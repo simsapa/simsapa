@@ -1,0 +1,126 @@
+// Reproduction harness for the Fusion `Dialog implicitHeight` binding loop that
+// DialogHeader.qml fixes (see the rule in AGENTS.md and PRD task 7.17). It is
+// kept because six earlier reproduction attempts failed, and getting it right
+// took two non-obvious environment facts, both encoded below.
+//
+// It instantiates the REAL SearchBarInput with all eleven required properties,
+// so it must run from inside assets/qml/ to resolve the project's QML types —
+// which is also why it is stored here with a .keep suffix instead of living
+// there: `make qml-test` walks assets/qml/ and would otherwise adopt it.
+//
+//     cp scripts/tst_dialog_loop_harness.qml.keep assets/qml/tst_DialogLoop.qml
+//     env QT_QPA_PLATFORM=offscreen QT_QUICK_CONTROLS_STYLE=Fusion \
+//         qmltestrunner -import ./assets/qml/ -input ./assets/qml/tst_DialogLoop.qml
+//     rm assets/qml/tst_DialogLoop.qml      # <- do not leave it there
+//
+// Count the loops in the output:
+//     … 2>&1 | grep -c 'Binding loop detected for property "implicitHeight"'
+//
+// Two things that invalidated earlier attempts:
+//
+//  1. `QT_QUICK_CONTROLS_STYLE=Fusion` is mandatory. The app forces Fusion in
+//     cpp/gui.cpp; qmltestrunner defaults to Basic, whose Dialog does not have
+//     the offending implicitHeight expression, so the loop cannot appear.
+//  2. `QT_QPA_PLATFORM=offscreen` is mandatory. The trigger is a window RESIZE,
+//     and this desktop's WM (qtile) auto-maximizes windows on X11 — every
+//     `w.width = …` below is silently ignored there, i.e. the one step that
+//     matters never happens.
+//
+// And one scoring trap: a variant that fails to LOAD also logs zero loops. Always
+// check `Totals: N passed, 0 failed`, never just the grep count. (An earlier
+// variant matrix was invalidated exactly this way, by assigning the read-only
+// `implicitHeight` on a Label root.)
+
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import QtTest
+
+TestCase {
+    id: tc
+    name: "RealBar"
+    when: windowShown
+    visible: true
+    width: 400
+    height: 200
+
+    Component {
+        id: win_comp
+        ApplicationWindow {
+            id: w
+            width: 1000
+            height: 600
+            readonly property bool is_wide: w.width > 650
+            readonly property bool is_tall: w.height > 810
+            readonly property int icon_size: is_tall ? 40 : 30
+            property alias bar: bar
+            property string area: "Suttas"
+            function handle_query(t, n) {}
+
+            Timer { id: search_timer; interval: 400 }
+            DrawerMenu {
+                id: mobile_menu
+                window_width: w.width
+                window_height: w.height
+                menu_list: []
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                SearchBarInput {
+                    id: bar
+                    window_width: w.width
+                    is_wide: w.is_wide
+                    is_tall: w.is_tall
+                    icon_size: w.icon_size
+                    db_loaded: true
+                    searcher_ready: true
+                    search_as_you_type_checked: false
+                    is_loading: false
+                    has_query_error: false
+                    search_area: w.area
+                    handle_query_fn: w.handle_query
+                    search_timer: search_timer
+                    mobile_menu: mobile_menu
+                }
+                Item { Layout.fillHeight: true }
+            }
+        }
+    }
+
+    function make() {
+        let w = win_comp.createObject(null);
+        w.show();
+        wait(400);
+        return w;
+    }
+
+    function test_1_narrow_only() {
+        let w = make();
+        w.width = 420; wait(700);
+        w.close(); w.destroy(); wait(100);
+    }
+
+    function test_2_narrow_then_dictionary() {
+        let w = make();
+        w.width = 420; wait(700);
+        w.area = "Dictionary"; wait(700);
+        w.close(); w.destroy(); wait(100);
+    }
+
+    function test_3_wide_dictionary_popup() {
+        let w = make();
+        w.area = "Dictionary"; wait(700);
+        w.bar.search_mode_dropdown.popup.open(); wait(700);
+        w.bar.search_mode_dropdown.popup.close(); wait(300);
+        w.close(); w.destroy(); wait(100);
+    }
+
+    function test_4_narrow_suttas_popup() {
+        let w = make();
+        w.width = 420; wait(700);
+        w.bar.search_mode_dropdown.popup.open(); wait(700);
+        w.bar.search_mode_dropdown.popup.close(); wait(300);
+        w.close(); w.destroy(); wait(100);
+    }
+}

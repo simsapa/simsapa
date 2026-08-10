@@ -28,6 +28,8 @@ fn main() {
         "../assets/qml/DownloadProgressFrame.qml",
         "../assets/qml/SearchBarInput.qml",
         "../assets/qml/MobileKeyboardHelper.qml",
+        "../assets/qml/DialogHeader.qml",
+        "../assets/qml/MobileOverlayTracker.qml",
         "../assets/qml/FulltextResults.qml",
         "../assets/qml/CMenuItem.qml",
         "../assets/qml/KeySequenceDisplay.qml",

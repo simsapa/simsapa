@@ -82,7 +82,8 @@ ApplicationWindow {
         parent: Overlay.overlay
         anchors.centerIn: parent
 
-        width: 400
+        // Clamped to the overlay: a fixed 400 is wider than a phone screen.
+        width: Math.min(parent.width - 40, 400)
 
         title: "Confirm Removal"
         modal: true

@@ -17,7 +17,13 @@ Dialog {
 
     title: "AI Word Selection"
     modal: true
-    width: 500
+    // Sized from the window overlay rather than from whatever item declares
+    // this dialog: it is instantiated inside GlossTab, whose size is 0 while
+    // another tab is current (a StackLayout does not size its non-current
+    // children), and it can be opened from the toolbar menu in that state.
+    parent: Overlay.overlay
+    anchors.centerIn: parent
+    width: Math.min(parent.width - 40, 500)
     standardButtons: Dialog.Close
 
     // Current persisted on/off state.
@@ -79,12 +85,12 @@ Dialog {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 15
+        spacing: 10
 
         Label {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: "When a gloss finds multiple dictionary options for a word, an AI model is asked to pick the correct one based on the sentence context. The request uses the Fallback sequence in Settings > AI Models."
+            text: "When a word has several dictionary senses, an AI model picks one from the sentence context. The request uses the Fallback sequence in Settings > AI Models."
         }
 
         RowLayout {
@@ -117,7 +123,7 @@ Dialog {
         // clicking it cycles the state.
         GroupBox {
             Layout.fillWidth: true
-            title: "Selection confidence — the shield icon"
+            title: "Shield icons: selection confidence level"
 
             ColumnLayout {
                 anchors.fill: parent
@@ -137,7 +143,7 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "Not checked — a plain dictionary lookup with no saved selection."
+                        text: "Not checked: plain dictionary lookup, no saved selection."
                     }
 
                     Image {
@@ -149,7 +155,7 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "AI-checked — a machine (runtime AI or the built-in agent pipeline) picked this sense."
+                        text: "AI-checked: picked by a machine (runtime AI request, or built-in cache)."
                     }
 
                     Image {
@@ -161,20 +167,20 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "Human-checked — a person confirmed this sense: you, or a curator whose selection ships with the app (including its set-phrase rules)."
+                        text: "Human-checked: confirmed by you, or via selections and set phrases built-in the app."
                     }
                 }
 
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: "Click a word's shield to confirm the shown sense as Human-checked — choosing it yourself is human confidence, so the click never stops at AI-checked. Clicking a Human-checked shield returns the word to Not checked; if the selection was your own, it asks for confirmation before removing it."
+                    text: "Click a shield to confirm the shown sense as Human-checked. Clicking again returns it to 'Not checked'."
                 }
 
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: "Built-in selections are never deleted. Clicking one only sets the word aside for the current session, and it applies again next time you gloss the passage."
+                    text: "Built-in selections are never deleted, clicking one sets the word aside for this session only."
                 }
             }
         }

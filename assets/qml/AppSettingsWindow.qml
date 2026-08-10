@@ -248,7 +248,8 @@ ApplicationWindow {
         title: "Rebuild Search Index"
         anchors.centerIn: parent
         modal: true
-        width: 400
+        // Clamped to the window: a fixed 400 is wider than a phone screen.
+        width: Math.min(root.width - 40, 400)
 
         property bool is_rebuilding: false
         property string status_message: ""
@@ -283,6 +284,9 @@ ApplicationWindow {
             }
         }
 
+        // `width: parent.width` is required for the wrapping Labels: declared
+        // children are parented to popupItem->contentItem(), which is already
+        // sized to availableWidth. Without it the text does not wrap.
         ColumnLayout {
             spacing: 10
             width: parent.width

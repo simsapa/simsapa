@@ -70,6 +70,11 @@ Frame {
     Dialog {
         id: short_query_dpd_dialog
         title: "Short Query"
+        // Not Fusion's default header: in a Frame-rooted component like this
+        // one, its unstated implicitHeight plus wrapping content makes the
+        // dialog's implicitHeight oscillate on window resize. Same shape as the
+        // two dialogs in SearchBarInput.qml. See DialogHeader.qml.
+        header: DialogHeader { text: short_query_dpd_dialog.title }
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true

@@ -214,6 +214,72 @@ None were changed: the fix belongs on the edge a device actually shows a problem
 on, and a phone screenshot decides it. The July 2026 on-device pass found no
 problem with any of them.
 
+### Rule 2a — size a dialog from the overlay, never from a declaring item
+
+Found on a phone in August 2026, while verifying `MobileOverlayTracker` (see
+[mobile-webview-visibility-management.md](./mobile-webview-visibility-management.md)).
+Six dialogs were unusable on a narrow screen, and the cause was never the safe
+area — it was a **hard-coded width** wider than the screen:
+`GlossTab.qml`'s `commonWordsDialog` (400×500), `AppSettingsWindow.qml`'s
+`rebuild_index_dialog` (400), `GlossWordSelectionDialog.qml` (500),
+`LibraryWindow.qml`'s `remove_confirmation_dialog` (400),
+`DictionaryEditDialog.qml` (480), and `SuttaLanguagesWindow.qml`'s
+`confirm_removal_dialog` (none at all). All are now clamped to the available area.
+
+The trap that made two of them worse: **a `StackLayout` gives its non-current
+children a size of 0.** `commonWordsDialog` and `GlossWordSelectionDialog` are
+declared inside `GlossTab` but are also opened from the toolbar Gloss menu while
+another tab is current — so a `root.width - 40` clamp evaluated to **-40**,
+collapsing the dialog while its `ColumnLayout` kept drawing children at their
+minimum widths. Both now take `parent: Overlay.overlay` and size from the overlay,
+which is always window-sized.
+
+```qml
+Dialog {
+    parent: Overlay.overlay          // not the declaring item
+    width: Math.min(400, parent.width - 40)
+    anchors.centerIn: parent
+}
+```
+
+### Rule 2b — keep `width: parent.width` on a dialog's contentItem
+
+`QQuickPopupPrivate::contentData()` appends a `Dialog`'s declared children to
+`popupItem->contentItem()`, which `QQuickControlPrivate::resizeContent()` sizes to
+`availableWidth`. So `parent` there is **already** the padding-adjusted content
+area, and `width: parent.width` is what makes `wrapMode` work:
+
+```qml
+Dialog {
+    ColumnLayout {
+        width: parent.width          // load-bearing — do not remove
+        Label { Layout.fillWidth: true; wrapMode: Text.WordWrap }
+    }
+}
+```
+
+This was briefly removed from six dialogs on the theory that `parent` was the
+un-padded `popupItem`. That is wrong: the labels fell back to their implicit width
+and the text stopped wrapping, reported on device. It has been restored everywhere,
+with comments recording why.
+
+### Rule 2c — a dialog needs `focus: true` for the Android back button
+
+`QQuickPopup::keyPressEvent` (`qquickpopup.cpp:3129-3143`) closes on
+`Qt::Key_Back` only under `#if defined(Q_OS_ANDROID)`, **and** only when
+`closePolicy` tests `CloseOnEscape`, **and** only when `hasActiveFocus()` is true.
+A `Popup`/`Dialog` defaults to `focus: false`, so without setting it the back
+button does nothing in that dialog — and since the app opts out of predictive back
+(§5), back then escapes to whatever does handle it. Every new dialog that should be
+dismissible with back needs both:
+
+```qml
+Dialog {
+    focus: true
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+}
+```
+
 ### Other unpadded cases
 
 - A mobile-visible `header` / `footer` / `menuBar` — Qt accounts for these in the

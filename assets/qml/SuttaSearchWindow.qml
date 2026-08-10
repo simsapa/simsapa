@@ -93,7 +93,13 @@ ApplicationWindow {
     // Gate the webview on the DB being ready so that the "Loading..." icon and
     // message are shown unobscured while the database is loading.
     property bool db_ready: SuttaBridge.db_loaded && SuttaBridge.searcher_ready
-    property bool webview_visible: root.db_ready && (root.is_desktop || (!mobile_menu.visible && !about_dialog.visible && !models_dialog.visible && !anki_export_dialog.visible && !gloss_tab.commonWordsDialog.visible && !tab_list_dialog.visible && !database_validation_dialog.visible && !app_settings_window.visible && !info_dialog.visible && !related_sutta_not_found_dialog.visible))
+    // On mobile the HTML reader is a native web view composited above the whole
+    // Qt Quick scene, so anything drawn over this window has to hide it. This
+    // used to be a hand-maintained list of dialog ids, which silently missed
+    // nine overlays and could not cover ComboBox drop-downs at all;
+    // MobileOverlayTracker detects them instead, so a new dialog needs no edit
+    // here. See docs/mobile-webview-visibility-management.md.
+    property bool webview_visible: root.db_ready && (root.is_desktop || !overlay_tracker.any_open)
 
     // Collapsible advanced sub-sections
     property bool is_filters_collapsed: false
@@ -229,6 +235,11 @@ ApplicationWindow {
     }
 
     Logger { id: logger }
+
+    // Drives webview_visible: true while any popup or in-tree child window is
+    // open over this window. Tracks the window it is instantiated in, so it
+    // takes no target.
+    MobileOverlayTracker { id: overlay_tracker }
 
     Connections {
         target: SuttaBridge
@@ -2313,6 +2324,12 @@ ${query_text}`;
 
         property string status_text: ""
 
+        // `width: parent.width` is required for the wrapping Labels below:
+        // items declared in a Dialog are appended to popupItem->contentItem()
+        // (QQuickPopupPrivate::contentData), which the control sizes to
+        // availableWidth — so `parent` here is already the padding-adjusted
+        // content area. Without it the layout takes its implicit width and the
+        // text does not wrap.
         ColumnLayout {
             spacing: 10
             width: parent.width
