@@ -382,6 +382,65 @@ See also [android-edge-to-edge-and-safe-areas.md](./android-edge-to-edge-and-saf
 for the safe-area rules these interact with — in particular that the `Popup` family gets
 no automatic inset, so tall dialogs must cap their own height.
 
+### ComboBox drop-downs on mobile — why the native popup was kept
+
+This is the evidence behind Key Principle 8, and it is recorded because a **whole
+replacement component was designed and then deliberately not built**. Without the reasons
+here, the obvious next step on seeing a cramped drop-down is to build it again.
+
+**The original plan was a `MobileComboBox`** — a `ComboBox` subclass that, on mobile,
+suppressed the native drop-down and opened a modal dialog of radio choices instead. It
+existed because the search-bar drop-downs were **partly hidden behind the webview**, so
+some search modes and languages could not be seen or tapped. Once the tracker landed that
+premise disappeared: a drop-down's popup is a `Popup` in the window overlay **like any
+other**, so the tracker hides the reader while it is open and every option is visible and
+tappable. The component was descoped.
+
+The one thing it would still have added is control over the popup's **width** and
+**height**, which the native popup does not offer. Both were measured rather than assumed,
+and both were fine:
+
+- **Width.** Fusion gives the popup `width: control.width` with `padding: 1`, and its
+  delegate is an `ItemDelegate` with `padding: 6` (`Fusion/ComboBox.qml:113-117`,
+  `Fusion/ItemDelegate.qml:19`). At the search bar's 80 px phone width that leaves **66 px**
+  for text; the longest label that can appear, `Headword`, measures 58.5 px. Device-confirmed
+  in the Dictionary area: the open popup fits every label.
+- **Width of the language drop-down is safe by construction** and needed no device run.
+  `load_language_labels_for_area()` assigns the **raw distinct DB values**, and every code
+  in `LANG_CODE_TO_NAME` (`backend/src/lookup.rs`, 57 entries) is 2–3 characters — so the
+  widest entry it can ever show is the index-0 sentinel `"Lang"`, at 27.8 px. This does not
+  depend on how many languages the user installs.
+- **Height.** Fusion caps the popup at `Window.height - topMargin - bottomMargin`, which
+  knows nothing about the gesture-nav inset. That is still true, but **unreachable**: the
+  cap only binds when the list is taller than the window, and a realistic number of
+  installed languages never gets there. Unreachable, not absent — see the trigger below.
+
+**A pre-existing behaviour that is accepted, and is not a bug to fix:** on a phone the
+*closed* control clips `"Combined"` to `"Combine"`. The closed control and the popup do
+**not** have the same text width — Fusion sets the control's
+`rightPadding = padding + indicator.width + spacing` (`Fusion/ComboBox.qml:22-23`), and the
+drop-down arrow is 20 px, so the closed state gets **60 px** against the popup's 66. It has
+always rendered this way at this width; the tracker changed nothing about it.
+
+**The Android back button closes a native drop-down correctly**, and durably. A `Popup`
+needs `focus: true` **and** `CloseOnEscape` **and** `hasActiveFocus()` for
+`QQuickPopup::keyPressEvent` to handle `Key_Back` (`qquickpopup.cpp:3129-3143`) — and
+`QQuickComboBox::setPopup` applies `CloseOnEscape | CloseOnPressOutsideParent`
+**unconditionally in C++** (`qquickcombobox.cpp:1395`), not in the Fusion QML. So this
+holds for every style, and a QML `popup:` override would have to remove it deliberately.
+Device-verified: back closes the drop-down only; the window and app survive.
+
+**What would reopen this.** Build the choice dialog (or the geometry override) only if one
+of these actually appears, not on suspicion:
+
+- a call site whose labels are materially longer than `Headword`, or a font change that
+  eats the ~11 % headroom at 80 px;
+- a list long enough to fill the window — roughly a couple of dozen installed languages,
+  or landscape, where the window is short. Only then does the height cap bind and the
+  bottom row land under the nav bar;
+- a `ComboBox` **outside** `SuttaSearchWindow`, where no tracker runs — though today the
+  webview lives only inside that window, so nothing there is at risk either.
+
 ## The Complete Visibility Chain
 
 For a WebView to be visible, ALL of these conditions must be true:
@@ -427,7 +486,9 @@ When working with mobile WebViews in Qt:
    drop-down is a `Popup` in the window overlay, so the tracker hides the reader while it
    is open. Do not add it to any list, and do not assume a short list is safe to leave
    over the reader — Qt documents overlapping a `WebView` with QML components as
-   unsupported on every platform, at every size.
+   unsupported on every platform, at every size. A replacement `MobileComboBox` with a
+   modal choice dialog was designed and **deliberately not built**; before rebuilding it,
+   read "ComboBox drop-downs on mobile" above for the measurements that closed it.
 
 ## Why Not Simpler Solutions?
 

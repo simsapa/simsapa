@@ -10,12 +10,12 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
   silently truncated the 26-deep tree (task 2.11). Its startup log line reports
   objects visited, deepest depth, cap hits and the depth each window was found
   at, because a bare duration cannot show truncation.
-- `assets/qml/MobileComboBox.qml` — **not written; superseded.** Was to be a
+- `assets/qml/MobileComboBox.qml` — **not written; descoped (8.5).** Was to be a
   `ComboBox` subclass opening a radio choice dialog on mobile. Once the tracker
   landed, the native drop-down turned out to hide the webview by itself (its popup
   is an overlay child like any other), so the options are already fully visible and
-  tappable. See 8.0 for the one thing the dialog would still have bought — control
-  over popup width and height — and 8.5 for closing 4.0/5.0 formally.
+  tappable. 8.0 then measured the only remaining gap — control over popup width and
+  height — and found both fine on device, so 4.0/5.0 are closed. Evidence: PRD §8.0.
 - `assets/qml/tst_MobileOverlayTracker.qml` — **new.** Offscreen tests for the
   tracker (popup open/close transitions, desktop short-circuit, the ToolTip
   identity exclusion sampled across the whole close transition). Forces the
@@ -31,9 +31,10 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
 - `assets/qml/SuttaSearchWindow.qml` — `webview_visible` (`:96`) is rewritten;
   the tracker is instantiated here. Consumers at `:3506` and `:3731` are
   untouched.
-- `assets/qml/SearchBarInput.qml` — `search_mode_dropdown` (`:334`) and
-  `language_filter_dropdown` (`:456`) become `MobileComboBox`; all surrounding
-  restore/persist logic is preserved verbatim.
+- `assets/qml/SearchBarInput.qml` — **not modified.** `search_mode_dropdown`
+  (`:337`) and `language_filter_dropdown` (`:459`) were to become `MobileComboBox`,
+  but 4.0/5.0 were descoped (8.5), so both stay plain `ComboBox` and all the
+  surrounding restore/persist logic is untouched rather than merely preserved.
 - `assets/qml/GlossTab.qml` — the `commonWordsDialog` alias (`:25`) is **kept**;
   it has a second user at `SuttaSearchWindow.qml:2197`. The dialog's hard-coded
   `400x500` size was clamped to the available area (task 7.14).
@@ -50,8 +51,11 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
   Qt source references, the runtime-created-window limitation, the ToolTip
   identity rule, the rejected alternatives, and the narrow-screen dialog sizing
   rules from 7.14.
-- `docs/mobile-webview-visibility-fix-inline-comments.md` — the companion doc,
-  **not yet updated**; still describes the enumerated-id era (task 6.7).
+- `docs/mobile-webview-visibility-fix-inline-comments.md` — the per-file companion doc,
+  **updated (6.7).** Kept rather than merged (it walks the actual inline comments, which
+  the conceptual management doc does not). Gained a scope note naming the management doc
+  authoritative; section 6 rewritten to the tracker form with the enumerated chain
+  retained as a labelled historical warning.
 - `docs/android-edge-to-edge-and-safe-areas.md` — **updated (6.3).** New rules 2a
   (size a dialog from `Overlay.overlay`, never from a declaring item a
   `StackLayout` can collapse to 0), 2b (`width: parent.width` on a dialog's
@@ -93,8 +97,10 @@ Each top-level task ends with the app compiling and the relevant tests passing:
 - **2.0–3.0** deliver the overlay tracker end-to-end (component, then wiring),
   fixing the dialog-obscuring problem including the five dialogs the current
   conditional silently misses.
-- **4.0–5.0** deliver the ComboBox choice dialog (component, then the two
-  conversions), fixing the clipped search-mode / language options.
+- **4.0–5.0** were to deliver the ComboBox choice dialog (component, then the two
+  conversions), fixing the clipped search-mode / language options. **Descoped by
+  8.5** — 3.0 fixed the clipping on its own and 8.0 confirmed nothing else was
+  missing. No code was written for either.
 - **6.0** is documentation and project hygiene.
 - **7.0** is the on-device verification that neither 3.0 nor 5.0 can prove on
   desktop.
@@ -102,11 +108,12 @@ Each top-level task ends with the app compiling and the relevant tests passing:
   the shipped tracker. Nothing there is a known defect; they are assumptions that
   hold today by accident of how the tree happens to be shaped, plus checks only a
   device can settle.
-- **8.0** was added after 3.0 landed: the tracker turned out to hide the webview
-  for the ComboBox drop-downs too, so the options are already fully visible and
-  4.0/5.0 are no longer needed for that. 8.0 examines the one thing the choice
-  dialog would still have given — control over the popup's width and height —
-  and only implements it if measurement shows it is needed.
+- **8.0 ✅ complete.** Added after 3.0 landed: the tracker turned out to hide the
+  webview for the ComboBox drop-downs too, so the options are already fully
+  visible and 4.0/5.0 were no longer needed for that. 8.0 examined the one thing
+  the choice dialog would still have given — control over the popup's width and
+  height — and **measurement showed neither is needed**, so no override was
+  implemented and 4.0/5.0 are closed as descoped (8.5, PRD §8.0).
 
 ---
 
@@ -222,7 +229,13 @@ out of scope.
 - [x] 3.8 Note in the task list that the *behavioural* proof of 3.0 is on-device only (task 7.0) — desktop short-circuits the whole mechanism.
 - [x] 3.9 **NOT NEEDED — spike 3b was confirmed** (see PRD §7.2); the tracker excludes the shared `ToolTip` by identity (2.4) and tooltips keep working everywhere. Original task, kept for context: **Only if spike 3b was refuted** (1.5b): gate tooltips off on mobile at the source, `ToolTip.visible: hovered && root.is_desktop`, at the **31 sites in 10 files** inside `SuttaSearchWindow`'s tree — `SearchBarInput.qml` 8, `DictionarySearchDictionariesPanel.qml` 6, `FulltextResults.qml` 4, `WordSummary.qml` 4, `GlossTab.qml` 3, `SuttaSearchWindow.qml` 2, and one each in `PromptsTab.qml`, `DictionaryListItem.qml`, `DeconstructorSelector.qml`, `ResponseTabButton.qml`. Add the standard `readonly property bool is_mobile` / `is_desktop` pair to any of those files that lacks it. **Leave tooltips inside dialogs and child windows alone** (`ModelsDialog`, `DocumentImportDialog`, `TabListDialog`, `ModelUsageLists`, `RecordingPlaybackItem`) — the webview is already hidden while those are open, so they cannot blink anything. This task must land **with** 3.0, never after it.
 
-### 4.0 `MobileComboBox.qml` — ⏸ SUPERSEDED, do not implement without re-deciding
+### 4.0 `MobileComboBox.qml` — ❌ DESCOPED (closed by 8.5, 2026-08-10)
+
+**Closed, not merely paused.** 8.1 and 8.2 measured the two things this component would
+still have added over the native drop-down — control of popup **width** and **height** —
+and both came back clean on device, so there is nothing left for it to buy. See PRD §8.0
+for the evidence. Do not implement without new evidence; the sub-tasks below stay
+unchecked because they describe work that was deliberately **not** done.
 
 **Superseded by 3.0.** With the tracker in place a native `ComboBox` drop-down is a
 `Popup` in the window overlay like any other, so it already hides the webview and its
@@ -288,9 +301,11 @@ activated(chosen_index);       // always emitted
 - [ ] 4.11 Write `assets/qml/tst_MobileComboBox.qml`: selecting a different index emits `currentIndexChanged` then `activated`; selecting the current index emits `activated` only; cancel/dismiss emits neither; a programmatic `currentIndex` assignment emits `currentIndexChanged` and **not** `activated`, and does not open the dialog; a model change while the dialog is open closes it and emits nothing (4.9); `dialog_labels` changes the row text without changing which index a row applies.
 - [ ] 4.12 Run `make build -B`; ask the user to run `make qml-test`.
 
-### 5.0 Convert the two search-bar dropdowns — ⏸ SUPERSEDED with 4.0
+### 5.0 Convert the two search-bar dropdowns — ❌ DESCOPED with 4.0 (closed by 8.5)
 
-Both dropdowns stay plain `ComboBox`. See the 4.0 banner. The list below of what must
+Both dropdowns stay plain `ComboBox`, and `SearchBarInput.qml` is **unmodified** by this
+PRD — which is the tidiest possible outcome for requirement 25, since none of the logic
+that had to "survive the conversion verbatim" was ever touched. See the 4.0 banner. The list below of what must
 survive **verbatim** is still the authoritative inventory of that logic
 (`suppress_persist`, `applied_area`, `restore_for_current_area()`, `get_text()`, the two
 `Connections`, the mid-transition guards, the no-op guard) — consult it before touching
@@ -315,9 +330,11 @@ Spec — what must survive the conversion **verbatim** (PRD req 25–27):
 - [ ] 5.6 Trace the area-switch path once by reading it: `onSearch_areaChanged` → `restore_for_current_area()` on both dropdowns → the single query from `area_query_coordinator`. Confirm no path can now fire a second query.
 - [ ] 5.7 Run `make build -B` and `qmllint` via the normal build; ask the user to run `make qml-test`.
 
-### 6.0 Documentation and project registration
+### 6.0 Documentation and project registration ✅
 
-**Depends on:** 3.0 and 5.0.
+**Depends on:** 3.0 and 5.0 (5.0 descoped — see 8.5).
+**Complete:** all sub-tasks done; `make build -B` and `make qml-test` pass
+(148 QML tests, 0 failed, including all 15 tracker tests).
 
 - [x] 6.1 Add a section to `docs/mobile-webview-visibility-management.md` covering the tracker: why overlays must hide the webview, the `Overlay.overlay` reparenting mechanism (with the `qquickpopup.cpp` references), and the in-tree-window vs. `WindowManager`-created-window distinction that decides what needs tracking.
 - [x] 6.1b In the same doc, record **why ChromeOS is not a special case** (PRD §1.1): same AAB, same `QAndroidPlatformIntegration`, the webview is a native child `QWindow` (`qtwebview/src/quick/qquickviewcontroller.cpp:226`, `:241`) under a platform that returns `false` for `TopStackedNativeChildWindows`, and `QtAndroidWebViewController.java:183` is a plain `new WebView(activity)` in the activity's view hierarchy — ARCVM composites the app's *outer* window and does not reorder views inside it. Include the three reference links from PRD §10 ([Qt WebView](https://doc.qt.io/qt-6/qtwebview-index.html), [ARCVM on ChromeOS](https://chromeos.dev/en/posts/making-android-runtime-on-chromeos-more-secure-and-easier-to-upgrade-with-arcvm), [SurfaceView/GLSurfaceView](https://source.android.com/docs/core/graphics/arch-sv-glsv)). State the consequence as a rule: **a spurious webview hide/show is a blocking defect on ChromeOS**, because the reader is most of a large window and the pointer triggers it casually.
@@ -326,10 +343,75 @@ Spec — what must survive the conversion **verbatim** (PRD req 25–27):
 - [x] 6.2 Document the `MobileComboBox` rule in the same place or in `docs/android-soft-keyboard.md`'s neighbourhood: **on native-webview platforms a ComboBox drop-down cannot be seen over the reader**, so new mobile ComboBoxes inside `SuttaSearchWindow` should use `MobileComboBox`.
 - [x] 6.3 Record the back-button requirement (`focus: true` + `CloseOnEscape`) in `docs/android-edge-to-edge-and-safe-areas.md`, next to the existing predictive-back note — it is a general rule for every new dialog, not just this one. **Also record the two narrow-screen sizing rules from 7.14** in the same place: (1) clamp a dialog's width to the available area instead of hard-coding it, and size it from `Overlay.overlay` — never from a declaring item that a `StackLayout` can collapse to 0 while another tab is current; (2) **keep** `width: parent.width` on a dialog's contentItem — declared children are parented to `popupItem->contentItem()`, which is already sized to `availableWidth`, so that binding is what makes `wrapMode` work.
 - [x] 6.4 Add both new components to `PROJECT_MAP.md` (tree entry plus a one-line description, as done for `SearchBarInput.qml`).
-- [ ] 6.5 Add the CLAUDE.md-worthy summary line if the maintainer wants it in the "Notable feature docs" list — propose the wording, do not assume.
-- [ ] 6.6 Verify `bridges/build.rs` contains exactly the new **shipped** components and no `tst_*` or spike files.
-- [ ] 6.7 Update `docs/mobile-webview-visibility-fix-inline-comments.md` — it is the companion to the management doc and still describes the enumerated-id era. Either fold its still-true parts into the management doc and delete it, or add a pointer at its top saying the Layer 4 material there is superseded. Decide which; do not leave two docs disagreeing about how overlays are detected.
-- [ ] 6.8 Once 8.0 concludes, fold its outcome into `docs/mobile-webview-visibility-management.md` — either "the native drop-down is fine as-is on mobile, here is why" or the geometry override that was adopted. The Key Principles list already tells a future reader that a new mobile `ComboBox` needs no special treatment; that claim needs 8.0's evidence behind it.
+- [x] 6.5 **Done — wording proposed and approved by the maintainer.**
+  `docs/mobile-webview-visibility-management.md` was **not** in the "Notable feature docs"
+  list at all, despite now carrying the tracker, the ChromeOS argument and the ComboBox
+  decision; the entry was added after `mobile-rendering-troubleshooting.md`, which is the
+  neighbour it is most likely to be confused with (that one is GPU/scene-graph corruption
+  toggles, this one is overlay stacking).
+  The entry leads with the rule — **overlays are detected, never enumerated** — and
+  carries the four conclusions that cost real research: the `Overlay.overlay` reparenting
+  mechanism, ChromeOS being the same Android binary with no exemption (so a spurious
+  hide/show there is *blocking*, not cosmetic), the `ToolTip` identity exclusion, and the
+  `MobileComboBox` that was designed and deliberately not built.
+  **Note for future edits: `CLAUDE.md` is a symlink to `AGENTS.md`** — edit `AGENTS.md`;
+  writing through the symlink is refused.
+- [x] 6.6 **Verified — `bridges/build.rs` is correct.** `"../assets/qml/MobileOverlayTracker.qml"`
+  is registered (`:31`) in the exact required form; `MobileComboBox.qml` is correctly
+  **absent** (never written — 4.0 descoped), as is `MobileOverlayGuard.qml` (never needed
+  — 2.3 chose the automatic walk). No `tst_*` and no spike files are listed, so the two
+  tracker test files stay out of the shipped resources as intended. Cross-checked both
+  directions: every path listed in `build.rs` exists on disk, and every top-level
+  `assets/qml/*.qml` that ships is listed.
+  **One pre-existing finding, out of scope, not touched:** `assets/qml/ColorThemeDialog.qml`
+  is on disk but is **not** in `build.rs` **and is not referenced anywhere** in the repo
+  (no QML, C++, Rust or TS reference; last touched by `8e8c28f` "removing the 'system'
+  theme option"). It appears to be an orphan left by that change. It is unrelated to this
+  PRD — which only ever cited it as the `Dialog` + `ButtonGroup` + `RadioButton` *pattern*
+  to copy — so it is reported rather than deleted. Worth a maintainer decision separately:
+  either delete it, or register it if the colour-theme dialog is meant to come back.
+- [x] 6.7 **DECISION: keep the doc, fix the one wrong section, and state which doc wins.**
+  Not folded-and-deleted: the two docs are not redundant — this one is a **per-file**
+  walk-through of the actual inline comments, the management doc is conceptual (the five
+  layers). Merging would bloat the management doc with code snippets for material that is
+  still accurate. Checked section by section: **1–5 and 7 still describe the code as it
+  is** (Item wrapping, explicit bindings, dimension collapsing, per-tab visibility);
+  only **section 6** was stale.
+  Changes made:
+  - A scope note at the top naming
+    `mobile-webview-visibility-management.md` as **authoritative** where the two overlap,
+    and saying explicitly which sections here are current and which is not — so the two
+    docs cannot be read as disagreeing.
+  - **Section 6 rewritten** to the tracker form, with the enumerated chain kept below it
+    as a labelled *"⚠️ Historical — do not restore this pattern"* block carrying both
+    reasons it failed (silently incomplete — nine overlays were missing from the real
+    list; and unable to cover non-dialog popups like drop-downs). Kept rather than deleted
+    because the failed pattern is the whole justification for the tracker.
+  - Noted that the ids in that old snippet (`color_theme_dialog`, `storage_dialog`) **no
+    longer exist** — the drift is itself the failure mode in miniature.
+  - Preserved the section's one still-true point (use `visible`, not `activeFocus`, for a
+    `Drawer`), flagged as still applying to any code inspecting a drawer directly, though
+    the tracker does not depend on it.
+  - "The Complete Visibility Chain" item 4 updated from "No drawer/dialogs open" to the
+    tracker-based wording, matching the management doc's chain.
+- [x] 6.8 **Done.** 8.0's outcome is folded into
+  `docs/mobile-webview-visibility-management.md` as a new section, **"ComboBox drop-downs
+  on mobile — why the native popup was kept"**, placed after the dialog sizing rules. It
+  is written as "the native drop-down is fine as-is, here is why", since no geometry
+  override was adopted. Key Principle 8 now points at it.
+  The section records: that a whole replacement component (`MobileComboBox` + choice
+  dialog) was designed and **deliberately not built**, and why the premise for it
+  disappeared once the tracker landed; the width measurement with its Qt source
+  references; the language drop-down being safe **by construction** (≤ 3-char DB values,
+  independent of how many languages are installed); the height cap being *unreachable*
+  rather than absent; the accepted pre-existing closed-control clipping with its cause
+  (the 20 px indicator, 60 px vs the popup's 66); and the back-button guarantee holding
+  durably because `CloseOnEscape` is set in C++ (`qquickcombobox.cpp:1395`), not in the
+  Fusion QML.
+  It ends with an explicit **"what would reopen this"** list — longer labels, a
+  window-filling list, or a `ComboBox` outside `SuttaSearchWindow` — so the component is
+  rebuilt on evidence rather than on suspicion. That framing is the point of the section:
+  without it, the natural response to a cramped drop-down is to build the dialog again.
 
 ### 7.0 On-device verification (Android)
 
@@ -372,7 +454,7 @@ together.
   - [ ] 7.12e Resize the window wide so `is_mobile && is_wide` are both true — a combination that never occurs on a phone. The drop-down opens, the reader hides, and the control shows the **wide** labels (`is_wide` drives the model, `SearchBarInput.qml:339`, `:458`); confirm the 120 px popup width is adequate for them (feeds 8.1).
 - [ ] 7.13 Report results back into the PRD's §8 success metrics; open follow-up tasks for anything that fails rather than patching ad hoc.
 
-### 8.0 Native drop-down geometry on mobile (replaces most of 4.0/5.0)
+### 8.0 Native drop-down geometry on mobile (replaces most of 4.0/5.0) ✅
 
 **Depends on:** 3.0. **Context:** with the tracker in place the search-bar drop-downs
 already hide the webview, so their options are **visible and tappable** — PRD goal 3
@@ -402,28 +484,103 @@ a handful of languages, not all of them, so the list is shorter than the window.
 section therefore exists to find out whether that holds beyond one phone and one set of
 installed languages — **not** to fix a reported defect.
 
-- [ ] 8.1 **Examine the width case across real content.** Check the widest label that can
-  actually appear in each drop-down: the search-mode narrow labels
-  (`search_mode_label_narrow`, longest is `"Headword"` in Dictionary) and the language
-  codes produced by `load_language_labels_for_area()` for each area — confirm from the DB
-  what those values really are rather than assuming two-letter codes. Note anything that
-  elides at 80 px, at the app's mobile font size, in both themes.
-- [ ] 8.2 **Examine the height case.** Install/enable a deliberately large number of sutta
-  languages and open the language drop-down on a phone in portrait. The cap is
-  `Window.height`, which knows nothing about the **gesture-nav inset** — the `Popup` family
-  gets no safe area automatically (`docs/android-edge-to-edge-and-safe-areas.md`). Confirm
-  whether the last row is reachable, or whether it sits under the nav bar. Repeat in
-  landscape, where the window is short and the search bar eats a larger fraction of it.
-- [ ] 8.3 **Only if 8.1/8.2 find something:** implement and test the geometry override. Two
-  independent pieces, either of which can be taken alone:
-  - **Width** — on mobile widen the popup beyond the control, clamped to the overlay:
+- [x] 8.1 **Width measured. Language dropdown is comfortably safe; the search-mode
+  dropdown is safe on desktop metrics but has thin headroom, and only in the Dictionary
+  area — one device check is needed before 8.3 can be declined.**
+
+  **Available text width.** Fusion's popup is `width: control.width` with `padding: 1`,
+  and its delegate is an `ItemDelegate` with `padding: 6` (measured, not assumed:
+  `~/Qt/6.9.3/gcc_64/qml/QtQuick/Controls/Fusion/ComboBox.qml:113-117` and
+  `ItemDelegate.qml:19`). So the text gets **80 − 2 − 12 = 66 px** on a phone and
+  **120 − 2 − 12 = 106 px** at `is_wide`.
+
+  **Language codes are ≤ 3 characters — the width question is closed for that dropdown.**
+  `load_language_labels_for_area()` assigns the raw distinct DB values, and every value in
+  `LANG_CODE_TO_NAME` (`backend/src/lookup.rs:329`, 57 entries) is 2 or 3 characters
+  (`lzh`, `pli`, `xto`, …); the shipped DB confirms it (`max(length(language)) = 3` over
+  `suttas`, and `dict_words` holds only `en`/`pli`). The widest thing the dropdown can ever
+  show is therefore the **index-0 sentinel**, `"Lang"` — 27.8 px against 66 available.
+  This holds regardless of which languages the user installs, so it needs no device run.
+
+  **Search-mode narrow labels fit, but the margin is ~11 %.** Measured advance widths at
+  the ComboBox's inherited font (offscreen: `Sans Serif`, `pointSize 9` / `pixelSize 12`):
+  `Title` 24.0, `Fulltext` 41.3, `Lookup` 42.0, `Contains` 49.5, `Combined` 58.1,
+  `Headword` **58.5** — all under 66, but the two longest are **Dictionary-only labels**.
+  In Suttas/Library the worst case is `Contains` at 49.5 (25 % headroom); the tight case
+  exists only after switching to Dictionary, which is plausibly why the field observation
+  reported no problem.
+
+  **The caveat that decides this: offscreen metrics are not Android metrics.** `pixelSize
+  12` is the *desktop* default — no app-wide `QFont` is set (`cpp/gui.cpp` sets only
+  `QQuickStyle::setStyle("Fusion")`), so the control inherits the platform default, and
+  Android's is typically larger. `Headword` elides once the font is **> ~13 % wider**
+  (66 / 58.5 = 1.128), which a 12 → 14 px default would exceed. Same shape at `is_wide`:
+  `Headword Match` is 96.7 against 106, ~10 % headroom — so this feeds **7.12e** too.
+
+  **CONFIRMED ON DEVICE (maintainer, Dictionary area, phone): the width question is
+  closed — 8.3's width override is NOT needed.** Observed: the **closed control** shows
+  `"Combine"` with the `d` cut off, but the **open popup fits every label** (`Combined`,
+  `Lookup`, …). Accepted as-is — a narrower screen than this is unlikely, and the popup
+  is the surface that has to be usable.
+
+  **Why the closed control elides while the popup does not** (measured, so it is not
+  re-investigated): they do **not** have the same text width. Fusion sets the control's
+  `rightPadding = padding + indicator.width + spacing` (`Fusion/ComboBox.qml:22-23`), and
+  the drop-down arrow is 20 px — so at an 80 px control the closed state gives text
+  `availableWidth = 60`, while the popup delegate gives **66** (popup `width:
+  control.width`, `padding: 1`, delegate `padding: 6`; no indicator). `Combined` measures
+  58.1 px at desktop metrics, i.e. it clears 66 but has only ~2 px against 60 — which is
+  why Android's larger default font tips the closed control into eliding and leaves the
+  popup intact. The device behaviour therefore also **brackets the real Android font**:
+  the rendered width of `Combined` is between 60 and 66 px.
+
+  Note the elided *closed control* is pre-existing and unrelated to this PRD — it is how
+  the control has always rendered on a phone; the tracker changed nothing about it.
+
+  Measured with a throwaway `TextMetrics` probe under the scratchpad (**not** under
+  `assets/qml/`, per task 1.1 — `make qml-test` walks that tree).
+- [x] 8.2 **Height — clean; no override needed.** (The width half was already answered by
+  the device run recorded in 8.1.)
+
+  **Assessed on device (maintainer):** there is ample screen height for many language
+  rows, and a user installs a handful of languages, not dozens. The drop-down is short
+  enough that Fusion's height cap is never reached.
+
+  **What that does and does not settle.** Fusion caps the popup at
+  `control.Window.height - topMargin - bottomMargin`
+  (`Fusion/ComboBox.qml:114-115`), and `Window.height` knows nothing about the
+  **gesture-nav inset** — the `Popup` family gets no safe area automatically
+  (`docs/android-edge-to-edge-and-safe-areas.md`). That remains true; it is simply **not
+  reachable**, because the cap only binds when the list is taller than the window. With
+  realistic language counts the list never gets there, so the last row is always well
+  clear of the nav bar. The defect is unreachable rather than absent.
+
+  **The trigger to watch, if this is ever revisited:** a language list long enough to fill
+  the window — roughly a couple of dozen installed languages, or landscape, where the
+  window is short and the search bar takes a larger fraction of it. Only then would the
+  cap bind and the bottom row land under the nav bar. Recorded so a future report of "the
+  last language is unreachable" is diagnosed from here instead of re-derived.
+- [x] 8.3 **NOT NEEDED — both halves declined on device evidence** (width: 8.1, the popup
+  already fits every label; height: 8.2, the cap is never reached). No geometry override
+  is implemented. The two designs are kept below for a future call site with longer labels
+  or a genuinely long list — start here rather than from scratch.
+  - **Width — NOT NEEDED (8.1, device-confirmed).** Kept for a future call site with
+    longer labels: on mobile widen the popup beyond the control, clamped to the overlay:
     `popup.width: root.is_mobile ? Math.min(Math.max(implicitContentWidth, width), Overlay.overlay.width - 20) : width`.
     Take the cap from `Overlay.overlay`, never from the control or a declaring item — this
     is the same trap task 7.14 hit, where a `StackLayout` gave a non-current child a size
     of 0 and the clamp evaluated negative.
   - **Height** — cap against the safe-area-adjusted height rather than `Window.height`, and
     keep the list scrollable.
-- [ ] 8.4 **Optional, larger, and only worth it if 8.1 shows real elision:** stop swapping
+- [x] 8.4 **DECLINED — the precondition was not met, and it would not fix what was seen.**
+  8.1 found no elision in the drop-down; the only clipping observed was on the **closed
+  control** (`"Combine"`), and this change would *not* fix that — the closed control keeps
+  showing the narrow label under `displayText` exactly as it does under the narrow model.
+  So the whole benefit here is fuller labels in a popup that is already legible, bought at
+  the cost of re-tracing the `onIs_wideChanged` model rebuild, the `applied_area` guards
+  and the index-0 sentinel. Not a trade worth taking now. Design kept below for whenever
+  the label sets are next revisited on their own merits.
+  **Original (optional, larger, and only worth it if 8.1 shows real elision):** stop swapping
   the *model* on `is_wide` and swap the *display* instead. `ComboBox.displayText` is
   settable and defaults to `currentText`, so `search_mode_dropdown` could keep
   `model: search_mode_label_wide[root.search_area]` at all times and set
@@ -435,9 +592,22 @@ installed languages — **not** to fix a reported defect.
   `applied_area` mid-transition guards and the index-0 `"Language"`/`"Lang"` sentinel all
   have to be re-traced (PRD req 25–27 list what must survive verbatim). Weigh it against
   simply widening the popup in 8.3, which achieves most of the benefit with none of that risk.
-- [ ] 8.5 If 8.1 and 8.2 both come back clean, record that outcome in the PRD (§8) and close
-  4.0/5.0 as **descoped with reason** rather than leaving them looking unfinished — the
-  tracker solved the problem they existed to solve.
+- [x] 8.5 **Done — 8.1 and 8.2 both came back clean, so 4.0/5.0 are formally descoped.**
+  Recorded in the PRD as a new **§8.0 "Outcome"** section: change B was never built and is
+  not needed, because the tracker hides the webview for the native drop-down like any
+  other overlay, so goal 3 is met by change A alone. The section carries the width and
+  height measurements, the language-codes-are-≤3-chars argument (safe by construction, no
+  device run needed), and the accepted pre-existing closed-control clipping with its
+  cause. The §8 metric bullets that assumed a choice dialog were restated for the native
+  drop-down rather than deleted, and the tablet/landscape bullet marked moot (the tracker
+  keys on `is_mobile`, never on screen size).
+  **One guarantee did not automatically survive the descope — since RESOLVED by 9.3.**
+  Requirement 28 (`focus: true` + `CloseOnEscape`, so the Android back button closes the
+  popup rather than escaping to close the app) was something `MobileComboBox` would have
+  set explicitly. Device-verified on 2026-08-10: back closes the native drop-down only,
+  and it holds durably because `QQuickComboBox::setPopup` sets `CloseOnEscape`
+  unconditionally in C++ (`qquickcombobox.cpp:1395`), not in the Fusion QML. Nothing is
+  left outstanding from the descope.
 
 ### 9.0 Open questions and unverified assumptions
 
@@ -463,30 +633,57 @@ here so they are investigated deliberately rather than rediscovered as bugs.
   does, it is a different problem from the blank-webview class in
   `docs/mobile-webview-visibility-management.md` and needs its own answer (most likely
   accepting it, since the alternative is delaying every popup).
-- [ ] 9.3 **Does the Android back button close a native `ComboBox` drop-down?** PRD req 28
-  established that a `Popup` needs `focus: true` **and** `CloseOnEscape` **and**
-  `hasActiveFocus()` for `QQuickPopup::keyPressEvent` to handle `Key_Back`
-  (`qquickpopup.cpp:3129-3143`). The `MobileComboBox` choice dialog would have set those
-  explicitly; the native Fusion drop-down's are whatever Qt gives it. Verify on device that
-  back closes the drop-down and does **not** escape to close the window or the app — back
-  escaping a dialog to close the whole app has been a real bug in this app before
-  (`docs/android-edge-to-edge-and-safe-areas.md` §5).
-- [ ] 9.4 **`looks_like_window()` is a duck test and could false-positive.** It matches any
-  object with `contentItem`, `visible` and `transientParent` all defined. Nothing in the
-  tree trips it today, but a false positive is doubly bad: the object is counted as a
-  window *and* its subtree is skipped, so a real window beneath it would be missed. Decide
-  whether to tighten it (e.g. also require `transientParent !== undefined` **and** the
-  absence of an `Item`-only property), or to leave it and rely on 2.10's test to notice.
-  Cheap either way — record the decision rather than leaving the shape of the test
-  unexamined.
-- [ ] 9.5 **PRD open question 3 is now answered — record it.** "Are there other mobile
-  ComboBoxes that overlap the sutta webview badly enough to be converted in the same pass?"
-  The answer is **no conversion is needed for any of them**: every `ComboBox` inside
-  `SuttaSearchWindow` (`GlossTab`, `PromptsTab`, the dictionary panels,
-  `DeconstructorSelector`) opens a `Popup` into the same window overlay, so the tracker
-  already hides the reader for all of them, and ComboBoxes inside in-tree child windows
-  were never at risk. Write this into the PRD's §9 so it is not re-opened; 8.0's geometry
-  findings, if any, apply to those call sites too.
+- [x] 9.3 **VERIFIED ON DEVICE (maintainer, phone, 2026-08-10) — back closes the drop-down
+  only.** Opening the search-mode drop-down hid the webview and showed the options;
+  pressing back closed the drop-down and the webview returned. The window and the app
+  survived, so the old "back escapes a dialog and closes the whole app" failure
+  (`docs/android-edge-to-edge-and-safe-areas.md` §5) does **not** recur here.
+
+  This was the one guarantee that did not automatically survive descoping 4.0/5.0 (see
+  8.5): PRD req 28 needs `focus: true` **and** `CloseOnEscape` **and** `hasActiveFocus()`
+  for `QQuickPopup::keyPressEvent` to handle `Key_Back` (`qquickpopup.cpp:3129-3143`), and
+  `MobileComboBox` would have set them explicitly.
+
+  **Why the native drop-down satisfies it anyway, and why that is durable:**
+  `QQuickComboBox::setPopup` applies
+  `CloseOnEscape | CloseOnPressOutsideParent` **unconditionally** to whatever popup is
+  assigned (`qquickcombobox.cpp:1395`). That is in **C++, not in the Fusion QML**, so it
+  holds for every style and is not something a style change or a `popup:` override in QML
+  would silently drop — an override would have to remove it deliberately. The focus half
+  is satisfied in practice (device-confirmed above), consistent with ComboBox's own code
+  testing `d->popup->hasActiveFocus()` at `:1979` and `:2026`.
+
+  **Also incidentally confirms requirement 2b end-to-end:** the webview came back after
+  the popup's exit transition unparented its `popupItem` from the overlay — i.e. the
+  tracker's close path works on a real device, not just offscreen where transitions are
+  instant (the gap spike 3 could not measure).
+- [x] 9.4 **DECISION: leave the test as it is — measurement showed it is already precise.**
+  The worry was a false positive, which is doubly bad (the object is counted as a window
+  *and* `collect_windows()` stops recursing into it, so a real window beneath would be
+  missed). Rather than guess at a tightening, the test was run against 11 types offscreen:
+
+  | reports `transientParent` | types |
+  |---|---|
+  | **undefined** (correctly rejected) | `Item`, `Rectangle`, `Button`, `Dialog`, `Menu`, `Drawer`, `ComboBox`, `ToolTip`, `ListView` |
+  | **defined** (correctly matched) | `Window`, `ApplicationWindow` |
+
+  **`transientParent` is a QWindow property, so nothing in the Qt Quick item/popup world
+  has it** — it alone does all the discriminating. The proposed tightening ("also require
+  the absence of an `Item`-only property") would add nothing: every type it would exclude
+  is already excluded. Worth knowing that `contentItem` and `visible` discriminate
+  **nothing** on their own — 8 of the 9 rejected types have both — so they are kept only
+  as documentation of the shape being matched, not as filters.
+  Recorded as a comment on `looks_like_window()` in `MobileOverlayTracker.qml`, including
+  the measured table, the doubly-bad failure mode, and the note that `anchors` is the
+  exact inverse (defined on items, undefined on windows) should a negative check ever be
+  wanted. `tst_MobileOverlayTrackerWindows.qml` (2.10) remains the regression guard.
+- [x] 9.5 **Done — PRD open question 3 is answered in the PRD's §9.** Recorded as "no
+  conversions are needed, for any of them", with the counts verified rather than asserted:
+  eleven ComboBoxes in the tracked tree (`GlossTab` 5, `PromptsTab` 3, `SearchBarInput` 2,
+  `DeconstructorSelector` 1), all covered with no per-site work because each opens its
+  drop-down as a `Popup` into the same window overlay. Also noted that the question's
+  premise is doubly gone: `MobileComboBox` was descoped (§8.0), so there is nothing to
+  convert *to* either. 8.0's geometry findings apply to these call sites as well.
 - [ ] 9.6 **The tracker is single-window by construction — check that is true of the app.**
   It tracks the window it is instantiated in, and there is exactly one instance, in
   `SuttaSearchWindow.qml`. If the app can open a **second** `SuttaSearchWindow`, confirm

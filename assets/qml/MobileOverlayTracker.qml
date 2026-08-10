@@ -199,6 +199,23 @@ Item {
 
     // Duck-typed: a Window is not a QQuickItem, so it cannot be matched by type
     // from QML without a bridge helper.
+    //
+    // `transientParent` is the load-bearing check — it is a QWindow property, so
+    // nothing in the Qt Quick item/popup world has it. Measured across 11 types:
+    // Item, Rectangle, Button, Dialog, Menu, Drawer, ComboBox, ToolTip and
+    // ListView all report `transientParent === undefined`, while Window and
+    // ApplicationWindow report it defined. Note that most of those DO have
+    // `contentItem` and `visible`, so those two checks discriminate nothing on
+    // their own; they are kept because they document the shape being matched and
+    // cost nothing. (`anchors` is the exact inverse — defined on items, undefined
+    // on windows — if a future negative check is ever wanted.)
+    //
+    // Why precision matters here: a false positive is doubly bad. The object
+    // would be counted as a window AND collect_windows() stops recursing into
+    // anything it classifies as one, so a real window beneath it would be missed
+    // — silently drawn under the webview, which is the original bug this
+    // component exists to prevent. tst_MobileOverlayTrackerWindows.qml is the
+    // regression guard if a Qt upgrade changes any of this.
     function looks_like_window(obj) {
         return obj !== null
             && obj !== undefined

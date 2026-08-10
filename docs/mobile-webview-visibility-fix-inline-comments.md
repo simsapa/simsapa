@@ -2,6 +2,18 @@
 
 This document explains the inline comments and changes made to fix the blank yellow webview issue on mobile.
 
+> **Scope, and which doc wins.** This is the *per-file* companion to
+> [mobile-webview-visibility-management.md](./mobile-webview-visibility-management.md),
+> which is the **authoritative** document. Where the two touch the same subject, that one
+> is correct and this one is illustrative.
+>
+> Sections 1–5 and 7 below still describe the code as it is: the Item wrapping, the
+> explicit visibility bindings, the dimension collapsing and the per-tab visibility
+> (Layers 1, 2, 3 and 5 in the management doc). **Section 6 is the exception** — the
+> enumerated `!x.visible && !y.visible && …` chain it shows was **replaced** by
+> `MobileOverlayTracker`, which *detects* overlays instead of listing them. That section
+> has been rewritten below and the historical form kept only as a labelled warning.
+
 ## Key Files and Changes
 
 ### 1. SuttaHtmlView_Mobile.qml
@@ -128,22 +140,48 @@ function add_item(tab_data: var, show_item = true) {
 - Width/height bindings provide physical constraints that native WebViews must respect
 - Multiple layers ensure hiding works even if one mechanism fails
 
-### 6. SuttaSearchWindow.qml - webview_visible property
+### 6. SuttaSearchWindow.qml - webview_visible property — **SUPERSEDED**
 
-**Change**: Check `mobile_menu.visible` instead of `mobile_menu.activeFocus`.
+**Current form**: overlays are **detected**, not enumerated.
 
 ```qml
-// Use visible instead of activeFocus because Drawer doesn't automatically
-// get activeFocus when opened. Checking visible directly reflects the actual state.
-property bool webview_visible: root.is_desktop || 
-    (!mobile_menu.visible && 
-     !color_theme_dialog.visible && 
-     !storage_dialog.visible && 
-     // ... other dialogs
-    )
+property bool webview_visible: root.db_ready && (root.is_desktop || !overlay_tracker.any_open)
 ```
 
-**Why**: Qt's `Drawer` component doesn't automatically receive `activeFocus` when opened. Using `visible` property directly reflects whether the drawer is actually open.
+`MobileOverlayTracker` reports `any_open` for anything open over the window — every popup
+(`Dialog`, `Popup`, `Menu`, `Drawer`, `ComboBox` drop-down), found via `Overlay.overlay`'s
+children, plus in-tree child `ApplicationWindow`s found by an object-tree walk. See
+[mobile-webview-visibility-management.md](./mobile-webview-visibility-management.md)
+§"Automatic overlay tracking" for the mechanism, the ChromeOS argument and the `ToolTip`
+identity rule.
+
+> **⚠️ Historical — do not restore this pattern.**
+>
+> ```qml
+> property bool webview_visible: root.is_desktop ||
+>     (!mobile_menu.visible &&
+>      !color_theme_dialog.visible &&
+>      !storage_dialog.visible &&
+>      // ... other dialogs
+>     )
+> ```
+>
+> Two things were wrong with it, and both are why the tracker exists. **It was silently
+> incomplete**: every new dialog had to be remembered and appended by hand, and a
+> forgotten one is simply invisible on mobile with no build-time or test-time signal —
+> nine overlays were in fact missing from the real list when it was replaced. **And it
+> could not cover popups that are not dialogs**: a `ComboBox` drop-down opens and closes
+> as part of the control's own behaviour and cannot practically be listed, which is how
+> the search-bar drop-downs came to be half-hidden behind the reader.
+>
+> (Note the ids above are themselves stale — `color_theme_dialog` and `storage_dialog` no
+> longer exist. That is the failure mode in miniature: a hand-maintained list drifts and
+> nothing complains.)
+
+**Still true from the original note**: use `visible`, not `activeFocus`, to decide whether
+a `Drawer` is open — Qt's `Drawer` does not automatically receive `activeFocus` when
+opened. The tracker does not depend on this (it watches overlay parenting rather than
+focus), but the reasoning holds for any code that inspects a drawer directly.
 
 ### 7. SuttaSearchWindow.qml - DictionaryTab visibility
 
@@ -176,7 +214,9 @@ For a webview to be visible, ALL these conditions must be true:
 1. **should_be_visible** - Set by SuttaStackLayout based on current_key
 2. **loader.visible** - The Loader component's visibility
 3. **parent visibility** - Parent container visibility cascading
-4. **webview_visible** - No drawer/dialogs open
+4. **webview_visible** - nothing is open over the window: no popup (`Dialog`, `Popup`,
+   `Menu`, `Drawer`, `ComboBox` drop-down) and no in-tree child window, via
+   `MobileOverlayTracker.any_open`
 5. **Tab selection** - For sidebar tabs, tab must be current
 6. **Non-zero dimensions** - Width and height > 0
 

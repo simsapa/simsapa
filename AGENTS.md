@@ -121,6 +121,19 @@ Notable feature docs:
   env-var toggle is read from the DB in `gui.cpp` before `QApplication`
   (standalone `db::get_app_settings()` + `render_loop_basic_c()` FFI, cached,
   restart-only) vs. the two QML toggles passed down to `FulltextResults.qml`.
+- [Mobile webview visibility management](./docs/mobile-webview-visibility-management.md) —
+  why anything Qt draws over the mobile reader is covered by the native
+  `QtWebView`, and the five layers that hide it. **Overlays are detected, never
+  enumerated**: `MobileOverlayTracker` reads `Overlay.overlay.children` (Qt
+  reparents a popup's `popupItem` in on show, out at the *end* of the exit
+  transition) and walks the object tree for in-tree child `ApplicationWindow`s —
+  the hand-maintained id chain it replaced was missing nine overlays. Covers why
+  **ChromeOS is the same Android binary** and gets no exemption (so a spurious
+  hide/show there is a *blocking* defect, not cosmetic), the shared `ToolTip`
+  excluded **by identity** never by arithmetic, the runtime-created-window
+  limitation, and why a `MobileComboBox` choice dialog was designed and
+  **deliberately not built** — the native drop-down is an overlay child like any
+  other, with width and height measured adequate.
 - [WebEngineView stale black frame workaround](./docs/webengine-stale-black-frame-workaround.md) —
   why the desktop HTML reader panels turned solid black after switching away
   from and back to the app window on Linux (Chromium stops compositing while

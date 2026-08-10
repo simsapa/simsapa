@@ -793,6 +793,53 @@ a real animation.
 
 ## 8. Success metrics
 
+### 8.0 Outcome — `MobileComboBox` was descoped; the tracker alone met goal 3
+
+**Change B (`MobileComboBox`) was never built, and is no longer needed.** Once
+change A landed, a native `ComboBox` drop-down turned out to be a `Popup` in the
+window overlay like any other — so the tracker **already hides the webview while
+it is open**, and its options are fully visible and tappable. Goal 3 ("all
+options of the search-mode and language-filter ComboBoxes fully visible and
+selectable on mobile") is therefore met by change A alone, and requirements
+14–29 describe a component that no call site needs. `search_mode_dropdown` and
+`language_filter_dropdown` stay plain `ComboBox`es; requirement 25's inventory of
+logic that had to survive a conversion (`suppress_persist`, `applied_area`,
+`restore_for_current_area()`, `get_text()`, the two `Connections`, the no-op
+guard) is untouched because no conversion happened.
+
+The one thing the choice dialog would still have bought is control over the
+**popup's width and height**, which the native popup does not offer. Both were
+measured rather than assumed, and both came back clean:
+
+- **Width — no override needed.** Fusion gives the popup `width: control.width`,
+  `padding: 1`, and an `ItemDelegate` with `padding: 6`, so an 80 px phone
+  control leaves **66 px** for text; the longest label that can appear,
+  `Headword`, measures 58.5 px. Confirmed on device: in the Dictionary area the
+  open popup fits every label. The **language** drop-down is safe by
+  construction and needed no device run at all — `load_language_labels_for_area()`
+  assigns raw distinct DB values, and every code in `LANG_CODE_TO_NAME`
+  (`backend/src/lookup.rs:329`, 57 entries) is 2–3 characters, so the widest
+  entry it can ever show is the index-0 sentinel `"Lang"` at 27.8 px.
+- **Height — no override needed.** Fusion caps the popup at
+  `Window.height - topMargin - bottomMargin`, which knows nothing about the
+  gesture-nav inset. That remains true but is **unreachable**: the cap only binds
+  when the list is taller than the window, and a user installs a handful of
+  languages, not dozens. Unreachable rather than absent — a couple of dozen
+  installed languages, or landscape, is what would make it bind.
+
+One pre-existing behaviour was observed and **accepted**: the *closed* control
+clips `"Combined"` to `"Combine"` on a phone. It is not a regression — the
+closed control's `rightPadding` includes the 20 px drop-down arrow
+(`Fusion/ComboBox.qml:22-23`), giving it only 60 px of text room against the
+popup's 66, so it has always rendered this way at this width.
+
+Consequently PRD **open question 3** is answered "no conversions needed" (see
+§9), and §5's "migrate other ComboBoxes later" is moot for anything inside
+`SuttaSearchWindow`: every one of them opens into the same overlay and is
+already covered.
+
+### 8.1 Metrics
+
 - `webview_visible` in `SuttaSearchWindow.qml` is a single short expression with
   no enumerated dialog ids.
 - Manual mobile test: opening each of the ten items previously named in the
@@ -812,13 +859,22 @@ a real animation.
 - Manual mobile test: opening `LibraryWindow` (and another
   `WindowManager`-created window, e.g. Dictionaries) behaves exactly as today —
   they are unaffected by the tracker.
-- Manual mobile test: the search-mode dialog shows all 3 (Suttas/Library) or 5
-  (Dictionary) modes; the language dialog shows and scrolls through the full
+- Manual mobile test *(restated for the native drop-down — see §8.0; there is no
+  choice dialog)*: the search-mode **drop-down** shows all 3 (Suttas/Library) or
+  5 (Dictionary) modes; the language drop-down shows and scrolls through the full
   language list for each area; picking an option changes the mode/language,
   persists it per area, and re-runs the search exactly as before.
-- Manual mobile test: each of Cancel, back button and outside tap on either
-  dialog changes nothing, fires no query, and closes only the dialog. The back
-  button case is the one most likely to regress silently (requirement 28).
+- Manual mobile test: back button and outside tap on either **drop-down** change
+  nothing, fire no query, and close only the drop-down. (There is no Cancel
+  button — that belonged to the descoped choice dialog.)
+  **Back button: VERIFIED on device (2026-08-10, task 9.3)** — opening the
+  search-mode drop-down hid the webview, back closed the drop-down only, and the
+  webview returned; the window and app survived. Requirement 28's guarantee turns
+  out to carry over to the native popup for free and durably, because
+  `QQuickComboBox::setPopup` applies `CloseOnEscape | CloseOnPressOutsideParent`
+  **unconditionally in C++** (`qquickcombobox.cpp:1395`), independent of the
+  Fusion style. This also confirms requirement 2b's close path on real hardware,
+  which offscreen spikes could not measure.
 - Manual mobile test: open a toolbar menu over an open sutta, close it, and
   confirm the reading position is unchanged and the page did not reload
   (requirement 30).
@@ -827,8 +883,10 @@ a real animation.
   blank or stray webview is left on screen. This is the regression the five
   layers in `docs/mobile-webview-visibility-management.md` exist to prevent, and
   the tracker raises the toggle frequency by roughly an order of magnitude (§7).
-- Manual mobile test on a **tablet-sized** screen / landscape: the choice dialog
-  is still used (no size-based fallback to the native popup).
+- ~~Manual mobile test on a **tablet-sized** screen / landscape: the choice dialog
+  is still used (no size-based fallback to the native popup).~~ **Moot** — the
+  choice dialog was descoped (§8.0). The tracker is keyed on `is_mobile`, never
+  on screen size, so there is no size-based branch left to test.
 - **ChromeOS run (§1.1 — this is a required target, not an optional extra):**
   1. moving the pointer across the toolbar and search bar produces **no** reader
      hide/show at all — this is the acceptance test for requirement 13, and any
@@ -836,14 +894,19 @@ a real animation.
   2. tooltips still appear on the toolbar buttons (identity branch), or are
      deliberately absent everywhere in the reader window (source-gate branch) —
      whichever branch spike 3b selected, with no third behaviour;
-  3. dialogs, menus and the two choice dialogs still hide the webview — ChromeOS
+  3. dialogs, menus and both **drop-downs** still hide the webview — ChromeOS
      gets **no** exemption from the tracker;
-  4. focusing a dropdown and pressing Space/Enter opens the **choice dialog**,
-     not the native drop-down (requirement 16);
+  4. focusing a dropdown and pressing Space/Enter **hides the reader** and shows
+     the drop-down fully. Requirement 16's concern was that the keyboard route
+     bypassed the choice dialog; with that dialog descoped the keyboard route is
+     no longer a problem to solve but a case to confirm — `keyReleaseEvent` →
+     `togglePopup(true)` reparents the same `popupItem` into the overlay as a
+     tap does, so the tracker should see it identically;
   5. with the window resized wide (`is_mobile && is_wide` both true), the
-     search-mode dialog still opens and shows the wide labels.
-- Desktop regression: both dropdowns still use the native popup; no dialogs
-  appear; webview visibility is unchanged.
+     search-mode drop-down still opens, the reader hides, and the control shows
+     the wide labels.
+- Desktop regression: both dropdowns still use the native popup (unchanged —
+  they were never converted); webview visibility is unchanged.
 - Adding a throwaway new `Dialog` to `SuttaSearchWindow` hides the webview with
   no other edit.
 - `make qml-test` and `make build -B` pass.
@@ -874,12 +937,20 @@ a real animation.
    hand-maintained list this PRD deletes. The cost of the geometry filter is
    per-child bookkeeping (requirement 12's cheapness), so it is a fallback, not
    the default.
-3. Are there other mobile ComboBoxes that overlap the sutta webview badly enough
-   to be converted in the same pass rather than "later" (§5)? Only ComboBoxes
-   inside `SuttaSearchWindow` itself can be affected (the webview lives there) —
-   `GlossTab`, `PromptsTab` and the dictionary panels are the candidates;
-   ComboBoxes in the in-tree child windows are safe because those windows
-   already hide the webview while they are open.
+3. **ANSWERED — no conversions are needed, for any of them** (2026-08-10). The
+   question presupposed change B; with `MobileComboBox` descoped (§8.0) there is
+   nothing to convert *to*. More importantly the premise is gone: **every**
+   `ComboBox` inside `SuttaSearchWindow` opens its drop-down as a `Popup` into
+   the same window overlay, so the tracker already hides the reader for all of
+   them — the same mechanism that made the two search-bar dropdowns work.
+   Counted in the tracked tree: `GlossTab` 5, `PromptsTab` 3, `SearchBarInput` 2,
+   `DeconstructorSelector` 1 — eleven in total, all covered with no per-site
+   work. ComboBoxes in the in-tree child windows were never at risk, since those
+   windows already hide the webview while they are open. §8.0's geometry
+   findings (width/height both adequate) apply to these call sites too.
+   Original question: Are there other mobile ComboBoxes that overlap the sutta
+   webview badly enough to be converted in the same pass rather than "later"
+   (§5)?
 4. `PromptsTab.qml:884` and several other call sites use `onActivated`. Should
    `MobileComboBox` adoption be prioritised there once §7.1 spike 1 proves the
    `activated` emission, since those are the sites where getting the signal
