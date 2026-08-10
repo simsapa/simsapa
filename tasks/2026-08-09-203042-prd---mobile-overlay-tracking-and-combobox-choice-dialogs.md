@@ -722,6 +722,75 @@ on-device run rather than blocking implementation: requirement 30 (webview
 hide/show does not reload the page or lose scroll position) and requirement 28
 (the Android back button actually closes the choice dialog).
 
+### 7.2 Spike results (run 2026-08-10, Qt 6.9.3, `QT_QPA_PLATFORM=offscreen`)
+
+All four spikes ran as one `qmltestrunner` pass: **21 passed, 0 failed**. Spike
+files were throwaway and have been deleted; the assertions worth keeping are
+re-expressed as real tests in tasks 2.7/2.8 and 4.11.
+
+| Spike | Outcome | Branch selected |
+|---|---|---|
+| 1 — QML can emit `ComboBox::activated(int)` | **confirmed** | `MobileComboBox` is a true drop-in; requirement 19's two-line contract is implementable as written |
+| 2 — in-tree child windows found by walking `contentItem.resources`/`data` | **confirmed for declared windows, refuted for runtime-created ones** | **option (a)**, the duck-typed walk, with the dynamic limitation documented — see below |
+| 3 — `Overlay.overlay.children` holds exactly the open popups | **confirmed** | tracker is a declarative binding on `children.length` |
+| 3b — the shared `ToolTip` is excludable **by identity** | **confirmed** | identity filter; **task 3.9 (source-gating tooltips on mobile) is NOT needed** |
+
+**Spike 1.** `activated(2)` called from JS on a `ComboBox` subclass emitted the
+C++ signal once with the right argument and did not touch `currentIndex`. The
+apply path `currentIndex = i; activated(i)` delivered the signals in the order
+`currentIndexChanged` → `activated`; re-applying the index that was already
+current delivered `activated` **only**. That is exactly
+`QQuickComboBoxPrivate::hidePopup(accept = true)`, so requirements 19 and 20 hold
+verbatim and open questions 4 and 5 are moot.
+
+**Spike 2.** A directly-declared child `ApplicationWindow` (`flags: Qt.Dialog`)
+appears in **both** `contentItem.resources` and `contentItem.data`; one declared
+a component deeper (the `gloss_tab.commonWordsDialog` shape) is reached by
+recursing into the intermediate `Item`. Both were found, and each window's
+`visibleChanged` is observable from outside. The dynamic case failed **harder
+than predicted**: a window created with `Component.createObject(contentItem)` is
+not seen by a walk-based *binding* (expected — `resources`/`data` are
+non-bindable, and Qt logs `QQmlExpression: … depends on non-bindable
+properties`), **and it is not seen by a fresh walk either**, because
+`createObject`'s parent argument sets the `QObject` parent without going through
+`QQuickItemPrivate::data_append`. So a runtime-created in-tree window is
+invisible to option (a) by any means, not merely un-notified.
+
+This selects option (a) anyway, because **nothing in the tree is affected**: all
+ten in-tree child windows are declared directly in `SuttaSearchWindow.qml`
+(`:2257`–`:2404`), and the only `createObject` call in the QML tree
+(`SuttaStackLayout.qml:60`) creates a `SuttaHtmlView`, an `Item`, not a window.
+The limitation must be stated in a comment in the tracker (task 2.5) so a future
+runtime-created child window is recognised as the known gap and answered with
+option (b)'s `MobileOverlayGuard {}` marker rather than debugged.
+
+**Spike 3.** `Overlay.overlay` resolves for an `Item`-rooted attachee
+(confirming requirement 6). The overlay is **empty at rest** even with a
+`Dialog { parent: Overlay.overlay }` declared but never opened, and returns to
+empty after every close, dimmer included. Open-state child counts: plain
+`Dialog` 1, modal `Dialog` 2 (dimmer + `popupItem`), pre-parented modal 2,
+`Menu` 1, `Drawer` 2, `ComboBox` drop-down 1 — so `length > 0` is the right
+test and the exact count carries no meaning. A binding on `children.length`
+re-evaluated on its own in every case, with no per-child bookkeeping.
+Measured close transition offscreen was **~1 ms**, which is *not* a device
+figure: offscreen runs the transitions instantly. Requirement 2b's "the webview
+reappears one animation-length after a popup starts closing" is therefore still
+unmeasured and belongs to the on-device run (task 7.5).
+
+**Spike 3b (the gate).** A `ToolTip` enters the overlay like any other popup,
+and `ToolTip.toolTip.contentItem.parent` **is** the object that appears in
+`Overlay.overlay.children` (`QQuickPopupItem(…, "ToolTip")`) — identity
+exclusion is available, so tooltips keep working everywhere and the 31-site
+source gate in requirement 13 / task 3.9 is **not** needed. Two supporting
+facts: the app has **no inline `ToolTip {}` declarations** — all 31 sites use the
+attached property, hence the single shared instance — so one identity filter
+covers every one of them. The measured blink window (`visible === false` →
+unparented) was **0 ms offscreen**, which again reflects instant transitions and
+must **not** be read as "the arithmetic discount would have been fine": the
+ordering it depends on (`visible` false first, unparent at the *end* of the exit
+transition) was confirmed by the spike-3 dialog case, and on device that gap is
+a real animation.
+
 ## 8. Success metrics
 
 - `webview_visible` in `SuttaSearchWindow.qml` is a single short expression with
@@ -785,9 +854,18 @@ hide/show does not reload the page or lose scroll position) and requirement 28
    child windows. If the spike is inconclusive rather than clearly positive, is
    the preference to spend more time on automatic discovery, or to take option
    (b)'s one-line-per-window marker and move on?
-2. Toolbar `Menu`s will start hiding the webview once tracking is generic
-   (§7). Is that acceptable as-is, or does a short menu opening/closing produce
-   distracting flicker that warrants an exemption? **Proposed answer: ship
+2. **ANSWERED — not applicable on mobile** (device run, 2026-08-10). All seven
+   `Menu`s are inside `menuBar: MenuBar { visible: root.is_desktop }`
+   (`SuttaSearchWindow.qml:1692`), so no `Menu` is reachable on a phone or a
+   Chromebook, and desktop short-circuits the tracker. The mobile equivalent is
+   the `mobile_menu` `DrawerMenu` (a `Drawer`, therefore an overlay popup),
+   which was already in the old conditional: verified on device to hide the
+   webview, to leave the sutta page unreloaded with its reading position
+   intact, and to survive rapid drawer/dialog cycling with no stray or blank
+   webview. The geometry-filter fallback below is therefore **not** needed.
+   Original question: Toolbar `Menu`s will start hiding the webview once
+   tracking is generic (§7). Is that acceptable as-is, or does a short menu
+   opening/closing produce distracting flicker that warrants an exemption? **Proposed answer: ship
    "count every popup", and treat flicker as a device finding (task 7.5), not a
    design decision to be made in advance.** If 7.5 does show distracting
    flicker, the named fallback is a **geometry filter** — count an overlay child

@@ -142,6 +142,8 @@ ApplicationWindow {
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Cancel | Dialog.Ok
+        // Clamped to the window so it fits a narrow screen.
+        width: Math.min(root.width - 40, 450)
 
         property var languages_to_remove: []
 

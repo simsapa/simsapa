@@ -151,6 +151,9 @@ Frame {
 
         onAccepted: root.handle_query_fn(short_query_warn_dialog.query, 1) // qmllint disable use-proper-function
 
+        // `width: parent.width` is what makes wrapMode work: a Dialog's
+        // declared children are parented to popupItem->contentItem(), which is
+        // already sized to availableWidth.
         Label {
             width: parent.width
             wrapMode: Text.WordWrap

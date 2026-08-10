@@ -21,8 +21,10 @@ Dialog {
     title: "Edit Dictionary"
     modal: true
     standardButtons: Dialog.Cancel | Dialog.Ok
-    width: 480
+    // Clamped to the window overlay: a fixed 480 is wider than a phone screen.
+    parent: Overlay.overlay
     anchors.centerIn: parent
+    width: Math.min(parent.width - 40, 480)
 
     DictionaryManager { id: dict_manager }
 

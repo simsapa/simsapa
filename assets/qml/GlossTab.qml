@@ -3422,9 +3422,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     Dialog {
         id: commonWordsDialog
         title: "Edit Common Words"
-        width: 400
-        height: 500
+        // Sized from the window overlay, never from `root` (the GlossTab item):
+        // this dialog is also opened from the toolbar Gloss menu while another
+        // tab is current, and a StackLayout gives its non-current children a
+        // size of 0 — so a `root.width`-based clamp collapsed the dialog and
+        // spilled its contents across the screen. The overlay is always
+        // window-sized. A fixed 400x500 was the original bug (too wide for a
+        // phone).
+        parent: Overlay.overlay
         anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 400)
+        height: Math.min(parent.height - 80, 500)
 
         ColumnLayout {
             anchors.fill: parent
