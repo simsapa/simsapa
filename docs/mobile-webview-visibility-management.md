@@ -401,10 +401,13 @@ The one thing it would still have added is control over the popup's **width** an
 and both were fine:
 
 - **Width.** Fusion gives the popup `width: control.width` with `padding: 1`, and its
-  delegate is an `ItemDelegate` with `padding: 6` (`Fusion/ComboBox.qml:113-117`,
-  `Fusion/ItemDelegate.qml:19`). At the search bar's 80 px phone width that leaves **66 px**
-  for text; the longest label that can appear, `Headword`, measures 58.5 px. Device-confirmed
-  in the Dictionary area: the open popup fits every label.
+  delegate is a `MenuItem` with `padding: 6` (`Fusion/ComboBox.qml:113-117`,
+  `Fusion/MenuItem.qml:19`). At the search bar's 80 px phone width that leaves **66 px**
+  for text; the longest label that could appear at the time, `Headword`, measures 58.5 px.
+  Device-confirmed in the Dictionary area: the open popup fit every label.
+  **⚠️ This bullet has since been overtaken for `search_mode_dropdown` — see "The width
+  override that was later needed" below.** It still describes the language drop-down
+  exactly.
 - **Width of the language drop-down is safe by construction** and needed no device run.
   `load_language_labels_for_area()` assigns the **raw distinct DB values**, and every code
   in `LANG_CODE_TO_NAME` (`backend/src/lookup.rs`, 57 entries) is 2–3 characters — so the
@@ -430,11 +433,57 @@ needs `focus: true` **and** `CloseOnEscape` **and** `hasActiveFocus()` for
 holds for every style, and a QML `popup:` override would have to remove it deliberately.
 Device-verified: back closes the drop-down only; the window and app survive.
 
-**What would reopen this.** Build the choice dialog (or the geometry override) only if one
-of these actually appears, not on suspicion:
+#### The width override that was later needed
 
-- a call site whose labels are materially longer than `Headword`, or a font change that
-  eats the ~11 % headroom at 80 px;
+The first "what would reopen this" trigger below **did** fire, by choice rather than by
+defect. The measurements above were taken against the *narrow* labels, because on a phone
+`is_wide` is false and `search_mode_dropdown` swapped its whole **model** to the abbreviated
+list — so the closed control and the drop-down both showed "Fulltext", "Lookup", "Headword".
+The drop-down is the surface with room, so it was changed to show the full names while the
+closed control keeps the abbreviations.
+
+The two surfaces are already independent in Fusion, which is what makes this cheap: the
+popup delegate's text is `model[control.textRole]` (`Fusion/ComboBox.qml:30`), while the
+closed control's `contentItem` text is `control.displayText` (`:50`). So
+`search_mode_dropdown` now keeps `model: search_mode_label_wide[search_area]` at all widths
+and sets `displayText` to the narrow label when `!is_wide`.
+
+That changes the width sum: the popup must now fit `Headword Match` (~97 px) rather than
+`Headword` (58.5 px), against 66 px of room. Hence the geometry override that 8.0 had
+declined:
+
+- `widest_label_width` measures the current label set with **`TextMetrics` at the control's
+  own font**, plus 14 px for the popup's `padding: 1` and the delegate's `padding: 6`.
+  Measured, not hard-coded — the Android default font is larger than the desktop one, so a
+  constant would be wrong on one of them.
+- Applied via a `Binding` on `popup.width`, **clamped against `Overlay.overlay`** — never
+  against the control or a declaring item (the `StackLayout`-collapses-to-0 trap in the
+  dialog sizing rules above).
+- It can only **grow** the popup, so desktop is unaffected in practice: at `is_wide` the
+  control is already 120 px and the widest label needs ~111.
+
+Two consequences worth knowing:
+
+- **`textAt(i)` now always returns the wide label.** Two callers match on it
+  (`SuttaSearchWindow.qml:1428`, `:1474`). The `textAt(i) === "Combined"` match at `:1474`
+  previously worked only because `Combined` happened to be spelled identically in both label
+  lists — a silent breakage waiting for anyone who renamed it. That is now correct by
+  construction.
+- **Reading `popup` un-defers it.** `QQuickComboBox::popup()` calls `executePopup()` when the
+  popup has not been built (`qquickcombobox.cpp:1371-1377`), so the `Binding`'s `target`
+  builds the drop-down at startup rather than at first open. Accepted knowingly — one small
+  Popup over a 5-item list. If a startup trace implicates it, set the width from
+  `popup.onAboutToShow` instead of binding it.
+
+`language_filter_dropdown` was **not** touched: its labels are raw 2–3 character DB codes,
+so it has no wide/narrow distinction to exploit and no width problem to solve.
+
+**What would reopen this.** Build the choice dialog (or a further geometry override) only if
+one of these actually appears, not on suspicion:
+
+- a call site whose labels are materially longer than the current worst case, or a font
+  change that eats the headroom — note the first form of this trigger already fired, and
+  was answered with the width override above rather than with the choice dialog;
 - a list long enough to fill the window — roughly a couple of dozen installed languages,
   or landscape, where the window is short. Only then does the height cap bind and the
   bottom row land under the nav bar;

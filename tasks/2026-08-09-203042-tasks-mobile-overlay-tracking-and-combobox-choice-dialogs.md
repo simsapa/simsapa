@@ -4,6 +4,11 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
 
 ## Relevant Files
 
+- `assets/qml/DialogHeader.qml` — **new (7.17).** A drop-in `header:` for a `Dialog`,
+  visually identical to Fusion's but stating its `implicitHeight` outright, which is what
+  stops Fusion's `Dialog.implicitHeight` binding loop on window resize. Root is an `Item`
+  wrapping a `Label` because `implicitHeight` is read-only on `Label`. Registered in
+  `bridges/build.rs`; used by both short-query dialogs in `SearchBarInput.qml`.
 - `assets/qml/MobileOverlayTracker.qml` — **new.** Exposes `any_open`: true while
   any popup (or in-tree child window) is open over the tracked window.
   `max_scan_depth` is 100 — a runaway guard, not a cost control; the earlier 8
@@ -21,6 +26,8 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
   identity exclusion sampled across the whole close transition). Forces the
   mobile branch via `tracker.is_mobile = true`, which is why
   `MobileOverlayTracker`'s `is_mobile` is deliberately not `readonly`.
+  **Extended by 2.12** with the `Drawer` and `ComboBox` drop-down cases — the two
+  overlays that actually matter on a phone, and the ones the original set missed.
 - `assets/qml/tst_MobileOverlayTrackerWindows.qml` — **new (2.10).** Offscreen
   regression guard for the *in-tree child window* walk (`collect_windows()` /
   `looks_like_window()` / the `Instantiator`). Has its own `ApplicationWindow`
@@ -31,17 +38,26 @@ PRD: [2026-08-09-203042-prd---mobile-overlay-tracking-and-combobox-choice-dialog
 - `assets/qml/SuttaSearchWindow.qml` — `webview_visible` (`:96`) is rewritten;
   the tracker is instantiated here. Consumers at `:3506` and `:3731` are
   untouched.
-- `assets/qml/SearchBarInput.qml` — **not modified.** `search_mode_dropdown`
+- `assets/qml/SearchBarInput.qml` — **modified by 7.16 only.** `search_mode_dropdown`
   (`:337`) and `language_filter_dropdown` (`:459`) were to become `MobileComboBox`,
   but 4.0/5.0 were descoped (8.5), so both stay plain `ComboBox` and all the
-  surrounding restore/persist logic is untouched rather than merely preserved.
+  restore/persist logic (`suppress_persist`, `applied_area`,
+  `restore_for_current_area()`, `get_text()`, the two `Connections`, the no-op
+  guard) is untouched rather than merely preserved. **7.16** then changed
+  `search_mode_dropdown` alone: `model` is always the wide label list, a new
+  `displayText` abbreviates the closed control on a narrow screen, and a
+  `TextMetrics`-measured `Binding` on `popup.width` widens the drop-down to fit
+  the wide labels. `language_filter_dropdown` is untouched.
 - `assets/qml/GlossTab.qml` — the `commonWordsDialog` alias (`:25`) is **kept**;
   it has a second user at `SuttaSearchWindow.qml:2197`. The dialog's hard-coded
   `400x500` size was clamped to the available area (task 7.14).
 - `assets/qml/WordSummary.qml` — contains a `short_query_dpd_dialog` (`:70`)
   that the current conditional misses; newly covered by the tracker, verified in
-  7.0. Not modified — its dialog already sizes its contentItem correctly
-  (explicit `contentItem:` + `Layout.fillWidth`), unlike the ones fixed in 7.14.
+  7.0. Its sizing was already correct (explicit `contentItem:` + `Layout.fillWidth`), unlike
+  the ones fixed in 7.14 — but **7.17 modified it**: as the one exact structural twin of the
+  two dialogs that produced the Fusion `implicitHeight` binding loop (`Frame` root,
+  top-level titled dialog, wrapping content, width tracking `root.width`), it gained the same
+  `header: DialogHeader { … }`.
 - `bridges/build.rs` — the `qml_files` list (`:14`) must gain the two new
   components in the exact `"../assets/qml/<Name>.qml"` form.
 - `docs/mobile-webview-visibility-management.md` — **updated (6.1–6.1d, 6.2).**
@@ -103,11 +119,11 @@ Each top-level task ends with the app compiling and the relevant tests passing:
   missing. No code was written for either.
 - **6.0** is documentation and project hygiene.
 - **7.0** is the on-device verification that neither 3.0 nor 5.0 can prove on
-  desktop.
-- **9.0** parks the open questions and unverified assumptions found while reviewing
-  the shipped tracker. Nothing there is a known defect; they are assumptions that
-  hold today by accident of how the tree happens to be shaped, plus checks only a
-  device can settle.
+  desktop. **All phone checks are done** (7.1–7.11, plus 7.14/7.15 sizing, 7.16's wide
+  drop-down labels and 7.17's binding-loop fix). **Only 7.12 (ChromeOS) is outstanding**, for
+  want of a Chromebook, with 7.13 blocked behind it — so 7.0 stays open on those two alone.
+- **9.0 ✅ complete.** Parked the open questions and unverified assumptions found while
+  reviewing the shipped tracker. None was a defect; all six are now settled.
 - **8.0 ✅ complete.** Added after 3.0 landed: the tracker turned out to hide the
   webview for the ComboBox drop-downs too, so the options are already fully
   visible and 4.0/5.0 were no longer needed for that. 8.0 examined the one thing
@@ -203,6 +219,11 @@ MobileOverlayTracker {
   - Establish the depth actually required. **All ten in-tree windows are declared directly in `SuttaSearchWindow.qml` (`:2268`–`:2415`), i.e. at depth 0 of `contentItem`**, and a repo-wide check found **no** `ApplicationWindow`-rooted component instantiated anywhere else in `SuttaSearchWindow`'s subtree (`GlossTab`, `PromptsTab`, `DictionaryTab`, `FulltextResults`, `WordSummary`, `SuttaStackLayout`, `DrawerMenu`, `SearchBarInput`, `DictionarySearchDictionariesPanel` all checked against all 25 window components). So depth 8 is buying nothing measurable today.
   - Decide between: keep 8 and record the measured cost as acceptable; or lower it (1–2 covers everything that exists, with headroom for one nesting level) and **comment why**, so a future window declared deeper is diagnosed as "raise the depth" rather than debugged. Do **not** silently lower it without the comment — the failure mode is an undetected window drawn under the webview, which is the original bug.
   - If the measured cost is large enough to matter, the cheaper structural fix is to walk `contentItem.resources` / `data` only (skipping `children`, the visual subtree, which is where nearly all the objects are) rather than to shrink the depth.
+- [x] 2.12 **The popup tests guarded the wrong overlays — `Drawer` and `ComboBox` drop-down added** (found reviewing the shipped work, 2026-08-10). 2.7/2.8 asked for `Dialog` and `Menu`, and that is what got written; spike 3 had also asserted `Drawer` and the `ComboBox` drop-down, but the spikes were thrown away (1.9) and those two assertions were never re-expressed as tests. The gap matters in both directions:
+  - **`Menu` is not reachable on mobile at all.** All seven live in `menuBar: MenuBar { visible: root.is_desktop }` (7.5), and desktop short-circuits the tracker — so `test_04_menu` covers the mechanism but no shipping mobile path. The mobile menu is `mobile_menu`, a **`Drawer`**, which is the single most frequently opened overlay on a phone and also has a different overlay shape (dimmer + popupItem, 2 children).
+  - **The `ComboBox` drop-down is the entire premise of the 4.0/5.0 descope.** "The native drop-down is an overlay child like any other" (PRD §8.0) is why a whole component was designed and not built, and nothing in CI asserted it. If it ever stops holding, the search-mode and language options go back under the reader — the original reported bug — and the descope decision has to be revisited.
+
+  Both added to `tst_MobileOverlayTracker.qml` as `test_04b_drawer` and `test_04c_combobox_dropdown`, with the reasoning above in comments so neither reads as redundant with `test_04`. The drop-down is opened with `popup.open()`, which is exactly what the control calls — `QQuickComboBoxPrivate::showPopup()` is `popup->open()` (`qquickcombobox.cpp:319-326`) and both the touch route (`handleRelease` → `togglePopup`) and the keyboard route (`keyReleaseEvent` → `togglePopup`) end there, so one test covers every way it can be opened.
 
 ### 3.0 Wire the tracker into `SuttaSearchWindow` ✅
 
@@ -440,19 +461,345 @@ a component that was never built. 7.9 (re-selecting the current option fires no 
 test `SearchBarInput.qml`'s own guards, not the component. Overlaps with 8.1/8.2; run them
 together.
 
-- [ ] 7.6 Search-mode dialog: all 3 modes in Suttas/Library and all 5 in Dictionary are visible and tappable, showing the **wide** labels ("Fulltext Match", "DPD Lookup", …) while the control itself still shows the narrow ones; the choice applies, persists per area, and re-runs the search exactly as before.
-- [ ] 7.7 Language dialog: the full list scrolls and is reachable in each area; selection applies, persists, re-queries; index 0 still means "no filter".
-- [ ] 7.8 Dismissal: Cancel, hardware/gesture back, and outside-tap each close only the dialog, change nothing, and fire no query (PRD req 21, 28).
-- [ ] 7.9 Re-select the option that is already current: the dialog closes and no query is fired.
-- [ ] 7.10 Repeat 7.6–7.8 in landscape and, if available, on a tablet-sized screen — the dialog must be used at every size (PRD req 16).
-- [ ] 7.11 Switch search areas while a choice dialog is open, and rotate while it is open — the dialog closes without applying and nothing is persisted or re-queried (4.9, PRD req 29).
-- [ ] 7.12 **ChromeOS run — required, not optional** (PRD §1.1, §8). ChromeOS runs the same AAB through the same platform plugin, so it has the same stacking issue *and* is the only place the pointer/keyboard paths exist. Five checks:
+- [x] 7.6 **Device result (phone): the drop-down shows the SHORT labels, same as the closed
+  control. Checked against the code — that is the expected behaviour, not a defect.**
+  `model` is `search_mode_label_narrow[root.search_area]` whenever `!is_wide`
+  (`SearchBarInput.qml:394-400`), a phone is never `is_wide`, and **both** surfaces draw
+  from the model — so short labels everywhere is exactly what the code says. The intent is
+  stated at `:362-364`.
+
+  **Can the popup show the long form while the control keeps the short one? Yes, and the
+  two surfaces are already independent in Fusion** (measured, not assumed): the popup
+  delegate's text is `model[control.textRole]`
+  (`~/Qt/6.9.3/gcc_64/qml/QtQuick/Controls/Fusion/ComboBox.qml:30`), while the closed
+  control's `contentItem` text is `control.displayText` (`:50`). So the parked 8.4 design
+  works as written — keep `model: search_mode_label_wide[root.search_area]` at all times and
+  add
+  `displayText: root.is_wide ? currentText : search_mode_label_narrow[root.search_area][currentIndex]`.
+
+  **Does it interfere with anything reading the mode off the ComboBox? No — and it removes
+  a latent fragility.** Three external readers, all in `SuttaSearchWindow.qml`:
+  - `:662` — `search_mode_dropdown.get_text()`, which indexes the **wide** list by
+    `currentIndex` (`SearchBarInput.qml:443-446`). Index-based, so immune to what the model
+    contains. This is the one that feeds the JSON search parameters.
+  - `:1428-1434` — matches `dropdown.textAt(i) === "Fulltext Match" || === "Fulltext"`,
+    i.e. it already defends against both label sets. Under the change the `|| "Fulltext"`
+    arm goes dead but stays harmless.
+  - `:1474-1477` — matches `dropdown.textAt(i) === "Combined"` **only**. This works today
+    purely by coincidence: `Combined` is the single Dictionary label spelled identically in
+    the narrow and wide lists. Rename it in the narrow list and this breaks silently, with
+    no build or test signal. The `displayText` design makes `textAt()` always return the
+    wide label and **fixes** this by construction.
+
+  **8.4 overstated the cost, because it assumed both dropdowns changed.**
+  `language_filter_dropdown` is fully independent (`:459-545`) — its own model, its own
+  `onIs_wideChanged` rebuild, its own index-0 `"Language"`/`"Lang"` sentinel — and a
+  search-mode-only change does not touch it. On the search-mode side
+  `restore_for_current_area()` already resolves through the wide list
+  (`wide_list.indexOf(saved_mode)`, `:407-409`) and `get_text()` already indexes it, so
+  neither moves. The `applied_area` mid-transition guard still gets its model change on an
+  **area** switch (the wide lists differ per area); what disappears is the model change on
+  an `is_wide` toggle, which is a simplification. **Decision pending — see 7.16.**
+- [x] 7.7 **Verified on device.** Language drop-down works as expected in each area;
+  selection applies, persists, re-queries; index 0 still means "no filter".
+- [x] 7.8 **Verified on device.** Back button and tapping outside both close the drop-down
+  only — nothing changes, no query fires. (Same observation as 9.3, which traced *why* this
+  holds durably: `QQuickComboBox::setPopup` sets `CloseOnEscape` in C++,
+  `qquickcombobox.cpp:1395`.) The Cancel-button case does not exist — that belonged to the
+  choice dialog, which was never built.
+- [x] 7.9 **Verified on device.** Re-selecting the option that is already current fires no
+  new query.
+- [x] 7.10 **Verified on device in landscape.** The ComboBox interactions work; the tracker
+  keys on `is_mobile`, never on screen size, so there is nothing size-dependent left to
+  check. Tablet not tested — no device; not required, for the same reason.
+- [x] 7.11 **Verified on device (rotation only).** Both dropdowns keep their state correctly
+  across a rotation. The "close the choice dialog without applying" half is **not
+  applicable** — the ComboBoxes were kept, so there is no choice dialog, and PRD req 29 /
+  task 4.9 describe a component that was never built.
+- [ ] 7.12 **DEFERRED — no Chromebook available in this session.** Not declined: PRD §1.1
+  makes this the demanding target (same AAB, same platform plugin, but a real pointer, a
+  keyboard, and `is_mobile && is_wide` true together), and 7.12a in particular guards a
+  **blocking** defect class. Everything else in 7.0 is done, so this is the sole remaining
+  device gap. Carry it to the next session with access to one.
   - [ ] 7.12a Move the pointer across the toolbar and search bar: the reader must **not** hide/show at all. Any visible blink is a blocking defect (PRD req 13) — stop and fix, do not file as polish.
   - [ ] 7.12b Tooltips behave per the branch spike 3b selected — either they still appear on the toolbar buttons (identity branch), or they are absent throughout the reader window (source-gate branch, 3.9). There is no third acceptable behaviour.
-  - [ ] 7.12c Dialogs, toolbar menus and both choice dialogs still hide the webview — ChromeOS gets no exemption from the tracker.
+  - [ ] 7.12c Dialogs, toolbar menus and both drop-downs still hide the webview — ChromeOS gets no exemption from the tracker.
   - [ ] 7.12d **Rewritten for the superseded 4.0.** Originally: "Space/Enter must open the choice dialog, not the native drop-down." Now the native drop-down *is* the answer, and the keyboard route reaches the overlay identically to a tap (`QQuickComboBox::keyReleaseEvent` → `togglePopup(true)` → the same `popupItem` reparenting), so the check becomes: focus each dropdown, press Space/Enter, and confirm the **reader hides** and the drop-down is fully visible — i.e. the tracker does not depend on the popup having been opened by touch.
   - [ ] 7.12e Resize the window wide so `is_mobile && is_wide` are both true — a combination that never occurs on a phone. The drop-down opens, the reader hides, and the control shows the **wide** labels (`is_wide` drives the model, `SearchBarInput.qml:339`, `:458`); confirm the 120 px popup width is adequate for them (feeds 8.1).
-- [ ] 7.13 Report results back into the PRD's §8 success metrics; open follow-up tasks for anything that fails rather than patching ad hoc.
+- [ ] 7.13 Report results back into the PRD's §8 success metrics; open follow-up tasks for anything that fails rather than patching ad hoc. **Blocked on 7.12** — everything else is in.
+- [x] 7.16 **ADOPTED and implemented** (maintainer decision, 2026-08-10: show the full search
+  mode names in the drop-down, keep the abbreviations on the closed control where space is
+  tight). `make build -B` and `qmllint` both clean. Four changes, all in
+  `SearchBarInput.qml`'s `search_mode_dropdown`:
+  - `model` is now **always** `search_mode_label_wide[root.search_area]`, at every width.
+  - New `displayText` applies the narrow label to the closed control when `!is_wide`,
+    falling back to `currentText` while `currentIndex` is out of range (which it briefly is
+    when the model is rebound on an area switch).
+  - **The popup is widened to fit the wide labels**, which is the coupling flagged when this
+    was still a proposal — 8.1's 66 px of text room was measured against the *narrow*
+    labels. `widest_label_width` measures the actual label set with `TextMetrics` at the
+    control's own font (**not** hard-coded: the Android default font is larger than the
+    desktop one, so a constant would be wrong on one of them), plus 14 px for the popup's
+    `padding: 1` and the delegate's `padding: 6`. Applied through a `Binding` on
+    `popup.width`, clamped against `Overlay.overlay` — never against the control or a
+    declaring item (the 7.14 `StackLayout`-collapses-to-0 trap). It can only ever **grow**
+    the popup, so desktop is unaffected in practice: at `is_wide` the control is already
+    120 px and the widest label needs ~111.
+  - `Component.onCompleted` and `onModelChanged` drive the measurement.
+
+  Deliberately a function writing to a plain property rather than a binding: measuring each
+  label requires assigning `TextMetrics.text`, and reading `advanceWidth` inside a binding
+  that also writes `text` is a binding loop.
+  **Untouched, as promised:** `language_filter_dropdown` (independent — own model, own
+  `onIs_wideChanged`, own index-0 sentinel), `restore_for_current_area()` and `get_text()`
+  (both already resolved through the wide list), the `suppress_persist` / `applied_area`
+  guards, and both `SuttaSearchWindow.qml` call sites. The `|| label === "Fulltext"` arm at
+  `SuttaSearchWindow.qml:1428` is now dead but kept — harmless, and it re-defends if the
+  labels are ever re-narrowed.
+  **One knowingly-accepted cost, commented in place:** the `Binding`'s `target` reads
+  `popup`, and `QQuickComboBox::popup()` un-defers it (`qquickcombobox.cpp:1371-1377`), so
+  the drop-down is now built at startup rather than at first open. One small Popup over a
+  5-item list; if a startup trace ever implicates it, set the width from
+  `popup.onAboutToShow` instead.
+  **Device pass done (maintainer, phone, 2026-08-10): the wide labels work as expected.**
+  The drop-down shows the full mode names while the closed control keeps the abbreviations,
+  and the `TextMetrics`-measured popup width is adequate at the real Android font — which is
+  the part that could not be settled on desktop, since 8.1 established the Android default
+  font is larger than the offscreen `pixelSize 12` the measurements were taken at.
+  Original task text follows.
+  **Decide whether to adopt the `displayText` split for `search_mode_dropdown`.** Not a
+  defect fix; two independent benefits, one cosmetic and one structural:
+  - the drop-down would show the **full** mode names ("Fulltext Match", "DPD Lookup",
+    "Headword Match") on a phone while the closed control keeps the abbreviations — the
+    popup is the surface with room, and this is precisely what PRD req 26's `dialog_labels`
+    was for before 4.0 was descoped;
+  - `SuttaSearchWindow.qml:1474`'s `textAt(i) === "Combined"` match stops depending on the
+    coincidence that `Combined` is spelled the same in both label lists.
+
+  Scope is one property plus one changed binding in `SearchBarInput.qml`, search-mode only.
+  Re-check on adoption: 8.1's width measurement was taken against the **narrow** labels, so
+  the popup would then have to fit `Headword Match` (96.7 px at desktop metrics) rather than
+  `Headword` (58.5) — at 80 px the popup has 66 px, so **the popup would need widening
+  too**, which is 8.3's parked width override
+  (`popup.width` clamped against `Overlay.overlay`, never against the control or a
+  `StackLayout`-collapsible declaring item — the 7.14 trap). That coupling is the real cost,
+  and it is why this is a decision rather than a tidy-up.
+
+- [x] 7.17 **RESOLVED as NOT OURS — the `Dialog implicitHeight` binding loop is upstream
+  Fusion, reproduced, root-caused, and 7.16 is exonerated by A/B.** No code change made.
+
+  **7.16 did not cause it.** With `assets/qml/SearchBarInput.qml` stashed and restored around
+  the same reproduction, the loop count is **identical** (`without 7.16: 1`, `with 7.16: 1`).
+  `qmltestrunner` reads QML from disk, so this A/B needs no rebuild and takes seconds.
+
+  **Minimal trigger: resizing the window narrow. That is all.** Bisected over four scenarios
+  in one run — resize-only **loops**; resize + Dictionary **loops**; resize + Suttas +
+  drop-down **loops**; wide + Dictionary + drop-down open, **no resize**, is **clean**.
+  So neither the Dictionary area, nor the ComboBox, nor the drop-down is involved; the
+  maintainer's repro path just happened to include a resize as its first step.
+
+  **Root cause is the `title`.** Removing `title: "Short Query"` takes the count 3 → **0**
+  across the same four scenarios; everything else is inert (`standardButtons`,
+  `anchors.centerIn`, `parent: Overlay.overlay` each change nothing). The header is what
+  participates in Fusion's
+  `implicitHeight: … + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0) + …`
+  (`Fusion/Dialog.qml:17-20`), whose header is
+  `Label { visible: control.title && parent?.parent === Overlay.overlay }` (`:42`). Our code
+  contributes only the title string.
+
+  **Precise mechanism, established by a nine-variant matrix** (loop counts across the same
+  four scenarios, baseline **3**):
+
+  | variant | loops | reading |
+  |---|---|---|
+  | baseline | 3 | — |
+  | content `Label` bound to `availableWidth` not `parent.width` | 3 | not the content sizing |
+  | explicit `contentItem: Label` instead of a declared child | 3 | not the implicit content wrapper |
+  | remove `standardButtons` / `anchors.centerIn` / `parent: Overlay.overlay` | 3 each | none of these |
+  | `width:` → `implicitWidth:` on the Dialog | 3 | not the width clamp |
+  | content `Label` given `height: implicitHeight` | 3 | not the content height |
+  | **remove `wrapMode`** | **0** | needs a height-varies-with-width content |
+  | **`header: null`** (title kept, header suppressed) | **0** | needs a header |
+  | custom `header:` Label, implicitHeight left implicit | 3 | a header alone is not enough… |
+  | **custom `header:` with `implicitHeight` stated outright** | **0** | …the header's *unstated* implicitHeight is the operative half |
+
+  ⚠️ **Two rows of an earlier version of this table were invalid and are corrected above.**
+  They set `implicitHeight` on a `Label` root, which is **read-only** on Label (it derives
+  from the text) — so those variants did not override anything, they **failed to load**
+  (`Invalid property assignment: "implicitHeight" is a read-only property` →
+  `Type SearchBarInput unavailable`), and scored 0 loops because the component was never
+  instantiated. The scoring only counted log lines, so a load failure was indistinguishable
+  from a fix. **Any future variant sweep here must assert the test actually passes, not just
+  grep the log** — the corrected row was re-measured with `Totals: N passed, 0 failed` and an
+  assertion that the header really renders (`visible`, `height = 29`, correct text).
+
+  So it takes **both** halves: content whose height varies with width (`wrapMode`), **and** a
+  header whose `implicitHeight` is itself resolved through the layout, feeding Fusion's
+  `implicitHeight: … + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0) + …`
+  (`Fusion/Dialog.qml:17-20`). Two pinnings both work: `implicitHeight: 28` and, better,
+  `implicitHeight: contentHeight + 2 * padding` — which is what an unwrapped Label's implicit
+  height already equals, so it is semantically a no-op that merely breaks the feedback path,
+  with no magic number and no DPI/font assumption.
+
+  **FIXED in app code (maintainer decision: fix it, without modifying any Qt file).**
+  New shared component **`assets/qml/DialogHeader.qml`**, registered in `bridges/build.rs`,
+  used by both dialogs as `header: DialogHeader { text: <dialog_id>.title }`. It reproduces
+  Fusion's header exactly — same `padding: 6`, bold, elide, and the same background
+  `Rectangle` — and states `implicitHeight: label.contentHeight + 2 * padding` outright,
+  which is the value the Label's implicit height already has. No geometry changes; the
+  feedback path is what goes away.
+  **Its root is an `Item` wrapping the Label, not a Label**, precisely because of the
+  read-only trap above. That constraint is written into the component's header comment so the
+  wrapper is not "simplified" back into a bare Label.
+  Verified in the harness: **0 binding loops, 7 passed / 0 failed**, header
+  `visible = true`, `height = 29`, text `"Short Query"`, dialogs sized 129/146 px.
+  `make build -B` and `qmllint` clean.
+
+  **Confirmed on desktop by the maintainer: the loop is gone in the scenario that reliably
+  produced it.**
+
+  **Sweep of the other dialogs (done) — a third ingredient was found, and it clears most of
+  them.** The earlier guess that "any titled dialog with wrapping content whose width tracks
+  the window" is at risk was wrong. A synthetic harness with exactly that shape, declared
+  directly in an `ApplicationWindow`, does **not** loop — offscreen, Fusion, opened and
+  closed, resized across the clamp threshold. What does loop is the same dialog declared
+  inside a **`Frame` whose `Flow` reflows during the resize**. So it takes **three** things:
+  a header with an unstated implicitHeight, content whose height varies with width, **and a
+  declaring component whose own layout is reflowing in the same pass**. A dialog declared
+  straight into a window root is not exposed, because a window's size is driven externally.
+
+  Real-world corroboration, not just the harness: `search_index_notification`
+  (`SuttaSearchWindow.qml:2317`) is titled, wrapping, and uses the *same*
+  `Math.min(root.width - 40, 400)` — and sat in the very same window through the very same
+  resize that tripped both `SearchBarInput` dialogs, without logging anything. Its root is
+  the window; theirs is a `Frame`.
+
+  Enumerated all 40 titled+wrapping `Dialog`s, classified by declaring root:
+  - **25 declared directly in a window root** (`ChantingPracticeWindow` ×7,
+    `DatabaseValidationDialog` ×5, `AppSettingsWindow` ×3, `SuttaLanguagesWindow` ×3,
+    `DownloadAppdataWindow` ×2, `SuttaSearchWindow` ×2, and one each in `LibraryWindow`,
+    `ModelsDialog`, `StorageRecoveryWindow`) — **not exposed**, same shape as the
+    `search_index_notification` control case.
+  - **13 declared inside an embedded component** — the exposed class. Most are
+    `Dialog`-rooted files (`DictionaryEditDialog`, `DictionaryInfoDialog`,
+    `DocumentImportDialog`, `DocumentMetadataEditDialog`, `GlossWordSelectionDialog`,
+    `ShortcutConflictDialog`, `StorageDialog` ×2), plus `Item`/`ColumnLayout` roots
+    (`GlossTab:3376`, `RecordingPlaybackItem` ×2, `BookmarkFolderItem:410`). None of these
+    has ever logged a loop.
+  - **One exact structural twin of the confirmed cases: `WordSummary.qml:70`
+    `short_query_dpd_dialog`** — `Frame` root, top-level titled dialog,
+    `parent: Overlay.overlay`, `standardButtons`, `width: Math.min(root.width - 40, 400)`,
+    wrapping content. **Fixed too**, with the same one-line `header: DialogHeader { … }`;
+    it is also already in this PRD's scope (req 11b / task 7.3b).
+
+  **Evidence that nothing else is currently affected:** grepping *every* `log*.txt` on the
+  machine for binding loops returns **only** the two `SearchBarInput` dialogs (8 occurrences,
+  5 at `:166` and 3 at `:141`) and nothing else, ever.
+
+  **Documented as a general code-style rule** so it is not re-introduced by the next
+  component: a new section in **`AGENTS.md`** ("`Dialog` with a title and wrapping text — use
+  `DialogHeader`"), placed before "New QML components". It states the rule, the three
+  ingredients, the read-only-`Label` trap that makes a naive fix silently fail to load, and
+  the measured list of things that are **not** the cause — so the next person does not
+  re-derive the matrix or reach for the content sizing. It also repeats the standing
+  prohibition on "fixing" it by removing `width: parent.width`.
+  `DialogHeader.qml` is added to `PROJECT_MAP.md` (tree entry + description).
+  **Note for future edits: `CLAUDE.md` is a symlink to `AGENTS.md`** — edit `AGENTS.md`.
+
+  **Decision: the remaining 12 embedded-component dialogs are left alone** and recorded here
+  as a watch-list rather than pre-emptively edited — the fix is additive and harmless, but 12
+  speculative edits against zero observed defects is the wrong trade. If a
+  `Binding loop detected for property "implicitHeight"` ever names one of them, the remedy is
+  one line: `header: DialogHeader { text: <dialog_id>.title }`.
+
+  Superseded design note — the same fix before it was extracted into a component:
+  ```qml
+  header: Label {
+      text: short_query_warn_dialog.title
+      visible: short_query_warn_dialog.title
+      elide: Label.ElideRight
+      font.bold: true
+      padding: 6
+      implicitHeight: contentHeight + 2 * padding   // pinning this is the fix
+      background: Rectangle {                        // Fusion's own header background
+          x: 1; y: 1
+          width: parent.width - 2
+          height: parent.height - 1
+          color: short_query_warn_dialog.palette.window
+          radius: 2
+      }
+  }
+  ```
+  Trade-offs: ~12 duplicated lines per dialog (a shared `DialogHeader.qml` would be cleaner
+  if more than these two need it); it drops Fusion's
+  `parent?.parent === Overlay.overlay` clause from `visible` (which only matters for a dialog
+  re-parented outside the overlay); and **any other titled `Dialog` with wrapping content
+  whose width tracks the window is likely to have the same latent loop** — only these two
+  were reported.
+
+  **If not fixed it is cosmetic:** Qt breaks the loop and the dialogs render correctly (7.14
+  verified the wrapping on device); the cost is log noise on every resize.
+  **Do not "fix" it by removing `width: parent.width`** — 7.14 established that binding is
+  load-bearing for wrapping, and the matrix above measures it as irrelevant to the loop.
+
+  **Method note worth keeping.** Six earlier reproduction attempts failed for two reasons
+  worth not repeating: the app forces Fusion (`cpp/gui.cpp`) while `qmltestrunner` defaults
+  to **Basic**, so `QT_QUICK_CONTROLS_STYLE=Fusion` is mandatory; and on this desktop
+  **qtile auto-maximizes windows**, so every `w.width = …` on the X11 platform was silently
+  ignored — which is exactly the step that turned out to be the trigger. Run this class of
+  test with `QT_QPA_PLATFORM=offscreen`, where the resize actually takes effect.
+  The harness is kept at **`scripts/tst_dialog_loop_harness.qml.keep`**, in the repo — it
+  was first left in the session scratchpad under `/tmp`, which would have lost it. It
+  instantiates the **real** `SearchBarInput` (all eleven required properties, plus a `Timer`
+  and a `DrawerMenu`), so it must be copied **into** `assets/qml/` to resolve project types
+  and deleted again after use, per task 1.1. Its header comment carries the run command,
+  both environment requirements above, and the load-failure-scores-zero trap.
+
+  Original task text follows.
+  **`Dialog implicitHeight` binding loop on desktop, cause not yet isolated.** Reported by
+  the maintainer after the 7.16 build:
+  ```
+  SearchBarInput.qml:141:5 / :166:5  QML Dialog: Binding loop detected for property
+  "implicitHeight":  Fusion/Dialog.qml:17:5
+  ```
+  Six occurrences in one session, at **both** short-query dialogs (`short_query_warn_dialog`
+  and `short_query_dpd_dialog`), neither of which 7.16 touched — the change is ~200 lines
+  below them, inside `search_mode_dropdown`.
+
+  **What is established:** the errors are absent from the three archived desktop logs
+  (`log.2026-08-10T09-51-21/10-13-38/10-18-17.txt`, 0 occurrences) and present in the run
+  after 7.16 (6 occurrences). **That does NOT isolate 7.16**, and an earlier note here said
+  it did — a correction: those logs predate commits `1e234df` (10:28), `4278fdb` (12:31) and
+  `97feab6` (13:17), so *four* changes sit between the last clean log and the failing run,
+  the tracker wiring among them. There is no desktop log of the committed-but-pre-7.16 state.
+
+  **Timing says it is interaction-triggered, not load-triggered:** the first error is ~11 s
+  after the last startup line, with a second cluster ~17 s later. An idle 25 s run of the
+  same build logs **zero**.
+
+  **Could not reproduce in eight configurations** (all offscreen *and* on real X11, all with
+  `QT_QUICK_CONTROLS_STYLE=Fusion`, since the app forces Fusion in `cpp/gui.cpp` and the
+  default is Basic — a first attempt that missed this was invalid): the dialog alone; the
+  dialog inside an `ApplicationWindow`; a hand-written copy of the search bar with and
+  without the new `popup.width` `Binding`; and finally the **real `SearchBarInput.qml`**
+  instantiated in a temporary in-tree harness, exercising window resizes across the
+  `Math.min(window_width - 40, 400)` clamp threshold, opening both short-query dialogs
+  (popups are not laid out until first shown), and opening/closing the search-mode drop-down.
+  No loop in any of them. The temporary harness was deleted (it must never be left under
+  `assets/qml/` — `make qml-test` walks that tree, task 1.1).
+
+  **Next step is the A/B, not more guessing:** `git stash push assets/qml/SearchBarInput.qml`
+  → `make build -B` → reproduce → check the fresh `log.txt` → `git stash pop`. That settles
+  7.16-vs-tracker in one run. The missing input is **what the maintainer did in the UI**
+  just before the first error; the reproduction attempts are blind without it.
+
+  **Prime suspect if 7.16 is implicated:** the `Binding` on `popup.width`. It is the only
+  part of the change that (a) un-defers the popup at completion
+  (`QQuickComboBox::popup()` → `executePopup()`, `qquickcombobox.cpp:1371-1377`) and
+  (b) reads `Overlay.overlay` — the same overlay both dialogs are parented to and
+  `anchors.centerIn`-ed against. The cheap first fix is to clamp against
+  `search_mode_dropdown.Window.width` instead, removing (b) entirely. Not applied yet,
+  because applying it now would confound the A/B.
 
 ### 8.0 Native drop-down geometry on mobile (replaces most of 4.0/5.0) ✅
 
@@ -560,12 +907,18 @@ installed languages — **not** to fix a reported defect.
   window is short and the search bar takes a larger fraction of it. Only then would the
   cap bind and the bottom row land under the nav bar. Recorded so a future report of "the
   last language is unreachable" is diagnosed from here instead of re-derived.
-- [x] 8.3 **NOT NEEDED — both halves declined on device evidence** (width: 8.1, the popup
-  already fits every label; height: 8.2, the cap is never reached). No geometry override
-  is implemented. The two designs are kept below for a future call site with longer labels
-  or a genuinely long list — start here rather than from scratch.
-  - **Width — NOT NEEDED (8.1, device-confirmed).** Kept for a future call site with
-    longer labels: on mobile widen the popup beyond the control, clamped to the overlay:
+- [x] 8.3 **Height half still declined; the WIDTH half was later adopted by 7.16.**
+  As of 8.1/8.2 both were correctly declined — the popup fit every *narrow* label and the
+  height cap is unreachable. **7.16 then changed the premise**: adopting the wide labels in
+  the drop-down means the popup must fit `Headword Match` rather than `Headword`, so the
+  width override designed below **is now implemented** (`SearchBarInput.qml`,
+  `widest_label_width` + the `Binding` on `popup.width`). The height override remains not
+  needed and not implemented — 8.2's reasoning is unaffected, since nothing about 7.16
+  lengthens the list.
+  - **Width — NOW IMPLEMENTED by 7.16.** The shipped version measures the label set with
+    `TextMetrics` instead of using `implicitContentWidth`, because the ComboBox's
+    `implicitContentWidth` describes its own contentItem, not the popup's list. The design
+    as originally sketched:
     `popup.width: root.is_mobile ? Math.min(Math.max(implicitContentWidth, width), Overlay.overlay.width - 20) : width`.
     Take the cap from `Overlay.overlay`, never from the control or a declaring item — this
     is the same trap task 7.14 hit, where a `StackLayout` gave a non-current child a size
@@ -609,14 +962,34 @@ installed languages — **not** to fix a reported defect.
   unconditionally in C++ (`qquickcombobox.cpp:1395`), not in the Fusion QML. Nothing is
   left outstanding from the descope.
 
-### 9.0 Open questions and unverified assumptions
+### 9.0 Open questions and unverified assumptions ✅
+
+**Complete — all six settled.** None turned out to be a defect: 9.1 and 9.2 were closed on
+device, 9.3 and 9.4 by measurement, 9.5 and 9.6 by reading the code. 9.6 overturned its own
+premise (the app *can* open a second `SuttaSearchWindow`, but each gets its own engine, so
+there is nothing shared to get wrong).
 
 Discovered while reviewing the shipped tracker. **None of these is a known defect** — the
 tracker passed its device run (7.1–7.5b). They are assumptions currently holding by
 accident of how the tree happens to be shaped, or things only a device can answer. Parked
 here so they are investigated deliberately rather than rediscovered as bugs.
 
-- [ ] 9.1 **Grandchild windows are not tracked, and nothing says so.** The walk stops when
+- [x] 9.1 **Half verified on device, half not applicable — assumption recorded in a comment.**
+  - `AppSettingsWindow.qml:193` → `KeybindingCaptureDialog`: **not applicable on Android.**
+    There is no keybinding capture on a phone, so this grandchild is unreachable there — and
+    the tracker is `is_mobile`-gated, so it is unreachable on the only platform the tracker
+    runs on. Nothing to test.
+  - `DatabaseValidationDialog.qml` → the Storage Diagnostics path: **verified on device**,
+    works correctly.
+
+  So the assumption the walk relies on — *a parent in-tree window stays `visible` for as long
+  as a grandchild is up, keeping `any_open` true* — holds for the one reachable case. The
+  walk was **not** changed to recurse into found windows: doing so would trade a verified
+  assumption for extra traversal and a second `Instantiator` level, with no case to justify
+  it. Written into `MobileOverlayTracker.qml` as a comment on `collect_windows()` so a future
+  grandchild window is answered from there rather than rediscovered.
+  Original task text follows.
+  **Grandchild windows are not tracked, and nothing says so.** The walk stops when
   it classifies an object as a window and does not recurse into it, so a window declared
   inside an in-tree child window is invisible to it. Two exist:
   `AppSettingsWindow.qml:193` → `KeybindingCaptureDialog`, and
@@ -626,7 +999,16 @@ here so they are investigated deliberately rather than rediscovered as bugs.
   Database Validation → trigger the download window) and then either write the assumption
   into a comment in `MobileOverlayTracker.qml`, or recurse into found windows if it turns
   out a parent can be hidden while a grandchild is open.
-- [ ] 9.2 **Possible one-frame flash when a popup opens.** Hiding the native Android view is
+- [x] 9.2 **Watched on device — nothing odd observed. No action.** No popup or drop-down was
+  seen painting under the webview for a frame as it opened, so the asynchronous native-view
+  teardown is not visible in practice on this device. Recorded as "not reproduced" rather
+  than "cannot happen": it is a timing effect, so a slower device or a heavier frame could
+  still surface it, and if a report ever arrives it should be diagnosed from here — it is a
+  **different** problem from the blank-webview class in
+  `docs/mobile-webview-visibility-management.md`, and the likely answer is to accept it,
+  since the alternative is delaying every popup.
+  Original task text follows.
+  **Possible one-frame flash when a popup opens.** Hiding the native Android view is
   asynchronous — the Qt scene reacts to `any_open` in the same frame, but the native
   `WebView` is torn down by the platform on its own schedule. Watch closely on device
   whether a drop-down or dialog paints *under* the webview for a frame as it opens. If it
@@ -684,9 +1066,23 @@ here so they are investigated deliberately rather than rediscovered as bugs.
   drop-down as a `Popup` into the same window overlay. Also noted that the question's
   premise is doubly gone: `MobileComboBox` was descoped (§8.0), so there is nothing to
   convert *to* either. 8.0's geometry findings apply to these call sites as well.
-- [ ] 9.6 **The tracker is single-window by construction — check that is true of the app.**
-  It tracks the window it is instantiated in, and there is exactly one instance, in
-  `SuttaSearchWindow.qml`. If the app can open a **second** `SuttaSearchWindow`, confirm
-  each gets its own tracker and that the shared `ToolTip` instance (engine-wide, not
-  window-wide) is still excluded correctly in both — the identity filter should hold, since
-  both trackers compare against the same object, but it has not been exercised.
+- [x] 9.6 **Checked statically — the premise was half wrong, and the conclusion is safe.**
+  The app **can** open a second `SuttaSearchWindow`: `WindowManager::restore_last_session()`
+  creates one per saved window folder beyond the first (`cpp/window_manager.cpp:286`), and
+  the browser-extension `run_lookup_query()` path creates its own dedicated
+  `window_lookup_query` window (`:389`). (`create_plain_sutta_search_window()` is declared
+  in `cpp/window_manager.h:27` and **never defined or called** — a dead declaration, worth
+  deleting separately; out of scope here.)
+  **But there is nothing shared between the trackers to get wrong**, because
+  `SuttaSearchWindow::setup_qml()` gives every window its **own**
+  `QQmlApplicationEngine` (`cpp/sutta_search_window.cpp:19`). So each window's QML
+  instantiates its own `MobileOverlayTracker`, tracking its own window — and the shared
+  `ToolTip` is **per-engine, not app-wide**: `QQuickToolTipAttachedPrivate::instance()`
+  stores it as `engine->property("_q_QQuickToolTip")`
+  (`qtdeclarative/src/quicktemplates/qquicktooltip.cpp:353-376`). A tracker can therefore
+  only ever meet its own engine's tooltip in its own window's overlay; the identity filter
+  needs no cross-window reasoning at all. The task's parenthetical "engine-wide, not
+  window-wide" was right about the mechanism but, given one engine per window, it makes the
+  case *easier* rather than harder.
+  Recorded as a comment at the top of `MobileOverlayTracker.qml`, next to the
+  "no `target_window`" note.

@@ -811,6 +811,18 @@ The one thing the choice dialog would still have bought is control over the
 **popup's width and height**, which the native popup does not offer. Both were
 measured rather than assumed, and both came back clean:
 
+> **Superseded in part (task 7.16, 2026-08-10).** The width finding below was correct for
+> the labels that were on screen at the time — the *narrow* ones. The maintainer then chose
+> to show the **full** mode names in the drop-down while the closed control keeps the
+> abbreviations (Fusion draws the two from different sources: the delegate's text is
+> `model[textRole]`, the closed control's is `displayText`). That makes the popup have to
+> fit `Headword Match` (~97 px) rather than `Headword` (58.5 px) against 66 px of room, so
+> **a width override is now implemented** for `search_mode_dropdown` — a `TextMetrics`
+> measurement of the label set, applied through a `Binding` on `popup.width` and clamped
+> against `Overlay.overlay`. The **height** finding below stands unchanged; nothing about
+> 7.16 lengthens any list. `language_filter_dropdown` is untouched and both findings below
+> still describe it exactly.
+
 - **Width — no override needed.** Fusion gives the popup `width: control.width`,
   `padding: 1`, and an `ItemDelegate` with `padding: 6`, so an 80 px phone
   control leaves **66 px** for text; the longest label that can appear,

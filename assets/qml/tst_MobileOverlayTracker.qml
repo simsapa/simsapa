@@ -46,6 +46,18 @@ TestCase {
         MenuItem { text: "Two" }
     }
 
+    Drawer {
+        id: test_drawer
+        width: 150
+        height: test_case.height
+        edge: Qt.LeftEdge
+    }
+
+    ComboBox {
+        id: test_combo
+        model: ["One", "Two", "Three"]
+    }
+
     Component {
         id: dynamic_dialog_component
         Dialog {
@@ -90,10 +102,47 @@ TestCase {
                    "a modal popup's dimmer must not be left counted after close");
     }
 
+    // Desktop-only in this app — all seven Menus live in
+    // `menuBar: MenuBar { visible: root.is_desktop }` — so this is coverage of
+    // the mechanism, not of a reachable mobile path. test_04b is the mobile one.
     function test_04_menu() {
         test_menu.open();
         tryCompare(tracker, "any_open", true, 2000, "an open Menu must hide the webview");
         test_menu.close();
+        tryCompare(tracker, "any_open", false, 2000);
+    }
+
+    // The Drawer is the mobile menu. `mobile_menu` (SuttaSearchWindow.qml) is a
+    // DrawerMenu, and it is the only menu reachable on a phone — so this, not
+    // test_04, is the guard for the most frequently opened mobile overlay.
+    // A Drawer also puts TWO children in the overlay (dimmer + popupItem),
+    // which is a different shape from the cases above.
+    function test_04b_drawer() {
+        test_drawer.open();
+        tryCompare(tracker, "any_open", true, 2000, "an open Drawer must hide the webview");
+        test_drawer.close();
+        tryCompare(tracker, "any_open", false, 2000,
+                   "the Drawer's dimmer must not be left counted after close");
+    }
+
+    // A ComboBox drop-down is a Popup in the window overlay like any other, so
+    // the tracker hides the webview while it is open and its options are fully
+    // visible and tappable. That single fact is why MobileComboBox — a whole
+    // replacement component with a modal radio choice dialog — was designed and
+    // then deliberately NOT built (PRD §8.0, tasks 4.0/5.0 descoped). If this
+    // test ever fails, the search-mode and language drop-downs are being drawn
+    // under the reader again and that decision has to be revisited.
+    //
+    // `popup.open()` is exactly what the control itself calls:
+    // QQuickComboBoxPrivate::showPopup() is `popup->open()`
+    // (qquickcombobox.cpp:319-326), and both the touch route (handleRelease ->
+    // togglePopup) and the keyboard route (keyReleaseEvent -> togglePopup) end
+    // there, so this covers every way the drop-down can be opened.
+    function test_04c_combobox_dropdown() {
+        test_combo.popup.open();
+        tryCompare(tracker, "any_open", true, 2000,
+                   "an open ComboBox drop-down must hide the webview");
+        test_combo.popup.close();
         tryCompare(tracker, "any_open", false, 2000);
     }
 

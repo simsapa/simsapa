@@ -141,6 +141,10 @@ Frame {
     Dialog {
         id: short_query_warn_dialog
         title: "Short Query"
+        // Not Fusion's default header: with wrapping content it makes the
+        // dialog's implicitHeight oscillate on every window resize. See
+        // DialogHeader.qml.
+        header: DialogHeader { text: short_query_warn_dialog.title }
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
@@ -166,6 +170,8 @@ Frame {
     Dialog {
         id: short_query_dpd_dialog
         title: "Short Query"
+        // See the note on short_query_warn_dialog's header above.
+        header: DialogHeader { text: short_query_dpd_dialog.title }
         parent: Overlay.overlay
         anchors.centerIn: parent
         modal: true
@@ -359,9 +365,16 @@ Frame {
                     ],
                 }
 
-                // For narrow screen, show shorter label texts.
-                // Value reading uses get_text(), which will return the longer label text,
-                // which is used for the JSON search parameters.
+                // For a narrow screen, the CLOSED control shows shorter label
+                // texts (see displayText below). The drop-down always lists the
+                // wide ones — the popup is the surface with room, and Fusion
+                // draws the two from different sources, so they can differ:
+                // the delegate's text is `model[control.textRole]`
+                // (Fusion/ComboBox.qml:30) while the closed control's
+                // contentItem text is `control.displayText` (:50).
+                //
+                // Value reading uses get_text(), which returns the longer label
+                // text, which is used for the JSON search parameters.
                 readonly property var search_mode_label_narrow: {
                     "Suttas": [
                         "Fulltext",
@@ -387,16 +400,38 @@ Frame {
                 // than by the user.
                 property bool suppress_persist: false
 
-                // Tracks the area whose saved mode is currently applied, so
-                // is_wide-driven model swaps don't get treated as area changes.
+                // Tracks the area whose saved mode is currently applied, so a
+                // currentIndex change that arrives mid-area-switch — the model
+                // has rebound but restore_for_current_area() has not run yet —
+                // is not mistaken for a user choice. (It also used to cover
+                // is_wide-driven model swaps; this dropdown no longer has any,
+                // since the model is always the wide list.)
                 property string applied_area: ""
 
-                model: {
+                // The model is ALWAYS the wide list, at every width. The narrow
+                // labels are applied to the closed control only, via
+                // displayText. Both lists have the same length per area, so
+                // currentIndex means the same thing in either.
+                //
+                // This also makes textAt(i) return the wide label
+                // unconditionally, which is what two callers in
+                // SuttaSearchWindow.qml match against (:1428, :1474). The
+                // "Combined" match at :1474 previously worked only because that
+                // one label happened to be spelled identically in both lists.
+                model: search_mode_label_wide[root.search_area]
+
+                // Abbreviate the closed control on a narrow screen. Falls back
+                // to currentText while currentIndex is out of range, which it
+                // briefly is when the model is rebound on an area switch.
+                displayText: {
                     if (root.is_wide) {
-                        return search_mode_label_wide[root.search_area];
-                    } else {
-                        return search_mode_label_narrow[root.search_area];
+                        return currentText;
                     }
+                    const narrow = search_mode_label_narrow[root.search_area];
+                    if (currentIndex < 0 || currentIndex >= narrow.length) {
+                        return currentText;
+                    }
+                    return narrow[currentIndex];
                 }
 
                 // Pure restore (no query). The single query for an area switch
@@ -414,7 +449,10 @@ Frame {
                     applied_area = root.search_area;
                 }
 
-                Component.onCompleted: restore_for_current_area()
+                Component.onCompleted: {
+                    recompute_widest_label_width();
+                    restore_for_current_area();
+                }
 
                 Connections {
                     target: root
@@ -433,8 +471,11 @@ Frame {
                     // Mid-transition between search areas: the model just
                     // rebound and ComboBox auto-clipped currentIndex into the
                     // new (shorter) list before the area-restore could run.
-                    // Ignore — the restore in onModelChanged will set the
-                    // correct index for the new area.
+                    // Ignore — restore_for_current_area(), called from the
+                    // onSearch_areaChanged Connections above, sets the correct
+                    // index for the new area. (Not from onModelChanged: that
+                    // handler only re-measures the popup width, and a
+                    // Suttas↔Library switch emits no model change at all.)
                     if (applied_area !== root.search_area) return;
                     SuttaBridge.set_last_search_mode(root.search_area, get_text());
                     root.handle_query_fn(search_input.text); // qmllint disable use-proper-function
@@ -443,6 +484,99 @@ Frame {
                 function get_text(): string {
                     // Return the value using the wide values which is expected for JSON search parameters.
                     return search_mode_label_wide[root.search_area][currentIndex];
+                }
+
+                // --- popup width -------------------------------------------
+                //
+                // Fusion gives the popup `width: control.width`
+                // (Fusion/ComboBox.qml:114), which is 80 px on a phone and
+                // leaves 66 px for text once the popup's `padding: 1` and the
+                // MenuItem delegate's `padding: 6` are taken off. The wide
+                // labels need more than that ("Headword Match" measures ~97 px
+                // at desktop metrics), so the popup is widened to fit them.
+                //
+                // This can only ever GROW the popup. It is not platform-gated,
+                // and neither is displayText above, so be precise about what
+                // that means on desktop: at is_wide the control is already
+                // 120 px against ~111 px of widest label, so nothing changes —
+                // but desktop is_wide is `width > 650` (SuttaSearchWindow.qml:58),
+                // and a desktop window narrower than that takes the same branch a
+                // phone does: abbreviated closed control, wide labels in a
+                // widened drop-down. That is intended (the popup is the surface
+                // with room, at any width), not an accident of leaving the gate
+                // off.
+                //
+                // Only the WIDTH is clamped here, not the popup's x. Qt pushes a
+                // popup inside the window only when its margins are >= 0 or it
+                // has an implicitWidth (qquickpopuppositioner.cpp:174-213), and
+                // Fusion's ComboBox popup sets only topMargin/bottomMargin and no
+                // implicitWidth — so a popup wider than the room to its right
+                // would be clipped at the window edge rather than shifted left.
+                // Not reachable today: language_filter_dropdown (80 px) and
+                // search_help_btn sit to the right of this control, which absorbs
+                // the ~30-50 px of growth. Re-check it if a longer mode label is
+                // ever added.
+                property int widest_label_width: 0
+
+                // Measured rather than guessed, because the Android default font
+                // is larger than the desktop one and a hard-coded width would be
+                // wrong on one of them.
+                //
+                // Deliberately a function and a plain property, NOT a binding:
+                // measuring each label means assigning `text`, and reading
+                // advanceWidth inside a binding that also writes text is a
+                // binding loop.
+                TextMetrics {
+                    id: mode_label_metrics
+                    font: search_mode_dropdown.font
+                    onFontChanged: search_mode_dropdown.recompute_widest_label_width()
+                }
+
+                function recompute_widest_label_width() {
+                    // onFontChanged can fire before search_area is set.
+                    const labels = search_mode_label_wide[root.search_area];
+                    if (!labels) {
+                        return;
+                    }
+                    let w = 0;
+                    for (let i = 0; i < labels.length; i++) {
+                        mode_label_metrics.text = labels[i];
+                        w = Math.max(w, mode_label_metrics.advanceWidth);
+                    }
+                    // popup padding (1 each side) + delegate padding (6 each side)
+                    widest_label_width = Math.ceil(w) + 14;
+                }
+
+                onModelChanged: recompute_widest_label_width()
+
+                // Clamped against Overlay.overlay, never against the control or
+                // a declaring item — a StackLayout gives its non-current
+                // children a size of 0, which is the trap that collapsed the
+                // Gloss dialogs (see docs/android-edge-to-edge-and-safe-areas.md).
+                // Qualified through the id on purpose: unqualified inside
+                // Binding (a QObject, not an Item) the attached overlay is null.
+                readonly property int target_popup_width: {
+                    const wanted = Math.max(search_mode_dropdown.width,
+                                            search_mode_dropdown.widest_label_width);
+                    const ov = search_mode_dropdown.Overlay.overlay;
+                    if (ov && ov.width > 20) {
+                        return Math.min(wanted, ov.width - 20);
+                    }
+                    return wanted;
+                }
+
+                // Note: reading `popup` un-defers it — QQuickComboBox::popup()
+                // calls executePopup() when it has not been built yet
+                // (qquickcombobox.cpp:1371-1377) — so this creates the drop-down
+                // at startup instead of at first open. Accepted knowingly: it is
+                // one small Popup over a 5-item list, nothing like the costs
+                // docs/startup-sequence-and-caches.md §6 is about. If a startup
+                // trace ever implicates it, set the width from popup.onAboutToShow
+                // instead of binding it.
+                Binding {
+                    target: search_mode_dropdown.popup
+                    property: "width"
+                    value: search_mode_dropdown.target_popup_width
                 }
             }
 

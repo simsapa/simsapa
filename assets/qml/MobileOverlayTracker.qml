@@ -18,6 +18,19 @@ import QtQuick.Controls
 // popup or window), and an Item's attached overlay follows `item->window()` on
 // its own. That is also why the root element here must be an `Item` and not a
 // `QtObject` — attached to a plain QObject, `Overlay.overlay` resolves to null.
+//
+// Multiple tracked windows are safe, and there is nothing shared between them
+// to get wrong. The app really can open more than one SuttaSearchWindow —
+// session restore creates one per saved window folder
+// (WindowManager::restore_last_session), and the browser-extension lookup path
+// (WindowManager::run_lookup_query) creates its own — but each one is built by
+// SuttaSearchWindow::setup_qml with its OWN QQmlApplicationEngine, so each gets
+// its own tracker instance tracking its own window. The shared ToolTip is stored
+// as a property on the engine (`engine->property("_q_QQuickToolTip")`,
+// qquicktooltip.cpp QQuickToolTipAttachedPrivate::instance), i.e. it is
+// per-engine, hence here per-window: a tracker can only ever meet its own
+// engine's tooltip in its own window's overlay, so the identity exclusion below
+// needs no cross-window reasoning.
 Item {
     id: root
 
@@ -227,6 +240,19 @@ Item {
 
     // `stats` is optional; when passed it records what the walk actually did
     // (see rescan_child_windows()).
+    //
+    // The walk does NOT recurse into an object once it classifies it as a
+    // window, so a window declared inside an in-tree child window (a
+    // "grandchild") is not tracked in its own right. That is safe because the
+    // parent stays `visible` for as long as the grandchild is up, so `any_open`
+    // stays true either way. Two such windows exist:
+    // AppSettingsWindow -> KeybindingCaptureDialog, which is unreachable on
+    // Android (no keybinding capture there, and this whole component is
+    // is_mobile-gated); and DatabaseValidationDialog -> DownloadAppdataWindow,
+    // device-verified via the Storage Diagnostics path. Recursing into found
+    // windows was considered and rejected — it would cost extra traversal and a
+    // second Instantiator level to replace an assumption that holds. Revisit
+    // only if a parent window can be hidden while its grandchild is still open.
     function collect_windows(obj, found, seen, depth, stats) {
         if (obj === null || obj === undefined)
             return found;
