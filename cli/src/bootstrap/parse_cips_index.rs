@@ -5,7 +5,7 @@
 //!
 //! The CSV is tab-delimited with 3 columns: headword, subheading, locator
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::fs;
 
@@ -39,6 +39,11 @@ pub struct TopicIndexRef {
     /// Type of reference: "sutta" or "xref"
     #[serde(rename = "type")]
     pub ref_type: String,
+
+    /// Disambiguation letter when two refs in the same entry share a displayed
+    /// label ("a", "b", … "aa"). Absent when the label is unique.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
 }
 
 /// A sub-entry within a headword
@@ -80,9 +85,10 @@ pub struct TopicIndexLetter {
 // Constants
 // ============================================================================
 
-/// Words to ignore when sorting headwords
-const IGNORE_WORDS: &[&str] = &[
-    "in", "of", "with", "from", "to", "for", "on", "the", "as", "a", "an", "vs.", "and"
+/// Leading words to ignore when sorting headwords, already carrying the
+/// trailing space so the strip loop allocates nothing.
+const IGNORE_PREFIXES: &[&str] = &[
+    "in ", "of ", "with ", "from ", "to ", "for ", "on ", "the ", "as ", "a ", "an ", "vs. ", "and "
 ];
 
 /// Canonical book order for sorting sutta references
@@ -159,10 +165,9 @@ fn get_headword_sort_key(headword: &str) -> String {
     // Strip leading ignore words (repeatedly)
     loop {
         let mut stripped = false;
-        for word in IGNORE_WORDS {
-            let prefix = format!("{} ", word);
-            if s.starts_with(&prefix) {
-                s = s[prefix.len()..].to_string();
+        for prefix in IGNORE_PREFIXES {
+            if let Some(rest) = s.strip_prefix(prefix) {
+                s = rest.to_string();
                 stripped = true;
                 break;
             }
@@ -202,6 +207,12 @@ fn extract_numbers(locator: &str) -> Vec<u32> {
 }
 
 /// Compare two locators for sorting by canonical book order and natural number sorting.
+///
+/// The locator sort itself uses the equivalent cached tuple key
+/// `(book_order_index, Vec<u32>)`; this is kept as the reference definition of
+/// the ordering, and `test_locator_sort_key_matches_compare_locators` asserts
+/// the two agree.
+#[cfg(test)]
 fn compare_locators(a: &str, b: &str) -> std::cmp::Ordering {
     let book_a = extract_book(a);
     let book_b = extract_book(b);
@@ -360,6 +371,85 @@ fn sutta_ref_to_uid(sutta_ref: &str) -> String {
     }
 }
 
+// ============================================================================
+// Disambiguation Suffixes
+// ============================================================================
+
+lazy_static! {
+    /// Collection letters + number, matching the QML `format_sutta_ref()` regex.
+    static ref RE_REF_LABEL: Regex = Regex::new(r"(?i)^([a-z]+)(\d.*)$").unwrap();
+}
+
+/// The label the Topic Index window displays for a sutta reference: the part
+/// before the `:` (the segment id is not shown), with a space between the
+/// collection letters and the number, followed by the title when present.
+///
+/// "dn33:1.11.0" + "Saṅgītisutta" → "DN 33 Saṅgītisutta"
+///
+/// This mirrors `format_sutta_ref()` in `assets/qml/TopicIndexWindow.qml`.
+/// The two must agree, or the suffixes assigned here appear on labels that do
+/// not actually look alike in the window.
+fn display_label(sutta_ref: &str, title: Option<&str>) -> String {
+    let before_segment = sutta_ref.split(':').next().unwrap_or(sutta_ref);
+
+    let mut label = match RE_REF_LABEL.captures(before_segment) {
+        Some(caps) => format!("{} {}", caps[1].to_uppercase(), &caps[2]),
+        None => before_segment.to_uppercase(),
+    };
+
+    if let Some(title) = title {
+        label.push(' ');
+        label.push_str(title);
+    }
+
+    label
+}
+
+/// Disambiguation letter for the n-th member of a colliding group:
+/// 0 → "a", 25 → "z", 26 → "aa", 27 → "ab", …
+fn suffix_letter(n: usize) -> String {
+    let mut letters = Vec::new();
+    let mut n = n;
+
+    loop {
+        letters.push((b'a' + (n % 26) as u8) as char);
+        if n < 26 {
+            break;
+        }
+        n = n / 26 - 1;
+    }
+
+    letters.iter().rev().collect()
+}
+
+/// Assign disambiguation suffixes within one sub-topic entry.
+///
+/// Sutta refs that share a displayed label each get a letter in data order;
+/// a label that occurs only once keeps `None`. Cross-references are skipped.
+fn assign_disambiguation_suffixes(refs: &mut [TopicIndexRef]) {
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for (idx, item) in refs.iter().enumerate() {
+        if item.ref_type != "sutta" {
+            continue;
+        }
+        let Some(sutta_ref) = &item.sutta_ref else {
+            continue;
+        };
+        let label = display_label(sutta_ref, item.title.as_deref());
+        groups.entry(label).or_default().push(idx);
+    }
+
+    for indices in groups.values() {
+        if indices.len() < 2 {
+            continue;
+        }
+        for (n, &idx) in indices.iter().enumerate() {
+            refs[idx].suffix = Some(suffix_letter(n));
+        }
+    }
+}
+
 /// Intermediate structure for building the index
 #[allow(clippy::type_complexity)]
 struct IndexBuilder {
@@ -416,7 +506,7 @@ impl IndexBuilder {
 
             // Sort headwords
             let mut headword_keys: Vec<String> = headword_map.keys().cloned().collect();
-            headword_keys.sort_by_key(|a| get_headword_sort_key(a));
+            headword_keys.sort_by_cached_key(|a| get_headword_sort_key(a));
 
             let mut headwords: Vec<TopicIndexHeadword> = Vec::new();
 
@@ -426,14 +516,8 @@ impl IndexBuilder {
 
                 // Sort sub-entries (em-dash first, then alphabetically)
                 let mut sub_keys: Vec<String> = sub_map.keys().cloned().collect();
-                sub_keys.sort_by(|a, b| {
-                    match (a.as_str(), b.as_str()) {
-                        ("—", "—") => std::cmp::Ordering::Equal,
-                        ("—", _) => std::cmp::Ordering::Less,
-                        (_, "—") => std::cmp::Ordering::Greater,
-                        _ => latinize(a).to_lowercase().cmp(&latinize(b).to_lowercase()),
-                    }
-                });
+                // `false` sorts before `true`, so the em-dash entry stays first.
+                sub_keys.sort_by_cached_key(|s| (s != "—", latinize(s).to_lowercase()));
 
                 let mut entries: Vec<TopicIndexEntry> = Vec::new();
 
@@ -443,7 +527,11 @@ impl IndexBuilder {
 
                     // Sort and add locators (sutta references)
                     let mut sorted_locators = locators.clone();
-                    sorted_locators.sort_by(|a, b| compare_locators(a, b));
+                    // The same ordering as `compare_locators()`: book order,
+                    // then the numeric components lexicographically (Vec<u32>'s
+                    // derived Ord is the "shorter wins" tie-break).
+                    sorted_locators
+                        .sort_by_cached_key(|l| (book_order_index(&extract_book(l)), extract_numbers(l)));
 
                     for locator in sorted_locators {
                         let sutta_ref = parse_sutta_ref(&locator);
@@ -455,6 +543,7 @@ impl IndexBuilder {
                             ref_target: None,
                             title,
                             ref_type: "sutta".to_string(),
+                            suffix: None,
                         });
                     }
 
@@ -466,8 +555,13 @@ impl IndexBuilder {
                             ref_target: Some(target),
                             title: None,
                             ref_type: "xref".to_string(),
+                            suffix: None,
                         });
                     }
+
+                    // Scoped to this one sub-topic entry, after both the sutta
+                    // refs and the xrefs have been pushed.
+                    assign_disambiguation_suffixes(&mut refs);
 
                     entries.push(TopicIndexEntry { sub, refs });
                 }
@@ -508,10 +602,10 @@ pub fn validate_index(index: &[TopicIndexLetter]) -> ValidationResult {
     let mut result = ValidationResult::default();
 
     // Collect all headword names for xref validation
-    let mut all_headwords: HashMap<String, bool> = HashMap::new();
+    let mut all_headwords: HashSet<String> = HashSet::new();
     for letter in index {
         for headword in &letter.headwords {
-            all_headwords.insert(headword.headword.to_lowercase(), true);
+            all_headwords.insert(headword.headword.to_lowercase());
         }
     }
 
@@ -523,7 +617,7 @@ pub fn validate_index(index: &[TopicIndexLetter]) -> ValidationResult {
                     // Validate xref targets exist
                     if ref_item.ref_type == "xref"
                         && let Some(target) = &ref_item.ref_target
-                            && !all_headwords.contains_key(&target.to_lowercase()) {
+                            && !all_headwords.contains(&target.to_lowercase()) {
                                 result.warnings.push(format!(
                                     "Cross-reference target not found: '{}' -> '{}'",
                                     headword.headword, target
@@ -717,6 +811,123 @@ mod tests {
 
         // Non-CUSTOM format returns None
         assert_eq!(parse_custom_locator("DN33:1.11.0"), None);
+    }
+
+    #[test]
+    fn test_locator_sort_key_matches_compare_locators() {
+        let locators = [
+            "DN33:1.11.0", "DN33:1.7.9.1", "DN30:1.4.0", "DN30:1.19.0", "DN2",
+            "MN5", "AN4.10", "AN4.2", "AN4", "SN35.24", "DHP33-43", "thag1.50",
+            "unknown9", "DN33:1.11", "DN33:1.11.0",
+        ];
+
+        let mut by_compare = locators.to_vec();
+        by_compare.sort_by(|a, b| compare_locators(a, b));
+
+        let mut by_key = locators.to_vec();
+        by_key.sort_by_cached_key(|l| (book_order_index(&extract_book(l)), extract_numbers(l)));
+
+        assert_eq!(by_compare, by_key);
+    }
+
+    fn sutta_ref_item(sutta_ref: &str, title: Option<&str>) -> TopicIndexRef {
+        TopicIndexRef {
+            sutta_ref: Some(sutta_ref.to_string()),
+            ref_target: None,
+            title: title.map(|s| s.to_string()),
+            ref_type: "sutta".to_string(),
+            suffix: None,
+        }
+    }
+
+    fn xref_item(target: &str) -> TopicIndexRef {
+        TopicIndexRef {
+            sutta_ref: None,
+            ref_target: Some(target.to_string()),
+            title: None,
+            ref_type: "xref".to_string(),
+            suffix: None,
+        }
+    }
+
+    fn suffixes(refs: &[TopicIndexRef]) -> Vec<Option<&str>> {
+        refs.iter().map(|r| r.suffix.as_deref()).collect()
+    }
+
+    #[test]
+    fn test_display_label() {
+        assert_eq!(
+            display_label("dn33:1.11.0", Some("Saṅgītisutta")),
+            "DN 33 Saṅgītisutta"
+        );
+        assert_eq!(
+            display_label("sn35.24", Some("Pahānasutta")),
+            "SN 35.24 Pahānasutta"
+        );
+        assert_eq!(display_label("dn33:1.11.0", None), "DN 33");
+        assert_eq!(display_label("dhp33-43", None), "DHP 33-43");
+    }
+
+    #[test]
+    fn test_suffix_letter() {
+        assert_eq!(suffix_letter(0), "a");
+        assert_eq!(suffix_letter(25), "z");
+        assert_eq!(suffix_letter(26), "aa");
+        assert_eq!(suffix_letter(27), "ab");
+    }
+
+    #[test]
+    fn test_assign_suffixes_no_collision() {
+        let mut refs = vec![
+            sutta_ref_item("dn33:1.11.0", Some("Saṅgītisutta")),
+            sutta_ref_item("sn35.24", Some("Pahānasutta")),
+        ];
+        assign_disambiguation_suffixes(&mut refs);
+        assert_eq!(suffixes(&refs), vec![None, None]);
+    }
+
+    #[test]
+    fn test_assign_suffixes_two_colliding() {
+        let mut refs = vec![
+            sutta_ref_item("dn33:1.11.0", Some("Saṅgītisutta")),
+            sutta_ref_item("dn33:2.1.0", Some("Saṅgītisutta")),
+        ];
+        assign_disambiguation_suffixes(&mut refs);
+        assert_eq!(suffixes(&refs), vec![Some("a"), Some("b")]);
+    }
+
+    #[test]
+    fn test_assign_suffixes_five_way_group() {
+        let mut refs: Vec<TopicIndexRef> = ["1.4.0", "1.7.0", "1.10.0", "1.16.0", "1.19.0"]
+            .iter()
+            .map(|seg| sutta_ref_item(&format!("dn30:{}", seg), Some("Lakkhaṇasutta")))
+            .collect();
+        assign_disambiguation_suffixes(&mut refs);
+        assert_eq!(
+            suffixes(&refs),
+            vec![Some("a"), Some("b"), Some("c"), Some("d"), Some("e")]
+        );
+    }
+
+    #[test]
+    fn test_assign_suffixes_differing_title_is_not_a_collision() {
+        let mut refs = vec![
+            sutta_ref_item("dn33:1.11.0", Some("Saṅgītisutta")),
+            sutta_ref_item("dn33:2.1.0", Some("Another Title")),
+        ];
+        assign_disambiguation_suffixes(&mut refs);
+        assert_eq!(suffixes(&refs), vec![None, None]);
+    }
+
+    #[test]
+    fn test_assign_suffixes_ignores_xrefs() {
+        let mut refs = vec![
+            sutta_ref_item("dn33:1.11.0", Some("Saṅgītisutta")),
+            xref_item("abandoning (pajahati, pahāna)"),
+            sutta_ref_item("dn33:2.1.0", Some("Saṅgītisutta")),
+        ];
+        assign_disambiguation_suffixes(&mut refs);
+        assert_eq!(suffixes(&refs), vec![Some("a"), None, Some("b")]);
     }
 
     #[test]
