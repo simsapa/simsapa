@@ -222,6 +222,41 @@ android-beta-debug-run:
 	adb shell monkey -p $(ANDROID_BETA_PKG) -c android.intent.category.LAUNCHER 1 >/dev/null
 	adb logcat -v brief simsapa:V Qt:V QtCore:V QtQml:V AndroidRuntime:E DEBUG:E '*:S'
 
+# --- Beta package, arm64-v8a only ------------------------------------------
+#
+# Same debuggable beta package, built for arm64-v8a alone. This is ONLY for
+# local testing on an arm64-v8a phone: dropping the other two ABIs cuts the
+# build time roughly threefold. Never use it for anything distributed — an
+# arm64-only package is filtered off Intel/AMD Chromebooks (ARCVM is x86_64);
+# see docs/android-multi-abi-and-chromeos.md.
+#
+# It uses its own build directory, because QT_ANDROID_ABIS is baked into the
+# CMake cache and the per-ABI ExternalProject stamps: sharing one directory
+# between the arm64-only and the multi-ABI build would mean a reconfigure each
+# time, which throws away the very time this target saves. The cost is a second
+# build tree on disk; `make android-arm64-clean` removes it.
+#
+# The package id is unchanged (io.github.simsapa.app.beta), so this build and
+# the multi-ABI beta replace each other on the device, and
+# android-beta-debug-run works for either.
+
+ANDROID_ARM64_BUILD_DIR ?= build/android-arm64
+APK_BETA_DEBUG_ARM64 := $(ANDROID_ARM64_BUILD_DIR)/android-build/build/outputs/apk/debug/android-build-debug.apk
+
+android-beta-debug-arm64:
+	ANDROID_BUILD_DIR=$(ANDROID_ARM64_BUILD_DIR) ./build-android.sh --apk --debug --sign --abis arm64-v8a
+
+android-beta-debug-arm64-install:
+	@test -f "$(APK_BETA_DEBUG_ARM64)" || { echo "Not built yet: $(APK_BETA_DEBUG_ARM64) — run 'make android-beta-debug-arm64'"; exit 1; }
+	adb install -r "$(APK_BETA_DEBUG_ARM64)"
+
+# Identical to android-beta-debug-run — the package id is the same. Kept as a
+# separate name so the arm64-only cycle reads build/install/run consistently.
+android-beta-debug-arm64-run: android-beta-debug-run
+
+android-arm64-clean:
+	rm -rf $(ANDROID_ARM64_BUILD_DIR)
+
 # The distributable beta: release build type, NOT debuggable, release-signed.
 # Copied out under a version-stamped name ready to attach to a GitHub release.
 #

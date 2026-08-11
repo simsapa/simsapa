@@ -285,6 +285,24 @@ make android-beta-debug-install
 make android-beta-debug-run
 ```
 
+On an arm64-v8a phone — which is the local test device — the same three steps
+exist in an arm64-only form that builds one ABI instead of three:
+
+```sh
+make android-beta-debug-arm64
+make android-beta-debug-arm64-install
+make android-beta-debug-arm64-run   # same recipe; the package id is unchanged
+```
+
+These are **local testing only**: an arm64-only package is filtered off
+Intel/AMD Chromebooks (see
+[android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md)), so
+nothing built this way may be distributed. They use a separate build directory,
+`build/android-arm64` (`make android-arm64-clean` removes it), because
+`QT_ANDROID_ABIS` is baked into the CMake cache and the per-ABI ExternalProject
+stamps — sharing one directory with the multi-ABI build would force a
+reconfigure on every switch and give back the time saved.
+
 After any change to the beta wiring, round-trip the identities in one build
 directory (`--beta` → plain `--apk` → `--beta`) and check `aapt2 dump badging`
 each time. That is the only check that catches the stale-artifact trap in §2.

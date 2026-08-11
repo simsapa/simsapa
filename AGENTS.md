@@ -1291,6 +1291,10 @@ Use this path for any tests or experimental scripts that need to query the actua
     - `make android-beta-debug` — debuggable, release-signed, for local
       testing. **Never distribute it.**
     - `make android-beta-debug-install` — `adb install -r`.
+    - `make android-beta-debug-arm64` (+ `-install`, `-run`) — the same
+      debuggable beta built for **arm64-v8a only**, in its own build directory
+      `build/android-arm64` (`make android-arm64-clean`). Local testing on an
+      arm64 phone only — never distribute an arm64-only package.
     - `make android-beta-debug-run` — launches it and streams the log messages
       (Rust `simsapa` tag + Qt/QML tags) to the console; this is the same thing
       Qt Creator's "Application Output" pane shows.
