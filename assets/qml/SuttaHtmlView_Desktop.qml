@@ -41,6 +41,16 @@ Item {
         onTriggered: root.scroll_to_anchor()
     }
 
+    // No-op counterpart of the mobile view's geometry nudge, so callers do not
+    // have to branch on platform. The bug it works around is a native-WebView
+    // resize propagation failure; QtWebEngine has never shown it here.
+    function nudge_webview_geometry() {
+    }
+
+    function webview_height(): real {
+        return web.height;
+    }
+
     function set_properties_from_data_json() {
         if (!root.data_json || root.data_json.length === 0) {
             return;

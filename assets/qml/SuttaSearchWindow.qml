@@ -797,6 +797,14 @@ ApplicationWindow {
 
     function set_summary_query(query_text: string) {
         word_summary_wrap.visible = true;
+        // Opening shrinks the reader's webview again. Any VIEWPORT-NUDGE run
+        // still measuring from the previous close has to stop here, or it
+        // records the summary-open height as a fault (see
+        // docs/mobile-stuck-bottom-bar-investigation.md §5.2).
+        let html_view = sutta_html_view_layout.get_current_item();
+        if (html_view && html_view.item) {
+            html_view.item.web.runJavaScript("if (typeof window.ssp_word_summary_opened === 'function') { window.ssp_word_summary_opened(); }");
+        }
         word_summary.set_query(query_text);
         word_summary.search_btn.click();
     }
@@ -3575,9 +3583,26 @@ ${query_text}`;
 
                                 function handle_summary_close() {
                                     word_summary_wrap.visible = false;
+                                    // Closing the panel gives the reader's height back to the
+                                    // webview. On mobile that is a native view resize, after which
+                                    // the page's bottom-anchored fixed chrome (column bar, footnote
+                                    // bar) can stay pinned to the old, shorter viewport.
+                                    // The 1px geometry jiggle makes the native view re-send its
+                                    // size (the page cannot repair that from the inside), and
+                                    // window.word_summary_closed() then re-resolves the page's own
+                                    // layout and logs a VIEWPORT-NUDGE: line describing what it
+                                    // found (src-ts/viewport_nudge.ts).
+                                    // The height passed here is only logged as qt_h0 — the
+                                    // SplitView re-lays out in the polish pass, so it is still
+                                    // the summary-open one. The comparable geometry is reported
+                                    // later, by the pre_jiggle / post_jiggle timers in
+                                    // SuttaHtmlView_Mobile.qml, which also drive the page's
+                                    // measurement phases.
                                     let html_view = sutta_html_view_layout.get_current_item();
-                                    if (html_view) {
-                                        html_view.item.web.runJavaScript("if (typeof window.word_summary_closed === 'function') { window.word_summary_closed(); }");
+                                    if (html_view && html_view.item) {
+                                        html_view.nudge_webview_geometry();
+                                        let qt_h0 = html_view.webview_height();
+                                        html_view.item.web.runJavaScript(`if (typeof window.word_summary_closed === 'function') { window.word_summary_closed(${qt_h0}); }`);
                                     }
                                 }
 

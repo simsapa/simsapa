@@ -134,6 +134,15 @@ Notable feature docs:
   limitation, and why a `MobileComboBox` choice dialog was designed and
   **deliberately not built** — the native drop-down is an overlay child like any
   other, with width and height measured adequate.
+- [Investigation: stuck bottom bar on mobile](./docs/mobile-stuck-bottom-bar-investigation.md) —
+  **open, root cause not determined.** After the WordSummary pane closes on
+  Android, the page's bottom-anchored fixed chrome (the column bar) can stay
+  pinned mid-screen. **Not a CSS fault** — do not "fix" `.column-bar`. A
+  candidate two-part fix (a 1px webview geometry jiggle + an in-page relayout)
+  and its `VIEWPORT-NUDGE:` logging are in the tree; the doc holds the symptom,
+  the reasoning, the log format, and the rule for deciding which half to keep.
+  Delete or fold it into the two docs it names once a device reproduction is
+  read.
 - [WebEngineView stale black frame workaround](./docs/webengine-stale-black-frame-workaround.md) —
   why the desktop HTML reader panels turned solid black after switching away
   from and back to the app window on Linux (Chromium stops compositing while

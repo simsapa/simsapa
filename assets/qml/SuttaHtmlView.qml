@@ -41,6 +41,21 @@ Loader {
         loader.item.show_transient_message(msg); // qmllint disable missing-property
     }
 
+    // Force the embedded webview to re-send its size to its rendering engine
+    // after the surrounding layout gave it back some height. No-op on desktop.
+    function nudge_webview_geometry() {
+        if (loader.item) {
+            loader.item.nudge_webview_geometry(); // qmllint disable missing-property
+        }
+    }
+
+    // Qt's height for the embedded webview at call time, for the VIEWPORT-NUDGE
+    // diagnostic's `qt_h0` field only — the surrounding layout may not have
+    // settled yet. The comparable value is reported later by the mobile view.
+    function webview_height(): real {
+        return loader.item ? loader.item.webview_height() : 0; // qmllint disable missing-property
+    }
+
     function show_find_bar() {
         loader.item.show_find_bar(); // qmllint disable missing-property
     }

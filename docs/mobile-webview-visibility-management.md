@@ -490,6 +490,22 @@ one of these actually appears, not on suspicion:
 - a `ComboBox` **outside** `SuttaSearchWindow`, where no tracker runs — though today the
   webview lives only inside that window, so nothing there is at risk either.
 
+## Resizing the mobile webview (open investigation)
+
+Hiding the webview is not the only thing that moves it. The **WordSummary** panel is the
+second pane of the vertical `SplitView` in `SuttaSearchWindow.qml`
+(`word_summary_wrap`), so opening it shrinks the reader's webview and closing it grows it
+back — on mobile, a resize of the *native* Android `WebView`.
+
+An Android user reported the page's bottom-anchored fixed chrome (the column bar) staying
+pinned mid-screen after such a close. **The CSS is not the cause**, so do not "fix"
+`.column-bar`. The root cause is **not yet determined**, a candidate fix and its
+instrumentation are in the tree, and all of it — symptom, reasoning, the
+`VIEWPORT-NUDGE:` log format, and what to keep or delete once a reproduction is read —
+lives in
+[mobile-stuck-bottom-bar-investigation.md](./mobile-stuck-bottom-bar-investigation.md)
+until it is settled.
+
 ## The Complete Visibility Chain
 
 For a WebView to be visible, ALL of these conditions must be true:
@@ -517,6 +533,7 @@ The following files implement this solution:
 - `assets/qml/SuttaSearchWindow.qml` - Top-level visibility control; instantiates the tracker and defines `webview_visible`
 - `assets/qml/MobileOverlayTracker.qml` - Detects open popups and in-tree child windows; exposes `any_open`
 - `assets/qml/tst_MobileOverlayTracker.qml` - Offscreen tests, including the ToolTip identity exclusion sampled across the whole close transition
+- `src-ts/viewport_nudge.ts` (+ `.test.ts`), `nudge_webview_geometry()` in `assets/qml/SuttaHtmlView_Mobile.qml` - unproven fix + instrumentation for the resize issue above; see [mobile-stuck-bottom-bar-investigation.md](./mobile-stuck-bottom-bar-investigation.md)
 
 ## Key Principles
 

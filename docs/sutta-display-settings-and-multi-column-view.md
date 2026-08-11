@@ -324,6 +324,10 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   `assets/sass/_display_settings.scss`; `body:has(#columnBar.show)` lifts
   the footnote bottom bar above the 40px bar and raises `#ssp_main`'s
   bottom padding.
+- **If the bar stops sticking to the bottom, do not go looking in this CSS.**
+  An open Android issue, traced to the mobile webview being resized when the
+  WordSummary panel closes:
+  [mobile-stuck-bottom-bar-investigation.md](./mobile-stuck-bottom-bar-investigation.md).
 
 ### sbs_blocks.ts — block-fallback pane sizing
 

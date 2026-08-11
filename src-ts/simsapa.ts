@@ -8,6 +8,7 @@ import * as display_settings from "./display_settings";
 import * as content_reload from "./content_reload";
 import * as column_bar from "./column_bar";
 import * as sbs_blocks from "./sbs_blocks";
+import * as viewport_nudge from "./viewport_nudge";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -148,6 +149,13 @@ function footnote_bottom_bar_refresh(): void {
 document.addEventListener('DOMContentLoaded', () => {
     // h.log_info('[simsapa] DOMContentLoaded event fired');
     attach_link_handlers();
+
+    // Install window.word_summary_closed(): QML calls it when the WordSummary
+    // panel closes and the mobile WebView grows back to full height, which is
+    // when the bottom-anchored fixed chrome can be left pinned to the old,
+    // shorter viewport. Registered on every page — the bars it repairs are only
+    // present on sutta pages, where it is a no-op if nothing is wrong.
+    viewport_nudge.init_viewport_nudge();
 
     // Initialize footnote bottom bar for sutta pages if enabled
     const sspContent = document.getElementById('ssp_content');

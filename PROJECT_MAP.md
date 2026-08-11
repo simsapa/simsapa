@@ -167,7 +167,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `LibraryWindow.qml` - Library management window with nested chapter list support
   - `ChapterListItem.qml` - Reusable component for rendering book chapters with expand/collapse for nested TOC items
   - `DictionaryTab.qml`, `GlossTab.qml`, `PromptsTab.qml` - Tab interfaces
-  - `DictionaryHtmlView.qml`, `SuttaHtmlView.qml` - Content display views
+  - `DictionaryHtmlView.qml`, `SuttaHtmlView.qml` - Content display views. `SuttaHtmlView_Mobile.qml` also carries `nudge_webview_geometry()` and the `pre_jiggle`/`post_jiggle` timer chain that drives the `VIEWPORT-NUDGE:` diagnostic — an **open investigation**, see `docs/mobile-stuck-bottom-bar-investigation.md`
   - `DrawerMenu.qml` - Navigation drawer menu
   - `SearchBarInput.qml`, - Search interface component
   - `AboutDialog.qml`, `StorageDialog.qml`, `ColorThemeDialog.qml`, `GlossWordSelectionDialog.qml` - Dialog windows. `AboutDialog` also hosts the **File Selection Test** (button, unfiltered `FileDialog`, result `MessageDialog`) and **owns that run** — the busy state, the completion `Connections` and the keep-screen-on bracket live there, because unlike the storage diagnostics it has no results window. Its bottom button area must stay a full-width `ColumnLayout`: four buttons on a row overflow a phone screen. See `docs/file-selection-test.md`
@@ -392,7 +392,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── sbs_blocks.ts (+ .test.ts)
 │   ├── simsapa.ts
 │   ├── test-setup.ts
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── viewport_nudge.ts (+ .test.ts)  # open investigation, see docs/mobile-stuck-bottom-bar-investigation.md
 ```
 
 - **Entry Point:** `simsapa.ts`

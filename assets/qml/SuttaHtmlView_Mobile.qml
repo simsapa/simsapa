@@ -62,6 +62,105 @@ Item {
         onTriggered: root.scroll_to_anchor()
     }
 
+    /* Force the native WebView to re-send its size to Chromium.
+     *
+     * When the WordSummary pane closes, the SplitView gives this view its
+     * height back. If Chromium does not act on that resize, the page keeps the
+     * initial containing block it had while the pane was open, and everything
+     * anchored to the viewport bottom (the column bar, the footnote bar) stays
+     * pinned mid-screen. Ordinary block content is unaffected — its height is
+     * content-driven — which is why sutta text still paints above *and* below
+     * the stranded bar, and why neither scrolling nor re-opening the pane
+     * recovers it: a compositor scroll re-runs no layout, and the next resize
+     * is ignored the same way the first one was.
+     *
+     * Nothing inside the page can repair that, because every quantity JS reads
+     * (window.innerHeight included) is stale too. A 1px geometry jiggle is a
+     * resize Chromium has to observe. Same remedy as WebEngineRepaintNudge.qml
+     * uses for the desktop stale-frame bug, applied to the native WebView.
+     *
+     * THE DELAY BEFORE THE JIGGLE IS LOAD-BEARING. It used to fire 50 ms after
+     * the close, i.e. before the *ordinary* resize had been delivered — so on a
+     * healthy device (Galaxy S23, Android 16) all 19 measured closes credited
+     * the jiggle for what the ordinary resize had already done, and the two were
+     * indistinguishable. The `pre_jiggle` report below is sent once the ordinary
+     * resize has had time to land and before the jiggle fires; it is what lets
+     * the log say nothing was wrong in the first place. Do not shorten it.
+     */
+    function nudge_webview_geometry() {
+        // Logged from Qt's side of the boundary, because the page cannot see
+        // any of it. Note this height is the *pre-layout* one — the SplitView
+        // re-lays out in the polish pass — which is why the comparable geometry
+        // is reported from the timers below instead.
+        logger.info("VIEWPORT-NUDGE-QT: phase=close item=" + Math.round(root.width) + "x" + Math.round(root.height)
+                    + " web=" + Math.round(web.width) + "x" + Math.round(web.height)
+                    + " dpr=" + root.Screen.devicePixelRatio);
+        pre_jiggle_report_timer.restart();
+    }
+
+    // Qt's height for the native view at call time. Logged as `qt_h0` only:
+    // the SplitView re-lays out in the polish pass, so this is still the
+    // summary-open height and must not be compared against anything. The
+    // authoritative values are reported from the timers below.
+    function webview_height(): real {
+        return web.height;
+    }
+
+    // The page measures a phase on each of these reports, so QML owns the
+    // timing of both. Two independently maintained sets of constants would
+    // drift, and the whole attribution depends on the order being exact.
+    function report_qt_geometry(phase: string) {
+        web.runJavaScript(`if (typeof window.ssp_report_qt_geometry === 'function') { window.ssp_report_qt_geometry(${web.height}, ${root.Screen.devicePixelRatio}, '${phase}'); }`);
+    }
+
+    // Long enough for the ordinary resize to have been delivered. The page
+    // measures its `natural` phase here — the phase that says whether anything
+    // needed fixing at all.
+    Timer {
+        id: pre_jiggle_report_timer
+        interval: 250
+        repeat: false
+        onTriggered: {
+            logger.info("VIEWPORT-NUDGE-QT: phase=pre_jiggle web=" + Math.round(web.width) + "x" + Math.round(web.height)
+                        + " dpr=" + root.Screen.devicePixelRatio);
+            root.report_qt_geometry("pre_jiggle");
+            geometry_nudge_timer.restart();
+        }
+    }
+
+    Timer {
+        id: geometry_nudge_timer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            web.anchors.bottomMargin = 1;
+            geometry_restore_timer.restart();
+        }
+    }
+
+    Timer {
+        id: geometry_restore_timer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            web.anchors.bottomMargin = 0;
+            post_jiggle_report_timer.restart();
+        }
+    }
+
+    // Delayed past the restore so the resize it causes has been delivered
+    // before the page measures the `jiggle` phase and runs its own repair.
+    Timer {
+        id: post_jiggle_report_timer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            logger.info("VIEWPORT-NUDGE-QT: phase=post_jiggle web=" + Math.round(web.width) + "x" + Math.round(web.height)
+                        + " dpr=" + root.Screen.devicePixelRatio);
+            root.report_qt_geometry("post_jiggle");
+        }
+    }
+
     function set_properties_from_data_json() {
         if (!root.data_json || root.data_json.length === 0) {
             return;
