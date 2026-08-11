@@ -328,13 +328,13 @@ Expected: **55 added `suffix` values across 25 groups**, nothing else
 (success metric 9). Any reordering means task 1.6–1.8 changed a sort order and
 must be reverted.
 
-- [ ] 3.0 Regenerate `assets/general-index.json` and add the `suffix` field to the backend struct
-  - [ ] 3.1 Add the identical `suffix: Option<String>` field (same doc comment, same `skip_serializing_if`) to `TopicIndexRef` in `backend/src/topic_index.rs:20`, and confirm `cd backend && cargo test` still passes against the **old** JSON — proving the field is genuinely optional.
-  - [ ] 3.2 Establish the clean-tree baseline first (the `git stash` block above), then capture the pretty-printed "before" copy of `assets/general-index.json`, run `make parse-cips` and diff. Confirm the only changes are added `suffix` keys.
-  - [ ] 3.3 Count the suffixed refs and their groups in the regenerated JSON and confirm **55 refs / 25 groups**. If the numbers differ, the scoping rule (requirement 12) was implemented differently — fix it in task 1.5 rather than accepting the new number.
-  - [ ] 3.4 Confirm the named check from success metric 9 by inspection of the JSON: headword **feet**, sub-topic **Buddhas'**, five `dn30` refs carrying `a`–`e` in the order `dn30:1.4.0`, `1.7.0`, `1.10.0`, `1.16.0`, `1.19.0`.
-  - [ ] 3.5 Confirm the anchor-validation summary printed by that same run reads `1579 checked, 1573 ok, 0 unresolved uid, 0 no segments, 6 missing segment` and names all six locations (success metric 12), and that the command exited 0 and wrote the file.
-  - [ ] 3.6 Rebuild (`make build -B`) so `include_str!(CIPS_GENERAL_INDEX_JSON)` picks up the regenerated file, and run `make rust-test`.
+- [x] 3.0 Regenerate `assets/general-index.json` and add the `suffix` field to the backend struct
+  - [x] 3.1 Add the identical `suffix: Option<String>` field (same doc comment, same `skip_serializing_if`) to `TopicIndexRef` in `backend/src/topic_index.rs:20`, and confirm `cd backend && cargo test` still passes against the **old** JSON — proving the field is genuinely optional.
+  - [x] 3.2 Establish the clean-tree baseline first (the `git stash` block above), then capture the pretty-printed "before" copy of `assets/general-index.json`, run `make parse-cips` and diff. Confirm the only changes are added `suffix` keys.
+  - [x] 3.3 Count the suffixed refs and their groups in the regenerated JSON and confirm **55 refs / 25 groups**. If the numbers differ, the scoping rule (requirement 12) was implemented differently — fix it in task 1.5 rather than accepting the new number.
+  - [x] 3.4 Confirm the named check from success metric 9 by inspection of the JSON: headword **feet**, sub-topic **Buddhas'**, five `dn30` refs carrying `a`–`e` in the order `dn30:1.4.0`, `1.7.0`, `1.10.0`, `1.16.0`, `1.19.0`.
+  - [x] 3.5 Confirm the anchor-validation summary printed by that same run reads `1579 checked, 1573 ok, 0 unresolved uid, 0 no segments, 6 missing segment` and names all six locations (success metric 12), and that the command exited 0 and wrote the file.
+  - [x] 3.6 Rebuild (`make build -B`) so `include_str!(CIPS_GENERAL_INDEX_JSON)` picks up the regenerated file, and run `make rust-test`.
 
 ---
 
@@ -639,6 +639,56 @@ documents were spot-checked and are accurate.
   stable. The tuple key is safe. Task 3.2's diff remains the guard — run against
   a **clean-tree baseline** first, or a pre-existing staleness in the committed
   JSON gets misattributed to this change.
+- **The generated JSON is not byte-reproducible, and never was** (found while
+  running 3.2). `IndexBuilder.data` is a `HashMap`
+  (`parse_cips_index.rs:457`), so `headword_map.keys()` yields a
+  process-randomized order; headwords whose **sort keys are equal after
+  `to_lowercase()` + `latinize()`** therefore swap freely between runs of the
+  *same* binary. Measured: two consecutive runs of the unmodified parser
+  produced three such swaps (`Dhanañjāni, brahmin`, `Māgaṇḍiyā`, `Sineru, king
+  of mountains` — each paired with a headword differing only in diacritics or
+  case). The clean-tree baseline was also **not** empty against the committed
+  `assets/general-index.json` (454 diff lines): the CSV has gained and renamed
+  entries since it was last regenerated, and the headword count is 3203, not the
+  3202 quoted above.
+
+  So the 3.2 acceptance test cannot be a plain `diff`. What was actually
+  verified, and what a future regeneration should re-verify:
+
+  ``` sh
+  jq -S -c '[.[] | .headwords[] | {h: .headword, e: [.entries[] | {sub: .sub, refs: [.refs[] | del(.suffix)]}]}] | sort_by(.h)' before.json > before.canon
+  # …same for after.canon…
+  diff before.canon after.canon   # must be empty
+  ```
+
+  Sorting only the headword array absorbs the HashMap noise while leaving the
+  `entries` and `refs` array order — the thing tasks 1.7 and 1.8 could break —
+  fully compared. That diff was **empty**, so the sort cleanups changed no
+  order.
+- **The reproducibility hole was then closed, so a plain `diff` *is* the
+  acceptance test from now on.** Two changes, beyond the task list's scope but
+  in the same file:
+  1. `IndexBuilder.data` is now a `BTreeMap` at all three levels. Feeding a
+     **stable** sort from a key-ordered map is exactly equivalent to sorting by
+     `(sort_key, raw_key)` — the map supplies the tie-break — so the output is a
+     function of the CSV's *content*. An insertion-ordered map (`IndexMap`) was
+     tried first and is also deterministic, but only for a fixed row order,
+     which the index author is free to change.
+  2. Cross-references were the one thing still emitted in CSV row order (the
+     locators were already sorted). They are now sorted by
+     `(latinize(target).to_lowercase(), target)` — the sub-entry sort's
+     convention, plus the target itself as the tie-break. A `Vec` sort, **not**
+     a `BTreeSet`: the CSV contains 5 duplicated xref rows, and a set would
+     silently drop them, which §4.6 forbids. Sorting makes those duplicates
+     adjacent and therefore visible to the author.
+
+  Verified: the parser now emits a **byte-identical** file across three runs,
+  and across two independently shuffled copies of the 21,791-row CSV
+  (`shuf` with two seeds → same md5). The shuffle test is the sharp one —
+  before change 2 it showed 1,466 differing `ref_target` lines and **zero**
+  differences in `sutta_ref`, `title`, `suffix`, `headword`, `sub` or `letter`.
+  Ref counts are unchanged (19,965 sutta / 1,826 xref / 55 suffixed), and the
+  content is identical to the pre-change output apart from xref ordering.
 - **Task 5.4 was corrected during review.** The original framing ("when the uid
   is unchanged, no `LoadSucceededStatus` fires") is wrong: the anchor is part of
   the URL, so a different anchor on an open sutta already reloads and scrolls.

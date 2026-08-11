@@ -34,6 +34,10 @@ internally very consistent about this:
 Only **16 locations in two suttas** depart from that convention, and they are
 exactly where the problems are. Everything else checks out.
 
+Sections **C** and **D** are unrelated to the locations — a headword spelling and
+five duplicated cross-reference rows, both found while working on the index and
+recorded here because they are one-line source edits in the same file.
+
 ## A. DN 33 — one location, off by one row
 
 `DN33:1.7.9.0` is the heading *"1. Ones"*. The adjacent row appends `.1` to that
@@ -107,6 +111,37 @@ Two consequences worth knowing before it is corrected:
   the id changes with the spelling. Nothing persists headword ids across runs,
   so this is safe — but any note or test that names the id (or the headword) has
   to be updated in the same pass.
+
+## D. Five duplicated cross-reference rows
+
+Found separately from the location review, while making the generated index
+byte-reproducible: five cross-references are entered **twice**, as fully
+identical rows (same headword, same empty sub-topic, same target).
+
+| Rows | Headword | Cross-reference |
+|---|---|---|
+| 216, 221 | `bhikkhunīs` | `xref Āḷavikā, Ven.` |
+| 220, 232 | `bhikkhunīs` | `xref Jaṭilagāhikā, Ven.` |
+| 224, 234 | `bhikkhunīs` | `xref Nandā, Ven.` |
+| 515, 516 | `occupations` | `xref hunters` |
+| 1609, 1610 | `craving (taṇhā)` | `xref craving to end existence (vibhavataṇhā)` |
+
+Two of the pairs are adjacent rows (515/516, 1609/1610), which looks like a
+duplicated line while editing. The three `bhikkhunīs` pairs are separated by
+several rows, so they look more like the same name being added twice to a long
+list.
+
+The same check over the **sutta-locator** rows found **0** duplicates, so this
+is confined to cross-references.
+
+Nothing in the pipeline removes them: the parser reports source-data defects and
+never repairs them (PRD §4.6), and de-duplication was explicitly rejected for
+sutta references. Deleting one row of each pair is a source edit for the author.
+
+Until then, each duplicate shows in the app as the same `• see: …` line twice
+under its headword. One small thing has changed in their favour: cross-references
+are now sorted rather than emitted in CSV row order, so a duplicated pair always
+appears **adjacent**, which makes it obvious rather than scattered down a list.
 
 ## Other
 
