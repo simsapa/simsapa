@@ -33,6 +33,11 @@ pub struct TopicIndexRef {
     /// Type of reference: "sutta" or "xref"
     #[serde(rename = "type")]
     pub ref_type: String,
+
+    /// Disambiguation letter when two refs in the same entry share a displayed
+    /// label ("a", "b", … "aa"). Absent when the label is unique.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
 }
 
 /// A sub-entry within a headword
