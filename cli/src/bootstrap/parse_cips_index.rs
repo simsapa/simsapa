@@ -5,7 +5,7 @@
 //!
 //! The CSV is tab-delimited with 3 columns: headword, subheading, locator
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::fs;
 
@@ -292,6 +292,25 @@ fn extract_xref_target(locator: &str) -> String {
     locator.replace("xref ", "").trim().to_string()
 }
 
+/// Extract and sort the cross-reference targets of one sub-topic entry.
+///
+/// Sorted the same way sub-entries are (diacritic- and case-insensitive), with
+/// the target itself as the tie-break, so the order is a function of the CSV's
+/// content and not of its row order — the locators beside them are already
+/// sorted, and leaving the xrefs in row order was the last thing that made the
+/// generated index change when rows were rearranged.
+///
+/// Returns a `Vec`, and must not become a `BTreeSet`: the CSV contains
+/// duplicated xref rows (5 pairs as of 2026-08-11, listed in §D of the CIPS
+/// corrections document), and a set would silently drop them. The parser
+/// reports source-data defects, it never repairs them (PRD §4.6). Sorting keeps
+/// a duplicated pair adjacent, which makes it visible to the index author.
+fn sorted_xref_targets(xrefs: &[String]) -> Vec<String> {
+    let mut targets: Vec<String> = xrefs.iter().map(|x| extract_xref_target(x)).collect();
+    targets.sort_by_cached_key(|t| (latinize(t).to_lowercase(), t.clone()));
+    targets
+}
+
 /// Check if a locator is in CUSTOM format.
 /// Format: "CUSTOM:Label:Title:URL" where URL contains the sutta ref
 fn is_custom_format(locator: &str) -> bool {
@@ -454,13 +473,27 @@ fn assign_disambiguation_suffixes(refs: &mut [TopicIndexRef]) {
 #[allow(clippy::type_complexity)]
 struct IndexBuilder {
     /// Letter → Headword → Sub-entry → (locators, xrefs)
-    data: HashMap<String, HashMap<String, HashMap<String, (Vec<String>, Vec<String>)>>>,
+    /// `BTreeMap`, not `HashMap`: the headword and sub-entry sorts in `build()`
+    /// have ties — headwords differing only in case or diacritics share a sort
+    /// key ("Khema, Ven." / "Khemā, Ven.", "Māgaṇḍiya" / "Māgaṇḍiyā") — and a
+    /// stable sort resolves a tie by the order the keys arrive in. With
+    /// `HashMap` that order is randomized per process, so the generated JSON
+    /// was not byte-reproducible between two runs of the same binary.
+    ///
+    /// `BTreeMap` yields keys in `String` order, which makes the whole result a
+    /// function of the CSV's *content* alone. Feeding a stable sort from an
+    /// ordered map is exactly equivalent to sorting by
+    /// `(sort_key, raw_key)` — the raw key is the tie-break — so reordering
+    /// rows in the CSV cannot change the output. An insertion-ordered map
+    /// (`IndexMap`) would also be deterministic, but only for a fixed row
+    /// order, which the index author is free to change.
+    data: BTreeMap<String, BTreeMap<String, BTreeMap<String, (Vec<String>, Vec<String>)>>>,
 }
 
 impl IndexBuilder {
     fn new() -> Self {
         Self {
-            data: HashMap::new(),
+            data: BTreeMap::new(),
         }
     }
 
@@ -548,8 +581,7 @@ impl IndexBuilder {
                     }
 
                     // Add cross-references
-                    for xref in xrefs {
-                        let target = extract_xref_target(xref);
+                    for target in sorted_xref_targets(xrefs) {
                         refs.push(TopicIndexRef {
                             sutta_ref: None,
                             ref_target: Some(target),
@@ -909,6 +941,56 @@ mod tests {
     fn test_extract_xref_target() {
         assert_eq!(extract_xref_target("xref disrobing"), "disrobing");
         assert_eq!(extract_xref_target("xref abandoning (pajahati, pahāna)"), "abandoning (pajahati, pahāna)");
+    }
+
+    #[test]
+    fn test_sorted_xref_targets_orders_diacritic_and_case_insensitively() {
+        let xrefs: Vec<String> = [
+            "xref monastics",
+            "xref Āḷavikā, Ven.",
+            "xref Khemā, Ven.",
+            "xref bhikkhus",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        // "Āḷavikā" latinizes to "alavika" and so sorts under A, not after Z;
+        // case is ignored, so "bhikkhus" falls between the two Ven. names.
+        assert_eq!(
+            sorted_xref_targets(&xrefs),
+            vec!["Āḷavikā, Ven.", "bhikkhus", "Khemā, Ven.", "monastics"],
+        );
+    }
+
+    #[test]
+    fn test_sorted_xref_targets_is_independent_of_input_order() {
+        let forward: Vec<String> = ["xref zeal", "xref admonishment", "xref hunters"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let reversed: Vec<String> = forward.iter().rev().cloned().collect();
+
+        assert_eq!(sorted_xref_targets(&forward), sorted_xref_targets(&reversed));
+    }
+
+    #[test]
+    fn test_sorted_xref_targets_keeps_duplicates() {
+        // The CSV contains duplicated xref rows (§D of the corrections
+        // document). They must survive as two entries — the parser reports
+        // source defects and never repairs them, so this must not be
+        // "simplified" into a BTreeSet.
+        let xrefs: Vec<String> = ["xref hunters", "xref butchers", "xref hunters"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let sorted = sorted_xref_targets(&xrefs);
+
+        assert_eq!(sorted, vec!["butchers", "hunters", "hunters"]);
+        // Sorting is what puts a duplicated pair side by side, which is how the
+        // index author notices it.
+        assert_eq!(sorted[1], sorted[2]);
     }
 
     #[test]
