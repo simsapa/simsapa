@@ -769,6 +769,7 @@ fn import_language(db_path: &Path, language_db_path: &Path) -> Result<(), String
 /// Parse CIPS general-index.csv and generate JSON for topic index
 fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&Path>, minify: bool) -> Result<(), String> {
     use simsapa_backend::db::appdata_schema::suttas;
+    use bootstrap::parse_cips_index::SuttaSegments;
 
     println!("Parsing CIPS general-index.csv...");
     println!("CSV file: {:?}", csv_path);
@@ -779,7 +780,11 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
         return Err(format!("CSV file not found: {:?}", csv_path));
     }
 
-    // Create title lookup function
+    // Create title lookup function, and — when a database is available — the
+    // segment-key lookup that anchor validation needs.
+    #[allow(clippy::type_complexity)]
+    let mut segments_lookup: Option<Box<dyn Fn(&str) -> SuttaSegments>> = None;
+
     #[allow(clippy::type_complexity)]
     let title_lookup: Box<dyn Fn(&str) -> Option<String>> = if let Some(db) = db_path {
         if !db.exists() {
@@ -795,6 +800,11 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
         // Create a HashMap of uid -> title for efficient lookups
         let mut title_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
+        // Uid existence oracle for anchor validation. This must NOT be
+        // `title_map`, which drops rows whose title is NULL and would report
+        // them as unresolved uids.
+        let mut known_uids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         // Query all Pāli sutta titles (source_uid = 'ms' for SuttaCentral Pāli)
         let pali_suttas: Vec<(String, Option<String>)> = suttas::table
             .select((suttas::uid, suttas::title))
@@ -804,14 +814,65 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
             .unwrap_or_default();
 
         for (uid, title) in pali_suttas {
+            // Extract just the sutta part from uid (e.g., "mn5/pli/ms" -> "mn5")
+            let sutta_uid = uid.split('/').next().unwrap_or(&uid).to_lowercase();
+            known_uids.insert(sutta_uid.clone());
             if let Some(t) = title {
-                // Extract just the sutta part from uid (e.g., "mn5/pli/ms" -> "mn5")
-                let sutta_uid = uid.split('/').next().unwrap_or(&uid).to_lowercase();
                 title_map.insert(sutta_uid, t);
             }
         }
 
         println!("Loaded {} Pāli sutta titles from database", title_map.len());
+
+        // Segment keys are loaded lazily, per referenced uid, over the same
+        // connection. The measured working set is ~32 suttas out of 7,285.
+        let conn_cell = std::cell::RefCell::new(conn);
+        let cache: std::cell::RefCell<std::collections::HashMap<String, SuttaSegments>> =
+            std::cell::RefCell::new(std::collections::HashMap::new());
+
+        segments_lookup = Some(Box::new(move |uid: &str| {
+            let uid = uid.to_lowercase();
+
+            if let Some(cached) = cache.borrow().get(&uid) {
+                return cached.clone();
+            }
+
+            let segments = if !known_uids.contains(&uid) {
+                SuttaSegments::UnresolvedUid
+            } else {
+                // The runtime resolves `{uid}/pli/ms` first
+                // (`AppData::get_full_sutta_uid()`), so validation must too.
+                let full_uid = format!("{}/pli/ms", uid);
+                let content: Option<Option<String>> = suttas::table
+                    .select(suttas::content_json)
+                    .filter(suttas::uid.eq(&full_uid))
+                    .first(&mut *conn_cell.borrow_mut())
+                    .optional()
+                    .unwrap_or(None);
+
+                match content.flatten() {
+                    Some(json) if !json.trim().is_empty() => {
+                        // The top-level object's keys are FULL segment ids
+                        // ("dn33:1.11.0"). Note the page's `id` attributes
+                        // actually come from `content_json_tmpl` — a key with no
+                        // template renders with no id — so this check is an
+                        // approximation, covered at runtime by the in-page
+                        // candidate walk, which reads ids from the loaded page.
+                        // Measured: 0 untemplated keys across the referenced suttas.
+                        match serde_json::from_str::<serde_json::Value>(&json) {
+                            Ok(serde_json::Value::Object(map)) if !map.is_empty() => {
+                                SuttaSegments::Keys(map.keys().cloned().collect())
+                            }
+                            _ => SuttaSegments::NoSegments,
+                        }
+                    }
+                    _ => SuttaSegments::NoSegments,
+                }
+            };
+
+            cache.borrow_mut().insert(uid, segments.clone());
+            segments
+        }));
 
         Box::new(move |uid: &str| {
             title_map.get(&uid.to_lowercase()).cloned()
@@ -822,7 +883,11 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
     };
 
     // Parse and generate JSON
-    match bootstrap::parse_cips_index::parse_cips_to_json(csv_path, json_path, title_lookup, minify) {
+    let segments_lookup_ref = segments_lookup
+        .as_ref()
+        .map(|f| f.as_ref() as &dyn Fn(&str) -> SuttaSegments);
+
+    match bootstrap::parse_cips_index::parse_cips_to_json(csv_path, json_path, title_lookup, segments_lookup_ref, minify) {
         Ok(count) => {
             println!("Successfully parsed {} headwords", count);
             println!("JSON written to: {:?}", json_path);

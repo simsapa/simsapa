@@ -644,6 +644,117 @@ pub fn validate_index(index: &[TopicIndexLetter]) -> ValidationResult {
 }
 
 // ============================================================================
+// Anchor Validation
+// ============================================================================
+
+/// What the parser learns about a referenced sutta's segments.
+#[derive(Debug, Clone)]
+pub enum SuttaSegments {
+    /// No `{uid}/pli/ms` row exists (bad reference in the CSV).
+    UnresolvedUid,
+    /// The sutta exists but its content_json is empty (a legacy text).
+    NoSegments,
+    /// The segment keys the sutta's content actually has.
+    Keys(HashSet<String>),
+}
+
+/// Counts and warning lines from checking every paragraph location.
+#[derive(Debug, Default)]
+pub struct AnchorValidation {
+    pub checked: usize,
+    pub ok: usize,
+    pub unresolved_uid: usize,
+    pub no_segments: usize,
+    pub missing_segment: usize,
+    pub warnings: Vec<String>,
+}
+
+impl AnchorValidation {
+    /// The one-line summary printed at the end of a run.
+    pub fn summary_line(&self) -> String {
+        format!(
+            "Anchor validation: {} checked, {} ok, {} unresolved uid, {} no segments, {} missing segment",
+            self.checked, self.ok, self.unresolved_uid, self.no_segments, self.missing_segment
+        )
+    }
+}
+
+/// Check that every paragraph location in the index exists in the sutta it
+/// points at.
+///
+/// Refs without a segment id are not checked and are not counted. The lookup is
+/// called once per distinct referenced uid.
+///
+/// This reports only — it never repairs, renames or normalizes the source data
+/// (PRD §4.6). Warning lines quote the offending values exactly as they appear.
+pub fn validate_anchors(
+    index: &[TopicIndexLetter],
+    segments_lookup: &dyn Fn(&str) -> SuttaSegments,
+) -> AnchorValidation {
+    let mut result = AnchorValidation::default();
+    let mut resolved: HashMap<String, SuttaSegments> = HashMap::new();
+
+    for letter in index {
+        for headword in &letter.headwords {
+            for entry in &headword.entries {
+                for ref_item in &entry.refs {
+                    if ref_item.ref_type != "sutta" {
+                        continue;
+                    }
+                    let Some(sutta_ref) = &ref_item.sutta_ref else {
+                        continue;
+                    };
+                    // Only refs carrying a segment id are checked.
+                    if !sutta_ref.contains(':') {
+                        continue;
+                    }
+
+                    result.checked += 1;
+
+                    let uid = sutta_ref_to_uid(sutta_ref);
+                    let segments = resolved
+                        .entry(uid.clone())
+                        .or_insert_with(|| segments_lookup(&uid));
+
+                    // The content_json keys are FULL segment ids
+                    // ("dn33:1.11.0"), so the whole sutta_ref is compared
+                    // unsplit.
+                    match segments {
+                        SuttaSegments::UnresolvedUid => {
+                            result.unresolved_uid += 1;
+                            result.warnings.push(format!(
+                                "  unresolved uid: '{}' / '{}' -> {}",
+                                headword.headword, entry.sub, sutta_ref
+                            ));
+                        }
+                        SuttaSegments::NoSegments => {
+                            result.no_segments += 1;
+                            result.warnings.push(format!(
+                                "  no segments: '{}' / '{}' -> {}",
+                                headword.headword, entry.sub, sutta_ref
+                            ));
+                        }
+                        SuttaSegments::Keys(keys) => {
+                            if keys.contains(sutta_ref) {
+                                result.ok += 1;
+                            } else {
+                                result.missing_segment += 1;
+                                result.warnings.push(format!(
+                                    "  missing segment: '{}' / '{}' -> {}",
+                                    headword.headword, entry.sub, sutta_ref
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+// ============================================================================
 // Main Public API
 // ============================================================================
 
@@ -675,6 +786,8 @@ where
 /// * `csv_path` - Path to the input CSV file
 /// * `json_path` - Path to the output JSON file
 /// * `title_lookup` - Function to look up Pāli titles for sutta UIDs
+/// * `segments_lookup` - Function returning a sutta's segment keys; `None`
+///   skips anchor validation entirely (no database was given)
 /// * `minify` - If true, output minified JSON (no pretty-printing)
 ///
 /// # Returns
@@ -683,6 +796,7 @@ pub fn parse_cips_to_json<F>(
     csv_path: &Path,
     json_path: &Path,
     title_lookup: F,
+    segments_lookup: Option<&dyn Fn(&str) -> SuttaSegments>,
     minify: bool,
 ) -> Result<usize>
 where
@@ -700,6 +814,22 @@ where
     }
     for error in &validation.errors {
         eprintln!("Error: {}", error);
+    }
+
+    // Anchor validation is advisory only: it never adds to
+    // `ValidationResult::errors`, never short-circuits the JSON write, and
+    // never changes the exit status.
+    match segments_lookup {
+        Some(lookup) => {
+            let anchors = validate_anchors(&index, lookup);
+            eprintln!("{}", anchors.summary_line());
+            for warning in &anchors.warnings {
+                eprintln!("{}", warning);
+            }
+        }
+        None => {
+            eprintln!("Anchor validation: skipped (no database given)");
+        }
     }
 
     // Write JSON
@@ -811,6 +941,88 @@ mod tests {
 
         // Non-CUSTOM format returns None
         assert_eq!(parse_custom_locator("DN33:1.11.0"), None);
+    }
+
+    /// One headword / one sub-topic wrapping the given refs.
+    fn index_with(refs: Vec<TopicIndexRef>) -> Vec<TopicIndexLetter> {
+        vec![TopicIndexLetter {
+            letter: "C".to_string(),
+            headwords: vec![TopicIndexHeadword {
+                headword: "conditions (saṅkāra)".to_string(),
+                headword_id: "conditions-sankaara".to_string(),
+                entries: vec![TopicIndexEntry {
+                    sub: "all beings sustained by".to_string(),
+                    refs,
+                }],
+            }],
+        }]
+    }
+
+    fn test_segments_lookup(uid: &str) -> SuttaSegments {
+        match uid {
+            "dn33" => SuttaSegments::Keys(
+                ["dn33:1.11.0", "dn33:1.7.9.0"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            ),
+            "dn20" => SuttaSegments::NoSegments,
+            _ => SuttaSegments::UnresolvedUid,
+        }
+    }
+
+    #[test]
+    fn test_validate_anchors_classifies_each_case() {
+        let index = index_with(vec![
+            sutta_ref_item("dn33:1.11.0", None),   // exact hit
+            sutta_ref_item("dn33:1.7.9.1", None),  // missing segment
+            sutta_ref_item("zz99:1.1", None),      // unresolved uid
+            sutta_ref_item("dn20:4.11", None),     // no segments
+            sutta_ref_item("sn35.24", None),       // no segment id: not checked
+            xref_item("something else"),           // never checked
+        ]);
+
+        let v = validate_anchors(&index, &test_segments_lookup);
+
+        assert_eq!(v.checked, 4);
+        assert_eq!(v.ok, 1);
+        assert_eq!(v.missing_segment, 1);
+        assert_eq!(v.unresolved_uid, 1);
+        assert_eq!(v.no_segments, 1);
+        assert_eq!(v.warnings.len(), 3);
+
+        assert_eq!(
+            v.summary_line(),
+            "Anchor validation: 4 checked, 1 ok, 1 unresolved uid, 1 no segments, 1 missing segment"
+        );
+    }
+
+    #[test]
+    fn test_validate_anchors_warning_quotes_the_source_verbatim() {
+        let index = index_with(vec![sutta_ref_item("dn33:1.7.9.1", None)]);
+        let v = validate_anchors(&index, &test_segments_lookup);
+
+        // The headword is misspelled in the CSV (saṅkhāra); the warning must
+        // reproduce it as-is, with no "did you mean" substitution.
+        assert_eq!(
+            v.warnings[0],
+            "  missing segment: 'conditions (saṅkāra)' / 'all beings sustained by' -> dn33:1.7.9.1"
+        );
+    }
+
+    #[test]
+    fn test_validate_anchors_does_not_modify_the_index() {
+        let index = index_with(vec![
+            sutta_ref_item("dn33:1.7.9.1", Some("Saṅgītisutta")),
+            sutta_ref_item("zz99:1.1", None),
+        ]);
+
+        let before = serde_json::to_string(&index).unwrap();
+        let v = validate_anchors(&index, &test_segments_lookup);
+        let after = serde_json::to_string(&index).unwrap();
+
+        assert!(v.missing_segment > 0, "the fixture must contain a defect");
+        assert_eq!(before, after, "validation must report, never repair");
     }
 
     #[test]
