@@ -495,6 +495,7 @@ ColumnLayout {
                     RowLayout {
                         spacing: 12
                         visible: result_item.show_header
+                        Layout.fillWidth: true
                         Text {
                             text: result_item.sutta_ref
                             visible: result_item.sutta_ref !== ""
@@ -502,9 +503,30 @@ ColumnLayout {
                             font.bold: true
                             color: root.palette.active.text
                         }
-                        Text { text: result_item.sutta_title; font.pointSize: root.font_point_size; font.bold: true; color: root.palette.active.text }
-                        Item { Layout.fillWidth: true }
-                        Text { text: result_item.item_uid; font.pointSize: root.font_point_size; font.italic: true; color: root.palette.active.text }
+                        // The title takes the remaining space and elides, so the
+                        // uid on the right stays visible on narrow screens.
+                        Text {
+                            text: result_item.sutta_title
+                            font.pointSize: root.font_point_size
+                            font.bold: true
+                            color: root.palette.active.text
+                            // Elide towards the end of the title
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                        }
+                        Text {
+                            text: result_item.item_uid
+                            font.pointSize: root.font_point_size
+                            font.italic: true
+                            color: root.palette.active.text
+                            // Elide towards the beginning of the uid,
+                            // which might be the same as other results items above and below,
+                            // while the end of the uid is the translation author that distinguishes them
+                            elide: Text.ElideLeft
+                            Layout.maximumWidth: implicitWidth
+                            Layout.minimumWidth: 0
+                        }
                     }
 
                     // Snippet with highlighted HTML
