@@ -1100,11 +1100,19 @@ ${query_text}`;
         // displayed (e.g. clicking another snippet of the same record in
         // all-snippets mode), the content does not reload and onPage_loaded
         // won't fire — so the find must be run immediately instead.
+        //
+        // The anchor is captured alongside it because it is part of the URL: a
+        // *different* anchor on the same uid produces a different URL, so the
+        // page genuinely reloads and the wrapper's own scroll_timer fires. Only
+        // "same uid AND same anchor" leaves data_json unchanged, so that is the
+        // one case needing a direct scroll_to_anchor() call below.
         let already_open_uid = "";
+        let already_open_anchor = "";
         {
             let cur_item = sutta_html_view_layout.get_current_item();
             if (cur_item) {
                 already_open_uid = cur_item.get_data_value('item_uid') || "";
+                already_open_anchor = cur_item.get_data_value('anchor') || "";
             }
         }
         logger.debug("SHOW_RESULT: show_result_in_html_view() called - item_uid: " + result_data.item_uid + " new_tab: " + new_tab);
@@ -1121,6 +1129,20 @@ ${query_text}`;
         } else {
             // For updating existing tab, focus on ResultsTab_0
             root.focus_on_tab_with_id_key("ResultsTab_0");
+        }
+
+        // Clicking the same Topic Index link twice writes an identical
+        // data_json, so onData_jsonChanged never fires and the page neither
+        // reloads nor re-scrolls. Do the jump directly for that case only —
+        // keyed on uid AND anchor, because a same-uid/different-anchor click
+        // has a pending reload whose incoming DOM this would run ahead of.
+        if (tab_data.anchor && tab_data.anchor.length > 0 &&
+            already_open_uid === tab_data.item_uid &&
+            already_open_anchor === tab_data.anchor) {
+            let cur_item = sutta_html_view_layout.get_current_item();
+            if (cur_item) {
+                cur_item.scroll_to_anchor();
+            }
         }
 
         // Record navigation history (content replacement)
@@ -1228,6 +1250,12 @@ ${query_text}`;
                     anchor: tab_data.anchor || "",
                 };
                 comp.data_json = JSON.stringify(data);
+            } else if (tab_data.anchor && tab_data.anchor.length > 0) {
+                // The webview is not found the first time while the window objects
+                // are still being constructed (see the NOTE above). When that
+                // happens the data_json write is skipped and the anchor is lost,
+                // so the sutta opens at the top instead of at the cited paragraph.
+                logger.warn("add_results_tab(): webview not found for web_item_key '" + tab_data.web_item_key + "', anchor '" + tab_data.anchor + "' dropped for uid " + tab_data.item_uid);
             }
 
             if (tab_data.item_uid !== "Sutta" && tab_data.item_uid !== "Word") {

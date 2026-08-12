@@ -56,6 +56,15 @@ Loader {
         return loader.item ? loader.item.webview_height() : 0; // qmllint disable missing-property
     }
 
+    // Re-run the paragraph jump against the page already loaded. Only needed
+    // when neither the uid nor the anchor changed, since any change to either
+    // rewrites data_json and reloads the page (the anchor is part of the URL).
+    function scroll_to_anchor() {
+        if (loader.item) {
+            loader.item.scroll_to_anchor(); // qmllint disable missing-property
+        }
+    }
+
     function show_find_bar() {
         loader.item.show_find_bar(); // qmllint disable missing-property
     }

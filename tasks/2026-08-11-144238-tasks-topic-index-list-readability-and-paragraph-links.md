@@ -131,6 +131,7 @@ and the post-swap re-init contract) and
 - `backend/src/topic_index.rs` — `TopicIndexRef`; add the optional `suffix` field.
 - `assets/qml/TopicIndexWindow.qml` — layout rhythm, label formatting, `open_sutta()` anchor.
 - `assets/qml/SuttaSearchWindow.qml` — already-open-sutta re-scroll (`show_result_in_html_view()` `:1095`, existing-tab update `:1228`).
+- `assets/qml/SuttaHtmlView.qml` — the `Loader` wrapper; forwards `scroll_to_anchor()` to the platform view.
 - `assets/qml/SuttaHtmlView_Desktop.qml` — `scroll_to_anchor()`, anchor URL construction.
 - `assets/qml/SuttaHtmlView_Mobile.qml` — the mobile twin of the above.
 - `src-ts/anchor_jump.ts` (new) — candidate walk, highlight, notice; exposed on `window` for the wrappers to call.
@@ -370,7 +371,7 @@ abandoning (pajahati, pahāna)
 `modelData.suffix`; with an older JSON it is simply `undefined` and no suffix is
 appended).
 
-- [ ] 4.0 Topic Index window: sub-topic colon, vertical rhythm, and segment-id-free reference labels
+- [x] 4.0 Topic Index window: sub-topic colon, vertical rhythm, and segment-id-free reference labels
   - [x] 4.1 In the sub-topic `Text` (`TopicIndexWindow.qml:461-473`), append `":"` after the `highlight_query_terms()` result when the sub is non-empty and not `"—"`. Leave the `visible:` binding as it is.
   - [x] 4.2 Add `Layout.topMargin` to the sub-topic `ColumnLayout` (`:451-459`): roughly one blank line (`root.pointSize * 1.2` or similar, tuned by eye) when `sub_topic.index > 0` **and** the entry has a real sub label; `0` otherwise.
   - [x] 4.3 Increase the links `Flow`'s `Layout.leftMargin` (`:477`) modestly for entries that have a sub label, keeping `0` for those that do not, so the parent/child relation reads clearly (requirement 5).
@@ -428,14 +429,14 @@ conversion, so keep that shape and carry the full `sutta_ref` separately.
 **Dependencies:** none beyond task 4 sharing the same file.
 
 - [ ] 5.0 Route the segment id through the existing `anchor` path and re-scroll an already-open sutta
-  - [ ] 5.1 In `TopicIndexWindow.qml`'s `open_sutta()` (`:189-212`), replace the `segment_id` key with `anchor`, carrying the **full** segment id (`dn33:1.11.0`), and empty string when the ref has no `:` (requirement 37).
-  - [ ] 5.2 Verify by reading `SuttaSearchWindow.qml:367` that `new_tab_data()` copies `anchor` from the result data onto the tab, and `:1228` that the existing-tab update path does too — i.e. that no further plumbing is needed for the in-place mode.
-  - [ ] 5.3 Confirm the new-window mode: the trace to `WindowManager::open_sutta_search_window_with_query()` (`cpp/window_manager.cpp:497`) shows it reaches the same `show_result_in_html_view_with_json`, so no pass-through is missing. Instead check the risk named above — that the tab-0 update branch (`SuttaSearchWindow.qml:1210-1240`) finds its webview on a freshly constructed window; if `get_item()` returns nothing, `data_json` (and the anchor) is dropped without a log line. Add a `logger.warn()` there if it can miss.
-  - [ ] 5.4 In `show_result_in_html_view()` (`SuttaSearchWindow.qml:1095`), extend the existing `already_open_uid` capture — which today exists only for the find-bar (`:1096-1108`) — to capture the current item's **`anchor` as well**, and invoke that item's `scroll_to_anchor()` directly **only when the uid and the anchor are both unchanged** (§6.6, §6.15). Do **not** key this on the uid alone: a same-uid/different-anchor click already reloads via the URL, and an eager call would run against the outgoing DOM.
-  - [ ] 5.5 That direct call is what makes clicking the *same* link twice, after scrolling away, re-scroll rather than do nothing (§6.15 / open question 4 — the PRD's own recommendation, one line). Verify it runs *after* the `data_json` write, so the no-change case is unambiguous.
-  - [ ] 5.6 Confirm a ref with no segment id still opens at the top with no `anchor` query parameter and no highlight (requirement 37) — the empty-string anchor must fall through the `root.anchor && root.anchor.length > 0` guards in both wrappers.
-  - [ ] 5.7 Check every log call added or touched in this group uses `logger.<level>()` with a **single concatenated string**.
-  - [ ] 5.8 Run `make qml-test` and `qmllint` on both changed QML files.
+  - [x] 5.1 In `TopicIndexWindow.qml`'s `open_sutta()` (`:189-212`), replace the `segment_id` key with `anchor`, carrying the **full** segment id (`dn33:1.11.0`), and empty string when the ref has no `:` (requirement 37).
+  - [x] 5.2 Verify by reading `SuttaSearchWindow.qml:367` that `new_tab_data()` copies `anchor` from the result data onto the tab, and `:1228` that the existing-tab update path does too — i.e. that no further plumbing is needed for the in-place mode.
+  - [x] 5.3 Confirm the new-window mode: the trace to `WindowManager::open_sutta_search_window_with_query()` (`cpp/window_manager.cpp:497`) shows it reaches the same `show_result_in_html_view_with_json`, so no pass-through is missing. Instead check the risk named above — that the tab-0 update branch (`SuttaSearchWindow.qml:1210-1240`) finds its webview on a freshly constructed window; if `get_item()` returns nothing, `data_json` (and the anchor) is dropped without a log line. Add a `logger.warn()` there if it can miss.
+  - [x] 5.4 In `show_result_in_html_view()` (`SuttaSearchWindow.qml:1095`), extend the existing `already_open_uid` capture — which today exists only for the find-bar (`:1096-1108`) — to capture the current item's **`anchor` as well**, and invoke that item's `scroll_to_anchor()` directly **only when the uid and the anchor are both unchanged** (§6.6, §6.15). Do **not** key this on the uid alone: a same-uid/different-anchor click already reloads via the URL, and an eager call would run against the outgoing DOM.
+  - [x] 5.5 That direct call is what makes clicking the *same* link twice, after scrolling away, re-scroll rather than do nothing (§6.15 / open question 4 — the PRD's own recommendation, one line). Verify it runs *after* the `data_json` write, so the no-change case is unambiguous.
+  - [x] 5.6 Confirm a ref with no segment id still opens at the top with no `anchor` query parameter and no highlight (requirement 37) — the empty-string anchor must fall through the `root.anchor && root.anchor.length > 0` guards in both wrappers.
+  - [x] 5.7 Check every log call added or touched in this group uses `logger.<level>()` with a **single concatenated string**.
+  - [x] 5.8 Run `make qml-test` and `qmllint` on both changed QML files.
 
 ---
 

@@ -207,7 +207,10 @@ ApplicationWindow {
             const result_data = JSON.stringify({
                                                    item_uid: full_uid,
                                                    table_name: "suttas",
-                                                   segment_id: sutta_ref.includes(":") ? sutta_ref : ""
+                                                   // Full segment id ("dn33:1.11.0"), carried through
+                                                   // the tab data to the webview's anchor URL. Empty
+                                                   // when the reference cites no paragraph.
+                                                   anchor: sutta_ref.includes(":") ? sutta_ref : ""
                                                });
 
             if (root.open_in_new_window) {
