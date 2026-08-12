@@ -371,14 +371,14 @@ abandoning (pajahati, pahāna)
 appended).
 
 - [ ] 4.0 Topic Index window: sub-topic colon, vertical rhythm, and segment-id-free reference labels
-  - [ ] 4.1 In the sub-topic `Text` (`TopicIndexWindow.qml:461-473`), append `":"` after the `highlight_query_terms()` result when the sub is non-empty and not `"—"`. Leave the `visible:` binding as it is.
-  - [ ] 4.2 Add `Layout.topMargin` to the sub-topic `ColumnLayout` (`:451-459`): roughly one blank line (`root.pointSize * 1.2` or similar, tuned by eye) when `sub_topic.index > 0` **and** the entry has a real sub label; `0` otherwise.
-  - [ ] 4.3 Increase the links `Flow`'s `Layout.leftMargin` (`:477`) modestly for entries that have a sub label, keeping `0` for those that do not, so the parent/child relation reads clearly (requirement 5).
-  - [ ] 4.4 Confirm the headword highlight `Rectangle` still spans the full entry after the margin change — it is bound to `headword_column.height`, so verify the margins are inside that column and not on it.
-  - [ ] 4.5 Change `format_sutta_ref()` (`:180-188`) to strip the segment id: take the part before `:` before applying the existing letter/number spacing (requirements 6, 7). Keep the function's name and its `toUpperCase()` fallback.
-  - [ ] 4.6 In the ref delegate's `text` binding (`:487-494`), append `" (" + modelData.suffix + ")"` when `modelData.suffix` is a non-empty string (requirements 9, 10). Guard for `undefined` so an older JSON renders unchanged. Do **not** compute collisions in QML.
-  - [ ] 4.7 Confirm the `xref` branch of the same binding, its styling and its click handler are untouched (requirements 4, 13).
-  - [ ] 4.8 Run `make qml-test` and `qmllint` on `TopicIndexWindow.qml`; confirm no new warnings.
+  - [x] 4.1 In the sub-topic `Text` (`TopicIndexWindow.qml:461-473`), append `":"` after the `highlight_query_terms()` result when the sub is non-empty and not `"—"`. Leave the `visible:` binding as it is.
+  - [x] 4.2 Add `Layout.topMargin` to the sub-topic `ColumnLayout` (`:451-459`): roughly one blank line (`root.pointSize * 1.2` or similar, tuned by eye) when `sub_topic.index > 0` **and** the entry has a real sub label; `0` otherwise.
+  - [x] 4.3 Increase the links `Flow`'s `Layout.leftMargin` (`:477`) modestly for entries that have a sub label, keeping `0` for those that do not, so the parent/child relation reads clearly (requirement 5).
+  - [x] 4.4 Confirm the headword highlight `Rectangle` still spans the full entry after the margin change — it is bound to `headword_column.height`, so verify the margins are inside that column and not on it.
+  - [x] 4.5 Change `format_sutta_ref()` (`:180-188`) to strip the segment id: take the part before `:` before applying the existing letter/number spacing (requirements 6, 7). Keep the function's name and its `toUpperCase()` fallback.
+  - [x] 4.6 In the ref delegate's `text` binding (`:487-494`), append `" (" + modelData.suffix + ")"` when `modelData.suffix` is a non-empty string (requirements 9, 10). Guard for `undefined` so an older JSON renders unchanged. Do **not** compute collisions in QML.
+  - [x] 4.7 Confirm the `xref` branch of the same binding, its styling and its click handler are untouched (requirements 4, 13).
+  - [x] 4.8 Run `make qml-test` and `qmllint` on `TopicIndexWindow.qml`; confirm no new warnings.
 
 ---
 

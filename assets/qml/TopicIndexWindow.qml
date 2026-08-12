@@ -179,12 +179,19 @@ ApplicationWindow {
     }
 
     function format_sutta_ref(sutta_ref: string): string {
-        // Format sutta reference with space: "dn33:1.11.0" -> "DN 33:1.11.0"
-        const match = sutta_ref.match(/^([a-z]+)(\d.*)$/i);
+        // Format sutta reference with space, dropping the segment id:
+        // "dn33:1.11.0" -> "DN 33". The segment id is used for the paragraph
+        // jump, never displayed.
+        //
+        // This must stay in step with `display_label()` in
+        // cli/src/bootstrap/parse_cips_index.rs, which computes the
+        // disambiguation suffixes from the same displayed string.
+        const ref_only = sutta_ref.includes(":") ? sutta_ref.split(":")[0] : sutta_ref;
+        const match = ref_only.match(/^([a-z]+)(\d.*)$/i);
         if (match) {
             return match[1].toUpperCase() + " " + match[2];
         }
-        return sutta_ref.toUpperCase();
+        return ref_only.toUpperCase();
     }
 
     function open_sutta(sutta_ref: string) {
@@ -453,28 +460,38 @@ ApplicationWindow {
                                     required property var modelData
                                     required property int index
 
+                                    readonly property bool has_sub_label: sub_topic.modelData.sub && sub_topic.modelData.sub !== "—" && sub_topic.modelData.sub.length > 0
+
                                     Layout.fillWidth: true
                                     Layout.leftMargin: 20
+                                    // Space above each labelled sub-topic, so
+                                    // "label: + its links" reads as one block. Not on the
+                                    // first entry (no double gap under the headword), and
+                                    // not for entries without a label.
+                                    Layout.topMargin: (sub_topic.index > 0 && sub_topic.has_sub_label) ? Math.round(root.pointSize * 0.8) : 0
                                     spacing: 2
 
                                     // Sub-entry text
                                     Text {
                                         Layout.fillWidth: true
                                         text: {
-                                            const text = sub_topic.modelData.sub && sub_topic.modelData.sub !== "—" ? sub_topic.modelData.sub : "";
-                                            return root.highlight_query_terms(text);
+                                            if (!sub_topic.has_sub_label)
+                                                return "";
+                                            // The colon is presentation only: appended after
+                                            // highlighting so it never enters search matching.
+                                            return root.highlight_query_terms(sub_topic.modelData.sub) + ":";
                                         }
                                         font.pointSize: root.pointSize
                                         color: palette.text
                                         wrapMode: Text.Wrap
                                         textFormat: Text.RichText
-                                        visible: sub_topic.modelData.sub && sub_topic.modelData.sub !== "—" && sub_topic.modelData.sub.length > 0
+                                        visible: sub_topic.has_sub_label
                                     }
 
                                     // References
                                     Flow {
                                         Layout.fillWidth: true
-                                        Layout.leftMargin: sub_topic.modelData.sub && sub_topic.modelData.sub !== "—" ? 10 : 0
+                                        Layout.leftMargin: sub_topic.has_sub_label ? 16 : 0
                                         spacing: 8
 
                                         Repeater {
@@ -489,7 +506,14 @@ ApplicationWindow {
                                                         return "• see: " + ref_item.modelData.ref_target;
                                                     } else {
                                                         const formatted_ref = root.format_sutta_ref(ref_item.modelData.sutta_ref);
-                                                        return ref_item.modelData.title ? formatted_ref + " " + ref_item.modelData.title : formatted_ref;
+                                                        let label = ref_item.modelData.title ? formatted_ref + " " + ref_item.modelData.title : formatted_ref;
+                                                        // Disambiguation letter, pre-computed at build time by
+                                                        // parse-cips-index. Absent when the label is unique.
+                                                        const suffix = ref_item.modelData.suffix;
+                                                        if (typeof suffix === "string" && suffix.length > 0) {
+                                                            label += " (" + suffix + ")";
+                                                        }
+                                                        return label;
                                                     }
                                                 }
                                                 font.pointSize: root.pointSize
