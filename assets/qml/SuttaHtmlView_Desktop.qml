@@ -20,6 +20,17 @@ Item {
     property string table_name
     property string sutta_ref
     property string sutta_title
+    // The cited Bilara segment id, carried in the sutta URL as both
+    // ?anchor= and the fragment. It is deliberately NOT cleared once the jump
+    // resolves, so a reload of this view re-applies it — which also means the
+    // server's "an anchor forces the reference numbers on" rule fires again,
+    // overriding a Show references = Off choice the reader made in the
+    // cogwheel on that page. That is accepted: the only paths that rebuild
+    // the URL are a data_json change (switching to another translation of the
+    // same sutta, where re-jumping to the cited paragraph is what the reader
+    // wants) and a fresh view, both of which are genuine new page loads.
+    // Clearing it would break the same-link-twice re-scroll below, which
+    // reads it. See docs/sutta-display-settings-and-multi-column-view.md.
     property string anchor
 
     property alias web: web

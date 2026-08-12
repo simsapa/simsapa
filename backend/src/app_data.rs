@@ -385,7 +385,6 @@ impl AppData {
     pub fn resolve_sutta_display_options(
         &self,
         sutta: &Sutta,
-        show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> SuttaDisplayOptions {
         let pali_uid = if overrides.columns.is_none() {
@@ -401,7 +400,7 @@ impl AppData {
         };
         let mut options = {
             let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), show_references, overrides)
+            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), overrides)
         };
 
         // The Pāli placement (first column; repeated per repeat_pali) is
@@ -782,10 +781,12 @@ impl AppData {
     /// endpoint (api.rs::get_sutta_html_by_uid, via the shared
     /// `sutta_html_response` helper) to ensure consistent behavior.
     ///
-    /// The `show_references` parameter controls whether segment reference anchors are rendered.
-    /// This should be true when the sutta was requested with an anchor ID to scroll to.
-    pub fn render_sutta_html_by_uid(&self, window_id: &str, sutta_uid: &str, show_references: bool) -> String {
-        self.render_sutta_html_by_uid_with_overrides(window_id, sutta_uid, show_references, &SuttaDisplayOverrides::default())
+    /// Whether the per-segment reference anchors are rendered comes from the
+    /// resolved display options: `SuttaDisplayOverrides::show_references` when
+    /// set (the API routes set it from an `anchor` parameter or an explicit
+    /// request parameter), otherwise the persisted default.
+    pub fn render_sutta_html_by_uid(&self, window_id: &str, sutta_uid: &str) -> String {
+        self.render_sutta_html_by_uid_with_overrides(window_id, sutta_uid, &SuttaDisplayOverrides::default())
     }
 
     /// `render_sutta_html_by_uid` with explicit display overrides (from the
@@ -798,10 +799,9 @@ impl AppData {
         &self,
         window_id: &str,
         sutta_uid: &str,
-        show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> String {
-        self.try_render_sutta_html_by_uid_with_overrides(window_id, sutta_uid, show_references, overrides)
+        self.try_render_sutta_html_by_uid_with_overrides(window_id, sutta_uid, overrides)
             .unwrap_or_else(|_| {
                 let body_class = {
                     let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
@@ -821,7 +821,6 @@ impl AppData {
         &self,
         window_id: &str,
         sutta_uid: &str,
-        show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> Result<String> {
         // Guard scoped to the value copy: resolve_sutta_display_options and
@@ -845,7 +844,7 @@ impl AppData {
             Some(sutta) => {
                 // Render the sutta with WINDOW_ID in the JavaScript
                 let js_extra = format!("const WINDOW_ID = '{}'; window.WINDOW_ID = WINDOW_ID;", window_id);
-                let options = self.resolve_sutta_display_options(&sutta, show_references, overrides);
+                let options = self.resolve_sutta_display_options(&sutta, overrides);
                 self.render_sutta_content(&sutta, None, Some(js_extra), &options)
             },
             None => Ok(blank_page_html),

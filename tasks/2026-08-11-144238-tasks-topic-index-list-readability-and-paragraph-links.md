@@ -140,6 +140,7 @@ and the post-swap re-init contract) and
 - `assets/sass/_anchor_jump.scss` (new) — highlight + notice styling.
 - `assets/sass/suttas.sass` — `@include meta.load-css("anchor_jump")`.
 - `assets/sass/_find.scss` — reference for the existing light/dark highlight pair (`:242-258`).
+- `assets/sass/_suttacentral.sass` — the Columns-layout `span.segment` flex row; needed `flex-wrap: wrap` for the full-width reference line (see the review note below).
 - `backend/src/app_settings.rs` — `SuttaDisplayDefaults` (`:469`) and its `Default` impl (`:485`).
 - `backend/src/sutta_display.rs` — `SuttaDisplayOverrides` / `SuttaDisplayOptions::resolve` / the GET-param parser.
 - `backend/src/app_data.rs` — `resolve_sutta_display_options()` (`:385`), `sutta_display_js()` (`:646-655`).
@@ -581,24 +582,24 @@ changes (§6.2).
 **Dependencies:** independent of tasks 1–6, but requirement 44 (the scroll must
 work with references **off**) is only testable once task 6 exists.
 
-- [ ] 7.0 "Show references" as a persisted display option with anchor-forced precedence
-  - [ ] 7.1 Add `show_references: bool` to `SuttaDisplayDefaults` (`app_settings.rs:469`) and set it `false` in the `Default` impl (`:485`). **No per-field `#[serde(default)]`** — the struct already carries one at `:468`, which is what lets existing settings rows load (§6.17).
-  - [ ] 7.2 Add `show_references: Option<bool>` to `SuttaDisplayOverrides` (`sutta_display.rs:16`) and remove the positional `show_references: bool` parameter from `SuttaDisplayOptions::resolve` (`:41`), resolving it as `overrides.show_references.unwrap_or(app_settings.sutta_display.show_references)`.
-  - [ ] 7.3 Remove the positional parameter from `AppData::resolve_sutta_display_options` (`app_data.rs:385`) and update its internal call (`:404`).
-  - [ ] 7.4 Update `sutta_html_response()` (`api.rs:719-741`): delete `let show_references = anchor.is_some();` and instead set `overrides.show_references = Some(true)` when `anchor.is_some()` — precedence rule 2. Update the call at `:741` and the helper it calls (`try_render_sutta_html_by_uid_with_overrides`).
-  - [ ] 7.5 Update `/sutta_content_block` (`api.rs:1651/1667`) to put its existing `show_references: Option<bool>` query parameter into the overrides (precedence rule 1) rather than passing `unwrap_or(false)`.
-  - [ ] 7.6 Check the shared GET-parameter parser in `sutta_display.rs` (the `layout` / `columns` / `repeat_pali` one) and decide whether `show_references` belongs there too; if it does, add it and use it from all three routes for consistency.
-  - [ ] 7.7 Confirm `sutta_display_js()` (`app_data.rs:646-655`) now serializes the new field inside `defaults` for free, and that `SUTTA_DISPLAY.show_references` still carries the **effective** value.
-  - [ ] 7.8 Add the control to `assets/templates/display_settings.html`: a `ds-label` "Show references" plus a `ds-segmented` with `data-setting="show-references"` and `Off` / `On` buttons, placed **after** the Repeat Pāli control and **before** Width (§7, requirement 39).
-  - [ ] 7.9 In `src-ts/display_settings.ts`: add `show_references: boolean` to `SuttaDisplaySettings`, `false` in `built_in_defaults()`, the read in `merged_settings()` (`typeof === "boolean"`, **not** `||` — see above), a `set_show_references(v)` mirroring `set_repeat_pali()` (`:320-328`), the `case "show-references":` in the segmented-control switch (`:899`), and the `sync_controls()` line beside the repeat-pali one (`:438-441`). Note the segmented control's `data-value` arrives as a **string** (`"on"`/`"off"`) — convert once in the `case`, do not store the string.
-  - [ ] 7.10 Seed it in `init_display_settings()` (`:1005-1015`) from `sd.show_references` — using `typeof sd.show_references === "boolean"`, not truthiness, so an explicit `false` is honoured — and confirm no POST is scheduled by that seeding (requirement 46).
-  - [ ] 7.11 Widen `rerender_handler` to `(layout, repeat_pali, show_references)` (`:69`, `:73`, `:79`), update `request_rerender()`, and update the wiring in `src-ts/simsapa.ts:170-172`.
-  - [ ] 7.12 Widen `refetch_with_params()` (`content_reload.ts:218-224`) to take `show_references` as a parameter instead of reading `SUTTA_DISPLAY.show_references` (requirement 45), leaving `build_content_block_url()` and the post-swap write-back (`:130`) as they are.
-  - [ ] 7.13 Confirm `reset_all()` (`display_settings.ts:359-372`) requests a re-render when `show_references` changed, alongside its existing layout/repeat-pali comparison.
-  - [ ] 7.14 Extend `src-ts/display_settings.test.ts` (the new setting's state, scope semantics, and that seeding does not POST) and `src-ts/content_reload.test.ts` (`:26`, `:31-33`, `:141-149` already assert on `show_references` in the URL — extend for the new parameter shape).
-  - [ ] 7.15 Settle requirement 45's scope limit (PRD open question 5): the user's "off" choice lives in the page, so any **full reload** of that tab rebuilds the URL from the wrapper's still-set `root.anchor` and rule 2 forces references back on. Either clear `root.anchor` in `SuttaHtmlView_{Desktop,Mobile}.qml` once the jump has resolved, or record the behaviour as accepted in the doc (8.1). Do not leave it undecided.
-  - [ ] 7.16 Confirm no work is needed for the persist path: `POST /save_sutta_display_settings` (`api.rs:1717`) takes the whole `SuttaDisplayDefaults` and the client posts its whole settings object, so C17 lands with 7.1 + 7.9. Verify by round-tripping in a Rust test rather than by inspection.
-  - [ ] 7.17 Run `npx webpack`, `make js-test`, `make rust-test`, and `make build -B`.
+- [x] 7.0 "Show references" as a persisted display option with anchor-forced precedence
+  - [x] 7.1 Add `show_references: bool` to `SuttaDisplayDefaults` (`app_settings.rs:469`) and set it `false` in the `Default` impl (`:485`). **No per-field `#[serde(default)]`** — the struct already carries one at `:468`, which is what lets existing settings rows load (§6.17).
+  - [x] 7.2 Add `show_references: Option<bool>` to `SuttaDisplayOverrides` (`sutta_display.rs:16`) and remove the positional `show_references: bool` parameter from `SuttaDisplayOptions::resolve` (`:41`), resolving it as `overrides.show_references.unwrap_or(app_settings.sutta_display.show_references)`.
+  - [x] 7.3 Remove the positional parameter from `AppData::resolve_sutta_display_options` (`app_data.rs:385`) and update its internal call (`:404`).
+  - [x] 7.4 Update `sutta_html_response()` (`api.rs:719-741`): delete `let show_references = anchor.is_some();` and instead set `overrides.show_references = Some(true)` when `anchor.is_some()` — precedence rule 2. Update the call at `:741` and the helper it calls (`try_render_sutta_html_by_uid_with_overrides`).
+  - [x] 7.5 Update `/sutta_content_block` (`api.rs:1651/1667`) to put its existing `show_references: Option<bool>` query parameter into the overrides (precedence rule 1) rather than passing `unwrap_or(false)`.
+  - [x] 7.6 Check the shared GET-parameter parser in `sutta_display.rs` (the `layout` / `columns` / `repeat_pali` one) and decide whether `show_references` belongs there too; if it does, add it and use it from all three routes for consistency.
+  - [x] 7.7 Confirm `sutta_display_js()` (`app_data.rs:646-655`) now serializes the new field inside `defaults` for free, and that `SUTTA_DISPLAY.show_references` still carries the **effective** value.
+  - [x] 7.8 Add the control to `assets/templates/display_settings.html`: a `ds-label` "Show references" plus a `ds-segmented` with `data-setting="show-references"` and `Off` / `On` buttons, placed **after** the Repeat Pāli control and **before** Width (§7, requirement 39).
+  - [x] 7.9 In `src-ts/display_settings.ts`: add `show_references: boolean` to `SuttaDisplaySettings`, `false` in `built_in_defaults()`, the read in `merged_settings()` (`typeof === "boolean"`, **not** `||` — see above), a `set_show_references(v)` mirroring `set_repeat_pali()` (`:320-328`), the `case "show-references":` in the segmented-control switch (`:899`), and the `sync_controls()` line beside the repeat-pali one (`:438-441`). Note the segmented control's `data-value` arrives as a **string** (`"on"`/`"off"`) — convert once in the `case`, do not store the string.
+  - [x] 7.10 Seed it in `init_display_settings()` (`:1005-1015`) from `sd.show_references` — using `typeof sd.show_references === "boolean"`, not truthiness, so an explicit `false` is honoured — and confirm no POST is scheduled by that seeding (requirement 46).
+  - [x] 7.11 Widen `rerender_handler` to `(layout, repeat_pali, show_references)` (`:69`, `:73`, `:79`), update `request_rerender()`, and update the wiring in `src-ts/simsapa.ts:170-172`.
+  - [x] 7.12 Widen `refetch_with_params()` (`content_reload.ts:218-224`) to take `show_references` as a parameter instead of reading `SUTTA_DISPLAY.show_references` (requirement 45), leaving `build_content_block_url()` and the post-swap write-back (`:130`) as they are.
+  - [x] 7.13 Confirm `reset_all()` (`display_settings.ts:359-372`) requests a re-render when `show_references` changed, alongside its existing layout/repeat-pali comparison.
+  - [x] 7.14 Extend `src-ts/display_settings.test.ts` (the new setting's state, scope semantics, and that seeding does not POST) and `src-ts/content_reload.test.ts` (`:26`, `:31-33`, `:141-149` already assert on `show_references` in the URL — extend for the new parameter shape).
+  - [x] 7.15 Settle requirement 45's scope limit (PRD open question 5): the user's "off" choice lives in the page, so any **full reload** of that tab rebuilds the URL from the wrapper's still-set `root.anchor` and rule 2 forces references back on. Either clear `root.anchor` in `SuttaHtmlView_{Desktop,Mobile}.qml` once the jump has resolved, or record the behaviour as accepted in the doc (8.1). Do not leave it undecided.
+  - [x] 7.16 Confirm no work is needed for the persist path: `POST /save_sutta_display_settings` (`api.rs:1717`) takes the whole `SuttaDisplayDefaults` and the client posts its whole settings object, so C17 lands with 7.1 + 7.9. Verify by round-tripping in a Rust test rather than by inspection.
+  - [x] 7.17 Run `npx webpack`, `make js-test`, `make rust-test`, and `make build -B`.
 
 ---
 
@@ -690,6 +691,37 @@ documents were spot-checked and are accurate.
   differences in `sutta_ref`, `title`, `suffix`, `headword`, `sub` or `letter`.
   Ref counts are unchanged (19,965 sutta / 1,826 xref / 55 suffixed), and the
   content is identical to the pre-change output apart from xref ordering.
+- **The reference anchor's placement in the multi-column builder was wrong, and
+  had been all along** (found by the user on the first visual check of task 7;
+  **not** introduced by it — an anchor navigation in Columns layout would have
+  shown it too, which is why PRD §7 asks for the check in *both* layouts).
+  It was emitted as a child of `span.segment`, i.e. as a sibling of the
+  `colcell` spans — and `span.segment` is the flex row in Columns mode. Two
+  defects, in this order:
+  1. With `flex: 0 0 100%; order: -1` and no `flex-wrap` on the container, the
+     reference shared the single flex line and squeezed every cell to zero
+     width (`min-width: 0`): the text rendered as an invisible
+     one-character-per-line column. Adding `flex-wrap` fixed *that*, but only
+     by giving the reference a line of its own.
+  2. A line per segment is a lot of vertical space, in **both** Lines and
+     Columns. Solo mode has always had it right — inline at the start of the
+     paragraph.
+
+  **Resolved by moving the anchor into the `col-0` cell** in
+  `bilara_multi_column_html` (`helpers.rs`), inline before that cell's text,
+  matching the single-document renderer. All the special CSS then goes away
+  (both `flex: 0 0 100%; order: -1` and the `flex-wrap`), and — the reason to
+  prefer this over a left gutter — the Columns stripe geometry in
+  `column_bg_gradient()` (`src-ts/display_settings.ts`) and the
+  `.column-headers` alignment stay functions of the cells alone. One
+  consequence: the label inherits the host cell's font scale, so
+  `span.colcell.pali span.reference` carries a compensating `1.25em` against
+  the Pāli cell's `0.8em` default. `test_multi_column_reference_anchors` pins
+  the placement in both directions.
+
+  **Rule for anything else injected per segment** (the task 6 notice included):
+  `span.segment` is a layout container in the multi-column layouts — put content
+  in a cell or outside the segment, never as a third child.
 - **Task 5.4 was corrected during review.** The original framing ("when the uid
   is unchanged, no `LoadSucceededStatus` fires") is wrong: the anchor is part of
   the URL, so a different anchor on an open sutta already reloads and scrolls.

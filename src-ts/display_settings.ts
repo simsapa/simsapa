@@ -27,6 +27,10 @@ export interface SuttaDisplaySettings {
   // Reading-measure width as percent of the base sutta_max_width (100 =
   // unchanged); applied as the --width-scale CSS var.
   width_percent: number;
+  // The SuttaCentral-style per-segment reference numbers. An anchor
+  // navigation forces them on for that render regardless of this default;
+  // see docs/sutta-display-settings-and-multi-column-view.md.
+  show_references: boolean;
   pali_font: SuttaFontGroup;
   translation_font: SuttaFontGroup;
   author_ink_colors: Record<string, string>;
@@ -49,6 +53,7 @@ export function built_in_defaults(): SuttaDisplaySettings {
     layout: "linebyline",
     repeat_pali: "off",
     width_percent: 100,
+    show_references: false,
     pali_font: { family_kind: "sans", size_percent: 80, line_height_percent: 150, bold: false, italic: false },
     translation_font: { family_kind: "serif", size_percent: 100, line_height_percent: 150, bold: false, italic: false },
     author_ink_colors: {},
@@ -66,17 +71,23 @@ const MAX_COLOR_COLUMNS = 12;
 
 let settings: SuttaDisplaySettings = built_in_defaults();
 let scope: Scope = "save_default";
-let rerender_handler: ((layout: string, repeat_pali: string) => void) | null = null;
+// The stored `show_references` default this page was rendered against, and
+// whether the reader has operated the control since. See settings_to_persist().
+let persisted_show_references = false;
+let show_references_user_set = false;
+let rerender_handler: ((layout: string, repeat_pali: string, show_references: boolean) => void) | null = null;
 
 // Wired in simsapa.ts init to content_reload.ts's content-block re-render.
-// Fired on render-affecting changes (layout, Repeat Pāli).
-export function set_rerender_handler(handler: (layout: string, repeat_pali: string) => void): void {
+// Fired on render-affecting changes (layout, Repeat Pāli, Show references).
+// The re-fetch carries the client's current `show_references` so the user's
+// choice survives a later layout change (it is precedence rule 1 server-side).
+export function set_rerender_handler(handler: (layout: string, repeat_pali: string, show_references: boolean) => void): void {
   rerender_handler = handler;
 }
 
 function request_rerender(): void {
   if (rerender_handler) {
-    rerender_handler(settings.layout, settings.repeat_pali);
+    rerender_handler(settings.layout, settings.repeat_pali, settings.show_references);
   }
 }
 
@@ -105,6 +116,11 @@ function merged_settings(defaults_json: any): SuttaDisplaySettings {
     layout: defaults_json.layout || base.layout,
     repeat_pali: defaults_json.repeat_pali || base.repeat_pali,
     width_percent: defaults_json.width_percent || base.width_percent,
+    // A boolean must be read with a typeof check, not `||`: that shape
+    // silently discards an explicit `false`.
+    show_references: typeof defaults_json.show_references === "boolean"
+      ? defaults_json.show_references
+      : base.show_references,
     pali_font: { ...base.pali_font, ...(defaults_json.pali_font || {}) },
     translation_font: { ...base.translation_font, ...(defaults_json.translation_font || {}) },
     author_ink_colors: { ...(defaults_json.author_ink_colors || {}) },
@@ -223,13 +239,32 @@ export function column_bg_gradient(
   return `linear-gradient(to right, ${stops.join(", ")})`;
 }
 
+/**
+ * The settings object as it should be *persisted*, which is not always the
+ * state the page is rendered with.
+ *
+ * `show_references` is seeded from the effective render value, which an anchor
+ * navigation forces to true whatever the stored default is. That seeded value
+ * must never reach the stored default — otherwise arriving from the Topic Index
+ * and then changing something unrelated (Width, a font) would silently turn the
+ * reference numbers on for good, since the panel posts its whole settings
+ * object. So until the reader actually operates the control, the stored default
+ * this page was given is what gets posted back.
+ */
+function settings_to_persist(): SuttaDisplaySettings {
+  if (show_references_user_set) {
+    return settings;
+  }
+  return { ...settings, show_references: persisted_show_references };
+}
+
 async function post_settings(keepalive: boolean = false): Promise<void> {
   const API_URL = (globalThis as any).API_URL || "http://localhost:4848";
   try {
     const response = await fetch(`${API_URL}/save_sutta_display_settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
+      body: JSON.stringify(settings_to_persist()),
       // keepalive lets the pagehide flush survive the page teardown.
       keepalive,
     });
@@ -328,6 +363,20 @@ export function set_repeat_pali(repeat_pali: string): void {
   }
 }
 
+export function set_show_references(show_references: boolean): void {
+  if (settings.show_references === show_references) {
+    return;
+  }
+  settings.show_references = show_references;
+  // From here on this is the reader's choice, so it is what gets persisted —
+  // not the value the render was forced to (see settings_to_persist()).
+  show_references_user_set = true;
+  request_rerender();
+  if (scope === "save_default") {
+    schedule_post();
+  }
+}
+
 /**
  * The Repeat Pāli column arrangement, mirroring the server's
  * `AppData::arrange_repeat_pali` (keep the two in sync): the first Pāli
@@ -360,11 +409,18 @@ export function arrange_display_columns(
 export function reset_all(): void {
   const previous_layout = settings.layout;
   const previous_repeat_pali = settings.repeat_pali;
+  const previous_show_references = settings.show_references;
   settings = built_in_defaults();
+  // An explicit "reset to defaults" is a user decision about the stored value,
+  // so the built-in `false` is what should be persisted from here on — not the
+  // default this page happened to be rendered against.
+  show_references_user_set = true;
   sync_controls();
   render_color_rows();
   apply_css_vars();
-  if (settings.layout !== previous_layout || settings.repeat_pali !== previous_repeat_pali) {
+  if (settings.layout !== previous_layout
+      || settings.repeat_pali !== previous_repeat_pali
+      || settings.show_references !== previous_show_references) {
     request_rerender();
   }
   if (scope === "save_default") {
@@ -438,6 +494,11 @@ function sync_controls(): void {
   const repeat_seg = panel.querySelector<HTMLElement>(".ds-segmented[data-setting='repeat-pali']");
   if (repeat_seg) {
     set_segmented_active(repeat_seg, settings.repeat_pali);
+  }
+
+  const references_seg = panel.querySelector<HTMLElement>(".ds-segmented[data-setting='show-references']");
+  if (references_seg) {
+    set_segmented_active(references_seg, settings.show_references ? "on" : "off");
   }
 
   const width = panel.querySelector<HTMLInputElement>("input.ds-width");
@@ -899,6 +960,11 @@ function wire_panel(): void {
           case "repeat-pali":
             set_repeat_pali(value);
             break;
+          case "show-references":
+            // The segmented control's data-value is the string "on"/"off";
+            // convert here so only a boolean is ever stored.
+            set_show_references(value === "on");
+            break;
           case "width-preset": {
             settings.width_percent = Number(value);
             const width_slider = panel.querySelector<HTMLInputElement>("input.ds-width");
@@ -1004,6 +1070,10 @@ export function init_display_settings(): void {
 
   const sd = (globalThis as any).SUTTA_DISPLAY;
   settings = merged_settings(sd ? sd.defaults : null);
+  // Captured before the effective-value seeding below overwrites it, and it is
+  // what every POST carries until the reader operates the control.
+  persisted_show_references = settings.show_references;
+  show_references_user_set = false;
   if (sd && sd.layout) {
     // The page may have been rendered with a GET-param layout override;
     // the panel reflects the effective layout.
@@ -1011,6 +1081,13 @@ export function init_display_settings(): void {
   }
   if (sd && sd.repeat_pali) {
     settings.repeat_pali = sd.repeat_pali;
+  }
+  if (sd && typeof sd.show_references === "boolean") {
+    // The *effective* value, which is true on an anchor-navigated page even
+    // when the stored default is false. Seeding the control must not persist
+    // it — only a user interaction does, and this assignment goes straight to
+    // the state without going through set_show_references().
+    settings.show_references = sd.show_references;
   }
   scope = "save_default";
 
@@ -1030,6 +1107,8 @@ export function init_display_settings(): void {
 export function reset_module_state_for_tests(): void {
   settings = built_in_defaults();
   scope = "save_default";
+  persisted_show_references = false;
+  show_references_user_set = false;
   rerender_handler = null;
   if (post_timer !== null) {
     clearTimeout(post_timer);

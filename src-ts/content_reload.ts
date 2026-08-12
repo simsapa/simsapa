@@ -210,16 +210,27 @@ export function show_transient_notice(message: string): void {
 
 /**
  * Re-render the content block with the current page state, changing only the
- * render parameters (layout, Repeat Pāli). Used by the display-settings
- * panel's Layout / Repeat Pāli controls. The current column list may carry a
- * previous arrangement's repeated Pāli entries — the server collapses them
- * back to one anchor before applying the requested arrangement.
+ * render parameters (layout, Repeat Pāli, Show references). Used by the
+ * display-settings panel's Layout / Repeat Pāli / Show references controls.
+ * The current column list may carry a previous arrangement's repeated Pāli
+ * entries — the server collapses them back to one anchor before applying the
+ * requested arrangement.
+ *
+ * `show_references` is a parameter, not read back from `SUTTA_DISPLAY`:
+ * a toggle would otherwise re-send the value the page was rendered with and
+ * the user's choice would never take effect.
  */
-export function refetch_with_params(layout: string, repeat_pali: string = "off"): Promise<boolean> {
+export function refetch_with_params(
+  layout: string,
+  repeat_pali: string = "off",
+  show_references?: boolean,
+): Promise<boolean> {
   const sd = (globalThis as any).SUTTA_DISPLAY || {};
   const columns: string[] = Array.isArray(sd.columns)
     ? sd.columns.map((c: any) => c.uid)
     : [];
-  const show_references = !!sd.show_references;
-  return fetch_content_block(layout, columns, show_references, repeat_pali);
+  const effective_references = typeof show_references === "boolean"
+    ? show_references
+    : !!sd.show_references;
+  return fetch_content_block(layout, columns, effective_references, repeat_pali);
 }

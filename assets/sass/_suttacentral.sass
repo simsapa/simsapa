@@ -128,18 +128,22 @@ $solarized_light_bg: #FAE6B2
   span.reference
     a.sc
       font-size: 0.7em
+      // The glyph colour is only honoured in light mode: _base.sass forces
+      // `color: white !important` on every anchor under body.dark, and this is
+      // an <a>, so nothing here can win in dark mode. The dark chip below is
+      // therefore darkened to suit a white glyph instead of fighting that rule.
       color: #333
       text-decoration: none
       padding: 2px 5px
       margin-right: 4px
-      border: 1px solid #ccc
+      border: 1px solid var(--reference-chip-border, #ccc)
       border-radius: 4px
-      background-color: color.adjust($solarized_light_bg, $lightness: 10%)
+      background-color: var(--reference-chip-bg, #{color.adjust($solarized_light_bg, $lightness: 10%)})
       vertical-align: middle
 
       &:hover
-        background-color: color.adjust($solarized_light_bg, $lightness: -10%)
-        border-color: #999
+        background-color: var(--reference-chip-hover-bg, #{color.adjust($solarized_light_bg, $lightness: -10%)})
+        border-color: var(--reference-chip-hover-border, #999)
 
   footer
     margin-top: 4em
@@ -187,6 +191,12 @@ $solarized_light_bg: #FAE6B2
       line-height: var(--tr-line-height, inherit)
       font-weight: var(--tr-font-weight, inherit)
       font-style: var(--tr-font-style, inherit)
+    // The reference number sits inside the first cell, so it inherits that
+    // cell's font scale. The Pāli cell's default is 0.8em, which would render
+    // the label a fifth smaller than the same label in Solo mode; undo that
+    // one step so references look the same in all three layouts.
+    span.colcell.pali span.reference
+      font-size: 1.25em
     span.colcell.pali
       font-family: var(--pali-font-family, "Source Sans 3 SSP")
       font-size: var(--pali-font-size, 0.8em)
@@ -238,8 +248,10 @@ body:has(.suttacentral.layout-columns)
     background-color: transparent
 
 // Columns (side-by-side): the cells of each segment become equal-width flex
-// columns. The per-segment reference anchor must keep full width and sit
-// above the cells, or it steals a column.
+// columns. The per-segment reference anchor is not a cell sibling — the
+// builder puts it inside the first cell (see bilara_multi_column_html), so it
+// can neither steal a column nor add a line, and the stripe geometry in
+// column_bg_gradient() stays a function of the cells alone.
 // The cells carry inner side padding so the column background stripe edge
 // is never flush against the text.
 // The sbs-blocks fallback is excluded: its wrapper carries layout-columns
@@ -256,9 +268,6 @@ body:has(.suttacentral.layout-columns)
       min-width: 0
       padding-left: 0.75em
       padding-right: 0.75em
-    span.reference
-      flex: 0 0 100%
-      order: -1
 
   .column-headers
     display: flex
@@ -342,6 +351,19 @@ body:has(.suttacentral.layout-columns)
     font-variant-caps: small-caps
     letter-spacing: 1pt
     padding-bottom: 0.5em
+
+// Reference-number chips in dark mode (the "Show references" option, and every
+// anchor navigation, which forces them on). The light chip is a lightened cream
+// carrying a #333 glyph; on a dark page that same chip renders a *white* glyph,
+// because _base.sass sets `color: white !important` for anchors under
+// body.dark — so the number is invisible until the chip itself goes dark.
+// Slightly lighter than the page background ($body_bg_color_dark #23272E) so it
+// still reads as a chip rather than dissolving into the page.
+body.dark .suttacentral
+  --reference-chip-bg: #2E333C
+  --reference-chip-border: #4A515C
+  --reference-chip-hover-bg: #3A414C
+  --reference-chip-hover-border: #626B78
 
 // Block-fallback scrollbar colors in dark mode.
 body.dark .suttacentral.sbs-blocks .sbs-col

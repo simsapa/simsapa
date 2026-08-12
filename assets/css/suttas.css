@@ -395,14 +395,14 @@ div.btn a, span.btn a {
   text-decoration: none;
   padding: 2px 5px;
   margin-right: 4px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--reference-chip-border, #ccc);
   border-radius: 4px;
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: var(--reference-chip-bg, rgb(253.1097560976, 245.5487804878, 225.8902439024));
   vertical-align: middle;
 }
 .suttacentral span.reference a.sc:hover {
-  background-color: rgb(246.8902439024, 214.4512195122, 130.1097560976);
-  border-color: #999;
+  background-color: var(--reference-chip-hover-bg, rgb(246.8902439024, 214.4512195122, 130.1097560976));
+  border-color: var(--reference-chip-hover-border, #999);
 }
 .suttacentral footer {
   margin-top: 4em;
@@ -439,6 +439,9 @@ div.btn a, span.btn a {
   line-height: var(--tr-line-height, inherit);
   font-weight: var(--tr-font-weight, inherit);
   font-style: var(--tr-font-style, inherit);
+}
+.suttacentral span.segment span.colcell.pali span.reference {
+  font-size: 1.25em;
 }
 .suttacentral span.segment span.colcell.pali {
   font-family: var(--pali-font-family, "Source Sans 3 SSP");
@@ -601,10 +604,6 @@ body:has(.suttacentral.layout-columns) {
   padding-left: 0.75em;
   padding-right: 0.75em;
 }
-.suttacentral.layout-columns:not(.sbs-blocks) span.segment span.reference {
-  flex: 0 0 100%;
-  order: -1;
-}
 .suttacentral.layout-columns:not(.sbs-blocks) .column-headers {
   display: flex;
   column-gap: 1em;
@@ -676,6 +675,13 @@ body:has(.suttacentral.layout-columns) {
   font-variant-caps: small-caps;
   letter-spacing: 1pt;
   padding-bottom: 0.5em;
+}
+
+body.dark .suttacentral {
+  --reference-chip-bg: #2E333C;
+  --reference-chip-border: #4A515C;
+  --reference-chip-hover-bg: #3A414C;
+  --reference-chip-hover-border: #626B78;
 }
 
 body.dark .suttacentral.sbs-blocks .sbs-col {

@@ -18,6 +18,12 @@ pub struct SuttaDisplayOverrides {
     /// Ordered column source sutta uids.
     pub columns: Option<Vec<String>>,
     pub repeat_pali: Option<RepeatPali>,
+    /// Whether the per-segment reference numbers are rendered. `None` = use
+    /// the persisted default. Set by an explicit `show_references` request
+    /// parameter (highest precedence) or, on the full-page sutta routes, by
+    /// the presence of an `anchor` parameter — see
+    /// `docs/sutta-display-settings-and-multi-column-view.md`.
+    pub show_references: Option<bool>,
 }
 
 /// The resolved options the sutta content renderer receives.
@@ -43,11 +49,12 @@ impl SuttaDisplayOptions {
         app_settings: &AppSettings,
         sutta_uid: &str,
         pali_uid: Option<&str>,
-        show_references: bool,
         overrides: &SuttaDisplayOverrides,
     ) -> Self {
         let layout = overrides.layout.unwrap_or(app_settings.sutta_display.layout);
         let repeat_pali = overrides.repeat_pali.unwrap_or(app_settings.sutta_display.repeat_pali);
+        let show_references = overrides.show_references
+            .unwrap_or(app_settings.sutta_display.show_references);
 
         let columns = match &overrides.columns {
             Some(cols) if !cols.is_empty() => cols.clone(),
@@ -122,7 +129,12 @@ pub fn parse_display_overrides(
         if cols.is_empty() { None } else { Some(cols) }
     });
 
-    Ok(SuttaDisplayOverrides { layout, columns, repeat_pali })
+    // `show_references` is deliberately not parsed here: Rocket hands it over
+    // already typed (`Option<bool>`) on the one route that accepts it
+    // (`/sutta_content_block`), so there is no string spelling to validate.
+    // The routes set the field on the returned overrides themselves — the
+    // full-page sutta routes from the presence of an `anchor` parameter.
+    Ok(SuttaDisplayOverrides { layout, columns, repeat_pali, show_references: None })
 }
 
 #[cfg(test)]
@@ -213,10 +225,12 @@ mod tests {
     #[test]
     fn test_resolve_default_columns() {
         let settings = AppSettings::default();
-        let o = SuttaDisplayOptions::resolve(&settings, "mn1/en/sujato", Some("mn1/pli/ms"), false, &SuttaDisplayOverrides::default());
+        let o = SuttaDisplayOptions::resolve(&settings, "mn1/en/sujato", Some("mn1/pli/ms"), &SuttaDisplayOverrides::default());
         assert_eq!(o.layout, SuttaLayout::LineByLine);
         assert_eq!(o.repeat_pali, RepeatPali::Off);
         assert_eq!(o.columns, vec!["mn1/en/sujato".to_string(), "mn1/pli/ms".to_string()]);
+        // Precedence rule 3: no override, so the persisted default (off) wins.
+        assert!(!o.show_references);
     }
 
     #[test]
@@ -226,11 +240,28 @@ mod tests {
             layout: Some(SuttaLayout::SideBySide),
             columns: Some(vec!["an4.1/pli/ms".to_string()]),
             repeat_pali: Some(RepeatPali::AtEnd),
+            show_references: Some(true),
         };
-        let o = SuttaDisplayOptions::resolve(&settings, "an4.1/en/sujato", Some("an4.1/pli/ms"), true, &overrides);
+        let o = SuttaDisplayOptions::resolve(&settings, "an4.1/en/sujato", Some("an4.1/pli/ms"), &overrides);
         assert_eq!(o.layout, SuttaLayout::SideBySide);
         assert_eq!(o.columns, vec!["an4.1/pli/ms".to_string()]);
         assert_eq!(o.repeat_pali, RepeatPali::AtEnd);
         assert!(o.show_references);
+    }
+
+    #[test]
+    fn test_resolve_show_references_precedence() {
+        let mut settings = AppSettings::default();
+        settings.sutta_display.show_references = true;
+
+        // No override: the persisted default is used (rule 3).
+        let o = SuttaDisplayOptions::resolve(&settings, "mn1/pli/ms", None, &SuttaDisplayOverrides::default());
+        assert!(o.show_references);
+
+        // An explicit `false` override wins over a `true` default (rule 1) —
+        // this is the user turning references off on an anchor-opened page.
+        let overrides = SuttaDisplayOverrides { show_references: Some(false), ..Default::default() };
+        let o = SuttaDisplayOptions::resolve(&settings, "mn1/pli/ms", None, &overrides);
+        assert!(!o.show_references);
     }
 }

@@ -41,6 +41,9 @@ Item {
     property string table_name
     property string sutta_ref
     property string sutta_title
+    // Kept set after the jump resolves — see the note on the same property in
+    // SuttaHtmlView_Desktop.qml for why, and for what it means for the
+    // Show references setting on an anchor-navigated page.
     property string anchor
 
     property alias web: web

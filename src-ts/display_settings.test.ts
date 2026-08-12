@@ -119,7 +119,7 @@ describe("display_settings scope semantics", () => {
     const handler = jest.fn();
     ds.set_rerender_handler(handler);
     ds.set_layout("sidebyside");
-    expect(handler).toHaveBeenCalledWith("sidebyside", "off");
+    expect(handler).toHaveBeenCalledWith("sidebyside", "off", false);
     jest.advanceTimersByTime(300);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     expect(ds.get_settings().layout).toBe("sidebyside");
@@ -130,7 +130,7 @@ describe("display_settings scope semantics", () => {
     ds.set_rerender_handler(handler);
     ds.on_scope_changed("this_view");
     ds.set_layout("sidebyside");
-    expect(handler).toHaveBeenCalledWith("sidebyside", "off");
+    expect(handler).toHaveBeenCalledWith("sidebyside", "off", false);
     jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(0);
   });
@@ -147,7 +147,7 @@ describe("display_settings scope semantics", () => {
     const handler = jest.fn();
     ds.set_rerender_handler(handler);
     ds.set_repeat_pali("atend");
-    expect(handler).toHaveBeenCalledWith("linebyline", "atend");
+    expect(handler).toHaveBeenCalledWith("linebyline", "atend", false);
     jest.advanceTimersByTime(300);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     expect(ds.get_settings().repeat_pali).toBe("atend");
@@ -167,6 +167,161 @@ describe("display_settings scope semantics", () => {
     expect(save_settings_calls(fetch_mock).length).toBe(1);
     jest.advanceTimersByTime(1000);
     expect(save_settings_calls(fetch_mock).length).toBe(1);
+  });
+
+  test("set_show_references re-renders with the current layout and POSTs", () => {
+    const handler = jest.fn();
+    ds.set_rerender_handler(handler);
+    ds.set_show_references(true);
+    expect(handler).toHaveBeenCalledWith("linebyline", "off", true);
+    jest.advanceTimersByTime(300);
+    const body = JSON.parse(save_settings_calls(fetch_mock)[0][1].body);
+    expect(body.show_references).toBe(true);
+    expect(ds.get_settings().show_references).toBe(true);
+
+    // Unchanged value is a no-op.
+    handler.mockClear();
+    ds.set_show_references(true);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  test("set_show_references in local scope re-renders but does not POST", () => {
+    const handler = jest.fn();
+    ds.set_rerender_handler(handler);
+    ds.on_scope_changed("this_view");
+    ds.set_show_references(true);
+    expect(handler).toHaveBeenCalledWith("linebyline", "off", true);
+    jest.advanceTimersByTime(1000);
+    expect(save_settings_calls(fetch_mock).length).toBe(0);
+  });
+
+  test("reset_all re-renders when only show_references changed", () => {
+    const handler = jest.fn();
+    ds.set_rerender_handler(handler);
+    ds.set_show_references(true);
+    handler.mockClear();
+    ds.reset_all();
+    expect(ds.get_settings().show_references).toBe(false);
+    expect(handler).toHaveBeenCalledWith("linebyline", "off", false);
+  });
+});
+
+describe("show_references initial state", () => {
+  let fetch_mock: jest.Mock;
+
+  function build_panel_dom(): void {
+    document.body.innerHTML = `
+      <button id="displaySettingsButton"></button>
+      <div id="displaySettingsPanel">
+        <div class="ds-segmented" data-setting="show-references">
+          <button type="button" class="ds-seg-btn" data-value="off">Off</button>
+          <button type="button" class="ds-seg-btn" data-value="on">On</button>
+        </div>
+      </div>`;
+  }
+
+  function active_reference_value(): string | undefined {
+    const active = document.querySelector<HTMLButtonElement>(
+      ".ds-segmented[data-setting='show-references'] .ds-seg-btn.active");
+    return active?.dataset.value;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    ds.reset_module_state_for_tests();
+    fetch_mock = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    (globalThis as any).fetch = fetch_mock;
+    (globalThis as any).API_URL = "http://localhost:4848";
+    build_panel_dom();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  test("the control seeds from the effective value, not the stored default, and does not POST", () => {
+    // The anchor-navigated page: references forced on for this render while
+    // the persisted default stays off.
+    (globalThis as any).SUTTA_DISPLAY = {
+      layout: "linebyline",
+      columns: [],
+      show_references: true,
+      defaults: { layout: "linebyline", show_references: false },
+    };
+    ds.init_display_settings();
+    expect(ds.get_settings().show_references).toBe(true);
+    expect(active_reference_value()).toBe("on");
+    // Seeding is not a user interaction: nothing is persisted.
+    jest.advanceTimersByTime(1000);
+    expect(save_settings_calls(fetch_mock).length).toBe(0);
+  });
+
+  test("the forced value is not persisted by an unrelated setting change", () => {
+    // The trap requirement 46 is about: the panel posts its whole settings
+    // object, so a seeded anchor-forced `true` would otherwise be written to
+    // the stored default the first time the reader touches Width or a font.
+    (globalThis as any).SUTTA_DISPLAY = {
+      layout: "linebyline",
+      columns: [],
+      show_references: true,
+      defaults: { layout: "linebyline", show_references: false },
+    };
+    ds.init_display_settings();
+
+    ds.get_settings().width_percent = 125;
+    ds.on_setting_changed();
+    jest.advanceTimersByTime(300);
+
+    const body = JSON.parse(save_settings_calls(fetch_mock)[0][1].body);
+    expect(body.width_percent).toBe(125);
+    expect(body.show_references).toBe(false);
+    // The page itself still renders with them on.
+    expect(ds.get_settings().show_references).toBe(true);
+  });
+
+  test("once the reader operates the control, that choice is what persists", () => {
+    (globalThis as any).SUTTA_DISPLAY = {
+      layout: "linebyline",
+      columns: [],
+      show_references: true,
+      defaults: { layout: "linebyline", show_references: false },
+    };
+    ds.init_display_settings();
+
+    ds.set_show_references(false);
+    jest.advanceTimersByTime(300);
+    let body = JSON.parse(save_settings_calls(fetch_mock)[0][1].body);
+    expect(body.show_references).toBe(false);
+
+    ds.set_show_references(true);
+    jest.advanceTimersByTime(300);
+    body = JSON.parse(save_settings_calls(fetch_mock)[1][1].body);
+    expect(body.show_references).toBe(true);
+  });
+
+  test("an explicit stored false is honoured, not treated as absent", () => {
+    (globalThis as any).SUTTA_DISPLAY = {
+      layout: "linebyline",
+      columns: [],
+      show_references: false,
+      defaults: { layout: "linebyline", show_references: false },
+    };
+    ds.init_display_settings();
+    expect(ds.get_settings().show_references).toBe(false);
+    expect(active_reference_value()).toBe("off");
+  });
+
+  test("a stored true default with no anchor keeps the control on", () => {
+    (globalThis as any).SUTTA_DISPLAY = {
+      layout: "linebyline",
+      columns: [],
+      show_references: true,
+      defaults: { layout: "linebyline", show_references: true },
+    };
+    ds.init_display_settings();
+    expect(ds.get_settings().show_references).toBe(true);
+    expect(active_reference_value()).toBe("on");
   });
 });
 

@@ -19,6 +19,9 @@ const HIGHLIGHT_CLASS = "ssp-anchor-highlight";
 // the same paragraph can re-trigger it.
 const HIGHLIGHT_MS = 2500;
 
+// How far the decrement step of the walk may go. See candidate_ids().
+const MAX_DECREMENTS = 200;
+
 /**
  * The ids to try, in order, for a requested segment id.
  *
@@ -54,7 +57,15 @@ export function candidate_ids(requested: string): string[] {
 
     if (/^\d+$/.test(last)) {
         const head = parts.slice(0, -1);
-        for (let n = parseInt(last, 10) - 1; n >= 0; n--) {
+        const start = parseInt(last, 10) - 1;
+        // Bounded so a nonsense location cannot freeze the page. The anchor does
+        // not only come from the CIPS index — the localhost API's
+        // GUI-navigation route takes one from any caller — and each candidate
+        // costs two DOM lookups, so "mn1:1.9999999" would otherwise spin for
+        // millions of iterations. The real data's largest last component is 15
+        // (dn20:4.15), so this changes no measured case.
+        const stop = Math.max(0, start - MAX_DECREMENTS + 1);
+        for (let n = start; n >= stop; n--) {
             ids.push(prefix + head.concat(String(n)).join("."));
         }
     }

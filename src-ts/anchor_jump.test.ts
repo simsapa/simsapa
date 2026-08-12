@@ -47,6 +47,18 @@ describe("candidate_ids", () => {
         expect(candidate_ids("dn33:1.7.end")).toEqual(["dn33:1.7.end", "dn33:1.7"]);
     });
 
+    test("the decrement walk is bounded, so a nonsense location cannot freeze the page", () => {
+        // The anchor can come from the localhost API's GUI-navigation route,
+        // i.e. from any caller — not only from the CIPS index.
+        const ids = candidate_ids("mn1:1.9999999");
+
+        // 1 requested + 200 decrements + 1 parent.
+        expect(ids.length).toBe(202);
+        expect(ids[1]).toBe("mn1:1.9999998");
+        expect(ids[200]).toBe("mn1:1.9999799");
+        expect(ids[201]).toBe("mn1:1");
+    });
+
     test("an id with no dots and no colon neither crashes nor loops", () => {
         expect(candidate_ids("intro")).toEqual(["intro"]);
         expect(candidate_ids("dn33:0")).toEqual(["dn33:0"]);
