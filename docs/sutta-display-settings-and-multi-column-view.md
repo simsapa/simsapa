@@ -26,13 +26,24 @@ Three layouts (`SuttaLayout` in `backend/src/app_settings.rs`):
 
 Persisted defaults live in `AppSettings.sutta_display`
 (`SuttaDisplayDefaults`): layout, Repeat Pāli (`off` / `alternate` /
-`atend`), reading-measure width percent, two font groups (Pāli /
+`atend`), **Show references** (`show_references`, default **off**),
+reading-measure width percent, two font groups (Pāli /
 translation: serif|sans, size %, line-height %, bold, italic), and two color
 maps keyed **by author** (`author_ink_colors`, `author_bg_colors`; the Pāli
 column uses the key `"pali"`). Sizes are integer percents so the struct
 stays `Eq`. Missing fields deserialize via serde defaults, so existing user
 DBs load cleanly; there is no migration from the removed
 `show_translation_and_pali_line_by_line` boolean.
+
+**Show references** renders the SuttaCentral-style per-segment reference
+numbers (`1.11.0`, …) beside each paragraph — `generate_reference_anchor` in
+`helpers.rs`, emitting
+`<span class="reference"><a class="sc" id="1.11.0" href="#1.11.0">1.11.0</a></span>`.
+Before it became a setting it had exactly one trigger, an `anchor` parameter
+on the sutta route; that trigger is **kept** as precedence rule 2 below (a
+reader arriving from the Topic Index needs to see which reference they landed
+on) and the persisted default sits under it. Its control is an `Off`/`On`
+`ds-segmented` in the panel's **Layout** card, between Repeat Pāli and Width.
 
 ## 2. Options resolution and precedence
 
@@ -51,6 +62,34 @@ Precedence, weakest first:
 4. In-page state (the settings panel / column bar under "This view only"
    scope) — ephemeral, expressed as content-block fetch parameters; lost on
    navigation by design.
+
+**`show_references` has its own three-level precedence**, highest first, and
+is carried on `SuttaDisplayOverrides` as an `Option<bool>` (`None` = unset,
+use the persisted default):
+
+1. an explicit `show_references` request parameter — only
+   `/sutta_content_block` accepts one, and that is how a reader turns the
+   references *off* on a page opened with an anchor;
+2. an `anchor` parameter on a full-page sutta route — forces them **on** for
+   that render regardless of the stored default
+   (`sutta_html_response` sets `overrides.show_references = Some(true)`);
+3. the persisted `SuttaDisplayDefaults.show_references`.
+
+`show_references` is deliberately **not** in `parse_display_overrides`: the
+two full-page routes have no such parameter (only the anchor rule), and the
+content-block route sets the field directly from its own typed
+`Option<bool>` parameter. Note the signature consequence — a plain forced
+`bool` cannot express "unset", so `SuttaDisplayOptions::resolve` and
+`AppData::resolve_sutta_display_options` take it inside the overrides struct
+rather than as a positional argument.
+
+**Scope limit, accepted deliberately.** The user's "off" choice lives in the
+page, not in the tab. A *full* reload of the same tab rebuilds the URL from
+the QML wrapper's still-set `root.anchor`
+(`SuttaHtmlView_{Desktop,Mobile}.qml`), so rule 2 fires again and the
+references come back on. `root.anchor` is **not** cleared after a jump
+resolves — the comment at its declaration says so — because it is also what
+a re-jump and the wrapper's own scroll path read.
 
 `AppData::resolve_sutta_display_options` (`backend/src/app_data.rs`) then:
 
@@ -94,7 +133,7 @@ per-row containers. Both layouts emit the **same markup**; only CSS differs.
 
 - **All columns segmented** → `bilara_multi_column_html`
   (`backend/src/helpers.rs`): per segment,
-  `<span class='segment' id='<key>'>[reference]<span class='colcell col-0 pali' data-uid='…'>…</span><span class='colcell col-1 translated' data-uid='…'>…</span>…</span>`
+  `<span class='segment' id='<key>'><span class='colcell col-0 pali' data-uid='…'>[reference]…</span><span class='colcell col-1 translated' data-uid='…'>…</span>…</span>`
   wrapped in `<div class='suttacentral bilara-text layout-columns cols-N'>`
   (or `layout-lines`). Columns mode also gets a `div.column-headers` row
   (one labelled `span.colcell` per column: "Pāli" / author, from
@@ -113,8 +152,23 @@ CSS (`assets/sass/_suttacentral.sass`):
 
 - Lines: colcells are stacked blocks. Columns:
   `span.segment { display:flex; column-gap: 1em }`,
-  `span.colcell { flex: 1 1 0 }`; the per-segment **reference anchor** keeps
-  `flex: 0 0 100%; order: -1` or it would steal a column.
+  `span.colcell { flex: 1 1 0 }`. The per-segment **reference anchor** is
+  emitted *inside the `col-0` cell*, inline before its text, exactly as the
+  single-document renderer places it — **never as a third child of
+  `span.segment`**, which in Columns mode is the flex row: a direct child
+  there is another flex item, so it either steals a column or (with
+  `flex: 0 0 100%`) costs a blank line per segment. Keeping it in a cell
+  also leaves the stripe geometry (`column_bg_gradient`) and the
+  `.column-headers` alignment functions of the cells alone. The one cost is
+  that the label inherits the host cell's font scale, so
+  `span.colcell.pali span.reference` carries a compensating `1.25em` against
+  the Pāli cell's `0.8em`. `test_multi_column_reference_anchors` pins the
+  placement in both directions.
+
+  **Rule for anything else injected per segment** (the anchor-jump notice
+  included): `span.segment` is a layout container in the multi-column
+  layouts — put content in a cell or outside the segment, never as an extra
+  direct child.
 - Typography vars on the cells **and** on the fallback's `.sbs-col`
   (`.colcell.pali` / `.sbs-col.pali` etc.): `--pali-font-family`,
   `--pali-font-size`, `--pali-line-height`, `--tr-*` twins. The
@@ -204,6 +258,9 @@ Details and JSON shapes in
 - `layout` / `columns` / `repeat_pali` are also accepted by both full-page
   routes (`/get_sutta_html_by_uid/<window_id>/<uid..>` and the query-param
   twin `/sutta_html?window_id=…&uid=…`); absent → persisted defaults.
+  **Neither full-page route takes `show_references`** — only
+  `/sutta_content_block` does. What the full-page routes have is `anchor`,
+  which forces the references on for that render (precedence rule 2, §2).
   **Error parity:** an unknown `columns` uid is a 404 with the message on
   the full-page routes too (`try_render_sutta_html_by_uid_with_overrides` +
   the shared `render_error_status` helper in `api.rs`; other render errors
@@ -239,8 +296,15 @@ book and blank pages stay chrome-free (empty defaults).
 ### display_settings.ts — the cogwheel panel
 
 - Initial state: `merged_settings(SUTTA_DISPLAY.defaults)` overlaid with the
-  page's effective `layout`/`repeat_pali` (a GET-param override must show in
-  the panel).
+  page's effective `layout`/`repeat_pali`/`show_references` (a GET-param
+  override, or the anchor rule, must show in the panel). Seeding from the
+  effective value **must not POST** — on an anchor-opened page
+  `SUTTA_DISPLAY.show_references` is `true` while the stored default is
+  `false`, and only a user interaction may persist that. The two boolean
+  reads (`merged_settings` and `init_display_settings`) use
+  `typeof x === "boolean"`, not the `defaults_json.x || base.x` shape the
+  neighbouring string fields use — `||` silently discards an explicit
+  `false`.
 - **Scope semantics** (FR 18–19): scope defaults to "Save as default" —
   every change applies locally *and* POSTs the full settings object. "This
   view only" applies locally without persisting; **switching local →
@@ -256,8 +320,13 @@ book and blank pages stay chrome-free (empty defaults).
   (`flush_pending_post(true)` with `keepalive: true` so the fetch survives
   page teardown — prev/next navigation replaces the page).
 - Typography/colors apply as CSS custom properties only (no re-render);
-  layout / Repeat Pāli changes go through a re-render handler wired in
-  `simsapa.ts` to `content_reload.refetch_with_params`.
+  layout / Repeat Pāli / Show references changes go through a re-render
+  handler wired in `simsapa.ts` to `content_reload.refetch_with_params`.
+  The handler is `(layout, repeat_pali, show_references)` and
+  `refetch_with_params` takes `show_references` **as a parameter** rather
+  than reading it back from `SUTTA_DISPLAY` — otherwise a toggle would
+  re-send the pre-toggle value and the user's choice would not survive its
+  own re-render.
 - Color rows: one per author key (Pāli row keyed `"pali"`), with an inline
   swatch palette + custom HSV picker — the native `<input type="color">`
   dialog is unreliable in the embedded WebEngineView.
@@ -352,7 +421,10 @@ succeed.
   changed a setting in the running app.
 - **Assert wrapper classes, not CSS-text absence** — the full page inlines
   the stylesheet, so `!html.contains("layout-columns")` is a false negative.
-- **Reference anchors need `flex: 0 0 100%; order: -1`** in Columns mode.
+- **Reference anchors go inside the `col-0` cell**, never as a direct child
+  of `span.segment` (§3). The old `flex: 0 0 100%; order: -1` rule was the
+  workaround for having them as a cell sibling and is gone; so is the
+  `flex-wrap` it needed.
 - `get_pali_for_translated` resolves **only `<ref>/pli/ms`**.
 - Segmented rendering requires **all** columns segmented; one non-segmented
   column switches the whole block to the `sbs-blocks` fallback — which is
@@ -361,3 +433,141 @@ succeed.
   stop applying when a non-segmented column was added).
 - `js_extra` consts are not globals for the webpack bundle: set
   `window.X = X` too.
+
+## 8. Anchor jump — opening a sutta at a paragraph
+
+A Topic Index entry may cite a *segment id* (`dn33:1.11.0`) rather than just a
+sutta. Clicking it opens the sutta scrolled to that paragraph. The mechanism
+mostly pre-existed; what was missing was that `TopicIndexWindow.open_sutta()`
+wrote a `segment_id` key **nothing read** — the fix is that it writes `anchor`,
+the key the tab plumbing already carried.
+
+The path: `TopicIndexWindow.qml` → result-data `anchor` →
+`SuttaSearchWindow.qml` (`new_tab_data` for a new tab, the tab-0 update branch
+for an existing one) → `SuttaHtmlView_{Desktop,Mobile}.qml`'s `root.anchor` →
+`…/uid/?anchor=<id>#<id>` → after load, `scroll_to_anchor()` →
+`window.ssp_jump_to_segment(id)` (`src-ts/anchor_jump.ts`).
+
+**The anchor is part of the URL.** So a *different* location of an
+already-open sutta produces a different URL, genuinely reloads, and the
+existing `scroll_timer` fires — no special case needed. The only inert case is
+**same uid *and* same anchor** (an identical `data_json`, so
+`onData_jsonChanged` never fires), which is the one branch that calls
+`scroll_to_anchor()` directly. Keying that direct call on the **uid alone**
+would be a bug, not a simplification: it would run before the pending reload,
+against the outgoing page's DOM, scrolling the page that is about to be
+replaced and planting a notice the incoming page discards.
+
+### The candidate walk
+
+`candidate_ids(requested)` is a pure function (unit-tested without a DOM):
+
+1. the requested id;
+2. the **last** numeric component decremented down to `0` — `1.7.9.10` gives
+   `1.7.9.9` … `1.7.9.0` (bounded by `MAX_DECREMENTS`, so a nonsense location
+   from the localhost API cannot spin);
+3. the parent, **exactly once** — `1.7.9`;
+4. stop.
+
+**Never `1.7.8`, never `1.7`.** A sibling of the parent may be an entirely
+different chapter of the sutta, and landing there silently is worse than
+landing at the top. A non-numeric last component skips step 2.
+
+Step 3 **never fires against the current data, and that is expected** — Bilara
+emits headings as `x.y.z.0`, never as the bare parent, so neither `dn33:1.7.9`
+nor `dn20:4` exists as a segment key. Both real failure classes resolve at
+step 2. It is kept because it is two lines; do not debug its silence, and do
+not read the device checks as covering it — `anchor_jump.test.ts` does, in a
+synthetic DOM.
+
+The walk reads ids **from the loaded page**, never from a list computed in
+Rust: the page is the only authority on which segments the currently displayed
+text has, which covers the translation-without-that-segment case for free.
+`getElementById` throughout — a colon is valid in an `id` but **not** in a CSS
+selector fragment, which is why the wrappers' legacy `querySelector` branch
+threw a `SyntaxError` on these ids and aborted the whole IIFE (it is now
+wrapped in `try/catch` and kept only for pages that do not load the bundle:
+book chapters, dictionary words).
+
+**Two `id` attributes exist in a rendered segment** and only one is the scroll
+target: the wrapper `id="dn33:1.11.0"` (emitted regardless of
+`show_references`) and, inside it, the reference anchor's `id="1.11.0"` (only
+when references are on). Always target the full colon-bearing id — the short
+one is conditional *and* collides across columns.
+
+`jump_to_segment` returns `"exact"`, `"fallback:<used id>"` or `"missed"`; the
+QML wrappers log the last two (`logger.info` / `logger.warn`), so a support log
+distinguishes the three outcomes.
+
+### The in-page notice
+
+One component, two forms — an imperfect jump must say so at the place the
+reader lands, or they read the wrong paragraph believing it is the cited one.
+
+| | fallback | give-up |
+|---|---|---|
+| when | resolved by the walk, not exactly | nothing found at all |
+| text | `Referenced location dn20:4.11 not found. This location dn20:4.10 is the closest fallback.` | `Referenced location dn20:4.11 not found.` |
+| placement | sibling **before** `target.closest('p, li, h1…, blockquote') \|\| target` | first child of `#ssp_content`, above the sutta title |
+
+Shared rules, each load-bearing:
+
+- **Real, selectable text nodes** — never CSS `content:`, which is
+  unselectable in Chromium. The reader's likely next move is to copy the
+  sentence into an email reporting the bad location.
+- **Full ids** (`dn20:4.11`), not the short form printed in the margin: the
+  sutta must not be left implied in a report. The short form survives as a
+  substring for matching against the label beside the paragraph.
+- **No auto-fade, no timeout.** It stays until the "×" dismisses it.
+  Dismissal is not persisted — a later miss shows a notice again.
+- **At most one in the page**: inserting removes any existing notice, and an
+  exact hit removes one left by an earlier miss.
+- **Inserted before the scroll**, and the *fallback* form is what is scrolled
+  to (not the paragraph) — the notice sits above the paragraph, so scrolling
+  to the paragraph would push the explanation off the top edge exactly when it
+  is needed.
+- **Never injected into `span.segment`** — §3's rule: it is the flex container
+  in the multi-column layouts, and a block child becomes a phantom grid item
+  that breaks the row's alignment. Verify in **Columns**, not only Lines.
+- The find bar walks `#ssp_content`, so it will highlight and count the
+  notice's words. That is **accepted** in exchange for selectable text; the
+  consequence is that the dismiss handler is attached to the **button**, never
+  to a captured text node, because `findAndReplace` splices highlight spans
+  into those nodes. (The "×" is one character, below the find bar's
+  2-character minimum, so the control itself can never be matched.)
+- A content re-render (Layout / Repeat Pāli / references change) drops the
+  notice as a side effect. Acceptable — the reader has seen it by then — and
+  must **not** be worked around by recreating it.
+
+Styling is `assets/sass/_anchor_jump.scss` (`@include
+meta.load-css("anchor_jump")` in `suttas.sass`), theme-aware, in normal flow —
+**never** `position: fixed`, which would collide with the column bar and the
+footnote bottom bar and, on Android, sit in front of the native webview
+visibility machinery. The landing highlight is a background-only class
+(`.ssp-anchor-highlight`, no geometry change) in a colour deliberately distinct
+from the find bar's yellow/green, so an arrival is not mistaken for a search
+hit. Run `make sass`; never hand-edit `assets/css/`.
+
+### Build-time support
+
+The paragraph locations come from the CIPS index, and two things are
+pre-computed by `cli/src/bootstrap/parse_cips_index.rs` so runtime does no
+extra work:
+
+- **Disambiguation suffixes.** When two refs in one sub-topic entry produce the
+  same displayed label (the segment id is not shown), each gets `(a)`, `(b)`, …
+  baked into the JSON as an optional `suffix` field. QML only appends what it
+  is given — no per-click collision scan. The collision key is the string QML
+  displays, so the Rust `display_label()` and `TopicIndexWindow`'s
+  `format_sutta_ref()` are two implementations of one rule and each carries a
+  comment naming the other.
+- **Anchor validation**, printed as a summary at the end of the run
+  (`N checked, N ok, N unresolved uid, N no segments, N missing segment`) and
+  advisory only — never an error, never blocking the JSON write.
+
+**The tooling reports; the author decides.** The parser never repairs,
+renames, normalizes away or "did you mean"s a defect in the CIPS source data —
+warning lines quote the offending value verbatim, typos included, so the index
+author can find the row. A silent in-parser correction would make the CSV and
+the shipped index disagree, and would be invisible in the diff of the
+generated JSON.

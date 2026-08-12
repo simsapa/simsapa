@@ -1,0 +1,100 @@
+// Paragraph jumps from a segment id: the landing highlight and the in-page
+// notice shown when the cited location was missing.
+//
+// The highlight colour is deliberately distinct from the yellow/green
+// find-match colour in _find.scss, so a reader arriving from the Topic Index
+// does not mistake it for a search hit.
+
+:root {
+    --anchor-highlight-bg: #cfe4ff;
+    --anchor-notice-bg: #f2ecd8;
+    --anchor-notice-border: #c9b98a;
+    --anchor-notice-text: #1a1a1a;
+    --anchor-notice-code-bg: #e4dcc2;
+    --anchor-notice-dismiss: #6b6355;
+    --anchor-notice-dismiss-hover-bg: #e0d6ba;
+}
+
+body.dark {
+    --anchor-highlight-bg: #29486e;
+    --anchor-notice-bg: #3a3a34;
+    --anchor-notice-border: #5f5a4a;
+    --anchor-notice-text: #e8e8e8;
+    --anchor-notice-code-bg: #4a4940;
+    --anchor-notice-dismiss: #b9b3a3;
+    --anchor-notice-dismiss-hover-bg: #4a4940;
+}
+
+// Background only: no border, no padding, no size change, so the paragraph
+// does not shift as the highlight comes and goes.
+.ssp-anchor-highlight {
+    background-color: var(--anchor-highlight-bg);
+    animation: ssp-anchor-highlight-fade 2.5s ease-out forwards;
+}
+
+@keyframes ssp-anchor-highlight-fade {
+    0% { background-color: var(--anchor-highlight-bg); }
+    60% { background-color: var(--anchor-highlight-bg); }
+    100% { background-color: transparent; }
+}
+
+// An aside about the navigation, not part of the discourse: full width, its own
+// subdued background, a clear boundary. In normal flow — never position: fixed,
+// which would collide with the column bar and the footnote bottom bar, and on
+// Android would put it in front of the native webview visibility machinery.
+.ssp-anchor-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75em;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 1em 0;
+    padding: 0.75em 1em;
+    background-color: var(--anchor-notice-bg);
+    border: 1px solid var(--anchor-notice-border);
+    border-radius: 4px;
+    color: var(--anchor-notice-text);
+    // Footnote size: the notice is an aside about the navigation and must not
+    // compete with the discourse. Still comfortably readable and selectable.
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.ssp-anchor-notice-message {
+    flex: 1 1 auto;
+
+    code {
+        padding: 0 0.25em;
+        background-color: var(--anchor-notice-code-bg);
+        border-radius: 2px;
+        // The monospace text with padding can appear too large
+        font-size: 0.8em;
+    }
+}
+
+.ssp-anchor-notice-dismiss {
+    flex: 0 0 auto;
+    // A real hit area on mobile; the glyph itself is one character.
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: var(--anchor-notice-dismiss);
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+    // The message stays selectable (the reader is expected to copy it into a
+    // report); only the control excludes itself.
+    user-select: none;
+
+    &:hover {
+        background-color: var(--anchor-notice-dismiss-hover-bg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--anchor-notice-border);
+        outline-offset: 1px;
+    }
+}

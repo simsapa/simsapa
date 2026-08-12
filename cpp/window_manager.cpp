@@ -231,12 +231,77 @@ WindowManager::~WindowManager() {
     }
 }
 
+/// A closed window is only hidden -- it stays in sutta_search_windows so it can
+/// be revived cheaply. `visible` is therefore what distinguishes a window the
+/// user has open from one in the pool.
+static bool window_is_open(SuttaSearchWindow* w) {
+    if (w == nullptr || w->m_root == nullptr) {
+        return false;
+    }
+    QVariant visible = w->m_root->property("visible");
+    return visible.isValid() && visible.toBool();
+}
+
 SuttaSearchWindow* WindowManager::create_sutta_search_window() {
+    // Closing a window only hides it, so the pool holds ready-made windows.
+    // Reviving one skips a whole QQmlApplicationEngine load (the expensive part
+    // of a new window), which is why closed windows are kept in the first place.
+    // The revived window keeps its window_id -- QML-side callers pass it back to
+    // the bridge, and it is still unique.
+    if (SuttaSearchWindow* reused = this->take_closed_sutta_search_window()) {
+        // Reset to the blank state a freshly constructed window has: callers
+        // treat the result as empty (open_sutta_search_window_with_query
+        // replaces the current tab rather than adding one), so leftover tabs
+        // from before the window was closed must not survive.
+        QMetaObject::invokeMethod(reused->m_root, "clear_all_tabs");
+        show_and_activate_window(reused->m_root);
+        // Move to the end so it counts as the newest window for the
+        // window_id-less dispatch fallbacks.
+        this->sutta_search_windows.removeOne(reused);
+        this->sutta_search_windows.append(reused);
+        return reused;
+    }
+
     SuttaSearchWindow* w = new SuttaSearchWindow(this->m_app);
     sutta_search_windows.append(w);
     w->m_root->setProperty("window_id", QString("window_%1").arg(this->m_window_id_count));
     this->m_window_id_count++;
     return w;
+}
+
+/// Newest closed (hidden) window in the pool, or nullptr if every window is
+/// open. Newest-first so a revived window is the one most recently used.
+SuttaSearchWindow* WindowManager::take_closed_sutta_search_window() {
+    for (auto it = this->sutta_search_windows.crbegin(); it != this->sutta_search_windows.crend(); ++it) {
+        if (*it && (*it)->m_root && !window_is_open(*it)) {
+            return *it;
+        }
+    }
+    return nullptr;
+}
+
+SuttaSearchWindow* WindowManager::last_open_sutta_search_window() {
+    if (this->sutta_search_windows.isEmpty()) {
+        return nullptr;
+    }
+    for (auto it = this->sutta_search_windows.crbegin(); it != this->sutta_search_windows.crend(); ++it) {
+        if (window_is_open(*it)) {
+            return *it;
+        }
+    }
+    return this->sutta_search_windows.last();
+}
+
+SuttaSearchWindow* WindowManager::first_open_sutta_search_window() {
+    if (this->sutta_search_windows.isEmpty()) {
+        return nullptr;
+    }
+    for (auto w : this->sutta_search_windows) {
+        if (window_is_open(w)) {
+            return w;
+        }
+    }
+    return this->sutta_search_windows.first();
 }
 
 void WindowManager::restore_last_session() {
@@ -473,10 +538,10 @@ void WindowManager::run_sutta_menu_action(const QString& window_id, const QStrin
         }
     }
 
-    // Fallback: use the first available window, or create a new one
+    // Fallback: use the first window still open, or create a new one
     if (target_window == nullptr) {
         if (this->sutta_search_windows.length() > 0) {
-            target_window = this->sutta_search_windows.first();
+            target_window = this->first_open_sutta_search_window();
         } else {
             target_window = this->create_sutta_search_window();
         }
@@ -514,8 +579,10 @@ void WindowManager::open_sutta_tab_in_window(const QString& window_id, const QSt
     }
 
     if (window_id.isEmpty()) {
-        // Fall back to last window if no window_id provided
-        target_window = this->sutta_search_windows.last();
+        // Fall back to the last window the user still has open if no
+        // window_id was provided. A closed window is only hidden, not removed
+        // from the list, so plain last() could re-show a window the user closed.
+        target_window = this->last_open_sutta_search_window();
     } else {
         // Find the window with matching window_id
         for (auto w : this->sutta_search_windows) {
@@ -549,8 +616,10 @@ void WindowManager::show_chapter_in_sutta_window(const QString& window_id, const
     }
 
     if (window_id.isEmpty()) {
-        // Fall back to last window if no window_id provided
-        target_window = this->sutta_search_windows.last();
+        // Fall back to the last window the user still has open if no
+        // window_id was provided. A closed window is only hidden, not removed
+        // from the list, so plain last() could re-show a window the user closed.
+        target_window = this->last_open_sutta_search_window();
     } else {
         // Find the window with matching window_id
         for (auto w : this->sutta_search_windows) {
@@ -584,8 +653,10 @@ void WindowManager::show_sutta_from_reference_search(const QString& window_id, c
     }
 
     if (window_id.isEmpty()) {
-        // Fall back to last window if no window_id provided
-        target_window = this->sutta_search_windows.last();
+        // Fall back to the last window the user still has open if no
+        // window_id was provided. A closed window is only hidden, not removed
+        // from the list, so plain last() could re-show a window the user closed.
+        target_window = this->last_open_sutta_search_window();
     } else {
         // Find the window with matching window_id
         for (auto w : this->sutta_search_windows) {

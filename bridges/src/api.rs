@@ -722,13 +722,20 @@ fn sutta_html_response(
     repeat_pali: Option<&str>,
     dbm: &DbManager,
 ) -> (Status, RawHtml<String>) {
-    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
+    let mut overrides = match parse_display_overrides(layout, columns, repeat_pali) {
         Ok(o) => o,
         Err(msg) => return (Status::BadRequest, RawHtml(msg)),
     };
 
-    // Show reference anchors only when navigating to a specific anchor
-    let show_references = anchor.is_some();
+    // Precedence rule 2: an anchor navigation forces the per-segment
+    // reference numbers on for this render, whatever the persisted default is,
+    // so the reader can see which reference they landed on. Without an anchor
+    // the persisted default decides (rule 3, resolved in
+    // `SuttaDisplayOptions::resolve`). These routes take no explicit
+    // `show_references` parameter — only `/sutta_content_block` does.
+    if anchor.is_some() {
+        overrides.show_references = Some(true);
+    }
     let app_data = get_app_data();
     let processed_uid = convert_verse_ref_to_sutta_uid(uid);
 
@@ -738,7 +745,7 @@ fn sutta_html_response(
         None => (Status::NotFound, processed_uid),
     };
 
-    match app_data.try_render_sutta_html_by_uid_with_overrides(window_id, &render_uid, show_references, &overrides) {
+    match app_data.try_render_sutta_html_by_uid_with_overrides(window_id, &render_uid, &overrides) {
         Ok(html) => (ok_status, RawHtml(html)),
         Err(e) => {
             let msg = format!("{:#}", e);
@@ -1651,10 +1658,14 @@ fn ssp_columns_header(columns_json: &serde_json::Value) -> rocket::http::Header<
 fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str>, show_references: Option<bool>, repeat_pali: Option<&str>, dbm: &State<Arc<DbManager>>) -> Result<ContentBlockResponse, (Status, RawHtml<String>)> {
     info(&format!("get_sutta_content_block(): uid: {}, layout: {:?}, columns: {:?}, repeat_pali: {:?}", uid, layout, columns, repeat_pali));
 
-    let overrides = match parse_display_overrides(layout, columns, repeat_pali) {
+    let mut overrides = match parse_display_overrides(layout, columns, repeat_pali) {
         Ok(o) => o,
         Err(msg) => return Err((Status::BadRequest, RawHtml(msg))),
     };
+    // Precedence rule 1: the cogwheel's re-fetch sends the client's current
+    // value, so an explicit parameter wins over the persisted default — this
+    // is how a reader turns the references off on an anchor-opened page.
+    overrides.show_references = show_references;
 
     let app_data = get_app_data();
     let processed_uid = convert_verse_ref_to_sutta_uid(uid);
@@ -1664,7 +1675,7 @@ fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<&str
         None => return Err((Status::NotFound, RawHtml(format!("Unknown sutta uid: {}", uid)))),
     };
 
-    let options = app_data.resolve_sutta_display_options(&sutta, show_references.unwrap_or(false), &overrides);
+    let options = app_data.resolve_sutta_display_options(&sutta, &overrides);
     match app_data.render_sutta_content_block_with_columns(&sutta, &options) {
         Ok((html, columns_json)) => Ok(ContentBlockResponse {
             html: RawHtml(html),

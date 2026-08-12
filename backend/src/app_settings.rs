@@ -474,6 +474,11 @@ pub struct SuttaDisplayDefaults {
     /// (100 = unchanged). Applied as the `--width-scale` CSS var to both the
     /// line-by-line body measure and the side-by-side per-column cap.
     pub width_percent: usize,
+    /// Whether the SuttaCentral-style per-segment reference numbers
+    /// (`1.1.1`, `1.1.2`, …) are rendered beside each paragraph. An anchor
+    /// navigation forces them on for that render regardless of this default;
+    /// see `docs/sutta-display-settings-and-multi-column-view.md`.
+    pub show_references: bool,
     pub pali_font: SuttaFontGroup,
     pub translation_font: SuttaFontGroup,
     /// Per-author text ("ink") colors, e.g. "sujato" -> "#663399".
@@ -488,6 +493,7 @@ impl Default for SuttaDisplayDefaults {
             layout: SuttaLayout::default(),
             repeat_pali: RepeatPali::default(),
             width_percent: 100,
+            show_references: false,
             // Matches the stylesheet's un-overridden look: Pāli cells render
             // in "Source Sans 3 SSP" at 0.8em (see _suttacentral.sass),
             // translations in the serif body font at 1em. The CSS custom
@@ -931,6 +937,27 @@ mod tests {
         // Legacy Debug-form values persisted by the old `format!("{:?}")` call sites.
         assert_eq!(ProviderName::from_canonical_or_legacy("XAI"), Some(ProviderName::XAI));
         assert_eq!(ProviderName::from_canonical_or_legacy("Nonsense"), None);
+    }
+
+    /// The `POST /save_sutta_display_settings` route deserializes the client's
+    /// whole settings object straight into `SuttaDisplayDefaults`, so the new
+    /// `show_references` field needs no route or payload change — but a stored
+    /// settings row written before the field existed must still load. The
+    /// struct-level `#[serde(default)]` is what makes both true.
+    #[test]
+    fn sutta_display_defaults_show_references_round_trip() {
+        let stored_before_the_field = r#"{"layout": "lines", "width_percent": 90}"#;
+        let d: SuttaDisplayDefaults = serde_json::from_str(stored_before_the_field).unwrap();
+        assert_eq!(d.width_percent, 90);
+        assert!(!d.show_references, "an old settings row must default to off");
+
+        let mut d = SuttaDisplayDefaults::default();
+        d.show_references = true;
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("\"show_references\":true"), "{}", json);
+
+        let back: SuttaDisplayDefaults = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, d);
     }
 
     /// FR-A7 migration: stored settings and the old bundled JSON carry

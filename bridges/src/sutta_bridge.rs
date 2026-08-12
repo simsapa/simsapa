@@ -2658,8 +2658,8 @@ impl qobject::SuttaBridge {
 
     pub fn get_sutta_html(&self, window_id: &QString, uid: &QString) -> QString {
         let app_data = get_app_data();
-        // Default to not showing references when called directly from QML
-        let html = app_data.render_sutta_html_by_uid(&window_id.to_string(), &uid.to_string(), false);
+        // No overrides: the reference numbers follow the persisted default.
+        let html = app_data.render_sutta_html_by_uid(&window_id.to_string(), &uid.to_string());
         QString::from(html)
     }
 

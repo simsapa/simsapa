@@ -2427,15 +2427,25 @@ pub fn bilara_multi_column_html(
         for (n, col) in columns.iter().enumerate() {
             let segment = col.segments.get(i).cloned().unwrap_or_default();
             let kind = if col.is_pali { "pali" } else { "translated" };
+            // The reference number goes *inside* the first cell, inline before
+            // its text, exactly as the single-document renderer places it — so
+            // it shares the paragraph's first line instead of costing a line of
+            // its own. As a direct child of `span.segment` it would be another
+            // flex/grid item: full-width (a blank line per segment, which is
+            // what it used to do) or a stolen column. Keeping it out of
+            // `span.segment` also leaves the Columns stripe geometry
+            // (`column_bg_gradient` in src-ts/display_settings.ts) and the
+            // header row's alignment untouched.
+            let cell_reference = if n == 0 { reference_anchor.as_str() } else { "" };
             cells.push_str(&format!(
-                "<span class='colcell col-{} {}' data-uid='{}'>{}</span>",
-                n, kind, col.uid, segment,
+                "<span class='colcell col-{} {}' data-uid='{}'>{}{}</span>",
+                n, kind, col.uid, cell_reference, segment,
             ));
         }
 
         let combined_segment = format!(
-            "<span class='segment' id='{}'>{}{}</span>",
-            i, reference_anchor, cells,
+            "<span class='segment' id='{}'>{}</span>",
+            i, cells,
         );
 
         // Apply template if available

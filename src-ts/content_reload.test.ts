@@ -150,6 +150,21 @@ describe("fetch_content_block", () => {
     expect(url).toContain("repeat_pali=off");
   });
 
+  test("refetch_with_params sends an explicit show_references over the page state", async () => {
+    // The page was rendered with references on (an anchor navigation); the
+    // reader has just switched them off. The re-fetch must carry the new
+    // value, not read the old one back out of SUTTA_DISPLAY.
+    (globalThis as any).SUTTA_DISPLAY.show_references = true;
+    const ok = await cr.refetch_with_params("linebyline", "off", false);
+    expect(ok).toBe(true);
+
+    const url = String(fetch_mock.mock.calls.find((c) =>
+      String(c[0]).includes("sutta_content_block"))![0]);
+    expect(url).toContain("show_references=false");
+    // The post-swap write-back records the new effective value.
+    expect((globalThis as any).SUTTA_DISPLAY.show_references).toBe(false);
+  });
+
   test("adopts the server-resolved columns from the X-SSP-Columns header", async () => {
     // The server applied an atend Repeat-Pāli arrangement; the client adopts
     // it verbatim (no client-side mirroring).
