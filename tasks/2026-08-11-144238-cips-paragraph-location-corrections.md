@@ -1,6 +1,8 @@
 # CIPS topic index — paragraph location review
 
-Prepared 2026-08-11, for review by the topic index author.
+Prepared 2026-08-11 for review by the topic index author; updated 2026-08-12,
+when the paragraph-link feature shipped, to separate the defects the tooling
+can report from the ones only a human reading the passage can catch.
 
 Companion to
 [2026-08-11-144238-prd---topic-index-list-readability-and-paragraph-links.md](./2026-08-11-144238-prd---topic-index-list-readability-and-paragraph-links.md).
@@ -17,8 +19,25 @@ opens when a topic link is clicked.
 | Sutta references in the index | 19,970 |
 | …of which carry a paragraph location | 1,579 (7.9 %) — all in **DN** |
 | Distinct suttas involved | 32 |
-| Locations that resolve correctly | **1,573** |
-| Locations that do not exist in the text | **6** |
+| Locations that resolve to the intended passage | **1,563** |
+| Locations that resolve, but to the **wrong** passage | **10** — §B |
+| Locations that do not exist in the text | **6** — §A, §B |
+
+**The 10 in the middle row are the ones that need you most**, and they are the
+reason this document exists rather than just a warning in the build log. They
+are all DN 20 `4.1`–`4.10`. The automated check can only ask *"does this
+segment id exist?"*, and for these the answer is yes — so they pass validation
+silently, and the app's fallback never fires, because there is nothing for it
+to detect. A reader clicking *gandhabbas, visiting monastics* today is taken,
+with no warning of any kind, to a paragraph about deities gathering.
+
+The 6 missing ones are the *safer* failure: the tooling reports them, and the
+reader gets an explicit notice naming the location that was missing (see
+[What the app does meanwhile](#what-the-app-does-meanwhile)).
+
+Only a correction to `general-index.csv` can fix either class. The pipeline
+reports source-data defects and never repairs them, so nothing changes until
+the source is edited.
 
 ## The convention the data follows
 
@@ -50,6 +69,13 @@ are not — the heading's siblings continue as `1.7.10`, `1.8.1`, `1.8.2`, …
 | `DN33:1.7.9.1`<br>*conditions (saṅkāra) — all beings sustained by*<br>(the headword's spelling is itself a typo — see §C) | ❌ | — | `dn33:1.8.3` | Does not exist. `1.8.3` is *"All sentient beings are sustained by conditions."* If section-level is preferred, use `1.7.9.0` like its sibling row above. |
 
 ## B. DN 20 — the whole `4.x` block
+
+**All 15 rows in this section are wrong, but in two different ways, and only
+the second way is visible to a reader.** `4.1`–`4.10` exist and therefore
+resolve, silently, to unrelated prose — no warning, no notice, nothing in the
+build log. `4.11`–`4.15` do not exist, so the tooling reports them and the
+reader gets a notice. The first ten are the harder problem precisely because
+nothing flags them.
 
 DN 20 has only **one** heading segment in the entire sutta — `dn20:4.0`,
 *"1. The Gathering of Deities"* — so the heading convention offers nothing
@@ -151,18 +177,64 @@ heading, so those six all land in the same place. The four direction rows would
 be better served by `dn20:9.41`–`9.44`, and *earth gods* by `dn20:7.2`
 (*"earth-gods of Kapilavatthu"*).
 
-## What the app will do meanwhile
+## What the app does meanwhile
 
-A location that does not exist will not leave the reader stranded. The app
+This is implemented and shipped, so it describes current behaviour rather than
+a plan.
+
+A location that does not exist does not leave the reader stranded. The app
 walks back to the nearest preceding paragraph **within the same parent
 section**, and only that far — so `1.7.9.1` lands on `1.7.9.0` (*"1. Ones"* —
 the right place), and `DN20:4.11`–`4.15` land on `dn20:4.10`, which is at least
 inside the Gathering of Deities. Either way a dismissible notice at the landing
-place names the location that was missing and the one used instead. If nothing
-in the parent matches, the sutta opens at the top with a notice saying only that
+place names the location that was missing and the one used instead, in full
+(`dn20:4.11`), so it can be copied into a reply to this document. If nothing in
+the parent matches, the sutta opens at the top with a notice saying only that
 the referenced location was not found, and the reader can search for the
 passage.
 
-That fallback is a safety net, not a fix: it cannot know that `DN20:4.2` was
-meant to be the gandhabbas, because `4.2` exists and points somewhere else.
-Only a correction to the source data can fix the second table above.
+The walk deliberately stops at the parent and never continues to a sibling of
+it: a sibling may be an entirely different chapter, and landing there silently
+would be worse than landing at the top.
+
+**That fallback is a safety net, not a fix, and it is blind to the larger half
+of §B.** It cannot know that `DN20:4.2` was meant to be the gandhabbas,
+because `4.2` exists and points somewhere else — so those ten rows produce no
+notice, no warning and no log line. They look correct from every angle except
+reading the paragraph. Only a correction to the source data reaches them.
+
+## What we are asking for
+
+Four independent decisions, in rough order of how much they affect readers.
+None of them is urgent, and nothing in the app is blocked on them — the
+feature ships and works with the data as it stands.
+
+1. **§B, DN 20 `4.1`–`4.10` (10 rows).** The most valuable to fix, because
+   they are wrong *and* invisible. The suggested targets are keyword matches
+   against the Pāli and Ven. Sujato's translation and need your confirmation —
+   we do not want to guess at what a topic entry was meant to point to. Two
+   specific questions inside that table: `4.9` (*devas, visiting monastics*)
+   is too general for us to place at all; and `4.12`–`4.14` are three
+   consecutive rows carrying the same heading — is one segment intended, or
+   three different ones?
+2. **§B, DN 20 `4.11`–`4.15` (5 rows) and §A, DN 33 `1.7.9.1` (1 row).** The
+   six that do not exist. Readers do get a notice here, so the harm is smaller,
+   but the notice is an apology rather than a destination.
+3. **§C, the `conditions (saṅkāra)` headword** (10 rows, missing *h*). A
+   single find-and-replace. Worth knowing: the entry is currently findable in
+   the app's Topic Index search **only** by the misspelling.
+4. **§D, five duplicated cross-reference rows.** Delete one row of each pair.
+   Cosmetic — they show as the same `• see:` line twice.
+
+Also flagged, not defects: the six rows all pointing at `DN20:4.0`, and
+`DN33:1.7.9.0` pointing at a heading rather than the sentence beneath it (see
+§A and "Other"). Both resolve to a reasonable place; they are listed in case
+finer targets were intended.
+
+A reply naming row numbers and replacement locators is enough — we make the
+CSV edit, regenerate the index and re-run the validation. Re-running it is how
+we confirm a correction landed: the summary line currently reads
+`1579 checked, 1573 ok, 0 unresolved uid, 0 no segments, 6 missing segment`,
+and items 1 and 2 above would move it to `1579 ok`. Note that the count alone
+cannot confirm item 1 — those rows already count as `ok` today. Only reading
+the passages can.

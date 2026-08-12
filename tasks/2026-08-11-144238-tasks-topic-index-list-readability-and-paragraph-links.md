@@ -614,14 +614,14 @@ The PRD's success metrics 1–12 are almost all **visual, GUI checks** — per t
 project rules the agent must not run the GUI, so this task ends by handing the
 user a concrete checklist rather than by claiming them.
 
-- [ ] 8.0 Tests, documentation and final verification
-  - [ ] 8.1 Update `docs/sutta-display-settings-and-multi-column-view.md`: the **Show references** option, its Off/On control and placement, the three-level precedence of requirement 43, the `SuttaDisplayOverrides.show_references` signature change, and a note that the two full-page sutta routes still have no `show_references` parameter (only the anchor rule).
-  - [ ] 8.2 Add a short section to the same doc (or a new `docs/` note, cross-linked) covering the anchor jump: the candidate walk and its deliberate stopping rule, the two notice forms, and the "never inject a block into `span.segment`" constraint.
-  - [ ] 8.3 Update `PROJECT_MAP.md` with `src-ts/anchor_jump.ts`, `src-ts/anchor_jump.test.ts` and `assets/sass/_anchor_jump.scss`.
-  - [ ] 8.4 Run the full suite: `make test` (rust + qml + js) plus `qmllint` on the three changed QML files; confirm no new warnings (success metric 13).
-  - [ ] 8.5 Run `make build -B` and confirm a clean build.
-  - [ ] 8.6 Re-read the PRD's §8 success metrics against the implementation and write the user a verification checklist naming the exact clicks for the ones only a human can confirm: metrics 1–11 (the two named fallback checks — *conditions (saṅkāra) → all beings sustained by* landing on `dn33:1.7.9.0`, and *Māra → attacks gathering of arahants* landing on `dn20:4.10`; the notice's selectability; Columns-layout alignment; the `feet` / `Buddhas'` `(a)`–`(e)` group; references forced on from the Topic Index and turned off in the cogwheel; and the restart-survival check). **Search for `conditions (saṅkāra)` — without the *h*.** The correct Pāli is *saṅkhāra*; the CSV misspells this one headword on 10 rows (the rest of the file spells it correctly), so the entry is findable only by the typo until the source is fixed — §C of [the corrections doc](./2026-08-11-144238-cips-paragraph-location-corrections.md). If the author corrects it first, this check and the sample warning line above both move to `saṅkhāra`. For metric 6 (the give-up notice) the checklist must say how to reach it, since no Topic Index link produces it directly: open a segment-carrying link, then switch the reading panel to a non-segmented text of the same sutta (`dn33/pli/cst`, `dn33/en/thanissaro`, `dn33/en/tw-caf_rhysdavids` all have an empty `content_json`) and jump again.
-  - [ ] 8.7 Report which requirements are covered by automated tests and which rest on the manual checklist, so nothing is reported as verified that was not.
+- [x] 8.0 Tests, documentation and final verification
+  - [x] 8.1 Update `docs/sutta-display-settings-and-multi-column-view.md`: the **Show references** option, its Off/On control and placement, the three-level precedence of requirement 43, the `SuttaDisplayOverrides.show_references` signature change, and a note that the two full-page sutta routes still have no `show_references` parameter (only the anchor rule).
+  - [x] 8.2 Add a short section to the same doc (or a new `docs/` note, cross-linked) covering the anchor jump: the candidate walk and its deliberate stopping rule, the two notice forms, and the "never inject a block into `span.segment`" constraint.
+  - [x] 8.3 Update `PROJECT_MAP.md` with `src-ts/anchor_jump.ts`, `src-ts/anchor_jump.test.ts` and `assets/sass/_anchor_jump.scss`.
+  - [x] 8.4 Run the full suite: `make test` (rust + qml + js) plus `qmllint` on the three changed QML files; confirm no new warnings (success metric 13).
+  - [x] 8.5 Run `make build -B` and confirm a clean build.
+  - [x] 8.6 Re-read the PRD's §8 success metrics against the implementation and write the user a verification checklist naming the exact clicks for the ones only a human can confirm: metrics 1–11 (the two named fallback checks — *conditions (saṅkāra) → all beings sustained by* landing on `dn33:1.7.9.0`, and *Māra → attacks gathering of arahants* landing on `dn20:4.10`; the notice's selectability; Columns-layout alignment; the `feet` / `Buddhas'` `(a)`–`(e)` group; references forced on from the Topic Index and turned off in the cogwheel; and the restart-survival check). **Search for `conditions (saṅkāra)` — without the *h*.** The correct Pāli is *saṅkhāra*; the CSV misspells this one headword on 10 rows (the rest of the file spells it correctly), so the entry is findable only by the typo until the source is fixed — §C of [the corrections doc](./2026-08-11-144238-cips-paragraph-location-corrections.md). If the author corrects it first, this check and the sample warning line above both move to `saṅkhāra`. For metric 6 (the give-up notice) the checklist must say how to reach it, since no Topic Index link produces it directly: open a segment-carrying link, then switch the reading panel to a non-segmented text of the same sutta (`dn33/pli/cst`, `dn33/en/thanissaro`, `dn33/en/tw-caf_rhysdavids` all have an empty `content_json`) and jump again.
+  - [x] 8.7 Report which requirements are covered by automated tests and which rest on the manual checklist, so nothing is reported as verified that was not.
 
 ---
 
@@ -747,11 +747,25 @@ documents were spot-checked and are accurate.
 - **The `anchor` rename (5.1) is the whole of the reported bug** and is
   independently shippable — it is worth confirming the exact-hit path works
   before task 6 adds the fallback machinery on top.
-- **Requirement 44 is a trap by construction**: with rule 2 in place, every Topic
-  Index arrival has references on, so "the scroll works with references off" is
-  untestable by simply opening a link. The testable path is the one the PRD
-  names — open from the index, switch references off in the cogwheel, then jump
-  to another location in the same sutta (task 8.6).
+- **Requirement 44 is a trap by construction, and worse than the PRD thought.**
+  With rule 2 in place every anchor-carrying load has references on. The PRD's
+  proposed path — open from the index, switch references off, then jump to
+  another location — **does not work**: a Topic Index click is hardcoded
+  `new_tab = true` (`cpp/window_manager.cpp:606`), so the "another location" is
+  a fresh page whose load re-forces the references on. Since the only thing
+  that ever scrolls a page is a jump at load time, there is **no** state in
+  which a scroll happens with references off. Requirement 44 is therefore not
+  GUI-testable; it holds structurally, because both render paths emit the
+  segment wrapper's `id` regardless of `show_references` (`helpers.rs:2313`,
+  `:2437`) and the walk targets that id. See §F of the handover checklist.
+- **Every Topic Index click opens a new tab**, which invalidates any check
+  phrased as "jump again" or "two misses in a row". The direct
+  `scroll_to_anchor()` branch of task 5.4 is `!new_tab`, so it serves the
+  tab-0-reusing callers (search results, in-page links), never the Topic
+  Index. The localhost API's `/open_sutta_tab/<window_id>/<uid..>?<anchor>`
+  is the only way to drive an arbitrary uid/anchor pair into the reader, and
+  is what the handover checklist uses for the give-up notice and the
+  Columns-layout check.
 - **Two `id` attributes exist in the page** (`id="dn33:1.11.0"` on the segment
   wrapper, `id="1.11.0"` on the reference anchor inside it, and the latter only
   when references are on). Everything in task 6 targets the **full colon-bearing
@@ -773,3 +787,217 @@ documents were spot-checked and are accurate.
   persist path lands with 7.1 + 7.9. The component table's `C14, C16 → C17`
   dependency stands, but the box is essentially empty (task 7.16 just verifies
   it).
+
+---
+
+## Handover — manual verification checklist (task 8.6)
+
+The agent does not run the GUI. Everything below needs a human at the app.
+Build first: `make build -B && make run`.
+
+### A. Topic Index list readability (metrics 1, 2, 9)
+
+1. Open the **Topic Index** window, letter **A**, headword
+   *abandoning (pajahati, pahāna)*.
+   - Each sub-topic label ends with a **colon** (`sense bases:`).
+   - A clear gap precedes each label, **except** the first one under the
+     headword — no doubled gap there.
+   - Entries with no sub-topic label (and the `• see:` cross-reference lines)
+     look exactly as before: no colon, no extra gap.
+2. No link anywhere in the window shows a segment id. `DN 33:1.11.0` must not
+   appear; the link reads `DN 33 Saṅgītisutta`.
+3. Headword **feet**, sub-topic **Buddhas'** — five `dn30` links reading
+   `(a)` … `(e)`, and each one jumps to its own paragraph
+   (`dn30:1.4.0`, `1.7.0`, `1.10.0`, `1.16.0`, `1.19.0`).
+
+### B. The exact jump (metrics 3, 4, 10)
+
+4. Click `DN 33 Saṅgītisutta` under *striving* — **with** "Open in new window"
+   checked, then again **without** it. Both must open DN 33 scrolled to
+   `dn33:1.11.0`, briefly highlighted in a colour clearly distinct from the
+   find bar's. No notice appears.
+5. Click a link whose reference has **no** segment id (e.g. `SN 35.24
+   Pahānasutta`) — opens at the top, no highlight, no notice.
+6. On an arrival from the Topic Index the small reference numbers are **on**
+   even though the stored default is off, and the number beside the
+   highlighted paragraph is the one the index cited.
+
+### C. The fallback notice (metric 5)
+
+7. Search the Topic Index for **`conditions (saṅkāra)`** — *without the h*.
+   The correct Pāli is *saṅkhāra*; the CSV misspells this one headword on 10
+   rows, so the entry is findable only by the typo until the index author
+   corrects the source (§C of the corrections doc). Sub-topic *all beings
+   sustained by* → the link cites `dn33:1.7.9.1`, which does not exist.
+   - It lands on `dn33:1.7.9.0`, the heading *"1. Ones"*.
+   - Above it: **"Referenced location dn33:1.7.9.1 not found. This location
+     dn33:1.7.9.0 is the closest fallback."**
+   - `1.7.9.0` is printed beside the paragraph, matching the tail of the id in
+     the notice.
+   - The notice is **still on screen a minute later** (it must not fade), and
+     its "×" removes it.
+8. Headword **Māra**, sub-topic *attacks gathering of arahants* (`dn20:4.15`,
+   five decrements) — lands on `dn20:4.10` with the same notice shape.
+9. **Drag-select the notice text with the mouse and copy it** — the clipboard
+   must hold the complete sentence including both *full* ids
+   (`dn33:1.7.9.1`, not `1.7.9.1`), and the "×" must not land inside the
+   selection.
+10. Open the find bar and search a word that occurs in the notice — it
+    highlights like any other text, **and the "×" still dismisses** afterwards.
+
+### The constraint that shapes D, E and F
+
+**Every Topic Index click opens a new tab.**
+`WindowManager::show_sutta_from_reference_search` (`cpp/window_manager.cpp:606`)
+calls `show_result_in_html_view_with_json(json, true)` — the `true` is
+hardcoded. So there is no GUI gesture that re-jumps inside an already-loaded
+page: a second click is a second tab with a fresh page load.
+
+Three things follow, and they are why the checks below use the localhost API
+rather than clicks:
+
+- The jump runs once, from the wrapper's `scroll_timer` on
+  `LoadSucceededStatus`. Nothing re-runs it within a page.
+- The `show_result_in_html_view` direct-`scroll_to_anchor()` branch is
+  explicitly `!new_tab`, so the Topic Index never reaches it. It exists for
+  the callers that reuse tab 0 (search results, in-page links).
+- A content-block swap (any cogwheel or column-bar change) replaces
+  `#ssp_content` and therefore **destroys the notice** — by design
+  (requirement 36). A notice and a post-load layout change cannot coexist.
+
+**The API route is the harness.** `GET /open_sutta_tab/<window_id>/<uid..>?<anchor>`
+takes an arbitrary uid and an arbitrary anchor and goes through the same
+`show_result_in_html_view_with_json` path. The first window is `window_1`; the
+port is in `$SIMSAPA_DIR/api-port.txt`:
+
+``` sh
+PORT=$(cat "$SIMSAPA_DIR/api-port.txt")
+curl "http://localhost:$PORT/open_sutta_tab/window_1/dn33/pli/cst?anchor=dn33:1.11.0"
+```
+
+(These recipes were derived by reading the route and `window_manager.cpp`, not
+by running them — if `window_1` does not match your window, the call silently
+does nothing and you need the actual `window_id`.)
+
+### D. The give-up notice (metric 6)
+
+11. **Not reachable by clicking**, and the earlier "switch text and jump
+    again" instruction was wrong — switching the displayed text is a content
+    swap, which removes the notice rather than re-running the jump. Every
+    segment-carrying ref resolves against `{uid}/pli/ms`, segmented in all 32
+    referenced suttas, so no Topic Index link can miss.
+
+    Reach it by loading a **non-segmented** text with an anchor — `dn33/pli/cst`,
+    `dn33/en/thanissaro` and `dn33/en/tw-caf_rhysdavids` all have an empty
+    `content_json`:
+
+    ``` sh
+    curl "http://localhost:$PORT/open_sutta_tab/window_1/dn33/pli/cst?anchor=dn33:1.11.0"
+    ```
+
+    - The sutta opens at the **top** with **"Referenced location dn33:1.11.0
+      not found."** — one sentence, no fallback clause — as the first thing
+      above the sutta title, dismissible by its "×".
+    - **No error dialog.** One `logger.warn()` line in `log.txt`.
+
+### E. Notice hygiene and layout (metrics 7, 8)
+
+12. **Metric 7's "two misses in a row" is not GUI-reproducible** — each click
+    is a new tab, so each miss is a fresh page and the at-most-one rule is
+    never actually exercised by a reader. It is covered by
+    `anchor_jump.test.ts` ("two misses in a row leave exactly one notice",
+    "an exact hit after a miss clears the stale notice"). What is worth
+    confirming by eye is only the half that a click *does* produce: **an exact
+    hit shows no notice**, and a reference with no location shows none.
+13. **Metric 8 needs a multi-column page that carries a notice, and a Topic
+    Index click cannot make one.** The link opens `{uid}/pli/ms`;
+    `get_pali_for_translated` returns `None` for a Pāli sutta
+    (`app_data.rs:294`), so the default column set is a single column. Adding
+    a translation from the column bar swaps the content and destroys the
+    notice.
+
+    The combination exists only when the *opened* sutta is a **translation**
+    (which does get a Pāli counterpart, so two columns) and the anchor misses
+    on load. Set layout **Columns** with scope "Save as default" first, then:
+
+    ``` sh
+    curl "http://localhost:$PORT/open_sutta_tab/window_1/dn33/en/sujato?anchor=dn33:1.7.9.1"
+    ```
+
+    The notice must sit above the resolved row without disturbing the
+    alignment of that row's column cells. (This is the `span.segment`-is-a-flex-container
+    constraint. The placement rule itself is pinned by the jsdom test "goes
+    before the nearest block ancestor, never inside span.segment", and the
+    reference anchor's own placement by `test_multi_column_reference_anchors`.)
+
+### F. Show references (metrics 10, 11)
+
+14. On a page opened from the Topic Index (references forced on), open the
+    cogwheel → **Layout** → **Show references** → **Off**. The numbers
+    disappear, the page still works and stays correctly laid out, and a
+    subsequent **Layout** or **Repeat Pāli** change does **not** bring them
+    back.
+
+    **The earlier "then jump to another location" step was wrong** — that is a
+    new tab and a fresh load, so rule 2 forces the references on again and it
+    tests nothing. Requirement 44 ("the scroll does not depend on the
+    setting") is in fact **not GUI-testable at all**: a page can only be
+    scrolled by a jump at load time, and any load carrying an anchor has
+    references forced on by rule 2. It holds structurally instead — the
+    segment wrapper's `id` is emitted by both render paths regardless of
+    `show_references` (`helpers.rs:2313`, `:2437`), which is what the walk
+    targets.
+
+    Known and accepted: a **full reload** of that tab (prev/next navigation,
+    reopening the sutta) re-forces them on, because the wrapper's
+    `root.anchor` is still set. Documented in
+    `docs/sutta-display-settings-and-multi-column-view.md` §2.
+15. Turn **Show references** **On** with scope **"Save as default"**, restart
+    the app, and open a sutta **without** an anchor — the numbers are there.
+    For the Columns half of this check, open a **translation** (a Pāli sutta
+    is a single column, so Columns looks identical to Lines).
+
+## Coverage — automated vs. manual (task 8.7)
+
+**Covered by automated tests** (all green: 482+102 Rust, 150 QML, 129 Jest):
+
+| Requirements | Where |
+|---|---|
+| 9–12, 48, 58 (suffix computation, scoping, xrefs untouched) | `parse_cips_index.rs` — `test_display_label`, `test_suffix_letter`, `test_assign_suffixes_*` (5 cases) |
+| 50–57 (anchor validation, the three categories, the no-`:` skip) | `test_validate_anchors_classifies_each_case`, `test_validate_anchors_warning_quotes_the_source_verbatim` |
+| 59–61 (report-don't-repair) | `test_validate_anchors_does_not_modify_the_index` |
+| §6.1 sort equivalence | `test_locator_sort_key_matches_compare_locators`, `test_sorted_xref_targets_*` (incl. duplicates kept, input-order independence) |
+| 19, 23, 24 (the walk, its stopping rule, the bounded decrement) | `anchor_jump.test.ts` — `candidate_ids` group, incl. "never walks past the parent section" and the parent-only case real data never exercises |
+| 20, 21, 25–35 (both notice forms, placement, single-instance, selectable text, dismissal after find-bar splicing, insert-before-scroll) | `anchor_jump.test.ts` — `jump_to_segment` + `the notice` groups |
+| 43 (the three-level `show_references` precedence) | `sutta_display.rs::test_resolve_show_references_precedence` |
+| 39, 41, 42, 45, 46 (control state, scope semantics, seeding does not POST, explicit value wins over page state) | `display_settings.test.ts`, `content_reload.test.ts` |
+| 40 + persist round-trip (task 7.16) | Rust round-trip test on `SuttaDisplayDefaults` |
+| Reference-anchor placement in Columns (the `col-0` cell rule) | `test_multi_column_reference_anchors` |
+| 3.3 / 3.4 / 3.5 acceptance figures | verified against the regenerated JSON in task 3 (55 suffixed refs / 25 groups; `1579 checked, 1573 ok, 0 unresolved uid, 0 no segments, 6 missing segment`) |
+
+**Not covered — rests on the checklist above:** requirements 1–8, 13 (all
+visual layout), 14–16 (the jump end-to-end through QML, both open modes), 18
+(the highlight's appearance and its distinctness from the find colour), 22
+(the log lines), 36–38, 47, and PRD success metrics 1–6 and 8–11.
+
+**Not covered by either — structural or unreachable, stated plainly rather
+than claimed:**
+
+- **Requirement 17** (re-scroll an already-open sutta) — the Topic Index
+  cannot produce the case: every click is a new tab. The code path exists for
+  the tab-0-reusing callers and its guard is uid **and** anchor, but no
+  checklist step exercises it.
+- **Requirement 44** (the scroll works with references off) — not reachable
+  in any GUI state, since only a load-time jump scrolls and any anchored load
+  forces references on. Holds structurally: both render paths emit the segment
+  wrapper's `id` regardless of `show_references`.
+- **Metric 7's "two misses in a row"** — one notice per page is all a reader
+  can produce. Covered by jsdom instead.
+
+`qmllint` is clean on all four changed QML files (`TopicIndexWindow`,
+`SuttaSearchWindow`, `SuttaHtmlView_Desktop`, `SuttaHtmlView_Mobile`) and now
+runs as part of `make qml-test`, but a lint is not a behaviour test.
+
+Nothing above is reported as verified that was not actually run. The API
+recipes in §D and §E were derived from the route and `window_manager.cpp` by
+reading, not by execution.

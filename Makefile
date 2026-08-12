@@ -89,7 +89,19 @@ js-test:
 # qml-test-one:
 # 	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./assets/qml/ -input ./assets/qml/ -functions 'CommonWords::test_clean_stem'
 
-qml-test:
+# Sources scripts/qt-env.sh so this is the project's qmllint, not the system
+# Qt's (a bare 'qmllint' resolves to /usr/bin, a version the project targets on
+# no platform -- see CLAUDE.md "Qt version per platform").
+#
+# qmllint exits 0 on warnings, so this reports without failing the build. There
+# is a pre-existing warning baseline (dynamic itemAt() member lookups in the
+# tst_* files, the bookmark drag properties, AiResponseCoordinator's var-typed
+# function properties); the thing to watch for is a NEW warning naming a file
+# you touched.
+qml-lint:
+	. ./scripts/qt-env.sh && qmllint -I ./assets/qml/ ./assets/qml/*.qml
+
+qml-test: qml-lint
 	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./assets/qml/ -input ./assets/qml/
 
 project-tree:

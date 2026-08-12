@@ -906,6 +906,16 @@ the acceptance test.
    solar systems have gathered…"*). No fallback can detect that. Does the CSV
    get corrected before or after this feature ships?
 
+   **Answered 2026-08-12: after.** The feature ships against the data as it
+   stands; the index author will be contacted separately to review the CSV.
+   The corrections document was reorganised for that hand-off — its summary
+   table now separates the three classes (1,563 correct / 10 resolving to the
+   wrong passage / 6 missing) instead of reporting 1,573 as "resolve
+   correctly", and it ends with a "What we are asking for" section listing the
+   four independent decisions. Note for whoever re-runs the validation after a
+   correction: the summary count **cannot** confirm the ten silent ones, since
+   they already count as `ok` today.
+
    The same question covers §C of that document — the headword
    `conditions (saṅkāra)`, misspelled for *saṅkhāra* on 10 CSV rows. It is
    unrelated to the locations, but it is a one-word source fix in the same file,
@@ -923,6 +933,18 @@ the acceptance test.
    is a defect worth one line of code, but it is a behaviour choice. Note this
    is narrower than it first appears: a *different* location of the same open
    sutta already re-scrolls today, because the anchor is part of the URL (§6.6).
+
+   **Moot for the Topic Index, found while writing the handover checklist.**
+   §6.15's premise — that a second click rewrites `data_json` on the existing
+   tab — does not hold for this entry point:
+   `WindowManager::show_sutta_from_reference_search`
+   (`cpp/window_manager.cpp:606`) passes `new_tab = true` unconditionally, so
+   *every* click is a fresh tab that loads and scrolls itself. The implemented
+   direct-`scroll_to_anchor()` branch is guarded `!new_tab` (correctly — on a
+   new tab it would run against the outgoing or still-blank DOM), so it never
+   fires from the Topic Index at all. It remains right for the callers that
+   reuse tab 0. Nothing needs changing; the analysis was simply describing a
+   case this entry point cannot reach.
 5. Requirement 45's scope limit: clear `root.anchor` after a resolved jump, so
    a later full reload of that tab does not re-force the references on, or
    accept that it does?

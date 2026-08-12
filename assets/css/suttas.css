@@ -971,6 +971,7 @@ h4 {
 
 body.dark {
   --bg-primary: #2b2b2b;
+  --bg-primary-darker: #242424;
   --bg-content: #3c3c3c;
   --text-primary: #ffffff;
   --text-secondary: #cccccc;

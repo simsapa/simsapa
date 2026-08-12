@@ -153,6 +153,26 @@ Notable feature docs:
   (two deferred 50 ms timers) on window re-activation. A JS-only repaint nudge
   was tried first and does **not** work. Instantiate the helper next to every
   new desktop `WebEngineView`.
+- [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
+  **a closed window is not destroyed, it is hidden and stays in its
+  `WindowManager` list**, so the next open can revive it instead of loading
+  another `QQmlApplicationEngine` (the expensive part of a window). Everything
+  else follows: the root's `visible` property — `window_is_open()` — is what
+  distinguishes an open window from a pooled one, and list membership tells you
+  nothing. Covers the revive path in `create_sutta_search_window()`
+  (`clear_all_tabs()` because callers assume a blank window, keep the
+  `window_id`, move to the end of the list, `show_and_activate_window()`), and
+  the two places that must filter on `visible`: the **`window_id`-less dispatch
+  fallbacks** (`last_open_sutta_search_window()` /
+  `first_open_sutta_search_window()`, never bare `last()`/`first()` — they call
+  `show` + `raise`, so targeting a pooled window silently **re-opens a window
+  the user closed**, which is exactly the Topic Index "Open in new window looks
+  stuck on" bug), and the **session save** in `gui.cpp`'s `aboutToQuit`, whose
+  array length is the restored window count. Also why mobile never pools (the
+  `onClosing` handler rejects the close) and why the other window lists
+  (`create_topic_index_window()` and friends) accumulate one hidden window per
+  open — a memory cost, not a correctness bug, since nothing dispatches to them
+  by "last window".
 - [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
   shipped `assets/fonts/crimson-pro/*.ttf` are **patched, not stock**: stock
   Crimson Pro lacks ṁ (U+1E41), so plain browsers fell back to a mismatched
@@ -423,7 +443,22 @@ Notable feature docs:
   contract** (`reinit_sutta_content()` + `window.ssp_rebind_content_handlers()`
   + the `ssp-content-swapped` event), and why the column bar uses custom
   upward-opening dropdowns (WebEngineView clips native select popups at the
-  window edge).
+  window edge). **§8 the anchor jump** — opening a sutta at a paragraph from a
+  Topic Index segment id (`dn33:1.11.0`): the result-data `anchor` key (the
+  old `segment_id` key nothing read was the whole bug), why the anchor being
+  *part of the URL* means a different location of an open sutta already
+  reloads and only "same uid **and** same anchor" needs a direct
+  `scroll_to_anchor()` (keying it on the uid alone runs against the outgoing
+  DOM), the candidate walk in `src-ts/anchor_jump.ts` and its deliberate
+  stopping rule (decrement the last component, then the parent once, then
+  **stop** — never a sibling of the parent, which may be an unrelated
+  chapter), the two in-page notice forms and why the message is real
+  selectable text the find bar is allowed to match, and the **`show_references`
+  three-level precedence** (explicit param > `anchor` on the request > the
+  persisted default). Two placement rules that break layouts if ignored: the
+  reference anchor goes **inside the `col-0` cell** and the notice goes
+  **outside `span.segment`** — that span is the flex container in the
+  multi-column layouts, so any extra direct child becomes a phantom grid item.
 - [Android file saving via SAF](./docs/android-file-saving-saf.md) — how
   `SuttaBridge.save_file` writes user-chosen files. On Android `FolderDialog`
   returns a **Storage Access Framework `content://` tree URI** (not a path) and
@@ -1320,7 +1355,12 @@ Use this path for any tests or experimental scripts that need to query the actua
     [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing
-- **QML Tests:** `make qml-test` (runs all QML tests with offscreen platform)
+- **QML Tests:** `make qml-test` — runs `qmllint` over `assets/qml/*.qml`
+  first, then all QML tests with the offscreen platform. `make qml-lint` runs
+  the lint alone. The lint sources `scripts/qt-env.sh` so it is the project's
+  `qmllint`, not the system Qt's, and it does **not** fail the target (qmllint
+  exits 0 on warnings): there is a pre-existing warning baseline, so what
+  matters is a *new* warning naming a file you touched.
 - **Rust Tests:** `cd backend && cargo test` (runs all backend tests)
 - **Single Test:** `cd backend && cargo test test_name` (replace test_name with specific test function)
 - **All Tests:** `make test` (runs Rust, QML, and JavaScript tests)

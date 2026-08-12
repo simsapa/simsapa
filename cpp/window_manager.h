@@ -26,6 +26,17 @@ class WindowManager : public QObject {
 
         void create_plain_sutta_search_window();
         SuttaSearchWindow* create_sutta_search_window();
+
+        /// Closing a SuttaSearchWindow only hides it — the object stays in
+        /// sutta_search_windows (same assumption the aboutToQuit session-save in
+        /// gui.cpp makes when it skips windows whose root is not `visible`).
+        /// These pick the newest / oldest window the user still has open, so a
+        /// window_id-less dispatch never targets a closed one. They fall back to
+        /// last()/first() when nothing is open, so the request still lands
+        /// somewhere (re-showing a closed window) instead of being dropped.
+        SuttaSearchWindow* last_open_sutta_search_window();
+        SuttaSearchWindow* first_open_sutta_search_window();
+        SuttaSearchWindow* take_closed_sutta_search_window();
         void restore_last_session();
         DownloadAppdataWindow* create_download_appdata_window(
             const QVariantMap& initial_properties = QVariantMap());
