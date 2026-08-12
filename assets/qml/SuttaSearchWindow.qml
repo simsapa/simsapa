@@ -1136,7 +1136,11 @@ ${query_text}`;
         // reloads nor re-scrolls. Do the jump directly for that case only —
         // keyed on uid AND anchor, because a same-uid/different-anchor click
         // has a pending reload whose incoming DOM this would run ahead of.
-        if (tab_data.anchor && tab_data.anchor.length > 0 &&
+        // "new_tab" is excluded because a fresh tab always builds and loads its
+        // own webview, so the incoming page scrolls itself; calling here would
+        // run against the outgoing or still-blank DOM.
+        if (!new_tab &&
+            tab_data.anchor && tab_data.anchor.length > 0 &&
             already_open_uid === tab_data.item_uid &&
             already_open_anchor === tab_data.anchor) {
             let cur_item = sutta_html_view_layout.get_current_item();

@@ -303,35 +303,88 @@ Item {
         }
     }
 
+    // Whether this view is showing a sutta, as opposed to a dictionary word or
+    // a book chapter. Mirrors the dispatch in Component.onCompleted.
+    function is_sutta_content(): bool {
+        return root.table_name !== "dict_words"
+            && root.table_name !== "dpd_headwords"
+            && root.table_name !== "dpd_roots"
+            && root.table_name !== "bold_definitions"
+            && root.table_name !== "book_spine_items";
+    }
+
     function scroll_to_anchor() {
         if (root.anchor && root.anchor.length > 0) {
             // Remove the leading # if present
             let anchor_id = root.anchor.startsWith('#') ? root.anchor.substring(1) : root.anchor;
 
-            // Try to scroll to the element with the anchor ID
+            // Sutta pages get window.ssp_jump_to_segment() from
+            // simsapa.min.js: it walks the nearest preceding siblings when the
+            // cited segment is absent, highlights where it landed, and inserts
+            // the in-page notice.
+            //
+            // Word and book-chapter pages load the same bundle but must NOT use
+            // it. Their anchors are plain element ids or names, not Bilara
+            // segment ids, so the walk is meaningless there: a miss would scroll
+            // the page to the top — undoing the native URL-fragment scroll this
+            // JS pass exists only to reinforce — and plant a notice about a
+            // location the reader never asked for. They take the direct lookup
+            // below, which is the live path for every EPUB TOC entry whose
+            // target carries a '#' fragment.
+            let use_walk = root.is_sutta_content();
             let js = `
                 (function() {
-                    var element = document.getElementById('${anchor_id}');
+                    var requested = ${JSON.stringify(anchor_id)};
+                    if (${use_walk} && typeof window.ssp_jump_to_segment === 'function') {
+                        return window.ssp_jump_to_segment(requested);
+                    }
+                    var element = document.getElementById(requested);
                     if (element) {
                         element.scrollIntoView({ behavior: 'auto', block: 'start' });
-                        return true;
+                        return 'exact';
                     }
-                    // Also try with querySelector in case it's a more complex selector
-                    element = document.querySelector('a[name="${anchor_id}"]');
+                    element = document.querySelector('a[name="' + requested + '"]');
                     if (element) {
                         element.scrollIntoView({ behavior: 'auto', block: 'start' });
-                        return true;
+                        return 'exact';
                     }
-                    // Try with the hash directly
-                    element = document.querySelector('${root.anchor}');
-                    if (element) {
-                        element.scrollIntoView({ behavior: 'auto', block: 'start' });
-                        return true;
+                    // The hash-form selector: this is the '#name' case, so it
+                    // takes root.anchor with its leading '#' rather than the
+                    // stripped id. A segment id contains a colon,
+                    // which is valid in an id but not in a CSS selector fragment,
+                    // so querySelector throws on it — that exception used to
+                    // abort this whole function.
+                    try {
+                        element = document.querySelector(${JSON.stringify(root.anchor)});
+                        if (element) {
+                            element.scrollIntoView({ behavior: 'auto', block: 'start' });
+                            return 'exact';
+                        }
+                    } catch (e) {
                     }
-                    return false;
+                    return 'missed';
                 })();
             `;
-            web.runJavaScript(js);
+            web.runJavaScript(js, function(result) {
+                root.log_anchor_jump_result(anchor_id, result, use_walk);
+            });
+        }
+    }
+
+    // Distinguish "exact", "approximate" and "missed" in a support log, and
+    // which of the two resolvers answered — the segment walk (sutta pages) or
+    // the direct anchor lookup (word and book-chapter pages).
+    function log_anchor_jump_result(anchor_id: string, result: var, used_walk: bool) {
+        if (result === undefined || result === null) {
+            return;
+        }
+        let outcome = String(result);
+        let path = used_walk ? "walk" : "direct";
+        logger.debug("scroll_to_anchor(): " + path + " -> " + outcome + " for " + anchor_id + " in " + root.item_uid);
+        if (outcome.startsWith("fallback:")) {
+            logger.info("scroll_to_anchor(): requested " + anchor_id + " not found in " + root.item_uid + ", used " + outcome.substring(9));
+        } else if (outcome === "missed") {
+            logger.warn("scroll_to_anchor(): no element for anchor " + anchor_id + " in " + root.item_uid);
         }
     }
 

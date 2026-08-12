@@ -428,7 +428,7 @@ conversion, so keep that shape and carry the full `sutta_ref` separately.
 
 **Dependencies:** none beyond task 4 sharing the same file.
 
-- [ ] 5.0 Route the segment id through the existing `anchor` path and re-scroll an already-open sutta
+- [x] 5.0 Route the segment id through the existing `anchor` path and re-scroll an already-open sutta
   - [x] 5.1 In `TopicIndexWindow.qml`'s `open_sutta()` (`:189-212`), replace the `segment_id` key with `anchor`, carrying the **full** segment id (`dn33:1.11.0`), and empty string when the ref has no `:` (requirement 37).
   - [x] 5.2 Verify by reading `SuttaSearchWindow.qml:367` that `new_tab_data()` copies `anchor` from the result data onto the tab, and `:1228` that the existing-tab update path does too — i.e. that no further plumbing is needed for the in-place mode.
   - [x] 5.3 Confirm the new-window mode: the trace to `WindowManager::open_sutta_search_window_with_query()` (`cpp/window_manager.cpp:497`) shows it reaches the same `show_result_in_html_view_with_json`, so no pass-through is missing. Instead check the risk named above — that the tab-0 update branch (`SuttaSearchWindow.qml:1210-1240`) finds its webview on a freshly constructed window; if `get_item()` returns nothing, `data_json` (and the anchor) is dropped without a log line. Add a `logger.warn()` there if it can miss.
@@ -508,22 +508,22 @@ not only Lines.
 
 **Dependencies:** task 5 (an anchor must actually arrive).
 
-- [ ] 6.0 In-page anchor resolution: fallback walk, paragraph highlight, and the notice component
-  - [ ] 6.1 Create `src-ts/anchor_jump.ts` with `jump_to_segment(requested)` implementing the walk above, plus `candidate_ids(requested): string[]` as a separately exported pure function so the walk is unit-testable without a DOM.
-  - [ ] 6.2 Handle the non-numeric-last-component case (requirement 24) and a requested id with no `.` at all — neither may crash or loop.
-  - [ ] 6.3 Implement the highlight: add a class (e.g. `ssp-anchor-highlight`) to the resolved element, scoped so it changes background only and alters no geometry (requirement 18).
-  - [ ] 6.4 Implement `show_anchor_notice(requested, used_or_null)`: build the element with real text nodes, remove any existing `.ssp-anchor-notice` first (requirement 32), place it per the table above (requirement 33), wire the "×" with an `aria-label` and a delegated click handler (requirements 31, §6.13), and insert it **before** the scroll (requirement 34).
-  - [ ] 6.5 Make `jump_to_segment` return `"exact"` / `"fallback:<id>"` / `"missed"` and show no notice on `"exact"` (requirement 35). On `"missed"` scroll the page to the top and place the give-up notice as the first child of `#ssp_content` (requirement 20).
-  - [ ] 6.6 Register `window.ssp_jump_to_segment = jump_to_segment` from `src-ts/simsapa.ts`'s init, next to the other page-level registrations.
-  - [ ] 6.7 Create `assets/sass/_anchor_jump.scss` with the highlight and notice styling: theme-aware light/dark pair modelled on `_find.scss:242-258`, a highlight colour **visually distinct** from the yellow/green find-match colour (§7), the notice as a full-width block in normal flow with its own subdued background and a clear boundary — **never** `position: fixed` (§7), body-size type (requirement 29), and no `user-select: none` on the message (requirement 26).
-  - [ ] 6.8 Add `@include meta.load-css("anchor_jump")` to `assets/sass/suttas.sass` beside the existing `find` include (`:119`) and run `make sass`.
-  - [ ] 6.9 Reduce `scroll_to_anchor()` in `SuttaHtmlView_Desktop.qml:196` to call `window.ssp_jump_to_segment` via `runJavaScript` with a result callback, keeping the existing three-branch body as the no-bundle fallback and wrapping its `document.querySelector('${root.anchor}')` branch in `try/catch` (§6.3).
-  - [ ] 6.10 Apply the identical change to `SuttaHtmlView_Mobile.qml:306`. The result-callback form is **already used unconditionally on both platforms** (`SuttaSearchWindow.qml:147`, `get_current_scroll_position()`), so no platform branch is expected; if it nevertheless proves unreliable through the native `QtWebView`, log from JS in a way that reaches the app log rather than dropping the requirement-22 logging silently.
-  - [ ] 6.11 In both wrappers' callbacks, emit `logger.info()` for a resolved fallback (naming requested and used ids) and `logger.warn()` for a miss (naming the uid and the anchor) — single concatenated string arguments (requirement 22).
-  - [ ] 6.12 Confirm the URL-fragment half of the anchor URL (`#dn33:1.11.0`, `_Desktop.qml:141`, `_Mobile.qml:251`) is not double-encoded such that native scrolling silently fails (§6.4). Adjust only if it is.
-  - [ ] 6.13 Add `src-ts/anchor_jump.test.ts`: `candidate_ids` for `1.7.9.10` (stops after `1.7.9`, never `1.7.8`), for a non-numeric tail, and for a bare id; a jsdom case where **only** the parent id exists, since real data never exercises that branch; jsdom tests for the notice — one instance only after two calls, dismissal works after text nodes have been spliced, give-up placement is the first child of `#ssp_content`, and the notice is inserted before the scroll call.
-  - [ ] 6.14 Run `npx webpack` and `make js-test`.
-  - [ ] 6.15 Re-read the generated markup for **Columns** layout (`helpers.rs:2426-2438`) and confirm the chosen insertion point can never land inside `<span class="segment">` (§6.14, success metric 8). Note this as a user-facing visual check for task 8.
+- [x] 6.0 In-page anchor resolution: fallback walk, paragraph highlight, and the notice component
+  - [x] 6.1 Create `src-ts/anchor_jump.ts` with `jump_to_segment(requested)` implementing the walk above, plus `candidate_ids(requested): string[]` as a separately exported pure function so the walk is unit-testable without a DOM.
+  - [x] 6.2 Handle the non-numeric-last-component case (requirement 24) and a requested id with no `.` at all — neither may crash or loop.
+  - [x] 6.3 Implement the highlight: add a class (e.g. `ssp-anchor-highlight`) to the resolved element, scoped so it changes background only and alters no geometry (requirement 18).
+  - [x] 6.4 Implement `show_anchor_notice(requested, used_or_null)`: build the element with real text nodes, remove any existing `.ssp-anchor-notice` first (requirement 32), place it per the table above (requirement 33), wire the "×" with an `aria-label` and a delegated click handler (requirements 31, §6.13), and insert it **before** the scroll (requirement 34).
+  - [x] 6.5 Make `jump_to_segment` return `"exact"` / `"fallback:<id>"` / `"missed"` and show no notice on `"exact"` (requirement 35). On `"missed"` scroll the page to the top and place the give-up notice as the first child of `#ssp_content` (requirement 20).
+  - [x] 6.6 Register `window.ssp_jump_to_segment = jump_to_segment` from `src-ts/simsapa.ts`'s init, next to the other page-level registrations.
+  - [x] 6.7 Create `assets/sass/_anchor_jump.scss` with the highlight and notice styling: theme-aware light/dark pair modelled on `_find.scss:242-258`, a highlight colour **visually distinct** from the yellow/green find-match colour (§7), the notice as a full-width block in normal flow with its own subdued background and a clear boundary — **never** `position: fixed` (§7), body-size type (requirement 29), and no `user-select: none` on the message (requirement 26).
+  - [x] 6.8 Add `@include meta.load-css("anchor_jump")` to `assets/sass/suttas.sass` beside the existing `find` include (`:119`) and run `make sass`.
+  - [x] 6.9 Reduce `scroll_to_anchor()` in `SuttaHtmlView_Desktop.qml:196` to call `window.ssp_jump_to_segment` via `runJavaScript` with a result callback, keeping the existing three-branch body as the no-bundle fallback and wrapping its `document.querySelector('${root.anchor}')` branch in `try/catch` (§6.3).
+  - [x] 6.10 Apply the identical change to `SuttaHtmlView_Mobile.qml:306`. The result-callback form is **already used unconditionally on both platforms** (`SuttaSearchWindow.qml:147`, `get_current_scroll_position()`), so no platform branch is expected; if it nevertheless proves unreliable through the native `QtWebView`, log from JS in a way that reaches the app log rather than dropping the requirement-22 logging silently.
+  - [x] 6.11 In both wrappers' callbacks, emit `logger.info()` for a resolved fallback (naming requested and used ids) and `logger.warn()` for a miss (naming the uid and the anchor) — single concatenated string arguments (requirement 22).
+  - [x] 6.12 Confirm the URL-fragment half of the anchor URL (`#dn33:1.11.0`, `_Desktop.qml:141`, `_Mobile.qml:251`) is not double-encoded such that native scrolling silently fails (§6.4). Adjust only if it is.
+  - [x] 6.13 Add `src-ts/anchor_jump.test.ts`: `candidate_ids` for `1.7.9.10` (stops after `1.7.9`, never `1.7.8`), for a non-numeric tail, and for a bare id; a jsdom case where **only** the parent id exists, since real data never exercises that branch; jsdom tests for the notice — one instance only after two calls, dismissal works after text nodes have been spliced, give-up placement is the first child of `#ssp_content`, and the notice is inserted before the scroll call.
+  - [x] 6.14 Run `npx webpack` and `make js-test`.
+  - [x] 6.15 Re-read the generated markup for **Columns** layout (`helpers.rs:2426-2438`) and confirm the chosen insertion point can never land inside `<span class="segment">` (§6.14, success metric 8). Note this as a user-facing visual check for task 8.
 
 ---
 

@@ -9,6 +9,7 @@ import * as content_reload from "./content_reload";
 import * as column_bar from "./column_bar";
 import * as sbs_blocks from "./sbs_blocks";
 import * as viewport_nudge from "./viewport_nudge";
+import * as anchor_jump from "./anchor_jump";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -156,6 +157,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // shorter viewport. Registered on every page — the bars it repairs are only
     // present on sutta pages, where it is a no-op if nothing is wrong.
     viewport_nudge.init_viewport_nudge();
+
+    // Install window.ssp_jump_to_segment(): the QML webview wrappers call it
+    // after the page loads to scroll to a cited paragraph. Registered on every
+    // page; it simply misses on one with no matching segment id.
+    anchor_jump.init_anchor_jump();
 
     // Initialize footnote bottom bar for sutta pages if enabled
     const sspContent = document.getElementById('ssp_content');

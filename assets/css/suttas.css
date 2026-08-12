@@ -2699,6 +2699,93 @@ body.dark .ssp-find-highlight.current {
     min-width: 100px;
   }
 }
+:root {
+  --anchor-highlight-bg: #cfe4ff;
+  --anchor-notice-bg: #f2ecd8;
+  --anchor-notice-border: #c9b98a;
+  --anchor-notice-text: #1a1a1a;
+  --anchor-notice-code-bg: #e4dcc2;
+  --anchor-notice-dismiss: #6b6355;
+  --anchor-notice-dismiss-hover-bg: #e0d6ba;
+}
+
+body.dark {
+  --anchor-highlight-bg: #29486e;
+  --anchor-notice-bg: #3a3a34;
+  --anchor-notice-border: #5f5a4a;
+  --anchor-notice-text: #e8e8e8;
+  --anchor-notice-code-bg: #4a4940;
+  --anchor-notice-dismiss: #b9b3a3;
+  --anchor-notice-dismiss-hover-bg: #4a4940;
+}
+
+.ssp-anchor-highlight {
+  background-color: var(--anchor-highlight-bg);
+  animation: ssp-anchor-highlight-fade 2.5s ease-out forwards;
+}
+
+@keyframes ssp-anchor-highlight-fade {
+  0% {
+    background-color: var(--anchor-highlight-bg);
+  }
+  60% {
+    background-color: var(--anchor-highlight-bg);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.ssp-anchor-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75em;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 1em 0;
+  padding: 0.75em 1em;
+  background-color: var(--anchor-notice-bg);
+  border: 1px solid var(--anchor-notice-border);
+  border-radius: 4px;
+  color: var(--anchor-notice-text);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.ssp-anchor-notice-message {
+  flex: 1 1 auto;
+}
+
+.ssp-anchor-notice-message code {
+  padding: 0 0.25em;
+  background-color: var(--anchor-notice-code-bg);
+  border-radius: 2px;
+  font-size: 0.8em;
+}
+
+.ssp-anchor-notice-dismiss {
+  flex: 0 0 auto;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--anchor-notice-dismiss);
+  font-size: 1.1em;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ssp-anchor-notice-dismiss:hover {
+  background-color: var(--anchor-notice-dismiss-hover-bg);
+}
+
+.ssp-anchor-notice-dismiss:focus-visible {
+  outline: 2px solid var(--anchor-notice-border);
+  outline-offset: 1px;
+}
+
 #readingModeButton {
   position: fixed;
   top: 10px;
