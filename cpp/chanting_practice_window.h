@@ -17,6 +17,8 @@ public:
     QQmlApplicationEngine *m_engine;
     QString m_window_id;
 
+    void apply_window_properties(const QString& window_id);
+
 private:
     void setup_qml();
 };

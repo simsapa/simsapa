@@ -1073,6 +1073,10 @@ Item {
         console.log("open_topic_index_window()");
     }
 
+    function notify_window_closed(window_type: string) {
+        console.log("notify_window_closed():", window_type);
+    }
+
     // Chanting Practice functions
     function open_chanting_practice_window(window_id: string) {
         console.log("open_chanting_practice_window():", window_id);

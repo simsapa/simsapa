@@ -49,6 +49,11 @@ class WindowManager : public QObject {
         ChantingPracticeWindow* create_chanting_practice_window(const QString& window_id);
         ChantingReviewWindow* create_chanting_review_window(const QString& window_id, const QString& section_uid);
 
+        /// Destroy the single-instance secondary window of the given type, after
+        /// QML has accepted its close. Called from the QML onClosing handlers via
+        /// SuttaBridge.notify_window_closed().
+        void on_window_closed(const QString& window_type);
+
         static WindowManager *m_instance;
         QApplication* m_app;
         int m_window_id_count;

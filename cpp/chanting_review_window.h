@@ -19,6 +19,8 @@ public:
     QString m_window_id;
     QString m_section_uid;
 
+    void apply_window_properties(const QString& window_id, const QString& section_uid);
+
 private:
     void setup_qml();
 };

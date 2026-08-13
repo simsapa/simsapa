@@ -12,7 +12,10 @@ SuttaLanguagesWindow::SuttaLanguagesWindow(QApplication* app, QObject* parent)
 void SuttaLanguagesWindow::setup_qml() {
     const QUrl view_qml(QStringLiteral("qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/SuttaLanguagesWindow.qml"));
     m_engine = new QQmlApplicationEngine(view_qml, this);
-    m_root = m_engine->rootObjects().constFirst();
+    // An engine load failure leaves rootObjects() empty; constFirst() on an empty
+    // list is undefined behaviour. A null m_root is a reachable state that
+    // WindowManager evicts from its list rather than reusing.
+    m_root = m_engine->rootObjects().isEmpty() ? nullptr : m_engine->rootObjects().constFirst();
 }
 
 SuttaLanguagesWindow::~SuttaLanguagesWindow() {

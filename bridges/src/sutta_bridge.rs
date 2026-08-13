@@ -1613,6 +1613,11 @@ pub mod qobject {
         #[qinvokable]
         fn open_topic_index_window(self: &SuttaBridge);
 
+        /// Tell WindowManager that a single-instance secondary window has closed,
+        /// so it can drop it from its list and deleteLater() it.
+        #[qinvokable]
+        fn notify_window_closed(self: &SuttaBridge, window_type: &QString);
+
         // Chanting Practice functions
         #[qinvokable]
         fn open_chanting_practice_window(self: &SuttaBridge, window_id: &QString);
@@ -5343,6 +5348,15 @@ impl qobject::SuttaBridge {
     pub fn open_topic_index_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_topic_index_window();
+    }
+
+    /// Called from a window's QML onClosing handler once the close has been
+    /// accepted and any operation that window started has finished. The window
+    /// is destroyed, so nothing may be queued back to this bridge instance
+    /// afterwards -- it goes with the engine.
+    pub fn notify_window_closed(&self, window_type: &QString) {
+        use crate::api::ffi;
+        ffi::callback_window_closed(window_type.clone());
     }
 
     // =========================================================================

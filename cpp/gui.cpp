@@ -243,6 +243,10 @@ void callback_open_chanting_review_window(QString window_id, QString section_uid
   AppGlobals::manager->create_chanting_review_window(window_id, section_uid);
 }
 
+void callback_window_closed(QString window_type) {
+  AppGlobals::manager->on_window_closed(window_type);
+}
+
 void callback_show_chapter_in_sutta_window(QString window_id, QString result_data_json) {
   AppGlobals::manager->show_chapter_in_sutta_window(window_id, result_data_json);
 }
