@@ -62,7 +62,34 @@ ApplicationWindow {
             if (success) {
                 root.load_library_books();
             }
+            if (root.close_pending) {
+                root.notify_closed();
+            }
         }
+    }
+
+    // Closing this window destroys it, taking this engine's SuttaBridge instance
+    // with it. A document import is a backgrounded, signal-driven operation whose
+    // completion handler lives in DocumentImportDialog, so the notify waits for
+    // onImport_completed rather than orphaning the import.
+    property bool close_pending: false
+
+    function notify_closed() {
+        root.close_pending = false;
+        logger.info("LibraryWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("library");
+    }
+
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        if (import_dialog.is_importing) {
+            root.close_pending = true;
+            logger.info("LibraryWindow: close deferred until the document import finishes");
+            return;
+        }
+        root.notify_closed();
     }
 
     DocumentMetadataEditDialog {

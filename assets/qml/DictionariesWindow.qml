@@ -86,12 +86,23 @@ ApplicationWindow {
 
     // Ignore close while a long op is in progress. Idx 1 = deleting,
     // Idx 2 = importing, Idx 3 = renaming.
+    //
+    // Closing this window destroys it (WindowManager::on_window_closed), taking
+    // this engine's DictionaryManager and SuttaBridge instances with it. Unlike
+    // the other windows this one needs no deferred-destruction path: the refuse
+    // below already guarantees no operation is running by the time a close is
+    // accepted. Keep the refuse -- it is what makes the notify safe.
     onClosing: function(close) {
         if (views_stack.currentIndex === 1
             || views_stack.currentIndex === 2
             || views_stack.currentIndex === 3) {
             close.accepted = false;
         }
+        if (!close.accepted) {
+            return;
+        }
+        logger.info("DictionariesWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("dictionaries");
     }
 
     function refresh_list() {

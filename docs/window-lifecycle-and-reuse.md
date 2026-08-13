@@ -2,14 +2,39 @@
 
 How `WindowManager` (`cpp/window_manager.cpp`, `cpp/window_manager.h`) creates,
 closes and re-shows the app's top-level windows, and the rules that follow from
-it. The short version, which every other rule here derives from:
+it.
 
-> **A closed window is not destroyed — it is hidden, and stays in its
-> `WindowManager` list for the lifetime of the process.**
-> Therefore: `visible` is what tells an open window from a closed one, and
-> "is it in the list" tells you nothing.
+> **There are two lifecycle families, and they need opposite code.** Read §0
+> first and decide which one a new window belongs to before writing anything —
+> the reuse predicate, the close handler and the "is it in the list" question
+> all have different answers in the two families, and each is silently wrong in
+> the other.
 
-## 1. Why closing only hides
+**Adding a new window? §7 is the checklist.**
+
+## 0. The two families
+
+| | **Pooled** | **Single-instance** |
+|---|---|---|
+| Members | `SuttaSearchWindow` only | every secondary window (§5) |
+| On close | hidden, kept in the list | destroyed: removed from the list + `deleteLater()` |
+| "An instance exists" | list membership — tells you **nothing** useful | `m_root != nullptr` |
+| "The user has it open" | `visible` (`window_is_open()`) | same as "an instance exists" |
+| Reuse predicate | `visible`, via `take_closed_sutta_search_window()` | `m_root != nullptr`, via `reuse_or_evict<T>()` |
+| Why | reviving skips a `QQmlApplicationEngine` load — the expensive part, and these host `WebEngineView`s | one at a time is the correct UX, and N opens must not leave N engines resident |
+
+**Each predicate is a bug in the other family.** Using `visible` for a
+single-instance window would treat a window that is merely hidden mid-close as
+absent and construct a second one. Using list membership for a pooled window
+re-opens a window the user closed — that is a real bug that shipped, see §3.
+
+`DownloadAppdataWindow` and `StorageRecoveryWindow` are in neither family. They
+exist only during startup, inside their own dedicated `app.exec()` which the app
+**exits** when they close (`cpp/gui.cpp`, `throw NormalExit(…)`), so destroying
+them on close would be meaningless and risks running destruction during
+teardown. Leave them alone.
+
+## 1. Why closing only hides — pooled windows
 
 Each window owns a `QQmlApplicationEngine` (`cpp/sutta_search_window.cpp`:
 `setup_qml()` loads the QML and keeps `m_root`). Loading that engine — with its
@@ -17,9 +42,8 @@ Each window owns a `QQmlApplicationEngine` (`cpp/sutta_search_window.cpp`:
 window around means the *next* open can revive it instead of paying that cost
 again.
 
-Nothing removes an entry from `sutta_search_windows`; the only teardown is
-`~WindowManager`, which `deleteLater()`s every list. So the list is really two
-populations mixed together:
+Nothing removes an entry from `sutta_search_windows`, and `~WindowManager` never
+runs (§6a). So the list is really two populations mixed together:
 
 | | `m_root->property("visible")` | meaning |
 |---|---|---|
@@ -92,29 +116,186 @@ window count** restored on next launch. Pooled windows must not appear in it.
 - **Restore** — `restore_last_session()` fills the existing first window from
   entry 0 and calls `create_sutta_search_window()` for the rest.
 
-## 5. The other window lists
+## 5. Single-instance windows, destroyed on close
 
-`sutta_search_windows` is the only list with pooling *and* reuse. The others
-share the "closing only hides" half without the reuse half:
+Seven windows are single-instance and destroyed when they close. Each
+`create_*_window()` has the same shape, built on the `reuse_or_evict<T>()`
+template in `window_manager.cpp`:
 
-- `create_chanting_practice_window()` reuses by scanning its list and
-  show/raise/activate-ing the first entry — a *single-instance* window, not a
-  pool.
-- `create_topic_index_window()`, `create_library_window()`,
-  `create_dictionaries_window()`, `create_reference_search_window()`,
-  `create_sutta_languages_window()`, `create_chanting_review_window()` construct
-  unconditionally. Since closing only hides, opening one of these N times leaves
-  N−1 hidden windows, each with its own engine, alive until exit. Nothing
-  dispatches to them by "last window", so this is a memory cost, not a
-  correctness bug — but a reuse pass on the model of §2 is the obvious fix if one
-  of them ever gets expensive.
+```cpp
+TopicIndexWindow* WindowManager::create_topic_index_window() {
+    if (TopicIndexWindow* reused = reuse_or_evict(this->topic_index_windows)) {
+        show_and_activate_window(reused->m_root);   // never the raw triple
+        return reused;
+    }
+    TopicIndexWindow* w = new TopicIndexWindow(this->m_app);
+    topic_index_windows.append(w);
+    return w;
+}
+```
 
-## 6. Rules when touching this code
+Four things in that shape are load-bearing:
 
-1. **Never target a window without checking `window_is_open()`**, unless you
-   matched it by an explicit `window_id`.
-2. **Never treat list length as a window count** — for the user-visible count,
-   filter by `visible`.
-3. **A revived window must be reset** to whatever state its caller assumes.
-4. **Do not "fix" the pool by destroying closed windows.** The hiding is
-   deliberate; destroying the engine gives back the reuse win in §2.
+1. **`show_and_activate_window()`, not `show`/`raise`/`requestActivate`.** That
+   helper handles X11 focus-stealing prevention, the Windows foreground-stealing
+   demotion and the macOS app-level activate. Two reuse loops used the raw
+   triple and silently lost window activation on those platforms.
+2. **The predicate is `m_root != nullptr`.** See §0. After the close path
+   removes the wrapper from the list, a wrapper in the list is by construction a
+   live one, so this degrades to a pointer-validity check against a failed
+   engine load — which is exactly case 3.
+3. **A null `m_root` is evicted, not skipped.** `setup_qml()` guards
+   `rootObjects().constFirst()` (calling it on an empty list is undefined
+   behaviour), so a failed engine load now leaves a reachable `m_root ==
+   nullptr`. Left in the list such a wrapper is never reused *and* never
+   removed, so every subsequent open appends another one — the unbounded growth
+   single-instance creation exists to remove, reintroduced through the new null
+   path. `reuse_or_evict()` `removeAll`s + `deleteLater()`s it.
+4. **A reused parameterised window must have its parameters re-applied.**
+   `ChantingPracticeWindow` and `ChantingReviewWindow` push their constructor
+   arguments onto the QML root *after* the engine load, so returning an existing
+   instance without re-applying them shows the **previous** section. Both expose
+   `apply_window_properties(…)`, called by `setup_qml()` and by the reuse path.
+   For the review window, setting `current_section_uid` **is** the re-init —
+   `ChantingPracticeReviewWindow.qml` has an `onCurrent_section_uidChanged`
+   handler that reloads whenever the uid changes, so an added
+   `QMetaObject::invokeMethod` re-init would load the section twice. Reopening
+   the *same* section fires no reload, which is correct.
+
+### 5a. The close path
+
+QML `onClosing` → `SuttaBridge.notify_window_closed("<type>")` →
+`ffi::callback_window_closed` → `cpp/gui.cpp` →
+`WindowManager::on_window_closed()`, which removes the wrapper from its list and
+calls **`deleteLater()`**.
+
+**Never a direct `delete`.** The wrapper's destructor runs `delete m_engine`,
+which destroys the `QQmlApplicationEngine`, the root `QQuickWindow` and the whole
+QML object tree — including the handler currently executing. The deferred delete
+runs after the QML stack has unwound. (The engine is created with `this` as its
+parent, so the explicit `delete m_engine` is redundant but harmless; do not tidy
+it away.)
+
+The C++ side is deliberately *not* connected to the QML root's `closing` signal
+from `setup_qml()`. It would be fewer files, but handler ordering against the
+window's own `onClosing` is unspecified, so "destroy only when the close is
+actually accepted" becomes unverifiable. Use the explicit QML call.
+
+**None of the seven hosts a `WebEngineView`** (grep-verified), so the destruction
+chain involves no Chromium render-process teardown. That is what makes this
+tractable, and it is a large part of why the same treatment was not extended to
+`SuttaSearchWindow` — see `docs/webengine-stale-black-frame-workaround.md` for
+how delicate that machinery already is.
+
+### 5b. Deferred destruction — which window needs what
+
+**A window must not be destroyed while an operation it started is still
+running.** Its bridge objects are per-engine, so destroying the window destroys
+the `SuttaBridge` / `AssetManager` / … instance that the worker thread holds a
+`CxxQtThread` to; the completion signal is then lost, along with whatever the
+completion handler owned.
+
+The pattern: a `close_pending` flag, an `onClosing` that sets it and skips the
+notify, and the operation's completion handler issuing the notify. Plus a 15 s
+failsafe `Timer`, because notifying late is harmless (§5c) while never notifying
+leaks the window.
+
+| Window | type string | Operation to wait for | Completion signal |
+|---|---|---|---|
+| `TopicIndexWindow` | `topic_index` | its own `load_topic_index()` warm-up | `onTopicIndexLoaded` |
+| `ReferenceSearchWindow` | `reference_search` | its own `load_sutta_references()` warm-up | `sutta_references_loaded` qproperty |
+| `LibraryWindow` | `library` | EPUB/PDF/HTML document import | `DocumentImportDialog.onImport_completed` |
+| `SuttaLanguagesWindow` | `sutta_languages` | language download / import / removal | `onDownloadsCompleted` / `onRemovalCompleted` |
+| `ChantingPracticeReviewWindow` | `chanting_review` | an in-progress recording | `onRecording_completed` |
+| `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3, so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
+| `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
+
+Three traps in that table:
+
+- **The two warm-ups are the cheapest reproductions in the app.** Both windows
+  start a thread from `Component.onCompleted`; closing the window before it
+  finishes is a two-second test.
+- **`SuttaLanguagesWindow`'s refuse-to-close stays mobile-only.** On desktop a
+  user can close it and the download continues, and nothing about
+  single-instance windows requires taking that away. Defer the destruction;
+  do not refuse the close.
+- **The chanting recording is a data-loss case, not a truncation case.** The
+  audio file is finalised in Rust, so the disk side is safe either way — but the
+  database row that makes the recording *visible* is written by QML in
+  `onRecording_completed`. Destroy the window before that arrives and the file
+  exists while the recording has vanished from the UI.
+
+### 5c. `qt_thread.queue()` must never be `.unwrap()`ed or discarded
+
+`CxxQtThread::queue()` returns `Err(ThreadingQueueError::ObjectDestroyed)` once
+its target `QObject` is gone. Destroy-on-close makes that a live path for every
+background operation a window started.
+
+**Use `crate::queue_or_log(&thread, "file::fn", closure)`** (`bridges/src/lib.rs`)
+in all new bridge code. All 123 existing sites were converted to it — 94 that
+`.unwrap()`ed (a panicking worker thread), 28 that `let _ =`d the error away (a
+lost completion signal with no line in `log.txt` at all) and one `.ok()`.
+
+Two rules that came out of that sweep:
+
+- **Log and continue, not log and return.** The helper's call sites keep their
+  control flow. An early return would skip cleanup that still has to run —
+  `asset_manager::cleanup_on_failure` queues a status message *before* deleting
+  the temp folders.
+- **`is_destroyed()` is not the fix.** cxx-qt documents it as racy — the object
+  can be destroyed between the check and the `queue`. Handle the `Err`.
+
+## 6. `~WindowManager` never runs
+
+`m_instance` is `new`ed in `instance()` and nothing anywhere deletes it, and the
+destructor is `private`. Its body used to walk the window lists calling
+`deleteLater()` under a standing `// FIXME: does this clean up work?`. The answer
+is **no**: it never runs, and even if it did — at process teardown — it posts
+events that no event loop is left to process. The body has been deleted and the
+destructor left empty with a comment saying so.
+
+Memory is reclaimed by destroy-on-close (§5a) instead. Do not reinstate the
+destructor loops, and do not "fix" the fact that `reference_search_windows` was
+missing from them.
+
+## 7. Adding a new window — checklist
+
+1. **Pick a family (§0).** Anything that is not the sutta reader is
+   single-instance; there is no second pooled window and adding one needs a
+   reason at the level of §1.
+2. **C++ wrapper** (`cpp/<name>_window.{h,cpp}`): guard the root —
+   `m_root = m_engine->rootObjects().isEmpty() ? nullptr : rootObjects().constFirst();`
+   — and null-check before any `setProperty`. If the window takes constructor
+   parameters, put them in an `apply_window_properties(…)` method that
+   `setup_qml()` calls, so the reuse path can call the same one (§5, point 4).
+3. **`create_*_window()`**: copy the `reuse_or_evict()` shape in §5 verbatim.
+4. **A list** in `window_manager.h`, and a branch in `on_window_closed()` with a
+   new type string.
+5. **QML `onClosing`**: `function(close)`, return early if `!close.accepted`,
+   then `SuttaBridge.notify_window_closed("<type>")` with a `Logger` line so the
+   destroy path is greppable in `log.txt`.
+6. **Does it start a long operation?** Then it needs the §5b deferral — and add
+   a row to that table. Anything that `thread::spawn`s in the backend counts,
+   including a warm-up the window fires from `Component.onCompleted`.
+7. **New bridge code**: `crate::queue_or_log`, never `.unwrap()` (§5c).
+8. **Verify on Android with the back button**, not only the Close button — back
+   reaches these windows and goes through the same `onClosing` handler. Watch
+   for a spurious webview hide/show on Android **and ChromeOS**
+   (`docs/mobile-webview-visibility-management.md`): `MobileOverlayTracker`
+   walks the object tree for in-tree child `ApplicationWindow`s, so changing
+   when windows exist changes what it sees.
+
+## 8. Rules when touching this code
+
+1. **Never target a pooled window without checking `window_is_open()`**, unless
+   you matched it by an explicit `window_id`.
+2. **Never treat list length as a window count** — for a pooled list, filter by
+   `visible`.
+3. **A revived window must be reset** to whatever state its caller assumes —
+   `clear_all_tabs()` for the reader, re-applied parameters for the two
+   parameterised secondary windows.
+4. **Do not "fix" the pool by destroying closed `SuttaSearchWindow`s.** The
+   hiding is deliberate; destroying the engine gives back the reuse win in §2,
+   and those windows host `WebEngineView`s (§5a).
+5. **Do not extend a mobile-only refuse-to-close to desktop** to solve a
+   lifetime problem. Deferred destruction (§5b) is the answer.

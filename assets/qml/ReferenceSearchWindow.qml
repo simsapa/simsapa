@@ -75,6 +75,55 @@ ApplicationWindow {
         SuttaBridge.load_sutta_references();
     }
 
+    // Closing this window destroys it, taking this engine's SuttaBridge instance
+    // with it. Component.onCompleted starts a reference warm-up on a spawned
+    // thread that reports back through the sutta_references_loaded qproperty, so
+    // the notify waits for it.
+    property bool close_pending: false
+
+    Connections {
+        target: SuttaBridge
+        function onSutta_references_loadedChanged() {
+            if (root.close_pending && SuttaBridge.sutta_references_loaded) {
+                root.notify_closed();
+            }
+        }
+    }
+
+    Timer {
+        // Failsafe: notifying late is harmless -- a queue into a destroyed object
+        // is logged, not fatal -- but leaking the window forever is not.
+        id: close_deferral_failsafe
+        interval: 15000
+        repeat: false
+        onTriggered: {
+            if (root.close_pending) {
+                logger.warn("ReferenceSearchWindow: reference warm-up did not signal within 15 s, closing anyway");
+                root.notify_closed();
+            }
+        }
+    }
+
+    function notify_closed() {
+        root.close_pending = false;
+        close_deferral_failsafe.stop();
+        logger.info("ReferenceSearchWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("reference_search");
+    }
+
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        if (!SuttaBridge.sutta_references_loaded) {
+            root.close_pending = true;
+            close_deferral_failsafe.restart();
+            logger.info("ReferenceSearchWindow: close deferred until the reference warm-up finishes");
+            return;
+        }
+        root.notify_closed();
+    }
+
     // Keyboard shortcuts
     Shortcut {
         sequence: "Ctrl+L"

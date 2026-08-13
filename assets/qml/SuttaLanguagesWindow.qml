@@ -72,6 +72,10 @@ ApplicationWindow {
 
         function onDownloadsCompleted(success: bool) {
             root.is_downloading = false;
+            if (root.close_pending) {
+                root.notify_closed();
+                return;
+            }
             // Delegate to the progress frame's centralized retry logic
             if (download_progress_frame.handle_downloads_completed(success)) {
                 // All downloads complete - show completion screen
@@ -91,6 +95,10 @@ ApplicationWindow {
 
         function onRemovalCompleted(success: bool, error_msg: string) {
             root.is_removing = false;
+            if (root.close_pending) {
+                root.notify_closed();
+                return;
+            }
             if (success) {
                 completion_message.text = "Languages have been successfully removed.\n\nQuit and start the application again.";
                 views_stack.currentIndex = 2;
@@ -125,6 +133,22 @@ ApplicationWindow {
         }
     }
 
+    // Closing this window destroys it (WindowManager::on_window_closed), taking
+    // this engine's AssetManager and SuttaBridge instances with it. A download,
+    // import or removal reports through those instances, so the notify is held
+    // back until its completion handler runs.
+    //
+    // Deliberately NOT a refuse-to-close on desktop: today a desktop user can
+    // close this window and the download continues, and single-instance windows
+    // do not require taking that away. The refuse below stays mobile-only.
+    property bool close_pending: false
+
+    function notify_closed() {
+        root.close_pending = false;
+        logger.info("SuttaLanguagesWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("sutta_languages");
+    }
+
     // Guard the Android Back button while a download/import or removal is
     // actively running: intercept the close request and ask for confirmation
     // instead of aborting the operation.
@@ -132,7 +156,17 @@ ApplicationWindow {
         if (root.is_mobile && (root.is_downloading || root.is_removing) && !root.force_close) {
             close.accepted = false;
             back_guard_dialog.open();
+            return;
         }
+        if (!close.accepted) {
+            return;
+        }
+        if (root.is_downloading || root.is_removing) {
+            root.close_pending = true;
+            logger.info("SuttaLanguagesWindow: close deferred until the running operation finishes");
+            return;
+        }
+        root.notify_closed();
     }
 
     // Confirmation dialog for language removal

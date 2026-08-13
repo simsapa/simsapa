@@ -106,7 +106,51 @@ ApplicationWindow {
         function onTopicIndexLoaded() {
             root.is_loading = false;
             root.load_letter(root.current_letter);
+            if (root.close_pending) {
+                root.notify_closed();
+            }
         }
+    }
+
+    // Closing this window destroys it (WindowManager::on_window_closed), which
+    // takes this engine's SuttaBridge instance with it. The Component.onCompleted
+    // warm-up runs on a spawned thread holding a CxxQtThread to that instance, so
+    // the notify waits until onTopicIndexLoaded has arrived.
+    property bool close_pending: false
+
+    Timer {
+        // Failsafe: if the warm-up never signals, do not leak the window forever.
+        // Notifying late is harmless -- a queue into a destroyed object is logged,
+        // not fatal.
+        id: close_deferral_failsafe
+        interval: 15000
+        repeat: false
+        onTriggered: {
+            if (root.close_pending) {
+                logger.warn("TopicIndexWindow: warm-up did not signal within 15 s, closing anyway");
+                root.notify_closed();
+            }
+        }
+    }
+
+    function notify_closed() {
+        root.close_pending = false;
+        close_deferral_failsafe.stop();
+        logger.info("TopicIndexWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("topic_index");
+    }
+
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        if (root.is_loading) {
+            root.close_pending = true;
+            close_deferral_failsafe.restart();
+            logger.info("TopicIndexWindow: close deferred until the topic index warm-up finishes");
+            return;
+        }
+        root.notify_closed();
     }
 
     // Keyboard shortcuts

@@ -10,7 +10,7 @@
 //! `Player` itself stays on the Qt (GUI) thread where the QObject lives. A
 //! background polling thread reads position/state through the player's shared
 //! [`PlaybackCore`](simsapa_backend::audio::player::PlaybackCore) handle and
-//! marshals updates back to QML via `qt_thread().queue(...)` — the same pattern
+//! marshals updates back to QML via `crate::queue_or_log(...)` — the same pattern
 //! `SuttaBridge::generate_waveform_data` uses. No QObject is ever touched off
 //! the Qt thread.
 //!
@@ -230,7 +230,7 @@ impl qobject::AudioManager {
             );
             match decoded {
                 Ok((mono, src_rate)) => {
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "audio_manager::load", move |mut qo| {
                         match Player::from_samples(mono, src_rate) {
                             Ok(player) => {
                                 player.set_volume(qo.rust().pending_volume);
@@ -273,7 +273,7 @@ impl qobject::AudioManager {
                 Err(e) => {
                     let msg = format!("Failed to load audio: {e}");
                     error(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "audio_manager::load", move |mut qo| {
                         qo.as_mut().set_loading(false);
                         qo.as_mut().error_occurred(QString::from(&msg));
                     });
@@ -392,13 +392,13 @@ impl qobject::AudioManager {
 
                     if pos != last_pos {
                         last_pos = pos;
-                        let _ = qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "audio_manager::ensure_polling", move |mut qo| {
                             qo.as_mut().set_position_ms(pos);
                         });
                     }
 
                     if finished {
-                        let _ = qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "audio_manager::ensure_polling", move |mut qo| {
                             qo.as_mut().set_state(PlayerState::Stopped.as_i32());
                             // Stop the device feeding silence after a non-looping end.
                             if let Some(p) = &qo.rust().player {

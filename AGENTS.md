@@ -154,25 +154,43 @@ Notable feature docs:
   was tried first and does **not** work. Instantiate the helper next to every
   new desktop `WebEngineView`.
 - [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
-  **a closed window is not destroyed, it is hidden and stays in its
-  `WindowManager` list**, so the next open can revive it instead of loading
-  another `QQmlApplicationEngine` (the expensive part of a window). Everything
-  else follows: the root's `visible` property — `window_is_open()` — is what
-  distinguishes an open window from a pooled one, and list membership tells you
-  nothing. Covers the revive path in `create_sutta_search_window()`
-  (`clear_all_tabs()` because callers assume a blank window, keep the
-  `window_id`, move to the end of the list, `show_and_activate_window()`), and
-  the two places that must filter on `visible`: the **`window_id`-less dispatch
-  fallbacks** (`last_open_sutta_search_window()` /
-  `first_open_sutta_search_window()`, never bare `last()`/`first()` — they call
-  `show` + `raise`, so targeting a pooled window silently **re-opens a window
-  the user closed**, which is exactly the Topic Index "Open in new window looks
-  stuck on" bug), and the **session save** in `gui.cpp`'s `aboutToQuit`, whose
-  array length is the restored window count. Also why mobile never pools (the
-  `onClosing` handler rejects the close) and why the other window lists
-  (`create_topic_index_window()` and friends) accumulate one hidden window per
-  open — a memory cost, not a correctness bug, since nothing dispatches to them
-  by "last window".
+  **read this before adding any new top-level window; §7 is the checklist.**
+  There are **two lifecycle families and they need opposite code** (§0): the
+  **pooled** `SuttaSearchWindow`, which is only *hidden* on close and stays in
+  its `WindowManager` list so the next open revives it instead of loading
+  another `QQmlApplicationEngine` (the expensive part, and these host
+  `WebEngineView`s); and the **single-instance** secondary windows, which are
+  **destroyed on close**. The reuse predicate differs accordingly — `visible`
+  (`window_is_open()`) for the pool, **`m_root != nullptr`** for the rest — and
+  each predicate is a bug in the other family. Covers, for the pool: the revive
+  path in `create_sutta_search_window()` (`clear_all_tabs()` because callers
+  assume a blank window, keep the `window_id`, move to the end of the list,
+  `show_and_activate_window()`), the two places that must filter on `visible`
+  (the **`window_id`-less dispatch fallbacks** —
+  `last_open_sutta_search_window()` / `first_open_sutta_search_window()`, never
+  bare `last()`/`first()`, since they call `show` + `raise` and so silently
+  **re-open a window the user closed**, exactly the Topic Index "Open in new
+  window looks stuck on" bug — and the **session save** in `gui.cpp`'s
+  `aboutToQuit`, whose array length is the restored window count), and why
+  mobile never pools. And for the seven single-instance windows: the shared
+  `reuse_or_evict<T>()` shape, why reuse must go through
+  `show_and_activate_window()` and not the raw `show`/`raise`/`requestActivate`
+  triple, the **null-`m_root` eviction** rule (a failed engine load is otherwise
+  never reused *and* never removed — one leaked wrapper per open), the
+  **re-applied constructor parameters** for the two parameterised ones (and why
+  setting `current_section_uid` *is* the chanting-review re-init, so an added
+  `invokeMethod` would load the section twice), the close route QML `onClosing`
+  → `notify_window_closed` → `callback_window_closed` → `on_window_closed` with
+  **`deleteLater()`, never a direct `delete`**, and **§5b's table of which
+  window must defer its destruction until which completion signal** — including
+  that `SuttaLanguagesWindow`'s refuse-to-close stays **mobile-only** and that
+  the chanting recording case is *data loss*, not truncation (the file is
+  finalised in Rust but the row that makes it visible is written by QML in
+  `onRecording_completed`). §5c is the standing rule for all new bridge code:
+  **`crate::queue_or_log()`, never `.unwrap()` or `let _ =` on
+  `qt_thread.queue()`** — destroy-on-close makes `ObjectDestroyed` a live path,
+  and `is_destroyed()` is racy and is not the fix. §6 records why
+  `~WindowManager` is dead code and must stay empty.
 - [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
   shipped `assets/fonts/crimson-pro/*.ttf` are **patched, not stock**: stock
   Crimson Pro lacks ṁ (U+1E41), so plain browsers fell back to a mismatched
@@ -1074,6 +1092,53 @@ function get_api_key(key_name: string): string {
     return 'key_value';
 }
 ```
+
+### Adding a new top-level window
+
+**Read [docs/window-lifecycle-and-reuse.md](./docs/window-lifecycle-and-reuse.md)
+before writing any of it — §0 for which of the two lifecycle families it belongs
+to, §7 for the step-by-step checklist.** There are two families and they need
+opposite code: the **pooled** `SuttaSearchWindow` (closing only *hides* it;
+reuse predicate `visible`) and the **single-instance** secondary windows
+(destroyed on close; reuse predicate `m_root != nullptr`). Each predicate is a
+silent bug in the other family.
+
+The three things most easily missed, all of which fail quietly:
+
+1. Guard `m_root = m_engine->rootObjects().isEmpty() ? nullptr : …constFirst();`
+   in the wrapper, and evict a null-`m_root` wrapper in `create_*_window()`
+   rather than skipping it — otherwise a failed engine load leaks one wrapper
+   per open.
+2. If the window starts anything long-running — **including a warm-up fired from
+   `Component.onCompleted`** — it must defer its destruction until that
+   operation's completion signal. §5b carries the table of which existing window
+   waits for which signal; add a row for the new one.
+3. Destruction is always `deleteLater()` from `WindowManager::on_window_closed()`,
+   never a direct `delete` from the QML close path.
+
+### `qt_thread.queue()` — use `queue_or_log()`, never `.unwrap()`
+
+In `bridges/src/`, never call `qt_thread.queue(…)` with a trailing `.unwrap()`
+or behind a `let _ =`. Use the shared helper in `bridges/src/lib.rs`:
+
+``` rust
+crate::queue_or_log(&qt_thread, "sutta_bridge::load_topic_index", move |mut qo| {
+    qo.as_mut().topic_index_loaded_signal();
+});
+```
+
+`CxxQtThread::queue()` returns `Err(ThreadingQueueError::ObjectDestroyed)` once
+its target `QObject` is gone. Bridge objects are **per-engine**, and the
+secondary windows are destroyed on close, so this is a live path — not a
+theoretical one. `.unwrap()` panics the worker thread; `let _ =` drops the
+completion signal with **no log line at all**, leaving whatever the completion
+handler owned (notably the keep-screen-on lock) unreleased.
+
+Two rules that come with it: **log and continue, not log and return** — an early
+return would skip cleanup that still has to run, e.g.
+`asset_manager::cleanup_on_failure` queues a status message *before* deleting
+its temp folders. And **`is_destroyed()` is not the fix**; cxx-qt documents it
+as racy (the object can be destroyed between the check and the `queue`).
 
 ### New Rust bridges
 

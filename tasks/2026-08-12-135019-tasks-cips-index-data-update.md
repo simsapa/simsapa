@@ -77,6 +77,14 @@ Verified against the tree on 2026-08-12; the PRD's code claims hold.
   | `audio_manager.rs` | 5 | **0** | 5 |
   | `storage_manager.rs` | 1 | **0** | 1 |
 
+  **Re-measured during 2.1 with a paren-matching scanner (this table is the one
+  to trust, the row above is the PRD's estimate): 123 real sites, not 124.**
+  `sutta_bridge.rs` is 59 `.unwrap()` + 1 `let _ =`; `audio_manager.rs` has 4
+  real sites (the 5th match is a `//!` doc comment mentioning
+  `qt_thread().queue(...)`); `storage_manager.rs`'s single site is `.ok()`, a
+  third form the PRD did not record. Totals: **94 `.unwrap()` + 28 `let _ =` +
+  1 `.ok()`**.
+
   Both forms are defects after destroy-on-close: the first panics, the second
   loses the completion signal with **no log line at all**. The sweep covers all
   six files even though three contain no `.unwrap()`.
@@ -150,6 +158,7 @@ Verified against the tree on 2026-08-12; the PRD's code claims hold.
 - `bridges/src/api.rs` — its `extern "C++"` declaration.
 - `bridges/src/sutta_bridge.rs` — the `notify_window_closed()` bridge function,
   plus the `qt_thread.queue` sweep (W-7a).
+- `bridges/src/lib.rs` — `queue_or_log()`, the shared queue helper (W-7a).
 - `bridges/src/asset_manager.rs`, `bridges/src/dictionary_manager.rs`,
   `bridges/src/audio_manager.rs`, `bridges/src/prompt_manager.rs`,
   `bridges/src/storage_manager.rs` — the same sweep.
@@ -157,9 +166,13 @@ Verified against the tree on 2026-08-12; the PRD's code claims hold.
   `ReferenceSearchWindow.qml`, `SuttaLanguagesWindow.qml`,
   `DictionariesWindow.qml`, `ChantingPracticeWindow.qml`,
   `ChantingPracticeReviewWindow.qml` — `onClosing` handlers (W-5, W-6, W-7).
-  Five of these also need deferred destruction (W-7 table): the two already
-  identified plus `LibraryWindow`, `TopicIndexWindow` and
-  `ChantingPracticeWindow`.
+  **Six** of these need deferred destruction, not the five of the W-7 table:
+  `SuttaLanguagesWindow`, `LibraryWindow`, `TopicIndexWindow`,
+  `ChantingPracticeReviewWindow` and — found during 2.5 —
+  `ReferenceSearchWindow`. `DictionariesWindow` needs none (its refuse-to-close
+  already guarantees no operation is running when a close is accepted), and
+  `ChantingPracticeWindow` needs none (it only browses the collection tree;
+  the audio lives in the review window).
 - `assets/qml/DocumentImportDialog.qml` — read only, to wire `LibraryWindow`'s
   deferred destruction to `onDocumentImportCompleted` (`:347-366`).
 - `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — stub for
@@ -287,7 +300,7 @@ it. **Never a direct `delete`.**
 > window's own `onClosing` is unspecified, so W-6 ("destroy only when the close
 > is actually accepted") becomes unverifiable. Use the explicit QML call.
 
-- [ ] 1.0 Phase 1a — `WindowManager`: single-instance creation, a close entry point, and the two latent-crash fixes (W-1, W-1a, W-1b, W-5, W-9, W-9a)
+- [x] 1.0 Phase 1a — `WindowManager`: single-instance creation, a close entry point, and the two latent-crash fixes (W-1, W-1a, W-1b, W-5, W-9, W-9a)
   - [x] 1.1 Read `cpp/window_manager.cpp:52-157` (`show_and_activate_window`) and `:251-263` (the `SuttaSearchWindow` revive path) so the reuse pattern being copied is understood before editing anything.
   - [x] 1.2 Guard `m_root` in all seven wrapper `setup_qml()` functions (W-9a): replace `m_root = m_engine->rootObjects().constFirst();` with `m_root = m_engine->rootObjects().isEmpty() ? nullptr : m_engine->rootObjects().constFirst();`. In `chanting_review_window.cpp` and `chanting_practice_window.cpp` the `setProperty` calls that follow must be guarded by the null check too.
   - [x] 1.3 Add re-apply hooks to the two parameterised wrappers (W-1a): a public method on `ChantingPracticeWindow` that sets `window_id` on `m_root`, and one on `ChantingReviewWindow` that sets both `window_id` and `current_section_uid`. Have `setup_qml()` call the same method rather than duplicating the `setProperty` lines.
@@ -366,23 +379,71 @@ entirely of the second kind, so they need the sweep for **logging**, not to
 avert a panic. Say so in the commit message; otherwise the diff looks like
 churn.
 
-- [ ] 2.0 Phase 1b — destroy-on-close in QML, in-flight-operation safety, and the `qt_thread.queue` `ObjectDestroyed` sweep (W-2, W-6, W-7, W-7a, W-8, W-10 … W-13)
-  - [ ] 2.1 Inventory the queue sites and record **both** counts per file in the commit notes (baseline in "Current state assessment": 124 sites = 90 `.unwrap()` + 34 `let _ =`). A plain `grep -c 'queue('` gives only the first column; the `.unwrap()` sits on the closing line of the multi-line closure, so counting it needs a multi-line match (`perl -0777`, or `grep -A20 'queue(' | grep -c unwrap`).
-  - [ ] 2.2 Add the shared queue helper described above. Prefer a small function or macro that takes the closure so each call site becomes a one-line change; it must be usable from every bridge file and must log through the backend logger.
-  - [ ] 2.3 Apply the helper to **all 124** queue sites across `sutta_bridge.rs`, `asset_manager.rs`, `dictionary_manager.rs`, `audio_manager.rs`, `prompt_manager.rs` and `storage_manager.rs` — the 90 `.unwrap()`ed ones to stop the panic, the 34 `let _ =` ones to stop the silent loss. `SuttaBridge` lives in every window's engine, so no bridge is exempt.
-  - [ ] 2.3a Verify the sweep with a check that **fails on the unfixed tree** — e.g. `perl -0777 -ne 'print scalar(()=/\.queue\(/g)' <file>` against a count of helper invocations. **Do not use `grep -n 'queue(' bridges/src/*.rs | grep unwrap`**: it returns nothing *today*, before any work is done, so it certifies nothing.
-  - [ ] 2.4 Check each converted site for a **cleanup obligation on the error path** — `asset_manager.rs`'s `cleanup_on_failure` and any keep-screen-on release must still run when the queue fails, not be skipped by the early return. Note that the 34 `let _ =` sites currently *continue* past the failure, so converting them to log-**and-return** changes control flow: re-read each one before choosing return vs. continue.
-  - [ ] 2.5 Add the `onClosing` handler to `TopicIndexWindow.qml`, `LibraryWindow.qml`, `ReferenceSearchWindow.qml` and `ChantingPracticeWindow.qml` per the contract above, with a distinct type string per window.
-  - [ ] 2.6 Extend the three existing handlers (`SuttaLanguagesWindow.qml:131`, `DictionariesWindow.qml:89`, `ChantingPracticeReviewWindow.qml:91`) with the `if (close.accepted)` notify, preserving their current guards verbatim. Convert `ChantingPracticeReviewWindow`'s handler to the `function(close)` form.
-  - [ ] 2.7 Implement W-7 deferred destruction in `SuttaLanguagesWindow.qml`: track whether a download / import / removal is running, hold the notify back on desktop closes during one, and issue it from the operation's completion handler. **Do not** make the close refuse on desktop.
-  - [ ] 2.8 Do the same for `DictionariesWindow.qml` for its delete / import / rename operations, keeping its existing refuse-to-close behaviour unchanged.
-  - [ ] 2.8a Do the same for `LibraryWindow.qml`, whose `DocumentImportDialog` (`:56-65`) runs a signal-driven document import (`onDocumentImportProgress` / `onDocumentImportCompleted`, `DocumentImportDialog.qml:347-366`). This window was missing from the first draft of W-7. Do **not** add keep-screen-on here — that gap is real but out of scope; note it for a follow-up.
-  - [ ] 2.8b Do the same for `TopicIndexWindow.qml`'s own warm-up: `:101` calls `SuttaBridge.load_topic_index()`, so a close before `onTopicIndexLoaded` arrives orphans that thread. Hold the notify until the signal lands (or until a short timeout). This is the first W-7a case to test, per success metric 0a.
-  - [ ] 2.8c Decide and implement the behaviour for `ChantingPracticeWindow.qml` (which has **no** `onClosing` today) and confirm `ChantingPracticeReviewWindow.qml`'s existing one: a recording in progress must be **stopped and finalised** on close, never silently truncated. `AudioManager`'s queue sites are all `let _ =`, so the failure mode here is a lost callback, not a panic.
-  - [ ] 2.9 Verify W-8 by reading: `SuttaLanguagesWindow.qml:122-127`'s `Component.onDestruction` keep-screen-on release now fires on every close. Confirm both acquire (`:117-119`) and release are `is_mobile`-gated so there is no double-release, and that the deferred-destruction path of 2.7 does not skip it.
-  - [ ] 2.10 Add a `Logger` line at each notify site (single concatenated string, never `console.*`) so the destroy path is greppable in `log.txt` during device testing.
-  - [ ] 2.11 `make build -B` and `make qml-test`; confirm no new qmllint warnings naming the touched QML files.
-  - [ ] 2.12 Write the manual verification checklist into the commit message / task notes for the user to run: open+close each of the seven windows ten times (desktop and Android, including the **Android back button**, W-11); watch resident memory (W-13); **open the Topic Index window and close it immediately, ~20 times, before its warm-up finishes** (W-7b — run this first, it is the cheapest W-7a reproduction); close `SuttaLanguagesWindow` with a download in flight and `LibraryWindow` with an import in flight, on both platforms (W-7, success metric 0a); close `ChantingPracticeWindow` mid-recording and confirm the file is finalised; open a chanting review for section A then section B and confirm **B** is shown (W-1a); and watch for a spurious webview hide/show on Android and ChromeOS (W-12).
+- [x] 2.0 Phase 1b — destroy-on-close in QML, in-flight-operation safety, and the `qt_thread.queue` `ObjectDestroyed` sweep (W-2, W-6, W-7, W-7a, W-8, W-10 … W-13)
+  - [x] 2.1 Inventory the queue sites and record **both** counts per file in the commit notes (baseline in "Current state assessment": 124 sites = 90 `.unwrap()` + 34 `let _ =`). A plain `grep -c 'queue('` gives only the first column; the `.unwrap()` sits on the closing line of the multi-line closure, so counting it needs a multi-line match (`perl -0777`, or `grep -A20 'queue(' | grep -c unwrap`).
+  - [x] 2.2 Add the shared queue helper described above. Prefer a small function or macro that takes the closure so each call site becomes a one-line change; it must be usable from every bridge file and must log through the backend logger.
+  - [x] 2.3 Apply the helper to **all 124** queue sites across `sutta_bridge.rs`, `asset_manager.rs`, `dictionary_manager.rs`, `audio_manager.rs`, `prompt_manager.rs` and `storage_manager.rs` — the 90 `.unwrap()`ed ones to stop the panic, the 34 `let _ =` ones to stop the silent loss. `SuttaBridge` lives in every window's engine, so no bridge is exempt.
+  - [x] 2.3a Verify the sweep with a check that **fails on the unfixed tree** — e.g. `perl -0777 -ne 'print scalar(()=/\.queue\(/g)' <file>` against a count of helper invocations. **Do not use `grep -n 'queue(' bridges/src/*.rs | grep unwrap`**: it returns nothing *today*, before any work is done, so it certifies nothing.
+  - [x] 2.4 Check each converted site for a **cleanup obligation on the error path** — `asset_manager.rs`'s `cleanup_on_failure` and any keep-screen-on release must still run when the queue fails, not be skipped by the early return. Note that the 34 `let _ =` sites currently *continue* past the failure, so converting them to log-**and-return** changes control flow: re-read each one before choosing return vs. continue.
+  - [x] 2.5 Add the `onClosing` handler to `TopicIndexWindow.qml`, `LibraryWindow.qml`, `ReferenceSearchWindow.qml` and `ChantingPracticeWindow.qml` per the contract above, with a distinct type string per window.
+  - [x] 2.6 Extend the three existing handlers (`SuttaLanguagesWindow.qml:131`, `DictionariesWindow.qml:89`, `ChantingPracticeReviewWindow.qml:91`) with the `if (close.accepted)` notify, preserving their current guards verbatim. Convert `ChantingPracticeReviewWindow`'s handler to the `function(close)` form.
+  - [x] 2.7 Implement W-7 deferred destruction in `SuttaLanguagesWindow.qml`: track whether a download / import / removal is running, hold the notify back on desktop closes during one, and issue it from the operation's completion handler. **Do not** make the close refuse on desktop.
+  - [x] 2.8 Do the same for `DictionariesWindow.qml` for its delete / import / rename operations, keeping its existing refuse-to-close behaviour unchanged.
+  - [x] 2.8a Do the same for `LibraryWindow.qml`, whose `DocumentImportDialog` (`:56-65`) runs a signal-driven document import (`onDocumentImportProgress` / `onDocumentImportCompleted`, `DocumentImportDialog.qml:347-366`). This window was missing from the first draft of W-7. Do **not** add keep-screen-on here — that gap is real but out of scope; note it for a follow-up.
+  - [x] 2.8b Do the same for `TopicIndexWindow.qml`'s own warm-up: `:101` calls `SuttaBridge.load_topic_index()`, so a close before `onTopicIndexLoaded` arrives orphans that thread. Hold the notify until the signal lands (or until a short timeout). This is the first W-7a case to test, per success metric 0a.
+  - [x] 2.8c Decide and implement the behaviour for `ChantingPracticeWindow.qml` (which has **no** `onClosing` today) and confirm `ChantingPracticeReviewWindow.qml`'s existing one: a recording in progress must be **stopped and finalised** on close, never silently truncated. `AudioManager`'s queue sites are all `let _ =`, so the failure mode here is a lost callback, not a panic.
+  - [x] 2.8d **(added during 2.5)** `ReferenceSearchWindow.qml` is a W-7 window the PRD's W-7 table missed: its `Component.onCompleted` calls `SuttaBridge.load_sutta_references()`, which `thread::spawn`s and reports back through the `sutta_references_loaded` qproperty. Given the same deferred-destruction treatment as `TopicIndexWindow`.
+  - [x] 2.9 Verify W-8 by reading: `SuttaLanguagesWindow.qml:122-127`'s `Component.onDestruction` keep-screen-on release now fires on every close. Confirm both acquire (`:117-119`) and release are `is_mobile`-gated so there is no double-release, and that the deferred-destruction path of 2.7 does not skip it.
+  - [x] 2.10 Add a `Logger` line at each notify site (single concatenated string, never `console.*`) so the destroy path is greppable in `log.txt` during device testing.
+  - [x] 2.11 `make build -B` and `make qml-test`; confirm no new qmllint warnings naming the touched QML files.
+  - [x] 2.12 Write the manual verification checklist into the commit message / task notes for the user to run.
+
+### Manual verification checklist for phase 1 (2.12)
+
+Run on **desktop and Android**, and on Android use the **back button** as well as
+the Close button (W-11) — back goes through the same `onClosing` handlers.
+
+1. **W-7b, run this first — the cheapest reproduction in the app.** Open the
+   Topic Index window and close it **immediately**, before the letter list
+   appears (i.e. during the warm-up). Repeat ~20 times. Expected: no crash, and
+   `log.txt` shows `TopicIndexWindow: close deferred until the topic index
+   warm-up finishes` followed by `notifying WindowManager of close` and
+   `on_window_closed(topic_index): destroyed`.
+2. **W-13 / metric 0.** Open and close each of the seven windows ten times —
+   Topic Index, Library, Reference Search, Sutta Languages, Dictionaries,
+   Chanting Practice, Chanting Review. Expected: each reopens correctly, and
+   resident memory does not grow monotonically with the count. `log.txt` must
+   show one `on_window_closed(<type>): destroyed` per close.
+3. **W-1a / metric 0a.** Open a chanting review for section **A**, close it,
+   then open one for section **B**. Expected: **B** is shown. (Reopening the
+   *same* section fires no reload — correct, the content is already right.)
+4. **W-7, Sutta Languages.** Start a language download, then close the window.
+   - Desktop: the window disappears and the download **continues**; the
+     `destroyed` log line arrives only when the download completes.
+   - Android: the back-guard dialog appears and refuses the close (unchanged);
+     confirming "Close anyway" hides the window and still defers destruction
+     until the download ends.
+5. **W-7, Library.** Start a document import (EPUB/PDF/HTML), close the window
+   mid-import. Expected: the import completes and the book appears the next
+   time the Library is opened; `log.txt` shows the deferred-close line.
+6. **W-7, Dictionaries.** Start an import and try to close. Expected: the close
+   is **refused** (unchanged behaviour); it succeeds once the import finishes.
+7. **W-7, Chanting Review — the one that can lose data.** Start a recording,
+   then close the window while it is still recording. Expected: the recording
+   is stopped, finalised **and saved** — reopen the section and the new
+   recording is listed. `log.txt` shows `close deferred until the recording is
+   finalised and saved`. A file on disk that is missing from the list is a
+   failure.
+8. **W-12.** On Android **and ChromeOS**, watch for a spurious webview
+   hide/show as these windows open and close. Any flicker of the reader behind
+   them is a blocking defect.
+9. **W-8.** On Android, close the Sutta Languages window and confirm the device
+   suspends normally afterwards (the keep-screen-on lock is released by
+   `Component.onDestruction`, which now actually fires).
+10. **Metric 7a-adjacent.** Nothing in `log.txt` should show a
+    `qt_thread.queue() failed` line during normal use. One appearing after a
+    close is informative, not fatal — but it names the operation that lost its
+    completion signal and is worth reporting.
 
 ---
 
@@ -689,7 +750,7 @@ W-2 windows hosts a `WebEngineView`**, so no render-process teardown is involved
 - [ ] 8.0 Documentation and verification — `PROJECT_MAP.md`, `docs/cips-index-updates.md`, `docs/window-lifecycle-and-reuse.md`, and the success-metric pass on desktop and Android (§7, §8)
   - [ ] 8.1 Update `PROJECT_MAP.md` for the moved parser module, the new `cips_update.rs`, the new table, and the new QML window.
   - [ ] 8.2 Write `docs/cips-index-updates.md` per the specs above.
-  - [ ] 8.3 Update `docs/window-lifecycle-and-reuse.md` with the two reuse predicates and the phase-1 destroy-on-close behaviour, including the `qt_thread.queue` `ObjectDestroyed` rule (W-7a) as a standing rule for new bridge code.
+  - [x] 8.3 **(done early, after phase 1 manual verification — the CIPS update window in 7.0 is a new window and needs this guidance in place first.)** `docs/window-lifecycle-and-reuse.md` rewritten around the **two lifecycle families** (§0), with §5 the single-instance shape, §5a the close path and destruction chain, **§5b the table of which window defers until which completion signal**, §5c the `queue_or_log` rule, §6 the `~WindowManager` resolution, §7 an **"adding a new window" checklist** and §8 the standing rules. Cross-referenced from `AGENTS.md`/`CLAUDE.md` (the "Notable feature docs" entry, plus two new "Specific coding procedures" subsections — *Adding a new top-level window* and *`qt_thread.queue()` — use `queue_or_log()`*) and from `PROJECT_MAP.md` (the `window_manager.cpp/.h` entry, the UI Components line, and a new bridge-threading-helper entry).
   - [ ] 8.4 Add the `CLAUDE.md` cross-reference line for `docs/cips-index-updates.md` in the "Notable feature docs" list, matching the style of the existing entries.
   - [ ] 8.5 Run the full `make test` sweep and record the result, noting any pre-existing timing-assertion drift separately from real failures.
   - [ ] 8.6 Verify success metric 7b: query the stored `index_json`'s length and confirm it is within a few per cent of `assets/general-index.json`'s 2,328,695 bytes, not two to three times it.

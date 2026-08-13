@@ -43,6 +43,18 @@ ApplicationWindow {
         load_collections();
     }
 
+    // Closing this window destroys it. Nothing long-running starts here -- this
+    // window only browses the collection tree; recording and playback live in
+    // ChantingPracticeReviewWindow, which defers its own close -- so the notify
+    // is immediate.
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        logger.info("ChantingPracticeWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("chanting_practice");
+    }
+
     function load_collections() {
         const json_str = SuttaBridge.get_all_chanting_collections_json();
         try {
