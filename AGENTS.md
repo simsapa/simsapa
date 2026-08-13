@@ -191,6 +191,39 @@ Notable feature docs:
   `qt_thread.queue()`** — destroy-on-close makes `ObjectDestroyed` a live path,
   and `is_destroyed()` is racy and is not the fix. §6 records why
   `~WindowManager` is dead code and must stay empty.
+- [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
+  its data, and the in-app **Update** / **Reset** actions that replace it without
+  a Simsapa release. The parser moved from the CLI to
+  `backend/src/cips_parse.rs` (pure — no file access, no printing, **all**
+  diagnostics returned; the regression check was **byte-identical** CLI output,
+  and the file was `git mv`'d so the untouched logic is provably untouched), and
+  the index now resolves from **two** sources. **The newer of the two wins**:
+  the single-row `topic_index_data` table is used only when its `updated_at` is
+  *strictly* newer than `assets/general-index-date.txt`, which is why a
+  downloaded index does not silently shadow every future shipped one — a plain
+  string compare, so both stamps must stay fixed-width UTC ISO 8601 to the
+  second. Covers why the table is a **new, empty** table (so existing installs
+  get it from the migration alone, no DB version bump, no re-download) and why
+  every read must tolerate it being absent (a migration failure is non-fatal by
+  design); the **minified-JSON** rule (`to_string`, never `to_string_pretty` —
+  `appdata.sqlite3` is kept across app updates); the swappable
+  `RwLock<Option<Arc<TopicIndex>>>` cache and its three rules (clone the `Arc`
+  out and **drop the guard**, build outside the write lock, double-check under
+  it), plus why reset **replaces and never clears**; the fetch's
+  **`status_is_retryable()`** policy (429 + 5xx retry, 4xx does not — the
+  `asset_manager.rs` loop this was modelled on retries transport errors *only*,
+  so a 500 read as success) and the **50 MB ceiling enforced twice**, which is
+  the only guard against an OOM on Android since the plausibility *floor* does
+  not cover size at all; the truthful stage ordering via a lazily-loaded title
+  map; `known_uids` built from **all** Pāli rows including NULL titles; the
+  "before" counts taken at the **top** of the run; and the QML rules — the
+  update window's **split model** (layout from `DictionaryIndexProgressWindow`,
+  lifecycle from `TopicIndexInfoDialog`, start from `StorageDiagnosticsDialog`),
+  why it must **not** start the run in `Component.onCompleted`, and the three
+  flows sharing one completion signal. The standing source-data rule applies
+  throughout: **report defects, never repair them** (duplicated xrefs preserved,
+  misspellings verbatim; `BTreeMap` not `HashMap`, `sorted_xref_targets` returns
+  a `Vec` not a `BTreeSet`).
 - [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
   shipped `assets/fonts/crimson-pro/*.ttf` are **patched, not stock**: stock
   Crimson Pro lacks ṁ (U+1E41), so plain browsers fell back to a mismatched

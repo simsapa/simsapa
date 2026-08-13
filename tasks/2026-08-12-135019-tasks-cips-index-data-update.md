@@ -1042,13 +1042,68 @@ W-2 windows hosts a `WebEngineView`**, so no render-process teardown is involved
 — which is also part of why the same treatment could not be extended to
 `SuttaSearchWindow` without much more care.
 
-- [ ] 8.0 Documentation and verification — `PROJECT_MAP.md`, `docs/cips-index-updates.md`, `docs/window-lifecycle-and-reuse.md`, and the success-metric pass on desktop and Android (§7, §8)
-  - [ ] 8.1 Update `PROJECT_MAP.md` for the moved parser module, the new `cips_update.rs`, the new table, and the new QML window.
-  - [ ] 8.2 Write `docs/cips-index-updates.md` per the specs above.
+- [x] 8.0 Documentation and verification — `PROJECT_MAP.md`, `docs/cips-index-updates.md`, `docs/window-lifecycle-and-reuse.md`, and the success-metric pass on desktop and Android (§7, §8)
+  - [x] 8.1 Update `PROJECT_MAP.md` for the moved parser module, the new `cips_update.rs`, the new table, and the new QML window.
+  - [x] 8.2 Write `docs/cips-index-updates.md` per the specs above.
   - [x] 8.3 **(done early, after phase 1 manual verification — the CIPS update window in 7.0 is a new window and needs this guidance in place first.)** `docs/window-lifecycle-and-reuse.md` rewritten around the **two lifecycle families** (§0), with §5 the single-instance shape, §5a the close path and destruction chain, **§5b the table of which window defers until which completion signal**, §5c the `queue_or_log` rule, §6 the `~WindowManager` resolution, §7 an **"adding a new window" checklist** and §8 the standing rules. Cross-referenced from `AGENTS.md`/`CLAUDE.md` (the "Notable feature docs" entry, plus two new "Specific coding procedures" subsections — *Adding a new top-level window* and *`qt_thread.queue()` — use `queue_or_log()`*) and from `PROJECT_MAP.md` (the `window_manager.cpp/.h` entry, the UI Components line, and a new bridge-threading-helper entry).
-  - [ ] 8.4 Add the `CLAUDE.md` cross-reference line for `docs/cips-index-updates.md` in the "Notable feature docs" list, matching the style of the existing entries.
-  - [ ] 8.5 Run the full `make test` sweep and record the result, noting any pre-existing timing-assertion drift separately from real failures.
-  - [ ] 8.6 Verify success metric 7b: query the stored `index_json`'s length and confirm it is within a few per cent of `assets/general-index.json`'s 2,328,695 bytes, not two to three times it.
-  - [ ] 8.7 Verify success metric 7a: open and close the Topic Index window several times and confirm `log.txt` contains **no** FR-45 block until Update is confirmed.
-  - [ ] 8.8 Hand the user the device verification checklist and collect the results: metrics 0/0a/0b (phase 1, desktop + Android, back button included), 3 (upgrade path on Android), 4 (responsive GUI through an update), 5 (new entries with no restart), 6 (network killed mid-download), 7 (Reset + Info in both states, including the open-close-update-reopen sequence), 8 (Android timing, no OOM, no ANR).
-  - [ ] 8.9 Propose the commit split for the user to review — phase 1a, phase 1b, phase 2, phase 3 storage, update engine, bridge, UI, docs — stating in the phase-1 message which W-9 resolution was chosen and in the phase-2 message which FR-6 option was taken.
+  - [x] 8.4 Add the `CLAUDE.md` cross-reference line for `docs/cips-index-updates.md` in the "Notable feature docs" list, matching the style of the existing entries.
+  - [x] 8.5 Run the full `make test` sweep and record the result, noting any pre-existing timing-assertion drift separately from real failures. **Not re-run: the user confirmed on 2026-08-13 that `make test` is fine.** The last sweeps recorded in these notes were green (backend suite green after 3.11 / 4.12 / 5.13, `make qml-test` 150 passed / 0 failed at 7.15); nothing since 7.0 touched code, only `PROJECT_MAP.md`, `AGENTS.md` and the new doc.
+  - [x] 8.6 Verify success metric 7b: query the stored `index_json`'s length and confirm it is within a few per cent of `assets/general-index.json`'s 2,328,695 bytes, not two to three times it.
+  - [x] 8.7 Verify success metric 7a: open and close the Topic Index window several times and confirm `log.txt` contains **no** FR-45 block until Update is confirmed.
+  - [x] 8.8 Hand the user the device verification checklist and collect the results: metrics 0/0a/0b (phase 1, desktop + Android, back button included), 3 (upgrade path on Android), 4 (responsive GUI through an update), 5 (new entries with no restart), 6 (network killed mid-download), 7 (Reset + Info in both states, including the open-close-update-reopen sequence), 8 (Android timing, no OOM, no ANR). **The user confirmed on 2026-08-13 that device verification was already done.** The desktop halves of metrics 4, 5, 6-adjacent and 7 are independently evidenced in `SIMSAPA_DIR/log.txt` and its rotations — see the notes below.
+  - [x] 8.9 Propose the commit split for the user to review — phase 1a, phase 1b, phase 2, phase 3 storage, update engine, bridge, UI, docs — stating in the phase-1 message which W-9 resolution was chosen and in the phase-2 message which FR-6 option was taken.
+
+### Notes from 8.0 (documentation and verification, completed 2026-08-13)
+
+- **8.6 / metric 7b passed with room to spare.** The stored row in the runtime
+  `appdata.sqlite3` holds an `index_json` of **2,285,687 bytes** against the
+  shipped `assets/general-index.json`'s 2,328,695 — **98.2%**, i.e. slightly
+  *smaller*, not the 2–3× a pretty-printed blob would have been. (It is smaller
+  because the downloaded index is a slightly different revision, not because of
+  formatting.) Row metadata: `csv_line_count` 21,807, `headword_count` 3,203,
+  `ref_count` 21,807, `updated_at` `2026-08-13T08:56:09Z`, `source_etag` the
+  strong SHA-256 ETag.
+- **8.7 / metric 7a: no fetch happens on window open.** Across the three logged
+  sessions that opened the Topic Index window, the first `CIPS-UPDATE:` line
+  always arrives **seconds after** the open, following a user confirm — 08:47:41
+  open → 08:47:45 start (3.6 s), and 08:55:57 open → 08:56:08 start (11 s, with a
+  Reset in between). No session shows a `CIPS-UPDATE:` line at window-load time.
+  **Limit of the evidence:** each recorded session opened the window exactly
+  once, so "several opens with no update block" is demonstrated structurally
+  rather than by a repeat-open log — `start_run()` is reachable only from
+  `open_and_run()`, which only the Update confirm dialog's accept handler calls,
+  and `Component.onCompleted` does nothing but `theme_helper.apply()`.
+- **The logs independently evidence several other metrics on desktop**, from real
+  runs the user made:
+  - metric 5 (new entries, no restart): `topic_index: stored a downloaded index`
+    immediately followed by `TopicIndexWindow: topic index data changed,
+    refreshing the view`;
+  - **Cancel works end to end** (FR-40, FR-40a): `TopicIndexUpdateWindow: cancel
+    requested` → `CIPS-UPDATE: cancel requested` → `The update was cancelled. The
+    index in use has not been changed.` — **79 ms** from request to reported
+    cancellation;
+  - **Reset works** (FR-30): `topic_index: reset to the index shipped with this
+    build`, followed by the same refresh line;
+  - **the destroy-on-close route** (phase 1): `TopicIndexWindow: notifying
+    WindowManager of close` → `on_window_closed(topic_index): destroyed`;
+  - **source resolution picks the downloaded row** on the next launch:
+    `topic_index: using the downloaded index (2026-08-13T08:48:08Z, 26 letters)`;
+  - **timing**: a whole desktop run — download, parse, both validators, store —
+    in **1.0–1.2 s**, three times over.
+- **Three updates ran against the live upstream CSV with zero defects reported by
+  the validator** (`validation: 0 warnings, 0 errors`) and anchor validation
+  `1579 checked, 1573 ok, 0 unresolved uid, 0 no segments, 6 missing segment` —
+  the same six as the CLI baseline (`dn33:1.7.9.1`, `dn20:4.11`–`4.15`), which is
+  a useful cross-check that the runtime lookups agree with the CLI's.
+- **The deltas prove the feature's premise**: `3203 headwords (±0), 15723
+  sub-entries (-5), 21807 refs (+16)` — upstream really has moved on from the
+  shipped index, and `format_delta()`'s `±0` renders as specified.
+- **8.9 is mostly retrospective**: the user had already committed phases 1a–7 as
+  `WindowManager instance creation`, `window destroy-on-close safety and docs`,
+  `parser move`, `review fixes`, `topic index db storage`, `cips update backend
+  engine`, `bridge surface`, `topic index update window`, `report format`. Those
+  commit messages are short subjects with no bodies, so the W-9 and FR-6
+  decisions the task asked to record there live in the docs instead — W-9 in
+  `docs/window-lifecycle-and-reuse.md` §6, FR-6 in `docs/cips-index-updates.md`
+  §7 — which is the more durable place for both. Only the documentation commit
+  remains.
