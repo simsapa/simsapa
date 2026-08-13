@@ -5250,7 +5250,7 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {
             // Load the topic index (this caches it for future use)
-            let _ = topic_index::load_topic_index();
+            topic_index::ensure_topic_index_loaded();
             crate::queue_or_log(&qt_thread, "sutta_bridge::load_topic_index", move |mut qo| {
                 qo.as_mut().set_topic_index_loaded(true);
                 qo.as_mut().topic_index_loaded_signal();

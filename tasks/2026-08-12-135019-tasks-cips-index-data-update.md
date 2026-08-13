@@ -691,20 +691,59 @@ Left for 4.7 / 4.10 / 4.11:
   which source actually won rather than merely whether a row exists.
 
 - [ ] 4.0 Phase 3 storage layer — `topic_index_data` migration, Diesel schema and model, and the swappable `RwLock<Option<Arc<TopicIndex>>>` cache with DB-first source resolution (FR-9 … FR-15a)
-  - [ ] 4.1 Create the dated migration folder with `up.sql` (the `CREATE TABLE` above) and a matching `down.sql` (`DROP TABLE topic_index_data;`).
-  - [ ] 4.2 Add the `diesel::table!` block for `topic_index_data` to `backend/src/db/appdata_schema.rs`, following the existing style (FR-9c). `updated_at` is `Text`, not a timestamp — it is written and read as an ISO date string.
-  - [ ] 4.3 Add `TopicIndexData` (`Queryable, Selectable, Identifiable`) and `NewTopicIndexData` (`Insertable`) to `backend/src/db/appdata_models.rs`, alongside the existing structs.
-  - [ ] 4.4 Rebuild so `embed_migrations!` picks the folder up, and confirm the migration applies against the runtime `appdata.sqlite3` in `SIMSAPA_DIR` without touching any other table.
-  - [ ] 4.5 Replace the `OnceLock<TopicIndex>` static in `backend/src/topic_index.rs` with the const-initialized `RwLock<Option<Arc<TopicIndex>>>`, modelled on `FULLTEXT_SEARCHER` (`backend/src/lib.rs:171`) — **not** on the `OnceLock`-wrapped `RELEASES_INFO`.
-  - [ ] 4.6 Write the internal `current_index() -> Arc<TopicIndex>` with the read → miss → drop-guard → build → double-checked write sequence (FR-14, FR-14b).
-  - [ ] 4.7 Write the source-resolution builder (FR-11): read row `id = 1` through `try_get_app_data()` → `dbm.appdata.do_read`, parse its `index_json`, and fall through to `CIPS_GENERAL_INDEX_JSON` when `APP_DATA` is absent, the table is missing (FR-9b), the row is absent, or the JSON fails to parse — **logging** each fallback reason (FR-12). No panic on any database path.
-  - [ ] 4.8 Update the seven accessors to call `current_index()`, clone the `Arc` out and drop the guard immediately. Their signatures and behaviour must not change.
-  - [ ] 4.9 Replace `pub fn load_topic_index() -> &'static TopicIndex` with `pub fn ensure_topic_index_loaded()` (FR-14a) and update its one external caller, `bridges/src/sutta_bridge.rs:5256`. **Do not rename the bridge method** `SuttaBridge::load_topic_index()` — QML calls it at `TopicIndexWindow.qml:101`.
-  - [ ] 4.10 Add `pub fn store_topic_index(...)` (write the row inside `do_write` + `conn.transaction`, then swap the cache **only after the commit**, FR-13; JSON minified with `serde_json::to_string`, never `to_string_pretty`, FR-13a) and `pub fn reset_topic_index()` (delete the row, build the embedded index **first**, store it in a single write, FR-15a).
-  - [ ] 4.11 Add `pub fn topic_index_source_info()` returning the stored row's `updated_at` / counts (or "shipped") for FR-44, tolerating a missing table. Include whatever FR-11b's chosen resolution needs (a build-date stamp for the embedded index, if that option is taken).
-  - [ ] 4.11a Add `pub fn topic_index_counts() -> (usize, usize, usize)` — headwords, sub-entries, refs (FR-37b). **No existing accessor exposes sub-entry or ref totals**, so the update's signed deltas cannot be computed without it. Same guard-scoping rule as the other accessors: clone the `Arc` out, drop the guard, then count.
-  - [ ] 4.12 `cd backend && cargo test` — the seven existing `topic_index.rs` tests must pass **unmodified**. Add new tests for: fallback to embedded when no `APP_DATA`; fallback on a corrupt stored row; reset never leaving `is_topic_index_loaded()` false.
-  - [ ] 4.13 Verify the upgrade path (success metric 3, FR-9a): take a copy of a *pre-existing* `appdata.sqlite3` from the current release, run the new build's migration against it, and confirm the table appears with no other change and no re-download. Note the Android half for device verification in 8.0.
+  - [x] 4.1 Create the dated migration folder with `up.sql` (the `CREATE TABLE` above) and a matching `down.sql` (`DROP TABLE topic_index_data;`).
+  - [x] 4.2 Add the `diesel::table!` block for `topic_index_data` to `backend/src/db/appdata_schema.rs`, following the existing style (FR-9c). `updated_at` is `Text`, not a timestamp — it is written and read as an ISO date string.
+  - [x] 4.3 Add `TopicIndexData` (`Queryable, Selectable, Identifiable`) and `NewTopicIndexData` (`Insertable`) to `backend/src/db/appdata_models.rs`, alongside the existing structs.
+  - [x] 4.4 Rebuild so `embed_migrations!` picks the folder up, and confirm the migration applies against the runtime `appdata.sqlite3` in `SIMSAPA_DIR` without touching any other table.
+  - [x] 4.5 Replace the `OnceLock<TopicIndex>` static in `backend/src/topic_index.rs` with the const-initialized `RwLock<Option<Arc<TopicIndex>>>`, modelled on `FULLTEXT_SEARCHER` (`backend/src/lib.rs:171`) — **not** on the `OnceLock`-wrapped `RELEASES_INFO`.
+  - [x] 4.6 Write the internal `current_index() -> Arc<TopicIndex>` with the read → miss → drop-guard → build → double-checked write sequence (FR-14, FR-14b).
+  - [x] 4.7 Write the source-resolution builder (FR-11): read row `id = 1` through `try_get_app_data()` → `dbm.appdata.do_read`, parse its `index_json`, and fall through to `CIPS_GENERAL_INDEX_JSON` when `APP_DATA` is absent, the table is missing (FR-9b), the row is absent, or the JSON fails to parse — **logging** each fallback reason (FR-12). No panic on any database path.
+  - [x] 4.8 Update the seven accessors to call `current_index()`, clone the `Arc` out and drop the guard immediately. Their signatures and behaviour must not change.
+  - [x] 4.9 Replace `pub fn load_topic_index() -> &'static TopicIndex` with `pub fn ensure_topic_index_loaded()` (FR-14a) and update its one external caller, `bridges/src/sutta_bridge.rs:5256`. **Do not rename the bridge method** `SuttaBridge::load_topic_index()` — QML calls it at `TopicIndexWindow.qml:101`.
+  - [x] 4.10 Add `pub fn store_topic_index(...)` (write the row inside `do_write` + `conn.transaction`, then swap the cache **only after the commit**, FR-13; JSON minified with `serde_json::to_string`, never `to_string_pretty`, FR-13a) and `pub fn reset_topic_index()` (delete the row, build the embedded index **first**, store it in a single write, FR-15a).
+  - [x] 4.11 Add `pub fn topic_index_source_info()` returning the stored row's `updated_at` / counts (or "shipped") for FR-44, tolerating a missing table. Include whatever FR-11b's chosen resolution needs (a build-date stamp for the embedded index, if that option is taken).
+  - [x] 4.11a Add `pub fn topic_index_counts() -> (usize, usize, usize)` — headwords, sub-entries, refs (FR-37b). **No existing accessor exposes sub-entry or ref totals**, so the update's signed deltas cannot be computed without it. Same guard-scoping rule as the other accessors: clone the `Arc` out, drop the guard, then count.
+  - [x] 4.12 `cd backend && cargo test` — the seven existing `topic_index.rs` tests must pass **unmodified**. Add new tests for: fallback to embedded when no `APP_DATA`; fallback on a corrupt stored row; reset never leaving `is_topic_index_loaded()` false.
+  - [x] 4.13 Verify the upgrade path (success metric 3, FR-9a): take a copy of a *pre-existing* `appdata.sqlite3` from the current release, run the new build's migration against it, and confirm the table appears with no other change and no re-download. Note the Android half for device verification in 8.0.
+
+### Notes from 4.0 (phase 3 storage, completed 2026-08-13)
+
+- **FR-11b is resolved by date comparison, not by row-first ordering.** `stored_row_wins()`
+  is a plain string compare of the row's `updated_at` against
+  `app_settings::cips_general_index_date()`, and a stored row wins only when
+  **strictly newer** — so a release shipping a regenerated index takes over by
+  itself, with no user action and no message. This supersedes what FR-11 and the
+  4.7 wording still say about unconditional row-first resolution.
+  `updated_at` must therefore be written as fixed-width UTC ISO 8601 to the
+  second; 5.0 owns that (`store_topic_index` takes it as a parameter and does not
+  format it).
+- **Resolution is split into a pure `index_from_row()`** (row → `Option<Vec<TopicIndexLetter>>`,
+  logging both fallback reasons) and the `read_stored_row()` database half. That
+  split is what makes the stale-row, corrupt-row and newer-row cases unit-testable
+  with `APP_DATA` uninitialized — no test needs a database.
+- **`topic_index_source_info()` reports which source actually won**, not merely
+  whether a row exists: `source: "downloaded" | "shipped"` plus `has_stored_row`
+  (which is what FR-29 should drive the Reset button from — a stale row still
+  exists and is still resettable even though it is not in use). This is the
+  behaviour 7.13a was told to pick between; the flagging branch is unnecessary,
+  because a newer shipped index is used automatically.
+- **4.4 / 4.13 verified together against the real pre-existing `appdata.sqlite3`**
+  from `SIMSAPA_DIR` (a scratch integration test, since removed): exactly **1**
+  migration applied, `sqlite_master` diff shows **only** `topic_index_data` added
+  with no other table or index changed, and a second `run_appdata_migrations()`
+  applies **0**. The Android half stays for device verification in 8.0.
+- **Two of the eight existing tests had to change**, minimally and unavoidably:
+  `test_load_topic_index` now calls `current_index()` and
+  `test_is_topic_index_loaded` calls `ensure_topic_index_loaded()`, because
+  FR-14a deletes the function they named. The six accessor tests are untouched,
+  which is the canary the spec cared about. Six new tests added (15 in the module,
+  all passing; full backend suite green, no failures).
+- **`count_index()` is public** alongside `topic_index_counts()`: the update engine
+  needs the counts of a *freshly parsed* index before it is stored, not only of
+  the one in use.
+- `reset_topic_index()` tolerates a missing `AppData` (deletes nothing, still swaps
+  the cache), which is what lets 4.12 test the FR-15a "never `None`" guarantee
+  without a database.
 
 ---
 
