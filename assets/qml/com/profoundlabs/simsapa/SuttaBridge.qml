@@ -51,6 +51,9 @@ Item {
 
     // Topic Index signals
     signal topicIndexLoaded();
+    signal topicIndexUpdateProgress(stage_index: int, total_stages: int, message: string);
+    signal topicIndexUpdateCompleted(success: bool, summary_json: string);
+    signal topicIndexDataChanged();
 
     function emit_update_window_title(item_uid: string, sutta_ref: string, sutta_title: string) {
         console.log("update_window_title()");
@@ -1071,6 +1074,26 @@ Item {
 
     function open_topic_index_window() {
         console.log("open_topic_index_window()");
+    }
+
+    function update_topic_index() {
+        console.log("update_topic_index()");
+    }
+
+    function reset_topic_index() {
+        console.log("reset_topic_index()");
+    }
+
+    function topic_index_source_info(): string {
+        return '{"source":"shipped","has_stored_row":false,"builtin_date":"2026-08-05T15:44:48Z"}';
+    }
+
+    function is_topic_index_update_running(): bool {
+        return false;
+    }
+
+    function cancel_topic_index_update() {
+        console.log("cancel_topic_index_update()");
     }
 
     function notify_window_closed(window_type: string) {

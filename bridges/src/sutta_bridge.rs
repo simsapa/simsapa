@@ -21,6 +21,7 @@ use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
+use simsapa_backend::cips_update;
 use simsapa_backend::update_checker;
 use simsapa_backend::types::SearchResult;
 use simsapa_backend::db::appdata_models::HistoryItemType;
@@ -937,6 +938,38 @@ pub mod qobject {
         #[cxx_name = "topicIndexLoaded"]
         fn topic_index_loaded_signal(self: Pin<&mut SuttaBridge>);
 
+        /// One stage of a CIPS index update started, or reported new detail
+        /// (the per-attempt download messages).
+        #[qsignal]
+        #[cxx_name = "topicIndexUpdateProgress"]
+        fn topic_index_update_progress(
+            self: Pin<&mut SuttaBridge>,
+            stage_index: i32,
+            total_stages: i32,
+            message: QString,
+        );
+
+        /// A CIPS index update finished. `summary_json` is the success summary
+        /// when `success` is true, and `{"cancelled": bool, "message": str}`
+        /// otherwise.
+        #[qsignal]
+        #[cxx_name = "topicIndexUpdateCompleted"]
+        fn topic_index_update_completed(
+            self: Pin<&mut SuttaBridge>,
+            success: bool,
+            summary_json: QString,
+        );
+
+        /// The index in use was replaced -- by an update or by a reset -- so
+        /// anything showing it must re-read.
+        ///
+        /// Deliberately NOT `topicIndexLoaded`, which drives each window's
+        /// first-load state machine out of its `Component.onCompleted` warm-up;
+        /// conflating them makes an update indistinguishable from a first load.
+        #[qsignal]
+        #[cxx_name = "topicIndexDataChanged"]
+        fn topic_index_data_changed(self: Pin<&mut SuttaBridge>);
+
         #[qsignal]
         #[cxx_name = "rebuildSearchIndexProgress"]
         fn rebuild_search_index_progress(self: Pin<&mut SuttaBridge>, message: QString);
@@ -1613,6 +1646,30 @@ pub mod qobject {
         #[qinvokable]
         fn open_topic_index_window(self: &SuttaBridge);
 
+        /// Fetch the current CIPS index and replace the one in use. Runs on a
+        /// background thread; reports through the three topic-index-update
+        /// signals above.
+        #[qinvokable]
+        fn update_topic_index(self: Pin<&mut SuttaBridge>);
+
+        /// Discard a downloaded index and go back to the one shipped with this
+        /// build. No network access.
+        #[qinvokable]
+        fn reset_topic_index(self: Pin<&mut SuttaBridge>);
+
+        /// JSON describing which index is in use and what is known about the
+        /// stored row.
+        #[qinvokable]
+        fn topic_index_source_info(self: &SuttaBridge) -> QString;
+
+        /// Is an update running anywhere in the process? Reads a Rust static,
+        /// not bridge state -- the bridge object is per-engine.
+        #[qinvokable]
+        fn is_topic_index_update_running(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn cancel_topic_index_update(self: &SuttaBridge);
+
         /// Tell WindowManager that a single-instance secondary window has closed,
         /// so it can drop it from its list and deleteLater() it.
         #[qinvokable]
@@ -1852,6 +1909,27 @@ fn startup_report_error(kind: DbKind, label: &str) -> Option<String> {
     }
 
     None
+}
+
+/// The payload of `topicIndexUpdateCompleted` when the run produced a plain
+/// message rather than a summary: a failure, a cancellation, or a reset's
+/// confirmation. The `success` argument of the signal says which.
+///
+/// A cancellation is flagged separately because the UI reports it differently
+/// from a failure, even though neither changes the stored index.
+fn update_message_json(cancelled: bool, message: &str) -> String {
+    serde_json::json!({ "cancelled": cancelled, "message": message }).to_string()
+}
+
+/// Best-effort text of a caught panic.
+fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = panic.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = panic.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
 }
 
 #[derive(Default)]
@@ -5340,6 +5418,138 @@ impl qobject::SuttaBridge {
     pub fn open_topic_index_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_topic_index_window();
+    }
+
+    /// Fetch the current CIPS index from GitHub, parse it, validate it and
+    /// store it -- all on a background thread.
+    ///
+    /// Nothing here touches `topic_index_loaded`: that property means "the
+    /// in-memory cache is populated", which stays true throughout an update.
+    /// Every queue goes through `queue_or_log()`, because this window is
+    /// destroyed on close and can easily outlive the run.
+    pub fn update_topic_index(self: Pin<&mut Self>) {
+        info("SuttaBridge::update_topic_index() start");
+
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            let progress = |stage_index: u32, total_stages: u32, message: &str| {
+                let msg = QString::from(message);
+                crate::queue_or_log(&qt_thread, "sutta_bridge::update_topic_index", move |mut qo| {
+                    qo.as_mut().topic_index_update_progress(
+                        stage_index as i32,
+                        total_stages as i32,
+                        msg,
+                    );
+                });
+            };
+
+            // A panic in the worker must still complete the run, or the window
+            // waits on a progress bar that will never move again.
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                cips_update::run_update(&progress)
+            }));
+
+            let (success, summary_json) = match outcome {
+                Ok(Ok(summary)) => (true, summary.to_json()),
+                Ok(Err(e)) => {
+                    error(&format!("update_topic_index: {}", e.message));
+                    (false, update_message_json(e.cancelled, &e.message))
+                }
+                Err(panic) => {
+                    let msg = panic_message(panic);
+                    error(&format!("update_topic_index: panicked: {}", msg));
+                    (
+                        false,
+                        update_message_json(
+                            false,
+                            &format!(
+                                "The index update failed unexpectedly ({}). The index in use has not been changed.",
+                                msg
+                            ),
+                        ),
+                    )
+                }
+            };
+
+            let summary_qstr = QString::from(&summary_json);
+            crate::queue_or_log(&qt_thread, "sutta_bridge::update_topic_index", move |mut qo| {
+                if success {
+                    // The data changed first, so a handler re-reading the index
+                    // in response to the completion signal already sees the new
+                    // one.
+                    qo.as_mut().topic_index_data_changed();
+                }
+                qo.as_mut().topic_index_update_completed(success, summary_qstr);
+            });
+
+            info("SuttaBridge::update_topic_index() end");
+        });
+    }
+
+    /// Discard a downloaded index and go back to the one shipped with this build.
+    ///
+    /// Spawned rather than run inline: it does no network access, but it
+    /// re-parses the 2.3 MB embedded JSON, which is on the order of 100-300 ms
+    /// on a mid-range Android device -- not GUI-thread work. There is still no
+    /// progress window either way.
+    pub fn reset_topic_index(self: Pin<&mut Self>) {
+        info("SuttaBridge::reset_topic_index() start");
+
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            let (success, summary_json) = match topic_index::reset_topic_index() {
+                Ok(()) => (
+                    true,
+                    update_message_json(false, "The index shipped with this version of Simsapa is now in use."),
+                ),
+                Err(e) => {
+                    error(&format!("reset_topic_index: {}", e));
+                    (
+                        false,
+                        update_message_json(
+                            false,
+                            &format!("The index could not be reset: {}", e),
+                        ),
+                    )
+                }
+            };
+
+            let summary_qstr = QString::from(&summary_json);
+            crate::queue_or_log(&qt_thread, "sutta_bridge::reset_topic_index", move |mut qo| {
+                if success {
+                    qo.as_mut().topic_index_data_changed();
+                }
+                qo.as_mut().topic_index_update_completed(success, summary_qstr);
+            });
+
+            info("SuttaBridge::reset_topic_index() end");
+        });
+    }
+
+    /// Which index is in use, and what is known about the stored row.
+    pub fn topic_index_source_info(&self) -> QString {
+        let info_data = topic_index::topic_index_source_info();
+        match serde_json::to_string(&info_data) {
+            Ok(json) => QString::from(&json),
+            Err(e) => {
+                error(&format!("Failed to serialize topic index source info: {}", e));
+                QString::from("{}")
+            }
+        }
+    }
+
+    /// Is an index update running? Reads the backend static, so it is true for
+    /// a run any window started.
+    pub fn is_topic_index_update_running(&self) -> bool {
+        cips_update::is_update_running()
+    }
+
+    /// Ask a running update to stop. It lands at the next stage boundary, or
+    /// within about a second if the run is waiting to retry a download.
+    pub fn cancel_topic_index_update(&self) {
+        cips_update::cancel_update();
     }
 
     /// Called from a window's QML onClosing handler once the close has been

@@ -883,15 +883,46 @@ Every queue in the new code uses the 2.2 helper, never `.unwrap()` (FR-34a).
 Copy the background-run shape of `SuttaBridge::run_storage_diagnostics()`
 (`sutta_bridge.rs:4102-4133`) minus that `.unwrap()`.
 
-- [ ] 6.0 Bridge surface — `update_topic_index()`, `reset_topic_index()`, `topic_index_source_info()`, `is_topic_index_update_running()`, the three signals, and their `qmllint` stubs (§11.4.6, FR-34a, FR-42)
-  - [ ] 6.1 Declare the five functions and three signals in `sutta_bridge.rs`'s `extern "RustQt"` block, next to the existing topic-index entries (`:1590-1614`, `:937-938`).
-  - [ ] 6.2 Implement `update_topic_index()`: `thread::spawn` + `catch_unwind`, progress callbacks queued to the GUI thread through the 2.2 helper, and a final `topicIndexUpdateCompleted` + `topicIndexDataChanged` on success.
-  - [ ] 6.3 Implement `reset_topic_index()` calling `topic_index::reset_topic_index()` and emitting `topicIndexDataChanged` (plus a completion indication for the confirmation message of FR-30). Run it on a spawned thread per FR-30 — the embedded-JSON re-parse is not GUI-thread work — and use the 2.2 queue helper for the signal.
-  - [ ] 6.4 Implement `topic_index_source_info()`, `is_topic_index_update_running()` and `cancel_topic_index_update()` as thin readers over the backend.
-  - [ ] 6.5 Update `bridges/src/sutta_bridge.rs:5256` to call `ensure_topic_index_loaded()`, keeping the bridge method name `load_topic_index` (FR-14a).
-  - [ ] 6.6 Confirm nothing in the new code sets `topic_index_loaded` to `false` (FR-15).
-  - [ ] 6.7 Add matching stubs for all five functions and the three signals to `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with correct signatures and simple return values (FR-42).
-  - [ ] 6.8 `make build -B` and `make qml-lint`.
+- [x] 6.0 Bridge surface — `update_topic_index()`, `reset_topic_index()`, `topic_index_source_info()`, `is_topic_index_update_running()`, the three signals, and their `qmllint` stubs (§11.4.6, FR-34a, FR-42)
+  - [x] 6.1 Declare the five functions and three signals in `sutta_bridge.rs`'s `extern "RustQt"` block, next to the existing topic-index entries (`:1590-1614`, `:937-938`).
+  - [x] 6.2 Implement `update_topic_index()`: `thread::spawn` + `catch_unwind`, progress callbacks queued to the GUI thread through the 2.2 helper, and a final `topicIndexUpdateCompleted` + `topicIndexDataChanged` on success.
+  - [x] 6.3 Implement `reset_topic_index()` calling `topic_index::reset_topic_index()` and emitting `topicIndexDataChanged` (plus a completion indication for the confirmation message of FR-30). Run it on a spawned thread per FR-30 — the embedded-JSON re-parse is not GUI-thread work — and use the 2.2 queue helper for the signal.
+  - [x] 6.4 Implement `topic_index_source_info()`, `is_topic_index_update_running()` and `cancel_topic_index_update()` as thin readers over the backend.
+  - [x] 6.5 Update `bridges/src/sutta_bridge.rs:5256` to call `ensure_topic_index_loaded()`, keeping the bridge method name `load_topic_index` (FR-14a).
+  - [x] 6.6 Confirm nothing in the new code sets `topic_index_loaded` to `false` (FR-15).
+  - [x] 6.7 Add matching stubs for all five functions and the three signals to `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with correct signatures and simple return values (FR-42).
+  - [x] 6.8 `make build -B` and `make qml-lint`.
+
+### Notes from 6.0 (bridge surface, completed 2026-08-13)
+
+- **`topicIndexUpdateProgress(stage_index, total_stages, message)`** — three
+  parameters, not the four the spec table sketched (`stage, index, total,
+  message`): "stage" and "index" are the same number, and the backend reports
+  `(u32, u32, &str)`. The signal mirrors that exactly.
+- **`topicIndexUpdateCompleted(success, summary_json)` carries two shapes.** On
+  success `summary_json` is `UpdateSummary::to_json()`; otherwise it is
+  `{"cancelled": bool, "message": str}` from `update_message_json()`. The same
+  helper builds the **reset**'s confirmation payload, so QML has one parse path
+  for every terminal message and reads `success` to branch.
+- **`topicIndexDataChanged` is emitted *before* `topicIndexUpdateCompleted`**,
+  inside the same queued closure. A completion handler that re-reads the index
+  therefore already sees the new one, whichever order QML connects them in.
+- **Both `update_topic_index()` and `reset_topic_index()` spawn.** Reset does no
+  network access but re-parses the 2.3 MB embedded JSON, which FR-30 fixes at
+  ~100–300 ms on a mid-range Android device — not GUI-thread work. Neither gets
+  a progress window.
+- **`catch_unwind` wraps the whole update run** (`AssertUnwindSafe`, since the
+  progress closure borrows the `CxxQtThread`), so a panic still emits a
+  completion signal rather than leaving the window on a progress bar that never
+  moves again. `panic_message()` is factored out for it.
+- **Every queue goes through `crate::queue_or_log()`** (FR-34a) — this window is
+  destroyed on close and an update easily outlives it, which is exactly the live
+  `ObjectDestroyed` path phase 1 opened.
+- **FR-15 verified by grep**: `set_topic_index_loaded` has exactly one call
+  site, and it sets `true`. Nothing in the new code touches the property.
+- The `qmllint` stubs cover all five functions and all three signals;
+  `make qml-lint` reports no warning naming `SuttaBridge.qml` or any topic-index
+  file.
 
 ---
 
