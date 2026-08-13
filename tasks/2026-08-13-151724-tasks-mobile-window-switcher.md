@@ -209,7 +209,7 @@ field must restore as unnamed (§7.4).
 requires the two dialogs to agree. Leave `get_open_items_json()`'s narrower
 filter alone — the session path depends on its current shape.
 
-- [ ] 2.0 Extend `SuttaSearchWindow.qml` with the per-window data the dialog needs
+- [x] 2.0 Extend `SuttaSearchWindow.qml` with the per-window data the dialog needs
   - [x] 2.1 Add `property string window_title: ""` next to `property string window_id` (line 34), and a `readonly property string effective_window_title` that returns `window_title` when non-blank (requirement 23 trims whitespace) and `""` otherwise — the `"Window N"` fallback is the dialog's job, since N depends on the whole list.
   - [x] 2.2 Add `function get_open_tabs_json(): string` collecting from `tabs_pinned_model` / `tabs_results_model` / `tabs_translations_model` **in that order** (requirement 11 — the same order `TabListDialog.populate_model()` uses, with group labels `"Pinned"` / `"Results"` / `"Trans"`), emitting `{ id_key, item_uid, table_name, sutta_ref, sutta_title, tab_group }` per tab and skipping any tab where `root.is_blank_tab_uid(tab.item_uid)`. Leave `get_open_items_json()` untouched — it feeds the existing session path and its shape is written to storage.
   - [x] 2.3 Add `title: root.window_title` to the object returned by `get_session_data_json()` (requirement 25), leaving `name` and `items` unchanged.
@@ -241,17 +241,17 @@ read as `!!root.expanded_uids[id]`, written by copying with `Object.assign({}, �
 and reassigning the whole object (a mutated-in-place object does not re-evaluate
 bindings).
 
-- [ ] 3.0 Build `WindowListDialog.qml`
-  - [ ] 3.1 Create `assets/qml/WindowListDialog.qml`: a `Dialog` with `title: "Windows"`, `modal: true`, `header: DialogHeader { … }`, top margin honouring `extra_top_margin`, a `Logger { id: logger }`, and required properties `current_window_id` and `extra_top_margin`.
-  - [ ] 3.2 Add `function refresh_list()`: call `SuttaBridge.get_open_sutta_windows_json(root.current_window_id)`, `JSON.parse` inside a `try`/`catch` that `logger.error`s the raw string on failure, assign `"Window N"` defaults by oldest-first index, reverse into the display model, and preserve `expanded_uids`. Call it from `onOpened` — **not** `Component.onCompleted`.
-  - [ ] 3.3 Build the window row delegate: chevron/expand affordance, title text, pluralised tab count `(0 tabs)` / `(1 tab)` / `(N tabs)` (requirement 6b), edit and trash `Button`s copied in shape from `BookmarkListItem.qml:212-232` (same icon sources, `flat: true`, `implicitWidth: implicitHeight`), with the icon buttons visually and spatially separated from the row's tap area (requirement, Design Considerations — touch targets).
-  - [ ] 3.4 Mark the current window's row (requirement 7): distinct background or a "current" label, and seed `expanded_uids` so it is **expanded by default** while all others are collapsed (requirement 8).
-  - [ ] 3.5 Build the tab sub-row list shown when a row is expanded: indented in `ChantingTreeList.qml`'s style, grouped **Pinned → Results → Translations** with the group identifiable (a group label or `TabListDialog.qml`'s visual treatment), each row showing `sutta_ref` and `sutta_title` following `TabListDialog.qml`'s delegate including its `/dpd` word special case (line 331).
-  - [ ] 3.6 Handle the empty case (requirement 14): a window with zero non-placeholder tabs still lists, shows `(0 tabs)`, and expands to a short "No open tabs" label.
-  - [ ] 3.7 Wire switching: tapping a window row's title area emits `window_selected(window_id)`; tapping a tab sub-row emits `tab_selected(window_id, id_key)`. Both close the dialog first, then the handler calls `SuttaBridge.activate_sutta_search_window(...)` (requirements 15–17; tapping the current window's row just closes the dialog, since activating it is harmless but pointless — still route it through the same call for uniformity and log it).
-  - [ ] 3.8 Add the footer: a **New Window** button beside Close (requirement 19). New Window calls `SuttaBridge.open_sutta_search_window()` and closes the dialog (requirement 20).
-  - [ ] 3.9 Register `"../assets/qml/WindowListDialog.qml"` in `bridges/build.rs`'s `qml_files`, in that exact form.
-  - [ ] 3.10 `make build -B` and `make qml-lint` — no new warnings naming the file.
+- [x] 3.0 Build `WindowListDialog.qml`
+  - [x] 3.1 Create `assets/qml/WindowListDialog.qml`: a `Dialog` with `title: "Windows"`, `modal: true`, `header: DialogHeader { … }`, top margin honouring `extra_top_margin`, a `Logger { id: logger }`, and required properties `current_window_id` and `extra_top_margin`.
+  - [x] 3.2 Add `function refresh_list()`: call `SuttaBridge.get_open_sutta_windows_json(root.current_window_id)`, `JSON.parse` inside a `try`/`catch` that `logger.error`s the raw string on failure, assign `"Window N"` defaults by oldest-first index, reverse into the display model, and preserve `expanded_uids`. Call it from `onOpened` — **not** `Component.onCompleted`.
+  - [x] 3.3 Build the window row delegate: chevron/expand affordance, title text, pluralised tab count `(0 tabs)` / `(1 tab)` / `(N tabs)` (requirement 6b), edit and trash `Button`s copied in shape from `BookmarkListItem.qml:212-232` (same icon sources, `flat: true`, `implicitWidth: implicitHeight`), with the icon buttons visually and spatially separated from the row's tap area (requirement, Design Considerations — touch targets).
+  - [x] 3.4 Mark the current window's row (requirement 7): distinct background or a "current" label, and seed `expanded_uids` so it is **expanded by default** while all others are collapsed (requirement 8).
+  - [x] 3.5 Build the tab sub-row list shown when a row is expanded: indented in `ChantingTreeList.qml`'s style, grouped **Pinned → Results → Translations** with the group identifiable (a group label or `TabListDialog.qml`'s visual treatment), each row showing `sutta_ref` and `sutta_title` following `TabListDialog.qml`'s delegate including its `/dpd` word special case (line 331).
+  - [x] 3.6 Handle the empty case (requirement 14): a window with zero non-placeholder tabs still lists, shows `(0 tabs)`, and expands to a short "No open tabs" label.
+  - [x] 3.7 Wire switching: tapping a window row's title area emits `window_selected(window_id)`; tapping a tab sub-row emits `tab_selected(window_id, id_key)`. Both close the dialog first, then the handler calls `SuttaBridge.activate_sutta_search_window(...)` (requirements 15–17; tapping the current window's row just closes the dialog, since activating it is harmless but pointless — still route it through the same call for uniformity and log it).
+  - [x] 3.8 Add the footer: a **New Window** button beside Close (requirement 19). New Window calls `SuttaBridge.open_sutta_search_window()` and closes the dialog (requirement 20).
+  - [x] 3.9 Register `"../assets/qml/WindowListDialog.qml"` in `bridges/build.rs`'s `qml_files`, in that exact form.
+  - [x] 3.10 `make build -B` and `make qml-lint` — no new warnings naming the file.
 
 ### 4.0 — specs
 
