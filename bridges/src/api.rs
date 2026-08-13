@@ -248,6 +248,7 @@ pub mod ffi {
         fn callback_activate_sutta_search_window(window_id: QString, tab_id_key: QString);
         fn callback_close_sutta_search_window(window_id: QString);
         fn callback_set_sutta_search_window_title(window_id: QString, title: QString);
+        fn callback_activate_most_recently_used_window(exclude_window_id: QString);
     }
 }
 

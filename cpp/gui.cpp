@@ -263,6 +263,10 @@ void callback_set_sutta_search_window_title(QString window_id, QString title) {
   AppGlobals::manager->set_sutta_search_window_title(window_id, title);
 }
 
+void callback_activate_most_recently_used_window(QString exclude_window_id) {
+  AppGlobals::manager->activate_most_recently_used_window(exclude_window_id);
+}
+
 void callback_window_closed(QString window_type) {
   AppGlobals::manager->on_window_closed(window_type);
 }

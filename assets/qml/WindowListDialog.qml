@@ -46,6 +46,11 @@ Dialog {
     signal tab_selected(string window_id, string id_key)
     signal new_window_requested()
 
+    // The user trashed the *only* visible window. It is deliberately not hidden
+    // (see close_window_row() below) — the host window clears its tabs and
+    // takes the platform minimise/quit path.
+    signal last_window_close_requested()
+
     title: "Windows"
     modal: true
 
@@ -139,13 +144,112 @@ Dialog {
         control.tab_selected(window_id, id_key);
     }
 
-    // Filled in with the rename dialog and the close-confirmation flow.
     function request_rename(window_id, current_title) {
-        logger.info("WindowListDialog: rename requested for " + window_id + " (current: '" + current_title + "')");
+        rename_dialog.open_for(window_id, current_title);
     }
 
+    // A window holding more than one real tab is confirmed first; zero or one
+    // tab closes straight away (requirements 28, 29).
     function request_close(window_id) {
-        logger.info("WindowListDialog: close requested for " + window_id);
+        let window_data = control.find_window(window_id);
+        if (!window_data) {
+            logger.error("WindowListDialog: close requested for unknown window " + window_id);
+            return;
+        }
+
+        if (window_data.tabs.length > 1) {
+            confirm_close_dialog.window_id = window_id;
+            confirm_close_dialog.window_label = control.effective_label(window_data);
+            confirm_close_dialog.tab_count = window_data.tabs.length;
+            confirm_close_dialog.open();
+            return;
+        }
+
+        control.close_window_row(window_id);
+    }
+
+    function find_window(window_id) {
+        for (let i = 0; i < control.windows_list.length; i++) {
+            if (control.windows_list[i].window_id === window_id) {
+                return control.windows_list[i];
+            }
+        }
+        return null;
+    }
+
+    // The three close outcomes (requirements 30-34a). The branch is taken
+    // *before* anything is closed, on the number of visible windows.
+    function close_window_row(window_id) {
+        let is_current = (window_id === control.current_window_id);
+
+        if (control.windows_list.length <= 1) {
+            // The last visible window is never hidden. Hiding it would leave
+            // the app showing nothing, and because the session save filters on
+            // `visible`, the next quit would write an *empty* session and
+            // silently discard the user's tabs. The host clears its tabs
+            // instead and minimises (Android) / quits (iOS).
+            logger.info("WindowListDialog: closing the only window " + window_id
+                + " - clearing tabs and minimising rather than hiding");
+            control.close();
+            control.last_window_close_requested();
+            return;
+        }
+
+        if (is_current) {
+            // Activate the replacement *first*: with zero visible windows, even
+            // for a frame, Android can background the task or show a black
+            // frame.
+            logger.info("WindowListDialog: closing the current window " + window_id
+                + " - activating the most recently used remaining window first");
+            control.close();
+            SuttaBridge.activate_most_recently_used_window(window_id);
+            SuttaBridge.close_sutta_search_window(window_id);
+            return;
+        }
+
+        logger.info("WindowListDialog: closing window " + window_id);
+        SuttaBridge.close_sutta_search_window(window_id);
+        control.refresh_list();
+    }
+
+    WindowRenameDialog {
+        id: rename_dialog
+
+        onAccepted_title: function(window_id, title) {
+            // An all-whitespace name arrives as "", which makes the row revert
+            // to its "Window N" default.
+            SuttaBridge.set_sutta_search_window_title(window_id, title);
+            control.refresh_list();
+        }
+    }
+
+    Dialog {
+        id: confirm_close_dialog
+
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        title: "Close Window"
+        header: DialogHeader { text: confirm_close_dialog.title }
+
+        property string window_id: ""
+        property string window_label: ""
+        property int tab_count: 0
+
+        Label {
+            text: `Close "${confirm_close_dialog.window_label}" and its ${confirm_close_dialog.tab_count} tabs?`
+            wrapMode: Text.WordWrap
+            width: parent.width
+        }
+
+        onAccepted: {
+            logger.info("WindowListDialog: close confirmed for " + confirm_close_dialog.window_id);
+            control.close_window_row(confirm_close_dialog.window_id);
+        }
+
+        onRejected: {
+            logger.info("WindowListDialog: close cancelled for " + confirm_close_dialog.window_id);
+        }
     }
 
     footer: DialogButtonBox {

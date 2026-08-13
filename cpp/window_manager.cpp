@@ -363,6 +363,21 @@ void WindowManager::touch_window_mru(const QString& window_id) {
     this->m_mru_window_ids.append(window_id);
 }
 
+void WindowManager::activate_most_recently_used_window(const QString& exclude_window_id) {
+    SuttaSearchWindow* w = this->most_recently_used_open_window(exclude_window_id);
+    if (w == nullptr) {
+        log_error_c(QString("activate_most_recently_used_window(): no other open window (excluding %1)")
+                    .arg(exclude_window_id).toUtf8().constData());
+        return;
+    }
+
+    const QString window_id = w->m_root->property("window_id").toString();
+    log_info_c(QString("activate_most_recently_used_window(): %1").arg(window_id).toUtf8().constData());
+
+    show_and_activate_window(w->m_root);
+    this->touch_window_mru(window_id);
+}
+
 SuttaSearchWindow* WindowManager::most_recently_used_open_window(const QString& exclude_window_id) {
     for (auto it = this->m_mru_window_ids.crbegin(); it != this->m_mru_window_ids.crend(); ++it) {
         if (*it == exclude_window_id) {

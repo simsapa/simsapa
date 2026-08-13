@@ -33,6 +33,7 @@ extern "C++" {
     void callback_activate_sutta_search_window(QString window_id, QString tab_id_key);
     void callback_close_sutta_search_window(QString window_id);
     void callback_set_sutta_search_window_title(QString window_id, QString title);
+    void callback_activate_most_recently_used_window(QString exclude_window_id);
     /// Destroy the single-instance secondary window of the given type, once QML
     /// has accepted its close.
     void callback_window_closed(QString window_type);

@@ -1261,6 +1261,9 @@ pub mod qobject {
         fn set_sutta_search_window_title(self: &SuttaBridge, window_id: &QString, title: &QString);
 
         #[qinvokable]
+        fn activate_most_recently_used_window(self: &SuttaBridge, exclude_window_id: &QString);
+
+        #[qinvokable]
         fn open_sutta_languages_window(self: &SuttaBridge);
 
         #[qinvokable]
@@ -3781,6 +3784,14 @@ impl qobject::SuttaBridge {
         use crate::api::ffi;
         info(&format!("set_sutta_search_window_title(): {} -> '{}'", window_id, title));
         ffi::callback_set_sutta_search_window_title(window_id.clone(), title.clone());
+    }
+
+    /// Show + activate the most recently used window other than the given one.
+    /// Call this *before* hiding the outgoing window, never after.
+    pub fn activate_most_recently_used_window(&self, exclude_window_id: &QString) {
+        use crate::api::ffi;
+        info(&format!("activate_most_recently_used_window(): excluding {}", exclude_window_id));
+        ffi::callback_activate_most_recently_used_window(exclude_window_id.clone());
     }
 
     pub fn open_sutta_languages_window(&self) {

@@ -280,15 +280,15 @@ the next `aboutToQuit` would write an **empty** session and silently discard the
 user's tabs. So trash-on-the-last-window behaves exactly like *Close Window*:
 `clear_all_tabs()`, leave it shown, minimise (Android) / quit (iOS).
 
-- [ ] 4.0 Build `WindowRenameDialog.qml` and the close-confirmation flow
-  - [ ] 4.1 Create `assets/qml/WindowRenameDialog.qml`: a `Dialog` with `header: DialogHeader { … }`, a single `TextField` pre-filled with the window's current effective title, and OK / Cancel; expose `property string window_id` and `signal accepted_title(string window_id, string title)`.
-  - [ ] 4.2 Apply the mobile keyboard rules to the field: a `MobileKeyboardHelper`, `EnterKey.type: Qt.EnterKeyDone`, `inputMethodHints: Qt.ImhNoAutoUppercase`, and `onAccepted` mapped to the dialog's accept.
-  - [ ] 4.3 Register `"../assets/qml/WindowRenameDialog.qml"` in `bridges/build.rs`'s `qml_files`.
-  - [ ] 4.4 In `WindowListDialog.qml`, open the rename dialog from a row's edit icon (requirement 21); on accept call `SuttaBridge.set_sutta_search_window_title(window_id, title.trim())` and `refresh_list()` immediately (requirement 22). An all-whitespace title is sent as `""`, which makes the row revert to its `"Window N"` default (requirement 23).
-  - [ ] 4.5 Add the close-confirmation `Dialog` (inline in `WindowListDialog.qml` is fine — it also needs `header: DialogHeader`): shown only when the row's tab count is > 1, naming the window and its tab count (requirement 28), with Close / Cancel.
-  - [ ] 4.6 Implement the close handler per the table above. Branch **before** closing, on the count of visible windows, not after: with others remaining, call `SuttaBridge.close_sutta_search_window(window_id)` and either refresh the list (not current) or close the dialog and activate the MRU window first, then hide (was current, requirement 34); with this being the only visible window, do **not** call the close command at all — close the dialog, `clear_all_tabs()`, and take the task-6.0 minimise/quit path (requirement 33, per the note above).
-  - [ ] 4.7 Log one `logger.info` line per rename, per close, and per switch (requirement 39).
-  - [ ] 4.8 `make build -B` and `make qml-lint`.
+- [x] 4.0 Build `WindowRenameDialog.qml` and the close-confirmation flow
+  - [x] 4.1 Create `assets/qml/WindowRenameDialog.qml`: a `Dialog` with `header: DialogHeader { … }`, a single `TextField` pre-filled with the window's current effective title, and OK / Cancel; expose `property string window_id` and `signal accepted_title(string window_id, string title)`.
+  - [x] 4.2 Apply the mobile keyboard rules to the field: a `MobileKeyboardHelper`, `EnterKey.type: Qt.EnterKeyDone`, `inputMethodHints: Qt.ImhNoAutoUppercase`, and `onAccepted` mapped to the dialog's accept.
+  - [x] 4.3 Register `"../assets/qml/WindowRenameDialog.qml"` in `bridges/build.rs`'s `qml_files`.
+  - [x] 4.4 In `WindowListDialog.qml`, open the rename dialog from a row's edit icon (requirement 21); on accept call `SuttaBridge.set_sutta_search_window_title(window_id, title.trim())` and `refresh_list()` immediately (requirement 22). An all-whitespace title is sent as `""`, which makes the row revert to its `"Window N"` default (requirement 23).
+  - [x] 4.5 Add the close-confirmation `Dialog` (inline in `WindowListDialog.qml` is fine — it also needs `header: DialogHeader`): shown only when the row's tab count is > 1, naming the window and its tab count (requirement 28), with Close / Cancel.
+  - [x] 4.6 Implement the close handler per the table above. Branch **before** closing, on the count of visible windows, not after: with others remaining, call `SuttaBridge.close_sutta_search_window(window_id)` and either refresh the list (not current) or close the dialog and activate the MRU window first, then hide (was current, requirement 34); with this being the only visible window, do **not** call the close command at all — close the dialog, `clear_all_tabs()`, and take the task-6.0 minimise/quit path (requirement 33, per the note above).
+  - [x] 4.7 Log one `logger.info` line per rename, per close, and per switch (requirement 39).
+  - [x] 4.8 `make build -B` and `make qml-lint`.
 
 ### 5.0 — specs
 
@@ -307,7 +307,7 @@ branch is on the **platform** (`Qt.platform.os === "ios"` vs android), not on
   - [ ] 5.2 Change `action_sutta_search`'s `onTriggered` (line ~1787) to `if (root.is_mobile) { root.open_window_list_dialog() } else { SuttaBridge.open_sutta_search_window() }` (requirements 1, 2).
   - [ ] 5.3 Remove the mobile hijack from `onClosing` (line 19): keep the unconditional `flush_if_needed()` pair, drop the `close.accepted = false` / `open_tab_list_dialog()` branch so *Close Window* really closes (requirement 35, goal 2). Keep `show_sidebar_btn.checked = false` only if it is still wanted on close — check whether removing it changes desktop behaviour, and if so leave it under the mobile branch.
   - [ ] 5.4 Change `action_close_window`'s `onTriggered` to route through a new `root.close_current_window()`: on desktop, `root.close()` unchanged; on mobile, call `SuttaBridge.count_open_sutta_search_windows()` (task 1.6b) — with 2+, **activate the MRU remaining window first, then** flush and hide this one (requirement 35); with exactly one, call the minimise/quit path (requirement 36, task 6.0) **without** hiding the window. The order is load-bearing: hiding first leaves the app with zero visible windows for a frame, which on Android can background the task or show a black frame, and violates goal 5.
-  - [ ] 5.5 Add the `WindowManager`-side support 5.4 needs: `activate_most_recently_used_window(exclude_window_id)`, exposed through a `callback_*` + `SuttaBridge` fn + `SuttaBridge.qml` stub, implemented with `most_recently_used_open_window()` (task 1.7) + `show_and_activate_window()`.
+  - [x] 5.5 Add the `WindowManager`-side support 5.4 needs: `activate_most_recently_used_window(exclude_window_id)`, exposed through a `callback_*` + `SuttaBridge` fn + `SuttaBridge.qml` stub, implemented with `most_recently_used_open_window()` (task 1.7) + `show_and_activate_window()`.
   - [ ] 5.6 Confirm the tab list dialog is still reachable by its other entry point (`SuttaSearchWindow.qml:2036`) — requirement 38 removes only the *Close Window* hijack.
   - [ ] 5.7 Verify the desktop path by reading the diff: no desktop-reachable line changed except the `is_mobile`-guarded branches (goal 6).
   - [ ] 5.8 `make build -B`, `make qml-lint`, `cd backend && cargo test`.

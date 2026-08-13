@@ -663,6 +663,10 @@ Item {
         console.log("set_sutta_search_window_title():", window_id, title);
     }
 
+    function activate_most_recently_used_window(exclude_window_id: string) {
+        console.log("activate_most_recently_used_window():", exclude_window_id);
+    }
+
     function open_library_window() {
         console.log("open_library_window()");
     }

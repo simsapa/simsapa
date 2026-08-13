@@ -59,6 +59,12 @@ class WindowManager : public QObject {
         /// reordering it on every switch would renumber the list under the user.
         void touch_window_mru(const QString& window_id);
         SuttaSearchWindow* most_recently_used_open_window(const QString& exclude_window_id = QString());
+
+        /// Show + activate the most recently used *other* visible window.
+        /// Callers hide the outgoing window only after this returns: leaving
+        /// zero visible windows even for a frame can background the Android
+        /// task or show a black frame.
+        void activate_most_recently_used_window(const QString& exclude_window_id);
         DownloadAppdataWindow* create_download_appdata_window(
             const QVariantMap& initial_properties = QVariantMap());
         StorageRecoveryWindow* create_storage_recovery_window();
