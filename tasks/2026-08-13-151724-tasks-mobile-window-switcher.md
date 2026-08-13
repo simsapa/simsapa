@@ -179,7 +179,7 @@ oldest-first index (requirement 9a). `title` is `""` when the user has set none.
 reorder that stays is the existing revive-move-to-end in
 `create_sutta_search_window()` (requirement 4a).
 
-- [ ] 1.0 Add the window query/command surface: `WindowManager` helpers, `gui.cpp` callbacks, `SuttaBridge` functions, and the MRU stamp
+- [x] 1.0 Add the window query/command surface: `WindowManager` helpers, `gui.cpp` callbacks, `SuttaBridge` functions, and the MRU stamp
   - [x] 1.1 In `cpp/window_manager.h`, declare `QString open_sutta_windows_json(const QString& current_window_id)`, `void activate_sutta_search_window(const QString& window_id, const QString& tab_id_key)`, `void close_sutta_search_window(const QString& window_id)`, `void set_sutta_search_window_title(const QString& window_id, const QString& title)`, and a private `SuttaSearchWindow* find_sutta_search_window(const QString& window_id)` helper.
   - [x] 1.2 Implement `open_sutta_windows_json()` in `cpp/window_manager.cpp`: iterate `sutta_search_windows` in list order, skip any window failing `window_is_open()` (requirement 5), `invokeMethod` each root's tab-listing function (task 2.2) with `Q_RETURN_ARG(QString, …)`, read the root's `window_id` and `window_title` properties, set `is_current` by comparing to the passed-in id, and assemble a compact `QJsonArray`.
   - [x] 1.3 Implement `find_sutta_search_window()` matching on the root's `window_id` property, returning `nullptr` when not found or when `m_root` is null; every command below must tolerate `nullptr` with a `log_error_c()` line and no crash.
@@ -210,13 +210,13 @@ requires the two dialogs to agree. Leave `get_open_items_json()`'s narrower
 filter alone — the session path depends on its current shape.
 
 - [ ] 2.0 Extend `SuttaSearchWindow.qml` with the per-window data the dialog needs
-  - [ ] 2.1 Add `property string window_title: ""` next to `property string window_id` (line 34), and a `readonly property string effective_window_title` that returns `window_title` when non-blank (requirement 23 trims whitespace) and `""` otherwise — the `"Window N"` fallback is the dialog's job, since N depends on the whole list.
-  - [ ] 2.2 Add `function get_open_tabs_json(): string` collecting from `tabs_pinned_model` / `tabs_results_model` / `tabs_translations_model` **in that order** (requirement 11 — the same order `TabListDialog.populate_model()` uses, with group labels `"Pinned"` / `"Results"` / `"Trans"`), emitting `{ id_key, item_uid, table_name, sutta_ref, sutta_title, tab_group }` per tab and skipping any tab where `root.is_blank_tab_uid(tab.item_uid)`. Leave `get_open_items_json()` untouched — it feeds the existing session path and its shape is written to storage.
-  - [ ] 2.3 Add `title: root.window_title` to the object returned by `get_session_data_json()` (requirement 25), leaving `name` and `items` unchanged.
-  - [ ] 2.4 In `restore_last_session()`, apply `root.window_title = session.title || ""` before restoring items, so an absent field yields an unnamed window (§7.4 backward compatibility).
-  - [ ] 2.5 Add `function close_window_from_switcher()`: call `gloss_tab.flush_if_needed()` and `prompts_tab.flush_if_needed()` (requirement 32), log one `logger.info` line, then `root.hide()` — **not** `root.close()` (which would re-enter `onClosing`) and **not** `SuttaBridge.notify_window_closed()` (wrong lifecycle family).
-  - [ ] 2.6 Set `root.title` to include the custom name when one is set (requirement 26, cosmetic): e.g. `title: root.effective_window_title !== "" ? root.effective_window_title + " - Simsapa" : "Sutta Search - Simsapa"`.
-  - [ ] 2.7 `make build -B` and `make qml-lint` — no new warnings naming `SuttaSearchWindow.qml`.
+  - [x] 2.1 Add `property string window_title: ""` next to `property string window_id` (line 34), and a `readonly property string effective_window_title` that returns `window_title` when non-blank (requirement 23 trims whitespace) and `""` otherwise — the `"Window N"` fallback is the dialog's job, since N depends on the whole list.
+  - [x] 2.2 Add `function get_open_tabs_json(): string` collecting from `tabs_pinned_model` / `tabs_results_model` / `tabs_translations_model` **in that order** (requirement 11 — the same order `TabListDialog.populate_model()` uses, with group labels `"Pinned"` / `"Results"` / `"Trans"`), emitting `{ id_key, item_uid, table_name, sutta_ref, sutta_title, tab_group }` per tab and skipping any tab where `root.is_blank_tab_uid(tab.item_uid)`. Leave `get_open_items_json()` untouched — it feeds the existing session path and its shape is written to storage.
+  - [x] 2.3 Add `title: root.window_title` to the object returned by `get_session_data_json()` (requirement 25), leaving `name` and `items` unchanged.
+  - [x] 2.4 In `restore_last_session()`, apply `root.window_title = session.title || ""` before restoring items, so an absent field yields an unnamed window (§7.4 backward compatibility).
+  - [x] 2.5 Add `function close_window_from_switcher()`: call `gloss_tab.flush_if_needed()` and `prompts_tab.flush_if_needed()` (requirement 32), log one `logger.info` line, then `root.hide()` — **not** `root.close()` (which would re-enter `onClosing`) and **not** `SuttaBridge.notify_window_closed()` (wrong lifecycle family).
+  - [x] 2.6 Set `root.title` to include the custom name when one is set (requirement 26, cosmetic): e.g. `title: root.effective_window_title !== "" ? root.effective_window_title + " - Simsapa" : "Sutta Search - Simsapa"`.
+  - [x] 2.7 `make build -B` and `make qml-lint` — no new warnings naming `SuttaSearchWindow.qml`.
 
 ### 3.0 — specs
 

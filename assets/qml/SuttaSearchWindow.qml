@@ -10,7 +10,7 @@ import com.profoundlabs.simsapa
 ApplicationWindow {
     id: root
 
-    title: "Sutta Search - Simsapa"
+    title: root.effective_window_title !== "" ? root.effective_window_title + " - Simsapa" : "Sutta Search - Simsapa"
     width: is_mobile ? Screen.desktopAvailableWidth : 1300
     height: is_mobile ? Screen.desktopAvailableHeight : 900
     visible: true
@@ -32,6 +32,15 @@ ApplicationWindow {
     }
 
     property string window_id
+
+    // User-set name for this window, shown by the mobile window switcher
+    // (WindowListDialog) and round-tripped through the saved session. Empty
+    // means "no custom title", in which case the switcher labels the row
+    // "Window N" — N depends on the whole window list, so the default cannot be
+    // computed here.
+    property string window_title: ""
+
+    readonly property string effective_window_title: root.window_title.trim()
 
     readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
     /* readonly property bool is_mobile: true // for qml preview */
@@ -404,6 +413,43 @@ ApplicationWindow {
         return JSON.stringify(items);
     }
 
+    // The mobile window switcher's per-window tab listing, invoked from
+    // WindowManager::open_sutta_windows_json(). Deliberately separate from
+    // get_open_items_json() above: that one feeds the session-save path, whose
+    // output shape is written to storage and whose narrower "Sutta"-only blank
+    // filter must not change. Here the app-wide is_blank_tab_uid() predicate is
+    // used instead, so blank Word-lookup tabs are excluded too and the dialog's
+    // counts agree with TabListDialog's.
+    //
+    // Group order is Pinned -> Results -> Trans, matching
+    // TabListDialog.populate_model().
+    function get_open_tabs_json(): string {
+        let tabs = [];
+
+        function collect_from_model(model, tab_group) {
+            for (let i = 0; i < model.count; i++) {
+                let tab = model.get(i);
+                if (root.is_blank_tab_uid(tab.item_uid)) {
+                    continue;
+                }
+                tabs.push({
+                    id_key: tab.id_key || "",
+                    item_uid: tab.item_uid,
+                    table_name: tab.table_name || "suttas",
+                    sutta_ref: tab.sutta_ref || "",
+                    sutta_title: tab.sutta_title || "",
+                    tab_group: tab_group,
+                });
+            }
+        }
+
+        collect_from_model(tabs_pinned_model, "Pinned");
+        collect_from_model(tabs_results_model, "Results");
+        collect_from_model(tabs_translations_model, "Trans");
+
+        return JSON.stringify(tabs);
+    }
+
     function get_session_data_json(): string {
         let items = [];
         let sort_order = 0;
@@ -431,12 +477,29 @@ ApplicationWindow {
         collect_from_model(tabs_results_model, "results");
         collect_from_model(tabs_translations_model, "translations");
 
+        // `title` is an addition to an existing stored shape: an older session
+        // without it restores as an unnamed window.
         let session = {
             name: root.window_id || "window",
+            title: root.window_title,
             items: items,
         };
 
         return JSON.stringify(session);
+    }
+
+    // Called from WindowManager::close_sutta_search_window(). A SuttaSearchWindow
+    // is pooled (docs/window-lifecycle-and-reuse.md §0), so closing it only
+    // hides it and the wrapper stays in sutta_search_windows for reuse.
+    //
+    // hide(), not close(): close() re-enters onClosing. And never
+    // SuttaBridge.notify_window_closed(), which destroys single-instance
+    // windows and is the wrong lifecycle family for this one.
+    function close_window_from_switcher() {
+        logger.info("close_window_from_switcher(): hiding " + root.window_id);
+        gloss_tab.flush_if_needed();
+        prompts_tab.flush_if_needed();
+        root.hide();
     }
 
     function save_last_session(windows_json: string) {
@@ -446,6 +509,8 @@ ApplicationWindow {
     function restore_last_session(session_json: string) {
         let session = JSON.parse(session_json);
         let items = session.items || [];
+        // Absent in sessions saved before the window switcher existed.
+        root.window_title = session.title || "";
         root.is_restoring_session = true;
         // The first restored results-group item should replace the default
         // blank "Sutta" placeholder tab rather than open alongside it.
