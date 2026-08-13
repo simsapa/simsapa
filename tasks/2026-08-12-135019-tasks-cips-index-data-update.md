@@ -690,7 +690,7 @@ Left for 4.7 / 4.10 / 4.11:
   drop it when that task is reached, and have `topic_index_source_info()` report
   which source actually won rather than merely whether a row exists.
 
-- [ ] 4.0 Phase 3 storage layer — `topic_index_data` migration, Diesel schema and model, and the swappable `RwLock<Option<Arc<TopicIndex>>>` cache with DB-first source resolution (FR-9 … FR-15a)
+- [x] 4.0 Phase 3 storage layer — `topic_index_data` migration, Diesel schema and model, and the swappable `RwLock<Option<Arc<TopicIndex>>>` cache with DB-first source resolution (FR-9 … FR-15a)
   - [x] 4.1 Create the dated migration folder with `up.sql` (the `CREATE TABLE` above) and a matching `down.sql` (`DROP TABLE topic_index_data;`).
   - [x] 4.2 Add the `diesel::table!` block for `topic_index_data` to `backend/src/db/appdata_schema.rs`, following the existing style (FR-9c). `updated_at` is `Text`, not a timestamp — it is written and read as an ISO date string.
   - [x] 4.3 Add `TopicIndexData` (`Queryable, Selectable, Identifiable`) and `NewTopicIndexData` (`Insertable`) to `backend/src/db/appdata_models.rs`, alongside the existing structs.
@@ -786,21 +786,74 @@ versions capture `RefCell`s and are not `Send`. Per-uid reads go through
 `dbm.appdata.do_read`; `known_uids` comes from **all** Pāli sutta rows, not from
 the title map (FR-22).
 
-- [ ] 5.0 Backend update engine — fetch with retry and plausibility gate, runtime title/segment lookups, validation, transactional store, reset, cancellation, in-flight guard and the `log.txt` block (FR-16 … FR-26, FR-40a, FR-45)
-  - [ ] 5.1 Create `backend/src/cips_update.rs`, register it in `backend/src/lib.rs`, and declare `CIPS_CSV_URL` plus the two `AtomicBool` statics.
-  - [ ] 5.2 Write the fetch function using `reqwest::blocking::Client::builder().timeout(…)` (the `update_checker.rs:588-600` shape), returning the body **and** the `ETag` header and the HTTP status.
-  - [ ] 5.3 Implement the retry loop with the FR-17a status policy, per-attempt progress messages, and the cancellation-aware incremental sleep (FR-40a). Adapt the `asset_manager.rs:423-467` loop — do not call it; it is welded to the asset download's temp folders.
-  - [ ] 5.4 Implement the FR-18 plausibility gate as a standalone, unit-testable function over the response body, with a distinct rejection reason per failed check.
-  - [ ] 5.4a Implement the FR-18a **size ceiling**: reject when `Content-Length` exceeds 50 MB *before* buffering, and cap the read itself at the same figure so a missing or lying header cannot defeat it. This is the only guard against an OOM on Android (success metric 8); FR-18's floor does not cover this direction.
-  - [ ] 5.5 Implement the runtime `title_lookup` (FR-21): one `do_read` query over `suttas` filtered `language = 'pli' AND source_uid = 'ms'`, uid truncated at the first `/`, lowercased, built once per run.
-  - [ ] 5.6 Implement the runtime `segments_lookup` (FR-22): `known_uids` from **all** Pāli sutta rows (including NULL titles), lazy per-uid `content_json` fetch via `do_read` with an in-run cache, resolving `{uid}/pli/ms` exactly as `cli/src/main.rs:829-873` does. Both closures constructed **inside** the worker thread (FR-22a).
-  - [ ] 5.7 Write the orchestration function: stage callbacks, fetch → plausibility → `parse_cips_index_str` → both validators (FR-23, advisory per FR-24) → `store_topic_index` (FR-13). Check `UPDATE_CANCELLED` at every stage boundary; check and set `UPDATE_RUNNING` at entry, and clear it on **every** exit path including panics.
-  - [ ] 5.8 Implement the abort rules of FR-25 exactly, with a distinct plainly-worded message per cause naming the URL (FR-20), and confirm each abort leaves the stored row and the in-memory cache untouched.
-  - [ ] 5.9 Build the summary payload for FR-37/FR-37a: new headword / sub-entry / reference counts with **signed deltas** against the counts of the index that was loaded at the start of the run, the validation summary line, and the full warning list. Serialize it as JSON for the bridge signal. A count that did not change shows `(±0)`, never a blank. Take the "before" counts with `topic_index_counts()` (4.11a) **in the worker, before `store_topic_index`** — FR-13 swaps the cache after the commit, so reading them afterwards reports the new counts as the old ones (FR-37b, §11.5.5f).
-  - [ ] 5.10 Write the greppable `log.txt` block (FR-45): stages, URL, HTTP status, ETag, counts, timings, validation summary — one recognisable prefix per line so a user report can be grepped. Also write the full validation warning lines to the log (FR-38).
-  - [ ] 5.11 Add `pub fn is_update_running()` and `pub fn cancel_update()` readers/setters over the statics.
-  - [ ] 5.12 Add unit tests for the plausibility gate (empty / short / HTML page / valid) and for the retry-status decision function (`429`, `500`, `502` retry; `404`, `403` do not). Do not add a test that performs a real network fetch.
-  - [ ] 5.13 `cd backend && cargo test` and confirm no `.exists()` was introduced on any file check (`try_exists()` only).
+- [x] 5.0 Backend update engine — fetch with retry and plausibility gate, runtime title/segment lookups, validation, transactional store, reset, cancellation, in-flight guard and the `log.txt` block (FR-16 … FR-26, FR-40a, FR-45)
+  - [x] 5.1 Create `backend/src/cips_update.rs`, register it in `backend/src/lib.rs`, and declare `CIPS_CSV_URL` plus the two `AtomicBool` statics.
+  - [x] 5.2 Write the fetch function using `reqwest::blocking::Client::builder().timeout(…)` (the `update_checker.rs:588-600` shape), returning the body **and** the `ETag` header and the HTTP status.
+  - [x] 5.3 Implement the retry loop with the FR-17a status policy, per-attempt progress messages, and the cancellation-aware incremental sleep (FR-40a). Adapt the `asset_manager.rs:423-467` loop — do not call it; it is welded to the asset download's temp folders.
+  - [x] 5.4 Implement the FR-18 plausibility gate as a standalone, unit-testable function over the response body, with a distinct rejection reason per failed check.
+  - [x] 5.4a Implement the FR-18a **size ceiling**: reject when `Content-Length` exceeds 50 MB *before* buffering, and cap the read itself at the same figure so a missing or lying header cannot defeat it. This is the only guard against an OOM on Android (success metric 8); FR-18's floor does not cover this direction.
+  - [x] 5.5 Implement the runtime `title_lookup` (FR-21): one `do_read` query over `suttas` filtered `language = 'pli' AND source_uid = 'ms'`, uid truncated at the first `/`, lowercased, built once per run.
+  - [x] 5.6 Implement the runtime `segments_lookup` (FR-22): `known_uids` from **all** Pāli sutta rows (including NULL titles), lazy per-uid `content_json` fetch via `do_read` with an in-run cache, resolving `{uid}/pli/ms` exactly as `cli/src/main.rs:829-873` does. Both closures constructed **inside** the worker thread (FR-22a).
+  - [x] 5.7 Write the orchestration function: stage callbacks, fetch → plausibility → `parse_cips_index_str` → both validators (FR-23, advisory per FR-24) → `store_topic_index` (FR-13). Check `UPDATE_CANCELLED` at every stage boundary; check and set `UPDATE_RUNNING` at entry, and clear it on **every** exit path including panics.
+  - [x] 5.8 Implement the abort rules of FR-25 exactly, with a distinct plainly-worded message per cause naming the URL (FR-20), and confirm each abort leaves the stored row and the in-memory cache untouched.
+  - [x] 5.9 Build the summary payload for FR-37/FR-37a: new headword / sub-entry / reference counts with **signed deltas** against the counts of the index that was loaded at the start of the run, the validation summary line, and the full warning list. Serialize it as JSON for the bridge signal. A count that did not change shows `(±0)`, never a blank. Take the "before" counts with `topic_index_counts()` (4.11a) **in the worker, before `store_topic_index`** — FR-13 swaps the cache after the commit, so reading them afterwards reports the new counts as the old ones (FR-37b, §11.5.5f).
+  - [x] 5.10 Write the greppable `log.txt` block (FR-45): stages, URL, HTTP status, ETag, counts, timings, validation summary — one recognisable prefix per line so a user report can be grepped. Also write the full validation warning lines to the log (FR-38).
+  - [x] 5.11 Add `pub fn is_update_running()` and `pub fn cancel_update()` readers/setters over the statics.
+  - [x] 5.12 Add unit tests for the plausibility gate (empty / short / HTML page / valid) and for the retry-status decision function (`429`, `500`, `502` retry; `404`, `403` do not). Do not add a test that performs a real network fetch.
+  - [x] 5.13 `cd backend && cargo test` and confirm no `.exists()` was introduced on any file check (`try_exists()` only).
+
+### Notes from 5.0 (update engine, completed 2026-08-13)
+
+- **FR-35's stage order is kept, and it is truthful — via a lazily-loaded title
+  map.** The natural coding order is fetch → load titles → parse, because
+  `parse_cips_index_str()` takes `title_lookup` by value; that would have made
+  stage 3 ("Looking up sutta titles") report *after* the parse finished, or
+  forced a reordering of the PRD's numbered list. Instead the closure holds a
+  `RefCell<Option<SuttaLookups>>` and loads on the builder's **first** title
+  lookup, announcing stage 3 at that moment. `IndexBuilder::build()` is the only
+  thing that calls it, so stage 2 really is the CSV scan and stage 4's anchor
+  validation reuses the same already-loaded `known_uids`.
+- **One query, both lookups.** `load_sutta_lookups()` returns the `title_map`
+  *and* the `known_uids` set in one pass over the Pāli `ms` suttas — `known_uids`
+  includes rows with a NULL title, which is the FR-22 point. Per-uid
+  `content_json` fetches are lazy, cached in-run, and go through
+  `dbm.appdata.do_read` (FR-22a: both closures are built inside `run_update()`,
+  which the bridge calls on the worker thread; nothing captures a long-lived
+  `SqliteConnection`).
+- **`UpdateError { cancelled, message }`, not `anyhow`.** A cancellation and a
+  failure both leave the database untouched but must be *reported* differently
+  (FR-40), and the caller should not have to string-match to tell them apart.
+  Implements `Display` + `Error`, so it still composes.
+- **`summary_text` is formatted in Rust**, not in QML: FR-37's block, with
+  `format_delta()` guaranteeing `±0` rather than a blank (FR-37a). The raw
+  counts and signed deltas are in the payload too, so the UI can lay them out
+  differently without re-deriving them.
+- **The "before" counts are taken at the very top of the run**, before the
+  fetch — `store_topic_index()` swaps the cache as soon as the write commits, so
+  reading them later would report the new counts as the old ones (§11.5.5f).
+- **`updated_at` is the fetch time**, fixed-width UTC `%Y-%m-%dT%H:%M:%SZ` to
+  match `cips_general_index_date()` exactly, because that comparison is a plain
+  string compare (4.0's note). `raw.githubusercontent.com` sends no
+  `Last-Modified` (FR-19), so there is no upstream content date to prefer.
+- **The size ceiling is enforced twice** (FR-18a): against `Content-Length`
+  before buffering, and against the bytes actually read via
+  `Read::take(MAX_CSV_BYTES + 1)` — the `+ 1` is what makes "exactly at the cap"
+  distinguishable from "over it", so a missing or lying header cannot defeat the
+  guard.
+- **Retry policy is a standalone `status_is_retryable()`** (FR-17a: 429 and 5xx
+  retry, 4xx does not), so it is unit-testable without a network. The backoff
+  sleeps in 200 ms steps checking `UPDATE_CANCELLED`, so Cancel lands within
+  ~0.2 s rather than up to 32 s (FR-40a). The `asset_manager.rs` loop was
+  **adapted, not called** — it is welded to the asset download's temp folders.
+- **`UPDATE_RUNNING` is cleared by a `Drop` guard**, so every exit path is
+  covered including a panic (FR-30d). Entry is a `compare_exchange`, so a second
+  concurrent call fails fast with a plain message rather than racing.
+- **11 unit tests, no network test**: the plausibility gate (valid / empty /
+  short / HTML page / blank-line counting), the retry-status decision, the delta
+  and thousands formatting, the summary block's shape, and the running-guard.
+  Full backend suite green.
+- 5.13 confirmed: the module performs no filesystem existence check at all, so
+  the `try_exists()` rule has nothing to violate.
 
 ---
 
