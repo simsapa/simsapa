@@ -728,8 +728,10 @@ fn log_validation(validation: &ValidationResult, anchors: &AnchorValidation) {
 fn format_summary_text(s: &UpdateSummary, xref_warnings: usize) -> String {
     let date = s.updated_at.split('T').next().unwrap_or(&s.updated_at);
 
+    // One sub-total per line: the window is narrow on mobile, and a single
+    // comma-joined line wraps at arbitrary points.
     let mut text = format!(
-        "Updated from CIPS — {}\n\n{} headwords ({}), {} sub-entries ({}), {} references ({})",
+        "Updated from CIPS — {}\n\n{} headwords ({})\n{} sub-entries ({})\n{} references ({})",
         date,
         thousands(s.headword_count),
         format_delta(s.headword_delta),

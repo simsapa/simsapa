@@ -20,6 +20,7 @@ fn main() {
         "../assets/qml/ReferenceSearchInfoDialog.qml",
         "../assets/qml/TopicIndexWindow.qml",
         "../assets/qml/TopicIndexInfoDialog.qml",
+        "../assets/qml/TopicIndexUpdateWindow.qml",
         "../assets/qml/BooksList.qml",
         "../assets/qml/ChapterListItem.qml",
         "../assets/qml/DocumentImportDialog.qml",

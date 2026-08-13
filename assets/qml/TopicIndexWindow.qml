@@ -58,6 +58,102 @@ ApplicationWindow {
         extra_top_margin: root.extra_top_margin
     }
 
+    TopicIndexUpdateWindow {
+        id: update_window
+        extra_top_margin: root.extra_top_margin
+    }
+
+    // Whether a downloaded index row exists at all. A stale row still exists and
+    // is still resettable even when the shipped index is the one in use, so this
+    // is `has_stored_row`, not `source === "downloaded"`.
+    property bool has_stored_index: false
+    // An update this window started, or one already running when it was shown.
+    property bool update_is_running: false
+    // Guards the reset's completion message, which arrives on the same signal
+    // the update window uses.
+    property bool reset_initiated_here: false
+
+    function refresh_source_info() {
+        const json = SuttaBridge.topic_index_source_info();
+        try {
+            const info = JSON.parse(json);
+            root.has_stored_index = info.has_stored_row === true;
+        } catch (e) {
+            logger.error("Failed to parse topic index source info: " + e + " json: " + json);
+            root.has_stored_index = false;
+        }
+    }
+
+    // Both confirm dialogs have a title and wrapping text, the combination that
+    // makes Fusion's default header oscillate the dialog's implicitHeight. See
+    // DialogHeader.qml.
+    Dialog {
+        id: update_confirm_dialog
+        title: "Update Topic Index"
+        header: DialogHeader { text: update_confirm_dialog.title }
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(root.width - 40, 460)
+
+        onAccepted: {
+            root.update_is_running = true;
+            update_window.open_and_run();
+        }
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            text: "The current index data will be downloaded from the CIPS project and will replace the index in use.\n\nThis needs a network connection. Continue?"
+        }
+    }
+
+    Dialog {
+        id: reset_confirm_dialog
+        title: "Reset Topic Index"
+        header: DialogHeader { text: reset_confirm_dialog.title }
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(root.width - 40, 460)
+
+        onAccepted: {
+            logger.info("TopicIndexWindow: resetting to the index shipped with this build");
+            root.reset_initiated_here = true;
+            SuttaBridge.reset_topic_index();
+        }
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            text: "The downloaded index will be discarded and the index shipped with this version of Simsapa will be used again.\n\nContinue?"
+        }
+    }
+
+    Dialog {
+        id: reset_done_dialog
+        title: "Reset Topic Index"
+        header: DialogHeader { text: reset_done_dialog.title }
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Ok
+        width: Math.min(root.width - 40, 460)
+
+        property string message: ""
+
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            text: reset_done_dialog.message
+        }
+    }
+
     // Search debounce timer
     Timer {
         id: search_timer
@@ -99,6 +195,8 @@ ApplicationWindow {
         theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         SuttaBridge.load_topic_index();
+        root.refresh_source_info();
+        root.update_is_running = SuttaBridge.is_topic_index_update_running();
     }
 
     Connections {
@@ -109,6 +207,39 @@ ApplicationWindow {
             if (root.close_pending) {
                 root.notify_closed();
             }
+        }
+
+        // A successful update or reset replaced the index in use. Deliberately
+        // separate from onTopicIndexLoaded, which drives the first-load state
+        // machine above -- conflating the two makes an update indistinguishable
+        // from a first load.
+        function onTopicIndexDataChanged() {
+            logger.info("TopicIndexWindow: topic index data changed, refreshing the view");
+            root.highlighted_headword_id = "";
+            root.load_letter(root.current_letter);
+            if (root.current_query.length >= 3) {
+                root.perform_search();
+            }
+            root.refresh_source_info();
+        }
+
+        function onTopicIndexUpdateCompleted(success, summary_json) {
+            root.update_is_running = false;
+            if (!root.reset_initiated_here) return;
+            root.reset_initiated_here = false;
+            let message = success
+                ? "The index shipped with this version of Simsapa is now in use."
+                : "The index could not be reset.";
+            try {
+                const payload = JSON.parse(summary_json);
+                if (payload.message) {
+                    message = payload.message;
+                }
+            } catch (e) {
+                logger.error("Failed to parse the reset payload: " + e + " json: " + summary_json);
+            }
+            reset_done_dialog.message = message;
+            reset_done_dialog.open();
         }
     }
 
@@ -149,6 +280,12 @@ ApplicationWindow {
             root.close_pending = false;
             close_deferral_failsafe.stop();
             logger.info("TopicIndexWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+        if (root.visible) {
+            // No signal crosses engines, so a run another window started can
+            // only be discovered by asking the backend static.
+            root.update_is_running = SuttaBridge.is_topic_index_update_running();
+            root.refresh_source_info();
         }
     }
 
@@ -347,6 +484,24 @@ ApplicationWindow {
                         info_dialog.show();
                         info_dialog.raise();
                         info_dialog.requestActivate();
+                    }
+                }
+
+                Button {
+                    text: "Update"
+                    font.pointSize: root.pointSize
+                    enabled: !root.update_is_running
+                    onClicked: {
+                        update_confirm_dialog.open();
+                    }
+                }
+
+                Button {
+                    text: "Reset"
+                    font.pointSize: root.pointSize
+                    enabled: root.has_stored_index && !root.update_is_running
+                    onClicked: {
+                        reset_confirm_dialog.open();
                     }
                 }
 

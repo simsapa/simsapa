@@ -964,23 +964,58 @@ not a silently unmargined window.
 
 All logging via `Logger`, single concatenated strings (FR-43).
 
-- [ ] 7.0 QML UI — header buttons, confirm dialogs, `TopicIndexUpdateWindow.qml`, the `topicIndexDataChanged` refresh, and the Info-dialog source line (FR-27 … FR-33, FR-35 … FR-44a)
-  - [ ] 7.1 Add the "Update" and "Reset" buttons to the header row after "Info" (FR-27). Bind "Reset"'s `enabled` to whether a stored row exists, read from `topic_index_source_info()` (FR-29), and bind "Update"'s `enabled` to the local `is_running` state plus a poll of `is_topic_index_update_running()` when the window is shown (FR-30d corollary).
-  - [ ] 7.2 Add the two confirm dialogs (FR-28) as inline children, each with `header: DialogHeader { text: <id>.title }` (FR-31), reader-facing wording (§6: no crate names, no "ETag", "paragraph locations" not "anchors"), and confirm/cancel actions where cancel changes nothing.
-  - [ ] 7.3 Create `assets/qml/TopicIndexUpdateWindow.qml` per the specs table: layout from `DictionaryIndexProgressWindow.qml`, inline `visible: false` lifecycle, `open_and_run()` entry point, `run_initiated_here` / `is_running` state, `required property int extra_top_margin` (FR-32a), and a `Logger` instance. Copy only the *layout* from `DictionaryIndexProgressWindow.qml` — it is loaded by C++ into a **stack-local engine pumped by a nested `QEventLoop`** (`gui.cpp:769-785`), so neither its `Component.onCompleted` start nor its `visible: true` transfers.
-  - [ ] 7.4 Register `"../assets/qml/TopicIndexUpdateWindow.qml"` in `bridges/build.rs`'s `qml_files` list in exactly that form (FR-41) — otherwise the failure is a runtime `Type … unavailable`.
-  - [ ] 7.5 Wire the progress UI (FR-35): a status `Label` naming the current stage, a `ProgressBar` advancing as stages complete with an `indeterminate` fallback inside a stage, and the "attempt N of 5, retrying in N s" messages during stage 1.
-  - [ ] 7.6 Wire the keep-screen-on acquire/release per FR-36, copying `StorageDiagnosticsDialog.qml:69-91`.
-  - [ ] 7.7 Implement the success view (FR-37, FR-37a): the summary block with signed deltas, and a scrollable **selectable** details area (or "Show details" toggle) for the full validation warning lines (FR-38). The window stays open until dismissed.
-  - [ ] 7.8 Implement the failure view (FR-39): what failed, and that the index currently in use has not been changed.
-  - [ ] 7.9 Implement **Cancel** (FR-40): visible during the run, calls `cancel_topic_index_update()`, and the completion handler reports the cancellation, releases the keep-screen-on lock, and leaves the database untouched.
-  - [ ] 7.10 Declare the update window as an inline sibling in `TopicIndexWindow.qml` and call `open_and_run()` from the Update confirm dialog's accept handler (FR-33).
-  - [ ] 7.11 Add the `topicIndexDataChanged` handler to `TopicIndexWindow.qml` (FR-30a): re-run `load_letter(current_letter)`, re-run an active search when the query is ≥ 3 characters, and clear `highlighted_headword_id`. Keep it separate from the existing `onTopicIndexLoaded` handler (FR-30b).
-  - [ ] 7.12 Wire the Reset flow: confirm dialog → `reset_topic_index()` → brief confirmation message, no progress window, no network access (FR-30).
-  - [ ] 7.13 Add the "which index is in use" line to `TopicIndexInfoDialog.qml` (FR-44), re-reading `topic_index_source_info()` from the `show()` path or binding it to `topicIndexDataChanged` — **not** computing it in `Component.onCompleted:29`, which runs during the engine load (FR-44a).
-  - [ ] 7.13a Implement whichever FR-11b resolution was chosen: either extend that line to flag a stored index older than the one shipped with the running build (*"…a newer index shipped with this version of Simsapa; use Reset to switch to it"*), or record the acceptance in `docs/cips-index-updates.md` (8.2). Do not leave it undecided — a downloaded row otherwise shadows every future shipped index silently and forever.
-  - [ ] 7.14 Replace any `console.*` introduced while drafting with `Logger` calls taking a single concatenated string (FR-43), and confirm every new bridge call has a stub from 6.7.
-  - [ ] 7.15 `make build -B` and `make qml-test`; confirm no new qmllint warnings naming the new or touched QML files, and no `implicitHeight` binding-loop lines from the new dialogs.
+- [x] 7.0 QML UI — header buttons, confirm dialogs, `TopicIndexUpdateWindow.qml`, the `topicIndexDataChanged` refresh, and the Info-dialog source line (FR-27 … FR-33, FR-35 … FR-44a)
+  - [x] 7.1 Add the "Update" and "Reset" buttons to the header row after "Info" (FR-27). Bind "Reset"'s `enabled` to whether a stored row exists, read from `topic_index_source_info()` (FR-29), and bind "Update"'s `enabled` to the local `is_running` state plus a poll of `is_topic_index_update_running()` when the window is shown (FR-30d corollary).
+  - [x] 7.2 Add the two confirm dialogs (FR-28) as inline children, each with `header: DialogHeader { text: <id>.title }` (FR-31), reader-facing wording (§6: no crate names, no "ETag", "paragraph locations" not "anchors"), and confirm/cancel actions where cancel changes nothing.
+  - [x] 7.3 Create `assets/qml/TopicIndexUpdateWindow.qml` per the specs table: layout from `DictionaryIndexProgressWindow.qml`, inline `visible: false` lifecycle, `open_and_run()` entry point, `run_initiated_here` / `is_running` state, `required property int extra_top_margin` (FR-32a), and a `Logger` instance. Copy only the *layout* from `DictionaryIndexProgressWindow.qml` — it is loaded by C++ into a **stack-local engine pumped by a nested `QEventLoop`** (`gui.cpp:769-785`), so neither its `Component.onCompleted` start nor its `visible: true` transfers.
+  - [x] 7.4 Register `"../assets/qml/TopicIndexUpdateWindow.qml"` in `bridges/build.rs`'s `qml_files` list in exactly that form (FR-41) — otherwise the failure is a runtime `Type … unavailable`.
+  - [x] 7.5 Wire the progress UI (FR-35): a status `Label` naming the current stage, a `ProgressBar` advancing as stages complete with an `indeterminate` fallback inside a stage, and the "attempt N of 5, retrying in N s" messages during stage 1.
+  - [x] 7.6 Wire the keep-screen-on acquire/release per FR-36, copying `StorageDiagnosticsDialog.qml:69-91`.
+  - [x] 7.7 Implement the success view (FR-37, FR-37a): the summary block with signed deltas, and a scrollable **selectable** details area (or "Show details" toggle) for the full validation warning lines (FR-38). The window stays open until dismissed.
+  - [x] 7.8 Implement the failure view (FR-39): what failed, and that the index currently in use has not been changed.
+  - [x] 7.9 Implement **Cancel** (FR-40): visible during the run, calls `cancel_topic_index_update()`, and the completion handler reports the cancellation, releases the keep-screen-on lock, and leaves the database untouched.
+  - [x] 7.10 Declare the update window as an inline sibling in `TopicIndexWindow.qml` and call `open_and_run()` from the Update confirm dialog's accept handler (FR-33).
+  - [x] 7.11 Add the `topicIndexDataChanged` handler to `TopicIndexWindow.qml` (FR-30a): re-run `load_letter(current_letter)`, re-run an active search when the query is ≥ 3 characters, and clear `highlighted_headword_id`. Keep it separate from the existing `onTopicIndexLoaded` handler (FR-30b).
+  - [x] 7.12 Wire the Reset flow: confirm dialog → `reset_topic_index()` → brief confirmation message, no progress window, no network access (FR-30).
+  - [x] 7.13 Add the "which index is in use" line to `TopicIndexInfoDialog.qml` (FR-44), re-reading `topic_index_source_info()` from the `show()` path or binding it to `topicIndexDataChanged` — **not** computing it in `Component.onCompleted:29`, which runs during the engine load (FR-44a).
+  - [x] 7.13a Implement whichever FR-11b resolution was chosen: either extend that line to flag a stored index older than the one shipped with the running build (*"…a newer index shipped with this version of Simsapa; use Reset to switch to it"*), or record the acceptance in `docs/cips-index-updates.md` (8.2). Do not leave it undecided — a downloaded row otherwise shadows every future shipped index silently and forever.
+  - [x] 7.14 Replace any `console.*` introduced while drafting with `Logger` calls taking a single concatenated string (FR-43), and confirm every new bridge call has a stub from 6.7.
+  - [x] 7.15 `make build -B` and `make qml-test`; confirm no new qmllint warnings naming the new or touched QML files, and no `implicitHeight` binding-loop lines from the new dialogs.
+
+### Notes from 7.0 (QML UI, completed 2026-08-13)
+
+- **The completion signal is shared by three flows**, so every listener needs its
+  own guard. `topicIndexUpdateCompleted` carries the update's summary, the
+  update's failure/cancellation message **and** the reset's confirmation — the
+  update window filters on `run_initiated_here`, `TopicIndexWindow` filters on a
+  separate `reset_initiated_here`. Without the second flag the reset's
+  confirmation dialog would also pop for an update, and vice versa.
+- **`update_is_running` is cleared on *any* completion**, outside both guards:
+  it drives the Update/Reset buttons' `enabled`, and a run this window did not
+  start (discovered by the `is_topic_index_update_running()` poll) still has to
+  re-enable them when it ends.
+- **The poll lives in `onVisibleChanged`, not only `Component.onCompleted`.**
+  After phase 1 the window is reused across opens, so `onCompleted` runs once per
+  *instance*; the source info and the in-flight flag are re-read on every show.
+  The same handler already cancels a pending deferred close (2.13).
+- **The update window refuses a mid-run close** (`close.accepted = false`) so the
+  only way out during a run is Cancel (FR-33). Cancel does **not** close the
+  window — it asks the backend to stop and lets the completion handler report the
+  cancellation, which is what releases the keep-screen-on lock exactly once.
+- **`payload.summary_text` is used verbatim.** The FR-37 block with its signed
+  deltas is formatted in Rust (5.0's note), so the window renders it rather than
+  re-deriving it; the raw counts are in the payload for a future layout change.
+- **FR-11b / 7.13a resolved in the informative direction, not the flagging one.**
+  Because a newer shipped index wins automatically (4.0's `stored_row_wins()`),
+  there is nothing for the user to do — so the Info line *states* the situation
+  ("A previously downloaded index is older and is not in use") instead of telling
+  them to press Reset. Reset stays enabled, since the row still exists.
+- The Info line is refreshed from `onVisibleChanged` **and** bound to
+  `topicIndexDataChanged`, so it is correct whether the dialog is opened after an
+  update or is already open when one lands (FR-44a).
+- `make qml-lint` reports no warning naming `TopicIndexWindow.qml`,
+  `TopicIndexInfoDialog.qml` or `TopicIndexUpdateWindow.qml`; `make qml-test`
+  is green (150 passed, 0 failed) with no `implicitHeight` binding-loop lines.
 
 ---
 
