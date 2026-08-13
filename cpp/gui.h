@@ -24,6 +24,9 @@ extern "C++" {
     void callback_open_in_lookup_window(QString result_data_json);
     void callback_open_chanting_practice_window(QString window_id);
     void callback_open_chanting_review_window(QString window_id, QString section_uid);
+    /// Destroy the single-instance secondary window of the given type, once QML
+    /// has accepted its close.
+    void callback_window_closed(QString window_type);
     /// Connected to GlobalHotkeyManager::hotkeyActivated.
     void callback_global_hotkey_activated(int handle);
 }

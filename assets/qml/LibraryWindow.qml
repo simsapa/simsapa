@@ -28,6 +28,9 @@ ApplicationWindow {
 
     property var books_list: []
     property var selected_book_uid: ""
+    // Set at the end of Component.onCompleted; read by onVisibleChanged, which
+    // runs before it on the first show.
+    property bool is_initialized: false
     property bool is_dark: theme_helper.is_dark
 
     ThemeHelper {
@@ -41,6 +44,7 @@ ApplicationWindow {
 
         theme_helper.apply();
         load_library_books();
+        root.is_initialized = true;
     }
 
     function load_library_books() {
@@ -62,7 +66,58 @@ ApplicationWindow {
             if (success) {
                 root.load_library_books();
             }
+            if (root.close_pending) {
+                root.notify_closed();
+            }
         }
+    }
+
+    // Closing this window destroys it, taking this engine's SuttaBridge instance
+    // with it. A document import is a backgrounded, signal-driven operation whose
+    // completion handler lives in DocumentImportDialog, so the notify waits for
+    // onImport_completed rather than orphaning the import.
+    property bool close_pending: false
+
+    function notify_closed() {
+        root.close_pending = false;
+        logger.info("LibraryWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("library");
+    }
+
+    // This window is single-instance and reused, so a re-open revives the same
+    // QML tree: Component.onCompleted does not run again and the book list would
+    // stay as it was when the window was hidden. Re-read it on show.
+    //
+    // A close that is pending only hid the window, and the wrapper is still in
+    // WindowManager's list, so the same re-open revives a window that is on its
+    // way out. Reviving it cancels the pending close -- otherwise the deferred
+    // notify arrives when the import finishes and destroys the window the user
+    // is now looking at.
+    onVisibleChanged: {
+        if (!root.visible) {
+            return;
+        }
+        if (root.close_pending) {
+            root.close_pending = false;
+            logger.info("LibraryWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+        // Skipped on the first show: `visible: true` makes this handler run
+        // before Component.onCompleted, which does the initial load.
+        if (root.is_initialized) {
+            root.load_library_books();
+        }
+    }
+
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        if (import_dialog.is_importing) {
+            root.close_pending = true;
+            logger.info("LibraryWindow: close deferred until the document import finishes");
+            return;
+        }
+        root.notify_closed();
     }
 
     DocumentMetadataEditDialog {

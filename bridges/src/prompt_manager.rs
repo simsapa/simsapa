@@ -168,7 +168,7 @@ impl qobject::PromptManager {
             if !is_provider_enabled(&provider_name_text) {
                 let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 cancel.take_cancel_flag();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "prompt_manager::prompt_request", move |mut qo| {
                     qo.as_mut().prompt_response(
                         QString::from(request_id_text),
                         paragraph_idx,
@@ -176,7 +176,7 @@ impl qobject::PromptManager {
                         QString::from(model_name_text),
                         QString::from(error_msg.clone()),
                         QString::from(error_msg));
-                }).unwrap();
+                });
                 return;
             }
             // Create a single message for the chat request
@@ -193,7 +193,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::prompt_request", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -224,7 +224,7 @@ impl qobject::PromptManager {
             };
 
             // Emit signal with the prompt response
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::prompt_request", move |mut qo| {
                 qo.as_mut().prompt_response(
                     QString::from(request_id_text),
                     paragraph_idx,
@@ -232,7 +232,7 @@ impl qobject::PromptManager {
                     QString::from(model_name_text),
                     QString::from(response_content.trim()),
                     QString::from(response_content_html.trim()));
-            }).unwrap();
+            });
         }); // end of thread
     }
 
@@ -252,12 +252,12 @@ impl qobject::PromptManager {
             // Check if provider is enabled
             if !is_provider_enabled(&provider_name_text) {
                 let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "prompt_manager::word_selection_request", move |mut qo| {
                     qo.as_mut().word_selection_response(
                         request_id,
                         QString::from(model_name_text),
                         QString::from(error_msg));
-                }).unwrap();
+                });
                 return;
             }
             // The system prompt is already prepended to the prompt content
@@ -271,7 +271,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::word_selection_request", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -291,12 +291,12 @@ impl qobject::PromptManager {
                 WalkOutcome::Cancelled => return,
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::word_selection_request", move |mut qo| {
                 qo.as_mut().word_selection_response(
                     request_id,
                     QString::from(model_name_text),
                     QString::from(response_content.trim()));
-            }).unwrap();
+            });
         }); // end of thread
     }
 
@@ -329,13 +329,13 @@ impl qobject::PromptManager {
             if !is_provider_enabled(&provider_name_text) {
                 let error_msg = provider_disabled_error(&provider_name_text, &model_name_text).to_envelope_json();
                 cancel.take_cancel_flag();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "prompt_manager::prompt_request_with_messages", move |mut qo| {
                     qo.as_mut().prompt_response_for_messages(
                         QString::from(request_id_text),
                         sender_message_idx,
                         QString::from(model_name_text),
                         QString::from(error_msg));
-                }).unwrap();
+                });
                 return;
             }
 
@@ -346,7 +346,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::prompt_request_with_messages", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -367,14 +367,14 @@ impl qobject::PromptManager {
             };
 
             // Emit signal with the prompt response (HTML conversion now done client-side)
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::prompt_request_with_messages", move |mut qo| {
                 qo.as_mut().prompt_response_for_messages(
                     QString::from(request_id_text),
                     sender_message_idx,
                     QString::from(model_name_text),  // Add model name to identify which model responded
                     QString::from(response_content.trim()),  // Raw response without HTML conversion
                 );
-            }).unwrap();
+            });
         }); // end of thread
     }
 
@@ -402,7 +402,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::sequential_prompt_request", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -428,7 +428,7 @@ impl qobject::PromptManager {
                 WalkOutcome::Cancelled => return,
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::sequential_prompt_request", move |mut qo| {
                 qo.as_mut().prompt_response(
                     QString::from(request_id_text),
                     paragraph_idx,
@@ -436,7 +436,7 @@ impl qobject::PromptManager {
                     QString::from(model),
                     QString::from(response_content.trim()),
                     QString::from(response_content_html.trim()));
-            }).unwrap();
+            });
         });
     }
 
@@ -458,7 +458,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::sequential_word_selection_request", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -478,12 +478,12 @@ impl qobject::PromptManager {
                 WalkOutcome::Cancelled => return,
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::sequential_word_selection_request", move |mut qo| {
                 qo.as_mut().word_selection_response(
                     request_id,
                     QString::from(model),
                     QString::from(response_content.trim()));
-            }).unwrap();
+            });
         });
     }
 
@@ -520,7 +520,7 @@ impl qobject::PromptManager {
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::sequential_prompt_request_with_messages", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
@@ -540,14 +540,14 @@ impl qobject::PromptManager {
                 WalkOutcome::Cancelled => return,
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::sequential_prompt_request_with_messages", move |mut qo| {
                 qo.as_mut().prompt_response_for_messages(
                     QString::from(request_id_text),
                     sender_message_idx,
                     QString::from(model),
                     QString::from(response_content.trim()),
                 );
-            }).unwrap();
+            });
         });
     }
 

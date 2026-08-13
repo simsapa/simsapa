@@ -3,6 +3,8 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Window
 
+import com.profoundlabs.simsapa
+
 ApplicationWindow {
     id: root
 
@@ -21,13 +23,63 @@ ApplicationWindow {
     required property int extra_top_margin
     property bool is_dark: theme_helper.is_dark
 
+    // Which index is in use. Computed on every show, never in
+    // Component.onCompleted: this dialog is an inline `visible: false` child, so
+    // its onCompleted runs during the engine load -- before any update can have
+    // happened -- and the value would be stale for the rest of the session.
+    property string source_line: ""
+
     ThemeHelper {
         id: theme_helper
         target_window: root
     }
 
+    Logger { id: logger }
+
     Component.onCompleted: {
         theme_helper.apply();
+    }
+
+    onVisibleChanged: {
+        if (root.visible) {
+            root.refresh_source_line();
+        }
+    }
+
+    Connections {
+        target: SuttaBridge
+        function onTopicIndexDataChanged() {
+            root.refresh_source_line();
+        }
+    }
+
+    function date_only(stamp: string): string {
+        return stamp.includes("T") ? stamp.split("T")[0] : stamp;
+    }
+
+    function refresh_source_line() {
+        const json = SuttaBridge.topic_index_source_info();
+        try {
+            const info = JSON.parse(json);
+            if (info.source === "downloaded" && info.stored_updated_at) {
+                root.source_line = "Updated from CIPS on " + root.date_only(info.stored_updated_at);
+            } else if (info.has_stored_row === true && info.builtin_date) {
+                // A downloaded index exists but is older than the one shipped
+                // with this build, so the shipped one is in use. FR-11b: this
+                // resolves itself, so it is stated rather than flagged.
+                root.source_line = "Index shipped with this version of Simsapa ("
+                    + root.date_only(info.builtin_date)
+                    + "). A previously downloaded index is older and is not in use.";
+            } else if (info.builtin_date) {
+                root.source_line = "Index shipped with this version of Simsapa ("
+                    + root.date_only(info.builtin_date) + ")";
+            } else {
+                root.source_line = "Index shipped with this version of Simsapa";
+            }
+        } catch (e) {
+            logger.error("Failed to parse topic index source info: " + e + " json: " + json);
+            root.source_line = "";
+        }
     }
 
     Frame {
@@ -76,6 +128,16 @@ ApplicationWindow {
                             textFormat: Text.RichText
                             wrapMode: Text.Wrap
                         }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.source_line
+                        font.pointSize: root.pointSize
+                        font.italic: true
+                        color: palette.text
+                        wrapMode: Text.Wrap
+                        visible: text.length > 0
                     }
 
                     Text {

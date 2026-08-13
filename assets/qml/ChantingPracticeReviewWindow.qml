@@ -87,8 +87,76 @@ ApplicationWindow {
         }
     }
 
+    // Closing this window destroys it (WindowManager::on_window_closed), taking
+    // this engine's SuttaBridge instance with it. A recording in progress is
+    // stopped and finalised below, but the row that makes it visible in the
+    // library is written by onRecording_completed, which arrives asynchronously
+    // from the Rust side -- so the notify is held back until it does. Without
+    // this the file would exist on disk while the recording had vanished from
+    // the UI, which is W-7's "silently truncated" in its real form here.
+    property bool close_pending: false
+
+    function any_recording_active(): bool {
+        for (let i = 0; i < new_rec_repeater.count; i++) {
+            let item = new_rec_repeater.itemAt(i) as RecordingPlaybackItem;
+            if (item && item.is_recording) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    Timer {
+        // Failsafe: notifying late is harmless -- a queue into a destroyed object
+        // is logged, not fatal -- but leaking the window forever is not.
+        id: close_deferral_failsafe
+        interval: 15000
+        repeat: false
+        onTriggered: {
+            if (root.close_pending) {
+                logger.warn("ChantingReviewWindow: recording did not finalise within 15 s, closing anyway");
+                root.notify_closed();
+            }
+        }
+    }
+
+    function notify_closed() {
+        root.close_pending = false;
+        close_deferral_failsafe.stop();
+        logger.info("ChantingReviewWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("chanting_review");
+    }
+
+    // A close that is pending only hid the window; the wrapper is still in
+    // WindowManager's list, so the next open revives *this* window (with its
+    // window_id and current_section_uid re-applied). Reviving it cancels the
+    // pending close -- otherwise the deferred notify arrives when the recording
+    // is finalised and destroys the window the user is now looking at.
+    //
+    // The re-acquire below is needed on every re-open, not only a cancelled
+    // one: onClosing releases the keep-screen-on flag, and Component.onCompleted
+    // -- which is where it is taken -- does not run again for a reused window.
+    // Setting it twice is harmless (it is a window flag, not a counted lock).
+    onVisibleChanged: {
+        if (!root.visible) {
+            return;
+        }
+        if (root.close_pending) {
+            root.close_pending = false;
+            close_deferral_failsafe.stop();
+            logger.info("ChantingReviewWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+        if (root.is_mobile) {
+            screen_manager.set_keep_screen_on(true);
+        }
+    }
+
     // Stop all playback and save state when window is closed
-    onClosing: {
+    onClosing: function(close) {
+        // Read before the cleanup below, which sets is_recording false at once
+        // while the file is still being finalised in Rust.
+        const was_recording = root.any_recording_active();
+
         if (root.is_mobile) {
             screen_manager.set_keep_screen_on(false);
         }
@@ -109,6 +177,17 @@ ApplicationWindow {
                 item.cleanup();
             }
         }
+
+        if (!close.accepted) {
+            return;
+        }
+        if (was_recording) {
+            root.close_pending = true;
+            close_deferral_failsafe.restart();
+            logger.info("ChantingReviewWindow: close deferred until the recording is finalised and saved");
+            return;
+        }
+        root.notify_closed();
     }
 
     function load_section_data() {
@@ -787,6 +866,9 @@ ApplicationWindow {
                                 new_recordings_model.remove(new_rec_delegate.index);
                                 root.auto_open_uid = uid;
                                 root.load_section_data();
+                                if (root.close_pending && !root.any_recording_active()) {
+                                    root.notify_closed();
+                                }
                             }
                         }
                     }

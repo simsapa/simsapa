@@ -4508,6 +4508,7 @@ dependencies = [
  "tinytemplate",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "urlencoding",
  "walkdir",
  "zip 2.4.2",
@@ -4541,7 +4542,6 @@ dependencies = [
  "tipitaka_xml_parser",
  "tokio",
  "toml 0.8.23",
- "unicode-normalization",
  "urlencoding",
 ]
 

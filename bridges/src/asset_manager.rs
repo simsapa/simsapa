@@ -126,9 +126,9 @@ pub struct AssetManagerRust;
 fn cleanup_on_failure(download_temp_folder: &Path, extract_temp_folder: &Path, app_assets_folder: &Path, is_initial_setup: bool, qt_thread: &CxxQtThread<qobject::AssetManager>) {
     info(&format!("Cleaning up due to download failure (initial_setup: {})", is_initial_setup));
     let cleanup_msg = QString::from("Removing partially downloaded files due to network error...");
-    qt_thread.queue(move |mut qo| {
+    crate::queue_or_log(&qt_thread, "asset_manager::cleanup_on_failure", move |mut qo| {
         qo.as_mut().download_show_msg(cleanup_msg);
-    }).unwrap();
+    });
 
     // Remove download temp folder
     if download_temp_folder.exists() {
@@ -153,9 +153,9 @@ fn cleanup_on_failure(download_temp_folder: &Path, extract_temp_folder: &Path, a
     if is_initial_setup {
         info("Initial setup detected - removing app_assets_folder for clean state");
         let complete_cleanup_msg = QString::from("Removing incomplete initial setup...");
-        qt_thread.queue(move |mut qo| {
+        crate::queue_or_log(&qt_thread, "asset_manager::cleanup_on_failure", move |mut qo| {
             qo.as_mut().download_show_msg(complete_cleanup_msg);
-        }).unwrap();
+        });
 
         if app_assets_folder.exists() {
             if let Err(e) = remove_dir_all(app_assets_folder) {
@@ -303,9 +303,9 @@ impl qobject::AssetManager {
         if codes.is_empty() {
             info("remove_sutta_languages(): No language codes provided");
             let qt_thread = self.qt_thread();
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "asset_manager::remove_sutta_languages", move |mut qo| {
                 qo.as_mut().removal_completed(true, QString::from(""));
-            }).unwrap();
+            });
             return;
         }
 
@@ -315,9 +315,9 @@ impl qobject::AssetManager {
 
         // Show initial message
         let msg = QString::from("Preparing to remove languages...");
-        qt_thread.queue(move |mut qo| {
+        crate::queue_or_log(&qt_thread, "asset_manager::remove_sutta_languages", move |mut qo| {
             qo.as_mut().removal_show_msg(msg);
-        }).unwrap();
+        });
 
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
@@ -328,25 +328,25 @@ impl qobject::AssetManager {
                 let lang_name = LANG_CODE_TO_NAME.get(lang_code).copied().unwrap_or(lang_code);
                 let lang_name_qstr = QString::from(lang_name);
                 let qt_thread_clone = qt_thread.clone();
-                qt_thread_clone.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread_clone, "asset_manager::remove_sutta_languages", move |mut qo| {
                     qo.as_mut().removal_progress_changed(current_index, total, lang_name_qstr);
-                }).unwrap();
+                });
             };
 
             match app_data.dbm.remove_sutta_languages(codes, progress_callback) {
                 Ok(success) => {
                     info(&format!("remove_sutta_languages(): Completed with success={}", success));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "asset_manager::remove_sutta_languages", move |mut qo| {
                         qo.as_mut().removal_completed(success, QString::from(""));
-                    }).unwrap();
+                    });
                 },
                 Err(e) => {
                     let error_msg = format!("Failed to remove languages: {}", e);
                     error(&format!("remove_sutta_languages(): {}", error_msg));
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "asset_manager::remove_sutta_languages", move |mut qo| {
                         qo.as_mut().removal_completed(false, error_qstr);
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -412,9 +412,9 @@ impl qobject::AssetManager {
                     Err(e) => {
                         error(&format!("Failed to build HTTP client: {}", e));
                         let msg = QString::from(&format!("Failed to build HTTP client: {}", e));
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             qo.as_mut().download_show_msg(msg);
-                        }).unwrap();
+                        });
                         cleanup_on_failure(&download_temp_folder, &extract_temp_folder, &app_assets_folder, is_initial_setup, &qt_thread);
                         return;
                     }
@@ -430,9 +430,9 @@ impl qobject::AssetManager {
                         "Connecting to download {}... (attempt {}/{})",
                         &download_file_name, retry_count + 1, MAX_RETRIES
                     ));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                         qo.as_mut().download_show_msg(connecting_msg);
-                    }).unwrap();
+                    });
 
                     match client.get(&url_str).send() {
                         Ok(r) => {
@@ -448,9 +448,9 @@ impl qobject::AssetManager {
                                     "Download failed for {}: {}. Retrying in {} seconds... (Attempt {}/{})",
                                     &download_file_name, e, wait_seconds, retry_count + 1, MAX_RETRIES
                                 ));
-                                qt_thread.queue(move |mut qo| {
+                                crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                                     qo.as_mut().download_show_msg(retry_msg);
-                                }).unwrap();
+                                });
                                 error(&format!("Download attempt {} failed: {}", retry_count, e));
                                 thread::sleep(Duration::from_secs(wait_seconds));
                             } else {
@@ -460,9 +460,9 @@ impl qobject::AssetManager {
                                     "Network error: Failed to download {} after {} attempts. Please check your internet connection and try again later.",
                                     &download_file_name, MAX_RETRIES
                                 ));
-                                qt_thread.queue(move |mut qo| {
+                                crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                                     qo.as_mut().download_show_msg(fail_msg);
-                                }).unwrap();
+                                });
                                 cleanup_on_failure(&download_temp_folder, &extract_temp_folder, &app_assets_folder, is_initial_setup, &qt_thread);
                                 return;
                             }
@@ -475,9 +475,9 @@ impl qobject::AssetManager {
                     None => {
                         // This shouldn't happen, but handle it just in case
                         let msg = QString::from("Unexpected error: failed to initiate download.");
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             qo.as_mut().download_show_msg(msg);
-                        }).unwrap();
+                        });
                         cleanup_on_failure(&download_temp_folder, &extract_temp_folder, &app_assets_folder, is_initial_setup, &qt_thread);
                         return;
                     }
@@ -486,10 +486,10 @@ impl qobject::AssetManager {
                 let mut file = match File::create(&download_temp_file_path) {
                     Ok(f) => f,
                     Err(e) => {
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             let msg = QString::from(&format!("Error creating the file: {}", e));
                             qo.as_mut().download_show_msg(msg);
-                        }).unwrap();
+                        });
                         return;
                     }
                 };
@@ -499,9 +499,9 @@ impl qobject::AssetManager {
                     None => {
                         let error_msg = QString::from("Error: can't read download content length.");
                         let url_qstr_clone = url_qstr.clone();
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             qo.as_mut().download_needs_retry(url_qstr_clone, error_msg);
-                        }).unwrap();
+                        });
                         // The download file may have already been created with 0 length.
                         let _ = remove_file(download_temp_file_path);
                         // Stop processing the remaining URLs in the download loop and exit the thread.
@@ -524,15 +524,15 @@ impl qobject::AssetManager {
                     file.write_all(&buf[..n]).unwrap();
                     downloaded += n;
                     let op_msg = QString::from(format!("Downloading {}", &download_file_name));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                         qo.as_mut().download_progress_changed(op_msg, downloaded, total);
-                    }).unwrap();
+                    });
                 }
 
                 let op_msg = QString::from(format!("Extracting {}", &download_file_name));
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                     qo.as_mut().download_progress_changed(op_msg, 0, 0);
-                }).unwrap();
+                });
 
                 // Extract contents to a temp folder and move contents on success
                 let extraction_result = extract_tar_bz2_with_progress(&download_temp_file_path,
@@ -545,17 +545,17 @@ impl qobject::AssetManager {
                 let extraction_success = match extraction_result {
                     Ok(_) => {
                         let msg = QString::from(format!("Completed extracting {}", &download_file_name));
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             qo.as_mut().download_show_msg(msg);
-                        }).unwrap();
+                        });
                         true
                     }
                     Err(e) => {
                         let msg = QString::from(format!("Extraction failed: {}", e));
                         error(&format!("Failed to extract {}: {}", &download_file_name, e));
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                             qo.as_mut().download_show_msg(msg);
-                        }).unwrap();
+                        });
                         false
                     }
                 };
@@ -563,17 +563,17 @@ impl qobject::AssetManager {
                 // Import language databases before moving files
                 if extraction_success && download_file_name.starts_with("suttas_lang_") && download_file_name.ends_with(".tar.bz2") {
                     let import_msg = QString::from(format!("Importing {}", &download_file_name));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                         qo.as_mut().download_show_msg(import_msg);
-                    }).unwrap();
+                    });
 
                     match import_suttas_lang_to_appdata(&extract_temp_folder, &paths.appdata_database_url) {
                         Ok(_) => {
                             info(&format!("Successfully imported {}", &download_file_name));
                             let success_msg = QString::from(format!("Successfully imported {}", &download_file_name));
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                                 qo.as_mut().download_show_msg(success_msg);
-                            }).unwrap();
+                            });
                             // Refresh the per-area language caches off the
                             // calling thread so the search-bar language filter
                             // dropdown reflects the new sutta language on the
@@ -585,9 +585,9 @@ impl qobject::AssetManager {
                         Err(e) => {
                             error(&format!("Failed to import {}: {}", &download_file_name, e));
                             let error_msg = QString::from(format!("Import failed for {}: {}", &download_file_name, e));
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                                 qo.as_mut().download_show_msg(error_msg);
-                            }).unwrap();
+                            });
                         }
                     }
                 }
@@ -599,9 +599,9 @@ impl qobject::AssetManager {
                         Err(e) => {
                             error(&format!("Failed to move files: {}", e));
                             let msg = QString::from(format!("Failed to move files: {}", e));
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                                 qo.as_mut().download_show_msg(msg);
-                            }).unwrap();
+                            });
                         }
                     }
                 }
@@ -612,9 +612,9 @@ impl qobject::AssetManager {
             let _ = remove_dir_all(&download_temp_folder);
 
             info("download_urls_and_extract(): all downloads completed");
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "asset_manager::download_urls_and_extract", move |mut qo| {
                 qo.as_mut().downloads_completed(true);
-            }).unwrap();
+            });
 
         }); // end of thread
     }
@@ -677,9 +677,9 @@ impl<R: Read> Read for ProgressReader<'_, R> {
                 let op_msg = QString::from(format!("Extracting {}", &self.file_name));
                 let bytes_read = self.bytes_read;
                 let total_size = self.total_size;
-                self.qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&self.qt_thread, "asset_manager::read", move |mut qo| {
                     qo.as_mut().download_progress_changed(op_msg, bytes_read, total_size);
-                }).unwrap();
+                });
 
                 self.last_bytes_read = bytes_read;
             }
@@ -734,10 +734,10 @@ pub fn extract_tar_bz2_with_progress(
 
     // Send initial progress status.
     let file_name_b = file_name.clone();
-    qt_thread.queue(move |mut qo| {
+    crate::queue_or_log(&qt_thread, "asset_manager::extract_tar_bz2_with_progress", move |mut qo| {
         let op_msg = QString::from(format!("Extracting {}", &file_name_b));
         qo.as_mut().download_progress_changed(op_msg, 0, total_size);
-    }).unwrap();
+    });
 
     // 6. Iterate through the entries in the tar archive and unpack them.
     // Progress signals are sent during read.
@@ -759,10 +759,10 @@ pub fn extract_tar_bz2_with_progress(
     }
 
     // 7. Send final progress status.
-    qt_thread.queue(move |mut qo| {
+    crate::queue_or_log(&qt_thread, "asset_manager::extract_tar_bz2_with_progress", move |mut qo| {
         let op_msg = QString::from(format!("Completed extracting {}", &file_name));
         qo.as_mut().download_progress_changed(op_msg, total_size, total_size);
-    }).unwrap();
+    });
 
     Ok(())
 }

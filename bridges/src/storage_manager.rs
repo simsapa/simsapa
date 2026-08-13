@@ -160,11 +160,11 @@ impl qobject::StorageManager {
                 return;
             }
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "storage_manager::probe_storage_candidate", move |mut qo| {
                 qo.as_mut().probe_completed(QString::from(&path_text),
                                             QString::from(&request_id_text),
                                             QString::from(&result_json));
-            }).ok();
+            });
         });
     }
 

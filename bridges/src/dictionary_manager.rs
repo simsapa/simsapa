@@ -319,7 +319,7 @@ impl qobject::DictionaryManager {
             let on_progress = move |p: StardictImportProgress| {
                 let (stage, done, total) = stardict_progress_to_signal(&p);
                 let qs = QString::from(&stage);
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "dictionary_manager::import_zip", move |mut qo| {
                     qo.as_mut().import_progress(qs, done, total);
                 });
             };
@@ -352,7 +352,7 @@ impl qobject::DictionaryManager {
                         )
                     };
                     let msg = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_zip", move |mut qo| {
                         qo.as_mut().import_cancelled(msg, inserted);
                     });
                 }
@@ -361,14 +361,14 @@ impl qobject::DictionaryManager {
                     let label_qs = QString::from(&label);
                     let inserted = outcome.inserted as i32;
                     let elapsed_ms = started.elapsed().as_millis() as i32;
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_zip", move |mut qo| {
                         qo.as_mut().import_finished(outcome.dictionary_id, label_qs, inserted, elapsed_ms);
                     });
                 }
                 Err(msg) => {
                     error(&format!("import_zip failed: {}", msg));
                     let qs = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_zip", move |mut qo| {
                         qo.as_mut().import_failed(qs);
                     });
                 }
@@ -394,7 +394,7 @@ impl qobject::DictionaryManager {
             let on_progress = move |p: StardictImportProgress| {
                 let (stage, done, total) = stardict_progress_to_signal(&p);
                 let qs = QString::from(&stage);
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "dictionary_manager::import_dir", move |mut qo| {
                     qo.as_mut().import_progress(qs, done, total);
                 });
             };
@@ -422,7 +422,7 @@ impl qobject::DictionaryManager {
                         )
                     };
                     let msg = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_dir", move |mut qo| {
                         qo.as_mut().import_cancelled(msg, inserted);
                     });
                 }
@@ -431,14 +431,14 @@ impl qobject::DictionaryManager {
                     let label_qs = QString::from(&label);
                     let inserted = outcome.inserted as i32;
                     let elapsed_ms = started.elapsed().as_millis() as i32;
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_dir", move |mut qo| {
                         qo.as_mut().import_finished(outcome.dictionary_id, label_qs, inserted, elapsed_ms);
                     });
                 }
                 Err(msg) => {
                     error(&format!("import_dir failed: {}", msg));
                     let qs = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::import_dir", move |mut qo| {
                         qo.as_mut().import_failed(qs);
                     });
                 }
@@ -466,14 +466,14 @@ impl qobject::DictionaryManager {
                         "[]".to_string()
                     });
                     let json_qs = QString::from(&json);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::scan_source", move |mut qo| {
                         qo.as_mut().scan_finished(json_qs);
                     });
                 }
                 Err(msg) => {
                     error(&format!("scan_source failed: {}", msg));
                     let qs = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::scan_source", move |mut qo| {
                         qo.as_mut().scan_failed(qs);
                     });
                 }
@@ -517,14 +517,14 @@ impl qobject::DictionaryManager {
                     refresh_all_dict_caches();
                     let elapsed_ms = started.elapsed().as_millis() as i32;
                     let label_qs = QString::from(&label);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::delete_dictionary", move |mut qo| {
                         qo.as_mut().delete_finished(dictionary_id, label_qs, removed_count, elapsed_ms);
                     });
                 }
                 Err(msg) => {
                     error(&format!("delete_dictionary failed: {}", msg));
                     let qs = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::delete_dictionary", move |mut qo| {
                         qo.as_mut().delete_failed(qs);
                     });
                 }
@@ -564,14 +564,14 @@ impl qobject::DictionaryManager {
                     let elapsed_ms = started.elapsed().as_millis() as i32;
                     let old_qs = QString::from(&old_label);
                     let new_qs = QString::from(&new_label);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::rename_label", move |mut qo| {
                         qo.as_mut().rename_finished(dictionary_id, old_qs, new_qs, elapsed_ms);
                     });
                 }
                 Err(msg) => {
                     error(&format!("rename_label failed: {}", msg));
                     let qs = QString::from(&msg);
-                    let _ = qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::rename_label", move |mut qo| {
                         qo.as_mut().rename_failed(qs);
                     });
                 }
@@ -705,7 +705,7 @@ impl qobject::DictionaryManager {
             let status = compute_label_status(&label_str);
             let label_qs = QString::from(&label_str);
             let status_qs = QString::from(&status);
-            let _ = qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "dictionary_manager::check_label_status", move |mut qo| {
                 qo.as_mut().label_status_checked(label_qs, status_qs);
             });
         });
@@ -768,7 +768,7 @@ impl qobject::DictionaryManager {
             let on_progress = move |p: ReconcileProgress| {
                 let (stage, done, total) = reconcile_progress_to_signal(&p);
                 let qs = QString::from(&stage);
-                let _ = progress_thread.queue(move |mut qo| {
+                crate::queue_or_log(&progress_thread, "dictionary_manager::start_reconcile", move |mut qo| {
                     qo.as_mut().reconcile_progress(qs, done, total);
                 });
             };
@@ -776,7 +776,7 @@ impl qobject::DictionaryManager {
                 error(&format!("reconcile_dict_indexes failed: {:#}", e));
             }
             info("start_reconcile: complete");
-            let _ = qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "dictionary_manager::start_reconcile", move |mut qo| {
                 qo.as_mut().reconcile_finished();
             });
         });

@@ -182,53 +182,16 @@ WindowManager::WindowManager(QApplication* app, QObject* parent)
     QObject::connect(this, &WindowManager::signal_open_in_lookup_window, this, &WindowManager::open_in_lookup_window);
 }
 
+/// Deliberately empty. This destructor is unreachable: m_instance is `new`ed in
+/// instance() and nothing anywhere deletes it, and the destructor is private. Its
+/// old body walked the window lists calling deleteLater(), which -- even if it did
+/// run, at process teardown -- posts events that no event loop is left to process.
+/// It also omitted reference_search_windows entirely; adding that loop would have
+/// changed nothing observable.
+///
+/// Memory is reclaimed by destroy-on-close instead: QML's onClosing calls
+/// SuttaBridge.notify_window_closed(), which reaches on_window_closed() below.
 WindowManager::~WindowManager() {
-    // Clean up all windows
-    // FIXME: does this clean up work?
-    while (!sutta_search_windows.isEmpty()) {
-        auto w = sutta_search_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!download_appdata_windows.isEmpty()) {
-        auto w = download_appdata_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!storage_recovery_windows.isEmpty()) {
-        auto w = storage_recovery_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!sutta_languages_windows.isEmpty()) {
-        auto w = sutta_languages_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!dictionaries_windows.isEmpty()) {
-        auto w = dictionaries_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!library_windows.isEmpty()) {
-        auto w = library_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!topic_index_windows.isEmpty()) {
-        auto w = topic_index_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!chanting_practice_windows.isEmpty()) {
-        auto w = chanting_practice_windows.takeFirst();
-        w->deleteLater();
-    }
-
-    while (!chanting_review_windows.isEmpty()) {
-        auto w = chanting_review_windows.takeFirst();
-        w->deleteLater();
-    }
 }
 
 /// A closed window is only hidden -- it stays in sutta_search_windows so it can
@@ -371,21 +334,51 @@ StorageRecoveryWindow* WindowManager::create_storage_recovery_window() {
     return w;
 }
 
+/// The secondary windows are single-instance and destroyed when they close, so
+/// "an instance exists" is the reuse question and `m_root != nullptr` is what
+/// answers it. This is NOT the predicate the pooled SuttaSearchWindow uses --
+/// there a hidden window is a *pooled* window and `visible` is what distinguishes
+/// it, because dispatching to a hidden one re-opens a window the user closed.
+/// See docs/window-lifecycle-and-reuse.md.
+///
+/// A wrapper whose engine load failed has a null m_root. It can never be reused,
+/// so it is evicted here -- left in the list it would make every subsequent open
+/// append another one, which is exactly the unbounded growth single-instance
+/// creation exists to remove.
+///
+/// The loop iterates a copy because it mutates the list. QList is implicitly
+/// shared, so the copy costs nothing until removeAll detaches it.
+///
+/// It returns at the first live wrapper, so a null one sitting *after* it is not
+/// evicted on this pass. That is deliberate and bounded: a new wrapper is only
+/// appended when no live one is found, so the list cannot grow past the one
+/// straggler, and the next open with no live instance evicts it.
+template <typename T>
+static T* reuse_or_evict(QList<T*>& windows) {
+    for (auto w : QList<T*>(windows)) {
+        if (w && w->m_root) {
+            return w;
+        }
+        windows.removeAll(w);
+        if (w) w->deleteLater();
+    }
+    return nullptr;
+}
+
 SuttaLanguagesWindow* WindowManager::create_sutta_languages_window() {
+    if (SuttaLanguagesWindow* reused = reuse_or_evict(this->sutta_languages_windows)) {
+        show_and_activate_window(reused->m_root);
+        return reused;
+    }
     SuttaLanguagesWindow* w = new SuttaLanguagesWindow(this->m_app);
     sutta_languages_windows.append(w);
     return w;
 }
 
 DictionariesWindow* WindowManager::create_dictionaries_window() {
-    // Reuse existing window if one exists
-    for (auto w : this->dictionaries_windows) {
-        if (w->m_root) {
-            QMetaObject::invokeMethod(w->m_root, "show");
-            QMetaObject::invokeMethod(w->m_root, "raise");
-            QMetaObject::invokeMethod(w->m_root, "requestActivate");
-            return w;
-        }
+    if (DictionariesWindow* reused = reuse_or_evict(this->dictionaries_windows)) {
+        show_and_activate_window(reused->m_root);
+        return reused;
     }
     DictionariesWindow* w = new DictionariesWindow(this->m_app);
     dictionaries_windows.append(w);
@@ -393,32 +386,43 @@ DictionariesWindow* WindowManager::create_dictionaries_window() {
 }
 
 LibraryWindow* WindowManager::create_library_window() {
+    if (LibraryWindow* reused = reuse_or_evict(this->library_windows)) {
+        show_and_activate_window(reused->m_root);
+        return reused;
+    }
     LibraryWindow* w = new LibraryWindow(this->m_app);
     library_windows.append(w);
     return w;
 }
 
 ReferenceSearchWindow* WindowManager::create_reference_search_window() {
+    if (ReferenceSearchWindow* reused = reuse_or_evict(this->reference_search_windows)) {
+        show_and_activate_window(reused->m_root);
+        return reused;
+    }
     ReferenceSearchWindow* w = new ReferenceSearchWindow(this->m_app);
     reference_search_windows.append(w);
     return w;
 }
 
 TopicIndexWindow* WindowManager::create_topic_index_window() {
+    if (TopicIndexWindow* reused = reuse_or_evict(this->topic_index_windows)) {
+        show_and_activate_window(reused->m_root);
+        return reused;
+    }
     TopicIndexWindow* w = new TopicIndexWindow(this->m_app);
     topic_index_windows.append(w);
     return w;
 }
 
 ChantingPracticeWindow* WindowManager::create_chanting_practice_window(const QString& window_id) {
-    // Reuse existing ChantingPracticeWindow if one exists
-    for (auto w : this->chanting_practice_windows) {
-        if (w->m_root) {
-            QMetaObject::invokeMethod(w->m_root, "show");
-            QMetaObject::invokeMethod(w->m_root, "raise");
-            QMetaObject::invokeMethod(w->m_root, "requestActivate");
-            return w;
-        }
+    if (ChantingPracticeWindow* reused = reuse_or_evict(this->chanting_practice_windows)) {
+        // Re-apply the constructor parameter: the reuse loop that was here before
+        // returned early without ever setting window_id, so a reused window kept
+        // the id of the open before it.
+        reused->apply_window_properties(window_id);
+        show_and_activate_window(reused->m_root);
+        return reused;
     }
 
     ChantingPracticeWindow* w = new ChantingPracticeWindow(this->m_app, window_id);
@@ -427,9 +431,57 @@ ChantingPracticeWindow* WindowManager::create_chanting_practice_window(const QSt
 }
 
 ChantingReviewWindow* WindowManager::create_chanting_review_window(const QString& window_id, const QString& section_uid) {
+    if (ChantingReviewWindow* reused = reuse_or_evict(this->chanting_review_windows)) {
+        // Setting current_section_uid is itself the re-init -- see the comment on
+        // ChantingReviewWindow::apply_window_properties().
+        reused->apply_window_properties(window_id, section_uid);
+        show_and_activate_window(reused->m_root);
+        return reused;
+    }
+
     ChantingReviewWindow* w = new ChantingReviewWindow(this->m_app, window_id, section_uid);
     chanting_review_windows.append(w);
     return w;
+}
+
+/// Called from QML via SuttaBridge.notify_window_closed() once a close has been
+/// accepted (and once any operation the window started has finished). Removes the
+/// wrapper from its list and defers its destruction.
+///
+/// deleteLater(), never a direct delete: ~TopicIndexWindow() and its siblings run
+/// `delete m_engine`, which destroys the QQmlApplicationEngine, the root
+/// QQuickWindow and the whole QML object tree -- including the handler that is
+/// currently executing. The deferred delete runs after the QML stack has unwound.
+void WindowManager::on_window_closed(const QString& window_type) {
+    auto close_one = [&window_type](auto& windows) {
+        if (windows.isEmpty()) {
+            log_info_c(QString("on_window_closed(%1): no live instance").arg(window_type).toUtf8().constData());
+            return;
+        }
+        while (!windows.isEmpty()) {
+            auto w = windows.takeFirst();
+            if (w) w->deleteLater();
+        }
+        log_info_c(QString("on_window_closed(%1): destroyed").arg(window_type).toUtf8().constData());
+    };
+
+    if (window_type == "topic_index") {
+        close_one(this->topic_index_windows);
+    } else if (window_type == "library") {
+        close_one(this->library_windows);
+    } else if (window_type == "reference_search") {
+        close_one(this->reference_search_windows);
+    } else if (window_type == "sutta_languages") {
+        close_one(this->sutta_languages_windows);
+    } else if (window_type == "dictionaries") {
+        close_one(this->dictionaries_windows);
+    } else if (window_type == "chanting_practice") {
+        close_one(this->chanting_practice_windows);
+    } else if (window_type == "chanting_review") {
+        close_one(this->chanting_review_windows);
+    } else {
+        log_error_c(QString("on_window_closed(): unknown window type: %1").arg(window_type).toUtf8().constData());
+    }
 }
 
 void WindowManager::run_lookup_query(const QString& query_text) {

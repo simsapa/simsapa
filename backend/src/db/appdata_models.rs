@@ -648,6 +648,41 @@ pub struct NewGlossPhraseSelection<'a> {
     pub selected_uid: &'a str,
 }
 
+/// The single stored row (`id = 1`) holding a CIPS topic index downloaded from
+/// within the app. No row means "use the index embedded in this build".
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, PartialEq, Serialize, Deserialize)]
+#[diesel(table_name = topic_index_data)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TopicIndexData {
+    pub id: i32,
+    /// Minified `Vec<TopicIndexLetter>` JSON, the same shape as the embedded
+    /// `assets/general-index.json`.
+    pub index_json: String,
+    pub source_url: String,
+    /// `ETag` of the fetched CSV. On raw.githubusercontent.com this is the
+    /// SHA-256 of the file content. Recorded for diagnostics only.
+    pub source_etag: Option<String>,
+    pub csv_line_count: Option<i32>,
+    pub headword_count: Option<i32>,
+    pub ref_count: Option<i32>,
+    /// Fixed-width UTC ISO 8601 to the second, string-comparable against
+    /// `app_settings::cips_general_index_date()`.
+    pub updated_at: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = topic_index_data)]
+pub struct NewTopicIndexData<'a> {
+    pub id: i32,
+    pub index_json: &'a str,
+    pub source_url: &'a str,
+    pub source_etag: Option<&'a str>,
+    pub csv_line_count: Option<i32>,
+    pub headword_count: Option<i32>,
+    pub ref_count: Option<i32>,
+    pub updated_at: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkItemUpdate {
     pub item_uid: Option<String>,

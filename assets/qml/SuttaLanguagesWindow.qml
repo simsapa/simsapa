@@ -29,6 +29,9 @@ ApplicationWindow {
 
     property var available_languages: []
     property var installed_languages_with_counts: []
+    // Set at the end of Component.onCompleted; read by onVisibleChanged, which
+    // runs before it on the first show.
+    property bool is_initialized: false
     property bool is_dark: theme_helper.is_dark
 
     ThemeHelper {
@@ -72,6 +75,10 @@ ApplicationWindow {
 
         function onDownloadsCompleted(success: bool) {
             root.is_downloading = false;
+            if (root.close_pending) {
+                root.notify_closed();
+                return;
+            }
             // Delegate to the progress frame's centralized retry logic
             if (download_progress_frame.handle_downloads_completed(success)) {
                 // All downloads complete - show completion screen
@@ -91,6 +98,10 @@ ApplicationWindow {
 
         function onRemovalCompleted(success: bool, error_msg: string) {
             root.is_removing = false;
+            if (root.close_pending) {
+                root.notify_closed();
+                return;
+            }
             if (success) {
                 completion_message.text = "Languages have been successfully removed.\n\nQuit and start the application again.";
                 views_stack.currentIndex = 2;
@@ -117,12 +128,65 @@ ApplicationWindow {
         if (root.is_mobile) {
             manager.set_keep_screen_on(true);
         }
+
+        root.is_initialized = true;
     }
 
     Component.onDestruction: {
         if (root.is_mobile) {
             manager.set_keep_screen_on(false);
         }
+    }
+
+    // Closing this window destroys it (WindowManager::on_window_closed), taking
+    // this engine's AssetManager and SuttaBridge instances with it. A download,
+    // import or removal reports through those instances, so the notify is held
+    // back until its completion handler runs.
+    //
+    // Deliberately NOT a refuse-to-close on desktop: today a desktop user can
+    // close this window and the download continues, and single-instance windows
+    // do not require taking that away. The refuse below stays mobile-only.
+    property bool close_pending: false
+
+    function notify_closed() {
+        root.close_pending = false;
+        logger.info("SuttaLanguagesWindow: notifying WindowManager of close");
+        SuttaBridge.notify_window_closed("sutta_languages");
+    }
+
+    // This window is single-instance and reused, so a re-open revives the same
+    // QML tree: Component.onCompleted does not run again. Without the re-init
+    // below, a window closed on the completion page (views_stack index 2, whose
+    // only control is "Quit") would reopen still showing it, with a stale
+    // installed-language list -- and before single-instance creation every open
+    // built a fresh window, so that would be a regression.
+    //
+    // A close that is pending only hid the window, and the wrapper is still in
+    // WindowManager's list, so the same re-open revives a window that is on its
+    // way out. Reviving it cancels the pending close -- otherwise the deferred
+    // notify arrives when the download or removal finishes and destroys the
+    // window the user is now looking at.
+    onVisibleChanged: {
+        if (!root.visible) {
+            return;
+        }
+        if (root.close_pending) {
+            root.close_pending = false;
+            logger.info("SuttaLanguagesWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+        // Skipped on the first show: `visible: true` makes this handler run
+        // before Component.onCompleted, which does the initial load.
+        if (!root.is_initialized) {
+            return;
+        }
+        // An operation revived with the window keeps its progress view; only an
+        // idle window goes back to the language list.
+        if (root.is_downloading || root.is_removing) {
+            return;
+        }
+        root.available_languages = manager.get_available_languages();
+        root.installed_languages_with_counts = SuttaBridge.get_sutta_language_labels_with_counts();
+        views_stack.currentIndex = 0;
     }
 
     // Guard the Android Back button while a download/import or removal is
@@ -132,7 +196,17 @@ ApplicationWindow {
         if (root.is_mobile && (root.is_downloading || root.is_removing) && !root.force_close) {
             close.accepted = false;
             back_guard_dialog.open();
+            return;
         }
+        if (!close.accepted) {
+            return;
+        }
+        if (root.is_downloading || root.is_removing) {
+            root.close_pending = true;
+            logger.info("SuttaLanguagesWindow: close deferred until the running operation finishes");
+            return;
+        }
+        root.notify_closed();
     }
 
     // Confirmation dialog for language removal

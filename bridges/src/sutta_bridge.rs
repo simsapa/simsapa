@@ -21,6 +21,7 @@ use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
+use simsapa_backend::cips_update;
 use simsapa_backend::update_checker;
 use simsapa_backend::types::SearchResult;
 use simsapa_backend::db::appdata_models::HistoryItemType;
@@ -137,9 +138,9 @@ fn spawn_file_selection_test(
         };
 
         let outcome_qstr = QString::from(&outcome);
-        qt_thread.queue(move |mut qo| {
+        crate::queue_or_log(&qt_thread, "sutta_bridge::spawn_file_selection_test", move |mut qo| {
             qo.as_mut().file_selection_test_completed(success, outcome_qstr);
-        }).unwrap();
+        });
     });
 }
 
@@ -937,6 +938,38 @@ pub mod qobject {
         #[cxx_name = "topicIndexLoaded"]
         fn topic_index_loaded_signal(self: Pin<&mut SuttaBridge>);
 
+        /// One stage of a CIPS index update started, or reported new detail
+        /// (the per-attempt download messages).
+        #[qsignal]
+        #[cxx_name = "topicIndexUpdateProgress"]
+        fn topic_index_update_progress(
+            self: Pin<&mut SuttaBridge>,
+            stage_index: i32,
+            total_stages: i32,
+            message: QString,
+        );
+
+        /// A CIPS index update finished. `summary_json` is the success summary
+        /// when `success` is true, and `{"cancelled": bool, "message": str}`
+        /// otherwise.
+        #[qsignal]
+        #[cxx_name = "topicIndexUpdateCompleted"]
+        fn topic_index_update_completed(
+            self: Pin<&mut SuttaBridge>,
+            success: bool,
+            summary_json: QString,
+        );
+
+        /// The index in use was replaced -- by an update or by a reset -- so
+        /// anything showing it must re-read.
+        ///
+        /// Deliberately NOT `topicIndexLoaded`, which drives each window's
+        /// first-load state machine out of its `Component.onCompleted` warm-up;
+        /// conflating them makes an update indistinguishable from a first load.
+        #[qsignal]
+        #[cxx_name = "topicIndexDataChanged"]
+        fn topic_index_data_changed(self: Pin<&mut SuttaBridge>);
+
         #[qsignal]
         #[cxx_name = "rebuildSearchIndexProgress"]
         fn rebuild_search_index_progress(self: Pin<&mut SuttaBridge>, message: QString);
@@ -1613,6 +1646,35 @@ pub mod qobject {
         #[qinvokable]
         fn open_topic_index_window(self: &SuttaBridge);
 
+        /// Fetch the current CIPS index and replace the one in use. Runs on a
+        /// background thread; reports through the three topic-index-update
+        /// signals above.
+        #[qinvokable]
+        fn update_topic_index(self: Pin<&mut SuttaBridge>);
+
+        /// Discard a downloaded index and go back to the one shipped with this
+        /// build. No network access.
+        #[qinvokable]
+        fn reset_topic_index(self: Pin<&mut SuttaBridge>);
+
+        /// JSON describing which index is in use and what is known about the
+        /// stored row.
+        #[qinvokable]
+        fn topic_index_source_info(self: &SuttaBridge) -> QString;
+
+        /// Is an update running anywhere in the process? Reads a Rust static,
+        /// not bridge state -- the bridge object is per-engine.
+        #[qinvokable]
+        fn is_topic_index_update_running(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn cancel_topic_index_update(self: &SuttaBridge);
+
+        /// Tell WindowManager that a single-instance secondary window has closed,
+        /// so it can drop it from its list and deleteLater() it.
+        #[qinvokable]
+        fn notify_window_closed(self: &SuttaBridge, window_type: &QString);
+
         // Chanting Practice functions
         #[qinvokable]
         fn open_chanting_practice_window(self: &SuttaBridge, window_id: &QString);
@@ -1849,6 +1911,27 @@ fn startup_report_error(kind: DbKind, label: &str) -> Option<String> {
     None
 }
 
+/// The payload of `topicIndexUpdateCompleted` when the run produced a plain
+/// message rather than a summary: a failure, a cancellation, or a reset's
+/// confirmation. The `success` argument of the signal says which.
+///
+/// A cancellation is flagged separately because the UI reports it differently
+/// from a failure, even though neither changes the stored index.
+fn update_message_json(cancelled: bool, message: &str) -> String {
+    serde_json::json!({ "cancelled": cancelled, "message": message }).to_string()
+}
+
+/// Best-effort text of a caught panic.
+fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = panic.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = panic.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
 #[derive(Default)]
 pub struct SuttaBridgeRust {
     db_loaded: bool,
@@ -1882,9 +1965,9 @@ impl qobject::SuttaBridge {
             // FIXME: should init AppData if not alrerady
             // let r = db::rust_backend_init_db();
             let r = true;
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::load_db", move |mut qo| {
                 qo.as_mut().set_db_loaded(r);
-            }).unwrap();
+            });
             info("SuttaBridge::load_db() end");
         });
     }
@@ -1899,9 +1982,9 @@ impl qobject::SuttaBridge {
             // this completes, so callers that haven't gated on
             // `searcher_ready` still no-op safely.
             simsapa_backend::init_fulltext_searcher();
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::load_searcher", move |mut qo| {
                 qo.as_mut().set_searcher_ready(true);
-            }).unwrap();
+            });
             info("SuttaBridge::load_searcher() end");
         });
     }
@@ -1911,9 +1994,9 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {
             simsapa_backend::init_sutta_references();
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::load_sutta_references", move |mut qo| {
                 qo.as_mut().set_sutta_references_loaded(true);
-            }).unwrap();
+            });
             info("SuttaBridge::load_sutta_references() end");
         });
     }
@@ -2016,9 +2099,9 @@ impl qobject::SuttaBridge {
                 QString::from(error_message)
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::appdata_first_query", move |mut qo| {
                 qo.as_mut().database_validation_result(QString::from("appdata"), is_valid, message);
-            }).unwrap();
+            });
 
             info("SuttaBridge::appdata_first_query() end");
         });
@@ -2072,9 +2155,9 @@ impl qobject::SuttaBridge {
                 QString::from(error_message)
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::dpd_first_query", move |mut qo| {
                 qo.as_mut().database_validation_result(QString::from("dpd"), is_valid, message);
-            }).unwrap();
+            });
 
             info("SuttaBridge::dpd_first_query() end");
         });
@@ -2130,9 +2213,9 @@ impl qobject::SuttaBridge {
                 QString::from(error_message)
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::dictionary_first_query", move |mut qo| {
                 qo.as_mut().database_validation_result(QString::from("dictionaries"), is_valid, message);
-            }).unwrap();
+            });
 
             info("SuttaBridge::dictionary_first_query() end");
         });
@@ -2289,9 +2372,9 @@ impl qobject::SuttaBridge {
                             direct_uids: page_direct_uids.clone(),
                         };
                         let json = serde_json::to_string(&results_page_data).unwrap_or_default();
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
                             qo.as_mut().results_page_ready(QString::from(json));
-                        }).unwrap();
+                        });
 
                         let total_pages = if page_len > 0 {
                             (total_hits as usize).div_ceil(page_len)
@@ -2345,9 +2428,9 @@ impl qobject::SuttaBridge {
                             }
                         }
                         let error_json = serde_json::json!({"error": format!("{}", e)}).to_string();
-                        qt_thread.queue(move |mut qo| {
+                        crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
                             qo.as_mut().results_page_ready(QString::from(error_json));
-                        }).unwrap();
+                        });
                     }
                 }
                 return;
@@ -2377,9 +2460,9 @@ impl qobject::SuttaBridge {
                                 direct_uids: page_direct_uids.clone(),
                             };
                             let json = serde_json::to_string(&results_page).unwrap_or_default();
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
                                 qo.as_mut().results_page_ready(QString::from(json));
-                            }).unwrap();
+                            });
 
                             // If the user reached the highest cached page, prefetch the next 2
                             let max_cached = cache.pages.keys().max().copied().unwrap_or(0);
@@ -2438,9 +2521,9 @@ impl qobject::SuttaBridge {
                         direct_uids: page_direct_uids.clone(),
                     };
                     let json = serde_json::to_string(&results_page_data).unwrap_or_default();
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
                         qo.as_mut().results_page_ready(QString::from(json));
-                    }).unwrap();
+                    });
 
                     // Prefetch: next page immediately (so page+1 is ready), then 2 more in background
                     let total_pages = if page_len > 0 {
@@ -2479,9 +2562,9 @@ impl qobject::SuttaBridge {
                 Err(e) => {
                     error(&e.to_string());
                     let error_json = serde_json::json!({"error": format!("{}", e)}).to_string();
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
                         qo.as_mut().results_page_ready(QString::from(error_json));
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -2517,9 +2600,9 @@ impl qobject::SuttaBridge {
                 );
 
                 let json = serde_json::json!({"debug_text": debug_text}).to_string();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::debug_query", move |mut qo| {
                     qo.as_mut().debug_query_ready(QString::from(json));
-                }).unwrap();
+                });
                 return;
             }
 
@@ -2574,9 +2657,9 @@ impl qobject::SuttaBridge {
                 }
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::debug_query", move |mut qo| {
                 qo.as_mut().debug_query_ready(QString::from(json));
-            }).unwrap();
+            });
         });
     }
 
@@ -2623,9 +2706,9 @@ impl qobject::SuttaBridge {
             let query_id_qstring = QString::from(query_id_string);
 
             // Emit signal with the query_id and results
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::dpd_lookup_json_async", move |mut qo| {
                 qo.as_mut().dpd_lookup_ready(query_id_qstring, results_json);
-            }).unwrap();
+            });
 
             info("SuttaBridge::dpd_lookup_json_async() end");
         });
@@ -2648,9 +2731,9 @@ impl qobject::SuttaBridge {
             let grouped_json = QString::from(s);
             let query_id_qstring = QString::from(query_id_string);
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::dpd_lookup_grouped_json_async", move |mut qo| {
                 qo.as_mut().dpd_lookup_grouped_ready(query_id_qstring, grouped_json);
-            }).unwrap();
+            });
 
             info("SuttaBridge::dpd_lookup_grouped_json_async() end");
         });
@@ -3185,7 +3268,7 @@ impl qobject::SuttaBridge {
             let report_json = serde_json::to_string(&report).unwrap_or_default();
             info(&format!("SuttaBridge::update_model_lists() end: {}", report.summary()));
 
-            let _ = qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::update_model_lists", move |mut qo| {
                 qo.as_mut().model_lists_updated(success, QString::from(&report_json));
             });
         });
@@ -3401,11 +3484,9 @@ impl qobject::SuttaBridge {
             let json = serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string());
             let item_type_q = QString::from(&item_type_str);
             let json_q = QString::from(&json);
-            qt_thread
-                .queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::get_history_json_background", move |mut qo| {
                     qo.as_mut().history_list_ready(item_type_q, json_q);
-                })
-                .unwrap();
+                });
         });
     }
 
@@ -3439,11 +3520,9 @@ impl qobject::SuttaBridge {
             // dirty for the next retry and does not clobber current_session_id).
             let item_type_q = QString::from(&item_type_str);
             let id_q = QString::from(&resolved_id.unwrap_or_default());
-            qt_thread
-                .queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::save_history_session_background", move |mut qo| {
                     qo.as_mut().history_saved(item_type_q, id_q);
-                })
-                .unwrap();
+                });
         });
     }
 
@@ -3484,11 +3563,9 @@ impl qobject::SuttaBridge {
                 error(&format!("delete_history_item: {}", e));
             }
             let item_type_q = QString::from(&item_type_str);
-            qt_thread
-                .queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::delete_history_item", move |mut qo| {
                     qo.as_mut().history_changed(item_type_q);
-                })
-                .unwrap();
+                });
         });
     }
 
@@ -3511,11 +3588,9 @@ impl qobject::SuttaBridge {
                 error(&format!("clear_history: {}", e));
             }
             let item_type_q = QString::from(&item_type_str);
-            qt_thread
-                .queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::clear_history", move |mut qo| {
                     qo.as_mut().history_changed(item_type_q);
-                })
-                .unwrap();
+                });
         });
     }
 
@@ -3918,25 +3993,25 @@ impl qobject::SuttaBridge {
             let result = match doc_type.as_str() {
                 "epub" => {
                     let progress_msg = QString::from("Importing EPUB...");
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_progress(progress_msg);
-                    }).unwrap();
+                    });
 
                     app_data.import_epub_to_db(path, &uid_str, custom_title, custom_author, custom_language, None, true)
                 }
                 "pdf" => {
                     let progress_msg = QString::from("Importing PDF...");
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_progress(progress_msg);
-                    }).unwrap();
+                    });
 
                     app_data.import_pdf_to_db(path, &uid_str, custom_title, custom_author, custom_language, None, true)
                 }
                 "html" => {
                     let progress_msg = QString::from("Importing HTML...");
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_progress(progress_msg);
-                    }).unwrap();
+                    });
 
                     // TODO: Pass split_tag parameter when html_import supports it
                     // For now, HTML is imported as a single spine item
@@ -3946,9 +4021,9 @@ impl qobject::SuttaBridge {
                     let error_msg = format!("Unknown document type: {}", doc_type);
                     error(&error_msg);
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_completed(false, error_qstr);
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -3971,17 +4046,17 @@ impl qobject::SuttaBridge {
                     simsapa_backend::reinit_fulltext_searcher();
 
                     let success_msg = QString::from(format!("Successfully imported '{}'", &title_str));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_completed(true, success_msg);
-                    }).unwrap();
+                    });
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to import: {}", e);
                     error(&error_msg);
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
                         qo.as_mut().document_import_completed(false, error_qstr);
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -4028,9 +4103,9 @@ impl qobject::SuttaBridge {
 
         thread::spawn(move || {
             let progress_msg = QString::from("Rebuilding search index...");
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                 qo.as_mut().rebuild_search_index_progress(progress_msg);
-            }).unwrap();
+            });
 
             let app_data = get_app_data();
             let globals = get_app_globals();
@@ -4039,25 +4114,25 @@ impl qobject::SuttaBridge {
             // Delete existing index directories to rebuild from scratch
             if let Ok(true) = paths.index_dir.try_exists() {
                 let msg = QString::from("Removing old index...");
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                     qo.as_mut().rebuild_search_index_progress(msg);
-                }).unwrap();
+                });
 
                 if let Err(e) = std::fs::remove_dir_all(&paths.index_dir) {
                     let error_msg = format!("Failed to remove old index: {}", e);
                     error(&error_msg);
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                         qo.as_mut().rebuild_search_index_completed(false, error_qstr);
-                    }).unwrap();
+                    });
                     return;
                 }
             }
 
             let msg = QString::from("Building fulltext indexes for all languages...");
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                 qo.as_mut().rebuild_search_index_progress(msg);
-            }).unwrap();
+            });
 
             match simsapa_backend::search::indexer::build_all_indexes(
                 &app_data.dbm.appdata,
@@ -4071,17 +4146,17 @@ impl qobject::SuttaBridge {
 
                     info("rebuild_search_index: completed successfully");
                     let success_msg = QString::from("Search index rebuilt successfully.");
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                         qo.as_mut().rebuild_search_index_completed(true, success_msg);
-                    }).unwrap();
+                    });
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to rebuild search index: {}", e);
                     error(&error_msg);
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
                         qo.as_mut().rebuild_search_index_completed(false, error_qstr);
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -4126,9 +4201,9 @@ impl qobject::SuttaBridge {
             };
 
             let summary_qstr = QString::from(&summary);
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::run_storage_diagnostics", move |mut qo| {
                 qo.as_mut().storage_diagnostics_completed(success, summary_qstr);
-            }).unwrap();
+            });
         });
     }
 
@@ -4293,17 +4368,17 @@ impl qobject::SuttaBridge {
                     }
 
                     let success_msg = QString::from(format!("Successfully updated metadata for '{}'", &title_str));
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::update_book_metadata", move |mut qo| {
                         qo.as_mut().book_metadata_updated(true, success_msg);
-                    }).unwrap();
+                    });
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to update book metadata: {}", e);
                     error(&error_msg);
                     let error_qstr = QString::from(&error_msg);
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::update_book_metadata", move |mut qo| {
                         qo.as_mut().book_metadata_updated(false, error_qstr);
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -4336,9 +4411,9 @@ impl qobject::SuttaBridge {
                 Ok(data) => data,
                 Err(e) => {
                     let error_response = Self::create_error_response(&format!("Failed to parse input JSON: {}", e));
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_all_paragraphs_background", move |mut qo| {
                         qo.as_mut().all_paragraphs_gloss_ready(QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -4355,9 +4430,9 @@ impl qobject::SuttaBridge {
                 Ok(response) => response,
                 Err(e) => {
                     let error_response = Self::create_error_response(&e);
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_all_paragraphs_background", move |mut qo| {
                         qo.as_mut().all_paragraphs_gloss_ready(QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -4366,16 +4441,16 @@ impl qobject::SuttaBridge {
                 Ok(json) => json,
                 Err(e) => {
                     let error_response = Self::create_error_response(&format!("Failed to serialize response: {}", e));
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_all_paragraphs_background", move |mut qo| {
                         qo.as_mut().all_paragraphs_gloss_ready(QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
 
-            self_.queue(move |mut qo| {
+            crate::queue_or_log(&self_, "sutta_bridge::process_all_paragraphs_background", move |mut qo| {
                 qo.as_mut().all_paragraphs_gloss_ready(QString::from(response_json));
-            }).unwrap();
+            });
         });
     }
 
@@ -4390,9 +4465,9 @@ impl qobject::SuttaBridge {
                 Ok(data) => data,
                 Err(e) => {
                     let error_response = Self::create_error_response(&format!("Failed to parse input JSON: {}", e));
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_paragraph_background", move |mut qo| {
                         qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -4410,9 +4485,9 @@ impl qobject::SuttaBridge {
                 Ok(response) => response,
                 Err(e) => {
                     let error_response = Self::create_error_response(&e);
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_paragraph_background", move |mut qo| {
                         qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -4421,16 +4496,16 @@ impl qobject::SuttaBridge {
                 Ok(json) => json,
                 Err(e) => {
                     let error_response = Self::create_error_response(&format!("Failed to serialize response: {}", e));
-                    self_.queue(move |mut qo| {
+                    crate::queue_or_log(&self_, "sutta_bridge::process_paragraph_background", move |mut qo| {
                         qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(error_response));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
 
-            self_.queue(move |mut qo| {
+            crate::queue_or_log(&self_, "sutta_bridge::process_paragraph_background", move |mut qo| {
                 qo.as_mut().paragraph_gloss_ready(paragraph_index, QString::from(response_json));
-            }).unwrap();
+            });
         });
     }
 
@@ -4545,9 +4620,9 @@ impl qobject::SuttaBridge {
                         error: Some(format!("Failed to parse input JSON: {}", e)),
                     };
                     let error_json = serde_json::to_string(&error_response).unwrap_or_default();
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::export_anki_csv_background", move |mut qo| {
                         qo.as_mut().anki_csv_export_ready(QString::from(error_json));
-                    }).unwrap();
+                    });
                     return;
                 }
             };
@@ -4573,9 +4648,9 @@ impl qobject::SuttaBridge {
                 }
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::export_anki_csv_background", move |mut qo| {
                 qo.as_mut().anki_csv_export_ready(QString::from(result_json));
-            }).unwrap();
+            });
 
             info("SuttaBridge::export_anki_csv_background() end");
         });
@@ -4601,9 +4676,9 @@ impl qobject::SuttaBridge {
                 Err(e) => format!("<span style='color: red;'>Preview error: {}</span>", e),
             };
 
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::render_anki_preview_background", move |mut qo| {
                 qo.as_mut().anki_preview_ready(QString::from(preview_html));
-            }).unwrap();
+            });
 
             info("SuttaBridge::render_anki_preview_background() end");
         });
@@ -4899,10 +4974,10 @@ impl qobject::SuttaBridge {
                 db_version.as_deref(),
             ) {
                 let json = serde_json::to_string(&obsolete_info).unwrap_or_default();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().local_db_obsolete(QString::from(json));
                     qo.as_mut().releases_check_completed();
-                }).unwrap();
+                });
                 info("SuttaBridge::check_for_updates() - local db obsolete");
                 return;
             }
@@ -4935,10 +5010,10 @@ impl qobject::SuttaBridge {
                             // usable: report the failure to the user.
                             let error_msg = format!("Failed to fetch updates: {}", e);
                             error(&error_msg);
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                                 qo.as_mut().update_check_error(QString::from(error_msg));
                                 qo.as_mut().releases_check_completed();
-                            }).unwrap();
+                            });
                             info("SuttaBridge::check_for_updates() - fetch error, no fallback");
                             return;
                         }
@@ -4953,10 +5028,10 @@ impl qobject::SuttaBridge {
                     app_update.release_notes = Some(markdown_to_html(notes));
                 }
                 let json = serde_json::to_string(&app_update).unwrap_or_default();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().app_update_available(QString::from(json));
                     qo.as_mut().releases_check_completed();
-                }).unwrap();
+                });
                 info("SuttaBridge::check_for_updates() - app update available");
                 return;
             }
@@ -4972,24 +5047,24 @@ impl qobject::SuttaBridge {
                     db_update.release_notes = Some(markdown_to_html(notes));
                 }
                 let json = serde_json::to_string(&db_update).unwrap_or_default();
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().db_update_available(QString::from(json));
                     qo.as_mut().releases_check_completed();
-                }).unwrap();
+                });
                 info("SuttaBridge::check_for_updates() - db update available");
                 return;
             }
 
             // No updates available
             if include_no_updates {
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().no_updates_available();
                     qo.as_mut().releases_check_completed();
-                }).unwrap();
+                });
             } else {
-                qt_thread.queue(move |mut qo| {
+                crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().releases_check_completed();
-                }).unwrap();
+                });
             }
 
             info("SuttaBridge::check_for_updates() - no updates available");
@@ -5118,9 +5193,9 @@ impl qobject::SuttaBridge {
                             if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                                 *guard = None;
                             }
-                            qt_thread.queue(|mut qo| {
+                            crate::queue_or_log(&qt_thread, "sutta_bridge::prepare_for_database_upgrade", |mut qo| {
                                 qo.as_mut().export_succeeded();
-                            }).unwrap();
+                            });
                         }
                         Err(marker_errors) => {
                             let reason = format_category_errors(&marker_errors);
@@ -5131,9 +5206,9 @@ impl qobject::SuttaBridge {
                             if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                                 *guard = Some(reason.clone());
                             }
-                            qt_thread.queue(move |mut qo| {
+                            crate::queue_or_log(&qt_thread, "sutta_bridge::prepare_for_database_upgrade", move |mut qo| {
                                 qo.as_mut().export_failed(QString::from(&reason));
-                            }).unwrap();
+                            });
                         }
                     }
                 }
@@ -5146,9 +5221,9 @@ impl qobject::SuttaBridge {
                     if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                         *guard = Some(reason.clone());
                     }
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::prepare_for_database_upgrade", move |mut qo| {
                         qo.as_mut().export_failed(QString::from(&reason));
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -5193,9 +5268,9 @@ impl qobject::SuttaBridge {
                     if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                         *guard = None;
                     }
-                    qt_thread.queue(|mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::force_database_upgrade", |mut qo| {
                         qo.as_mut().export_succeeded();
-                    }).unwrap();
+                    });
                 }
                 Err(marker_errors) => {
                     let reason = format_category_errors(&marker_errors);
@@ -5206,9 +5281,9 @@ impl qobject::SuttaBridge {
                     if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                         *guard = Some(reason.clone());
                     }
-                    qt_thread.queue(move |mut qo| {
+                    crate::queue_or_log(&qt_thread, "sutta_bridge::force_database_upgrade", move |mut qo| {
                         qo.as_mut().export_failed(QString::from(&reason));
-                    }).unwrap();
+                    });
                 }
             }
         });
@@ -5253,11 +5328,11 @@ impl qobject::SuttaBridge {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {
             // Load the topic index (this caches it for future use)
-            let _ = topic_index::load_topic_index();
-            qt_thread.queue(move |mut qo| {
+            topic_index::ensure_topic_index_loaded();
+            crate::queue_or_log(&qt_thread, "sutta_bridge::load_topic_index", move |mut qo| {
                 qo.as_mut().set_topic_index_loaded(true);
                 qo.as_mut().topic_index_loaded_signal();
-            }).unwrap();
+            });
             info("SuttaBridge::load_topic_index() end");
         });
     }
@@ -5343,6 +5418,147 @@ impl qobject::SuttaBridge {
     pub fn open_topic_index_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_topic_index_window();
+    }
+
+    /// Fetch the current CIPS index from GitHub, parse it, validate it and
+    /// store it -- all on a background thread.
+    ///
+    /// Nothing here touches `topic_index_loaded`: that property means "the
+    /// in-memory cache is populated", which stays true throughout an update.
+    /// Every queue goes through `queue_or_log()`, because this window is
+    /// destroyed on close and can easily outlive the run.
+    pub fn update_topic_index(self: Pin<&mut Self>) {
+        info("SuttaBridge::update_topic_index() start");
+
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            let progress = |stage_index: u32, total_stages: u32, message: &str| {
+                let msg = QString::from(message);
+                crate::queue_or_log(&qt_thread, "sutta_bridge::update_topic_index", move |mut qo| {
+                    qo.as_mut().topic_index_update_progress(
+                        stage_index as i32,
+                        total_stages as i32,
+                        msg,
+                    );
+                });
+            };
+
+            // A panic in the worker must still complete the run, or the window
+            // waits on a progress bar that will never move again.
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                cips_update::run_update(&progress)
+            }));
+
+            let (success, summary_json) = match outcome {
+                Ok(Ok(summary)) => (true, summary.to_json()),
+                Ok(Err(e)) => {
+                    error(&format!("update_topic_index: {}", e.message));
+                    (false, update_message_json(e.cancelled, &e.message))
+                }
+                Err(panic) => {
+                    let msg = panic_message(panic);
+                    error(&format!("update_topic_index: panicked: {}", msg));
+                    (
+                        false,
+                        update_message_json(
+                            false,
+                            &format!(
+                                "The index update failed unexpectedly ({}). The index in use has not been changed.",
+                                msg
+                            ),
+                        ),
+                    )
+                }
+            };
+
+            let summary_qstr = QString::from(&summary_json);
+            crate::queue_or_log(&qt_thread, "sutta_bridge::update_topic_index", move |mut qo| {
+                if success {
+                    // The data changed first, so a handler re-reading the index
+                    // in response to the completion signal already sees the new
+                    // one.
+                    qo.as_mut().topic_index_data_changed();
+                }
+                qo.as_mut().topic_index_update_completed(success, summary_qstr);
+            });
+
+            info("SuttaBridge::update_topic_index() end");
+        });
+    }
+
+    /// Discard a downloaded index and go back to the one shipped with this build.
+    ///
+    /// Spawned rather than run inline: it does no network access, but it
+    /// re-parses the 2.3 MB embedded JSON, which is on the order of 100-300 ms
+    /// on a mid-range Android device -- not GUI-thread work. There is still no
+    /// progress window either way.
+    pub fn reset_topic_index(self: Pin<&mut Self>) {
+        info("SuttaBridge::reset_topic_index() start");
+
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            let (success, summary_json) = match topic_index::reset_topic_index() {
+                Ok(()) => (
+                    true,
+                    update_message_json(false, "The index shipped with this version of Simsapa is now in use."),
+                ),
+                Err(e) => {
+                    error(&format!("reset_topic_index: {}", e));
+                    (
+                        false,
+                        update_message_json(
+                            false,
+                            &format!("The index could not be reset: {}", e),
+                        ),
+                    )
+                }
+            };
+
+            let summary_qstr = QString::from(&summary_json);
+            crate::queue_or_log(&qt_thread, "sutta_bridge::reset_topic_index", move |mut qo| {
+                if success {
+                    qo.as_mut().topic_index_data_changed();
+                }
+                qo.as_mut().topic_index_update_completed(success, summary_qstr);
+            });
+
+            info("SuttaBridge::reset_topic_index() end");
+        });
+    }
+
+    /// Which index is in use, and what is known about the stored row.
+    pub fn topic_index_source_info(&self) -> QString {
+        let info_data = topic_index::topic_index_source_info();
+        match serde_json::to_string(&info_data) {
+            Ok(json) => QString::from(&json),
+            Err(e) => {
+                error(&format!("Failed to serialize topic index source info: {}", e));
+                QString::from("{}")
+            }
+        }
+    }
+
+    /// Is an index update running? Reads the backend static, so it is true for
+    /// a run any window started.
+    pub fn is_topic_index_update_running(&self) -> bool {
+        cips_update::is_update_running()
+    }
+
+    /// Ask a running update to stop. It lands at the next stage boundary, or
+    /// within about a second if the run is waiting to retry a download.
+    pub fn cancel_topic_index_update(&self) {
+        cips_update::cancel_update();
+    }
+
+    /// Called from a window's QML onClosing handler once the close has been
+    /// accepted and any operation that window started has finished. The window
+    /// is destroyed, so nothing may be queued back to this bridge instance
+    /// afterwards -- it goes with the engine.
+    pub fn notify_window_closed(&self, window_type: &QString) {
+        use crate::api::ffi;
+        ffi::callback_window_closed(window_type.clone());
     }
 
     // =========================================================================
@@ -5638,9 +5854,9 @@ impl qobject::SuttaBridge {
             // Emit signal back to QML
             let uid_qstr = QString::from(&uid_str);
             let json_qstr = QString::from(&waveform_json);
-            qt_thread.queue(move |mut qo| {
+            crate::queue_or_log(&qt_thread, "sutta_bridge::generate_waveform_data", move |mut qo| {
                 qo.as_mut().waveform_data_ready(uid_qstr, json_qstr);
-            }).unwrap();
+            });
         });
     }
 

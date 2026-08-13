@@ -259,6 +259,23 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    /// Single-row store (`id = 1`) for a CIPS topic index downloaded from
+    /// within the app. Empty means "use the index embedded in this build".
+    topic_index_data (id) {
+        id -> Integer,
+        index_json -> Text,
+        source_url -> Text,
+        source_etag -> Nullable<Text>,
+        csv_line_count -> Nullable<Integer>,
+        headword_count -> Nullable<Integer>,
+        ref_count -> Nullable<Integer>,
+        // Fixed-width UTC ISO 8601 to the second ("YYYY-MM-DDTHH:MM:SSZ"), so
+        // it can be string-compared against `cips_general_index_date()`.
+        updated_at -> Text,
+    }
+}
+
 diesel::joinable!(sutta_variants -> suttas (sutta_id));
 diesel::joinable!(sutta_comments -> suttas (sutta_id));
 diesel::joinable!(sutta_glosses -> suttas (sutta_id));
@@ -284,4 +301,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     gloss_prompts_history,
     gloss_word_context_cache,
     gloss_phrase_selections,
+    topic_index_data,
 );
