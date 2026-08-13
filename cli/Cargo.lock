@@ -4508,6 +4508,7 @@ dependencies = [
  "tinytemplate",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "urlencoding",
  "walkdir",
  "zip 2.4.2",

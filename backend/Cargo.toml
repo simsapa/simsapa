@@ -28,6 +28,9 @@ anyhow = "1.0"
 thiserror = "2.0"
 stardict = { version = "0.2.2", features = ["sqlite"] }
 lazy_static = "1.5.0"
+# NFD decomposition for the CIPS index parser's diacritic stripping
+# (`cips_parse::normalize_diacritic_string`). Same version the `cli` crate uses.
+unicode-normalization = "0.1"
 html-escape = "0.2.13"
 markdown = "1.0.0"
 parking_lot = "0.12.3"

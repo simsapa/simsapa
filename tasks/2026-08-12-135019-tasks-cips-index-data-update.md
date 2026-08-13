@@ -488,20 +488,80 @@ agreement. Move the long explanatory comments with the code.
 output, land the CSV-scan warnings only and leave those two printing — and
 **record which was done**.
 
-- [ ] 3.0 Phase 2 — move the CIPS parser into `backend/src/cips_parse.rs` with single type definitions, a string entry point and returned diagnostics, leaving the CLI's output byte-identical (FR-1 … FR-8a)
-  - [ ] 3.0a **Obtain the CSV — it is not in the tree.** `Makefile:67` passes `../../src-lib/CIPS/src/data/general-index.csv`, which **does not exist** on this machine (checked 2026-08-12). Either clone the CIPS repository to that path or download the raw CSV once from FR-16's URL. **Copy it to the scratchpad and use that pinned copy for both baseline and post-move runs** — re-downloading between them would change the input and make the diff meaningless.
-  - [ ] 3.1 **Capture the baseline first.** Run the existing CLI `parse-cips-index` against the **pinned** CSV from 3.0a and the `SIMSAPA_DIR` database, saving the generated JSON and the full stderr/stdout to the scratchpad. This is the reference for success metric 2 and cannot be recreated after the move.
-  - [ ] 3.2 Add `unicode-normalization` to `backend/Cargo.toml` (FR-2), matching the version the `cli` crate uses.
-  - [ ] 3.3 Create `backend/src/cips_parse.rs` and register `pub mod cips_parse;` in `backend/src/lib.rs`. Move the whole parser body across, importing the four data structs from `crate::topic_index` and `latinize` from `crate::helpers` (crate-local now, not the external `simsapa_backend::helpers` path).
-  - [ ] 3.4 Delete the duplicate `TopicIndexRef` / `TopicIndexEntry` / `TopicIndexHeadword` / `TopicIndexLetter` declarations from the CLI parser (FR-3). If the CLI copy's extra doc comment says anything the backend copy does not, carry the wording over to the backend declaration first.
-  - [ ] 3.5 Split `parse_csv()` into `parse_csv_str(csv: &str) -> (Vec<CsvRow>, Vec<String>)` (FR-5), returning the malformed-line warnings instead of `eprintln!`ing them at `:270`. Keep the warning text character-for-character identical.
-  - [ ] 3.6 Add `parse_cips_index_str()` returning `CipsParseOutcome` (FR-4), and keep the path-taking `parse_cips_index()` as a thin `fs::read_to_string` + delegate wrapper returning the same type.
-  - [ ] 3.7 Attempt FR-6: thread a `&mut Vec<String>` warnings sink through `IndexBuilder::add_row` / `build` so `parse_custom_locator`'s two `eprintln!`s (`:333`, `:361`) become returned diagnostics merged into `CipsParseOutcome::warnings`. If this disturbs the builder enough to threaten byte-identical output, revert just this sub-task, leave the two prints in place, and record the decision in the commit message, in `docs/cips-index-updates.md`, **and in a short comment at each of the two surviving `eprintln!`s** — the next reader of that code will not be reading the commit log.
-  - [ ] 3.8 Move both `#[cfg(test)]` blocks (`:215`, `:884`) into `backend/src/cips_parse.rs` **unchanged**, including `compare_locators` and its equivalence test (FR-7). Adjust only `use` paths.
-  - [ ] 3.9 Reduce `cli/src/bootstrap/parse_cips_index.rs` to `parse_cips_to_json()`, now calling `simsapa_backend::cips_parse::parse_cips_index()` and printing the returned warnings before the validator output. Update `cli/src/bootstrap/mod.rs` re-exports.
-  - [ ] 3.10 Repoint `cli/src/main.rs:772`'s `use bootstrap::parse_cips_index::SuttaSegments` at `simsapa_backend::cips_parse::SuttaSegments`, and fix any other CLI import of the moved types (FR-3a).
-  - [ ] 3.11 `cd backend && cargo test` — every moved parser test must pass unchanged (success metric 1). Then build the CLI.
-  - [ ] 3.12 Re-run the CLI command from 3.1 and `diff` the JSON against the baseline: it must be **byte-identical** (success metric 2). Diff the console output too, and confirm the only difference is the *position* of warning lines, which FR-8a permits — any changed or missing warning line is a defect.
+- [x] 3.0 Phase 2 — move the CIPS parser into `backend/src/cips_parse.rs` with single type definitions, a string entry point and returned diagnostics, leaving the CLI's output byte-identical (FR-1 … FR-8a)
+  - [x] 3.0a **Obtain the CSV — it is not in the tree.** `Makefile:67` passes `../../src-lib/CIPS/src/data/general-index.csv`, which **does not exist** on this machine (checked 2026-08-12). Either clone the CIPS repository to that path or download the raw CSV once from FR-16's URL. **Copy it to the scratchpad and use that pinned copy for both baseline and post-move runs** — re-downloading between them would change the input and make the diff meaningless.
+  - [x] 3.1 **Capture the baseline first.** Run the existing CLI `parse-cips-index` against the **pinned** CSV from 3.0a and the `SIMSAPA_DIR` database, saving the generated JSON and the full stderr/stdout to the scratchpad. This is the reference for success metric 2 and cannot be recreated after the move.
+
+    **Baseline captured 2026-08-13.** Pinned CSV: `scratchpad/cips/general-index.csv`,
+    1,120,102 bytes, 21,792 lines, every line exactly 3 tab-separated fields,
+    `ETag "79356bff…6e40ce"`, md5 `669eb16f2111ce5cebdcae2f14b33db6` — matching
+    the PRD's 2026-08-12 measurements exactly. Baseline artifacts:
+    `baseline-general-index.json` (2,328,764 bytes, md5
+    `a1ec1ad06560f84599e8e87d9206c8ca`), `baseline-stdout.txt` (7 lines),
+    `baseline-stderr.txt`. The run reported 7288 Pāli sutta titles loaded, 3203
+    headwords parsed, and anchor validation `1579 checked, 1573 ok, 0 unresolved
+    uid, 0 no segments, 6 missing segment` (the six listed under `dn33:1.7.9.1`,
+    `dn20:4.11`–`4.15`). **No malformed-CSV warnings and no `parse_custom_locator`
+    warnings are produced by this input**, so FR-8a's "position of warning lines
+    may change" is untestable against it — the diff in 3.12 must be exact.
+  - [x] 3.2 Add `unicode-normalization` to `backend/Cargo.toml` (FR-2), matching the version the `cli` crate uses.
+  - [x] 3.3 Create `backend/src/cips_parse.rs` and register `pub mod cips_parse;` in `backend/src/lib.rs`. Move the whole parser body across, importing the four data structs from `crate::topic_index` and `latinize` from `crate::helpers` (crate-local now, not the external `simsapa_backend::helpers` path).
+  - [x] 3.4 Delete the duplicate `TopicIndexRef` / `TopicIndexEntry` / `TopicIndexHeadword` / `TopicIndexLetter` declarations from the CLI parser (FR-3). If the CLI copy's extra doc comment says anything the backend copy does not, carry the wording over to the backend declaration first.
+  - [x] 3.5 Split `parse_csv()` into `parse_csv_str(csv: &str) -> (Vec<CsvRow>, Vec<String>)` (FR-5), returning the malformed-line warnings instead of `eprintln!`ing them at `:270`. Keep the warning text character-for-character identical.
+  - [x] 3.6 Add `parse_cips_index_str()` returning `CipsParseOutcome` (FR-4), and keep the path-taking `parse_cips_index()` as a thin `fs::read_to_string` + delegate wrapper returning the same type.
+  - [x] 3.7 Attempt FR-6: thread a `&mut Vec<String>` warnings sink through `IndexBuilder::add_row` / `build` so `parse_custom_locator`'s two `eprintln!`s (`:333`, `:361`) become returned diagnostics merged into `CipsParseOutcome::warnings`. If this disturbs the builder enough to threaten byte-identical output, revert just this sub-task, leave the two prints in place, and record the decision in the commit message, in `docs/cips-index-updates.md`, **and in a short comment at each of the two surviving `eprintln!`s** — the next reader of that code will not be reading the commit log.
+  - [x] 3.8 Move both `#[cfg(test)]` blocks (`:215`, `:884`) into `backend/src/cips_parse.rs` **unchanged**, including `compare_locators` and its equivalence test (FR-7). Adjust only `use` paths.
+  - [x] 3.9 Reduce `cli/src/bootstrap/parse_cips_index.rs` to `parse_cips_to_json()`, now calling `simsapa_backend::cips_parse::parse_cips_index()` and printing the returned warnings before the validator output. Update `cli/src/bootstrap/mod.rs` re-exports.
+  - [x] 3.10 Repoint `cli/src/main.rs:772`'s `use bootstrap::parse_cips_index::SuttaSegments` at `simsapa_backend::cips_parse::SuttaSegments`, and fix any other CLI import of the moved types (FR-3a).
+  - [x] 3.11 `cd backend && cargo test` — every moved parser test must pass unchanged (success metric 1). Then build the CLI.
+  - [x] 3.12 Re-run the CLI command from 3.1 and `diff` the JSON against the baseline: it must be **byte-identical** (success metric 2). Diff the console output too, and confirm the only difference is the *position* of warning lines, which FR-8a permits — any changed or missing warning line is a defect.
+
+### Notes from 3.0 (phase 2, completed 2026-08-13)
+
+- **Success metric 2 met: the JSON is byte-identical** (`cmp` clean,
+  2,328,764 bytes, md5 `a1ec1ad06560f84599e8e87d9206c8ca`). stderr is
+  **identical line for line**, including the anchor-validation summary and its
+  six `missing segment` lines. The only stdout difference is the echoed output
+  *path*, which differs because the two runs were told to write different
+  filenames — not a behaviour change.
+- **The file was `git mv`'d**, not retyped, so the diff shows exactly what
+  changed and the untouched logic is provably untouched.
+- **FR-6 was done in full — no escape hatch taken.** The warnings sink is
+  threaded `build()` → `parse_sutta_ref()` → `parse_custom_locator()`.
+  `add_row()` did **not** need it: it never calls the locator parser, so the
+  sink touches one call chain rather than the whole builder, which is why this
+  was far less invasive than the PRD feared. Both surviving `eprintln!`s are
+  gone; the only printing left in the CIPS path is
+  `cli/src/bootstrap/parse_cips_index.rs`.
+- **Warning strings drop the `Warning: ` prefix** and the CLI adds it back when
+  printing (`eprintln!("Warning: {}", w)`), matching how `validate_index`
+  warnings have always been handled. The printed lines are therefore unchanged
+  character-for-character, and the app's report gets clean message text with no
+  console-shaped prefix baked in.
+- **FR-8a's permitted deviation was not exercised.** This CSV produces **zero**
+  malformed-line and zero locator warnings, so nothing moved position. That also
+  means the CLI diff proves nothing about the sink, which is why 3.8 added three
+  new unit tests that do:
+  `test_parse_csv_str_returns_malformed_line_warnings`,
+  `test_parse_custom_locator_returns_its_warnings`, and
+  `test_parse_cips_index_str_merges_both_warning_sources` (which pins the
+  CSV-scan-then-locator ordering).
+- **The moved tests are character-identical.** `parse_custom_locator` and
+  `parse_sutta_ref` now take a sink, which would have forced an edit at four
+  test call sites; instead the test module defines two same-named shadowing
+  wrappers over `super::`, so every test body reads exactly as before. Test
+  count: 26 moved + 3 new = 29, all passing; full backend suite green (59 test
+  binaries).
+- **3.4 deviation — one doc line deliberately not carried over.** The CLI copy
+  of `TopicIndexRef` carried an extra line on the `sutta_ref` field, *"For xref
+  type: target headword name"*. It is **wrong**: xref refs set `sutta_ref: None`
+  and put the target in `ref_target` (which has its own accurate doc line).
+  Copying it into the surviving declaration would have propagated a stale
+  comment, so it was dropped rather than merged. Nothing else differed between
+  the two copies.
+- `docs/sutta-display-settings-and-multi-column-view.md:554` named the CLI
+  parser as where the suffixes/anchors are pre-computed; repointed at
+  `backend/src/cips_parse.rs`.
 
 ---
 

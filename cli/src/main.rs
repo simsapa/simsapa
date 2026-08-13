@@ -769,7 +769,7 @@ fn import_language(db_path: &Path, language_db_path: &Path) -> Result<(), String
 /// Parse CIPS general-index.csv and generate JSON for topic index
 fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&Path>, minify: bool) -> Result<(), String> {
     use simsapa_backend::db::appdata_schema::suttas;
-    use bootstrap::parse_cips_index::SuttaSegments;
+    use simsapa_backend::cips_parse::SuttaSegments;
 
     println!("Parsing CIPS general-index.csv...");
     println!("CSV file: {:?}", csv_path);
