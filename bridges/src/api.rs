@@ -243,6 +243,11 @@ pub mod ffi {
         fn callback_open_chanting_practice_window(window_id: QString);
         fn callback_open_chanting_review_window(window_id: QString, section_uid: QString);
         fn callback_window_closed(window_type: QString);
+        fn callback_open_sutta_windows_json(current_window_id: QString) -> QString;
+        fn callback_count_open_sutta_search_windows() -> i32;
+        fn callback_activate_sutta_search_window(window_id: QString, tab_id_key: QString);
+        fn callback_close_sutta_search_window(window_id: QString);
+        fn callback_set_sutta_search_window_title(window_id: QString, title: QString);
     }
 }
 

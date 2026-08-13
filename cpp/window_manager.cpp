@@ -217,19 +217,171 @@ SuttaSearchWindow* WindowManager::create_sutta_search_window() {
         // replaces the current tab rather than adding one), so leftover tabs
         // from before the window was closed must not survive.
         QMetaObject::invokeMethod(reused->m_root, "clear_all_tabs");
+        // A custom title belongs to the window the user closed. The revived
+        // object keeps its window_id and loses its tabs, so the user
+        // experiences it as brand new -- it must present as one in every
+        // respect, or "rename, close, New Window" hands back a blank window
+        // still called "Dependent origination".
+        reused->m_root->setProperty("window_title", QString());
         show_and_activate_window(reused->m_root);
         // Move to the end so it counts as the newest window for the
         // window_id-less dispatch fallbacks.
         this->sutta_search_windows.removeOne(reused);
         this->sutta_search_windows.append(reused);
+        const QString reused_id = reused->m_root->property("window_id").toString();
+        this->touch_window_mru(reused_id);
+        log_info_c(QString("create_sutta_search_window(): revived %1").arg(reused_id).toUtf8().constData());
         return reused;
     }
 
     SuttaSearchWindow* w = new SuttaSearchWindow(this->m_app);
     sutta_search_windows.append(w);
-    w->m_root->setProperty("window_id", QString("window_%1").arg(this->m_window_id_count));
+    const QString new_id = QString("window_%1").arg(this->m_window_id_count);
+    w->m_root->setProperty("window_id", new_id);
     this->m_window_id_count++;
+    this->touch_window_mru(new_id);
+    log_info_c(QString("create_sutta_search_window(): created %1").arg(new_id).toUtf8().constData());
     return w;
+}
+
+SuttaSearchWindow* WindowManager::find_sutta_search_window(const QString& window_id) {
+    for (auto* w : this->sutta_search_windows) {
+        if (w == nullptr || w->m_root == nullptr) {
+            continue;
+        }
+        if (w->m_root->property("window_id").toString() == window_id) {
+            return w;
+        }
+    }
+    return nullptr;
+}
+
+QString WindowManager::open_sutta_windows_json(const QString& current_window_id) {
+    QJsonArray arr;
+
+    for (auto* w : this->sutta_search_windows) {
+        // Hidden windows are pool artifacts the user does not know exist.
+        if (!window_is_open(w)) {
+            continue;
+        }
+
+        const QString window_id = w->m_root->property("window_id").toString();
+
+        QString tabs_json;
+        QMetaObject::invokeMethod(w->m_root, "get_open_tabs_json",
+                                  Q_RETURN_ARG(QString, tabs_json));
+
+        QJsonArray tabs;
+        if (!tabs_json.isEmpty()) {
+            QJsonDocument tabs_doc = QJsonDocument::fromJson(tabs_json.toUtf8());
+            if (tabs_doc.isArray()) {
+                tabs = tabs_doc.array();
+            } else {
+                log_error_c(QString("open_sutta_windows_json(): %1 returned unparseable tabs: %2")
+                            .arg(window_id, tabs_json).toUtf8().constData());
+            }
+        }
+
+        QJsonObject obj;
+        obj["window_id"] = window_id;
+        obj["title"] = w->m_root->property("window_title").toString();
+        obj["is_current"] = (window_id == current_window_id);
+        obj["tabs"] = tabs;
+        arr.append(obj);
+    }
+
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+}
+
+int WindowManager::count_open_sutta_search_windows() {
+    int count = 0;
+    for (auto* w : this->sutta_search_windows) {
+        if (window_is_open(w)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void WindowManager::activate_sutta_search_window(const QString& window_id, const QString& tab_id_key) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("activate_sutta_search_window(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("activate_sutta_search_window(): %1 tab '%2'")
+               .arg(window_id, tab_id_key).toUtf8().constData());
+
+    show_and_activate_window(w->m_root);
+    this->touch_window_mru(window_id);
+
+    if (!tab_id_key.isEmpty()) {
+        // Logs and returns when the id_key no longer resolves, so a tab closed
+        // between the dialog opening and the tap is a log line, not a crash.
+        QMetaObject::invokeMethod(w->m_root, "focus_on_tab_with_id_key",
+                                  Q_ARG(QString, tab_id_key));
+    }
+}
+
+void WindowManager::close_sutta_search_window(const QString& window_id) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("close_sutta_search_window(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("close_sutta_search_window(): %1").arg(window_id).toUtf8().constData());
+
+    // Pooled family: QML flushes its Gloss/Prompts sessions and hides the
+    // window. The wrapper stays in sutta_search_windows for reuse; nothing is
+    // deleted, and on_window_closed() is not involved.
+    QMetaObject::invokeMethod(w->m_root, "close_window_from_switcher");
+    this->m_mru_window_ids.removeAll(window_id);
+}
+
+void WindowManager::set_sutta_search_window_title(const QString& window_id, const QString& title) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("set_sutta_search_window_title(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("set_sutta_search_window_title(): %1 -> '%2'")
+               .arg(window_id, title).toUtf8().constData());
+
+    // Trimming and "empty means no custom title" are decided QML-side; here we
+    // store what we are given.
+    w->m_root->setProperty("window_title", title);
+}
+
+void WindowManager::touch_window_mru(const QString& window_id) {
+    if (window_id.isEmpty()) {
+        return;
+    }
+    this->m_mru_window_ids.removeAll(window_id);
+    this->m_mru_window_ids.append(window_id);
+}
+
+SuttaSearchWindow* WindowManager::most_recently_used_open_window(const QString& exclude_window_id) {
+    for (auto it = this->m_mru_window_ids.crbegin(); it != this->m_mru_window_ids.crend(); ++it) {
+        if (*it == exclude_window_id) {
+            continue;
+        }
+        SuttaSearchWindow* w = this->find_sutta_search_window(*it);
+        if (window_is_open(w)) {
+            return w;
+        }
+    }
+
+    // The stamp knows nothing about this window (e.g. a session restored before
+    // it was seeded), so fall back to the newest window the user has open.
+    SuttaSearchWindow* last = this->last_open_sutta_search_window();
+    if (last != nullptr && window_is_open(last)
+        && last->m_root->property("window_id").toString() != exclude_window_id) {
+        return last;
+    }
+    return nullptr;
 }
 
 /// Newest closed (hidden) window in the pool, or nullptr if every window is

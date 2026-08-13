@@ -38,6 +38,27 @@ class WindowManager : public QObject {
         SuttaSearchWindow* first_open_sutta_search_window();
         SuttaSearchWindow* take_closed_sutta_search_window();
         void restore_last_session();
+
+        /// The mobile window switcher's query/command surface. See
+        /// docs/window-lifecycle-and-reuse.md -- SuttaSearchWindow is pooled, so
+        /// close_sutta_search_window() only *hides*; it must never reach
+        /// on_window_closed(), which is the single-instance family's path.
+        ///
+        /// JSON is an array in sutta_search_windows order (oldest first); the
+        /// dialog reverses it for display. `title` is "" when the user has set
+        /// none.
+        QString open_sutta_windows_json(const QString& current_window_id);
+        int count_open_sutta_search_windows();
+        void activate_sutta_search_window(const QString& window_id, const QString& tab_id_key);
+        void close_sutta_search_window(const QString& window_id);
+        void set_sutta_search_window_title(const QString& window_id, const QString& title);
+
+        /// Most-recently-used bookkeeping, deliberately kept *separate* from
+        /// sutta_search_windows order: the list order is what the switcher
+        /// displays and what its "Window N" labels are derived from, so
+        /// reordering it on every switch would renumber the list under the user.
+        void touch_window_mru(const QString& window_id);
+        SuttaSearchWindow* most_recently_used_open_window(const QString& exclude_window_id = QString());
         DownloadAppdataWindow* create_download_appdata_window(
             const QVariantMap& initial_properties = QVariantMap());
         StorageRecoveryWindow* create_storage_recovery_window();
@@ -71,6 +92,11 @@ class WindowManager : public QObject {
     private:
         WindowManager(QApplication* app, QObject *parent = nullptr);
         ~WindowManager();
+
+        SuttaSearchWindow* find_sutta_search_window(const QString& window_id);
+
+        /// window_ids, most recently used last.
+        QList<QString> m_mru_window_ids;
 
     signals:
         void signal_run_lookup_query(const QString& query_text);

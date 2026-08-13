@@ -243,6 +243,26 @@ void callback_open_chanting_review_window(QString window_id, QString section_uid
   AppGlobals::manager->create_chanting_review_window(window_id, section_uid);
 }
 
+QString callback_open_sutta_windows_json(QString current_window_id) {
+  return AppGlobals::manager->open_sutta_windows_json(current_window_id);
+}
+
+int callback_count_open_sutta_search_windows() {
+  return AppGlobals::manager->count_open_sutta_search_windows();
+}
+
+void callback_activate_sutta_search_window(QString window_id, QString tab_id_key) {
+  AppGlobals::manager->activate_sutta_search_window(window_id, tab_id_key);
+}
+
+void callback_close_sutta_search_window(QString window_id) {
+  AppGlobals::manager->close_sutta_search_window(window_id);
+}
+
+void callback_set_sutta_search_window_title(QString window_id, QString title) {
+  AppGlobals::manager->set_sutta_search_window_title(window_id, title);
+}
+
 void callback_window_closed(QString window_type) {
   AppGlobals::manager->on_window_closed(window_type);
 }

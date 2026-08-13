@@ -1246,6 +1246,21 @@ pub mod qobject {
         fn open_sutta_search_window_with_result(self: &SuttaBridge, result_data_json: &QString);
 
         #[qinvokable]
+        fn get_open_sutta_windows_json(self: &SuttaBridge, current_window_id: &QString) -> QString;
+
+        #[qinvokable]
+        fn count_open_sutta_search_windows(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn activate_sutta_search_window(self: &SuttaBridge, window_id: &QString, tab_id_key: &QString);
+
+        #[qinvokable]
+        fn close_sutta_search_window(self: &SuttaBridge, window_id: &QString);
+
+        #[qinvokable]
+        fn set_sutta_search_window_title(self: &SuttaBridge, window_id: &QString, title: &QString);
+
+        #[qinvokable]
         fn open_sutta_languages_window(self: &SuttaBridge);
 
         #[qinvokable]
@@ -3735,6 +3750,37 @@ impl qobject::SuttaBridge {
     pub fn open_sutta_search_window_with_result(&self, result_data_json: &QString) {
         use crate::api::ffi;
         ffi::callback_open_sutta_search_window(result_data_json.clone());
+    }
+
+    /// The mobile window switcher's query surface: every *visible* Sutta Search
+    /// window, oldest first, with its tabs. See
+    /// docs/window-lifecycle-and-reuse.md.
+    pub fn get_open_sutta_windows_json(&self, current_window_id: &QString) -> QString {
+        use crate::api::ffi;
+        ffi::callback_open_sutta_windows_json(current_window_id.clone())
+    }
+
+    pub fn count_open_sutta_search_windows(&self) -> i32 {
+        use crate::api::ffi;
+        ffi::callback_count_open_sutta_search_windows()
+    }
+
+    pub fn activate_sutta_search_window(&self, window_id: &QString, tab_id_key: &QString) {
+        use crate::api::ffi;
+        info(&format!("activate_sutta_search_window(): {} tab '{}'", window_id, tab_id_key));
+        ffi::callback_activate_sutta_search_window(window_id.clone(), tab_id_key.clone());
+    }
+
+    pub fn close_sutta_search_window(&self, window_id: &QString) {
+        use crate::api::ffi;
+        info(&format!("close_sutta_search_window(): {}", window_id));
+        ffi::callback_close_sutta_search_window(window_id.clone());
+    }
+
+    pub fn set_sutta_search_window_title(&self, window_id: &QString, title: &QString) {
+        use crate::api::ffi;
+        info(&format!("set_sutta_search_window_title(): {} -> '{}'", window_id, title));
+        ffi::callback_set_sutta_search_window_title(window_id.clone(), title.clone());
     }
 
     pub fn open_sutta_languages_window(&self) {
