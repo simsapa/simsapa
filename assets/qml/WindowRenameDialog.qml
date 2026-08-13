@@ -12,8 +12,13 @@ Dialog {
 
     Logger { id: logger }
 
+    // Overlay-parented and explicitly sized, so the dialog is a share of the
+    // screen rather than of the popup it is declared in, and its content wraps
+    // instead of overflowing a narrow phone screen.
+    parent: Overlay.overlay
     modal: true
     anchors.centerIn: parent
+    width: Math.min(400, parent ? parent.width - 40 : 400)
     standardButtons: Dialog.Ok | Dialog.Cancel
 
     title: "Rename Window"
@@ -36,13 +41,22 @@ Dialog {
     }
 
     ColumnLayout {
+        // Keep this binding: it is what gives the children a width to wrap and
+        // fill against. See docs/android-edge-to-edge-and-safe-areas.md.
+        width: parent.width
         spacing: 10
 
-        Label { text: "Window name:" }
+        Label {
+            text: "Window name:"
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+        }
 
         TextField {
             id: name_input
-            Layout.preferredWidth: 300
+            // Fills the dialog rather than a fixed 300px, which overflows a
+            // narrow screen.
+            Layout.fillWidth: true
             placeholderText: "Enter window name"
             // Never Qt.ImhPreferLowercase: inert on Android, and it forces the
             // lowercase layer under Qt Virtual Keyboard.

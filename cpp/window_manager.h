@@ -39,6 +39,12 @@ class WindowManager : public QObject {
         SuttaSearchWindow* take_closed_sutta_search_window();
         void restore_last_session();
 
+        /// Collect and store the current session (visible windows only).
+        /// The single implementation behind every save point: aboutToQuit, the
+        /// periodic autosave, and the app going to the background. `reason` is
+        /// logged so the log says which one fired.
+        void save_session_now(const QString& reason);
+
         /// The mobile window switcher's query/command surface. See
         /// docs/window-lifecycle-and-reuse.md -- SuttaSearchWindow is pooled, so
         /// close_sutta_search_window() only *hides*; it must never reach

@@ -23,6 +23,7 @@ Dialog {
     id: control
 
     Logger { id: logger }
+    TitleUtils { id: title_utils }
 
     // The window this dialog was opened from: its row is marked as current and
     // expanded by default.
@@ -50,6 +51,10 @@ Dialog {
     // (see close_window_row() below) — the host window clears its tabs and
     // takes the platform minimise/quit path.
     signal last_window_close_requested()
+
+    // "Clear" was confirmed: every other window has been hidden and the host
+    // window is asked to empty itself, leaving exactly one blank window.
+    signal clear_all_windows_requested()
 
     title: "Windows"
     modal: true
@@ -114,7 +119,8 @@ Dialog {
     }
 
     function effective_label(window_data) {
-        return window_data.title !== "" ? window_data.title : window_data.default_label;
+        let custom = title_utils.clean_title(window_data.title);
+        return custom !== "" ? custom : window_data.default_label;
     }
 
     function toggle_expanded(window_id) {
@@ -212,6 +218,87 @@ Dialog {
         control.refresh_list();
     }
 
+    function total_tab_count() {
+        let total = 0;
+        for (let i = 0; i < control.windows_list.length; i++) {
+            total += control.windows_list[i].tabs.length;
+        }
+        return total;
+    }
+
+    // The window "Clear" keeps. Normally the one the dialog was opened from;
+    // the newest otherwise, so this can never end up keeping nothing.
+    function window_id_to_keep() {
+        for (let i = 0; i < control.windows_list.length; i++) {
+            if (control.windows_list[i].is_current) {
+                return control.windows_list[i].window_id;
+            }
+        }
+        return control.windows_list.length > 0 ? control.windows_list[0].window_id : "";
+    }
+
+    // Hide every window but one, then ask the host to empty the survivor. One
+    // window is always left standing, for the same reason the last window is
+    // never hidden by the trash icon: zero visible windows makes the session
+    // save write an empty session and discards the user's tabs.
+    //
+    // The survivor stays visible throughout, so there is no moment with nothing
+    // on screen. It ends emptied rather than removed, mirroring clear_all_tabs()
+    // leaving a blank placeholder tab rather than no tabs at all.
+    function clear_all_windows() {
+        let keep_id = control.window_id_to_keep();
+        if (keep_id === "") {
+            logger.error("WindowListDialog: clear requested with no windows listed");
+            return;
+        }
+
+        logger.info("WindowListDialog: clearing all windows, keeping " + keep_id);
+
+        for (let i = 0; i < control.windows_list.length; i++) {
+            let window_id = control.windows_list[i].window_id;
+            if (window_id === keep_id) {
+                continue;
+            }
+            SuttaBridge.close_sutta_search_window(window_id);
+        }
+
+        control.close();
+        control.clear_all_windows_requested();
+    }
+
+    Dialog {
+        id: confirm_clear_dialog
+
+        // Parented to the window overlay, not to this dialog, so the width
+        // below is a share of the *screen* rather than of whatever the enclosing
+        // popup happens to measure. Without an explicit width the dialog sizes
+        // itself to the message's implicit single-line width and runs off the
+        // side of a narrow phone screen instead of wrapping.
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(400, parent ? parent.width - 40 : 400)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        title: "Clear Windows"
+        header: DialogHeader { text: confirm_clear_dialog.title }
+
+        Label {
+            text: {
+                let windows = control.windows_list.length;
+                let tabs = control.total_tab_count();
+                let windows_text = windows === 1 ? "1 window" : windows + " windows";
+                let tabs_text = tabs === 1 ? "1 tab" : tabs + " tabs";
+                return `Close all ${windows_text} and their ${tabs_text}? One empty window will be kept.`;
+            }
+            wrapMode: Text.WordWrap
+            width: parent.width
+        }
+
+        onAccepted: control.clear_all_windows()
+
+        onRejected: logger.info("WindowListDialog: clear cancelled")
+    }
+
     WindowRenameDialog {
         id: rename_dialog
 
@@ -226,8 +313,12 @@ Dialog {
     Dialog {
         id: confirm_close_dialog
 
+        // See confirm_clear_dialog: overlay-parented and explicitly sized, so
+        // the message wraps on a narrow screen instead of widening the dialog.
+        parent: Overlay.overlay
         modal: true
         anchors.centerIn: parent
+        width: Math.min(400, parent ? parent.width - 40 : 400)
         standardButtons: Dialog.Ok | Dialog.Cancel
         title: "Close Window"
         header: DialogHeader { text: confirm_close_dialog.title }
@@ -252,30 +343,66 @@ Dialog {
         }
     }
 
-    footer: DialogButtonBox {
-        Button {
-            text: "New Window"
-            DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
-            onClicked: {
-                logger.info("WindowListDialog: new window requested");
-                control.close();
-                SuttaBridge.open_sutta_search_window();
-                control.new_window_requested();
+    // A Pane wrapping a RowLayout rather than a DialogButtonBox.
+    //
+    // DialogButtonBox is a Container, not a layout: its children become
+    // contentChildren of a ListView-based contentItem and are positioned by
+    // their buttonRole through Qt's platform button-layout rules. Layout
+    // attached properties mean nothing there, so `Layout.fillWidth` is ignored
+    // and a spacer Item collapses to zero width. Distributing the buttons needs
+    // a real layout, which also lets each one carry an equal share of the width
+    // — worth having for mobile touch targets.
+    //
+    // Every button already acts in its own onClicked, so nothing is lost by
+    // dropping the accept/reject roles.
+    footer: Pane {
+        padding: 10
+        // A Pane paints an opaque background by default, which covers the
+        // dialog's own rounded bottom border. The dialog's background shows
+        // through instead.
+        background: null
+
+        RowLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            Button {
+                text: "Clear"
+                Layout.fillWidth: true
+                enabled: control.windows_list.length > 0
+                onClicked: confirm_clear_dialog.open()
             }
-        }
-        Button {
-            text: "Close"
-            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
-            onClicked: control.close()
+            Button {
+                text: "New Window"
+                Layout.fillWidth: true
+                onClicked: {
+                    logger.info("WindowListDialog: new window requested");
+                    control.close();
+                    SuttaBridge.open_sutta_search_window();
+                    control.new_window_requested();
+                }
+            }
+            Button {
+                text: "Close"
+                Layout.fillWidth: true
+                onClicked: control.close()
+            }
         }
     }
 
+    // The dialog's height is capped, so a long window list (or several expanded
+    // at once) has to scroll. Sizing the column from the ScrollView's
+    // availableWidth rather than from `parent.width` keeps the ScrollView's
+    // contentHeight driven by the column's implicitHeight, which is what makes
+    // the vertical scrollbar appear.
     contentItem: ScrollView {
+        id: windows_scroll_view
         contentWidth: availableWidth
         clip: true
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
         ColumnLayout {
-            width: parent.width
+            width: windows_scroll_view.availableWidth
             spacing: 4
 
             Repeater {
@@ -308,12 +435,19 @@ Dialog {
 
                             // Expand / collapse affordance. Its own button so a
                             // tap here never switches windows.
+                            //
+                            // An image, not a Unicode arrow: glyph coverage is
+                            // unreliable on Android, where ▸/▾ render as tofu.
+                            // Same icons as ChantingTreeList's tree expander.
                             Button {
-                                text: window_item.is_expanded ? "▾" : "▸"
                                 flat: true
                                 padding: 8
                                 implicitWidth: implicitHeight
-                                font.pointSize: control.pointSize
+                                icon.source: window_item.is_expanded
+                                    ? "icons/32x32/fe--drop-down.png"
+                                    : "icons/32x32/fe--drop-right.png"
+                                icon.width: 20
+                                icon.height: 20
                                 onClicked: control.toggle_expanded(window_item.modelData.window_id)
                             }
 
@@ -324,6 +458,14 @@ Dialog {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: window_row_label.implicitHeight + 16
                                 onClicked: control.activate_window(window_item.modelData.window_id)
+
+                                // No background of its own: the row's colour is
+                                // the enclosing Frame's, so it covers the whole
+                                // row rather than just this tap area — the same
+                                // arrangement ChantingTreeList.qml uses, where
+                                // the Frame carries the colour and its content
+                                // item is a bare MouseArea.
+                                background: null
 
                                 contentItem: RowLayout {
                                     spacing: 6
@@ -443,11 +585,16 @@ Dialog {
                                     // A dictionary word tab has no sutta_ref;
                                     // TabListDialog renders it as the
                                     // hyphenated "cakka-1/dpd" form.
+                                    //
+                                    // Falls back to item_uid when a tab carries
+                                    // no reference, so a row is never blank.
                                     text: {
-                                        if (tab_item.modelData.table_name === "dpd_headwords") {
-                                            return `${tab_item.modelData.sutta_title.replace(/ /g, "-")}/dpd`;
+                                        let d = tab_item.modelData;
+                                        if (d.table_name === "dpd_headwords") {
+                                            return `${title_utils.clean_title(d.sutta_title).replace(/ /g, "-")}/dpd`;
                                         }
-                                        return tab_item.modelData.sutta_ref;
+                                        let ref = title_utils.clean_title(d.sutta_ref);
+                                        return ref !== "" ? ref : d.item_uid;
                                     }
                                     font.pointSize: control.pointSize - 1
                                     font.bold: true
@@ -456,7 +603,7 @@ Dialog {
 
                                 Label {
                                     text: tab_item.modelData.table_name === "dpd_headwords"
-                                        ? "" : tab_item.modelData.sutta_title
+                                        ? "" : title_utils.clean_title(tab_item.modelData.sutta_title)
                                     font.pointSize: control.pointSize - 1
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true

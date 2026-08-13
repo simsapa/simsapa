@@ -3422,6 +3422,11 @@ impl AppData {
                 sort_order: folder.sort_order,
                 is_last_session: false,
                 is_user_added: folder.is_user_added,
+                // A bookmark export carries no session windows.
+                window_title: None,
+                active_tab_group: None,
+                active_tab_index: None,
+                is_active_window: None,
             };
 
             diesel::insert_into(bookmark_folders::table)
@@ -3533,6 +3538,11 @@ impl AppData {
                     sort_order: folder.sort_order,
                     is_last_session: false,
                     is_user_added: folder.is_user_added,
+                    // Only last-session folders carry window metadata.
+                    window_title: None,
+                    active_tab_group: None,
+                    active_tab_index: None,
+                    is_active_window: None,
                 };
 
                 diesel::insert_into(bookmark_folders::table)

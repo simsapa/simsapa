@@ -17,18 +17,16 @@ ApplicationWindow {
     color: palette.window
 
     onClosing: function(close) {
-        // Flush any unsaved Gloss/Prompts session before the process exits (PRD
-        // req 17). flush_if_needed() is a blocking, idempotent no-op when clean.
-        // Run on BOTH branches: on mobile the close is cancelled (no guaranteed
-        // real-exit hook), so this is a backstop and a redundant save is harmless.
+        // Flush any unsaved Gloss/Prompts session before the process exits.
+        // flush_if_needed() is a blocking, idempotent no-op when clean.
+        //
+        // Mobile used to cancel the close here and open the tab list instead,
+        // which is why a window could never be dismissed. The tab list is still
+        // reachable by its own entry point; closing now really closes, and the
+        // mobile close paths go through close_current_window() /
+        // close_window_from_switcher() rather than here.
         gloss_tab.flush_if_needed();
         prompts_tab.flush_if_needed();
-        if (root.is_mobile) {
-            close.accepted = false;
-            show_sidebar_btn.checked = false;
-            root.open_tab_list_dialog();
-        }
-        // Desktop: close.accepted defaults to true, normal close behavior
     }
 
     property string window_id
@@ -244,6 +242,7 @@ ApplicationWindow {
     }
 
     Logger { id: logger }
+    TitleUtils { id: title_utils }
 
     // Drives webview_visible: true while any popup or in-tree child window is
     // open over this window. Tracks the window it is instantiated in, so it
@@ -371,8 +370,11 @@ ApplicationWindow {
         let tab_data = {
             item_uid:    fulltext_results_data.item_uid || "",
             table_name:  fulltext_results_data.table_name || "",
-            sutta_title: fulltext_results_data.sutta_title || "",
-            sutta_ref:   fulltext_results_data.sutta_ref || "",
+            // Cleaned once here, at the single point every tab's data is built,
+            // so the tab buttons and both list dialogs are free of the entity
+            // debris some shipped titles carry. See TitleUtils.qml.
+            sutta_title: title_utils.clean_title(fulltext_results_data.sutta_title),
+            sutta_ref:   title_utils.clean_title(fulltext_results_data.sutta_ref),
             anchor:      fulltext_results_data.anchor || "",
             // Per-snippet find-bar query (see FulltextResults.derive_find_query);
             // used by the find-on-open block to jump to this snippet's passage.
@@ -454,10 +456,23 @@ ApplicationWindow {
         let items = [];
         let sort_order = 0;
 
+        // Which tab was active, recorded as (group, index-within-group counting
+        // only saved tabs). An id_key cannot be used: they are regenerated when
+        // the session is restored. Positions survive, because restore appends
+        // the same saved items into the same groups in the same order.
+        let active_id_key = root.get_active_tab_id_key();
+        let active_tab_group = "";
+        let active_tab_index = -1;
+
         function collect_from_model(model, tab_group) {
+            let group_index = 0;
             for (let i = 0; i < model.count; i++) {
                 let tab = model.get(i);
                 if (tab.item_uid && tab.item_uid !== "Sutta" && tab.item_uid.length > 0) {
+                    if (active_id_key !== "" && tab.id_key === active_id_key) {
+                        active_tab_group = tab_group;
+                        active_tab_index = group_index;
+                    }
                     items.push({
                         item_uid: tab.item_uid,
                         table_name: tab.table_name || "suttas",
@@ -469,6 +484,7 @@ ApplicationWindow {
                         sort_order: sort_order,
                     });
                     sort_order++;
+                    group_index++;
                 }
             }
         }
@@ -477,11 +493,19 @@ ApplicationWindow {
         collect_from_model(tabs_results_model, "results");
         collect_from_model(tabs_translations_model, "translations");
 
-        // `title` is an addition to an existing stored shape: an older session
-        // without it restores as an unnamed window.
+        logger.info("get_session_data_json(): " + root.window_id
+            + " active_id_key='" + active_id_key + "'"
+            + " -> " + active_tab_group + "[" + active_tab_index + "]"
+            + " items=" + items.length);
+
+        // `title` and the two active-tab fields are additions to an existing
+        // stored shape: an older session without them restores as an unnamed
+        // window with no active-tab preference.
         let session = {
             name: root.window_id || "window",
             title: root.window_title,
+            active_tab_group: active_tab_group,
+            active_tab_index: active_tab_index,
             items: items,
         };
 
@@ -521,6 +545,87 @@ ApplicationWindow {
         }
         root.restore_blank_results_pending = false;
         root.is_restoring_session = false;
+
+        // Deferred: each tab's TabButton is created by a Repeater from the
+        // ListModel rows just appended, and focus_on_tab_with_id_key() resolves
+        // the tab through tabs_row.children — so the delegates have to exist
+        // first.
+        Qt.callLater(root.restore_active_tab,
+                     session.active_tab_group || "",
+                     session.active_tab_index === undefined ? -1 : session.active_tab_index);
+
+        if (root.is_mobile) {
+            restore_geometry_nudge_timer.restart();
+        }
+    }
+
+    // Restored tabs create their webviews while the window is still laying
+    // itself out, and the native Android WebView keeps whatever geometry it was
+    // handed at that moment — which can be the full window, so it covers the
+    // search bar and the tab row. Nothing later corrects it on its own: a
+    // native view does not re-read the QML geometry, which is why loading the
+    // next sutta (a real resize) is what puts the page back in place.
+    //
+    // A 1px geometry jiggle is a resize the native view has to observe — the
+    // same remedy the WordSummary close path uses, and the desktop
+    // stale-frame bug before it.
+    //
+    // The interval must be long enough for the ordinary layout to have settled,
+    // or the jiggle takes credit for what the normal resize already did. The
+    // VIEWPORT-NUDGE-QT lines the nudge emits carry the before/after geometry,
+    // so the log can tell the two apart. See
+    // docs/mobile-stuck-bottom-bar-investigation.md.
+    Timer {
+        id: restore_geometry_nudge_timer
+        interval: 600
+        repeat: false
+        onTriggered: {
+            let html_view = sutta_html_view_layout.get_current_item();
+            if (!html_view) {
+                logger.info("restore_geometry_nudge: no current html view, nothing to nudge");
+                return;
+            }
+            logger.info("restore_geometry_nudge: window=" + Math.round(root.width) + "x" + Math.round(root.height)
+                + " webview_h=" + Math.round(html_view.webview_height()));
+            html_view.nudge_webview_geometry();
+        }
+    }
+
+    // Re-select the tab that was active when the session was saved. Every
+    // restored results tab is focused as it is created, so without this the tab
+    // that happens to be created last stays active.
+    //
+    // An older session carries no active-tab fields and arrives here with
+    // index -1, which leaves that as-created behaviour untouched.
+    function restore_active_tab(tab_group: string, index: int) {
+        if (index < 0) {
+            // Either nothing was active at save time, or the session predates
+            // the active-tab fields.
+            logger.info("restore_active_tab(): " + root.window_id
+                + " no active tab recorded in the session (group='" + tab_group + "')");
+            return;
+        }
+
+        let model = null;
+        if (tab_group === "pinned") {
+            model = tabs_pinned_model;
+        } else if (tab_group === "translations") {
+            model = tabs_translations_model;
+        } else if (tab_group === "results") {
+            model = tabs_results_model;
+        }
+
+        if (model === null || index >= model.count) {
+            logger.error("restore_active_tab(): " + root.window_id
+                + " no tab at " + tab_group + "[" + index + "]");
+            return;
+        }
+
+        let id_key = model.get(index).id_key;
+        logger.info("restore_active_tab(): " + root.window_id + " "
+            + tab_group + "[" + index + "] id_key " + id_key);
+
+        root.focus_on_tab_with_id_key(id_key);
     }
 
     function get_restore_last_session_setting(): bool {
@@ -1607,6 +1712,58 @@ ${query_text}`;
         return tab;
     }
 
+    // Closing the last window expresses "I am finished reading", which each
+    // platform honours differently. The branch is on the platform, not on
+    // is_mobile: iOS offers no public way to background an app (UIApplication
+    // exposes none, and exit(0) / the private UIApplication.suspend selector
+    // are App Store rejection grounds), so quitting is the honest equivalent
+    // there. On iOS the normal aboutToQuit session save runs.
+    function minimize_or_quit_app() {
+        if (Qt.platform.os === "ios") {
+            logger.info("minimize_or_quit_app(): iOS - quitting");
+            Qt.quit();
+            return;
+        }
+
+        // The native moveTaskToBack() call arrives with the app_minimize helper.
+        logger.info("minimize_or_quit_app(): backgrounding the app");
+    }
+
+    function open_window_list_dialog() {
+        logger.info("open_window_list_dialog(): from " + root.window_id);
+        window_list_dialog.open();
+    }
+
+    // Close Window on mobile. Desktop is untouched: root.close() there, exactly
+    // as before.
+    //
+    // With other windows open, the replacement is activated *before* this one is
+    // hidden -- zero visible windows, even for a frame, can background the
+    // Android task or show a black frame. With this being the only visible
+    // window, it is NOT hidden: the tabs are cleared and the app is minimised
+    // (Android) or quit (iOS). Hiding the last window would make the next
+    // session save, which filters on `visible`, write an empty session and
+    // silently discard the user's tabs.
+    function close_current_window() {
+        if (root.is_desktop) {
+            root.close();
+            return;
+        }
+
+        let open_count = SuttaBridge.count_open_sutta_search_windows();
+        if (open_count > 1) {
+            logger.info("close_current_window(): " + open_count + " windows open, hiding " + root.window_id);
+            SuttaBridge.activate_most_recently_used_window(root.window_id);
+            root.close_window_from_switcher();
+            return;
+        }
+
+        logger.info("close_current_window(): last window " + root.window_id
+            + " - clearing tabs and minimising rather than hiding");
+        root.clear_all_tabs();
+        root.minimize_or_quit_app();
+    }
+
     function open_tab_list_dialog() {
         tab_list_dialog.active_tab_id_key = root.get_active_tab_id_key();
         tab_list_dialog.open();
@@ -1824,7 +1981,7 @@ ${query_text}`;
                         context: Qt.WindowShortcut
                         onActivated: action_close_window.trigger()
                     }
-                    onTriggered: root.close()
+                    onTriggered: root.close_current_window()
                 }
             }
 
@@ -1858,7 +2015,14 @@ ${query_text}`;
                         onActivated: action_sutta_search.trigger()
                     }
                     onTriggered: {
-                        SuttaBridge.open_sutta_search_window()
+                        // On mobile this offers the open windows instead of
+                        // always creating one, which is the whole point of the
+                        // switcher. Desktop behaviour is unchanged.
+                        if (root.is_mobile) {
+                            root.open_window_list_dialog();
+                        } else {
+                            SuttaBridge.open_sutta_search_window();
+                        }
                     }
                 }
             }
@@ -2368,6 +2532,29 @@ ${query_text}`;
         window_height: root.height
         // NOTE: No need for find_menu and tabs_menu on mobile, they are keyboard actions
         menu_list: [file_menu, windows_menu, gloss_menu, prompts_menu, help_menu]
+    }
+
+    // The mobile window switcher. Desktop never opens it -- the Windows menu's
+    // Sutta Search action keeps creating a window outright there.
+    WindowListDialog {
+        id: window_list_dialog
+        current_window_id: root.window_id
+        extra_top_margin: root.extra_top_margin
+
+        // The user trashed the only visible window. It is deliberately still
+        // shown: clear its tabs so the close is honoured visibly, then take the
+        // platform path (background on Android, quit on iOS).
+        onLast_window_close_requested: {
+            root.clear_all_tabs();
+            root.minimize_or_quit_app();
+        }
+
+        // Every other window has already been hidden; this one is the survivor
+        // and is emptied so the user is left with a single blank window.
+        onClear_all_windows_requested: {
+            logger.info("clear_all_windows_requested(): emptying " + root.window_id);
+            root.clear_all_tabs();
+        }
     }
 
     AboutDialog {

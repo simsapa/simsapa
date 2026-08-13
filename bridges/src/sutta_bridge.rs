@@ -6178,11 +6178,24 @@ impl qobject::SuttaBridge {
             sort_order: i32,
         }
 
+        // Per-window metadata. All three are additions to a shape that was
+        // already being written, so a session produced by an older build (or
+        // by a window with nothing active) deserializes with them absent.
         #[derive(serde::Deserialize)]
         struct SessionWindow {
             name: String,
+            #[serde(default)]
+            title: String,
+            #[serde(default)]
+            active_tab_group: String,
+            #[serde(default = "minus_one")]
+            active_tab_index: i32,
+            #[serde(default)]
+            is_active_window: bool,
             items: Vec<SessionItem>,
         }
+
+        fn minus_one() -> i32 { -1 }
 
         let windows: Vec<SessionWindow> = match serde_json::from_str(&json_str) {
             Ok(w) => w,
@@ -6202,7 +6215,14 @@ impl qobject::SuttaBridge {
 
         // Create new session folders and items
         for window in &windows {
-            let folder_id = match app_data.dbm.appdata.create_bookmark_folder(&window.name, true) {
+            let window_title = if window.title.is_empty() { None } else { Some(window.title.as_str()) };
+            let active_tab_group = if window.active_tab_group.is_empty() { None } else { Some(window.active_tab_group.as_str()) };
+            let active_tab_index = if window.active_tab_index < 0 { None } else { Some(window.active_tab_index) };
+
+            let folder_id = match app_data.dbm.appdata.create_last_session_folder(
+                &window.name, window_title, active_tab_group, active_tab_index,
+                window.is_active_window,
+            ) {
                 Ok(id) => id,
                 Err(e) => {
                     error(&format!("save_last_session() create folder: {}", e));
@@ -6241,6 +6261,12 @@ impl qobject::SuttaBridge {
             result.push(serde_json::json!({
                 "name": folder.name,
                 "folder_id": folder.id,
+                // Absent-as-NULL is carried through as the "nothing recorded"
+                // form QML already tolerates: "" and -1.
+                "title": folder.window_title.clone().unwrap_or_default(),
+                "active_tab_group": folder.active_tab_group.clone().unwrap_or_default(),
+                "active_tab_index": folder.active_tab_index.unwrap_or(-1),
+                "is_active_window": folder.is_active_window.unwrap_or(false),
                 "items": items,
             }));
         }

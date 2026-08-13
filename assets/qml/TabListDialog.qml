@@ -8,6 +8,7 @@ Dialog {
     id: control
 
     Logger { id: logger }
+    TitleUtils { id: title_utils }
 
     required property var tabs_pinned_model
     required property var tabs_results_model
@@ -583,8 +584,8 @@ Dialog {
             combined_tabs_model.append({
                 item_uid: tab_data.item_uid,
                 table_name: tab_data.table_name,
-                sutta_title: tab_data.sutta_title,
-                sutta_ref: tab_data.sutta_ref,
+                sutta_title: title_utils.clean_title(tab_data.sutta_title),
+                sutta_ref: title_utils.clean_title(tab_data.sutta_ref),
                 id_key: tab_data.id_key,
                 group_label: "Pinned"
             });
@@ -597,8 +598,8 @@ Dialog {
             combined_tabs_model.append({
                 item_uid: tab_data.item_uid,
                 table_name: tab_data.table_name,
-                sutta_title: tab_data.sutta_title,
-                sutta_ref: tab_data.sutta_ref,
+                sutta_title: title_utils.clean_title(tab_data.sutta_title),
+                sutta_ref: title_utils.clean_title(tab_data.sutta_ref),
                 id_key: tab_data.id_key,
                 group_label: "Results"
             });
@@ -611,8 +612,8 @@ Dialog {
             combined_tabs_model.append({
                 item_uid: tab_data.item_uid,
                 table_name: tab_data.table_name,
-                sutta_title: tab_data.sutta_title,
-                sutta_ref: tab_data.sutta_ref,
+                sutta_title: title_utils.clean_title(tab_data.sutta_title),
+                sutta_ref: title_utils.clean_title(tab_data.sutta_ref),
                 id_key: tab_data.id_key,
                 group_label: "Trans"
             });
@@ -628,8 +629,8 @@ Dialog {
             history_list_model.append({
                 item_uid: entry.item_uid || "",
                 table_name: entry.table_name || "",
-                sutta_ref: entry.sutta_ref || "",
-                sutta_title: entry.sutta_title || "",
+                sutta_ref: title_utils.clean_title(entry.sutta_ref),
+                sutta_title: title_utils.clean_title(entry.sutta_title),
             });
         }
     }
