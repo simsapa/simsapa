@@ -98,6 +98,32 @@ ApplicationWindow {
         SuttaBridge.update_topic_index();
     }
 
+    // The whole report, whether or not the details are currently shown.
+    function report_text(): string {
+        if (root.details_text.length === 0) {
+            return root.summary_text;
+        }
+        return root.summary_text + "\n\nDetails:\n" + root.details_text;
+    }
+
+    // Invisible helper for clipboard: a TextEdit's copy() is the only clipboard
+    // route available to QML without a bridge call.
+    TextEdit {
+        id: clipboard_helper
+        visible: false
+        function copy_text(text: string) {
+            clipboard_helper.text = text;
+            clipboard_helper.selectAll();
+            clipboard_helper.copy();
+        }
+    }
+
+    Timer {
+        id: copied_reset_timer
+        interval: 1500
+        onTriggered: copy_button.copied = false
+    }
+
     function cancel_run() {
         if (!root.is_running) return;
         logger.info("TopicIndexUpdateWindow: cancel requested");
@@ -237,13 +263,33 @@ ApplicationWindow {
                         background: null
                     }
 
-                    Button {
-                        text: root.show_details ? "Hide details" : "Show details"
-                        font.pointSize: root.pointSize
-                        visible: root.was_successful && root.details_text.length > 0
-                        onClicked: {
-                            root.show_details = !root.show_details;
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        Button {
+                            text: root.show_details ? "Hide details" : "Show details"
+                            font.pointSize: root.pointSize
+                            visible: root.was_successful && root.details_text.length > 0
+                            onClicked: {
+                                root.show_details = !root.show_details;
+                            }
                         }
+
+                        Button {
+                            id: copy_button
+                            property bool copied: false
+                            text: copy_button.copied ? "Copied" : "Copy"
+                            font.pointSize: root.pointSize
+                            enabled: !root.is_running && root.summary_text !== ""
+                            onClicked: {
+                                clipboard_helper.copy_text(root.report_text());
+                                copy_button.copied = true;
+                                copied_reset_timer.restart();
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
                     }
 
                     TextArea {

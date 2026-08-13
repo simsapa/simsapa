@@ -121,7 +121,7 @@ ApplicationWindow {
         width: Math.min(root.width - 40, 460)
 
         onAccepted: {
-            logger.info("TopicIndexWindow: resetting to the index shipped with this build");
+            logger.info("TopicIndexWindow: resetting to the index data built-in to this Simsapa version");
             root.reset_initiated_here = true;
             SuttaBridge.reset_topic_index();
         }
@@ -130,7 +130,7 @@ ApplicationWindow {
             width: parent.width
             wrapMode: Text.WordWrap
             font.pointSize: root.pointSize
-            text: "The downloaded index will be discarded and the index shipped with this version of Simsapa will be used again.\n\nContinue?"
+            text: "The downloaded index will be discarded and the index data built-in to this version of Simsapa will be used again.\n\nContinue?"
         }
     }
 
@@ -228,7 +228,7 @@ ApplicationWindow {
             if (!root.reset_initiated_here) return;
             root.reset_initiated_here = false;
             let message = success
-                ? "The index shipped with this version of Simsapa is now in use."
+                ? "The index data built-in to this version of Simsapa is now in use."
                 : "The index could not be reset.";
             try {
                 const payload = JSON.parse(summary_json);
@@ -455,15 +455,21 @@ ApplicationWindow {
             anchors.bottomMargin: 0
             spacing: 0
 
-            // Header with Info and Close buttons
-            RowLayout {
+            // Header with Info / Update / Reset and Close.
+            //
+            // A Flow, not a RowLayout: on mobile the four text buttons plus the
+            // icon do not fit across a phone screen, and a RowLayout would push
+            // Close off the edge instead of wrapping. Close is inside the Flow
+            // rather than pinned right, because a right-pinned item cannot take
+            // part in the wrap.
+            Flow {
                 Layout.fillWidth: true
                 Layout.margins: 10
                 spacing: 10
 
                 Rectangle {
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 32
+                    width: 32
+                    height: 32
                     radius: 16
                     color: "white"
                     border.width: 1
@@ -504,8 +510,6 @@ ApplicationWindow {
                         reset_confirm_dialog.open();
                     }
                 }
-
-                Item { Layout.fillWidth: true }
 
                 Button {
                     text: "Close"

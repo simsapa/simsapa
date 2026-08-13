@@ -726,13 +726,15 @@ fn log_validation(validation: &ValidationResult, anchors: &AnchorValidation) {
 /// The block the results window shows, built here so every caller shows the
 /// same wording.
 fn format_summary_text(s: &UpdateSummary, xref_warnings: usize) -> String {
-    let date = s.updated_at.split('T').next().unwrap_or(&s.updated_at);
-
+    // The full stamp as written to `topic_index_data.updated_at`, not just the
+    // date: it is what the Info dialog and the log block report, so the three
+    // must be comparable at a glance.
+    //
     // One sub-total per line: the window is narrow on mobile, and a single
     // comma-joined line wraps at arbitrary points.
     let mut text = format!(
         "Updated from CIPS — {}\n\n{} headwords ({})\n{} sub-entries ({})\n{} references ({})",
-        date,
+        s.updated_at,
         thousands(s.headword_count),
         format_delta(s.headword_delta),
         thousands(s.entry_count),
@@ -858,7 +860,8 @@ mod tests {
         };
         s.summary_text = format_summary_text(&s, 12);
 
-        assert!(s.summary_text.starts_with("Updated from CIPS — 2026-08-13"));
+        // The full stamp, exactly as stored — not truncated to the date.
+        assert!(s.summary_text.starts_with("Updated from CIPS — 2026-08-13T10:11:12Z"));
         assert!(s.summary_text.contains("3,210 headwords (+7)"));
         assert!(s.summary_text.contains("21,840 references (±0)"));
         assert!(s.summary_text.contains("Warnings: 12"));
