@@ -127,6 +127,30 @@ ApplicationWindow {
         SuttaBridge.notify_window_closed("chanting_review");
     }
 
+    // A close that is pending only hid the window; the wrapper is still in
+    // WindowManager's list, so the next open revives *this* window (with its
+    // window_id and current_section_uid re-applied). Reviving it cancels the
+    // pending close -- otherwise the deferred notify arrives when the recording
+    // is finalised and destroys the window the user is now looking at.
+    //
+    // The re-acquire below is needed on every re-open, not only a cancelled
+    // one: onClosing releases the keep-screen-on flag, and Component.onCompleted
+    // -- which is where it is taken -- does not run again for a reused window.
+    // Setting it twice is harmless (it is a window flag, not a counted lock).
+    onVisibleChanged: {
+        if (!root.visible) {
+            return;
+        }
+        if (root.close_pending) {
+            root.close_pending = false;
+            close_deferral_failsafe.stop();
+            logger.info("ChantingReviewWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+        if (root.is_mobile) {
+            screen_manager.set_keep_screen_on(true);
+        }
+    }
+
     // Stop all playback and save state when window is closed
     onClosing: function(close) {
         // Read before the cleanup below, which sets is_recording false at once

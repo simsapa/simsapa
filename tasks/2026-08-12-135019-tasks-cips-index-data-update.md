@@ -104,9 +104,18 @@ Verified against the tree on 2026-08-12; the PRD's code claims hold.
   `delete m_engine;` — redundant but harmless. **None of the seven W-2 windows
   contains a `WebEngineView`** (grep-verified), so no render-process teardown is
   involved in destroy-on-close.
-- The CIPS CSV is **not present**:
+- ~~The CIPS CSV is **not present**:
   `../../src-lib/CIPS/src/data/general-index.csv` (which `Makefile:67` passes)
-  does not exist on this machine. Task 3.1 must obtain it first.
+  does not exist on this machine. Task 3.1 must obtain it first.~~
+  **Wrong — corrected 2026-08-13.** The path is relative to `cli/`, so it
+  resolves to
+  `/home/gambhiro/prods/apps/simsapa-ng-project/src-lib/CIPS/src/data/general-index.csv`,
+  which **is** a checked-out CIPS repository. The local copy is 1,120,051 bytes
+  at commit `2026-08-05T15:44:48Z`, while the copy 3.0a downloaded from upstream
+  on 2026-08-13 is 1,120,102 bytes — which is also why `assets/general-index.json`
+  is not byte-identical to 3.1's baseline artifact. Neither fact invalidates
+  3.1/3.12: both runs used the same pinned downloaded CSV, which is all success
+  metric 2 requires.
 - `backend/src/topic_index.rs:89` — `static TOPIC_INDEX_CACHE: OnceLock<TopicIndex>`;
   `load_topic_index() -> &'static TopicIndex` at `:100` with the
   `.expect("Failed to parse CIPS general index JSON")`; seven accessors at
@@ -372,6 +381,13 @@ match qt_thread.queue(move |mut qo| { /* ... */ }) {
 }
 ```
 
+**As implemented, the helper logs and *continues*, not "log and return"** as the
+snippet above says — the call sites keep their control flow, so no cleanup
+obligation can be skipped by a new early return (2.4). It returns a `bool` for
+any future call site that does need to abort. `CLAUDE.md` §5c and
+`docs/window-lifecycle-and-reuse.md` §5c state the rule in that form; the snippet
+is the only place left saying "return". New code in FR-34a follows the doc.
+
 **Two defects, not one.** 90 sites `.unwrap()` (→ panic) and 34 sites `let _ =`
 (→ silent loss, no log line). The helper fixes both; apply it to all 124. Three
 files — `dictionary_manager.rs`, `audio_manager.rs`, `storage_manager.rs` — are
@@ -397,6 +413,9 @@ churn.
   - [x] 2.10 Add a `Logger` line at each notify site (single concatenated string, never `console.*`) so the destroy path is greppable in `log.txt` during device testing.
   - [x] 2.11 `make build -B` and `make qml-test`; confirm no new qmllint warnings naming the touched QML files.
   - [x] 2.12 Write the manual verification checklist into the commit message / task notes for the user to run.
+  - [x] 2.13 **(added by the 2026-08-13 review of phases 1–2)** Cancel a pending close when the window is re-opened. A deferred close only *hides* the window and leaves the wrapper in `WindowManager`'s list, so the next open revives it through `reuse_or_evict()`; when the operation completed, its handler saw `close_pending` and destroyed the window the user was then looking at. All five deferring windows now clear the flag (and stop the failsafe `Timer`) in `onVisibleChanged`. Exposure was seconds for the two warm-ups but the whole of a language download or chanting recording for the rest.
+  - [x] 2.14 **(added by the same review)** Re-init on show, since a reused window's `Component.onCompleted` runs once per *instance*, not once per open. `SuttaLanguagesWindow` closed on the completion page (`views_stack.currentIndex = 2`, whose only control is **Quit**) reopened straight back onto it over a stale language list, with no route back short of restarting the app — a regression against the pre-phase-1 behaviour of building a fresh window per open. It now re-reads both lists and returns to index 0 unless an operation is running; `LibraryWindow` re-reads its book list; `ChantingPracticeReviewWindow` re-acquires the mobile keep-screen-on flag its `onClosing` released. Guarded by an `is_initialized` flag, because `visible: true` makes `onVisibleChanged` fire *before* `Component.onCompleted` on the first show. `TopicIndexWindow` and `ReferenceSearchWindow` deliberately keep their previous letter / query / results. Recorded in `docs/window-lifecycle-and-reuse.md` §5b (first two traps) and the new §5b-bis.
+  - [x] 2.15 **(same review, small items)** `cli/Cargo.toml` dropped `unicode-normalization`, unused there since 3.2 moved the parser; `reuse_or_evict()` gained a comment stating that a null wrapper sitting *after* a live one is deliberately not evicted on that pass (bounded — a new wrapper is appended only when no live one is found).
 
 ### Manual verification checklist for phase 1 (2.12)
 
@@ -444,6 +463,19 @@ the Close button (W-11) — back goes through the same `onClosing` handlers.
     `qt_thread.queue() failed` line during normal use. One appearing after a
     close is informative, not fatal — but it names the operation that lost its
     completion signal and is worth reporting.
+11. **Re-open during a deferred close (2.13).** Start a language download, close
+    the Sutta Languages window, **re-open it while the download is still
+    running**, and let the download finish. Expected: the window stays open and
+    shows the completion screen; `log.txt` shows `reopened while a close was
+    pending, deferred destroy cancelled` and **no** `on_window_closed` line. A
+    window that vanishes when the download ends is the defect 2.13 fixed.
+    Repeat the same shape with a chanting recording.
+12. **Re-init on re-open (2.14).** Download or remove a language, wait for the
+    "Quit and start the application again" page, close the window and open it
+    again. Expected: the language list, not that page. Then: open the Library,
+    close it, import nothing, re-open — the book list is re-read. On Android,
+    open a chanting review, close it, re-open it and confirm the screen still
+    stays awake during playback.
 
 ---
 
@@ -612,6 +644,51 @@ pub fn ensure_topic_index_loaded();             // replaces load_topic_index()
 
 **Do not rewrite the seven existing tests in `topic_index.rs`** — they are the
 canary for this change (§11.5.2).
+
+**FR-11b's date stamp — the generation half is done, the resolution half is
+4.7's** (raised and half-built by the 2026-08-13 review). The PRD resolved FR-11b
+to *"store a date for when the builtin json was updated … compare with the date
+of the downloaded json, use the more recent one"*, which supersedes the plain
+row-then-embedded ordering that FR-11 and task 4.7 still spell out.
+
+Done already, because the stamp has to be generated before anything can read it:
+
+- **`assets/general-index-date.txt`**, holding UTC `YYYY-MM-DDTHH:MM:SSZ`.
+  A separate file rather than a field in the JSON, because
+  `assets/general-index.json` is a bare array that both the embedded path and
+  the stored `index_json` deserialize as `Vec<TopicIndexLetter>` — a metadata
+  slot would be a format change on both.
+- **It stamps the source CSV's date, not the generator run's** (`csv_source_stamp()`):
+  the last commit touching the CSV in the CIPS checkout (`git -C <dir> log -1
+  --format=%ct`), falling back to the file's mtime and only then to now, with the
+  source it used printed. What the comparison must answer is *"whose CIPS data is
+  newer"*, so re-running `make parse-cips` over an unchanged CSV must not make
+  the shipped index look newer than a download carrying the same content.
+- **The CLI writes it** from `parse_cips_to_json()`, deriving the path from the
+  `--json-path` it was given (`<stem>-date.txt`), so a comparison run writing
+  the JSON to a scratchpad stamps that copy and leaves the shipped one alone.
+- **The backend embeds it** as `app_settings::cips_general_index_date()`
+  (`include_str!` + `trim()`), beside `CIPS_GENERAL_INDEX_JSON`.
+- The checked-in stamp is `2026-08-05T15:44:48Z`, read from the CIPS checkout for
+  the CSV the shipped JSON was generated from. Written by hand this once, since
+  regenerating the JSON was out of scope for this review — the local CSV has
+  moved on from the one behind the shipped JSON. The next `make parse-cips` run
+  writes both together, which is the normal case.
+
+Left for 4.7 / 4.10 / 4.11:
+
+- Resolve the source by **comparing the stored row's `updated_at` with that
+  stamp** and taking the later one — sound in both directions, since a shipped
+  index generated after the user's download wins and a download made after
+  installing that release wins again. `raw.githubusercontent.com` sends no
+  `Last-Modified` (FR-19), so there is no upstream content date to use instead.
+- **`updated_at` must be written in exactly the stamp's format** — fixed-width
+  UTC ISO 8601 to the second — because the comparison is a plain string
+  compare. A bare date, a local time or a non-`Z` offset breaks it silently.
+  Task 4.2's "an ISO date string" is not specific enough.
+- 7.13a still offers the superseded *"or record the acceptance in docs"* branch;
+  drop it when that task is reached, and have `topic_index_source_info()` report
+  which source actually won rather than merely whether a row exists.
 
 - [ ] 4.0 Phase 3 storage layer — `topic_index_data` migration, Diesel schema and model, and the swappable `RwLock<Option<Arc<TopicIndex>>>` cache with DB-first source resolution (FR-9 … FR-15a)
   - [ ] 4.1 Create the dated migration folder with `up.sql` (the `CREATE TABLE` above) and a matching `down.sql` (`DROP TABLE topic_index_data;`).

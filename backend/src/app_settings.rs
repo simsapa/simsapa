@@ -7,7 +7,27 @@ static PROVIDERS_JSON: &str = include_str!("../../assets/providers.json");
 pub static LANGUAGES_JSON: &str = include_str!("../../assets/languages.json");
 pub static SUTTA_REFERENCE_CONVERTER_JSON: &str = include_str!("../../assets/sutta-reference-converter.json");
 pub static CIPS_GENERAL_INDEX_JSON: &str = include_str!("../../assets/general-index.json");
+/// UTC `YYYY-MM-DDTHH:MM:SSZ` when the CIPS CSV behind the embedded index above
+/// was last changed (its commit date in the CIPS repository, not the date the
+/// index was generated — re-running the generator over unchanged data must not
+/// make the shipped index look newer). Written by the CLI's `parse-cips-index`
+/// command alongside the JSON. Compared
+/// with a downloaded index's `updated_at` so a later release shipping a newer
+/// index is not shadowed forever by an index a user downloaded once (PRD
+/// FR-11b). Use `cips_general_index_date()`, which trims the trailing newline.
+static CIPS_GENERAL_INDEX_DATE_RAW: &str = include_str!("../../assets/general-index-date.txt");
 static KEYBINDINGS_JSON: &str = include_str!("../../assets/keybindings.json");
+
+/// The embedded CIPS index's generation time, UTC `YYYY-MM-DDTHH:MM:SSZ`.
+///
+/// Comparing it with the stored row's `updated_at` is a plain string comparison:
+/// both are fixed-width UTC ISO 8601 to the second, so lexicographic order is
+/// chronological order. **`updated_at` must therefore be written in exactly this
+/// format** — a bare date, a local time, or an offset other than `Z` breaks the
+/// comparison silently.
+pub fn cips_general_index_date() -> &'static str {
+    CIPS_GENERAL_INDEX_DATE_RAW.trim()
+}
 
 /// Where a model entry came from. `Fetched` entries are owned by the model-list
 /// updater (it adds and removes them); `User` entries were added by hand in the

@@ -9,10 +9,12 @@
 //! This is the only place in the CIPS path that touches an output file or
 //! prints. See `docs/cips-index-updates.md`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
+use std::process::Command;
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 
 use simsapa_backend::cips_parse::{parse_cips_index, validate_anchors, validate_index, SuttaSegments};
 
@@ -25,6 +27,14 @@ use simsapa_backend::cips_parse::{parse_cips_index, validate_anchors, validate_i
 /// * `segments_lookup` - Function returning a sutta's segment keys; `None`
 ///   skips anchor validation entirely (no database was given)
 /// * `minify` - If true, output minified JSON (no pretty-printing)
+///
+/// Also writes a sibling date-stamp file (`<name>-date.txt` next to the JSON,
+/// so `assets/general-index.json` gets `assets/general-index-date.txt`) holding
+/// the UTC `YYYY-MM-DDTHH:MM:SSZ` **the source CSV** was last changed — see
+/// `csv_source_stamp()`. The backend embeds that stamp alongside the JSON and
+/// compares it with a downloaded index's `updated_at`, so that a later release
+/// shipping newer CIPS data is not shadowed forever by an index a user
+/// downloaded once. See `docs/cips-index-updates.md`.
 ///
 /// # Returns
 /// The number of headwords processed
@@ -88,5 +98,74 @@ where
     fs::write(json_path, json_str)
         .with_context(|| format!("Failed to write JSON file: {:?}", json_path))?;
 
+    let date_path = date_stamp_path(json_path);
+    let (stamp, stamp_source) = csv_source_stamp(csv_path);
+    fs::write(&date_path, format!("{}\n", stamp))
+        .with_context(|| format!("Failed to write date stamp file: {:?}", date_path))?;
+    eprintln!("Wrote date stamp {} ({}) to {:?}", stamp, stamp_source, date_path);
+
     Ok(headword_count)
+}
+
+/// When the *source CSV* was last changed, as UTC `YYYY-MM-DDTHH:MM:SSZ`.
+///
+/// The CSV's date, not this run's: the stamp is compared with the `updated_at`
+/// of an index a user downloaded, and what that comparison has to answer is
+/// "whose CIPS data is newer", not "who ran a command more recently". Re-running
+/// `make parse-cips` over an unchanged CSV must not make the shipped index look
+/// newer than a download that carries the same content.
+///
+/// Preferred source is the commit date in the CIPS repository the CSV is checked
+/// out from. Second-resolution UTC, not a bare date, so two stamps from the same
+/// day still order.
+fn csv_source_stamp(csv_path: &Path) -> (String, &'static str) {
+    if let Some(t) = git_commit_time(csv_path) {
+        return (format_utc(t), "CIPS repo commit date");
+    }
+    // Not a git checkout (a downloaded copy, say). mtime is the next best
+    // statement about the content -- note a fresh clone sets it to the checkout
+    // time, which is why it is not preferred over the commit date.
+    if let Ok(meta) = fs::metadata(csv_path) {
+        if let Ok(mtime) = meta.modified() {
+            let t: DateTime<Utc> = mtime.into();
+            return (format_utc(t), "CSV file mtime");
+        }
+    }
+    (format_utc(Utc::now()), "now -- CSV date unavailable")
+}
+
+fn format_utc(t: DateTime<Utc>) -> String {
+    t.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// Committer date of the last commit touching `csv_path`, read with `git -C` in
+/// the file's own directory so it works whatever repository the CSV lives in.
+/// `%ct` is a Unix timestamp, which sidesteps git's date formatting and locale.
+fn git_commit_time(csv_path: &Path) -> Option<DateTime<Utc>> {
+    let dir = csv_path.parent()?;
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["log", "-1", "--format=%ct", "--"])
+        .arg(csv_path)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let secs: i64 = String::from_utf8_lossy(&out.stdout).trim().parse().ok()?;
+    DateTime::from_timestamp(secs, 0)
+}
+
+/// `.../general-index.json` -> `.../general-index-date.txt`.
+///
+/// Derived from the JSON path rather than hard-coded, so a run writing the JSON
+/// somewhere else (a scratchpad comparison run, say) stamps that copy and leaves
+/// the shipped `assets/general-index-date.txt` alone.
+fn date_stamp_path(json_path: &Path) -> PathBuf {
+    let stem = json_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "general-index".to_string());
+    json_path.with_file_name(format!("{}-date.txt", stem))
 }

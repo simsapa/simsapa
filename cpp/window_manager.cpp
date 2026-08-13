@@ -348,6 +348,11 @@ StorageRecoveryWindow* WindowManager::create_storage_recovery_window() {
 ///
 /// The loop iterates a copy because it mutates the list. QList is implicitly
 /// shared, so the copy costs nothing until removeAll detaches it.
+///
+/// It returns at the first live wrapper, so a null one sitting *after* it is not
+/// evicted on this pass. That is deliberate and bounded: a new wrapper is only
+/// appended when no live one is found, so the list cannot grow past the one
+/// straggler, and the next open with no live instance evicts it.
 template <typename T>
 static T* reuse_or_evict(QList<T*>& windows) {
     for (auto w : QList<T*>(windows)) {

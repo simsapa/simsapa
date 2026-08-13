@@ -210,8 +210,35 @@ leaks the window.
 | `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3, so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
 | `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
 
-Three traps in that table:
+Five traps in that table:
 
+- **A re-open while a close is pending must cancel that close.** This is the one
+  that bites, and it is a property of the deferral pattern rather than of any one
+  window. A pending close has only *hidden* the window; the wrapper is still in
+  `WindowManager`'s list, so the next open reaches `reuse_or_evict()` and revives
+  exactly the window that is on its way out. When the operation finally completes,
+  its handler sees `close_pending` and notifies — destroying the window the user
+  is now looking at. Every deferring window therefore carries
+
+  ```qml
+  onVisibleChanged: {
+      if (root.visible && root.close_pending) {
+          root.close_pending = false;
+          close_deferral_failsafe.stop();
+          logger.info("…: reopened while a close was pending, deferred destroy cancelled");
+      }
+  }
+  ```
+
+  The exposure is as long as the operation: seconds for the two warm-ups, but the
+  whole of a language download or a chanting recording for the other three.
+- **`SuttaLanguagesWindow` is the one deferring window with no failsafe `Timer`,
+  deliberately.** The other four give up after 15 s; a download legitimately runs
+  far longer than that, and destroying the window mid-download is the exact defect
+  the deferral prevents. The cost is that if `onDownloadsCompleted` /
+  `onRemovalCompleted` never arrive, that window is never destroyed — it stays
+  hidden in the list and the next open revives it, which is why the rule above
+  covers this case too.
 - **The two warm-ups are the cheapest reproductions in the app.** Both windows
   start a thread from `Component.onCompleted`; closing the window before it
   finishes is a two-second test.
@@ -224,6 +251,31 @@ Three traps in that table:
   database row that makes the recording *visible* is written by QML in
   `onRecording_completed`. Destroy the window before that arrives and the file
   exists while the recording has vanished from the UI.
+
+### 5b-bis. Re-open runs no `Component.onCompleted` — re-init on show
+
+Five of the seven windows used to be constructed fresh on every open. They are
+now **reused**, so `Component.onCompleted` runs once per *instance*, not once per
+open, and anything it set up is whatever the user left behind when they closed
+the window. §8's "a revived window must be reset" applies to the unparameterised
+windows too — an earlier reading of it as "unparameterised windows need no
+re-init" was wrong.
+
+What that turned up, and what each window now does in `onVisibleChanged`:
+
+| Window | What went stale | Now |
+|---|---|---|
+| `SuttaLanguagesWindow` | closing on the completion page (`views_stack.currentIndex = 2`, whose only control is **Quit**) reopened straight back onto it, over a stale installed-language list — with no route back to the list short of restarting the app | re-reads both language lists and returns to index 0 — **unless** a download or removal is running, which keeps its progress view |
+| `LibraryWindow` | the book list was read only at load | re-reads it |
+| `ChantingPracticeReviewWindow` | `onClosing` releases the mobile keep-screen-on flag, and only `Component.onCompleted` takes it — so every reused review window ran with the screen free to sleep | re-acquires it (a window flag, not a counted lock, so setting it twice is harmless) |
+| `TopicIndexWindow`, `ReferenceSearchWindow` | nothing — carrying the previous letter, query and results across a re-open is the better behaviour | nothing |
+
+Two mechanical points. `visible: true` on the root means `onVisibleChanged` fires
+**before** `Component.onCompleted` on the first show, so a handler that reloads
+data needs an `is_initialized` flag set at the end of `onCompleted` or it will
+query twice on every window creation. And `SuttaLanguagesWindow` releases its
+keep-screen-on lock in `Component.onDestruction`, not `onClosing`, so unlike the
+review window it needs no re-acquire.
 
 ### 5c. `qt_thread.queue()` must never be `.unwrap()`ed or discarded
 
@@ -276,7 +328,13 @@ missing from them.
    destroy path is greppable in `log.txt`.
 6. **Does it start a long operation?** Then it needs the §5b deferral — and add
    a row to that table. Anything that `thread::spawn`s in the backend counts,
-   including a warm-up the window fires from `Component.onCompleted`.
+   including a warm-up the window fires from `Component.onCompleted`. A deferring
+   window also needs the `onVisibleChanged` cancel of §5b's first trap.
+6a. **What does `Component.onCompleted` set up?** It runs once per instance, not
+   once per open, so anything time-varying (a list read from the database, a
+   keep-screen-on flag released on close, a `StackLayout` page) must be re-done in
+   `onVisibleChanged` — see §5b-bis, including the `is_initialized` flag that
+   keeps the first show from doing it twice.
 7. **New bridge code**: `crate::queue_or_log`, never `.unwrap()` (§5c).
 8. **Verify on Android with the back button**, not only the Close button — back
    reaches these windows and goes through the same `onClosing` handler. Watch
@@ -293,7 +351,8 @@ missing from them.
    `visible`.
 3. **A revived window must be reset** to whatever state its caller assumes —
    `clear_all_tabs()` for the reader, re-applied parameters for the two
-   parameterised secondary windows.
+   parameterised secondary windows, and the `onVisibleChanged` re-init of
+   §5b-bis for the unparameterised ones that show time-varying data.
 4. **Do not "fix" the pool by destroying closed `SuttaSearchWindow`s.** The
    hiding is deliberate; destroying the engine gives back the reuse win in §2,
    and those windows host `WebEngineView`s (§5a).

@@ -111,6 +111,18 @@ ApplicationWindow {
         SuttaBridge.notify_window_closed("reference_search");
     }
 
+    // A close that is pending only hid the window; the wrapper is still in
+    // WindowManager's list, so the next open revives *this* window. Reviving it
+    // cancels the pending close -- otherwise the deferred notify arrives later
+    // and destroys the window the user is now looking at.
+    onVisibleChanged: {
+        if (root.visible && root.close_pending) {
+            root.close_pending = false;
+            close_deferral_failsafe.stop();
+            logger.info("ReferenceSearchWindow: reopened while a close was pending, deferred destroy cancelled");
+        }
+    }
+
     onClosing: function(close) {
         if (!close.accepted) {
             return;
