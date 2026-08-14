@@ -316,6 +316,32 @@ The opt-out is temporary. Removing it, and what to re-test when Qt implements th
 callback, is in
 [android-qt-upgrade-considerations.md §2.1](./android-qt-upgrade-considerations.md).
 
+### 5a. `minimize_app()` — what back can no longer do
+
+Because the opt-out keeps back on the **legacy `KEYCODE_BACK` path**, Qt delivers
+it to the top-level window as a **close request**, and it reaches
+`SuttaSearchWindow.qml`'s `onClosing`. That handler cancels the close on mobile
+and opens the tab list; on mobile it is reached by *nothing else*, since the
+deliberate close paths hide or clear the window without calling `close()` (see
+[window-lifecycle-and-reuse.md §9.4](./window-lifecycle-and-reuse.md)). So back
+never leaves the app, and there is no gesture that backgrounds it.
+
+*Close Window* on the **last** visible window is what fills that gap, via
+`cpp/app_minimize.cpp`'s `minimize_app()` — `Activity.moveTaskToBack(true)` on
+the Android main thread, following `cpp/screen.cpp`'s JNI pattern. The window is
+cleared but never hidden (hiding the last visible window empties the saved
+session), and Simsapa stays in the overview screen exactly as the user left it.
+
+**On iOS the same action quits instead** (`Qt.quit()`). iOS exposes no public way
+to background an app — the mechanisms that do (`exit(0)`, the private
+`UIApplication.suspend` selector) are App Store rejection grounds — so quitting
+is the honest equivalent, and `aboutToQuit` saves the session normally. The
+branch is on the **platform**, not on `is_mobile`; on desktop `minimize_app()` is
+a logged no-op.
+
+No explicit session save sits on the minimise path: backgrounding raises
+`applicationStateChanged`, which already saves (§4 of the lifecycle doc).
+
 ---
 
 ## 6. Deprecated status/navigation bar APIs in Play's report

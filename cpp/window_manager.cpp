@@ -456,7 +456,16 @@ void WindowManager::save_session_now(const QString& reason) {
     QJsonArray all_windows;
     for (auto w : this->sutta_search_windows) {
         if (w->m_root) {
-            // Only save windows that are still visible (not closed/hidden)
+            // Only save windows that are still visible (not closed/hidden).
+            //
+            // DO NOT relax this filter (requirement 38b of the mobile window
+            // switcher PRD, 2026-08-13-151724): a hidden window is an internal reuse-pool artifact the user does
+            // not know exists and has closed deliberately -- restoring one
+            // would resurrect a window they dismissed. The accepted side
+            // effect is that a renamed window closed before quitting loses its
+            // name. The close paths are what must not create the state where
+            // this filter is destructive: see the mobile teardown guard below
+            // and docs/window-lifecycle-and-reuse.md.
             QVariant visible = w->m_root->property("visible");
             if (!visible.isValid() || !visible.toBool()) {
                 continue;
