@@ -28,8 +28,8 @@ Item {
         return false;
     }
 
-    function set_keep_screen_on(on: bool) {
-        console.log("set_keep_screen_on(" + on + ")");
+    function set_keep_screen_on(holder: string, on: bool) {
+        console.log("set_keep_screen_on(" + holder + ", " + on + ")");
     }
 
     function open_display_settings() {

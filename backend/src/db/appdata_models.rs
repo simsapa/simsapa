@@ -489,6 +489,14 @@ pub struct BookmarkFolder {
     pub sort_order: i32,
     pub is_last_session: bool,
     pub is_user_added: bool,
+    /// Per-window session metadata. Only ever set on last-session folders,
+    /// where one folder is one Sutta Search window. See the
+    /// 2026-08-13-210000_session_window_metadata migration.
+    pub window_title: Option<String>,
+    pub active_tab_group: Option<String>,
+    pub active_tab_index: Option<i32>,
+    /// Which window was in front when the session was saved.
+    pub is_active_window: Option<bool>,
 }
 
 #[derive(Insertable)]
@@ -498,6 +506,10 @@ pub struct NewBookmarkFolder<'a> {
     pub sort_order: i32,
     pub is_last_session: bool,
     pub is_user_added: bool,
+    pub window_title: Option<&'a str>,
+    pub active_tab_group: Option<&'a str>,
+    pub active_tab_index: Option<i32>,
+    pub is_active_window: Option<bool>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, PartialEq, Associations, Serialize, Deserialize)]

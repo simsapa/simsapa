@@ -24,6 +24,16 @@ extern "C++" {
     void callback_open_in_lookup_window(QString result_data_json);
     void callback_open_chanting_practice_window(QString window_id);
     void callback_open_chanting_review_window(QString window_id, QString section_uid);
+    /// The mobile window switcher's query/command surface. Unlike the callbacks
+    /// above, these run synchronously on the GUI thread and forward straight to
+    /// the WindowManager -- no signal/slot indirection, and the first two return
+    /// a value.
+    QString callback_open_sutta_windows_json(QString current_window_id);
+    int callback_count_open_sutta_search_windows();
+    void callback_activate_sutta_search_window(QString window_id, QString tab_id_key);
+    void callback_close_sutta_search_window(QString window_id);
+    void callback_set_sutta_search_window_title(QString window_id, QString title);
+    void callback_activate_most_recently_used_window(QString exclude_window_id);
     /// Destroy the single-instance secondary window of the given type, once QML
     /// has accepted its close.
     void callback_window_closed(QString window_type);

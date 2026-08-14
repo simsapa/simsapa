@@ -217,19 +217,186 @@ SuttaSearchWindow* WindowManager::create_sutta_search_window() {
         // replaces the current tab rather than adding one), so leftover tabs
         // from before the window was closed must not survive.
         QMetaObject::invokeMethod(reused->m_root, "clear_all_tabs");
+        // A custom title belongs to the window the user closed. The revived
+        // object keeps its window_id and loses its tabs, so the user
+        // experiences it as brand new -- it must present as one in every
+        // respect, or "rename, close, New Window" hands back a blank window
+        // still called "Dependent origination".
+        reused->m_root->setProperty("window_title", QString());
         show_and_activate_window(reused->m_root);
         // Move to the end so it counts as the newest window for the
         // window_id-less dispatch fallbacks.
         this->sutta_search_windows.removeOne(reused);
         this->sutta_search_windows.append(reused);
+        const QString reused_id = reused->m_root->property("window_id").toString();
+        this->touch_window_mru(reused_id);
+        log_info_c(QString("create_sutta_search_window(): revived %1").arg(reused_id).toUtf8().constData());
         return reused;
     }
 
     SuttaSearchWindow* w = new SuttaSearchWindow(this->m_app);
     sutta_search_windows.append(w);
-    w->m_root->setProperty("window_id", QString("window_%1").arg(this->m_window_id_count));
+    const QString new_id = QString("window_%1").arg(this->m_window_id_count);
+    w->m_root->setProperty("window_id", new_id);
     this->m_window_id_count++;
+    this->touch_window_mru(new_id);
+    log_info_c(QString("create_sutta_search_window(): created %1").arg(new_id).toUtf8().constData());
     return w;
+}
+
+SuttaSearchWindow* WindowManager::find_sutta_search_window(const QString& window_id) {
+    for (auto* w : this->sutta_search_windows) {
+        if (w == nullptr || w->m_root == nullptr) {
+            continue;
+        }
+        if (w->m_root->property("window_id").toString() == window_id) {
+            return w;
+        }
+    }
+    return nullptr;
+}
+
+QString WindowManager::open_sutta_windows_json(const QString& current_window_id) {
+    QJsonArray arr;
+
+    for (auto* w : this->sutta_search_windows) {
+        // Hidden windows are pool artifacts the user does not know exist.
+        if (!window_is_open(w)) {
+            continue;
+        }
+
+        const QString window_id = w->m_root->property("window_id").toString();
+
+        QString tabs_json;
+        QMetaObject::invokeMethod(w->m_root, "get_open_tabs_json",
+                                  Q_RETURN_ARG(QString, tabs_json));
+
+        QJsonArray tabs;
+        if (!tabs_json.isEmpty()) {
+            QJsonDocument tabs_doc = QJsonDocument::fromJson(tabs_json.toUtf8());
+            if (tabs_doc.isArray()) {
+                tabs = tabs_doc.array();
+            } else {
+                log_error_c(QString("open_sutta_windows_json(): %1 returned unparseable tabs: %2")
+                            .arg(window_id, tabs_json).toUtf8().constData());
+            }
+        }
+
+        QJsonObject obj;
+        obj["window_id"] = window_id;
+        obj["title"] = w->m_root->property("window_title").toString();
+        obj["is_current"] = (window_id == current_window_id);
+        obj["tabs"] = tabs;
+        arr.append(obj);
+    }
+
+    return QString::fromUtf8(QJsonDocument(arr).toJson(QJsonDocument::Compact));
+}
+
+int WindowManager::count_open_sutta_search_windows() {
+    int count = 0;
+    for (auto* w : this->sutta_search_windows) {
+        if (window_is_open(w)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+void WindowManager::activate_sutta_search_window(const QString& window_id, const QString& tab_id_key) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("activate_sutta_search_window(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("activate_sutta_search_window(): %1 tab '%2'")
+               .arg(window_id, tab_id_key).toUtf8().constData());
+
+    show_and_activate_window(w->m_root);
+    this->touch_window_mru(window_id);
+
+    if (!tab_id_key.isEmpty()) {
+        // Logs and returns when the id_key no longer resolves, so a tab closed
+        // between the dialog opening and the tap is a log line, not a crash.
+        QMetaObject::invokeMethod(w->m_root, "focus_on_tab_with_id_key",
+                                  Q_ARG(QString, tab_id_key));
+    }
+}
+
+void WindowManager::close_sutta_search_window(const QString& window_id) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("close_sutta_search_window(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("close_sutta_search_window(): %1").arg(window_id).toUtf8().constData());
+
+    // Pooled family: QML flushes its Gloss/Prompts sessions and hides the
+    // window. The wrapper stays in sutta_search_windows for reuse; nothing is
+    // deleted, and on_window_closed() is not involved.
+    QMetaObject::invokeMethod(w->m_root, "close_window_from_switcher");
+    this->m_mru_window_ids.removeAll(window_id);
+}
+
+void WindowManager::set_sutta_search_window_title(const QString& window_id, const QString& title) {
+    SuttaSearchWindow* w = this->find_sutta_search_window(window_id);
+    if (w == nullptr) {
+        log_error_c(QString("set_sutta_search_window_title(): no window %1").arg(window_id).toUtf8().constData());
+        return;
+    }
+
+    log_info_c(QString("set_sutta_search_window_title(): %1 -> '%2'")
+               .arg(window_id, title).toUtf8().constData());
+
+    // Trimming and "empty means no custom title" are decided QML-side; here we
+    // store what we are given.
+    w->m_root->setProperty("window_title", title);
+}
+
+void WindowManager::touch_window_mru(const QString& window_id) {
+    if (window_id.isEmpty()) {
+        return;
+    }
+    this->m_mru_window_ids.removeAll(window_id);
+    this->m_mru_window_ids.append(window_id);
+}
+
+void WindowManager::activate_most_recently_used_window(const QString& exclude_window_id) {
+    SuttaSearchWindow* w = this->most_recently_used_open_window(exclude_window_id);
+    if (w == nullptr) {
+        log_error_c(QString("activate_most_recently_used_window(): no other open window (excluding %1)")
+                    .arg(exclude_window_id).toUtf8().constData());
+        return;
+    }
+
+    const QString window_id = w->m_root->property("window_id").toString();
+    log_info_c(QString("activate_most_recently_used_window(): %1").arg(window_id).toUtf8().constData());
+
+    show_and_activate_window(w->m_root);
+    this->touch_window_mru(window_id);
+}
+
+SuttaSearchWindow* WindowManager::most_recently_used_open_window(const QString& exclude_window_id) {
+    for (auto it = this->m_mru_window_ids.crbegin(); it != this->m_mru_window_ids.crend(); ++it) {
+        if (*it == exclude_window_id) {
+            continue;
+        }
+        SuttaSearchWindow* w = this->find_sutta_search_window(*it);
+        if (window_is_open(w)) {
+            return w;
+        }
+    }
+
+    // The stamp knows nothing about this window (e.g. a session restored before
+    // it was seeded), so fall back to the newest window the user has open.
+    SuttaSearchWindow* last = this->last_open_sutta_search_window();
+    if (last != nullptr && window_is_open(last)
+        && last->m_root->property("window_id").toString() != exclude_window_id) {
+        return last;
+    }
+    return nullptr;
 }
 
 /// Newest closed (hidden) window in the pool, or nullptr if every window is
@@ -267,6 +434,96 @@ SuttaSearchWindow* WindowManager::first_open_sutta_search_window() {
     return this->sutta_search_windows.first();
 }
 
+/// Moved here from the aboutToQuit lambda in gui.cpp so that the periodic
+/// autosave and the going-to-background save share one implementation rather
+/// than growing a second, drifting copy.
+///
+/// The `visible` filter is load-bearing and must stay: a hidden window is a
+/// reuse-pool artifact the user does not know exists and has formed no
+/// intention about, so restoring one would resurrect a window they closed.
+void WindowManager::save_session_now(const QString& reason) {
+    log_info_c(QString("save_session_now(%1): saving last session").arg(reason).toUtf8().constData());
+
+    // Which window is in front, so restore can bring the user back to it.
+    // Taken from the MRU stamp rather than from the windows' `active`
+    // property: the most common time to save is while the app is going to the
+    // background, and a backgrounded app has no active window at all.
+    QString active_window_id;
+    if (SuttaSearchWindow* mru = this->most_recently_used_open_window()) {
+        active_window_id = mru->m_root->property("window_id").toString();
+    }
+
+    QJsonArray all_windows;
+    for (auto w : this->sutta_search_windows) {
+        if (w->m_root) {
+            // Only save windows that are still visible (not closed/hidden).
+            //
+            // DO NOT relax this filter (requirement 38b of the mobile window
+            // switcher PRD, 2026-08-13-151724): a hidden window is an internal reuse-pool artifact the user does
+            // not know exists and has closed deliberately -- restoring one
+            // would resurrect a window they dismissed. The accepted side
+            // effect is that a renamed window closed before quitting loses its
+            // name. The close paths are what must not create the state where
+            // this filter is destructive: see the mobile teardown guard below
+            // and docs/window-lifecycle-and-reuse.md.
+            QVariant visible = w->m_root->property("visible");
+            if (!visible.isValid() || !visible.toBool()) {
+                continue;
+            }
+            QString session_json;
+            QMetaObject::invokeMethod(w->m_root, "get_session_data_json",
+                Q_RETURN_ARG(QString, session_json));
+            if (!session_json.isEmpty()) {
+                QJsonDocument doc = QJsonDocument::fromJson(session_json.toUtf8());
+                if (!doc.isNull()) {
+                    QJsonObject obj = doc.object();
+                    const QString window_id = obj.value("name").toString();
+                    obj["is_active_window"] = (!active_window_id.isEmpty()
+                                               && window_id == active_window_id);
+                    all_windows.append(obj);
+                }
+            }
+        }
+    }
+
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    // Refuse to clear the stored session during teardown.
+    //
+    // Android can make the windows non-visible before aboutToQuit runs, and an
+    // empty save deletes every session folder -- destroying what the
+    // going-to-background save had just stored correctly. Observed in a device
+    // log: an aboutToQuit that collected zero windows moments after two
+    // successful saves of two windows each.
+    //
+    // On mobile this state cannot be reached legitimately: no code path hides
+    // the last visible window (the switcher's trash and Close Window both clear
+    // its tabs and leave it shown instead), so "windows exist but none are
+    // visible" means teardown. On desktop the same state IS legitimate -- the
+    // user closed every window -- which is why this guard is mobile-only and
+    // the deliberate clear-on-empty behaviour below is untouched there.
+    if (all_windows.isEmpty() && !this->sutta_search_windows.isEmpty()) {
+        log_info_c(QString("save_session_now(%1): no visible windows, refusing to clear the stored session")
+                   .arg(reason).toUtf8().constData());
+        return;
+    }
+#endif
+
+    // NOTE: Call save_last_session even when all_windows is empty. An empty
+    // array clears the stored session, which is what we want when the user
+    // closed all tabs (the last placeholder tab's Ctrl+W calls root.close(),
+    // hiding the window so it is skipped by the visibility check above). Without
+    // this, an empty session would never overwrite a previously saved one, and
+    // the old tabs would be wrongly restored on the next launch.
+    if (this->sutta_search_windows.length() > 0) {
+        QString windows_json = QJsonDocument(all_windows).toJson(QJsonDocument::Compact);
+        auto first_window = this->sutta_search_windows.first();
+        if (first_window->m_root) {
+            QMetaObject::invokeMethod(first_window->m_root, "save_last_session",
+                Q_ARG(QString, windows_json));
+        }
+    }
+}
+
 void WindowManager::restore_last_session() {
     if (this->sutta_search_windows.length() == 0) {
         return;
@@ -301,6 +558,13 @@ void WindowManager::restore_last_session() {
     }
 
     QJsonArray windows = doc.array();
+
+    // The window that was in front when the session was saved. Restoring the
+    // tabs is not enough on its own: without this, whichever window happens to
+    // be created last is the one the user comes back to, so switching windows
+    // and then leaving the app returns them to the wrong one.
+    SuttaSearchWindow* window_to_activate = nullptr;
+
     for (int i = 0; i < windows.size(); i++) {
         QJsonObject window_obj = windows[i].toObject();
         QString window_json = QJsonDocument(window_obj).toJson(QJsonDocument::Compact);
@@ -317,7 +581,29 @@ void WindowManager::restore_last_session() {
         if (target_window && target_window->m_root) {
             QMetaObject::invokeMethod(target_window->m_root, "restore_last_session",
                 Q_ARG(QString, window_json));
+
+            // Seed the MRU stamp in restore order, so a later Close Window
+            // falls back to a sensible neighbour rather than to the raw list
+            // order. The active window is touched last, below.
+            this->touch_window_mru(target_window->m_root->property("window_id").toString());
+
+            if (window_obj.value("is_active_window").toBool()) {
+                window_to_activate = target_window;
+            }
         }
+    }
+
+    // A session saved before is_active_window existed flags nothing; fall back
+    // to the newest window, which is what the old behaviour amounted to.
+    if (window_to_activate == nullptr) {
+        window_to_activate = this->last_open_sutta_search_window();
+    }
+
+    if (window_to_activate != nullptr && window_to_activate->m_root != nullptr) {
+        const QString window_id = window_to_activate->m_root->property("window_id").toString();
+        log_info_c(QString("restore_last_session(): activating %1").arg(window_id).toUtf8().constData());
+        show_and_activate_window(window_to_activate->m_root);
+        this->touch_window_mru(window_id);
     }
 }
 

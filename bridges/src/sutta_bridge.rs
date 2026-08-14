@@ -828,6 +828,15 @@ pub mod qobject {
         include!("android_raw_pick.h");
         fn start_raw_document_pick() -> bool;
 
+        // Android moveTaskToBack(), a no-op elsewhere. Its own header for the
+        // same reason cpp/screen.cpp has one: the JNI includes stay confined to
+        // that file.
+        include!("app_minimize.h");
+        // Renamed on the Rust side so it does not collide with the
+        // #[qinvokable] wrapper of the same name below.
+        #[rust_name = "minimize_app_native"]
+        fn minimize_app();
+
         include!("utils.h");
         fn get_import_staging_root() -> QString;
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
@@ -1244,6 +1253,27 @@ pub mod qobject {
 
         #[qinvokable]
         fn open_sutta_search_window_with_result(self: &SuttaBridge, result_data_json: &QString);
+
+        #[qinvokable]
+        fn get_open_sutta_windows_json(self: &SuttaBridge, current_window_id: &QString) -> QString;
+
+        #[qinvokable]
+        fn count_open_sutta_search_windows(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn activate_sutta_search_window(self: &SuttaBridge, window_id: &QString, tab_id_key: &QString);
+
+        #[qinvokable]
+        fn close_sutta_search_window(self: &SuttaBridge, window_id: &QString);
+
+        #[qinvokable]
+        fn set_sutta_search_window_title(self: &SuttaBridge, window_id: &QString, title: &QString);
+
+        #[qinvokable]
+        fn activate_most_recently_used_window(self: &SuttaBridge, exclude_window_id: &QString);
+
+        #[qinvokable]
+        fn minimize_app(self: &SuttaBridge);
 
         #[qinvokable]
         fn open_sutta_languages_window(self: &SuttaBridge);
@@ -3737,6 +3767,55 @@ impl qobject::SuttaBridge {
         ffi::callback_open_sutta_search_window(result_data_json.clone());
     }
 
+    /// The mobile window switcher's query surface: every *visible* Sutta Search
+    /// window, oldest first, with its tabs. See
+    /// docs/window-lifecycle-and-reuse.md.
+    pub fn get_open_sutta_windows_json(&self, current_window_id: &QString) -> QString {
+        use crate::api::ffi;
+        ffi::callback_open_sutta_windows_json(current_window_id.clone())
+    }
+
+    pub fn count_open_sutta_search_windows(&self) -> i32 {
+        use crate::api::ffi;
+        ffi::callback_count_open_sutta_search_windows()
+    }
+
+    pub fn activate_sutta_search_window(&self, window_id: &QString, tab_id_key: &QString) {
+        use crate::api::ffi;
+        info(&format!("activate_sutta_search_window(): {} tab '{}'", window_id, tab_id_key));
+        ffi::callback_activate_sutta_search_window(window_id.clone(), tab_id_key.clone());
+    }
+
+    pub fn close_sutta_search_window(&self, window_id: &QString) {
+        use crate::api::ffi;
+        info(&format!("close_sutta_search_window(): {}", window_id));
+        ffi::callback_close_sutta_search_window(window_id.clone());
+    }
+
+    pub fn set_sutta_search_window_title(&self, window_id: &QString, title: &QString) {
+        use crate::api::ffi;
+        info(&format!("set_sutta_search_window_title(): {} -> '{}'", window_id, title));
+        ffi::callback_set_sutta_search_window_title(window_id.clone(), title.clone());
+    }
+
+    /// Show + activate the most recently used window other than the given one.
+    /// Call this *before* hiding the outgoing window, never after.
+    pub fn activate_most_recently_used_window(&self, exclude_window_id: &QString) {
+        use crate::api::ffi;
+        info(&format!("activate_most_recently_used_window(): excluding {}", exclude_window_id));
+        ffi::callback_activate_most_recently_used_window(exclude_window_id.clone());
+    }
+
+    /// Send the app to the background (Android). Called when Close Window is
+    /// used on the last visible window; the window itself is never hidden.
+    /// The session is saved by gui.cpp's applicationStateChanged handler, which
+    /// the backgrounding raises. A no-op off Android; iOS quits instead, from
+    /// QML.
+    pub fn minimize_app(&self) {
+        info("minimize_app()");
+        qobject::minimize_app_native();
+    }
+
     pub fn open_sutta_languages_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_sutta_languages_window();
@@ -6121,11 +6200,24 @@ impl qobject::SuttaBridge {
             sort_order: i32,
         }
 
+        // Per-window metadata. All three are additions to a shape that was
+        // already being written, so a session produced by an older build (or
+        // by a window with nothing active) deserializes with them absent.
         #[derive(serde::Deserialize)]
         struct SessionWindow {
             name: String,
+            #[serde(default)]
+            title: String,
+            #[serde(default)]
+            active_tab_group: String,
+            #[serde(default = "minus_one")]
+            active_tab_index: i32,
+            #[serde(default)]
+            is_active_window: bool,
             items: Vec<SessionItem>,
         }
+
+        fn minus_one() -> i32 { -1 }
 
         let windows: Vec<SessionWindow> = match serde_json::from_str(&json_str) {
             Ok(w) => w,
@@ -6145,7 +6237,14 @@ impl qobject::SuttaBridge {
 
         // Create new session folders and items
         for window in &windows {
-            let folder_id = match app_data.dbm.appdata.create_bookmark_folder(&window.name, true) {
+            let window_title = if window.title.is_empty() { None } else { Some(window.title.as_str()) };
+            let active_tab_group = if window.active_tab_group.is_empty() { None } else { Some(window.active_tab_group.as_str()) };
+            let active_tab_index = if window.active_tab_index < 0 { None } else { Some(window.active_tab_index) };
+
+            let folder_id = match app_data.dbm.appdata.create_last_session_folder(
+                &window.name, window_title, active_tab_group, active_tab_index,
+                window.is_active_window,
+            ) {
                 Ok(id) => id,
                 Err(e) => {
                     error(&format!("save_last_session() create folder: {}", e));
@@ -6184,6 +6283,12 @@ impl qobject::SuttaBridge {
             result.push(serde_json::json!({
                 "name": folder.name,
                 "folder_id": folder.id,
+                // Absent-as-NULL is carried through as the "nothing recorded"
+                // form QML already tolerates: "" and -1.
+                "title": folder.window_title.clone().unwrap_or_default(),
+                "active_tab_group": folder.active_tab_group.clone().unwrap_or_default(),
+                "active_tab_index": folder.active_tab_index.unwrap_or(-1),
+                "is_active_window": folder.is_active_window.unwrap_or(false),
                 "items": items,
             }));
         }

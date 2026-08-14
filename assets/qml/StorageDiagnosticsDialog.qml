@@ -73,7 +73,7 @@ ApplicationWindow {
         root.is_running = true;
         root.summary_text = "";
         // Long operation: it touches the storage volume and opens every index.
-        manager.set_keep_screen_on(true);
+        manager.set_keep_screen_on("storage-diagnostics", true);
         SuttaBridge.run_storage_diagnostics();
     }
 
@@ -87,7 +87,7 @@ ApplicationWindow {
             root.is_running = false;
             root.summary_text = summary;
             // Release when the run ACTUALLY ends, on both success and failure.
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("storage-diagnostics", false);
         }
     }
 

@@ -124,9 +124,13 @@ ApplicationWindow {
         available_languages = manager.get_available_languages();
         installed_languages_with_counts = SuttaBridge.get_sutta_language_labels_with_counts();
 
-        // Keep the screen on while this window is open on mobile
+        // Keep the screen on while this window is open on mobile. Held for the
+        // window's lifetime, not for one operation, and released in
+        // Component.onDestruction. Named in the log because the flag is a
+        // single per-activity boolean shared by every caller.
         if (root.is_mobile) {
-            manager.set_keep_screen_on(true);
+            logger.info("SuttaLanguagesWindow: keep_screen_on for the window's lifetime");
+            manager.set_keep_screen_on("sutta-languages-window", true);
         }
 
         root.is_initialized = true;
@@ -134,7 +138,7 @@ ApplicationWindow {
 
     Component.onDestruction: {
         if (root.is_mobile) {
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("sutta-languages-window", false);
         }
     }
 
@@ -260,15 +264,20 @@ ApplicationWindow {
     Dialog {
         id: error_dialog
         title: "Error"
+        header: DialogHeader { text: error_dialog.title }
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Ok
+        // Clamped to the window so it fits a narrow screen, as
+        // confirm_removal_dialog above does. Without it the dialog sizes to its
+        // content and runs off both edges of a phone screen.
+        width: Math.min(root.width - 40, 450)
 
         property string error_message: ""
 
         ColumnLayout {
             spacing: 10
-            width: 400
+            width: parent.width
 
             Label {
                 text: error_dialog.error_message
@@ -284,13 +293,18 @@ ApplicationWindow {
     Dialog {
         id: back_guard_dialog
         title: "Operation in progress"
+        header: DialogHeader { text: back_guard_dialog.title }
         anchors.centerIn: parent
         modal: true
         standardButtons: Dialog.Yes | Dialog.No
+        // Clamped to the window so it fits a narrow screen, as
+        // confirm_removal_dialog above does. This is the one the user hit:
+        // unclamped, its wrapping text sized the dialog wider than the phone.
+        width: Math.min(root.width - 40, 450)
 
         ColumnLayout {
             spacing: 10
-            width: 400
+            width: parent.width
 
             Label {
                 text: "An operation is in progress. Closing the window now will interrupt it. Close anyway?"

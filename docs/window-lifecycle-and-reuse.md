@@ -52,7 +52,10 @@ runs (§6a). So the list is really two populations mixed together:
 
 On **desktop** `SuttaSearchWindow.qml`'s `onClosing` accepts the close, so the
 window hides. On **mobile** the same handler sets `close.accepted = false` and
-opens the tab list instead, so a mobile window is never pooled.
+opens the tab list — because there, `onClosing` is reached only by the Android
+back button (§9.4). Mobile windows *are* pooled now, but through the switcher's
+close and the *Close Window* action, which hide the window directly and never
+call `close()`.
 
 `window_is_open()` (a file-static in `window_manager.cpp`) is the single
 predicate for this; use it rather than re-reading the property by hand.
@@ -66,6 +69,10 @@ one (`take_closed_sutta_search_window()`), and only constructs a new
 - is reset with `clear_all_tabs()` — callers treat the returned window as blank
   (`open_sutta_search_window_with_query()` passes `new_tab = false`, i.e. replace
   the current tab), so tabs from before it was closed must not survive;
+- has its **`window_title` cleared** in the same place, for the same reason: the
+  user experiences a revived window as newly opened, so a name given before it
+  was closed must not come back on it (§9.2). This is what makes the reuse
+  invisible — see §9.3;
 - **keeps its `window_id`** — QML-side callers pass it back to the bridge, and it
   is still unique;
 - is moved to the end of the list, so it counts as the newest window for the
@@ -104,17 +111,49 @@ is no open one) instead of being silently dropped. Lookups by an explicit
 The saved "last session" is a JSON array of window objects; its **length is the
 window count** restored on next launch. Pooled windows must not appear in it.
 
-- **Save** — `cpp/gui.cpp`, the `aboutToQuit` handler, is the *only* save path
-  (nothing else calls `get_session_data_json` / `save_last_session`). It skips
-  any window whose root is not `visible`, so a closed window contributes neither
-  an entry nor a tab. The `first()` window used to invoke `save_last_session` is
-  just the QML object the bridge call is routed through, not a data source, so it
-  is fine if that one happens to be pooled.
-- The handler calls `save_last_session` **even when the array is empty**, which
+- **Save** — the one implementation is
+  `WindowManager::save_session_now(reason)`. It skips any window whose root is
+  not `visible`, so a closed window contributes neither an entry nor a tab. The
+  `first()` window used to invoke `save_last_session` is just the QML object the
+  bridge call is routed through, not a data source, so it is fine if that one
+  happens to be pooled.
+- **It has two callers, and `aboutToQuit` alone is not enough.** Android ends
+  the process with no `aboutToQuit` when the task is swiped away from the
+  overview screen or the app is OOM-killed — the ordinary way to leave an app on
+  a phone. So `cpp/gui.cpp` also connects `applicationStateChanged` and saves
+  whenever the state leaves `ApplicationActive`, **mobile only**: on desktop a
+  plain focus change raises the same signal, so every alt-tab would write the
+  session, and desktop's `aboutToQuit` is reliable. No periodic autosave sits
+  behind this — a timer can only store what happened up to its last tick, while
+  the state hook fires on the real event.
+- **Teardown must not overwrite a good save.** Mobile `aboutToQuit` has been
+  measured collecting *one* window, and separately *zero*, moments after
+  state-change saves that collected two — the windows are part-way destroyed by
+  then. Two guards: `aboutToQuit` skips entirely on mobile when the
+  going-to-background save already ran and the app has not been foregrounded
+  since; and `save_session_now()` refuses to clear the stored session on mobile
+  when windows exist but none are visible. That state is unreachable
+  legitimately on mobile (no path hides the last visible window, §9), while on
+  desktop it is the legitimate "user closed everything" — hence mobile-only.
+- The saver calls `save_last_session` **even when the array is empty**, which
   clears the stored session — the case where the user closed every tab (the last
-  placeholder tab's Ctrl+W calls `root.close()`, hiding the window).
+  placeholder tab's Ctrl+W calls `root.close()`, hiding the window). The guard
+  above is what keeps that from firing during mobile teardown.
+- **The `visible` filter is deliberate and must not be relaxed.** A hidden
+  window is an internal reuse-pool artifact the user has closed; restoring one
+  would resurrect a window they dismissed. Accepted side effect: a window
+  renamed (§9) and then closed before quitting loses its name.
 - **Restore** — `restore_last_session()` fills the existing first window from
-  entry 0 and calls `create_sutta_search_window()` for the rest.
+  entry 0 and calls `create_sutta_search_window()` for the rest, then activates
+  whichever window was in front. Three per-window fields beyond the tab list
+  round-trip through `bookmark_folders` (migrations
+  `2026-08-13-210000_session_window_metadata` and
+  `2026-08-13-220000_session_active_window`): `window_title`,
+  `active_tab_group` + `active_tab_index`, and `is_active_window`. All are
+  nullable, so an older session restores unnamed, with the as-created tab
+  selection, and with the newest window in front. The active-window flag is
+  taken from the **MRU stamp**, not from any window's `active` property — a
+  backgrounded app has no active window at all.
 
 ## 5. Single-instance windows, destroyed on close
 
@@ -358,3 +397,110 @@ missing from them.
    and those windows host `WebEngineView`s (§5a).
 5. **Do not extend a mobile-only refuse-to-close to desktop** to solve a
    lifetime problem. Deferred destruction (§5b) is the answer.
+
+## 9. The mobile window switcher
+
+On mobile a second Sutta Search window used to be a one-way trip: the Windows
+menu's *Sutta Search* action always created (or revived) a window and never
+offered an existing one, and *Close Window* was hijacked on mobile to open the
+tab list instead of closing. So the newest window covered the previous one and
+the previous one was unreachable for the rest of the session. Android's app
+switcher cannot help — Qt's secondary windows are not separate Android tasks.
+
+`WindowListDialog.qml` (with `WindowRenameDialog.qml`) is the fix: on mobile the
+*Sutta Search* action — labelled **Sutta Windows** there — opens a list of the
+open windows, each expandable to its tabs, renameable, and closable. Desktop
+behaviour is unchanged.
+
+### 9.1 The query/command surface
+
+`WindowManager` had no query API at all before this — every `callback_*` in
+`cpp/gui.h` returned `void`. Added, each forwarded straight to
+`AppGlobals::manager` (synchronous, on the GUI thread — no `signal_*`/slot
+indirection):
+
+| `SuttaBridge` fn | `WindowManager` |
+|---|---|
+| `get_open_sutta_windows_json(current_window_id)` | iterate `sutta_search_windows`, skip `!window_is_open()`, `invokeMethod` each root's `get_open_tabs_json()` |
+| `count_open_sutta_search_windows()` | count windows passing `window_is_open()` |
+| `activate_sutta_search_window(window_id, tab_id_key)` | `show_and_activate_window()` + `focus_on_tab_with_id_key` |
+| `close_sutta_search_window(window_id)` | `invokeMethod` QML `close_window_from_switcher()` |
+| `set_sutta_search_window_title(window_id, title)` | set the root's `window_title` property |
+| `activate_most_recently_used_window(exclude_window_id)` | `most_recently_used_open_window()` + `show_and_activate_window()` |
+| `minimize_app()` | `cpp/app_minimize.cpp`, `moveTaskToBack` |
+
+The count query exists separately on purpose: the close paths branch on the
+number of visible windows, and routing that through the JSON query would
+serialise every tab of every window to obtain an integer.
+
+Blank placeholder tabs are excluded from the listing **and** the count via
+`root.is_blank_tab_uid()` (`item_uid` empty, `"Sutta"` **or** `"Word"`), the
+same three-way predicate `TabListDialog.qml` uses, so the two dialogs agree.
+`get_open_items_json()` filters on `"Sutta"` alone — pre-existing narrowness on
+the session path, whose output shape is written to storage; do not copy it and
+do not "fix" it.
+
+### 9.2 The MRU stamp is separate from the list order
+
+`WindowManager` keeps `m_mru_window_ids` (most recent last) alongside
+`sutta_search_windows`. **Do not reorder `sutta_search_windows` when the user
+switches windows.** Both the dialog's row order and its `"Window N"` labels are
+derived from that list, so moving the activated window to the end would jump it
+to the top and renumber it on every switch — "Window 1" becomes "Window 3"
+because the user looked at it. The one reorder that stays is the existing
+move-to-end in `create_sutta_search_window()`, where the window really is being
+newly opened from the user's point of view.
+
+List order is `sutta_search_windows` (oldest first); the dialog reverses it for
+display, so the top row is newest and carries the highest N, and "Window 1" is
+the oldest open window at the bottom. A window with a custom title is never
+numbered. A **revived** pooled window has its `window_title` cleared next to the
+`clear_all_tabs()` call, for the same reason the tabs are cleared: the user
+perceives it as brand new, so it must not come back named.
+
+### 9.3 Closing a window — hide, never destroy
+
+**The *Close Window* menu action and the list's trash icon are the same
+behaviour**, deliberately: both close the window the user means, and neither has
+a way to get it back. They differ only in which window they name — the current
+one, or the row that was tapped — and *Close Window* is the one that can find
+itself on the last visible window.
+
+Both go through QML `close_window_from_switcher()` (the trash icon via
+`close_sutta_search_window()`), which flushes the Gloss/Prompts sessions and
+calls `root.hide()` — **not** `root.close()` (which re-enters `onClosing`) and
+**never** `SuttaBridge.notify_window_closed()`, which destroys single-instance
+windows and is the wrong lifecycle family here (§0).
+
+**"Hidden" is an implementation detail the user never observes.** The window
+keeps its tabs and its title while pooled, but nothing shows them again: it is
+gone from the switcher (which lists `visible` windows only), gone from the saved
+session (§4), and when a later *New Window* revives it, the revive clears both
+the tabs and the `window_title` before the user sees it (§9.2). So closing a
+window really does mean the tabs are gone and the name is not handed to the next
+window — the pool buys an engine load, nothing else. Verified on device.
+
+Two orderings are load-bearing:
+
+- **Activate the replacement first, hide second**, whenever a *visible* window
+  is being hidden. Hiding first leaves zero visible windows for a frame, which
+  on Android can background the task or show a black frame.
+- **The last visible window is cleared, never hidden.** Trash-on-the-last-window
+  and *Close Window* on the last window both call `clear_window_for_close()`
+  (tabs **and** title) and then minimise (Android) / `Qt.quit()` (iOS), leaving
+  the window shown. Hiding it would leave the app showing nothing *and* make the
+  next save write an empty session (§4), silently discarding the user's tabs.
+  Clearing the title here is the counterpart of the revive-path reset in §9.2,
+  on the path the revive never takes — the tab context menu's "Close all tabs"
+  deliberately keeps the name, since there the user is keeping the window.
+
+### 9.4 The Android back button still opens the tab list
+
+Removing the mobile `onClosing` hijack made *Close Window* work, and made the
+**back button** background the app: on Android, back is delivered as a window
+close request (the app opts out of predictive back, see
+`docs/android-edge-to-edge-and-safe-areas.md`). `onClosing` is now cancelled on
+mobile and opens the tab list, which is unambiguous because every deliberate
+mobile close path — `close_current_window()`, `close_window_from_switcher()` —
+hides or clears and never calls `close()`. **On mobile, `onClosing` means the
+back button and nothing else.** The unconditional Gloss/Prompts flush stays.

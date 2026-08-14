@@ -1737,6 +1737,10 @@ impl AppdataDbHandle {
             sort_order: max_order + 1,
             is_last_session: is_last_session_param,
             is_user_added: true,
+            window_title: None,
+            active_tab_group: None,
+            active_tab_index: None,
+            is_active_window: None,
         };
 
         self.do_write(|db_conn| {
@@ -1745,6 +1749,48 @@ impl AppdataDbHandle {
                 .execute(db_conn)?;
 
             // Get the last inserted row id
+            bookmark_folders
+                .order(id.desc())
+                .select(id)
+                .first::<i32>(db_conn)
+        })
+    }
+
+    /// One saved session window. Same row as create_bookmark_folder() writes,
+    /// plus the per-window metadata that only a session folder carries: the
+    /// user-set window name and which of its tabs was active.
+    pub fn create_last_session_folder(
+        &self,
+        name_param: &str,
+        window_title_param: Option<&str>,
+        active_tab_group_param: Option<&str>,
+        active_tab_index_param: Option<i32>,
+        is_active_window_param: bool,
+    ) -> Result<i32> {
+        use crate::db::appdata_schema::bookmark_folders::dsl::*;
+
+        let max_order: i32 = self.do_read(|db_conn| {
+            bookmark_folders
+                .select(diesel::dsl::max(sort_order))
+                .first::<Option<i32>>(db_conn)
+        })?.unwrap_or(0);
+
+        let new_folder = NewBookmarkFolder {
+            name: name_param,
+            sort_order: max_order + 1,
+            is_last_session: true,
+            is_user_added: true,
+            window_title: window_title_param,
+            active_tab_group: active_tab_group_param,
+            active_tab_index: active_tab_index_param,
+            is_active_window: Some(is_active_window_param),
+        };
+
+        self.do_write(|db_conn| {
+            diesel::insert_into(bookmark_folders)
+                .values(&new_folder)
+                .execute(db_conn)?;
+
             bookmark_folders
                 .order(id.desc())
                 .select(id)

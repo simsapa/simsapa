@@ -31,10 +31,39 @@ ApplicationWindow {
 
     Logger { id: logger }
 
-    Component.onCompleted: {
-        if (root.is_mobile) {
-            manager.set_keep_screen_on(true);
+    // Whether this window currently holds the shared keep-screen-on flag.
+    //
+    // The hold follows visibility, NOT this component's lifetime, because
+    // DatabaseValidationDialog embeds a permanently hidden DownloadAppdataWindow
+    // for re-downloads (`DownloadAppdataWindow { visible: false }`). That
+    // instance is created on every ordinary launch and never destroyed, so a
+    // hold taken in Component.onCompleted was never released: the screen could
+    // not sleep for the rest of the session, on a healthy install, with no
+    // download in sight. Measured on device.
+    //
+    // `operation_active` is ORed in so a download that is still running holds
+    // the screen even if its window has been hidden.
+    property bool screen_lock_held: false
+
+    function update_screen_lock() {
+        if (!root.is_mobile) {
+            return;
         }
+        const wanted = root.visible || root.operation_active;
+        if (wanted === root.screen_lock_held) {
+            return;
+        }
+        logger.info("DownloadAppdataWindow: keep_screen_on -> " + wanted
+                    + " (visible=" + root.visible + " operation_active=" + root.operation_active + ")");
+        manager.set_keep_screen_on("download-appdata-window", wanted);
+        root.screen_lock_held = wanted;
+    }
+
+    onVisibleChanged: root.update_screen_lock()
+    onOperation_activeChanged: root.update_screen_lock()
+
+    Component.onCompleted: {
+        root.update_screen_lock();
 
         // Check if auto_start_download.txt marker file exists
         // This is set during database upgrades to automatically start the download
@@ -132,8 +161,11 @@ ApplicationWindow {
     }
 
     Component.onDestruction: {
-        if (root.is_mobile) {
-            manager.set_keep_screen_on(false);
+        // Guarded by screen_lock_held so a window that never held the flag does
+        // not log a spurious "was not holding it" error on the way out.
+        if (root.is_mobile && root.screen_lock_held) {
+            manager.set_keep_screen_on("download-appdata-window", false);
+            root.screen_lock_held = false;
         }
     }
 

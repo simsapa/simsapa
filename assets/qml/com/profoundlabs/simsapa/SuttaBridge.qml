@@ -641,6 +641,36 @@ Item {
         console.log("open_sutta_search_window_with_result():", result_data_json);
     }
 
+    function get_open_sutta_windows_json(current_window_id: string): string {
+        console.log("get_open_sutta_windows_json():", current_window_id);
+        return '[{"window_id":"window_0","title":"","is_current":true,"tabs":[]}]';
+    }
+
+    function count_open_sutta_search_windows(): int {
+        console.log("count_open_sutta_search_windows()");
+        return 1;
+    }
+
+    function activate_sutta_search_window(window_id: string, tab_id_key: string) {
+        console.log("activate_sutta_search_window():", window_id, tab_id_key);
+    }
+
+    function close_sutta_search_window(window_id: string) {
+        console.log("close_sutta_search_window():", window_id);
+    }
+
+    function set_sutta_search_window_title(window_id: string, title: string) {
+        console.log("set_sutta_search_window_title():", window_id, title);
+    }
+
+    function activate_most_recently_used_window(exclude_window_id: string) {
+        console.log("activate_most_recently_used_window():", exclude_window_id);
+    }
+
+    function minimize_app() {
+        console.log("minimize_app()");
+    }
+
     function open_library_window() {
         console.log("open_library_window()");
     }

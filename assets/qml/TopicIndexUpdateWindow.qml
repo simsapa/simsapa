@@ -94,7 +94,7 @@ ApplicationWindow {
         root.progress_value = 0.0;
         root.indeterminate = true;
         // Long operation: it downloads, parses and writes to the database.
-        manager.set_keep_screen_on(true);
+        manager.set_keep_screen_on("topic-index-update", true);
         SuttaBridge.update_topic_index();
     }
 
@@ -182,7 +182,7 @@ ApplicationWindow {
             // Release when the run ACTUALLY ends, on both success and failure --
             // never in onClosed, which would drop the lock while the run is
             // still going.
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("topic-index-update", false);
         }
     }
 

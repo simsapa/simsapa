@@ -202,6 +202,10 @@ diesel::table! {
         sort_order -> Integer,
         is_last_session -> Bool,
         is_user_added -> Bool,
+        window_title -> Nullable<Text>,
+        active_tab_group -> Nullable<Text>,
+        active_tab_index -> Nullable<Integer>,
+        is_active_window -> Nullable<Bool>,
         // created_at -> Nullable<Timestamp>,
         // updated_at -> Nullable<Timestamp>,
     }

@@ -243,6 +243,30 @@ void callback_open_chanting_review_window(QString window_id, QString section_uid
   AppGlobals::manager->create_chanting_review_window(window_id, section_uid);
 }
 
+QString callback_open_sutta_windows_json(QString current_window_id) {
+  return AppGlobals::manager->open_sutta_windows_json(current_window_id);
+}
+
+int callback_count_open_sutta_search_windows() {
+  return AppGlobals::manager->count_open_sutta_search_windows();
+}
+
+void callback_activate_sutta_search_window(QString window_id, QString tab_id_key) {
+  AppGlobals::manager->activate_sutta_search_window(window_id, tab_id_key);
+}
+
+void callback_close_sutta_search_window(QString window_id) {
+  AppGlobals::manager->close_sutta_search_window(window_id);
+}
+
+void callback_set_sutta_search_window_title(QString window_id, QString title) {
+  AppGlobals::manager->set_sutta_search_window_title(window_id, title);
+}
+
+void callback_activate_most_recently_used_window(QString exclude_window_id) {
+  AppGlobals::manager->activate_most_recently_used_window(exclude_window_id);
+}
+
 void callback_window_closed(QString window_type) {
   AppGlobals::manager->on_window_closed(window_type);
 }
@@ -831,43 +855,64 @@ int start(int argc, char* argv[]) {
     }
   });
 
-  // Save last session on exit
+  // === Session saving ===
+  //
+  // aboutToQuit alone is not enough. It runs for the Quit menu action and a
+  // desktop window close, but NOT when Android reclaims the app: swiping the
+  // task away from the overview screen, or an OOM kill, ends the process with
+  // no aboutToQuit. A user who leaves the app that way -- the ordinary way to
+  // leave an app on a phone -- lost the whole session.
+  //
+  // So there are two save points, both sharing
+  // WindowManager::save_session_now():
+
+  // Set when the going-to-background save runs, cleared whenever the app comes
+  // back to the foreground. On mobile it makes that save authoritative: see the
+  // aboutToQuit handler below.
+  static bool saved_since_last_foreground = false;
+
+  // 1. Quit.
   QObject::connect(&app, &QApplication::aboutToQuit, [&]() {
-    log_info_c("aboutToQuit: saving last session");
-    QJsonArray all_windows;
-    for (auto w : AppGlobals::manager->sutta_search_windows) {
-      if (w->m_root) {
-        // Only save windows that are still visible (not closed/hidden)
-        QVariant visible = w->m_root->property("visible");
-        if (!visible.isValid() || !visible.toBool()) {
-          continue;
-        }
-        QString session_json;
-        QMetaObject::invokeMethod(w->m_root, "get_session_data_json",
-          Q_RETURN_ARG(QString, session_json));
-        if (!session_json.isEmpty()) {
-          QJsonDocument doc = QJsonDocument::fromJson(session_json.toUtf8());
-          if (!doc.isNull()) {
-            all_windows.append(doc.object());
-          }
-        }
-      }
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    // Skip when the app has already been saved on its way to the background
+    // and has not been used since. Teardown runs with the windows part-way
+    // destroyed, so this save sees fewer windows than the state-change save
+    // did -- measured on device as an aboutToQuit that collected one window
+    // where the state-change saves moments earlier collected two, and another
+    // that collected none at all. Either would persist over a correct save.
+    //
+    // The flag is cleared on every return to the foreground, so quitting from
+    // the menu after reading still saves: that path has no preceding
+    // background save.
+    if (saved_since_last_foreground) {
+      log_info_c("aboutToQuit: already saved on backgrounding, skipping");
+      return;
     }
-    // NOTE: Call save_last_session even when all_windows is empty. An empty
-    // array clears the stored session, which is what we want when the user
-    // closed all tabs (the last placeholder tab's Ctrl+W calls root.close(),
-    // hiding the window so it is skipped by the visibility check above). Without
-    // this, an empty session would never overwrite a previously saved one, and
-    // the old tabs would be wrongly restored on the next launch.
-    if (AppGlobals::manager->sutta_search_windows.length() > 0) {
-      QString windows_json = QJsonDocument(all_windows).toJson(QJsonDocument::Compact);
-      auto first_window = AppGlobals::manager->sutta_search_windows.first();
-      if (first_window->m_root) {
-        QMetaObject::invokeMethod(first_window->m_root, "save_last_session",
-          Q_ARG(QString, windows_json));
-      }
-    }
+#endif
+    AppGlobals::manager->save_session_now("aboutToQuit");
   });
+
+  // 2. Leaving the foreground. This is the one that covers the swipe-away:
+  //    Android delivers onPause/onStop (-> ApplicationInactive/Suspended)
+  //    before the task is removed, so the session is already stored by the
+  //    time the process dies. Verified on device -- an app swiped away seconds
+  //    after launch still restores. Desktop is excluded because a plain focus
+  //    change raises the same signal -- every alt-tab would write the session,
+  //    and desktop already has a reliable aboutToQuit.
+  //
+  //    No periodic autosave sits behind this: a timer can only ever store what
+  //    happened up to its last tick, and this hook fires on the real event.
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+  QObject::connect(&app, &QApplication::applicationStateChanged,
+                   [](Qt::ApplicationState state) {
+    if (state == Qt::ApplicationActive) {
+      saved_since_last_foreground = false;
+      return;
+    }
+    AppGlobals::manager->save_session_now("applicationStateChanged");
+    saved_since_last_foreground = true;
+  });
+#endif
 
   log_info_c("app.exec()");
   int status = app.exec();
