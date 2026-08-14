@@ -63,10 +63,10 @@ recorded here because they are one-line source edits in the same file.
 heading id, as if the items under the heading were numbered `.1`, `.2`, … They
 are not — the heading's siblings continue as `1.7.10`, `1.8.1`, `1.8.2`, …
 
-| Original | Exists? | Currently points at | Suggested | Comment |
-|---|---|---|---|---|
-| `DN33:1.7.9.0`<br>*food — all beings sustained by* | ✅ | *"1. Ones"* (heading) | `dn33:1.8.2` | Resolves, but to the section heading. `1.8.2` is the sentence itself: *"All sentient beings are sustained by food."* Keep the heading if section-level is intended. |
-| `DN33:1.7.9.1`<br>*conditions (saṅkāra) — all beings sustained by*<br>(the headword's spelling is itself a typo — see §C) | ❌ | — | `dn33:1.8.3` | Does not exist. `1.8.3` is *"All sentient beings are sustained by conditions."* If section-level is preferred, use `1.7.9.0` like its sibling row above. |
+| Original                                                                                                                  | Exists? | Currently points at   | Suggested    | Comment                                                                                                                                                             |
+|---------------------------------------------------------------------------------------------------------------------------|---------|-----------------------|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `DN33:1.7.9.0`<br>*food — all beings sustained by*                                                                        | ✅      | *"1. Ones"* (heading) | `dn33:1.8.2` | Resolves, but to the section heading. `1.8.2` is the sentence itself: *"All sentient beings are sustained by food."* Keep the heading if section-level is intended. |
+| `DN33:1.7.9.1`<br>*conditions (saṅkāra) — all beings sustained by*<br>(the headword's spelling is itself a typo — see §C) | ❌      | —                     | `dn33:1.8.3` | Does not exist. `1.8.3` is *"All sentient beings are sustained by conditions."* If section-level is preferred, use `1.7.9.0` like its sibling row above.            |
 
 ## B. DN 20 — the whole `4.x` block
 
@@ -89,23 +89,23 @@ The actual passages are in the verse sections that follow (5 – 22). Suggested
 targets below are keyword matches against the Pāli and Ven. Sujato's
 translation, and need your confirmation.
 
-| Original | Exists? | Currently points at | Suggested | Comment |
-|---|---|---|---|---|
-| `DN20:4.1` — *Four Great Kings, described* | ✅ | *"Then the Buddha said to the mendicants:"* | `dn20:9.41` | `9.41`–`9.44` name the four kings by direction; `9.1` begins *"King Dhataraṭṭha rules…"* |
-| `DN20:4.2` — *gandhabbas, visiting monastics* | ✅ | *"…deities from ten solar systems have gathered…"* | `dn20:10.9` | *"Cittasena the centaur came too"*; `9.3` is *"Lord of the centaurs"* |
-| `DN20:4.3` — *nāgas, visiting monastics* | ✅ | *"Those who were perfected ones… in the past"* | `dn20:11.1` | *"Then came the dragons of Nābhasa lake"* |
-| `DN20:4.4` — *supaṇṇas, visiting monastics* | ✅ | *"Those who will be perfected ones… in the future"* | `dn20:11.12` | *"their name is 'Rainbow Phoenix'"* |
-| `DN20:4.5` — *nāgas, going for refuge* | ✅ | *"I shall declare the names of the heavenly hosts"* | `dn20:11.16` | *"the dragons and phoenixes took the Buddha as refuge"* — same segment as the next row |
-| `DN20:4.6` — *supaṇṇas, going for refuge* | ✅ | *"I shall extol the names…"* | `dn20:11.16` | as above; the two are one line in the text |
-| `DN20:4.7` — *yakkhas, visiting monastics* | ✅ | *"I shall teach the names…"* | `dn20:7.1` | *"There are seven thousand spirits"* — note this is **earlier** than the rows above it, so the index's `4.x` order does not follow the sutta |
-| `DN20:4.8` — *Varuṇa, visiting monastics* | ✅ | *"Listen and apply your mind well…"* | `dn20:13.3` | *"The gods of Varuṇa and Varuṇa's offspring"* |
-| `DN20:4.9` — *devas, visiting monastics* | ✅ | *"'Yes, sir,' they replied."* | — | Too general to place; which passage was meant? |
-| `DN20:4.10` — *Varuṇa, visiting monastics* | ✅ | *"The Buddha said this:"* | `dn20:15.5` | *"The Varuṇas and Sahadhammas"* — a second Varuṇa mention, which may be why Varuṇa appears twice (`4.8` and `4.10`) |
-| `DN20:4.11` — *gods of Yama, visiting monastics* | ❌ | — | `dn20:18.1` | *"The Khemiyas from the realms of Tusita and Yama"* |
-| `DN20:4.12` — *gods that delight in creation* | ❌ | — | `dn20:18.5` | *"The gods who love to create came too"* |
-| `DN20:4.13` — *gods that delight in creation* | ❌ | — | `dn20:18.5` | Three consecutive rows carry the same heading; is one segment intended, or three different ones? |
-| `DN20:4.14` — *gods that delight in creation* | ❌ | — | `dn20:18.5` | as above |
-| `DN20:4.15` — *Māra, attacks gathering of arahants* | ❌ | — | `dn20:21.3` | *"Māra's army came forth too"*; `22.5` is *"Māra's army has arrived"* |
+| Original                                            | Exists? | Currently points at                                 | Suggested    | Comment                                                                                                                                      |
+|-----------------------------------------------------|---------|-----------------------------------------------------|--------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `DN20:4.1` — *Four Great Kings, described*          | ✅      | *"Then the Buddha said to the mendicants:"*         | `dn20:9.41`  | `9.41`–`9.44` name the four kings by direction; `9.1` begins *"King Dhataraṭṭha rules…"*                                                     |
+| `DN20:4.2` — *gandhabbas, visiting monastics*       | ✅      | *"…deities from ten solar systems have gathered…"*  | `dn20:10.9`  | *"Cittasena the centaur came too"*; `9.3` is *"Lord of the centaurs"*                                                                        |
+| `DN20:4.3` — *nāgas, visiting monastics*            | ✅      | *"Those who were perfected ones… in the past"*      | `dn20:11.1`  | *"Then came the dragons of Nābhasa lake"*                                                                                                    |
+| `DN20:4.4` — *supaṇṇas, visiting monastics*         | ✅      | *"Those who will be perfected ones… in the future"* | `dn20:11.12` | *"their name is 'Rainbow Phoenix'"*                                                                                                          |
+| `DN20:4.5` — *nāgas, going for refuge*              | ✅      | *"I shall declare the names of the heavenly hosts"* | `dn20:11.16` | *"the dragons and phoenixes took the Buddha as refuge"* — same segment as the next row                                                       |
+| `DN20:4.6` — *supaṇṇas, going for refuge*           | ✅      | *"I shall extol the names…"*                        | `dn20:11.16` | as above; the two are one line in the text                                                                                                   |
+| `DN20:4.7` — *yakkhas, visiting monastics*          | ✅      | *"I shall teach the names…"*                        | `dn20:7.1`   | *"There are seven thousand spirits"* — note this is **earlier** than the rows above it, so the index's `4.x` order does not follow the sutta |
+| `DN20:4.8` — *Varuṇa, visiting monastics*           | ✅      | *"Listen and apply your mind well…"*                | `dn20:13.3`  | *"The gods of Varuṇa and Varuṇa's offspring"*                                                                                                |
+| `DN20:4.9` — *devas, visiting monastics*            | ✅      | *"'Yes, sir,' they replied."*                       | —            | Too general to place; which passage was meant?                                                                                               |
+| `DN20:4.10` — *Varuṇa, visiting monastics*          | ✅      | *"The Buddha said this:"*                           | `dn20:15.5`  | *"The Varuṇas and Sahadhammas"* — a second Varuṇa mention, which may be why Varuṇa appears twice (`4.8` and `4.10`)                          |
+| `DN20:4.11` — *gods of Yama, visiting monastics*    | ❌      | —                                                   | `dn20:18.1`  | *"The Khemiyas from the realms of Tusita and Yama"*                                                                                          |
+| `DN20:4.12` — *gods that delight in creation*       | ❌      | —                                                   | `dn20:18.5`  | *"The gods who love to create came too"*                                                                                                     |
+| `DN20:4.13` — *gods that delight in creation*       | ❌      | —                                                   | `dn20:18.5`  | Three consecutive rows carry the same heading; is one segment intended, or three different ones?                                             |
+| `DN20:4.14` — *gods that delight in creation*       | ❌      | —                                                   | `dn20:18.5`  | as above                                                                                                                                     |
+| `DN20:4.15` — *Māra, attacks gathering of arahants* | ❌      | —                                                   | `dn20:21.3`  | *"Māra's army came forth too"*; `22.5` is *"Māra's army has arrived"*                                                                        |
 
 ## C. A headword spelling, unrelated to the locations
 
