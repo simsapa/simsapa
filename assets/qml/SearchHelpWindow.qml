@@ -73,6 +73,9 @@ ApplicationWindow {
 search mode from the dropdown.</p>
 
 <h3>Search modes</h3>
+
+<p>Sutta references are matched first. Typing <b>mn8</b>, <b>sn 56.11</b>, <b>iti92</b> will list those suttas.</p>
+
 <ul>
     <li><b>Fulltext Match</b> — word-based full-text search over the whole text.
     Pāli words are stemmed, so a query matches its inflected forms. Best for
