@@ -202,8 +202,9 @@ Dialog {
         anchors.margins: 10
 
         Label {
-            text: "Choose a storage location for the app database:"
+            text: "<p>Choose a storage location for the app databases.</p><p>(They are removed when the app is uninstalled.)</p>"
             wrapMode: Text.WordWrap
+            textFormat: Text.RichText
             font.pointSize: root.font_point_size
             Layout.fillWidth: true
         }
