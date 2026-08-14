@@ -370,6 +370,13 @@ div.btn a, span.btn a {
   font-size: 1.15em;
   letter-spacing: 0.8pt;
   word-spacing: 1pt;
+  line-height: calc(var(--tr-line-height, 1.5) / 1.15);
+}
+.suttacentral .evam span.colcell.translated {
+  line-height: calc(var(--tr-line-height, 1.5) / 1.15);
+}
+.suttacentral .evam span.colcell.pali {
+  line-height: calc(var(--pali-line-height, 1.5) / 1.15);
 }
 .suttacentral .speaker {
   font-style: italic;
@@ -416,6 +423,13 @@ div.btn a, span.btn a {
 .suttacentral footer span.publication-date {
   font-style: italic;
 }
+.suttacentral .variant-wrap, .suttacentral .comment-wrap {
+  text-transform: none;
+  font-variant: normal;
+  font-size: 1rem;
+  letter-spacing: normal;
+  word-spacing: normal;
+}
 .suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
   font-size: 0.6em;
   position: relative;
@@ -426,7 +440,7 @@ div.btn a, span.btn a {
   border-bottom: 2px solid black;
 }
 .suttacentral .variant, .suttacentral .comment {
-  font-size: 0.8em;
+  font-size: 0.8rem;
 }
 
 .suttacentral span.segment span.colcell {
@@ -665,6 +679,9 @@ body:has(.suttacentral.layout-columns) {
   line-height: var(--pali-line-height, inherit);
   font-weight: var(--pali-font-weight, inherit);
   font-style: var(--pali-font-style, inherit);
+}
+.suttacentral.sbs-blocks .sbs-col.pali .evam {
+  line-height: calc(var(--pali-line-height, 1.5) / 1.15);
 }
 .suttacentral.sbs-blocks .sbs-col-header {
   font-family: "Source Sans 3 SSP";

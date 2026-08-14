@@ -2,6 +2,11 @@
 
 $solarized_light_bg: #FAE6B2
 
+// The opening line's enlarged small-caps scale. Kept as a variable because
+// every line-height under .evam has to divide by exactly this number to cancel
+// it out again — see the .evam rule for why.
+$evam_font_scale: 1.15
+
 .suttacentral
   span.segment
     span.translated
@@ -104,9 +109,43 @@ $solarized_light_bg: #FAE6B2
   .evam
     text-transform: lowercase
     font-variant: small-caps
-    font-size: 1.15em
+    font-size: #{$evam_font_scale}em
     letter-spacing: .8pt
     word-spacing: 1pt
+    // Cancel the enlarged font-size out of the *leading* only.
+    //
+    // line-height is inherited as a unitless *number*, re-resolved against
+    // each element's own font-size — so the 1.15em above silently enlarges
+    // the leading of the opening segment and of everything nested in it, by
+    // the same 1.15x. That is barely visible on the one-line "So I have
+    // heard.", but footnotes/comments are appended *inside* the segment
+    // (helpers.rs substitutes the segment text plus its additions into the
+    // `<p><span class='evam'>{}</span>` template), so a multi-line comment on
+    // the opening segment came out with visibly wider line spacing than the
+    // same comment anywhere else on the page. Resetting line-height on
+    // .comment-wrap/.variant-wrap cannot fix that: in Solo the line box is
+    // sized by the enclosing .evam inline box (an inline box's leading applies
+    // on *every* line it spans), and in the Lines/Columns layouts by the
+    // colcell block, not by the nested span.
+    //
+    // Dividing the leading by the same scale makes it identical to the
+    // surrounding text's, and still tracks the user's configurable setting
+    // (--tr-line-height / --pali-line-height are unitless numbers set by
+    // display_settings.ts; the 1.5 fallbacks match both the html default and
+    // the settings' own 150% default).
+    //
+    // This rule covers Solo, where the segment's content is all inline. The
+    // two colcell rules below repeat it for Lines/Columns, where the block
+    // that sizes the line boxes is the colcell — they are scoped under .evam
+    // rather than folded into the general colcell rules so those keep their
+    // `inherit` fallback for segments nested in something with its own
+    // leading (footer, say).
+    line-height: calc(var(--tr-line-height, 1.5) / #{$evam_font_scale})
+
+    span.colcell.translated
+      line-height: calc(var(--tr-line-height, 1.5) / #{$evam_font_scale})
+    span.colcell.pali
+      line-height: calc(var(--pali-line-height, 1.5) / #{$evam_font_scale})
 
   .speaker
     font-style: italic
@@ -156,6 +195,21 @@ $solarized_light_bg: #FAE6B2
       font-style: italic
 
   .variant-wrap, .comment-wrap
+    // Reset here, not just on .variant/.comment below: footnotes/comments are
+    // appended inline into the segment text, which for the sutta's opening
+    // line ("So I have heard...") is wrapped in .evam (small-caps, lowercase
+    // transform, enlarged font-size, extra letter/word-spacing). font-size is
+    // reset to 1rem (not just left alone) because .evam's own font-size is
+    // 1.15em — an em-based .comment/.variant font-size nested inside it would
+    // still come out larger than a plain .comment elsewhere in the page, even
+    // with small-caps/transform reset. letter-spacing/word-spacing are fixed
+    // units, so they only need a plain reset, not a counter-scale.
+    text-transform: none
+    font-variant: normal
+    font-size: 1rem
+    letter-spacing: normal
+    word-spacing: normal
+
     .mark
       font-size: 0.6em
       position: relative
@@ -166,7 +220,8 @@ $solarized_light_bg: #FAE6B2
         border-bottom: 2px solid black
 
   .variant, .comment
-    font-size: 0.8em
+    // This should apply whether the note is nested inside .evam or not.
+    font-size: 0.8rem
 
 // --- Multi-column sutta view (Lines / Columns layouts) ---
 //
@@ -338,6 +393,13 @@ body:has(.suttacentral.layout-columns)
     line-height: var(--pali-line-height, inherit)
     font-weight: var(--pali-font-weight, inherit)
     font-style: var(--pali-font-style, inherit)
+    // Unlike the colcell builder, this fallback nests a whole standard
+    // rendering inside the column — so here .evam is a *descendant* and needs
+    // the cancellation on itself, against the Pāli font group's line-height.
+    // (.sbs-col.translated needs no such rule: the base .evam already divides
+    // the translated group's.)
+    .evam
+      line-height: calc(var(--pali-line-height, 1.5) / #{$evam_font_scale})
   // The header scrolls with the column body (not pinned): the bottom column
   // bar already shows each column's author, so a fixed top label is
   // unnecessary. Same plain bold/centered treatment as the aligned Columns
