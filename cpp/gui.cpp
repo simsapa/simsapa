@@ -29,7 +29,6 @@
 #include "utils.h"
 #include "window_manager.h"
 #include "storage_recovery_window.h"
-#include "sutta_search_window.h"
 #include "global_hotkey_manager.h"
 #include "system_palette.h"
 
