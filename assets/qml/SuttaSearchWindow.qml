@@ -19,14 +19,23 @@ ApplicationWindow {
     onClosing: function(close) {
         // Flush any unsaved Gloss/Prompts session before the process exits.
         // flush_if_needed() is a blocking, idempotent no-op when clean.
-        //
-        // Mobile used to cancel the close here and open the tab list instead,
-        // which is why a window could never be dismissed. The tab list is still
-        // reachable by its own entry point; closing now really closes, and the
-        // mobile close paths go through close_current_window() /
-        // close_window_from_switcher() rather than here.
         gloss_tab.flush_if_needed();
         prompts_tab.flush_if_needed();
+
+        // On Android the hardware/gesture back button is delivered here as a
+        // window close request (the app opts out of predictive back, see
+        // docs/android-edge-to-edge-and-safe-areas.md), and it is the ONLY
+        // thing that reaches onClosing on mobile: every deliberate mobile
+        // close path goes through close_current_window() /
+        // close_window_from_switcher(), which hide() or clear + minimise and
+        // never call close(). So accepting the close here means "back
+        // backgrounds the app", which is not what back is for — it opens the
+        // tab list, as it always has.
+        if (root.is_mobile) {
+            close.accepted = false;
+            logger.info("onClosing(): mobile back button - opening the tab list dialog");
+            root.open_tab_list_dialog();
+        }
     }
 
     property string window_id
