@@ -402,6 +402,7 @@ list(APPEND cpp_files
     cpp/errors.cpp
     cpp/utils.cpp
     cpp/screen.cpp
+    cpp/app_minimize.cpp
     cpp/android_helpers.cpp
     cpp/android_raw_pick.cpp
     cpp/system_palette.cpp

@@ -31,7 +31,7 @@ pub mod qobject {
         type QUrl = cxx_qt_lib::QUrl;
 
         include!("screen.h");
-        fn keep_screen_on(on: bool);
+        fn keep_screen_on(holder: &QString, on: bool);
 
         include!("android_helpers.h");
         fn open_android_display_settings();
@@ -64,8 +64,11 @@ pub mod qobject {
         #[qinvokable]
         fn peek_auto_start_download(self: Pin<&mut AssetManager>) -> bool;
 
+        /// `holder` names who wants the screen awake. The flag is one shared
+        /// boolean on the Android Activity, so it is only cleared when every
+        /// holder has released it -- pass the same name to acquire and release.
         #[qinvokable]
-        fn set_keep_screen_on(self: Pin<&mut AssetManager>, on: bool);
+        fn set_keep_screen_on(self: Pin<&mut AssetManager>, holder: &QString, on: bool);
 
         // NOTE: currently unused — the "Open Settings" button on the large-download
         // warning screen was removed once keep-screen-on made the screen-timeout
@@ -168,8 +171,8 @@ fn cleanup_on_failure(download_temp_folder: &Path, extract_temp_folder: &Path, a
 }
 
 impl qobject::AssetManager {
-    fn set_keep_screen_on(self: Pin<&mut Self>, on: bool) {
-        qobject::keep_screen_on(on);
+    fn set_keep_screen_on(self: Pin<&mut Self>, holder: &QString, on: bool) {
+        qobject::keep_screen_on(holder, on);
     }
 
     fn open_display_settings(self: Pin<&mut Self>) {

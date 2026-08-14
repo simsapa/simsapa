@@ -99,7 +99,7 @@ ApplicationWindow {
         root.file_selection_test_running = true;
         // The run continues on a worker after the picker closes, so hold the
         // screen awake until the completion signal arrives.
-        manager.set_keep_screen_on(true);
+        manager.set_keep_screen_on("file-selection-test", true);
 
         // Android specifically, not is_mobile: the raw intent exists only there,
         // and on iOS it would report "unsupported-platform" instead of opening
@@ -123,7 +123,7 @@ ApplicationWindow {
 
             root.file_selection_test_running = false;
             // Released on both success and failure, and on a cancelled pick.
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("file-selection-test", false);
 
             root.show_file_selection_test_outcome(outcome);
             logger.info("File Selection Test: completed, success = " + success + ", outcome: " + outcome);
@@ -150,7 +150,7 @@ ApplicationWindow {
         onRejected: {
             logger.info("File Selection Test: FileDialog cancelled, no file was chosen");
             root.file_selection_test_running = false;
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("file-selection-test", false);
             root.show_file_selection_test_outcome("The file chooser was closed without choosing a file.");
         }
     }

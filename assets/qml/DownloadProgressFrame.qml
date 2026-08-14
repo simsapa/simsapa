@@ -138,7 +138,7 @@ Frame {
                     visible: root.is_mobile
                     Layout.alignment: Qt.AlignCenter
                     Layout.fillWidth: true
-                    text: "Switching apps would interrupt the download and extract process."
+                    text: "Switching apps interrupts the download and extract process."
                     font.pointSize: root.pointSize
                     color: palette.text
                     wrapMode: Text.WordWrap

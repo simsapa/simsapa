@@ -67,11 +67,17 @@ ApplicationWindow {
     // (same FLAG_KEEP_SCREEN_ON mechanism used by the download windows).
     AssetManager { id: screen_manager }
 
+    // Whether this window currently holds the shared keep-screen-on flag. The
+    // flag is one boolean shared by every holder in the app, so each holder
+    // tracks its own state rather than releasing blind. See cpp/screen.cpp.
+    property bool screen_lock_held: false
+
     // 7.2 Load section detail on completed
     Component.onCompleted: {
         theme_helper.apply();
-        if (root.is_mobile) {
-            screen_manager.set_keep_screen_on(true);
+        if (root.is_mobile && !root.screen_lock_held) {
+            screen_manager.set_keep_screen_on("chanting-review-window", true);
+            root.screen_lock_held = true;
         }
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         // Only load if current_section_uid is already set (may not be if set by C++ after this)
@@ -81,9 +87,14 @@ ApplicationWindow {
     }
 
     // Release the screen-on flag if the window is destroyed while still open.
+    //
+    // onClosing already released it on the ordinary close path, and releasing a
+    // holder twice is a logged error by design (it usually means a bug), so
+    // this second release is guarded rather than unconditional.
     Component.onDestruction: {
-        if (root.is_mobile) {
-            screen_manager.set_keep_screen_on(false);
+        if (root.is_mobile && root.screen_lock_held) {
+            screen_manager.set_keep_screen_on("chanting-review-window", false);
+            root.screen_lock_held = false;
         }
     }
 
@@ -136,7 +147,9 @@ ApplicationWindow {
     // The re-acquire below is needed on every re-open, not only a cancelled
     // one: onClosing releases the keep-screen-on flag, and Component.onCompleted
     // -- which is where it is taken -- does not run again for a reused window.
-    // Setting it twice is harmless (it is a window flag, not a counted lock).
+    // screen_lock_held keeps the acquire/release pairs matched, so this window
+    // never releases a hold it does not have (which is a logged error, since it
+    // would otherwise steal another holder's -- see cpp/screen.cpp).
     onVisibleChanged: {
         if (!root.visible) {
             return;
@@ -146,8 +159,9 @@ ApplicationWindow {
             close_deferral_failsafe.stop();
             logger.info("ChantingReviewWindow: reopened while a close was pending, deferred destroy cancelled");
         }
-        if (root.is_mobile) {
-            screen_manager.set_keep_screen_on(true);
+        if (root.is_mobile && !root.screen_lock_held) {
+            screen_manager.set_keep_screen_on("chanting-review-window", true);
+            root.screen_lock_held = true;
         }
     }
 
@@ -157,8 +171,9 @@ ApplicationWindow {
         // while the file is still being finalised in Rust.
         const was_recording = root.any_recording_active();
 
-        if (root.is_mobile) {
-            screen_manager.set_keep_screen_on(false);
+        if (root.is_mobile && root.screen_lock_held) {
+            screen_manager.set_keep_screen_on("chanting-review-window", false);
+            root.screen_lock_held = false;
         }
 
         function cleanup_repeater(repeater: Repeater) {

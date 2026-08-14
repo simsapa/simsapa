@@ -667,6 +667,10 @@ Item {
         console.log("activate_most_recently_used_window():", exclude_window_id);
     }
 
+    function minimize_app() {
+        console.log("minimize_app()");
+    }
+
     function open_library_window() {
         console.log("open_library_window()");
     }

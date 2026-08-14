@@ -310,7 +310,7 @@ ApplicationWindow {
         root.is_rebuilding = true;
         root.rebuild_status_message = "Rebuilding…";
         // Long operation: keep the screen awake until it actually ends.
-        manager.set_keep_screen_on(true);
+        manager.set_keep_screen_on("search-index-rebuild-validation", true);
         SuttaBridge.rebuild_search_index();
     }
 
@@ -331,7 +331,7 @@ ApplicationWindow {
             // Release the screen lock when the rebuild ACTUALLY ends, not when
             // the dialog closes — the rebuild continues in the background if
             // the user closes this window.
-            manager.set_keep_screen_on(false);
+            manager.set_keep_screen_on("search-index-rebuild-validation", false);
             // Refresh the index row in place so it flips to OK (and the
             // success label appears) without a manual re-run.
             root.refresh_search_index_status();

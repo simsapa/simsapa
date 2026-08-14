@@ -828,6 +828,15 @@ pub mod qobject {
         include!("android_raw_pick.h");
         fn start_raw_document_pick() -> bool;
 
+        // Android moveTaskToBack(), a no-op elsewhere. Its own header for the
+        // same reason cpp/screen.cpp has one: the JNI includes stay confined to
+        // that file.
+        include!("app_minimize.h");
+        // Renamed on the Rust side so it does not collide with the
+        // #[qinvokable] wrapper of the same name below.
+        #[rust_name = "minimize_app_native"]
+        fn minimize_app();
+
         include!("utils.h");
         fn get_import_staging_root() -> QString;
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
@@ -1262,6 +1271,9 @@ pub mod qobject {
 
         #[qinvokable]
         fn activate_most_recently_used_window(self: &SuttaBridge, exclude_window_id: &QString);
+
+        #[qinvokable]
+        fn minimize_app(self: &SuttaBridge);
 
         #[qinvokable]
         fn open_sutta_languages_window(self: &SuttaBridge);
@@ -3792,6 +3804,16 @@ impl qobject::SuttaBridge {
         use crate::api::ffi;
         info(&format!("activate_most_recently_used_window(): excluding {}", exclude_window_id));
         ffi::callback_activate_most_recently_used_window(exclude_window_id.clone());
+    }
+
+    /// Send the app to the background (Android). Called when Close Window is
+    /// used on the last visible window; the window itself is never hidden.
+    /// The session is saved by gui.cpp's applicationStateChanged handler, which
+    /// the backgrounding raises. A no-op off Android; iOS quits instead, from
+    /// QML.
+    pub fn minimize_app(&self) {
+        info("minimize_app()");
+        qobject::minimize_app_native();
     }
 
     pub fn open_sutta_languages_window(&self) {

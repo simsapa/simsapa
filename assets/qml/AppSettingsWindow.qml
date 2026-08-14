@@ -268,7 +268,7 @@ ApplicationWindow {
                 rebuild_index_dialog.status_message = "";
                 rebuild_index_dialog.open();
                 // Long operation: keep the screen awake until it actually ends.
-                manager.set_keep_screen_on(true);
+                manager.set_keep_screen_on("search-index-rebuild-settings", true);
                 SuttaBridge.rebuild_search_index();
             }
         }
@@ -335,7 +335,7 @@ ApplicationWindow {
                 // Release the screen lock only here — when the rebuild
                 // actually ends. Closing the dialog mid-rebuild must not
                 // release it, since the background job continues.
-                manager.set_keep_screen_on(false);
+                manager.set_keep_screen_on("search-index-rebuild-settings", false);
             }
         }
     }

@@ -555,39 +555,43 @@ ApplicationWindow {
                      session.active_tab_index === undefined ? -1 : session.active_tab_index);
 
         if (root.is_mobile) {
-            restore_geometry_nudge_timer.restart();
+            restore_geometry_report_timer.restart();
         }
     }
 
-    // Restored tabs create their webviews while the window is still laying
-    // itself out, and the native Android WebView keeps whatever geometry it was
-    // handed at that moment — which can be the full window, so it covers the
-    // search bar and the tab row. Nothing later corrects it on its own: a
-    // native view does not re-read the QML geometry, which is why loading the
-    // next sutta (a real resize) is what puts the page back in place.
+    // Measurement only — deliberately no repair.
     //
-    // A 1px geometry jiggle is a resize the native view has to observe — the
-    // same remedy the WordSummary close path uses, and the desktop
-    // stale-frame bug before it.
+    // The symptom this watches for: a restored tab creates its webview while
+    // the window is still laying itself out, and the native Android WebView
+    // keeps whatever geometry it was handed at that moment — which was once
+    // reported as the full window, covering the search bar and the tab row.
+    // A native view does not re-read the QML geometry on its own, so loading
+    // the next sutta (a real resize) is what would put the page back.
     //
-    // The interval must be long enough for the ordinary layout to have settled,
-    // or the jiggle takes credit for what the normal resize already did. The
-    // VIEWPORT-NUDGE-QT lines the nudge emits carry the before/after geometry,
-    // so the log can tell the two apart. See
-    // docs/mobile-stuck-bottom-bar-investigation.md.
+    // A 1px geometry jiggle was tried here and is now removed. Five measured
+    // restores all reported webview_h=582 against a 780 window — the ordinary
+    // inset, unchanged between the pre_jiggle and post_jiggle phases — and the
+    // full-screen-tab symptom never reproduced again. That is a timer chain
+    // running on every mobile restore with no evidence it does anything, which
+    // is exactly the trap docs/mobile-stuck-bottom-bar-investigation.md exists
+    // to record: there, a jiggle took credit for what an ordinary resize had
+    // already done.
+    //
+    // The log line is kept so a recurrence is still diagnosable. The interval
+    // must stay long enough for the ordinary layout to have settled, or the
+    // measurement describes a mid-layout state rather than the resting one.
     Timer {
-        id: restore_geometry_nudge_timer
+        id: restore_geometry_report_timer
         interval: 600
         repeat: false
         onTriggered: {
             let html_view = sutta_html_view_layout.get_current_item();
             if (!html_view) {
-                logger.info("restore_geometry_nudge: no current html view, nothing to nudge");
+                logger.info("restore_geometry_report: no current html view to measure");
                 return;
             }
-            logger.info("restore_geometry_nudge: window=" + Math.round(root.width) + "x" + Math.round(root.height)
+            logger.info("restore_geometry_report: window=" + Math.round(root.width) + "x" + Math.round(root.height)
                 + " webview_h=" + Math.round(html_view.webview_height()));
-            html_view.nudge_webview_geometry();
         }
     }
 
@@ -1725,8 +1729,29 @@ ${query_text}`;
             return;
         }
 
-        // The native moveTaskToBack() call arrives with the app_minimize helper.
+        // Android: moveTaskToBack(true), a logged no-op on desktop. The session
+        // is written by gui.cpp's applicationStateChanged handler, which the
+        // backgrounding raises -- the same hook that covers a task swiped away
+        // from the overview screen.
         logger.info("minimize_or_quit_app(): backgrounding the app");
+        SuttaBridge.minimize_app();
+    }
+
+    // Empty this window because the user *closed* it, as opposed to closing its
+    // tabs. The distinction is the custom title: "Close all tabs" leaves the
+    // user with the window they named, while a close hands back something they
+    // experience as brand new, so the name must go with the tabs.
+    //
+    // Without this, the last window is never hidden (its tabs are cleared and
+    // the app is minimised instead), so the going-to-background save stores the
+    // title and the next launch restores a blank window still called "suttas".
+    // This is the QML counterpart of the window_title reset on the revive path
+    // in create_sutta_search_window().
+    function clear_window_for_close() {
+        logger.info("clear_window_for_close(): " + root.window_id
+            + " clearing tabs and the custom title '" + root.window_title + "'");
+        root.clear_all_tabs();
+        root.window_title = "";
     }
 
     function open_window_list_dialog() {
@@ -1760,7 +1785,7 @@ ${query_text}`;
 
         logger.info("close_current_window(): last window " + root.window_id
             + " - clearing tabs and minimising rather than hiding");
-        root.clear_all_tabs();
+        root.clear_window_for_close();
         root.minimize_or_quit_app();
     }
 
@@ -2007,7 +2032,9 @@ ${query_text}`;
             CMenuItem {
                 action: Action {
                     id: action_sutta_search
-                    text: "&Sutta Search"
+                    // On mobile the action opens the window switcher, so it is
+                    // named for what it does there.
+                    text: root.is_mobile ? "&Sutta Windows" : "&Sutta Search"
                     icon.source: "icons/32x32/bxs_book_bookmark.png"
                     shortcut: Shortcut {
                         sequences: root.get_sequences("sutta_search")
@@ -2545,7 +2572,7 @@ ${query_text}`;
         // shown: clear its tabs so the close is honoured visibly, then take the
         // platform path (background on Android, quit on iOS).
         onLast_window_close_requested: {
-            root.clear_all_tabs();
+            root.clear_window_for_close();
             root.minimize_or_quit_app();
         }
 
@@ -2553,7 +2580,7 @@ ${query_text}`;
         // and is emptied so the user is left with a single blank window.
         onClear_all_windows_requested: {
             logger.info("clear_all_windows_requested(): emptying " + root.window_id);
-            root.clear_all_tabs();
+            root.clear_window_for_close();
         }
     }
 
