@@ -237,6 +237,7 @@ pub mod ffi {
         fn callback_open_reference_search_window();
         fn callback_open_topic_index_window();
         fn callback_show_chapter_in_sutta_window(window_id: QString, result_data_json: QString);
+        fn callback_show_toc_tab(window_id: QString, spine_item_uid: QString);
         fn callback_show_sutta_from_reference_search(window_id: QString, result_data_json: QString);
         fn callback_toggle_reading_mode(window_id: QString, is_active: bool);
         fn callback_open_in_lookup_window(result_data_json: QString);
@@ -543,6 +544,19 @@ fn next_chapter(window_id: &str, current_spine_item_uid: PathBuf, dbm: &State<Ar
 
     let json_string = serde_json::to_string(&result_data_json).unwrap_or_default();
     ffi::callback_show_chapter_in_sutta_window(ffi::QString::from(window_id), ffi::QString::from(json_string));
+    Status::Ok
+}
+
+/// Activate the sidebar's TOC tab in the window and reveal the entry for the
+/// chapter the reader panel is showing. Called by the in-page TOC button in
+/// the book chapter chrome (`assets/templates/toc_button.html`).
+#[get("/show_toc_tab/<window_id>/<spine_item_uid..>")]
+fn show_toc_tab(window_id: &str, spine_item_uid: PathBuf) -> Status {
+    // Convert path to forward slashes for cross-platform consistency
+    let uid_str = pathbuf_to_forward_slash_string(&spine_item_uid);
+    info(&format!("show_toc_tab(): window_id: {}, spine_item_uid: {}", window_id, uid_str));
+
+    ffi::callback_show_toc_tab(ffi::QString::from(window_id), ffi::QString::from(&uid_str));
     Status::Ok
 }
 
@@ -2314,6 +2328,7 @@ pub async extern "C" fn start_webserver() {
             open_book_page_tab,
             prev_chapter,
             next_chapter,
+            show_toc_tab,
             prev_sutta,
             next_sutta,
             // Browser Extension API routes

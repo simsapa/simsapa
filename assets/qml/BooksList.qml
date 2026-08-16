@@ -11,12 +11,18 @@ ColumnLayout {
     id: root
 
     Logger { id: logger }
+    TocUtils { id: toc_utils }
 
     required property var books_list
     required property var selected_book_uid
     required property int pointSize
     property bool auto_expand: false
     property string window_id: ""
+    // The spine item (and in-page anchor) currently shown in the reader panel.
+    // When set, the matching TOC entry is revealed: its ancestors are expanded,
+    // it is marked selected, and a scroll request is emitted for it.
+    property string active_spine_item_uid: ""
+    property string active_anchor: ""
     // Per-book Edit / Delete buttons in the header row. Off by default: TocTab
     // shows the same list purely as a table of contents.
     property bool show_item_actions: false
@@ -27,6 +33,20 @@ ColumnLayout {
     signal selected_book_uid_changed(string uid)
     signal edit_book_requested(string uid)
     signal delete_book_requested(string uid, string title)
+    // Emitted with the ChapterListItem delegate that has just become the
+    // selected (active) TOC entry, so the containing view can scroll to it.
+    signal scroll_to_item_requested(var item)
+
+    // Bumped to ask every book delegate to re-run its reveal and re-request the
+    // scroll, even when nothing changed — the path for the user explicitly
+    // asking to be shown where they are, rather than a chapter having just been
+    // opened. A counter rather than a walk over Repeater.itemAt(), which has no
+    // knowledge of the delegate's type.
+    property int reveal_generation: 0
+
+    function reveal_active_items() {
+        root.reveal_generation += 1;
+    }
 
     Repeater {
         model: root.books_list
@@ -44,21 +64,36 @@ ColumnLayout {
             property var chapter_list: []
             property bool use_toc: false
             property var expanded_items: ({}) // Track expanded state of items with children
+            // item_key of the TOC entry matching the chapter currently open in
+            // the reader panel, "" when none of this book's entries match.
+            property string selected_item_key: ""
+            // One property so a change of either uid or anchor re-reveals.
+            readonly property string active_key: root.active_spine_item_uid + "#" + root.active_anchor
 
             Component.onCompleted: {
                 // If auto_expand is true, load the spine items immediately
                 if (root.auto_expand) {
                     book_item_wrapper.load_spine_items();
+                    book_item_wrapper.reveal_active_item();
                 }
             }
 
+            onActive_keyChanged: book_item_wrapper.reveal_active_item()
+
+            readonly property int reveal_generation: root.reveal_generation
+            onReveal_generationChanged: {
+                book_item_wrapper.reveal_active_item();
+                book_item_wrapper.request_scroll_to_selected();
+            }
+
             // Flatten the TOC tree into a flat list with depth information
-            function flatten_toc(toc_items, depth) {
+            function flatten_toc(toc_items, depth, index_path) {
                 let result = [];
                 for (let i = 0; i < toc_items.length; i++) {
                     const item = toc_items[i];
                     const has_children = item.children && item.children.length > 0;
-                    const item_key = depth + "_" + i + "_" + item.label;
+                    const child_path = index_path.concat([i]);
+                    const item_key = toc_utils.toc_item_key(child_path);
 
                     // Add the item with metadata
                     result.push({
@@ -71,11 +106,115 @@ ColumnLayout {
 
                     // If expanded and has children, recursively add children
                     if (has_children && expanded_items[item_key]) {
-                        const children_flat = flatten_toc(item.children, depth + 1);
+                        const children_flat = flatten_toc(item.children, depth + 1, child_path);
                         result = result.concat(children_flat);
                     }
                 }
                 return result;
+            }
+
+            function resource_path_for_spine_uid(spine_item_uid) {
+                for (let i = 0; i < spine_items.length; i++) {
+                    if (spine_items[i].spine_item_uid === spine_item_uid) {
+                        return spine_items[i].resource_path || "";
+                    }
+                }
+                return "";
+            }
+
+            // Ask the view to scroll to this book's selected entry, if it has
+            // one. Used when the reveal is requested explicitly and the
+            // selection itself has not changed, so no delegate emits on its own.
+            function request_scroll_to_selected() {
+                if (book_item_wrapper.selected_item_key === "") {
+                    return false;
+                }
+                for (let j = 0; j < chapters_repeater.count; j++) {
+                    const chapter_item = chapters_repeater.itemAt(j) as ChapterListItem;
+                    if (chapter_item && chapter_item.is_selected) {
+                        root.scroll_to_item_requested(chapter_item);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // Select the TOC entry for the chapter open in the reader panel and
+            // expand its ancestors so it is visible without hunting for it.
+            function reveal_active_item() {
+                const active_uid = root.active_spine_item_uid;
+                if (!active_uid || active_uid === "") {
+                    book_item_wrapper.selected_item_key = "";
+                    return;
+                }
+
+                if (spine_items.length === 0 && chapter_list.length === 0) {
+                    // Not loaded yet (collapsed book in the Library window).
+                    return;
+                }
+
+                // The spine item may belong to a different book in the list.
+                const resource_path = resource_path_for_spine_uid(active_uid);
+                if (resource_path === "") {
+                    book_item_wrapper.selected_item_key = "";
+                    return;
+                }
+
+                if (!use_toc) {
+                    for (let i = 0; i < spine_items.length; i++) {
+                        if (spine_items[i].spine_item_uid === active_uid) {
+                            book_item_wrapper.selected_item_key = "spine_" + i;
+                            book_item_wrapper.is_expanded = true;
+                            return;
+                        }
+                    }
+                    book_item_wrapper.selected_item_key = "";
+                    return;
+                }
+
+                let toc = [];
+                try {
+                    toc = JSON.parse(modelData.toc_json);
+                } catch (e) {
+                    logger.error("Failed to parse TOC JSON while revealing active item: " + e);
+                    return;
+                }
+
+                const index_path = toc_utils.resolve_toc_path(toc, resource_path, root.active_anchor);
+
+                if (index_path === null) {
+                    // Not listed in the TOC: the first spine item is shown as
+                    // the "cover" row, anything else has no row to select.
+                    if (spine_items.length > 0 && spine_items[0].spine_item_uid === active_uid) {
+                        book_item_wrapper.selected_item_key = "cover";
+                        book_item_wrapper.is_expanded = true;
+                    } else {
+                        book_item_wrapper.selected_item_key = "";
+                    }
+                    return;
+                }
+
+                // Expand every ancestor of the matched entry so it is visible.
+                const new_expanded = Object.assign({}, expanded_items);
+                const ancestors = toc_utils.ancestor_keys(index_path);
+                let expanded_changed = false;
+                for (let n = 0; n < ancestors.length; n++) {
+                    if (!new_expanded[ancestors[n]]) {
+                        new_expanded[ancestors[n]] = true;
+                        expanded_changed = true;
+                    }
+                }
+
+                book_item_wrapper.is_expanded = true;
+                book_item_wrapper.selected_item_key = toc_utils.toc_item_key(index_path);
+
+                // Only rebuild when the visible rows actually change: a rebuild
+                // recreates every delegate, and the selection highlight alone
+                // follows selected_item_key through a binding.
+                if (expanded_changed) {
+                    expanded_items = new_expanded;
+                    rebuild_chapter_list();
+                }
             }
 
             function toggle_item_expanded(item_key) {
@@ -118,7 +257,7 @@ ColumnLayout {
                     }
 
                     // Add flattened TOC items
-                    const toc_flat = flatten_toc(toc, 0);
+                    const toc_flat = flatten_toc(toc, 0, []);
                     combined_list = combined_list.concat(toc_flat);
 
                     // Assign the combined list to trigger property change
@@ -306,9 +445,11 @@ ColumnLayout {
                 }
 
                 Repeater {
+                    id: chapters_repeater
                     model: book_item_wrapper.chapter_list
 
                     delegate: ChapterListItem {
+                        id: chapter_delegate
                         required property var modelData
                         required property int index
 
@@ -316,9 +457,13 @@ ColumnLayout {
                         depth: modelData.depth
                         has_children: modelData.has_children
                         is_expanded: modelData.is_expanded
+                        is_selected: book_item_wrapper.selected_item_key !== ""
+                            && book_item_wrapper.selected_item_key === modelData.item_key
                         book_uid: book_item_wrapper.modelData.uid
                         pointSize: root.pointSize
                         window_id: root.window_id
+
+                        onSelected_scroll_requested: root.scroll_to_item_requested(chapter_delegate)
 
                         onToggle_expanded: {
                             book_item_wrapper.toggle_item_expanded(modelData.item_key);

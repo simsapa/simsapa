@@ -17,15 +17,35 @@ ItemDelegate {
     required property string book_uid
     required property int pointSize
     property string window_id: ""
+    // True for the entry matching the chapter open in the reader panel.
+    property bool is_selected: false
 
     signal toggle_expanded()
     signal chapter_clicked(string window_id, string spine_item_uid, string title, string anchor)
+    // Emitted when this entry becomes the selected one, so the view can scroll
+    // it into view. Deferred, because the surrounding list is still being
+    // rebuilt when the selection changes and the y position is not final yet.
+    signal selected_scroll_requested()
 
     // Determine if this is a spine item or TOC item
     readonly property bool is_spine_item: item_data.hasOwnProperty('spine_item_uid')
 
+    function request_scroll_if_selected() {
+        if (chapter_item.is_selected) {
+            Qt.callLater(function() {
+                if (chapter_item.is_selected) {
+                    chapter_item.selected_scroll_requested();
+                }
+            });
+        }
+    }
+
+    onIs_selectedChanged: chapter_item.request_scroll_if_selected()
+    Component.onCompleted: chapter_item.request_scroll_if_selected()
+
     background: Rectangle {
-        color: chapter_item.hovered ? palette.midlight : "transparent"
+        color: chapter_item.is_selected ? palette.highlight
+            : (chapter_item.hovered ? palette.midlight : "transparent")
         radius: 2
     }
 
@@ -66,7 +86,8 @@ ItemDelegate {
                 ? (chapter_item.item_data.title || "Chapter " + (chapter_item.item_data.spine_index + 1))
                 : chapter_item.item_data.label
             font.pointSize: chapter_item.pointSize - 1
-            color: palette.text
+            font.bold: chapter_item.is_selected
+            color: chapter_item.is_selected ? palette.highlightedText : palette.text
             wrapMode: Text.WordWrap
             elide: Text.ElideRight
             Layout.fillWidth: true

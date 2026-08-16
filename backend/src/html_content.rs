@@ -7,6 +7,9 @@ static PAGE_HTML: &str = include_str!("../../assets/templates/page.html");
 static FIND_HTML: &str = include_str!("../../assets/templates/find.html");
 static READING_MODE_HTML: &str = include_str!("../../assets/templates/reading_mode.html");
 pub static PREV_NEXT_CHAPTER_HTML: &str = include_str!("../../assets/templates/prev_next_chapter.html");
+// Appended to the prev/next navigation on book chapter pages only — sutta
+// pages share PREV_NEXT_CHAPTER_HTML but have no table of contents.
+pub static TOC_BUTTON_HTML: &str = include_str!("../../assets/templates/toc_button.html");
 static MENU_HTML: &str = include_str!("../../assets/templates/menu.html");
 static CONFIRM_MODAL_HTML: &str = include_str!("../../assets/templates/confirm_modal.html");
 static FOOTNOTE_MODAL_HTML: &str = include_str!("../../assets/templates/footnote_modal.html");

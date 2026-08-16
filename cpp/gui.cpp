@@ -274,6 +274,10 @@ void callback_show_chapter_in_sutta_window(QString window_id, QString result_dat
   AppGlobals::manager->show_chapter_in_sutta_window(window_id, result_data_json);
 }
 
+void callback_show_toc_tab(QString window_id, QString spine_item_uid) {
+  AppGlobals::manager->show_toc_tab(window_id, spine_item_uid);
+}
+
 void callback_show_sutta_from_reference_search(QString window_id, QString result_data_json) {
   AppGlobals::manager->show_sutta_from_reference_search(window_id, result_data_json);
 }

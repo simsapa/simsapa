@@ -1338,7 +1338,7 @@ ${query_text}`;
 
         // Update TocTab if this is a book chapter
         if (tab_data.table_name === "book_spine_items" && tab_data.item_uid) {
-            toc_tab.update_for_spine_item(tab_data.item_uid);
+            toc_tab.update_for_spine_item(tab_data.item_uid, tab_data.anchor || "");
         }
 
         // Only add translation tabs for sutta results, not dictionary or library results.
@@ -1830,6 +1830,23 @@ ${query_text}`;
         dictionary_tab.word_uid = uid;
     }
 
+    // Show the sidebar's TOC tab with this chapter's entry revealed. Called
+    // from the in-page TOC button on book chapter pages, through the
+    // /show_toc_tab route and WindowManager::show_toc_tab().
+    function show_toc_tab_for_spine_item(spine_item_uid: string) {
+        show_sidebar_btn.checked = true;
+        rightside_tabs.setCurrentIndex(4); // idx 4 = TOC
+        // Normally the TOC already tracks this chapter (it is updated whenever
+        // a chapter tab is opened or focused); load it here for the case where
+        // it does not, e.g. the page was navigated inside the webview.
+        if (toc_tab.active_spine_item_uid !== spine_item_uid) {
+            toc_tab.update_for_spine_item(spine_item_uid, "");
+        }
+        // Re-request the reveal even when the entry is already selected: the
+        // point of pressing the button is to be shown where you are.
+        toc_tab.reveal_current_chapter();
+    }
+
     // Open a bookmark item in the correct tab group, with optional scroll/find restoration.
     // item_data: {item_uid, table_name, title, tab_group, scroll_position, find_query, find_match_index}
     // focus: whether to focus on the newly created tab
@@ -1856,7 +1873,7 @@ ${query_text}`;
                 root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
             }
             if (tab_data.table_name === "book_spine_items" && tab_data.item_uid) {
-                toc_tab.update_for_spine_item(tab_data.item_uid);
+                toc_tab.update_for_spine_item(tab_data.item_uid, tab_data.anchor || "");
             }
         } else if (tab_group === "translations") {
             let tab_data = root.new_tab_data(result_data, false, focus);
@@ -1871,7 +1888,7 @@ ${query_text}`;
                 root.nav_history_push(root.build_nav_entry("tab_switch", tab_data.id_key, tab_data, 0));
             }
             if (tab_data.table_name === "book_spine_items" && tab_data.item_uid) {
-                toc_tab.update_for_spine_item(tab_data.item_uid);
+                toc_tab.update_for_spine_item(tab_data.item_uid, tab_data.anchor || "");
             }
         } else {
             // "results" — during session restore, the first results-group item
@@ -3421,7 +3438,7 @@ ${query_text}`;
 
                                     // Update TocTab if switching to a book chapter tab
                                     if (tab_data_entry.table_name === "book_spine_items" && tab_data_entry.item_uid) {
-                                        toc_tab.update_for_spine_item(tab_data_entry.item_uid);
+                                        toc_tab.update_for_spine_item(tab_data_entry.item_uid, tab_data_entry.anchor || "");
                                     }
 
                                     // Tab switch completed: webview shown, tab scrolled into view

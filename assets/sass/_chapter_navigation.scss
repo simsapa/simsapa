@@ -1,27 +1,57 @@
-// Chapter Navigation Buttons (Previous/Next)
-// Positioned on the left side of the page, after the reading mode button
+// Chapter Navigation Buttons (Table of Contents / Previous / Next)
+// Positioned on the left side of the page, after the reading mode button.
+//
+// Left-to-right order: reading mode, table of contents, previous, next.
+//
+// The TOC button is rendered on book chapter pages only — sutta pages share the
+// prev/next chrome but have no table of contents. Its slot must not be left
+// empty there, so prev/next are positioned one slot earlier by default and
+// shifted right only when the TOC button is actually present. All of these
+// buttons are siblings in the page template (`assets/templates/page.html`
+// inserts them into the same parent), which is what makes the `~` combinator
+// below the whole mechanism: no JS, and no page-type class on the body.
 
 $button_size: 30px;
 $edge_margin: 10px;
 $border_radius: 2px;
 $button_spacing: 5px;
 
-// Previous chapter button (left side, after reading mode button)
-#prevChapterButton {
+// The nth button position from the left edge. Slot 0 is the reading mode
+// button: 10px, 45px, 80px, 115px…
+@function button_slot($n) {
+    @return $edge_margin + ($button_size + $button_spacing) * $n;
+}
+
+@mixin fixed_top_left_button($left) {
     position: fixed;
     top: $edge_margin;
-    left: $edge_margin + $button_size + $button_spacing;  // 45px
+    left: $left;
     z-index: 1000;
     transform: translateZ(0);
 }
 
-// Next chapter button (left side, after prev chapter button)
+// Book chapter pages only, first slot after the reading mode button.
+#tocTabButton {
+    @include fixed_top_left_button(button_slot(1));
+}
+
+// Without a TOC button (sutta pages), prev/next follow the reading mode button
+// directly.
+#prevChapterButton {
+    @include fixed_top_left_button(button_slot(1));
+}
+
 #nextChapterButton {
-    position: fixed;
-    top: $edge_margin;
-    left: $edge_margin + ($button_size + $button_spacing) * 2;  // 80px
-    z-index: 1000;
-    transform: translateZ(0);
+    @include fixed_top_left_button(button_slot(2));
+}
+
+// With a TOC button (book chapter pages), both shift one slot right.
+#tocTabButton ~ #prevChapterButton {
+    left: button_slot(2);
+}
+
+#tocTabButton ~ #nextChapterButton {
+    left: button_slot(3);
 }
 
 .chapter-nav-button {

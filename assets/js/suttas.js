@@ -329,11 +329,19 @@ class ChapterNavigationController {
     constructor() {
         this.prevButton = document.getElementById('prevChapterButton');
         this.nextButton = document.getElementById('nextChapterButton');
+        this.tocButton = document.getElementById('tocTabButton');
 
         this.init();
     }
 
     init() {
+        // Wired before the prev/next guard below: the TOC button is rendered
+        // only on book chapter pages, and is independent of that pair (it is
+        // never disabled, since the first and last chapters have a TOC too).
+        if (this.tocButton) {
+            this.tocButton.addEventListener('click', () => this.show_toc_tab());
+        }
+
         if (!this.prevButton || !this.nextButton) {
             return;
         }
@@ -349,6 +357,17 @@ class ChapterNavigationController {
         // Add click event listeners
         this.prevButton.addEventListener('click', () => this.navigate_prev());
         this.nextButton.addEventListener('click', () => this.navigate_next());
+    }
+
+    // Activate the sidebar's TOC tab and reveal this chapter's entry in it.
+    async show_toc_tab() {
+        const item_uid = this.tocButton.dataset.spineItemUid;
+
+        try {
+            await fetch(`${API_URL}/show_toc_tab/${WINDOW_ID}/${item_uid}`);
+        } catch (error) {
+            log_error('Failed to show the table of contents: ' + error);
+        }
     }
 
     async navigate_prev() {

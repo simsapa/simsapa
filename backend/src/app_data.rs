@@ -1225,14 +1225,23 @@ impl AppData {
         let is_first_chapter = prev_item.is_none();
         let is_last_chapter = next_item.is_none();
 
-        // Build the navigation HTML by replacing placeholders
-        use crate::html_content::PREV_NEXT_CHAPTER_HTML;
-        let nav_html = PREV_NEXT_CHAPTER_HTML
-            .replace("{current_spine_item_uid}", &spine_item.spine_item_uid)
-            .replace("{current_book_uid}", &spine_item.book_uid)
-            .replace("{is_first_chapter}", &is_first_chapter.to_string())
-            .replace("{is_last_chapter}", &is_last_chapter.to_string())
-            .replace("{api_url}", &self.api_url);
+        // Build the navigation HTML by replacing placeholders. The TOC button
+        // goes first, matching its on-screen position left of the prev/next
+        // pair, and is rendered only here: sutta pages share the same nav
+        // template but have no table of contents.
+        use crate::html_content::{PREV_NEXT_CHAPTER_HTML, TOC_BUTTON_HTML};
+        let nav_html = format!(
+            "{}{}",
+            TOC_BUTTON_HTML
+                .replace("{current_spine_item_uid}", &spine_item.spine_item_uid)
+                .replace("{current_book_uid}", &spine_item.book_uid)
+                .replace("{api_url}", &self.api_url),
+            PREV_NEXT_CHAPTER_HTML
+                .replace("{current_spine_item_uid}", &spine_item.spine_item_uid)
+                .replace("{current_book_uid}", &spine_item.book_uid)
+                .replace("{is_first_chapter}", &is_first_chapter.to_string())
+                .replace("{is_last_chapter}", &is_last_chapter.to_string())
+                .replace("{api_url}", &self.api_url));
 
         // Wrap content in the full HTML page structure
         use crate::html_content::sutta_html_page_with_nav;

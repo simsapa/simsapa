@@ -39,6 +39,7 @@ fn main() {
         "../assets/qml/WindowListDialog.qml",
         "../assets/qml/WindowRenameDialog.qml",
         "../assets/qml/TitleUtils.qml",
+        "../assets/qml/TocUtils.qml",
         "../assets/qml/SuttaHtmlView.qml",
         "../assets/qml/WebEngineRepaintNudge.qml",
         "../assets/qml/SuttaHtmlView_Desktop.qml",

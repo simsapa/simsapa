@@ -809,6 +809,7 @@ views, not for headless data retrieval.
 | `GET /next_sutta/<window_id>/<current_sutta_uid..>` | Navigate `window_id` to the next sutta. |
 | `GET /prev_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the previous Library-book chapter. |
 | `GET /next_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the next Library-book chapter. |
+| `GET /show_toc_tab/<window_id>/<spine_item_uid..>` | Show the sidebar's **TOC** tab in `window_id` with the entry for `spine_item_uid` revealed (ancestors expanded, entry selected and scrolled into view). Called by the in-page TOC button on book chapter pages. Always `200` — it hands off to the GUI and does not read the DB. |
 | `GET /lookup_window_query/<text>` | Open the word-lookup window and run a query (text in the path). |
 | `POST /lookup_window_query` | Open the word-lookup window. If `query_text` is a word **uid** (contains `/`) it opens that entry directly (dict_words → DPD headword fallback); otherwise it runs a lookup search. Body: `LookupWindowRequest` (§15). |
 | `GET /summary_query/<window_id>/<text>` | Run a summary query in `window_id`. |

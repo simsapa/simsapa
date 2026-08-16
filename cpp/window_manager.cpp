@@ -981,6 +981,37 @@ void WindowManager::show_chapter_in_sutta_window(const QString& window_id, const
     }
 }
 
+void WindowManager::show_toc_tab(const QString& window_id, const QString& spine_item_uid) {
+    SuttaSearchWindow* target_window = nullptr;
+
+    if (this->sutta_search_windows.length() == 0) {
+        return;
+    }
+
+    if (window_id.isEmpty()) {
+        // Fall back to the last window the user still has open if no
+        // window_id was provided. A closed window is only hidden, not removed
+        // from the list, so plain last() could re-show a window the user closed.
+        target_window = this->last_open_sutta_search_window();
+    } else {
+        // Find the window with matching window_id
+        for (auto w : this->sutta_search_windows) {
+            QVariant prop = w->m_root->property("window_id");
+            if (prop.isValid() && prop.toString() == window_id) {
+                target_window = w;
+                break;
+            }
+        }
+    }
+
+    if (target_window && target_window->m_root) {
+        // The request comes from a button in this window's own reader panel,
+        // so the window is already the active one -- no show/raise needed.
+        QMetaObject::invokeMethod(target_window->m_root, "show_toc_tab_for_spine_item",
+            Q_ARG(QString, spine_item_uid));
+    }
+}
+
 void WindowManager::show_sutta_from_reference_search(const QString& window_id, const QString& result_data_json) {
     // If window_id is empty, fall back to the last window (for backwards compatibility)
     // Otherwise, find the specific window by window_id
