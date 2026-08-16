@@ -166,6 +166,48 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: confirm_delete_all_dialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+
+        // Clamped to the overlay: a fixed 480 is wider than a phone screen.
+        width: Math.min(parent.width - 40, 480)
+
+        title: "Delete all books?"
+        modal: true
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        // A title plus wrapping content is the combination that can produce an
+        // implicitHeight binding loop with Fusion's default header; see
+        // CLAUDE.md, "`Dialog` with a title and wrapping text".
+        header: DialogHeader { text: confirm_delete_all_dialog.title }
+
+        contentItem: Label {
+            text: `Remove all ${root.books_list.length} books from the library? This cannot be undone.`
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            color: palette.text
+        }
+
+        onAccepted: root.remove_all_books()
+    }
+
+    function remove_all_books() {
+        const books = root.books_list.slice();
+        let failed = 0;
+        for (let i = 0; i < books.length; i++) {
+            if (!SuttaBridge.remove_book(books[i].uid)) {
+                failed += 1;
+                logger.error("Failed to remove book: " + books[i].uid);
+            }
+        }
+        if (failed > 0) {
+            logger.error("Delete All: " + failed + " of " + books.length + " books could not be removed");
+        }
+        root.selected_book_uid = "";
+        root.load_library_books();
+    }
+
     // Content sits inside a Frame, matching TopicIndexWindow /
     // ReferenceSearchWindow: the Frame's padding supplies the margin on all
     // four edges. `extra_top_margin` is the user's own additional space at the
@@ -192,26 +234,11 @@ ApplicationWindow {
                 }
 
                 Button {
-                    text: "Edit Metadata"
-                    enabled: root.selected_book_uid !== ""
-                    onClicked: {
-                        metadata_edit_dialog.load_metadata(root.selected_book_uid);
-                        metadata_edit_dialog.open();
-                    }
-                }
-
-                Button {
-                    text: "Remove"
-                    enabled: root.selected_book_uid !== ""
-                    onClicked: {
-                        // Find the selected book to get its title
-                        const selected_book = root.books_list.find(book => book.uid === root.selected_book_uid);
-                        if (selected_book) {
-                            remove_confirmation_dialog.book_title = selected_book.title || "Untitled";
-                            remove_confirmation_dialog.book_uid = root.selected_book_uid;
-                            remove_confirmation_dialog.open();
-                        }
-                    }
+                    text: "Delete All"
+                    enabled: root.books_list.length > 0
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Remove all books from the library"
+                    onClicked: confirm_delete_all_dialog.open()
                 }
 
                 Item { Layout.fillWidth: true }
@@ -238,9 +265,21 @@ ApplicationWindow {
                     selected_book_uid: root.selected_book_uid
                     pointSize: root.pointSize
                     window_id: ""  // Empty string means use the last window
+                    show_item_actions: true
 
                     onSelected_book_uid_changed: function(uid) {
                         root.selected_book_uid = uid;
+                    }
+
+                    onEdit_book_requested: function(uid) {
+                        metadata_edit_dialog.load_metadata(uid);
+                        metadata_edit_dialog.open();
+                    }
+
+                    onDelete_book_requested: function(uid, title) {
+                        remove_confirmation_dialog.book_title = title;
+                        remove_confirmation_dialog.book_uid = uid;
+                        remove_confirmation_dialog.open();
                     }
                 }
             }

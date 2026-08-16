@@ -290,8 +290,8 @@ Item {
         return '{"appdata": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dictionaries": {"present_at_start": true, "migration_ok": true, "migration_error": null}, "dpd": {"present_at_start": true, "migration_ok": null, "migration_error": null}, "storage_path": {"recorded": null, "state": "absent"}}';
     }
 
-    function remove_book(book_uid: string) {
-        return;
+    function remove_book(book_uid: string): bool {
+        return true;
     }
 
     function get_book_metadata_json(book_uid: string): string {

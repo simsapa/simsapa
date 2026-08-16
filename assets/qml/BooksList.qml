@@ -17,11 +17,16 @@ ColumnLayout {
     required property int pointSize
     property bool auto_expand: false
     property string window_id: ""
+    // Per-book Edit / Delete buttons in the header row. Off by default: TocTab
+    // shows the same list purely as a table of contents.
+    property bool show_item_actions: false
 
     anchors.fill: parent
     spacing: 10
 
     signal selected_book_uid_changed(string uid)
+    signal edit_book_requested(string uid)
+    signal delete_book_requested(string uid, string title)
 
     Repeater {
         model: root.books_list
@@ -247,6 +252,39 @@ ColumnLayout {
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
+                    }
+
+                    // Both actions are square icon buttons of equal size, the
+                    // same idiom as DictionaryListItem: `implicitWidth:
+                    // implicitHeight` is what makes them square, since an
+                    // icon-only Button is otherwise wider than it is tall.
+                    // They sit after the MouseArea in the same Item, so their
+                    // clicks are not swallowed by the row's expand handler.
+                    Button {
+                        visible: root.show_item_actions
+                        icon.source: "icons/32x32/fa_pen-to-square-solid.png"
+                        icon.width: 16
+                        icon.height: 16
+                        padding: 8
+                        implicitWidth: implicitHeight
+                        Layout.alignment: Qt.AlignVCenter
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Edit book metadata"
+                        onClicked: root.edit_book_requested(book_item_wrapper.modelData.uid)
+                    }
+
+                    Button {
+                        visible: root.show_item_actions
+                        icon.source: "icons/32x32/ion--trash-outline.png"
+                        icon.width: 16
+                        icon.height: 16
+                        padding: 8
+                        implicitWidth: implicitHeight
+                        Layout.alignment: Qt.AlignVCenter
+                        ToolTip.visible: hovered
+                        ToolTip.text: "Delete book"
+                        onClicked: root.delete_book_requested(book_item_wrapper.modelData.uid,
+                                                              book_item_wrapper.modelData.title || "Untitled")
                     }
                 }
             }
