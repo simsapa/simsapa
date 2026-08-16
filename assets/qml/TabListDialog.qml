@@ -42,10 +42,20 @@ Dialog {
     // squeezing the dialog into the left portion of narrow windows.
     parent: Overlay.overlay
 
+    // As a Popup-family item this lives in Overlay.overlay, which is NOT inset
+    // by ApplicationWindow's safe-area padding (docs/android-edge-to-edge-and-safe-areas.md).
+    // parent.height is therefore the full window height, including the space
+    // under the Android nav bar / gesture area — sizing directly from it let
+    // the dialog's bottom edge land under the OS buttons. Reserve the top/bottom
+    // safe-area margins from the usable height instead, matching DrawerMenu.qml.
+    readonly property real safe_top: control.SafeArea.margins.top
+    readonly property real safe_bottom: control.SafeArea.margins.bottom
+    readonly property real usable_height: parent.height - control.safe_top - control.safe_bottom
+
     x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
+    y: control.safe_top + (control.usable_height - height) / 2
     width: Math.min(parent.width * 0.9, 600)
-    height: control.is_tall ? Math.min(parent.height * 0.7, 400) : Math.min(parent.height * 0.9, 800)
+    height: control.is_tall ? Math.min(control.usable_height * 0.6, 400) : Math.min(control.usable_height * 0.9, 800)
 
     // Track which column is active: "tabs" or "history"
     property string active_column: "tabs"
