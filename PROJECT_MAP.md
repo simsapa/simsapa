@@ -71,6 +71,16 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   `minSdk 27` vs Qt's declared 28, the deprecated Java APIs in Play's report,
   the AGP/Gradle/JDK coupling — is recorded in
   [docs/android-qt-upgrade-considerations.md](./docs/android-qt-upgrade-considerations.md)
+- **Which Android API level each feature actually needs** — the measured
+  per-feature inventory, the Qt 6.9.3 / 6.11 floors, and the crash-triage
+  playbook for "does this user's Android version have the API this feature
+  relies on?" — is
+  [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md).
+  It records that `libQt6Core` imports `getentropy` (API 28) as a **non-weak**
+  symbol, so the app cannot load below API 28 despite `minSdk 27`.
+  `scripts/android-api-scan.sh` regenerates every measurement in it (symbol
+  scan, JNI call-site inventory, manifest checks); re-run it after a Qt upgrade,
+  an NDK change, a new native crate, or a new JNI call site.
 - `signing.env.example` - Template for the gitignored `android/signing.env`
   holding the `QT_ANDROID_KEYSTORE_*` upload-key credentials used by
   `build-android.sh`
