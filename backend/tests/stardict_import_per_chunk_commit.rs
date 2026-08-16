@@ -94,12 +94,14 @@ fn abort_keeps_partial_rows_in_db() {
     // ~2500 entries → 3 chunks at chunk_size 1000. Cancel after 2 ticks.
     let total_entries: usize = 2500;
 
-    // Use a unique label per run. We INTENTIONALLY do not clean up at the
-    // end of the test: this mirrors production abort semantics, where the
-    // partial dict is left for the next reconcile to pick up rather than
-    // rolled back. (Cleanup is now cheap — the `dict_words_fts` delete
-    // trigger uses the FTS5 rowid, so per-row deletes are O(log n) rather
-    // than the full FTS scans they were when `dict_word_id` was an
+    // Use a unique label per run. The production abort semantics under test
+    // — the partial dict is left in place for the next reconcile rather than
+    // rolled back — are fully established by the assertions below, which all
+    // run before any cleanup. The test then deletes its own dictionary, so
+    // repeated suite runs do not accumulate 2000-row test dictionaries in the
+    // shared `dictionaries.sqlite3`. (Cleanup is cheap — the `dict_words_fts`
+    // delete trigger uses the FTS5 rowid, so per-row deletes are O(log n)
+    // rather than the full FTS scans they were when `dict_word_id` was an
     // UNINDEXED column.)
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH).unwrap().as_millis();
@@ -159,6 +161,10 @@ fn abort_keeps_partial_rows_in_db() {
         .expect("list_dictionaries");
     assert!(dicts.iter().any(|d| d.id == dict_id),
         "parent dictionaries row must persist so next-startup reconcile picks it up");
+
+    // Everything under test is asserted above; remove the test dictionary so
+    // successive suite runs don't accumulate them.
+    delete_user_dictionary(dict_id).expect("cleanup: delete_user_dictionary");
 }
 
 /// Empty-abort cleanup (PRD §4.3 / task 2.2): when an import is aborted
