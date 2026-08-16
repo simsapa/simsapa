@@ -901,6 +901,46 @@ change anyway — not with an SDK or targetSdk bump. See
 [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md)
 and `tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`.
 
+### `Dialog` width — clamp it to the window overlay
+
+**Every `Dialog` must state its own width, clamped against the overlay it lives
+in**, rather than letting it size itself from its content:
+
+``` qml
+Dialog {
+    id: my_dialog
+
+    modal: true
+    // Clamped to the window overlay: a fixed 480 is wider than a phone screen.
+    parent: Overlay.overlay
+    anchors.centerIn: parent
+    width: Math.min(parent.width - 40, 480)
+
+    contentItem: Label {
+        text: "…a sentence long enough to need wrapping…"
+        wrapMode: Text.WordWrap
+    }
+}
+```
+
+A content-sized dialog with a long unwrapped string grows past the window edge
+on a narrow desktop window and off-screen on a phone, where there is no window
+manager to pull it back. The `Math.min(parent.width - 40, <max>)` form gives the
+comfortable desktop width *and* the phone fit from one binding; `parent:
+Overlay.overlay` is what makes `parent.width` the window's width regardless of
+where the dialog is declared, and it is also what keeps `anchors.centerIn`
+meaningful.
+
+The clamp only works if the content wraps to it, so pair it with
+`wrapMode: Text.WordWrap` on every text item inside — and that combination is
+exactly what the next section is about.
+
+`DictionaryEditDialog.qml` and `DictionariesWindow.qml`'s
+`confirm_delete_all_dialog` are the worked examples. Native `MessageDialog`
+(from `QtQuick.Dialogs`) is sized by the platform and needs none of this — but
+it also cannot carry custom content, so a confirmation with more than one line
+of text belongs in a `QtQuick.Controls` `Dialog` written this way.
+
 ### `Dialog` with a title and wrapping text — use `DialogHeader`
 
 **Any `Dialog` that has a `title` *and* content that wraps

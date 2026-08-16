@@ -75,14 +75,28 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+            // Both actions are square icon buttons of equal size, the same
+            // idiom as the row buttons in WindowListDialog / BookmarkListItem:
+            // `implicitWidth: implicitHeight` is what makes them square, since
+            // an icon-only Button is otherwise wider than it is tall.
             Button {
-                text: "Edit"
+                icon.source: "icons/32x32/fa_pen-to-square-solid.png"
+                icon.width: 16
+                icon.height: 16
+                padding: 8
+                implicitWidth: implicitHeight
+                ToolTip.visible: hovered
+                ToolTip.text: "Edit dictionary label"
                 enabled: !root.busy
                 onClicked: root.edit_clicked()
             }
 
             Button {
                 icon.source: "icons/32x32/ion--trash-outline.png"
+                icon.width: 16
+                icon.height: 16
+                padding: 8
+                implicitWidth: implicitHeight
                 ToolTip.visible: hovered
                 ToolTip.text: "Delete dictionary"
                 enabled: !root.busy

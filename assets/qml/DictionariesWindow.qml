@@ -71,6 +71,19 @@ ApplicationWindow {
     property var batch_failed: []       // [{label, message}]
     property int batch_entries_total: 0
 
+    // Sequential "Delete All" driver state. The backend serialises dictionary
+    // operations behind DICT_MGR_LOCK (a `try_lock`, so a second concurrent
+    // call would fail with "busy"), and `delete_dictionary` reports through the
+    // one pair of deleteFinished / deleteFailed signals — so the deletes are
+    // driven one at a time, mirroring the batch import above. A per-dictionary
+    // failure is recorded and the run continues.
+    property var delete_queue: []       // [{id, label}]
+    property int delete_index: 0        // 0-based index of the currently running item
+    property int delete_total: 0
+    property bool delete_all_active: false
+    property int delete_all_removed: 0
+    property var delete_all_failed: []  // [{label, message}]
+
     ThemeHelper {
         id: theme_helper
         target_window: root
@@ -172,6 +185,62 @@ ApplicationWindow {
         root.refresh_list();
     }
 
+    // Begin deleting every user-imported dictionary currently listed. Built-in
+    // dictionaries are never in `user_dictionaries` (the bridge lists only
+    // `is_user_imported` rows, and `delete_dictionary` refuses anything else),
+    // so they cannot be reached from here.
+    function start_delete_all() {
+        const queue = [];
+        for (let i = 0; i < root.user_dictionaries.length; i++) {
+            const d = root.user_dictionaries[i];
+            queue.push({ id: d.id, label: d.label });
+        }
+        if (queue.length === 0) {
+            return;
+        }
+        root.delete_queue = queue;
+        root.delete_total = queue.length;
+        root.delete_index = 0;
+        root.delete_all_active = true;
+        root.delete_all_removed = 0;
+        root.delete_all_failed = [];
+        root.op_elapsed_ms = 0;
+        views_stack.currentIndex = 1;
+        root.start_next_delete();
+    }
+
+    // Start the item at `delete_index`, or finish the run if the queue is
+    // exhausted. A quick-fail (non-"ok" return) is recorded and the run
+    // continues to the next dictionary.
+    function start_next_delete() {
+        if (root.delete_index >= root.delete_queue.length) {
+            root.finish_delete_all();
+            return;
+        }
+        const item = root.delete_queue[root.delete_index];
+        root.op_label = item.label;
+        const result = dict_manager.delete_dictionary(item.id);
+        if (result !== "ok") {
+            root.record_delete_failure(item.label, result);
+            root.delete_index += 1;
+            root.start_next_delete();
+        }
+    }
+
+    function record_delete_failure(label: string, message: string) {
+        const f = root.delete_all_failed.slice();
+        f.push({ label: label, message: message });
+        root.delete_all_failed = f;
+    }
+
+    function finish_delete_all() {
+        root.delete_all_active = false;
+        root.op_kind = "delete_all";
+        root.op_count = root.delete_all_removed;
+        views_stack.currentIndex = 4;
+        root.refresh_list();
+    }
+
     function elapsed_seconds_text(ms: int): string {
         const s = Math.max(0, ms) / 1000.0;
         return s.toFixed(1) + "s";
@@ -231,6 +300,14 @@ ApplicationWindow {
         }
 
         function onDeleteFinished(dictionary_id: int, label: string, removed_count: int, elapsed_ms: int) {
+            if (root.delete_all_active) {
+                // One item of the Delete All run finished: accumulate and advance.
+                root.delete_all_removed += removed_count;
+                root.op_elapsed_ms += elapsed_ms;
+                root.delete_index += 1;
+                root.start_next_delete();
+                return;
+            }
             root.op_label = label;
             root.op_kind = "delete";
             root.op_count = removed_count;
@@ -240,6 +317,15 @@ ApplicationWindow {
         }
 
         function onDeleteFailed(message: string) {
+            if (root.delete_all_active) {
+                // One bad dictionary must not abandon the rest of the run:
+                // record the failure and continue to the next one.
+                const item = root.delete_queue[root.delete_index];
+                root.record_delete_failure(item ? item.label : root.op_label, message);
+                root.delete_index += 1;
+                root.start_next_delete();
+                return;
+            }
             root.error_message = "Delete failed: " + message;
             views_stack.currentIndex = 5;
             root.refresh_list();
@@ -280,6 +366,32 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    Dialog {
+        id: confirm_delete_all_dialog
+
+        title: "Delete all imported dictionaries?"
+        modal: true
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        // Clamped to the window overlay: a fixed 480 is wider than a phone
+        // screen. (Same idiom as DictionaryEditDialog.)
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        // A title plus wrapping content is the combination that can produce an
+        // implicitHeight binding loop with Fusion's default header; see
+        // AGENTS.md, "`Dialog` with a title and wrapping text".
+        header: DialogHeader { text: confirm_delete_all_dialog.title }
+
+        contentItem: Label {
+            text: `Delete all ${root.user_dictionaries.length} imported dictionaries and all their entries? This cannot be undone.\n\nBuilt-in dictionaries are not affected.`
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            color: palette.text
+        }
+
+        onAccepted: root.start_delete_all()
     }
 
     DictionaryImportDialog {
@@ -354,10 +466,22 @@ ApplicationWindow {
                         Layout.fillWidth: true
                     }
 
-                    Button {
-                        text: "Import StarDict..."
+                    RowLayout {
+                        spacing: 8
                         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-                        onClicked: import_dialog.start()
+
+                        Button {
+                            text: "Delete All"
+                            enabled: root.user_dictionaries.length > 0
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Delete all imported dictionaries"
+                            onClicked: confirm_delete_all_dialog.open()
+                        }
+
+                        Button {
+                            text: "Import StarDict..."
+                            onClicked: import_dialog.start()
+                        }
                     }
                 }
 
@@ -458,6 +582,16 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         width: parent.width * 0.9
                         spacing: 16
+
+                        Label {
+                            // "Deleting N of M" across the Delete All run.
+                            text: `Deleting ${root.delete_index + 1} of ${root.delete_total}`
+                            visible: root.delete_all_active && root.delete_total > 1
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
 
                         Label {
                             text: `Deleting dictionary "${root.op_label}"…`
@@ -653,6 +787,7 @@ ApplicationWindow {
                         Label {
                             text: {
                                 if (root.op_kind === "delete") return "Deleted";
+                                if (root.op_kind === "delete_all") return "Deleted all imported dictionaries";
                                 if (root.op_kind === "import") return "Imported";
                                 if (root.op_kind === "import_aborted") return "Import aborted";
                                 if (root.op_kind === "import_batch") return root.batch_aborted ? "Import aborted" : "Import complete";
@@ -670,6 +805,18 @@ ApplicationWindow {
                             text: {
                                 if (root.op_kind === "delete") {
                                     return `Deleted "${root.op_label}" — removed ${root.op_count} entries in ${root.elapsed_seconds_text(root.op_elapsed_ms)}.\nYou can delete more dictionaries, or quit now. The fulltext search index will be updated the next time you start Simsapa.`;
+                                }
+                                if (root.op_kind === "delete_all") {
+                                    const deleted = root.delete_total - root.delete_all_failed.length;
+                                    let msg = `Deleted ${deleted} of ${root.delete_total} imported dictionaries — removed ${root.op_count} entries in ${root.elapsed_seconds_text(root.op_elapsed_ms)}.`;
+                                    if (root.delete_all_failed.length > 0) {
+                                        msg += `\n\nFailed (${root.delete_all_failed.length}):`;
+                                        for (let i = 0; i < root.delete_all_failed.length; i++) {
+                                            msg += `\n• ${root.delete_all_failed[i].label}: ${root.delete_all_failed[i].message}`;
+                                        }
+                                    }
+                                    msg += `\n\nYou can manage more dictionaries, or quit now. The fulltext search index will be updated the next time you start Simsapa.`;
+                                    return msg;
                                 }
                                 if (root.op_kind === "import") {
                                     return `Imported "${root.op_label}" — ${root.op_count} entries in ${root.elapsed_seconds_text(root.op_elapsed_ms)}.\nYou can manage more dictionaries, or quit now. The fulltext search index will be updated the next time you start Simsapa.`;
@@ -723,7 +870,7 @@ ApplicationWindow {
                         // quitting. Offer a way back to the list; the re-index
                         // happens on next start.
                         // (Empty abort uses the single "OK" button below.)
-                        visible: root.op_kind === "delete" || root.op_kind === "import" || root.op_kind === "rename" || root.op_kind === "import_batch"
+                        visible: root.op_kind === "delete" || root.op_kind === "delete_all" || root.op_kind === "import" || root.op_kind === "rename" || root.op_kind === "import_batch"
                         text: "Back to Dictionaries"
                         font.pointSize: root.pointSize
                         onClicked: {
