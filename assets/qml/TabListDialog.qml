@@ -36,6 +36,12 @@ Dialog {
     // title: "Tabs and History"
     modal: true
 
+    // Declared deep inside the tab bar's RowLayout, so the implicit parent is
+    // that narrow row item, not the window. Without this, parent.width/height
+    // below resolve to the tab bar's width instead of the full window,
+    // squeezing the dialog into the left portion of narrow windows.
+    parent: Overlay.overlay
+
     x: (parent.width - width) / 2
     y: (parent.height - height) / 2
     width: Math.min(parent.width * 0.9, 600)
