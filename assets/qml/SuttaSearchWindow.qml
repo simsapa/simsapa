@@ -3783,10 +3783,30 @@ ${query_text}`;
 
                             onTabSelected: function(id_key) {
                                 root.focus_on_tab_with_id_key(id_key);
+                                // focus_on_tab_with_id_key() clicks a SuttaTabButton, but
+                                // tab_checked_changed() only switches sutta_html_view_layout's
+                                // current_key — it never touches show_sidebar_btn. Normally that's
+                                // fine because the tab bar itself is hidden behind the sidebar in
+                                // narrow mode (html_visible: !show_sidebar_btn.checked), so a direct
+                                // tab click can't happen while the sidebar covers it. But this
+                                // dialog is reachable regardless of which panel is showing, so
+                                // "Open" from the Results tab while the sidebar is up left the
+                                // sidebar in place instead of revealing the reader.
+                                root.reveal_html_panel();
+                                if (!root.is_wide) {
+                                    show_sidebar_btn.checked = false;
+                                }
                             }
 
                             onHistoryItemSelected: function(item_uid, table_name, sutta_ref, sutta_title) {
                                 root.open_history_item(item_uid, table_name, sutta_ref, sutta_title);
+                                // Same narrow-mode gap as onTabSelected above: open_history_item()'s
+                                // "already open in a tab" branch goes through
+                                // focus_on_tab_with_id_key(), which doesn't reveal the reader panel.
+                                root.reveal_html_panel();
+                                if (!root.is_wide) {
+                                    show_sidebar_btn.checked = false;
+                                }
                             }
 
                             onClearAllTabs: root.clear_all_tabs()
