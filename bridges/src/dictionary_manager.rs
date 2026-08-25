@@ -775,6 +775,16 @@ impl qobject::DictionaryManager {
             if let Err(e) = dict_index_reconcile::reconcile_dict_indexes(on_progress) {
                 error(&format!("reconcile_dict_indexes failed: {:#}", e));
             }
+
+            // The dict index has just been mutated, so the open searcher is
+            // holding stale segments. This is **required**, not belt-and-braces:
+            // the readers are built with `ReloadPolicy::Manual`, so nothing
+            // picks the change up on its own. `reconcile_dict_indexes_blocking_c()`
+            // in `backend/src/lib.rs` already did this; this path did not, and
+            // was silently relying on the reader's old 500 ms `meta.json` poll.
+            // See `docs/fulltext-index-storage-and-file-locking.md`.
+            simsapa_backend::reinit_fulltext_searcher();
+
             info("start_reconcile: complete");
             crate::queue_or_log(&qt_thread, "dictionary_manager::start_reconcile", move |mut qo| {
                 qo.as_mut().reconcile_finished();

@@ -203,11 +203,56 @@ impl Drop for ProbeCleanup {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Probe accounting
+// ---------------------------------------------------------------------------
+
+/// How many times the probe has actually run, in total and per directory.
+///
+/// **Always compiled, not `#[cfg(test)]`.** An integration test in
+/// `backend/tests/` links the library built *without* `cfg(test)`, so a
+/// test-only counter would be invisible to it — and the count is worth having
+/// in the field anyway: the probe is one syscall plus a file create/delete, and
+/// it must happen **once per index directory** (FR-7). Every reader build takes
+/// `META_LOCK`, so a broken cache would turn this into a per-query cost.
+static FLOCK_PROBE_TOTAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn flock_probe_counts() -> &'static Mutex<HashMap<PathBuf, usize>> {
+    static COUNTS: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
+    COUNTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Total number of `flock` probes performed by this process.
+///
+/// Assert on **deltas**, never on this absolute value: `cargo test` runs tests
+/// in parallel in one process, so other tests contribute to it. For a
+/// per-directory assertion use [`flock_probe_count_for_dir`], which is immune to
+/// that.
+pub fn flock_probe_count() -> usize {
+    FLOCK_PROBE_TOTAL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Number of `flock` probes performed against one directory. Should never
+/// exceed 1 for the lifetime of the process (FR-7).
+pub fn flock_probe_count_for_dir(dir: &Path) -> usize {
+    let key = normalize_lock_key(dir);
+    flock_probe_counts()
+        .lock()
+        .map(|c| c.get(&key).copied().unwrap_or(0))
+        .unwrap_or(0)
+}
+
 /// Try to take an exclusive `flock` on a throwaway file in `dir`, and say what
 /// happened. Returns the elapsed time too — SD cards are slow, and phase 2
 /// needs to know whether the wrapper is viable on latency grounds (FR-21).
 pub fn probe_flock_support(dir: &Path) -> (FlockSupport, Duration) {
     let started = Instant::now();
+
+    FLOCK_PROBE_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if let Ok(mut counts) = flock_probe_counts().lock() {
+        *counts.entry(normalize_lock_key(dir)).or_insert(0) += 1;
+    }
+
     let path = dir.join(FLOCK_PROBE_FILENAME);
     let _cleanup = ProbeCleanup { path: path.clone() };
 
@@ -803,6 +848,136 @@ mod tests {
         assert_eq!(directory.last_lock_path(), Some(LockPathTaken::InnerFlock));
         assert_eq!(directory.lock_paths(), vec![LockPathTaken::InnerFlock]);
         drop(guard);
+    }
+
+    /// Seed the support cache so a healthy temp directory is treated as a
+    /// volume without working `flock`. There is no other way to reach the
+    /// fallback route on a developer machine or in CI, and the cache is
+    /// module-private, so this lives in the unit tests rather than in the
+    /// integration test.
+    fn pretend_flock_is_unsupported(dir: &Path) {
+        flock_support_cache().lock().unwrap().insert(
+            normalize_lock_key(dir),
+            FlockSupport::Unsupported {
+                errno: 38,
+                name: "ENOSYS".to_string(),
+            },
+        );
+    }
+
+    /// The whole point of the module: on a volume that answers `ENOSYS`, an
+    /// index directory must still hand out a working lock.
+    ///
+    /// This also pins **FR-16** — once the probe has said `Unsupported` the
+    /// inner `acquire_lock` is *skipped*, not called and discarded. The
+    /// observable consequence is asserted rather than the code path: a skipped
+    /// inner call leaves no `.tantivy-meta.lock` behind, because
+    /// `MmapDirectory::acquire_lock` creates that file before locking it and
+    /// never deletes it again. A lock file appearing here would mean a failing
+    /// syscall on every reader reload, on a file that can never serve its
+    /// purpose on that volume.
+    #[test]
+    fn an_unsupported_volume_falls_back_without_touching_the_inner_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        pretend_flock_is_unsupported(dir.path());
+
+        let directory = LenientLockMmapDirectory::open(dir.path()).unwrap();
+        let meta_lock = Lock {
+            filepath: PathBuf::from(".tantivy-meta.lock"),
+            is_blocking: true,
+        };
+
+        let guard = directory
+            .acquire_lock(&meta_lock)
+            .expect("the fallback must produce a lock on an unsupported volume");
+
+        assert_eq!(
+            directory.last_lock_path(),
+            Some(LockPathTaken::FallbackUnsupported {
+                errno: 38,
+                name: "ENOSYS".to_string(),
+            })
+        );
+
+        // FR-16: the inner call was skipped, so no lock file exists.
+        assert_eq!(
+            dir.path().join(".tantivy-meta.lock").try_exists().unwrap(),
+            false,
+            "the inner acquire_lock must be skipped, not called and discarded"
+        );
+
+        // FR-13: it is a real mutual exclusion, not a no-op guard. A second
+        // *non-blocking* acquisition of the same path must be refused while the
+        // first is held — otherwise the garbage collector could delete segment
+        // files out from under a reader.
+        let writer_lock_path = dir.path().join(".tantivy-meta.lock");
+        let contender = fallback_lock_for(&writer_lock_path).unwrap();
+        assert!(
+            !contender.try_acquire(),
+            "the fallback guard must actually exclude"
+        );
+
+        drop(guard);
+        assert!(
+            contender.try_acquire(),
+            "dropping the guard must release the fallback lock"
+        );
+        contender.release();
+    }
+
+    /// FR-14: the fallback preserves each lock's blocking semantics.
+    /// `INDEX_WRITER_LOCK` is non-blocking and must return `LockBusy` on
+    /// contention, so the single-writer guarantee still holds in-process.
+    #[test]
+    fn an_unsupported_volume_still_refuses_a_second_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        pretend_flock_is_unsupported(dir.path());
+
+        let directory = LenientLockMmapDirectory::open(dir.path()).unwrap();
+        let writer_lock = Lock {
+            filepath: PathBuf::from(".tantivy-writer.lock"),
+            is_blocking: false,
+        };
+
+        let first = directory.acquire_lock(&writer_lock).unwrap();
+        // A clone is what tantivy actually holds internally.
+        // `DirectoryLock` is not `Debug`, so describe the outcome by hand.
+        let second = match directory.clone().acquire_lock(&writer_lock) {
+            Ok(_) => "acquired".to_string(),
+            Err(LockError::LockBusy) => "busy".to_string(),
+            Err(e) => format!("other error: {e}"),
+        };
+        assert_eq!(second, "busy", "a second writer must be refused");
+
+        drop(first);
+        directory
+            .acquire_lock(&writer_lock)
+            .expect("the writer lock must be free again once the first is dropped");
+    }
+
+    /// FR-7: the probe runs at most once per index directory. This is the one
+    /// cost that would scale with query volume if the cache broke — every
+    /// reader build takes `META_LOCK`.
+    #[test]
+    fn the_flock_probe_runs_at_most_once_per_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let directory = LenientLockMmapDirectory::open(dir.path()).unwrap();
+        let meta_lock = Lock {
+            filepath: PathBuf::from(".tantivy-meta.lock"),
+            is_blocking: true,
+        };
+
+        for _ in 0..5 {
+            drop(directory.acquire_lock(&meta_lock).unwrap());
+        }
+
+        // Per-directory, never the global total: `cargo test` runs these in
+        // parallel in one process and other tests probe other directories.
+        assert_eq!(
+            flock_probe_count_for_dir(dir.path()),
+            1,
+            "five lock acquisitions must produce exactly one probe"
+        );
     }
 
     /// One `index.reader()` acquires `META_LOCK` more than once, so a route

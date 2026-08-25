@@ -13,6 +13,7 @@ use crate::db::dpd_models::BoldDefinition;
 use crate::logger::{info, warn};
 use crate::AppGlobalPaths;
 
+use super::lenient_directory::LenientLockMmapDirectory;
 use super::schema::{build_dict_schema, build_library_schema, build_sutta_schema};
 use super::tokenizer::register_tokenizers;
 
@@ -31,7 +32,15 @@ pub fn open_or_create_index(dir: &Path, schema: tantivy::schema::Schema, lang: &
         }
     }
 
-    let mmap_dir = tantivy::directory::MmapDirectory::open(dir)?;
+    // `LenientLockMmapDirectory`, not a bare `MmapDirectory`: on a volume whose
+    // `flock(2)` answers ENOSYS every index open fails and the app holds zero
+    // indexes. On a normal filesystem the wrapper delegates unchanged. See
+    // `docs/fulltext-index-storage-and-file-locking.md`.
+    //
+    // `open_or_create` is correct here — this is a write path, and the six index
+    // builders reach it before their index exists. The *search* path uses
+    // `Index::open` instead (`searcher.rs`).
+    let mmap_dir = LenientLockMmapDirectory::open(dir)?;
     let index = Index::open_or_create(mmap_dir, schema)?;
 
     register_tokenizers(&index, lang);
@@ -761,7 +770,7 @@ pub fn delete_from_dict_index_by_source_uid(index_dir: &Path, label: &str) -> Re
         };
 
         let schema = build_dict_schema(&lang);
-        let mmap_dir = match tantivy::directory::MmapDirectory::open(&path) {
+        let mmap_dir = match LenientLockMmapDirectory::open(&path) {
             Ok(d) => d,
             Err(e) => {
                 warn(&format!("delete_from_dict_index: open {}: {}", path.display(), e));
@@ -811,7 +820,7 @@ pub fn list_indexed_source_uids_in_dict_index(index_dir: &Path) -> Result<HashSe
         };
 
         let schema = build_dict_schema(&lang);
-        let mmap_dir = match tantivy::directory::MmapDirectory::open(&path) {
+        let mmap_dir = match LenientLockMmapDirectory::open(&path) {
             Ok(d) => d,
             Err(e) => {
                 warn(&format!("list_indexed_source_uids: open {}: {}", path.display(), e));

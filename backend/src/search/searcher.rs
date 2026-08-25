@@ -15,6 +15,7 @@ use crate::helpers::normalize_plain_text;
 use crate::query_task::SearchQueryTask;
 use crate::AppGlobalPaths;
 
+use super::lenient_directory::LenientLockMmapDirectory;
 use super::schema::{build_dict_schema, build_library_schema, build_sutta_schema};
 use super::tokenizer::register_tokenizers;
 pub use super::types::SearchFilters;
@@ -153,11 +154,44 @@ impl FulltextSearcher {
             IndexType::Library => build_library_schema(lang),
         };
 
-        let mmap_dir = tantivy::directory::MmapDirectory::open(dir)?;
-        let index = Index::open_or_create(mmap_dir, schema)?;
+        // `LenientLockMmapDirectory`, not a bare `MmapDirectory`: on a volume
+        // whose `flock(2)` answers ENOSYS the reader build below fails on every
+        // index and the searcher ends up holding none. On a normal filesystem
+        // the wrapper delegates to `MmapDirectory` unchanged. See
+        // `docs/fulltext-index-storage-and-file-locking.md`.
+        let mmap_dir = LenientLockMmapDirectory::open(dir)?;
+
+        // Read path: open what is there, and only create when the directory
+        // genuinely holds no index. Creating an index from the *search* path is
+        // never correct — it would leave an empty index behind and report
+        // success. `Index::open_or_create` stays in `indexer.rs`'s write paths.
+        //
+        // Neither `Index::exists` nor `Index::open` takes a lock (both are
+        // `load_metas` over the directory), so this is hygiene, not part of the
+        // lock fix.
+        let index = if Index::exists(&mmap_dir)? {
+            Index::open(mmap_dir)?
+        } else {
+            Index::open_or_create(mmap_dir, schema)?
+        };
         register_tokenizers(&index, lang);
 
-        let reader = index.reader()?;
+        // `ReloadPolicy::Manual`, not the default `OnCommitWithDelay`. This is
+        // an **independent improvement, not an alternative to the wrapper**:
+        // `open_segment_readers` takes `META_LOCK` whatever the policy, so the
+        // lenient directory above is still what makes the open succeed.
+        //
+        // The default spawns one polling thread per index that re-reads and
+        // CRC32s `meta.json` every 500 ms for the life of the process
+        // (`directory/file_watcher.rs`). With six indexes open that is six
+        // threads and ~12 file reads per second against the user's storage
+        // volume, growing with every downloaded language. Nothing depends on the
+        // auto-reload: every index mutation is followed by an explicit
+        // `crate::reinit_fulltext_searcher()`.
+        let reader = index
+            .reader_builder()
+            .reload_policy(tantivy::ReloadPolicy::Manual)
+            .try_into()?;
         Ok((index, reader))
     }
 

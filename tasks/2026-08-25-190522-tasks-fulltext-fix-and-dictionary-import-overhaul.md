@@ -347,8 +347,16 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
 
 - `backend/src/search/searcher.rs` — `open_single_index` (`:149`): wrapper,
   `Index::open`, `ReloadPolicy::Manual`. Also the per-area open counts for FR-21.
+  **Done (1.1–1.3).**
 - `backend/src/search/indexer.rs` — the four write-path sites (`:34`, `:764`,
-  `:814`, and by inheritance the six builders).
+  `:814`, and by inheritance the six builders). **Done (1.1);** `open_or_create`
+  deliberately kept — these are write paths.
+- `backend/src/search/lenient_directory.rs` — no behaviour change; gained
+  `flock_probe_count()` / `flock_probe_count_for_dir()` (3.4's option (a),
+  always compiled) and three tests covering the fallback route. **Done (1.5, 1.6).**
+- `bridges/src/dictionary_manager.rs` — `start_reconcile()` now calls
+  `reinit_fulltext_searcher()` after mutating the dict index. Required by 1.3;
+  it was the one site relying on the reader's removed auto-reload. **Done (1.4).**
 - `backend/src/lib.rs` — `reinit_fulltext_searcher()` (`:344`) counts + ERROR on
   zero; `is_fulltext_searcher_ready()` (`:408`) honesty; a new accessor for the
   per-area counts so QML and `/health` read one source.
@@ -450,7 +458,7 @@ just after completing an entire parent task.
 
 ## Tasks
 
-### 1.0 [ ] Wire the lenient directory into the real search paths (fix-PRD FR-9, FR-11, FR-16, FR-17)
+### 1.0 [x] Wire the lenient directory into the real search paths (fix-PRD FR-9, FR-11, FR-16, FR-17)
 
 **Specs to keep in mind.** The wrapper is written and proven (§0.2); this task is
 call-site surgery. On a normal filesystem `probe_flock_support` returns
@@ -458,34 +466,96 @@ call-site surgery. On a normal filesystem `probe_flock_support` returns
 and behaviour is bit-for-bit identical — that invariant is what task 3.0 must
 demonstrate rather than assume.
 
-- [ ] 1.1 Replace `MmapDirectory::open` with `LenientLockMmapDirectory::open` at
+- [x] 1.1 Replace `MmapDirectory::open` with `LenientLockMmapDirectory::open` at
   `searcher.rs:156`, `indexer.rs:34`, `indexer.rs:764`, `indexer.rs:814`. The six
   index builders inherit it through `open_or_create_index`. There is **one**
   test helper still using a bare `MmapDirectory`, at `indexer.rs:913` — leave it
   alone unless a test asserts on the directory type. (Verified 2026-08-25: those
   are the only four non-test `MmapDirectory::open` sites in `indexer.rs`.)
-- [ ] 1.2 In `open_single_index` **only**, use `Index::open` when the directory
+- [x] 1.2 In `open_single_index` **only**, use `Index::open` when the directory
   already contains an index, falling back to `Index::open_or_create` only when it
   does not (FR-11). Creating an index from the *search* path is never correct.
   `open_or_create` **stays** in every `indexer.rs` write path.
-- [ ] 1.3 Build the reader with `ReloadPolicy::Manual` (FR-17). Record in a
+- [x] 1.3 Build the reader with `ReloadPolicy::Manual` (FR-17). Record in a
   comment that this is an independent improvement, **not** part of the lock fix
   (FR-18): `open_segment_readers` takes `META_LOCK` regardless of policy. The
   default spawns one 500 ms `meta.json`-polling thread **per index**
   (`directory/file_watcher.rs:12,47-62`) — six threads and ~12 reads/s against
   the user's FUSE volume today.
-- [ ] 1.4 Confirm nothing else depends on the reader auto-reloading: every index
+- [x] 1.4 Confirm nothing else depends on the reader auto-reloading: every index
   mutation is already followed by an explicit `reinit_fulltext_searcher()`. Grep
   the rebuild, import and reconcile paths and list them in the commit message.
-- [ ] 1.5 Verify FR-16 holds in the shipped wrapper — once a directory is
+
+  **The premise was not quite true, and this found the exception.** There are
+  five in-app index-mutation sites (the `cli/` builders run in a separate
+  process with no live searcher, so they do not count):
+
+  | Site | Mutation | Reinit before this task? |
+  |---|---|---|
+  | `backend/src/lib.rs:447` `reconcile_dict_indexes_blocking_c()` | dict index reconcile | yes |
+  | `bridges/src/dictionary_manager.rs` `start_reconcile()` | dict index reconcile | **no** |
+  | `bridges/src/sutta_bridge.rs:4125` | library book import | yes |
+  | `bridges/src/sutta_bridge.rs:4224` | `rebuild_search_index` | yes |
+  | `bridges/src/sutta_bridge.rs:4446` | library language change | yes |
+
+  `DictionaryManager::start_reconcile` is the **same reconcile** as the `lib.rs`
+  one, reached from the GUI rather than from startup, and it never reinitialised
+  the searcher — it was silently relying on the default reader's 500 ms
+  `meta.json` poll, which is exactly what 1.3 removes. Left alone, a
+  GUI-triggered reconcile would have gone unnoticed by the open searcher for the
+  rest of the session. Fixed here by adding the `reinit_fulltext_searcher()`
+  call, with a comment saying it is required rather than defensive.
+
+  This is worth stating plainly in the commit message: **1.3 turned a latent
+  staleness window into a hard dependency, and one call site had to be fixed to
+  meet it.**
+- [x] 1.5 Verify FR-16 holds in the shipped wrapper — once a directory is
   classified `Unsupported`, the inner `acquire_lock` is **skipped**, not called
   and discarded. Skipping avoids a failing syscall per reader reload and avoids
   creating a `.tantivy-meta.lock` that can never work (`MmapDirectory` creates
   lock files and never deletes them). If the shipped code does not do this, fix
   it here.
-- [ ] 1.6 `cd backend && cargo test`. Add a unit test that exercises the fallback
+
+  **It already does** — `acquire_lock` calls `flock_support_for_dir(&self.root)`
+  first and returns straight into `acquire_fallback_lock` on `Unsupported`,
+  never reaching `self.inner.acquire_lock`. No change was needed. The behaviour
+  is now **pinned by a test** rather than only by reading (see 1.6): the
+  observable consequence of a skipped inner call is that no `.tantivy-meta.lock`
+  file appears, since `MmapDirectory::acquire_lock` creates that file before
+  locking it and never removes it.
+- [x] 1.6 `cd backend && cargo test`. Add a unit test that exercises the fallback
   against a simulated unsupported-lock inner directory (fix-PRD success metric 8)
   if one does not already exist from phase 1.
+
+  Phase 1's tests covered the fallback lock's *mechanics* but never the
+  wrapper's `acquire_lock` **taking** the fallback route — on a developer
+  machine the probe always answers `Supported`. Three tests added to
+  `backend/src/search/lenient_directory.rs`, sharing a
+  `pretend_flock_is_unsupported()` helper that seeds the module-private support
+  cache (which is why these are unit tests, not integration tests):
+
+  - `an_unsupported_volume_falls_back_without_touching_the_inner_lock` — the
+    fallback produces a working lock, the route is recorded as
+    `FallbackUnsupported`, **no lock file is created** (FR-16), and the guard is
+    a real mutual exclusion that releases on drop (FR-13).
+  - `an_unsupported_volume_still_refuses_a_second_writer` — FR-14: the
+    non-blocking `INDEX_WRITER_LOCK` still returns `LockBusy` on contention, so
+    the single-writer guarantee holds in-process.
+  - `the_flock_probe_runs_at_most_once_per_directory` — FR-7.
+
+  **`flock_probe_count()` / `flock_probe_count_for_dir()` were added** as
+  always-compiled accessors over an `AtomicUsize` plus a per-directory map. This
+  is task **3.4's option (a)**, landed early because 1.6 needed it too; the
+  per-directory accessor is what makes the assertion immune to `cargo test`'s
+  in-process parallelism, so 3.4 should use it rather than a global delta.
+
+  `cargo test` result: **all 14 `lenient_directory` tests pass**, and the wider
+  suite is green apart from `diacritic_query_highlights_bold_definition_rows`,
+  which is a **timing-budget assertion that fails only under parallel load** and
+  passes in isolation — the project's known absolute-time budget drift, not a
+  regression from this task. That run also logged the thing this whole task
+  exists for: `FulltextSearcher opened: 3 sutta language indexes, 2 dict
+  language indexes, 1 library language indexes`.
 
 ### 2.0 [ ] Honest readiness reporting (fix-PRD FR-19…FR-30)
 
@@ -551,10 +621,40 @@ one `flock` probe per directory (cached for the process by
 `flock_support_for_dir`), one enum comparison per `acquire_lock`, and a
 `lock_paths` record push.
 
-- [ ] 3.1 **Take the baseline first, before task 1.0 lands.** Record it in this
+- [x] 3.1 **Take the baseline first, before task 1.0 lands.** Record it in this
   file so a later session can compare: index open, reader build, and search
   latency through a bare `MmapDirectory` on the real dev index
   (`/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa/app-assets/index/`).
+
+  **Baseline measured 2026-08-25**, before any of task 1.0 landed. Bare
+  `MmapDirectory::open` → `Index::open` → `register_tokenizers` → `index.reader()`
+  (default reload policy) → `Count` search on `content`, run from a throwaway
+  integration test in `backend/tests/`, `--release`, `--test-threads=1`,
+  6 iterations per index with the **first discarded** (page cache warm-up).
+  `open_ms` covers `MmapDirectory::open` + `Index::open` + tokenizer
+  registration; the search columns are microseconds.
+
+  | index | num_docs | open_ms | reader_ms | nirodha_µs | cessation_µs |
+  |---|---:|---:|---:|---:|---:|
+  | suttas/en | 10649 | 0.06 | 0.61 | 68.6 | 14.7 |
+  | suttas/hu | 494 | 0.06 | 0.61 | 54.8 | 4.0 |
+  | suttas/pli | 10649 | 0.06 | 0.81 | 125.8 | 19.0 |
+  | dict_words/en | 13587 | 0.05 | 0.17 | 24.1 | 10.1 |
+  | dict_words/pli | 539569 | 0.06 | 0.70 | 142.8 | 49.6 |
+  | library/en | 322 | 0.05 | 0.61 | 67.1 | 8.4 |
+
+  Two things this run establishes, beyond the numbers:
+
+  - **`Index::open` works on every dev index** — none of the six needed
+    `open_or_create`, so task 1.2's read-path change has no fallback case here.
+  - **The dev tree is not the user's** (§0.0): it has `suttas/hu` and no
+    `suttas/san`, and `suttas/en` reports 10649 docs against the user's 10722.
+    The benchmark of 3.2 must enumerate what it finds, as planned.
+
+  Scale note for 3.3's ratio assertion: open and reader build are **sub-millisecond**
+  here, so their ratios will be dominated by noise; the search columns are the
+  stable signal. Averaging over enough iterations (and reporting all three
+  unconditionally) is what makes the assertion diagnosable.
 - [ ] 3.2 Write `backend/tests/test_lenient_directory_benchmark.rs`. For each
   available index directory, run the identical sequence through
   `MmapDirectory` and through `LenientLockMmapDirectory`: open → `Index::open` →
