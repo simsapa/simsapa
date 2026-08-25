@@ -1167,3 +1167,42 @@ phase-2 task list from the requirement subset that row names. If the first colum
 says the URL was **empty**, note that none of PRD §5's requirements is the fix,
 and the next investigation is the Qt Android `FileDialog` → ARC picker mapping —
 a different piece of work than the one §5 describes.
+
+### The report came back — 2026-08-25
+
+Raw material: `feedback-and-bug-reports/rechromebookstoragetesting/` (three
+logs, two screenshots, and the storage-diagnostics summary). Full reading and
+its consequences: **PRD §4A.6**. In short:
+
+- **The instrument worked.** Five runs, one correctly reported as `cancelled`,
+  four with a real pick. Every field D-8 specifies came back populated, the
+  blocks were greppable and distinguishable by run counter, and the user needed
+  no follow-up instructions — phase-1 success metrics 1–3 met.
+- **The bug did not reproduce.** `raw_uri` non-empty,
+  `qurl_of_raw_is_valid: yes`, `encoding_differs: no`, scheme `content`,
+  `provider_opened: true`, display name and size read, 4 MB streamed in 6–15 ms.
+  §4A.5's raw-intent table, **row 2**.
+- **So do not generate the phase-2 task list yet.** §5 fixes Defects A–D and
+  none of them is demonstrated. The next piece of work is a **narrow second
+  round trip**: a File Selection Test variant that goes through Qt's
+  `FileDialog`, run once with `nameFilters: ["StarDict archives (*.zip)"]` and
+  once without (PRD §4A.6.3). That is the one variable D-3a left unmeasured, and
+  it is now the whole question.
+- **Two findings that are free wins.** `staging_roots_differ: no` on ARC too, so
+  Req. 20 is a non-issue (PRD §11 Q4). And the user was selecting
+  **`all-dictionaries-mdict.zip`** — an MDict archive, not StarDict — which the
+  app rejects with a silent empty candidate list after extracting all 177 MB of
+  it. That is separate work; see PRD §4A.6.4 and task 7.0 of
+  `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`.
+
+**The phase-1b work is planned in
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`**,
+generated from **PRD §4A.7** (`E-1` … `E-17`), not from §5 — and widened, because
+the same build also carries the fulltext fix and the import overhaul for the same
+user. That list substitutes an **automatic fallback to the raw picker** for
+E-8…E-13's two-pick measurement; see PRD §4A.7.6. Phase 1b ships the speculative `nameFilters` removal on
+Android *and* a Qt-`FileDialog` variant of the test that measures both filter
+configurations, plus `DICTIONARY-IMPORT-PICK:` logging that makes the real
+import self-diagnosing. §4A.7.1 is the part most easily got wrong — the
+diagnostic must build its filter from its own literals, or removing the filter
+from the import dialog silently changes what the test measures.

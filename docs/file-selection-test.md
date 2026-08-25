@@ -290,6 +290,35 @@ the raw-intent table is read first** — it sits upstream of everything else.
 | no | no | `file://`, `local_file_exists: no` | **Defect A.2 confirmed.** Scoped storage; an honest message plus the Downloads workaround is all that is available. |
 | no, provider read **succeeds** | no | `content://` | The pick is fine; the failure is downstream. Re-triage from the staging facts. |
 
+### 5.3 What the first real report returned (2026-08-25)
+
+The Chromebook this instrument was built for ran it five times and landed on
+**§5.1's second row**, four times over. The ARC picker returned an ordinary,
+**completely unencoded** URI —
+`content://org.chromium.arc.volumeprovider/<volume>/Documenti/Dizionari/all-dictionaries-gd.zip`
+— `qurl_of_raw_is_valid: yes`, `encoding_differs: no`, `provider_opened: true`,
+display name and size read, 4 MB streamed in 6–15 ms.
+
+So the instrument worked and **the bug did not reproduce through it**. Three
+consequences for anyone reading a future block:
+
+- **`QUrl(QString)` is cleared for this provider.** The mechanism the whole test
+  was pointed at — `qandroidplatformfiledialoghelper.cpp:48` producing an empty
+  `QUrl` — is not what happens here.
+- **`encoding_differs: no` is now the *only* value ever observed**, on an
+  Android 16 phone and on ChromeOS, across four URI shapes. §6 already says not
+  to "fix" it; treat a `true` as genuinely new information.
+- **The raw-intent path is not the import path**, and on this device they
+  demonstrably behave differently — the raw intent works, the import returns
+  nothing. That is §3's accepted cost coming due. The next build (PRD §4A.7)
+  adds a **Qt `FileDialog`** variant that runs both filter configurations, and a
+  `DICTIONARY-IMPORT-PICK:` block on the real import path, so the failing action
+  measures itself instead of relying on a test button that measures the test
+  button.
+
+Full reading: PRD §4A.6. Raw material:
+`feedback-and-bug-reports/rechromebookstoragetesting/`.
+
 ## 6. Four measured states that are normal
 
 Do not "fix" the report when it says any of these.

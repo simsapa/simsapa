@@ -1119,3 +1119,46 @@ Verified after the changes: `cargo test --lib` 442 passed / 0 failed,
 `make qml-test` 131 passed / 0 failed, `cmake --build` clean. `git diff main..HEAD`
 on `searcher.rs` and `lib.rs` remains purely additive, no call site was switched
 to the wrapper, and `is_fulltext_searcher_ready()` is unchanged (8.7).
+
+---
+
+## The report came back — 2026-08-25
+
+Raw material: `feedback-and-bug-reports/rechromebookstoragetesting/`. Full
+reading in **PRD §12**; the outcome in one line: **decision-gate row 1 —
+diagnosis and fix both confirmed, phase 2 unblocked and needing no redesign.**
+
+`flock` **unsupported(38 ENOSYS)**, `mmap` **ok** on an 18 MB segment file with
+reads forced past page 0, and the candidate `LenientLockMmapDirectory` opened
+all six indexes and returned real hits (`dict_words/pli`: 539,569 docs,
+nirodha=2227 in 328.6 ms) on a volume where today's code opens **zero**.
+
+Requirements that earned their keep in the field, worth remembering the next
+time a diagnostic is designed:
+
+- **FR-28c (`num_docs`)** turned `suttas/san`'s zero hits from an ambiguous
+  reading into a measured "this index holds no documents — expected, not a
+  fault".
+- **FR-28d (both terms everywhere)** — `suttas/pli` returned `cessation=0` and
+  `dict_words/en` returned `nirodha=7`; the rejected per-language routing would
+  have asked each of those the wrong question.
+- **FR-27a's three-way lock route** returned "fell back after an
+  unsupported-operation errno" on all six, never the third outcome — so the
+  wrapper is working around an unsupported primitive, not hiding a broken volume.
+- **FR-37's normal states** all occurred in one run (stale locks, a zero-doc
+  index, an uninitialised searcher) and none produced a false alarm.
+- **FR-33..36's verdict** was quoted back by the user as their own description
+  of the problem. One button, no follow-up questions.
+
+Task 8.x's non-goal checks held: no probe files left behind, no index created,
+the live searcher untouched (section F still reports the startup state).
+
+**Phase 2 is planned in
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`**
+(tasks 1.0–3.0), which wires the wrapper into the real call sites, makes the
+readiness reporting honest, and adds the no-slowdown benchmark this PRD's
+success metric 7 asks for.
+
+One premise the report **contradicts**, carried into the fix PRD's §10.2: this
+is a ChromeOS FUSE external volume, not an SD card, and it is **fast**. Nothing
+measured supports the "searches will be slower" notice of fix-PRD §4.7.
