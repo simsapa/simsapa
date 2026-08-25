@@ -266,6 +266,10 @@ Item {
         return '{"exists": true, "current": true}';
     }
 
+    function get_fulltext_status(): string {
+        return '{"is_valid": true, "state": "ready", "message": "OK", "failure_count": 0, "sutta": {"opened": 1, "dir_present": true}, "dict": {"opened": 1, "dir_present": true}, "library": {"opened": 1, "dir_present": true}}';
+    }
+
     function rebuild_search_index() {
         console.log("rebuild_search_index()");
     }

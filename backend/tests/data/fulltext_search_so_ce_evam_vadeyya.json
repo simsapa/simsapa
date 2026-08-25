@@ -1,12 +1,12 @@
 {
-  "total": 2331,
+  "total": 2330,
   "results": [
     {
       "uid": "sn55.54/pli/ms",
       "title": "Gilānasutta",
       "language": "pli",
       "source_uid": "ms",
-      "score": 47.39701,
+      "score": 47.39852,
       "snippet_html": "mātāpitūsu apekkhā taṁ pajaha ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> yā me mātāpitūsu apekkhā sā pahīna ti <span class='match'>so</span> evamassa vacanīyo atthi panāyasmato puttadāresu apekkha ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> atthi me"
     },
     {
@@ -14,7 +14,7 @@
       "title": "Paṭhamaaniyata",
       "language": "pli",
       "source_uid": "ms",
-      "score": 45.780693,
+      "score": 45.782185,
       "snippet_html": "sā <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> ayyo mayā diṭṭho nisinno mātugāmassa methunaṁ dhammaṁ paṭisevanto ti <span class='match'>so</span> ca taṁ paṭijānāti āpattiyā kāretabbo sā <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> ayyo mayā diṭṭho"
     },
     {
@@ -22,7 +22,7 @@
       "title": "Codanākaṇḍa",
       "language": "pli",
       "source_uid": "ms",
-      "score": 44.48731,
+      "score": 44.488747,
       "snippet_html": "ti <span class='match'>so</span> evamassa vacanīyo jānāsi panāyasmā sīlavipattiṁ jānāsi ācāravipattiṁ jānāsi diṭṭhivipattiṁ ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> jānāmi kho ahaṁ āvuso sīlavipattiṁ jānāmi"
     },
     {
@@ -30,7 +30,7 @@
       "title": "Rāja",
       "language": "pli",
       "source_uid": "ms",
-      "score": 43.25302,
+      "score": 43.254383,
       "snippet_html": "dehīti vā <span class='match'>so</span> vā nikkhipissati <span class='match'>so</span> vā parivattessati <span class='match'>so</span> vā cetāpessati ti <span class='match'>so</span> <span class='match'>ce</span> dūto taṁ veyyāvaccakaraṁ saññāpetvā taṁ bhikkhuṁ upasaṅkamitvā <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> yaṁ kho bhante"
     },
     {
@@ -38,7 +38,7 @@
       "title": "Dutiyaaniyata",
       "language": "pli",
       "source_uid": "ms",
-      "score": 40.981297,
+      "score": 40.982708,
       "snippet_html": "<span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> ayyo mayā diṭṭho nisinno mātugāmena saddhiṁ kāyasaṁsaggaṁ samāpajjanto ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> saccāhaṁ nisinno no ca kho kāyasaṁsaggaṁ samāpajjiṁ ti"
     },
     {
@@ -46,15 +46,15 @@
       "title": "Mahāsaṅgāma",
       "language": "pli",
       "source_uid": "ms",
-      "score": 40.069878,
-      "snippet_html": "diṭṭhivipattiṁ ti <span class='match'>so</span> evamassa vacanīyo katamā panāvuso sīlavipatti katamā ācāravipatti katamā diṭṭhivipatti ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> cattāri pārājikāni terasa saṅghādisesā"
+      "score": 40.071285,
+      "snippet_html": "ṭhapesi diṭṭhivipattiyā vā ṭhapesi ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> sīlavipattiyā vā ṭhapemi ācāravipattiyā vā ṭhapemi diṭṭhivipattiyā vā ṭhapemi ti <span class='match'>so</span> evamassa vacanīyo jānāti"
     },
     {
       "uid": "pli-tv-bu-vb-pj1/pli/ms",
       "title": "Methunadhamma",
       "language": "pli",
       "source_uid": "ms",
-      "score": 39.98833,
+      "score": 39.989613,
       "snippet_html": "sarāmi ti <span class='match'>vadati</span> viññāpeti ñātake sarāmi ti <span class='match'>vadati</span> viññāpeti mitte sarāmi ti <span class='match'>vadati</span> viññāpeti gāmaṁ sarāmi ti <span class='match'>vadati</span> viññāpeti nigamaṁ sarāmi ti <span class='match'>vadati</span> viññāpeti khettaṁ"
     },
     {
@@ -62,7 +62,7 @@
       "title": "Pavāraṇākkhandhaka",
       "language": "pli",
       "source_uid": "ms",
-      "score": 35.528923,
+      "score": 35.53008,
       "snippet_html": "pavāraṇā dvevācikāya <span class='match'>ce</span> bhikkhave ekavācikāya <span class='match'>ce</span> bhikkhave samānavassikāya <span class='match'>ce</span> bhikkhave pavāraṇāya bhāsitāya lapitāya pariyositāya pavāraṇaṁ ṭhapeti aṭṭhapitā hoti"
     },
     {
@@ -70,15 +70,15 @@
       "title": "Pāsādikasutta",
       "language": "pli",
       "source_uid": "ms",
-      "score": 33.788284,
-      "snippet_html": "appaṭikkositvā <span class='match'>so</span> evamassa vacanīyo imesaṁ nu kho āvuso byañjanānaṁ ayaṁ vā attho eso vā attho katamo opāyikataro ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> imesaṁ kho āvuso byañjanānaṁ ayameva"
+      "score": 33.789658,
+      "snippet_html": "katamo opāyikataro ti <span class='match'>so</span> <span class='match'>ce</span> <span class='match'>evaṁ</span> <span class='match'>vadeyya</span> imassa kho āvuso atthassa imāneva byañjanāni opāyikatarāni yā ceva etāni imesañca byañjanānaṁ ayameva attho opāyikataro yā ceva eso ti <span class='match'>so</span>"
     },
     {
       "uid": "pli-tv-bu-pm/pli/ms",
       "title": "Bhikkhu Pātimokkha",
       "language": "pli",
       "source_uid": "ms",
-      "score": 31.595592,
+      "score": 31.596779,
       "snippet_html": "abhinipphādeyya iccetaṁ kusalaṁ tato <span class='match'>ce</span> uttari vāyamamāno taṁ cīvaraṁ abhinipphādeyya nissaggiyaṁ pācittiyaṁ no <span class='match'>ce</span> abhinipphādeyya yatassa cīvaracetāpannaṁ ābhataṁ tattha"
     }
   ]

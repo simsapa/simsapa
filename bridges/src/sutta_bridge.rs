@@ -1339,6 +1339,9 @@ pub mod qobject {
         fn check_search_index_status(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
+        fn get_fulltext_status(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
         fn get_startup_db_report(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -2245,6 +2248,30 @@ impl qobject::SuttaBridge {
 
             crate::queue_or_log(&qt_thread, "sutta_bridge::dictionary_first_query", move |mut qo| {
                 qo.as_mut().database_validation_result(QString::from("dictionaries"), is_valid, message);
+            });
+
+            // The fulltext index is not a database and is not downloadable, but
+            // it fails in the same silent way and the user reaches for the same
+            // dialog. It rides the existing signal rather than adding plumbing;
+            // the QML side keeps it out of the downloadable-failure set.
+            //
+            // Emitted from here because this runs on the same worker thread,
+            // after the searcher has had its chance to open — reporting it
+            // earlier would report `not_opened_yet` on every launch.
+            let fulltext_status = simsapa_backend::fulltext_status::current_status();
+            let fulltext_valid = fulltext_status.is_valid;
+            let fulltext_message = QString::from(&fulltext_status.message);
+            if fulltext_valid {
+                info(&format!("Fulltext index validation: {}", fulltext_status.message));
+            } else {
+                error(&format!("Fulltext index validation FAILED: {}", fulltext_status.message));
+            }
+            crate::queue_or_log(&qt_thread, "sutta_bridge::fulltext_validation", move |mut qo| {
+                qo.as_mut().database_validation_result(
+                    QString::from("fulltext"),
+                    fulltext_valid,
+                    fulltext_message,
+                );
             });
 
             info("SuttaBridge::dictionary_first_query() end");
@@ -4159,6 +4186,27 @@ impl qobject::SuttaBridge {
 
         let json = format!(r#"{{"exists": {}, "current": {}}}"#, exists, current);
         QString::from(&json)
+    }
+
+    /// Whether fulltext search can currently return results, and what to say if
+    /// it cannot. Returns the JSON of `simsapa_backend::fulltext_status`:
+    ///
+    /// ```json
+    /// {"is_valid": false, "state": "could_not_open",
+    ///  "message": "The search index could not be opened. …",
+    ///  "failure_count": 6,
+    ///  "sutta": {"opened": 0, "dir_present": true}, …}
+    /// ```
+    ///
+    /// `state` is one of `not_opened_yet`, `files_not_found`, `could_not_open`,
+    /// `ready`. **Branch on `state`, never on `opened == 0`** — an area with no
+    /// index because the user never downloaded that language is not a fault, and
+    /// telling them it is would be worse than saying nothing.
+    ///
+    /// The same data backs the Database Validation row and `/health`, so all
+    /// three read one source. See `docs/fulltext-index-storage-and-file-locking.md`.
+    pub fn get_fulltext_status(&self) -> QString {
+        QString::from(&simsapa_backend::fulltext_status_json())
     }
 
     /// Per-database startup report as JSON, for the Database Validation dialog's

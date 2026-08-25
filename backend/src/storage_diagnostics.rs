@@ -492,6 +492,72 @@ struct MmapProbe {
     used_fallback_file: bool,
 }
 
+/// Log the two storage-capability verdicts for the resolved index location,
+/// **once per process**.
+///
+/// Both verdicts belong in every user's log, not only in a diagnostics run they
+/// have to be asked to perform: the one user who found this bug found it
+/// because we shipped them a button. A log line costs nothing and turns the
+/// next report into a one-line diagnosis.
+///
+/// **A failing verdict here changes no behaviour.** `flock` being unsupported is
+/// precisely the case [`crate::search::lenient_directory`] handles, so it is
+/// recorded and moved past. The demote-only contract of the tier-2 storage probe
+/// is untouched — see `docs/relocated-storage-recovery.md`.
+///
+/// Runs once because it is not free: the `mmap` probe faults three pages of a
+/// real segment file (94.6 ms on the one affected device measured), and the
+/// `flock` probe creates and removes a file.
+pub fn log_storage_capability_verdicts(index_dir: &Path) {
+    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+
+    if !matches!(index_dir.try_exists(), Ok(true)) {
+        info(&format!(
+            "storage capability: index_dir={} not present, not probed",
+            index_dir.display()
+        ));
+        return;
+    }
+
+    let (flock, flock_elapsed) = probe_flock_support(index_dir);
+    let mmap_probe = probe_mmap(index_dir);
+
+    // One line, both verdicts, next to the `storage_path` diagnostic in the log.
+    info(&format!(
+        "storage capability: index_dir={} flock={} ({} ms) mmap={} ({} ms){}",
+        index_dir.display(),
+        flock.describe(),
+        flock_elapsed.as_millis(),
+        if mmap_probe.outcome.ok {
+            mmap_probe.outcome.detail.clone()
+        } else {
+            format!(
+                "FAILED: {}",
+                mmap_probe.outcome.error.unwrap_or_else(|| "unknown".to_string())
+            )
+        },
+        mmap_probe.outcome.elapsed.as_millis(),
+        match mmap_probe.file {
+            Some(f) if mmap_probe.used_fallback_file =>
+                format!(" (mapped a file written for the probe: {f})"),
+            Some(f) => format!(" (mapped {f})"),
+            None => String::new(),
+        },
+    ));
+
+    if flock.is_unsupported() {
+        // Not a warning: this is the supported, handled configuration.
+        info(
+            "storage capability: this location does not support advisory file locking; \
+             the search index is opened through the process-internal fallback \
+             (see docs/fulltext-index-storage-and-file-locking.md)",
+        );
+    }
+}
+
 /// The go/no-go measurement of the whole exercise: can this volume be
 /// memory-mapped at all?
 ///
@@ -1852,7 +1918,7 @@ pub fn collect_searcher_state() -> SearcherState {
     let counts = crate::with_fulltext_searcher(|s| s.index_counts());
 
     let (initialised, sutta_indexes, dict_indexes, library_indexes) = match counts {
-        Some((s, d, l)) => (true, s, d, l),
+        Some(c) => (true, c.sutta.opened, c.dict.opened, c.library.opened),
         None => (false, 0, 0, 0),
     };
 
@@ -2757,7 +2823,12 @@ tmpfs /run tmpfs rw,nosuid,nodev,mode=755 0 0
             crate::searcher_open_failures().is_empty(),
             "open_from_dirs must reset the record too, not only open()"
         );
-        assert_eq!(searcher.index_counts(), (0, 0, 0));
+        assert_eq!(searcher.index_counts().total_opened(), 0);
+        // The directories exist but hold no per-language subdirectories, which
+        // is a different state from an absent index tree — see
+        // `crate::fulltext_status`.
+        assert!(searcher.index_counts().sutta.dir_present);
+        assert!(!searcher.index_counts().library.dir_present, "None was passed for library");
 
         // `open()` needs a fully-populated `AppGlobalPaths`, which is not worth
         // synthesising here — so check instead that both constructors go

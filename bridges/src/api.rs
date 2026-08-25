@@ -1792,13 +1792,45 @@ pub struct HealthDbPaths {
     pub dpd: String,
 }
 
+/// Per-area fulltext index counts, so a caller can tell *which* areas are
+/// searchable rather than only whether any are.
+///
+/// `dir_present` distinguishes the two zero states: an absent index directory
+/// (nothing built or downloaded) from a present one that yielded no usable
+/// index (the files could not be read). See
+/// `backend/src/fulltext_status.rs`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthFulltextArea {
+    pub opened: usize,
+    pub dir_present: bool,
+}
+
+/// The fulltext block of `/health`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthFulltext {
+    /// One of `not_opened_yet`, `files_not_found`, `could_not_open`, `ready`.
+    pub state: String,
+    /// Plain-language summary, safe to display.
+    pub message: String,
+    pub failure_count: usize,
+    pub sutta: HealthFulltextArea,
+    pub dict: HealthFulltextArea,
+    pub library: HealthFulltextArea,
+}
+
 /// The `/health` document: a single read-once snapshot of the running instance.
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthInfo {
     pub app_version: String,
     pub api_port: i32,
     pub db_paths: HealthDbPaths,
+    /// **Now means "at least one index is open"**, not merely "the searcher
+    /// global is set". It previously reported `true` for a searcher that opened
+    /// with zero indexes, which made this field actively misleading — the state
+    /// it could not distinguish is the one a reporting user was actually in.
+    /// See `simsapa_backend::is_fulltext_searcher_ready`.
     pub fulltext_searcher_ready: bool,
+    pub fulltext: HealthFulltext,
     pub counts: HealthCounts,
     pub sutta_languages: Vec<String>,
     pub dict_sources: Vec<String>,
@@ -1822,6 +1854,26 @@ fn health(dbm: &State<Arc<DbManager>>) -> Json<HealthInfo> {
             dpd: fs_path_to_forward_slash(&g.paths.dpd_abs_path),
         },
         fulltext_searcher_ready: simsapa_backend::is_fulltext_searcher_ready(),
+        fulltext: {
+            let status = simsapa_backend::fulltext_status::current_status();
+            HealthFulltext {
+                state: status.state.as_str().to_string(),
+                message: status.message.clone(),
+                failure_count: status.failure_count,
+                sutta: HealthFulltextArea {
+                    opened: status.counts.sutta.opened,
+                    dir_present: status.counts.sutta.dir_present,
+                },
+                dict: HealthFulltextArea {
+                    opened: status.counts.dict.opened,
+                    dir_present: status.counts.dict.dir_present,
+                },
+                library: HealthFulltextArea {
+                    opened: status.counts.library.opened,
+                    dir_present: status.counts.library.dir_present,
+                },
+            }
+        },
         // A count error -> None -> null (Finding 5); a real empty DB -> Some(0).
         counts: HealthCounts {
             suttas: dbm.appdata.count_suttas().ok(),

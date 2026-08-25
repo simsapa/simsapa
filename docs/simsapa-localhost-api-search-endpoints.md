@@ -390,6 +390,14 @@ fulltext searcher has been initialized (§8):
     "dpd": "…/dpd.sqlite3"
   },
   "fulltext_searcher_ready": false,   // see note below
+  "fulltext": {                       // per-area detail; see note below
+    "state": "could_not_open",        // not_opened_yet | files_not_found | could_not_open | ready
+    "message": "The search index could not be opened. This storage location does not support the file locking the search index needs.",
+    "failure_count": 6,
+    "sutta":   { "opened": 0, "dir_present": true },
+    "dict":    { "opened": 0, "dir_present": true },
+    "library": { "opened": 0, "dir_present": true }
+  },
   "counts": {                         // row counts in the live DBs
     "suttas": 21359,
     "dict_words": 216009,
@@ -400,10 +408,21 @@ fulltext searcher has been initialized (§8):
 }
 ```
 
-- **`fulltext_searcher_ready`** reflects the lazy, mode-gated searcher init of §8:
-  it is `false` on a fresh process and flips to `true` after the **first**
-  `FulltextMatch`/`Combined` query (or a QML `load_searcher`). It stays `true`
-  thereafter (the searcher is process-global). To watch the flip:
+- **`fulltext_searcher_ready`** means **"at least one index is open"** — i.e.
+  whether a `FulltextMatch`/`Combined` query can return anything at all.
+
+  > **This changed.** It previously meant only "the process-global searcher is
+  > set", which reported `true` for a searcher that had opened successfully with
+  > **zero** indexes. That is not hypothetical: a user on a storage volume
+  > without working file locking ran an entire session with every fulltext
+  > search silently empty while `/health` said it was ready. A client that
+  > treated `true` as "fulltext works" was being told the wrong thing, which is
+  > why the meaning was tightened rather than a second field added.
+
+  It is still `false` on a fresh process and flips after the **first**
+  `FulltextMatch`/`Combined` query (or a QML `load_searcher`) — the searcher
+  init of §8 is lazy and mode-gated. It now flips to `true` only if that init
+  actually opened something. To watch the flip:
 
   ```sh
   curl -s "localhost:$PORT/health" | jq '.fulltext_searcher_ready'   # false
@@ -411,6 +430,24 @@ fulltext searcher has been initialized (§8):
     -H 'Content-Type: application/json' -d '{"query_text":"dukkha"}' >/dev/null
   curl -s "localhost:$PORT/health" | jq '.fulltext_searcher_ready'   # true
   ```
+
+- **`fulltext`** carries the per-area detail behind that boolean, so a client can
+  tell *why* it is `false` without reading the log. **Branch on `state`, never on
+  a zero `opened`:**
+
+  | `state` | Meaning |
+  |---|---|
+  | `not_opened_yet` | No searcher built this session. Not measured — **not** "no failures". |
+  | `files_not_found` | No index directory, or no per-language index in one. Nothing is broken; nothing has been built or downloaded. |
+  | `could_not_open` | Index files are present and every attempt to open one failed. This is a fault. |
+  | `ready` | At least one index is open. |
+
+  `opened: 0` for a single area is normal — it usually means the user has not
+  downloaded that language. `dir_present` is what separates an absent index tree
+  from one that would not open. `message` is plain language and safe to display;
+  it deliberately carries no `flock`/`Tantivy`/errno text (that stays in the log
+  and in Run Storage Diagnostics). See
+  [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).
 
 - **`counts`** are per-DB row counts. Each is resilient: a real `0` means the DB
   is loaded but empty / not installed (consistent with
@@ -822,7 +859,7 @@ views, not for headless data retrieval.
 | Method · Path | Purpose |
 |---|---|
 | `GET /` | Liveness — minimal HTML page (see §10). |
-| `GET /health` | JSON diagnostics snapshot: `app_version`, `api_port`, `db_paths`, `fulltext_searcher_ready`, `counts`, `sutta_languages`, `dict_sources` (see §10). |
+| `GET /health` | JSON diagnostics snapshot: `app_version`, `api_port`, `db_paths`, `fulltext_searcher_ready`, `fulltext` (per-area index state), `counts`, `sutta_languages`, `dict_sources` (see §10). |
 | `GET /shutdown` | Shut the webserver down (`Shutdown::notify`). Used by `shutdown_webserver` / `shutdown_webserver_tcp`. |
 | `GET /app-assets-list` | Debug HTML listing of the SIMSAPA_DIR and internal-storage directory trees. |
 | `GET /assets/<path..>` | Serve a bundled static asset (CSS/JS/fonts/images/pdf-viewer) from the embedded `assets/` dir. |

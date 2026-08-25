@@ -78,11 +78,20 @@ ApplicationWindow {
     property bool search_index_failed: false
     property string search_index_message: ""
 
+    // Whether the fulltext indexes could actually be opened. Distinct from
+    // search_index_failed above, which asks whether the index files exist and
+    // are the current version: the files can be present and current and still
+    // fail to open, which is exactly the case this row was added for. Like the
+    // search index it is not downloadable, so it must never feed
+    // has_downloadable_failures.
+    property bool fulltext_failed: false
+    property string fulltext_message: ""
+
     // Computed properties
     readonly property bool has_downloadable_failures: appdata_failed || dpd_failed || dictionaries_failed
     // Migration failures need no term here: the backend folds them into the
     // database's own result, flipping appdata_failed / dictionaries_failed.
-    readonly property bool has_any_failure: has_downloadable_failures || search_index_failed
+    readonly property bool has_any_failure: has_downloadable_failures || search_index_failed || fulltext_failed
 
     // Track if dialog was opened from menu (manual) vs automatic validation failure
     property bool opened_from_menu: false
@@ -181,9 +190,27 @@ ApplicationWindow {
         }
     }
 
+    // Read the fulltext verdict straight from the backend, for the paths that
+    // open this dialog without a validation run behind them (the menu, and the
+    // in-place refresh after a rebuild). During a validation run the same data
+    // arrives on the database_validation_result signal instead.
+    function refresh_fulltext_status() {
+        const json = SuttaBridge.get_fulltext_status();
+        try {
+            const status = JSON.parse(json);
+            root.fulltext_failed = !status.is_valid;
+            root.fulltext_message = status.message;
+        } catch (e) {
+            logger.error("Failed to parse fulltext status: " + e + " json: " + json);
+            root.fulltext_failed = false;
+            root.fulltext_message = "";
+        }
+    }
+
     function show_validation_failure(failed_databases) {
         root.refresh_startup_db_report();
         root.refresh_search_index_status();
+        root.refresh_fulltext_status();
 
         // Parse the failed_databases string (comma-separated list)
         root.appdata_failed = failed_databases.includes("appdata");
@@ -333,8 +360,10 @@ ApplicationWindow {
             // the user closes this window.
             manager.set_keep_screen_on("search-index-rebuild-validation", false);
             // Refresh the index row in place so it flips to OK (and the
-            // success label appears) without a manual re-run.
+            // success label appears) without a manual re-run. The rebuild also
+            // reopens the searcher, so the fulltext row can change with it.
             root.refresh_search_index_status();
+            root.refresh_fulltext_status();
         }
     }
 
@@ -897,6 +926,16 @@ ApplicationWindow {
     Connections {
         target: SuttaBridge
         function onDatabaseValidationResult(database_name, is_valid, message) {
+            // The fulltext index rides this signal but is not a database: it is
+            // not downloadable, and it is not in expected_databases, so it must
+            // not enter validation_results or the three-database completion
+            // state machine. Handled here and rendered as its own row.
+            if (database_name === "fulltext") {
+                root.fulltext_failed = !is_valid;
+                root.fulltext_message = message;
+                return;
+            }
+
             // Store result in hashmap
             root.validation_results[database_name] = {
                 is_valid: is_valid,
@@ -1133,6 +1172,30 @@ ApplicationWindow {
                     visible: root.is_rebuilding
                     running: visible
                     Layout.alignment: Qt.AlignLeft
+                }
+            }
+
+            // Whether the index files, however current they are, could actually
+            // be opened. A storage location that does not support the file
+            // locking the index needs fails here while every row above says OK.
+            ColumnLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Layout.topMargin: 5
+
+                Label {
+                    text: "Fulltext index:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                }
+
+                Label {
+                    text: "  - " + root.fulltext_message
+                    font.pointSize: root.pointSize
+                    color: root.fulltext_failed ? palette.mid : palette.text
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    visible: root.fulltext_message.length > 0
                 }
             }
 

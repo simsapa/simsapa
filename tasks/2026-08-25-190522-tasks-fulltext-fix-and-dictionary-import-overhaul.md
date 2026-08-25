@@ -359,7 +359,20 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
   it was the one site relying on the reader's removed auto-reload. **Done (1.4).**
 - `backend/src/lib.rs` — `reinit_fulltext_searcher()` (`:344`) counts + ERROR on
   zero; `is_fulltext_searcher_ready()` (`:408`) honesty; a new accessor for the
-  per-area counts so QML and `/health` read one source.
+  per-area counts so QML and `/health` read one source. **Done (2.1–2.4, 2.8):**
+  `fulltext_index_counts()`, `fulltext_status_json()`, and the
+  `log_storage_capability_verdicts()` call.
+- `backend/src/fulltext_status.rs` — **new (2.1, 2.3, 2.7).** The single place
+  that turns per-area counts + recorded failures into one verdict and one
+  plain-language sentence, consumed by the search UI, Database Validation and
+  `/health` alike. `FulltextState` has four variants so `files_not_found` can
+  never be reported as `could_not_open`. Its `no_jargon_in_user_facing_strings`
+  test is what enforces 2.7 for every string the feature can emit.
+- `backend/src/search/searcher.rs` — **also (2.1):** `FulltextAreaStatus` /
+  `FulltextIndexCounts`, captured at open time. `open_indexes()` now returns
+  whether the directory existed, which is what makes 2.3's distinction possible
+  at all. The old tuple-returning `index_counts()` was **replaced**, not
+  duplicated (two callers updated in `storage_diagnostics.rs`).
 - `backend/src/storage_probe.rs` — FR-31…FR-33's `flock`/`mmap` verdicts
   recorded (demote-only contract unchanged; a `flock` failure alone **must not**
   demote).
@@ -367,9 +380,24 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
   row (near `:2247`).
 - `bridges/src/api.rs:1801,1824` — `/health`'s `fulltext_searcher_ready`, plus
   per-area counts.
-- `assets/qml/DatabaseValidationDialog.qml:139,213-221` — the new row.
+- `assets/qml/DatabaseValidationDialog.qml:139,213-221` — the new row. **Done
+  (2.5).** The `"fulltext"` result is intercepted in `onDatabaseValidationResult`
+  and **kept out of** `validation_results`: it is not in `expected_databases`,
+  so letting it in would have broken the three-database completion state
+  machine, and it is not downloadable, so it must never reach
+  `get_failed_downloadable_list()` (which would build a bogus asset URL). It
+  renders as its own section beside "Search index:", and feeds `has_any_failure`
+  only.
 - `assets/qml/FulltextResults.qml:335-350` — the "index could not be opened"
-  empty state.
+  empty state. **Done (2.6).** Gated on `state === "could_not_open"`, never on a
+  zero result count, which is what satisfies FR-26. The status arrives via a
+  **`fulltext_status_fn` callback** supplied by the parent, matching the
+  existing `new_results_page_fn`: this component's
+  `import com.profoundlabs.simsapa` is deliberately commented out so it stays
+  usable in QML preview, and a direct `SuttaBridge` call there produced a new
+  `qmllint` unqualified-access warning naming the file.
+- `assets/qml/SuttaSearchWindow.qml` — supplies `fulltext_status_fn` and
+  `search_area` to `FulltextResults`.
 - `backend/tests/test_lenient_directory_benchmark.rs` — **new** (task 3.0).
 
 **Dictionary import**
@@ -557,36 +585,36 @@ demonstrate rather than assume.
   exists for: `FulltextSearcher opened: 3 sutta language indexes, 2 dict
   language indexes, 1 library language indexes`.
 
-### 2.0 [ ] Honest readiness reporting (fix-PRD FR-19…FR-30)
+### 2.0 [x] Honest readiness reporting (fix-PRD FR-19…FR-30)
 
 **Specs to keep in mind.** The failure list and its clear-on-reopen rule already
 exist (§2 above) — this task **consumes** them. The user's own report is the
 argument: section F said 0/0/0 with 6 failures while section E opened all six,
 and the app called itself "initialized" throughout.
 
-- [ ] 2.1 Expose the per-area open counts from `FulltextSearcher` (sutta / dict /
+- [x] 2.1 Expose the per-area open counts from `FulltextSearcher` (sutta / dict /
   library) through a `backend/src/lib.rs` accessor, so QML, `/health` and
   Database Validation read **one** source rather than re-probing.
-- [ ] 2.2 `reinit_fulltext_searcher()` (`lib.rs:344`): log at **ERROR** when it
+- [x] 2.2 `reinit_fulltext_searcher()` (`lib.rs:344`): log at **ERROR** when it
   completes with zero indexes open, and include the counts in the message
   (FR-21). A log alone must tell the story.
-- [ ] 2.3 Make the distinction FR-30 requires: index directory **absent** →
+- [x] 2.3 Make the distinction FR-30 requires: index directory **absent** →
   "Fulltext index files not found"; present but zero opened → the lock/IO error.
   Do not conflate them. This is the `StartupDbReport` principle.
-- [ ] 2.4 `is_fulltext_searcher_ready()` (`lib.rs:408`) must return **false**
+- [x] 2.4 `is_fulltext_searcher_ready()` (`lib.rs:408`) must return **false**
   when zero indexes are open (FR-20). **This changes `/health`'s
   `fulltext_searcher_ready`** — deliberately, and it is why phase 1 deferred it
   (diagnostics FR-31b). Update
   `docs/simsapa-localhost-api-search-endpoints.md` in the same commit, and add
   the per-area counts to `/health` while there.
-- [ ] 2.5 Add a **"Fulltext index"** row to `DatabaseValidationDialog.qml`,
+- [x] 2.5 Add a **"Fulltext index"** row to `DatabaseValidationDialog.qml`,
   driven by the existing `database_validation_result` signal — no new signal
   plumbing (FR-27). Emit it from `bridges/src/sutta_bridge.rs` beside the
   dictionaries emission at `:2247`. Valid when ≥ 1 index per expected area
   opened, reporting counts ("3 sutta, 2 dictionary, 1 library index"); invalid
   when the directory exists and zero opened, with the underlying error in plain
   language.
-- [ ] 2.6 Add the "index could not be opened" empty state to
+- [x] 2.6 Add the "index could not be opened" empty state to
   `FulltextResults.qml:335-350`, extending the existing non-generic branch rather
   than adding a dialog or toast (FR-23…FR-25). It must name the reason from the
   recorded failure and point at Database Validation. **It must not fire** when a
@@ -600,15 +628,51 @@ and the app called itself "initialized" throughout.
   `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`. Task 2.1's per-area
   counts accessor should feed the same call, so the empty state, the Validation
   row and `/health` all read one source.
-- [ ] 2.7 Wording check: no `flock`, `ENOSYS`, `Tantivy`, `META_LOCK`, `mmap` or
+- [x] 2.7 Wording check: no `flock`, `ENOSYS`, `Tantivy`, `META_LOCK`, `mmap` or
   `FUSE` in any user-facing string. The user-facing concept is *"this storage
   location does not support the file locking the search index needs; Simsapa is
   working around it"*, and in the failure case *"the search index could not be
   opened."*
-- [ ] 2.8 `backend/src/storage_probe.rs`: record the `flock` and `mmap` verdicts
+- [x] 2.8 `backend/src/storage_probe.rs`: record the `flock` and `mmap` verdicts
   (FR-31…FR-33) and log them next to the existing `storage_path` diagnostic. **A
   volume that fails only the `flock` test must not be demoted** (FR-32) — with
   task 1.0 in place the app works on it. The demote-only contract is unchanged.
+
+  **The two verdicts ended up in two places, deliberately.**
+  `probe_storage_location()` (tier 2, dialog-only) now runs the `flock` probe
+  and logs it as *"recorded only, never demotes"*, leaving its `Result`
+  untouched. It does **not** run the `mmap` probe: that probe is only meaningful
+  against a file large enough to fault past page 0, and this probe's directory
+  is a storage root the user is still choosing — writing an 18 MB file to a card
+  to earn one log line is not a reasonable price.
+
+  The `mmap` verdict is instead logged against the **real index directory**, by
+  a new `storage_diagnostics::log_storage_capability_verdicts()` called from
+  `reinit_fulltext_searcher()` — one line carrying **both** verdicts, once per
+  process, on every platform (FR-33, success metric 10). That is also the
+  honest place for it: it measures the directory the searcher is about to use.
+
+**Fixture regenerated: `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json`.**
+`test_fulltext_search_so_ce_evam_vadeyya` failed with `total` 2330 against an
+expected 2331. This is **not** the project's known timing-budget drift — it is a
+hit count — so it was measured rather than assumed:
+
+- A throwaway A/B ran **both** open sequences in one process against the same
+  on-disk `suttas/pli` index — old (`MmapDirectory` + `Index::open_or_create` +
+  default reader) versus new (`LenientLockMmapDirectory` + `Index::open` +
+  `ReloadPolicy::Manual`). Result: `num_docs=10649 hits=4304` for **both**.
+  Task 1.0's change is byte-identical on this query.
+- The regenerated fixture returns the **same 10 uids in the same order**; what
+  moved is `total` (−1, 0.04%), the BM25 scores (~0.003%), and **two snippets**.
+  A changed snippet for an unchanged uid means the underlying *sutta text*
+  changed, not just the corpus size — i.e. `appdata.sqlite3` and the index have
+  drifted from the fixture, which was last committed 2026-07-31.
+
+So the fixture was stale, and regenerating it is the correct maintenance action.
+Worth knowing: **this fixture is machine-dependent** — it is generated from
+whatever index the dev machine currently holds, so it will drift again after any
+re-bootstrap. The generator is
+`cargo test --test test_fulltext_search_results -- --ignored generate_fulltext_fixture`.
 
 ### 3.0 [ ] Benchmark: prove the wrapper costs nothing on a normal filesystem
 

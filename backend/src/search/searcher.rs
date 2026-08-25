@@ -28,6 +28,39 @@ enum IndexType {
     Library,
 }
 
+/// How one search area (sutta / dict / library) fared at open time.
+///
+/// `dir_present` is recorded here rather than re-derived later because the two
+/// zero-index states have different causes and different remedies: an **absent**
+/// index directory means the user has not built or downloaded an index, while a
+/// **present** one that yielded nothing means the files could not be read. See
+/// `crate::fulltext_status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FulltextAreaStatus {
+    /// Per-language indexes successfully opened for this area.
+    pub opened: usize,
+    /// Whether the area's index directory exists at all.
+    pub dir_present: bool,
+}
+
+/// The per-area open counts, captured when the searcher was built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FulltextIndexCounts {
+    pub sutta: FulltextAreaStatus,
+    pub dict: FulltextAreaStatus,
+    pub library: FulltextAreaStatus,
+}
+
+impl FulltextIndexCounts {
+    pub fn total_opened(&self) -> usize {
+        self.sutta.opened + self.dict.opened + self.library.opened
+    }
+
+    pub fn any_dir_present(&self) -> bool {
+        self.sutta.dir_present || self.dict.dir_present || self.library.dir_present
+    }
+}
+
 /// Holds open indexes for fulltext searching.
 ///
 /// The dict index unifies dict_words rows and DPD bold-definition rows; both
@@ -41,6 +74,9 @@ pub struct FulltextSearcher {
     dict_indexes: HashMap<String, (Index, IndexReader)>,
     /// Map of language → (Index, IndexReader) for library book chapter indexes
     library_indexes: HashMap<String, (Index, IndexReader)>,
+    /// Captured at open time. The map lengths give the counts, but not whether
+    /// a directory existed — and that distinction is the whole point.
+    counts: FulltextIndexCounts,
 }
 
 /// Returned by `FulltextSearcher::debug_query()`: the formatted debug text
@@ -67,9 +103,15 @@ impl FulltextSearcher {
     /// Open all available per-language indexes under the given paths.
     pub fn open(paths: &AppGlobalPaths) -> Result<Self> {
         Self::begin_open_session();
-        let sutta_indexes = Self::open_indexes(&paths.suttas_index_dir, IndexType::Sutta)?;
-        let dict_indexes = Self::open_indexes(&paths.dict_words_index_dir, IndexType::Dict)?;
-        let library_indexes = Self::open_indexes(&paths.library_index_dir, IndexType::Library)?;
+        let (sutta_indexes, sutta_dir) = Self::open_indexes(&paths.suttas_index_dir, IndexType::Sutta)?;
+        let (dict_indexes, dict_dir) = Self::open_indexes(&paths.dict_words_index_dir, IndexType::Dict)?;
+        let (library_indexes, library_dir) = Self::open_indexes(&paths.library_index_dir, IndexType::Library)?;
+
+        let counts = FulltextIndexCounts {
+            sutta: FulltextAreaStatus { opened: sutta_indexes.len(), dir_present: sutta_dir },
+            dict: FulltextAreaStatus { opened: dict_indexes.len(), dir_present: dict_dir },
+            library: FulltextAreaStatus { opened: library_indexes.len(), dir_present: library_dir },
+        };
 
         info(&format!(
             "FulltextSearcher opened: {} sutta language indexes, {} dict language indexes, {} library language indexes",
@@ -82,7 +124,22 @@ impl FulltextSearcher {
             sutta_indexes,
             dict_indexes,
             library_indexes,
+            counts,
         })
+    }
+
+    /// The per-area open counts captured when this searcher was built, plus
+    /// whether each area's index directory existed at all.
+    ///
+    /// Read through `crate::fulltext_index_counts()`, which is what the search
+    /// UI, Database Validation and `/health` all go through — one source, so
+    /// they cannot disagree.
+    ///
+    /// The `has_*_indexes()` predicates answer a different question — "is there
+    /// at least one" — and are not a substitute where the count itself is the
+    /// reported fact.
+    pub fn index_counts(&self) -> FulltextIndexCounts {
+        self.counts
     }
 
     /// Open indexes from explicit directory paths (without needing AppGlobalPaths).
@@ -91,28 +148,40 @@ impl FulltextSearcher {
     /// Pass an empty or non-existent path to skip sutta, dict, or library indexes.
     pub fn open_from_dirs(suttas_index_dir: &Path, dict_words_index_dir: &Path, library_index_dir: Option<&Path>) -> Result<Self> {
         Self::begin_open_session();
-        let sutta_indexes = Self::open_indexes(suttas_index_dir, IndexType::Sutta)?;
-        let dict_indexes = Self::open_indexes(dict_words_index_dir, IndexType::Dict)?;
-        let library_indexes = if let Some(dir) = library_index_dir {
+        let (sutta_indexes, sutta_dir) = Self::open_indexes(suttas_index_dir, IndexType::Sutta)?;
+        let (dict_indexes, dict_dir) = Self::open_indexes(dict_words_index_dir, IndexType::Dict)?;
+        let (library_indexes, library_dir) = if let Some(dir) = library_index_dir {
             Self::open_indexes(dir, IndexType::Library)?
         } else {
-            HashMap::new()
+            (HashMap::new(), false)
+        };
+
+        let counts = FulltextIndexCounts {
+            sutta: FulltextAreaStatus { opened: sutta_indexes.len(), dir_present: sutta_dir },
+            dict: FulltextAreaStatus { opened: dict_indexes.len(), dir_present: dict_dir },
+            library: FulltextAreaStatus { opened: library_indexes.len(), dir_present: library_dir },
         };
 
         Ok(Self {
             sutta_indexes,
             dict_indexes,
             library_indexes,
+            counts,
         })
     }
 
-    /// Scan a directory for per-language subdirectories and open each as a Tantivy index.
-    fn open_indexes(base_dir: &Path, index_type: IndexType) -> Result<HashMap<String, (Index, IndexReader)>> {
+    /// Scan a directory for per-language subdirectories and open each as a
+    /// Tantivy index.
+    ///
+    /// Returns the opened indexes **and whether the base directory existed** —
+    /// an empty map means "nothing opened", which on its own cannot tell an
+    /// absent index tree from one that would not open.
+    fn open_indexes(base_dir: &Path, index_type: IndexType) -> Result<(HashMap<String, (Index, IndexReader)>, bool)> {
         let mut map = HashMap::new();
 
         match base_dir.try_exists() {
             Ok(true) => {}
-            _ => return Ok(map),
+            _ => return Ok((map, false)),
         }
 
         let entries = std::fs::read_dir(base_dir)?;
@@ -144,7 +213,7 @@ impl FulltextSearcher {
             }
         }
 
-        Ok(map)
+        Ok((map, true))
     }
 
     fn open_single_index(dir: &Path, lang: &str, index_type: IndexType) -> Result<(Index, IndexReader)> {
@@ -320,19 +389,6 @@ impl FulltextSearcher {
         })
     }
 
-    /// How many per-language indexes are open, as (suttas, dict_words,
-    /// library).
-    ///
-    /// The `has_*_indexes()` predicates answer a different question — "is there
-    /// at least one" — and are not a substitute where the count itself is the
-    /// reported fact.
-    pub fn index_counts(&self) -> (usize, usize, usize) {
-        (
-            self.sutta_indexes.len(),
-            self.dict_indexes.len(),
-            self.library_indexes.len(),
-        )
-    }
 
     /// Check if any sutta indexes are available.
     pub fn has_sutta_indexes(&self) -> bool {
@@ -1206,6 +1262,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         // Flag off: one row per record, not flagged as a snippet.
@@ -1285,6 +1345,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1325,6 +1389,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1364,6 +1432,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1399,6 +1471,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1438,6 +1514,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1505,6 +1585,10 @@ mod tests {
             sutta_indexes,
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {
@@ -1535,6 +1619,10 @@ mod tests {
             sutta_indexes: HashMap::new(),
             dict_indexes: HashMap::new(),
             library_indexes: HashMap::new(),
+            // These tests build a searcher by hand to exercise the search
+            // methods; the open-time reporting counts are not what they are
+            // about.
+            counts: FulltextIndexCounts::default(),
         };
 
         let filters = SearchFilters {

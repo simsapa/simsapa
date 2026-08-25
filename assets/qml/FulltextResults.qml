@@ -105,8 +105,56 @@ ColumnLayout {
     // generic "No results found." empty state. Defaults true so QML preview /
     // desktop tooling are unaffected.
     property bool db_ready: true
+    // "Suttas", "Dictionary" or "Library" — which area the current results
+    // belong to. Used only to decide whether a fulltext-index failure is
+    // relevant to what the user just searched.
+    property string search_area: ""
+    // Set by check_fulltext_index_problem() when a page comes back empty and
+    // the index for this area could not be opened. Empty string means "no
+    // index problem to report", which is the overwhelmingly common case.
+    property string fulltext_problem_message: ""
+    // Returns the parsed fulltext status object (see
+    // SuttaBridge.get_fulltext_status), or null when unavailable. Supplied by
+    // the parent so this component need not import the bridge.
+    property var fulltext_status_fn: null
     property alias currentIndex: fulltext_list.currentIndex
     property alias currentItem: fulltext_list.currentItem
+
+    // Distinguish "no results" from "the index could not be opened".
+    //
+    // Only ever called when a page came back with no rows, so it costs nothing
+    // on the normal path. It must **not** fire merely because an area has no
+    // index: a user who never downloaded a language has no fault to report, and
+    // telling them the index is broken would send them to Rebuild Search Index
+    // for nothing.
+    //
+    // The gate is therefore the backend's `state`, not a zero count:
+    // `could_not_open` means index directories exist, indexes were attempted,
+    // and every one of them failed. See backend/src/fulltext_status.rs.
+    //
+    // The status arrives through a callback rather than a direct SuttaBridge
+    // call, because this component deliberately does not import the bridge —
+    // its `import com.profoundlabs.simsapa` is commented out so it stays usable
+    // in QML preview, and everything else it needs is likewise passed down.
+    // Same shape as new_results_page_fn.
+    function check_fulltext_index_problem() {
+        root.fulltext_problem_message = "";
+
+        if (!root.fulltext_status_fn) {
+            return;
+        }
+
+        const status = root.fulltext_status_fn(); // qmllint disable use-proper-function
+        if (!status || status.state !== "could_not_open") {
+            return;
+        }
+
+        // A whole-app failure is worth naming whatever the area. When only some
+        // areas failed the backend reports `ready`, so reaching here already
+        // means nothing opened anywhere.
+        root.fulltext_problem_message = status.message
+            + " Open Database Validation from the menu for details.";
+    }
 
     function set_search_result_page(search_result_page) {
         // SearchResultPage { total_hits, page_len, page_num, results,
@@ -329,16 +377,30 @@ ColumnLayout {
         // Reset scroll position — the model was cleared above, so any
         // previous scroll offset references items that no longer exist.
         fulltext_list.positionViewAtBeginning();
+
+        // An empty page is the only case where the index's health is worth
+        // asking about.
+        if (results_model.count === 0) {
+            root.check_fulltext_index_problem();
+        } else {
+            root.fulltext_problem_message = "";
+        }
     }
 
     Text {
         id: empty_state
-        // When records matched (total_hits > 0) but this page has no rows, every
-        // snippet on the page was removed by the exclusion filter — name it
-        // instead of the generic "No results found.".
-        text: (root.total_hits > 0 && root.snippet_exclude_terms.trim().length > 0)
-            ? "Results from this page were excluded by the filter: " + root.snippet_exclude_terms.trim()
-            : "No results found."
+        // Three distinguishable empty states, most specific first:
+        //   1. the index could not be opened — nothing was searched at all;
+        //   2. records matched but every snippet on this page was removed by
+        //      the exclusion filter — name the filter;
+        //   3. the ordinary "No results found.".
+        // Conflating (1) with (3) is what let a user run silently empty
+        // searches for a whole session believing the texts simply had no match.
+        text: root.fulltext_problem_message.length > 0
+            ? root.fulltext_problem_message
+            : ((root.total_hits > 0 && root.snippet_exclude_terms.trim().length > 0)
+                ? "Results from this page were excluded by the filter: " + root.snippet_exclude_terms.trim()
+                : "No results found.")
         // Don't show "No results found." while the DB is still loading — the
         // loading_state overlay shows the logo + "Loading..." instead.
         visible: root.db_ready && !root.is_loading && results_model.count === 0
