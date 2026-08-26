@@ -922,17 +922,41 @@ this file, under the sub-task, so the record lives with the work.
   >    `log.txt` has them — and the two are provably the same instant
   >    (`engine.load() end` at `17:06:33.292Z` in the file;
   >    `create_sutta_search_window(): created window_0` at `18:06:33.292` local
-  >    in logcat). So the Rust-side `tracing` records reach logcat and the
-  >    C++ `log_info_c()` ones do not.
+  >    in logcat).
   >
-  >    `AGENTS.md` states the opposite: *"`log_info_c()` output goes to the same
-  >    `simsapa` tag as the Rust backend's, and also into the app's own
-  >    `log.txt`"*. The second half holds; **the first half does not**, at least
-  >    for these call sites. This matters because it is the same failure mode
-  >    that section was written to prevent — an agent debugging on device via
-  >    logcat would conclude the C++ never ran. **Flagged, not fixed:** the fix
-  >    is a code or doc change outside this PRD's scope, and the workaround
-  >    (read `log.txt` over `run-as`) is what the harness does.
+  >    **ROOT CAUSE FOUND — and my first reading of it above was wrong.** I
+  >    initially recorded this as "Rust `tracing` records reach logcat, C++
+  >    `log_info_c()` ones do not", contradicting `AGENTS.md`. That is **not**
+  >    the discriminator. Measuring properly — every distinct message in one
+  >    launch's `log.txt` checked against a completely **unfiltered** logcat —
+  >    gives: of 81 distinct messages, exactly **31 missing, and all 31 are
+  >    `STARTUP-TRACE:` lines**. Nothing else is missing, and *most* of the 31
+  >    are QML `Logger` calls, not C++ ones. Every Rust-side message
+  >    (`gui::start()`, `create_sutta_search_window`, `app.exec()`,
+  >    `DbManager::new`, `init_app_data`) appears in **both**.
+  >
+  >    The cause is in `AndroidLogWriter::write` (`backend/src/logger.rs`), which
+  >    chooses a `log` level by sniffing the **formatted line** for a level word.
+  >    That line contains the message text, so `STARTUP-TRACE` matches the
+  >    `line.contains("TRACE")` arm and is emitted via `log::trace!` — below the
+  >    `.with_max_level(log::LevelFilter::Debug)` that `android_logger` is
+  >    initialised with, and therefore discarded. It is **message-text based, not
+  >    origin based**, which is why C++ and QML traces vanish together while
+  >    ordinary Rust messages survive.
+  >
+  >    `AGENTS.md`'s claim is therefore *nearly* right — `log_info_c()` does
+  >    reach the `simsapa` tag, **except** when the message text contains one of
+  >    the four level words. **Docs fixed** (at the maintainer's request) in
+  >    `AGENTS.md` (both the C++ and the QML logging sections),
+  >    `docs/startup-sequence-and-caches.md` §6 — which *instructs* readers to
+  >    bracket stalls with `STARTUP-TRACE` lines and so most needed the warning —
+  >    and `docs/android-beta-distribution-and-play-policy.md`, where the
+  >    `adb logcat` recipe is published and which previously said an unlisted tag
+  >    was the usual reason for a missing message.
+  >
+  >    **The code is deliberately NOT changed** — it is outside this PRD, and the
+  >    fix is to carry the level explicitly rather than re-derive it from text.
+  >    The workaround (read `log.txt` over `run-as`) is what the harness does.
   > 2. **`run-as PKG sh -c '…'` is unusable, but `run-as PKG <binary>` is fine.**
   >    With a relative path the shell cannot find the file (it does not inherit
   >    the app home as cwd); with an absolute path SELinux denies it outright.

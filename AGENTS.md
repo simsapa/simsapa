@@ -1230,6 +1230,13 @@ Item {
 }
 ```
 
+**On Android, a message whose text contains `TRACE` never reaches logcat** — it
+is routed below `android_logger`'s level and dropped, so every QML
+`STARTUP-TRACE: … onCompleted` line is invisible there (read the app's `log.txt`
+instead). The mechanism, and the three other level words that are misclassified,
+are under "Logging in C++" below; it applies to the QML `Logger` and to
+`log_info_c()` alike, because the filter keys on message text rather than origin.
+
 The available functions map to log levels: `logger.debug(message)`,
 `logger.info(message)`, `logger.warn(message)`, `logger.error(message)`.
 
@@ -1281,6 +1288,54 @@ failure it was added to detect.
 
 `log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
 also into the app's own `log.txt`, so it is available when a user sends logs.
+
+#### …with one measured exception: a message containing `TRACE` never reaches logcat
+
+**On Android, any log message whose *text* contains `TRACE` is silently dropped
+from logcat.** It still reaches `log.txt` normally. This is not a tag or a
+filter-config problem — it survives an entirely unfiltered `adb logcat`.
+
+The cause is in `AndroidLogWriter::write` (`backend/src/logger.rs`), which picks
+a `log` level by sniffing the **formatted line** for a level word:
+
+``` rust
+if line.contains("ERROR")      { log::error!("{}", line); }
+else if line.contains("WARN")  { log::warn!("{}", line); }
+else if line.contains("DEBUG") { log::debug!("{}", line); }
+else if line.contains("TRACE") { log::trace!("{}", line); }   // <-- here
+else                           { log::info!("{}", line); }
+```
+
+That line contains the *message* as well as the level, so the test matches on
+message content. `android_logger` is initialised
+`.with_max_level(log::LevelFilter::Debug)`, and trace is **below** debug — so
+anything routed to `log::trace!` is discarded.
+
+The practical casualty is the **`STARTUP-TRACE:` convention itself**: all of it
+is invisible on device. Measured 2026-08-26 on an Android 16 device — of 81
+distinct messages in one launch's `log.txt`, exactly **31 were missing from an
+unfiltered logcat, and every one of them was a `STARTUP-TRACE:` line**. Nothing
+else was missing. This affects the C++ `engine.load()` markers and every QML
+`Logger` `onCompleted` trace alike, because the filter keys on text, not origin.
+
+The same mechanism *misclassifies* rather than drops in the other three cases —
+an INFO message mentioning "ERROR" is logged to logcat as an error, and so on.
+
+**Consequences for anyone debugging on device:**
+
+- **Do not conclude from a logcat capture that instrumentation did not run.**
+  Read the app's own `log.txt` instead. On a debuggable build:
+  `adb shell run-as io.github.simsapa.app.beta cat files/log.txt`.
+  (`run-as PKG sh -c '…'` does *not* work — SELinux denies it, and the shell
+  does not inherit the app home as cwd — but `run-as PKG <binary>` does.)
+- **Avoid the words `TRACE`, `ERROR`, `WARN` and `DEBUG` in new log message
+  text** if you want the message to appear on device at its own level.
+- This is the same failure mode as the `qInfo()` trap above — instrumentation
+  that looks like code that never ran — reached by a different route.
+
+**Not yet fixed in code.** The fix is to carry the level explicitly instead of
+re-deriving it from the text (the writer is downstream of a `tracing` layer that
+already knows the level); until then, treat the above as the rule.
 
 Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
 in `cpp/utils.cpp`); do not add new ones, and prefer converting them when

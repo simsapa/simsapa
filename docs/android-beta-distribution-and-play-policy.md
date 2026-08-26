@@ -202,6 +202,18 @@ established until the process exists, which loses exactly the startup messages
 worth reading. Drop the trailing `'*:S'` if something expected is missing — an
 unlisted tag is the usual reason.
 
+> **An unlisted tag is the usual reason, but not the only one: a message whose
+> text contains `TRACE` never reaches logcat at all**, whatever the filter.
+> `AndroidLogWriter` (`backend/src/logger.rs`) derives the `log` level by
+> searching the formatted line for a level word, and that line includes the
+> message — so `STARTUP-TRACE: …` is routed to `log::trace!`, below
+> `android_logger`'s configured `LevelFilter::Debug`, and dropped. Widening the
+> tag filter will not recover it; **read `log.txt` instead** (next paragraph).
+> Measured 2026-08-26: 31 of 81 distinct messages in one launch were absent from
+> an *unfiltered* logcat, and all 31 were `STARTUP-TRACE` lines. The words
+> `ERROR`, `WARN` and `DEBUG` in message text are misclassified the same way,
+> though those remain visible. See `AGENTS.md`, "Logging in C++".
+
 Because the beta is debuggable, `adb shell run-as io.github.simsapa.app.beta`
 also works for inspecting its data directory. That is refused for the Play
 build, which is not debuggable.
