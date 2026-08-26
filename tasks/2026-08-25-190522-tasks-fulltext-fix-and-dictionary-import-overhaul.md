@@ -398,7 +398,14 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
   `qmllint` unqualified-access warning naming the file.
 - `assets/qml/SuttaSearchWindow.qml` — supplies `fulltext_status_fn` and
   `search_area` to `FulltextResults`.
-- `backend/tests/test_lenient_directory_benchmark.rs` — **new** (task 3.0).
+- `backend/tests/test_lenient_directory_benchmark.rs` — **new (3.2–3.6).** Two
+  tests: the bare-vs-wrapper ratio benchmark (which also carries 3.4's
+  per-directory probe-count assertion) and the Linux-only watcher-thread check
+  for `ReloadPolicy::Manual`. Enumerates the index tree, never creates one,
+  skips with a message when `SIMSAPA_DIR/app-assets/index` is absent.
+- `docs/fulltext-index-storage-and-file-locking.md` — **new (3.7).** Currently
+  holds the framing and the benchmark record only; task 8.2 writes the mechanism
+  sections.
 
 **Dictionary import**
 
@@ -719,18 +726,36 @@ one `flock` probe per directory (cached for the process by
   here, so their ratios will be dominated by noise; the search columns are the
   stable signal. Averaging over enough iterations (and reporting all three
   unconditionally) is what makes the assertion diagnosable.
-- [ ] 3.2 Write `backend/tests/test_lenient_directory_benchmark.rs`. For each
+- [x] 3.2 Write `backend/tests/test_lenient_directory_benchmark.rs`. For each
   available index directory, run the identical sequence through
   `MmapDirectory` and through `LenientLockMmapDirectory`: open → `Index::open` →
   `reader()` → N searches (use the diagnostic's own terms, `nirodha` and
   `cessation`, so the numbers are comparable with the user's section E). Report
   both, and the ratio.
-- [ ] 3.3 Assert on the **ratio**, generously — e.g. wrapper ≤ 1.25× bare for
+
+  Written as two tests in one binary. `discover_indexes()` walks
+  `<SIMSAPA_DIR>/app-assets/index/<area>/<lang>` and keeps only directories
+  where `Index::exists` is true — enumerated, never hard-coded, per 3.1's
+  finding that the dev tree is not the user's. `run_once()` is the measured
+  sequence, parameterised **only** by which `Directory` opens the index; both
+  arms use `ReloadPolicy::Manual`, so the isolated variable really is the
+  directory (and so the benchmark does not spawn watcher threads that would
+  poison 3.6 in the same process).
+- [x] 3.3 Assert on the **ratio**, generously — e.g. wrapper ≤ 1.25× bare for
   search latency and reader build, averaged over enough iterations to be stable.
   Discard the first iteration of each (page cache, and the one-time probe).
   Print the numbers unconditionally so a failure is diagnosable from the output.
-- [ ] 3.4 Assert the probe runs **at most once per directory** (FR-7). This is
+
+  6 iterations per index per arm, first discarded. The 1.25× limit is applied to
+  the **aggregate across all indexes**, not per index: open and reader build are
+  sub-millisecond per index (3.1's scale note), so a single index's ratio is
+  scheduling noise while the sum is stable. The full per-index table plus the
+  aggregate line print before any assertion runs.
+- [x] 3.4 Assert the probe runs **at most once per directory** (FR-7). This is
   the one cost that could scale with query volume if the cache broke.
+
+  Uses option (a), `flock_probe_count_for_dir()`, which task 1.6 already landed
+  for this reason. Per directory, never the process-global counter.
 
   **PITFALL — `#[cfg(test)]` will not work here.** A test in `backend/tests/` is
   an *integration* test: it links the library compiled **without** `cfg(test)`,
@@ -741,12 +766,25 @@ one `flock` probe per directory (cached for the process by
   `backend/src/search/lenient_directory.rs` and leave only the timing comparison
   in the integration test. (a) is preferred; it is one relaxed atomic increment
   on a path that already does a syscall.
-- [ ] 3.5 Skip cleanly with a clear message when the dev index is absent, so the
+- [x] 3.5 Skip cleanly with a clear message when the dev index is absent, so the
   test is not a failure on a machine without it. It must never *create* an index.
-- [ ] 3.6 Verify FR-17's win separately: assert that no
+
+  `index_root()` resolves `SIMSAPA_DIR` from the project `.env` **cwd-relative**
+  (which is what the dev value is; `get_create_simsapa_dir()` makes the same
+  fallback) and returns `None` rather than creating anything. Both tests print a
+  `SKIPPED:` line naming what is missing and return. Every open in the file is
+  `Index::open`, never `open_or_create`.
+- [x] 3.6 Verify FR-17's win separately: assert that no
   `thread-tantivy-meta-file-watcher` threads exist after opening N indexes with
   `ReloadPolicy::Manual` (success metric 9). On Linux, read
   `/proc/self/task/*/comm` and match the thread **name**.
+
+  `no_meta_file_watcher_threads_with_manual_reload`, `#[cfg(target_os = "linux")]`.
+  Two details worth keeping: the readers are **held in a `Vec` for the duration
+  of the scan** — a dropped reader takes its watcher thread with it, which would
+  make the test pass for the wrong reason — and the match is on the prefix
+  `thread-tantivy-`, because Linux truncates `comm` to 15 bytes so the full
+  name never appears there.
 
   **PITFALL — cargo runs tests in parallel in one process.** Another test that
   builds a default-policy reader will spawn watcher threads into the *same*
@@ -756,9 +794,37 @@ one `flock` probe per directory (cached for the process by
   is `ReloadPolicy::Manual` — verified against
   `tantivy-0.25.0/src/reader/mod.rs:21-31`, where the only other variant is
   `OnCommitWithDelay`.
-- [ ] 3.7 Record the measured before/after numbers **in this file** under task
+- [x] 3.7 Record the measured before/after numbers **in this file** under task
   3.1, and in `docs/fulltext-index-storage-and-file-locking.md`. A benchmark
   whose results live only in a terminal that has scrolled away has not been run.
+
+  **Measured 2026-08-26**, `--release --test-threads=1`, 6 iterations per index
+  per arm with the first discarded. `_b` = bare `MmapDirectory`, `_w` = wrapper.
+
+  | index | num_docs | open_b_ms | open_w_ms | read_b_ms | read_w_ms | srch_b_ms | srch_w_ms | open× | read× | srch× |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+  | dict_words/en | 13587 | 0.043 | 0.040 | 0.107 | 0.105 | 0.035 | 0.033 | 0.95 | 0.99 | 0.95 |
+  | dict_words/pli | 539569 | 0.050 | 0.050 | 0.412 | 0.431 | 0.187 | 0.186 | 1.01 | 1.05 | 0.99 |
+  | library/en | 322 | 0.049 | 0.047 | 0.384 | 0.397 | 0.085 | 0.079 | 0.97 | 1.03 | 0.93 |
+  | suttas/en | 10649 | 0.048 | 0.047 | 0.323 | 0.321 | 0.081 | 0.077 | 0.99 | 0.99 | 0.94 |
+  | suttas/hu | 494 | 0.052 | 0.048 | 0.360 | 0.393 | 0.057 | 0.056 | 0.93 | 1.09 | 0.99 |
+  | suttas/pli | 10649 | 0.051 | 0.057 | 0.475 | 0.462 | 0.138 | 0.138 | 1.13 | 0.97 | 1.00 |
+
+  Aggregate: open 0.292 → 0.291 ms (**1.00×**), reader 2.060 → 2.110 ms
+  (**1.02×**), search 0.583 → 0.568 ms (**0.97×**). Ratios fall on both sides of
+  1.0, which is what a no-cost result looks like. The debug profile reproduces
+  the same conclusion (0.97× / 1.00× / 0.97×), so this is not an artefact of the
+  optimisation level. **Fix-PRD success metric 7 is met.**
+
+  One caveat when comparing against 3.1's baseline table: that baseline used the
+  **default** reload policy and so also paid for spawning a watcher thread per
+  index (0.61–0.81 ms reader build there vs 0.32–0.48 ms here). The two arms
+  above are `ReloadPolicy::Manual` on both sides, which is the correct
+  comparison for isolating the directory wrapper — the policy change is measured
+  by 3.6 instead.
+
+  Written up in the new `docs/fulltext-index-storage-and-file-locking.md`, whose
+  mechanism sections task 8.2 still has to fill in.
 
 ### 4.0 [ ] Get the dictionary import off the UI thread, with real progress
 
