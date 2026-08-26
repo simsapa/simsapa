@@ -796,6 +796,20 @@ ApplicationWindow {
         //     self._render_results_in_active_tab(hits)
     }
 
+    // The parsed fulltext-index verdict, or null if it cannot be read. Handed
+    // to FulltextResults as a callback so that component need not import the
+    // bridge (its import is deliberately commented out for QML preview).
+    // Called only when a results page comes back empty.
+    function get_fulltext_status() {
+        const json = SuttaBridge.get_fulltext_status();
+        try {
+            return JSON.parse(json);
+        } catch (e) {
+            logger.error("Failed to parse fulltext status: " + e + " json: " + json);
+            return null;
+        }
+    }
+
     function results_page(query_text: string, page_num: int, search_area: string, params: var) {
         root.is_loading = true;
 
@@ -4092,12 +4106,25 @@ ${query_text}`;
                                 id: fulltext_results
                                 is_loading: root.is_loading
                                 db_ready: root.db_ready
+                                // Which area the current results belong to, so
+                                // an empty page can tell "nothing matched" from
+                                // "the index could not be opened".
+                                search_area: root.last_search_area
+                                // And which mode produced them: only the
+                                // Tantivy-backed modes may blame the index.
+                                // Read from last_params, the same object
+                                // new_results_page() replays, so a page
+                                // navigation reports the mode its results
+                                // actually came from.
+                                search_mode: (root.last_params && root.last_params.mode)
+                                    ? root.last_params.mode : ""
                                 is_dark: root.is_dark
                                 render_use_flat_results_background: root.render_use_flat_results_background
                                 render_disable_results_clip: root.render_disable_results_clip
                                 item_height_use_default: root.item_height_use_default
                                 item_height_fixed: root.item_height_fixed
                                 new_results_page_fn: root.new_results_page
+                                fulltext_status_fn: root.get_fulltext_status
                                 // Cleaned, comma-joined exclude terms so an
                                 // all-excluded page can name the active filter.
                                 snippet_exclude_terms: {

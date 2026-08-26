@@ -1,8 +1,8 @@
 import QtQuick
 
 Item {
-    function import_zip(zip_path: string, label: string, lang: string): string {
-        console.log("import_zip():", zip_path, label, lang);
+    function import_zip(zip_path: string, member: string, label: string, lang: string): string {
+        console.log("import_zip():", zip_path, member, label, lang);
         return "ok";
     }
 
@@ -14,6 +14,25 @@ Item {
     function scan_source(kind: string, path: string): string {
         console.log("scan_source():", kind, path);
         return "ok";
+    }
+
+    function stage_picked_file(url: url): string {
+        console.log("stage_picked_file():", url);
+        return "ok";
+    }
+
+    function abort_staging() {
+        console.log("abort_staging()");
+    }
+
+    function stage_picked_uri(uri: string): string {
+        console.log("stage_picked_uri():", uri);
+        return "ok";
+    }
+
+    function cleanup_staged_file(path: string): bool {
+        console.log("cleanup_staged_file():", path);
+        return true;
     }
 
     function abort_import() {
@@ -110,6 +129,9 @@ Item {
     signal importFinished(dictionary_id: int, label: string, inserted_count: int, elapsed_ms: int);
     signal importFailed(message: string);
     signal importCancelled(message: string, inserted_count: int);
+    signal stagingProgress(done_bytes: real, total_bytes: real);
+    signal stagingFinished(path: string);
+    signal stagingFailed(message: string);
     signal scanFinished(items_json: string);
     signal scanFailed(message: string);
     signal deleteFinished(dictionary_id: int, label: string, removed_count: int, elapsed_ms: int);

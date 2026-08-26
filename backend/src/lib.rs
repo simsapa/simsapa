@@ -6,6 +6,7 @@ pub mod helpers;
 pub mod highlight;
 pub mod asset_helpers;
 pub mod query_task;
+pub mod fulltext_status;
 pub mod html_content;
 pub mod dir_list;
 pub mod app_data;
@@ -47,6 +48,7 @@ pub mod global_hotkeys;
 pub mod storage_probe;
 pub mod storage_diagnostics;
 pub mod picker_url;
+pub mod import_staging;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 
@@ -254,6 +256,35 @@ pub extern "C" fn init_app_data() {
                 app_data.refresh_language_caches();
             });
         }
+
+        // Reclaim extraction directories left by a process that was killed
+        // mid-import. `tempfile::TempDir` cleans up on drop, so this only ever
+        // finds the ones no drop ran for — at up to twice an archive's size
+        // each, and with nothing else in the app reclaiming them. Age-gated at
+        // an hour inside, so a running import is never swept. On a background
+        // thread: it is a directory walk on cold mobile storage and nothing at
+        // startup waits on it.
+        std::thread::spawn(|| {
+            let removed = crate::dictionary_manager_core::sweep_orphaned_extract_dirs();
+            if removed > 0 {
+                info(&format!(
+                    "init_app_data: swept {} orphaned import temp folder(s)",
+                    removed
+                ));
+            }
+
+            // And the staged copies themselves, which are bigger: a killed
+            // process leaves the whole picked archive in the staging folder.
+            let staged = crate::import_staging::sweep_orphaned_staged_files(
+                crate::import_staging::DICTIONARY_FEATURE,
+            );
+            if staged > 0 {
+                info(&format!(
+                    "init_app_data: swept {} orphaned staged import file(s)",
+                    staged
+                ));
+            }
+        });
     }
 
     // The fulltext searcher is initialised lazily off the GUI thread by
@@ -326,34 +357,137 @@ pub fn try_get_releases_info() -> Option<ReleasesInfo> {
     })
 }
 
+/// Serialises **opening** the searcher, which `FULLTEXT_SEARCHER`'s own
+/// `RwLock` cannot: that one is held only for the instant of the assignment,
+/// while the open itself takes seconds and mutates a *second* global.
+///
+/// Two openers running at once is a live path, not a theoretical one. At
+/// startup `SuttaBridge::load_searcher()` spawns one thread and
+/// `dictionary_first_query()`'s validation spawns another that also calls
+/// [`init_fulltext_searcher`]; a GUI-triggered reconcile or an index rebuild
+/// adds more. Without this lock both can pass the "is it already open" check
+/// and open every index twice — and, worse,
+/// `FulltextSearcher::begin_open_session()` **clears**
+/// `SEARCHER_OPEN_FAILURES`, so the second opener's clear can wipe the first
+/// opener's recorded failures. The state that leaves behind is zero indexes
+/// open *and* zero failures recorded, which
+/// [`fulltext_status::build_status`] reads as `FilesNotFound` — "Fulltext index
+/// files not found. Use Rebuild Search Index to create them." — over a volume
+/// whose indexes are all present and all failed to open. That is a fabricated
+/// diagnosis in the one report a user is asked to send.
+static SEARCHER_OPEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Initialize the fulltext searcher by opening available indexes.
 /// This is safe to call even if indexes don't exist yet (it will just have no indexes).
+///
+/// Idempotent and safe to call from several threads at once: the check is
+/// repeated under [`SEARCHER_OPEN_LOCK`], so exactly one caller opens and the
+/// rest return.
 pub fn init_fulltext_searcher() {
-    // Only initialize if not already set
+    // Fast path, without taking the open lock: the overwhelmingly common case
+    // is that a searcher is already there.
     if let Ok(guard) = FULLTEXT_SEARCHER.read()
         && guard.is_some()
     {
         return;
     }
 
-    reinit_fulltext_searcher();
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Re-check under the lock. Another thread may have opened it between the
+    // read above and the lock; without this the whole lock buys nothing, since
+    // both threads would go on to open.
+    if let Ok(guard) = FULLTEXT_SEARCHER.read()
+        && guard.is_some()
+    {
+        return;
+    }
+
+    open_fulltext_searcher();
 }
 
 /// Re-initialize the fulltext searcher, replacing any existing instance.
 /// Call this after rebuilding indexes to pick up the new index files.
+///
+/// Unlike [`init_fulltext_searcher`] this always re-opens, but it takes the
+/// same lock: two reinits from different features (a reconcile and a rebuild,
+/// say) would otherwise clobber each other's failure list exactly as above.
 pub fn reinit_fulltext_searcher() {
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    open_fulltext_searcher();
+}
+
+/// The open itself. **Callers must hold [`SEARCHER_OPEN_LOCK`].**
+fn open_fulltext_searcher() {
     let g = get_app_globals();
+
+    // Both storage-capability verdicts into every user's log, once per process,
+    // next to the `storage_path` diagnostic. Neither verdict changes what
+    // happens next — an unsupported `flock` is the handled case — but a report
+    // that carries them is a one-line diagnosis instead of a round trip.
+    storage_diagnostics::log_storage_capability_verdicts(&g.paths.index_dir);
+
     match search::searcher::FulltextSearcher::open(&g.paths) {
         Ok(searcher) => {
+            let counts = searcher.index_counts();
             if let Ok(mut guard) = FULLTEXT_SEARCHER.write() {
                 *guard = Some(searcher);
             }
-            info("Fulltext searcher initialized");
+
+            // The counts go in the message, and zero is an ERROR. A bare
+            // "Fulltext searcher initialized" at INFO is what let one user run
+            // silently empty searches for a whole session while the log looked
+            // healthy — the searcher had opened successfully with zero indexes.
+            // A log alone must tell the story.
+            let summary = format!(
+                "{} sutta, {} dict, {} library indexes open",
+                counts.sutta.opened, counts.dict.opened, counts.library.opened,
+            );
+            if counts.total_opened() == 0 {
+                let failures = searcher_open_failures();
+                error(&format!(
+                    "Fulltext searcher initialized with NO indexes: {} ({} directory open failure(s)). \
+                     Fulltext search will return nothing. First failure: {}",
+                    summary,
+                    failures.len(),
+                    failures
+                        .first()
+                        .map(|(path, err)| format!("{path}: {err}"))
+                        .unwrap_or_else(|| "none recorded".to_string()),
+                ));
+            } else {
+                info(&format!("Fulltext searcher initialized: {summary}"));
+            }
         }
         Err(e) => {
             warn(&format!("Failed to initialize fulltext searcher: {}", e));
         }
     }
+}
+
+/// The per-area index counts of the current searcher, or `None` when no
+/// searcher has been built this session.
+///
+/// This is the **one** accessor the search UI, Database Validation and
+/// `/health` read, so they cannot report different numbers. Pair it with
+/// [`searcher_open_failures`] and hand both to
+/// [`crate::fulltext_status::build_status`] rather than interpreting them at
+/// each call site.
+pub fn fulltext_index_counts() -> Option<search::searcher::FulltextIndexCounts> {
+    with_fulltext_searcher(|s| s.index_counts())
+}
+
+/// The current fulltext verdict as JSON, for QML and `/health`.
+///
+/// Structured bridge results are returned as a JSON string throughout this
+/// project (`scan_source`, `get_word_json`); this follows that convention.
+pub fn fulltext_status_json() -> String {
+    fulltext_status::current_status().to_json()
 }
 
 /// Per-index-directory open failures recorded while a searcher was being built.
@@ -395,18 +529,27 @@ pub fn searcher_open_failures() -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// Whether the process-global fulltext searcher has been initialized (the
-/// Tantivy indexes are open). Lets a headless caller learn — via `/health` —
-/// whether a `FulltextMatch` / `Combined` query will return real results yet,
-/// without running a throwaway query. See docs/simsapa-localhost-api-search-endpoints.md.
+/// Whether a `FulltextMatch` / `Combined` query will actually return real
+/// results. Lets a headless caller learn this via `/health` without running a
+/// throwaway query. See docs/simsapa-localhost-api-search-endpoints.md.
 ///
-/// Note that this answers "is the global `Some`", not "does it hold any
-/// indexes" — the storage diagnostics deliberately derive their
-/// "not initialised this session" state from `with_fulltext_searcher()`
-/// returning `None` instead, because changing this function's meaning would
-/// change the `/health` field it feeds.
+/// **This answers "is at least one index open", not "is the global `Some`".**
+/// It used to answer the latter, which made it report `true` for a searcher
+/// that had opened successfully with **zero** indexes — exactly the state one
+/// reporting user was in for a whole session while every search came back
+/// silently empty and `/health` said it was ready.
+///
+/// Changing this deliberately changes `/health`'s `fulltext_searcher_ready`
+/// field; phase 1 left it alone for that reason, and this is the phase that
+/// owns the change.
+///
+/// The storage diagnostics still derive their "not initialised this session"
+/// state from `with_fulltext_searcher()` returning `None`, which is a third,
+/// genuinely different question — "was this ever measured".
 pub fn is_fulltext_searcher_ready() -> bool {
-    FULLTEXT_SEARCHER.read().map(|g| g.is_some()).unwrap_or(false)
+    fulltext_index_counts()
+        .map(|c| c.total_opened() > 0)
+        .unwrap_or(false)
 }
 
 /// Get the fulltext searcher if initialized.

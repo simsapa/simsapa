@@ -46,6 +46,7 @@ Item {
     signal rebuildSearchIndexCompleted(success: bool, message: string);
     signal storageDiagnosticsCompleted(success: bool, summary: string);
     signal fileSelectionTestCompleted(success: bool, outcome: string);
+    signal importFilePickCompleted(success: bool, uri: string, message: string);
 
     signal debugQueryReady(debug_json: string);
 
@@ -266,6 +267,10 @@ Item {
         return '{"exists": true, "current": true}';
     }
 
+    function get_fulltext_status(): string {
+        return '{"is_valid": true, "state": "ready", "message": "OK", "failure_count": 0, "sutta": {"opened": 1, "dir_present": true}, "dict": {"opened": 1, "dir_present": true}, "library": {"opened": 1, "dir_present": true}}';
+    }
+
     function rebuild_search_index() {
         console.log("rebuild_search_index()");
     }
@@ -278,6 +283,14 @@ Item {
     // this test exists to measure.
     function run_file_selection_test(url: url) {
         console.log("run_file_selection_test()");
+    }
+
+    function log_import_pick(url: url, filter_config: string) {
+        console.log("log_import_pick()");
+    }
+
+    function start_import_raw_pick() {
+        console.log("start_import_raw_pick()");
     }
 
     function start_file_selection_test_raw_pick() {

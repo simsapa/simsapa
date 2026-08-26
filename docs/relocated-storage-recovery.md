@@ -241,6 +241,18 @@ do not add it), `CREATE TABLE` + `DROP TABLE`, close, and delete the file **and
 its `-wal` / `-shm` / `-journal` siblings** on every exit path including failures.
 Cleanup is a `Drop` guard (`ProbeCleanup`), not a happy-path statement.
 
+**A SQLite probe proves only what SQLite uses.** SQLite locks with `fcntl`
+byte-range locks; Tantivy's fulltext index locks with `flock(2)`, which some
+volumes do not implement at all — so a volume can pass this probe, pass Database
+Validation and pass every first-run check while **every fulltext search silently
+returns nothing**. That is a real user-reported bug, and it is why the tier-2
+probe now also runs a `flock` probe and **records** the verdict. It is recorded
+only: a volume that fails just the `flock` test is **never demoted**, because the
+app works on it. See
+[fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md),
+whose §4 also explains why that module's lock-key normalisation avoids
+`canonicalize()` for the same reason `same_path()` does.
+
 File creation is tested *separately* from the SQLite open, because SQLite reports
 "unable to open database file" for a permission problem too and the two failure
 classes must stay distinguishable:

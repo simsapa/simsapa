@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serial_test::serial;
-use simsapa_backend::dictionary_manager_core::{delete_user_dictionary, import_user_zip};
+use simsapa_backend::dictionary_manager_core::{delete_user_dictionary, import_user_dir, import_user_zip};
 use simsapa_backend::get_app_data;
 use simsapa_backend::stardict_parse::StardictImportProgress;
 
@@ -199,15 +199,15 @@ fn empty_abort_removes_zero_entry_row() {
     fs::create_dir_all(&stardict_dir).unwrap();
     write_synthetic_stardict(&stardict_dir, "test", total_entries).expect("write stardict");
 
-    let zip_path = tmp.path().join("test.zip");
-    zip_dir_contents(&stardict_dir, &zip_path).expect("zip");
-
-    // Cancel BEFORE any insert: the importer's between-chunk cancel check
-    // fires on the first iteration, so 0 rows are committed.
+    // Imported from the **directory**, not the zip: the zip path now checks
+    // the cancel flag between extraction entries too, so a pre-set flag there
+    // stops before any dictionaries row is created — which is the case the
+    // test below covers. Here the flag has to survive as far as the first
+    // insert chunk, which is what this test is about.
     let cancel = AtomicBool::new(true);
 
-    let outcome = import_user_zip(&zip_path, label, "en", &|_p| {}, &cancel)
-        .expect("import_user_zip should return Ok on early cancel");
+    let outcome = import_user_dir(&stardict_dir, label, "en", &|_p| {}, &cancel)
+        .expect("import_user_dir should return Ok on early cancel");
 
     assert!(outcome.cancelled, "expected cancelled=true on early abort");
     assert_eq!(outcome.inserted, 0, "expected 0 rows inserted on early abort");
@@ -229,4 +229,50 @@ fn empty_abort_removes_zero_entry_row() {
         .expect("list_dictionaries");
     assert!(!dicts_after.iter().any(|d| d.id == dict_id),
         "0-entry dictionaries row must be removed after empty-abort cleanup");
+}
+
+/// A cancel during the **extraction** stage happens before any database row
+/// exists, so there is nothing to keep and nothing to clean up. The importer
+/// reports `dictionary_id = -1` for that case, which is the bridge's signal to
+/// skip the empty-abort delete rather than ask to remove a row that was never
+/// created.
+#[test]
+#[serial]
+fn cancelling_during_extraction_creates_no_dictionary_row() {
+    h::app_data_setup();
+
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let label = format!("ssp_test_abort_extract_{}", millis);
+
+    let app_data = get_app_data();
+    let before = app_data.dbm.dictionaries
+        .list_dictionaries(Some(true))
+        .expect("list_dictionaries")
+        .len();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-stardict-test-")
+        .tempdir()
+        .expect("tempdir");
+    let stardict_dir = tmp.path().join("sd");
+    fs::create_dir_all(&stardict_dir).unwrap();
+    write_synthetic_stardict(&stardict_dir, "test", 100).expect("write stardict");
+
+    let zip_path = tmp.path().join("test.zip");
+    zip_dir_contents(&stardict_dir, &zip_path).expect("zip");
+
+    let cancel = AtomicBool::new(true);
+    let outcome = import_user_zip(&zip_path, &label, "en", &|_p| {}, &cancel)
+        .expect("a cancel is not an error");
+
+    assert!(outcome.cancelled);
+    assert_eq!(outcome.inserted, 0);
+    assert_eq!(outcome.dictionary_id, -1, "no row was created, so there is no id to report");
+
+    let after = app_data.dbm.dictionaries
+        .list_dictionaries(Some(true))
+        .expect("list_dictionaries")
+        .len();
+    assert_eq!(before, after, "a cancelled extraction must leave no dictionaries row behind");
 }

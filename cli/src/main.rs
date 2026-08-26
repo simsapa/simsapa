@@ -169,7 +169,7 @@ fn import_stardict_zip(zip_path: &Path, label: Option<&str>, lang: &str) -> Resu
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let outcome = import_user_zip(zip_path, &resolved_label, lang, &|p| {
         match p {
-            StardictImportProgress::Extracting => println!("  extracting..."),
+            StardictImportProgress::Extracting { .. } => println!("  extracting..."),
             StardictImportProgress::Parsing => println!("  parsing..."),
             StardictImportProgress::InsertingWords { done, total } => {
                 if total > 0 && (done == 0 || done == total || done % 1000 == 0) {

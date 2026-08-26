@@ -25,6 +25,7 @@ use diesel::{Connection, SqliteConnection};
 
 use crate::logger::{error, info};
 use crate::normalize_path_for_sqlite;
+use crate::search::lenient_directory::probe_flock_support;
 
 /// A distinctive name, so anything left behind by a killed process is
 /// identifiable as ours rather than mistaken for app data.
@@ -144,6 +145,33 @@ pub fn probe_storage_location(dir: &Path) -> Result<(), ProbeFailure> {
 
     // Close before the cleanup guard deletes the file.
     drop(conn);
+
+    // Step 3: record — never judge — whether this location supports the
+    // advisory file locking the search index wants.
+    //
+    // **This must not affect the return value.** The probe's contract is
+    // demote-only (see the module docs and
+    // `docs/relocated-storage-recovery.md`), and a location that fails only the
+    // `flock` test is fully usable: that is the exact case
+    // `crate::search::lenient_directory` exists to handle, and the volume that
+    // reported the bug is fast and otherwise healthy. Demoting on it would take
+    // a working storage location away from the user to fix a problem that is
+    // already fixed.
+    //
+    // The `mmap` verdict is deliberately **not** probed here. It needs a file
+    // large enough to fault past page 0 to mean anything, and this probe's
+    // directory is a user-chosen storage root that may hold nothing at all —
+    // writing an 18 MB file to a card the user is still deciding about is not a
+    // reasonable price for a line in the log. It is logged instead against the
+    // real index directory, once per process, by
+    // `crate::storage_diagnostics::log_storage_capability_verdicts()`.
+    let (flock, flock_elapsed) = probe_flock_support(dir);
+    info(&format!(
+        "probe_storage_location(): {} flock={} ({} ms) — recorded only, never demotes",
+        dir.display(),
+        flock.describe(),
+        flock_elapsed.as_millis(),
+    ));
 
     Ok(())
 }

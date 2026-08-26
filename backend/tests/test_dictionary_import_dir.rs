@@ -17,7 +17,7 @@ use diesel::prelude::*;
 use serial_test::serial;
 use simsapa_backend::db::dictionaries_schema;
 use simsapa_backend::dictionary_manager_core::{
-    delete_user_dictionary, import_user_dir, import_user_zip, scan_source,
+    delete_user_dictionary, import_user_dir, import_user_zip, import_user_zip_member, scan_source,
     suggested_label_for_dir, ScanKind,
 };
 use simsapa_backend::get_app_data;
@@ -169,15 +169,22 @@ fn scan_dir_folder_skips_non_stardict() {
     // A loose file at the root — irrelevant to dir-folder scanning.
     fs::write(root.join("notes.txt"), b"x").unwrap();
 
-    let mut items = scan_source(ScanKind::DirFolder, root).expect("scan_source");
-    items.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+    let mut report = scan_source(ScanKind::DirFolder, root).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
 
+    let items = &report.candidates;
     assert_eq!(items.len(), 2, "only the two valid StarDict folders should be found");
     assert_eq!(items[0].title, "Alpha");
     assert_eq!(items[0].entry_count, 5);
     assert_eq!(items[0].source_kind, "dir");
     assert_eq!(items[1].title, "Beta");
     assert_eq!(items[1].entry_count, 7);
+
+    // The junk folder is no longer dropped silently: it is reported with a
+    // reason, which is what lets the dialog say what it actually found.
+    assert_eq!(report.rejections.len(), 1);
+    assert_eq!(report.rejections[0].reason, "unsupported_format");
+    assert!(report.rejections[0].source_path.ends_with("not-a-dict"));
 }
 
 #[test]
@@ -203,11 +210,303 @@ fn scan_zip_folder_skips_non_stardict() {
     fs::write(junk_dir.join("readme.txt"), b"nothing here").unwrap();
     zip_dir_recursive(&junk_dir, &root.join("junk.zip")).unwrap();
 
-    let items = scan_source(ScanKind::ZipFolder, root).expect("scan_source");
+    let report = scan_source(ScanKind::ZipFolder, root).expect("scan_source");
+    let items = &report.candidates;
     assert_eq!(items.len(), 1, "only the valid StarDict zip should be found");
     assert_eq!(items[0].title, "Good Dict");
     assert_eq!(items[0].entry_count, 9);
     assert_eq!(items[0].source_kind, "zip");
+
+    assert_eq!(report.rejections.len(), 1, "the junk zip must be reported, not dropped");
+    assert_eq!(report.rejections[0].reason, "unsupported_format");
+}
+
+/// A bundle archive — one zip, a folder per dictionary, which is how `-gd`
+/// releases are routinely distributed — must scan to one row per dictionary,
+/// and each row must import **its own** dictionary.
+///
+/// Before this, the probe reported the first `.ifo` in the zip's central
+/// directory and the import extracted everything and took the first `.ifo` the
+/// *filesystem* enumerated. Every other dictionary in the archive was
+/// unreachable, and when the two orders disagreed the user got a dictionary
+/// under a label they had typed for a different one.
+#[test]
+#[serial]
+fn a_bundle_zip_scans_and_imports_one_dictionary_per_member() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-bundle-zip-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    // Two dictionaries with clearly different sizes, so an import that took the
+    // wrong member is visible in the row count and not just in the title.
+    let build = tmp.path().join("build");
+    let alpha = build.join("alpha-dict");
+    let beta = build.join("beta-dict");
+    fs::create_dir_all(&alpha).unwrap();
+    fs::create_dir_all(&beta).unwrap();
+    write_synthetic_stardict(&alpha, "alpha", 5, "Alpha Bundle").unwrap();
+    write_synthetic_stardict(&beta, "beta", 11, "Beta Bundle").unwrap();
+
+    let zip_path = tmp.path().join("all-dictionaries-gd.zip");
+    zip_dir_recursive(&build, &zip_path).expect("zip");
+
+    let mut report = scan_source(ScanKind::SingleZip, &zip_path).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+
+    assert_eq!(
+        report.candidates.len(),
+        2,
+        "a bundle archive must offer every dictionary it holds, not just the first"
+    );
+    assert!(report.rejections.is_empty(), "{:?}", report.rejections);
+
+    assert_eq!(report.candidates[0].title, "Alpha Bundle");
+    assert_eq!(report.candidates[0].entry_count, 5);
+    assert_eq!(report.candidates[0].member.as_deref(), Some("alpha-dict"));
+    // The label comes from the member folder, not the zip's filename — which is
+    // shared, and would make every row a duplicate of the others.
+    assert_eq!(report.candidates[0].suggested_label, "alpha-dict");
+
+    assert_eq!(report.candidates[1].title, "Beta Bundle");
+    assert_eq!(report.candidates[1].entry_count, 11);
+    assert_eq!(report.candidates[1].member.as_deref(), Some("beta-dict"));
+
+    // Import the *second* member. Taking whichever dictionary came first is the
+    // defect under test, so the one asked for must be the one imported.
+    let label = unique_label("ssp_bundle_beta");
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip_member(
+        &zip_path,
+        report.candidates[1].member.as_deref(),
+        &label,
+        "en",
+        &|_p| {},
+        &cancel,
+    )
+    .expect("import_user_zip_member should succeed");
+    assert!(!outcome.cancelled);
+    assert_eq!(
+        outcome.inserted, 11,
+        "the row named Beta must import Beta's 11 entries, not Alpha's 5"
+    );
+
+    let count = app_data
+        .dbm
+        .dictionaries
+        .count_words_for_dictionary(outcome.dictionary_id)
+        .expect("count words");
+    assert_eq!(count, 11);
+
+    delete_user_dictionary(outcome.dictionary_id).expect("delete");
+}
+
+/// A zip holding one dictionary keeps its old behaviour exactly: no member, and
+/// the label still comes from the archive's own filename.
+#[test]
+#[serial]
+fn a_single_dictionary_zip_reports_no_member() {
+    h::app_data_setup();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-single-zip-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    let sd = tmp.path().join("build");
+    fs::create_dir_all(&sd).unwrap();
+    write_synthetic_stardict(&sd, "solo", 4, "Solo Dict").unwrap();
+    let zip_path = tmp.path().join("Concise P-E Dict.zip");
+    zip_dir_recursive(&sd, &zip_path).unwrap();
+
+    let report = scan_source(ScanKind::SingleZip, &zip_path).expect("scan_source");
+    assert_eq!(report.candidates.len(), 1);
+    assert_eq!(report.candidates[0].member, None);
+    assert_eq!(report.candidates[0].suggested_label, "Concise_P-E_Dict");
+}
+
+/// Write `files` into `out_zip` as top-level entries under their own file
+/// names, with the given compression method.
+fn zip_files(out_zip: &Path, files: &[&Path], method: zip::CompressionMethod) -> std::io::Result<()> {
+    let file = fs::File::create(out_zip)?;
+    let mut zw = zip::ZipWriter::new(file);
+    let opts: zip::write::FileOptions<'_, ()> =
+        zip::write::FileOptions::default().compression_method(method);
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        zw.start_file(name, opts)?;
+        zw.write_all(&fs::read(path)?)?;
+    }
+    zw.finish()?;
+    Ok(())
+}
+
+/// Build a two-dictionary bundle of the *nested zip* shape: one `.zip` per
+/// dictionary inside one outer archive. Returns the outer archive's path.
+fn build_nested_bundle(tmp: &Path, method: zip::CompressionMethod) -> std::path::PathBuf {
+    let build = tmp.join("build");
+    let alpha = build.join("alpha");
+    let beta = build.join("beta");
+    fs::create_dir_all(&alpha).unwrap();
+    fs::create_dir_all(&beta).unwrap();
+    write_synthetic_stardict(&alpha, "alpha", 5, "Alpha Nested").unwrap();
+    write_synthetic_stardict(&beta, "beta", 11, "Beta Nested").unwrap();
+
+    let alpha_zip = tmp.join("alpha.zip");
+    let beta_zip = tmp.join("beta.zip");
+    zip_dir_recursive(&alpha, &alpha_zip).unwrap();
+    zip_dir_recursive(&beta, &beta_zip).unwrap();
+
+    let outer = tmp.join("all-dictionaries-gd.zip");
+    zip_files(&outer, &[&alpha_zip, &beta_zip], method).unwrap();
+    outer
+}
+
+/// The second bundle shape: a zip holding **one `.zip` per dictionary** rather
+/// than one folder per dictionary. `all-dictionaries-gd.zip` is built this way,
+/// and the whole archive was rejected with "does not contain a
+/// StarDict/GoldenDict dictionary" while `cone-gd.zip` from the same release
+/// imported fine.
+#[test]
+#[serial]
+fn a_nested_zip_bundle_scans_and_imports_one_dictionary_per_archive() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-nested-bundle-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    // Stored, which is how every measured `-gd` bundle carries its members:
+    // deflating an already-compressed zip gains nothing. This is also the path
+    // that opens the nested archive in place, without copying it out.
+    let outer = build_nested_bundle(tmp.path(), zip::CompressionMethod::Stored);
+
+    let mut report = scan_source(ScanKind::SingleZip, &outer).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+
+    assert!(report.rejections.is_empty(), "{:?}", report.rejections);
+    assert_eq!(
+        report.candidates.len(),
+        2,
+        "a bundle of nested zips must offer every dictionary it holds"
+    );
+
+    assert_eq!(report.candidates[0].title, "Alpha Nested");
+    assert_eq!(report.candidates[0].entry_count, 5);
+    // The nested archive's own filename names the row; the member points back
+    // at the entry it was read from.
+    assert_eq!(report.candidates[0].suggested_label, "alpha");
+    assert_eq!(report.candidates[0].member.as_deref(), Some("alpha.zip!/"));
+
+    assert_eq!(report.candidates[1].title, "Beta Nested");
+    assert_eq!(report.candidates[1].entry_count, 11);
+    assert_eq!(report.candidates[1].member.as_deref(), Some("beta.zip!/"));
+
+    // Import the second one: a row that imported whichever nested archive came
+    // first would insert 5 entries here, not 11.
+    let label = unique_label("ssp_nested_beta");
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip_member(
+        &outer,
+        report.candidates[1].member.as_deref(),
+        &label,
+        "en",
+        &|_p| {},
+        &cancel,
+    )
+    .expect("import_user_zip_member should succeed");
+    assert!(!outcome.cancelled);
+    assert_eq!(outcome.inserted, 11);
+
+    let count = app_data
+        .dbm
+        .dictionaries
+        .count_words_for_dictionary(outcome.dictionary_id)
+        .expect("count words");
+    assert_eq!(count, 11);
+
+    delete_user_dictionary(outcome.dictionary_id).expect("delete");
+}
+
+/// A nested archive that is *deflated* cannot be seeked in place, so it is
+/// copied out first. Same candidates, same import — only the route differs.
+#[test]
+#[serial]
+fn a_deflated_nested_zip_bundle_is_read_by_copying_it_out() {
+    h::app_data_setup();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-nested-deflated-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    let outer = build_nested_bundle(tmp.path(), zip::CompressionMethod::Deflated);
+
+    let mut report = scan_source(ScanKind::SingleZip, &outer).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+    assert!(report.rejections.is_empty(), "{:?}", report.rejections);
+    assert_eq!(report.candidates.len(), 2);
+    assert_eq!(report.candidates[1].title, "Beta Nested");
+    assert_eq!(report.candidates[1].entry_count, 11);
+
+    let label = unique_label("ssp_nested_deflated");
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip_member(
+        &outer,
+        report.candidates[1].member.as_deref(),
+        &label,
+        "en",
+        &|_p| {},
+        &cancel,
+    )
+    .expect("import_user_zip_member should succeed");
+    assert_eq!(outcome.inserted, 11);
+
+    delete_user_dictionary(outcome.dictionary_id).expect("delete");
+}
+
+/// A nested archive that is not a dictionary is reported as **one member** of
+/// the bundle, never as the bundle: an MDict among twelve good dictionaries
+/// must not read as "this archive is not a dictionary".
+#[test]
+#[serial]
+fn a_non_dictionary_nested_zip_is_rejected_by_name() {
+    h::app_data_setup();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-nested-mdict-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    let build = tmp.path().join("build");
+    let good = build.join("good");
+    let bad = build.join("bad");
+    fs::create_dir_all(&good).unwrap();
+    fs::create_dir_all(&bad).unwrap();
+    write_synthetic_stardict(&good, "good", 3, "Good Nested").unwrap();
+    fs::write(bad.join("dict.mdx"), b"not a stardict").unwrap();
+
+    let good_zip = tmp.path().join("good.zip");
+    let bad_zip = tmp.path().join("mdict.zip");
+    zip_dir_recursive(&good, &good_zip).unwrap();
+    zip_dir_recursive(&bad, &bad_zip).unwrap();
+
+    let outer = tmp.path().join("mixed-gd.zip");
+    zip_files(&outer, &[&good_zip, &bad_zip], zip::CompressionMethod::Stored).unwrap();
+
+    let report = scan_source(ScanKind::SingleZip, &outer).expect("scan_source");
+    assert_eq!(report.candidates.len(), 1);
+    assert_eq!(report.candidates[0].title, "Good Nested");
+    assert_eq!(report.rejections.len(), 1);
+    assert_eq!(
+        report.rejections[0].message,
+        "\"mixed-gd.zip\" contains \"mdict.zip\", which is an MDict dictionary (.mdx)."
+    );
 }
 
 /// PRD §4.6 req. 25 (task 5.2/5.5): a built-in StarDict import
@@ -274,3 +573,5 @@ fn suggested_label_for_dir_sanitises() {
     assert_eq!(suggested_label_for_dir(Path::new("/tmp/my.dotted.folder")), "my_dotted_folder");
     assert_eq!(suggested_label_for_dir(Path::new("/tmp/__weird__")), "weird");
 }
+
+

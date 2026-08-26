@@ -1,15 +1,48 @@
 # PRD — Robust file-picker URL handling (fixing the Chromebook "Path not found" import failure)
 
 - **Date:** 2026-07-31
-- **Amended:** 2026-08-06 — see §2.1, §2.1a and §4A
-- **Status:** Draft — not yet implemented. Split into **two phases**:
-  - **Phase 1 — the "File Selection Test" button (§4A).** A diagnostic that
-    changes no import behaviour, shipped in the same build as **Run Storage
-    Diagnostics** (`tasks/2026-08-05-201545-prd---run-storage-diagnostics.md`)
-    and sent to the same user, who reports both. **This is what gets
-    implemented first.**
-  - **Phase 2 — the fix (§5 onwards).** Blocked on phase 1's data, exactly as
-    the fulltext-index fix is blocked on the storage diagnostics.
+- **Amended:** 2026-08-06 — see §2.1, §2.1a and §4A;
+  **2026-08-25 — phase-1 report received, see §4A.6**;
+  **2026-08-26 — phase 1b implemented, see the status below and §11 Q0a**
+- **Status:** Split into **two phases**:
+  - **Phase 1 — the "File Selection Test" button (§4A). Complete.** Shipped in
+    the same build as **Run Storage Diagnostics**
+    (`tasks/2026-08-05-201545-prd---run-storage-diagnostics.md`) and reported by
+    the same user on 2026-08-25. **Results and their consequences: §4A.6.**
+  - **Phase 1b — IMPLEMENTED 2026-08-26**, by
+    `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
+    (tasks 4.0–7.0). It kept E-4, E-7 and E-14…E-17 and **replaced the two-pick
+    measurement (E-8…E-13) with an automatic fallback to the raw picker**: the
+    import works whichever suspect is right, and the fallback firing is itself
+    the measurement. What shipped:
+
+    | | |
+    |---|---|
+    | **E-4** | `nameFilters` dropped on Android only, gated on `Qt.platform.os === "android"` (not `is_mobile`), `[]` being the value that yields `setType("*/*")` and no extras |
+    | **E-7** | the empty-URL guard, in `handle_picked_url()` so *every* pick goes through one place, with its own message distinct from "Could not access the selected file." |
+    | **fallback** | announced in a `Dialog` first, then the raw `ACTION_OPEN_DOCUMENT` intent; the recovered URI is staged **as a string**, never re-wrapped in the `QUrl` conversion under suspicion; one global slot with a `RawPickConsumer` discriminator stored *with* the thread handle |
+    | **E-14…E-17** | a `DICTIONARY-IMPORT-PICK:` block through the **same** `picker_url.rs` builder — one report shape, two prefixes; no 4 MB read on the import path (E-16); desktop byte-identical in effect (E-17) |
+    | **Reqs. 10, 17b–17d** | staging moved off the UI thread into `backend/src/import_staging.rs`, 1 MB chunks, determinate progress, keep-screen-on holders |
+    | **Reqs. 18, 21, 21a, 24** | per-feature staging folder, ownership decided by **location**, deleted at every exit, free-space pre-check |
+    | **Reqs. 15, 23, 25, 30** | URL-scheme rejection in `scan_source`; the probe no longer extracts (`.ifo`-only); path-traversal guard with a hand-built hostile archive as its test |
+    | **Req. 26** | verified: `android/AndroidManifest.xml` byte-identical |
+
+    Documentation: `docs/dictionary-import-pipeline.md`.
+    **§11 Q0a was amended**: the "confined to the diagnostic" term for the
+    private-Qt include is explicitly dropped, with the reason and the surviving
+    terms.
+
+    **Still not verified: the device behaviour.** Whether the fallback fires is
+    the measurement, and only the reporting user's log can take it.
+  - **Phase 2 — the fix (§5 onwards). Still blocked, and now for a different
+    reason.** Phase 1 did **not** reproduce the empty URL: the picker, the
+    `QUrl` conversion and the provider read all worked. §5 fixes Defects A–D,
+    and **none of them is what blocks the reporting user**. Phase 1b took the
+    §5 requirements that stand on their own evidence (listed above); what
+    remains blocked is the **four-call-site shared-resolver migration**
+    (Reqs. 1–7a, 13, 14, 14a, 16, 27–29) — correct engineering with no known
+    victim, belonging in its own build where a desktop regression is not riding
+    alongside a fulltext fix.
 - **Reported by:** A Chromebook user importing a StarDict `.zip` via the Dictionaries window
 - **Same user as the storage report.** `feedback-and-bug-reports/log-chromebook.txt`
   carries *both* failures: the `scan_source` errors at `:127-128` and the
@@ -162,6 +195,15 @@ ARC picker's URI does not parse as a valid `QUrl`, the result is an **empty
 with an empty `selectedFile`, which is exactly the observed behaviour. The whole
 file emits **no `qWarning` at all**, so the loss is silent.
 
+> **Refuted by measurement, 2026-08-25 — see §4A.6.** The mechanism below is
+> sound in the abstract, but it is **not** what happened on the reporting
+> device: the ARC picker returned
+> `content://org.chromium.arc.volumeprovider/…/all-dictionaries-gd.zip`, and
+> `QUrl(QString)` — the same TolerantMode constructor — accepted it as **valid**.
+> The `QUrl` conversion is cleared. Of the three candidates below, the
+> **second** (`nameFilters` → `setType`/`EXTRA_MIME_TYPES`) is now the leading
+> one, and the diagnostic deliberately did not exercise it.
+
 This is sufficient to explain the report, and it makes the first of the earlier
 candidates the leading one. All three are kept because none is yet *proven* on
 the device:
@@ -285,11 +327,13 @@ candidate's `source_path` for the later import step. Two problems:
    so the cleanup is very likely a silent no-op and staged files accumulate
    indefinitely.
 
-   > **Contradicted by measurement, 2026-08-07 — see §11 Q4.** On an Android 16
-   > device the two roots are **identical**
-   > (`/data/user/0/<pkg>/cache/simsapa-imports`). Claim 2 above was never
-   > verified; D-12 was written to settle it and did. Claim 1 (the shared folder
-   > being wiped by an unrelated import) is untouched by this and still stands.
+   > **Contradicted by measurement, 2026-08-07 and again 2026-08-25 — see §11
+   > Q4.** On an Android 16 phone **and** on the reporting Chromebook (ARC,
+   > API 33) the two roots are **identical**
+   > (`/data/user/0/<pkg>/cache/simsapa-imports`, `staging_roots_differ: no`).
+   > Claim 2 above was never verified; D-12 was written to settle it and did, on
+   > both platforms. **Req. 20 is a non-issue.** Claim 1 (the shared folder being
+   > wiped by an unrelated import) is untouched by this and still stands.
 
 ### 2.6 The four duplicated call sites
 
@@ -582,6 +626,312 @@ report what the picker returned before any `QUrl` existed.
 | non-empty | **valid** | The picker and the conversion are both fine, so the loss is **downstream of Qt's dialog** — the leading remaining suspect is the `nameFilters` → `setType`/`EXTRA_MIME_TYPES` mapping that D-3a deliberately does not exercise. This is the case that earns a second round trip with a Qt-`FileDialog` run. Take the scheme and encoding lines to the table above. |
 | **empty**, branch = `cancelled` | — | The user backed out of the picker. Not a finding; ask for another run. |
 | **empty**, branch = `no-uri` / `no-intent` | — | The picker reported success but returned no URI at all — a case Qt's helper drops silently. The failure is in the ARC picker or the intent, upstream of every URL question in this PRD. |
+
+## 4A.6 Phase-1 results returned (2026-08-25) — read before touching §5
+
+The user ran the File Selection Test five times and sent back three log files
+(`feedback-and-bug-reports/rechromebookstoragetesting/`). Environment: **ChromeOS
+151.0.7922.168 (64-bit)**, Simsapa 1.0.0-alpha.6, Android **API 33**.
+
+### 4A.6.1 What came back
+
+Run 1 of the 21:21 log was `cancelled` (no URI — correctly reported as such, not
+as a fault). The other **four runs all carried a real URI, and every one of them
+was clean**:
+
+```
+raw_branch:            intent-getData
+raw_uri:               content://org.chromium.arc.volumeprovider/0000000000000000000000000000CAFEF00D2019/Documenti/Dizionari/all-dictionaries-gd.zip
+qurl_of_raw_is_valid:  yes
+url_empty_or_invalid:  no
+url_encoded:           …identical to url_decoded…
+encoding_differs:      no
+url_scheme:            content
+url_host:              org.chromium.arc.volumeprovider
+branch:                Provider { scheme: "content" }
+provider_opened:       true
+provider_display_name: all-dictionaries-gd.zip
+provider_size:         180735851
+provider_bytes_read:   4194304   (cap reached)
+provider_open_ms:      2–8
+provider_read_ms:      6–15
+```
+
+A second URI shape appeared in the 14:23 log, from Downloads:
+`content://org.chromium.arc.volumeprovider/download/all-dictionaries-mdict.zip`
+— same verdicts throughout.
+
+### 4A.6.2 The decision gate — §4A.5 raw-intent table, row 2
+
+> **non-empty raw URI + `QUrl(raw)` valid** → *"The picker and the conversion are
+> both fine, so the loss is downstream of Qt's dialog — the leading remaining
+> suspect is the `nameFilters` → `setType`/`EXTRA_MIME_TYPES` mapping that D-3a
+> deliberately does not exercise. This is the case that earns a second round trip
+> with a Qt-`FileDialog` run."*
+
+**The empty URL did not reproduce, and §2.1a's leading hypothesis is refuted for
+these URIs.** Point by point:
+
+- **Defect E's cause is still unknown**, but the candidate set has narrowed to
+  *one variable*: the difference between the intent Qt builds and the intent the
+  diagnostic builds.
+- **`QUrl(uri.toString())` is not the culprit for this provider.** The raw string
+  was handed through cxx-qt-lib's `QUrl::from(&QString)` — the same
+  `QUrl(QString)` TolerantMode constructor Qt uses at
+  `qandroidplatformfiledialoghelper.cpp:48` — and came back **valid**. The URIs
+  carry no percent-encoding at all: plain, readable path segments.
+- **Defect B is not demonstrated, again.** `encoding_differs: no` on all four
+  runs, on both URI shapes. §9.5's premise that "a ChromeOS pick carries a deeply
+  encoded document id" is **wrong for `org.chromium.arc.volumeprovider`** — it
+  emits nothing that needs encoding. Combined with the Android-16 phone
+  measurement (§11 Q5), Defect B now has **no observed instance on any device**.
+- **Defect A.1 is not demonstrated, and Q2 is answered.** ChromeOS returned
+  `content://`, not `externalfile:`. The *host* is Chrome's own provider
+  (`org.chromium.arc.volumeprovider`), which is the kind of thing A.1 worried
+  about — but the scheme is `content`, so the existing QML gate at
+  `DictionaryImportDialog.qml:179` would have passed it.
+- **Defect C is refuted as a blocker.** D-9's
+  `ContentResolver.openInputStream` opened the Chrome provider, read
+  `DISPLAY_NAME` and size, and streamed 4 MB in **6–15 ms** — from a ChromeOS
+  volume, not a sandbox. The provider read path works and is fast.
+- **Defect D.2 is settled, on ARC as well.** `staging_roots_differ: no`, both
+  `/data/user/0/io.github.simsapa.app/cache/simsapa-imports`. This closes §11
+  Q4: **Req. 20 is a non-issue** and Req. 21a keeps only its "nothing ever
+  deletes the staged copy" half. Staging folder absent, 102 GiB free.
+
+### 4A.6.3 What is left, and what the next round trip must isolate
+
+Every step downstream of *"a URI exists"* is proven to work on the reporting
+device. The loss therefore happens **inside Qt's `FileDialog` path**, between the
+ARC picker returning a document and QML seeing `selectedFile`. Reading
+`qandroidplatformfiledialoghelper.cpp` (6.9.3 kit, verified locally) against
+`cpp/android_raw_pick.cpp`, there are exactly **four** deltas, in priority order:
+
+1. **The MIME filter — the leading suspect.**
+   `nameFilters: ["StarDict archives (*.zip)"]` goes through
+   `nameFilterExtensions()` → `QMimeDatabase::mimeTypeForFile("*.zip", MatchExtension)`
+   → `setType("application/zip")` **and** `EXTRA_MIME_TYPES = ["application/zip"]`
+   (`:146-179`). The diagnostic sets `*/*` and no `EXTRA_MIME_TYPES`
+   (`android_raw_pick.cpp:167-174`) — deliberately, per D-3/D-3b, and that is
+   precisely the variable it therefore cannot discriminate.
+2. **`takePersistableUriPermission()`** (`:47`, called *before* the append).
+   Qt's intent never sets `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`
+   (`getFileDialogIntent`, `:181-187`), so this call is expected to throw
+   `SecurityException` on essentially every pick. **It is probably not the
+   cause** — `callMethod<void>` clears pending exceptions
+   (`qjniobject.h:141-144`), so `uri.toString()` afterwards is unaffected — but
+   it is a real defect in Qt's helper and worth stating so it is not
+   re-investigated from scratch.
+3. **`EXTRA_INITIAL_URI`** via `setInitialDirectoryUri(m_directory.toString())`
+   (`:227`), which the diagnostic does not set.
+4. **The `getClipData` branch** (`:56-71`), which the diagnostic reports
+   separately. Note it calls `m_selectedFile.constFirst()` **unconditionally**
+   after the loop — a crash if `getItemCount()` is 0 — and appends a `QString` to
+   a `QList<QUrl>`. Not our observed failure (the app did not crash), but it is
+   the second unguarded path in the same function.
+
+**The next round trip is therefore narrow and cheap:** a File Selection Test
+variant that runs **Qt's `FileDialog`**, once with `nameFilters:
+["StarDict archives (*.zip)"]` and once with none, logging the same
+`PickerUrlFacts` block. Two presses, and suspect 1 is either confirmed or
+eliminated. This is exactly the cost D-3a recorded as accepted, now come due.
+
+**Do not begin §5.** Phase 2 as drafted fixes Defects A–D, and the report shows
+**none of them is what blocks this user**. Migrating four call sites to a shared
+resolver is still correct engineering (Goals 2–4) and should happen eventually,
+but it would ship, be sent to this user, and leave them exactly as broken —
+which is the outcome §4A.1 exists to prevent.
+
+### 4A.6.4 An unrelated fault found in the same screenshots — wrong archive format
+
+The user's picker screenshot shows them selecting **`all-dictionaries-mdict.zip`**,
+and the 14:23 log confirms it was one of the files tested. **MDict is not
+StarDict**, so that import was doomed regardless of every URL defect in this PRD.
+
+They also have **`all-dictionaries-gd.zip`** in `Documenti/Dizionari`, and its
+source is known: it **is StarDict format** — the `-gd` suffix names GoldenDict,
+which *reads* StarDict, rather than naming a format of its own (confirmed with
+the user, 2026-08-25). **This file should import successfully the moment the
+picker hands over a path**, which makes it the right file for any retry: a
+failure with it is a picker or import fault, with no format ambiguity to argue
+about. A retry using the MDict archive would produce an ambiguous result and
+must not be asked for.
+
+The test-run order suggests the user cannot tell the two apart: `gd` (14:14,
+14:15, 14:17), then `mdict` (14:24), then `gd` again (14:27) — having been asked
+to pick "the same file that would not import". That confusion is the user-facing
+cost of the silent rejection below.
+
+The app handles this badly, and the fault is in the backend, not the picker:
+`probe_zip_candidate` (`backend/src/dictionary_manager_core.rs:459`) returns
+`None` on **any** failure — a non-StarDict archive, a corrupt zip, a full disk,
+an extraction error — and `scan_source` then returns `Ok(vec![])`. QML shows
+*"No StarDict dictionaries were found in the chosen source."*
+(`DictionaryImportDialog.qml:154`), which is true but tells the user nothing
+about **why**, and is indistinguishable from a genuine failure. Worse, the probe
+extracts the entire archive — 177 MB here — before discarding it silently
+(Req. 25's second extraction, paid to learn nothing).
+
+**Reading MDict is out of scope and has been dropped** (decided with the user,
+2026-08-25): the reporting user knows they need StarDict and was only guessing
+by trying the other file. What *is* in scope is **naming the format** so the
+guess is not silent — planned as task 7.0 of
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`,
+which also carries §5 Req. 15's URL-scheme rejection. It rides on that list's
+task 5.1 (the probe reads the archive's entry list instead of extracting it), so
+the format can be named without unpacking 177 MB first.
+
+## 4A.7 Phase 1b — the speculative fix and its measurement, in one build
+
+**Added 2026-08-25, decided with the user.** §4A.6.3 leaves exactly one
+untested variable and one plausible one-line fix for it. Rather than choose
+between shipping the fix blind and spending another round trip purely to
+measure, this build does **both**, arranged so that neither can hide the other's
+answer. Requirements are numbered `E-n`.
+
+### 4A.7.1 The principle that keeps them from confounding
+
+The speculative fix and the measurement touch the **same** setting —
+`nameFilters` on a `FileDialog` — in the same build. If the diagnostic derived
+its filter from the import dialog, removing it there would silently change what
+the test measures, and the build would come back unfalsifiable. Hence:
+
+- **E-1.** The diagnostic must construct its filter configuration from its
+  **own literals**, never by reading `DictionaryImportDialog`'s property or a
+  shared constant. The duplication is deliberate and must carry a comment
+  saying so.
+- **E-2.** The diagnostic must exercise **both** configurations in the same
+  build regardless of what the import dialog now does, so the report is
+  conclusive whether or not the speculative fix worked.
+- **E-3.** Every logged block must state which picker and which filter
+  configuration produced it, on its own line — extending D-8(h)'s labelling
+  rule:
+
+  ```
+  FILE-SELECTION-TEST: picker: Qt FileDialog
+  FILE-SELECTION-TEST: filter_config: nameFilters = ["StarDict archives (*.zip)"]
+  ```
+
+  and, for the existing Android path, `filter_config: none (raw intent, */*)`.
+  A block without both lines is not comparable to any other block.
+
+### 4A.7.2 The speculative fix
+
+- **E-4.** `DictionaryImportDialog.qml`'s `file_dialog` (`:170-174`) must drop
+  `nameFilters` **on Android only**; desktop keeps
+  `["StarDict archives (*.zip)"]`, where the filter is a genuine convenience and
+  where no defect has ever been observed. This is the change that might simply
+  make the user's import work.
+- **E-5.** It must be a **single, clearly-marked, trivially revertible** edit,
+  commented with what it is testing and pointing at this section. If the report
+  clears the filter, the line goes back.
+- **E-6.** The dialog's `title` must still say what is wanted ("Choose StarDict
+  .zip"), since with no filter the picker now shows every file. **No new
+  validation is added here** — an archive that is not StarDict is
+  `scan_source`'s business, and the message for it is the separate work of
+  §4A.6.4.
+- **E-7.** The empty-URL guard is now allowed to ship (§4A.4 already permits the
+  D-13 wording early, and it is the one thing that made the original report
+  unreadable): if `selectedFile` is empty or invalid, show *"The file chooser
+  did not return a file."* and **never** call `scan_source` with an empty
+  string. It must not be conflated with the `content://` branch's existing
+  *"Could not access the selected file."*
+
+### 4A.7.3 The measurement
+
+- **E-8.** A second button, **"File Selection Test (Qt picker)"**, must be added
+  to `AboutDialog.qml`'s button column, directly beneath the existing "File
+  Selection Test". The existing button is unchanged and keeps the raw-intent
+  path (D-3a) — it is what produced the clean baseline in §4A.6.1 and must stay
+  comparable across builds.
+- **E-9.** On Android the new button opens **Qt's `FileDialog`** — the same
+  class the import dialog uses, through the same
+  `QAndroidPlatformFileDialogHelper`. The QML plumbing for this already exists
+  and is currently unreachable on Android (`AboutDialog.qml:110-113`,
+  `:133-156`); it is a branch change, not new machinery. On desktop the new
+  button behaves as the existing one already does, so a maintainer can see the
+  report shape locally.
+- **E-10.** One press must run **two picks in sequence**: first with
+  `nameFilters: ["StarDict archives (*.zip)"]`, then, when that pick completes
+  or is cancelled, with **no** `nameFilters`. Each pick produces its own
+  complete block (E-3). This is a deliberate, documented exception to D-3a's
+  one-press-one-picker rule: here the two pickers *are* the measurement, and
+  splitting them across two buttons invites the user to press one and not the
+  other.
+- **E-11.** The user must be told, before the first picker opens, that they will
+  be asked for the same file twice. A short dialog with **Continue** /
+  **Cancel** is sufficient; without it the second picker reads as a bug.
+- **E-12.** A cancelled or empty first pick must **not** abort the sequence. The
+  second pick still runs, and its block still records what happened. An empty
+  *filtered* pick followed by a good *unfiltered* one is the single most
+  informative outcome this build can return, and it is precisely the case where
+  a naive implementation would stop early.
+- **E-13.** The on-screen outcome (D-6) must summarise **both** picks in one
+  dialog — one line each, labelled "with .zip filter" and "no filter" — so the
+  user can report what they saw without reading the log.
+
+### 4A.7.4 Make the real import self-diagnosing
+
+The strongest lesson of §4A.6 is that a test button measures the test button.
+The user's *actual* failing action is a dictionary import, and it produces no
+usable evidence at all.
+
+- **E-14.** `DictionaryImportDialog.qml`'s `file_dialog.onAccepted` must log the
+  same `PickerUrlFacts` block that the diagnostic does, under a distinct prefix
+  (`DICTIONARY-IMPORT-PICK:`), before anything else happens to the URL. Same
+  backend entry point, same report shape — a second report shape is forbidden by
+  the same reasoning as §11 Q0a's terms of reversal.
+- **E-15.** It must log on the **failure** path too, including the empty-URL
+  case of E-7. A failed import that writes nothing is what produced this PRD.
+- **E-16.** This block must **not** perform the diagnostic's provider read: the
+  import is about to materialize the file for real, and reading 4 MB first would
+  double a slow Drive-backed stream. Record the URL facts and the branch; leave
+  `provider_*` to the staging step that follows.
+- **E-17.** The logging must not change import behaviour on any platform. It is
+  observation only, and desktop must be byte-identical in effect.
+
+### 4A.7.5 Decision gate for phase 1b
+
+| Import now works? | Filtered pick | Unfiltered pick | Conclusion |
+|---|---|---|---|
+| **yes** | empty | non-empty | **`nameFilters` was the bug.** E-4 is the fix; make it permanent, and consider whether Qt's `setType`/`EXTRA_MIME_TYPES` mapping warrants an upstream report. §5's Defects A–D revert to ordinary engineering debt with no known victim. |
+| **yes** | non-empty | non-empty | The filter was *not* the mechanism, yet removing it helped — suspicious. Re-read the `DICTIONARY-IMPORT-PICK:` block: the failure has moved downstream, into staging or `scan_source`, and §4A.6.4's format question becomes the leading candidate. |
+| **no** | empty | non-empty | The filter breaks the *picker* but something else breaks the *import*. Two faults. Take the import block to §4A.5's original table. |
+| **no** | non-empty | non-empty | **Neither the filter nor the URL is the problem**, and the loss is elsewhere in Qt's helper — suspects 2–4 of §4A.6.3. This is the outcome that justifies reading `takePersistableUriPermission` and the `getClipData` branch properly, and possibly an upstream Qt bug report. |
+| **no** | empty | empty | Qt's `FileDialog` returns nothing on this device *whatever* the filter, while the raw intent works perfectly. The fix becomes: **bypass Qt's `FileDialog` on Android for imports**, reusing the raw-intent capture that phase 1 already proved — and §11 Q0a's "confined to the diagnostic" term must then be revisited deliberately, not by drift. |
+
+### 4A.7.6 How this section is actually being built
+
+**Amended 2026-08-25.** The implementation task list is
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`,
+and it makes one deliberate substitution: **E-8…E-13's two-pick measurement is
+replaced by an automatic fallback** (its task 6.3). The import opens Qt's
+`FileDialog` as today; if the URL comes back empty, it says so in one sentence
+and retries with the raw `ACTION_OPEN_DOCUMENT` picker that phase 1 proved works
+on this device.
+
+The reason is that the two designs answer different questions and only one of
+them fixes the user's problem in the same build. E-8…E-13 measure which suspect
+is responsible; the fallback makes the import work *whichever* suspect is
+responsible, and the fallback **firing** is the measurement — logged under
+`DICTIONARY-IMPORT-PICK:`. E-1's non-confounding rule survives in a simpler
+form: the two picker paths are already separately implemented, so nothing
+derives its configuration from the other.
+
+**E-4, E-7 and E-14…E-17 are kept as written.** E-1…E-3's labelling discipline
+carries over to the fallback logging. The trade-off is that the *filtered vs
+unfiltered* comparison is no longer run head-to-head — task 6.1 removes the
+filter and the log records whether the fallback was still needed, which answers
+the same question one build later without a round trip.
+
+### 4A.7.7 Phase-1b non-goals
+
+- **Migrating the four call sites of §2.6.** Still phase 2, still blocked.
+- **Any change to `strip_file_scheme` / `file_url_to_path`** beyond E-7's guard.
+- **Any new Android permission**, and `android/AndroidManifest.xml` stays
+  byte-identical (Req. 26 — E-9 uses Qt's own dialog, which needs nothing).
+- **Format detection for non-StarDict archives** — §4A.6.4, filed separately.
+- **Removing `nameFilters` on desktop.**
 
 ## 5. Functional Requirements (phase 2 — blocked on §4A)
 
@@ -1017,9 +1367,12 @@ Resolved since the first draft (kept for the record):
   shows an **empty** path (§2.1). The claim that the shipped error message
   "already embeds the offending path" was true but useless: the path it embedded
   was the empty string. This is the correction that produced §2.1a and §4A.
-- **Q2 — does ChromeOS still emit `externalfile:`?** **Still open, and no longer
-  answerable from the shipped build.** The URL never reaches Rust, so nothing
-  prints it. Phase 1's D-8(d) is now the only way to find out.
+- **Q2 — does ChromeOS still emit `externalfile:`?** ~~Still open~~ —
+  **ANSWERED 2026-08-25: no.** Four measured picks on the reporting Chromebook
+  all returned `content://`, hosted by `org.chromium.arc.volumeprovider`, from
+  both Downloads and a My-files subfolder (§4A.6.1). **Defect A.1 has no
+  observed instance.** Req. 4(c) is still worth writing — it costs one branch and
+  removes a whole class of question — but it is not the fix for this user.
 - **Q3 — should messages offer a workaround?** *Yes.* Req. 14a, scoped to the two
   failure reasons where it helps.
 - **Q4 — is a size guard needed?** No RAM guard; disk is the constraint. §5.5.
@@ -1029,13 +1382,27 @@ Resolved since the first draft (kept for the record):
 
 Still open:
 
-0. **Why is `selectedFile` empty?** (§2.1a.) The central question, and the one
-   phase 1 exists to answer. Now has a **source-level mechanism** —
-   `QUrl(uri.toString())` at `qandroidplatformfiledialoghelper.cpp:48` producing
-   an empty `QUrl` while `accept()` is emitted anyway — but it is not yet proven
-   on the device. D-3's unfiltered `FileDialog` discriminates the `nameFilters`
-   candidate; the direct-intent capture (tasks 3.10-3.14) discriminates the
-   `QUrl`-conversion one.
+0. **Why is `selectedFile` empty?** (§2.1a.) **Still the central question, and
+   still open — but the candidate set is now one variable wide.** Phase 1's
+   report (§4A.6) shows the ARC picker returning a perfectly ordinary
+   `content://` URI that `QUrl(QString)` accepts, and every downstream step
+   working. So the §2.1a mechanism is **refuted for this provider's URIs**, and
+   the loss is inside Qt's `FileDialog` configuration: the
+   `nameFilters` → `setType`/`EXTRA_MIME_TYPES` mapping is the leading suspect,
+   with `takePersistableUriPermission`, `EXTRA_INITIAL_URI` and the `getClipData`
+   branch behind it (§4A.6.3). The next step is a Qt-`FileDialog` variant of the
+   test, run with and without the `.zip` filter.
+
+   *Historical note:* this entry previously read "Now has a **source-level
+   mechanism** — `QUrl(uri.toString())` at
+   `qandroidplatformfiledialoghelper.cpp:48` producing an empty `QUrl` while
+   `accept()` is emitted anyway — but it is not yet proven on the device." It was
+   measured, and it is not what happened. Of the two discriminators the entry
+   named — D-3's unfiltered `FileDialog` for the `nameFilters` candidate, and the
+   direct-intent capture (tasks 3.10-3.14) for the `QUrl`-conversion one — **only
+   the second shipped**, because D-3a replaced the `FileDialog` with the raw
+   intent on Android. It cleared its suspect. The first is now the outstanding
+   one.
 0a. **Should the diagnostic launch its own `ACTION_OPEN_DOCUMENT`?** Raised
    2026-08-06 by the review. It is the **only** way to see the raw URI, because
    Qt destroys it before app code runs (§2.1a). It uses Qt private API
@@ -1105,6 +1472,41 @@ Still open:
      never a second report shape;
    - the module comment records that the private include is deliberate, scoped,
      and expected to be **deleted** once the report comes back.
+
+   **REVISED 2026-08-26 — the first term is dropped, deliberately.** The report
+   came back (§4A.6) and answered the question the other way round: through the
+   raw intent every one of the four real picks on the reporting Chromebook was
+   clean, while Qt's `FileDialog` on the same device returns nothing. So the
+   dictionary import now **falls back** to this picker when Qt's chooser hands
+   it an empty URL (implementation task list task 6.3), and the private include
+   is on a shipping path.
+
+   This is a decision, not drift. The alternative to the dependency is a user
+   who cannot import a dictionary at all, which is the defect this PRD was
+   opened for. What the reversal costs is bounded and was already measured in
+   point 2 above: `Qt6::CorePrivate` adds include paths, not a library, and a
+   future break is a **compile error at upgrade time** on ~80 lines of
+   `#ifdef`-gated code in **one** file.
+
+   The other three terms stand, and one is added:
+
+   - the include stays in `cpp/android_raw_pick.cpp` **alone**, so the blast
+     radius is exactly what was measured;
+   - both callers feed the **same** `PickerUrlFacts` pipeline; the import's
+     block differs only by its prefix (`DICTIONARY-IMPORT-PICK:`) and by not
+     performing the provider read (E-16);
+   - the module comment records the scope and the reason — it no longer says
+     "delete once the report comes back", because the report is back and the
+     answer was to keep it;
+   - **new:** the single global result slot carries a **consumer
+     discriminator** (`RawPickConsumer` in `bridges/src/sutta_bridge.rs`), so a
+     diagnostic pick and an import pick cannot be delivered to the wrong
+     listener. No second parallel mechanism.
+
+   The dependency is still removable: if the returned log shows the fallback
+   never firing once `nameFilters` is gone (task 6.1), then the filter was the
+   whole bug, Qt's dialog is sufficient, and this file can go back to being
+   diagnostic-only — or be deleted.
 1. **`delete_temp_import_folder` signature change (Req. 19)** is a breaking change
    to an existing bridge function. Its only callers are
    `DocumentImportDialog.qml:360` and `:376` (verified 2026-07-31) — re-confirm
@@ -1130,6 +1532,13 @@ rather than an answer about the bug.
    stands on its own and is unaffected). The returning Chromebook block carries
    these same two lines, so it answers this for free — read them even though
    they are not what the round trip was for.
+
+   **ANSWERED 2026-08-25: it holds on ARC.** All five Chromebook runs report
+   `staging_roots_differ: no`, both roots
+   `/data/user/0/io.github.simsapa.app/cache/simsapa-imports`. **§2.5's claim 2
+   is false on every device measured, and Req. 20 is a non-issue.** §2.5 carries
+   the correction inline. Claim 1 — an unrelated document import wiping the
+   shared folder — is untouched and still stands, so Req. 18/19 remain.
 5. **Does `encoding_differs` ever come back `true`?** (§2.3.) §2.3 asserts that
    `String(url)` "percent-decodes and corrupts the URI". Qt's `toString()`
    defaults to `PrettyDecoded`, which does **not** decode `%2F` or `%3A` inside
@@ -1143,6 +1552,16 @@ rather than an answer about the bug.
    demonstrate it. Do **not** "fix" the report if the two forms come back the
    same; that is data. (Recorded as one of the four normal states in
    `docs/file-selection-test.md` §6.)
+
+   **ANSWERED 2026-08-25: no, not once.** `encoding_differs: no` on all four
+   Chromebook picks, across two URI shapes. And the ChromeOS URIs are not merely
+   *tolerant* of decoding — they carry **no percent-encoding at all**
+   (`content://org.chromium.arc.volumeprovider/<volume>/Documenti/Dizionari/all-dictionaries-gd.zip`),
+   which directly contradicts §9.5's "deeply encoded document id" premise for
+   this provider. **Defect B now has no observed instance on any device.** It
+   remains real on the write path §2.3 cites, and Req. 3's `to_encoded()` is
+   still the correct discipline — but it is not this bug, and §2.3's blanket
+   claim should not be repeated as though it were established.
 6. **Do Qt's `FileDialog` and a plain `ACTION_OPEN_DOCUMENT` reach the same
    picker on ChromeOS?** Created by D-3a: since the Android test launches the
    app's own intent, it no longer exercises the path the import actually uses.
@@ -1151,6 +1570,23 @@ rather than an answer about the bug.
    measuring the same thing and the §4A.5 raw-intent rows must be read with that
    caveat. This is the known, accepted cost of D-3a, written down here so it is
    not rediscovered as a surprise when the report arrives.
+
+   **The cost came due, 2026-08-25.** The raw intent reached a picker that works
+   perfectly (§4A.6.1), while the import through Qt's `FileDialog` returns
+   nothing — so the two paths demonstrably do **not** behave the same on this
+   device, and the difference between them is now the whole remaining question
+   (§4A.6.3). The user's screenshot shows the ChromeOS **Files** window for the
+   raw intent; we do not know what the import dialog showed them.
+
+7. **Is the phase-1 on-screen line too alarming?** The user reported *"The file
+   picker returned a file from another app (scheme: content)"* as **"the
+   error"** they got. It is not an error — `outcome_line()`
+   (`backend/src/picker_url.rs:862`) emits it for a **successful** provider
+   pick, and the run it came from read the file fine. No change is needed to the
+   throwaway diagnostic, but it is a live lesson for Req. 13: a message that
+   names a scheme reads as a fault to a non-developer even when the sentence is
+   neutral. Phase 2's wording should state the *outcome* first and keep the
+   scheme as the parenthetical aside §7 already asks for.
 
 ## Appendix A — Diagnostic requests for the reporting user
 

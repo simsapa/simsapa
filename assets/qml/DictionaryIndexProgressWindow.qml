@@ -56,6 +56,8 @@ ApplicationWindow {
         anchors.margins: 16
         spacing: 12
 
+        Item { Layout.fillHeight: true }
+
         Label {
             id: stage_label
             text: root.stage_text

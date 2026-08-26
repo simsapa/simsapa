@@ -105,8 +105,125 @@ ColumnLayout {
     // generic "No results found." empty state. Defaults true so QML preview /
     // desktop tooling are unaffected.
     property bool db_ready: true
+    // "Suttas", "Dictionary" or "Library" — which area the current results
+    // belong to. Used to pick the per-area block of the fulltext status, so a
+    // failure is only reported to the user when it is a failure of the area
+    // they actually searched.
+    property string search_area: ""
+    // The search mode the current results came from, exactly as the search
+    // parameters spell it ("Fulltext Match", "Combined", "Contains Match",
+    // "Title Match", "DPD Lookup", "Headword Match").
+    //
+    // Only the Tantivy-backed modes may be told that the index is at fault. The
+    // others go through FTS5/SQLite and work perfectly on a volume where every
+    // Tantivy index failed to open — that is the reporting user's exact
+    // configuration, and telling them a Contains Match found nothing "because
+    // the search index could not be opened" is a fabricated diagnosis of a
+    // search that never touched the index. Fulltext PRD FR-23 scopes the
+    // message to FulltextMatch/Combined for this reason.
+    property string search_mode: ""
+    // Set by check_fulltext_index_problem() when a page comes back empty and
+    // the index for this area could not be opened. Empty string means "no
+    // index problem to report", which is the overwhelmingly common case.
+    property string fulltext_problem_message: ""
+    // Returns the parsed fulltext status object (see
+    // SuttaBridge.get_fulltext_status), or null when unavailable. Supplied by
+    // the parent so this component need not import the bridge.
+    property var fulltext_status_fn: null
     property alias currentIndex: fulltext_list.currentIndex
     property alias currentItem: fulltext_list.currentItem
+
+    // Distinguish "no results" from "the index could not be opened".
+    //
+    // Only ever called when a page came back with no rows, so it costs nothing
+    // on the normal path. It must **not** fire merely because an area has no
+    // index: a user who never downloaded a language has no fault to report, and
+    // telling them the index is broken would send them to Rebuild Search Index
+    // for nothing.
+    //
+    // The gate is therefore the backend's `state`, not a zero count:
+    // `could_not_open` means index directories exist, indexes were attempted,
+    // and every one of them failed. See backend/src/fulltext_status.rs.
+    //
+    // It is the **searched area's** state, not the whole app's. The top-level
+    // one reads `ready` as soon as anything opened anywhere, so a user whose
+    // sutta indexes open and whose dictionary indexes all fail would be back to
+    // a silent "No results found." on every dictionary search — the same defect,
+    // narrowed to one area. The whole-app state is the fallback for a search
+    // area this component cannot map (there is none today).
+    //
+    // The status arrives through a callback rather than a direct SuttaBridge
+    // call, because this component deliberately does not import the bridge —
+    // its `import com.profoundlabs.simsapa` is commented out so it stays usable
+    // in QML preview, and everything else it needs is likewise passed down.
+    // Same shape as new_results_page_fn.
+    function check_fulltext_index_problem() {
+        root.fulltext_problem_message = "";
+
+        // The mode gate comes first: a mode that does not read the Tantivy
+        // index has nothing to say about it, however broken it is. See
+        // `search_mode` and `uses_fulltext_index()`.
+        if (!root.uses_fulltext_index()) {
+            return;
+        }
+
+        if (!root.fulltext_status_fn) {
+            return;
+        }
+
+        const status = root.fulltext_status_fn(); // qmllint disable use-proper-function
+        if (!status) {
+            return;
+        }
+
+        // The area's own block when the search area maps to one, the whole-app
+        // verdict otherwise. Both carry a ready-made sentence: every
+        // user-facing string this feature can emit is written in
+        // backend/src/fulltext_status.rs, so that one file can be checked for
+        // jargon — and so is every decision about *when* to speak.
+        //
+        // An empty per-area message means "say nothing", which is the normal
+        // case. Do not add conditions here: an area that opened some indexes and
+        // failed on others has working search and incomplete results, and that
+        // sentence is one the backend already knows how to write.
+        const area = root.area_status(status);
+        const message = area
+            ? area.message
+            : (status.state === "could_not_open" ? status.message : "");
+        if (message.length === 0) {
+            return;
+        }
+
+        root.fulltext_problem_message = message
+            + " Open Database Validation from the menu for details.";
+    }
+
+    // Does the mode that produced these results read the Tantivy index at all?
+    //
+    // An **allowlist**, not a denylist of the FTS5 modes: a mode added later
+    // stays silent by default, which is the failure that costs nothing. The
+    // reverse — a new FTS5 mode silently inheriting "the search index could not
+    // be opened" — is the defect this gate exists to prevent.
+    //
+    // "Combined" is included because the Dictionary combined page's third
+    // stream is a Fulltext Match (see
+    // docs/search-snippet-highlight-pipeline.md §9). An empty mode (QML
+    // preview, or a page produced before any search) is treated as not using
+    // the index, so the message never appears without a search behind it.
+    function uses_fulltext_index(): bool {
+        return root.search_mode === "Fulltext Match" || root.search_mode === "Combined";
+    }
+
+    // The status block for the area that was just searched, or null when the
+    // area does not map to one.
+    function area_status(status) {
+        switch (root.search_area) {
+        case "Suttas":     return status.sutta;
+        case "Dictionary": return status.dict;
+        case "Library":    return status.library;
+        default:           return null;
+        }
+    }
 
     function set_search_result_page(search_result_page) {
         // SearchResultPage { total_hits, page_len, page_num, results,
@@ -329,16 +446,30 @@ ColumnLayout {
         // Reset scroll position — the model was cleared above, so any
         // previous scroll offset references items that no longer exist.
         fulltext_list.positionViewAtBeginning();
+
+        // An empty page is the only case where the index's health is worth
+        // asking about.
+        if (results_model.count === 0) {
+            root.check_fulltext_index_problem();
+        } else {
+            root.fulltext_problem_message = "";
+        }
     }
 
     Text {
         id: empty_state
-        // When records matched (total_hits > 0) but this page has no rows, every
-        // snippet on the page was removed by the exclusion filter — name it
-        // instead of the generic "No results found.".
-        text: (root.total_hits > 0 && root.snippet_exclude_terms.trim().length > 0)
-            ? "Results from this page were excluded by the filter: " + root.snippet_exclude_terms.trim()
-            : "No results found."
+        // Three distinguishable empty states, most specific first:
+        //   1. the index could not be opened — nothing was searched at all;
+        //   2. records matched but every snippet on this page was removed by
+        //      the exclusion filter — name the filter;
+        //   3. the ordinary "No results found.".
+        // Conflating (1) with (3) is what let a user run silently empty
+        // searches for a whole session believing the texts simply had no match.
+        text: root.fulltext_problem_message.length > 0
+            ? root.fulltext_problem_message
+            : ((root.total_hits > 0 && root.snippet_exclude_terms.trim().length > 0)
+                ? "Results from this page were excluded by the filter: " + root.snippet_exclude_terms.trim()
+                : "No results found.")
         // Don't show "No results found." while the DB is still loading — the
         // loading_state overlay shows the logo + "Loading..." instead.
         visible: root.db_ready && !root.is_loading && results_model.count === 0

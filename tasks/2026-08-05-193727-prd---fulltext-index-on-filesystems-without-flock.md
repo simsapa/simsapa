@@ -1,20 +1,71 @@
 # PRD — Fulltext search on storage volumes that do not support `flock()` (SD cards)
 
 **Date:** 2026-08-05
-**Status:** Draft — **blocked on phase 1**, not yet implemented
+**Status:** **IMPLEMENTED 2026-08-26** — §4.1–§4.6 (FR-1…FR-36) are in the tree
+and shipped in the beta build. §4.7 (FR-37…FR-45, the removable-volume
+performance notice) is the **only** part not implemented, and is deferred
+deliberately; see §10.2. **Device confirmation is still outstanding** (success
+metrics 1–6 and 9 need the reporting user's log — the diagnostic pre-satisfied
+1–3 through the wrapper, but not through the real call sites).
+**Task list:**
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
+— tasks 1.0–3.0 implement §4.1–§4.6 and add the no-slowdown benchmark.
+**Documentation:** `docs/fulltext-index-storage-and-file-locking.md` (written as
+required by §7, framed around filesystems without `flock` per §10.3).
+
+**What implementation added beyond the requirements**, each because tracing the
+flows found a gap the PRD did not anticipate:
+
+- **`ReloadPolicy::Manual` (FR-17) turned a latent staleness window into a hard
+  dependency, and one call site had to be fixed to meet it.**
+  `DictionaryManager::start_reconcile()` mutated the dictionary index and never
+  called `reinit_fulltext_searcher()` — it had been silently relying on the
+  500 ms `meta.json` poll FR-17 removes. FR-17's premise ("every index mutation
+  is already followed by an explicit reinit") was *not quite true*; there are
+  five in-app mutation sites and this was the exception.
+- **Opening the searcher had to be serialised.** `begin_open_session()` clears
+  the FR-19 failure list, so two concurrent openers can leave zero indexes open
+  *and* zero failures recorded — which FR-30's classifier then reports as
+  "index files not found" over a volume whose indexes are all present and all
+  failed to open. `SEARCHER_OPEN_LOCK` in `backend/src/lib.rs`.
+- **FR-23…FR-26 needed two more axes than "all three areas".** A user whose
+  sutta indexes open and whose dictionary indexes all fail, and a user whose
+  `suttas/en` opens while `suttas/pli` fails, were both back to a silent "No
+  results found." Per-area and partial-area states were added; an **empty
+  per-area message is the whole instruction to stay silent**.
+- **FR-23's mode scoping was missing and mattered.** Contains Match, Title
+  Match, Headword Match and DPD Lookup all go through FTS5/SQLite and work
+  perfectly on the affected volume, so without a mode gate a genuinely empty
+  Contains Match would have read *"The search index could not be opened."* —
+  a fabricated diagnosis, the same dishonesty this PRD exists to remove, pointed
+  the other way. Implemented as an **allowlist** (`Fulltext Match`, `Combined`).
+- **FR-27's Validation row needed `is_valid` and `state` to answer different
+  questions.** `is_valid` meaning "search works at all" reported a partly-open
+  index as clean; it now means *everything that should have opened, opened*.
+- **FR-11 (`Index::open`) silently dropped Tantivy's schema-equality check.**
+  `open_or_create` returned `SchemaError` on a mismatch; `Index::open` takes
+  whatever is on disk. `INDEX_VERSION` is now the **only** guard, and is
+  recorded as such on the constant and in the doc.
 **Phase:** 2 of 2. Phase 1 is
-`2026-08-05-201545-prd---run-storage-diagnostics.md`, which ships a
+`2026-08-05-201545-prd---run-storage-diagnostics.md`, which shipped a
 behaviour-neutral **"Run Storage Diagnostics"** action that measures the
 assumptions this PRD rests on — including running the candidate wrapper
 end-to-end on an affected device.
 
-**Do not begin implementing this PRD until phase 1 has returned data from a
-real affected device.** Phase 1's §9 decision gate says what each outcome means;
-in particular, if `mmap` does not work on those volumes, the wrapper designed
-here is necessary but **not sufficient**, and §4.1 needs redesigning before any
-of it is written. Phase 1 also *implements* the probes (FR-8, FR-34..36) and the
-wrapper (FR-1..FR-16) in their final locations, wired only into the diagnostic —
-so phase 2 is largely a matter of switching the real call sites over.
+**Phase 1 has returned.** An affected ChromeOS device ran the diagnostic on
+2026-08-25 and landed on **row 1** of phase 1's §9 decision gate — `flock`
+unsupported (**ENOSYS 38**), **`mmap` ok**, and the candidate wrapper returned
+**real search hits on every populated index**. *Diagnosis and fix both
+confirmed; proceed with this PRD as written.* §4.1 needs no redesign and
+§4.6's go/no-go is answered **go**. The measurements are in phase 1's §12; what
+they change here is in **§10** below — read it before starting, because it
+retires one premise (§4.7's "SD cards are slow") and answers three of the §9
+open questions.
+
+Phase 1 also *implemented* the probes (FR-8, FR-34..36) and the wrapper
+(FR-1..FR-16) in their final locations, wired only into the diagnostic — so
+phase 2 is largely a matter of switching the real call sites over (FR-9), plus
+the honest-reporting and UI work of §4.2–§4.4.
 
 ## 1. Introduction / Overview
 
@@ -521,3 +572,94 @@ the full analysis behind FR-11 through FR-18 and FR-34..36.
    so a failure is visible before the user opens Database Validation?
 5. **Retention of the ChromeOS `scan_source` defect** — filed separately as noted
    in Non-Goals; confirm the separate PRD exists before closing this one.
+
+---
+
+## 10. What phase 1's report changes here (2026-08-25)
+
+Full measurements: phase 1 PRD §12. Raw material:
+`feedback-and-bug-reports/rechromebookstoragetesting/`. Device: ChromeOS
+**151.0.7922.168**, Simsapa 1.0.0-alpha.6, Android API 33, storage on a
+**`fuse`** external volume (statfs magic `0x65735546`).
+
+### 10.1 Confirmed, and now measured rather than inferred
+
+- **The `flock` diagnosis is right at the primitive level**, not merely inferred
+  from tantivy's error text: section B's direct `try_lock_exclusive()` probe
+  returned `unsupported(38 ENOSYS)` in 19.6 ms.
+- **§4.6's go/no-go is `go`.** `mmap` worked on an 18 MB `.pos` segment file,
+  with reads forced at offsets 0, 9,064,365 and 18,128,731 — i.e. faulting well
+  past page 0, which is the case a `direct_io` FUSE mount fails. **FR-36's
+  fallback plan (a non-mmap `pread`-backed `Directory`) is not needed and should
+  not be written.**
+- **The wrapper of §4.1 works on the affected hardware.** All six index
+  directories opened through `LenientLockMmapDirectory` and returned real hits
+  (`dict_words/pli`: 539,569 docs, 2,227 hits for *nirodha* in 328.6 ms).
+  Success metrics 1–3 are effectively pre-satisfied by the diagnostic; what
+  remains is FR-9, wiring the real call sites.
+- **FR-4a's distinction paid off with the good answer, explicitly.** Every one of
+  the six directories reported the lock route as *"fell back after an
+  unsupported-operation errno (38 ENOSYS)"* — never *"fell back after some other
+  `IoError`"*. The fallback is working around an unsupported primitive, not
+  masking an unwritable volume.
+- **FR-11 is confirmed as hygiene, not fix.** Section D shows
+  `MmapDirectory::open` **ok** → `Index::open` **ok** → `index.reader()`
+  **FAILED**, exactly as §7 predicted. `Index::open` takes no lock.
+- **FR-19..FR-22 are justified by one report.** In the same session, section F
+  reported **0 sutta / 0 dictionary / 0 library** indexes open with 6 failures,
+  while section E opened all six and searched them successfully. The user's
+  searches were silently empty throughout.
+
+### 10.2 Retired premise — §4.7's removable-volume performance notice
+
+**§4.7 was written around a slow microSD card. The device that reported the bug
+is neither an SD card nor slow.** Measured on it:
+
+| Operation | Time |
+|---|---|
+| `mmap` probe (18 MB segment) | 94.6 ms |
+| Reader build through the wrapper | 77–628 ms per index |
+| Search (`nirodha`, 539k-doc index) | 328.6 ms |
+| Whole diagnostic run (D + E = 12 opens, 12 searches) | 3.4 s |
+
+Consequences, to be decided before §4.7 is implemented rather than during:
+
+1. **We still have no measurement of a slow affected volume.** §4.7's closing
+   note already forbids stating a slowdown factor we have not measured; the
+   honest position now is that we have not measured a slowdown *at all*.
+2. **`is_removable` was the right gate and remains so** (FR-38) — it is a
+   property of the volume, not of its speed, and the notice's job is expectation
+   setting. But the *wording* of FR-43 should not assert that searches will be
+   slower as though it were established. Prefer "may be slower".
+3. **§4.7 is separable.** It shares no code with FR-1..FR-22 and blocks nothing.
+   If it is not wanted on the same evidence footing as the rest, split it into
+   its own task set and ship the fix first — the fix is what the reporting users
+   are waiting for.
+
+### 10.3 Scope widened — this is not an "SD card" bug
+
+§1 and the Non-Goals are framed around SD cards. The one device that has
+actually been measured is a **ChromeOS external volume in ARCVM over FUSE**. The
+mechanism (`flock` → `ENOSYS`) is identical, so no requirement changes, but the
+user-facing wording of FR-25, FR-28 and FR-30 must not say "SD card" — say
+"this storage location". The doc required by §7 (`docs/fulltext-index-storage-and-file-locking.md`)
+should be titled and framed around **filesystems without `flock`**, listing
+ChromeOS/ARCVM and portable SD cards as two instances of one class.
+
+### 10.4 §9 open questions, updated
+
+1. **`mmap` on this mount** — **RESOLVED: works.** See §10.1.
+2. **Which volumes are affected** — **ChromeOS/ARCVM confirmed affected**, by
+   direct measurement. Portable Android SD card remains confirmed from the
+   earlier log. Adopted storage and USB-OTG remain unknown; FR-33's startup log
+   line is still the way to collect them.
+3. **Should the notice state a measured cost?** — **No, and it cannot.** See
+   §10.2. The only affected device measured is fast.
+4. **Fulltext row in `StartupDbReport`** — still open, and now better supported:
+   the reporting user found the failure only because we sent them a diagnostic
+   button. A startup-report row would have surfaced it unprompted.
+5. **The `scan_source` defect's separate PRD** — confirmed to exist:
+   `tasks/2026-07-31-180502-prd---picker-url-handling-and-chromebook-import-failure.md`.
+   Its phase 1 shipped in the same build and its report came back in the same
+   round trip; see that PRD's §4A.6. **It is a different bug and is not fixed by
+   this one.** This question can be closed.

@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use core::pin::Pin;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QUrl};
 use cxx_qt::{CxxQtType, Threading};
 
 use serde::Serialize;
@@ -32,6 +32,13 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+
+        // The picked file arrives as a `QUrl`, not a string: on Android it is a
+        // provider URI whose only usable form is `to_encoded()`, and going
+        // through a `QString` loses that distinction
+        // (`docs/android-file-saving-saf.md`).
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -46,13 +53,25 @@ pub mod qobject {
     extern "RustQt" {
         // Mutating operations (run on a worker thread, emit signals).
         #[qinvokable]
-        fn import_zip(self: Pin<&mut DictionaryManager>, zip_path: &QString, label: &QString, lang: &QString) -> QString;
+        fn import_zip(self: Pin<&mut DictionaryManager>, zip_path: &QString, member: &QString, label: &QString, lang: &QString) -> QString;
 
         #[qinvokable]
         fn import_dir(self: Pin<&mut DictionaryManager>, dir_path: &QString, label: &QString, lang: &QString) -> QString;
 
         #[qinvokable]
         fn scan_source(self: Pin<&mut DictionaryManager>, kind: &QString, path: &QString) -> QString;
+
+        #[qinvokable]
+        fn stage_picked_file(self: Pin<&mut DictionaryManager>, url: &QUrl) -> QString;
+
+        #[qinvokable]
+        fn stage_picked_uri(self: Pin<&mut DictionaryManager>, uri: &QString) -> QString;
+
+        #[qinvokable]
+        fn abort_staging(self: Pin<&mut DictionaryManager>);
+
+        #[qinvokable]
+        fn cleanup_staged_file(self: &DictionaryManager, path: &QString) -> bool;
 
         #[qinvokable]
         fn abort_import(self: Pin<&mut DictionaryManager>);
@@ -139,6 +158,21 @@ pub mod qobject {
         #[cxx_name = "importFailed"]
         fn import_failed(self: Pin<&mut DictionaryManager>, message: QString);
 
+        // Staging: copying a picked file into a local temp copy the scanner can
+        // open. `total` is 0 when the source will not say how big it is, which
+        // QML renders as an indeterminate bar rather than as 0%.
+        #[qsignal]
+        #[cxx_name = "stagingProgress"]
+        fn staging_progress(self: Pin<&mut DictionaryManager>, done_bytes: f64, total_bytes: f64);
+
+        #[qsignal]
+        #[cxx_name = "stagingFinished"]
+        fn staging_finished(self: Pin<&mut DictionaryManager>, path: QString);
+
+        #[qsignal]
+        #[cxx_name = "stagingFailed"]
+        fn staging_failed(self: Pin<&mut DictionaryManager>, message: QString);
+
         #[qsignal]
         #[cxx_name = "scanFinished"]
         fn scan_finished(self: Pin<&mut DictionaryManager>, items_json: QString);
@@ -182,6 +216,12 @@ pub mod qobject {
 }
 
 pub struct DictionaryManagerRust {
+    /// Cooperative cancellation flag for the in-flight staging copy, checked
+    /// between 1 MB chunks. Separate from `import_cancel`: staging and importing
+    /// are different stages with different cancel buttons, and one flag could be
+    /// set by the wrong screen.
+    pub staging_cancel: Arc<AtomicBool>,
+
     /// Cooperative cancellation flag for the in-flight import worker.
     /// Reset to `false` at the start of each `import_zip` call and flipped
     /// to `true` by `abort_import`. The worker checks it between insert
@@ -192,6 +232,7 @@ pub struct DictionaryManagerRust {
 impl Default for DictionaryManagerRust {
     fn default() -> Self {
         Self {
+            staging_cancel: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -252,7 +293,9 @@ fn compute_label_status(label_str: &str) -> String {
 
 fn stardict_progress_to_signal(p: &StardictImportProgress) -> (String, i32, i32) {
     match p {
-        StardictImportProgress::Extracting => ("Extracting".to_string(), 0, 0),
+        StardictImportProgress::Extracting { done, total } => {
+            ("Extracting".to_string(), *done as i32, *total as i32)
+        }
         StardictImportProgress::Parsing => ("Parsing".to_string(), 0, 0),
         StardictImportProgress::InsertingWords { done, total } => {
             ("Inserting words".to_string(), *done as i32, *total as i32)
@@ -303,9 +346,21 @@ fn reconcile_progress_to_signal(p: &ReconcileProgress) -> (String, i32, i32) {
 }
 
 impl qobject::DictionaryManager {
-    fn import_zip(self: Pin<&mut Self>, zip_path: &QString, label: &QString, lang: &QString) -> QString {
+    /// `member` is the checklist row's own `member` value, verbatim: empty for
+    /// an archive holding a single dictionary, or the member folder of one
+    /// dictionary inside a bundle archive. QML must pass back what the scan
+    /// reported and never derive it — see `import_user_zip_member`.
+    ///
+    /// An empty string maps to "the whole archive". That collapses one rare
+    /// case — a bundle with a dictionary loose at the archive root *and* others
+    /// in folders, whose root member the probe reports as `""` — into extracting
+    /// the whole archive for that one row. It still imports the right
+    /// dictionary, because `locate_stardict_dir` looks at the root before the
+    /// subfolders; it is only less economical.
+    fn import_zip(self: Pin<&mut Self>, zip_path: &QString, member: &QString, label: &QString, lang: &QString) -> QString {
         let qt_thread = self.qt_thread();
         let zip_path = PathBuf::from(zip_path.to_string());
+        let member = member.to_string();
         let label = label.to_string();
         let lang = lang.to_string();
 
@@ -324,7 +379,8 @@ impl qobject::DictionaryManager {
                 });
             };
 
-            match dictionary_manager_core::import_user_zip(&zip_path, &label, &lang, &on_progress, &cancel) {
+            let member_opt = if member.is_empty() { None } else { Some(member.as_str()) };
+            match dictionary_manager_core::import_user_zip_member(&zip_path, member_opt, &label, &lang, &on_progress, &cancel) {
                 Ok(outcome) if outcome.cancelled => {
                     let inserted = outcome.inserted as i32;
                     let msg = if outcome.inserted == 0 {
@@ -334,7 +390,13 @@ impl qobject::DictionaryManager {
                         // returned and released `DICT_MGR_LOCK`), NOT inside
                         // `import_user_zip` — `delete_user_dictionary` re-acquires
                         // the same `try_lock` and would return BUSY.
-                        if let Err(e) = dictionary_manager_core::delete_user_dictionary(outcome.dictionary_id) {
+                        //
+                        // A cancel during the *extraction* stage happens before
+                        // any row exists and reports `dictionary_id = -1`; there
+                        // is nothing to delete, and asking would only log a
+                        // "not a user-imported dictionary" error.
+                        if outcome.dictionary_id > 0
+                            && let Err(e) = dictionary_manager_core::delete_user_dictionary(outcome.dictionary_id) {
                             error(&format!(
                                 "Empty-abort cleanup failed for dictionary id {}: {}",
                                 outcome.dictionary_id, e
@@ -460,10 +522,14 @@ impl qobject::DictionaryManager {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {
             match dictionary_manager_core::scan_source(scan_kind, &path) {
-                Ok(items) => {
-                    let json = serde_json::to_string(&items).unwrap_or_else(|e| {
+                // A `ScanReport` object, not the bare array this used to send:
+                // it carries `rejections` alongside `candidates`, so the dialog
+                // can say *why* nothing was found instead of "No StarDict
+                // dictionaries were found in the chosen source."
+                Ok(report) => {
+                    let json = serde_json::to_string(&report).unwrap_or_else(|e| {
                         error(&format!("scan_source serialize: {}", e));
-                        "[]".to_string()
+                        "{\"candidates\":[],\"rejections\":[]}".to_string()
                     });
                     let json_qs = QString::from(&json);
                     crate::queue_or_log(&qt_thread, "dictionary_manager::scan_source", move |mut qo| {
@@ -481,6 +547,152 @@ impl qobject::DictionaryManager {
         });
 
         QString::from("ok")
+    }
+
+    /// Copy a picked file into a local staging copy, off the UI thread.
+    ///
+    /// Replaces the synchronous `SuttaBridge.copy_content_uri_to_temp` on the
+    /// dictionary path. That one read the whole archive into a single
+    /// `QByteArray` **on the GUI thread** (`cpp/utils.cpp`), which at 180 MB is
+    /// seconds of frozen UI and an ANR risk on a slow provider.
+    ///
+    /// Returns `"ok"` when the worker started; the outcome arrives on
+    /// `stagingFinished` / `stagingFailed`, with `stagingProgress` in between.
+    /// A desktop `file://` pick is not copied at all — it finishes immediately
+    /// with the user's own path.
+    fn stage_picked_file(self: Pin<&mut Self>, url: &QUrl) -> QString {
+        // Read the QUrl here, on the thread that owns it: it is not `Send`, and
+        // `to_encoded()` is the only form `Uri.parse` accepts.
+        let request = simsapa_backend::import_staging::StagingRequest {
+            encoded_url: String::from_utf8_lossy(url.to_encoded().as_slice()).to_string(),
+            scheme: url.scheme().map(|s| s.to_string()).unwrap_or_default(),
+            local_path: crate::sutta_bridge::qurl_to_local_path(url),
+            feature: simsapa_backend::import_staging::DICTIONARY_FEATURE,
+        };
+
+        self.spawn_staging(request)
+    }
+
+    /// Stage a file the **raw** `ACTION_OPEN_DOCUMENT` picker returned.
+    ///
+    /// Takes the picker's own string rather than a `QUrl`. The fallback exists
+    /// precisely because Qt's `FileDialog` loses these URIs somewhere between
+    /// the picker and QML, so routing the recovered string back through a
+    /// `QUrl` would reintroduce the one conversion under suspicion. `Uri.parse`
+    /// on the Android side wants the string anyway.
+    fn stage_picked_uri(self: Pin<&mut Self>, uri: &QString) -> QString {
+        let uri = uri.to_string();
+        let scheme = match uri.find("://") {
+            // `://`, never a bare `:` — `C:/Users/…` is a Windows path.
+            Some(i) => uri[..i].to_ascii_lowercase(),
+            None => String::new(),
+        };
+        // A raw pick on Android always yields `content://`; a `file://` one is
+        // handled for completeness and anything else is left to the staging
+        // layer's `unsupported_scheme` error.
+        let local_path = if scheme == "file" {
+            // Through `QUrl`, not by trimming the prefix: `file:///C:/x` is
+            // `C:/x` and not `/C:/x`, and percent-escapes have to come back out.
+            // `qurl_to_local_path` is the same conversion the Qt-side entry
+            // point uses, so both pickers hand the staging layer the same shape
+            // of path.
+            crate::sutta_bridge::qurl_to_local_path(&QUrl::from(&QString::from(&uri)))
+        } else if scheme.is_empty() {
+            uri.clone()
+        } else {
+            String::new()
+        };
+
+        let request = simsapa_backend::import_staging::StagingRequest {
+            encoded_url: uri,
+            scheme,
+            local_path,
+            feature: simsapa_backend::import_staging::DICTIONARY_FEATURE,
+        };
+
+        self.spawn_staging(request)
+    }
+
+    /// The worker half shared by both staging entry points.
+    fn spawn_staging(
+        self: Pin<&mut Self>,
+        request: simsapa_backend::import_staging::StagingRequest,
+    ) -> QString {
+        info(&format!(
+            "stage_picked_file: scheme={} url={}",
+            if request.scheme.is_empty() { "none" } else { &request.scheme },
+            request.encoded_url,
+        ));
+
+        // Reset before the worker starts: a cancel from a previous staging must
+        // not kill the new one.
+        let cancel = self.rust().staging_cancel.clone();
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            // Throttled rather than per chunk: a 1 MB chunk of a fast local
+            // copy can complete in under a millisecond, and a queued signal per
+            // chunk would then cost more than the copy. The final state is
+            // carried by `stagingFinished`, so a dropped intermediate report
+            // loses nothing.
+            let mut last_report = Instant::now();
+            let mut progress = |done: u64, total: u64| {
+                if last_report.elapsed() < Duration::from_millis(100) {
+                    return;
+                }
+                last_report = Instant::now();
+                crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                    qo.as_mut().staging_progress(done as f64, total as f64);
+                });
+            };
+
+            match simsapa_backend::import_staging::stage_picked_url(&request, &cancel, &mut progress) {
+                Ok(staged) => {
+                    info(&format!(
+                        "stage_picked_file: ready at {} ({} bytes, copied={})",
+                        staged.path.display(),
+                        staged.bytes,
+                        staged.was_copied,
+                    ));
+                    let path_qs = QString::from(&staged.path.to_string_lossy().to_string());
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                        qo.as_mut().staging_finished(path_qs);
+                    });
+                }
+                Err(e) => {
+                    error(&format!("stage_picked_file failed: {}", e));
+                    let msg_qs = QString::from(&e.user_message());
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                        qo.as_mut().staging_failed(msg_qs);
+                    });
+                }
+            }
+        });
+
+        QString::from("ok")
+    }
+
+    /// Cooperative cancel for the staging copy. The worker checks the flag
+    /// between chunks, deletes the partial copy and reports through
+    /// `stagingFailed` with the cancelled reason — one outcome path, not two.
+    fn abort_staging(self: Pin<&mut Self>) {
+        self.rust().staging_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Remove a staged copy once the import that needed it has ended.
+    ///
+    /// Safe to call with any path: the backend removes the file only if it is
+    /// inside the dictionary staging folder, so a desktop pick — the user's own
+    /// archive, never copied — is left alone. Until this existed nothing ever
+    /// deleted a staged dictionary archive, so every import left 10–200 MB
+    /// behind for good.
+    fn cleanup_staged_file(&self, path: &QString) -> bool {
+        let p = PathBuf::from(path.to_string());
+        simsapa_backend::import_staging::cleanup_staged_file(
+            &p,
+            simsapa_backend::import_staging::DICTIONARY_FEATURE,
+        )
     }
 
     fn abort_import(self: Pin<&mut Self>) {
@@ -775,6 +987,16 @@ impl qobject::DictionaryManager {
             if let Err(e) = dict_index_reconcile::reconcile_dict_indexes(on_progress) {
                 error(&format!("reconcile_dict_indexes failed: {:#}", e));
             }
+
+            // The dict index has just been mutated, so the open searcher is
+            // holding stale segments. This is **required**, not belt-and-braces:
+            // the readers are built with `ReloadPolicy::Manual`, so nothing
+            // picks the change up on its own. `reconcile_dict_indexes_blocking_c()`
+            // in `backend/src/lib.rs` already did this; this path did not, and
+            // was silently relying on the reader's old 500 ms `meta.json` poll.
+            // See `docs/fulltext-index-storage-and-file-locking.md`.
+            simsapa_backend::reinit_fulltext_searcher();
+
             info("start_reconcile: complete");
             crate::queue_or_log(&qt_thread, "dictionary_manager::start_reconcile", move |mut qo| {
                 qo.as_mut().reconcile_finished();

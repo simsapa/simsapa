@@ -37,6 +37,47 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// survive a truncated paste.
 pub const LOG_PREFIX: &str = "FILE-SELECTION-TEST:";
 
+/// Prefix on the block the **real dictionary import** writes.
+///
+/// The same report shape as the diagnostic's, under its own greppable prefix, so
+/// a returned log can be searched for the user's actual failing action rather
+/// than only for a test button they may never press.
+pub const IMPORT_LOG_PREFIX: &str = "DICTIONARY-IMPORT-PICK:";
+
+/// Which caller a report block belongs to.
+///
+/// One report builder, two callers — never a second report shape. The variant
+/// decides the log prefix and whether the block is allowed to *read* the picked
+/// document: the diagnostic reads a capped prefix of it to prove the stream
+/// delivers bytes, while the import is about to copy the whole file for real and
+/// must not read it twice (a Drive-backed pick streams over the network).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PickReport {
+    /// The About dialog's "File Selection Test" button.
+    #[default]
+    Diagnostic,
+    /// The dictionary import's own pick, logged as it happens.
+    DictionaryImport,
+}
+
+impl PickReport {
+    /// The greppable prefix every line of this block carries.
+    pub fn log_prefix(&self) -> &'static str {
+        match self {
+            PickReport::Diagnostic => LOG_PREFIX,
+            PickReport::DictionaryImport => IMPORT_LOG_PREFIX,
+        }
+    }
+
+    /// Whether this block may open and read the picked document.
+    pub fn reads_document(&self) -> bool {
+        match self {
+            PickReport::Diagnostic => true,
+            PickReport::DictionaryImport => false,
+        }
+    }
+}
+
 /// The facts Qt can state about a picked URL, extracted on the calling thread
 /// and owned, so the measurement can move to a worker (`QUrl` is not `Send`).
 ///
@@ -604,11 +645,43 @@ pub struct FileSelectionTestInput {
     pub qurl_of_raw_is_valid: Option<bool>,
     /// `QStandardPaths::TempLocation` + `/simsapa-imports`, from the C++ side.
     pub cpp_staging_root: String,
+    /// Which caller this block belongs to — its prefix, and whether it may read
+    /// the document.
+    pub report: PickReport,
+    /// The picker's filter configuration, verbatim, as the caller set it.
+    ///
+    /// Two blocks are only comparable if each states which picker *and* which
+    /// filter produced it: the `nameFilters` → `setType`/`EXTRA_MIME_TYPES`
+    /// mapping is the leading suspect for the empty URL, so a block that does
+    /// not say what the filter was cannot settle anything.
+    pub filter_config: Option<String>,
 }
 
-/// One labelled line of the report.
-fn line(out: &mut String, label: &str, value: impl std::fmt::Display) {
-    out.push_str(&format!("{LOG_PREFIX} {label}: {value}\n"));
+/// The report block under construction, together with the prefix every one of
+/// its lines carries.
+///
+/// A struct rather than a free function with a prefix argument so that a line
+/// written without the prefix is not expressible.
+struct Block {
+    out: String,
+    prefix: &'static str,
+}
+
+impl Block {
+    fn new(prefix: &'static str) -> Self {
+        Block { out: String::new(), prefix }
+    }
+
+    /// One labelled line of the report.
+    fn line(&mut self, label: &str, value: impl std::fmt::Display) {
+        let prefix = self.prefix;
+        self.out.push_str(&format!("{prefix} {label}: {value}\n"));
+    }
+
+    fn banner(&mut self, text: &str) {
+        let prefix = self.prefix;
+        self.out.push_str(&format!("{prefix} {text}\n"));
+    }
 }
 
 /// Render a value that may be absent, without ever printing an empty field —
@@ -629,6 +702,19 @@ fn exists_str(path: &str) -> String {
     }
 }
 
+/// What one run of the report produced.
+///
+/// The probe is carried out of the builder rather than re-derived, because the
+/// on-screen line has to be able to say whether the read *worked* — which is
+/// knowable only here, where the read happened.
+#[derive(Debug, Clone, Default)]
+pub struct PickReportOutput {
+    /// The block of prefixed lines, ready for the log.
+    pub block: String,
+    /// The provider read, when this run performed one.
+    pub probe: Option<DocumentProbe>,
+}
+
 /// Build the whole report block.
 ///
 /// Returns the block so the bridge can log it and derive the on-screen line from
@@ -636,50 +722,59 @@ fn exists_str(path: &str) -> String {
 /// reason to abandon the rest, and the staging facts are independent of the pick
 /// so they are reported whatever happened.
 pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
-    let mut out = String::new();
+    build_pick_report(input).block
+}
+
+/// Build the report and hand back what it measured.
+pub fn build_pick_report(input: &FileSelectionTestInput) -> PickReportOutput {
+    let mut b = Block::new(input.report.log_prefix());
     let run = next_run_number();
     // Whether the `QUrl`-derived path already read the document, so the raw URI
     // is not read a second time. A provider read can stream over the network.
     let mut probed_via_qurl = false;
+    let mut probe_result: Option<DocumentProbe> = None;
 
-    out.push_str(&format!("{LOG_PREFIX} ===== run {run} begin =====\n"));
-    line(&mut out, "timestamp", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3fZ"));
-    line(&mut out, "platform", crate::storage_diagnostics::current_platform());
-    line(
-        &mut out,
+    b.banner(&format!("===== run {run} begin ====="));
+    b.line("timestamp", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3fZ"));
+    b.line("platform", crate::storage_diagnostics::current_platform());
+    b.line(
         "android_api_level",
         or_none(crate::storage_diagnostics::android_api_level()),
     );
-    line(
-        &mut out,
+    b.line(
         "picker",
         input.source.map(|s| s.label()).unwrap_or("(unknown)"),
+    );
+    // Two blocks are only comparable if each states its filter configuration as
+    // well as its picker.
+    b.line(
+        "filter_config",
+        input.filter_config.as_deref().unwrap_or("(not stated)"),
     );
 
     // The raw pick first: it sits upstream of every QUrl question, and on the
     // Android path it can settle the whole diagnosis on its own.
     match &input.raw {
         Some(raw) => {
-            line(&mut out, "raw_branch", &raw.source);
-            line(&mut out, "raw_uri_length", raw.raw_uri.len());
+            b.line("raw_branch", &raw.source);
+            b.line("raw_uri_length", raw.raw_uri.len());
             // The URI itself. This is the deliverable of the round trip; Req. 17
             // permits URLs and paths in the log, and forbids only file contents.
             if raw.raw_uri.is_empty() {
-                line(&mut out, "raw_uri", "(empty — the picker returned no URI)");
+                b.line("raw_uri", "(empty — the picker returned no URI)");
             } else {
-                line(&mut out, "raw_uri", &raw.raw_uri);
+                b.line("raw_uri", &raw.raw_uri);
             }
             // Reproduces qandroidplatformfiledialoghelper.cpp:48. If this says
             // "no" for a non-empty raw_uri, Qt's QUrl(QString) conversion is
             // where the URL is lost, and no amount of URL->path rework fixes it.
-            line(
-                &mut out,
+            b.line(
                 "qurl_of_raw_is_valid",
                 or_none(input.qurl_of_raw_is_valid.map(|v| if v { "yes" } else { "no" })),
             );
         }
         None => {
-            line(&mut out, "raw_pick", "(not attempted on this path)");
+            b.line("raw_pick", "(not attempted on this path)");
         }
     }
 
@@ -688,56 +783,63 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
             let branch = classify(facts);
 
             // (a) first, always.
-            line(
-                &mut out,
+            b.line(
                 "url_empty_or_invalid",
                 if branch == PickerBranch::Empty { "YES" } else { "no" },
             );
-            line(&mut out, "url_is_valid", facts.is_valid);
-            line(&mut out, "url_encoded", &facts.encoded);
-            line(&mut out, "url_decoded", &facts.decoded);
-            line(
-                &mut out,
+            b.line("url_is_valid", facts.is_valid);
+            b.line("url_encoded", &facts.encoded);
+            b.line("url_decoded", &facts.decoded);
+            b.line(
                 "encoding_differs",
                 if encoding_differs(facts) { "yes" } else { "no" },
             );
-            line(&mut out, "url_scheme", if facts.scheme.is_empty() { "(none)" } else { &facts.scheme });
-            line(&mut out, "url_host", if facts.host.is_empty() { "(none)" } else { &facts.host });
-            line(&mut out, "url_path_segments", path_segment_count(&facts.encoded));
-            line(&mut out, "branch", format!("{branch:?}"));
+            b.line("url_scheme", if facts.scheme.is_empty() { "(none)" } else { &facts.scheme });
+            b.line("url_host", if facts.host.is_empty() { "(none)" } else { &facts.host });
+            b.line("url_path_segments", path_segment_count(&facts.encoded));
+            b.line("branch", format!("{branch:?}"));
 
             match &branch {
                 PickerBranch::Empty => {
                     // Say so and carry on: the staging facts below are still
                     // worth having, and a user who only ever produces empty
                     // blocks still supplies them.
-                    line(&mut out, "verdict", "the file picker did not return a file");
+                    b.line("verdict", "the file picker did not return a file");
                 }
                 PickerBranch::LocalFile => {
                     // toLocalFile() semantics, never QUrl::path(), which drops
                     // the host and silently breaks a Windows UNC pick.
                     let local = &facts.local_file;
-                    line(&mut out, "local_file", if local.is_empty() { "(none)" } else { local });
-                    line(&mut out, "local_file_exists", exists_str(local));
+                    b.line("local_file", if local.is_empty() { "(none)" } else { local });
+                    b.line("local_file_exists", exists_str(local));
                 }
                 PickerBranch::Provider { scheme } => {
-                    line(&mut out, "provider_scheme", scheme);
-                    // The *encoded* URI: a pretty-decoded one resolves a
-                    // different document or none at all.
-                    let probe = probe_document_uri(&facts.encoded, PROBE_READ_CAP_BYTES);
-                    append_probe(&mut out, "provider", &probe);
-                    probed_via_qurl = true;
+                    b.line("provider_scheme", scheme);
+                    if input.report.reads_document() {
+                        // The *encoded* URI: a pretty-decoded one resolves a
+                        // different document or none at all.
+                        let probe = probe_document_uri(&facts.encoded, PROBE_READ_CAP_BYTES);
+                        append_probe(&mut b, "provider", &probe);
+                        probe_result = Some(probe);
+                        probed_via_qurl = true;
+                    } else {
+                        b.line(
+                            "provider_read",
+                            "(not read here: staging is about to copy the whole file, \
+                             and reading it twice doubles a network-backed stream)",
+                        );
+                    }
                 }
                 PickerBranch::BarePath => {
                     // Should not come from a picker. Saying so is how we would
                     // learn that it did.
-                    line(&mut out, "bare_path", &facts.encoded);
-                    line(&mut out, "bare_path_exists", exists_str(&facts.encoded));
+                    b.line("bare_path", &facts.encoded);
+                    b.line("bare_path_exists", exists_str(&facts.encoded));
                 }
             }
         }
         None => {
-            line(&mut out, "url", "(no URL to examine on this run)");
+            b.line("url", "(no URL to examine on this run)");
         }
     }
 
@@ -751,27 +853,32 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
     // while `QUrl` rejects it proves that bypassing the conversion is a viable
     // phase-2 fix, rather than leaving it a hypothesis.
     if let Some(raw) = &input.raw {
-        if raw.raw_uri.is_empty() {
-            line(&mut out, "raw_provider", "(no raw URI to read)");
+        if !input.report.reads_document() {
+            b.line(
+                "raw_provider",
+                "(not read here: staging is about to copy the whole file, \
+                 and reading it twice doubles a network-backed stream)",
+            );
+        } else if raw.raw_uri.is_empty() {
+            b.line("raw_provider", "(no raw URI to read)");
         } else if probed_via_qurl {
-            line(
-                &mut out,
+            b.line(
                 "raw_provider",
                 "(not re-read: the URL above round-tripped through QUrl unchanged \
                  and has already been read)",
             );
         } else {
             let probe = probe_document_uri(&raw.raw_uri, PROBE_READ_CAP_BYTES);
-            append_probe(&mut out, "raw_provider", &probe);
+            append_probe(&mut b, "raw_provider", &probe);
+            probe_result = Some(probe);
         }
     }
 
     // Independent of the pick, so appended to every block whatever happened.
     let staging = collect_staging_facts(&input.cpp_staging_root);
-    line(&mut out, "staging_cpp_root", &staging.cpp_root);
-    line(&mut out, "staging_rust_root", &staging.rust_root);
-    line(
-        &mut out,
+    b.line("staging_cpp_root", &staging.cpp_root);
+    b.line("staging_rust_root", &staging.rust_root);
+    b.line(
         "staging_roots_differ",
         if staging.roots_differ {
             "YES — the C++ writer and the Rust cleanup are pointed at different directories"
@@ -779,43 +886,43 @@ pub fn run_file_selection_test(input: &FileSelectionTestInput) -> String {
             "no"
         },
     );
-    append_census(&mut out, "staging_cpp", &staging.cpp_census);
+    append_census(&mut b, "staging_cpp", &staging.cpp_census);
     if let Some(rust_census) = &staging.rust_census {
-        append_census(&mut out, "staging_rust", rust_census);
+        append_census(&mut b, "staging_rust", rust_census);
     }
-    line(&mut out, "staging_space_measured_at", &staging.space.measured_path);
-    line(&mut out, "staging_space_total_bytes", or_none(staging.space.total_bytes));
-    line(&mut out, "staging_space_available_bytes", or_none(staging.space.available_bytes));
-    line(&mut out, "staging_space_error", or_none(staging.space.error.as_ref()));
+    b.line("staging_space_measured_at", &staging.space.measured_path);
+    b.line("staging_space_total_bytes", or_none(staging.space.total_bytes));
+    b.line("staging_space_available_bytes", or_none(staging.space.available_bytes));
+    b.line("staging_space_error", or_none(staging.space.error.as_ref()));
 
-    out.push_str(&format!("{LOG_PREFIX} ===== run {run} end =====\n"));
-    out
+    b.banner(&format!("===== run {run} end ====="));
+    PickReportOutput { block: b.out, probe: probe_result }
 }
 
 /// Emit a probe's fields under a prefix, so the `QUrl`-derived probe and the
 /// raw-URI probe are reported in exactly the same shape and can be compared line
 /// for line.
-fn append_probe(out: &mut String, prefix: &str, probe: &DocumentProbe) {
-    line(out, &format!("{prefix}_opened"), probe.opened);
-    line(out, &format!("{prefix}_display_name"), or_none(probe.display_name.as_ref()));
-    line(out, &format!("{prefix}_size"), or_none(probe.size));
-    line(out, &format!("{prefix}_bytes_read"), or_none(probe.bytes_read));
-    line(out, &format!("{prefix}_reached_cap"), probe.reached_cap);
-    line(out, &format!("{prefix}_open_ms"), or_none(probe.open_ms));
-    line(out, &format!("{prefix}_read_ms"), or_none(probe.read_ms));
-    line(out, &format!("{prefix}_error"), or_none(probe.error.as_ref()));
+fn append_probe(b: &mut Block, prefix: &str, probe: &DocumentProbe) {
+    b.line(&format!("{prefix}_opened"), probe.opened);
+    b.line(&format!("{prefix}_display_name"), or_none(probe.display_name.as_ref()));
+    b.line(&format!("{prefix}_size"), or_none(probe.size));
+    b.line(&format!("{prefix}_bytes_read"), or_none(probe.bytes_read));
+    b.line(&format!("{prefix}_reached_cap"), probe.reached_cap);
+    b.line(&format!("{prefix}_open_ms"), or_none(probe.open_ms));
+    b.line(&format!("{prefix}_read_ms"), or_none(probe.read_ms));
+    b.line(&format!("{prefix}_error"), or_none(probe.error.as_ref()));
     for note in &probe.notes {
-        line(out, &format!("{prefix}_note"), note);
+        b.line(&format!("{prefix}_note"), note);
     }
 }
 
-fn append_census(out: &mut String, prefix: &str, census: &FolderCensus) {
-    line(out, &format!("{prefix}_path"), &census.path);
-    line(out, &format!("{prefix}_exists"), or_none(census.exists));
-    line(out, &format!("{prefix}_file_count"), census.file_count);
-    line(out, &format!("{prefix}_total_bytes"), census.total_bytes);
-    line(out, &format!("{prefix}_oldest_age_secs"), or_none(census.oldest_age_secs));
-    line(out, &format!("{prefix}_error"), or_none(census.error.as_ref()));
+fn append_census(b: &mut Block, prefix: &str, census: &FolderCensus) {
+    b.line(&format!("{prefix}_path"), &census.path);
+    b.line(&format!("{prefix}_exists"), or_none(census.exists));
+    b.line(&format!("{prefix}_file_count"), census.file_count);
+    b.line(&format!("{prefix}_total_bytes"), census.total_bytes);
+    b.line(&format!("{prefix}_oldest_age_secs"), or_none(census.oldest_age_secs));
+    b.line(&format!("{prefix}_error"), or_none(census.error.as_ref()));
 }
 
 /// Count the path segments of an encoded URL, for D-8(d).
@@ -836,11 +943,35 @@ fn path_segment_count(encoded: &str) -> usize {
     path.split('/').filter(|s| !s.is_empty()).count()
 }
 
+/// Format a byte count the way a person reads one.
+fn human_bytes(n: u64) -> String {
+    const KB: f64 = 1024.0;
+    let n = n as f64;
+    if n < KB {
+        format!("{} bytes", n as u64)
+    } else if n < KB * KB {
+        format!("{:.1} KB", n / KB)
+    } else if n < KB * KB * KB {
+        format!("{:.1} MB", n / (KB * KB))
+    } else {
+        format!("{:.1} GB", n / (KB * KB * KB))
+    }
+}
+
 /// The plain-language one-liner shown on screen (D-6/D-13).
 ///
 /// One sentence a non-developer can act on, and never `Path not found:` — this
 /// is the wording model for the phase-2 failure messages.
-pub fn outcome_line(input: &FileSelectionTestInput) -> String {
+///
+/// **It takes the probe, not only the input.** Until it did, the line was a
+/// function of the *input* alone and could not see whether the read had worked:
+/// on Android every successful pick classifies as `Provider`, whose arm named a
+/// mechanism ("returned a file from another app") with no success word in it,
+/// and the only cheerful arm (`LocalFile`) is unreachable there. A reporting
+/// user read that line as the error message and alternated between two archives
+/// trying to find the one that "worked". Pass `None` when the run did not read
+/// the document.
+pub fn outcome_line(input: &FileSelectionTestInput, probe: Option<&DocumentProbe>) -> String {
     // A cancelled pick is not a failure and must not read like one.
     if let Some(raw) = &input.raw {
         if raw.source == "cancelled" {
@@ -859,9 +990,30 @@ pub fn outcome_line(input: &FileSelectionTestInput) -> String {
     match input.facts.as_ref().map(classify) {
         Some(PickerBranch::Empty) => "The file picker did not return a file.".to_string(),
         Some(PickerBranch::LocalFile) => "The file picker returned a file on this device.".to_string(),
-        Some(PickerBranch::Provider { scheme }) => {
-            format!("The file picker returned a file from another app (scheme: {scheme}).")
-        }
+        Some(PickerBranch::Provider { scheme }) => match probe {
+            // The read is what settles it, so it is what the sentence reports.
+            Some(p) if p.opened && p.bytes_read.unwrap_or(0) > 0 => {
+                let name = p.display_name.as_deref().unwrap_or("the chosen file");
+                match p.size {
+                    Some(size) => format!(
+                        "The file chooser worked. Simsapa opened «{name}» ({}) and read it successfully.",
+                        human_bytes(size.max(0) as u64)
+                    ),
+                    None => format!(
+                        "The file chooser worked. Simsapa opened «{name}» and read it successfully."
+                    ),
+                }
+            }
+            Some(p) if p.opened => format!(
+                "Simsapa opened the chosen file but could not read anything from it (scheme: {scheme})."
+            ),
+            Some(_) => format!(
+                "The file chooser returned a file from another app, but Simsapa could not open it (scheme: {scheme})."
+            ),
+            None => {
+                format!("The file picker returned a file from another app (scheme: {scheme}).")
+            }
+        },
         Some(PickerBranch::BarePath) => "The file picker returned a plain path.".to_string(),
         None => "The test ran, but the file chooser provided nothing to examine.".to_string(),
     }
@@ -872,10 +1024,20 @@ pub fn outcome_line(input: &FileSelectionTestInput) -> String {
 /// The block goes to `log.txt` — that file is the deliverable — while only the
 /// one-liner reaches the screen.
 pub fn run_and_log_file_selection_test(input: &FileSelectionTestInput) -> String {
-    let block = run_file_selection_test(input);
+    let report = build_pick_report(input);
     // One call, so the block cannot be interleaved with other threads' lines.
-    crate::logger::info(&block);
-    outcome_line(input)
+    crate::logger::info(&report.block);
+    outcome_line(input, report.probe.as_ref())
+}
+
+/// Log a `DICTIONARY-IMPORT-PICK:` block for a pick the real import made.
+///
+/// Observation only: it opens nothing, changes no import behaviour, and returns
+/// nothing the caller acts on. The import is about to stage the file for real,
+/// which is where any read failure will surface with a message of its own.
+pub fn log_import_pick(input: &FileSelectionTestInput) {
+    let report = build_pick_report(input);
+    crate::logger::info(&report.block);
 }
 
 #[cfg(test)]
@@ -1140,6 +1302,8 @@ mod tests {
                 .join("simsapa-imports-test-fixture")
                 .to_string_lossy()
                 .to_string(),
+            report: PickReport::Diagnostic,
+            filter_config: None,
         }
     }
 
@@ -1345,10 +1509,10 @@ mod tests {
     #[test]
     fn outcome_lines_are_plain_and_never_say_path_not_found() {
         // D-13: this wording is the model for phase 2's user-facing messages.
-        let empty = outcome_line(&input_for(Some(PickerUrlFacts {
-            is_valid: false,
-            ..Default::default()
-        })));
+        let empty = outcome_line(
+            &input_for(Some(PickerUrlFacts { is_valid: false, ..Default::default() })),
+            None,
+        );
         assert_eq!(empty, "The file picker did not return a file.");
         assert!(!empty.contains("Path not found"));
 
@@ -1358,7 +1522,7 @@ mod tests {
             source: "cancelled".to_string(),
         });
         // A cancelled pick is not a failure and must not read like one.
-        assert!(outcome_line(&cancelled).contains("closed without choosing"));
+        assert!(outcome_line(&cancelled, None).contains("closed without choosing"));
 
         let mut bad_convert = input_for(None);
         bad_convert.raw = Some(RawPickOutcome {
@@ -1366,7 +1530,7 @@ mod tests {
             source: "intent-getData".to_string(),
         });
         bad_convert.qurl_of_raw_is_valid = Some(false);
-        assert!(outcome_line(&bad_convert).contains("could not understand"));
+        assert!(outcome_line(&bad_convert, None).contains("could not understand"));
     }
 
     #[test]
@@ -1475,8 +1639,9 @@ mod tests {
             error: None,
             notes: Vec::new(),
         };
-        let mut out = String::new();
-        append_probe(&mut out, "provider", &probe);
+        let mut b = Block::new(LOG_PREFIX);
+        append_probe(&mut b, "provider", &probe);
+        let out = b.out;
 
         assert!(out.contains("provider_opened: true"));
         assert!(out.contains("provider_display_name: mw-gd.zip"));
@@ -1533,7 +1698,7 @@ mod tests {
         // back empty.
         assert!(block.contains("url: (no URL to examine on this run)"));
         assert!(!block.contains("url_empty_or_invalid:"));
-        assert!(outcome_line(&input).contains("closed without choosing"));
+        assert!(outcome_line(&input, None).contains("closed without choosing"));
     }
 
     #[test]
@@ -1565,6 +1730,96 @@ mod tests {
         // other test in this binary and they run in parallel.
         assert!(second > first);
         assert!(first >= 1);
+    }
+
+    /// A provider pick as the import makes it: same builder, own prefix.
+    fn import_input() -> FileSelectionTestInput {
+        let mut input = input_for(Some(facts(
+            "content://org.chromium.arc.volumeprovider/abc/all-dictionaries-gd.zip",
+            "content://org.chromium.arc.volumeprovider/abc/all-dictionaries-gd.zip",
+            "content",
+            "org.chromium.arc.volumeprovider",
+            "",
+        )));
+        input.report = PickReport::DictionaryImport;
+        input.filter_config = Some("nameFilters = []".to_string());
+        input
+    }
+
+    #[test]
+    fn the_import_block_uses_its_own_prefix_and_the_same_shape() {
+        let block = build_pick_report(&import_input()).block;
+        for l in block.lines() {
+            assert!(l.starts_with(IMPORT_LOG_PREFIX), "line without prefix: {l}");
+            assert!(!l.starts_with(LOG_PREFIX), "diagnostic prefix on an import block: {l}");
+        }
+        // The same fields as the diagnostic's block, so the two are comparable.
+        assert!(block.contains("url_empty_or_invalid: no"));
+        assert!(block.contains("provider_scheme: content"));
+        assert!(block.contains("filter_config: nameFilters = []"));
+    }
+
+    #[test]
+    fn the_import_block_never_reads_the_document() {
+        // Staging is about to copy the whole file; reading it here would double
+        // a network-backed stream.
+        let report = build_pick_report(&import_input());
+        assert!(report.probe.is_none());
+        assert!(report.block.contains("provider_read: (not read here"));
+        assert!(!report.block.contains("provider_opened:"));
+
+        // …and the raw-intent half of the same path is equally silent.
+        let mut raw_input = import_input();
+        raw_input.source = Some(PickSource::RawIntent);
+        raw_input.raw = Some(RawPickOutcome {
+            raw_uri: "content://org.chromium.arc.volumeprovider/abc/gd.zip".to_string(),
+            source: "intent-getData".to_string(),
+        });
+        let raw_report = build_pick_report(&raw_input);
+        assert!(raw_report.probe.is_none());
+        assert!(!raw_report.block.contains("raw_provider_opened:"));
+    }
+
+    #[test]
+    fn a_successful_provider_read_reads_as_a_success() {
+        // The reporting user took the old Provider wording for the error
+        // message: it named a mechanism and carried no success word, and on
+        // Android it is the only arm a successful pick can reach.
+        let input = input_for(Some(facts(
+            "content://org.chromium.arc.volumeprovider/abc/gd.zip",
+            "content://org.chromium.arc.volumeprovider/abc/gd.zip",
+            "content",
+            "org.chromium.arc.volumeprovider",
+            "",
+        )));
+        let probe = DocumentProbe {
+            opened: true,
+            display_name: Some("all-dictionaries-gd.zip".to_string()),
+            size: Some(180_735_851),
+            bytes_read: Some(4 * 1024 * 1024),
+            reached_cap: true,
+            open_ms: Some(4),
+            read_ms: Some(11),
+            error: None,
+            notes: Vec::new(),
+        };
+
+        let line = outcome_line(&input, Some(&probe));
+        assert!(line.contains("worked"), "no success word in: {line}");
+        assert!(line.contains("all-dictionaries-gd.zip"));
+        assert!(line.contains("172.4 MB"));
+
+        // A failure on the same branch must still read as one.
+        let failed = DocumentProbe {
+            opened: false,
+            bytes_read: None,
+            error: Some("could not open".to_string()),
+            ..probe.clone()
+        };
+        assert!(outcome_line(&input, Some(&failed)).contains("could not open it"));
+
+        let empty_read = DocumentProbe { opened: true, bytes_read: Some(0), ..probe };
+        assert!(outcome_line(&input, Some(&empty_read)).contains("could not read anything"));
     }
 }
 

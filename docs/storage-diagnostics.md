@@ -219,10 +219,18 @@ plus app version, platform and Android API level.
 "0 indexes, 0 failures": `init_fulltext_searcher()` is lazy and mode-gated, and
 the diagnostics are forbidden from initialising it to find out. That state is
 derived from `with_fulltext_searcher()` returning `None` — **not** from
-`is_fulltext_searcher_ready()`, which returns `true` whenever the global is
-`Some` regardless of index count. That dishonesty is real, but fixing it is
-phase-2 work: it feeds `/health`'s `fulltext_searcher_ready` field, and changing
-it here would break the "no behaviour change" guarantee.
+`is_fulltext_searcher_ready()`.
+
+> **Updated in phase 2.** `is_fulltext_searcher_ready()` used to return `true`
+> whenever the global was `Some`, regardless of index count — the dishonesty
+> this section was written to route around, left alone in phase 1 because it
+> feeds `/health`'s `fulltext_searcher_ready` field and phase 1 guaranteed no
+> behaviour change. Phase 2 (fulltext-fix PRD FR-20) changed it: it now answers
+> **"is at least one index open"**. The distinction that still matters here is a
+> third one — *was this ever measured this session* — and `with_fulltext_searcher()`
+> returning `None` remains the only thing that answers it, so this section's
+> rule is unchanged. See
+> [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).
 
 The failure list is cleared by **both** `FulltextSearcher` constructors
 (`open()` and `open_from_dirs()`, via the shared `begin_open_session()` helper),
@@ -237,6 +245,22 @@ fault.
 | unsupported | ok | 0 or error | Lock diagnosis right, wrapper wrong. Redesign phase 2 §4.1 from the reported error. |
 | unsupported | **fails** | 0 | **Wrapper is necessary but not sufficient.** Phase 2 needs a non-mmap `Directory` (pread-backed or read-into-RAM `FileHandle`) — a much larger job, correctly scoped *before* it starts. |
 | supported | ok | > 0 | The reporting user's fault is **something else**; re-triage from sections A, C, D. |
+
+**It has been run for real, and it landed on row 1.** A ChromeOS user (151.0.7922.168,
+Android API 33, storage on a `fuse` external volume) ran it on 2026-08-25:
+`flock` **unsupported(38 ENOSYS)**, `mmap` **ok** on an 18 MB segment file read
+at offsets 0 / middle / last, and section E opened all six indexes through
+`LenientLockMmapDirectory` and returned real hits (`dict_words/pli`: 539,569
+docs, `nirodha=2227` in 328.6 ms) where section D and the live searcher opened
+**zero**. Phase 2 is unblocked and needs no redesign; **the non-mmap `Directory`
+contingency is not needed.** Full report:
+`tasks/2026-08-05-201545-prd---run-storage-diagnostics.md` §12, raw material in
+`feedback-and-bug-reports/rechromebookstoragetesting/`.
+
+Two things that run counter to how the feature was framed, worth knowing before
+you read the next report: the affected volume is a **ChromeOS/ARCVM FUSE mount,
+not an SD card**, and it is **fast** (reader builds 77–628 ms, searches
+0.1–329 ms). Nothing measured supports a "searches will be slower here" message.
 
 ## 5. Safety constraints
 

@@ -72,17 +72,31 @@ static COMBINED_CACHE: Mutex<Option<CombinedCache>> = Mutex::new(None);
 /// log which errors the user chose to bypass. See PRD §11.6.
 static LAST_EXPORT_FAILURE: Mutex<Option<String>> = Mutex::new(None);
 
-/// The `SuttaBridge` thread handle a finished raw pick reports back through.
+/// Who asked for the raw pick that is currently in flight.
+///
+/// There is exactly **one** global result slot, because the picker is a separate
+/// activity and at most one pick is ever open. Two features now start picks —
+/// the About dialog's diagnostic and the dictionary import's fallback — so the
+/// slot has to carry which one, or a result would be delivered to the wrong
+/// listener and the other would hang waiting for a signal that never comes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawPickConsumer {
+    /// About → "File Selection Test".
+    FileSelectionTest,
+    /// The dictionary import, after Qt's `FileDialog` returned nothing.
+    DictionaryImport,
+}
+
+/// The consumer and the `SuttaBridge` thread handle a finished raw pick reports
+/// back through.
 ///
 /// The native activity-result callback (`raw_document_pick_result_c`, in
 /// `backend/src/picker_url.rs`) is a plain `extern "C"` function with no `self`,
 /// so it cannot reach the singleton. It is registered here when a raw pick is
 /// started, and read by `on_raw_pick_finished()`.
-///
-/// Diagnostic only — see `docs/file-selection-test.md`; goes away with the
-/// feature.
-static FILE_SELECTION_TEST_THREAD: Mutex<Option<cxx_qt::CxxQtThread<qobject::SuttaBridge>>> =
-    Mutex::new(None);
+static RAW_PICK_TARGET: Mutex<
+    Option<(RawPickConsumer, cxx_qt::CxxQtThread<qobject::SuttaBridge>)>,
+> = Mutex::new(None);
 
 /// Extract the Qt-side facts about a picked URL into owned `String`s.
 ///
@@ -153,7 +167,7 @@ fn spawn_file_selection_test(
 /// Every outcome completes the run, `cancelled` included, or the button that
 /// started it stays disabled until the dialog is reopened.
 fn on_raw_pick_finished() {
-    let qt_thread = match FILE_SELECTION_TEST_THREAD
+    let (consumer, qt_thread) = match RAW_PICK_TARGET
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone()
@@ -166,6 +180,11 @@ fn on_raw_pick_finished() {
     };
 
     let raw = simsapa_backend::picker_url::take_raw_pick();
+
+    if consumer == RawPickConsumer::DictionaryImport {
+        on_import_raw_pick_finished(qt_thread, raw);
+        return;
+    }
 
     // Reproduce `QUrl(uri.toString())` — the exact conversion
     // qandroidplatformfiledialoghelper.cpp performs, in the same TolerantMode —
@@ -185,9 +204,80 @@ fn on_raw_pick_finished() {
         raw,
         qurl_of_raw_is_valid,
         cpp_staging_root: qobject::get_import_staging_root().to_string(),
+        report: simsapa_backend::picker_url::PickReport::Diagnostic,
+        filter_config: Some(RAW_INTENT_FILTER_CONFIG.to_string()),
     };
 
     spawn_file_selection_test(qt_thread, input);
+}
+
+/// The raw intent's filter configuration, stated so a block that used it is
+/// comparable with one that came from a Qt `FileDialog`.
+///
+/// A literal of its own, never derived from any dialog's `nameFilters`: if two
+/// paths shared one constant, changing the filter in one place would silently
+/// change what the other measures.
+const RAW_INTENT_FILTER_CONFIG: &str = "none (raw intent, */*)";
+
+/// Deliver a dictionary-import fallback pick.
+///
+/// Logs the same `PickerUrlFacts` block the diagnostic does, under the import
+/// prefix and without reading the document (staging is about to read it for
+/// real), then hands QML the picker's own string. Every outcome emits the
+/// signal, cancellation included, or the dialog waits forever.
+fn on_import_raw_pick_finished(
+    qt_thread: cxx_qt::CxxQtThread<qobject::SuttaBridge>,
+    raw: Option<simsapa_backend::picker_url::RawPickOutcome>,
+) {
+    // The same `QUrl(uri.toString())` reproduction as the diagnostic's: it costs
+    // nothing here and it is what tells the returned log whether Qt's conversion
+    // would have survived this URI.
+    let (facts, qurl_of_raw_is_valid) = match raw.as_ref() {
+        Some(r) if !r.raw_uri.is_empty() => {
+            let url = QUrl::from(&QString::from(&r.raw_uri));
+            (Some(picker_url_facts_from(&url)), Some(url.is_valid()))
+        }
+        _ => (None, None),
+    };
+
+    let cancelled = raw.as_ref().is_some_and(|r| r.source == "cancelled");
+    let uri = raw.as_ref().map(|r| r.raw_uri.clone()).unwrap_or_default();
+
+    let input = simsapa_backend::picker_url::FileSelectionTestInput {
+        source: Some(simsapa_backend::picker_url::PickSource::RawIntent),
+        facts,
+        raw,
+        qurl_of_raw_is_valid,
+        cpp_staging_root: qobject::get_import_staging_root().to_string(),
+        report: simsapa_backend::picker_url::PickReport::DictionaryImport,
+        filter_config: Some(RAW_INTENT_FILTER_CONFIG.to_string()),
+    };
+
+    // Off the UI thread: this runs inside the activity-result dispatch, and the
+    // block collects a directory census and a `statvfs`.
+    thread::spawn(move || {
+        simsapa_backend::picker_url::log_import_pick(&input);
+
+        let (success, message) = if cancelled {
+            (false, String::new())
+        } else if uri.is_empty() {
+            (false, "The file chooser did not return a file.".to_string())
+        } else {
+            (true, String::new())
+        };
+
+        info(&format!(
+            "DICTIONARY-IMPORT-PICK: fallback picker finished: success={}, uri_len={}",
+            success,
+            uri.len()
+        ));
+
+        let uri_qs = QString::from(&uri);
+        let msg_qs = QString::from(&message);
+        crate::queue_or_log(&qt_thread, "sutta_bridge::on_import_raw_pick_finished", move |mut qo| {
+            qo.as_mut().import_file_pick_completed(success, uri_qs, msg_qs);
+        });
+    });
 }
 
 /// Fetch, highlight, and cache a single page of search results.
@@ -700,7 +790,7 @@ fn prefetch_pages(
 /// Convert a QUrl to a local file path string.
 /// Handles Windows paths correctly - QUrl::path() returns "/C:/path" on Windows,
 /// but we need "C:/path" for Rust's Path/PathBuf to work correctly.
-fn qurl_to_local_path(url: &QUrl) -> String {
+pub(crate) fn qurl_to_local_path(url: &QUrl) -> String {
     let path_str = url.path().to_string();
 
     // On Windows, QUrl::path() returns "/C:/path" for local files
@@ -996,6 +1086,19 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "fileSelectionTestCompleted"]
         fn file_selection_test_completed(self: Pin<&mut SuttaBridge>, success: bool, outcome: QString);
+
+        // The fallback picker's answer for the dictionary import. `uri` is the
+        // picker's own string, never round-tripped through a QUrl — that
+        // conversion is the suspect this fallback exists to route around.
+        // `message` is a plain sentence for the screen when `success` is false.
+        #[qsignal]
+        #[cxx_name = "importFilePickCompleted"]
+        fn import_file_pick_completed(
+            self: Pin<&mut SuttaBridge>,
+            success: bool,
+            uri: QString,
+            message: QString,
+        );
 
         #[qsignal]
         #[cxx_name = "debugQueryReady"]
@@ -1336,7 +1439,16 @@ pub mod qobject {
         fn start_file_selection_test_raw_pick(self: Pin<&mut SuttaBridge>);
 
         #[qinvokable]
+        fn log_import_pick(self: Pin<&mut SuttaBridge>, url: &QUrl, filter_config: &QString);
+
+        #[qinvokable]
+        fn start_import_raw_pick(self: Pin<&mut SuttaBridge>);
+
+        #[qinvokable]
         fn check_search_index_status(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn get_fulltext_status(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
         fn get_startup_db_report(self: &SuttaBridge) -> QString;
@@ -2245,6 +2357,41 @@ impl qobject::SuttaBridge {
 
             crate::queue_or_log(&qt_thread, "sutta_bridge::dictionary_first_query", move |mut qo| {
                 qo.as_mut().database_validation_result(QString::from("dictionaries"), is_valid, message);
+            });
+
+            // The fulltext index is not a database and is not downloadable, but
+            // it fails in the same silent way and the user reaches for the same
+            // dialog. It rides the existing signal rather than adding plumbing;
+            // the QML side keeps it out of the downloadable-failure set.
+            //
+            // Emitted from here because this runs on the same worker thread,
+            // after the databases have been queried.
+            //
+            // The searcher is opened first, and that call is load-bearing rather
+            // than defensive: `load_searcher()` is a *separate* spawned thread
+            // started at window construction, and nothing sequences the two. On
+            // a launch where the update check fails fast (no network) the
+            // validation can win the race, and the row would then report "The
+            // search index has not been opened yet." as a **failure** — a
+            // fabricated fault, logged at ERROR, in the one report a user is
+            // asked to send. `init_fulltext_searcher()` is idempotent: it
+            // returns immediately if a searcher is already open, and otherwise
+            // does here what the other thread was about to do anyway.
+            simsapa_backend::init_fulltext_searcher();
+            let fulltext_status = simsapa_backend::fulltext_status::current_status();
+            let fulltext_valid = fulltext_status.is_valid;
+            let fulltext_message = QString::from(&fulltext_status.message);
+            if fulltext_valid {
+                info(&format!("Fulltext index validation: {}", fulltext_status.message));
+            } else {
+                error(&format!("Fulltext index validation FAILED: {}", fulltext_status.message));
+            }
+            crate::queue_or_log(&qt_thread, "sutta_bridge::fulltext_validation", move |mut qo| {
+                qo.as_mut().database_validation_result(
+                    QString::from("fulltext"),
+                    fulltext_valid,
+                    fulltext_message,
+                );
             });
 
             info("SuttaBridge::dictionary_first_query() end");
@@ -3951,6 +4098,22 @@ impl qobject::SuttaBridge {
 
     /// Copy content from a content:// URI to a temporary file (Android only)
     /// Returns the path to the temporary file, or empty string on error
+    ///
+    /// **Superseded on the dictionary path by
+    /// `DictionaryManager::stage_picked_file`**, which does the same job on a
+    /// worker thread, in 1 MB chunks, with byte progress, a cancel, a
+    /// free-space pre-check, and a failure message naming the step that failed.
+    /// This one is synchronous on the GUI thread and reads the whole file into
+    /// a single `QByteArray` (`cpp/utils.cpp`), which at 180 MB is seconds of
+    /// frozen UI; its empty-string return is also why the user's only
+    /// diagnosis was "Could not access the selected file."
+    ///
+    /// It stays for the three call sites that were **not** migrated —
+    /// `DocumentImportDialog`, the chanting import and the Gloss "Open JSON" —
+    /// because migrating them means changing three more flows in a build whose
+    /// job is to fix the dictionary import and the fulltext index. Migrating
+    /// them is the shared-resolver work the picker-URL PRD describes; do that
+    /// in its own build, and delete this then.
     pub fn copy_content_uri_to_temp(&self, content_uri: &QString) -> QString {
         let uri_str = content_uri.to_string();
 
@@ -3975,6 +4138,23 @@ impl qobject::SuttaBridge {
 
     /// Delete the temporary import folder and all its contents
     /// Returns true if successful, false otherwise
+    /// Delete the **shared** staging root. Used only by `DocumentImportDialog`.
+    ///
+    /// Two things about it that have been re-investigated more than once:
+    ///
+    /// - **`std::env::temp_dir()` here and `QStandardPaths::TempLocation` in
+    ///   `cpp/utils.cpp` are the same directory.** That was long suspected of
+    ///   making this a silent no-op on Android; it was then measured on an
+    ///   Android 16 phone *and* on ChromeOS/ARC, and both reported
+    ///   `staging_roots_differ: no` (`docs/file-selection-test.md` §6). Do not
+    ///   "fix" it.
+    /// - It wipes the root, not a per-feature subfolder, which is why the
+    ///   dictionary path does **not** use it: it would take another feature's
+    ///   in-flight staged file with it. Dictionaries clean up through
+    ///   `DictionaryManager::cleanup_staged_file`, which removes one file and
+    ///   only from `simsapa-imports/dictionaries/`. Migrating the document,
+    ///   chanting and Gloss paths to the same shape is the shared-resolver work
+    ///   in the picker-URL PRD.
     pub fn delete_temp_import_folder(&self) -> bool {
         let temp_dir = std::env::temp_dir().join("simsapa-imports");
 
@@ -4161,6 +4341,27 @@ impl qobject::SuttaBridge {
         QString::from(&json)
     }
 
+    /// Whether fulltext search can currently return results, and what to say if
+    /// it cannot. Returns the JSON of `simsapa_backend::fulltext_status`:
+    ///
+    /// ```json
+    /// {"is_valid": false, "state": "could_not_open",
+    ///  "message": "The search index could not be opened. …",
+    ///  "failure_count": 6,
+    ///  "sutta": {"opened": 0, "dir_present": true}, …}
+    /// ```
+    ///
+    /// `state` is one of `not_opened_yet`, `files_not_found`, `could_not_open`,
+    /// `ready`. **Branch on `state`, never on `opened == 0`** — an area with no
+    /// index because the user never downloaded that language is not a fault, and
+    /// telling them it is would be worse than saying nothing.
+    ///
+    /// The same data backs the Database Validation row and `/health`, so all
+    /// three read one source. See `docs/fulltext-index-storage-and-file-locking.md`.
+    pub fn get_fulltext_status(&self) -> QString {
+        QString::from(&simsapa_backend::fulltext_status_json())
+    }
+
     /// Per-database startup report as JSON, for the Database Validation dialog's
     /// presentation rows. Shape per database (`appdata`, `dictionaries`, `dpd`):
     /// `{"present_at_start": bool|null, "migration_ok": bool|null, "migration_error": string|null}`.
@@ -4314,9 +4515,69 @@ impl qobject::SuttaBridge {
             raw: None,
             qurl_of_raw_is_valid: None,
             cpp_staging_root,
+            report: simsapa_backend::picker_url::PickReport::Diagnostic,
+            // The diagnostic's own literal, matching `AboutDialog.qml`'s
+            // deliberately unfiltered dialog. Never read from the import
+            // dialog's property: if the two shared one, removing the filter
+            // there would silently change what this measures.
+            filter_config: Some("none (Qt FileDialog, no nameFilters)".to_string()),
         };
 
         spawn_file_selection_test(self.qt_thread(), input);
+    }
+
+    /// Log a `DICTIONARY-IMPORT-PICK:` block for the real import's own pick.
+    ///
+    /// Observation only (E-14…E-17): it opens nothing, stages nothing and
+    /// changes no behaviour on any platform. It exists because the failing
+    /// action the user actually performs is an import, and until now that
+    /// produced no evidence at all — only the test button did.
+    ///
+    /// `filter_config` is the dialog's `nameFilters` verbatim, so a returned log
+    /// says which configuration produced the block.
+    pub fn log_import_pick(self: Pin<&mut Self>, url: &QUrl, filter_config: &QString) {
+        let facts = picker_url_facts_from(url);
+        let cpp_staging_root = qobject::get_import_staging_root().to_string();
+        let filter_config = filter_config.to_string();
+
+        let input = simsapa_backend::picker_url::FileSelectionTestInput {
+            source: Some(simsapa_backend::picker_url::PickSource::QtFileDialog),
+            facts: Some(facts),
+            raw: None,
+            qurl_of_raw_is_valid: None,
+            cpp_staging_root,
+            report: simsapa_backend::picker_url::PickReport::DictionaryImport,
+            filter_config: Some(filter_config),
+        };
+
+        // On a worker: the block collects a directory census and a `statvfs`,
+        // and this is called from the picker's `onAccepted` on the GUI thread.
+        thread::spawn(move || {
+            simsapa_backend::picker_url::log_import_pick(&input);
+        });
+    }
+
+    /// Start the raw `ACTION_OPEN_DOCUMENT` picker on behalf of the dictionary
+    /// import, after Qt's `FileDialog` returned nothing.
+    ///
+    /// The result arrives on `importFilePickCompleted`, never on
+    /// `fileSelectionTestCompleted`: the two share one global result slot and
+    /// are told apart by `RawPickConsumer`.
+    pub fn start_import_raw_pick(self: Pin<&mut Self>) {
+        info("DICTIONARY-IMPORT-PICK: Qt's file dialog returned nothing; falling back to the raw document picker");
+
+        *RAW_PICK_TARGET
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some((RawPickConsumer::DictionaryImport, self.qt_thread()));
+
+        simsapa_backend::picker_url::set_raw_pick_listener(on_raw_pick_finished);
+
+        // Off Android this delivers an "unsupported-platform" outcome through
+        // the same callback, so the dialog still hears back.
+        if !qobject::start_raw_document_pick() {
+            info("DICTIONARY-IMPORT-PICK: the fallback picker could not be launched");
+        }
     }
 
     /// Start the Android raw-intent pick (D-3a, D-8h).
@@ -4327,9 +4588,10 @@ impl qobject::SuttaBridge {
     pub fn start_file_selection_test_raw_pick(self: Pin<&mut Self>) {
         info("start_file_selection_test_raw_pick: launching the raw document picker");
 
-        *FILE_SELECTION_TEST_THREAD
+        *RAW_PICK_TARGET
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(self.qt_thread());
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some((RawPickConsumer::FileSelectionTest, self.qt_thread()));
 
         simsapa_backend::picker_url::set_raw_pick_listener(on_raw_pick_finished);
 

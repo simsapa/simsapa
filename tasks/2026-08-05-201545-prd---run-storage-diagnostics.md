@@ -1,10 +1,21 @@
 # PRD — "Run Storage Diagnostics"
 
 **Date:** 2026-08-05
-**Status:** Draft — not yet implemented
+**Status:** **Complete — implemented, shipped, and the report has come back.**
+The affected user ran it on 2026-08-25; see **§12 Results returned** for the
+measurements and the decision-gate outcome. Phase 2 is ~~**unblocked**~~
+**implemented (2026-08-26)** — see the phase-2 PRD's status header and
+`docs/fulltext-index-storage-and-file-locking.md`. Two of this PRD's deliverables
+outlived the diagnostic and are now shipping code: `LenientLockMmapDirectory`
+(wired into every real search and index path) and the `flock` verdict recorded by
+the tier-2 storage probe. The **`mmap` probe's answer deleted a planned second
+PRD** (the non-mmap `Directory` of fix-PRD FR-36), which is the single highest
+return this phase produced.
+**Phase-2 task list:**
+`tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
 **Phase:** 1 of 2. The fix itself is
 `2026-08-05-193727-prd---fulltext-index-on-filesystems-without-flock.md`
-(phase 2), which is **blocked on the data this PRD collects**.
+(phase 2), which was blocked on the data this PRD collects.
 **Background research:**
 `2026-08-05-193727-research---tantivy-directory-wrapper-implications.md`
 
@@ -604,6 +615,10 @@ is not re-litigated during implementation.
    Anything discovered during implementation should be added here rather than
    resolved silently.
 
+   **All three answered by §12.** The mmap probe did not SIGBUS (Q3), the raw
+   verdicts came back as designed, and none of the four "normal states" of FR-37
+   produced a fault reading.
+
 3. **The mmap probe (FR-18) can take the process down without returning, and
    nothing can catch it.** Raised by the phase-6 review (2026-08-06, after tasks
    1.0–3.0 were implemented). A read *through* a mapping that faults — a
@@ -631,3 +646,108 @@ is not re-litigated during implementation.
    therefore costs at most one failing syscall per lock, never a wrong route,
    and a restart re-probes. Recorded at `flock_support_for_dir()` and to be
    repeated in `docs/storage-diagnostics.md` (task 8.4).
+
+---
+
+## 12. Results returned (2026-08-25)
+
+The reporting user ran **File Selection Test** and then **Run Storage
+Diagnostics** and sent back the summary text plus three log files
+(`feedback-and-bug-reports/rechromebookstoragetesting/`). Their environment:
+**ChromeOS 151.0.7922.168 (64-bit)**, Simsapa **1.0.0-alpha.6**, Android
+**API 33**, total run **4.58 s**.
+
+### 12.1 The decision gate (§9) — row 1
+
+| Section B `flock` | Section B `mmap` | Section E hits | Row |
+|---|---|---|---|
+| `unsupported(38 ENOSYS)` | **ok** | **> 0 on every populated index** | **Diagnosis and fix both confirmed. Proceed with phase 2 as written.** |
+
+**Phase 2 is unblocked and needs no redesign.** The §4.6 go/no-go — the one
+question this whole PRD existed to answer — came back **go**.
+
+### 12.2 What was measured
+
+**Section A.** Recorded and resolved paths identical, state `ok`, 165.0 GiB free
+of 233.1 GiB. Filesystem **`fuse`** mounted at
+`/storage/E297186276AA7E917DC8E6AC2FFA3BF32E0D48BB`
+(`rw,lazytime,nosuid,nodev,noexec,noatime,user_id=0,group_id=0,allow_other`),
+statfs magic `0x65735546`. Classified "external volume (outside the internal app
+root)". This is the *ChromeOS* external-volume case, **not** a phone SD card —
+see §12.4.
+
+**Section B.** `flock` **unsupported(38 ENOSYS)** in 19.6 ms — the diagnosis of
+the fix PRD's §1 confirmed at the primitive level, not merely inferred from
+tantivy's error. `mmap` **ok**: an 18,128,732-byte `.pos` segment file mapped and
+read at offsets 0, 9,064,365 and 18,128,731 in 94.6 ms. FR-18's insistence on
+faulting past page 0 was honoured and the volume survived it. Atomic write ok
+(61.5 ms), plain read/write ok (33.8 ms).
+
+**Section C.** Index `VERSION` 1.0, matching. Six index directories, all with
+`meta.json` ok, 597.6 MiB total. Stale `.tantivy-*.lock` files present in all
+six, aged 31 days, correctly annotated *"expected leftovers, not a fault"*.
+
+**Section D.** Every one of the six directories: `MmapDirectory::open` **ok**,
+`Index::open` **ok**, `index.reader()` **FAILED** with
+`Failed to acquire Lockfile: IoError(Os { code: 38, kind: Unsupported })`.
+Success metric 4 met exactly — the failure is attributed to `index.reader()` and
+not to `Index::open`, confirming the research's claim that `Index::open` takes no
+lock.
+
+**Section E — the point of the exercise.** All six opened through
+`LenientLockMmapDirectory`, every one reporting the lock route as **"fell back
+after an unsupported-operation errno (38 ENOSYS)"**. Real searches:
+
+| Index | `num_docs` | nirodha | cessation |
+|---|---|---|---|
+| suttas/en | 10722 | 14 | 1317 |
+| suttas/pli | 10649 | 731 | 0 |
+| suttas/san | **0** | 0 | 0 |
+| dict_words/en | 13587 | 7 | 46 |
+| dict_words/pli | 539569 | 2227 | 555 |
+| library/en | 322 | 32 | 119 |
+
+**Section F.** 0 sutta / 0 dictionary / 0 library indexes open, 6 directories
+failed — the live searcher in the same session, against section E's six
+successes. That contrast in one report is the whole case for FR-19..FR-22 of the
+fix PRD.
+
+### 12.3 Requirements the report validated in the field
+
+- **FR-27a's three-way lock route** — all six rows read "fell back after an
+  unsupported-operation errno", never "fell back after some other `IoError`". The
+  distinction that exists so section E can tell *"the fix works"* from *"the fix
+  hid the failure"* returned the good answer explicitly rather than by absence.
+- **FR-28c (`num_docs`)** — `suttas/san` is the case it was added for: 0 hits
+  *and* 0 documents, annotated *"no matches, but this index holds no documents —
+  expected, not a fault"*. Without `num_docs` that row is indistinguishable from
+  a read failure.
+- **FR-28d (both terms against every index)** — vindicated. `suttas/pli` returned
+  `cessation=0`, and `dict_words/en` returned `nirodha=7`. Under the rejected
+  per-language routing, `suttas/pli` would have been asked only `nirodha` and the
+  Sanskrit index only `cessation`.
+- **FR-37's normal states** — stale lock files, a zero-document index and an
+  uninitialised searcher were all present in one run, and the verdict still read
+  as a single specific fault rather than a pile of alarms.
+- **FR-33..36 (the verdict)** — the user quoted it back verbatim as their
+  description of the problem, having pressed one button. It named no `flock`, no
+  `mmap`, no Tantivy, and it correctly told them a future update should fix it.
+- **§4.4 safety** — no probe files remained, no index was created, and the live
+  searcher was untouched (section F still reports the startup state).
+
+### 12.4 One premise the report contradicts — read before phase 2's §4.7
+
+Both PRDs are framed around a **slow SD card**. This device is neither.
+
+- It is a **ChromeOS external volume over FUSE**, not a portable microSD card.
+  Fix-PRD open question 2 ("which volumes exactly are affected?  … the
+  ChromeOS/ARCVM path specifically") is now **answered: yes, affected**, and by
+  the same `ENOSYS` mechanism.
+- It is **not slow**. Reader builds through the wrapper ran 77–628 ms, searches
+  0.1–329 ms, the 18 MB mmap probe 94.6 ms, section D+E together 3.4 s. Nothing
+  here supports a "searches will be slower" warning, and fix-PRD §4.7's note
+  ("prefer concrete wording … but do not state a specific slowdown factor we have
+  not measured") should now be read as: **we still have no measurement of a slow
+  volume**, and this one is fast.
+
+The consequence for fix-PRD §4.7 is recorded in that PRD's own §10.

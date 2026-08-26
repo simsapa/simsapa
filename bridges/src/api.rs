@@ -1792,13 +1792,76 @@ pub struct HealthDbPaths {
     pub dpd: String,
 }
 
+/// Per-area fulltext index counts, so a caller can tell *which* areas are
+/// searchable rather than only whether any are.
+///
+/// `dir_present` distinguishes the two zero states: an absent index directory
+/// (nothing built or downloaded) from a present one that yielded no usable
+/// index (the files could not be read). See
+/// `backend/src/fulltext_status.rs`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthFulltextArea {
+    pub opened: usize,
+    pub dir_present: bool,
+    /// Index directories in this area that were attempted and failed.
+    ///
+    /// The top-level `state` is `ready` as soon as *anything* opened anywhere,
+    /// so it cannot answer "will a search of **this** area work". These two
+    /// fields can: `state` is this area's own verdict, and `message` is what the
+    /// app itself shows a user whose search of this area came back empty.
+    pub failed: usize,
+    /// One of `files_not_found`, `could_not_open`, `ready` — for this area.
+    pub state: String,
+    /// Plain-language sentence for this area, or `""` when there is nothing
+    /// wrong to report. An area with `opened > 0` **and** `failed > 0` has
+    /// working but incomplete search, and says so here.
+    pub message: String,
+}
+
+/// The fulltext block of `/health`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthFulltext {
+    /// One of `not_opened_yet`, `files_not_found`, `could_not_open`, `ready`.
+    pub state: String,
+    /// Plain-language summary, safe to display.
+    pub message: String,
+    pub failure_count: usize,
+    pub sutta: HealthFulltextArea,
+    pub dict: HealthFulltextArea,
+    pub library: HealthFulltextArea,
+}
+
+/// One area's block, built from the same `fulltext_status` helpers the app's own
+/// UI reads — never from the counts directly, so `/health` cannot drift from
+/// what the user is being shown.
+fn health_area(
+    area: &simsapa_backend::search::searcher::FulltextAreaStatus,
+    reason: &str,
+) -> HealthFulltextArea {
+    HealthFulltextArea {
+        opened: area.opened,
+        dir_present: area.dir_present,
+        failed: area.failed,
+        state: simsapa_backend::fulltext_status::area_state(area)
+            .as_str()
+            .to_string(),
+        message: simsapa_backend::fulltext_status::area_message(area, reason),
+    }
+}
+
 /// The `/health` document: a single read-once snapshot of the running instance.
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthInfo {
     pub app_version: String,
     pub api_port: i32,
     pub db_paths: HealthDbPaths,
+    /// **Now means "at least one index is open"**, not merely "the searcher
+    /// global is set". It previously reported `true` for a searcher that opened
+    /// with zero indexes, which made this field actively misleading — the state
+    /// it could not distinguish is the one a reporting user was actually in.
+    /// See `simsapa_backend::is_fulltext_searcher_ready`.
     pub fulltext_searcher_ready: bool,
+    pub fulltext: HealthFulltext,
     pub counts: HealthCounts,
     pub sutta_languages: Vec<String>,
     pub dict_sources: Vec<String>,
@@ -1822,6 +1885,17 @@ fn health(dbm: &State<Arc<DbManager>>) -> Json<HealthInfo> {
             dpd: fs_path_to_forward_slash(&g.paths.dpd_abs_path),
         },
         fulltext_searcher_ready: simsapa_backend::is_fulltext_searcher_ready(),
+        fulltext: {
+            let status = simsapa_backend::fulltext_status::current_status();
+            HealthFulltext {
+                state: status.state.as_str().to_string(),
+                message: status.message.clone(),
+                failure_count: status.failure_count,
+                sutta: health_area(&status.counts.sutta, status.reason),
+                dict: health_area(&status.counts.dict, status.reason),
+                library: health_area(&status.counts.library, status.reason),
+            }
+        },
         // A count error -> None -> null (Finding 5); a real empty DB -> Some(0).
         counts: HealthCounts {
             suttas: dbm.appdata.count_suttas().ok(),
