@@ -212,8 +212,34 @@ fn import_located_stardict(
 ///
 /// On success returns the new `dictionaries.id`. The row's `indexed_at` is
 /// `NULL` so the next-startup reconciliation pass picks it up.
+///
+/// Imports the whole archive. To import one dictionary out of a bundle, call
+/// [`import_user_zip_member`] with the `member` the scan reported.
 pub fn import_user_zip(
     zip_path: &Path,
+    label: &str,
+    lang: &str,
+    on_progress: &dyn Fn(StardictImportProgress),
+    cancel: &AtomicBool,
+) -> Result<ImportOutcome, String> {
+    import_user_zip_member(zip_path, None, label, lang, on_progress, cancel)
+}
+
+/// Import one dictionary out of a `.zip`.
+///
+/// `member` is [`CandidateMeta::member`] as the scan reported it: `None` for an
+/// archive holding a single dictionary (the whole archive is extracted, exactly
+/// as before), or the member folder of one dictionary inside a bundle.
+///
+/// **The member must come from the probe, not be re-derived here.** Deciding it
+/// again at import time is the defect this parameter exists to remove: the
+/// probe reads the zip's central directory while the import reads an extracted
+/// tree, the two enumerate in different orders, and a bundle's rows then all
+/// imported whichever dictionary the filesystem listed first — under whatever
+/// label the user had typed for a different one.
+pub fn import_user_zip_member(
+    zip_path: &Path,
+    member: Option<&str>,
     label: &str,
     lang: &str,
     on_progress: &dyn Fn(StardictImportProgress),
@@ -249,7 +275,7 @@ pub fn import_user_zip(
     let mut archive = zip::ZipArchive::new(zip_file)
         .map_err(|e| format!("Failed to read zip archive {}: {}", zip_path.display(), e))?;
 
-    match extract_archive(&mut archive, &extract_dir, cancel, &|done, total| {
+    match extract_archive(&mut archive, &extract_dir, member, cancel, &|done, total| {
         on_progress(StardictImportProgress::Extracting { done, total })
     }) {
         Ok(true) => {}
@@ -299,16 +325,44 @@ pub fn import_user_zip(
 fn extract_archive<R: std::io::Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     dest: &Path,
+    member: Option<&str>,
     cancel: &AtomicBool,
     progress: &dyn Fn(usize, usize),
 ) -> Result<bool, String> {
-    let total = archive.len();
+    // Which entries this import actually wants. For a bundle archive that is
+    // one member's folder, so importing all N dictionaries of a bundle costs
+    // one archive's worth of extraction in total rather than N — and, more to
+    // the point, each row imports the dictionary the checklist named for it.
+    // An empty member is the whole archive, matching `entry_belongs_to_member`
+    // and the bridge's own mapping of an empty `QString`. Normalised here so
+    // there is one representation of "no filter" below.
+    let member = member.filter(|m| !m.is_empty());
+
+    let wanted: Vec<usize> = match member {
+        None => (0..archive.len()).collect(),
+        Some(m) => (0..archive.len())
+            .filter(|i| {
+                archive
+                    .name_for_index(*i)
+                    .is_some_and(|name| entry_belongs_to_member(name, m))
+            })
+            .collect(),
+    };
+
+    let total = wanted.len();
+    if total == 0 {
+        return Err(match member {
+            Some(m) => format!("The archive holds nothing under \"{}\".", m),
+            None => "The archive is empty.".to_string(),
+        });
+    }
+
     std::fs::create_dir_all(dest)
         .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
 
-    for i in 0..total {
+    for (done, &i) in wanted.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            info(&format!("extract_archive: cancelled after {} of {} entries", i, total));
+            info(&format!("extract_archive: cancelled after {} of {} entries", done, total));
             return Ok(false);
         }
 
@@ -339,7 +393,7 @@ fn extract_archive<R: std::io::Read + std::io::Seek>(
                 .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
         }
 
-        progress(i + 1, total);
+        progress(done + 1, total);
     }
 
     Ok(true)
@@ -548,17 +602,38 @@ fn locate_stardict_dir(extract_dir: &Path) -> Option<(std::path::PathBuf, String
     None
 }
 
-/// Return the file-stem of the first `*.ifo` in `dir`, if any.
+/// Return the file-stem of the **first** `*.ifo` in `dir`, if any.
+///
+/// The extension test is case-insensitive, matching [`is_shallow_ifo_entry`]:
+/// when the two disagreed, a `.IFO` archive probed as a valid StarDict and then
+/// failed at import time with "no dictionary found".
+///
+/// "First" is by **name**, not by `read_dir` order, and that is the point.
+/// `read_dir` order is unspecified, so a folder holding two `.ifo` files
+/// imported nondeterministically — and, worse, could disagree with
+/// [`stardict_members_in`], which sees the same folder through a zip's central
+/// directory. Both now take the lexicographically smallest name, so the probe's
+/// answer and the import's answer are the same answer.
 fn find_ifo_stem_in(dir: &Path) -> Option<String> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("ifo")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                return Some(stem.to_string());
-            }
-    }
-    None
+    let mut names: Vec<std::ffi::OsString> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.file_name())
+        .filter(|name| {
+            Path::new(name)
+                .extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("ifo"))
+        })
+        .collect();
+    names.sort();
+
+    names.first().and_then(|name| {
+        Path::new(name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string())
+    })
 }
 
 /// Metadata for one discovered StarDict candidate, returned by [`scan_source`]
@@ -574,6 +649,16 @@ pub struct CandidateMeta {
     pub suggested_label: String,
     pub source_path: String,
     pub source_kind: String,
+    /// Which dictionary **inside** a bundle archive this row is: the member
+    /// folder's name, or `""` for one at the archive root.
+    ///
+    /// `None` — and omitted from the JSON — for a directory source and for a
+    /// zip holding a single dictionary, where the import extracts the whole
+    /// archive as it always has. The import must be given back exactly what the
+    /// probe reported here: it is what stops a bundle's rows from all importing
+    /// whichever dictionary the extracted tree happened to enumerate first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
 }
 
 /// The four source kinds accepted by [`scan_source`] (PRD §4.2 req. 4).
@@ -730,6 +815,79 @@ fn is_shallow_ifo_entry(name: &str) -> bool {
     trimmed.matches('/').count() <= 1
 }
 
+/// One dictionary inside a zip.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZipMember {
+    /// The folder the dictionary lives in, without a trailing slash. Empty when
+    /// it sits at the archive root.
+    pub member: String,
+    /// The `.ifo` entry's full name, as the central directory spells it.
+    pub ifo_entry: String,
+}
+
+/// Every dictionary a zip's entry names describe, in central-directory order.
+///
+/// A `.ifo` at the root and a `.ifo` one folder deep are both dictionaries —
+/// the same two-level rule [`locate_stardict_dir`] applies after extraction, so
+/// the scan and the import agree on what counts.
+///
+/// A folder holding more than one `.ifo` is one dictionary, not several, and
+/// the one taken is the **lexicographically smallest** name — the same rule
+/// [`find_ifo_stem_in`] follows on the extracted tree. That is what makes the
+/// two agree: this reads the zip's central directory, that reads a directory
+/// listing, and neither order is the other's.
+pub fn stardict_members_in<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<ZipMember> {
+    let mut members: Vec<ZipMember> = Vec::new();
+    for name in names {
+        if !is_shallow_ifo_entry(name) {
+            continue;
+        }
+        let trimmed = name.trim_end_matches('/');
+        let (member, file_name) = match trimmed.rsplit_once('/') {
+            Some((dir, file)) => (dir.to_string(), file),
+            None => (String::new(), trimmed),
+        };
+
+        match members.iter_mut().find(|m| m.member == member) {
+            Some(existing) => {
+                let existing_file = existing
+                    .ifo_entry
+                    .rsplit_once('/')
+                    .map(|(_dir, file)| file)
+                    .unwrap_or(existing.ifo_entry.as_str());
+                if file_name < existing_file {
+                    existing.ifo_entry = trimmed.to_string();
+                }
+            }
+            None => members.push(ZipMember {
+                member,
+                ifo_entry: trimmed.to_string(),
+            }),
+        }
+    }
+    members
+}
+
+/// Does this zip entry belong to the given member of a bundle archive?
+///
+/// A member folder takes everything beneath it, `res/` subfolders included.
+///
+/// **An empty member means the whole archive**, and is the one answer that is
+/// safe here. A dictionary at the archive *root* cannot be selected by folder
+/// name — and filtering to root-level entries instead would silently drop its
+/// `res/` resources, which live one level down. So the root case extracts
+/// everything and lets `locate_stardict_dir` (which looks at the root before any
+/// subfolder) pick it out.
+fn entry_belongs_to_member(name: &str, member: &str) -> bool {
+    if member.is_empty() {
+        return true;
+    }
+    let trimmed = name.trim_end_matches('/');
+    trimmed.len() > member.len()
+        && trimmed.starts_with(member)
+        && trimmed.as_bytes()[member.len()] == b'/'
+}
+
 /// Probe a single `.zip` candidate **without extracting it**.
 ///
 /// Only two things are read: the central directory (entry names, no
@@ -739,26 +897,43 @@ fn is_shallow_ifo_entry(name: &str) -> bool {
 /// `import_user_zip` extracted the identical archive a second time — for a
 /// 172 MB dictionary that was minutes of the user's time and roughly twice its
 /// size in transient disk, paid to learn the title.
-fn probe_zip_candidate(zip_path: &Path) -> ProbeOutcome {
+///
+/// **A bundle archive yields one candidate per dictionary.** `-gd` releases are
+/// routinely shipped as one zip holding a folder per dictionary, and both the
+/// old code and the first version of this probe reported exactly one — the
+/// first `.ifo` they happened to meet — so every other dictionary in the
+/// archive was silently unreachable. Each member is now a checklist row of its
+/// own, with its own title, entry count and label, exactly as a folder of
+/// dictionaries already was.
+///
+/// Returns one outcome per member for a readable archive, or a single rejection
+/// for one that could not be opened or holds no dictionary at all. Never empty.
+fn probe_zip_candidates(zip_path: &Path) -> Vec<ProbeOutcome> {
     let zip_file = match std::fs::File::open(zip_path) {
         Ok(f) => f,
-        Err(e) => return ProbeOutcome::Unreadable(format!("could not be opened ({})", e)),
+        Err(e) => return vec![ProbeOutcome::Unreadable(format!("could not be opened ({})", e))],
     };
     let mut archive = match zip::ZipArchive::new(zip_file) {
         Ok(a) => a,
-        Err(e) => return ProbeOutcome::Unreadable(format!("is not a readable zip archive ({})", e)),
+        Err(e) => {
+            return vec![ProbeOutcome::Unreadable(format!(
+                "is not a readable zip archive ({})",
+                e
+            ))]
+        }
     };
 
     let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
-    let Some(ifo_entry) = names.iter().find(|n| is_shallow_ifo_entry(n)).cloned() else {
-        return ProbeOutcome::UnsupportedFormat(detect_archive_format(
+    let members = stardict_members_in(names.iter().map(|s| s.as_str()));
+    if members.is_empty() {
+        return vec![ProbeOutcome::UnsupportedFormat(detect_archive_format(
             names.iter().map(|s| s.as_str()),
-        ));
-    };
+        ))];
+    }
 
-    // The `stardict` crate parses from a filesystem path only, so the single
-    // `.ifo` entry is written to a small temp directory. That directory holds
-    // one text file, not the archive.
+    // The `stardict` crate parses from a filesystem path only, so each `.ifo`
+    // entry is written to one small temp directory. It holds a few hundred
+    // bytes of `key=value` text per dictionary, never the archive.
     let cache_root = get_app_globals().paths.simsapa_dir.clone();
     let tmp = match tempfile::Builder::new()
         .prefix(PROBE_TEMP_PREFIX)
@@ -766,53 +941,144 @@ fn probe_zip_candidate(zip_path: &Path) -> ProbeOutcome {
     {
         Ok(t) => t,
         Err(e) => {
-            return ProbeOutcome::IoFailure(format!(
+            return vec![ProbeOutcome::IoFailure(format!(
                 "could not create a temporary folder under {} ({})",
                 cache_root.display(),
                 e
-            ));
+            ))];
         }
     };
 
-    let stem = Path::new(&ifo_entry)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("dictionary")
-        .to_string();
-    let ifo_path = tmp.path().join(format!("{}.ifo", stem));
+    // A single-dictionary archive keeps its label from the zip's own filename,
+    // which is what users have been renaming their files for. Only a bundle
+    // needs a per-member label, and there the member folder is the only name
+    // that distinguishes them.
+    let is_bundle = members.len() > 1;
 
-    match archive.by_name(&ifo_entry) {
-        Ok(mut entry) => {
-            let mut out = match std::fs::File::create(&ifo_path) {
-                Ok(f) => f,
-                Err(e) => {
-                    return ProbeOutcome::IoFailure(format!(
-                        "could not write to {} ({})",
-                        ifo_path.display(),
-                        e
-                    ));
-                }
-            };
-            if let Err(e) = std::io::copy(&mut entry, &mut out) {
-                return ProbeOutcome::Unreadable(format!("its description file could not be read ({})", e));
+    let mut outcomes: Vec<ProbeOutcome> = Vec::with_capacity(members.len());
+    for (i, member) in members.iter().enumerate() {
+        let stem = Path::new(&member.ifo_entry)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("dictionary")
+            .to_string();
+        // Indexed, because two members may hold `<same-name>.ifo`.
+        let ifo_path = tmp.path().join(format!("{}-{}.ifo", i, stem));
+
+        // One member of a bundle failing is not the archive failing, and the
+        // rejection is rendered under the archive's own name — so the sentence
+        // has to say which dictionary inside it went wrong, or a user with a
+        // dozen good dictionaries and one bad one reads "this archive is
+        // unreadable" about an archive that mostly worked.
+        let describe = |what: &str| -> String {
+            if is_bundle && !member.member.is_empty() {
+                format!("contains a dictionary in \"{}\" whose {}", member.member, what)
+            } else {
+                format!("its {}", what)
+            }
+        };
+
+        match extract_one_entry(&mut archive, &member.ifo_entry, &ifo_path) {
+            Ok(()) => {}
+            Err(e) => {
+                outcomes.push(e.into_outcome(&describe));
+                continue;
             }
         }
-        Err(e) => {
-            return ProbeOutcome::Unreadable(format!("its description file could not be read ({})", e));
-        }
+
+        let suggested_label = if is_bundle {
+            member_label(member, &stem)
+        } else {
+            suggested_label_for_zip(zip_path)
+        };
+
+        outcomes.push(match read_ifo_title_and_count(&ifo_path) {
+            Ok((title, entry_count)) => ProbeOutcome::StarDict(Box::new(CandidateMeta {
+                title,
+                entry_count,
+                suggested_label,
+                source_path: zip_path.to_string_lossy().to_string(),
+                source_kind: "zip".to_string(),
+                // `None` for a single-dictionary archive — the import extracts
+                // the whole thing, exactly as it always has — and also for a
+                // dictionary at a bundle's root, which has no folder to select
+                // and whose `res/` resources live one level down, where a
+                // root-level filter would drop them. `locate_stardict_dir`
+                // looks at the root first, so extracting everything still
+                // imports that one.
+                member: is_bundle
+                    .then(|| member.member.clone())
+                    .filter(|m| !m.is_empty()),
+            })),
+            Err(e) => ProbeOutcome::Unreadable(format!(
+                "{} ({})",
+                describe("description file could not be understood"),
+                e
+            )),
+        });
     }
 
-    match read_ifo_title_and_count(&ifo_path) {
-        Ok((title, entry_count)) => ProbeOutcome::StarDict(Box::new(CandidateMeta {
-            title,
-            entry_count,
-            suggested_label: suggested_label_for_zip(zip_path),
-            source_path: zip_path.to_string_lossy().to_string(),
-            source_kind: "zip".to_string(),
-        })),
-        Err(e) => ProbeOutcome::Unreadable(format!("its description file could not be understood ({})", e)),
-    }
+    outcomes
     // tmp drops here.
+}
+
+/// Why reading one `.ifo` entry out of an archive failed.
+///
+/// Deliberately not a `ProbeOutcome` yet: the sentence depends on **which**
+/// dictionary of a bundle it was, and only the caller knows that. Holding the
+/// two apart is what stops one bad member being reported as a bad archive.
+enum EntryReadError {
+    /// The archive would not give up the entry.
+    Unreadable(String),
+    /// Our side: no temp space, no permission, a failed write.
+    Io(String),
+}
+
+impl EntryReadError {
+    /// `describe` turns a noun phrase into one naming the member, e.g.
+    /// `"description file could not be read"` →
+    /// `"contains a dictionary in \"pts\" whose description file could not be read"`.
+    fn into_outcome(self, describe: &dyn Fn(&str) -> String) -> ProbeOutcome {
+        match self {
+            EntryReadError::Unreadable(e) => ProbeOutcome::Unreadable(format!(
+                "{} ({})",
+                describe("description file could not be read"),
+                e
+            )),
+            EntryReadError::Io(e) => ProbeOutcome::IoFailure(e),
+        }
+    }
+}
+
+/// Copy one zip entry to `dest`, without touching the rest of the archive.
+fn extract_one_entry<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    entry_name: &str,
+    dest: &Path,
+) -> Result<(), EntryReadError> {
+    let mut entry = archive
+        .by_name(entry_name)
+        .map_err(|e| EntryReadError::Unreadable(e.to_string()))?;
+    let mut out = std::fs::File::create(dest).map_err(|e| {
+        EntryReadError::Io(format!("could not write to {} ({})", dest.display(), e))
+    })?;
+    std::io::copy(&mut entry, &mut out).map_err(|e| EntryReadError::Unreadable(e.to_string()))?;
+    Ok(())
+}
+
+/// The label offered for one member of a bundle archive.
+///
+/// The member folder name, sanitised the same way a picked folder's is — a
+/// bundle's folders *are* the dictionaries, so the two sources produce the same
+/// label for the same dictionary. A member at the archive root has no folder to
+/// name it, so its `.ifo` stem stands in.
+fn member_label(member: &ZipMember, ifo_stem: &str) -> String {
+    let raw = if member.member.is_empty() {
+        ifo_stem
+    } else {
+        member.member.rsplit('/').next().unwrap_or(&member.member)
+    };
+    sanitise_label_name(raw)
 }
 
 /// Probe a single extracted-directory candidate.
@@ -835,6 +1101,7 @@ fn probe_dir_candidate(dir_path: &Path) -> ProbeOutcome {
             suggested_label: suggested_label_for_dir(dir_path),
             source_path: dir_path.to_string_lossy().to_string(),
             source_kind: "dir".to_string(),
+            member: None,
         })),
         Err(e) => ProbeOutcome::Unreadable(format!("its description file could not be understood ({})", e)),
     }
@@ -944,7 +1211,14 @@ pub fn scan_source(kind: ScanKind, path: &Path) -> Result<ScanReport, String> {
     };
 
     match kind {
-        ScanKind::SingleZip => record(path, probe_zip_candidate(path)),
+        // A zip is not necessarily one dictionary: a bundle archive yields one
+        // candidate per member folder, which is why these are loops (see
+        // `probe_zip_candidates`).
+        ScanKind::SingleZip => {
+            for outcome in probe_zip_candidates(path) {
+                record(path, outcome);
+            }
+        }
         ScanKind::SingleDir => record(path, probe_dir_candidate(path)),
         ScanKind::ZipFolder => {
             let entries = std::fs::read_dir(path)
@@ -954,8 +1228,9 @@ pub fn scan_source(kind: ScanKind, path: &Path) -> Result<ScanReport, String> {
                 if p.is_file()
                     && p.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("zip")) == Some(true)
                 {
-                    let outcome = probe_zip_candidate(&p);
-                    record(&p, outcome);
+                    for outcome in probe_zip_candidates(&p) {
+                        record(&p, outcome);
+                    }
                 }
             }
         }
@@ -1197,7 +1472,7 @@ mod tests {
             "the crafted archive must actually carry a traversal entry: {names:?}"
         );
 
-        let finished = extract_archive(&mut archive, &dest, &AtomicBool::new(false), &|_, _| {})
+        let finished = extract_archive(&mut archive, &dest, None, &AtomicBool::new(false), &|_, _| {})
             .expect("extraction should succeed, skipping the unsafe entries");
         assert!(finished);
 
@@ -1219,7 +1494,7 @@ mod tests {
         let dest = dir.path().join("dest");
 
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        let finished = extract_archive(&mut archive, &dest, &AtomicBool::new(true), &|_, _| {})
+        let finished = extract_archive(&mut archive, &dest, None, &AtomicBool::new(true), &|_, _| {})
             .expect("a cancel is not an error");
         assert!(!finished, "a cancelled extraction reports not-finished");
         assert!(!dest.join("a.txt").try_exists().unwrap_or(false));
@@ -1233,7 +1508,7 @@ mod tests {
 
         let reports = std::cell::RefCell::new(Vec::new());
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        extract_archive(&mut archive, &dest, &AtomicBool::new(false), &|done, total| {
+        extract_archive(&mut archive, &dest, None, &AtomicBool::new(false), &|done, total| {
             reports.borrow_mut().push((done, total));
         })
         .unwrap();
@@ -1268,6 +1543,164 @@ mod tests {
         assert!(is_shallow_ifo_entry("wrapper/DICT.IFO"));
         assert!(!is_shallow_ifo_entry("a/b/dict.ifo"));
         assert!(!is_shallow_ifo_entry("dict.idx"));
+    }
+
+    #[test]
+    fn a_bundle_archive_lists_one_member_per_dictionary() {
+        let members = stardict_members_in([
+            "gd-bundle/README.txt",
+            "gd-bundle/concise/concise.ifo",
+            "gd-bundle/concise/concise.idx",
+            "pts/pts.ifo",
+            "nyanatiloka/nyanatiloka.ifo",
+            // Too deep to be a dictionary of its own — the same two-level rule
+            // `locate_stardict_dir` applies after extraction.
+            "a/b/deep.ifo",
+        ]);
+
+        let names: Vec<&str> = members.iter().map(|m| m.member.as_str()).collect();
+        assert_eq!(names, vec!["pts", "nyanatiloka"]);
+        assert_eq!(members[0].ifo_entry, "pts/pts.ifo");
+    }
+
+    #[test]
+    fn a_single_dictionary_archive_is_one_member_at_the_root() {
+        let members = stardict_members_in(["dict.ifo", "dict.idx", "res/img.png"]);
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].member, "");
+    }
+
+    /// A folder holding two `.ifo` files is one dictionary, not two — and the
+    /// one taken must be the same one `find_ifo_stem_in` takes on the extracted
+    /// tree, or the probe and the import describe different dictionaries again.
+    /// Both take the lexicographically smallest name, so the central-directory
+    /// order below must not decide it.
+    #[test]
+    fn one_folder_is_one_dictionary_and_the_choice_is_not_order_dependent() {
+        let members = stardict_members_in(["d/two.ifo", "d/one.ifo"]);
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].ifo_entry, "d/one.ifo");
+
+        // And the extracted-tree side agrees, from a directory whose listing
+        // order is not ours to choose.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("two.ifo"), b"x").unwrap();
+        std::fs::write(dir.path().join("one.ifo"), b"x").unwrap();
+        assert_eq!(find_ifo_stem_in(dir.path()).as_deref(), Some("one"));
+    }
+
+    /// `.IFO` must be recognised on both sides, or an archive probes as valid
+    /// and then fails at import with "no dictionary found".
+    #[test]
+    fn the_ifo_extension_is_case_insensitive_on_both_sides() {
+        assert!(is_shallow_ifo_entry("d/DICT.IFO"));
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("DICT.IFO"), b"x").unwrap();
+        assert_eq!(find_ifo_stem_in(dir.path()).as_deref(), Some("DICT"));
+    }
+
+    /// One bad dictionary inside a bundle must not be reported as a bad
+    /// archive: the rejection is rendered under the archive's own name, so the
+    /// sentence has to name the member.
+    #[test]
+    fn a_failing_bundle_member_is_named_in_the_rejection() {
+        let describe = |what: &str| format!("contains a dictionary in \"pts\" whose {}", what);
+        let outcome = EntryReadError::Unreadable("bad crc".to_string()).into_outcome(&describe);
+
+        let rejection = rejection_for(Path::new("/tmp/all-dictionaries-gd.zip"), &outcome)
+            .expect("an unreadable member is a rejection");
+        assert_eq!(rejection.reason, "unreadable");
+        assert_eq!(
+            rejection.message,
+            "\"all-dictionaries-gd.zip\" contains a dictionary in \"pts\" whose description file could not be read (bad crc)."
+        );
+    }
+
+    #[test]
+    fn a_member_takes_its_own_folder_and_nothing_else() {
+        assert!(entry_belongs_to_member("pts/pts.ifo", "pts"));
+        assert!(entry_belongs_to_member("pts/res/img.png", "pts"));
+        assert!(!entry_belongs_to_member("pts-extra/x.ifo", "pts"));
+        assert!(!entry_belongs_to_member("other/x.ifo", "pts"));
+        assert!(!entry_belongs_to_member("pts", "pts"));
+
+        // An empty member is the whole archive. Filtering to root-level entries
+        // instead would look tidier and would silently drop a root dictionary's
+        // `res/` resources, which live one level down.
+        assert!(entry_belongs_to_member("dict.ifo", ""));
+        assert!(entry_belongs_to_member("res/img.png", ""));
+    }
+
+    /// Extracting one member of a bundle must leave the siblings alone: that is
+    /// what keeps importing all N dictionaries to one archive's worth of work,
+    /// and what stops a row importing a dictionary it did not name.
+    #[test]
+    fn extracting_a_member_leaves_the_other_members_alone() {
+        let bytes = zip_with_raw_names(&[
+            ("pts/pts.ifo", b"one" as &[u8]),
+            ("pts/res/img.png", b"img"),
+            ("nyanatiloka/nyanatiloka.ifo", b"two"),
+            ("README.txt", b"readme"),
+        ]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+
+        let reports = std::cell::RefCell::new(Vec::new());
+        let finished = extract_archive(
+            &mut archive,
+            &dest,
+            Some("pts"),
+            &AtomicBool::new(false),
+            &|done, total| reports.borrow_mut().push((done, total)),
+        )
+        .expect("extraction should succeed");
+        assert!(finished);
+
+        assert_eq!(std::fs::read(dest.join("pts/pts.ifo")).unwrap(), b"one");
+        assert_eq!(std::fs::read(dest.join("pts/res/img.png")).unwrap(), b"img");
+        assert!(!dest.join("nyanatiloka").try_exists().unwrap_or(false));
+        assert!(!dest.join("README.txt").try_exists().unwrap_or(false));
+
+        // Progress counts the member's entries, not the archive's, so the bar
+        // reaches 100% rather than stopping at 2 of 4.
+        let (last_done, last_total) = *reports.into_inner().last().unwrap();
+        assert_eq!((last_done, last_total), (2, 2));
+    }
+
+    #[test]
+    fn extracting_a_member_that_is_not_there_is_an_error_not_an_empty_import() {
+        let bytes = zip_with_raw_names(&[("pts/pts.ifo", b"one" as &[u8])]);
+        let dir = tempfile::tempdir().unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+
+        let err = extract_archive(
+            &mut archive,
+            &dir.path().join("dest"),
+            Some("gone"),
+            &AtomicBool::new(false),
+            &|_, _| {},
+        )
+        .unwrap_err();
+        assert!(err.contains("gone"), "the message must name the member: {err}");
+    }
+
+    #[test]
+    fn a_bundle_member_is_labelled_by_its_folder() {
+        let member = ZipMember {
+            member: "Concise P-E Dict!".to_string(),
+            ifo_entry: "Concise P-E Dict!/x.ifo".to_string(),
+        };
+        assert_eq!(member_label(&member, "x"), "Concise_P-E_Dict");
+
+        // A member at the archive root has no folder to name it.
+        let root = ZipMember {
+            member: String::new(),
+            ifo_entry: "nyanatiloka.ifo".to_string(),
+        };
+        assert_eq!(member_label(&root, "nyanatiloka"), "nyanatiloka");
     }
 
     #[test]

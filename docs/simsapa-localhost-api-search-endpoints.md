@@ -394,9 +394,13 @@ fulltext searcher has been initialized (§8):
     "state": "could_not_open",        // not_opened_yet | files_not_found | could_not_open | ready
     "message": "The search index could not be opened. This storage location does not support the file locking the search index needs.",
     "failure_count": 6,
-    "sutta":   { "opened": 0, "dir_present": true },
-    "dict":    { "opened": 0, "dir_present": true },
-    "library": { "opened": 0, "dir_present": true }
+    // Per area: its own state and its own sentence. `message` is "" when there
+    // is nothing wrong to report.
+    "sutta":   { "opened": 0, "dir_present": true, "failed": 2,
+                 "state": "could_not_open",
+                 "message": "The search index could not be opened. This storage location does not support the file locking the search index needs." },
+    "dict":    { "opened": 0, "dir_present": true, "failed": 2, "state": "could_not_open", "message": "…" },
+    "library": { "opened": 0, "dir_present": false, "failed": 0, "state": "files_not_found", "message": "" }
   },
   "counts": {                         // row counts in the live DBs
     "suttas": 21359,
@@ -444,7 +448,17 @@ fulltext searcher has been initialized (§8):
 
   `opened: 0` for a single area is normal — it usually means the user has not
   downloaded that language. `dir_present` is what separates an absent index tree
-  from one that would not open. `message` is plain language and safe to display;
+  from one that would not open.
+
+  **The top-level `state` answers "does fulltext search work at all", not "will
+  a search of area X work".** It is `ready` as soon as anything opened anywhere,
+  so a client that cares about one area must read that area's own `state` and
+  `message` — the per-area block carries both, and an area can have `opened > 0`
+  **and** `failed > 0`, which is working-but-incomplete search and has a sentence
+  of its own. This is the same data, from the same helpers, that the app's own
+  empty-results panel shows, so the two cannot drift.
+
+  `message` is plain language and safe to display;
   it deliberately carries no `flock`/`Tantivy`/errno text (that stays in the log
   and in Run Storage Diagnostics). See
   [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).

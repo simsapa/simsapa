@@ -36,7 +36,13 @@ use crate::search::searcher::FulltextIndexCounts;
 /// What to tell the user about fulltext search, and whether it is working.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FulltextStatus {
-    /// Whether fulltext search can return results at all.
+    /// Whether everything that should have opened, opened.
+    ///
+    /// **Not the same question as `state`,** and the difference is deliberate:
+    /// `Ready` means fulltext search can return results at all, while this is
+    /// false the moment *any* index directory failed. A partly-open index is
+    /// both — search works, and something is wrong — and Database Validation
+    /// must not print "All checks passed" over it.
     pub is_valid: bool,
     /// One or two sentences, in plain language. Safe to show anywhere.
     pub message: String,
@@ -44,12 +50,25 @@ pub struct FulltextStatus {
     /// print. This is the `StartupDbReport` principle: "the files are not there"
     /// and "the files are there and would not open" are different diagnoses and
     /// must never be conflated.
+    ///
+    /// `Ready` says nothing about whether *every* index opened — read
+    /// `failure_count`, or [`area_state`] for one area, for that.
     pub state: FulltextState,
     pub counts: FulltextIndexCounts,
     /// How many index directories failed to open. Zero in every state except
     /// [`FulltextState::CouldNotOpen`] (and even there it can be zero if the
     /// directories held no per-language subdirectories at all).
     pub failure_count: usize,
+    /// The one plain-language cause behind those failures, or `""` when there
+    /// were none.
+    ///
+    /// Kept as a field so a **per-area** message can be composed from the same
+    /// sentence (see [`area_message`]) without the caller holding the raw
+    /// failure list — and so no caller is ever tempted to compose its own
+    /// wording out of the counts. Every user-facing string this feature can
+    /// emit is written in this file, which is what `no_jargon_in_user_facing_strings`
+    /// is able to check.
+    pub reason: &'static str,
 }
 
 /// The four distinguishable states, in the order they are checked.
@@ -149,16 +168,34 @@ pub fn build_status(
             state: FulltextState::NotOpenedYet,
             counts: FulltextIndexCounts::default(),
             failure_count: 0,
+            reason: "",
         };
     };
 
     if counts.total_opened() > 0 {
+        // Something opened, so fulltext search works — but "works" and "is
+        // fine" are different claims, and reporting the second when only the
+        // first is true is the whole failure mode this module exists to remove.
+        // A partly-open index is a green "All checks passed" in Database
+        // Validation next to searches that silently return nothing.
+        let reason = reason_or_empty(failures);
+        let message = if failures.is_empty() {
+            format!("OK — {} open.", describe_counts(&counts))
+        } else {
+            format!(
+                "{} open. Some search index files could not be opened. {}",
+                describe_counts(&counts),
+                reason
+            )
+        };
+
         return FulltextStatus {
-            is_valid: true,
-            message: format!("OK — {} open.", describe_counts(&counts)),
+            is_valid: failures.is_empty(),
+            message,
             state: FulltextState::Ready,
             counts,
             failure_count: failures.len(),
+            reason,
         };
     }
 
@@ -174,6 +211,7 @@ pub fn build_status(
             state: FulltextState::FilesNotFound,
             counts,
             failure_count: failures.len(),
+            reason: "",
         };
     }
 
@@ -200,12 +238,83 @@ pub fn build_status(
         message,
         counts,
         failure_count: failures.len(),
+        reason: reason_or_empty(failures),
+    }
+}
+
+/// [`plain_reason_for_all`], but `""` for an empty failure list rather than the
+/// generic sentence — the difference between "nothing failed" and "something
+/// failed and we cannot say what".
+fn reason_or_empty(failures: &[(String, String)]) -> &'static str {
+    if failures.is_empty() {
+        ""
+    } else {
+        plain_reason_for_all(failures)
     }
 }
 
 /// The current verdict, read from the process-global searcher and failure list.
 pub fn current_status() -> FulltextStatus {
     build_status(crate::fulltext_index_counts(), &crate::searcher_open_failures())
+}
+
+/// The verdict for **one** search area.
+///
+/// The whole-app `state` above is `Ready` as soon as *anything* opened, which is
+/// the right answer for "does fulltext search work at all" and the wrong one for
+/// "why did the search I just ran come back empty". A user whose sutta indexes
+/// open and whose dictionary indexes all fail was told "No results found." —
+/// the same silent empty result the whole feature exists to remove, just
+/// narrowed to one area.
+///
+/// The rules are the whole-app ones applied to one area's counts:
+/// something open → `Ready`; nothing open and no directory → `FilesNotFound`;
+/// nothing open, directory present, and at least one index in **this area**
+/// failed → `CouldNotOpen`. An area with a directory holding no per-language
+/// subdirectory at all is `FilesNotFound`, not a fault.
+pub fn area_state(area: &crate::search::searcher::FulltextAreaStatus) -> FulltextState {
+    if area.opened > 0 {
+        FulltextState::Ready
+    } else if area.dir_present && area.failed > 0 {
+        FulltextState::CouldNotOpen
+    } else {
+        FulltextState::FilesNotFound
+    }
+}
+
+/// What to say about one area, or `""` when there is nothing to say.
+///
+/// **An empty string is the instruction to stay silent**, and the caller needs
+/// no other rule — every decision about when this feature speaks is made here.
+/// There are three cases and only two of them produce a sentence:
+///
+/// - nothing opened and something failed → the index could not be opened;
+/// - **something opened and something else failed** → the results are
+///   incomplete. This one is easy to miss and was: an area is not all-or-nothing
+///   (`suttas/en` opens while `suttas/pli` fails), and a user searching Pāli
+///   would otherwise be told "No results found." while English worked fine;
+/// - nothing failed → silent, whether the area is open or simply not downloaded.
+///   A user who never downloaded a language has no fault to report, and telling
+///   them their index is broken would send them to Rebuild Search Index for
+///   nothing (FR-26).
+pub fn area_message(
+    area: &crate::search::searcher::FulltextAreaStatus,
+    reason: &str,
+) -> String {
+    if area.failed == 0 {
+        return String::new();
+    }
+
+    let headline = if area.opened == 0 {
+        "The search index could not be opened."
+    } else {
+        "Some of the search index could not be opened, so these results may be incomplete."
+    };
+
+    if reason.is_empty() {
+        return headline.to_string();
+    }
+    format!("{headline} {reason}")
 }
 
 impl FulltextStatus {
@@ -220,9 +329,9 @@ impl FulltextStatus {
         format!(
             concat!(
                 r#"{{"is_valid":{},"state":"{}","message":"{}","failure_count":{},"#,
-                r#""sutta":{{"opened":{},"dir_present":{}}},"#,
-                r#""dict":{{"opened":{},"dir_present":{}}},"#,
-                r#""library":{{"opened":{},"dir_present":{}}}}}"#,
+                r#""sutta":{{"opened":{},"dir_present":{},"failed":{},"state":"{}","message":"{}"}},"#,
+                r#""dict":{{"opened":{},"dir_present":{},"failed":{},"state":"{}","message":"{}"}},"#,
+                r#""library":{{"opened":{},"dir_present":{},"failed":{},"state":"{}","message":"{}"}}}}"#,
             ),
             self.is_valid,
             self.state.as_str(),
@@ -230,10 +339,19 @@ impl FulltextStatus {
             self.failure_count,
             self.counts.sutta.opened,
             self.counts.sutta.dir_present,
+            self.counts.sutta.failed,
+            area_state(&self.counts.sutta).as_str(),
+            area_message(&self.counts.sutta, self.reason),
             self.counts.dict.opened,
             self.counts.dict.dir_present,
+            self.counts.dict.failed,
+            area_state(&self.counts.dict).as_str(),
+            area_message(&self.counts.dict, self.reason),
             self.counts.library.opened,
             self.counts.library.dir_present,
+            self.counts.library.failed,
+            area_state(&self.counts.library).as_str(),
+            area_message(&self.counts.library, self.reason),
         )
     }
 }
@@ -254,11 +372,22 @@ mod tests {
     use super::*;
     use crate::search::searcher::FulltextAreaStatus;
 
+    /// An area that opened nothing is given one failure when its directory is
+    /// present, which is what the searcher records for a directory it tried and
+    /// could not open. `area_state` needs the two apart.
+    fn area(opened: usize, dir_present: bool) -> FulltextAreaStatus {
+        FulltextAreaStatus {
+            opened,
+            dir_present,
+            failed: if opened == 0 && dir_present { 1 } else { 0 },
+        }
+    }
+
     fn counts(sutta: usize, dict: usize, library: usize, dirs: bool) -> FulltextIndexCounts {
         FulltextIndexCounts {
-            sutta: FulltextAreaStatus { opened: sutta, dir_present: dirs },
-            dict: FulltextAreaStatus { opened: dict, dir_present: dirs },
-            library: FulltextAreaStatus { opened: library, dir_present: dirs },
+            sutta: area(sutta, dirs),
+            dict: area(dict, dirs),
+            library: area(library, dirs),
         }
     }
 
@@ -406,13 +535,14 @@ mod tests {
             "No space left on device",
             "something entirely unexpected",
         ] {
-            messages.push(
-                build_status(
-                    Some(counts(0, 0, 0, true)),
-                    &[("suttas/en".to_string(), raw.to_string())],
-                )
-                .message,
+            let status = build_status(
+                Some(counts(0, 0, 0, true)),
+                &[("suttas/en".to_string(), raw.to_string())],
             );
+            // The per-area sentence is shown in the search results panel and is
+            // just as user-facing as the whole-app one.
+            messages.push(area_message(&status.counts.sutta, status.reason));
+            messages.push(status.message);
         }
 
         for message in &messages {
@@ -431,8 +561,86 @@ mod tests {
         let json = status.to_json();
         assert!(json.contains(r#""is_valid":true"#), "got {json}");
         assert!(json.contains(r#""state":"ready""#), "got {json}");
-        assert!(json.contains(r#""sutta":{"opened":3,"dir_present":true}"#), "got {json}");
-        assert!(json.contains(r#""library":{"opened":1,"dir_present":true}"#), "got {json}");
+        assert!(
+            json.contains(r#""sutta":{"opened":3,"dir_present":true,"failed":0,"state":"ready","message":""}"#),
+            "got {json}"
+        );
+        assert!(
+            json.contains(r#""library":{"opened":1,"dir_present":true,"failed":0,"state":"ready","message":""}"#),
+            "got {json}"
+        );
+    }
+
+    /// The case the per-area block exists for: one area open, another failed.
+    /// The whole-app verdict is `ready` — fulltext search does work — and a
+    /// search of the failed area must still say so instead of "No results".
+    #[test]
+    fn a_partly_open_index_reports_per_area() {
+        let counts = FulltextIndexCounts {
+            sutta: area(3, true),
+            dict: area(0, true),
+            library: area(0, false),
+        };
+        let status = build_status(Some(counts), &[lock_failure("/vol/index/dict_words/pli")]);
+
+        // Search works, and something is wrong. Both are true, and the two
+        // fields say so separately — `state` is what the search UI branches on,
+        // `is_valid` is what stops Database Validation printing "All checks
+        // passed" over a broken dictionary index.
+        assert_eq!(status.state, FulltextState::Ready);
+        assert!(!status.is_valid, "a failed index is not a clean bill of health");
+        assert!(
+            status.message.contains("could not be opened"),
+            "the whole-app message must not read as OK: {}",
+            status.message
+        );
+
+        assert_eq!(area_state(&status.counts.sutta), FulltextState::Ready);
+        assert_eq!(area_state(&status.counts.dict), FulltextState::CouldNotOpen);
+        // Never downloaded, never attempted: not a fault, and silent.
+        assert_eq!(area_state(&status.counts.library), FulltextState::FilesNotFound);
+
+        assert!(area_message(&status.counts.sutta, status.reason).is_empty());
+        assert!(area_message(&status.counts.library, status.reason).is_empty());
+
+        let dict_message = area_message(&status.counts.dict, status.reason);
+        assert!(
+            dict_message.starts_with("The search index could not be opened."),
+            "got {dict_message}"
+        );
+        assert!(
+            dict_message.contains("does not support the file locking"),
+            "the area message must carry the cause, not just the fact: {dict_message}"
+        );
+    }
+
+    /// An area is not all-or-nothing either: `suttas/en` can open while
+    /// `suttas/pli` fails. The area's own state is `Ready` — English searches
+    /// work — but a Pāli search comes back empty, and saying nothing there is
+    /// the same silent-empty defect one level down.
+    #[test]
+    fn an_area_with_some_indexes_open_and_some_failed_still_speaks() {
+        let counts = FulltextIndexCounts {
+            sutta: FulltextAreaStatus { opened: 1, dir_present: true, failed: 1 },
+            dict: area(2, true),
+            library: area(0, false),
+        };
+        let status = build_status(Some(counts), &[lock_failure("/vol/index/suttas/pli")]);
+
+        assert_eq!(area_state(&status.counts.sutta), FulltextState::Ready);
+
+        let message = area_message(&status.counts.sutta, status.reason);
+        assert!(
+            message.contains("may be incomplete"),
+            "a partly-open area must say results are incomplete, not that nothing opened: {message}"
+        );
+        assert!(
+            message.contains("does not support the file locking"),
+            "and it must still carry the cause: {message}"
+        );
+
+        // The fully-open area stays silent.
+        assert!(area_message(&status.counts.dict, status.reason).is_empty());
     }
 
     /// The message is interpolated into JSON by hand, so a quote in it must not

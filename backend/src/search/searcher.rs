@@ -41,6 +41,14 @@ pub struct FulltextAreaStatus {
     pub opened: usize,
     /// Whether the area's index directory exists at all.
     pub dir_present: bool,
+    /// Per-language index directories that were attempted and failed.
+    ///
+    /// Counted per area rather than derived later from
+    /// `crate::searcher_open_failures()` by matching path fragments: the area a
+    /// failure belongs to is known here, at the moment it happens, and matching
+    /// `/suttas/` against a path would break the day a user's storage location
+    /// happens to contain that word.
+    pub failed: usize,
 }
 
 /// The per-area open counts, captured when the searcher was built.
@@ -103,15 +111,11 @@ impl FulltextSearcher {
     /// Open all available per-language indexes under the given paths.
     pub fn open(paths: &AppGlobalPaths) -> Result<Self> {
         Self::begin_open_session();
-        let (sutta_indexes, sutta_dir) = Self::open_indexes(&paths.suttas_index_dir, IndexType::Sutta)?;
-        let (dict_indexes, dict_dir) = Self::open_indexes(&paths.dict_words_index_dir, IndexType::Dict)?;
-        let (library_indexes, library_dir) = Self::open_indexes(&paths.library_index_dir, IndexType::Library)?;
+        let (sutta_indexes, sutta) = Self::open_indexes(&paths.suttas_index_dir, IndexType::Sutta)?;
+        let (dict_indexes, dict) = Self::open_indexes(&paths.dict_words_index_dir, IndexType::Dict)?;
+        let (library_indexes, library) = Self::open_indexes(&paths.library_index_dir, IndexType::Library)?;
 
-        let counts = FulltextIndexCounts {
-            sutta: FulltextAreaStatus { opened: sutta_indexes.len(), dir_present: sutta_dir },
-            dict: FulltextAreaStatus { opened: dict_indexes.len(), dir_present: dict_dir },
-            library: FulltextAreaStatus { opened: library_indexes.len(), dir_present: library_dir },
-        };
+        let counts = FulltextIndexCounts { sutta, dict, library };
 
         info(&format!(
             "FulltextSearcher opened: {} sutta language indexes, {} dict language indexes, {} library language indexes",
@@ -148,19 +152,15 @@ impl FulltextSearcher {
     /// Pass an empty or non-existent path to skip sutta, dict, or library indexes.
     pub fn open_from_dirs(suttas_index_dir: &Path, dict_words_index_dir: &Path, library_index_dir: Option<&Path>) -> Result<Self> {
         Self::begin_open_session();
-        let (sutta_indexes, sutta_dir) = Self::open_indexes(suttas_index_dir, IndexType::Sutta)?;
-        let (dict_indexes, dict_dir) = Self::open_indexes(dict_words_index_dir, IndexType::Dict)?;
-        let (library_indexes, library_dir) = if let Some(dir) = library_index_dir {
+        let (sutta_indexes, sutta) = Self::open_indexes(suttas_index_dir, IndexType::Sutta)?;
+        let (dict_indexes, dict) = Self::open_indexes(dict_words_index_dir, IndexType::Dict)?;
+        let (library_indexes, library) = if let Some(dir) = library_index_dir {
             Self::open_indexes(dir, IndexType::Library)?
         } else {
-            (HashMap::new(), false)
+            (HashMap::new(), FulltextAreaStatus::default())
         };
 
-        let counts = FulltextIndexCounts {
-            sutta: FulltextAreaStatus { opened: sutta_indexes.len(), dir_present: sutta_dir },
-            dict: FulltextAreaStatus { opened: dict_indexes.len(), dir_present: dict_dir },
-            library: FulltextAreaStatus { opened: library_indexes.len(), dir_present: library_dir },
-        };
+        let counts = FulltextIndexCounts { sutta, dict, library };
 
         Ok(Self {
             sutta_indexes,
@@ -173,15 +173,25 @@ impl FulltextSearcher {
     /// Scan a directory for per-language subdirectories and open each as a
     /// Tantivy index.
     ///
-    /// Returns the opened indexes **and whether the base directory existed** —
-    /// an empty map means "nothing opened", which on its own cannot tell an
-    /// absent index tree from one that would not open.
-    fn open_indexes(base_dir: &Path, index_type: IndexType) -> Result<(HashMap<String, (Index, IndexReader)>, bool)> {
+    /// Returns the opened indexes **and this area's status** — whether the base
+    /// directory existed, and how many per-language directories were attempted
+    /// and failed. An empty map means "nothing opened", which on its own cannot
+    /// tell an absent index tree from one that would not open.
+    fn open_indexes(
+        base_dir: &Path,
+        index_type: IndexType,
+    ) -> Result<(HashMap<String, (Index, IndexReader)>, FulltextAreaStatus)> {
         let mut map = HashMap::new();
+        let mut failed = 0usize;
 
         match base_dir.try_exists() {
             Ok(true) => {}
-            _ => return Ok((map, false)),
+            _ => {
+                return Ok((
+                    map,
+                    FulltextAreaStatus { opened: 0, dir_present: false, failed: 0 },
+                ))
+            }
         }
 
         let entries = std::fs::read_dir(base_dir)?;
@@ -202,6 +212,7 @@ impl FulltextSearcher {
                     map.insert(lang.clone(), (index, reader));
                 }
                 Err(e) => {
+                    failed += 1;
                     warn(&format!("Failed to open index at {}: {}", path.display(), e));
                     // Same information, kept where the storage diagnostics
                     // report can read it back. No behaviour change.
@@ -213,7 +224,12 @@ impl FulltextSearcher {
             }
         }
 
-        Ok((map, true))
+        let status = FulltextAreaStatus {
+            opened: map.len(),
+            dir_present: true,
+            failed,
+        };
+        Ok((map, status))
     }
 
     fn open_single_index(dir: &Path, lang: &str, index_type: IndexType) -> Result<(Index, IndexReader)> {

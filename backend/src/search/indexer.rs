@@ -615,6 +615,15 @@ pub fn build_all_indexes(
 // Index versioning
 // ---------------------------------------------------------------------------
 
+/// **Bump this whenever anything in `super::schema` changes.**
+///
+/// It is the only thing that detects a stale index now. The search path uses
+/// `Index::open`, which takes whatever schema is on disk; the
+/// `Index::open_or_create` it replaced compared schemas and refused a mismatch.
+/// Without a bump, an index built by an older Simsapa opens silently and fails
+/// per query against fields that are not in it. `is_index_current()` reads this
+/// against the `VERSION` file and the app offers a rebuild. See
+/// `docs/fulltext-index-storage-and-file-locking.md`.
 pub const INDEX_VERSION: &str = "1.0";
 
 /// Write a VERSION file to the index directory.

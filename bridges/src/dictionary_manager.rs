@@ -53,7 +53,7 @@ pub mod qobject {
     extern "RustQt" {
         // Mutating operations (run on a worker thread, emit signals).
         #[qinvokable]
-        fn import_zip(self: Pin<&mut DictionaryManager>, zip_path: &QString, label: &QString, lang: &QString) -> QString;
+        fn import_zip(self: Pin<&mut DictionaryManager>, zip_path: &QString, member: &QString, label: &QString, lang: &QString) -> QString;
 
         #[qinvokable]
         fn import_dir(self: Pin<&mut DictionaryManager>, dir_path: &QString, label: &QString, lang: &QString) -> QString;
@@ -346,9 +346,21 @@ fn reconcile_progress_to_signal(p: &ReconcileProgress) -> (String, i32, i32) {
 }
 
 impl qobject::DictionaryManager {
-    fn import_zip(self: Pin<&mut Self>, zip_path: &QString, label: &QString, lang: &QString) -> QString {
+    /// `member` is the checklist row's own `member` value, verbatim: empty for
+    /// an archive holding a single dictionary, or the member folder of one
+    /// dictionary inside a bundle archive. QML must pass back what the scan
+    /// reported and never derive it — see `import_user_zip_member`.
+    ///
+    /// An empty string maps to "the whole archive". That collapses one rare
+    /// case — a bundle with a dictionary loose at the archive root *and* others
+    /// in folders, whose root member the probe reports as `""` — into extracting
+    /// the whole archive for that one row. It still imports the right
+    /// dictionary, because `locate_stardict_dir` looks at the root before the
+    /// subfolders; it is only less economical.
+    fn import_zip(self: Pin<&mut Self>, zip_path: &QString, member: &QString, label: &QString, lang: &QString) -> QString {
         let qt_thread = self.qt_thread();
         let zip_path = PathBuf::from(zip_path.to_string());
+        let member = member.to_string();
         let label = label.to_string();
         let lang = lang.to_string();
 
@@ -367,7 +379,8 @@ impl qobject::DictionaryManager {
                 });
             };
 
-            match dictionary_manager_core::import_user_zip(&zip_path, &label, &lang, &on_progress, &cancel) {
+            let member_opt = if member.is_empty() { None } else { Some(member.as_str()) };
+            match dictionary_manager_core::import_user_zip_member(&zip_path, member_opt, &label, &lang, &on_progress, &cancel) {
                 Ok(outcome) if outcome.cancelled => {
                     let inserted = outcome.inserted as i32;
                     let msg = if outcome.inserted == 0 {
@@ -554,7 +567,7 @@ impl qobject::DictionaryManager {
             encoded_url: String::from_utf8_lossy(url.to_encoded().as_slice()).to_string(),
             scheme: url.scheme().map(|s| s.to_string()).unwrap_or_default(),
             local_path: crate::sutta_bridge::qurl_to_local_path(url),
-            feature: "dictionaries",
+            feature: simsapa_backend::import_staging::DICTIONARY_FEATURE,
         };
 
         self.spawn_staging(request)
@@ -578,7 +591,12 @@ impl qobject::DictionaryManager {
         // handled for completeness and anything else is left to the staging
         // layer's `unsupported_scheme` error.
         let local_path = if scheme == "file" {
-            uri.trim_start_matches("file://").to_string()
+            // Through `QUrl`, not by trimming the prefix: `file:///C:/x` is
+            // `C:/x` and not `/C:/x`, and percent-escapes have to come back out.
+            // `qurl_to_local_path` is the same conversion the Qt-side entry
+            // point uses, so both pickers hand the staging layer the same shape
+            // of path.
+            crate::sutta_bridge::qurl_to_local_path(&QUrl::from(&QString::from(&uri)))
         } else if scheme.is_empty() {
             uri.clone()
         } else {
@@ -589,7 +607,7 @@ impl qobject::DictionaryManager {
             encoded_url: uri,
             scheme,
             local_path,
-            feature: "dictionaries",
+            feature: simsapa_backend::import_staging::DICTIONARY_FEATURE,
         };
 
         self.spawn_staging(request)
@@ -671,7 +689,10 @@ impl qobject::DictionaryManager {
     /// behind for good.
     fn cleanup_staged_file(&self, path: &QString) -> bool {
         let p = PathBuf::from(path.to_string());
-        simsapa_backend::import_staging::cleanup_staged_file(&p, "dictionaries")
+        simsapa_backend::import_staging::cleanup_staged_file(
+            &p,
+            simsapa_backend::import_staging::DICTIONARY_FEATURE,
+        )
     }
 
     fn abort_import(self: Pin<&mut Self>) {

@@ -2365,8 +2365,19 @@ impl qobject::SuttaBridge {
             // the QML side keeps it out of the downloadable-failure set.
             //
             // Emitted from here because this runs on the same worker thread,
-            // after the searcher has had its chance to open — reporting it
-            // earlier would report `not_opened_yet` on every launch.
+            // after the databases have been queried.
+            //
+            // The searcher is opened first, and that call is load-bearing rather
+            // than defensive: `load_searcher()` is a *separate* spawned thread
+            // started at window construction, and nothing sequences the two. On
+            // a launch where the update check fails fast (no network) the
+            // validation can win the race, and the row would then report "The
+            // search index has not been opened yet." as a **failure** — a
+            // fabricated fault, logged at ERROR, in the one report a user is
+            // asked to send. `init_fulltext_searcher()` is idempotent: it
+            // returns immediately if a searcher is already open, and otherwise
+            // does here what the other thread was about to do anyway.
+            simsapa_backend::init_fulltext_searcher();
             let fulltext_status = simsapa_backend::fulltext_status::current_status();
             let fulltext_valid = fulltext_status.is_valid;
             let fulltext_message = QString::from(&fulltext_status.message);

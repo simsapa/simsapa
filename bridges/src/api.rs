@@ -1803,6 +1803,19 @@ pub struct HealthDbPaths {
 pub struct HealthFulltextArea {
     pub opened: usize,
     pub dir_present: bool,
+    /// Index directories in this area that were attempted and failed.
+    ///
+    /// The top-level `state` is `ready` as soon as *anything* opened anywhere,
+    /// so it cannot answer "will a search of **this** area work". These two
+    /// fields can: `state` is this area's own verdict, and `message` is what the
+    /// app itself shows a user whose search of this area came back empty.
+    pub failed: usize,
+    /// One of `files_not_found`, `could_not_open`, `ready` — for this area.
+    pub state: String,
+    /// Plain-language sentence for this area, or `""` when there is nothing
+    /// wrong to report. An area with `opened > 0` **and** `failed > 0` has
+    /// working but incomplete search, and says so here.
+    pub message: String,
 }
 
 /// The fulltext block of `/health`.
@@ -1816,6 +1829,24 @@ pub struct HealthFulltext {
     pub sutta: HealthFulltextArea,
     pub dict: HealthFulltextArea,
     pub library: HealthFulltextArea,
+}
+
+/// One area's block, built from the same `fulltext_status` helpers the app's own
+/// UI reads — never from the counts directly, so `/health` cannot drift from
+/// what the user is being shown.
+fn health_area(
+    area: &simsapa_backend::search::searcher::FulltextAreaStatus,
+    reason: &str,
+) -> HealthFulltextArea {
+    HealthFulltextArea {
+        opened: area.opened,
+        dir_present: area.dir_present,
+        failed: area.failed,
+        state: simsapa_backend::fulltext_status::area_state(area)
+            .as_str()
+            .to_string(),
+        message: simsapa_backend::fulltext_status::area_message(area, reason),
+    }
 }
 
 /// The `/health` document: a single read-once snapshot of the running instance.
@@ -1860,18 +1891,9 @@ fn health(dbm: &State<Arc<DbManager>>) -> Json<HealthInfo> {
                 state: status.state.as_str().to_string(),
                 message: status.message.clone(),
                 failure_count: status.failure_count,
-                sutta: HealthFulltextArea {
-                    opened: status.counts.sutta.opened,
-                    dir_present: status.counts.sutta.dir_present,
-                },
-                dict: HealthFulltextArea {
-                    opened: status.counts.dict.opened,
-                    dir_present: status.counts.dict.dir_present,
-                },
-                library: HealthFulltextArea {
-                    opened: status.counts.library.opened,
-                    dir_present: status.counts.library.dir_present,
-                },
+                sutta: health_area(&status.counts.sutta, status.reason),
+                dict: health_area(&status.counts.dict, status.reason),
+                library: health_area(&status.counts.library, status.reason),
             }
         },
         // A count error -> None -> null (Finding 5); a real empty DB -> Some(0).

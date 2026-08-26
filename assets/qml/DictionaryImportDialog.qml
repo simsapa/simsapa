@@ -219,6 +219,11 @@ ApplicationWindow {
     }
 
     function enter_copying_frame() {
+        // A staged copy from an earlier pick in this same dialog session has no
+        // owner once a new one is being made: `onStagingFinished` overwrites
+        // `staged_path`, and nothing would ever hold the old path again. That is
+        // a whole archive — up to hundreds of MB — left in the temp folder.
+        root.discard_staged_file();
         root.scan_message = "";
         root.copy_done_bytes = 0;
         root.copy_total_bytes = 0;
@@ -397,10 +402,16 @@ ApplicationWindow {
             screen_manager.set_keep_screen_on("dictionary-import-scan", false);
             if (root.scan_abandoned) {
                 root.scan_abandoned = false;
+                // Same as the abandoned branch of onScanFinished: the user
+                // walked away from this source, so the staged copy has no owner.
+                root.discard_staged_file();
                 return;
             }
             root.scan_message = "Scan failed: " + message;
             frames.currentIndex = root.frame_source;
+            // Nothing will import it now, so the staged copy has no owner left —
+            // the same reasoning as the "found nothing" branch above.
+            root.discard_staged_file();
         }
     }
 
@@ -843,6 +854,9 @@ ApplicationWindow {
 
                                 source_path: modelData.source_path
                                 source_kind: modelData.source_kind
+                                // Absent from the JSON unless the source is a
+                                // bundle archive.
+                                source_member: modelData.member || ""
                                 title_text: modelData.title
                                 entry_count: modelData.entry_count
                                 label: modelData.suggested_label
@@ -881,6 +895,7 @@ ApplicationWindow {
                                     items.push({
                                         path: it.source_path,
                                         kind: it.source_kind,
+                                        member: it.source_member,
                                         label: it.label,
                                         lang: it.lang
                                     });

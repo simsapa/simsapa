@@ -106,8 +106,9 @@ ColumnLayout {
     // desktop tooling are unaffected.
     property bool db_ready: true
     // "Suttas", "Dictionary" or "Library" — which area the current results
-    // belong to. Used only to decide whether a fulltext-index failure is
-    // relevant to what the user just searched.
+    // belong to. Used to pick the per-area block of the fulltext status, so a
+    // failure is only reported to the user when it is a failure of the area
+    // they actually searched.
     property string search_area: ""
     // Set by check_fulltext_index_problem() when a page comes back empty and
     // the index for this area could not be opened. Empty string means "no
@@ -132,6 +133,13 @@ ColumnLayout {
     // `could_not_open` means index directories exist, indexes were attempted,
     // and every one of them failed. See backend/src/fulltext_status.rs.
     //
+    // It is the **searched area's** state, not the whole app's. The top-level
+    // one reads `ready` as soon as anything opened anywhere, so a user whose
+    // sutta indexes open and whose dictionary indexes all fail would be back to
+    // a silent "No results found." on every dictionary search — the same defect,
+    // narrowed to one area. The whole-app state is the fallback for a search
+    // area this component cannot map (there is none today).
+    //
     // The status arrives through a callback rather than a direct SuttaBridge
     // call, because this component deliberately does not import the bridge —
     // its `import com.profoundlabs.simsapa` is commented out so it stays usable
@@ -145,15 +153,41 @@ ColumnLayout {
         }
 
         const status = root.fulltext_status_fn(); // qmllint disable use-proper-function
-        if (!status || status.state !== "could_not_open") {
+        if (!status) {
             return;
         }
 
-        // A whole-app failure is worth naming whatever the area. When only some
-        // areas failed the backend reports `ready`, so reaching here already
-        // means nothing opened anywhere.
-        root.fulltext_problem_message = status.message
+        // The area's own block when the search area maps to one, the whole-app
+        // verdict otherwise. Both carry a ready-made sentence: every
+        // user-facing string this feature can emit is written in
+        // backend/src/fulltext_status.rs, so that one file can be checked for
+        // jargon — and so is every decision about *when* to speak.
+        //
+        // An empty per-area message means "say nothing", which is the normal
+        // case. Do not add conditions here: an area that opened some indexes and
+        // failed on others has working search and incomplete results, and that
+        // sentence is one the backend already knows how to write.
+        const area = root.area_status(status);
+        const message = area
+            ? area.message
+            : (status.state === "could_not_open" ? status.message : "");
+        if (message.length === 0) {
+            return;
+        }
+
+        root.fulltext_problem_message = message
             + " Open Database Validation from the menu for details.";
+    }
+
+    // The status block for the area that was just searched, or null when the
+    // area does not map to one.
+    function area_status(status) {
+        switch (root.search_area) {
+        case "Suttas":     return status.sutta;
+        case "Dictionary": return status.dict;
+        case "Library":    return status.library;
+        default:           return null;
+        }
     }
 
     function set_search_result_page(search_result_page) {

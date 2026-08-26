@@ -15,6 +15,30 @@ it is wired into every real search and index path.
 > `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`.
 > The benchmark below is complete and is the record for task 3.7.
 
+## The read path opens, it does not create — and what that gave up
+
+`open_single_index` (`backend/src/search/searcher.rs`) uses `Index::open` when
+the directory already holds an index, and falls back to `Index::open_or_create`
+only when it does not. Creating an index from the *search* path is never
+correct: it leaves an empty index behind and reports success. The write paths in
+`indexer.rs` keep `open_or_create`, which is where creating one is the point.
+
+**One thing was given up with it, and it is worth knowing about.**
+`Index::open_or_create` compares the on-disk schema against the schema it was
+handed and returns `SchemaError` when they differ; `Index::open` takes whatever
+is on disk. So an index built by an older Simsapa whose schema has since changed
+now opens *silently* instead of being recorded as an open failure, and the
+mismatch surfaces later, per query, as a parse error against a field that is not
+there.
+
+Nothing is broken today, because a schema change is supposed to come with a
+bump to `INDEX_VERSION` (`backend/src/search/indexer.rs`), which
+`is_index_current()` reads and `SuttaBridge::check_search_index_status` reports
+so the user is offered a rebuild. But that is now the **only** thing standing
+between a schema change and a silently wrong index: **if you change any schema
+in `backend/src/search/schema.rs`, bump `INDEX_VERSION` in the same commit.**
+The type system will not remind you, and neither will Tantivy any more.
+
 ## Benchmark — the wrapper costs nothing on a normal filesystem
 
 `backend/tests/test_lenient_directory_benchmark.rs`.

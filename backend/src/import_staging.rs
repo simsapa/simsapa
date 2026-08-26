@@ -120,6 +120,17 @@ pub struct StagedFile {
     pub was_copied: bool,
 }
 
+/// The dictionary import's staging feature name.
+///
+/// A constant rather than a literal at each site because the three operations
+/// keyed on it — staging into the folder, `cleanup_staged_file` deleting from
+/// it, and `sweep_orphaned_staged_files` reclaiming it — **fail silently** when
+/// they disagree. Ownership is decided by location (see `cleanup_staged_file`),
+/// so a cleanup pointed at the wrong folder refuses every delete without an
+/// error, and the sweep watches a folder nothing writes to. The result is a leak
+/// that no test and no log line would show.
+pub const DICTIONARY_FEATURE: &str = "dictionaries";
+
 /// The per-feature staging folder: `<temp>/simsapa-imports/<feature>/`.
 ///
 /// Per-feature rather than the shared root, so a cleanup can remove one
@@ -161,6 +172,70 @@ pub fn cleanup_staged_file(path: &Path, feature: &str) -> bool {
         },
         _ => false,
     }
+}
+
+/// A staged copy younger than this may belong to an import running right now,
+/// and is never swept. Matches the extraction sweep's gate in
+/// `dictionary_manager_core`.
+pub const ORPHAN_SWEEP_MIN_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Remove staged copies left behind by a killed process.
+///
+/// Every ordinary ending deletes its own staged file (the dialog on a cancel or
+/// a scan that found nothing, the batch driver when the import ends). A process
+/// killed between the copy and the import — the Android low-memory killer
+/// during a 180 MB copy is the case this is written for — leaves the whole
+/// archive behind, and nothing else ever reclaims it. These are the **largest**
+/// files the app leaves anywhere, so they matter more than the extraction
+/// directories that already had a sweep.
+///
+/// Age-gated, and an unreadable timestamp counts as too young: deleting a
+/// running import's staged archive underneath it is far worse than leaving a
+/// stale copy for one more launch. Returns the number of files removed.
+pub fn sweep_orphaned_staged_files(feature: &str) -> usize {
+    let dir = staging_dir(feature);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        // Not an error: the folder only exists once something has been staged.
+        Err(_) => return 0,
+    };
+
+    let now = std::time::SystemTime::now();
+    let mut removed = 0usize;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let age = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok());
+        match age {
+            Some(age) if age >= ORPHAN_SWEEP_MIN_AGE => {}
+            _ => continue,
+        }
+
+        match std::fs::remove_file(&path) {
+            Ok(()) => {
+                info(&format!(
+                    "sweep_orphaned_staged_files: removed {}",
+                    path.display()
+                ));
+                removed += 1;
+            }
+            Err(e) => crate::logger::error(&format!(
+                "sweep_orphaned_staged_files: failed to remove {}: {}",
+                path.display(),
+                e
+            )),
+        }
+    }
+
+    removed
 }
 
 /// Strip anything from a provider-supplied display name that could escape the

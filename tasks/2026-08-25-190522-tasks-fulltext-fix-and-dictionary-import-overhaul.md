@@ -1375,12 +1375,194 @@ sibling task list's §Notes recipe sets up. Nothing added here is inside
 covers every line changed. **Whether the fallback fires is the measurement, and
 only the user's device can take it** (task 8.7).
 
+### 6.8 [x] Review pass — bundle archives, and five defects found by tracing the flows
+
+A review of tasks 1.0–6.0 against the PRDs (2026-08-26) found one defect that
+would have mislabelled the user's data and five smaller ones; a second pass over
+those fixes found seven more. All are fixed here, before task 7.0.
+**`cargo test`: 60 suites, 0 failed. `make qml-test`: 172 passed, 0 failed.
+`make qml-lint`: no warning naming a touched file. `make build`: clean.**
+
+**Not verified: the Android cross-check.** Nothing in 6.8 is inside
+`#[cfg(target_os = "android")]` — the zip work, the staging sweep and the status
+plumbing are all platform-independent — so the desktop compile covers every line
+changed. `cargo check --target aarch64-linux-android` still needs the NDK
+environment from the sibling task list's §Notes.
+
+- [x] 6.8.1 **A bundle `.zip` now imports as a folder of dictionaries would.**
+  This is the big one. `-gd` releases are routinely one zip with a folder per
+  dictionary — the reporting user's `all-dictionaries-gd.zip` is named as one —
+  and both the old code and task 5.1's probe reported exactly **one** candidate:
+  whichever `.ifo` they met first. Every other dictionary in the archive was
+  unreachable.
+
+  Worse, the two disagreed on *which* one. The probe read the zip's **central
+  directory**; `import_user_zip` extracted everything and took the first `.ifo`
+  the **filesystem** enumerated. The two orders are unrelated, so the checklist
+  could offer dictionary A's title and word count and the import could insert
+  dictionary B — under the label the user typed for A. Before task 5.1 both went
+  through `locate_stardict_dir` on the extracted tree, so they agreed by
+  construction; making the probe cheap is what broke the agreement.
+
+  The fix is the shape the task's premise already had: `probe_zip_candidates()`
+  (plural) returns one `ProbeOutcome` per member, `CandidateMeta` carries the
+  `member` folder, and `import_user_zip_member()` extracts **only that member's
+  entries**. Three consequences worth stating:
+
+  - **The member is decided once, by the probe, and handed back at import
+    time.** Re-deriving it is the defect. The value travels
+    `scan_source` → `scanFinished` JSON → `DictionaryImportRow.source_member` →
+    the batch item → `import_zip(path, member, label, lang)`.
+  - **Importing all N members costs one archive's worth of extraction**, not N,
+    because each import extracts its own folder only. That is what let the
+    existing sequential batch driver stay exactly as it is.
+  - **A single-dictionary archive is untouched**: `member` is `None`, the whole
+    archive is extracted as before, and the label still comes from the zip's own
+    filename. Only a bundle gets per-member labels, taken from the member folder
+    (the zip filename is shared, so it would make every row a duplicate of the
+    others). The row's subtitle names the member, since two rows of a bundle
+    share a `source_path` and nothing else would tell them apart.
+
+  `member: Some("")` — a dictionary loose at a bundle's root — maps to "whole
+  archive" at the bridge. It still imports the right dictionary
+  (`locate_stardict_dir` looks at the root first); it is only less economical,
+  and it is a shape no real bundle has.
+
+  Tested by `a_bundle_zip_scans_and_imports_one_dictionary_per_member` (two
+  synthetic dictionaries of *different sizes* in one zip, importing the second
+  and asserting its entry count — an import that took the wrong member fails on
+  the number, not just the title), `a_single_dictionary_zip_reports_no_member`,
+  and six unit tests over `stardict_members_in` / `entry_belongs_to_member` /
+  `member_label` / the member-filtered extraction.
+
+  **Still true, and not in scope here: a bundle is imported one dictionary at a
+  time and every row is a separate `dictionaries` row.** That is what the
+  checklist has always meant. The 8.7 covering message should say so, or the
+  user will read "1 of 12 imported" as a partial failure.
+- [x] 6.8.2 **`.IFO` probed as valid and then failed to import.**
+  `is_shallow_ifo_entry` lowercased the extension; `find_ifo_stem_in` compared
+  `extension() == Some("ifo")` exactly. Now both are case-insensitive.
+- [x] 6.8.3 **Two staged-copy leaks.** `onScanFailed` never discarded the staged
+  file, and staging a *second* file in one dialog session overwrote
+  `staged_path` without discarding the first — a whole archive, up to hundreds
+  of MB, with nothing left holding its path. `enter_copying_frame()` now
+  discards first, and so does `onScanFailed`.
+
+  Task 5.6 swept orphaned **extraction** directories but nothing swept the
+  **staged copies**, which are the larger files: a process killed mid-copy (the
+  Android low-memory killer during a 180 MB read is the case) left the whole
+  archive behind forever. `import_staging::sweep_orphaned_staged_files()` is the
+  twin sweep, same one-hour age gate, same "an unreadable timestamp counts as
+  too young" rule, called from `init_app_data()` beside the other.
+- [x] 6.8.4 **The search-UI empty state now reports the *area* that was
+  searched.** `FulltextState::CouldNotOpen` requires zero indexes open across
+  *all three* areas, so a user whose sutta indexes open and whose dictionary
+  indexes all fail was back to a silent "No results found." on every dictionary
+  search — FR-23…FR-25's defect, narrowed to one area. `FulltextAreaStatus`
+  gained a `failed` count (recorded where the failure happens, **not** derived
+  later by matching `/suttas/` against a path, which would break on a storage
+  location containing that word), and `fulltext_status` gained `area_state()` /
+  `area_message()`. `FulltextResults` picks the block for `search_area`, whose
+  property was declared and unread until now. Every sentence still comes from
+  `fulltext_status.rs`, so `no_jargon_in_user_facing_strings` still covers them
+  all — it now checks the per-area ones too.
+- [x] 6.8.5 **Database Validation could invent a fulltext failure.** The comment
+  claimed the row was emitted "after the searcher has had its chance to open",
+  but `load_searcher()` is a separate spawned thread and nothing sequences the
+  two. On a launch where the update check fails fast (no network), validation
+  wins the race and reports *"The search index has not been opened yet."* as a
+  **failure**, logged at ERROR — in the one report the user is asked to send,
+  and in the exact build whose returned log is the measurement. Now
+  `init_fulltext_searcher()` (idempotent) runs first.
+- [x] 6.8.6 **`stage_picked_uri`'s `file://` branch** used
+  `trim_start_matches("file://")`, which yields `/C:/x` on Windows and leaves
+  percent-escapes in. It goes through `qurl_to_local_path` now, the same
+  conversion the Qt-side entry point uses. Unreachable today (the raw pick is
+  Android-only), but it was wrong where it claimed to be complete.
+- [x] 6.8.7 **`INDEX_VERSION` is now load-bearing, and says so.** Task 1.2's
+  `Index::open` dropped Tantivy's schema-equality check —
+  `Index::open_or_create` returned `SchemaError` on a mismatch, `Index::open`
+  takes whatever is on disk. A stale index therefore opens silently and fails
+  per query instead of being recorded as an open failure. Nothing is broken
+  today because `is_index_current()` offers a rebuild, but that is now the
+  **only** guard: recorded on the constant itself and in
+  `docs/fulltext-index-storage-and-file-locking.md`.
+
+**Second pass over 6.8 itself** — reviewing the fixes found six more, four of
+them in the new code:
+
+- [x] 6.8.8 **The probe and the import could still disagree inside one folder.**
+  6.8.1 fixed the *between*-folder case and left the *within*-folder one: a
+  folder holding two `.ifo` files was resolved by "the first one", which meant
+  central-directory order in `stardict_members_in` and **`read_dir` order** in
+  `find_ifo_stem_in` — neither specified, and not each other. Both now take the
+  lexicographically smallest name, which also makes a two-`.ifo` folder import
+  the same dictionary every time rather than whatever the filesystem listed
+  first.
+- [x] 6.8.9 **A member at a bundle's root would have lost its `res/`
+  resources.** `entry_belongs_to_member(_, "")` filtered to root-*level* entries,
+  and a root dictionary's resources live one level down in `res/`. An empty
+  member now means "the whole archive" — the same mapping the bridge already
+  applied — and the probe reports `None` rather than `Some("")` for such a
+  member, so the case is not representable end-to-end. `locate_stardict_dir`
+  looks at the root before any subfolder, so the right dictionary is still the
+  one imported.
+- [x] 6.8.10 **One bad dictionary in a bundle read as a bad archive.** The
+  rejection is rendered under the *archive's* name, so a failing member produced
+  `"all-dictionaries-gd.zip" its description file could not be read.` about an
+  archive whose other eleven dictionaries were fine. `extract_one_entry` now
+  returns a typed `EntryReadError` that the caller — the only place that knows
+  which member it was — turns into a sentence naming it.
+- [x] 6.8.11 **An area is not all-or-nothing either.** 6.8.4 fixed
+  "sutta opens, dict fails" and left "`suttas/en` opens, `suttas/pli` fails":
+  the area's state is `Ready`, so a Pāli search was back to a silent "No results
+  found." while English worked. `area_message()` now covers three cases, and
+  **an empty message is the whole instruction to stay silent** — QML no longer
+  branches on the state at all, so the next case like this is a backend change
+  only.
+- [x] 6.8.12 **Database Validation could print "All checks passed" over a broken
+  index.** `is_valid` meant "search works at all", which is `state`'s job; a
+  partly-open index was therefore reported as clean. It now means *everything
+  that should have opened, opened* — the two fields answer different questions
+  and both are documented as doing so. `/health` is unaffected
+  (`fulltext_searcher_ready` is computed from the counts, not from this) and
+  gained the per-area `failed` / `state` / `message` fields, built through the
+  same helpers the app's own UI reads so the two cannot drift.
+- [x] 6.8.13 **The staging feature name was four literals.** Staging,
+  `cleanup_staged_file` and `sweep_orphaned_staged_files` all key on it, and a
+  mismatch fails **silently** in the worst way: ownership is decided by
+  location, so a cleanup pointed at the wrong folder refuses every delete
+  without an error and the sweep watches a folder nothing writes to. Now
+  `import_staging::DICTIONARY_FEATURE`.
+- [x] 6.8.14 **`onScanFailed`'s abandoned branch leaked the staged copy**, while
+  `onScanFinished`'s abandoned branch discarded it. Same branch, same rule.
+
+**One test was fixed, and it was the test that was wrong.**
+`test_dict_word_headword_match_with_language_filter` asserted that page 0 of a
+`pli`-filtered Headword Match for "dhamma" contains a `/dpd` row. Headword Match
+orders by match tier then by `dict_label`, and the dev DB has since gained
+`cone-gd` (37k rows, 157 of them matching, sorting before `dpd`) — so the first
+~15 pages are `cone-gd` and the assertion failed on ranking, which is not what it
+tests. It now walks pages until it finds one or runs out. **This failure predates
+this branch**: nothing in it touches `query_task.rs`, the schema or the FTS
+scripts.
+
 ### 7.0 [ ] Say what a non-StarDict archive actually is (MDict piece 1 only)
 
 **Specs to keep in mind.** The user had a valid StarDict file and an MDict file
 and could not tell them apart (§0.3.6). **MDict *reading* is dropped** — this is
 naming only. It depends on task 5.1's entry-list read, so no extraction is
 needed to answer the question.
+
+**7.1 and 7.3 already landed inside task 5.2** — verified 2026-08-26, and 5.2's
+write-up flags them. `ArchiveFormat` / `detect_archive_format()` and the
+`scan_source` URL rejection are implemented and unit-tested. What is actually
+left is **7.2 and 7.4**. And note what 7.2 still lacks specifically: the dialog
+joins the backend's rejection sentences verbatim, so it names the format
+**found** ("… is an MDict dictionary (.mdx), which Simsapa cannot read.") but
+never the format **wanted** — the required GoldenDict-alias sentence is missing
+entirely. Add it in QML keyed on `reason === "unsupported_format"`, not in the
+backend message, which is per-source and would repeat it once per rejected file.
 
 - [ ] 7.1 Recognise archive contents by entry name: **MDict** (`.mdx`, `.mdd`),
   **DSL** (`.dsl`, `.dsl.dz`), **XDXF** (`.xdxf`), and "a zip of something else".
@@ -1447,6 +1629,14 @@ needed to answer the question.
   1. Import **`all-dictionaries-gd.zip`** — the one in
      `Documenti/Dizionari`. **Explicitly say: not the `mdict` one**, which
      cannot work and would produce an ambiguous result.
+
+     **Say what a bundle archive now does** (task 6.8.1): the checklist will
+     list *every* dictionary inside that zip, one row each, and each is imported
+     as its own dictionary with its own label. Ticking all of them is fine.
+     Without that sentence, a list of a dozen rows where they expected one reads
+     as a fault — and it is the answer to the question they were actually
+     asking, since before this build the archive would have imported exactly one
+     of them.
   2. Run a fulltext search — suggest a word they will recognise, and note that
      search worked before only for "contains" style matches.
   3. Send `log.txt` from **About → log file list → Copy Contents / Save As…**

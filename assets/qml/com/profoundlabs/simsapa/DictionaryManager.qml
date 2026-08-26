@@ -1,8 +1,8 @@
 import QtQuick
 
 Item {
-    function import_zip(zip_path: string, label: string, lang: string): string {
-        console.log("import_zip():", zip_path, label, lang);
+    function import_zip(zip_path: string, member: string, label: string, lang: string): string {
+        console.log("import_zip():", zip_path, member, label, lang);
         return "ok";
     }
 

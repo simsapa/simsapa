@@ -272,6 +272,18 @@ pub extern "C" fn init_app_data() {
                     removed
                 ));
             }
+
+            // And the staged copies themselves, which are bigger: a killed
+            // process leaves the whole picked archive in the staging folder.
+            let staged = crate::import_staging::sweep_orphaned_staged_files(
+                crate::import_staging::DICTIONARY_FEATURE,
+            );
+            if staged > 0 {
+                info(&format!(
+                    "init_app_data: swept {} orphaned staged import file(s)",
+                    staged
+                ));
+            }
         });
     }
 

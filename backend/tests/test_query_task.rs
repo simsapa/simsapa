@@ -314,8 +314,27 @@ fn test_dict_word_headword_match_with_language_filter() {
         h::get_dict_params_with_mode_and_lang(SearchMode::HeadwordMatch, Some("pli".to_string())),
         SearchArea::Dictionary,
     );
-    let results_pli = task_pli.results_page(0).expect("pli headword match failed");
-    assert!(results_pli.iter().any(|r| r.uid.ends_with("/dpd")),
+    // Across the first few pages, not page 0 alone. Headword Match orders by
+    // match tier and then by `dict_label`, so any shipped dictionary whose label
+    // sorts before "dpd" fills the first page(s) — the dev DB grew `cone-gd`
+    // (37k rows, thousands of them matching) after this test was written, and a
+    // page-0 assertion then failed on a query path it was not testing. The claim
+    // is "a Pāli filter does not exclude DPD rows", which is about the filter,
+    // not about ranking.
+    // The cap is a stop condition, not a claim about where the row is; the walk
+    // ends at the first empty page.
+    let mut dpd_under_pli = false;
+    for page in 0..40 {
+        let rows = task_pli.results_page(page).expect("pli headword match failed");
+        if rows.is_empty() {
+            break;
+        }
+        if rows.iter().any(|r| r.uid.ends_with("/dpd")) {
+            dpd_under_pli = true;
+            break;
+        }
+    }
+    assert!(dpd_under_pli,
         "Pāli filter should include DPD (pli) headword matches");
 
     let mut task_en = SearchQueryTask::new(

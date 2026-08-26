@@ -19,6 +19,11 @@ Rectangle {
     // --- Public API consumed by the parent dialog ---
     property string source_path: ""
     property string source_kind: "" // "zip" | "dir"
+    // Which dictionary inside a bundle archive this row is (the member folder),
+    // or "" when the source holds a single dictionary. Passed straight back to
+    // `import_zip`; never derived here. See dictionary_manager_core's
+    // `import_user_zip_member`.
+    property string source_member: ""
     property string title_text: ""
     property int entry_count: 0
     property alias label: label_input.text
@@ -137,7 +142,12 @@ Rectangle {
             }
 
             Label {
-                text: `${root.entry_count} entries  ·  ${root.source_kind}`
+                // The member folder is named when there is one, so two rows of a
+                // bundle archive with near-identical titles are still tellable
+                // apart — they share a `source_path`, so that cannot do it.
+                text: root.source_member.length > 0
+                    ? `${root.entry_count} entries  ·  ${root.source_kind}: ${root.source_member}`
+                    : `${root.entry_count} entries  ·  ${root.source_kind}`
                 font.pointSize: root.point_size - 2
                 color: palette.mid
                 elide: Text.ElideRight

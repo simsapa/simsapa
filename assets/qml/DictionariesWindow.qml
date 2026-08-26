@@ -169,7 +169,9 @@ ApplicationWindow {
         views_stack.currentIndex = 2;
         const result = item.kind === "dir"
             ? dict_manager.import_dir(item.path, item.label, item.lang)
-            : dict_manager.import_zip(item.path, item.label, item.lang);
+            // `member` selects one dictionary out of a bundle archive; "" (and
+            // an older item that has no such key) means the whole archive.
+            : dict_manager.import_zip(item.path, item.member || "", item.label, item.lang);
         if (result !== "ok") {
             // Could not even start this item; record and advance.
             root.record_failure(item.label, result);

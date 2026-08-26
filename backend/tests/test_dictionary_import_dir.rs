@@ -17,7 +17,7 @@ use diesel::prelude::*;
 use serial_test::serial;
 use simsapa_backend::db::dictionaries_schema;
 use simsapa_backend::dictionary_manager_core::{
-    delete_user_dictionary, import_user_dir, import_user_zip, scan_source,
+    delete_user_dictionary, import_user_dir, import_user_zip, import_user_zip_member, scan_source,
     suggested_label_for_dir, ScanKind,
 };
 use simsapa_backend::get_app_data;
@@ -219,6 +219,113 @@ fn scan_zip_folder_skips_non_stardict() {
 
     assert_eq!(report.rejections.len(), 1, "the junk zip must be reported, not dropped");
     assert_eq!(report.rejections[0].reason, "unsupported_format");
+}
+
+/// A bundle archive — one zip, a folder per dictionary, which is how `-gd`
+/// releases are routinely distributed — must scan to one row per dictionary,
+/// and each row must import **its own** dictionary.
+///
+/// Before this, the probe reported the first `.ifo` in the zip's central
+/// directory and the import extracted everything and took the first `.ifo` the
+/// *filesystem* enumerated. Every other dictionary in the archive was
+/// unreachable, and when the two orders disagreed the user got a dictionary
+/// under a label they had typed for a different one.
+#[test]
+#[serial]
+fn a_bundle_zip_scans_and_imports_one_dictionary_per_member() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-bundle-zip-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    // Two dictionaries with clearly different sizes, so an import that took the
+    // wrong member is visible in the row count and not just in the title.
+    let build = tmp.path().join("build");
+    let alpha = build.join("alpha-dict");
+    let beta = build.join("beta-dict");
+    fs::create_dir_all(&alpha).unwrap();
+    fs::create_dir_all(&beta).unwrap();
+    write_synthetic_stardict(&alpha, "alpha", 5, "Alpha Bundle").unwrap();
+    write_synthetic_stardict(&beta, "beta", 11, "Beta Bundle").unwrap();
+
+    let zip_path = tmp.path().join("all-dictionaries-gd.zip");
+    zip_dir_recursive(&build, &zip_path).expect("zip");
+
+    let mut report = scan_source(ScanKind::SingleZip, &zip_path).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+
+    assert_eq!(
+        report.candidates.len(),
+        2,
+        "a bundle archive must offer every dictionary it holds, not just the first"
+    );
+    assert!(report.rejections.is_empty(), "{:?}", report.rejections);
+
+    assert_eq!(report.candidates[0].title, "Alpha Bundle");
+    assert_eq!(report.candidates[0].entry_count, 5);
+    assert_eq!(report.candidates[0].member.as_deref(), Some("alpha-dict"));
+    // The label comes from the member folder, not the zip's filename — which is
+    // shared, and would make every row a duplicate of the others.
+    assert_eq!(report.candidates[0].suggested_label, "alpha-dict");
+
+    assert_eq!(report.candidates[1].title, "Beta Bundle");
+    assert_eq!(report.candidates[1].entry_count, 11);
+    assert_eq!(report.candidates[1].member.as_deref(), Some("beta-dict"));
+
+    // Import the *second* member. Taking whichever dictionary came first is the
+    // defect under test, so the one asked for must be the one imported.
+    let label = unique_label("ssp_bundle_beta");
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip_member(
+        &zip_path,
+        report.candidates[1].member.as_deref(),
+        &label,
+        "en",
+        &|_p| {},
+        &cancel,
+    )
+    .expect("import_user_zip_member should succeed");
+    assert!(!outcome.cancelled);
+    assert_eq!(
+        outcome.inserted, 11,
+        "the row named Beta must import Beta's 11 entries, not Alpha's 5"
+    );
+
+    let count = app_data
+        .dbm
+        .dictionaries
+        .count_words_for_dictionary(outcome.dictionary_id)
+        .expect("count words");
+    assert_eq!(count, 11);
+
+    delete_user_dictionary(outcome.dictionary_id).expect("delete");
+}
+
+/// A zip holding one dictionary keeps its old behaviour exactly: no member, and
+/// the label still comes from the archive's own filename.
+#[test]
+#[serial]
+fn a_single_dictionary_zip_reports_no_member() {
+    h::app_data_setup();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-single-zip-test-")
+        .tempdir()
+        .expect("tempdir");
+
+    let sd = tmp.path().join("build");
+    fs::create_dir_all(&sd).unwrap();
+    write_synthetic_stardict(&sd, "solo", 4, "Solo Dict").unwrap();
+    let zip_path = tmp.path().join("Concise P-E Dict.zip");
+    zip_dir_recursive(&sd, &zip_path).unwrap();
+
+    let report = scan_source(ScanKind::SingleZip, &zip_path).expect("scan_source");
+    assert_eq!(report.candidates.len(), 1);
+    assert_eq!(report.candidates[0].member, None);
+    assert_eq!(report.candidates[0].suggested_label, "Concise_P-E_Dict");
 }
 
 /// PRD §4.6 req. 25 (task 5.2/5.5): a built-in StarDict import
