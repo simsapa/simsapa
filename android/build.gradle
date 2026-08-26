@@ -150,7 +150,15 @@ android {
 
     defaultConfig {
         resConfig "en"
-        minSdkVersion 27
+
+        // 28, not 27, and this is a correctness floor rather than a
+        // distribution choice: libQt6Core imports getentropy as a GLOBAL
+        // undefined symbol, and bionic first provides it at API 28 — so on an
+        // API 27 device dlopen fails before any app code runs. Qt 6.9.3 itself
+        // declares qtMinSdkVersion=28; the value here used to override it back
+        // down to 27, which never worked.
+        // See docs/android-api-levels-and-feature-dependencies.md section 2.
+        minSdkVersion 28
 
         // Targeting API 36 opts the app in to three behaviours that Android 16
         // enforces with no per-app opt-out:
