@@ -9,6 +9,7 @@
 //! startup reconciliation pass (`dict_index_reconcile`) owns all index
 //! writes (PRD §4.9), which avoids contention with the live searcher.
 
+use std::io::Seek;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -275,9 +276,47 @@ pub fn import_user_zip_member(
     let mut archive = zip::ZipArchive::new(zip_file)
         .map_err(|e| format!("Failed to read zip archive {}: {}", zip_path.display(), e))?;
 
-    match extract_archive(&mut archive, &extract_dir, member, cancel, &|done, total| {
-        on_progress(StardictImportProgress::Extracting { done, total })
-    }) {
+    // A member naming a nested `.zip` is the second bundle shape (one archive
+    // per dictionary rather than one folder per dictionary): open that archive
+    // — in place where it is stored uncompressed — and extract from it instead.
+    // The nested archive to open comes from the probe, exactly as a folder
+    // member does, and for the same reason.
+    let nested = member.and_then(split_nested_member);
+    let extracted = match nested {
+        Some((zip_entry, inner_member)) => {
+            // Inside the extraction temp dir, so a killed process leaves it for
+            // the same sweep, and one name because one member is imported per
+            // call. `locate_stardict_dir` looks for an `.ifo`, so a stray `.zip`
+            // beside the extracted files cannot be mistaken for the dictionary.
+            let copy_dest = extract_dir.join("__nested__.zip");
+            let mut nested = open_nested_archive(&mut archive, zip_path, zip_entry, &copy_dest)
+                .map_err(|e| match e {
+                    EntryReadError::Unreadable(msg) | EntryReadError::Io(msg) => format!(
+                        "Failed to open \"{}\" inside {}: {}",
+                        zip_entry,
+                        zip_path.display(),
+                        msg
+                    ),
+                })?;
+            let inner_member = (!inner_member.is_empty()).then_some(inner_member);
+            let extracted = extract_archive(
+                &mut nested.archive,
+                &extract_dir,
+                inner_member,
+                cancel,
+                &|done, total| on_progress(StardictImportProgress::Extracting { done, total }),
+            );
+            // Before the import reads the extracted tree, so a copied-out
+            // nested archive is not held alongside its own contents.
+            nested.discard();
+            extracted
+        }
+        None => extract_archive(&mut archive, &extract_dir, member, cancel, &|done, total| {
+            on_progress(StardictImportProgress::Extracting { done, total })
+        }),
+    };
+
+    match extracted {
         Ok(true) => {}
         // Cancelled between entries. Nothing has reached the database yet, so
         // there is no dictionary row to keep or clean up — hence the `-1` id,
@@ -888,6 +927,224 @@ fn entry_belongs_to_member(name: &str, member: &str) -> bool {
         && trimmed.as_bytes()[member.len()] == b'/'
 }
 
+/// Separator between a bundle's nested `.zip` entry and a member inside it,
+/// in the `member` string the probe hands back to the import.
+///
+/// Jar-style, and deliberately a **two**-character sequence: a member folder
+/// name never contains a `/` (a dictionary is at most one folder deep, so
+/// `stardict_members_in` never produces one), which is what makes the encoding
+/// unambiguous. Splitting is on the **last** occurrence, so an outer entry that
+/// itself sits in a folder whose name ends in `!` — `weird!/abt.zip` — still
+/// parses back to the entry it came from.
+const NESTED_MEMBER_SEP: &str = "!/";
+
+/// The `member` string for one dictionary inside a nested `.zip`.
+///
+/// Always carries the separator, even when the inner member is the whole nested
+/// archive (`"abt.zip!/"`), so [`split_nested_member`] never has to guess from
+/// the `.zip` extension — a *folder* named `whatever.zip` is a legal bundle
+/// member and must not be mistaken for a nested archive.
+fn encode_nested_member(zip_entry: &str, inner_member: &str) -> String {
+    format!("{}{}{}", zip_entry, NESTED_MEMBER_SEP, inner_member)
+}
+
+/// Split a `member` into its nested `.zip` entry and the member inside it,
+/// or `None` when it names an ordinary folder of the outer archive.
+fn split_nested_member(member: &str) -> Option<(&str, &str)> {
+    member.rsplit_once(NESTED_MEMBER_SEP)
+}
+
+/// Is this zip entry a `.zip` **file** at the archive root or one folder deep?
+///
+/// The same two-level rule [`is_shallow_ifo_entry`] applies, for the same
+/// reason: whatever the scan offers, the import has to be able to reach.
+///
+/// A trailing `/` marks a **directory** entry, and a folder named `foo.zip` is
+/// a legal bundle member — it is `stardict_members_in`'s business, not this
+/// one's. Reading it as a nested archive would add a spurious "could not be
+/// read" rejection beside the perfectly good candidate the folder produced.
+fn is_shallow_zip_entry(name: &str) -> bool {
+    if name.ends_with('/') {
+        return false;
+    }
+    if !name.to_ascii_lowercase().ends_with(".zip") {
+        return false;
+    }
+    name.matches('/').count() <= 1
+}
+
+/// Every nested `.zip` a bundle archive's entry names describe, in
+/// central-directory order.
+///
+/// The second shape of bundle: `all-dictionaries-gd.zip` holds one **zip** per
+/// dictionary rather than one folder per dictionary, and a probe that only
+/// looked for `.ifo` entries reported the whole archive as "does not contain a
+/// StarDict/GoldenDict dictionary".
+pub fn nested_zip_entries_in<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    names
+        .into_iter()
+        .filter(|name| is_shallow_zip_entry(name))
+        .map(|name| name.to_string())
+        .collect()
+}
+
+/// A `Read + Seek` view of one byte range of a file.
+///
+/// This is what lets a nested `.zip` be opened **in place**, without copying it
+/// out first: where the nested entry is stored uncompressed, its bytes are
+/// already a contiguous range of the outer file. That is the expected case —
+/// deflating an already-compressed zip gains nothing, and all 14 members of the
+/// one bundle measured (`all-dictionaries-gd.zip`) are `Stored` — so probing
+/// its 14 dictionaries costs 14 `.ifo` reads rather than 180 MB of temp-file
+/// writes.
+struct FileSlice {
+    file: std::fs::File,
+    start: u64,
+    len: u64,
+    pos: u64,
+}
+
+impl FileSlice {
+    fn new(file: std::fs::File, start: u64, len: u64) -> Self {
+        FileSlice { file, start, len, pos: 0 }
+    }
+
+    /// The whole file — the fallback shape, used when a nested archive had to
+    /// be copied out because it was *not* stored uncompressed.
+    fn whole(file: std::fs::File) -> std::io::Result<Self> {
+        let len = file.metadata()?.len();
+        Ok(FileSlice::new(file, 0, len))
+    }
+}
+
+impl std::io::Read for FileSlice {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.len {
+            return Ok(0);
+        }
+        let remaining = (self.len - self.pos) as usize;
+        let want = buf.len().min(remaining);
+        // Seek every time: the caller holds its own cursor and `ZipArchive`
+        // seeks this reader freely, so the file offset is never assumed.
+        self.file.seek(std::io::SeekFrom::Start(self.start + self.pos))?;
+        let n = self.file.read(&mut buf[..want])?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for FileSlice {
+    fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+        let target: i64 = match from {
+            std::io::SeekFrom::Start(n) => n as i64,
+            std::io::SeekFrom::End(n) => self.len as i64 + n,
+            std::io::SeekFrom::Current(n) => self.pos as i64 + n,
+        };
+        if target < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before the start of the slice",
+            ));
+        }
+        self.pos = target as u64;
+        Ok(self.pos)
+    }
+}
+
+/// One nested archive, opened, plus the copy that had to be made to open it.
+///
+/// The copy is `None` on the in-place route. When it is `Some`, the caller must
+/// [`NestedArchive::discard`] it as soon as it is done reading — a bundle of
+/// deflated members would otherwise accumulate every copy until the whole scan
+/// ended, which for the archive this feature exists for is 180 MB of temp files
+/// on a phone.
+struct NestedArchive {
+    archive: zip::ZipArchive<FileSlice>,
+    copy: Option<PathBuf>,
+}
+
+impl NestedArchive {
+    /// Drop the archive and delete its copy, if it has one.
+    fn discard(self) {
+        let NestedArchive { archive, copy } = self;
+        // The file handle has to go before the file does: deleting an open file
+        // fails outright on Windows.
+        drop(archive);
+        if let Some(path) = copy
+            && let Err(e) = std::fs::remove_file(&path)
+        {
+            error(&format!(
+                "NestedArchive::discard: failed to remove {}: {}",
+                path.display(),
+                e
+            ));
+        }
+    }
+}
+
+/// Open one nested `.zip` entry of `archive` as an archive in its own right.
+///
+/// Takes the cheap route when the entry is stored uncompressed — a
+/// [`FileSlice`] over the outer file, nothing written anywhere — and otherwise
+/// copies the entry to `copy_dest` first, because a deflate stream cannot be
+/// seeked. `copy_dest` must be inside a temp directory the caller owns, and its
+/// name is the caller's to keep unique.
+///
+/// **The copy is not cancellable and reports no progress**, so a deflated
+/// nested archive delays a cancel until the copy finishes. That is accepted
+/// rather than fixed: it is one `std::io::copy` on a shape no measured bundle
+/// has, and the extraction that follows it is both cancellable and determinate.
+fn open_nested_archive(
+    archive: &mut zip::ZipArchive<std::fs::File>,
+    outer_path: &Path,
+    entry_name: &str,
+    copy_dest: &Path,
+) -> Result<NestedArchive, EntryReadError> {
+    let entry = archive
+        .by_name(entry_name)
+        .map_err(|e| EntryReadError::Unreadable(e.to_string()))?;
+
+    let (slice, copy) = if entry.compression() == zip::CompressionMethod::Stored {
+        // `compressed_size`, not `size`: the slice is a range of bytes on disk.
+        // The two are equal for a stored entry by definition, and taking the
+        // one that means "bytes actually there" is what keeps a malformed
+        // header from running the slice off the end of the entry.
+        let (start, len) = (entry.data_start(), entry.compressed_size());
+        drop(entry);
+        let file = std::fs::File::open(outer_path).map_err(|e| {
+            EntryReadError::Unreadable(format!("could not be reopened ({})", e))
+        })?;
+        (FileSlice::new(file, start, len), None)
+    } else {
+        drop(entry);
+        if let Some(parent) = copy_dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                EntryReadError::Io(format!("could not create {} ({})", parent.display(), e))
+            })?;
+        }
+        extract_one_entry(archive, entry_name, copy_dest)?;
+        let file = std::fs::File::open(copy_dest).map_err(|e| {
+            EntryReadError::Io(format!("could not read back {} ({})", copy_dest.display(), e))
+        })?;
+        let slice = FileSlice::whole(file).map_err(|e| {
+            EntryReadError::Io(format!("could not size {} ({})", copy_dest.display(), e))
+        })?;
+        (slice, Some(copy_dest.to_path_buf()))
+    };
+
+    match zip::ZipArchive::new(slice) {
+        Ok(archive) => Ok(NestedArchive { archive, copy }),
+        Err(e) => {
+            // Nothing else will ever know about this copy, so it is discarded
+            // here rather than left for the temp directory's drop.
+            if let Some(path) = copy {
+                let _ = std::fs::remove_file(path);
+            }
+            Err(EntryReadError::Unreadable(e.to_string()))
+        }
+    }
+}
+
 /// Probe a single `.zip` candidate **without extracting it**.
 ///
 /// Only two things are read: the central directory (entry names, no
@@ -905,6 +1162,14 @@ fn entry_belongs_to_member(name: &str, member: &str) -> bool {
 /// archive was silently unreachable. Each member is now a checklist row of its
 /// own, with its own title, entry count and label, exactly as a folder of
 /// dictionaries already was.
+///
+/// **A bundle comes in two shapes, and both are read here.** One holds a
+/// *folder* per dictionary; the other — `all-dictionaries-gd.zip`, the one the
+/// reporting user has — holds a `.zip` per dictionary. Only the first was
+/// recognised, so the second was rejected outright with "does not contain a
+/// StarDict/GoldenDict dictionary" while a single-dictionary zip from the same
+/// release imported fine. A nested archive is opened in place (see
+/// [`FileSlice`]) and probed by the same `.ifo` read.
 ///
 /// Returns one outcome per member for a readable archive, or a single rejection
 /// for one that could not be opened or holds no dictionary at all. Never empty.
@@ -925,7 +1190,8 @@ fn probe_zip_candidates(zip_path: &Path) -> Vec<ProbeOutcome> {
 
     let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
     let members = stardict_members_in(names.iter().map(|s| s.as_str()));
-    if members.is_empty() {
+    let nested_zips = nested_zip_entries_in(names.iter().map(|s| s.as_str()));
+    if members.is_empty() && nested_zips.is_empty() {
         return vec![ProbeOutcome::UnsupportedFormat(detect_archive_format(
             names.iter().map(|s| s.as_str()),
         ))];
@@ -951,11 +1217,11 @@ fn probe_zip_candidates(zip_path: &Path) -> Vec<ProbeOutcome> {
 
     // A single-dictionary archive keeps its label from the zip's own filename,
     // which is what users have been renaming their files for. Only a bundle
-    // needs a per-member label, and there the member folder is the only name
-    // that distinguishes them.
-    let is_bundle = members.len() > 1;
+    // needs a per-member label, and there the member folder — or the nested
+    // archive's own filename — is the only name that distinguishes them.
+    let is_bundle = members.len() + nested_zips.len() > 1;
 
-    let mut outcomes: Vec<ProbeOutcome> = Vec::with_capacity(members.len());
+    let mut outcomes: Vec<ProbeOutcome> = Vec::with_capacity(members.len() + nested_zips.len());
     for (i, member) in members.iter().enumerate() {
         let stem = Path::new(&member.ifo_entry)
             .file_stem()
@@ -1018,6 +1284,113 @@ fn probe_zip_candidates(zip_path: &Path) -> Vec<ProbeOutcome> {
         });
     }
 
+    for (i, zip_entry) in nested_zips.iter().enumerate() {
+        // The nested archive's own filename is what names it to the user: a
+        // bundle's members are `abt.zip`, `cone.zip`, … and nothing else tells
+        // two rows of one bundle apart.
+        let nested_name = zip_entry.rsplit('/').next().unwrap_or(zip_entry.as_str());
+        let nested_stem = Path::new(nested_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(nested_name);
+
+        let describe = |what: &str| -> String {
+            format!("contains \"{}\", whose {}", nested_name, what)
+        };
+
+        // Indexed, because two nested archives may share a file name.
+        let copy_dest = tmp.path().join(format!("nested-{}.zip", i));
+        let mut nested = match open_nested_archive(&mut archive, zip_path, zip_entry, &copy_dest) {
+            Ok(a) => a,
+            Err(e) => {
+                outcomes.push(e.into_outcome(&describe));
+                continue;
+            }
+        };
+        let inner = &mut nested.archive;
+
+        let inner_names: Vec<String> = inner.file_names().map(|s| s.to_string()).collect();
+        let inner_members = stardict_members_in(inner_names.iter().map(|s| s.as_str()));
+        if inner_members.is_empty() {
+            // Named as one member of the archive, never as the archive: a
+            // bundle with twelve good dictionaries and one MDict among them
+            // must not read as "this archive is not a dictionary".
+            let format = detect_archive_format(inner_names.iter().map(|s| s.as_str()));
+            outcomes.push(ProbeOutcome::Unreadable(match format.description() {
+                Some(d) => format!("contains \"{}\", which is {}", nested_name, d),
+                None => format!(
+                    "contains \"{}\", which is not a StarDict/GoldenDict dictionary",
+                    nested_name
+                ),
+            }));
+            continue;
+        }
+
+        // A nested archive holding several dictionaries needs the inner folder
+        // to tell them apart; the usual case is one dictionary per nested zip,
+        // and there the zip's filename is the better name.
+        let inner_is_bundle = inner_members.len() > 1;
+
+        for (j, member) in inner_members.iter().enumerate() {
+            let stem = Path::new(&member.ifo_entry)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("dictionary")
+                .to_string();
+            let ifo_path = tmp.path().join(format!("nested-{}-{}-{}.ifo", i, j, stem));
+
+            let describe_member = |what: &str| -> String {
+                if inner_is_bundle && !member.member.is_empty() {
+                    format!(
+                        "contains \"{}\", holding a dictionary in \"{}\" whose {}",
+                        nested_name, member.member, what
+                    )
+                } else {
+                    describe(what)
+                }
+            };
+
+            match extract_one_entry(inner, &member.ifo_entry, &ifo_path) {
+                Ok(()) => {}
+                Err(e) => {
+                    outcomes.push(e.into_outcome(&describe_member));
+                    continue;
+                }
+            }
+
+            let suggested_label = if !is_bundle {
+                suggested_label_for_zip(zip_path)
+            } else if inner_is_bundle {
+                member_label(member, &stem)
+            } else {
+                sanitise_label_name(nested_stem)
+            };
+
+            outcomes.push(match read_ifo_title_and_count(&ifo_path) {
+                Ok((title, entry_count)) => ProbeOutcome::StarDict(Box::new(CandidateMeta {
+                    title,
+                    entry_count,
+                    suggested_label,
+                    source_path: zip_path.to_string_lossy().to_string(),
+                    source_kind: "zip".to_string(),
+                    // Always `Some` here, bundle or not: unlike a folder
+                    // member, a nested archive cannot be reached by extracting
+                    // the outer zip — that yields `.zip` files and no `.ifo`.
+                    member: Some(encode_nested_member(zip_entry, &member.member)),
+                })),
+                Err(e) => ProbeOutcome::Unreadable(format!(
+                    "{} ({})",
+                    describe_member("description file could not be understood"),
+                    e
+                )),
+            });
+        }
+
+        // Deleted now, not at the end of the scan: a bundle of deflated members
+        // would otherwise hold every copy at once.
+        nested.discard();
+    }
+
     outcomes
     // tmp drops here.
 }
@@ -1027,6 +1400,7 @@ fn probe_zip_candidates(zip_path: &Path) -> Vec<ProbeOutcome> {
 /// Deliberately not a `ProbeOutcome` yet: the sentence depends on **which**
 /// dictionary of a bundle it was, and only the caller knows that. Holding the
 /// two apart is what stops one bad member being reported as a bad archive.
+#[derive(Debug)]
 enum EntryReadError {
     /// The archive would not give up the entry.
     Unreadable(String),
@@ -1685,6 +2059,121 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("gone"), "the message must name the member: {err}");
+    }
+
+    /// The second bundle shape: one `.zip` per dictionary. Recognised at the
+    /// archive root and one folder deep, the same two-level rule an `.ifo` gets.
+    #[test]
+    fn a_bundle_of_nested_archives_lists_one_entry_per_zip() {
+        let nested = nested_zip_entries_in([
+            "abt.zip",
+            "cone.ZIP",
+            "dicts/mw.zip",
+            "a/b/too-deep.zip",
+            "readme.txt",
+            // A *folder* named like an archive is a folder: it is
+            // `stardict_members_in`'s to report, and reading it as a nested
+            // archive would add a bogus rejection beside a good candidate.
+            "looks-like.zip/",
+        ]);
+        assert_eq!(nested, vec!["abt.zip", "cone.ZIP", "dicts/mw.zip"]);
+    }
+
+    /// The nested-member encoding has to survive names that look like the
+    /// separator. A member folder never contains a `/` — `stardict_members_in`
+    /// cannot produce one — so splitting on the **last** `!/` is exact.
+    #[test]
+    fn a_nested_member_round_trips_through_its_encoding() {
+        for (zip_entry, inner) in [
+            ("abt.zip", ""),
+            ("dicts/mw.zip", "pts"),
+            // A folder whose name ends in `!` is legal, and mustn't split here.
+            ("weird!/abt.zip", ""),
+            ("weird!/abt.zip", "sub!"),
+        ] {
+            let encoded = encode_nested_member(zip_entry, inner);
+            assert_eq!(
+                split_nested_member(&encoded),
+                Some((zip_entry, inner)),
+                "encoded as {encoded}"
+            );
+        }
+
+        // An ordinary folder member is not a nested archive — including a
+        // folder that happens to be named `something.zip`.
+        assert_eq!(split_nested_member("pts"), None);
+        assert_eq!(split_nested_member("looks-like.zip"), None);
+        assert_eq!(split_nested_member(""), None);
+    }
+
+    /// A stored entry is read in place, and the slice must give back exactly
+    /// that entry's bytes — not the outer file's.
+    #[test]
+    fn a_stored_nested_entry_is_read_in_place() {
+        let inner = zip_with_raw_names(&[("dict.ifo", b"inner ifo" as &[u8])]);
+        let outer_bytes = zip_with_raw_names(&[("payload.zip", inner.as_slice())]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let outer_path = dir.path().join("bundle.zip");
+        std::fs::write(&outer_path, &outer_bytes).unwrap();
+
+        let mut outer = zip::ZipArchive::new(std::fs::File::open(&outer_path).unwrap()).unwrap();
+        let copy_dest = dir.path().join("copies/nested-0.zip");
+        let mut nested = open_nested_archive(&mut outer, &outer_path, "payload.zip", &copy_dest)
+            .expect("a stored nested archive opens");
+
+        assert_eq!(
+            nested.archive.file_names().collect::<Vec<_>>(),
+            vec!["dict.ifo"],
+            "the slice must see the nested archive, not the outer one"
+        );
+        let dest = dir.path().join("dict.ifo");
+        extract_one_entry(&mut nested.archive, "dict.ifo", &dest)
+            .expect("extract from the nested archive");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"inner ifo");
+        assert!(nested.copy.is_none(), "a stored entry must not be copied out");
+        assert!(
+            !copy_dest.try_exists().unwrap_or(false),
+            "a stored entry must not be copied out"
+        );
+        nested.discard();
+    }
+
+    /// The deflated route copies the entry out — and must delete that copy as
+    /// soon as it is done with it, or a bundle of deflated members holds the
+    /// whole archive in temp files at once.
+    #[test]
+    fn a_deflated_nested_entry_is_copied_out_and_the_copy_is_discarded() {
+        let inner = zip_with_raw_names(&[("dict.ifo", b"inner ifo" as &[u8])]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let outer_path = dir.path().join("bundle.zip");
+        {
+            let mut zw = zip::ZipWriter::new(std::fs::File::create(&outer_path).unwrap());
+            let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zw.start_file("payload.zip", opts).unwrap();
+            std::io::Write::write_all(&mut zw, &inner).unwrap();
+            zw.finish().unwrap();
+        }
+
+        let mut outer = zip::ZipArchive::new(std::fs::File::open(&outer_path).unwrap()).unwrap();
+        let copy_dest = dir.path().join("copies/nested-0.zip");
+        let mut nested = open_nested_archive(&mut outer, &outer_path, "payload.zip", &copy_dest)
+            .expect("a deflated nested archive opens by being copied out");
+
+        assert_eq!(nested.copy.as_deref(), Some(copy_dest.as_path()));
+        assert!(copy_dest.try_exists().unwrap());
+        let dest = dir.path().join("dict.ifo");
+        extract_one_entry(&mut nested.archive, "dict.ifo", &dest)
+            .expect("extract from the nested archive");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"inner ifo");
+
+        nested.discard();
+        assert!(
+            !copy_dest.try_exists().unwrap_or(false),
+            "the copy must not outlive the archive that needed it"
+        );
     }
 
     #[test]

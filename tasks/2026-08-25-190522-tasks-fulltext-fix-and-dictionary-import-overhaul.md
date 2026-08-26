@@ -1740,6 +1740,112 @@ archives.**
 either touched QML file. `make build -B` — clean. No Android cross-check needed:
 nothing here is inside `#[cfg(target_os = "android")]`.
 
+### 7.5 [x] A bundle is a zip of **zips** too — `all-dictionaries-gd.zip` was rejected outright
+
+**Confirmed on device 2026-08-26 by the user: `all-dictionaries-gd.zip` now opens
+and imports on both desktop and Android.** That closes the import half of §0.3 —
+the picker, the staging and the bundle probe are all exercised by that one run.
+
+Found by the user on 2026-08-26, testing the 6.8.1 work on the real archive:
+`all-dictionaries-gd.zip` failed on **both** desktop and Android with *"does not
+contain a StarDict/GoldenDict dictionary"*, while `cone-gd.zip` from the same
+release imported fine.
+
+6.8.1 assumed one bundle shape — a **folder** per dictionary. The archive the
+whole report is about has the other: **a `.zip` per dictionary**, 14 of them, all
+`Stored`, no `.ifo` anywhere in the outer central directory. So
+`stardict_members_in()` found nothing and the archive was classified
+`UnsupportedFormat(Unknown)` — the one outcome that reads as "this is not a
+dictionary" about a file that is fourteen of them.
+
+- [x] 7.5.1 **Both shapes are read.** `nested_zip_entries_in()` lists `.zip`
+  entries by the same two-level rule `is_shallow_ifo_entry` uses (root or one
+  folder deep — whatever the scan offers, the import has to reach), and each is
+  probed by the same `.ifo` read. `is_bundle` counts folder members **plus**
+  nested archives. Directory entries (a trailing `/`) are excluded: a folder
+  named `foo.zip` belongs to `stardict_members_in`, and probing it as an archive
+  would file a bogus rejection beside the candidate it legitimately produced.
+- [x] 7.5.2 **A nested archive is opened in place, not copied out.** `FileSlice`
+  is a `Read + Seek` view of one byte range of the outer file; a `Stored` nested
+  entry is already a contiguous run of bytes, so `ZipArchive::new` can read it
+  where it lies. The range length is the entry's `compressed_size` — the bytes
+  actually on disk — not `size`. `open_nested_archive()` copies the entry into
+  the probe's temp folder only when it is **deflated**, because a deflate stream
+  cannot be seeked. Measured on the real archive: **14 candidates in 7 ms**,
+  nothing written but 14 `.ifo` files. Copying the nested archives out instead
+  would have written 180 MB per scan, on a phone.
+- [x] 7.5.2b **A copy, where one is needed, dies with the archive that needed
+  it.** `NestedArchive::discard()` drops the handle *then* deletes the file
+  (Windows refuses to delete an open one), and both call sites discard before
+  moving on — the probe per nested archive, the import before it reads the
+  extracted tree. Holding them to the end of a scan would mean the entire bundle
+  in temp files simultaneously. Two accepted limits of the deflated fallback, on
+  a shape no measured bundle has: the copy is not cancellable and reports no
+  progress, and the import's copy sits in the extraction temp dir (harmless —
+  `locate_stardict_dir` looks for an `.ifo`, never a `.zip`).
+- [x] 7.5.3 **The member string carries the nested entry, jar-style.**
+  `"abt.zip!/"`, or `"abt.zip!/pts"` when a nested archive itself holds several
+  dictionaries. The separator is **always** written, so `split_nested_member()`
+  never guesses from the `.zip` extension — a *folder* named `whatever.zip` is a
+  legal bundle member. The split is on the **last** `!/`, which is exact because
+  a folder member never contains a `/` (`stardict_members_in` cannot produce
+  one), so an outer entry like `weird!/abt.zip` still round-trips. Nothing on the
+  QML side changed: the member is opaque there, and always has been.
+- [x] 7.5.4 **A nested member's `member` is always `Some`**, bundle or not.
+  Unlike a folder member it cannot be reached by extracting the outer archive —
+  that yields `.zip` files and no `.ifo`. The label comes from the nested
+  archive's own filename (`abt.zip` → `abt`), which is the only thing telling two
+  rows of one bundle apart.
+- [x] 7.5.5 **A bad nested member is named as a member, never as the archive.**
+  *"…contains "mdict.zip", which is an MDict dictionary (.mdx)."* One bad member
+  among twelve good ones must not read as "this archive is not a dictionary" —
+  the same rule 6.8.1 established for folder members.
+- [x] 7.5.6 **`DictionaryImportRow.member_display`** renders `abt.zip!/` back as
+  `abt.zip` (and `abt.zip!/pts` as `abt.zip / pts`) in the row subtitle. The
+  separator is for the import, not for the eye.
+- [x] 7.5.7 **The source-selection wording says a `.zip` may be a bundle.**
+  `"A single dictionary .zip archive"` told users a bundle was the *wrong* choice
+  on that screen — when for a bundle it is the only choice there is. Now
+  `"A .zip archive — one dictionary, or a bundle of several"`, with a note under
+  the options defining a bundle in the user's terms (one `.zip` containing
+  several dictionaries, each in its own `.zip` file **or** folder inside it) and
+  saying what happens next: every dictionary is listed, each imported separately
+  with its own name. That sentence is the one that stops a dozen rows reading as
+  a fault, and it now appears where the choice is made rather than only in the
+  covering e-mail. The mobile note's *"Multiple dictionaries have to be imported
+  one at a time"* was also wrong as of 6.8.1 — a bundle is one pick and every
+  dictionary in it can be ticked at once; what mobile cannot do is choose a
+  **folder**, which is what it now says.
+- [x] 7.5.8 **The re-indexing window centres its content.**
+  `DictionaryIndexProgressWindow` — the startup screen showing
+  `Indexing: 3/14 cone, 21099/37391 words`, which is where a bundle import is
+  actually paid for — had one bottom spacer, so on a full-screen mobile window
+  the label and bar sat against the top edge with the rest of the screen empty.
+  A second spacer above centres them.
+
+**Verification.** Three new integration tests (stored nesting scan + import of
+the *second* member asserting its entry count, deflated nesting through the
+copy-out path, a non-dictionary nested archive rejected by name) and four unit
+tests (`nested_zip_entries_in` including the `foo.zip/` folder case, the encoding
+round-trip including the `weird!/` case, `FileSlice` reading the nested archive
+rather than the outer one, and the deflated copy being deleted on `discard()`).
+`cargo test --test test_dictionary_import_dir` — 10 passed. `cargo test --lib
+dictionary_manager` — 19 passed. Full `cargo test` — no failures. `make qml-lint`
+— no warning naming the touched file. `make build -B` — clean.
+
+**Measured against the real archive** (`/home/gambhiro/Downloads/temp/
+all-dictionaries-gd.zip`, 180 MB, via a temporary `#[ignore]`d test since
+removed): all 14 dictionaries listed with correct titles and word counts in 7 ms,
+zero rejections; importing `nyanatiloka.zip!/` inserted its 1405 entries and
+captured its one `res/` file in 2 s, leaving no `simsapa-stardict-*` directory
+behind.
+
+**Not a defect, but this archive will show it:** its `dppn.zip` suggests the
+label `dppn`, which is a **shipped** dictionary. The row is flagged
+`taken_shipped` by the existing per-row `check_label_status` *before* any import
+runs, so it is a rename in the dialog, not a mid-batch failure. Worth saying in
+the 8.7 covering message alongside "a bundle is N rows".
+
 ### 8.0 [ ] Tests, docs, and the build to send
 
 - [x] 8.1 `cd backend && cargo test` and `make qml-test` pass. New unit tests

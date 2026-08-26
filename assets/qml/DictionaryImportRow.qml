@@ -24,6 +24,18 @@ Rectangle {
     // `import_zip`; never derived here. See dictionary_manager_core's
     // `import_user_zip_member`.
     property string source_member: ""
+    // `source_member` as a person reads it. A bundle's member is either a
+    // folder ("pts") or a nested archive, which the backend encodes with a
+    // jar-style separator ("abt.zip!/", "abt.zip!/pts"); the separator is for
+    // the import, not for the eye.
+    readonly property string member_display: {
+        let i = root.source_member.lastIndexOf("!/");
+        if (i < 0)
+            return root.source_member;
+        let outer = root.source_member.substring(0, i);
+        let inner = root.source_member.substring(i + 2);
+        return inner.length > 0 ? `${outer} / ${inner}` : outer;
+    }
     property string title_text: ""
     property int entry_count: 0
     property alias label: label_input.text
@@ -146,7 +158,7 @@ Rectangle {
                 // bundle archive with near-identical titles are still tellable
                 // apart — they share a `source_path`, so that cannot do it.
                 text: root.source_member.length > 0
-                    ? `${root.entry_count} entries  ·  ${root.source_kind}: ${root.source_member}`
+                    ? `${root.entry_count} entries  ·  ${root.source_kind}: ${root.member_display}`
                     : `${root.entry_count} entries  ·  ${root.source_kind}`
                 font.pointSize: root.point_size - 2
                 color: palette.mid

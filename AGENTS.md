@@ -591,6 +591,12 @@ Notable feature docs:
   defect — the probe read the central directory while the import took whatever
   `read_dir` listed, so the checklist could offer A and insert B under A's
   label), ordering is lexicographic, and an empty member means the whole archive.
+  **A bundle has two shapes**: a folder per dictionary, or — the
+  `all-dictionaries-gd.zip` case, which the folder-only probe rejected outright —
+  a **`.zip` per dictionary**, opened **in place** through `FileSlice` (a
+  `Read + Seek` view of a byte range of the outer file) when the entry is stored
+  uncompressed, copied out only when deflated, and carried jar-style in the
+  member string (`abt.zip!/`, split on the **last** `!/`).
   §6: `ScanReport { candidates, rejections }` is a **struct not an enum** because
   a folder yields both at once; key QML off the stable `reason`, never the
   message text; and the UI says **"StarDict/GoldenDict"**, never "StarDict"

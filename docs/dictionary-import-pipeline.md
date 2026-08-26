@@ -264,7 +264,68 @@ The fix:
 
 **Still true, and worth saying to users:** a bundle is imported one dictionary at
 a time and every row becomes its own `dictionaries` row. A list of a dozen rows
-where the user expected one reads as a fault unless it is explained.
+where the user expected one reads as a fault unless it is explained — so the
+source-selection screen explains it, rather than leaving it to a covering
+e-mail. The `.zip` option reads *"A .zip archive — one dictionary, or a bundle of
+several"* and carries a note defining a bundle (one `.zip` holding several
+dictionaries, each in its own `.zip` file **or** folder) and saying what follows:
+every dictionary listed, each imported separately under its own name. Calling
+that option "a *single dictionary* .zip archive", as it used to, tells the user
+a bundle is the wrong choice on the one screen where it is the only choice.
+
+### A bundle has **two** shapes, and the second one is a zip of zips
+
+The other half of the same defect: `all-dictionaries-gd.zip` — the archive the
+report was actually about — does not hold a folder per dictionary. It holds a
+**`.zip` per dictionary** (14 of them, all `Stored`), and a probe that only
+looked for `.ifo` entries rejected the whole thing with *"does not contain a
+StarDict/GoldenDict dictionary"* while `cone-gd.zip` from the same release
+imported fine. Both shapes are now read, on desktop and Android alike.
+
+- `nested_zip_entries_in()` lists `.zip` entries by the **same two-level rule**
+  `is_shallow_ifo_entry` uses — root or one folder deep. Whatever the scan
+  offers, the import must be able to reach. A trailing `/` marks a **directory**
+  entry and is excluded: a *folder* named `foo.zip` is a legal bundle member,
+  and reading it as a nested archive would file a bogus "could not be read"
+  rejection beside the good candidate the folder already produced.
+- **A nested archive is opened in place, not copied out.** `FileSlice` is a
+  `Read + Seek` view of one byte range of the outer file, so a nested entry
+  stored uncompressed *is* already a contiguous run of bytes to hand to
+  `ZipArchive::new`. Its length is the entry's **`compressed_size`** — equal to
+  `size` for a stored entry by definition, and the one that means "bytes
+  actually on disk", so a malformed header cannot run the slice off the end.
+  Probing all 14 dictionaries of the 180 MB bundle takes **7 ms** and writes 14
+  `.ifo` files. `open_nested_archive()` falls back to copying the entry out only
+  when it is **deflated** (a deflate stream cannot be seeked); all 14 members of
+  the one bundle measured are `Stored`, because deflating an already-compressed
+  zip gains nothing.
+- **A copy, when one is needed, is deleted the moment its archive is done
+  with** — `NestedArchive::discard()`, archive handle dropped *before* the file
+  (Windows will not delete an open file). Holding them to the end of the scan
+  would put the whole bundle in temp files at once, which on the archive this
+  feature exists for is 180 MB on a phone. Two known limits of that fallback,
+  both accepted rather than fixed because no measured bundle is deflated: the
+  copy is **not cancellable and reports no progress**, so a cancel waits for one
+  `std::io::copy`; and the import's copy lives inside the extraction temp dir,
+  where `locate_stardict_dir` cannot mistake a `.zip` for a dictionary.
+- **The member string carries the nested entry**, jar-style:
+  `"abt.zip!/"` for the usual one-dictionary-per-zip case, `"abt.zip!/pts"` when
+  a nested archive itself holds several. The separator is always present, so
+  `split_nested_member()` never has to guess from the `.zip` extension — a
+  *folder* named `whatever.zip` is a legal bundle member and must not be
+  mistaken for a nested archive. Splitting is on the **last** `!/`, which is
+  exact because a folder member never contains a `/`. `DictionaryImportRow`'s
+  `member_display` renders it back as `abt.zip` / `abt.zip / pts`; the separator
+  is for the import, not for the eye.
+- **A nested member's `member` is always `Some`**, bundle or not — unlike a
+  folder member, it cannot be reached by extracting the outer archive, which
+  yields `.zip` files and no `.ifo`.
+- **The label comes from the nested archive's own filename** (`abt.zip` → `abt`),
+  which is the only thing telling two rows of one bundle apart.
+- **A nested archive that is not a dictionary is rejected by name** — *"…
+  contains "mdict.zip", which is an MDict dictionary (.mdx)."* — never as the
+  archive, or one bad member among twelve good ones reads as "this archive is
+  not a dictionary".
 
 ### Extraction is cancellable and traversal-guarded
 

@@ -561,7 +561,12 @@ ApplicationWindow {
 
                     RadioButton {
                         id: opt_single_zip
-                        text: "A single dictionary .zip archive"
+                        // A `.zip` may hold one dictionary or many, in either of
+                        // two bundle shapes (a folder per dictionary, or a
+                        // nested .zip per dictionary). Saying "a single
+                        // dictionary .zip" told users a bundle was the wrong
+                        // choice here, when it is the only choice there is.
+                        text: "A .zip archive containing one dictionary, or a bundle of several"
                         font.pointSize: root.pointSize
                         checked: true
                         ButtonGroup.group: source_group
@@ -632,8 +637,24 @@ ApplicationWindow {
                     }
 
                     Label {
+                        // Says what a bundle is, because the file the user is
+                        // holding gives no clue: `all-dictionaries-gd.zip`
+                        // looks exactly like `cone-gd.zip` in a file manager.
+                        text: "A bundle is one .zip containing several dictionaries, either as .zip files or folders in the containing .zip archive."
+                        font.pointSize: root.pointSize
+                        font.italic: true
+                        color: palette.mid
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        Layout.topMargin: 6
+                    }
+
+                    Label {
                         visible: root.is_mobile
-                        text: "On mobile, only .zip imports are supported. Multiple dictionaries have to be imported one at a time."
+                        // Not "one at a time": a bundle .zip is one pick, and
+                        // every dictionary in it can be ticked at once. What
+                        // mobile cannot do is choose a *folder*.
+                        text: "On mobile, only .zip imports are supported, a folder cannot be chosen. A .zip bundle can be imported, or separate .zip files, one at a time."
                         font.pointSize: root.pointSize
                         font.italic: true
                         color: palette.mid
