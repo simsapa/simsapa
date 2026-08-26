@@ -9,16 +9,28 @@
 //! startup reconciliation pass (`dict_index_reconcile`) owns all index
 //! writes (PRD §4.9), which avoids contention with the live searcher.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
-use stardict::{self, Ifo};
+use stardict::Ifo;
 
 use crate::{get_app_data, get_app_globals};
 use crate::logger::{info, error};
 use crate::stardict_parse::{import_stardict_as_new, ImportOutcome, StardictImportProgress, read_ifo_description};
+
+/// Prefix of the temp directory `import_user_zip` extracts into.
+pub const EXTRACT_TEMP_PREFIX: &str = "simsapa-stardict-";
+
+/// Prefix of the temp directory the probe writes a single `.ifo` entry into.
+/// Deliberately starts with [`EXTRACT_TEMP_PREFIX`] so one sweep covers both.
+pub const PROBE_TEMP_PREFIX: &str = "simsapa-stardict-probe-";
+
+/// A temp directory younger than this is assumed to belong to an import that is
+/// still running, and is never swept.
+const ORPHAN_SWEEP_MIN_AGE: Duration = Duration::from_secs(60 * 60);
 
 /// Single global serialisation lock for user-dictionary mutations.
 ///
@@ -221,13 +233,13 @@ pub fn import_user_zip(
         Err(e) => return Err(format!("Cannot access zip {}: {}", zip_path.display(), e)),
     }
 
-    on_progress(StardictImportProgress::Extracting);
+    on_progress(StardictImportProgress::Extracting { done: 0, total: 0 });
 
     // Extract the .zip into a temp directory under the app cache so it lives
     // somewhere Android tolerates. The TempDir auto-deletes on drop.
     let cache_root = get_app_globals().paths.simsapa_dir.clone();
     let tmp = tempfile::Builder::new()
-        .prefix("simsapa-stardict-")
+        .prefix(EXTRACT_TEMP_PREFIX)
         .tempdir_in(&cache_root)
         .map_err(|e| format!("Failed to create temp directory under {}: {}", cache_root.display(), e))?;
     let extract_dir = tmp.path().to_path_buf();
@@ -236,8 +248,24 @@ pub fn import_user_zip(
         .map_err(|e| format!("Failed to open zip {}: {}", zip_path.display(), e))?;
     let mut archive = zip::ZipArchive::new(zip_file)
         .map_err(|e| format!("Failed to read zip archive {}: {}", zip_path.display(), e))?;
-    archive.extract(&extract_dir)
-        .map_err(|e| format!("Failed to extract zip {}: {}", zip_path.display(), e))?;
+
+    match extract_archive(&mut archive, &extract_dir, cancel, &|done, total| {
+        on_progress(StardictImportProgress::Extracting { done, total })
+    }) {
+        Ok(true) => {}
+        // Cancelled between entries. Nothing has reached the database yet, so
+        // there is no dictionary row to keep or clean up — hence the `-1` id,
+        // which the bridge's empty-abort branch skips rather than trying to
+        // delete.
+        Ok(false) => {
+            return Ok(ImportOutcome {
+                dictionary_id: -1,
+                inserted: 0,
+                cancelled: true,
+            });
+        }
+        Err(e) => return Err(format!("Failed to extract zip {}: {}", zip_path.display(), e)),
+    }
 
     let outcome = import_located_stardict(&extract_dir, label, lang, on_progress, cancel)?;
 
@@ -245,6 +273,141 @@ pub fn import_user_zip(
     drop(tmp);
 
     Ok(outcome)
+}
+
+/// Extract every entry of `archive` into `dest`, entry by entry.
+///
+/// Replaces `ZipArchive::extract`, which is a single opaque call: a 170 MB
+/// archive spent minutes inside it with no progress and no way to stop. Here
+/// `cancel` is checked between entries and `progress(done, total)` is reported
+/// per entry, which is what makes the import's progress bar determinate during
+/// the extraction stage.
+///
+/// Returns `Ok(false)` when the user cancelled; the caller owns the temp
+/// directory and deletes it on drop, so a cancelled extraction leaves nothing.
+///
+/// **Path traversal.** Every destination comes from
+/// [`zip::read::ZipFile::enclosed_name`], which rejects absolute paths, drive
+/// prefixes, NUL bytes and any `..` that escapes the archive root; an entry it
+/// refuses is skipped and logged rather than written somewhere else. That is
+/// the same guarantee `extract()` gives through its own `safe_prepare_path`,
+/// kept explicit here because the archive now comes from an arbitrary content
+/// provider and the destination is inside `SIMSAPA_DIR`. Symlink entries are
+/// written as ordinary files (their target as content) rather than recreated,
+/// which is strictly the safer of the two behaviours and costs nothing: a
+/// StarDict archive has no symlinks to honour.
+fn extract_archive<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    dest: &Path,
+    cancel: &AtomicBool,
+    progress: &dyn Fn(usize, usize),
+) -> Result<bool, String> {
+    let total = archive.len();
+    std::fs::create_dir_all(dest)
+        .map_err(|e| format!("Failed to create {}: {}", dest.display(), e))?;
+
+    for i in 0..total {
+        if cancel.load(Ordering::Relaxed) {
+            info(&format!("extract_archive: cancelled after {} of {} entries", i, total));
+            return Ok(false);
+        }
+
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("Failed to read entry {} of {}: {}", i + 1, total, e))?;
+
+        let Some(rel) = entry.enclosed_name() else {
+            error(&format!(
+                "extract_archive: skipping unsafe entry name '{}'",
+                entry.name()
+            ));
+            continue;
+        };
+        let out_path = dest.join(rel);
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out_path)
+                .map_err(|e| format!("Failed to create {}: {}", out_path.display(), e))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+            }
+            let mut out = std::fs::File::create(&out_path)
+                .map_err(|e| format!("Failed to create {}: {}", out_path.display(), e))?;
+            std::io::copy(&mut entry, &mut out)
+                .map_err(|e| format!("Failed to write {}: {}", out_path.display(), e))?;
+        }
+
+        progress(i + 1, total);
+    }
+
+    Ok(true)
+}
+
+/// Remove temp extraction directories left behind by a killed process.
+///
+/// `tempfile::TempDir` deletes on drop, so a normal or errored return is clean;
+/// a process killed mid-import (the OS reclaiming memory on Android, a crash)
+/// is not, and nothing else ever reclaims these. At up to twice the archive
+/// size each, they are worth sweeping.
+///
+/// Age-gated: a directory younger than an hour may belong to an import running
+/// right now, in this process or another. Returns the number removed.
+pub fn sweep_orphaned_extract_dirs() -> usize {
+    let root = get_app_globals().paths.simsapa_dir.clone();
+    let entries = match std::fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(e) => {
+            error(&format!("sweep_orphaned_extract_dirs: cannot read {}: {}", root.display(), e));
+            return 0;
+        }
+    };
+
+    let now = SystemTime::now();
+    let mut removed = 0usize;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // PROBE_TEMP_PREFIX starts with EXTRACT_TEMP_PREFIX, so this one test
+        // covers both kinds.
+        if !name.starts_with(EXTRACT_TEMP_PREFIX) {
+            continue;
+        }
+
+        let age = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok());
+        match age {
+            Some(age) if age >= ORPHAN_SWEEP_MIN_AGE => {}
+            // Either too young, or the timestamp is unreadable — in both cases
+            // leaving it is the safe answer. A running import must never have
+            // its extraction directory deleted underneath it.
+            _ => continue,
+        }
+
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {
+                info(&format!("sweep_orphaned_extract_dirs: removed {}", path.display()));
+                removed += 1;
+            }
+            Err(e) => error(&format!(
+                "sweep_orphaned_extract_dirs: failed to remove {}: {}",
+                path.display(),
+                e
+            )),
+        }
+    }
+
+    removed
 }
 
 /// Import directly from an already-extracted StarDict directory (PRD §4.5,
@@ -440,81 +603,349 @@ impl ScanKind {
     }
 }
 
-/// Parse the `.ifo` + index of a located StarDict directory and return its
-/// bookname title and raw index item count. Cheap — does not iterate
-/// definitions (PRD §4.2 req. 6). Returns `None` if no `.ifo` is found or it
-/// fails to parse.
-fn probe_stardict_dir(search_root: &Path) -> Option<(String, i64)> {
-    let (unzipped_dir, physical_stem) = locate_stardict_dir(search_root)?;
-    let ifo_path = unzipped_dir.join(format!("{}.ifo", physical_stem));
-    let ifo = Ifo::new(ifo_path.clone()).ok()?;
-    let dict = stardict::no_cache(ifo_path).ok()?;
-    let count = dict.idx.items.len() as i64;
-    Some((ifo.bookname, count))
+/// What a source turned out to be, when it is not a StarDict dictionary.
+///
+/// Recognised by **entry/file name alone** — no decompression, no extraction.
+/// The user had a valid StarDict archive and an MDict archive side by side and
+/// could not tell them apart, because both failures read as "no dictionaries
+/// found"; naming the format is the whole point of carrying this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveFormat {
+    MDict,
+    Dsl,
+    Xdxf,
+    /// Readable, but nothing in it names a dictionary format we know.
+    Unknown,
 }
 
-/// Probe a single `.zip` candidate by extracting it into a temp directory and
-/// parsing the StarDict files inside. Returns `None` (silently skipped) if the
-/// archive is not a valid StarDict.
-fn probe_zip_candidate(zip_path: &Path) -> Option<CandidateMeta> {
+impl ArchiveFormat {
+    /// How the format is named to the user, with the extension that identified
+    /// it. `None` for [`ArchiveFormat::Unknown`], which has nothing to name.
+    pub fn description(&self) -> Option<&'static str> {
+        match self {
+            ArchiveFormat::MDict => Some("an MDict dictionary (.mdx)"),
+            ArchiveFormat::Dsl => Some("a Lingvo DSL dictionary (.dsl)"),
+            ArchiveFormat::Xdxf => Some("an XDXF dictionary (.xdxf)"),
+            ArchiveFormat::Unknown => None,
+        }
+    }
+}
+
+/// Classify a source by the file names it contains. StarDict is decided
+/// separately (by finding an `.ifo`), so this only runs once that has failed.
+pub fn detect_archive_format<'a>(names: impl IntoIterator<Item = &'a str>) -> ArchiveFormat {
+    let mut found = ArchiveFormat::Unknown;
+    for name in names {
+        let lower = name.to_ascii_lowercase();
+        // First match wins in priority order MDict > DSL > XDXF, so a mixed
+        // archive is still named by something it actually contains.
+        if lower.ends_with(".mdx") || lower.ends_with(".mdd") {
+            return ArchiveFormat::MDict;
+        }
+        if lower.ends_with(".dsl") || lower.ends_with(".dsl.dz") {
+            found = ArchiveFormat::Dsl;
+        } else if lower.ends_with(".xdxf") && found == ArchiveFormat::Unknown {
+            found = ArchiveFormat::Xdxf;
+        }
+    }
+    found
+}
+
+/// The outcome of probing one candidate source.
+///
+/// Replaces an `Option<CandidateMeta>` whose `None` meant every one of these at
+/// once: not a dictionary, a corrupt archive, a full disk. The dialog rendered
+/// all three as "No StarDict dictionaries were found in the chosen source."
+#[derive(Debug, Clone)]
+pub enum ProbeOutcome {
+    /// A valid StarDict.
+    StarDict(Box<CandidateMeta>),
+    /// Readable, but not StarDict.
+    UnsupportedFormat(ArchiveFormat),
+    /// The archive itself could not be opened or read.
+    Unreadable(String),
+    /// A failure on our side — no temp space, no permission, a failed write.
+    IoFailure(String),
+}
+
+/// One rejected source, in the form the dialog renders.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScanRejection {
+    pub source_path: String,
+    /// `unsupported_format`, `unreadable` or `io_failure` — stable, and what
+    /// QML keys its wording off. Never match on the message text.
+    pub reason: &'static str,
+    /// Present only for `unsupported_format`: `mdict` / `dsl` / `xdxf` /
+    /// `unknown`.
+    pub format: Option<ArchiveFormat>,
+    /// One plain sentence naming what was found.
+    pub message: String,
+}
+
+/// What a scan found, and what it refused.
+///
+/// A folder scan can legitimately produce both at once (three StarDict archives
+/// and one MDict), which is why this is not an enum.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ScanReport {
+    pub candidates: Vec<CandidateMeta>,
+    pub rejections: Vec<ScanRejection>,
+}
+
+/// Read a StarDict `.ifo` and return its bookname and declared entry count.
+///
+/// **The count is the `.ifo`'s own `wordcount`, not `dict.idx.items.len()`.**
+/// The two can differ slightly (`wordcount` excludes synonyms, which the `.idx`
+/// may or may not carry), but this number is only ever *displayed* in the
+/// import checklist — the import itself counts what it actually inserts — and
+/// `wordcount` is required by the StarDict spec. Taking it from the `.ifo`
+/// alone is what lets a zip be probed without extracting it: `stardict::no_cache`
+/// loads the `.idx` **and** requires the `.dict`/`.dict.dz` to be present
+/// (`stardict-0.2.3/src/lib.rs`, `get_sub_file("dict", "dz")`), which is the
+/// bulk of the archive.
+fn read_ifo_title_and_count(ifo_path: &Path) -> Result<(String, i64), String> {
+    let ifo = Ifo::new(ifo_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let title = if ifo.bookname.trim().is_empty() {
+        ifo_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Untitled")
+            .to_string()
+    } else {
+        ifo.bookname
+    };
+    Ok((title, ifo.wordcount as i64))
+}
+
+/// Is this zip entry a `.ifo` at the archive root or one folder deep?
+///
+/// Mirrors [`locate_stardict_dir`]'s two-level search, so the scan and the
+/// import agree on what counts as a StarDict archive.
+fn is_shallow_ifo_entry(name: &str) -> bool {
+    let trimmed = name.trim_end_matches('/');
+    if !trimmed.to_ascii_lowercase().ends_with(".ifo") {
+        return false;
+    }
+    trimmed.matches('/').count() <= 1
+}
+
+/// Probe a single `.zip` candidate **without extracting it**.
+///
+/// Only two things are read: the central directory (entry names, no
+/// decompression at all) and the one `.ifo` entry, which is a few hundred bytes
+/// of `key=value` text. The previous implementation extracted the entire
+/// archive into a temp directory to read those same few hundred bytes, and then
+/// `import_user_zip` extracted the identical archive a second time — for a
+/// 172 MB dictionary that was minutes of the user's time and roughly twice its
+/// size in transient disk, paid to learn the title.
+fn probe_zip_candidate(zip_path: &Path) -> ProbeOutcome {
+    let zip_file = match std::fs::File::open(zip_path) {
+        Ok(f) => f,
+        Err(e) => return ProbeOutcome::Unreadable(format!("could not be opened ({})", e)),
+    };
+    let mut archive = match zip::ZipArchive::new(zip_file) {
+        Ok(a) => a,
+        Err(e) => return ProbeOutcome::Unreadable(format!("is not a readable zip archive ({})", e)),
+    };
+
+    let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
+    let Some(ifo_entry) = names.iter().find(|n| is_shallow_ifo_entry(n)).cloned() else {
+        return ProbeOutcome::UnsupportedFormat(detect_archive_format(
+            names.iter().map(|s| s.as_str()),
+        ));
+    };
+
+    // The `stardict` crate parses from a filesystem path only, so the single
+    // `.ifo` entry is written to a small temp directory. That directory holds
+    // one text file, not the archive.
     let cache_root = get_app_globals().paths.simsapa_dir.clone();
-    let tmp = tempfile::Builder::new()
-        .prefix("simsapa-stardict-probe-")
+    let tmp = match tempfile::Builder::new()
+        .prefix(PROBE_TEMP_PREFIX)
         .tempdir_in(&cache_root)
-        .ok()?;
-    let extract_dir = tmp.path().to_path_buf();
+    {
+        Ok(t) => t,
+        Err(e) => {
+            return ProbeOutcome::IoFailure(format!(
+                "could not create a temporary folder under {} ({})",
+                cache_root.display(),
+                e
+            ));
+        }
+    };
 
-    let zip_file = std::fs::File::open(zip_path).ok()?;
-    let mut archive = zip::ZipArchive::new(zip_file).ok()?;
-    archive.extract(&extract_dir).ok()?;
+    let stem = Path::new(&ifo_entry)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("dictionary")
+        .to_string();
+    let ifo_path = tmp.path().join(format!("{}.ifo", stem));
 
-    let (title, entry_count) = probe_stardict_dir(&extract_dir)?;
-    Some(CandidateMeta {
-        title,
-        entry_count,
-        suggested_label: suggested_label_for_zip(zip_path),
-        source_path: zip_path.to_string_lossy().to_string(),
-        source_kind: "zip".to_string(),
-    })
+    match archive.by_name(&ifo_entry) {
+        Ok(mut entry) => {
+            let mut out = match std::fs::File::create(&ifo_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    return ProbeOutcome::IoFailure(format!(
+                        "could not write to {} ({})",
+                        ifo_path.display(),
+                        e
+                    ));
+                }
+            };
+            if let Err(e) = std::io::copy(&mut entry, &mut out) {
+                return ProbeOutcome::Unreadable(format!("its description file could not be read ({})", e));
+            }
+        }
+        Err(e) => {
+            return ProbeOutcome::Unreadable(format!("its description file could not be read ({})", e));
+        }
+    }
+
+    match read_ifo_title_and_count(&ifo_path) {
+        Ok((title, entry_count)) => ProbeOutcome::StarDict(Box::new(CandidateMeta {
+            title,
+            entry_count,
+            suggested_label: suggested_label_for_zip(zip_path),
+            source_path: zip_path.to_string_lossy().to_string(),
+            source_kind: "zip".to_string(),
+        })),
+        Err(e) => ProbeOutcome::Unreadable(format!("its description file could not be understood ({})", e)),
+    }
     // tmp drops here.
 }
 
-/// Probe a single extracted-directory candidate. Returns `None` (silently
-/// skipped) if no valid StarDict `.ifo` is found inside.
-fn probe_dir_candidate(dir_path: &Path) -> Option<CandidateMeta> {
-    let (title, entry_count) = probe_stardict_dir(dir_path)?;
-    Some(CandidateMeta {
-        title,
-        entry_count,
-        suggested_label: suggested_label_for_dir(dir_path),
-        source_path: dir_path.to_string_lossy().to_string(),
-        source_kind: "dir".to_string(),
-    })
+/// Probe a single extracted-directory candidate.
+///
+/// Reads the `.ifo` only, matching [`probe_zip_candidate`] — so a dictionary
+/// and its own extracted folder report the same entry count.
+fn probe_dir_candidate(dir_path: &Path) -> ProbeOutcome {
+    let Some((unzipped_dir, physical_stem)) = locate_stardict_dir(dir_path) else {
+        let names = shallow_file_names(dir_path);
+        return ProbeOutcome::UnsupportedFormat(detect_archive_format(
+            names.iter().map(|s| s.as_str()),
+        ));
+    };
+    let ifo_path = unzipped_dir.join(format!("{}.ifo", physical_stem));
+
+    match read_ifo_title_and_count(&ifo_path) {
+        Ok((title, entry_count)) => ProbeOutcome::StarDict(Box::new(CandidateMeta {
+            title,
+            entry_count,
+            suggested_label: suggested_label_for_dir(dir_path),
+            source_path: dir_path.to_string_lossy().to_string(),
+            source_kind: "dir".to_string(),
+        })),
+        Err(e) => ProbeOutcome::Unreadable(format!("its description file could not be understood ({})", e)),
+    }
+}
+
+/// File names in `dir` and one level below it — the directory equivalent of a
+/// zip's entry list, used only to name an unrecognised format.
+fn shallow_file_names(dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut roots: Vec<PathBuf> = vec![dir.to_path_buf()];
+    let mut depth = 0;
+    while depth < 2 {
+        let mut next: Vec<PathBuf> = Vec::new();
+        for root in &roots {
+            let Ok(entries) = std::fs::read_dir(root) else { continue };
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    next.push(p);
+                } else if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+        roots = next;
+        depth += 1;
+    }
+    names
+}
+
+/// Turn a non-StarDict outcome into the row the dialog renders.
+fn rejection_for(source_path: &Path, outcome: &ProbeOutcome) -> Option<ScanRejection> {
+    let path = source_path.to_string_lossy().to_string();
+    let name = source_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&path)
+        .to_string();
+
+    match outcome {
+        ProbeOutcome::StarDict(_) => None,
+        ProbeOutcome::UnsupportedFormat(format) => Some(ScanRejection {
+            source_path: path,
+            reason: "unsupported_format",
+            format: Some(*format),
+            message: match format.description() {
+                Some(d) => format!("\"{}\" is {}, which Simsapa cannot read.", name, d),
+                None => format!("\"{}\" does not contain a StarDict dictionary.", name),
+            },
+        }),
+        ProbeOutcome::Unreadable(msg) => Some(ScanRejection {
+            source_path: path,
+            reason: "unreadable",
+            format: None,
+            message: format!("\"{}\" {}.", name, msg),
+        }),
+        ProbeOutcome::IoFailure(msg) => Some(ScanRejection {
+            source_path: path,
+            reason: "io_failure",
+            format: None,
+            message: format!("\"{}\" could not be examined: {}.", name, msg),
+        }),
+    }
 }
 
 /// Discover and probe StarDict candidates for the given source kind (PRD §4.2,
-/// req. 4–6). Non-StarDict files/folders are silently skipped. Does NOT mutate
-/// the DB. Folder scans are non-recursive (direct children only).
-pub fn scan_source(kind: ScanKind, path: &Path) -> Result<Vec<CandidateMeta>, String> {
+/// req. 4–6). Does NOT mutate the DB. Folder scans are non-recursive (direct
+/// children only), and nothing is extracted.
+///
+/// A source that is not a StarDict is reported in `rejections` with the reason,
+/// never dropped silently — an empty result used to be the app's answer to
+/// "this is an MDict dictionary", "this zip is corrupt" and "the disk is full"
+/// alike.
+pub fn scan_source(kind: ScanKind, path: &Path) -> Result<ScanReport, String> {
+    // A URL that reached here as a string is a caller bug, not a missing file,
+    // and printing "Path not found: content://…" hid that for a whole release.
+    // `://` rather than a bare `:`, because `C:/Users/…` is a Windows path.
+    let path_str = path.to_string_lossy();
+    if path_str.contains("://") {
+        return Err(format!(
+            "Expected a file path but received a URL: {}",
+            path_str
+        ));
+    }
+    if path_str.trim().is_empty() {
+        return Err("No file was selected.".to_string());
+    }
+
     match path.try_exists() {
         Ok(true) => {}
         Ok(false) => return Err(format!("Path not found: {}", path.display())),
         Err(e) => return Err(format!("Cannot access {}: {}", path.display(), e)),
     }
 
-    let mut candidates: Vec<CandidateMeta> = Vec::new();
+    let mut report = ScanReport::default();
+
+    let mut record = |source: &Path, outcome: ProbeOutcome| {
+        match outcome {
+            ProbeOutcome::StarDict(meta) => report.candidates.push(*meta),
+            other => {
+                if let Some(r) = rejection_for(source, &other) {
+                    info(&format!("scan_source: rejected {} — {}", source.display(), r.message));
+                    report.rejections.push(r);
+                }
+            }
+        }
+    };
 
     match kind {
-        ScanKind::SingleZip => {
-            if let Some(c) = probe_zip_candidate(path) {
-                candidates.push(c);
-            }
-        }
-        ScanKind::SingleDir => {
-            if let Some(c) = probe_dir_candidate(path) {
-                candidates.push(c);
-            }
-        }
+        ScanKind::SingleZip => record(path, probe_zip_candidate(path)),
+        ScanKind::SingleDir => record(path, probe_dir_candidate(path)),
         ScanKind::ZipFolder => {
             let entries = std::fs::read_dir(path)
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
@@ -522,9 +953,10 @@ pub fn scan_source(kind: ScanKind, path: &Path) -> Result<Vec<CandidateMeta>, St
                 let p = entry.path();
                 if p.is_file()
                     && p.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("zip")) == Some(true)
-                    && let Some(c) = probe_zip_candidate(&p) {
-                        candidates.push(c);
-                    }
+                {
+                    let outcome = probe_zip_candidate(&p);
+                    record(&p, outcome);
+                }
             }
         }
         ScanKind::DirFolder => {
@@ -532,19 +964,20 @@ pub fn scan_source(kind: ScanKind, path: &Path) -> Result<Vec<CandidateMeta>, St
                 .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.is_dir()
-                    && let Some(c) = probe_dir_candidate(&p) {
-                        candidates.push(c);
-                    }
+                if p.is_dir() {
+                    let outcome = probe_dir_candidate(&p);
+                    record(&p, outcome);
+                }
             }
         }
     }
 
     // Stable ordering for predictable checklist display (folders enumerate in
     // arbitrary order across platforms).
-    candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+    report.rejections.sort_by(|a, b| a.source_path.cmp(&b.source_path));
 
-    Ok(candidates)
+    Ok(report)
 }
 
 /// Delete a user-imported dictionary (SQL only).
@@ -644,4 +1077,209 @@ pub fn rename_user_dictionary(dictionary_id: i32, new_label: &str) -> Result<(),
         .map_err(|e| format!("rename_dictionary_label failed: {}", e))?;
     info(&format!("rename_user_dictionary: '{}' -> '{}'", target.label, new_label));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CRC-32 (IEEE), bitwise. `ZipArchive` verifies it on read, and the
+    /// handwritten archive below cannot borrow the `zip` crate's copy.
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFFu32;
+        for byte in data {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            }
+        }
+        !crc
+    }
+
+    /// Build a zip archive **byte by byte**, with the entry names written
+    /// verbatim.
+    ///
+    /// `ZipWriter` cannot be used for this: `start_file` normalizes the name
+    /// (`options.normalize()`, `write.rs:1172`), so `../escaped.txt` is written
+    /// as `escaped.txt` and a traversal test built on it passes without ever
+    /// testing traversal. That is exactly the "verify, do not assume" trap
+    /// Req. 30 is about, so the hostile name is placed in the central directory
+    /// directly. All entries are STORED, which keeps this to the three record
+    /// types below.
+    fn zip_with_raw_names(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::new();
+        let mut central: Vec<u8> = Vec::new();
+        let mut count = 0u16;
+
+        for (name, body) in entries {
+            let offset = out.len() as u32;
+            let crc = crc32(body);
+            let n = name.as_bytes();
+
+            // Local file header.
+            out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            out.extend_from_slice(&10u16.to_le_bytes()); // version needed
+            out.extend_from_slice(&0u16.to_le_bytes()); // flags
+            out.extend_from_slice(&0u16.to_le_bytes()); // method: stored
+            out.extend_from_slice(&0u16.to_le_bytes()); // mod time
+            out.extend_from_slice(&0u16.to_le_bytes()); // mod date
+            out.extend_from_slice(&crc.to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(n.len() as u16).to_le_bytes());
+            out.extend_from_slice(&0u16.to_le_bytes()); // extra len
+            out.extend_from_slice(n);
+            out.extend_from_slice(body);
+
+            // Central directory record.
+            central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            central.extend_from_slice(&10u16.to_le_bytes()); // version made by
+            central.extend_from_slice(&10u16.to_le_bytes()); // version needed
+            central.extend_from_slice(&0u16.to_le_bytes()); // flags
+            central.extend_from_slice(&0u16.to_le_bytes()); // method
+            central.extend_from_slice(&0u16.to_le_bytes()); // mod time
+            central.extend_from_slice(&0u16.to_le_bytes()); // mod date
+            central.extend_from_slice(&crc.to_le_bytes());
+            central.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            central.extend_from_slice(&(n.len() as u16).to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes()); // extra len
+            central.extend_from_slice(&0u16.to_le_bytes()); // comment len
+            central.extend_from_slice(&0u16.to_le_bytes()); // disk number
+            central.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
+            central.extend_from_slice(&0u32.to_le_bytes()); // external attrs
+            central.extend_from_slice(&offset.to_le_bytes());
+            central.extend_from_slice(n);
+
+            count += 1;
+        }
+
+        let central_offset = out.len() as u32;
+        let central_size = central.len() as u32;
+        out.extend_from_slice(&central);
+
+        // End of central directory.
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // disk number
+        out.extend_from_slice(&0u16.to_le_bytes()); // central dir disk
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&count.to_le_bytes());
+        out.extend_from_slice(&central_size.to_le_bytes());
+        out.extend_from_slice(&central_offset.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // comment len
+
+        out
+    }
+
+    /// Req. 30, verified rather than assumed against the pinned `zip` 2.x: an
+    /// entry whose name escapes the archive root must not be written outside
+    /// the destination. The extraction target is inside `SIMSAPA_DIR`, and the
+    /// archive now arrives from an arbitrary content provider.
+    #[test]
+    fn a_path_traversal_entry_cannot_escape_the_destination() {
+        let bytes = zip_with_raw_names(&[
+            ("../escaped.txt", b"nope" as &[u8]),
+            ("../../escaped-twice.txt", b"nope"),
+            ("ok.txt", b"fine"),
+        ]);
+
+        let outer = tempfile::tempdir().unwrap();
+        let dest = outer.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+        let sentinel = outer.path().join("escaped.txt");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        // The test is worthless if the writer sanitized the name away, so
+        // assert the hostile entry really is in the central directory.
+        let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
+        assert!(
+            names.iter().any(|n| n.contains("..")),
+            "the crafted archive must actually carry a traversal entry: {names:?}"
+        );
+
+        let finished = extract_archive(&mut archive, &dest, &AtomicBool::new(false), &|_, _| {})
+            .expect("extraction should succeed, skipping the unsafe entries");
+        assert!(finished);
+
+        assert!(
+            !sentinel.try_exists().unwrap_or(false),
+            "an entry named ../escaped.txt must not be written beside the destination"
+        );
+        assert!(
+            !outer.path().join("escaped-twice.txt").try_exists().unwrap_or(false),
+            "nor may a doubly-escaping entry"
+        );
+        assert_eq!(std::fs::read(dest.join("ok.txt")).unwrap(), b"fine");
+    }
+
+    #[test]
+    fn an_extraction_stops_between_entries_when_cancelled() {
+        let bytes = zip_with_raw_names(&[("a.txt", b"a" as &[u8]), ("b.txt", b"b")]);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        let finished = extract_archive(&mut archive, &dest, &AtomicBool::new(true), &|_, _| {})
+            .expect("a cancel is not an error");
+        assert!(!finished, "a cancelled extraction reports not-finished");
+        assert!(!dest.join("a.txt").try_exists().unwrap_or(false));
+    }
+
+    #[test]
+    fn an_extraction_reports_entry_progress() {
+        let bytes = zip_with_raw_names(&[("a.txt", b"a" as &[u8]), ("b.txt", b"b"), ("c.txt", b"c")]);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+
+        let reports = std::cell::RefCell::new(Vec::new());
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        extract_archive(&mut archive, &dest, &AtomicBool::new(false), &|done, total| {
+            reports.borrow_mut().push((done, total));
+        })
+        .unwrap();
+
+        let reports = reports.into_inner();
+        assert!(!reports.is_empty(), "the extraction stage must be determinate");
+        let (last_done, last_total) = *reports.last().unwrap();
+        assert_eq!(last_done, last_total, "progress must finish at 100%: {reports:?}");
+    }
+
+    #[test]
+    fn a_non_stardict_archive_is_named_by_its_entries() {
+        assert_eq!(
+            detect_archive_format(["dict.mdx", "dict.mdd"]),
+            ArchiveFormat::MDict
+        );
+        assert_eq!(detect_archive_format(["Some Dict.DSL"]), ArchiveFormat::Dsl);
+        assert_eq!(detect_archive_format(["d.xdxf"]), ArchiveFormat::Xdxf);
+        assert_eq!(detect_archive_format(["readme.txt"]), ArchiveFormat::Unknown);
+        assert_eq!(detect_archive_format(std::iter::empty()), ArchiveFormat::Unknown);
+        // Mixed: MDict wins, so the message names something really in there.
+        assert_eq!(
+            detect_archive_format(["a.xdxf", "b.mdx"]),
+            ArchiveFormat::MDict
+        );
+    }
+
+    #[test]
+    fn an_ifo_is_recognised_at_the_root_and_one_folder_deep_only() {
+        assert!(is_shallow_ifo_entry("dict.ifo"));
+        assert!(is_shallow_ifo_entry("wrapper/dict.ifo"));
+        assert!(is_shallow_ifo_entry("wrapper/DICT.IFO"));
+        assert!(!is_shallow_ifo_entry("a/b/dict.ifo"));
+        assert!(!is_shallow_ifo_entry("dict.idx"));
+    }
+
+    #[test]
+    fn a_scan_refuses_a_url_rather_than_reporting_a_missing_path() {
+        // The reported failure was `Path not found: ` with nothing after the
+        // colon, because a `content://` URI reached here as a string. `://`,
+        // never a bare `:` — `C:/Users/…` is a Windows path.
+        let err = scan_source(ScanKind::SingleZip, Path::new("content://provider/doc/1"))
+            .unwrap_err();
+        assert!(err.starts_with("Expected a file path but received a URL"), "{err}");
+
+        let err = scan_source(ScanKind::SingleZip, Path::new("")).unwrap_err();
+        assert_eq!(err, "No file was selected.");
+    }
 }

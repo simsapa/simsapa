@@ -25,6 +25,11 @@ Item {
         console.log("abort_staging()");
     }
 
+    function cleanup_staged_file(path: string): bool {
+        console.log("cleanup_staged_file():", path);
+        return true;
+    }
+
     function abort_import() {
         console.log("abort_import()");
     }

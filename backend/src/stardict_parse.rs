@@ -18,7 +18,11 @@ use crate::logger::{info, warn, error};
 /// intentionally has no `IndexingFts5` / `IndexingTantivy` variants.
 #[derive(Debug, Clone)]
 pub enum StardictImportProgress {
-    Extracting,
+    /// Unzipping the archive, entry by entry. `total` is the entry count and
+    /// `done` how many have been written; both are `0` for the single "starting
+    /// to extract" tick emitted before the archive is opened, which QML renders
+    /// as an indeterminate bar.
+    Extracting { done: usize, total: usize },
     Parsing,
     InsertingWords { done: usize, total: usize },
     /// Emitted as soon as the dictionary's identity is known (after the

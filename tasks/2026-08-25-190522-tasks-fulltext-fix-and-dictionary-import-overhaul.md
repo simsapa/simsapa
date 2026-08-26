@@ -409,9 +409,37 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
 
 **Dictionary import**
 
-- `backend/src/dictionary_manager_core.rs` — `probe_zip_candidate` (`:459`),
-  `import_user_zip` (`:220`), `scan_source` (`:498`), `locate_stardict_dir`
-  (`:366`), `find_ifo_stem_in` (`:389`).
+- `backend/src/dictionary_manager_core.rs` — **the bulk of 5.0.** New:
+  `ArchiveFormat` / `detect_archive_format`, `ProbeOutcome` / `ScanRejection` /
+  `ScanReport`, `read_ifo_title_and_count` (the `.ifo`-only probe),
+  `is_shallow_ifo_entry`, `shallow_file_names`, `rejection_for`,
+  `extract_archive` (entry-by-entry, cancellable, `enclosed_name`-guarded),
+  `sweep_orphaned_extract_dirs`, and the `EXTRACT_TEMP_PREFIX` /
+  `PROBE_TEMP_PREFIX` constants. Rewritten: `probe_zip_candidate` (no
+  extraction), `probe_dir_candidate`, `scan_source` (returns `ScanReport`, and
+  rejects a URL string). `probe_stardict_dir` and the `stardict::no_cache` call
+  are **gone**. Its `#[cfg(test)] mod tests` carries the hand-built-zip
+  traversal test (5.4).
+- `backend/src/stardict_parse.rs` — `StardictImportProgress::Extracting` now
+  carries `{ done, total }` (5.3); `cli/src/main.rs`,
+  `cli/src/bootstrap/mod.rs` and `bridges/src/dictionary_manager.rs` updated.
+- `backend/src/import_staging.rs` — **new (5.5):** `cleanup_staged_file`, which
+  deletes a staged copy only when it is inside that feature's staging folder.
+- `backend/src/lib.rs` — `init_app_data()` spawns the 5.6 sweep.
+- `bridges/src/dictionary_manager.rs` — `cleanup_staged_file` invokable;
+  `scan_source` serialises the `ScanReport` object; the empty-abort branch
+  skips the delete for the `dictionary_id: -1` extraction cancel.
+- `bridges/src/sutta_bridge.rs` — 5.7's comment on `delete_temp_import_folder`.
+- `assets/qml/DictionaryImportDialog.qml` — `staged_path` +
+  `discard_staged_file()` wired into every exit; `onScanFinished` reads the
+  `ScanReport` shape and renders the rejection reasons.
+- `assets/qml/DictionariesWindow.qml` — `finish_batch()` deletes the batch's
+  staged copies.
+- `assets/qml/com/profoundlabs/simsapa/DictionaryManager.qml` — stub for
+  `cleanup_staged_file`.
+- `backend/tests/test_dictionary_import_dir.rs`,
+  `backend/tests/stardict_import_per_chunk_commit.rs` — updated for the new
+  report shape and the new cancel ordering.
 - `backend/src/picker_url.rs` — `outcome_line` (`:843`); the staging-root helpers
   (`:272-293`).
 - `backend/src/import_staging.rs` — **new (4.1–4.3).** The whole
@@ -979,67 +1007,163 @@ Reqs. 10, 17b–17d.
   (§0.4). Add a comment on it naming the async replacement and why only the
   dictionary path uses it.
 
-### 5.0 [ ] Extract once, and clean up what a cancel leaves behind
+### 5.0 [x] Extract once, and clean up what a cancel leaves behind
 
 **Specs to keep in mind.** Today a 172 MB archive is fully extracted **twice** —
 once by `probe_zip_candidate` to read the `.ifo`, once by `import_user_zip`
 (Req. 23, Req. 25). `zip` 2.x can read individual entries by name, so the probe
 never needs to extract at all.
 
-- [ ] 5.1 Rewrite `probe_zip_candidate` (`dictionary_manager_core.rs:459`) so it
+- [x] 5.1 Rewrite `probe_zip_candidate` (`dictionary_manager_core.rs:459`) so it
   stops extracting the whole archive (Req. 25).
 
-  **PITFALL — the `stardict` crate cannot read from an archive.** `probe_stardict_dir`
-  (`:448-454`) calls `Ifo::new(ifo_path)` and `stardict::no_cache(ifo_path)`, and
-  **both take a filesystem `Path`** (`stardict = "0.2.2"`, `backend/Cargo.toml:29`).
-  So "read it out of the zip" is not a drop-in change. Take it in this order:
-  1. Enumerate entry names only (`ZipArchive::file_names()`) — no decompression.
-     This alone answers task 7.0's format question and costs nothing.
-  2. For the title and count, prefer parsing the **`.ifo` entry** directly: it is
-     a small key=value text file and the StarDict spec requires a `wordcount`
-     field, so reading that one entry may make the `.idx` unnecessary.
-     `probe_stardict_dir` currently reports `dict.idx.items.len()` — decide
-     explicitly whether the declared `wordcount` is acceptable for the checklist
-     display, and say so in a comment. It is only shown to the user.
-  3. **Only if** the `.idx` is genuinely needed, extract **just those entries**
-     into a small temp dir and call the existing helpers on it. Verify first
-     whether `stardict::no_cache` also requires the `.dict`/`.dict.dz` to be
-     present — if it does, that is the bulk of the archive and step 2 is the only
-     acceptable route.
+  **Open question 7 is answered, and it decided the route: `stardict::no_cache`
+  DOES require the `.dict`/`.dict.dz`.** `stardict-0.2.3/src/lib.rs:163-164`
+  calls `get_sub_file(prefix, "dict", "dz")` and returns `Error::NoFileFound`
+  when neither is present — that is the bulk of the archive, so step 3
+  (selectively extracting the `.idx`) was never cheap. The `.ifo`-only route of
+  step 2 is the only acceptable one, exactly as the task anticipated.
 
-  Whatever route is taken, the outcome must be: **no full extraction during a
-  scan.**
-- [ ] 5.2 Change the probe's return type from `Option<CandidateMeta>` to a
+  So the probe now reads **two things and nothing else**: the central directory
+  (`ZipArchive::file_names()` — entry names, zero decompression) and the single
+  `.ifo` entry, a few hundred bytes of `key=value` text written to a small temp
+  folder because the `stardict` crate parses from a filesystem path only. That
+  temp folder holds one text file, not the archive.
+
+  **Open question 6 is answered too, and recorded in a comment on
+  `read_ifo_title_and_count`: the declared `wordcount` is what is shown.** It is
+  required by the StarDict spec, it is only ever *displayed* in the checklist
+  (the import counts what it actually inserts), and the alternative costs a full
+  extraction. `probe_dir_candidate` was moved onto the same `.ifo` read for the
+  same reason and for a second one: a dictionary and its own extracted folder
+  now report the **same** number, which they did not before.
+- [x] 5.2 Change the probe's return type from `Option<CandidateMeta>` to a
   **typed result** that distinguishes: a valid StarDict; a recognised
   non-StarDict format (see 7.0); an unreadable/corrupt archive; and an I/O or
   space failure. `scan_source` must propagate the reason instead of returning an
   empty vector (this is what task 7.0 renders).
-- [ ] 5.3 Make `import_user_zip`'s extraction **cancellable**: `archive.extract()`
+
+  `ProbeOutcome` has those four variants. `scan_source` now returns a
+  `ScanReport { candidates, rejections }` — **not** an enum, because a folder
+  scan legitimately produces both at once (three StarDict archives and one
+  MDict). Each `ScanRejection` carries a stable `reason`
+  (`unsupported_format` / `unreadable` / `io_failure`), an optional `format`,
+  and one plain sentence. The bridge serialises the report object, so
+  `scanFinished` now carries `{"candidates":[…],"rejections":[…]}` rather than a
+  bare array; `DictionaryImportDialog` reads the new shape and falls back to the
+  old sentence only when there is genuinely nothing to say.
+
+  **Two things landed here that belong to task 7 and are flagged rather than
+  claimed.** `ArchiveFormat` + `detect_archive_format()` (7.1) exist because
+  5.2's "recognised non-StarDict format" variant is not representable without
+  them, and 5.1's entry-name read is the input. And **Req. 15 / task 7.3** — the
+  URL-scheme rejection — was added to `scan_source` while its failure surface
+  was being made typed: `://`, never a bare `:` (§9.6). Both are unit-tested
+  here. Task 7.2 (the dialog wording) and 7.4 (fixture archives) are untouched,
+  and 7.0 stays open.
+- [x] 5.3 Make `import_user_zip`'s extraction **cancellable**: `archive.extract()`
   is a single opaque call today and the `cancel: &AtomicBool` is only consulted
   inside `import_stardict_as_new`. Extract entry-by-entry, checking `cancel`
   between entries, and emit `StardictImportProgress::Extracting` with a count so
   the existing progress frame becomes determinate.
-- [ ] 5.4 Verify Req. 30 against `zip` 2.x: confirm `extract()` (or the
+
+  `extract_archive()` replaces `ZipArchive::extract`. `StardictImportProgress::
+  Extracting` gained `{ done, total }`; the single pre-open tick still carries
+  `0, 0`, which QML already renders as indeterminate.
+
+  **This changed one observable behaviour, and it broke a test that was right to
+  break.** A cancel now fires *before* any `dictionaries` row exists, so there
+  is no 0-entry row to clean up — the importer reports `dictionary_id: -1` and
+  the bridge's empty-abort branch skips the delete instead of asking to remove a
+  row that was never created. `empty_abort_removes_zero_entry_row` asserted the
+  old ordering; it was moved onto `import_user_dir` (no extraction stage), where
+  its actual subject — the between-chunk insert cancel — still lives, and a new
+  `cancelling_during_extraction_creates_no_dictionary_row` covers the new case
+  by asserting the dictionary count is unchanged.
+- [x] 5.4 Verify Req. 30 against `zip` 2.x: confirm `extract()` (or the
   entry-by-entry replacement) rejects path-traversal entries — `../`, absolute
   paths — via `enclosed_name` or equivalent. **Verify, do not assume**; the
   extraction target is inside `SIMSAPA_DIR`. Add a unit test with a crafted
   archive.
-- [ ] 5.5 Delete the staged `.zip` when the import completes **or is cancelled**
+
+  `extract_archive` routes every entry through `ZipFile::enclosed_name()` (public
+  in 2.4.2) and skips + logs anything it refuses. Symlink entries are written as
+  ordinary files rather than recreated — strictly the safer of the two, and a
+  StarDict archive has no symlinks to honour.
+
+  **"Verify, do not assume" nearly failed on the test itself.** The first
+  version built the crafted archive with `ZipWriter::start_file`, which
+  **normalizes the name** (`options.normalize()`, `zip-2.4.2/src/write.rs:1172`)
+  — `../escaped.txt` is stored as `escaped.txt`, so the test passed without ever
+  testing traversal. It only came to light because an assertion that the archive
+  really contained a `..` entry was added to check exactly that, and failed. The
+  test now writes the local headers, central directory and EOCD **by hand**
+  (`zip_with_raw_names`, with a 12-line CRC-32) so the hostile name reaches the
+  central directory verbatim, and keeps that assertion as the guard against the
+  test going vacuous again.
+- [x] 5.5 Delete the staged `.zip` when the import completes **or is cancelled**
   (Req. 21a). Today nothing does: only `DocumentImportDialog` ever calls
   `delete_temp_import_folder`. Stage into a **per-feature subfolder**
   (`<TempLocation>/simsapa-imports/dictionaries/`, Req. 18) and delete only that
   (Req. 19) — the shared-root wipe is Defect D's claim 1, which the 08-25
   measurements did **not** retire. The staged file must survive from
   `scan_source` recording it as `source_path` until the import ends (Req. 21).
-- [ ] 5.6 Add a **startup sweep** for orphaned `simsapa-stardict-*` and
+
+  The per-feature subfolder was already task 4.3's `staging_dir(feature)`; what
+  was missing was the delete. `import_staging::cleanup_staged_file(path,
+  feature)` removes one file and **decides ownership by location, not by the
+  caller's word** — a path outside `simsapa-imports/dictionaries/` is refused,
+  so a desktop pick (the user's own archive, `was_copied: false`) can never be
+  deleted whatever QML passes in.
+
+  **Req. 19's literal wording — change `delete_temp_import_folder`'s signature to
+  take the feature — was deliberately not followed.** That function is reached
+  only from `DocumentImportDialog`, which still stages through the C++ writer
+  into the **shared** root; giving it a `"documents"` argument would point it at
+  a subfolder nothing writes to and silently turn the one cleanup that does
+  exist into a no-op. The requirement's *intent* (never wipe the shared root out
+  from under another feature) is met by the dictionary path not using it at all.
+  Re-shaping the other three call sites is the shared-resolver work §0.4 keeps
+  out of this build.
+
+  Ownership is explicit at every exit: the dialog holds `staged_path` and
+  discards it on Cancel from either frame, on an abandoned scan, on a scan that
+  found nothing, and on re-entry to `start()`; on Import it **clears**
+  `staged_path`, handing ownership to `DictionariesWindow.finish_batch()`, which
+  every ending goes through — success, per-item failure and abort alike.
+- [x] 5.6 Add a **startup sweep** for orphaned `simsapa-stardict-*` and
   `simsapa-stardict-probe-*` directories in `SIMSAPA_DIR`. `TempDir` cleans up on
   drop, but a killed process leaves them forever and nothing reclaims them.
   Age-gate it (e.g. older than an hour) so a concurrent import is never swept.
   Log what it removes.
-- [ ] 5.7 Req. 20 (`std::env::temp_dir()` vs `QStandardPaths::TempLocation`) is a
+
+  `sweep_orphaned_extract_dirs()`, called from `init_app_data()` on a background
+  thread (a directory walk on cold mobile storage that nothing at startup waits
+  on). The two prefixes are now the constants `EXTRACT_TEMP_PREFIX` /
+  `PROBE_TEMP_PREFIX`, and the probe prefix is deliberately a *prefix of* the
+  extract prefix, so one `starts_with` test covers both. Age-gated at an hour —
+  and **an unreadable timestamp is treated as "too young"**, i.e. left alone:
+  deleting a running import's extraction directory underneath it is much worse
+  than leaving a stale folder for one more launch.
+- [x] 5.7 Req. 20 (`std::env::temp_dir()` vs `QStandardPaths::TempLocation`) is a
   **non-issue** — measured identical on an Android 16 phone and on ARC
   (`staging_roots_differ: no`). Do not "fix" it. Record that in the code comment
   at `delete_temp_import_folder` so it is not re-investigated.
+
+  Recorded, together with the second thing about that function that keeps being
+  re-derived: it wipes the *root*, not a per-feature subfolder, which is why the
+  dictionary path does not use it (see 5.5).
+
+**Verification.** `cd backend && cargo test` — all suites green (558 lib +
+every integration binary). `make qml-test` — 172 passed, 0 failed, and no new
+`qmllint` warning naming either touched QML file. `make build -B` — clean.
+
+**Not verified: the Android cross-check.** `cargo check --target
+aarch64-linux-android` fails in `ring`'s build script without the NDK
+environment the sibling task list's §Notes recipe sets up. Nothing in task 5.0
+touches `#[cfg(target_os = "android")]` code — `cleanup_staged_file` and
+`sweep_orphaned_extract_dirs` are platform-independent — so the desktop
+compile covers every line added here.
 
 ### 6.0 [ ] Make the dictionary import actually work — the automatic picker fallback (E-4, E-7, E-14…E-17)
 
@@ -1224,11 +1348,13 @@ needed to answer the question.
    button; a startup-report row would have surfaced it unprompted.
 5. **§4.7's removable-volume notice** — deferred (§0.4). Revisit only if a
    genuinely slow affected volume is ever measured.
-6. **Is the `.ifo`'s declared `wordcount` an acceptable substitute for
-   `dict.idx.items.len()`** in the import checklist? (Task 5.1.) It decides
-   whether a scan can avoid touching the `.idx` at all. The number is only ever
-   shown to the user, so the bar is "is it honest", not "is it exact" — but if
-   the two can disagree materially for real dictionaries, say which is shown.
-7. **Does `stardict::no_cache` require the `.dict`/`.dict.dz` to be present?**
-   Unverified. If it does, selectively extracting the `.idx` is not cheap after
-   all and task 5.1 must take the `.ifo`-only route. Check before writing 5.1.
+6. ~~**Is the `.ifo`'s declared `wordcount` an acceptable substitute for
+   `dict.idx.items.len()`**~~ — **answered (task 5.1): yes, and it is what is
+   shown.** Required by the StarDict spec, display-only, and the alternative
+   costs a full extraction. `probe_dir_candidate` was moved onto the same read,
+   so a dictionary and its extracted folder now agree.
+7. ~~**Does `stardict::no_cache` require the `.dict`/`.dict.dz` to be
+   present?**~~ — **answered (task 5.1): yes.**
+   `stardict-0.2.3/src/lib.rs:163-164` calls `get_sub_file(prefix, "dict",
+   "dz")` and errors with `NoFileFound` when neither exists. So the `.idx` route
+   was never cheap, and 5.1 took the `.ifo`-only route as the task anticipated.

@@ -128,6 +128,41 @@ pub fn staging_dir(feature: &str) -> PathBuf {
     crate::picker_url::rust_staging_root().join(feature)
 }
 
+/// Delete a staged copy once the import that needed it has ended.
+///
+/// **Ownership is decided by location, not by the caller's word.** The path is
+/// removed only if it sits inside this feature's own staging folder, so a
+/// desktop pick — the user's own archive, opened in place with
+/// `was_copied: false` — can never be deleted by a cleanup call, whatever QML
+/// passes in. Returns `true` when something was removed.
+///
+/// This is deliberately not `delete_temp_import_folder`, which wipes the
+/// **shared** `simsapa-imports` root and would take another feature's in-flight
+/// staged file with it.
+pub fn cleanup_staged_file(path: &Path, feature: &str) -> bool {
+    let dir = staging_dir(feature);
+    if !path.starts_with(&dir) {
+        return false;
+    }
+    match path.try_exists() {
+        Ok(true) => match std::fs::remove_file(path) {
+            Ok(()) => {
+                info(&format!("import staging: removed staged copy {}", path.display()));
+                true
+            }
+            Err(e) => {
+                crate::logger::error(&format!(
+                    "import staging: could not remove staged copy {}: {}",
+                    path.display(),
+                    e
+                ));
+                false
+            }
+        },
+        _ => false,
+    }
+}
+
 /// Strip anything from a provider-supplied display name that could escape the
 /// staging folder or confuse a filesystem.
 ///

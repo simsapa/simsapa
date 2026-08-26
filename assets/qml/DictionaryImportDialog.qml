@@ -78,6 +78,12 @@ ApplicationWindow {
     // signal as a failure — one outcome path — and this is the flag that tells
     // them apart on this side.
     property bool staging_cancelled: false
+    // The staged copy this dialog made, if any. Empty for a desktop pick, which
+    // is the user's own file and is never copied. Held so that every way out of
+    // the dialog *except* handing the path to an import can delete it — nothing
+    // deleted a staged dictionary archive before, so each import left 10–200 MB
+    // behind for good.
+    property string staged_path: ""
     // Set when the user leaves the scanning frame. The scan itself is not
     // interruptible in the backend yet, so this abandons its result rather than
     // stopping it; the expensive half (a full archive extraction during a scan)
@@ -103,6 +109,9 @@ ApplicationWindow {
 
     // Public entry point: reset to the source-selection frame and show.
     function start() {
+        // A copy left over from a previous run of this dialog (the window is
+        // reused) has no owner: discard it before anything else.
+        root.discard_staged_file();
         root.scanned_items = [];
         root.can_import = false;
         root.scan_message = "";
@@ -168,6 +177,17 @@ ApplicationWindow {
             root.scan_message = "Could not read the selected file: " + result;
             frames.currentIndex = root.frame_source;
         }
+    }
+
+    // Delete the staged copy, if this dialog made one and nobody took it over.
+    // The backend removes the file only when it really is inside the dictionary
+    // staging folder, so passing a desktop pick's own path here is harmless.
+    function discard_staged_file() {
+        if (root.staged_path.length === 0) {
+            return;
+        }
+        dict_manager.cleanup_staged_file(root.staged_path);
+        root.staged_path = "";
     }
 
     function cancel_staging() {
@@ -240,6 +260,7 @@ ApplicationWindow {
         function onStagingFinished(path: string) {
             screen_manager.set_keep_screen_on("dictionary-import-staging", false);
             root.staging_active = false;
+            root.staged_path = path;
             logger.info("DictionaryImportDialog: staged file ready at " + path);
             root.begin_scan("single_zip", path);
         }
@@ -258,22 +279,34 @@ ApplicationWindow {
             frames.currentIndex = root.frame_source;
         }
 
-        function onScanFinished(items_json: string) {
+        function onScanFinished(report_json: string) {
             screen_manager.set_keep_screen_on("dictionary-import-scan", false);
             if (root.scan_abandoned) {
                 root.scan_abandoned = false;
+                root.discard_staged_file();
                 return;
             }
+            // A `ScanReport` object: `candidates` plus `rejections`, each
+            // rejection naming what the source turned out to be. An empty
+            // result used to be the app's single answer to "this is an MDict
+            // dictionary", "this archive is corrupt" and "there was no room".
             let arr = [];
+            let rejections = [];
             try {
-                arr = JSON.parse(items_json);
+                const report = JSON.parse(report_json);
+                arr = report.candidates || [];
+                rejections = report.rejections || [];
             } catch (e) {
                 logger.error("DictionaryImportDialog scanFinished parse error: " + e);
                 arr = [];
             }
             if (!arr || arr.length === 0) {
-                root.scan_message = "No StarDict dictionaries were found in the chosen source.";
+                root.scan_message = rejections.length > 0
+                    ? rejections.map(r => r.message).join(" ")
+                    : "No StarDict dictionaries were found in the chosen source.";
                 frames.currentIndex = root.frame_source;
+                // Nothing will import it, so the staged copy has no owner left.
+                root.discard_staged_file();
                 return;
             }
             root.scanned_items = arr;
@@ -458,6 +491,7 @@ ApplicationWindow {
                         text: "Cancel"
                         font.pointSize: root.pointSize
                         onClicked: {
+                            root.discard_staged_file();
                             root.canceled();
                             root.hide();
                         }
@@ -711,6 +745,7 @@ ApplicationWindow {
                         text: "Cancel"
                         font.pointSize: root.pointSize
                         onClicked: {
+                            root.discard_staged_file();
                             root.canceled();
                             root.hide();
                         }
@@ -735,6 +770,10 @@ ApplicationWindow {
                                     });
                                 }
                             }
+                            // Ownership of the staged copy passes to the batch
+                            // driver, which deletes it when the batch ends —
+                            // by success, failure or abort alike.
+                            root.staged_path = "";
                             root.import_batch_requested(JSON.stringify(items));
                             root.hide();
                         }

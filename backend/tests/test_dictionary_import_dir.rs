@@ -169,15 +169,22 @@ fn scan_dir_folder_skips_non_stardict() {
     // A loose file at the root — irrelevant to dir-folder scanning.
     fs::write(root.join("notes.txt"), b"x").unwrap();
 
-    let mut items = scan_source(ScanKind::DirFolder, root).expect("scan_source");
-    items.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
+    let mut report = scan_source(ScanKind::DirFolder, root).expect("scan_source");
+    report.candidates.sort_by(|a, b| a.suggested_label.cmp(&b.suggested_label));
 
+    let items = &report.candidates;
     assert_eq!(items.len(), 2, "only the two valid StarDict folders should be found");
     assert_eq!(items[0].title, "Alpha");
     assert_eq!(items[0].entry_count, 5);
     assert_eq!(items[0].source_kind, "dir");
     assert_eq!(items[1].title, "Beta");
     assert_eq!(items[1].entry_count, 7);
+
+    // The junk folder is no longer dropped silently: it is reported with a
+    // reason, which is what lets the dialog say what it actually found.
+    assert_eq!(report.rejections.len(), 1);
+    assert_eq!(report.rejections[0].reason, "unsupported_format");
+    assert!(report.rejections[0].source_path.ends_with("not-a-dict"));
 }
 
 #[test]
@@ -203,11 +210,15 @@ fn scan_zip_folder_skips_non_stardict() {
     fs::write(junk_dir.join("readme.txt"), b"nothing here").unwrap();
     zip_dir_recursive(&junk_dir, &root.join("junk.zip")).unwrap();
 
-    let items = scan_source(ScanKind::ZipFolder, root).expect("scan_source");
+    let report = scan_source(ScanKind::ZipFolder, root).expect("scan_source");
+    let items = &report.candidates;
     assert_eq!(items.len(), 1, "only the valid StarDict zip should be found");
     assert_eq!(items[0].title, "Good Dict");
     assert_eq!(items[0].entry_count, 9);
     assert_eq!(items[0].source_kind, "zip");
+
+    assert_eq!(report.rejections.len(), 1, "the junk zip must be reported, not dropped");
+    assert_eq!(report.rejections[0].reason, "unsupported_format");
 }
 
 /// PRD §4.6 req. 25 (task 5.2/5.5): a built-in StarDict import

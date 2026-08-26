@@ -187,6 +187,18 @@ ApplicationWindow {
     // Route to the shared summary frame with the aggregated batch outcome.
     function finish_batch() {
         screen_manager.set_keep_screen_on("dictionary-import-batch", false);
+        // Delete the staged copies this batch was handed. Every ending comes
+        // through here — success, per-item failure and abort alike — which is
+        // what makes the staged archive's lifetime bounded at last. The backend
+        // removes a path only when it really is inside the dictionary staging
+        // folder, so a desktop pick (the user's own archive, never copied) is
+        // left where it is.
+        for (let i = 0; i < root.batch_queue.length; i++) {
+            const item = root.batch_queue[i];
+            if (item && item.path) {
+                dict_manager.cleanup_staged_file(item.path);
+            }
+        }
         root.batch_active = false;
         root.op_kind = "import_batch";
         views_stack.currentIndex = 4;

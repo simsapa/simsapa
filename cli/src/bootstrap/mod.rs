@@ -1187,7 +1187,7 @@ fn import_stardict_zip_bootstrap(zip_path: &Path, label: &str, lang: &str) -> Re
     let cancel = std::sync::atomic::AtomicBool::new(false);
     import_user_zip(zip_path, label, lang, &|p| {
         match p {
-            StardictImportProgress::Extracting => logger::info("  extracting..."),
+            StardictImportProgress::Extracting { .. } => logger::info("  extracting..."),
             StardictImportProgress::Parsing => logger::info("  parsing..."),
             StardictImportProgress::InsertingWords { done, total } => {
                 if total > 0 && (done == 0 || done == total || done % 1000 == 0) {

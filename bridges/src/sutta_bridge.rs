@@ -4018,6 +4018,23 @@ impl qobject::SuttaBridge {
 
     /// Delete the temporary import folder and all its contents
     /// Returns true if successful, false otherwise
+    /// Delete the **shared** staging root. Used only by `DocumentImportDialog`.
+    ///
+    /// Two things about it that have been re-investigated more than once:
+    ///
+    /// - **`std::env::temp_dir()` here and `QStandardPaths::TempLocation` in
+    ///   `cpp/utils.cpp` are the same directory.** That was long suspected of
+    ///   making this a silent no-op on Android; it was then measured on an
+    ///   Android 16 phone *and* on ChromeOS/ARC, and both reported
+    ///   `staging_roots_differ: no` (`docs/file-selection-test.md` §6). Do not
+    ///   "fix" it.
+    /// - It wipes the root, not a per-feature subfolder, which is why the
+    ///   dictionary path does **not** use it: it would take another feature's
+    ///   in-flight staged file with it. Dictionaries clean up through
+    ///   `DictionaryManager::cleanup_staged_file`, which removes one file and
+    ///   only from `simsapa-imports/dictionaries/`. Migrating the document,
+    ///   chanting and Gloss paths to the same shape is the shared-resolver work
+    ///   in the picker-URL PRD.
     pub fn delete_temp_import_folder(&self) -> bool {
         let temp_dir = std::env::temp_dir().join("simsapa-imports");
 

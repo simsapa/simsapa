@@ -68,6 +68,9 @@ pub mod qobject {
         fn abort_staging(self: Pin<&mut DictionaryManager>);
 
         #[qinvokable]
+        fn cleanup_staged_file(self: &DictionaryManager, path: &QString) -> bool;
+
+        #[qinvokable]
         fn abort_import(self: Pin<&mut DictionaryManager>);
 
         #[qinvokable]
@@ -287,7 +290,9 @@ fn compute_label_status(label_str: &str) -> String {
 
 fn stardict_progress_to_signal(p: &StardictImportProgress) -> (String, i32, i32) {
     match p {
-        StardictImportProgress::Extracting => ("Extracting".to_string(), 0, 0),
+        StardictImportProgress::Extracting { done, total } => {
+            ("Extracting".to_string(), *done as i32, *total as i32)
+        }
         StardictImportProgress::Parsing => ("Parsing".to_string(), 0, 0),
         StardictImportProgress::InsertingWords { done, total } => {
             ("Inserting words".to_string(), *done as i32, *total as i32)
@@ -369,7 +374,13 @@ impl qobject::DictionaryManager {
                         // returned and released `DICT_MGR_LOCK`), NOT inside
                         // `import_user_zip` — `delete_user_dictionary` re-acquires
                         // the same `try_lock` and would return BUSY.
-                        if let Err(e) = dictionary_manager_core::delete_user_dictionary(outcome.dictionary_id) {
+                        //
+                        // A cancel during the *extraction* stage happens before
+                        // any row exists and reports `dictionary_id = -1`; there
+                        // is nothing to delete, and asking would only log a
+                        // "not a user-imported dictionary" error.
+                        if outcome.dictionary_id > 0
+                            && let Err(e) = dictionary_manager_core::delete_user_dictionary(outcome.dictionary_id) {
                             error(&format!(
                                 "Empty-abort cleanup failed for dictionary id {}: {}",
                                 outcome.dictionary_id, e
@@ -495,10 +506,14 @@ impl qobject::DictionaryManager {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {
             match dictionary_manager_core::scan_source(scan_kind, &path) {
-                Ok(items) => {
-                    let json = serde_json::to_string(&items).unwrap_or_else(|e| {
+                // A `ScanReport` object, not the bare array this used to send:
+                // it carries `rejections` alongside `candidates`, so the dialog
+                // can say *why* nothing was found instead of "No StarDict
+                // dictionaries were found in the chosen source."
+                Ok(report) => {
+                    let json = serde_json::to_string(&report).unwrap_or_else(|e| {
                         error(&format!("scan_source serialize: {}", e));
-                        "[]".to_string()
+                        "{\"candidates\":[],\"rejections\":[]}".to_string()
                     });
                     let json_qs = QString::from(&json);
                     crate::queue_or_log(&qt_thread, "dictionary_manager::scan_source", move |mut qo| {
@@ -599,6 +614,18 @@ impl qobject::DictionaryManager {
     /// `stagingFailed` with the cancelled reason — one outcome path, not two.
     fn abort_staging(self: Pin<&mut Self>) {
         self.rust().staging_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Remove a staged copy once the import that needed it has ended.
+    ///
+    /// Safe to call with any path: the backend removes the file only if it is
+    /// inside the dictionary staging folder, so a desktop pick — the user's own
+    /// archive, never copied — is left alone. Until this existed nothing ever
+    /// deleted a staged dictionary archive, so every import left 10–200 MB
+    /// behind for good.
+    fn cleanup_staged_file(&self, path: &QString) -> bool {
+        let p = PathBuf::from(path.to_string());
+        simsapa_backend::import_staging::cleanup_staged_file(&p, "dictionaries")
     }
 
     fn abort_import(self: Pin<&mut Self>) {

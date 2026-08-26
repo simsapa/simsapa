@@ -256,6 +256,23 @@ pub extern "C" fn init_app_data() {
                 app_data.refresh_language_caches();
             });
         }
+
+        // Reclaim extraction directories left by a process that was killed
+        // mid-import. `tempfile::TempDir` cleans up on drop, so this only ever
+        // finds the ones no drop ran for — at up to twice an archive's size
+        // each, and with nothing else in the app reclaiming them. Age-gated at
+        // an hour inside, so a running import is never swept. On a background
+        // thread: it is a directory walk on cold mobile storage and nothing at
+        // startup waits on it.
+        std::thread::spawn(|| {
+            let removed = crate::dictionary_manager_core::sweep_orphaned_extract_dirs();
+            if removed > 0 {
+                info(&format!(
+                    "init_app_data: swept {} orphaned import temp folder(s)",
+                    removed
+                ));
+            }
+        });
     }
 
     // The fulltext searcher is initialised lazily off the GUI thread by
