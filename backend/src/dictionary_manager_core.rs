@@ -1149,7 +1149,7 @@ fn rejection_for(source_path: &Path, outcome: &ProbeOutcome) -> Option<ScanRejec
             format: Some(*format),
             message: match format.description() {
                 Some(d) => format!("\"{}\" is {}, which Simsapa cannot read.", name, d),
-                None => format!("\"{}\" does not contain a StarDict dictionary.", name),
+                None => format!("\"{}\" does not contain a StarDict/GoldenDict dictionary.", name),
             },
         }),
         ProbeOutcome::Unreadable(msg) => Some(ScanRejection {

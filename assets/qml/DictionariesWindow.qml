@@ -501,7 +501,7 @@ ApplicationWindow {
                         }
 
                         Button {
-                            text: "Import StarDict..."
+                            text: "Import StarDict/GoldenDict..."
                             onClicked: import_dialog.start()
                         }
                     }

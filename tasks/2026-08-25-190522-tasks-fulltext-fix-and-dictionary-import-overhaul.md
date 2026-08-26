@@ -1686,51 +1686,59 @@ aarch64-linux-android`: clean.**
   that **no desktop compile and no test in this repo ever sees**. Re-run it
   after any edit to that file.
 
-### 7.0 [ ] Say what a non-StarDict archive actually is (MDict piece 1 only)
+### 7.0 [x] Say "StarDict/GoldenDict" everywhere the UI says "StarDict"
 
-**Specs to keep in mind.** The user had a valid StarDict file and an MDict file
-and could not tell them apart (§0.3.6). **MDict *reading* is dropped** — this is
-naming only. It depends on task 5.1's entry-list read, so no extraction is
-needed to answer the question.
+**Scope reduced to this one line 2026-08-26, on the user's instruction.** The
+format *detection* work is not needed, and neither is a new "what to do next"
+sentence.
 
-**7.1 and 7.3 already landed inside task 5.2** — verified 2026-08-26, and 5.2's
-write-up flags them. `ArchiveFormat` / `detect_archive_format()` and the
-`scan_source` URL rejection are implemented and unit-tested. What is actually
-left is **7.2 and 7.4**. And note what 7.2 still lacks specifically: the dialog
-joins the backend's rejection sentences verbatim, so it names the format
-**found** ("… is an MDict dictionary (.mdx), which Simsapa cannot read.") but
-never the format **wanted** — the required GoldenDict-alias sentence is missing
-entirely. Add it in QML keyed on `reason === "unsupported_format"`, not in the
-backend message, which is per-source and would repeat it once per rejected file.
+The problem it answers is still §0.3.6: the user had a valid StarDict file and
+an MDict file and could not tell them apart. Many users know the format only as
+"GoldenDict" — the reporting user's own file is `all-dictionaries-gd.zip` — so
+every place the UI says "StarDict" alone fails to connect to what they are
+holding. Naming both is the whole fix.
 
-**Task 6.9.3 landed the other half of 7.2's plumbing**: rejections are now
-rendered on the *checklist* frame too, not only when the scan found nothing, so
-a folder or bundle that yields both candidates and refusals says what it
-refused. The wording work below is unchanged, and the new sentence has to reach
-**both** surfaces — `scan_message` on the source frame and the
-`scan_rejections` list on the checklist frame.
+**7.1 and 7.3 already landed inside task 5.2** — verified 2026-08-26.
+`ArchiveFormat` / `detect_archive_format()` name the format *found* (MDict
+`.mdx`/`.mdd`, DSL, XDXF, "a zip of something else"), the `scan_source`
+URL-scheme rejection is in (Req. 15), and both are unit-tested. The three
+failure classes are already distinguished by `ScanRejection.reason`
+(`unsupported_format` / `unreadable` / `io_failure`) and already render as three
+different sentences. **Do not add more detection, and do not add fixture
+archives.**
 
-- [ ] 7.1 Recognise archive contents by entry name: **MDict** (`.mdx`, `.mdd`),
-  **DSL** (`.dsl`, `.dsl.dz`), **XDXF** (`.xdxf`), and "a zip of something else".
-  Report the format in the typed probe result from task 5.2.
-- [ ] 7.2 Render it in `DictionaryImportDialog.qml` in place of the current bare
-  *"No StarDict dictionaries were found in the chosen source."* (`:154`).
-  Required wording properties:
-  - name the format found: *"This is an MDict dictionary (`.mdx`), which Simsapa
-    cannot read."*;
-  - **name the format wanted, including the GoldenDict alias** — many users know
-    it only by that name: *"Please select a StarDict dictionary — often
-    distributed as a GoldenDict (`-gd`) archive."*;
-  - keep it to two sentences (PRD §7): what failed, what to do next;
-  - distinguish "unsupported format" from "this archive could not be opened" and
-    from "there was not enough space" — three different failures that all read
-    as "no dictionaries found" today.
-- [ ] 7.3 `scan_source` must reject a string that still carries a URL scheme with
-  a distinct message (Req. 15) — *"Expected a file path but received a URL: …"*.
-  Match on `://` or a parsed scheme, **never on a bare `:`** (`C:/Users/…` is a
-  Windows path, §9.6). Safety net; after task 6.0 it should be unreachable.
-- [ ] 7.4 Unit-test the classifier with fixture archives: a real StarDict, an
-  MDict, a DSL, an empty zip, and a corrupt zip. No extraction, no temp dirs.
+- [x] 7.1 ~~Recognise archive contents by entry name~~ — **done in 5.2**
+  (`detect_archive_format`, unit-tested). No further work.
+- [x] 7.2 Replace "StarDict" with **"StarDict/GoldenDict"** in every
+  user-facing string. All nine, found by one grep over `assets/qml/`,
+  `bridges/src/` and `backend/src/`:
+
+  | Where | String |
+  |---|---|
+  | `DictionariesWindow.qml:504` | the toolbar button, `Import StarDict/GoldenDict...` |
+  | `DictionaryImportDialog.qml:28` | the window title |
+  | `:188` | `filter_config`, the logged picker configuration |
+  | `:417` | `No StarDict/GoldenDict dictionaries were found in the chosen source.` |
+  | `:458` | the file dialog's title |
+  | `:468` | `nameFilters` — the desktop file dialog's filter label |
+  | `:535` | the source frame's heading |
+  | `:779` | the scanning frame's label |
+  | `dictionary_manager_core.rs:1152` | `"…" does not contain a StarDict/GoldenDict dictionary.` |
+
+  `filter_config` is included because it is a **verbatim statement of the
+  filter literal** for the `DICTIONARY-IMPORT-PICK:` log block (6.5); leaving it
+  behind would make the logged configuration disagree with the one in force.
+  Comments and doc comments were left alone — they name the format, not the UI.
+- [x] 7.3 ~~`scan_source` rejects a URL-scheme string~~ — **done in 5.2**
+  (`://`, never a bare `:`).
+- [x] 7.4 ~~Unit-test the classifier with fixture archives~~ — **descoped with
+  the detection work.** The classifier's existing unit tests over entry-name
+  lists stay; no fixture archives are built.
+
+**Verification.** `cd backend && cargo test` — 60 suites, 0 failed.
+`make qml-test` — 172 passed, 0 failed. `make qml-lint` — no warning naming
+either touched QML file. `make build -B` — clean. No Android cross-check needed:
+nothing here is inside `#[cfg(target_os = "android")]`.
 
 ### 8.0 [ ] Tests, docs, and the build to send
 

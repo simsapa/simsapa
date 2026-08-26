@@ -25,7 +25,7 @@ ApplicationWindow {
 
     Logger { id: logger }
 
-    title: "Import StarDict Dictionaries"
+    title: "Import StarDict/GoldenDict Dictionaries"
     width: is_mobile ? Screen.desktopAvailableWidth : 640
     height: is_mobile ? Screen.desktopAvailableHeight : Math.min(700, Screen.desktopAvailableHeight)
     visible: false
@@ -185,7 +185,7 @@ ApplicationWindow {
     // comparable if each names its picker *and* its filter.
     readonly property string filter_config: Qt.platform.os === "android"
         ? "nameFilters = [] (Android)"
-        : "nameFilters = [\"StarDict archives (*.zip)\"]"
+        : "nameFilters = [\"StarDict/GoldenDict archives (*.zip)\"]"
 
     // Everything the picker's answer goes through, on both platforms.
     //
@@ -414,7 +414,7 @@ ApplicationWindow {
                 root.scan_rejections = [];
                 root.scan_message = rejections.length > 0
                     ? rejections.map(r => r.message).join(" ")
-                    : "No StarDict dictionaries were found in the chosen source.";
+                    : "No StarDict/GoldenDict dictionaries were found in the chosen source.";
                 frames.currentIndex = root.frame_source;
                 // Nothing will import it, so the staged copy has no owner left.
                 root.discard_staged_file();
@@ -455,7 +455,7 @@ ApplicationWindow {
         id: file_dialog
         // With no filter the picker lists every file, so the title is the only
         // thing left saying what is wanted. Keep it.
-        title: "Choose StarDict .zip"
+        title: "Choose StarDict/GoldenDict .zip"
         // No `nameFilters` on Android. Qt maps them to the intent's
         // `setType()` + `EXTRA_MIME_TYPES`, and that mapping is the leading
         // suspect for a picker that returns an empty URL on ChromeOS/ARC —
@@ -465,7 +465,7 @@ ApplicationWindow {
         // Gated on the platform, not on `is_mobile`: iOS has neither the defect
         // nor the raw-picker fallback. Single, revertible line — if the
         // returned log shows the fallback never fired, it goes back.
-        nameFilters: Qt.platform.os === "android" ? [] : ["StarDict archives (*.zip)"]
+        nameFilters: Qt.platform.os === "android" ? [] : ["StarDict/GoldenDict archives (*.zip)"]
         // The picked file goes through staging, which decides what it is: a
         // local path is used in place, and an Android content:// URI is copied
         // to a temp file on a worker thread. The dialog no longer inspects the
@@ -532,7 +532,7 @@ ApplicationWindow {
                 spacing: 14
 
                 Label {
-                    text: "Import StarDict"
+                    text: "Import StarDict/GoldenDict"
                     font.pointSize: root.largePointSize
                     font.bold: true
                     Layout.fillWidth: true
@@ -776,7 +776,7 @@ ApplicationWindow {
                     }
 
                     Label {
-                        text: "Looking for StarDict dictionaries in the chosen source."
+                        text: "Looking for StarDict/GoldenDict dictionaries in the chosen source."
                         font.pointSize: root.pointSize
                         color: palette.mid
                         wrapMode: Text.WordWrap
