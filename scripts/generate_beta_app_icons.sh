@@ -39,7 +39,7 @@
 #   - The background layer is a solid #FAE6B2 and is copied verbatim from
 #     android/res/, so beta and release share a background.
 #
-# The legacy ic_launcher.png is effectively unused at minSdkVersion 27 — the
+# The legacy ic_launcher.png is effectively unused at minSdkVersion 28 — the
 # mipmap-anydpi-v26 adaptive icon wins on every supported device — but it is
 # generated anyway to keep the resource set complete.
 

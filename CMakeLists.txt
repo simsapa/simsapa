@@ -513,8 +513,9 @@ elseif (ANDROID)
     # prebuilt libs are already 16 KB-aligned, and the pure-Rust audio stack
     # (cpal AAudio backend) bundles no native libs, so the main app .so is the
     # only artifact we link here that needs aligning. NDK r28 would make this the
-    # default, but it is incompatible with Qt 6.9.3 at minSdk 27 (libc++ uses
-    # pthread_cond_clockwait, API 30+ only), so we stay on the Qt-supported NDK
+    # default, but it is incompatible with Qt 6.9.3 at this project's minSdk
+    # (libc++ uses pthread_cond_clockwait, API 30+ only — so the exclusion holds
+    # at minSdk 28 too), so we stay on the Qt-supported NDK
     # (r26b/r27) and set max-page-size explicitly. See docs/pure-rust-audio-backend.md.
     target_link_options(simsapadhammareader PRIVATE "-Wl,-z,max-page-size=16384")
 

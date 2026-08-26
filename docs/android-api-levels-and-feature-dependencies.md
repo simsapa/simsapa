@@ -33,7 +33,7 @@ Companion documents:
 
 | Setting | Value | Where it is declared |
 |---|---|---|
-| `minSdkVersion` | **27** (Android 8.1) | `android/build.gradle` `defaultConfig` — **the only source** |
+| `minSdkVersion` | **28** (Android 9) | `android/build.gradle` `defaultConfig` — **the only source**. Raised from 27 on 2026-08-26 because of §2 |
 | `targetSdkVersion` | 36 (Android 16) | `android/build.gradle` `defaultConfig` |
 | `compileSdk` | android-36 | written by androiddeployqt; it picks the newest installed platform |
 | NDK | r27 (27.3.13750724) | `build-android.sh`; **not r28** |
@@ -65,16 +65,28 @@ device `dlopen("libQt6Core…so")` fails with `cannot locate symbol "getentropy"
 and the app dies during library loading — before any Qt or app code runs. The
 `@LIBC_P` version tag is bionic's own marker for "Android P", i.e. API 28.
 
-**Consequence: `minSdkVersion 27` is not merely one level below what Qt
-declares — it is a promise the binary cannot keep.** Google Play offers the app
-to Android 8.1 devices on which it cannot start. Raising the floor to 28 does not
-drop working users; it stops advertising to users for whom it was never going to
-work.
+**Consequence: `minSdkVersion 27` was not merely one level below what Qt
+declares — it was a promise the binary could not keep.** Google Play was
+offering the app to Android 8.1 devices on which it could not start. Raising the
+floor to 28 dropped no working users; it stopped advertising to users for whom
+it was never going to work.
 
-### 2.1 Symbols above API 27 that are safe (weak-linked)
+> **Resolved 2026-08-26.** `android/build.gradle` now declares
+> `minSdkVersion 28`, verified on the artifact with `aapt2 dump badging`
+> (`minSdkVersion:'28'`, `targetSdkVersion:'36'`). This finding is what
+> decoupled the raise from the Qt upgrade it had been deferred to since
+> 2026-07-29 — reframing it from a distribution trade-off into a correctness
+> fix. See
+> [android-qt-upgrade-considerations.md §2.2](./android-qt-upgrade-considerations.md).
+
+### 2.1 Symbols above the floor that are safe (weak-linked)
 
 Weak undefined symbols resolve to null when absent, and the calling code takes a
 fallback path. These are **not** a floor:
+
+(The table is as measured against the old floor of 27, which is why `getrandom`
+appears in it. At today's floor of 28 that one is no longer above the floor at
+all; the rest still are.)
 
 | Library | Symbol | Binding | First available | Fallback |
 |---|---|---|---|---|
@@ -107,6 +119,41 @@ Sections: `declared` (build.gradle's levels), `qt` (§3's three pieces of
 evidence, read from the installed kit), `symbols` (§2), `jni` (§5's call-site
 inventory), `manifest` (§5.8). The symbol scan takes about a minute; it reads
 only, and changes nothing.
+
+**Two flags are effectively mandatory for a verdict you can trust.** The script
+scans **one ABI at a time** and defaults to `arm64-v8a`, and with no `--apk` it
+picks the *newest* APK anywhere under `build/` — which may be an unrelated
+arm64-only build. Always pass both, and loop the ABIs:
+
+```sh
+for abi in arm64-v8a x86_64 armeabi-v7a; do
+    ./scripts/android-api-scan.sh --apk "$apk" --floor 28 --abi "$abi"
+done
+```
+
+`minSdkVersion` binds **every** ABI, so a floor confirmed on arm64 alone is not
+confirmed.
+
+#### The confirming run for `minSdkVersion 28` (2026-08-26)
+
+Against a multi-ABI beta APK, NDK 27.3.13750724, 98 libraries per ABI:
+
+```
+arm64-v8a     OK  no hard (GLOBAL) undefined symbol requires more than API 28
+x86_64        OK  no hard (GLOBAL) undefined symbol requires more than API 28
+armeabi-v7a   OK  no hard (GLOBAL) undefined symbol requires more than API 28
+```
+
+This is the check that **28 is a *sufficient* floor, not merely a higher one**.
+Note the `getentropy` finding above was measured on `libQt6Core_arm64-v8a.so`;
+before this run the x86_64 and armeabi-v7a slices had **never been scanned at
+all**, and neither turned out to require a higher floor.
+
+The WEAK references above 28 differ slightly per ABI, which is expected and is
+not a floor — arm64 carries `copy_file_range` (34), `memfd_create` (30) and the
+four `ZSTD_trace_*`; x86_64 the same minus `memfd_create`; armeabi-v7a only
+`copy_file_range`. All three link the same nine system libraries, `libaaudio.so`
+among them (API 26, well under the floor).
 
 The rest of this section is what the script does, kept because the mechanism is
 the point and a one-off check may be quicker by hand.
@@ -202,7 +249,7 @@ and it does not work.
 | Storage volume enumeration (`StorageManager.getStorageVolumes`) | 24 | Degrades: fewer candidates listed |
 | SAF document tree writes (`DocumentsContract` tree helpers) | 21 | Degrades: file save fails |
 | Everything else in §5 | ≤ 21 | Not a constraint at any supported level |
-| `minSdkVersion` as declared | 27 | **Below the hard floor — the defect this document argues to fix** |
+| `minSdkVersion` as declared | **28** | **Matches the hard floor.** Was 27 — below it, the defect this document was written to surface — until it was raised on 2026-08-26 |
 
 ---
 
@@ -358,26 +405,53 @@ without the device.
 
 ---
 
-## 8. Consequences of raising `minSdkVersion` to 28
+## 8. Consequences of the raise to `minSdkVersion 28` — **done 2026-08-26**
 
-- **In-app code:** none. Every call in §5 is at API 26 or below except the
-  storage helpers at 24, and the only >27 native requirement is Qt's own.
-- **Correctness:** the app stops being offered to devices where it cannot load
-  (§2). This is the actual benefit, and it is larger than the "align with Qt's
-  declared floor" framing that preceded this measurement.
-- **NDK:** unchanged. The r28 exclusion is about `pthread_cond_clockwait`, which
-  bionic declares at **API 30** — still above 28. `build-android.sh` already says
-  so at both its NDK-pin sites.
-- **`WRITE_EXTERNAL_STORAGE`:** unchanged (§5.8).
+What was predicted here before the change, and what the change actually did.
+Every prediction held; nothing needed revisiting.
+
+- **In-app code:** none, as expected. Every call in §5 is at API 26 or below
+  except the storage helpers at 24, and the only >27 native requirement was Qt's
+  own.
+- **Correctness:** the app stopped being offered to devices where it cannot load
+  (§2). This was the actual benefit, and it is larger than the "align with Qt's
+  declared floor" framing that preceded this measurement — that framing is what
+  had coupled the change to a Qt upgrade for a year.
+- **NDK:** unchanged, and **not to be re-litigated**. The r28 exclusion is about
+  `pthread_cond_clockwait`, which bionic declares at **API 30** — still above
+  28. `build-android.sh` already said so at both its NDK-pin sites and needed no
+  edit; `CMakeLists.txt` and `android/build.gradle`'s comments were reworded to
+  match.
+- **`WRITE_EXTERNAL_STORAGE`:** unchanged (§5.8). Re-audited on the day: 28 is
+  still inside the API 27–28 band where the permission would be required, and
+  the app still never touches shared external storage, so the rationale is
+  re-affirmed rather than retired.
 - **Distribution:** Google Play stops offering *updates* to devices below API 28.
-  Existing installs keep the last compatible version and are not uninstalled.
-  Sideloaded APKs will refuse to install on API 27.
-- **Verification:** `aapt2 dump badging <apk> | grep -i sdkversion` must report
-  `minSdkVersion:'28'`.
+  Existing installs keep the last compatible version and are **not**
+  uninstalled. Sideloaded APKs will refuse to install on API 27.
+- **Verification:** confirmed on the artifact —
+  `aapt2 dump badging <apk> | grep -i sdkversion` reports `minSdkVersion:'28'`
+  and `targetSdkVersion:'36'`. The per-ABI confirming scan is in §2.2.
+- **Build system:** the multi-ABI build produced all three slices with no
+  complaint about the floor, and the script's own artifact checks (cross-ABI
+  contamination, ChromeOS required-features) passed unchanged.
 
 ---
 
-## 9. When to re-run this analysis
+## 9. Standing rules: keeping this document true
+
+**These two are rules, not suggestions.** The `getentropy` defect existed for a
+year because nobody scanned the binaries, and §5's inventory is only worth
+consulting during a crash triage if it is complete:
+
+> **Rule 1 — every new JNI call site records its API level in §5.** Adding a
+> `QJniObject` call without adding its row silently degrades §7's triage
+> playbook into guesswork, and the omission is invisible until a user on an old
+> device reports something that "does nothing".
+>
+> **Rule 2 — the §2.2 symbol scan is re-run on any Qt or NDK change**, once per
+> ABI, and its verdict recorded. A new floor arrives silently: nothing in the
+> build fails, and the first symptom is a device that will not start the app.
 
 `./scripts/android-api-scan.sh` regenerates all of it. Re-run it whenever:
 

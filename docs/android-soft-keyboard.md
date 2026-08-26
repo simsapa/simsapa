@@ -251,7 +251,10 @@ MaintenanceTool), then re-run the table above. Note the 6.10.1 problems recorded
 in [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)
 are **Linux-AppImage-specific** (libtiff SONAME, WebEngine-on-FUSE SIGSEGV) and
 do not bear on the Android kits — but the rest of the Android upgrade checklist
-in that doc (minSdk 28, AGP/Gradle coupling) does.
+in that doc (AGP/Gradle coupling, the predictive-back opt-out) does. **minSdk 28
+is no longer part of that checklist:** it was raised on its own on 2026-08-26,
+decoupled from the upgrade, once a binary scan showed the app could not load
+below API 28 in the first place.
 
 ### References
 

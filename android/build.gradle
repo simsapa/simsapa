@@ -49,8 +49,9 @@ android {
 
     // NDK is driven by the QtCreator kit (androidNdkVersion, written into
     // gradle.properties). Stay on the Qt 6.9.3-supported NDK (r26b/r27). Do NOT
-    // force r28: at minSdk 27 its libc++ references pthread_cond_clockwait
-    // (declared by bionic only at API 30+), which breaks the cxx C++ build.
+    // force r28: at this project's minSdk its libc++ references
+    // pthread_cond_clockwait (declared by bionic only at API 30+), which breaks
+    // the cxx C++ build. The exclusion holds at minSdk 28 as well as 27.
     // 16 KB page alignment is achieved instead via the max-page-size linker flag
     // on the main app .so (see target_link_options in CMakeLists.txt).
     ndkVersion androidNdkVersion

@@ -68,7 +68,9 @@ that is the fastest way to see this.
 ## 1a. targetSdk 36 (July 2026)
 
 `android/build.gradle`'s `defaultConfig` declares `targetSdkVersion 36`
-(`minSdkVersion` stays 27). That one line opts the app in to three behaviours
+(`minSdkVersion` is 28 — raised separately in August 2026, see §2.2 of
+[android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)).
+That one line opts the app in to three behaviours
 Android 16 enforces with **no per-app opt-out**:
 
 1. **Edge-to-edge display** — the activity is laid out under the status and
@@ -91,8 +93,10 @@ Android 16 enforces with **no per-app opt-out**:
 > `gradle.properties`.** androiddeployqt writes `qtTargetSdkVersion=35` into
 > `android-build/gradle.properties` and `build.gradle` never reads it — that
 > line will still say 35 on a correctly-targeted build and means nothing.
-> The same file also carries `qtMinSdkVersion=28`, which our `minSdkVersion 27`
-> overrides; see
+> The same file also carries `qtMinSdkVersion=28`. **`build.gradle` used to
+> override that back down to 27; it no longer does** — the floor was raised to
+> 28 on 2026-08-26, so the two now agree and there is no override left to
+> misread. See
 > [android-qt-upgrade-considerations.md §2.2](./android-qt-upgrade-considerations.md).
 
 `compileSdk` keeps coming from androiddeployqt (`android-36`; it picks the newest
@@ -171,12 +175,20 @@ the app does not, and requiring it would exclude mic-less devices.
 
 ### Why dropping `WRITE_EXTERNAL_STORAGE` is safe
 
-`minSdkVersion` is 27, and on API 27–28 that permission genuinely is required to
-write to shared external storage — so dropping it needed checking rather than
-assuming. It is safe here because **Simsapa never touches external storage
-directly**: a grep for `getExternalStorage` / `EXTERNAL_STORAGE` / `/sdcard`
-across `backend/`, `bridges/`, `cpp/`, `assets/qml/` and `android/` returns
-nothing. All user-chosen file I/O goes through the Storage Access Framework
+`minSdkVersion` is 28, and **on API 27–28 that permission genuinely is required
+to write to shared external storage** — so dropping it needed checking rather
+than assuming. Note the raise from 27 to 28 (2026-08-26) does **not** change
+this: 28 is still inside that band, so the reasoning is re-affirmed rather than
+retired, and it would only lapse if the floor ever reached 29.
+
+It is safe here because **Simsapa never touches shared external storage**: a
+grep for `getExternalStorage` / `EXTERNAL_STORAGE` / `/sdcard` across
+`backend/`, `bridges/`, `cpp/`, `assets/qml/` and `android/` (re-run 2026-08-26)
+turns up only three hits, none of them shared-storage access — two comments, and
+`cpp/utils.cpp`'s `Environment.getExternalStorageState(File)` call, which is a
+read-only **mount-state query** on a volume path ("mounted", "removed", …) that
+opens no file and needs no permission. All user-chosen file I/O goes through the
+Storage Access Framework
 (`content://` tree URIs — see
 [android-file-saving-saf.md](./android-file-saving-saf.md)), which needs no
 permission, and everything else is written to the app-private data directory.
@@ -526,8 +538,8 @@ compile, on:
 - a missing Rust target for any requested ABI, naming the exact
   `rustup target add` command
 - **NDK r28 or newer** — the default NDK resolution picks the highest installed
-  version, which would silently select an NDK that breaks the `cxx` build at
-  minSdk 27
+  version, which would silently select an NDK that breaks the `cxx` build (its
+  libc++ needs bionic API 30+, so this is unaffected by the minSdk floor)
 - **no JDK 17–21** — see below; the native failure mode is a Gradle lint crash
   whose entire error message is the JDK version number
 - **`jarsigner` missing** from the selected JDK — androiddeployqt's `signAAB()`
@@ -577,6 +589,13 @@ unzip -l <artifact>.aab | grep -oE '(base/)?lib/[a-z0-9_-]+/' | sort -u
 # the Chromebook trap, APK only: any line here WITHOUT required='false' is a problem
 $ANDROID_SDK_ROOT/build-tools/<ver>/aapt2 dump badging <artifact>.apk \
     | grep -E "uses-feature|uses-implied-feature"
+
+# the SDK levels, APK only -- the ONLY trustworthy check. Reading the generated
+# android-build/gradle.properties instead gives values build.gradle never reads.
+$ANDROID_SDK_ROOT/build-tools/<ver>/aapt2 dump badging <artifact>.apk \
+    | grep -i sdkversion
+#   minSdkVersion:'28'
+#   targetSdkVersion:'36'
 
 # 16 KB page alignment (see the CLAUDE.md Android section)
 $ANDROID_SDK_ROOT/build-tools/<ver>/zipalign -c -P 16 4 <artifact>.apk
@@ -797,11 +816,17 @@ all three ABIs still load.
   — targetSdk 36's edge-to-edge enforcement, safe-area padding, the
   predictive-back opt-out and the deprecated bar-colour APIs in Play's report.
 - [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)
-  — work deferred to the Qt upgrade: removing the predictive-back opt-out,
-  raising `minSdkVersion` to 28, and the AGP / Gradle-wrapper / JDK coupling.
+  — work deferred to the Qt upgrade: removing the predictive-back opt-out and
+  the AGP / Gradle-wrapper / JDK coupling. Its §2.2 also records the
+  `minSdkVersion` raise to 28, which was **not** deferred — it shipped on its
+  own once a binary scan showed the app could not load below 28 anyway.
+- [android-api-levels-and-feature-dependencies.md](./android-api-levels-and-feature-dependencies.md)
+  — the measured per-feature API inventory and `scripts/android-api-scan.sh`,
+  the tool that produced the `getentropy` finding behind that raise.
 - [pure-rust-audio-backend.md](./pure-rust-audio-backend.md) — why the NDK is
-  pinned to r26b/r27 (r28 breaks the `cxx` C++ build at minSdk 27) and why 16 KB
-  alignment is done with `-Wl,-z,max-page-size=16384` in `CMakeLists.txt`.
+  pinned to r26b/r27 (r28 breaks the `cxx` C++ build: its libc++ needs bionic
+  API 30+, independent of the minSdk floor) and why 16 KB alignment is done with
+  `-Wl,-z,max-page-size=16384` in `CMakeLists.txt`.
 - [app-packaging-and-identifiers.md](./app-packaging-and-identifiers.md) — the
   `io.github.simsapa.app` application id vs. the `com.profoundlabs.simsapa` QML
   module URI, which are unrelated and must not be conflated.

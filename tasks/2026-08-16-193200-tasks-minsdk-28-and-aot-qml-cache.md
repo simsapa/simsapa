@@ -237,8 +237,11 @@ this file, under the sub-task, so the record lives with the work.
   `libaaudio.so`, `libandroid.so`, `libc.so`, `libdl.so`, `libEGL.so`,
   `libGLESv2.so`, `liblog.so`, `libm.so`, `libnativewindow.so` — `libaaudio.so`
   being the cpal/AAudio dependency at API 26, well under the floor.
-- [ ] 1.7 Commit Part A's code change on its own (docs follow in 2.0, or fold
+- [x] 1.7 Commit Part A's code change on its own (docs follow in 2.0, or fold
   them in — but nothing from Part B or C in this commit).
+
+  Commit `5fe14a7` *"Raise Android minSdkVersion from 27 to 28"* —
+  `android/build.gradle` plus this task file. Nothing from Part B or C.
 
 ### 2.0 Part A — correct every "minSdk 27" claim, and record the scan, permission re-check and Play share
 
@@ -248,54 +251,255 @@ this file, under the sub-task, so the record lives with the work.
 > trusting it, and treat the PRD list as a completeness check.
 > **Depends on:** 1.0.
 
-- [ ] 2.1 Re-run the `WRITE_EXTERNAL_STORAGE` audit (FR-4): grep
+- [x] 2.1 Re-run the `WRITE_EXTERNAL_STORAGE` audit (FR-4): grep
   `getExternalStorage`, `EXTERNAL_STORAGE` and `/sdcard` across `backend/`,
   `bridges/`, `cpp/`, `assets/qml/` and `android/`. Record here that it was
   re-run and returned nothing, with the date. Nothing changes — the app is still
   inside the API 27–28 band where the permission would be required, and it still
   never touches shared external storage.
-- [ ] 2.2 Build the authoritative site list:
+
+  **Re-run 2026-08-26. The conclusion holds, but "returned nothing" is not
+  literally what happens** — the sweep returns three hits and each is benign.
+  Recording them so the next run is not alarmed by them:
+
+  | Hit | Why it is not shared-storage access |
+  |---|---|
+  | `cpp/utils.cpp:179` | A **comment** naming `Environment.getExternalStorageState(File)` |
+  | `cpp/utils.cpp:196` | The call itself — a read-only **mount-state query** ("mounted", "removed", …) on a volume path, used by storage-volume enumeration. Reads no file, needs no permission. |
+  | `android/AndroidManifest.xml:39` | A **comment** recording that androiddeployqt's injected permissions (incl. `WRITE_EXTERNAL_STORAGE`) are *not* used — i.e. the rationale for having dropped it |
+
+  `/sdcard` — no match anywhere. No code path writes, reads or enumerates files
+  in shared external storage; everything goes through SAF `content://` URIs or
+  the app-private directory. The app remains inside the API 27–28 band where the
+  permission *would* be required if it did, so the reasoning in
+  `docs/android-multi-abi-and-chromeos.md` is unchanged by the floor moving to
+  28.
+- [x] 2.2 Build the authoritative site list:
   `grep -rn "minSdk\|API 27\|api 27" AGENTS.md PROJECT_MAP.md docs/ android/ CMakeLists.txt build-android.sh`
   and reconcile it against FR-5's list. Note any site FR-5 missed and any site
   FR-5 names that no longer exists.
-- [ ] 2.3 Correct the code comments: `android/build.gradle` (the NDK comment near
+
+  **Run 2026-08-26. Reconciliation: FR-5's list is accurate as far as it goes —
+  every site it names still exists, none has vanished — but it is not complete.**
+
+  Sites **FR-5 missed** (all real, all needing attention):
+
+  | Site | What it says |
+  |---|---|
+  | `docs/android-soft-keyboard.md:254` | lists minSdk 28 among things arriving *with the Qt upgrade* — it no longer does (already covered by 2.10) |
+  | `PROJECT_MAP.md:80` | "cannot load below API 28 despite `minSdk 27`" (2.5 covers `:52`/`:71`; this third hit is in the task list's Relevant Files but not in FR-5) |
+  | `docs/android-qt-upgrade-considerations.md:406` | "re-check the minSdk (§2.2) rather than assuming the r28 exclusion still applies" |
+  | `docs/android-qt-upgrade-considerations.md:443`, `:491` | the "Gradle, minSdk and packaging" sequencing advice — minSdk is no longer part of that bundle |
+  | `docs/android-multi-abi-and-chromeos.md:801`, `:803` | the doc's own cross-links describing minSdk as a pending raise |
+
+  Sites FR-5 names that **no longer exist**: none.
+
+  **`build-android.sh` confirmed needing no edit** (4 hits — `:134`, `:138`,
+  `:345`, `:347`, `:351`): all phrase the pin as "at this project's minSdk" and
+  two state outright that the exclusion *"holds at minSdk 28 as well as 27"*.
+  This matches 1.3.
+
+  `docs/android-api-levels-and-feature-dependencies.md` carries by far the most
+  hits (16), which is expected — it is the evidence base and much of it is
+  deliberately historical. 2.11 handles which parts become past tense.
+- [x] 2.3 Correct the code comments: `android/build.gradle` (the NDK comment near
   `:52`) and `CMakeLists.txt` (near `:516`). Both must keep saying the r28
   exclusion holds — only the "at minSdk 27" phrasing changes.
-- [ ] 2.4 Correct `AGENTS.md` (`:242`, `:386`, `:914`, `:1588`). `:386` is the
+
+  Both rephrased to "at this project's minSdk" and both now state outright that
+  **the exclusion holds at minSdk 28 as well as 27**, matching the wording
+  `build-android.sh` already used. The r28 exclusion itself is untouched.
+- [x] 2.4 Correct `AGENTS.md` (`:242`, `:386`, `:914`, `:1588`). `:386` is the
   "decision to raise minSdk to 28 **with the upgrade**" claim — it becomes "done
   on <date>, decoupled from the upgrade, because the override never worked".
   Remember `CLAUDE.md` is a symlink; edit `AGENTS.md` only.
-- [ ] 2.5 Correct `PROJECT_MAP.md` (`:52`, `:71`, `:80`) and **add links** to
+
+  All four done, `AGENTS.md` only (`CLAUDE.md` is a symlink and was not
+  touched). `:386` now reads *"the `minSdkVersion` raise to 28 — done on
+  2026-08-26 and deliberately decoupled from the upgrade"* with the `getentropy`
+  reason. `:914` gained the standing clarification that **the r28 exclusion is
+  about API 30, not about 27 vs 28**, so the floor raise does not re-open it.
+  `:1588` now says `minSdkVersion 28` and links the evidence doc.
+- [x] 2.5 Correct `PROJECT_MAP.md` (`:52`, `:71`, `:80`) and **add links** to
   `docs/android-api-levels-and-feature-dependencies.md` from both `PROJECT_MAP.md`
   and `AGENTS.md`, so it is discoverable alongside the other Android docs (FR-5).
-- [ ] 2.6 Rewrite `docs/android-qt-upgrade-considerations.md` **§2.2** from
+
+  `:52` → `minSdk 28`. `:71` — minSdk removed from the list of things deferred
+  to the Qt upgrade (it is no longer deferred). `:80` — the "despite `minSdk 27`"
+  clause replaced by the finding's actual consequence, that it turned the raise
+  into a correctness fix, plus the 2026-08-26 date and the all-ABI sufficiency
+  result.
+
+  **Links:** `PROJECT_MAP.md:78` already carried one. `AGENTS.md` had none in
+  its notable-feature-docs list, so a full entry was added there (after the
+  android-qt-upgrade bullet) covering the `getentropy` finding, the WEAK-vs-GLOBAL
+  distinction, the per-feature floors, and the `--abi` gotcha in
+  `scripts/android-api-scan.sh`.
+- [x] 2.6 Rewrite `docs/android-qt-upgrade-considerations.md` **§2.2** from
   "deferred to the Qt upgrade" to "done on <date>, and why it was decoupled" —
   the `getentropy` finding is the reason — and update §1's version table row.
-- [ ] 2.7 Update `docs/android-multi-abi-and-chromeos.md`: the §2 permissions
+
+  §2.2 rewritten as *"`minSdkVersion` 28 — **done 2026-08-26, and decoupled from
+  the upgrade**"*. It keeps the 2026-07-29 decision as a **block quote** rather
+  than deleting it, because the interesting content is *why that decision was
+  wrong*: it rested on "the override demonstrably works for shipped users", and
+  the scan showed the override never worked and there were no such users. Adds
+  the confirmations (single source of truth; the per-ABI `--floor 28` runs; the
+  NDK exclusion unchanged; `WRITE_EXTERNAL_STORAGE` unaffected) and the
+  user-facing consequence, and states the general lesson — *"no technical risk,
+  only a distribution cost, therefore no benefit on its own" is a conclusion
+  that needs a measurement*.
+
+  §1 table: the `minSdkVersion` row is now **28** ("raised 2026-08-26, decoupled
+  from the upgrade"), and the NDK row now says the exclusion is about API **30**
+  so it held at 27 and holds unchanged at 28.
+
+  Also fixed the three sites in this doc that FR-5 did not list (found by 2.2):
+  `:445` (re-verify against the new NDK, not the new minSdk — the floor is no
+  longer a variable, and re-run the scan per ABI), `:482` and `:530` (minSdk
+  removed from the "packaging work to do with the upgrade" sequence).
+- [x] 2.7 Update `docs/android-multi-abi-and-chromeos.md`: the §2 permissions
   rationale (the "on API 27–28" sentence stays true and should say so
   explicitly), the `qtMinSdkVersion=28`-override note (there is no override any
   more), and the `aapt2` sample output.
-- [ ] 2.8 Update `docs/android-beta-distribution-and-play-policy.md`'s
+
+  - §1a: `minSdkVersion` is 28, cross-linked to §2.2 of the upgrade doc.
+  - The override note now says `build.gradle` **used to** override
+    `qtMinSdkVersion=28` down to 27 and no longer does, so the two agree and
+    there is no override left to misread.
+  - Permissions rationale: says explicitly that **28 is still inside the API
+    27–28 band**, so the reasoning is *re-affirmed rather than retired*, and
+    would only lapse at 29. Also corrected the "returns nothing" claim to match
+    2.1's actual result (three benign hits, described).
+  - NDK-r28 precondition bullet: re-worded to bionic API 30+, "unaffected by the
+    minSdk floor".
+  - Cross-link list: minSdk removed from the *deferred* list, with a note that it
+    shipped separately; added a link to
+    `docs/android-api-levels-and-feature-dependencies.md`.
+  - **`aapt2` sample output:** the doc's by-hand block had no sdkversion recipe
+    at all (its samples covered features and alignment), so rather than
+    correcting a sample, a `grep -i sdkversion` invocation was **added** with the
+    expected `minSdkVersion:'28'` / `targetSdkVersion:'36'` output and the
+    warning not to read the generated `gradle.properties` instead.
+- [x] 2.8 Update `docs/android-beta-distribution-and-play-policy.md`'s
   `mipmap-anydpi-v26` note and its API-27 direct-call note.
-- [ ] 2.9 Check `docs/pure-rust-audio-backend.md` and
+
+  `:87` → `minSdkVersion 28`, noting the adaptive icon already won at 27 (both
+  being above 26) so the raise only widened the margin. `:262` → minSdk 28, with
+  the point that **28 is still below 30**, so `getInstallerPackageName()` is
+  still not universally replaceable by `getInstallSourceInfo()` and the direct
+  call stays correct.
+- [x] 2.9 Check `docs/pure-rust-audio-backend.md` and
   `docs/relocated-storage-recovery.md` — both are expected to need **no** change
   (the first already states the exclusion does not lapse at 28; the second's
   "above the minSdk floor" claim concerns an API 30 call). Record the
   confirmation rather than editing for the sake of it.
-- [ ] 2.10 Update `docs/android-soft-keyboard.md:254`, which lists minSdk 28
+
+  `docs/relocated-storage-recovery.md:174` — **confirmed, no edit made.**
+  "`StorageVolume.getDirectory()` (API 30) is above the minSdk floor and is not
+  used" still reads correctly: 30 > 28, so the sentence is as true at the new
+  floor as at the old.
+
+  `docs/pure-rust-audio-backend.md` — **the expectation was half right and the
+  task's premise needs correcting.** Its headline claim is indeed fine (the
+  exclusion is about API 30 and does not lapse at 28), but the same sentence
+  carried a **stale parenthetical**: it said the raise to 28 was *"done as part
+  of the Qt 6.10.3 upgrade"* — an upgrade that was abandoned and reverted, so
+  the raise had in fact not happened at all when that was written. Corrected to
+  "done on 2026-08-26, on its own — *not* as part of the Qt 6.10.3 upgrade,
+  which was abandoned and reverted", and the tense moved to the past.
+- [x] 2.10 Update `docs/android-soft-keyboard.md:254`, which lists minSdk 28
   among the things that arrive with the Qt upgrade — it no longer does.
-- [ ] 2.11 Update `docs/android-api-levels-and-feature-dependencies.md`: §1's
+
+  The checklist reference now names AGP/Gradle coupling and the predictive-back
+  opt-out, and states explicitly that **minSdk 28 is no longer part of that
+  checklist** — raised on its own on 2026-08-26.
+- [x] 2.11 Update `docs/android-api-levels-and-feature-dependencies.md`: §1's
   declared-levels table (`minSdkVersion` is now 28), §4's last row (the "below
   the hard floor" defect is **resolved** — say when and by what), and §8 into the
   past tense. Paste 1.6's `--floor 28` output into §2.2 as the confirming run.
-- [ ] 2.12 Add the §9 standing rule as a rule, not a note (FR-5b): any new JNI
+
+  - §1 table: **28** (Android 9), noting it was raised from 27 on 2026-08-26
+    because of §2.
+  - §2: the consequence paragraph moved to past tense, with a **Resolved
+    2026-08-26** block quote recording the `aapt2` verification and that this
+    finding is what decoupled the raise from the Qt upgrade.
+  - §2.2: 1.6's three verdict lines pasted in as *"The confirming run for
+    `minSdkVersion 28`"*, with the point that this proves 28 is a **sufficient**
+    floor and that the two non-arm64 slices had never been scanned before. Also
+    documented the two flags that turned out to be effectively mandatory
+    (`--abi`, `--apk`) and the per-ABI loop, since the script scans one ABI and
+    defaults to the newest APK under `build/`.
+  - §4 last row: now **28**, "Matches the hard floor", with the defect recorded
+    as historical.
+  - §8: retitled *"Consequences of the raise … — done 2026-08-26"*, framed as
+    predicted-vs-actual (every prediction held), and extended with the
+    `WRITE_EXTERNAL_STORAGE` re-audit and the build-system result.
+- [x] 2.12 Add the §9 standing rule as a rule, not a note (FR-5b): any new JNI
   call site records its API level in §5, and the §2.2 symbol scan is re-run on a
   Qt or NDK change.
+
+  §9 retitled *"Standing rules: keeping this document true"* and the two items
+  promoted into a block quote as **Rule 1** and **Rule 2**, each stating its
+  failure mode — an unrecorded JNI call site degrades §7's triage into guesswork
+  and is invisible until a user reports it; an unscanned floor change fails
+  nothing in the build and first shows up as a device that will not start.
+  Prefaced with why they are rules: the `getentropy` defect survived a year
+  because nobody scanned the binaries.
 - [ ] 2.13 Read the Play Console device/API-level distribution and **record the
   API-27 install share here** (FR-7). It does not gate anything — the decision is
   made — but it belongs in the record and may shape the release-notes wording.
-- [ ] 2.14 Final grep sweep: no file claims minSdk 27 except where it is
+
+  **BLOCKED — needs the maintainer.** The Play Console is behind an
+  authenticated web session and cannot be read from this environment. Nothing
+  else in Part A depends on it (FR-7 explicitly does not gate the change), so
+  the rest of 2.0 was completed around it.
+
+  To fill in: **Play Console → Statistics → filter by Android version / API
+  level**, or **Release → App bundle explorer → Device catalog**. Record the
+  API-27 (Android 8.1) share of active installs here. Expected to be very small,
+  and note it counts installs that **cannot actually run the app** (§2 of
+  `docs/android-api-levels-and-feature-dependencies.md`) — so a non-zero number
+  is a count of broken installs, not of lost users.
+- [x] 2.14 Final grep sweep: no file claims minSdk 27 except where it is
   explicitly historical ("was 27 until <date>"). Commit the doc changes.
+
+  **Swept 2026-08-26** over `*.md`, `*.rs`, `*.qml`, `*.cpp`, `*.h`, `*.gradle`,
+  `*.sh`, `*.ps1`, `*.txt`, `*.json`, `*.xml`, `*.conf`, excluding `build/`,
+  `target/`, `node_modules/` and `tasks/archive/`.
+
+  **The sweep found four live sites that neither FR-5 nor 2.2's grep had caught**
+  — 2.2's grep covered only `AGENTS.md PROJECT_MAP.md docs/ android/
+  CMakeLists.txt build-android.sh`, so it could not see `cpp/`, `scripts/` or
+  the non-archived PRDs:
+
+  | Site | Fix |
+  |---|---|
+  | `cpp/utils.cpp:262` | "must NOT be used at minSdk 27" → "at this project's minSdk (28, and still well below 30)" — the point is that `StorageVolume.getDirectory()` is API 30 |
+  | `cpp/utils.cpp:750` | `getInstallerPackageName()` "works on every level the app supports (minSdk 27)" → 28, "still below 30" |
+  | `scripts/generate_beta_app_icons.sh:42` | `minSdkVersion 27` → 28 (the `mipmap-anydpi-v26` note, twin of the one in the beta doc) |
+  | `tasks/2026-07-31-…-prd---picker-url-handling…md:1281` | a **live, non-archived** PRD stating `minSdkVersion 27`; updated to 28 with the note that scoped-storage enforcement is `targetSdkVersion`-driven so its SAF-only conclusion is unaffected |
+
+  Everything still matching after that is correct in context and was
+  deliberately left: **historical statements** (`AGENTS.md:406`,
+  `docs/pure-rust-audio-backend.md:41`,
+  `docs/android-qt-upgrade-considerations.md:156`/`:237`,
+  `docs/android-api-levels-and-feature-dependencies.md:52`/`:68`/`:248`), the
+  **API 27–28 permission band**, which is still true at floor 28 and is the
+  reason `WRITE_EXTERNAL_STORAGE` stays dropped, the `getentropy` explanation
+  itself, and `tasks/archive/` (out of scope).
+
+  One staleness fixed while sweeping: §2.1's heading was *"Symbols above API 27
+  that are safe"*, and its table lists `getrandom` at API **28** — no longer
+  above the floor. Retitled to "above the floor" with a note that the table was
+  measured against the old floor.
+
+  `scripts/qt-env-verify.sh` and `scripts/android-api-scan.sh` **read** the value
+  out of `android/build.gradle` rather than hardcoding it, so both follow the
+  change automatically — no edit needed.
+
+  Rebuilt after the `cpp/utils.cpp` comment edits: `cmake --build` recompiles and
+  links clean.
 
 ### 3.0 Part A — beta APK smoke pass on device, and the release-notes line
 

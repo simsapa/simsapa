@@ -239,8 +239,10 @@ Notable feature docs:
   recorder/player stack (`cpal` + `flacenc` + `rubato` + `symphonia`) that
   replaced Qt Multimedia / FFmpeg for 16 KB compliance. cpal 0.18's Android
   backend is **AAudio via the `ndk` crate** (no `oboe`, no bundled audio lib).
-  **Do NOT use NDK r28** (incompatible with Qt 6.9.3 at minSdk 27 —
-  `pthread_cond_clockwait` breaks the `cxx` C++ build); stay on r26b/r27 and
+  **Do NOT use NDK r28** (incompatible with Qt 6.9.3 at this project's minSdk —
+  `pthread_cond_clockwait` needs bionic API 30+, so the exclusion holds at
+  minSdk 28 just as it did at 27, and breaks the `cxx` C++ build); stay on
+  r26b/r27 and
   16 KB-align the main app `.so` with `-Wl,-z,max-page-size=16384` in
   `CMakeLists.txt`.
 - [Search snippet & highlight pipeline](./docs/search-snippet-highlight-pipeline.md) —
@@ -382,15 +384,35 @@ Notable feature docs:
 - [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
   work deliberately deferred to the eventual Qt upgrade, with the reasons and the
   pitfalls. Covers removing the predictive-back opt-out (and why Qt implementing
-  the callback may still not be sufficient for Qt Quick popups), the **decision
-  to raise `minSdkVersion` to 28 with the upgrade** (Qt 6.9.3 *already* declares
-  `qtMinSdkVersion=28` and we override it down to 27 — the floor does not
-  "arrive" with 6.10, it just stops being ignorable), the deprecated Java APIs,
+  the callback may still not be sufficient for Qt Quick popups), the **`minSdkVersion`
+  raise to 28 — done on 2026-08-26 and deliberately decoupled from the upgrade**
+  (a binary scan found `libQt6Core` importing `getentropy` as a GLOBAL undefined
+  symbol, first provided by bionic at API 28, so the app could never `dlopen` on
+  an API 27 device and the override was a correctness defect rather than a
+  distribution trade-off — see
+  [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md)),
+  the deprecated Java APIs,
   the AGP / Gradle-wrapper / JDK coupling (**the wrapper is ours at 8.10, not
   Qt's at 8.12** — correcting an earlier note), the 16 KB link flag Qt 6.10 makes
   redundant, and that the x86_64 and armeabi-v7a slices have still never been
   *run*. Pitfalls include the measured Qt 6.10.1 AppImage breakage (libtiff
   SONAME, WebEngine-on-FUSE SIGSEGV) that is why 6.10.1 was not adopted.
+- [Android API levels and feature dependencies](./docs/android-api-levels-and-feature-dependencies.md) —
+  which Android API level each feature actually needs, measured rather than
+  assumed, plus the crash-triage playbook for *"does this user's Android version
+  have the API this feature relies on?"*. The headline finding is that
+  **`libQt6Core` imports `getentropy` as a GLOBAL (non-weak) undefined symbol**,
+  which bionic first provides at API 28 — so below 28 `dlopen` fails before any
+  app code runs, and `minSdkVersion 27` was a correctness defect, not a
+  distribution choice (raised to **28** on 2026-08-26). Symbols above the floor
+  that are **WEAK** are *not* a floor: they resolve to null and the caller falls
+  back (`copy_file_range` 34, `memfd_create` 30). Also records the two Qt floors
+  (6.9.3 and 6.11 both declare 28), the per-feature inventory — cpal/AAudio 26,
+  storage-volume enumeration 24, SAF 21 — and that **no `Build.VERSION`-gated
+  code exists** anywhere in `cpp/`, `bridges/` or `backend/`.
+  `scripts/android-api-scan.sh` regenerates every measurement in it; **re-run it
+  after a Qt upgrade, an NDK change, a new native crate or a new JNI call
+  site**, and pass `--abi` — it scans one ABI at a time and defaults to arm64.
 - [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
   how the signed release AAB is built (`make android-aab` → `build-android.sh`,
   `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
@@ -910,9 +932,11 @@ replacing Qt Multimedia with a **pure-Rust audio stack** (`cpal` + `flacenc` +
 audio native library is bundled at all. See
 [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md).
 
-**Android NDK — do NOT use r28.** It is incompatible with Qt 6.9.3 at
-`minSdkVersion 27` (libc++ `pthread_cond_clockwait` needs API 30+, breaking the
-`cxx` C++ build). Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
+**Android NDK — do NOT use r28.** It is incompatible with Qt 6.9.3 at this
+project's `minSdkVersion` (libc++ `pthread_cond_clockwait` needs API 30+,
+breaking the `cxx` C++ build). **The exclusion is about API 30, not about 27 vs
+28** — raising the floor to 28 did not lapse it and does not re-open the
+question. Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
 main app `.so` is achieved with `target_link_options(... "-Wl,-z,max-page-size=16384")`
 in `CMakeLists.txt`, not by relying on r28's default. Details in the doc above.
 
@@ -1585,7 +1609,11 @@ Use this path for any tests or experimental scripts that need to query the actua
     would otherwise skip androiddeployqt and report the previous artifact.
     See
     [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
-  - `targetSdkVersion 36` / `minSdkVersion 27`. targetSdk 36 enforces
+  - `targetSdkVersion 36` / `minSdkVersion 28`. The floor is 28 because
+    `libQt6Core` hard-requires `getentropy` (bionic API 28) — below it the app
+    cannot load at all; see
+    [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md).
+    targetSdk 36 enforces
     edge-to-edge and predictive back; the app opts out of the latter with
     `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
     `OnBackInvokedCallback` and back otherwise closes the whole app. See

@@ -49,7 +49,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   comment here — the double hyphen is illegal in XML and the manifest merger
   fails with a bare parse error.) See
   [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
-- `build.gradle` - Android build configuration (`minSdk 27` / `targetSdk 36`;
+- `build.gradle` - Android build configuration (`minSdk 28` / `targetSdk 36`;
   `ndk.abiFilters` is driven by androiddeployqt's `qtTargetAbiList`, so it
   follows the multi-ABI list automatically). `packagingOptions.jniLibs.excludes`
   drops libraries androiddeployqt stages into the wrong ABI folder — load-bearing
@@ -68,8 +68,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   Play upload; `build-android.sh` reads it (the versionName comes from
   `bridges/Cargo.toml`), so `make android-aab` needs no version arguments.
 - Work deferred to the eventual Qt upgrade — the predictive-back opt-out, the
-  `minSdk 27` vs Qt's declared 28, the deprecated Java APIs in Play's report,
-  the AGP/Gradle/JDK coupling — is recorded in
+  deprecated Java APIs in Play's report, the AGP/Gradle/JDK coupling — is
+  recorded in
   [docs/android-qt-upgrade-considerations.md](./docs/android-qt-upgrade-considerations.md)
 - **Which Android API level each feature actually needs** — the measured
   per-feature inventory, the Qt 6.9.3 / 6.11 floors, and the crash-triage
@@ -77,7 +77,11 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   relies on?" — is
   [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md).
   It records that `libQt6Core` imports `getentropy` (API 28) as a **non-weak**
-  symbol, so the app cannot load below API 28 despite `minSdk 27`.
+  symbol, so the app cannot load below API 28 at all — the finding that turned
+  the `minSdkVersion` raise from a distribution trade-off into a correctness fix
+  and decoupled it from the Qt upgrade (raised to 28 on 2026-08-26; the scan
+  confirms 28 is a *sufficient* floor for all three ABIs, not merely a higher
+  one).
   `scripts/android-api-scan.sh` regenerates every measurement in it (symbol
   scan, JNI call-site inventory, manifest checks); re-run it after a Qt upgrade,
   an NDK change, a new native crate, or a new JNI call site.

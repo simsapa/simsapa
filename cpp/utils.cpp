@@ -259,7 +259,7 @@ static bool android_external_storage_is_removable(const QString& path) {
 // matching NOTHING become extra rows, so a matching failure can produce a
 // missing warning but never a duplicated or wrongly-disabled usable location.
 // All strategies are API 24 or earlier — StorageVolume.getDirectory() is API 30
-// and must NOT be used at minSdk 27:
+// and must NOT be used at this project's minSdk (28, and still well below 30):
 //
 //   - getStorageVolume(File) + StorageVolume.equals() (API 24): the volume the
 //     platform itself says a candidate path lives on. Exact, and independent of
@@ -747,7 +747,8 @@ QString get_android_package_name() {
 //
 // getInstallSourceInfo() replaced getInstallerPackageName() in API 30. The
 // latter is deprecated but still functional and works on every level the app
-// supports (minSdk 27), so it is used directly rather than branched on.
+// supports (minSdk 28, still below 30), so it is used directly rather than
+// branched on.
 QString get_installer_package_name() {
 #ifdef Q_OS_ANDROID
     QJniEnvironment env;
