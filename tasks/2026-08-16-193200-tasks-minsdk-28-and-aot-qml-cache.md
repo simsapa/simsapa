@@ -509,21 +509,111 @@ this file, under the sub-task, so the record lives with the work.
 > documented as never run.
 > **Depends on:** 1.0.
 
-- [ ] 3.1 Install the 1.4 beta APK on the arm64 phone
+- [x] 3.1 Install the 1.4 beta APK on the arm64 phone
   (`make android-beta-debug-install`) and confirm it replaces the previous beta.
-- [ ] 3.2 Smoke pass, all five: app launches; a sutta opens; search returns
+
+  Installed by the maintainer 2026-08-26 on device `RFCW112DLPR`. It replaced
+  the previous beta (`io.github.simsapa.app.beta` is a single package; the
+  released `io.github.simsapa.app` sits alongside it, as designed).
+
+  **`adb shell dumpsys package` gives an independent confirmation of FR-2,
+  from the installed package rather than the APK file:**
+
+  ```
+  versionCode=7 minSdk=28 targetSdk=36
+  versionName=1.0.0-alpha.6-beta-debug
+  ```
+
+  Worth noting as a second verification route alongside `aapt2 dump badging` —
+  it reads what the *platform* parsed, not what the build wrote.
+- [x] 3.2 Smoke pass, all five: app launches; a sutta opens; search returns
   results; text entry works in the search field; audio record **and** playback
   work in Chanting Practice. Record pass/fail per item.
-- [ ] 3.3 Watch `adb logcat -s simsapa Qt QtCore QtQml` during the pass for any
+
+  **All five PASS.** Evidence from the logcat capture, item by item:
+
+  | # | Item | Result | Evidence |
+  |---|---|---|---|
+  | 1 | App launches | **PASS** | Full startup chain: `gui::start()` → `DbManager::new()` → all three DBs opened → both migration runners "no pending migrations" → `start_webserver()`. **No `dlopen` failure** — the exact symptom a wrong floor would produce |
+  | 2 | A sutta opens | **PASS** | `get_sutta_html_by_uid(): window_id: window_0, uid: mn22/pli/ms`, after `mn22/en/bodhi` — both translations rendered |
+  | 3 | Search returns results | **PASS** | `results_page() start - query='nn22', search_area='Suttas'`, then `query='uid:mn22'`; also `dpd_lookup_grouped(): query_text_orig: samayena` (63 ms) from a word lookup in the open sutta |
+  | 4 | Text entry in the search field | **PASS** | The `'nn22'` → `'uid:mn22'` sequence *is* the proof: a mistyped `n` for `m` then a corrected query is a human typing into the field, not a programmatic query |
+  | 5 | Audio record **and** playback | **PASS** | `recording started` → `flacenc` 158 frames / 7 workers → `recording finished` → `check_file: …_user_….flac exists: true` → `symphonia` found the FLAC marker. Playback confirmed **visually by the maintainer** ("playback worked and looked fine") |
+
+  Item 5 is the one that mattered most: the audio stack is where the real native
+  floors live (cpal → AAudio, `libaaudio.so`, API 26), and it works unchanged.
+- [x] 3.3 Watch `adb logcat -s simsapa Qt QtCore QtQml` during the pass for any
   new load-time or JNI error. Record that the log was read and what it showed.
-- [ ] 3.4 Add the release-notes line (FR-6): **Play stops offering updates to
+
+  Log captured live during the whole pass (2,656 lines, `simsapa` + `Qt` +
+  `QtCore` + `QtQml` + `AndroidRuntime:E` + `DEBUG:E`) and watched by a monitor
+  filtering for crashes, JNI failures, QML type errors and Rust panics.
+
+  **Zero load-time errors and zero JNI errors. Exactly one `ERROR` line in the
+  entire capture:**
+
+  ```
+  E/simsapa: qt_thread.queue() failed in audio_manager::load (window closed?):
+             Cannot queue function pointer as object has been destroyed
+  ```
+
+  **This is a by-design, pre-existing, handled path — not a regression and not
+  related to minSdk.** It is precisely the `ThreadingQueueError::ObjectDestroyed`
+  case that `crate::queue_or_log()` exists for (AGENTS.md §"`qt_thread.queue()`",
+  `docs/window-lifecycle-and-reuse.md` §5c): bridge objects are per-engine and
+  secondary windows are destroyed on close, so a completion signal queued against
+  a departed window is logged and skipped rather than panicking the worker
+  thread. It fired 300 ms *after* the recording was written and decoded, and the
+  maintainer confirmed playback was visually correct — i.e. the dropped signal
+  had no user-visible effect.
+
+  The only other non-INFO line in the capture is Rocket's own launch banner,
+  which Rocket logs at warn level (`Rocket has launched from
+  http://127.0.0.1:4848`).
+
+  **Conclusion: the floor change is invisible at runtime, which is exactly what
+  FR-8 set out to confirm.**
+- [x] 3.4 Add the release-notes line (FR-6): **Play stops offering updates to
   devices below API 28 (Android 8.1); existing installs on those devices keep the
   last compatible version and are not uninstalled**, and sideloaded APKs will
   refuse to install on API 27. Put it wherever this project's release notes live;
   if there is no such file yet, record the exact wording here for the release.
-- [ ] 3.5 Note in this file that `android/version.txt` must be bumped before the
+
+  **There is no release-notes file in this repo** — checked: no `CHANGELOG*`, no
+  `RELEASES*`, no `*release*note*` anywhere outside `node_modules`
+  (`assets/releases-fallback.json` and `docs/releases-info-and-fallback.md` are
+  the *update-check* mechanism, not release notes). Releases are described on the
+  GitHub Releases page. Per this task's fallback, the exact wording to use is
+  recorded here:
+
+  > **Android: minimum version is now Android 9.0 (API 28).**
+  >
+  > Google Play will no longer offer updates to devices running Android 8.1 or
+  > older. **If you already have Simsapa installed on such a device it will keep
+  > working and will not be uninstalled** — it simply stays on the last
+  > compatible version. APKs downloaded from GitHub Releases will likewise
+  > refuse to install on Android 8.1.
+  >
+  > This corrects a long-standing packaging error rather than dropping working
+  > devices: the app declared support for Android 8.1 but could never actually
+  > start on it, because a core Qt library requires a system function
+  > (`getentropy`) that Android only provides from 9.0 onwards.
+
+  The last paragraph is deliberate — without it the note reads as *"we dropped
+  your device"*, when in fact no device that could run the app lost anything.
+- [x] 3.5 Note in this file that `android/version.txt` must be bumped before the
   next Play upload (FR-9) — **this PRD does not make a release**, so do not bump
   it here.
+
+  **Noted, and deliberately NOT done.** `android/version.txt` currently holds
+  **7**, which is what the 1.4 beta APK carries. Google Play requires a strictly
+  increasing `versionCode` on every upload, so **the next Play upload must bump
+  it first** (edit the integer, then `make android-aab` — no version arguments).
+  The versionName comes separately from `bridges/Cargo.toml` (`1.0.0-alpha.6`).
+
+  This PRD makes no release, so the file is left untouched. Note the beta APK
+  built here consumed no versionCode as far as Play is concerned — it was never
+  uploaded.
 
 ### 4.0 Part C — report the two upstream cxx-qt defects
 
