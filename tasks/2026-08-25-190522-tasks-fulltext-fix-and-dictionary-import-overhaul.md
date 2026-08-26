@@ -440,8 +440,27 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
 - `backend/tests/test_dictionary_import_dir.rs`,
   `backend/tests/stardict_import_per_chunk_commit.rs` — updated for the new
   report shape and the new cancel ordering.
-- `backend/src/picker_url.rs` — `outcome_line` (`:843`); the staging-root helpers
-  (`:272-293`).
+- `backend/src/picker_url.rs` — **the shared report pipeline (6.5, 6.6).** New:
+  `PickReport` (prefix + read permission), `IMPORT_LOG_PREFIX`, the `Block`
+  struct that makes a prefixless line inexpressible, `PickReportOutput`,
+  `build_pick_report()`, `log_import_pick()`, `human_bytes()`, and the
+  `filter_config` input field. `outcome_line` now takes the probe.
+  `run_file_selection_test()` keeps its old signature as a wrapper.
+- `bridges/src/sutta_bridge.rs` — **the fallback (6.3, 6.5).**
+  `FILE_SELECTION_TEST_THREAD` became `RAW_PICK_TARGET`, carrying a
+  `RawPickConsumer` discriminator alongside the thread handle;
+  `on_raw_pick_finished()` dispatches; new `on_import_raw_pick_finished()`,
+  the `log_import_pick` / `start_import_raw_pick` invokables, the
+  `importFilePickCompleted` signal, and `RAW_INTENT_FILTER_CONFIG`.
+- `bridges/src/dictionary_manager.rs` — **new `stage_picked_uri(&QString)`**
+  (6.3), with the worker half shared through `spawn_staging(request)`.
+- `assets/qml/DictionaryImportDialog.qml` — **6.1–6.3.** Android-only
+  `nameFilters`, the `filter_config` property, `handle_picked_url()` with the
+  empty-URL guard, `fallback_notice_dialog`, `start_fallback_pick()`,
+  `begin_staging_uri()` / `enter_copying_frame()` / `finish_staging_start()`,
+  and the `SuttaBridge` `onImportFilePickCompleted` handler.
+- `cpp/android_raw_pick.cpp` — comment only: the two "diagnostic only, delete
+  it" rules replaced by the revised §11 Q0a terms.
 - `backend/src/import_staging.rs` — **new (4.1–4.3).** The whole
   platform-independent staging half: `StagingRequest` / `StagedFile` /
   `StagingError` (stable `code` + `step` + `message`), `staging_dir` (per
@@ -1165,7 +1184,7 @@ touches `#[cfg(target_os = "android")]` code — `cleanup_staged_file` and
 `sweep_orphaned_extract_dirs` are platform-independent — so the desktop
 compile covers every line added here.
 
-### 6.0 [ ] Make the dictionary import actually work — the automatic picker fallback (E-4, E-7, E-14…E-17)
+### 6.0 [x] Make the dictionary import actually work — the automatic picker fallback (E-4, E-7, E-14…E-17)
 
 **Specs to keep in mind.** §0.3: Qt's `FileDialog` returns nothing on this
 device while our raw intent works perfectly. We do not know which of the four
@@ -1173,7 +1192,7 @@ deltas is responsible, and the user should not have to wait for another round
 trip to find out. So the import **tries Qt's dialog and falls back**, and the
 fallback firing *is* the measurement.
 
-- [ ] 6.1 Drop `nameFilters` from `DictionaryImportDialog.qml`'s `file_dialog`
+- [x] 6.1 Drop `nameFilters` from `DictionaryImportDialog.qml`'s `file_dialog`
   (`:171`) **on Android only** (E-4). Desktop keeps
   `["StarDict archives (*.zip)"]`. Single, clearly-marked, revertible edit,
   commented with what it tests and pointing at PRD §4A.7. Keep the `title` — with
@@ -1187,11 +1206,23 @@ fallback firing *is* the measurement.
   (`qandroidplatformfiledialoghelper.cpp:151`), so `[]` yields
   `setType("*/*")` and no `EXTRA_MIME_TYPES` — exactly the diagnostic's
   configuration.
-- [ ] 6.2 Add the empty-URL guard (E-7): if `selectedFile` is empty or invalid,
+
+  Done as written: `nameFilters: Qt.platform.os === "android" ? [] :
+  ["StarDict archives (*.zip)"]`, one line, commented with what it tests and
+  what would revert it. The `title` is kept and now carries a comment saying
+  why (with no filter the picker lists every file).
+- [x] 6.2 Add the empty-URL guard (E-7): if `selectedFile` is empty or invalid,
   **never** call `scan_source` with `""`. This is what produced `Path not found: `
   with nothing after the colon. It must be distinct from the existing
   *"Could not access the selected file."*
-- [ ] 6.3 On Android, when the guard fires, **automatically retry with the raw
+
+  The guard is in the new `handle_picked_url()`, which `onAccepted` now calls
+  instead of `begin_staging` directly, so **every** pick goes through one place.
+  The wording is *"The file chooser did not return a file."* — a different
+  failure from *"Could not access the selected file."*, which means a file was
+  named and could not be read. On Android the guard does not end there; it hands
+  over to 6.3.
+- [x] 6.3 On Android, when the guard fires, **automatically retry with the raw
   `ACTION_OPEN_DOCUMENT` picker** rather than giving up. Requirements:
   - tell the user first, in one sentence, that the chooser returned nothing and
     Simsapa will try a different one — a second picker appearing unannounced
@@ -1214,7 +1245,34 @@ fallback firing *is* the measurement.
     keep the include in `cpp/android_raw_pick.cpp` alone so the blast radius is
     unchanged. The failure mode remains a **compile error at upgrade time**, on
     ~80 lines of `#ifdef`-gated code.
-- [ ] 6.4 Switch the dictionary import's provider read from
+
+  All four requirements met. What the implementation settled beyond them:
+
+  - **The discriminator is on the slot, not beside it.** `RawPickConsumer`
+    (`FileSelectionTest` / `DictionaryImport`) is stored *with* the thread
+    handle in the renamed `RAW_PICK_TARGET`, so the consumer cannot be read
+    without the handle it belongs to, and a stale consumer from a previous run
+    is not representable. `on_raw_pick_finished()` branches on it once and
+    hands off. No second mechanism, no polling, and the cancelled path still
+    completes — an unanswered pick would leave the dialog on the copying frame
+    forever.
+  - **The recovered URI is staged as a string, never re-wrapped in a `QUrl`.**
+    New `DictionaryManager::stage_picked_uri(&QString)`, sharing the whole
+    worker half with `stage_picked_file` through `spawn_staging(request)`. This
+    is the point of the fallback: `QUrl(uri.toString())` is the conversion under
+    suspicion, so routing the picker's own string back through it would put it
+    straight back on the path it was recovered from. Scheme detection splits on
+    `://`, never a bare `:` (§9.6).
+  - **The notice is a `Dialog`, and the fallback starts from its `onAccepted`.**
+    Not a toast and not automatic: a second picker appearing unannounced reads
+    as a bug. Cancel returns to the source frame with the E-7 message. Clamped
+    to `Overlay.overlay` with a `DialogHeader`, per CLAUDE.md.
+  - **§11 Q0a was amended in the PRD, as required.** The first term of the
+    2026-08-07 reversal — "confined to the diagnostic" — is now explicitly
+    dropped, with the reason, the bounded cost, the three surviving terms, the
+    new discriminator term, and the condition under which the dependency can be
+    removed again (the fallback never firing once 6.1's filter is gone).
+- [x] 6.4 Switch the dictionary import's provider read from
   `QFile(content_uri)` (`cpp/utils.cpp:662`) to
   `ContentResolver.openInputStream` — Req. 8 / Defect C, whose implementation
   already exists as `probe_document_uri` in `backend/src/android_saf.rs`. If the
@@ -1230,12 +1288,45 @@ fallback firing *is* the measurement.
   survives in `cpp/utils.cpp` only for the three unmigrated call sites (4.7).
   It fell out of 4.1 because writing the new chunked copy in C++ around `QFile`
   would have meant building the exact thing this task removes.
-- [ ] 6.5 Log a `DICTIONARY-IMPORT-PICK:` block on the real import path
+
+  **Verified, not re-implemented.** Re-read at 6.4's turn: `stage_picked_file`
+  → `import_staging::stage_picked_url` → `android_saf::copy_document_to_path`
+  (`ContentResolver.openInputStream`), with the URI coming from
+  `QUrl::to_encoded()`. The fallback path added by 6.3 reaches the same reader
+  through `stage_picked_uri`, so both pickers read the same way and the picker
+  moving did not leave the reader behind. `QFile(content_uri)` survives in
+  `cpp/utils.cpp` for the three unmigrated call sites only.
+- [x] 6.5 Log a `DICTIONARY-IMPORT-PICK:` block on the real import path
   (E-14…E-17), through the **same** `PickerUrlFacts` pipeline as the diagnostic —
   never a second report shape. Log on the **failure** path too (E-15). Do **not**
   perform the diagnostic's 4 MB provider read (E-16): staging is about to read
   the file for real. Observation only; desktop behaviour byte-identical (E-17).
-- [ ] 6.6 Fix `outcome_line()` (`backend/src/picker_url.rs:843`) so a success
+
+  One report builder, two callers. `PickReport` (`Diagnostic` /
+  `DictionaryImport`) is a field on `FileSelectionTestInput` and decides two
+  things and nothing else: the log prefix, and whether the block may **read**
+  the document. The free `line()` helper became a `Block { out, prefix }` so a
+  line written without its prefix is not expressible — the alternative, passing
+  a prefix argument to every call, is one forgotten argument away from a block
+  that greps as the wrong feature.
+
+  Where the diagnostic reads, the import block prints
+  `provider_read: (not read here: staging is about to copy the whole file, …)`
+  — a stated measurement rather than a missing field (E-16). Both the QUrl and
+  the raw-URI probes are gated, since the fallback path has both.
+
+  **A new `filter_config` line** carries E-1/E-3's labelling discipline: every
+  block now states its picker *and* its filter, and the three configurations
+  are three separate literals — the diagnostic's, the raw intent's
+  (`RAW_INTENT_FILTER_CONFIG`) and the import dialog's `filter_config`
+  property. Nothing derives its configuration from anything else, so 6.1's
+  change to the import dialog cannot silently move what the diagnostic
+  measures.
+
+  Desktop is byte-identical in effect: the logging is a `thread::spawn` that
+  returns nothing the caller acts on (the block collects a directory census and
+  a `statvfs`, so it must not run on the GUI thread).
+- [x] 6.6 Fix `outcome_line()` (`backend/src/picker_url.rs:843`) so a success
   does not read as a failure (§0.3.7). It is currently a function of the *input*
   and cannot see whether the read worked; pass the result in. On Android every
   successful pick is `PickerBranch::Provider`, and the only cheerful arm
@@ -1243,9 +1334,46 @@ fallback firing *is* the measurement.
   sounds like it went well.** Suggested: *"The file chooser worked. Simsapa
   opened «all-dictionaries-gd.zip» (172 MB) and read it successfully."* Leave the
   scheme in the log.
-- [ ] 6.7 Verify no new Android permission and that
+
+  The result is now passed in: `build_pick_report()` returns
+  `PickReportOutput { block, probe }` and `outcome_line(input, probe)` takes the
+  probe, so the sentence is a function of what the read *did*. The `Provider`
+  arm has four outcomes — read succeeded (with the display name and size, e.g.
+  *"The file chooser worked. Simsapa opened «all-dictionaries-gd.zip»
+  (172.4 MB) and read it successfully."*), opened but read nothing, could not
+  open, and no read attempted (the old mechanism sentence, now reachable only
+  when there is genuinely no result to report). The scheme stays in the log and
+  in the two failure sentences, where naming it is informative.
+
+  `run_file_selection_test()` keeps its `-> String` shape so the existing
+  20-odd tests are unaffected; it is now a one-line wrapper over
+  `build_pick_report()`.
+- [x] 6.7 Verify no new Android permission and that
   `android/AndroidManifest.xml` is **byte-identical** (Req. 26). Qt's dialog and
   our intent both need nothing.
+
+  `git diff --quiet android/AndroidManifest.xml` → clean, and `git status
+  --porcelain android/` is empty. No Qt module was linked, so nothing new is
+  injectable even in principle — and the markers that used to inject
+  permissions are gone from the manifest anyway
+  (`docs/android-multi-abi-and-chromeos.md`). `ACTION_OPEN_DOCUMENT` requires
+  no permission: the picker grants per-URI access to the chosen document.
+
+**Verification.** `cd backend && cargo test` — all suites green (561 lib +
+every integration binary, 0 failed), including three new `picker_url` tests:
+`the_import_block_uses_its_own_prefix_and_the_same_shape`,
+`the_import_block_never_reads_the_document` and
+`a_successful_provider_read_reads_as_a_success`. `make qml-test` — 172 passed,
+0 failed, and `make qml-lint` produces no warning naming
+`DictionaryImportDialog.qml` or either stub file. `make build -B` — clean.
+
+**Not verified: the Android cross-check and the device behaviour.** `cargo
+check --target aarch64-linux-android` still needs the NDK environment the
+sibling task list's §Notes recipe sets up. Nothing added here is inside
+`#[cfg(target_os = "android")]` — the fallback is Rust dispatch plus QML, and
+`cpp/android_raw_pick.cpp` gained only comment text — so the desktop compile
+covers every line changed. **Whether the fallback fires is the measurement, and
+only the user's device can take it** (task 8.7).
 
 ### 7.0 [ ] Say what a non-StarDict archive actually is (MDict piece 1 only)
 

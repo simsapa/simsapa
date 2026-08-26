@@ -36,14 +36,30 @@
 //     in the package, no ABI-slice growth, no manifest change;
 //   - a future break would be a compile error, not silent misbehaviour.
 //
-// TWO RULES FOR WHOEVER READS THIS NEXT
+// THIS IS NO LONGER DIAGNOSTIC-ONLY
 //
-//   1. This is diagnostic code with a one-round-trip lifetime. **Delete it once
-//      the user's report comes back.** It is deliberately self-contained so that
-//      is a single-commit change.
-//   2. **Do not let the import path depend on it.** The private include is
-//      confined to this file on purpose; a build break here must never be able
-//      to take a shipping feature down with it.
+// The two rules that used to stand here — "delete it once the report comes
+// back" and "do not let the import path depend on it" — were written when this
+// file served one test button. The report came back and settled the question the
+// other way: on the reporting Chromebook every pick through this intent worked
+// perfectly, while Qt's FileDialog returned nothing. So the dictionary import
+// now falls back to this picker when Qt's chooser hands it an empty URL, and the
+// alternative to that dependency is a user who cannot import a dictionary at
+// all. The decision, and its terms, are recorded in the PRD §11 Q0a.
+//
+// The terms the reversal keeps:
+//
+//   1. **The private include stays in this file alone.** The blast radius is
+//      unchanged: one translation unit, ~80 lines of #ifdef-gated code, and a
+//      failure at the next Qt upgrade is a compile error, not silent
+//      misbehaviour.
+//   2. **One report shape.** Both callers feed the same PickerUrlFacts pipeline
+//      in backend/src/picker_url.rs; the import's block differs only by its
+//      prefix (DICTIONARY-IMPORT-PICK:) and by not reading the document.
+//   3. **One global result slot, with a discriminator.** The consumer is
+//      recorded in RAW_PICK_TARGET (bridges/src/sutta_bridge.rs) when a pick
+//      starts, so a diagnostic pick and an import pick cannot be delivered to
+//      the wrong listener. Do not add a second parallel mechanism.
 
 #include "android_raw_pick.h"
 

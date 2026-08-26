@@ -25,6 +25,11 @@ Item {
         console.log("abort_staging()");
     }
 
+    function stage_picked_uri(uri: string): string {
+        console.log("stage_picked_uri():", uri);
+        return "ok";
+    }
+
     function cleanup_staged_file(path: string): bool {
         console.log("cleanup_staged_file():", path);
         return true;

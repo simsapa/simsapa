@@ -65,6 +65,9 @@ pub mod qobject {
         fn stage_picked_file(self: Pin<&mut DictionaryManager>, url: &QUrl) -> QString;
 
         #[qinvokable]
+        fn stage_picked_uri(self: Pin<&mut DictionaryManager>, uri: &QString) -> QString;
+
+        #[qinvokable]
         fn abort_staging(self: Pin<&mut DictionaryManager>);
 
         #[qinvokable]
@@ -554,6 +557,49 @@ impl qobject::DictionaryManager {
             feature: "dictionaries",
         };
 
+        self.spawn_staging(request)
+    }
+
+    /// Stage a file the **raw** `ACTION_OPEN_DOCUMENT` picker returned.
+    ///
+    /// Takes the picker's own string rather than a `QUrl`. The fallback exists
+    /// precisely because Qt's `FileDialog` loses these URIs somewhere between
+    /// the picker and QML, so routing the recovered string back through a
+    /// `QUrl` would reintroduce the one conversion under suspicion. `Uri.parse`
+    /// on the Android side wants the string anyway.
+    fn stage_picked_uri(self: Pin<&mut Self>, uri: &QString) -> QString {
+        let uri = uri.to_string();
+        let scheme = match uri.find("://") {
+            // `://`, never a bare `:` — `C:/Users/…` is a Windows path.
+            Some(i) => uri[..i].to_ascii_lowercase(),
+            None => String::new(),
+        };
+        // A raw pick on Android always yields `content://`; a `file://` one is
+        // handled for completeness and anything else is left to the staging
+        // layer's `unsupported_scheme` error.
+        let local_path = if scheme == "file" {
+            uri.trim_start_matches("file://").to_string()
+        } else if scheme.is_empty() {
+            uri.clone()
+        } else {
+            String::new()
+        };
+
+        let request = simsapa_backend::import_staging::StagingRequest {
+            encoded_url: uri,
+            scheme,
+            local_path,
+            feature: "dictionaries",
+        };
+
+        self.spawn_staging(request)
+    }
+
+    /// The worker half shared by both staging entry points.
+    fn spawn_staging(
+        self: Pin<&mut Self>,
+        request: simsapa_backend::import_staging::StagingRequest,
+    ) -> QString {
         info(&format!(
             "stage_picked_file: scheme={} url={}",
             if request.scheme.is_empty() { "none" } else { &request.scheme },

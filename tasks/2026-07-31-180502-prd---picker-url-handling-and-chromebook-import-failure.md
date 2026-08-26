@@ -1455,6 +1455,41 @@ Still open:
      never a second report shape;
    - the module comment records that the private include is deliberate, scoped,
      and expected to be **deleted** once the report comes back.
+
+   **REVISED 2026-08-26 — the first term is dropped, deliberately.** The report
+   came back (§4A.6) and answered the question the other way round: through the
+   raw intent every one of the four real picks on the reporting Chromebook was
+   clean, while Qt's `FileDialog` on the same device returns nothing. So the
+   dictionary import now **falls back** to this picker when Qt's chooser hands
+   it an empty URL (implementation task list task 6.3), and the private include
+   is on a shipping path.
+
+   This is a decision, not drift. The alternative to the dependency is a user
+   who cannot import a dictionary at all, which is the defect this PRD was
+   opened for. What the reversal costs is bounded and was already measured in
+   point 2 above: `Qt6::CorePrivate` adds include paths, not a library, and a
+   future break is a **compile error at upgrade time** on ~80 lines of
+   `#ifdef`-gated code in **one** file.
+
+   The other three terms stand, and one is added:
+
+   - the include stays in `cpp/android_raw_pick.cpp` **alone**, so the blast
+     radius is exactly what was measured;
+   - both callers feed the **same** `PickerUrlFacts` pipeline; the import's
+     block differs only by its prefix (`DICTIONARY-IMPORT-PICK:`) and by not
+     performing the provider read (E-16);
+   - the module comment records the scope and the reason — it no longer says
+     "delete once the report comes back", because the report is back and the
+     answer was to keep it;
+   - **new:** the single global result slot carries a **consumer
+     discriminator** (`RawPickConsumer` in `bridges/src/sutta_bridge.rs`), so a
+     diagnostic pick and an import pick cannot be delivered to the wrong
+     listener. No second parallel mechanism.
+
+   The dependency is still removable: if the returned log shows the fallback
+   never firing once `nameFilters` is gone (task 6.1), then the filter was the
+   whole bug, Qt's dialog is sufficient, and this file can go back to being
+   diagnostic-only — or be deleted.
 1. **`delete_temp_import_folder` signature change (Req. 19)** is a breaking change
    to an existing bridge function. Its only callers are
    `DocumentImportDialog.qml:360` and `:376` (verified 2026-07-31) — re-confirm

@@ -156,10 +156,69 @@ ApplicationWindow {
         return (n / (kb * kb * kb)).toFixed(1) + " GB";
     }
 
+    // What the file picker was configured with, stated verbatim so the logged
+    // block says which configuration produced it. Two blocks are only
+    // comparable if each names its picker *and* its filter.
+    readonly property string filter_config: Qt.platform.os === "android"
+        ? "nameFilters = [] (Android)"
+        : "nameFilters = [\"StarDict archives (*.zip)\"]"
+
+    // Everything the picker's answer goes through, on both platforms.
+    //
+    // The empty case is the fault this whole path exists for: on the reporting
+    // Chromebook Qt's FileDialog fires `onAccepted` with an empty `selectedFile`
+    // and emits no warning of any kind, and the old code passed that empty
+    // string straight to `scan_source`, which logged `Path not found: ` with
+    // nothing after the colon.
+    function handle_picked_url(url) {
+        // Observation only, before anything else happens to the URL — including
+        // on the failure path, which is what produced no evidence at all before.
+        SuttaBridge.log_import_pick(url, root.filter_config);
+
+        const url_str = String(url);
+        if (url_str.length === 0) {
+            logger.error("DICTIONARY-IMPORT-PICK: the file chooser returned an empty URL");
+            if (Qt.platform.os === "android") {
+                // Not a dead end: the raw ACTION_OPEN_DOCUMENT picker is
+                // measured to work on this device where Qt's does not.
+                fallback_notice_dialog.open();
+            } else {
+                // Distinct from "Could not access the selected file." — that
+                // one means a file was named and could not be read.
+                root.scan_message = "The file chooser did not return a file.";
+                frames.currentIndex = root.frame_source;
+            }
+            return;
+        }
+
+        root.begin_staging(url);
+    }
+
+    // Ask the raw picker for the same file. Its answer arrives on
+    // SuttaBridge's `importFilePickCompleted`.
+    function start_fallback_pick() {
+        logger.info("DICTIONARY-IMPORT-PICK: starting the fallback raw document picker");
+        SuttaBridge.start_import_raw_pick();
+    }
+
     // Stage the picked file, then scan it. The copy runs on a worker thread and
     // reports bytes; the old path called a synchronous bridge invokable that
     // read the whole archive into one buffer on the GUI thread.
     function begin_staging(url) {
+        root.enter_copying_frame();
+        root.finish_staging_start(dict_manager.stage_picked_file(url));
+    }
+
+    // The fallback picker's answer is the picker's own string. It is staged as
+    // a string, never re-wrapped in a QUrl: that conversion is the one under
+    // suspicion, and routing the recovered URI back through it would put it
+    // straight back on the path.
+    function begin_staging_uri(uri: string) {
+        root.enter_copying_frame();
+        root.finish_staging_start(dict_manager.stage_picked_uri(uri));
+    }
+
+    function enter_copying_frame() {
         root.scan_message = "";
         root.copy_done_bytes = 0;
         root.copy_total_bytes = 0;
@@ -169,8 +228,9 @@ ApplicationWindow {
         // Released in onStagingFinished / onStagingFailed — both of them, and
         // never in a dialog handler: the worker outlives the dialog.
         screen_manager.set_keep_screen_on("dictionary-import-staging", true);
+    }
 
-        const result = dict_manager.stage_picked_file(url);
+    function finish_staging_start(result: string) {
         if (result !== "ok") {
             screen_manager.set_keep_screen_on("dictionary-import-staging", false);
             root.staging_active = false;
@@ -247,6 +307,24 @@ ApplicationWindow {
             }
         }
         root.can_import = any_checked && !any_blocking;
+    }
+
+    // The fallback picker's answer. Every outcome arrives here, cancellation
+    // included, so the dialog can never be left waiting on the copying frame.
+    Connections {
+        target: SuttaBridge
+
+        function onImportFilePickCompleted(success: bool, uri: string, message: string) {
+            if (success) {
+                logger.info("DICTIONARY-IMPORT-PICK: the fallback picker returned a file; Qt's chooser did not");
+                root.begin_staging_uri(uri);
+                return;
+            }
+            // An empty message is a cancel: the user closed the second chooser
+            // and needs no error for having done so.
+            root.scan_message = message;
+            frames.currentIndex = root.frame_source;
+        }
     }
 
     Connections {
@@ -328,16 +406,54 @@ ApplicationWindow {
 
     FileDialog {
         id: file_dialog
+        // With no filter the picker lists every file, so the title is the only
+        // thing left saying what is wanted. Keep it.
         title: "Choose StarDict .zip"
-        nameFilters: ["StarDict archives (*.zip)"]
+        // No `nameFilters` on Android. Qt maps them to the intent's
+        // `setType()` + `EXTRA_MIME_TYPES`, and that mapping is the leading
+        // suspect for a picker that returns an empty URL on ChromeOS/ARC —
+        // where the same pick through a bare `*/*` intent works perfectly. An
+        // empty array is the correct "no filter" value: Qt tests
+        // `if (!nameFilters.isEmpty())` before calling `setMimeTypes()`.
+        // Gated on the platform, not on `is_mobile`: iOS has neither the defect
+        // nor the raw-picker fallback. Single, revertible line — if the
+        // returned log shows the fallback never fired, it goes back.
+        nameFilters: Qt.platform.os === "android" ? [] : ["StarDict archives (*.zip)"]
         // The picked file goes through staging, which decides what it is: a
         // local path is used in place, and an Android content:// URI is copied
         // to a temp file on a worker thread. The dialog no longer inspects the
         // scheme itself, and no longer calls the synchronous
         // `SuttaBridge.copy_content_uri_to_temp` that read the whole archive on
         // the GUI thread.
-        onAccepted: root.begin_staging(selectedFile)
+        onAccepted: root.handle_picked_url(selectedFile)
         onRejected: root.canceled()
+    }
+
+    // The one sentence that precedes the second picker. A picker reappearing
+    // unannounced reads as a bug, so this is shown first and the fallback only
+    // starts when the user accepts it.
+    Dialog {
+        id: fallback_notice_dialog
+        title: "Try a different file chooser"
+        modal: true
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        header: DialogHeader { text: fallback_notice_dialog.title }
+
+        contentItem: Label {
+            width: parent ? parent.width : 0
+            text: "The file chooser did not return a file. Simsapa will open a different chooser so you can select it again."
+            font.pointSize: root.pointSize
+            wrapMode: Text.WordWrap
+        }
+
+        onAccepted: root.start_fallback_pick()
+        onRejected: {
+            root.scan_message = "The file chooser did not return a file.";
+            frames.currentIndex = root.frame_source;
+        }
     }
 
     // Shared folder picker for options 2–4; `pending_kind` selects which scan
