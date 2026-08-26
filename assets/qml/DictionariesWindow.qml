@@ -521,7 +521,7 @@ ApplicationWindow {
                         Text {
                             visible: root.user_dictionaries.length === 0
                             text: `<p>No imported dictionaries yet.</p>
-<p>Stardict / Goldendict formats can be imported. Useful dictionaries can be downloaded from:</p>
+<p>Stardict / GoldenDict formats can be imported. Useful dictionaries can be downloaded from:</p>
 <p><a href="https://github.com/digitalpalidictionary/other-dictionaries/releases/">https://github.com/digitalpalidictionary/other-dictionaries/releases/</a></p>`
                             textFormat: Text.RichText
                             font.pointSize: root.pointSize

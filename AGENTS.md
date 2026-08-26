@@ -558,7 +558,51 @@ Notable feature docs:
   B may be milder than the PRD asserts) and `staging_roots_differ: no` (on an
   Android 16 device `QStandardPaths::TempLocation` and `std::env::temp_dir()`
   resolve to the **same** directory, contradicting the PRD's "very likely a
-  silent no-op" claim).
+  silent no-op" claim). **The fix that diagnostic led to is the next entry.**
+- [Dictionary import pipeline](./docs/dictionary-import-pipeline.md) — pick →
+  stage → probe → choose → import for a user-supplied StarDict/GoldenDict
+  dictionary: which stage runs on which thread, the signal surface, and who owns
+  each temporary file. Records the **`readAll()`-on-the-UI-thread defect as
+  fixed** (the whole 180 MB archive into one `QByteArray` on the GUI thread, from
+  `FileDialog.onAccepted`) and its replacement, `backend/src/import_staging.rs` —
+  Qt-free, 1 MB chunks, cancel between chunks, `f64` byte counts, progress
+  throttled to 100 ms, and a `StagingError` whose `code` + `step` make an
+  unattributed failure unrepresentable. Covers the **two readers chosen by
+  scheme** (`std::fs` for a desktop pick, which is the user's own file and is
+  **never copied**; `ContentResolver.openInputStream` for `content://`, never
+  `QFile`) and that scheme detection splits on **`://`, never a bare `:`**. §4 is
+  the **Android picker fallback** — Qt's `FileDialog` returns an *empty URL* on
+  ChromeOS/ARC while a bare `ACTION_OPEN_DOCUMENT` works, so the import tries
+  Qt's dialog, guards the empty URL, announces itself in one sentence and retries
+  with the raw intent, **and the fallback firing is the measurement**; the
+  recovered URI is staged as a **string**, never re-wrapped in the `QUrl`
+  conversion it was recovered from, and the shared raw-pick slot carries a
+  `RawPickConsumer` discriminator stored *with* the thread handle. It also covers
+  the one-shape `DICTIONARY-IMPORT-PICK:` block (the `Block` struct makes a
+  prefixless line inexpressible; the import block never does the diagnostic's
+  4 MB read) and why `outcome_line()` had to take the **result** — every Android
+  success is `PickerBranch::Provider`, whose only cheerful arm was unreachable,
+  so the user reported the *success* message as "the error". §5: the probe
+  **extracts nothing** (central directory + the `.ifo` only — `stardict::no_cache`
+  needs the `.dict`, so the `.idx` route was never cheap), the displayed count is
+  the `.ifo`'s declared `wordcount`, and **a bundle `.zip` is N dictionaries**:
+  `probe_zip_candidates` returns one outcome per member, the member is **decided
+  once by the probe and handed back at import time** (re-deriving it is the
+  defect — the probe read the central directory while the import took whatever
+  `read_dir` listed, so the checklist could offer A and insert B under A's
+  label), ordering is lexicographic, and an empty member means the whole archive.
+  §6: `ScanReport { candidates, rejections }` is a **struct not an enum** because
+  a folder yields both at once; key QML off the stable `reason`, never the
+  message text; and the UI says **"StarDict/GoldenDict"**, never "StarDict"
+  alone. §7 is the three temporaries and their owners — staging is **per-feature**
+  and `cleanup_staged_file` decides ownership **by location, not by the caller's
+  word**, the feature name is one constant (a mismatch fails *silently*), both
+  startup sweeps are age-gated at an hour and treat an unreadable timestamp as
+  "too young", and `delete_temp_import_folder` wipes the **shared root** and is
+  deliberately not on this path. §8 the three keep-screen-on holders, §9 why the
+  scanning frame's Cancel *abandons* rather than cancels, §11 the
+  `cargo check --target aarch64-linux-android` hole that is the only check
+  `android_saf.rs` ever gets.
 - [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
   what happens when the storage location the user chose is no longer where it was
   (a microSD card moved to another socket, a volume back under a different path).
@@ -617,7 +661,48 @@ Notable feature docs:
   section C's lock reading is taken **before** D runs), and the three load-bearing
   UI facts — `Qt.ApplicationModal` (or the window opens dead to clicks from
   Database Validation), the bound `extra_top_margin`, and the results window owning
-  the whole run.
+  the whole run. **Phase 2 shipped** — see the next entry.
+- [Fulltext index storage and file locking](./docs/fulltext-index-storage-and-file-locking.md) —
+  phase 2, the fix: why fulltext search returned **zero results, silently**, on
+  storage that does not implement `flock(2)`, and what makes it work. Framed
+  around **filesystems without `flock`** — ChromeOS/ARCVM `fuse` volumes and
+  portable SD cards are two instances of one class, so **never say "SD card"**
+  in user-facing text; say "this storage location". Starts from the split that
+  explains why every existing check passed: **SQLite locks with `fcntl`, Tantivy
+  with `flock`**, so the tier-2 storage probe (a real SQLite database) passes on
+  a volume where every index fails — the general lesson being that *a probe
+  proves only the primitive it used*. Covers the **two** Tantivy lock sites and
+  their asymmetric failures (blocking `META_LOCK` at `reader/mod.rs:194` keeps
+  the errno; non-blocking `INDEX_WRITER_LOCK` at `index/index.rs:545` maps
+  everything to `LockBusy` and **discards** it, which is why a probe is needed
+  and not just an error check), and that **`Index::open` takes no lock at all**
+  — the failure is precisely and only at the reader. Then
+  `LenientLockMmapDirectory`'s four `acquire_lock` routes and why the "fell back
+  after some *other* `IoError`" one exists (an unwritable directory also yields
+  `IoError`, so absorbing it would turn a broken volume into "the fix works");
+  why the fallback must be a **real** mutual exclusion (the GC takes `META_LOCK`
+  after every commit and merge while the previous searcher is still alive), a
+  **hand-rolled guard** (`DirectoryLock` is `Send`, every `MutexGuard` is not),
+  and **not** the trait's default `acquire_lock` (it locks by file *existence*
+  and deletes on drop, but `MmapDirectory` never deletes its lock files — it
+  would find a stale one and return `LockBusy` forever); the **single-process
+  invariant** the process-internal lock rests on; the once-per-directory probe
+  and the shared `normalize_lock_key` that must **never** skip an entry and must
+  avoid `canonicalize()` (it fails on exactly these volumes). §5 records the
+  **`mmap` measurement that deleted a planned second PRD** — it works, at an
+  18 MB fault past page 0 — and that the affected volume is *fast*, which
+  retired the SD-card performance notice. §6 is the other half of the fix,
+  **honest reporting**: `fulltext_status.rs` as the single place every
+  user-facing string is written (so one test enforces the no-jargon rule),
+  `FulltextState`'s four variants, why `state` and `is_valid` answer **different**
+  questions, per-area messages where an **empty message is the instruction to
+  stay silent**, and the **search-mode allowlist** that stops Contains/Title/
+  Headword/DPD-Lookup searches inheriting "the index could not be opened". §7
+  names the two dependencies this created: `ReloadPolicy::Manual` makes an
+  explicit `reinit_fulltext_searcher()` **mandatory** after every in-app index
+  mutation, and opening the searcher is serialised because
+  `begin_open_session()` clears the failure list. §9 is the benchmark proving the
+  wrapper costs nothing (aggregate 1.00× / 1.02× / 0.97×).
 - [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row

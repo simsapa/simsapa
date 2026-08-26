@@ -3,7 +3,14 @@
 **Date:** 2026-08-05
 **Status:** **Complete — implemented, shipped, and the report has come back.**
 The affected user ran it on 2026-08-25; see **§12 Results returned** for the
-measurements and the decision-gate outcome. Phase 2 is **unblocked**.
+measurements and the decision-gate outcome. Phase 2 is ~~**unblocked**~~
+**implemented (2026-08-26)** — see the phase-2 PRD's status header and
+`docs/fulltext-index-storage-and-file-locking.md`. Two of this PRD's deliverables
+outlived the diagnostic and are now shipping code: `LenientLockMmapDirectory`
+(wired into every real search and index path) and the `flock` verdict recorded by
+the tier-2 storage probe. The **`mmap` probe's answer deleted a planned second
+PRD** (the non-mmap `Directory` of fix-PRD FR-36), which is the single highest
+return this phase produced.
 **Phase-2 task list:**
 `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
 **Phase:** 1 of 2. The fix itself is

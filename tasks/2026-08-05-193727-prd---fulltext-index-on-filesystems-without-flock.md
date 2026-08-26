@@ -1,13 +1,51 @@
 # PRD — Fulltext search on storage volumes that do not support `flock()` (SD cards)
 
 **Date:** 2026-08-05
-**Status:** Draft — **UNBLOCKED 2026-08-25**, ready to implement as written.
-Not yet implemented.
+**Status:** **IMPLEMENTED 2026-08-26** — §4.1–§4.6 (FR-1…FR-36) are in the tree
+and shipped in the beta build. §4.7 (FR-37…FR-45, the removable-volume
+performance notice) is the **only** part not implemented, and is deferred
+deliberately; see §10.2. **Device confirmation is still outstanding** (success
+metrics 1–6 and 9 need the reporting user's log — the diagnostic pre-satisfied
+1–3 through the wrapper, but not through the real call sites).
 **Task list:**
 `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
-— tasks 1.0–3.0 implement §4.1–§4.6 and add the no-slowdown benchmark. **§4.7
-(the removable-volume performance notice) is deliberately deferred there**; see
-§10.2 for why.
+— tasks 1.0–3.0 implement §4.1–§4.6 and add the no-slowdown benchmark.
+**Documentation:** `docs/fulltext-index-storage-and-file-locking.md` (written as
+required by §7, framed around filesystems without `flock` per §10.3).
+
+**What implementation added beyond the requirements**, each because tracing the
+flows found a gap the PRD did not anticipate:
+
+- **`ReloadPolicy::Manual` (FR-17) turned a latent staleness window into a hard
+  dependency, and one call site had to be fixed to meet it.**
+  `DictionaryManager::start_reconcile()` mutated the dictionary index and never
+  called `reinit_fulltext_searcher()` — it had been silently relying on the
+  500 ms `meta.json` poll FR-17 removes. FR-17's premise ("every index mutation
+  is already followed by an explicit reinit") was *not quite true*; there are
+  five in-app mutation sites and this was the exception.
+- **Opening the searcher had to be serialised.** `begin_open_session()` clears
+  the FR-19 failure list, so two concurrent openers can leave zero indexes open
+  *and* zero failures recorded — which FR-30's classifier then reports as
+  "index files not found" over a volume whose indexes are all present and all
+  failed to open. `SEARCHER_OPEN_LOCK` in `backend/src/lib.rs`.
+- **FR-23…FR-26 needed two more axes than "all three areas".** A user whose
+  sutta indexes open and whose dictionary indexes all fail, and a user whose
+  `suttas/en` opens while `suttas/pli` fails, were both back to a silent "No
+  results found." Per-area and partial-area states were added; an **empty
+  per-area message is the whole instruction to stay silent**.
+- **FR-23's mode scoping was missing and mattered.** Contains Match, Title
+  Match, Headword Match and DPD Lookup all go through FTS5/SQLite and work
+  perfectly on the affected volume, so without a mode gate a genuinely empty
+  Contains Match would have read *"The search index could not be opened."* —
+  a fabricated diagnosis, the same dishonesty this PRD exists to remove, pointed
+  the other way. Implemented as an **allowlist** (`Fulltext Match`, `Combined`).
+- **FR-27's Validation row needed `is_valid` and `state` to answer different
+  questions.** `is_valid` meaning "search works at all" reported a partly-open
+  index as clean; it now means *everything that should have opened, opened*.
+- **FR-11 (`Index::open`) silently dropped Tantivy's schema-equality check.**
+  `open_or_create` returned `SchemaError` on a mismatch; `Index::open` takes
+  whatever is on disk. `INDEX_VERSION` is now the **only** guard, and is
+  recorded as such on the constant and in the doc.
 **Phase:** 2 of 2. Phase 1 is
 `2026-08-05-201545-prd---run-storage-diagnostics.md`, which shipped a
 behaviour-neutral **"Run Storage Diagnostics"** action that measures the

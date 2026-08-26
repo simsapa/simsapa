@@ -188,6 +188,16 @@ the producer only wraps literal ranges.
 
 ## 5. FulltextMatch (Tantivy) — detailed sequence
 
+> **Before the sequence below can run at all, the index has to open** — and on
+> storage that does not implement `flock(2)` (ChromeOS/ARCVM `fuse` volumes,
+> portable SD cards) it did not, silently, for every index. The wrapper that
+> fixes it, and the reporting that makes a failure visible instead of
+> indistinguishable from "no matches", are in
+> [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).
+> Note in particular that the "index could not be opened" empty state is gated on
+> the search **mode**: everything in §4 below is FTS5/SQLite and works fine on
+> such a volume, so it must never carry that message.
+
 `fulltext_suttas()` / `fulltext_library()` → `search/searcher.rs`:
 
 1. **Build the dual-field query** in `search_single_index()`: `content` (stemmed,

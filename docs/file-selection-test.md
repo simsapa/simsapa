@@ -108,11 +108,22 @@ decision, and its reversal, is recorded in PRD §11 Q0a; the short form:
   still emits zero `qWarning`s), so waiting for the upgrade is not a substitute
   for measuring.
 
-**Keep it confined to the diagnostic.** Phase 2's import path must not acquire a
-dependency on it, and this file is expected to be **deleted** once the report
-comes back. `CMakeLists.txt` links `Qt6::CorePrivate` on Android only, and
-deliberately not via `${qt_modules}` — that list is also handed to
+`CMakeLists.txt` links `Qt6::CorePrivate` on Android only, and deliberately not
+via `${qt_modules}` — that list is also handed to
 `cxx_qt_import_crate(QT_MODULES)`, which resolves names through qmake.
+
+> **The "keep it confined to the diagnostic" term was dropped, deliberately, on
+> 2026-08-26.** This file was expected to be *deleted* once the report came back.
+> Instead the report showed the raw intent working perfectly on the device where
+> Qt's `FileDialog` returns nothing — so the dictionary import now **falls back**
+> to this picker, and the alternative was leaving the user unable to import at
+> all. Recorded in PRD §11 Q0a with the reason and the surviving terms; see
+> [dictionary-import-pipeline.md §4](./dictionary-import-pipeline.md).
+>
+> **The blast radius is unchanged**: the include stays in this one file, so the
+> failure mode remains a *compile error at upgrade time* on ~80 lines of
+> `#ifdef`-gated code. The dependency can be removed again if a returned log
+> shows the fallback never firing once the `nameFilters` change is in.
 
 #### Re-checked against Qt 6.10.3 (2026-08-08, the Android upgrade)
 
@@ -319,6 +330,37 @@ consequences for anyone reading a future block:
 Full reading: PRD §4A.6. Raw material:
 `feedback-and-bug-reports/rechromebookstoragetesting/`.
 
+### 5.4 What phase 1b built from that (2026-08-26)
+
+The third consequence above is now implemented, and it changed this feature in
+three ways worth knowing before reading a block:
+
+- **The report pipeline has two callers.** `PickReport` (`Diagnostic` /
+  `DictionaryImport`) is a field on `FileSelectionTestInput` and decides exactly
+  two things: the **log prefix** (`FILE-SELECTION-TEST:` vs
+  `DICTIONARY-IMPORT-PICK:`) and **whether the block may read the document**. The
+  import block does *not* do the 4 MB provider read — staging is about to read
+  the whole file for real — and says so in the `provider_read` line rather than
+  omitting the field. One shape, two prefixes; never a second report format.
+- **Every block now states its `filter_config`.** Three separate literals: this
+  diagnostic's, the raw intent's (`RAW_INTENT_FILTER_CONFIG`) and the import
+  dialog's property. Nothing derives its configuration from anything else, so a
+  change to the import dialog's filter cannot silently move what this test
+  measures. Two blocks are only comparable if each names its picker *and* its
+  filter.
+- **`outcome_line()` takes the result, not just the input.** It used to be a
+  function of the input alone and could not see whether the read worked — and on
+  Android every successful pick is `PickerBranch::Provider` while the only
+  cheerful arm (`LocalFile`) is unreachable there, so **no Android user could see
+  a line that sounded like it went well.** The reporting user read the *success*
+  message as "the error". The `Provider` arm now has four outcomes: read
+  succeeded (naming the file and its size), opened but read nothing, could not
+  open, and no read attempted.
+
+The import's own path is documented in
+[dictionary-import-pipeline.md](./dictionary-import-pipeline.md); this file
+remains the reference for reading either block.
+
 ## 6. Four measured states that are normal
 
 Do not "fix" the report when it says any of these.
@@ -399,3 +441,6 @@ user emails.
 - [android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md) — why
   `android/AndroidManifest.xml` is byte-identical in this change, and why it
   must stay that way.
+- [dictionary-import-pipeline.md](./dictionary-import-pipeline.md) — the fix this
+  diagnostic led to. The import now falls back to this file's raw picker, shares
+  its report pipeline, and reads `content://` through the same SAF reader.

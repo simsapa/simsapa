@@ -1742,9 +1742,26 @@ nothing here is inside `#[cfg(target_os = "android")]`.
 
 ### 8.0 [ ] Tests, docs, and the build to send
 
-- [ ] 8.1 `cd backend && cargo test` and `make qml-test` pass. New unit tests
+- [x] 8.1 `cd backend && cargo test` and `make qml-test` pass. New unit tests
   from 1.6, 3.x, 5.4 and 7.4.
-- [ ] 8.2 Write `docs/fulltext-index-storage-and-file-locking.md` (fix-PRD §7):
+
+  `cargo test` — **60 suites, 0 failed.** `make qml-test` — **172 passed, 0
+  failed.** `make qml-lint` — the pre-existing 41-warning baseline, none naming
+  a file touched by this branch. `make build -B` — clean.
+  `cargo check --lib --target aarch64-linux-android` — clean.
+
+  New tests, by the task that added them: 1.6 (three `lenient_directory` unit
+  tests over the fallback route, sharing `pretend_flock_is_unsupported()`), 3.x
+  (`test_lenient_directory_benchmark.rs` — the ratio benchmark carrying 3.4's
+  per-directory probe-count assertion, plus the Linux-only watcher-thread
+  check), 5.4 (the hand-built path-traversal archive), 6.0 (three `picker_url`
+  tests over the shared report pipeline), 6.8 (the bundle scan/import
+  round-trip plus six unit tests over member resolution), 6.9
+  (`every_json_string_is_escaped`), and `fulltext_status`'s
+  `no_jargon_in_user_facing_strings`. **7.4 was descoped** with the format
+  detection work; `detect_archive_format`'s existing unit tests over entry-name
+  lists stay.
+- [x] 8.2 Write `docs/fulltext-index-storage-and-file-locking.md` (fix-PRD §7):
   the `flock`-vs-`fcntl` distinction and why SQLite and the storage probe pass
   while Tantivy fails; the two Tantivy lock sites and their differing failure
   mappings (`reader/mod.rs:194` blocking `META_LOCK` → `IoError`;
@@ -1756,28 +1773,120 @@ nothing here is inside `#[cfg(target_os = "android")]`.
   class — not around "SD cards"** (fix-PRD §10.3). Cross-link from
   `docs/relocated-storage-recovery.md`, `docs/storage-diagnostics.md`,
   `docs/search-snippet-highlight-pipeline.md` and `CLAUDE.md`'s notable-docs list.
-- [ ] 8.3 Write `docs/dictionary-import-pipeline.md`: pick → stage → probe →
+
+  Written as §1–§7, in front of the framing and benchmark that task 3.7 already
+  put there (now §8–§9). All four cross-links are in;
+  `docs/storage-diagnostics.md` and
+  `docs/simsapa-localhost-api-search-endpoints.md` already carried theirs.
+
+  **Two things the doc says that are not in the PRD, and are the reason to read
+  it rather than the PRD.** First, the general lesson behind §1: *a probe proves
+  only the primitive it actually used* — the tier-2 storage probe exercises a
+  real SQLite database, which is `fcntl`, so it passed on a volume where every
+  `flock` failed, and there was no code path anywhere in the app that touched
+  `flock` before the index tried to open. Second, §7's two **dependencies the
+  fix created** — `ReloadPolicy::Manual` makes an explicit
+  `reinit_fulltext_searcher()` mandatory after every in-app index mutation, and
+  searcher opening had to be serialised because `begin_open_session()` clears
+  the failure list. Both are standing rules for future code, not history.
+- [x] 8.3 Write `docs/dictionary-import-pipeline.md`: pick → stage → probe →
   import, which stage runs on which thread, the signal surface, the
   single-extraction rule, the cleanup owners (per-feature subfolder, the startup
   sweep, `TempDir` on drop), the keep-screen-on holders, and the format-detection
   table. Record the `readAll()`-on-the-UI-thread defect as **fixed** so it is not
   reintroduced.
-- [ ] 8.4 Update `docs/file-selection-test.md` (§5.3 already records the returned
+
+  Eleven sections. The stage table names the thread and the signal surface for
+  each of pick / stage / probe / choose / import; §2 records the `readAll()`
+  defect as fixed and names what replaced it; §7 is the three temporaries and
+  their owners.
+
+  **Two things carry more weight in the doc than in the task list, because they
+  are the traps that fail silently.** `cleanup_staged_file` decides ownership
+  **by location, not by the caller's word** — which is what protects a desktop
+  pick (the user's own archive, never copied) from any path QML passes in — and
+  the staging feature name is **one constant**, because a mismatch makes the
+  cleanup refuse every delete with no error while the sweep watches a folder
+  nothing writes to.
+
+  §5's bundle-archive section is written around **why** the probe and the import
+  disagreed, not just the fix: making the probe cheap is what broke an agreement
+  that used to hold by construction (both went through `locate_stardict_dir` on
+  the extracted tree). That is the reusable lesson — an optimisation that
+  changes *which* data source answers a question can break a consistency nobody
+  wrote down.
+- [x] 8.4 Update `docs/file-selection-test.md` (§5.3 already records the returned
   report) with whatever task 6.0 changes, and
   `docs/simsapa-localhost-api-search-endpoints.md` for the `/health` change from
   2.4. Update `PROJECT_MAP.md` and `CLAUDE.md` per the standing rule.
-- [ ] 8.5 Update the three source PRDs' status headers: the fulltext fix from
+
+  `file-selection-test.md`: §3.1's "keep it confined to the diagnostic" term is
+  **struck**, with the reason and the unchanged blast radius; a new §5.4 records
+  the three ways phase 1b changed the feature (two callers of one report
+  pipeline, the `filter_config` line, and `outcome_line()` taking the result);
+  §9 gains the cross-link. `simsapa-localhost-api-search-endpoints.md` was
+  already updated by 2.4 and 6.8.12 and needed nothing.
+
+  `PROJECT_MAP.md`: two entries were **stale in a way that would have misled** —
+  `lenient_directory.rs` was still described as "reached **only** from the
+  storage diagnostics", and its own bullet said `searcher.rs` and `indexer.rs`
+  "still use bare `MmapDirectory`". Both now describe the shipped wiring. Added:
+  `fulltext_status.rs`, `import_staging.rs`, the staging/scan signal surface,
+  the SAF **reader** half with its cross-compile warning, and a pointer to the
+  new import doc at the head of the dictionary-management section.
+
+  `CLAUDE.md` is a **symlink to `AGENTS.md`** — edit the target, not the link.
+- [x] 8.5 Update the three source PRDs' status headers: the fulltext fix from
   "unblocked" to implemented; the picker PRD's phase-1b section with what
   actually shipped and what the fallback logging will tell us.
-- [ ] 8.6 Non-goal verification, by grep: `android/AndroidManifest.xml`
+
+  - **Fulltext fix PRD** — "Draft / not yet implemented" → **IMPLEMENTED**, with
+    §4.7 named as the only unimplemented part and device confirmation named as
+    still outstanding. The header also lists **six things implementation added
+    beyond the requirements**, each because tracing a flow found a gap the PRD
+    did not anticipate — most notably that FR-17's stated premise ("every index
+    mutation is already followed by an explicit reinit") was **not quite true**,
+    and that FR-23 was missing a search-**mode** gate without which a genuinely
+    empty Contains Match would have blamed the index.
+  - **Picker PRD** — phase 1b promoted from "Planned" to **IMPLEMENTED**, with a
+    table of what shipped against each E-number and Req, and phase 2's remaining
+    blocked scope narrowed to the four-call-site shared-resolver migration
+    specifically. §11 Q0a was already amended by task 6.3.
+  - **Diagnostics PRD** — "Phase 2 is unblocked" → implemented, plus the point
+    that two of its deliverables outlived the diagnostic as shipping code, and
+    that the **`mmap` probe's answer deleted a planned second PRD**, which is
+    the highest return that phase produced.
+- [x] 8.6 Non-goal verification, by grep: `android/AndroidManifest.xml`
   byte-identical; the four call sites of picker-PRD §2.6 **unchanged except the
   dictionary one**; no `console.` in touched QML; no `qInfo`/`qWarning` added; no
   `.exists()` added; no second `ANALYZE` added; no `.unwrap()` on a
   `qt_thread.queue()`.
+
+  All seven clean, run as `git diff <merge-base with main> HEAD`:
+
+  | Check | Result |
+  |---|---|
+  | `android/AndroidManifest.xml` | `git diff --quiet` → **clean** |
+  | picker-PRD §2.6's four call sites | only `DictionaryImportDialog.qml` changed; `DocumentImportDialog`, `ChantingPracticeWindow` and `GlossTab` untouched |
+  | `console.` in QML | 7 additions, **all** in `assets/qml/com/profoundlabs/simsapa/` — the qmllint stubs, the documented exception |
+  | `qInfo` / `qWarning` / `qDebug` | none added |
+  | `.exists()` | none added |
+  | second `ANALYZE` | none added (the two hits are prose in this file) |
+  | `.unwrap()` / `let _ =` on `qt_thread.queue()` | none added |
+
+  The `console.` row is the one worth stating rather than asserting: a bare
+  `grep` over `assets/qml/` reports seven violations, and the exception is a
+  property of the **file's directory**, not of the line. Check per file.
 - [ ] 8.7 Build the beta package for the user (`make android-beta-dist` → the
   `io.github.simsapa.app.beta` package, which installs *alongside* their Play
   copy — see `docs/android-beta-distribution-and-play-policy.md`) and write the
   covering message.
+
+  **The covering message is written and lives beside this file:**
+  [`2026-08-25-190522-covering-message-fulltext-fix-and-dictionary-import-overhaul.md`](./2026-08-25-190522-covering-message-fulltext-fix-and-dictionary-import-overhaul.md).
+  It carries the user-facing text and, below it, the **grep table for reading the
+  returned log** — which is the half that decides the open questions. The build
+  itself is still outstanding (the version bump is the user's).
 
   **What to ask them to do, in this order:**
   1. Import **`all-dictionaries-gd.zip`** — the one in

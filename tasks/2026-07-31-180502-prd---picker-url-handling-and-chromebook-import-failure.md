@@ -2,30 +2,47 @@
 
 - **Date:** 2026-07-31
 - **Amended:** 2026-08-06 — see §2.1, §2.1a and §4A;
-  **2026-08-25 — phase-1 report received, see §4A.6**
+  **2026-08-25 — phase-1 report received, see §4A.6**;
+  **2026-08-26 — phase 1b implemented, see the status below and §11 Q0a**
 - **Status:** Split into **two phases**:
   - **Phase 1 — the "File Selection Test" button (§4A). Complete.** Shipped in
     the same build as **Run Storage Diagnostics**
     (`tasks/2026-08-05-201545-prd---run-storage-diagnostics.md`) and reported by
     the same user on 2026-08-25. **Results and their consequences: §4A.6.**
-  - **Phase 1b — the speculative fix and its measurement (§4A.7). Planned, and
-    superseded in scope by the build-it-properly task list**
-    `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`.
-    That list keeps E-4, E-7 and E-14…E-17, but replaces the two-pick
-    *measurement* (E-8…E-13) with an **automatic fallback to the raw picker**
-    (its task 6.3): the import then works whichever suspect is right, and the
-    fallback firing is itself the measurement. It also carries the fulltext fix
-    and the rest of the import overhaul, since the same build goes to the same
-    user.
-    Drops the `.zip` `nameFilters` on Android (the one remaining suspect, and a
-    one-line change that may simply fix the user's import) *and* ships a Qt
-    `FileDialog` variant of the test that measures both filter configurations —
-    so the build either fixes them or tells us why not. Also makes the real
-    import path self-diagnosing.
+  - **Phase 1b — IMPLEMENTED 2026-08-26**, by
+    `tasks/2026-08-25-190522-tasks-fulltext-fix-and-dictionary-import-overhaul.md`
+    (tasks 4.0–7.0). It kept E-4, E-7 and E-14…E-17 and **replaced the two-pick
+    measurement (E-8…E-13) with an automatic fallback to the raw picker**: the
+    import works whichever suspect is right, and the fallback firing is itself
+    the measurement. What shipped:
+
+    | | |
+    |---|---|
+    | **E-4** | `nameFilters` dropped on Android only, gated on `Qt.platform.os === "android"` (not `is_mobile`), `[]` being the value that yields `setType("*/*")` and no extras |
+    | **E-7** | the empty-URL guard, in `handle_picked_url()` so *every* pick goes through one place, with its own message distinct from "Could not access the selected file." |
+    | **fallback** | announced in a `Dialog` first, then the raw `ACTION_OPEN_DOCUMENT` intent; the recovered URI is staged **as a string**, never re-wrapped in the `QUrl` conversion under suspicion; one global slot with a `RawPickConsumer` discriminator stored *with* the thread handle |
+    | **E-14…E-17** | a `DICTIONARY-IMPORT-PICK:` block through the **same** `picker_url.rs` builder — one report shape, two prefixes; no 4 MB read on the import path (E-16); desktop byte-identical in effect (E-17) |
+    | **Reqs. 10, 17b–17d** | staging moved off the UI thread into `backend/src/import_staging.rs`, 1 MB chunks, determinate progress, keep-screen-on holders |
+    | **Reqs. 18, 21, 21a, 24** | per-feature staging folder, ownership decided by **location**, deleted at every exit, free-space pre-check |
+    | **Reqs. 15, 23, 25, 30** | URL-scheme rejection in `scan_source`; the probe no longer extracts (`.ifo`-only); path-traversal guard with a hand-built hostile archive as its test |
+    | **Req. 26** | verified: `android/AndroidManifest.xml` byte-identical |
+
+    Documentation: `docs/dictionary-import-pipeline.md`.
+    **§11 Q0a was amended**: the "confined to the diagnostic" term for the
+    private-Qt include is explicitly dropped, with the reason and the surviving
+    terms.
+
+    **Still not verified: the device behaviour.** Whether the fallback fires is
+    the measurement, and only the reporting user's log can take it.
   - **Phase 2 — the fix (§5 onwards). Still blocked, and now for a different
     reason.** Phase 1 did **not** reproduce the empty URL: the picker, the
     `QUrl` conversion and the provider read all worked. §5 fixes Defects A–D,
-    and **none of them is what blocks the reporting user**.
+    and **none of them is what blocks the reporting user**. Phase 1b took the
+    §5 requirements that stand on their own evidence (listed above); what
+    remains blocked is the **four-call-site shared-resolver migration**
+    (Reqs. 1–7a, 13, 14, 14a, 16, 27–29) — correct engineering with no known
+    victim, belonging in its own build where a desktop regression is not riding
+    alongside a fulltext fix.
 - **Reported by:** A Chromebook user importing a StarDict `.zip` via the Dictionaries window
 - **Same user as the storage report.** `feedback-and-bug-reports/log-chromebook.txt`
   carries *both* failures: the `scan_source` errors at `:127-128` and the
