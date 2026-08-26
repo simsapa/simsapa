@@ -320,23 +320,23 @@ was made — keep new call sites to it.
    `Component.onCompleted` handlers and re-run; don't attribute the gap
    to the most plausible heavyweight on the path.
 
-   **On Android, read these from the app's `log.txt`, never from
-   logcat — `STARTUP-TRACE` lines do not reach logcat at all.** The
-   Android log writer picks a level by looking for a level word in the
-   formatted line, the line contains the message, so `STARTUP-TRACE`
-   matches `TRACE` and is emitted at a level below `android_logger`'s
-   configured maximum and discarded. Measured: of 81 distinct messages
-   in one device launch, the 31 missing from an *unfiltered* logcat were
-   exactly the `STARTUP-TRACE` ones. On a debuggable build:
+   **On Android these were invisible in logcat until 2026-08-26** — the
+   log writer inferred its level by searching the formatted line for a
+   level word, and the line contains the message, so `STARTUP-TRACE`
+   matched `TRACE` and was emitted below `android_logger`'s configured
+   maximum and dropped. Of 81 distinct messages in one device launch,
+   the 31 missing from an *unfiltered* logcat were exactly the
+   `STARTUP-TRACE` ones. The level is now carried from the event
+   metadata (`AGENTS.md`, "Logging in C++"), so they arrive normally.
+
+   The trap was precisely the one this section warns about —
+   instrumentation reading as code that never ran — so on a build
+   predating the fix, or whenever a device log looks impossibly empty,
+   read the app's own `log.txt`, which never had the problem:
 
    ``` sh
    adb shell run-as io.github.simsapa.app.beta cat files/log.txt
    ```
-
-   Mechanism and the other three misclassified level words are in
-   `AGENTS.md` under "Logging in C++". The trap is precisely the one
-   this section warns about — instrumentation that reads as code that
-   never ran — so it is worth knowing before adding device timings.
 
 3. **Never instantiate a webview (or anything comparably heavy) before
    `app.exec()`.** Defer the trigger past the first event-loop iteration

@@ -202,17 +202,18 @@ established until the process exists, which loses exactly the startup messages
 worth reading. Drop the trailing `'*:S'` if something expected is missing — an
 unlisted tag is the usual reason.
 
-> **An unlisted tag is the usual reason, but not the only one: a message whose
-> text contains `TRACE` never reaches logcat at all**, whatever the filter.
-> `AndroidLogWriter` (`backend/src/logger.rs`) derives the `log` level by
-> searching the formatted line for a level word, and that line includes the
-> message — so `STARTUP-TRACE: …` is routed to `log::trace!`, below
-> `android_logger`'s configured `LevelFilter::Debug`, and dropped. Widening the
-> tag filter will not recover it; **read `log.txt` instead** (next paragraph).
-> Measured 2026-08-26: 31 of 81 distinct messages in one launch were absent from
-> an *unfiltered* logcat, and all 31 were `STARTUP-TRACE` lines. The words
-> `ERROR`, `WARN` and `DEBUG` in message text are misclassified the same way,
-> though those remain visible. See `AGENTS.md`, "Logging in C++".
+> **On builds predating 2026-08-26, an unlisted tag is not the only reason a
+> message can be missing: anything whose text contained `TRACE` never reached
+> logcat at all**, whatever the filter. `AndroidLogWriter`
+> (`backend/src/logger.rs`) used to derive the `log` level by searching the
+> formatted line for a level word, and that line includes the message — so
+> `STARTUP-TRACE: …` was routed to `log::trace!`, below `android_logger`'s
+> `LevelFilter::Debug`, and dropped. Measured at the time: 31 of 81 distinct
+> messages in one launch were absent from an *unfiltered* logcat, and all 31
+> were `STARTUP-TRACE` lines. The level is now carried from the event metadata,
+> so this no longer happens — but widening the tag filter never recovered it, so
+> on an older build **read `log.txt` instead** (next paragraph). See
+> `AGENTS.md`, "Logging in C++".
 
 Because the beta is debuggable, `adb shell run-as io.github.simsapa.app.beta`
 also works for inspecting its data directory. That is refused for the Play

@@ -16,8 +16,29 @@ cfg_if! {
         use std::io::Result as IoResult;
         use android_logger::{Config, FilterBuilder};
 
-        #[derive(Clone)]
-        struct AndroidLogWriter;
+        /// Bridges the `tracing` fmt layer onto Android's logcat.
+        ///
+        /// The level is CARRIED here, not guessed. `tracing`'s fmt layer hands
+        /// the writer a formatted line of bytes, and that line contains the
+        /// message body as well as the level word -- so deriving the level by
+        /// searching the text (`line.contains("TRACE")` and friends, which is
+        /// what this did until 2026-08-26) classifies on user content.
+        ///
+        /// That was not cosmetic. `STARTUP-TRACE: ...` matched the `TRACE` arm,
+        /// was emitted through `log::trace!`, and fell below the
+        /// `LevelFilter::Debug` set in `platform_setup()` -- so the whole
+        /// `STARTUP-TRACE` convention was silently absent from logcat, on device,
+        /// whatever tag filter was used. Measured before the fix: of 81 distinct
+        /// messages in one launch, the 31 missing from an *unfiltered* logcat
+        /// were exactly the `STARTUP-TRACE` ones. `ERROR`/`WARN`/`DEBUG`
+        /// appearing in a message body were mis-levelled the same way.
+        ///
+        /// See `AGENTS.md` "Logging in C++" and
+        /// `docs/startup-sequence-and-caches.md` section 6.
+        #[derive(Clone, Copy)]
+        struct AndroidLogWriter {
+            level: log::Level,
+        }
 
         impl Write for AndroidLogWriter {
             fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
@@ -25,17 +46,10 @@ cfg_if! {
 
                 for line in msg.lines() {
                     let line = line.trim();
-                    if line.contains("ERROR") {
-                        log::error!("{}", line);
-                    } else if line.contains("WARN") {
-                        log::warn!("{}", line);
-                    } else if line.contains("DEBUG") {
-                        log::debug!("{}", line);
-                    } else if line.contains("TRACE") {
-                        log::trace!("{}", line);
-                    } else {
-                        log::info!("{}", line);
+                    if line.is_empty() {
+                        continue;
                     }
+                    log::log!(self.level, "{}", line);
                 }
 
                 Ok(buf.len())
@@ -43,6 +57,34 @@ cfg_if! {
 
             fn flush(&mut self) -> IoResult<()> {
                 Ok(())
+            }
+        }
+
+        struct AndroidMakeWriter;
+
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for AndroidMakeWriter {
+            type Writer = AndroidLogWriter;
+
+            /// Only reached for writes with no event behind them. Events go
+            /// through `make_writer_for`.
+            fn make_writer(&'a self) -> Self::Writer {
+                AndroidLogWriter { level: log::Level::Info }
+            }
+
+            /// The reason this is a named type rather than a closure: the
+            /// blanket `MakeWriter` impl for `Fn() -> W` cannot see the event,
+            /// so it only ever gets the default `make_writer_for`, which
+            /// discards the metadata. Implementing the trait by hand is what
+            /// makes the real level reachable.
+            fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
+                let level = match *meta.level() {
+                    tracing::Level::ERROR => log::Level::Error,
+                    tracing::Level::WARN => log::Level::Warn,
+                    tracing::Level::INFO => log::Level::Info,
+                    tracing::Level::DEBUG => log::Level::Debug,
+                    tracing::Level::TRACE => log::Level::Trace,
+                };
+                AndroidLogWriter { level }
             }
         }
 
@@ -56,8 +98,7 @@ cfg_if! {
         }
 
         fn make_writer() -> impl for<'a> tracing_subscriber::fmt::MakeWriter<'a> + Send + Sync {
-            let writer = AndroidLogWriter;
-            move || writer.clone()
+            AndroidMakeWriter
         }
     } else {
         fn platform_setup() {}
