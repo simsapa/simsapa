@@ -56,6 +56,15 @@ ApplicationWindow {
 
     // Parsed candidate metadata from `scan_source` (the Repeater model).
     property var scanned_items: []
+    // The `rejections` half of the same `ScanReport`: what the scan found and
+    // refused, each with a stable `reason` and one plain sentence. Rendered on
+    // the checklist frame *alongside* the candidates, because a scan that finds
+    // something and refuses something else is the normal case for a folder or a
+    // bundle archive, not an edge case.
+    property var scan_rejections: []
+    // How many rejection sentences the checklist frame prints before collapsing
+    // the rest into a count. See the Repeater that uses it.
+    readonly property int max_rejections_shown: 5
     // OK-enablement, recomputed by `recompute()` across all checked rows.
     property bool can_import: false
     // Shown on the scanning/checklist frames when discovery yields nothing or
@@ -102,6 +111,20 @@ ApplicationWindow {
     // part-way through leaves a half-copied archive behind.
     AssetManager { id: screen_manager }
 
+    // The window-manager close button and Android's back gesture are exits too,
+    // and they are the two that no Cancel handler covers. Without this, closing
+    // the window from the copying, scanning or checklist frame strands the
+    // staged copy — a whole archive, up to hundreds of MB — until the next
+    // `start()` or the hourly startup sweep reclaims it.
+    //
+    // `discard_staged_file()` is safe on every path: it no-ops when there is no
+    // staged copy, and the backend refuses to delete a path outside the
+    // dictionary staging folder, so a desktop pick (the user's own archive) is
+    // never touched. Ownership has already been handed to `DictionariesWindow`
+    // by the time the Import button hides the window, so this deletes nothing
+    // an import still needs.
+    onClosing: root.discard_staged_file()
+
     Component.onCompleted: {
         theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
@@ -113,6 +136,7 @@ ApplicationWindow {
         // reused) has no owner: discard it before anything else.
         root.discard_staged_file();
         root.scanned_items = [];
+        root.scan_rejections = [];
         root.can_import = false;
         root.scan_message = "";
         root.staging_active = false;
@@ -268,6 +292,9 @@ ApplicationWindow {
     // scanning frame and call the worker-threaded probe.
     function begin_scan(kind: string, path: string) {
         root.scan_message = "";
+        // Cleared here, not only on the next success: a second scan that finds
+        // nothing must not leave the previous scan's refusals on screen.
+        root.scan_rejections = [];
         root.scan_abandoned = false;
         frames.currentIndex = root.frame_scanning;
         screen_manager.set_keep_screen_on("dictionary-import-scan", true);
@@ -384,6 +411,7 @@ ApplicationWindow {
                 arr = [];
             }
             if (!arr || arr.length === 0) {
+                root.scan_rejections = [];
                 root.scan_message = rejections.length > 0
                     ? rejections.map(r => r.message).join(" ")
                     : "No StarDict dictionaries were found in the chosen source.";
@@ -392,6 +420,14 @@ ApplicationWindow {
                 root.discard_staged_file();
                 return;
             }
+            // A scan is not all-or-nothing. A folder holding three StarDict
+            // zips and one MDict, or a bundle whose twelfth member is corrupt,
+            // both produce candidates *and* rejections — and until now the
+            // rejections were read only on the empty path, so the refused files
+            // vanished without a word. That is the reporting user's own
+            // complaint: two archives side by side, one importable and one not,
+            // and nothing in the app saying which was which.
+            root.scan_rejections = rejections;
             root.scanned_items = arr;
             frames.currentIndex = root.frame_checklist;
             // Rows recompute their own status on completion; aggregate after.
@@ -828,6 +864,65 @@ ApplicationWindow {
                                 root.recompute();
                             }
                         }
+                    }
+                }
+
+                // What the same scan refused, shown next to what it accepted.
+                // Hidden entirely when there is nothing to say, which is the
+                // common case — an unconditional "0 skipped" line would read as
+                // a fault where there is none.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    visible: root.scan_rejections.length > 0
+
+                    Label {
+                        text: root.scan_rejections.length === 1
+                            ? "1 item was skipped:"
+                            : root.scan_rejections.length + " items were skipped:"
+                        font.pointSize: root.pointSize
+                        font.bold: true
+                        color: palette.mid
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+
+                    Repeater {
+                        // Capped, and the cap is load-bearing: this block sits
+                        // above the checklist's `Layout.fillHeight` ScrollView,
+                        // so every line it renders is a line taken away from
+                        // the dictionaries the user came here to tick. A folder
+                        // of twenty unreadable files must not bury the three
+                        // good ones. The rest are counted below, and every one
+                        // of them is in the log (`scan_source: rejected …`).
+                        model: root.scan_rejections.slice(0, root.max_rejections_shown)
+
+                        delegate: Label {
+                            required property var modelData
+
+                            // The sentence is the backend's, verbatim: it is
+                            // the one place that knows whether this was an
+                            // MDict file, an unreadable archive or a failure on
+                            // our side, and it names the file it is about.
+                            text: "  - " + modelData.message
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Label {
+                        readonly property int overflow:
+                            root.scan_rejections.length - root.max_rejections_shown
+                        visible: overflow > 0
+                        text: overflow === 1
+                            ? "  - and 1 more (see the log file for the full list)"
+                            : "  - and " + overflow + " more (see the log file for the full list)"
+                        font.pointSize: root.pointSize
+                        color: palette.mid
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
                     }
                 }
 

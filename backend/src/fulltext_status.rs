@@ -317,6 +317,19 @@ pub fn area_message(
     format!("{headline} {reason}")
 }
 
+/// Escape one string for a JSON double-quoted value.
+///
+/// Applied to **every** string this module writes into JSON, not only the
+/// whole-app message. All of them are written in this file today and none
+/// contains a quote or a backslash, so this changes no output — but "it happens
+/// to be safe" is a property of the current wording, not of the code, and the
+/// failure it guards against is silent: `JSON.parse` throws in QML, the `catch`
+/// clears the message, and the search-index problem this feature exists to
+/// report goes back to being invisible.
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 impl FulltextStatus {
     /// The project's convention for structured bridge results: a JSON string.
     ///
@@ -325,7 +338,7 @@ impl FulltextStatus {
     /// shape is small and is consumed by `/health`, the Database Validation row
     /// and `FulltextResults.qml`.
     pub fn to_json(&self) -> String {
-        let escaped = self.message.replace('\\', "\\\\").replace('"', "\\\"");
+        let escaped = json_escape(&self.message);
         format!(
             concat!(
                 r#"{{"is_valid":{},"state":"{}","message":"{}","failure_count":{},"#,
@@ -341,17 +354,17 @@ impl FulltextStatus {
             self.counts.sutta.dir_present,
             self.counts.sutta.failed,
             area_state(&self.counts.sutta).as_str(),
-            area_message(&self.counts.sutta, self.reason),
+            json_escape(&area_message(&self.counts.sutta, self.reason)),
             self.counts.dict.opened,
             self.counts.dict.dir_present,
             self.counts.dict.failed,
             area_state(&self.counts.dict).as_str(),
-            area_message(&self.counts.dict, self.reason),
+            json_escape(&area_message(&self.counts.dict, self.reason)),
             self.counts.library.opened,
             self.counts.library.dir_present,
             self.counts.library.failed,
             area_state(&self.counts.library).as_str(),
-            area_message(&self.counts.library, self.reason),
+            json_escape(&area_message(&self.counts.library, self.reason)),
         )
     }
 }
@@ -568,6 +581,38 @@ mod tests {
         assert!(
             json.contains(r#""library":{"opened":1,"dir_present":true,"failed":0,"state":"ready","message":""}"#),
             "got {json}"
+        );
+    }
+
+    /// Every string this module writes into JSON goes through [`json_escape`],
+    /// not only the whole-app `message`.
+    ///
+    /// The consumer is `JSON.parse` in QML inside a `try`, so a stray quote does
+    /// not throw an error anyone sees — it lands in the `catch`, the message is
+    /// cleared, and the broken search index goes back to being invisible. That
+    /// is the exact failure this whole module exists to remove, so the escaping
+    /// is pinned rather than left resting on today's wording.
+    #[test]
+    fn every_json_string_is_escaped() {
+        assert_eq!(json_escape(r#"a "quoted" \ word"#), r#"a \"quoted\" \\ word"#);
+        assert_eq!(json_escape("plain"), "plain");
+
+        // And the real document parses. Serde is already a dependency of this
+        // crate, so the round-trip is free and catches a malformed field this
+        // file's own `concat!` template could introduce.
+        let status = build_status(
+            Some(counts(0, 0, 0, true)),
+            &[lock_failure("/vol/index/suttas/pli")],
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&status.to_json())
+            .expect("to_json must produce parseable JSON");
+        assert_eq!(parsed["state"], "could_not_open");
+        assert_eq!(parsed["sutta"]["state"], "could_not_open");
+        assert!(
+            parsed["sutta"]["message"]
+                .as_str()
+                .is_some_and(|m| !m.is_empty()),
+            "the failed area must carry its own sentence: {parsed}"
         );
     }
 

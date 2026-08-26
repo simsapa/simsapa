@@ -110,6 +110,18 @@ ColumnLayout {
     // failure is only reported to the user when it is a failure of the area
     // they actually searched.
     property string search_area: ""
+    // The search mode the current results came from, exactly as the search
+    // parameters spell it ("Fulltext Match", "Combined", "Contains Match",
+    // "Title Match", "DPD Lookup", "Headword Match").
+    //
+    // Only the Tantivy-backed modes may be told that the index is at fault. The
+    // others go through FTS5/SQLite and work perfectly on a volume where every
+    // Tantivy index failed to open — that is the reporting user's exact
+    // configuration, and telling them a Contains Match found nothing "because
+    // the search index could not be opened" is a fabricated diagnosis of a
+    // search that never touched the index. Fulltext PRD FR-23 scopes the
+    // message to FulltextMatch/Combined for this reason.
+    property string search_mode: ""
     // Set by check_fulltext_index_problem() when a page comes back empty and
     // the index for this area could not be opened. Empty string means "no
     // index problem to report", which is the overwhelmingly common case.
@@ -148,6 +160,13 @@ ColumnLayout {
     function check_fulltext_index_problem() {
         root.fulltext_problem_message = "";
 
+        // The mode gate comes first: a mode that does not read the Tantivy
+        // index has nothing to say about it, however broken it is. See
+        // `search_mode` and `uses_fulltext_index()`.
+        if (!root.uses_fulltext_index()) {
+            return;
+        }
+
         if (!root.fulltext_status_fn) {
             return;
         }
@@ -177,6 +196,22 @@ ColumnLayout {
 
         root.fulltext_problem_message = message
             + " Open Database Validation from the menu for details.";
+    }
+
+    // Does the mode that produced these results read the Tantivy index at all?
+    //
+    // An **allowlist**, not a denylist of the FTS5 modes: a mode added later
+    // stays silent by default, which is the failure that costs nothing. The
+    // reverse — a new FTS5 mode silently inheriting "the search index could not
+    // be opened" — is the defect this gate exists to prevent.
+    //
+    // "Combined" is included because the Dictionary combined page's third
+    // stream is a Fulltext Match (see
+    // docs/search-snippet-highlight-pipeline.md §9). An empty mode (QML
+    // preview, or a page produced before any search) is treated as not using
+    // the index, so the message never appears without a search behind it.
+    function uses_fulltext_index(): bool {
+        return root.search_mode === "Fulltext Match" || root.search_mode === "Combined";
     }
 
     // The status block for the area that was just searched, or null when the

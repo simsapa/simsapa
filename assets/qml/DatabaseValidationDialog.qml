@@ -122,6 +122,15 @@ ApplicationWindow {
         root.dpd_failed = false;
         root.dictionaries_failed = false;
 
+        // Cleared like the three database flags above. The fulltext result
+        // arrives on the same signal as the dictionaries one and so is always
+        // re-emitted — but relying on that makes this row's correctness a
+        // property of another function's control flow, and a stale "the search
+        // index could not be opened" carried into a fresh run is exactly the
+        // fabricated failure this row must not produce.
+        root.fulltext_failed = false;
+        root.fulltext_message = "";
+
         root.refresh_startup_db_report();
         root.refresh_search_index_status();
 

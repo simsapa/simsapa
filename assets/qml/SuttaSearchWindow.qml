@@ -4110,6 +4110,14 @@ ${query_text}`;
                                 // an empty page can tell "nothing matched" from
                                 // "the index could not be opened".
                                 search_area: root.last_search_area
+                                // And which mode produced them: only the
+                                // Tantivy-backed modes may blame the index.
+                                // Read from last_params, the same object
+                                // new_results_page() replays, so a page
+                                // navigation reports the mode its results
+                                // actually came from.
+                                search_mode: (root.last_params && root.last_params.mode)
+                                    ? root.last_params.mode : ""
                                 is_dark: root.is_dark
                                 render_use_flat_results_background: root.render_use_flat_results_background
                                 render_disable_results_clip: root.render_disable_results_clip

@@ -219,10 +219,18 @@ plus app version, platform and Android API level.
 "0 indexes, 0 failures": `init_fulltext_searcher()` is lazy and mode-gated, and
 the diagnostics are forbidden from initialising it to find out. That state is
 derived from `with_fulltext_searcher()` returning `None` — **not** from
-`is_fulltext_searcher_ready()`, which returns `true` whenever the global is
-`Some` regardless of index count. That dishonesty is real, but fixing it is
-phase-2 work: it feeds `/health`'s `fulltext_searcher_ready` field, and changing
-it here would break the "no behaviour change" guarantee.
+`is_fulltext_searcher_ready()`.
+
+> **Updated in phase 2.** `is_fulltext_searcher_ready()` used to return `true`
+> whenever the global was `Some`, regardless of index count — the dishonesty
+> this section was written to route around, left alone in phase 1 because it
+> feeds `/health`'s `fulltext_searcher_ready` field and phase 1 guaranteed no
+> behaviour change. Phase 2 (fulltext-fix PRD FR-20) changed it: it now answers
+> **"is at least one index open"**. The distinction that still matters here is a
+> third one — *was this ever measured this session* — and `with_fulltext_searcher()`
+> returning `None` remains the only thing that answers it, so this section's
+> rule is unchanged. See
+> [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).
 
 The failure list is cleared by **both** `FulltextSearcher` constructors
 (`open()` and `open_from_dirs()`, via the shared `begin_open_session()` helper),

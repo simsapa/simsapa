@@ -1177,12 +1177,11 @@ never needs to extract at all.
 every integration binary). `make qml-test` — 172 passed, 0 failed, and no new
 `qmllint` warning naming either touched QML file. `make build -B` — clean.
 
-**Not verified: the Android cross-check.** `cargo check --target
-aarch64-linux-android` fails in `ring`'s build script without the NDK
-environment the sibling task list's §Notes recipe sets up. Nothing in task 5.0
-touches `#[cfg(target_os = "android")]` code — `cleanup_staged_file` and
-`sweep_orphaned_extract_dirs` are platform-independent — so the desktop
-compile covers every line added here.
+**Android cross-check: ~~not verified~~ verified 2026-08-26.** Nothing in
+task 5.0 touches `#[cfg(target_os = "android")]` code — `cleanup_staged_file`
+and `sweep_orphaned_extract_dirs` are platform-independent — so the desktop
+compile already covered every line added here. The cross-check was run anyway
+and passes; see the note under task 6.0.
 
 ### 6.0 [x] Make the dictionary import actually work — the automatic picker fallback (E-4, E-7, E-14…E-17)
 
@@ -1367,13 +1366,24 @@ every integration binary, 0 failed), including three new `picker_url` tests:
 0 failed, and `make qml-lint` produces no warning naming
 `DictionaryImportDialog.qml` or either stub file. `make build -B` — clean.
 
-**Not verified: the Android cross-check and the device behaviour.** `cargo
-check --target aarch64-linux-android` still needs the NDK environment the
-sibling task list's §Notes recipe sets up. Nothing added here is inside
-`#[cfg(target_os = "android")]` — the fallback is Rust dispatch plus QML, and
-`cpp/android_raw_pick.cpp` gained only comment text — so the desktop compile
-covers every line changed. **Whether the fallback fires is the measurement, and
-only the user's device can take it** (task 8.7).
+**Android cross-check: ~~not verified~~ verified 2026-08-26 — and it should
+never have been skipped.** The sibling task list's §Notes recipe works as
+written with NDK `27.3.13750724`; `cargo check --lib --target
+aarch64-linux-android` finishes clean in ~75 s. The earlier "fails in `ring`'s
+build script" note described a run **without** the three `CC_`/`CXX_`/`AR_`
+variables the recipe exists to set.
+
+This matters beyond bookkeeping. Task 4.1 added ~200 lines to
+`backend/src/android_saf.rs` (`document_metadata`, `copy_document_to_path`,
+`parse_uri`) that are `#[cfg(target_os = "android")]` and therefore invisible to
+**every** desktop compile and every test in this repo. "Nothing added here is
+inside `cfg(android)`" was true of tasks 5.0, 6.0 and 6.8 individually, but the
+staging feature as a whole rests on code no compiler had seen. **Re-run the
+recipe after any edit to `android_saf.rs`** — it is 75 s, and it is the only
+check that file gets.
+
+**Still not verified: the device behaviour.** Whether the fallback fires is the
+measurement, and only the user's device can take it (task 8.7).
 
 ### 6.8 [x] Review pass — bundle archives, and five defects found by tracing the flows
 
@@ -1383,11 +1393,10 @@ those fixes found seven more. All are fixed here, before task 7.0.
 **`cargo test`: 60 suites, 0 failed. `make qml-test`: 172 passed, 0 failed.
 `make qml-lint`: no warning naming a touched file. `make build`: clean.**
 
-**Not verified: the Android cross-check.** Nothing in 6.8 is inside
-`#[cfg(target_os = "android")]` — the zip work, the staging sweep and the status
-plumbing are all platform-independent — so the desktop compile covers every line
-changed. `cargo check --target aarch64-linux-android` still needs the NDK
-environment from the sibling task list's §Notes.
+**Android cross-check: ~~not verified~~ verified 2026-08-26.** Nothing in 6.8 is
+inside `#[cfg(target_os = "android")]` — the zip work, the staging sweep and the
+status plumbing are all platform-independent — and the cross-check passes too;
+see the note under task 6.0.
 
 - [x] 6.8.1 **A bundle `.zip` now imports as a folder of dictionaries would.**
   This is the big one. `-gd` releases are routinely one zip with a folder per
@@ -1547,6 +1556,136 @@ tests. It now walks pages until it finds one or runs out. **This failure predate
 this branch**: nothing in it touches `query_task.rs`, the schema or the FTS
 scripts.
 
+### 6.9 [x] Second review pass — four defects and two stale claims
+
+A review of tasks 1.0–6.8 against the PRDs (2026-08-26, after 6.8) traced the
+search-UI, validation, staging and scan flows end to end. Four defects, one
+hardening, and two documented statements that had become false.
+**`cargo test`: 60 suites, 0 failed. `make qml-test`: 172 passed, 0 failed.
+`make qml-lint`: no warning naming a touched file. `cargo check --lib --target
+aarch64-linux-android`: clean.**
+
+- [x] 6.9.1 **The search-UI empty state could blame the index for a search that
+  never used it.** `check_fulltext_index_problem()` gated on the searched
+  *area* and on the backend's `state`, but never on the search **mode**.
+  Contains Match, Title Match, Headword Match and DPD Lookup all go through
+  FTS5/SQLite and work perfectly on a volume where every Tantivy index failed
+  to open — which is the reporting user's exact configuration. A Contains Match
+  that genuinely matched nothing would have read *"The search index could not be
+  opened. This storage location does not support the file locking the search
+  index needs. Open Database Validation from the menu for details."*
+
+  That is a fabricated diagnosis of a search that touched no index, and it is
+  the same class of dishonesty the whole 2.0 task exists to remove — pointed the
+  other way. Fulltext PRD **FR-23 scopes the message to FulltextMatch and
+  Combined**, and the gate was simply missing.
+
+  `FulltextResults` gained a `search_mode` property and
+  `uses_fulltext_index()`, checked **first** in
+  `check_fulltext_index_problem()`. It is an **allowlist**
+  (`"Fulltext Match"`, `"Combined"`), not a denylist of the FTS5 modes: a mode
+  added later then stays silent by default, which costs nothing, where a new
+  FTS5 mode silently inheriting "the index could not be opened" is this defect
+  returning. `"Combined"` is in it because the Dictionary combined page's third
+  stream *is* a Fulltext Match (`docs/search-snippet-highlight-pipeline.md` §9).
+  An empty mode — QML preview, or a page with no search behind it — is treated
+  as not using the index.
+
+  `SuttaSearchWindow` supplies it from `root.last_params.mode`, the same object
+  `new_results_page()` replays, so a page navigation reports the mode its
+  results actually came from rather than whatever the dropdown now shows.
+- [x] 6.9.2 **`init_fulltext_searcher()` was check-then-act, and 6.8.5 added a
+  second concurrent caller to it.** It took a read lock, saw `None`, dropped it,
+  then opened. `SuttaBridge::load_searcher()` spawns one thread at startup and
+  `dictionary_first_query()`'s validation — as of 6.8.5 — spawns another that
+  calls the same function; both could pass the check.
+
+  Two openers is not merely wasteful. `FulltextSearcher::begin_open_session()`
+  **clears** `SEARCHER_OPEN_FAILURES`, so the second opener's clear can wipe the
+  first's recorded failures, leaving zero indexes open *and* zero failures
+  recorded — which `build_status` classifies as `FilesNotFound`: *"Fulltext
+  index files not found. Use Rebuild Search Index to create them."* over a
+  volume whose indexes are all present and all failed to open. 6.8.5 removed one
+  fabricated failure from the report the user is asked to send and opened a
+  narrow window onto another.
+
+  New `SEARCHER_OPEN_LOCK` in `backend/src/lib.rs`. `init_fulltext_searcher()`
+  keeps its lock-free fast path, then **re-checks under the lock** — without the
+  second check the lock buys nothing — and `reinit_fulltext_searcher()` takes it
+  too, since two reinits from different features (a reconcile and a rebuild)
+  clobber each other's failure list the same way. The open itself moved into a
+  private `open_fulltext_searcher()` whose contract is "callers hold the lock".
+- [x] 6.9.3 **A scan's rejections were invisible whenever it also found
+  something.** `onScanFinished` read `report.rejections` only in the
+  `candidates.length === 0` branch. A folder holding three StarDict zips and one
+  MDict, or a bundle archive whose twelfth member is corrupt, produces both at
+  once — that is what `ScanReport` is a struct and not an enum *for* (5.2) — and
+  the refused files vanished without a word.
+
+  This is the reporting user's own complaint (§0.3.6): two archives side by
+  side, one importable and one not, and nothing in the app saying which. Task
+  5.2 built the data to answer it and the dialog only rendered it on the one
+  path where there was nothing else to show.
+
+  New `scan_rejections` property, rendered on the checklist frame above the
+  list: *"N items were skipped:"* followed by the backend's own sentence per
+  item, verbatim — that is the only place that knows whether it was an MDict
+  file, an unreadable archive or a failure on our side. Hidden entirely when
+  there is nothing to say; an unconditional "0 skipped" reads as a fault where
+  there is none. Cleared in `start()` **and** in `begin_scan()`, so a second
+  scan that finds nothing cannot leave the first scan's refusals on screen.
+
+  **The five-line cap is load-bearing, not tidiness.** The block sits above the
+  checklist's `Layout.fillHeight` ScrollView, so every line it prints is a line
+  taken from the dictionaries the user came to tick — a folder of twenty
+  unreadable files would bury the three good ones. The remainder collapses to
+  "and N more (see the log file for the full list)", and every rejection is
+  already logged individually by `scan_source`.
+- [x] 6.9.4 **Closing the import window stranded the staged copy.** Every button
+  path calls `discard_staged_file()`; the window-manager close button and
+  Android's back gesture — the two exits no Cancel handler covers — did not. A
+  whole archive, up to hundreds of MB, sat in the staging folder until the next
+  `start()` or the hourly startup sweep of 6.8.3 reclaimed it. One
+  `onClosing: root.discard_staged_file()`. Safe on every path: it no-ops with no
+  staged copy, the backend refuses a path outside the dictionary staging folder,
+  and Import has already handed ownership to `DictionariesWindow` before it
+  hides the window.
+- [x] 6.9.5 **Hardening, not a live defect: `to_json` escaped one string out of
+  seven.** The whole-app `message` went through an escape; the six per-area
+  sentences did not. All are written in `fulltext_status.rs` and none contains a
+  quote, so the output was correct — but that is a property of today's wording,
+  not of the code, and the failure mode is silent: `JSON.parse` throws inside
+  QML's `try`, the `catch` clears the message, and the broken index goes back to
+  being invisible. One `json_escape()` helper, applied to all seven.
+  `every_json_string_is_escaped` pins it and round-trips the real document
+  through serde, which also catches a malformed field in the hand-written
+  `concat!` template.
+
+  Also: `DatabaseValidationDialog.run_validation_checks()` now clears
+  `fulltext_failed` / `fulltext_message` alongside the three database flags. The
+  fulltext result rides the dictionaries signal and is always re-emitted, so
+  nothing was broken — but that made this row's correctness a property of
+  another function's control flow.
+
+**Two documented statements had gone stale, and both were corrected.**
+
+- `docs/storage-diagnostics.md` §Section F still said
+  `is_fulltext_searcher_ready()` "returns `true` whenever the global is `Some`
+  regardless of index count… fixing it is phase-2 work". Task **2.4 is** that
+  fix. The paragraph now records the change and keeps its actual rule, which is
+  unaffected: "was this ever measured this session" is a third question, still
+  answered only by `with_fulltext_searcher()` returning `None`.
+- **The Android cross-check was never blocked.** Tasks 5.0, 6.0 and 6.8 each
+  carried "fails in `ring`'s build script without the NDK environment". The
+  sibling task list's §Notes recipe works as written with NDK
+  `27.3.13750724` — `cargo check --lib --target aarch64-linux-android` finishes
+  clean in ~75 s; the earlier note described a run **without** the three
+  `CC_`/`CXX_`/`AR_` variables the recipe exists to set. Each caveat is
+  corrected in place. This matters: task 4.1 added ~200 lines to
+  `android_saf.rs` (`document_metadata`, `copy_document_to_path`, `parse_uri`)
+  that **no desktop compile and no test in this repo ever sees**. Re-run it
+  after any edit to that file.
+
 ### 7.0 [ ] Say what a non-StarDict archive actually is (MDict piece 1 only)
 
 **Specs to keep in mind.** The user had a valid StarDict file and an MDict file
@@ -1563,6 +1702,13 @@ joins the backend's rejection sentences verbatim, so it names the format
 never the format **wanted** — the required GoldenDict-alias sentence is missing
 entirely. Add it in QML keyed on `reason === "unsupported_format"`, not in the
 backend message, which is per-source and would repeat it once per rejected file.
+
+**Task 6.9.3 landed the other half of 7.2's plumbing**: rejections are now
+rendered on the *checklist* frame too, not only when the scan found nothing, so
+a folder or bundle that yields both candidates and refusals says what it
+refused. The wording work below is unchanged, and the new sentence has to reach
+**both** surfaces — `scan_message` on the source frame and the
+`scan_rejections` list on the checklist frame.
 
 - [ ] 7.1 Recognise archive contents by entry name: **MDict** (`.mdx`, `.mdd`),
   **DSL** (`.dsl`, `.dsl.dz`), **XDXF** (`.xdxf`), and "a zip of something else".

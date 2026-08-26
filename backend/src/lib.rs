@@ -357,22 +357,73 @@ pub fn try_get_releases_info() -> Option<ReleasesInfo> {
     })
 }
 
+/// Serialises **opening** the searcher, which `FULLTEXT_SEARCHER`'s own
+/// `RwLock` cannot: that one is held only for the instant of the assignment,
+/// while the open itself takes seconds and mutates a *second* global.
+///
+/// Two openers running at once is a live path, not a theoretical one. At
+/// startup `SuttaBridge::load_searcher()` spawns one thread and
+/// `dictionary_first_query()`'s validation spawns another that also calls
+/// [`init_fulltext_searcher`]; a GUI-triggered reconcile or an index rebuild
+/// adds more. Without this lock both can pass the "is it already open" check
+/// and open every index twice — and, worse,
+/// `FulltextSearcher::begin_open_session()` **clears**
+/// `SEARCHER_OPEN_FAILURES`, so the second opener's clear can wipe the first
+/// opener's recorded failures. The state that leaves behind is zero indexes
+/// open *and* zero failures recorded, which
+/// [`fulltext_status::build_status`] reads as `FilesNotFound` — "Fulltext index
+/// files not found. Use Rebuild Search Index to create them." — over a volume
+/// whose indexes are all present and all failed to open. That is a fabricated
+/// diagnosis in the one report a user is asked to send.
+static SEARCHER_OPEN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Initialize the fulltext searcher by opening available indexes.
 /// This is safe to call even if indexes don't exist yet (it will just have no indexes).
+///
+/// Idempotent and safe to call from several threads at once: the check is
+/// repeated under [`SEARCHER_OPEN_LOCK`], so exactly one caller opens and the
+/// rest return.
 pub fn init_fulltext_searcher() {
-    // Only initialize if not already set
+    // Fast path, without taking the open lock: the overwhelmingly common case
+    // is that a searcher is already there.
     if let Ok(guard) = FULLTEXT_SEARCHER.read()
         && guard.is_some()
     {
         return;
     }
 
-    reinit_fulltext_searcher();
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Re-check under the lock. Another thread may have opened it between the
+    // read above and the lock; without this the whole lock buys nothing, since
+    // both threads would go on to open.
+    if let Ok(guard) = FULLTEXT_SEARCHER.read()
+        && guard.is_some()
+    {
+        return;
+    }
+
+    open_fulltext_searcher();
 }
 
 /// Re-initialize the fulltext searcher, replacing any existing instance.
 /// Call this after rebuilding indexes to pick up the new index files.
+///
+/// Unlike [`init_fulltext_searcher`] this always re-opens, but it takes the
+/// same lock: two reinits from different features (a reconcile and a rebuild,
+/// say) would otherwise clobber each other's failure list exactly as above.
 pub fn reinit_fulltext_searcher() {
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    open_fulltext_searcher();
+}
+
+/// The open itself. **Callers must hold [`SEARCHER_OPEN_LOCK`].**
+fn open_fulltext_searcher() {
     let g = get_app_globals();
 
     // Both storage-capability verdicts into every user's log, once per process,
