@@ -16,6 +16,15 @@ Item {
         return "ok";
     }
 
+    function stage_picked_file(url: url): string {
+        console.log("stage_picked_file():", url);
+        return "ok";
+    }
+
+    function abort_staging() {
+        console.log("abort_staging()");
+    }
+
     function abort_import() {
         console.log("abort_import()");
     }
@@ -110,6 +119,9 @@ Item {
     signal importFinished(dictionary_id: int, label: string, inserted_count: int, elapsed_ms: int);
     signal importFailed(message: string);
     signal importCancelled(message: string, inserted_count: int);
+    signal stagingProgress(done_bytes: real, total_bytes: real);
+    signal stagingFinished(path: string);
+    signal stagingFailed(message: string);
     signal scanFinished(items_json: string);
     signal scanFailed(message: string);
     signal deleteFinished(dictionary_id: int, label: string, removed_count: int, elapsed_ms: int);

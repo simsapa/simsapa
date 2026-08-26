@@ -91,6 +91,10 @@ ApplicationWindow {
 
     DictionaryManager { id: dict_manager }
 
+    // Only for `set_keep_screen_on`: a batch import runs on worker threads for
+    // as long as it takes, and a suspended device interrupts it.
+    AssetManager { id: screen_manager }
+
     Component.onCompleted: {
         theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
@@ -138,6 +142,9 @@ ApplicationWindow {
         root.batch_succeeded = 0;
         root.batch_failed = [];
         root.batch_entries_total = 0;
+        // Released in `finish_batch()`, which every ending goes through —
+        // success, per-item failure, and abort alike.
+        screen_manager.set_keep_screen_on("dictionary-import-batch", true);
         root.start_next_item();
     }
 
@@ -179,6 +186,7 @@ ApplicationWindow {
 
     // Route to the shared summary frame with the aggregated batch outcome.
     function finish_batch() {
+        screen_manager.set_keep_screen_on("dictionary-import-batch", false);
         root.batch_active = false;
         root.op_kind = "import_batch";
         views_stack.currentIndex = 4;

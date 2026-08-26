@@ -700,7 +700,7 @@ fn prefetch_pages(
 /// Convert a QUrl to a local file path string.
 /// Handles Windows paths correctly - QUrl::path() returns "/C:/path" on Windows,
 /// but we need "C:/path" for Rust's Path/PathBuf to work correctly.
-fn qurl_to_local_path(url: &QUrl) -> String {
+pub(crate) fn qurl_to_local_path(url: &QUrl) -> String {
     let path_str = url.path().to_string();
 
     // On Windows, QUrl::path() returns "/C:/path" for local files
@@ -3978,6 +3978,22 @@ impl qobject::SuttaBridge {
 
     /// Copy content from a content:// URI to a temporary file (Android only)
     /// Returns the path to the temporary file, or empty string on error
+    ///
+    /// **Superseded on the dictionary path by
+    /// `DictionaryManager::stage_picked_file`**, which does the same job on a
+    /// worker thread, in 1 MB chunks, with byte progress, a cancel, a
+    /// free-space pre-check, and a failure message naming the step that failed.
+    /// This one is synchronous on the GUI thread and reads the whole file into
+    /// a single `QByteArray` (`cpp/utils.cpp`), which at 180 MB is seconds of
+    /// frozen UI; its empty-string return is also why the user's only
+    /// diagnosis was "Could not access the selected file."
+    ///
+    /// It stays for the three call sites that were **not** migrated —
+    /// `DocumentImportDialog`, the chanting import and the Gloss "Open JSON" —
+    /// because migrating them means changing three more flows in a build whose
+    /// job is to fix the dictionary import and the fulltext index. Migrating
+    /// them is the shared-resolver work the picker-URL PRD describes; do that
+    /// in its own build, and delete this then.
     pub fn copy_content_uri_to_temp(&self, content_uri: &QString) -> QString {
         let uri_str = content_uri.to_string();
 

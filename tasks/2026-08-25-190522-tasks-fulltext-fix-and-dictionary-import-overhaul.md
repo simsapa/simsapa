@@ -414,19 +414,37 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
   (`:366`), `find_ifo_stem_in` (`:389`).
 - `backend/src/picker_url.rs` — `outcome_line` (`:843`); the staging-root helpers
   (`:272-293`).
-- `backend/src/android_saf.rs` — `probe_document_uri`; the new staging writer.
-- `bridges/src/dictionary_manager.rs` — new staging invokable + signals
-  (`:130-152` is the existing signal block).
+- `backend/src/import_staging.rs` — **new (4.1–4.3).** The whole
+  platform-independent staging half: `StagingRequest` / `StagedFile` /
+  `StagingError` (stable `code` + `step` + `message`), `staging_dir` (per
+  feature), `sanitize_staged_file_name`, `ensure_free_space`,
+  `copy_stream_to_file` (1 MB chunks, cancel-aware), `reject_empty`,
+  `stage_picked_url`. Qt-free and unit-tested off-device; 9 tests.
+- `backend/src/android_saf.rs` — `probe_document_uri`; **new (4.1, and 6.4
+  early): `document_metadata` and `copy_document_to_path`**, the chunked
+  `ContentResolver.openInputStream` reader, plus the shared `parse_uri` helper.
+  Cross-checked with `cargo check --target aarch64-linux-android`.
+- `bridges/src/dictionary_manager.rs` — **new (4.1, 4.5):**
+  `stage_picked_file(&QUrl)` + `abort_staging()`, the `stagingProgress` /
+  `stagingFinished` / `stagingFailed` signals (each with an explicit
+  `#[cxx_name]`), and the `staging_cancel` flag on `DictionaryManagerRust`.
+  Progress is throttled to 100 ms rather than emitted per chunk.
+- `bridges/src/sutta_bridge.rs` — `qurl_to_local_path` is now `pub(crate)` (the
+  staging bridge needs the same Windows drive-letter handling), and
+  `copy_content_uri_to_temp` carries the 4.7 comment naming its replacement.
 - `bridges/src/sutta_bridge.rs` — `copy_content_uri_to_temp` (`:3954`),
   `delete_temp_import_folder` (`:3978`), the raw-pick plumbing (`:75-150`,
   `:4327`).
 - `cpp/utils.cpp` — `copy_content_uri_to_temp_file` (`:640-700`),
   `get_import_staging_root` (`:590`).
-- `assets/qml/DictionaryImportDialog.qml` — `file_dialog` (`:170-190`),
-  `strip_file_scheme` (`:88-103`), `begin_scan` (`:109`), the scanning frame
-  (`:375-410`), `scan_message` (`:154`, `:165`, `:182`).
-- `assets/qml/DictionariesWindow.qml:130-300` — the batch runner to hook the new
-  staging stage into.
+- `assets/qml/DictionaryImportDialog.qml` — **done (4.4–4.6).** Four named
+  frame indices, the new `frame_copying` frame, `begin_staging` /
+  `cancel_staging` / `abandon_scan`, the three `onStaging*` handlers, and two
+  keep-screen-on holders. `file_dialog.onAccepted` is now one line into
+  staging — it no longer inspects the URL scheme itself and no longer calls
+  `SuttaBridge.copy_content_uri_to_temp`.
+- `assets/qml/DictionariesWindow.qml` — **done (4.6).** `AssetManager` added;
+  `dictionary-import-batch` held across `start_batch` → `finish_batch`.
 - `assets/qml/com/profoundlabs/simsapa/{SuttaBridge,DictionaryManager}.qml` —
   stubs for every new invokable **and signal** (CLAUDE.md).
 - `bridges/build.rs` — any new `.qml` file, in the `"../assets/qml/<Name>.qml"`
@@ -681,7 +699,7 @@ whatever index the dev machine currently holds, so it will drift again after any
 re-bootstrap. The generator is
 `cargo test --test test_fulltext_search_results -- --ignored generate_fulltext_fixture`.
 
-### 3.0 [ ] Benchmark: prove the wrapper costs nothing on a normal filesystem
+### 3.0 [x] Benchmark: prove the wrapper costs nothing on a normal filesystem
 
 **Specs to keep in mind.** Fix-PRD success metric 7 asks for "no change in
 index-open time or search latency on desktop Linux". There is **no bench
@@ -826,7 +844,7 @@ one `flock` probe per directory (cached for the process by
   Written up in the new `docs/fulltext-index-storage-and-file-locking.md`, whose
   mechanism sections task 8.2 still has to fill in.
 
-### 4.0 [ ] Get the dictionary import off the UI thread, with real progress
+### 4.0 [x] Get the dictionary import off the UI thread, with real progress
 
 **Specs to keep in mind.** The import stage is **already** threaded with progress
 and abort (§2) — do not rebuild it. The single blocker is the staging copy:
@@ -835,7 +853,7 @@ and abort (§2) — do not rebuild it. The single blocker is the staging copy:
 seconds of frozen UI and an ANR risk on a slower stream. Picker-URL PRD
 Reqs. 10, 17b–17d.
 
-- [ ] 4.1 Add an **asynchronous** staging invokable on `DictionaryManager` —
+- [x] 4.1 Add an **asynchronous** staging invokable on `DictionaryManager` —
   `stage_picked_file(url)` — that spawns a worker and reports through new
   signals `stagingProgress(done_bytes, total_bytes)`, `stagingFinished(path)`,
   `stagingFailed(message)`. Follow the existing `scan_source` shape
@@ -855,30 +873,108 @@ Reqs. 10, 17b–17d.
   - **Add stubs for the invokable *and all three signals*** to
     `assets/qml/com/profoundlabs/simsapa/DictionaryManager.qml`, or `qmllint`
     fails — CLAUDE.md. `SuttaBridge.qml:45-48` is the shape to copy.
-- [ ] 4.2 Copy in **fixed-size chunks** (1 MB), not `readAll()` (Req. 10), and
+
+  All three details were followed as written. Two things worth recording beyond
+  them:
+
+  - **The copy itself is now Rust, not C++.** `backend/src/import_staging.rs` is
+    new and holds the whole platform-independent half (request shape, free-space
+    check, name sanitizing, the chunked writer, the typed error); the Android
+    half is `android_saf::copy_document_to_path` + `document_metadata`, next to
+    the JNI stack that already exists there. That also **delivers task 6.4
+    early**: the provider read goes through
+    `ContentResolver.openInputStream`, never `QFile(content_uri)`, because
+    writing the new copy in C++ around `QFile` would have meant writing the
+    thing 6.4 exists to remove.
+  - **`stagingProgress` carries `f64`, not `i32`.** A byte count is not
+    guaranteed to fit in an `i32` (a 3 GB archive is legal), and QML numbers are
+    doubles anyway, so `i32` would have been a silent wrap at the one size where
+    progress matters most.
+- [x] 4.2 Copy in **fixed-size chunks** (1 MB), not `readAll()` (Req. 10), and
   emit `stagingProgress` per chunk. Distinguish "read produced zero bytes" from
   "read succeeded" and report the former as a failure (Req. 11). Every failure
   branch must name **which** step failed — URI parse, resolver open, temp dir
   creation, write, short write (Req. 12).
-- [ ] 4.3 Check free space on the staging volume before starting and fail with a
+
+  `CHUNK_BYTES = 1 MB` on both the desktop and the Android reader. Progress is
+  emitted **throttled to 100 ms**, not literally per chunk: a 1 MB chunk of a
+  local copy completes in well under a millisecond, and a queued cross-thread
+  signal per chunk would cost more than the copy. Nothing is lost —
+  `stagingFinished` carries the terminal state.
+
+  `StagingError` carries a stable `code` plus a `step` and a `message`, and
+  `user_message()` is `"<step>: <message>"`, so an unattributed staging failure
+  is now unrepresentable. Codes: `no_file`, `not_found`, `unsupported_scheme`,
+  `insufficient_space`, `staging_dir`, `provider_open_failed`,
+  `provider_read_failed`, `write_failed`, `short_write`, `empty_read`,
+  `cancelled`. A zero-byte read is `empty_read` **and the empty file is
+  deleted** — leaving it would have been a path to a 0-byte "archive" that
+  fails much later as corrupt. Every failure path removes the partial copy.
+- [x] 4.3 Check free space on the staging volume before starting and fail with a
   clear `insufficient_space` message (Req. 24). `fs4` is already a direct
   `backend` dependency. Measure the **staging volume actually used**, not `C:`
   or the app root.
-- [ ] 4.4 Add a **"Copying file…"** state to `DictionaryImportDialog`'s
+
+  `ensure_free_space()` measures the **per-feature staging folder**
+  (`<temp>/simsapa-imports/dictionaries/`), walking up to the nearest existing
+  ancestor because `statvfs` needs a real path and the folder may not exist yet
+  — same volume either way. Requires the file plus a 32 MB margin. Two
+  deliberate non-failures: an **unknown** size (a provider that reports no
+  `_size`) skips the check, since an unmeasurable file is not evidence of a full
+  disk; and an unreadable `statvfs` logs and continues rather than refusing an
+  import over a missing figure.
+- [x] 4.4 Add a **"Copying file…"** state to `DictionaryImportDialog`'s
   `StackLayout`, before the existing "Scanning…" frame (Req. 17b), determinate
   where the byte count is known. Reuse the visual language of the scanning frame
   (`:375-410`); do not invent a new window — `DictionaryIndexProgressWindow.qml`
   is the pattern to imitate if a separate window is preferred.
-- [ ] 4.5 Give the scanning frame a **cancel** affordance and a stage label, so a
+
+  Added as a frame in the existing `StackLayout`, reusing the scanning frame's
+  visual language — no new window. The bar is determinate when the provider
+  declared a size and indeterminate when it did not, with a byte label under it
+  either way (`"12.0 MB of 172.4 MB"` / `"12.0 MB copied"`), so **0 % never
+  stands in for "unknown"**.
+
+  The four frame indices are now **named `readonly property int`s** on `root`
+  (`frame_source` / `frame_copying` / `frame_scanning` / `frame_checklist`).
+  Inserting a frame renumbered every literal in the file; naming them is what
+  makes that safe to do again.
+- [x] 4.5 Give the scanning frame a **cancel** affordance and a stage label, so a
   177 MB extraction is not an indeterminate bar with no text.
-- [ ] 4.6 **Bracket the whole flow with `AssetManager.set_keep_screen_on`** —
+
+  **Two different cancels, because only one of them can be real today.**
+
+  - The **copying** frame's Cancel is a true cancel: `abort_staging()` sets an
+    `AtomicBool` on `DictionaryManagerRust` that the copy checks between chunks;
+    the worker deletes the partial file and reports `cancelled`. It travels the
+    same `stagingFailed` channel as a real failure (one outcome path, not two)
+    and the dialog tells them apart with a `staging_cancelled` flag it set
+    itself — never by matching the message text.
+  - The **scanning** frame's Cancel *abandons* rather than cancels:
+    `scan_source` has no cancel flag in the backend, so the worker runs to
+    completion and its result is discarded. That is said plainly in the code
+    comment rather than dressed up. Task **5.1** removes the expensive half of a
+    scan (a full archive extraction) and **5.3** makes the import's extraction
+    cancellable, which is what would make a real cancel here worth adding.
+- [x] 4.6 **Bracket the whole flow with `AssetManager.set_keep_screen_on`** —
   currently called **nowhere** in the dictionary import flow, which is a standing
   CLAUDE.md violation and lets the device suspend mid-import. Use distinct holder
   names per independent holder, e.g. `dictionary-import-staging` and
   `dictionary-import-batch`. Release in the completion handlers on **both**
   success and failure, never in a dialog's `onClosed` — the worker outlives the
   dialog.
-- [ ] 4.7 Leave `SuttaBridge.copy_content_uri_to_temp` in place for the other
+
+  **Three holders, not two** — the three stages are independently long and can
+  end independently: `dictionary-import-staging` (acquired in `begin_staging`,
+  released in **both** `onStagingFinished` and `onStagingFailed`),
+  `dictionary-import-scan` (acquired in `begin_scan`, released in both
+  `onScanFinished` and `onScanFailed` — including when the user abandoned the
+  scan, since the hold must outlive the abandonment, not the dialog state), and
+  `dictionary-import-batch` in `DictionariesWindow` (acquired in `start_batch`,
+  released in `finish_batch`, which every ending goes through: success,
+  per-item failure and abort alike). Neither window had an `AssetManager`
+  before; both now have one, named `screen_manager` and used for nothing else.
+- [x] 4.7 Leave `SuttaBridge.copy_content_uri_to_temp` in place for the other
   three call sites (document, chanting, Gloss); this task does not migrate them
   (§0.4). Add a comment on it naming the async replacement and why only the
   dictionary path uses it.
@@ -1001,6 +1097,15 @@ fallback firing *is* the measurement.
   picker moves, the reader must move with it; leaving `QFile` behind is a second
   untested delta on the same path. Apply the **`to_encoded()` rule** in both
   directions (`docs/android-file-saving-saf.md`).
+
+  **Already delivered by task 4.1** — verify rather than re-implement. The
+  dictionary path's provider read is now
+  `android_saf::copy_document_to_path` (`ContentResolver.openInputStream`,
+  chunked), reached from `import_staging::stage_provider_uri`, and the URI it
+  receives is `QUrl::to_encoded()` from `stage_picked_file`. `QFile(content_uri)`
+  survives in `cpp/utils.cpp` only for the three unmigrated call sites (4.7).
+  It fell out of 4.1 because writing the new chunked copy in C++ around `QFile`
+  would have meant building the exact thing this task removes.
 - [ ] 6.5 Log a `DICTIONARY-IMPORT-PICK:` block on the real import path
   (E-14…E-17), through the **same** `PickerUrlFacts` pipeline as the diagnostic —
   never a second report shape. Log on the **failure** path too (E-15). Do **not**

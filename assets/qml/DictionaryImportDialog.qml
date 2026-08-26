@@ -9,11 +9,15 @@ import QtQuick.Dialogs
 import com.profoundlabs.simsapa
 
 // StarDict import dialog. Standalone ApplicationWindow with a
-// three-frame StackLayout:
-//   Idx 0 — Source selection: four radio options + OK/Cancel.
-//   Idx 1 — Scanning: indeterminate progress while the discovery probe runs.
-//   Idx 2 — Checklist: one DictionaryImportRow per discovered dictionary,
-//            Select-All / Clear-Selection, and OK/Cancel.
+// four-frame StackLayout (the indices are named properties on `root`, never
+// literals — a frame was inserted once and every literal had to move):
+//   frame_source    — four radio options + OK/Cancel.
+//   frame_copying   — byte progress while a picked file is staged to a local
+//                     copy. Skipped entirely for a desktop file:// pick, which
+//                     needs no copy.
+//   frame_scanning  — progress while the discovery probe runs.
+//   frame_checklist — one DictionaryImportRow per discovered dictionary,
+//                     Select-All / Clear-Selection, and OK/Cancel.
 // On OK it emits `import_batch_requested(items_json)` (ordered list of checked
 // rows) and hides; the actual import runs in DictionariesWindow's frames.
 ApplicationWindow {
@@ -55,8 +59,30 @@ ApplicationWindow {
     // OK-enablement, recomputed by `recompute()` across all checked rows.
     property bool can_import: false
     // Shown on the scanning/checklist frames when discovery yields nothing or
-    // fails; surfaced as a message on Idx 0.
+    // fails; surfaced as a message on the source frame.
     property string scan_message: ""
+
+    readonly property int frame_source: 0
+    readonly property int frame_copying: 1
+    readonly property int frame_scanning: 2
+    readonly property int frame_checklist: 3
+
+    // Staging (the copy from the picker's answer to a local file) state.
+    property real copy_done_bytes: 0
+    // 0 means "the source would not say how big it is" — an indeterminate bar,
+    // never 0%.
+    property real copy_total_bytes: 0
+    property bool staging_active: false
+    // Set when the user pressed Cancel, so the `stagingFailed` that follows is
+    // not shown as an error. The backend reports a cancel through the same
+    // signal as a failure — one outcome path — and this is the flag that tells
+    // them apart on this side.
+    property bool staging_cancelled: false
+    // Set when the user leaves the scanning frame. The scan itself is not
+    // interruptible in the backend yet, so this abandons its result rather than
+    // stopping it; the expensive half (a full archive extraction during a scan)
+    // is being removed separately.
+    property bool scan_abandoned: false
 
     ThemeHelper {
         id: theme_helper
@@ -64,6 +90,11 @@ ApplicationWindow {
     }
 
     DictionaryManager { id: dict_manager }
+
+    // Only for `set_keep_screen_on`: staging and scanning both run on worker
+    // threads that outlive any dialog interaction, and a device that suspends
+    // part-way through leaves a half-copied archive behind.
+    AssetManager { id: screen_manager }
 
     Component.onCompleted: {
         theme_helper.apply();
@@ -75,7 +106,10 @@ ApplicationWindow {
         root.scanned_items = [];
         root.can_import = false;
         root.scan_message = "";
-        frames.currentIndex = 0;
+        root.staging_active = false;
+        root.staging_cancelled = false;
+        root.scan_abandoned = false;
+        frames.currentIndex = root.frame_source;
         root.show();
         root.raise();
         root.requestActivate();
@@ -103,16 +137,72 @@ ApplicationWindow {
         return url_str;
     }
 
+    // Binary units, one decimal — matches the backend's own `human_bytes`, and
+    // is only ever shown to the user.
+    function human_bytes(n: real): string {
+        const kb = 1024;
+        if (n < kb) return Math.round(n) + " bytes";
+        if (n < kb * kb) return (n / kb).toFixed(1) + " KB";
+        if (n < kb * kb * kb) return (n / (kb * kb)).toFixed(1) + " MB";
+        return (n / (kb * kb * kb)).toFixed(1) + " GB";
+    }
+
+    // Stage the picked file, then scan it. The copy runs on a worker thread and
+    // reports bytes; the old path called a synchronous bridge invokable that
+    // read the whole archive into one buffer on the GUI thread.
+    function begin_staging(url) {
+        root.scan_message = "";
+        root.copy_done_bytes = 0;
+        root.copy_total_bytes = 0;
+        root.staging_active = true;
+        root.staging_cancelled = false;
+        frames.currentIndex = root.frame_copying;
+        // Released in onStagingFinished / onStagingFailed — both of them, and
+        // never in a dialog handler: the worker outlives the dialog.
+        screen_manager.set_keep_screen_on("dictionary-import-staging", true);
+
+        const result = dict_manager.stage_picked_file(url);
+        if (result !== "ok") {
+            screen_manager.set_keep_screen_on("dictionary-import-staging", false);
+            root.staging_active = false;
+            root.scan_message = "Could not read the selected file: " + result;
+            frames.currentIndex = root.frame_source;
+        }
+    }
+
+    function cancel_staging() {
+        if (!root.staging_active) {
+            return;
+        }
+        root.staging_cancelled = true;
+        logger.info("DictionaryImportDialog: staging cancelled by the user");
+        dict_manager.abort_staging();
+    }
+
     // Begin discovery for the chosen source kind + path: switch to the
     // scanning frame and call the worker-threaded probe.
     function begin_scan(kind: string, path: string) {
         root.scan_message = "";
-        frames.currentIndex = 1;
+        root.scan_abandoned = false;
+        frames.currentIndex = root.frame_scanning;
+        screen_manager.set_keep_screen_on("dictionary-import-scan", true);
         const result = dict_manager.scan_source(kind, path);
         if (result !== "ok") {
+            screen_manager.set_keep_screen_on("dictionary-import-scan", false);
             root.scan_message = "Could not scan source: " + result;
-            frames.currentIndex = 0;
+            frames.currentIndex = root.frame_source;
         }
+    }
+
+    // Leave the scanning frame. The worker keeps running to completion — there
+    // is no cancel flag on `scan_source` — so its result is ignored rather than
+    // stopped, and the keep-screen-on hold is left in place until the worker
+    // actually reports back.
+    function abandon_scan() {
+        root.scan_abandoned = true;
+        logger.info("DictionaryImportDialog: scan abandoned by the user; its result will be ignored");
+        root.scan_message = "";
+        frames.currentIndex = root.frame_source;
     }
 
     // Re-aggregate intra-batch duplicate labels and OK-enablement across rows.
@@ -142,7 +232,38 @@ ApplicationWindow {
     Connections {
         target: dict_manager
 
+        function onStagingProgress(done_bytes: real, total_bytes: real) {
+            root.copy_done_bytes = done_bytes;
+            root.copy_total_bytes = total_bytes;
+        }
+
+        function onStagingFinished(path: string) {
+            screen_manager.set_keep_screen_on("dictionary-import-staging", false);
+            root.staging_active = false;
+            logger.info("DictionaryImportDialog: staged file ready at " + path);
+            root.begin_scan("single_zip", path);
+        }
+
+        function onStagingFailed(message: string) {
+            screen_manager.set_keep_screen_on("dictionary-import-staging", false);
+            root.staging_active = false;
+            if (root.staging_cancelled) {
+                // The user asked for this; it is not an error to report back.
+                root.staging_cancelled = false;
+                root.scan_message = "";
+            } else {
+                logger.error("DictionaryImportDialog: staging failed: " + message);
+                root.scan_message = "Could not read the selected file. " + message;
+            }
+            frames.currentIndex = root.frame_source;
+        }
+
         function onScanFinished(items_json: string) {
+            screen_manager.set_keep_screen_on("dictionary-import-scan", false);
+            if (root.scan_abandoned) {
+                root.scan_abandoned = false;
+                return;
+            }
             let arr = [];
             try {
                 arr = JSON.parse(items_json);
@@ -152,18 +273,23 @@ ApplicationWindow {
             }
             if (!arr || arr.length === 0) {
                 root.scan_message = "No StarDict dictionaries were found in the chosen source.";
-                frames.currentIndex = 0;
+                frames.currentIndex = root.frame_source;
                 return;
             }
             root.scanned_items = arr;
-            frames.currentIndex = 2;
+            frames.currentIndex = root.frame_checklist;
             // Rows recompute their own status on completion; aggregate after.
             Qt.callLater(root.recompute);
         }
 
         function onScanFailed(message: string) {
+            screen_manager.set_keep_screen_on("dictionary-import-scan", false);
+            if (root.scan_abandoned) {
+                root.scan_abandoned = false;
+                return;
+            }
             root.scan_message = "Scan failed: " + message;
-            frames.currentIndex = 0;
+            frames.currentIndex = root.frame_source;
         }
     }
 
@@ -171,21 +297,13 @@ ApplicationWindow {
         id: file_dialog
         title: "Choose StarDict .zip"
         nameFilters: ["StarDict archives (*.zip)"]
-        onAccepted: {
-            let path = root.strip_file_scheme(selectedFile);
-            // On Android the picker returns a content:// URI (Storage Access
-            // Framework), not a real filesystem path. Materialize it to a temp
-            // file the Rust scanner can open.
-            if (Qt.platform.os === "android" && path.startsWith("content://")) {
-                const temp_path = SuttaBridge.copy_content_uri_to_temp(path);
-                if (temp_path === "") {
-                    root.scan_message = "Could not access the selected file.";
-                    return;
-                }
-                path = temp_path;
-            }
-            root.begin_scan("single_zip", path);
-        }
+        // The picked file goes through staging, which decides what it is: a
+        // local path is used in place, and an Android content:// URI is copied
+        // to a temp file on a worker thread. The dialog no longer inspects the
+        // scheme itself, and no longer calls the synchronous
+        // `SuttaBridge.copy_content_uri_to_temp` that read the whole archive on
+        // the GUI thread.
+        onAccepted: root.begin_staging(selectedFile)
         onRejected: root.canceled()
     }
 
@@ -203,10 +321,10 @@ ApplicationWindow {
         id: frames
         anchors.fill: parent
         anchors.topMargin: root.extra_top_margin
-        currentIndex: 0
+        currentIndex: root.frame_source
 
         // -------------------------------------------------------------------
-        // Idx 0 — Source selection
+        // frame_source — Source selection
         // -------------------------------------------------------------------
         Frame {
             Layout.fillWidth: true
@@ -370,7 +488,74 @@ ApplicationWindow {
         }
 
         // -------------------------------------------------------------------
-        // Idx 1 — Scanning
+        // frame_copying — staging the picked file to a local copy
+        //
+        // A Drive-backed pick on a Chromebook streams over the network, so this
+        // can take a while on a file that looks local to the user. Determinate
+        // wherever the provider declared a size; indeterminate, with the bytes
+        // copied so far, where it did not.
+        // -------------------------------------------------------------------
+        Frame {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            Item {
+                anchors.fill: parent
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.9
+                    spacing: 16
+
+                    Label {
+                        text: "Copying file…"
+                        font.pointSize: root.largePointSize
+                        font.bold: true
+                        color: palette.text
+                        Layout.alignment: Qt.AlignCenter
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    Label {
+                        text: "Making a temporary copy of the chosen file so it can be read."
+                        font.pointSize: root.pointSize
+                        color: palette.mid
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    ProgressBar {
+                        Layout.fillWidth: true
+                        indeterminate: root.copy_total_bytes <= 0
+                        from: 0
+                        to: Math.max(1, root.copy_total_bytes)
+                        value: root.copy_done_bytes
+                    }
+
+                    Label {
+                        text: root.copy_total_bytes > 0
+                            ? root.human_bytes(root.copy_done_bytes) + " of " + root.human_bytes(root.copy_total_bytes)
+                            : root.human_bytes(root.copy_done_bytes) + " copied"
+                        font.pointSize: root.pointSize
+                        color: palette.mid
+                        Layout.alignment: Qt.AlignCenter
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    Button {
+                        text: "Cancel"
+                        font.pointSize: root.pointSize
+                        Layout.alignment: Qt.AlignCenter
+                        enabled: root.staging_active
+                        onClicked: root.cancel_staging()
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // frame_scanning — looking for dictionaries in the chosen source
         // -------------------------------------------------------------------
         Frame {
             Layout.fillWidth: true
@@ -406,12 +591,23 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         indeterminate: true
                     }
+
+                    // A large archive takes a noticeable time to read, and an
+                    // indeterminate bar with no way out is indistinguishable
+                    // from a hang. This returns to the source list; the worker
+                    // finishes on its own and its result is discarded.
+                    Button {
+                        text: "Cancel"
+                        font.pointSize: root.pointSize
+                        Layout.alignment: Qt.AlignCenter
+                        onClicked: root.abandon_scan()
+                    }
                 }
             }
         }
 
         // -------------------------------------------------------------------
-        // Idx 2 — Checklist
+        // frame_checklist — the discovered dictionaries
         // -------------------------------------------------------------------
         Frame {
             Layout.fillWidth: true

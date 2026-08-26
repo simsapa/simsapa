@@ -31,6 +31,7 @@ use std::time::Instant;
 use jni::objects::{JByteArray, JObject, JString, JValue};
 use jni::JavaVM;
 
+use crate::logger::info;
 use crate::picker_url::DocumentProbe;
 
 /// Map a filename extension to a MIME type for `DocumentsContract.createDocument`.
@@ -365,6 +366,212 @@ fn query_openable_columns(
     let _ = env.call_method(&cursor, "close", "()V", &[]);
 
     Ok((display_name, size, notes))
+}
+
+/// The user-visible name and declared size of a provider-backed document.
+///
+/// Both are optional because a provider is free to answer neither. The name
+/// decides what the staged copy is called (after sanitizing — it comes from
+/// another app) and the size is the input to the pre-staging free-space check;
+/// neither is worth failing an import over, so the caller treats an absent
+/// value as "unknown", not as an error.
+///
+/// `uri` must be the **fully-encoded** form (see the module docs).
+pub fn document_metadata(uri: &str) -> Result<(Option<String>, Option<u64>), String> {
+    let vm = unsafe {
+        JavaVM::from_raw(ndk_context::android_context().vm() as *mut jni::sys::JavaVM)
+    }
+    .map_err(|e| format!("JavaVM::from_raw: {e}"))?;
+
+    let (mut env, resolver) = attach_resolver(&vm)?;
+    let uri_obj = parse_uri(&mut env, uri)?;
+
+    let (name, size, notes) = query_openable_columns(&mut env, &resolver, &uri_obj)?;
+    for note in notes {
+        info(&format!("document_metadata({uri}): {note}"));
+    }
+
+    // A negative size is a provider bug, not a file; drop it rather than
+    // wrapping it round into an enormous `u64` that would fail the space check.
+    Ok((name, size.and_then(|n| u64::try_from(n).ok())))
+}
+
+/// `Uri.parse`, shared by the read, metadata and staging paths.
+fn parse_uri<'a>(env: &mut jni::JNIEnv<'a>, uri: &str) -> Result<JObject<'a>, String> {
+    let uri_j = env
+        .new_string(uri)
+        .map_err(|e| format!("new_string(uri): {e}"))?;
+    match env.call_static_method(
+        "android/net/Uri",
+        "parse",
+        "(Ljava/lang/String;)Landroid/net/Uri;",
+        &[JValue::Object(&uri_j)],
+    ) {
+        Ok(v) => v.l().map_err(|e| format!("Uri.parse .l(): {e}")),
+        Err(e) => {
+            let _ = env.exception_clear();
+            Err(format!("URI parse: {e}"))
+        }
+    }
+}
+
+/// Copy a provider-backed document to a local file in fixed-size chunks,
+/// reporting progress as it goes.
+///
+/// The read-side twin of `write_to_tree_uri`, and the replacement for
+/// `copy_content_uri_to_temp_file`'s `QFile(content_uri)` + `readAll()`:
+/// `QFile` reaches a document only through Qt's `QAndroidContentFileEngine`,
+/// which handles the `content://` scheme alone, and `readAll()` put the whole
+/// archive in one buffer on the GUI thread.
+///
+/// `uri` must be the **fully-encoded** form. `declared_size` is passed straight
+/// through to `progress` as the denominator and is never enforced — a provider
+/// whose declared size disagrees with what it streams is the caller's
+/// zero/short-read decision, not a reason to truncate here.
+///
+/// The destination is removed on every failure path, so a partial copy is never
+/// left for the importer to find.
+pub fn copy_document_to_path(
+    uri: &str,
+    dest: &std::path::Path,
+    declared_size: Option<u64>,
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: &mut dyn FnMut(u64, u64),
+) -> Result<u64, crate::import_staging::StagingError> {
+    use crate::import_staging::{cancelled_error, StagingError, CHUNK_BYTES};
+
+    let open_failed = |message: String| {
+        StagingError::new("provider_open_failed", "Opening the selected file", message)
+    };
+    let read_failed = |message: String| {
+        StagingError::new("provider_read_failed", "Reading the selected file", message)
+    };
+
+    let vm = unsafe {
+        JavaVM::from_raw(ndk_context::android_context().vm() as *mut jni::sys::JavaVM)
+    }
+    .map_err(|e| open_failed(format!("JavaVM::from_raw: {e}")))?;
+
+    let (mut env, resolver) = attach_resolver(&vm).map_err(open_failed)?;
+    let uri_obj = parse_uri(&mut env, uri).map_err(open_failed)?;
+
+    let stream = match env.call_method(
+        &resolver,
+        "openInputStream",
+        "(Landroid/net/Uri;)Ljava/io/InputStream;",
+        &[JValue::Object(&uri_obj)],
+    ) {
+        Ok(v) => v.l().map_err(|e| open_failed(format!("openInputStream .l(): {e}")))?,
+        Err(e) => {
+            let _ = env.exception_clear();
+            return Err(open_failed(format!("openInputStream: {e}")));
+        }
+    };
+
+    if stream.is_null() {
+        return Err(open_failed(
+            "the app that owns this file returned nothing to read.".to_string(),
+        ));
+    }
+
+    let mut file = std::fs::File::create(dest).map_err(|e| {
+        StagingError::new(
+            "write_failed",
+            "Creating the temporary copy",
+            format!("{}: {}", dest.display(), e),
+        )
+    })?;
+
+    let buf: JByteArray = match env.new_byte_array(CHUNK_BYTES as i32) {
+        Ok(b) => b,
+        Err(e) => {
+            close_stream(&mut env, &stream);
+            let _ = std::fs::remove_file(dest);
+            return Err(read_failed(format!("read buffer: {e}")));
+        }
+    };
+
+    let total = declared_size.unwrap_or(0);
+    let mut done: u64 = 0;
+    let mut chunk = vec![0u8; CHUNK_BYTES];
+
+    let result = loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            break Err(cancelled_error());
+        }
+
+        let n = match env.call_method(
+            &stream,
+            "read",
+            "([BII)I",
+            &[
+                JValue::Object(&buf),
+                JValue::Int(0),
+                JValue::Int(CHUNK_BYTES as i32),
+            ],
+        ) {
+            Ok(v) => match v.i() {
+                Ok(n) => n,
+                Err(e) => break Err(read_failed(format!("read .i(): {e}"))),
+            },
+            Err(e) => {
+                let _ = env.exception_clear();
+                break Err(read_failed(format!("read: {e}")));
+            }
+        };
+
+        // -1 is end of stream. 0 is treated as end of stream too: with a
+        // positive length `InputStream.read` is not allowed to return it, but a
+        // provider that did would leave `done` unchanged and spin this loop
+        // forever on a worker thread holding the keep-screen-on lock. A short
+        // copy reported honestly beats a frozen app — and a short copy of an
+        // archive fails loudly at the next step anyway.
+        if n <= 0 {
+            break Ok(done);
+        }
+
+        let count = n as usize;
+        if let Err(e) = env.get_byte_array_region(&buf, 0, unsafe {
+            // `i8` and `u8` have the same layout; this is the standard way to
+            // read a Java byte[] into a Rust buffer without a second copy.
+            std::slice::from_raw_parts_mut(chunk.as_mut_ptr() as *mut i8, count)
+        }) {
+            break Err(read_failed(format!("get_byte_array_region: {e}")));
+        }
+
+        if let Err(e) = std::io::Write::write_all(&mut file, &chunk[..count]) {
+            break Err(StagingError::new(
+                "write_failed",
+                "Writing the temporary copy",
+                format!("{}: {}", dest.display(), e),
+            ));
+        }
+
+        done += count as u64;
+        progress(done, total);
+    };
+
+    // Close on every path, success and failure alike.
+    close_stream(&mut env, &stream);
+
+    match result {
+        Ok(bytes) => {
+            if let Err(e) = std::io::Write::flush(&mut file) {
+                let _ = std::fs::remove_file(dest);
+                return Err(StagingError::new(
+                    "short_write",
+                    "Finishing the temporary copy",
+                    format!("{}: {}", dest.display(), e),
+                ));
+            }
+            Ok(bytes)
+        }
+        Err(e) => {
+            drop(file);
+            let _ = std::fs::remove_file(dest);
+            Err(e)
+        }
+    }
 }
 
 /// Open a provider-backed document and read a capped prefix of it, reporting

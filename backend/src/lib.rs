@@ -48,6 +48,7 @@ pub mod global_hotkeys;
 pub mod storage_probe;
 pub mod storage_diagnostics;
 pub mod picker_url;
+pub mod import_staging;
 #[cfg(target_os = "android")]
 pub mod android_saf;
 

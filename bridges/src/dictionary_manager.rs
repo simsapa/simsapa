@@ -9,10 +9,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use core::pin::Pin;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QUrl};
 use cxx_qt::{CxxQtType, Threading};
 
 use serde::Serialize;
@@ -32,6 +32,13 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+
+        // The picked file arrives as a `QUrl`, not a string: on Android it is a
+        // provider URI whose only usable form is `to_encoded()`, and going
+        // through a `QString` loses that distinction
+        // (`docs/android-file-saving-saf.md`).
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -53,6 +60,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn scan_source(self: Pin<&mut DictionaryManager>, kind: &QString, path: &QString) -> QString;
+
+        #[qinvokable]
+        fn stage_picked_file(self: Pin<&mut DictionaryManager>, url: &QUrl) -> QString;
+
+        #[qinvokable]
+        fn abort_staging(self: Pin<&mut DictionaryManager>);
 
         #[qinvokable]
         fn abort_import(self: Pin<&mut DictionaryManager>);
@@ -139,6 +152,21 @@ pub mod qobject {
         #[cxx_name = "importFailed"]
         fn import_failed(self: Pin<&mut DictionaryManager>, message: QString);
 
+        // Staging: copying a picked file into a local temp copy the scanner can
+        // open. `total` is 0 when the source will not say how big it is, which
+        // QML renders as an indeterminate bar rather than as 0%.
+        #[qsignal]
+        #[cxx_name = "stagingProgress"]
+        fn staging_progress(self: Pin<&mut DictionaryManager>, done_bytes: f64, total_bytes: f64);
+
+        #[qsignal]
+        #[cxx_name = "stagingFinished"]
+        fn staging_finished(self: Pin<&mut DictionaryManager>, path: QString);
+
+        #[qsignal]
+        #[cxx_name = "stagingFailed"]
+        fn staging_failed(self: Pin<&mut DictionaryManager>, message: QString);
+
         #[qsignal]
         #[cxx_name = "scanFinished"]
         fn scan_finished(self: Pin<&mut DictionaryManager>, items_json: QString);
@@ -182,6 +210,12 @@ pub mod qobject {
 }
 
 pub struct DictionaryManagerRust {
+    /// Cooperative cancellation flag for the in-flight staging copy, checked
+    /// between 1 MB chunks. Separate from `import_cancel`: staging and importing
+    /// are different stages with different cancel buttons, and one flag could be
+    /// set by the wrong screen.
+    pub staging_cancel: Arc<AtomicBool>,
+
     /// Cooperative cancellation flag for the in-flight import worker.
     /// Reset to `false` at the start of each `import_zip` call and flipped
     /// to `true` by `abort_import`. The worker checks it between insert
@@ -192,6 +226,7 @@ pub struct DictionaryManagerRust {
 impl Default for DictionaryManagerRust {
     fn default() -> Self {
         Self {
+            staging_cancel: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -481,6 +516,89 @@ impl qobject::DictionaryManager {
         });
 
         QString::from("ok")
+    }
+
+    /// Copy a picked file into a local staging copy, off the UI thread.
+    ///
+    /// Replaces the synchronous `SuttaBridge.copy_content_uri_to_temp` on the
+    /// dictionary path. That one read the whole archive into a single
+    /// `QByteArray` **on the GUI thread** (`cpp/utils.cpp`), which at 180 MB is
+    /// seconds of frozen UI and an ANR risk on a slow provider.
+    ///
+    /// Returns `"ok"` when the worker started; the outcome arrives on
+    /// `stagingFinished` / `stagingFailed`, with `stagingProgress` in between.
+    /// A desktop `file://` pick is not copied at all — it finishes immediately
+    /// with the user's own path.
+    fn stage_picked_file(self: Pin<&mut Self>, url: &QUrl) -> QString {
+        // Read the QUrl here, on the thread that owns it: it is not `Send`, and
+        // `to_encoded()` is the only form `Uri.parse` accepts.
+        let request = simsapa_backend::import_staging::StagingRequest {
+            encoded_url: String::from_utf8_lossy(url.to_encoded().as_slice()).to_string(),
+            scheme: url.scheme().map(|s| s.to_string()).unwrap_or_default(),
+            local_path: crate::sutta_bridge::qurl_to_local_path(url),
+            feature: "dictionaries",
+        };
+
+        info(&format!(
+            "stage_picked_file: scheme={} url={}",
+            if request.scheme.is_empty() { "none" } else { &request.scheme },
+            request.encoded_url,
+        ));
+
+        // Reset before the worker starts: a cancel from a previous staging must
+        // not kill the new one.
+        let cancel = self.rust().staging_cancel.clone();
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            // Throttled rather than per chunk: a 1 MB chunk of a fast local
+            // copy can complete in under a millisecond, and a queued signal per
+            // chunk would then cost more than the copy. The final state is
+            // carried by `stagingFinished`, so a dropped intermediate report
+            // loses nothing.
+            let mut last_report = Instant::now();
+            let mut progress = |done: u64, total: u64| {
+                if last_report.elapsed() < Duration::from_millis(100) {
+                    return;
+                }
+                last_report = Instant::now();
+                crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                    qo.as_mut().staging_progress(done as f64, total as f64);
+                });
+            };
+
+            match simsapa_backend::import_staging::stage_picked_url(&request, &cancel, &mut progress) {
+                Ok(staged) => {
+                    info(&format!(
+                        "stage_picked_file: ready at {} ({} bytes, copied={})",
+                        staged.path.display(),
+                        staged.bytes,
+                        staged.was_copied,
+                    ));
+                    let path_qs = QString::from(&staged.path.to_string_lossy().to_string());
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                        qo.as_mut().staging_finished(path_qs);
+                    });
+                }
+                Err(e) => {
+                    error(&format!("stage_picked_file failed: {}", e));
+                    let msg_qs = QString::from(&e.user_message());
+                    crate::queue_or_log(&qt_thread, "dictionary_manager::stage_picked_file", move |mut qo| {
+                        qo.as_mut().staging_failed(msg_qs);
+                    });
+                }
+            }
+        });
+
+        QString::from("ok")
+    }
+
+    /// Cooperative cancel for the staging copy. The worker checks the flag
+    /// between chunks, deletes the partial copy and reports through
+    /// `stagingFailed` with the cancelled reason — one outcome path, not two.
+    fn abort_staging(self: Pin<&mut Self>) {
+        self.rust().staging_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn abort_import(self: Pin<&mut Self>) {
