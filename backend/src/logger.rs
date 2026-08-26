@@ -18,23 +18,16 @@ cfg_if! {
 
         /// Bridges the `tracing` fmt layer onto Android's logcat.
         ///
-        /// The level is CARRIED here, not guessed. `tracing`'s fmt layer hands
-        /// the writer a formatted line of bytes, and that line contains the
-        /// message body as well as the level word -- so deriving the level by
-        /// searching the text (`line.contains("TRACE")` and friends, which is
-        /// what this did until 2026-08-26) classifies on user content.
+        /// The level is CARRIED, never inferred from the text. The fmt layer
+        /// hands the writer a formatted line that contains the message body as
+        /// well as the level, so a `line.contains("TRACE")`-style test would
+        /// classify on user content -- and since `platform_setup()` runs
+        /// `android_logger` at `LevelFilter::Debug`, anything routed to
+        /// `log::trace!` is DISCARDED rather than merely mis-levelled. That is
+        /// enough to erase a whole logging convention from logcat (it did:
+        /// `STARTUP-TRACE`, C++ and QML alike).
         ///
-        /// That was not cosmetic. `STARTUP-TRACE: ...` matched the `TRACE` arm,
-        /// was emitted through `log::trace!`, and fell below the
-        /// `LevelFilter::Debug` set in `platform_setup()` -- so the whole
-        /// `STARTUP-TRACE` convention was silently absent from logcat, on device,
-        /// whatever tag filter was used. Measured before the fix: of 81 distinct
-        /// messages in one launch, the 31 missing from an *unfiltered* logcat
-        /// were exactly the `STARTUP-TRACE` ones. `ERROR`/`WARN`/`DEBUG`
-        /// appearing in a message body were mis-levelled the same way.
-        ///
-        /// See `AGENTS.md` "Logging in C++" and
-        /// `docs/startup-sequence-and-caches.md` section 6.
+        /// See `AGENTS.md` "Logging in C++".
         #[derive(Clone, Copy)]
         struct AndroidLogWriter {
             level: log::Level,
@@ -71,11 +64,11 @@ cfg_if! {
                 AndroidLogWriter { level: log::Level::Info }
             }
 
-            /// The reason this is a named type rather than a closure: the
-            /// blanket `MakeWriter` impl for `Fn() -> W` cannot see the event,
-            /// so it only ever gets the default `make_writer_for`, which
-            /// discards the metadata. Implementing the trait by hand is what
-            /// makes the real level reachable.
+            /// Do not collapse this back into a closure: the blanket
+            /// `MakeWriter` impl for `Fn() -> W` cannot see the event, so it
+            /// only ever gets the default `make_writer_for`, which discards the
+            /// metadata and makes the real level unreachable. Implementing the
+            /// trait by hand is the whole point of the named type.
             fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
                 let level = match *meta.level() {
                     tracing::Level::ERROR => log::Level::Error,

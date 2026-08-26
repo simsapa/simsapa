@@ -1282,71 +1282,36 @@ failure it was added to detect.
 `log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
 also into the app's own `log.txt`, so it is available when a user sends logs.
 
-#### The Android log level is carried, never inferred from the message text
+#### The Android log level comes from the event metadata
 
-**Fixed 2026-08-26. Do not reintroduce level-sniffing in
-`AndroidLogWriter`** (`backend/src/logger.rs`).
+`AndroidMakeWriter` (`backend/src/logger.rs`) implements
+`MakeWriter::make_writer_for`, which receives the event's `Metadata`, so the
+writer carries the mapped `log::Level` and `write` is a plain
+`log::log!(self.level, …)`. Message text plays no part in levelling, so `TRACE`,
+`ERROR`, `WARN` and `DEBUG` are safe words to use inside a log message.
 
-Until that date the writer picked a `log` level by searching the **formatted
-line** for a level word:
+> **Trap: never level by inspecting the formatted line, and never reduce the
+> writer to a closure.** The line handed to the writer contains the message body
+> as well as the level, so a `line.contains("TRACE")` test classifies on user
+> content — and since `android_logger` runs at `LevelFilter::Debug`, anything
+> routed to `log::trace!` is *discarded*, not merely mis-levelled. That silently
+> erased the entire `STARTUP-TRACE` convention from logcat, C++ and QML alike.
+>
+> The reason the writer is a **named type** rather than `move || writer.clone()`
+> is that `MakeWriter`'s blanket impl for `Fn() -> W` cannot see the event and
+> only ever gets the default `make_writer_for`, which discards the metadata —
+> making the real level unreachable. Simplifying it back to a closure
+> reintroduces the bug.
 
-``` rust
-// WRONG -- this classifies on user content
-if line.contains("ERROR")      { log::error!("{}", line); }
-else if line.contains("TRACE") { log::trace!("{}", line); }
-else                           { log::info!("{}", line); }
-```
-
-The formatted line contains the *message body* as well as the level, so any
-message whose text happened to contain a level word was re-levelled. Because
-`android_logger` is initialised `.with_max_level(log::LevelFilter::Debug)` and
-trace sits **below** debug, anything matching `TRACE` was not merely mis-levelled
-but **silently discarded** — which took out the entire **`STARTUP-TRACE:`
-convention**, on device, whatever tag filter was used. Measured before the fix on
-an Android 16 device: of 81 distinct messages in one launch's `log.txt`, exactly
-**31 were absent from an *unfiltered* `adb logcat`, and all 31 were
-`STARTUP-TRACE:` lines**. Nothing else was missing. It hit the C++
-`engine.load()` markers and every QML `Logger` `onCompleted` trace alike, because
-it keyed on text rather than origin.
-
-**Why the bug existed, which is the part worth remembering.** The writer was
-produced by a closure, `move || writer.clone()`. `MakeWriter`'s blanket impl for
-`Fn() -> W` has no access to the event, so it only ever gets the default
-`make_writer_for`, which **discards the metadata** — the level genuinely was not
-reachable at the point where the text was being searched. Sniffing was a
-workaround for that, not an oversight.
-
-The fix is to implement the trait by hand and use the API provided for this:
-
-``` rust
-impl<'a> MakeWriter<'a> for AndroidMakeWriter {
-    type Writer = AndroidLogWriter;
-    fn make_writer(&'a self) -> Self::Writer { /* Info; no event behind it */ }
-    fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
-        AndroidLogWriter { level: /* mapped from *meta.level() */ }
-    }
-}
-```
-
-`make_writer_for` receives the event metadata, so the writer carries the real
-level and `write` is a plain `log::log!(self.level, …)`. **This is why the
-writer is a named type rather than a closure** — do not "simplify" it back.
-
-Two consequences that still hold:
-
-- Message text is now irrelevant to levelling, so `TRACE`, `ERROR`, `WARN` and
-  `DEBUG` are safe words to use in a log message.
-- A genuine `tracing::trace!` event is still filtered out by
-  `LevelFilter::Debug`. That is now a real level decision rather than an
-  accident of wording.
+A genuine `tracing::trace!` event is still filtered out by `LevelFilter::Debug`.
+That is a level decision, not an accident of wording.
 
 **When instrumentation seems not to have run on device, read the app's own
-`log.txt` before concluding anything** — it is the sink that never had this
-problem, and it is what a user sends you. On a debuggable build:
+`log.txt` before concluding anything** — it is what a user sends you, and it
+carries messages regardless of logcat's filtering. On a debuggable build:
 `adb shell run-as io.github.simsapa.app.beta cat files/log.txt`.
-(`run-as PKG sh -c '…'` does *not* work — SELinux denies it, and the shell does
-not inherit the app home as cwd — but `run-as PKG <binary>` does.) This was the
-same failure mode as the `qInfo()` trap above, reached by a different route.
+(`run-as PKG sh -c '…'` does **not** work — SELinux denies it, and the shell does
+not inherit the app home as cwd — but `run-as PKG <binary>` does.)
 
 Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
 in `cpp/utils.cpp`); do not add new ones, and prefer converting them when

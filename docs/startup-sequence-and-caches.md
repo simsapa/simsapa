@@ -320,19 +320,11 @@ was made — keep new call sites to it.
    `Component.onCompleted` handlers and re-run; don't attribute the gap
    to the most plausible heavyweight on the path.
 
-   **On Android these were invisible in logcat until 2026-08-26** — the
-   log writer inferred its level by searching the formatted line for a
-   level word, and the line contains the message, so `STARTUP-TRACE`
-   matched `TRACE` and was emitted below `android_logger`'s configured
-   maximum and dropped. Of 81 distinct messages in one device launch,
-   the 31 missing from an *unfiltered* logcat were exactly the
-   `STARTUP-TRACE` ones. The level is now carried from the event
-   metadata (`AGENTS.md`, "Logging in C++"), so they arrive normally.
-
-   The trap was precisely the one this section warns about —
-   instrumentation reading as code that never ran — so on a build
-   predating the fix, or whenever a device log looks impossibly empty,
-   read the app's own `log.txt`, which never had the problem:
+   On Android these lines reach both logcat (tag `simsapa`) and the
+   app's own `log.txt`. If a device log ever looks impossibly empty,
+   read `log.txt` rather than concluding the code did not run — it
+   carries messages regardless of logcat's filtering, and it is what a
+   user sends you. On a debuggable build:
 
    ``` sh
    adb shell run-as io.github.simsapa.app.beta cat files/log.txt
