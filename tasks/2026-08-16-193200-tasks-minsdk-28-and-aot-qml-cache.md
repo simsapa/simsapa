@@ -654,19 +654,151 @@ this file, under the sub-task, so the record lives with the work.
 > **Depends on:** nothing (but do it after A and C are committed, per §6.1).
 > **Blocks:** 6.0, 8.0, 9.0.
 
-- [ ] 5.1 Agree and write down the threshold here, before measuring. PRD
+- [x] 5.1 Agree and write down the threshold here, before measuring. PRD
   proposal: **keep if cold `engine.load()` improves by ≥ 100 ms**, and the binary
   size and build-time regressions from ~12.4 MB of regenerated C++ are judged
   acceptable; otherwise revert. Record the agreed form, including how "cold" is
   defined and how many runs count.
-- [ ] 5.2 Reconfigure clean (`make build -B` from a fresh `build/` directory) so
+
+  **AGREED 2026-08-26, before any measurement was taken.** The maintainer was
+  offered a stricter (≥ 200 ms) and a looser (any reproducible win) variant and
+  delegated the choice — *"I don't know what is a reasonable threshold to
+  expect, so go with what seems acceptable"* — so the PRD's own proposal stands.
+  On Open Question 4 (does app UI belong under `bridges/`?): *"Moving the folder
+  layout is fine, I don't have a strong opinion on it"* — so **there is no
+  standing layout objection**, and the measurement decides.
+
+  ### The rule
+
+  > **KEEP** the move if the **median cold `engine.load()` improves by ≥ 100 ms**,
+  > **and** the binary-size and build-time regressions are judged acceptable.
+  > **Otherwise REVERT.** Reverting is an acceptable, complete outcome provided
+  > the measurement is recorded (FR-18).
+
+  ### Definitions, fixed now so both columns are comparable
+
+  - **The metric** is the delta between `STARTUP-TRACE: engine.load() start` and
+    `… end` in `log.txt`, bracketing `new QQmlApplicationEngine(view_qml, this)`
+    at `cpp/sutta_search_window.cpp:18-20`. This is **QML engine load only**, not
+    total startup — the right scope, since that is the only thing AOT units can
+    affect.
+  - **"Cold"** = a freshly launched process with no other instance running, taking
+    the **first** `start`/`end` pair of the run (window_0's initial load).
+    Session restore can create further windows, each logging its own pair, so the
+    harness **counts the pairs per run** and prints the count — a changed window
+    count then shows up instead of silently shifting the number being compared.
+  - **N = 7 runs**, every run recorded, **median** reported (not mean: process
+    startup has one-sided outliers, and a single scheduling hiccup would drag a
+    mean around).
+  - **Same N and same method** for the after-measurement (8.3).
+
+  ### Harness
+
+  Written as `scripts/measure-engine-load.sh` rather than done by hand, for two
+  reasons: it makes the before and after provably the same procedure, and it
+  keeps the GUI launches to a single reviewable command.
+
+  **It kills each run by process group**, not by pid — a `WebEngineView` spawns
+  Chromium helper processes, and killing only the parent leaves them behind.
+  That is exactly the hazard behind `CLAUDE.md`'s standing rule that agents
+  should not launch the GUI ad hoc; the maintainer authorised GUI runs for this
+  task specifically, and the script also warns if any `simsapadhammareader`
+  process survives, since a stray one would race the next measurement.
+
+  It reads only the bytes `log.txt` grew by during each run, so a previous run's
+  trace lines can never be misread as the current one's.
+> **Trap found while setting this up — `pkill -f simsapadhammareader` kills the
+> shell that runs it.** A `-f` pattern is matched against *every* process's full
+> command line, including that of the shell executing the `pkill`, and any
+> command mentioning the app (even innocently, as in
+> `rm -rf build/simsapadhammareader`) therefore matches itself. It terminates
+> silently with **exit 144** and no log output, which reads exactly like a build
+> failure. Two things fix it, and both are needed:
+>
+> - use the bracket form **`pkill -f '[s]imsapadhammareader'`** (the regex matches
+>   the app; the literal `[s]…` in the pattern does not match itself), **and**
+> - keep that command *alone*, with no other mention of the app name in the same
+>   shell invocation — otherwise the enclosing shell's own argv matches again.
+>
+> `pkill -x` is not an option here: the process name is 20 characters and the
+> kernel's `comm` field caps at 15, so `-x` can never match it (`pgrep` says so
+> outright). The guard in `scripts/measure-engine-load.sh` uses the bracket form
+> for the same reason.
+
+- [x] 5.2 Reconfigure clean (`make build -B` from a fresh `build/` directory) so
   no stale `CMAKE_PREFIX_PATH` is in play, and confirm the configure log names
   the Qt kit you expect (`~/Qt/6.9.3/gcc_64`).
-- [ ] 5.3 Baseline metric 1 — cold `engine.load()`: run the app several times
+
+  `build/simsapadhammareader/` deleted outright, then `make build -B`. Exit 0.
+  The configure log names the expected kit:
+
+  ```
+  -- Using CMAKE_PREFIX_PATH: /home/gambhiro/Qt/6.9.3/gcc_64
+  -- Qt 6.9.3 (expected 6.9.3) at /home/gambhiro/Qt/6.9.3/gcc_64/lib/cmake/Qt6
+  -- Using qmake: /home/gambhiro/Qt/6.9.3/gcc_64/bin/qmake6
+  ```
+
+  Note the "(expected 6.9.3)" — that is CMake's own assertion that the found Qt
+  matches the declared `QT_LINUX`, so a stale or wrong kit would have failed the
+  configure rather than measuring the wrong thing.
+- [x] 5.3 Baseline metric 1 — cold `engine.load()`: run the app several times
   (record N, ≥ 5) and take the delta between the
   `STARTUP-TRACE: engine.load() start` and `engine.load() end` lines from
   `log.txt`. Record every run and the median, not just a summary.
-- [ ] 5.4 Baseline metric 2 — stripped binary size of
+
+  **BASELINE, 2026-08-26, N = 7, all 7 runs succeeded.**
+  `SIMSAPA_DIR=…/bootstrap-assets-resources/dist/simsapa`, Qt 6.9.3 desktop kit,
+  clean build from 5.2.
+
+  | Run | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|
+  | ms | 1184 | 1181 | 1167 | 1170 | 1193 | 1158 | **1341** |
+
+  **min 1158 · median 1181 · max 1341 ms.** Every run reported exactly **1
+  window load**, so no session-restore variance is contaminating the comparison.
+  Zero stray processes afterwards.
+
+  **The spread makes the threshold meaningful, which was not a given.** Six of
+  the seven runs fall in a 35 ms band (1158–1193); run 7 is a single 1341 ms
+  outlier, which is exactly why 5.1 fixed on the **median** rather than the mean
+  — the mean would be dragged 20 ms by that one run. The agreed ≥ 100 ms
+  threshold is ~8.5% of the median and roughly **three times the core
+  run-to-run spread**, so a genuine win of that size will be unambiguous and a
+  null result will be equally unambiguous.
+
+  Saved to `build/engine-load-baseline.txt`; 8.3 re-runs the identical command
+  with `-l after`.
+
+  > **Two measurement faults were found and fixed before this number was
+  > trusted. Both would have produced confident, wrong data**, and both are
+  > worth knowing about before the after-measurement:
+  >
+  > 1. **The app truncates `log.txt` at every startup** — the file always holds
+  >    exactly one run, starting at `gui::start()`. The first version of the
+  >    harness recorded a byte offset before launching and read from it
+  >    afterwards; after the truncation the file is *shorter* than that offset,
+  >    so the read came back empty and six of seven runs were reported as
+  >    "app exited early". They had in fact all run correctly. The harness now
+  >    truncates the log itself before each launch, which also removes the
+  >    opposite race — the previous run's `engine.load() end` still being present
+  >    and matching instantly.
+  > 2. **`SIMSAPA_DIR` was unset**, so the app resolved its own data directory.
+  >    It happened to resolve to the bootstrap one, but that was luck, and a run
+  >    against a different data set means a different session to restore, a
+  >    different number of windows, and a different `engine.load()`. The harness
+  >    now **exports it explicitly and prints it**, so the log states what was
+  >    measured.
+  >
+  > A third, non-fatal issue was raised by the maintainer watching the runs: the
+  > HTML reader panel was sometimes grey (Chromium not yet painted) and
+  > sometimes the normal yellow. That is downstream of the measured interval —
+  > `engine.load()` brackets the *synchronous* engine construction, while the
+  > webview `Loader`s are `asynchronous` and cannot start before `app.exec()` —
+  > so it did not affect the numbers. But it meant successive runs were being
+  > killed at genuinely different stages, so the harness now waits for
+  > `app.exec()` plus a 1 s settle before stopping each run. The tight 35 ms
+  > band above is partly the result of that change.
+- [x] 5.4 Baseline metric 2 — stripped binary size of
   `build/simsapadhammareader/simsapadhammareader`. Record the exact command and
   the byte count. **Control for a confound the PRD does not mention:**
   `bridges/src/api.rs:256` embeds the whole `../assets/` tree with `include_dir!`
@@ -676,10 +808,138 @@ this file, under the sub-task, so the record lives with the work.
   read as "AOT cost minus embed saving" rather than a single opaque number.
   (Checked: nothing requests `/assets/qml/…` over HTTP, so dropping it from the
   embedding is behaviourally safe — only the measurement is affected.)
-- [ ] 5.5 Baseline metric 3 — `make build -B` wall-clock from clean. Record it.
-- [ ] 5.6 Save the pre-change **generated `.qrc`** and the generated `qmldir`
+
+  Measured 2026-08-26 on the clean 5.2 build:
+
+  | Quantity | Command | Bytes | Human |
+  |---|---|---|---|
+  | Binary, **stripped** | `strip <copy>; stat -c%s` | **172,237,000** | 164.3 MiB |
+  | Binary, as-built (unstripped) | `stat -c%s` | 623,633,512 | 594.7 MiB |
+  | `assets/qml` tree | `du -sb assets/qml` | **2,225,239** | 2.12 MiB |
+  | `.qml` files in the tree | `find … -name '*.qml' \| wc -l` | 117 | — |
+
+  The stripped figure is the one to compare at 8.4 (the unstripped size is
+  mostly debug info and swamps the signal).
+
+  **The confound this sub-task exists for, stated as two separate numbers:**
+  `bridges/src/api.rs`'s `include_dir!("$CARGO_MANIFEST_DIR/../assets/")` embeds
+  the whole assets tree, so **2.12 MiB of QML source is in the binary today and
+  leaves it when the tree moves** — nothing to do with qmlcachegen. At 8.4 the
+  delta must therefore be reported as *AOT units added* **minus** *2.12 MiB of
+  embedding no longer happening*, not as one net number, which would understate
+  the AOT cost by exactly that much.
+- [x] 5.5 Baseline metric 3 — `make build -B` wall-clock from clean. Record it.
+
+  **239.37 s** (peak RSS 2,278,112 KB ≈ 2.17 GiB), measured with
+  `/usr/bin/time -f "WALL_SECONDS=%e MAXRSS_KB=%M"` around `make build -B` from
+  the deleted build directory in 5.2. Exit 0.
+- [x] 5.6 Save the pre-change **generated `.qrc`** and the generated `qmldir`
   from `bridges/`'s build output to the scratchpad. 7.2 diffs against these, and
   they cannot be reconstructed after the move.
+
+  Saved to the session scratchpad as `baseline-generated/{resources_0.qrc,
+  qmldir,qml_module_resources.qrc}`, from:
+
+  - `build/simsapadhammareader/cxxqt/crates/simsapa_bridges/qrc/resources_0.qrc`
+  - `build/simsapadhammareader/cxxqt/qml_modules/com/profoundlabs/simsapa/qmldir`
+  - `…/cargo/build/x86_64-unknown-linux-gnu/debug/build/simsapa_bridges-*/out/qt-build-utils/qml_modules/com/profoundlabs/simsapa/qml_module_resources_com_profoundlabs_simsapa.qrc`
+
+  **Three baseline facts established here, and two of them are the whole point
+  of Part B:**
+
+  1. **The generated `qmldir` contains no component lines at all** — it is
+     exactly five lines:
+
+     ```
+     module com.profoundlabs.simsapa
+     optional plugin com_profoundlabs_simsapa
+     classname com_profoundlabs_simsapa_plugin
+     typeinfo plugin.qmltypes
+     prefer :/qt/qml/com/profoundlabs/simsapa/
+     ```
+
+     **Not one of the 94 QML files is declared as a module type.** This is the
+     direct, artifact-level confirmation of the PRD's claim that the AOT/qmldir
+     path is entirely unused today. 7.1 checks that this file gains
+     `Logger 1.0 assets/qml/Logger.qml`-style lines after the move.
+  2. **qmlcachegen is invoked zero times** in the whole clean build log, and there
+     is **not one `*qmlcache*` file anywhere** in the build tree. AOT is not
+     merely ineffective today — it does not run at all. (The PRD's "87 compiled
+     units, 12.4 MB" describes the *older* arrangement, before the dead
+     generation was removed; the current tree generates nothing.)
+  3. The `.qrc` carries **94** `<file>` entries under prefix
+     `/qt/qml/com/profoundlabs/simsapa`, with aliases in the exact form
+     `assets/qml/SuttaSearchWindow.qml`, and **zero `..` survive** anywhere in
+     it — rcc folded them, as documented. This is FR-13's byte-identical
+     comparison target.
+
+  **Correction to this task file's own Relevant Files section:** it calls
+  `bridges/build.rs` a *"96-entry"* list, and 6.4 says "strip the `../` from all
+  96 entries". **The real count is 94.** The extra two are
+  `assets/qml/<Name>.qml` placeholders inside the `panic!` message's text, which
+  a naive grep counts as list entries. Verified by diffing the extracted list
+  against the generated aliases: the only two differences are those placeholders,
+  and there are **no duplicates** in the list.
+
+- [x] **5.7 (ADDED)** Baseline metric 1 **on the Android device**, before the
+  change.
+
+  **Not in the original plan, and it should have been.** The task list defers the
+  only Android measurement to 9.2, *"if the desktop result is positive"* — but by
+  then the pre-change baseline no longer exists, so there would be nothing to
+  compare against. Raised by the maintainer: the device CPU is markedly slower,
+  so AOT gains should show up there most clearly, and *"we can only tell if we
+  measure first"*. 9.2 is therefore now an after-measurement with a real
+  baseline, rather than a single unanchored number.
+
+  **BASELINE, 2026-08-26, N = 7, all 7 runs succeeded.** Device: Samsung
+  SM-S911B, Android 16 (API 36), package `io.github.simsapa.app.beta`
+  (versionCode 7, the minSdk-28 build from 1.4).
+
+  | Run | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|
+  | ms | **2746** | 1828 | 1748 | 1790 | 1776 | 1790 | 1798 |
+
+  **min 1748 · median 1790 · max 2746 ms.** One window load per run, as expected
+  (mobile never pools windows). Run 1 is a genuine cold start — first launch
+  after the smoke pass, with nothing in page cache — and is exactly the kind of
+  one-sided outlier the median was chosen for; runs 2–7 sit in an 80 ms band.
+
+  **Android is ~1.5× slower than the desktop** at this metric (1790 vs 1181 ms
+  median), which supports the reasoning behind measuring it: a fixed
+  parse-cost saving would be a larger *absolute* win here, and the 100 ms
+  desktop threshold is only ~5.6% of the device number.
+
+  Harness: `scripts/measure-engine-load-android.sh` (N, label and package
+  configurable), so 9.2 re-runs the identical procedure.
+
+  > **Two device-specific findings the harness had to be built around. The first
+  > contradicts `AGENTS.md`.**
+  >
+  > 1. **The `STARTUP-TRACE` lines never reach logcat.** A capture filtered on
+  >    the documented tag set (`simsapa Qt QtCore QtQml`) taken from before
+  >    launch contains **zero** `engine.load()` lines, while the app's own
+  >    `log.txt` has them — and the two are provably the same instant
+  >    (`engine.load() end` at `17:06:33.292Z` in the file;
+  >    `create_sutta_search_window(): created window_0` at `18:06:33.292` local
+  >    in logcat). So the Rust-side `tracing` records reach logcat and the
+  >    C++ `log_info_c()` ones do not.
+  >
+  >    `AGENTS.md` states the opposite: *"`log_info_c()` output goes to the same
+  >    `simsapa` tag as the Rust backend's, and also into the app's own
+  >    `log.txt`"*. The second half holds; **the first half does not**, at least
+  >    for these call sites. This matters because it is the same failure mode
+  >    that section was written to prevent — an agent debugging on device via
+  >    logcat would conclude the C++ never ran. **Flagged, not fixed:** the fix
+  >    is a code or doc change outside this PRD's scope, and the workaround
+  >    (read `log.txt` over `run-as`) is what the harness does.
+  > 2. **`run-as PKG sh -c '…'` is unusable, but `run-as PKG <binary>` is fine.**
+  >    With a relative path the shell cannot find the file (it does not inherit
+  >    the app home as cwd); with an absolute path SELinux denies it outright.
+  >    `run-as PKG rm files/log.txt` and `run-as PKG cat files/log.txt` both work.
+  >    This confirms the trap recorded in `docs/relocated-storage-recovery.md`.
+  >    Both require the **debuggable** beta build — the script checks `run-as`
+  >    up front and says so, rather than failing later with a permission error.
 
 ### 6.0 Part B — move `assets/qml/` under `bridges/` and switch `build.rs`
 
@@ -823,6 +1083,15 @@ this file, under the sub-task, so the record lives with the work.
   measurement of `engine.load()` to answer Open Question 2 — does the Android
   build benefit at all, given its startup is dominated by other costs? If the
   desktop result is null, record that this was **not** measured and why.
+
+  **Amended by 5.7:** the pre-change Android baseline now exists
+  (**median 1790 ms**, N = 7), so this is a straight before/after comparison —
+  re-run `scripts/measure-engine-load-android.sh -n 7 -l android-after` and
+  compare. **Take the after-measurement regardless of the desktop result**: the
+  device is ~1.5× slower, so a saving too small to clear the desktop threshold
+  could still be the more interesting number here, and the baseline is already
+  spent. The conditional in the original wording only made sense when no device
+  baseline existed.
 - [ ] 9.3 If **revert**: `git revert` (or reverse) the 6.0 commit in full,
   confirm `assets/qml/` is back at the top level, the `icons` symlink points at
   `../icons` again (`readlink` it — a reverted symlink is the easiest thing to
