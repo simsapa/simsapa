@@ -239,37 +239,37 @@ lang, entries, size_bytes, size_text, url, size_is_approximate } ] }`.
 window is destroyed on close and `ObjectDestroyed` is a live path; and log and
 continue, never log and return, so cleanup still runs.
 
-- [ ] 3.0 Bridge: expose the catalogue and the download run on `DictionaryManager`
-  - [ ] 3.1 Add a third cancel flag `download_cancel: Arc<AtomicBool>` to
+- [x] 3.0 Bridge: expose the catalogue and the download run on `DictionaryManager`
+  - [x] 3.1 Add a third cancel flag `download_cancel: Arc<AtomicBool>` to
         `DictionaryManagerRust`, next to `staging_cancel` and `import_cancel`,
         with a comment saying why it is separate (a third stage with a third
         cancel button; one shared flag would be set by the wrong screen).
-  - [ ] 3.2 Declare the invokables and signals above in the `#[cxx_qt::bridge]`
+  - [x] 3.2 Declare the invokables and signals above in the `#[cxx_qt::bridge]`
         block, with `#[cxx_name = "..."]` camelCase signal names matching the
         existing convention.
-  - [ ] 3.2a Add the `QStringList` type to the bridge's `unsafe extern "C++"`
+  - [x] 3.2a Add the `QStringList` type to the bridge's `unsafe extern "C++"`
         block — `include!("cxx-qt-lib/qstringlist.h")` +
         `type QStringList = cxx_qt_lib::QStringList;`. `dictionary_manager.rs`
         currently declares only `QString` and `QUrl`; `asset_manager.rs:27` is
         the worked example. Without it `download_available(labels: QStringList)`
         does not compile.
-  - [ ] 3.3 Implement `refresh_available_dictionaries()`: spawn a thread, call
+  - [x] 3.3 Implement `refresh_available_dictionaries()`: spawn a thread, call
         `dictionary_catalog::resolve_catalogue()`, serialise, emit
         `availableDictionariesReady`. The network lookup must never run on the
         GUI thread.
-  - [ ] 3.4 Implement `download_available(labels)`: reset `download_cancel`,
+  - [x] 3.4 Implement `download_available(labels)`: reset `download_cancel`,
         spawn one worker that walks the labels **in catalogue order** (FR-18),
         emitting progress / finished / failed per label, and continues past a
         failure rather than returning (FR-27).
-  - [ ] 3.5 Implement `abort_available_download()` — set the flag only; the
+  - [x] 3.5 Implement `abort_available_download()` — set the flag only; the
         worker observes it between chunks.
-  - [ ] 3.6 Format sizes for display with `import_staging::human_bytes()` so the
+  - [x] 3.6 Format sizes for display with `import_staging::human_bytes()` so the
         list and the progress frame agree on wording.
-  - [ ] 3.7 Mirror every new invokable and signal in
+  - [x] 3.7 Mirror every new invokable and signal in
         `bridges/assets/qml/com/profoundlabs/simsapa/DictionaryManager.qml` with
         the correct signature and a trivial return value. `qmllint` needs this;
         omitting it produces a runtime type failure with a green build.
-  - [ ] 3.8 `make build -B` and `make qml-lint` pass; no new warning names
+  - [x] 3.8 `make build -B` and `make qml-lint` pass; no new warning names
         `DictionaryManager.qml`.
 
 ### Specs for 4.0 — the Available section
