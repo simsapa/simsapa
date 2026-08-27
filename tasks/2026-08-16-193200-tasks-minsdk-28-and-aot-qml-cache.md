@@ -1602,7 +1602,7 @@ this file, under the sub-task, so the record lives with the work.
 
 - [ ] 9.1 Compare 8.5's numbers against 5.1's agreed threshold and state the
   decision plainly here: **keep** or **revert**, with the reason.
-- [ ] 9.2 If the desktop result is positive, take one Android on-device
+- [x] 9.2 If the desktop result is positive, take one Android on-device
   measurement of `engine.load()` to answer Open Question 2 — does the Android
   build benefit at all, given its startup is dominated by other costs? If the
   desktop result is null, record that this was **not** measured and why.
@@ -1615,6 +1615,63 @@ this file, under the sub-task, so the record lives with the work.
   could still be the more interesting number here, and the baseline is already
   spent. The conditional in the original wording only made sense when no device
   baseline existed.
+
+  **AFTER, 2026-08-27, N = 7, all 7 runs succeeded.** Same device (SM-S911B,
+  Android 16 / API 36), same package, same harness and same procedure as 5.7 —
+  `scripts/measure-engine-load-android.sh -n 7 -l android-after`.
+
+  | Run | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|
+  | ms | **1570** | 1391 | 1381 | 1306 | 1310 | 1311 | 1315 |
+
+  **min 1306 · median 1315 · max 1570 ms**, one window load per run. Run 1 is
+  again the genuine cold start (first launch after install, nothing in page
+  cache) — the same one-sided outlier shape the baseline had, and the reason the
+  metric is the median.
+
+  ### Android before/after
+
+  | | Baseline (5.7) | After | Δ |
+  |---|---|---|---|
+  | median | 1790 ms | **1315 ms** | **−475 ms (−26.5%)** |
+  | min | 1748 ms | 1306 ms | −442 ms |
+  | max | 2746 ms | 1570 ms | −1176 ms |
+
+  **Open Question 2 is answered: yes, and it helps Android more than the
+  desktop** — −475 ms against the desktop's −254 ms, and a larger proportion
+  (26.5% vs 21.5%). That is 5.7's reasoning confirmed by measurement: the device
+  CPU is slower and QML parsing is CPU-bound, so a fixed parse cost removed is a
+  bigger absolute saving here. It also narrows the platform gap at this metric
+  from ~1.5× to ~1.4×.
+
+  ### Build-state verification, before trusting the number
+
+  The Android build directory predates the QML move, so "it built" would not
+  have proved the APK carried AOT units at all. Checked rather than assumed:
+
+  - `build-android.sh --apk --debug --sign` — the same target as the 1.4/5.7
+    baseline APK (multi-ABI, not the faster arm64-only variant), exit 0. Its own
+    artifact checks passed: three ABIs, no cross-ABI contamination, no required
+    hardware features.
+  - `qmlcache_loader.cpp` was generated today for **all three ABIs** (arm64
+    06:35, armeabi-v7a and x86_64 06:36). Under the old layout none existed at
+    all, for any ABI.
+  - The arm64 loader carries **94 keys, 0 containing `/../`**, matching 7.4's
+    desktop result.
+  - **In the shipped APK**, `lib/arm64-v8a/libsimsapadhammareader_arm64-v8a.so`
+    contains all **94** `/qt/qml/com/profoundlabs/simsapa/assets/qml/…` keys and
+    1611 `QmlCacheGeneratedCode` symbols. The keys are UTF-16, so a plain
+    `strings` finds **zero** of them and reads as a failure — `strings -a -el` is
+    required. Worth knowing before anyone repeats this check and concludes the
+    units are missing.
+  - Installed and confirmed on device: `versionCode=7 minSdk=28 targetSdk=36`,
+    `versionName=1.0.0-alpha.6-beta-debug`.
+
+  **Not done, and not needed: the AOT-off control was desktop-only.** 8.3's
+  same-binary `QML_DISABLE_DISK_CACHE=1` run is what attributes the win to the
+  cache rather than to the move, and there is no comparably clean way to set that
+  env var for an Android activity. The device number is a straight before/after
+  by an identical procedure, resting on the desktop control for attribution.
 - [ ] 9.3 If **revert**: `git revert` (or reverse) the 6.0 commit in full,
   confirm `assets/qml/` is back at the top level, the `icons` symlink points at
   `../icons` again (`readlink` it — a reverted symlink is the easiest thing to
