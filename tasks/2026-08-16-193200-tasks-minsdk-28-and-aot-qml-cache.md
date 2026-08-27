@@ -1766,25 +1766,143 @@ this file, under the sub-task, so the record lives with the work.
 > against whichever layout 9.0 settled on.
 > **Depends on:** 9.0.
 
-- [ ] 10.1 `AGENTS.md`'s "New QML components" rule must describe the path form
+- [x] 10.1 `AGENTS.md`'s "New QML components" rule must describe the path form
   **actually** in `bridges/build.rs`, and — if the `qrc_resources` block survived
   — its build-time `panic!` message must match the rule (FR-19). The rule and the
   code must not disagree, whichever way 9.0 went.
-- [ ] 10.2 Linux: `make build -B`, `make qml-lint`, `make qml-test`, and an
+
+  **They agree.** The `qrc_resources` block did not survive (6.5), so there is no
+  `panic!` left to reconcile — `grep -n 'panic!' bridges/build.rs` returns
+  nothing. The rule, rewritten in 6.9, states the `"assets/qml/<Name>.qml"` form,
+  says it is relative to `bridges/`, explains *why* (the string is the rcc alias
+  verbatim) and keeps the `../` trap.
+
+  One correction made here: the rule's snippet showed
+  `qml_files.push("assets/qml/SearchBarInput.qml")`, but the code declares a
+  `vec![…]` literal — `bridges/build.rs:13`. The path form was right and the
+  surrounding syntax was not, so the snippet now shows the list literal. FR-19 is
+  about the two not disagreeing, and a `push` call on a `let` binding is a
+  disagreement a reader would have to resolve at the keyboard.
+- [x] 10.2 Linux: `make build -B`, `make qml-lint`, `make qml-test`, and an
   AppImage build (`make appimage -B`) all succeed.
-- [ ] 10.3 macOS and Windows: re-verify the build still **configures and
+
+  All four, on the kept layout:
+
+  | Check | Result |
+  |---|---|
+  | `make build -B` from clean | exit 0, 279.29 s (8.4) |
+  | `make qml-test` | **172 passed, 0 failed, 0 skipped** |
+  | `make qml-lint` | pre-existing `missing-property` baseline only — no `Type … unavailable`, no "is not a type", no "module is not installed" |
+  | `make appimage -B` | exit 0 — `Simsapa-v1.0.0-alpha.6-Linux-x86_64.AppImage`, 329,198,072 B, stripped, SHA256 written |
+
+  The AppImage script's own post-build checks passed too, including the
+  self-extraction test (*"✓ AppImage runtime works correctly"*) — which matters
+  more than usual here, since `build-appimage.sh`'s `QML_SOURCES_PATHS` was one
+  of the paths 6.8 re-pointed.
+- [x] 10.3 macOS and Windows: re-verify the build still **configures and
   completes** after the path change, on whichever of the two is available. If one
   is not available, say so explicitly rather than implying it was tested.
-- [ ] 10.4 Android: build one beta APK and confirm QML still loads on device.
+
+  **Neither was tested, because neither is available.** This work was done
+  entirely on Linux (`x86_64`, Arch); there is no macOS or Windows machine
+  reachable from this environment, and cross-compiling neither builds nor proves
+  anything about `macdeployqt`/`build-windows.ps1`. Stating it rather than
+  leaving a checked box that implies otherwise.
+
+  What *is* known about the two: `build-macos.sh:233`'s `-qmldir=./assets/qml`
+  was re-pointed in 6.8, and `build-appimage.sh` + `appimage.conf` — the two
+  independent copies of the same value — were both updated and the AppImage
+  proves that path (10.2). No Windows script names the QML tree (6.11's sweep
+  found none), so Windows carries no path edit to verify at all; the risk there
+  is the ordinary "does it still build" risk, unchanged by this work.
+
+  **Outstanding, and it belongs to whoever next builds on those platforms:** run
+  `make macos` / `build-windows.ps1` once and confirm they configure and
+  complete. The failure mode to watch for on macOS is `macdeployqt` scanning the
+  old `./assets/qml` and finding nothing — which would not fail the build, only
+  produce a bundle missing QML imports.
+- [x] 10.4 Android: build one beta APK and confirm QML still loads on device.
   Resource paths are unchanged, so this is a confirmation, not an investigation
   (FR-20). Note that x86_64 and armeabi-v7a remain **never functionally run** —
   out of scope (PRD §5.4) and must stay documented as outstanding.
-- [ ] 10.5 `git diff` against the pre-PRD tree shows **no** change to any `QT_*`
+
+  **Confirmed, and it was more than a confirmation because 9.2 needed the app to
+  actually run.** The multi-ABI debuggable beta was rebuilt today
+  (`build-android.sh --apk --debug --sign`, exit 0), installed, and **launched
+  seven times** for the measurement. Every run loaded QML successfully:
+
+  - 7 of 7 runs produced a complete `engine.load() start` → `end` pair and
+    `create_sutta_search_window(): created window_0`.
+  - The device `log.txt` contains **zero** matches for
+    `unavailable|is not a type|No such file|module … is not installed|Cannot assign`.
+  - Exactly one non-INFO line in the last run's log, and it is unrelated:
+    `WARN: Failed to fetch releases info … using embedded fallback` — the
+    documented offline path (`docs/releases-info-and-fallback.md`).
+  - 9.2 additionally verified the AOT units are **in the shipped APK**, not
+    merely generated: 94 clean cache keys in the arm64 library.
+
+  **x86_64 and armeabi-v7a remain never functionally run.** Both slices are built
+  and scanned (1.6 scanned all three for symbol floors), but no device or
+  emulator for either was available for this work. Out of scope per PRD §5.4 and
+  still outstanding.
+- [x] 10.5 `git diff` against the pre-PRD tree shows **no** change to any `QT_*`
   variable in `CMakeLists.txt`, to `android/build.gradle`'s AGP line, to the
   Gradle wrapper, to the JDK pin or to the NDK pin (Success Metric 6, PRD §5.1–5.2).
-- [ ] 10.6 Confirm the untouched list is untouched: `useLegacyPackaging`, the
+
+  `git diff 28a9739..HEAD` (28a9739 = the PRD's own commit, i.e. the pre-work
+  tree):
+
+  | Thing that must not have moved | Result |
+  |---|---|
+  | `QT_LINUX` / `QT_MACOS` / `QT_WINDOWS` / `QT_ANDROID` / `QT_IOS` | **no diff line touches any of them** |
+  | `android/gradle/wrapper/` (the wrapper, ours at 8.10) | **no diff at all** |
+  | `build-android.sh` (JDK pin, NDK backstop) | **no diff at all** |
+  | `android/build.gradle` | 12 insertions / 3 deletions — **only** `minSdkVersion 27 → 28` plus two comments; the AGP line is untouched |
+
+  Worth noting the shape of that last row: the only intended code change in the
+  whole of Part A is one token, and the rest of the diff is the comment
+  explaining why. That is the metric passing rather than a near miss.
+- [x] 10.6 Confirm the untouched list is untouched: `useLegacyPackaging`, the
   16 KB `max-page-size` link flag, the predictive-back opt-out,
   `assets/icons.qrc`, and the `qrc:` literals in `cpp/`.
-- [ ] 10.7 Walk PRD §7's six success metrics and check each off with the evidence
+
+  All five, against the same pre-PRD tree:
+
+  | Item | Result |
+  |---|---|
+  | `useLegacyPackaging` | no diff |
+  | 16 KB `max-page-size` link flag (`CMakeLists.txt`) | no diff |
+  | Predictive-back opt-out (`android:enableOnBackInvokedCallback="false"`) | no diff |
+  | `assets/icons.qrc` | **no diff at all** — 6.3 predicted this and it held |
+  | The `qrc:` literals in `cpp/` | **12 present, 0 diff lines touch one** (9.4) |
+
+  The `assets/icons.qrc` and `qrc:`-literal rows are the ones that make the move
+  safe rather than merely working: FR-13's alias-neutrality is what kept them
+  untouched, and 7.2's byte-identical alias md5 is the proof underneath them.
+- [x] 10.7 Walk PRD §7's six success metrics and check each off with the evidence
   recorded in this file. Set the PRD's Status header to reflect the outcome
   (including "Part B reverted" if that is what happened).
+
+  | # | Success metric | Verdict | Evidence |
+  |---|---|---|---|
+  | 1 | `aapt2 dump badging` reports `minSdkVersion:'28'` / `targetSdkVersion:'36'`, arm64 smoke pass clean | **met** | 1.5 (on the artifact), 3.1 (`dumpsys` on the installed package), 3.2 (all five smoke items pass), 3.3 (zero load-time or JNI errors) |
+  | 2 | No file in the tree claims the app's minSdk is 27 | **met** | 2.14's sweep — four live sites neither FR-5 nor 2.2 had caught, all fixed; everything still matching is explicitly historical |
+  | 3 | The AOT question closed **with a number**, plus runtime proof of a hit | **met** | 8.5 (three metrics, both columns), 8.2 (hit proven three ways), 9.2 (Android −475 ms) |
+  | 4 | If kept: build, lint, test, AppImage and Android APK all succeed; `.qrc` aliases byte-identical | **met** | 10.2, 10.4, and 7.2/9.4 — the alias md5 is still the **pre-move** `a36f45a1…` |
+  | 5 | Two upstream issue URLs (or a recorded decision not to file) in `docs/cxx-qt-fork.md` | **NOT MET** | Part C (4.0) is entirely unstarted. §5's defect list is still prose with no issue link — the dead end FR-21 exists to remove |
+  | 6 | `git diff` shows no `QT_*`, AGP or Gradle-wrapper change | **met** | 10.5 |
+
+  **Five of six met. The PRD is not complete**, and the two gaps are named rather
+  than rounded away:
+
+  - **Part C (4.0) — the two upstream cxx-qt defects, unreported.** Nothing
+    blocks it: 7.4 already captured the second defect's evidence in full (the
+    raw insert at `qmlcache_loader.cpp:680-773` against the
+    `QDir::cleanPath` lookup at `:784`), so what remains is the one-file
+    reproducer, filing, and pasting the URLs back into §5.
+  - **2.13 — the Play Console API-27 install share**, which needs an
+    authenticated session only the maintainer has. FR-7 explicitly does not gate
+    anything.
+
+  PRD Status header set accordingly: *"Parts A and B complete — Part B kept.
+  Part C (upstream reports) outstanding; FR-7 blocked on the maintainer."*

@@ -1,7 +1,10 @@
 # PRD: minSdkVersion 28 and the AOT QML cache — Qt-independent carry-overs
 
 - **Date:** 2026-08-16
-- **Status:** Draft
+- **Status:** Parts A and B complete (2026-08-27) — **Part B kept**: the AOT
+  cache is hit and worth −254 ms on desktop, −475 ms on Android. **Part C
+  (upstream cxx-qt reports) outstanding**; FR-7 (Play API-27 install share)
+  blocked on the maintainer.
 - **Scope:** Three items carried over from the **closed** Qt 6.10.3 PRD that do
   **not** depend on a Qt upgrade. **No Qt version changes in this work.**
 

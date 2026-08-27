@@ -1129,7 +1129,10 @@ create a new QML component such as `SearchBarInput.qml`, the file has to be adde
 to the `qml_files` list in `bridges/build.rs`.
 
 ``` rust
-qml_files.push("assets/qml/SearchBarInput.qml");
+let qml_files = vec![
+    // ...
+    "assets/qml/SearchBarInput.qml",
+];
 ```
 
 **Keep the `"assets/qml/<Name>.qml"` form exactly — relative to `bridges/`, and
