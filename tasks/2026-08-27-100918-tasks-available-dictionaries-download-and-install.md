@@ -28,7 +28,11 @@ PRD: [2026-08-27-100918-prd---available-dictionaries-download-and-install.md](./
   `qmllint` type stub; every new invokable and signal must be mirrored here.
 - `bridges/assets/qml/DictionariesWindow.qml` — the Available section, the new
   download progress frame (`views_stack` index 6), the download run state
-  machine, and the hand-off into the existing `start_batch()`.
+  machine (`start_download_run` / `advance_download` / `finish_download_phase` /
+  `cancel_download_run`, the three `onAvailableDownload*` handlers), the FR-6
+  filter, and the hand-off into the existing `start_batch()`. The shared summary
+  frame gained a `download_batch` op-kind and now labels import vs. download
+  failures separately.
 - `bridges/assets/qml/AvailableDictionaryRow.qml` — **new.** One catalogue row:
   checkbox, name, label, size.
 - `bridges/build.rs` — add `"assets/qml/AvailableDictionaryRow.qml"` to `qml_files`.
@@ -364,45 +368,46 @@ silent, and both must be settled here rather than discovered at 5.10:
    download failures whenever `download_failed` is non-empty. **Prefer the
    second** — it adds no branch to a function four other flows depend on.
 
-- [ ] 5.0 QML: the download run — progress frame and hand-off to the import batch
-  - [ ] 5.1 Add the download progress frame as `views_stack` index 6: current
+- [x] 5.0 QML: the download run — progress frame and hand-off to the import batch
+  - [x] 5.1 Add the download progress frame as `views_stack` index 6: current
         dictionary name, bytes done / total, `n of m` position, and a Cancel
         button (FR-20).
-  - [ ] 5.2 Add the run's state properties (`download_queue`, `download_index`,
-        `download_total`, `download_active`, `download_cancelled`,
+  - [x] 5.2 Add the run's state properties (`download_labels`, `download_index`,
+        `download_total`, `download_current_label`, `download_done_bytes`,
+        `download_total_bytes`, `download_active`, `download_cancelling`,
         `pending_import_items`, `download_failed` list).
-  - [ ] 5.3 Write `start_download_run(labels)`: sort the labels into catalogue
+  - [x] 5.3 Write `start_download_run(labels)`: sort the labels into catalogue
         order, acquire `dictionary-download-batch`, switch to frame 6, and call
         `download_available()`.
-  - [ ] 5.4 Handle `onAvailableDownloadProgress` — update the bytes and the
+  - [x] 5.4 Handle `onAvailableDownloadProgress` — update the bytes and the
         current name; ignore ticks once a cancel is pending, matching the
         existing `import_aborting` guard.
-  - [ ] 5.5 Handle `onAvailableDownloadFinished` — append the item to
+  - [x] 5.5 Handle `onAvailableDownloadFinished` — append the item to
         `pending_import_items` in the shape above.
-  - [ ] 5.6 Handle `onAvailableDownloadFailed` — record the failure with its
+  - [x] 5.6 Handle `onAvailableDownloadFailed` — record the failure with its
         message and continue; do not abort the run (FR-27).
-  - [ ] 5.7 When the last label is done, call `finish_download_phase()`: hand
+  - [x] 5.7 When the last label is done, call `finish_download_phase()`: hand
         `pending_import_items` to the existing `start_batch()` **first**, then
         release `dictionary-download-batch`. That order matters — `start_batch()`
         acquires `dictionary-import-batch`, so releasing first leaves an instant
         with no holder at all. If the list is empty (everything failed), release
         the holder and go straight to the summary frame instead.
-  - [ ] 5.8 Wire Cancel to `abort_available_download()` for the download phase and
+  - [x] 5.8 Wire Cancel to `abort_available_download()` for the download phase and
         to the existing `abort_import()` once the import phase has started
         (FR-24). Cancelling must stop before the next item starts, not mid-batch
         by killing the worker.
-  - [ ] 5.9 Extend the `onClosing` guard to refuse a close while frame 6 is
+  - [x] 5.9 Extend the `onClosing` guard to refuse a close while frame 6 is
         current, alongside the existing 1/2/3 check (FR-26).
-  - [ ] 5.10 Extend the shared summary frame to report the download phase:
+  - [x] 5.10 Extend the shared summary frame to report the download phase:
         add an `op_kind` `"download_batch"` for the everything-failed ending
         (which never reaches `start_batch()`), and for the normal ending append
         the `download_failed` entries to the existing `"import_batch"` body
         whenever that list is non-empty. Do not add a branch to `finish_batch()`
         — see the two collisions in the specs above.
-  - [ ] 5.11 Verify the keep-screen-on holder is released on **all three**
+  - [x] 5.11 Verify the keep-screen-on holder is released on **all three**
         endings — success, all-failed, and cancel — by inspection of the code
         paths, since every ending must pass through one function.
-  - [ ] 5.12 `make qml-lint`, `make qml-test` and `make build -B` pass.
+  - [x] 5.12 `make qml-lint`, `make qml-test` and `make build -B` pass.
 
 ### Specs for 6.0 — failures, cleanup, verification
 
