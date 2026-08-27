@@ -552,7 +552,7 @@ if (-not $SkipDeploy) {
     
     $windeployqtArgs = @(
         $distExePath,
-        "--qmldir", "assets\qml",
+        "--qmldir", "bridges\assets\qml",
         "--release",
         "--no-translations",
         "--no-system-d3d-compiler",
