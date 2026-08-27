@@ -1365,27 +1365,232 @@ this file, under the sub-task, so the record lives with the work.
 > task fails here and 9.0's revert branch applies.
 > **Depends on:** 7.0. **Blocks:** 9.0.
 
-- [ ] 8.1 Run with `QT_LOGGING_RULES="qt.qml.diskcache.debug=true"` and capture
+- [x] 8.1 Run with `QT_LOGGING_RULES="qt.qml.diskcache.debug=true"` and capture
   the output. Record concrete lines showing units being **loaded from the
   cache**, not compiled.
-- [ ] 8.2 Run the deliberate-mismatch control: perturb one QML file so its unit
+
+  **The cache is hit. But the obvious reading of this task is a trap, and it has
+  to be said first: Qt logs NOTHING on a cache hit.** `findCachedCompilationUnit`
+  (`qtdeclarative/src/qml/qml/qqmlmetatype.cpp:1726`) `return`s the unit
+  silently on success and is equally silent on `NoUnitFound`; the only
+  `qCDebug(DBG_DISK_CACHE)` calls on that path are *rejections*. So "capture the
+  diskcache log and look for hits" produces an **empty result whether the cache
+  works or not** — the exact silent-failure shape this task exists to defeat.
+  A run with `qt.qml.diskcache.debug=true` on the post-move binary logs **one
+  line in the whole startup**:
+
+  ```
+  qt.qml.diskcache: Error saving cached version of "" to disk: "Missing time stamp for source file"
+  ```
+
+  (One unnamed unit, present identically in every configuration below, so not a
+  discriminator.) The proof therefore had to come from the **complementary**
+  observation — the lines Qt *does* emit when a file is compiled from source —
+  and from two controls run against the **same binary**, which is 8.2.
+
+  **The mechanism, read out of the Qt 6.9.3 sources** (`~/Qt/6.9.3/Src`, so this
+  is not inference):
+
+  - `QQmlTypeLoader::Blob::aotCacheMode()` (`qqmltypeloader.cpp:953`) turns the
+    `QML_DISK_CACHE` env var into `RejectAll` / `AcceptUntyped` /
+    `RequireFullyTyped`; `ExecutionEngine::diskCacheOptions()`
+    (`qv4engine.cpp:2280`) parses it, with `QML_DISABLE_DISK_CACHE=1` forcing
+    `Disabled` and no variable at all meaning `Enabled = Aot | Qmlc`.
+  - On an AOT **miss**, the type is compiled from source and Qt then tries to
+    write a `.qmlc`; for a `qrc:` URL that always fails, logging
+    `Error saving cached version of <url> to disk: "Missing time stamp for
+    source file"` (`qqmltypedata.cpp:935`). **One line per file that was parsed
+    instead of loaded.**
+
+  So the count of `Error saving cached version` lines naming our own QML files
+  *is* the count of AOT misses, and it is **0** on the post-move binary against
+  **71** with AOT switched off (8.2). Those 71 are every registered file the
+  startup path actually reaches — 94 are registered, and the windows not opened
+  at startup are not loaded at all.
+- [x] 8.2 Run the deliberate-mismatch control: perturb one QML file so its unit
   *should* be rejected, and confirm the log reports the rejection for that unit
   and only that unit. Without this control, 8.1's log could be reporting
   something else. Revert the perturbation afterwards.
-- [ ] 8.3 Re-measure metric 1 (cold `engine.load()`) with the same N and the same
+
+  **Done as two controls, and deliberately not by editing a QML file.** Editing
+  a source file cannot produce a mismatch here: the source and its AOT unit are
+  both built into the same binary from the same input, so a perturbation is
+  simply compiled in and the two agree again (8.4a shows exactly that happening).
+  Qt's `QML_DISK_CACHE` switch reaches the same place *without* rebuilding —
+  which is strictly better, because both columns are then the **same binary**
+  and nothing else can account for the difference.
+
+  **Control 1 — `QML_DISK_CACHE=aot-native` (mode `RequireFullyTyped`).** Our
+  units are byte-code, not fully native, so every unit the lookup **finds** is
+  rejected and says so (`qqmlmetatype.cpp:1741`). 113 rejection lines, **71 of
+  them naming our own files**, the other 42 Qt's own Controls units:
+
+  ```
+  qt.qml.diskcache: Error loading pre-compiled file  QUrl("qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/SuttaSearchWindow.qml") : compilation unit contains functions not compiled to native code.
+  qt.qml.diskcache: Error loading pre-compiled file  QUrl("qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/UpdateNotificationDialog.qml") : compilation unit contains functions not compiled to native code.
+  ```
+
+  **This is the direct evidence FR-16 asks for.** A rejection line can only be
+  printed for a unit that was *located*, and it prints the URL it was located
+  by — `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/…`, exactly the keys
+  7.4 found in `qmlcache_loader.cpp`. The lookup reaches our units at our
+  resource paths. Under cxx-qt's old `../` arrangement this control would print
+  nothing at all for our files.
+
+  **Control 2 — `QML_DISK_CACHE=qmlc` (AOT off, `.qmlc` disk cache on).** With
+  `RejectAll` the units are never consulted and every reached file is parsed
+  from source: **72** `Error saving cached version` lines, **71** of them ours
+  (plus the same unnamed one seen in every run).
+
+  ```
+  qt.qml.diskcache: Error saving cached version of "qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/Logger.qml" to disk: "Missing time stamp for source file"
+  ```
+
+  **The two control sets are identical file-for-file** — `diff` of the 71 names
+  from control 1 against the 71 from control 2 is empty. The same 71 files that
+  the lookup *finds* under control 1 are the ones that *get parsed* when the
+  lookup is disabled — and under the default configuration **none** of them is
+  parsed. That is a hit on all 71, established three ways.
+
+  Nothing was perturbed on disk, so there is nothing to revert. The counts, per
+  configuration, on one binary:
+
+  | Configuration | our files rejected/found | our files parsed from source |
+  |---|---|---|
+  | default (`Aot \| Qmlc`) | — | **0** |
+  | `QML_DISK_CACHE=aot-native` | **71** | 0 |
+  | `QML_DISK_CACHE=qmlc` (AOT off) | 0 | **71** |
+- [x] 8.3 Re-measure metric 1 (cold `engine.load()`) with the same N and the same
   method as 5.3. Record every run and the median.
-- [ ] 8.4 Re-measure metric 2 (stripped binary size) and metric 3
+
+  **AFTER, 2026-08-27, N = 7, all 7 runs succeeded**, `scripts/measure-engine-load.sh
+  -n 7 -l after` — the identical harness, `SIMSAPA_DIR` and method as 5.3,
+  against the clean build from 8.4.
+
+  | Run | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|
+  | ms | 1056 | 944 | 927 | 943 | 915 | 915 | **899** |
+
+  **min 899 · median 927 · max 1056 ms**, one window load per run, no stray
+  processes. Against the 5.3 baseline (median **1181**): **−254 ms, −21.5%** —
+  comfortably past 5.1's agreed ≥ 100 ms threshold, and about **7×** the 35 ms
+  core run-to-run spread.
+
+  **A third measurement was added, and it is the one that makes the number
+  attributable.** A before/after across two builds can always be argued to have
+  measured something other than the cache. So the *same* binary was measured
+  again with the cache switched off — `QML_DISABLE_DISK_CACHE=1
+  scripts/measure-engine-load.sh -n 7 -l after-aot-disabled`:
+
+  | Run | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|
+  | ms | 1170 | 1160 | 1194 | 1155 | 1183 | 1173 | 1137 |
+
+  **min 1137 · median 1170 ms** — within **11 ms** of the pre-move baseline of
+  1181, i.e. the post-move binary with AOT disabled performs exactly like the
+  pre-move binary. **The entire 254 ms is the AOT cache**, not the tree move, not
+  build variance, not the machine on the day.
+- [x] 8.4 Re-measure metric 2 (stripped binary size) and metric 3
   (`make build -B` wall-clock from clean), same commands as 5.4/5.5. Report the
   size as two components per 5.4: the AOT units added, and the ~2.4 MB of QML
   source no longer embedded by `include_dir!`. A single net number would
   understate the AOT cost.
-- [ ] 8.4a Confirm the incremental-rebuild side benefit: touch one QML file and
+
+  Clean build (`rm -rf build/simsapadhammareader && make build -B`), exit 0.
+
+  | Metric | Baseline (5.4/5.5) | After | Δ |
+  |---|---|---|---|
+  | Stripped binary | 172,237,000 B | **176,006,216 B** | **+3,769,216 B (+3.59 MiB, +2.2%)** |
+  | `make build -B` wall-clock | 239.37 s | **279.29 s** | **+39.9 s (+16.7%)** |
+  | Peak build RSS | 2,278,112 KB | 2,309,976 KB | +31 MB |
+
+  **The size delta reported as two components, which is why 5.4 exists:** the
+  net +3.59 MiB is a *sum of a cost and a saving*, and quoting it alone would
+  understate the AOT cost by more than half.
+
+  | Component | Bytes |
+  |---|---|
+  | AOT units added | **≈ +5,994,455 (5.72 MiB)** |
+  | QML source no longer embedded by `include_dir!("…/../assets/")` | **−2,225,239 (2.12 MiB)** |
+  | Net, as measured | +3,769,216 (3.59 MiB) |
+
+  The saving is real but incidental — `bridges/src/api.rs:256` embeds the
+  `assets/` tree, and the QML left that tree when it moved under `bridges/`. It
+  has nothing to do with qmlcachegen and would not be repeated by any other AOT
+  change.
+
+  Generated C++ behind the cost: **95 files, 14,554,852 B (13.9 MiB)** under
+  `…/out/qmlcachegen/` (94 units + `qmlcache_loader.cpp`), plus an 877,584 B
+  `qmlcache_loader.o`. That is the source of the +16.7% build time.
+- [x] 8.4a Confirm the incremental-rebuild side benefit: touch one QML file and
   check that `cargo`/`make build` actually rebuilds the resource, which the
   current `../`-prefixed `rerun-if-changed` paths do not reliably do. Record the
   result — it is an argument for 9.1 that does not depend on the timing number.
-- [ ] 8.5 Write the before/after comparison table here — three metrics, both
+
+  **Confirmed working.** A comment line was appended to
+  `bridges/assets/qml/Logger.qml` and the build re-run; then the edit was
+  reverted with `git checkout` and the binary rebuilt.
+
+  - `cmake --build ./build/simsapadhammareader/` → exit 0 in **78 s**: it
+    recompiled the `simsapa_bridges` crate and relinked, rather than reporting
+    everything up to date.
+  - `qmlcachegen/com/profoundlabs/simsapa/Logger.qml.cpp` was **regenerated**
+    (mtime 06:21:37, inside that build, not the 05:5x clean build).
+  - `strings` on the resulting binary contains the probe comment — so the edit
+    reached the **resource**, not merely a rebuilt object file.
+
+  This is the `rerun-if-changed` half of the move: cxx-qt-build emits the raw
+  path and cargo resolves a relative rerun path against the package root, so the
+  old `../assets/qml/…` entries pointed one level above the crate and did not
+  reliably re-trigger. Now they resolve. **It is an argument for 9.1 that does
+  not depend on the timing number at all** — a QML edit that silently does not
+  reach the build is a debugging hazard rather than a performance one.
+
+  > **Trap for anyone repeating this: `make build` alone is a no-op here.** The
+  > repository has a directory named `build`, so make answers *"'build' is up to
+  > date"* and exits 0 in 0.00 s without running anything. Use `make build -B`
+  > (as every other measurement in this file does) or call `cmake --build` on the
+  > build directory. Taken at face value, that 0.00 s would have read as
+  > "incremental rebuild does nothing" — the opposite of the result.
+- [x] 8.5 Write the before/after comparison table here — three metrics, both
   columns, plus the cache-hit evidence. **Record the result either way**; a null
   result closes a question open since cxx-qt 0.7 (FR-17).
+
+  ### The three metrics
+
+  | Metric | Before (5.3–5.5) | After | Δ | Verdict |
+  |---|---|---|---|---|
+  | Cold `engine.load()`, median of 7 | 1181 ms | **927 ms** | **−254 ms (−21.5%)** | **passes** the ≥ 100 ms threshold by 2.5× |
+  | Stripped binary | 172,237,000 B | 176,006,216 B | +3,769,216 B (+2.2%) — *AOT +5.72 MiB, embedding −2.12 MiB* | regression, small |
+  | `make build -B` from clean | 239.37 s | 279.29 s | +39.9 s (+16.7%) | regression, developer-side only |
+
+  Supporting run, same binary, cache switched off: **median 1170 ms** — within
+  11 ms of the pre-move baseline, which attributes the whole win to the cache.
+
+  ### The cache-hit evidence (FR-16)
+
+  | Evidence | Result |
+  |---|---|
+  | Files parsed from source at startup, default config | **0 of 71** |
+  | Files parsed from source with `QML_DISK_CACHE=qmlc` (AOT off) | **71 of 71** |
+  | Units *located* by URL under `QML_DISK_CACHE=aot-native` | **71**, each named by its `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/…` URL |
+  | The two 71-name sets | **identical, `diff` empty** |
+  | `engine.load()` with the cache disabled on the same binary | back to baseline (1170 vs 1181 ms) |
+
+  ### The result
+
+  **The AOT QML cache works, is hit for every registered file the startup path
+  reaches, and is worth ~21% of QML engine load time.** The question open since
+  cxx-qt 0.7 — first "is the cache used?" (no, and 5.6 showed it was not even
+  generated), then "would it help?" — is closed with a number.
+
+  Two things worth carrying forward for whoever revisits this. First, **"a green
+  build proves nothing" understated it: a green *diskcache log* also proves
+  nothing**, because Qt is silent on a hit. Anyone re-checking this should use
+  8.2's inverted controls, not a search for a success line that does not exist.
+  Second, the win is real but it is **QML engine load only** — 254 ms of an app
+  whose startup is dominated by other costs (`docs/startup-sequence-and-caches.md`
+  §6). It is not a 254 ms saving on time-to-window.
 
 ### 9.0 Part B — decide keep or revert, and record it
 
