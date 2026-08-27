@@ -231,10 +231,57 @@ qmlcachegen running, and not generating those units lost nothing.
 runtime check rather than an inspection: unmatched AOT units fail *silently* by
 falling back to parsing QML from source — exactly the pre-move behaviour. The
 artifact-level checks are that the generated `qmldir` carries resolving component
-lines (`SuttaSearchWindow 1.0 bridges/assets/qml/SuttaSearchWindow.qml`) and that no key
-in the generated `qmlcache_loader.cpp` contains `/../`; the runtime check is
-`QT_LOGGING_RULES="qt.qml.diskcache.debug=true"` showing units loaded from the
-cache, with a deliberate-mismatch control.
+lines (`SuttaSearchWindow 1.0 assets/qml/SuttaSearchWindow.qml` — the path is
+relative to `bridges/`, as in `build.rs`) and that no key in the generated
+`qmlcache_loader.cpp` contains `/../`.
+
+### What the cache is worth, and how to re-check it
+
+Measured 2026-08-27 (PRD
+[`2026-08-16-193200`](../tasks/2026-08-16-193200-prd---minsdk-28-and-aot-qml-cache.md)),
+cold `engine.load()` as the median of 7 runs:
+
+| | Before | After | Δ |
+|---|---|---|---|
+| Linux desktop | 1181 ms | 927 ms | **−254 ms (−21.5%)** |
+| Android (SM-S911B, API 36) | 1790 ms | 1315 ms | **−475 ms (−26.5%)** |
+| Stripped desktop binary | 172.2 MB | 176.0 MB | +3.6 MB (AOT +5.7 MB, `include_dir!` embedding −2.1 MB) |
+| `make build -B` from clean | 239 s | 279 s | +40 s (+16.7%) |
+
+**The move is kept.** The device gains more than the desktop, absolutely and
+proportionally — the CPU is slower and QML parsing is CPU-bound. Note the scope:
+this is QML engine load, not time-to-window, which is dominated by other costs
+(see [startup-sequence-and-caches.md](./startup-sequence-and-caches.md) §6).
+
+> **Trap: Qt logs nothing on a cache hit, so "no diskcache output" is not
+> evidence of anything.** `findCachedCompilationUnit()`
+> (`qtdeclarative/src/qml/qml/qqmlmetatype.cpp`) returns silently on success and
+> is equally silent on `NoUnitFound`; every `qt.qml.diskcache` debug line is a
+> *rejection*. Searching that log for a success line yields an empty result
+> whether the cache works or not.
+>
+> Re-check it by inversion instead, on one binary, via `QML_DISK_CACHE`
+> (parsed in `qv4engine.cpp`, consumed by `QQmlTypeLoader::Blob::aotCacheMode()`):
+>
+> - default — count `Error saving cached version of "qrc:/…/assets/qml/…"`
+>   lines. Each one is a file that was **parsed from source**; there should be
+>   none of ours.
+> - `QML_DISK_CACHE=qmlc` — AOT rejected outright, so every file the startup
+>   path reaches parses from source and appears in that list (71 files today; 94
+>   are registered, and windows not opened at startup are never loaded).
+> - `QML_DISK_CACHE=aot-native` — units are *found* and then rejected for not
+>   being fully native, so each logs the URL it was located by. This is the
+>   direct proof that the lookup reaches our units at our resource paths, and it
+>   is what would print nothing under the old `../` arrangement.
+>
+> The two 71-name sets must be identical. `QML_DISABLE_DISK_CACHE=1` on the same
+> binary returns `engine.load()` to the pre-move figure, which is what attributes
+> the win to the cache rather than to the layout change.
+
+The move also repaired incremental rebuilds: cxx-qt-build emits `rerun-if-changed`
+with the raw path and cargo resolves relative rerun paths against the package
+root, so the old `../assets/qml/…` entries pointed above the crate. A QML edit
+now reliably reaches the resource.
 
 Two upstream defects worth reporting, with a one-file reproducer (`"../foo/Bar.qml"`):
 

@@ -1600,8 +1600,40 @@ this file, under the sub-task, so the record lives with the work.
 > legitimate and "no" is an allowed answer even if the win is real.
 > **Depends on:** 8.0.
 
-- [ ] 9.1 Compare 8.5's numbers against 5.1's agreed threshold and state the
+- [x] 9.1 Compare 8.5's numbers against 5.1's agreed threshold and state the
   decision plainly here: **keep** or **revert**, with the reason.
+
+  ### KEEP
+
+  The maintainer's call on 2026-08-27, after seeing both platforms: *"Those are
+  all-over positive results, so the decision for 9.1 is 'keep'."*
+
+  Against 5.1's rule, agreed in writing **before** any number was taken —
+  *"KEEP if the median cold `engine.load()` improves by ≥ 100 ms, and the
+  binary-size and build-time regressions are judged acceptable"*:
+
+  | Clause | Measured | Verdict |
+  |---|---|---|
+  | median `engine.load()` ≥ 100 ms better | desktop **−254 ms**, Android **−475 ms** | passes by 2.5–4.8× |
+  | binary size acceptable | +3.6 MB stripped (+2.2%) on a 172 MB binary | accepted |
+  | build time acceptable | +40 s on a clean build (+16.7%); incremental unaffected | accepted, developer-side only |
+
+  Three things beyond the threshold support it, and they are why this is not a
+  marginal call:
+
+  1. **The win is attributed, not merely observed.** The same binary with the
+     cache disabled returns to the pre-move figure (1170 vs 1181 ms), so the
+     saving is the cache and not the layout change or the machine.
+  2. **The cache is proven hit**, three independent ways (8.2), against a
+     mechanism where Qt's own logging cannot prove it directly.
+  3. **Incremental rebuilds are repaired** (8.4a) — a correctness benefit that
+     does not depend on the timing number at all. Under the old layout a QML
+     edit could silently fail to reach the build.
+
+  On Open Question 4 (*does app UI belong under `bridges/`?*): 5.1 recorded that
+  there is **no standing layout objection** — *"Moving the folder layout is fine,
+  I don't have a strong opinion on it"* — so the measurement decides, and it
+  decides keep.
 - [x] 9.2 If the desktop result is positive, take one Android on-device
   measurement of `engine.load()` to answer Open Question 2 — does the Android
   build benefit at all, given its startup is dominated by other costs? If the
@@ -1678,14 +1710,55 @@ this file, under the sub-task, so the record lives with the work.
   get silently wrong), `bridges/build.rs` is back on `qrc_resources` with its
   alias block and comment, and `make build -B` + `make qml-test` pass. The
   `docs/cxx-qt-fork.md` record of the measurement **stays**.
-- [ ] 9.4 If **keep**: confirm nothing in 7.0 regressed after any follow-up edits,
+
+  **NOT APPLICABLE — 9.1 decided keep.** Nothing was reverted.
+- [x] 9.4 If **keep**: confirm nothing in 7.0 regressed after any follow-up edits,
   and that the 12 `qrc:` literals in `cpp/` are untouched in `git diff`.
-- [ ] 9.5 Record the measurement **and** the decision in `docs/cxx-qt-fork.md`'s
+
+  All three 7.0 artifact checks re-run on the current build, after the 8.4a
+  edit-and-revert cycle and the rebuild that followed it:
+
+  | 7.0 check | Then | Now |
+  |---|---|---|
+  | `qmldir` component lines, no `..` | 94 / 0 | **94 / 0** |
+  | `.qrc` alias set (md5 of the sorted aliases) | `a36f45a1ff17fd55e14a1df320227b3e` | **`a36f45a1ff17fd55e14a1df320227b3e`** |
+  | `qmlcache_loader.cpp` keys containing `/../` | 0 of 94 | **0 of 94** |
+
+  The alias md5 is the FR-13 contract and it is still the **pre-move**
+  baseline's, so the resource paths remain byte-identical to before Part B.
+
+  **`cpp/` against the pre-PRD tree** (`git diff 5fe14a7~1..HEAD -- cpp/`): 2
+  files, 4 insertions, 3 deletions — one comment line in `gui.cpp` (6.9) and the
+  two minSdk comments in `utils.cpp` (2.14). **Zero** diff lines touch a
+  `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/…` literal, and all **12** are
+  still present in `cpp/`.
+- [x] 9.5 Record the measurement **and** the decision in `docs/cxx-qt-fork.md`'s
   "Side finding" section, replacing "enabling AOT for real is an untried
   improvement" with what was actually measured, so the next reader does not
   re-derive it (FR-18).
-- [ ] 9.6 Commit the decision (and the revert, if that is the outcome) separately
+
+  Done. The section keeps the `..` trap and the "a green build proves nothing"
+  warning, and gains two things:
+
+  - **"What the cache is worth, and how to re-check it"** — the four-row
+    before/after table (both platforms, binary size split into its AOT cost and
+    its incidental `include_dir!` saving, build time), the **keep** decision, and
+    the scope caveat that this is QML engine load and not time-to-window.
+  - **The trap that Qt logs nothing on a cache hit**, written as the re-check
+    procedure rather than as narrative: the three `QML_DISK_CACHE` configurations,
+    what each should print, the requirement that the two 71-name sets match, and
+    `QML_DISABLE_DISK_CACHE=1` as the attribution control. Without this the next
+    reader repeats 8.1's dead end — searching for a success line Qt never emits.
+
+  Also fixed a path corrupted by 6.9's bulk substitution: the sample `qmldir`
+  line read `SuttaSearchWindow 1.0 bridges/assets/qml/…`, but that path is
+  relative to `bridges/` and is `assets/qml/…`. Exactly the two-path-forms
+  confusion 6.9 warned about, caught here in its own doc.
+- [x] 9.6 Commit the decision (and the revert, if that is the outcome) separately
   from 6.0's commit.
+
+  Committed on its own — `docs/cxx-qt-fork.md` plus this task file. 6.0's move is
+  `02cd0c5`, four commits back and untouched.
 
 ### 10.0 Final sweep — cross-platform verification and consistency
 
