@@ -125,10 +125,6 @@ Item {
         console.log("start_reconcile()");
     }
 
-    function available_dictionaries(): string {
-        return "{}";
-    }
-
     function refresh_available_dictionaries() {
         console.log("refresh_available_dictionaries()");
     }

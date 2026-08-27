@@ -153,13 +153,11 @@ pub mod qobject {
         fn start_reconcile(self: Pin<&mut DictionaryManager>);
 
         // "Available dictionaries" — the curated download-and-install catalogue.
-        // `available_dictionaries` resolves the upstream release tag, which may
-        // block on the first call (a GitHub lookup), so QML uses the async
-        // `refresh_available_dictionaries` + `availableDictionariesReady` pair
-        // instead and never calls the sync one on the GUI thread.
-        #[qinvokable]
-        fn available_dictionaries(self: &DictionaryManager) -> QString;
-
+        // Resolution is exposed **only** through the async
+        // `refresh_available_dictionaries` + `availableDictionariesReady` pair.
+        // There is deliberately no synchronous getter: resolving the tag can
+        // block on a GitHub request, and any invokable QML can reach is one a
+        // future caller will eventually reach from the GUI thread.
         #[qinvokable]
         fn refresh_available_dictionaries(self: Pin<&mut DictionaryManager>);
 
@@ -1109,17 +1107,11 @@ impl qobject::DictionaryManager {
         });
     }
 
-    /// Synchronous catalogue resolution. Resolves the upstream tag on first use
-    /// (`dictionary_catalog::resolve_catalogue()` caches a successful lookup for
-    /// the process lifetime), so this can block on a GitHub request — QML calls
-    /// `refresh_available_dictionaries` instead. Kept for completeness / tests.
-    fn available_dictionaries(&self) -> QString {
-        QString::from(&catalogue_to_json(&dictionary_catalog::resolve_catalogue()))
-    }
-
-    /// Async sibling of `available_dictionaries`: resolve the catalogue on a
-    /// worker thread and deliver it via `availableDictionariesReady`. The GitHub
-    /// lookup must never run on the GUI thread.
+    /// Resolve the catalogue on a worker thread and deliver it via
+    /// `availableDictionariesReady`. `resolve_catalogue()` caches a successful
+    /// lookup for the process lifetime, but a failed one is retried, so this can
+    /// block on a GitHub request — which is why there is no synchronous getter
+    /// beside it. The lookup must never run on the GUI thread.
     fn refresh_available_dictionaries(self: Pin<&mut Self>) {
         let qt_thread = self.qt_thread();
         thread::spawn(move || {

@@ -72,6 +72,33 @@ pub fn status_to_error(status: u16, asset_stem: &str, tag: &str) -> Option<Stagi
     ))
 }
 
+/// Reject a body shorter than the server's own `Content-Length`, deleting it.
+///
+/// `declared` must be the **response's** `Content-Length`, never the
+/// catalogue's `fallback_size_bytes` — that figure is an approximation and a
+/// newer patch release legitimately differs from it. `None` (a chunked
+/// response) means there is nothing to check against, which is a pass.
+///
+/// In practice a premature EOF under `Content-Length` already surfaces as a
+/// read error, so this is the belt to that braces; it is what stops a truncated
+/// archive reaching the importer if a server ever closes cleanly mid-body.
+pub fn reject_short(dest: &Path, bytes: u64, declared: Option<u64>) -> Result<(), StagingError> {
+    match declared {
+        Some(expected) if bytes < expected => {
+            let _ = std::fs::remove_file(dest);
+            Err(StagingError::new(
+                "truncated_download",
+                "Downloading the dictionary",
+                format!(
+                    "the download ended early — {bytes} of {expected} bytes were received. \
+                     Check your connection and try again."
+                ),
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Download one catalogue archive into the dictionaries staging directory.
 ///
 /// `expected_bytes` is the resolved size from the catalogue (or the API): it is
@@ -139,7 +166,11 @@ pub fn download_entry(
         return Err(err);
     }
 
-    let total = response.content_length().or(expected_bytes);
+    // What the server itself declared, kept apart from `total`: only this is
+    // exact enough to check the finished size against. `expected_bytes` may be
+    // the catalogue's baked-in approximation and must never gate the result.
+    let declared = response.content_length();
+    let total = declared.or(expected_bytes);
 
     let mut last_emit: Option<Instant> = None;
     let mut last_done: u64 = 0;
@@ -158,8 +189,13 @@ pub fn download_entry(
 
     let bytes = copy_stream_to_file(&mut response, &dest, total, cancel, &mut throttled)?;
 
-    // A truncated archive must never reach the importer.
+    // A truncated archive must never reach the importer. `reject_empty` covers
+    // the zero-byte case; `reject_short` covers the rest, because
+    // `copy_stream_to_file` deliberately does not enforce the declared size —
+    // its doc comment delegates that to "the caller's zero/short-read checks",
+    // and this is that caller.
     reject_empty(&dest, bytes)?;
+    reject_short(&dest, bytes, declared)?;
 
     // Force a final progress tick so the bar reaches 100% even if the last
     // chunk fell inside the throttle window.
@@ -221,6 +257,29 @@ mod tests {
     fn a_2xx_status_is_not_an_error() {
         assert!(status_to_error(200, "mw", "v1.0.8").is_none());
         assert!(status_to_error(206, "mw", "v1.0.8").is_none());
+    }
+
+    #[test]
+    fn reject_short_deletes_a_truncated_body() {
+        let dir = staging_dir(DICTIONARY_FEATURE);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("tst-reject-short-gd.zip");
+        std::fs::write(&dest, b"partial").unwrap();
+
+        let err = reject_short(&dest, 7, Some(4096)).unwrap_err();
+        assert_eq!(err.code, "truncated_download");
+        assert!(err.message.contains("4096"));
+        assert_eq!(dest.try_exists().unwrap(), false, "the partial file must be deleted");
+    }
+
+    #[test]
+    fn reject_short_passes_a_complete_or_unmeasurable_body() {
+        let dest = staging_dir(DICTIONARY_FEATURE).join("tst-not-written-gd.zip");
+        // Exactly the declared size, more than declared, and a chunked response
+        // (no Content-Length) are all a pass — and none of them touches `dest`.
+        assert!(reject_short(&dest, 4096, Some(4096)).is_ok());
+        assert!(reject_short(&dest, 5000, Some(4096)).is_ok());
+        assert!(reject_short(&dest, 7, None).is_ok());
     }
 
     #[test]

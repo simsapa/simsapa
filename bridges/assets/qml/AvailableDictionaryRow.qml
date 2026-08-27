@@ -22,9 +22,6 @@ Rectangle {
     // Emitted on user interaction only, carrying the new checkbox state.
     signal toggled(bool is_checked)
 
-    // On a narrow window the size line wraps rather than eliding.
-    readonly property bool narrow: width < 380
-
     color: "transparent"
     border.color: palette.mid
     border.width: 1

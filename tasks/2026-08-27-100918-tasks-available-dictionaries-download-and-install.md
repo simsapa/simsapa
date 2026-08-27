@@ -509,6 +509,51 @@ failed *import* (they are in the batch queue) and for items that failed
         `nyana_label_is_short_but_the_asset_stem_is_the_upstream_name`);
         `make build -B` green.
 
+  - [x] 6.11 Review pass over 1.0–6.0, and the six fixes it produced:
+        1. **`checked_labels` survived a completed run.** Nothing reset it, and
+           the count / combined size / button / run order all read the raw list
+           over the **unfiltered** `available_items`. An imported dictionary
+           therefore left the Available list but stayed selected: the section
+           claimed "1 selected · 55.7 MB" with no checkbox to match, and
+           pressing the button re-downloaded it for `import_zip` to refuse as a
+           duplicate label. Fixed with `checked_offered()` (the selection
+           intersected with `available_filtered()`), which the three UI bindings
+           and `start_download_run()` now go through, plus a reset of the run's
+           labels in `finish_download_phase()` — succeeded ones must not stay
+           checked behind the FR-6 filter, failed ones must come back unchecked
+           to be retried (FR-29).
+        2. **A download completing inside the cancel window leaked its archive.**
+           `cancel_download_run()` clears `download_active` synchronously, so a
+           download that finished a moment later was dropped by the
+           `onAvailableDownloadFinished` guard — never entering the batch queue,
+           so `finish_batch()` never cleaned it up and only the hour-gated
+           startup sweep reclaimed it. That guard now calls
+           `cleanup_staged_file(path)` before returning (FR-33).
+        3. **Two size formatters disagreed on one screen** — rows render the
+           backend's `human_bytes` (`55.7 MB`) while the combined-size line and
+           the progress frame used a QML formatter with different precision
+           (`55.69 MB`). `human_size()` now mirrors `human_bytes()` exactly.
+        4. **The short-read half of 2.6 was missing.** Only `reject_empty()`
+           (zero bytes) ran, while `copy_stream_to_file`'s own doc delegates the
+           declared-size check to "the caller's zero/short-read checks". Added
+           `reject_short()`, comparing against the **response's**
+           `Content-Length` only — never the catalogue's approximate
+           `fallback_size_bytes` — with `None` (chunked) a pass. Two tests.
+        5. **Removed the dead synchronous `available_dictionaries()`
+           invokable.** Nothing called it, and it resolved the catalogue — a
+           blocking GitHub request — on whatever thread called it. Resolution is
+           now reachable only through the async pair. Dropped from the bridge and
+           from the `qmllint` stub.
+        6. **FR-7's link stays folded into the FR-8 source line above the list**,
+           not beneath it as the PRD words it — one line rather than two saying
+           the same thing. A review pass split them; that was reverted, the
+           authored wording is unchanged, and the deviation is now recorded in a
+           comment on the line itself rather than left to be re-flagged. Also
+           dropped the unused `narrow` property from `AvailableDictionaryRow.qml`.
+        `cargo test --lib dictionary_catalog` 20 pass; `make qml-test` 172
+        passed, 0 failed; `make qml-lint` no new warning naming the touched
+        files; `make build -B` exit 0.
+
 ### Specs for 7.0 — documentation
 
 - [ ] 7.0 Documentation

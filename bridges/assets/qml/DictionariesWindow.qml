@@ -129,8 +129,8 @@ ApplicationWindow {
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.refresh_list();
         // Resolves the upstream release tag on a worker thread; the result
-        // arrives on `onAvailableDictionariesReady`. Never call the synchronous
-        // `available_dictionaries()` here — it can block on a GitHub request.
+        // arrives on `onAvailableDictionariesReady`. There is no synchronous
+        // getter by design — the lookup can block on a GitHub request.
         dict_manager.refresh_available_dictionaries();
     }
 
@@ -189,19 +189,35 @@ ApplicationWindow {
         root.checked_labels = arr;
     }
 
+    // The checked labels that are still **offered** — i.e. still pass the FR-6
+    // filter. Everything user-visible about the selection (the count, the
+    // combined size, the button's enabled state, and the run itself) must go
+    // through this and never through `checked_labels` directly: an imported
+    // label leaves the list but not the selection, and reading the raw list
+    // there leaves the section claiming a selection with no checkbox to match
+    // it, and re-downloads an already-imported dictionary if pressed.
+    function checked_offered(): var {
+        const offered = root.available_filtered();
+        return root.checked_labels.filter(function(l) {
+            return offered.some(function(it) { return it.label === l; });
+        });
+    }
+
     function checked_total_bytes(): real {
+        const offered = root.available_filtered();
         let sum = 0;
-        for (let i = 0; i < root.available_items.length; i++) {
-            if (root.checked_labels.indexOf(root.available_items[i].label) >= 0) {
-                sum += root.available_items[i].size_bytes;
+        for (let i = 0; i < offered.length; i++) {
+            if (root.checked_labels.indexOf(offered[i].label) >= 0) {
+                sum += offered[i].size_bytes;
             }
         }
         return sum;
     }
 
     function checked_any_approximate(): bool {
-        for (let i = 0; i < root.available_items.length; i++) {
-            const it = root.available_items[i];
+        const offered = root.available_filtered();
+        for (let i = 0; i < offered.length; i++) {
+            const it = offered[i];
             if (root.checked_labels.indexOf(it.label) >= 0 && it.size_is_approximate) {
                 return true;
             }
@@ -209,11 +225,16 @@ ApplicationWindow {
         return false;
     }
 
+    // Matches `import_staging::human_bytes()` exactly — same thresholds, same
+    // precision, same words. The rows render the backend's `size_text` while
+    // the combined-size line and the progress frame are formatted here, and
+    // the two appear on the same screen, so they must not disagree.
     function human_size(bytes: real): string {
-        if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
-        if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
-        return Math.round(bytes) + " B";
+        const KB = 1024;
+        if (bytes < KB) return Math.round(bytes) + " bytes";
+        if (bytes < KB * KB) return (bytes / KB).toFixed(1) + " KB";
+        if (bytes < KB * KB * KB) return (bytes / (KB * KB)).toFixed(1) + " MB";
+        return (bytes / (KB * KB * KB)).toFixed(1) + " GB";
     }
 
     // Resolve a catalogue row (name, lang, size…) by its label, or null.
@@ -235,9 +256,13 @@ ApplicationWindow {
     // `pending_import_items`; `finish_download_phase()` hands the queue to the
     // existing `start_batch()` (FR-21) — no new import code path.
     function start_download_run(labels) {
+        // Ordered over the **filtered** list: an already-imported label must
+        // never enter a run, or it is downloaded again only for `import_zip`
+        // to refuse it as a duplicate label.
+        const offered = root.available_filtered();
         const ordered = [];
-        for (let i = 0; i < root.available_items.length; i++) {
-            const l = root.available_items[i].label;
+        for (let i = 0; i < offered.length; i++) {
+            const l = offered[i].label;
             if (labels.indexOf(l) >= 0) {
                 ordered.push(l);
             }
@@ -299,6 +324,13 @@ ApplicationWindow {
     // would leave an instant with no keep-screen-on holder at all.
     function finish_download_phase() {
         root.download_active = false;
+        // Drop this run's labels from the selection. A succeeded one leaves the
+        // Available list (FR-6) and must not stay checked behind it; a failed
+        // one stays listed and is retried "by checking it again" (FR-29), which
+        // means it must come back unchecked.
+        root.checked_labels = root.checked_labels.filter(function(l) {
+            return root.download_labels.indexOf(l) < 0;
+        });
         if (root.pending_import_items.length > 0) {
             // Download failures ride into the summary via `download_failed`;
             // they are NOT merged into `batch_failed`, which `start_batch()`
@@ -599,6 +631,15 @@ ApplicationWindow {
 
         function onAvailableDownloadFinished(label: string, path: string) {
             if (!root.download_active) {
+                // A download that completed inside the cancel window: the run
+                // has already ended, so this archive will never enter the batch
+                // queue and `finish_batch()` will never clean it up. Delete it
+                // here rather than leave it for the hour-gated startup sweep
+                // (FR-33: nothing survives a run). `cleanup_staged_file` decides
+                // ownership by location, so a path outside the staging folder is
+                // left alone.
+                logger.info("DictionariesWindow: discarding \"" + label + "\" downloaded after the run ended");
+                dict_manager.cleanup_staged_file(path);
                 return;
             }
             const entry = root.catalogue_entry(label);
@@ -838,9 +879,15 @@ ApplicationWindow {
                             Layout.fillWidth: true
                         }
 
-                        // FR-8: name the source and the resolved release tag.
-                        // Renders a placeholder before the resolution arrives
-                        // and updates in place when it does.
+                        // Does double duty: FR-8 (name the source and the
+                        // resolved release tag, so an upstream mismatch is
+                        // readable from a screenshot) and FR-7 (the always-
+                        // visible link to the releases page, for dictionaries
+                        // not in the curated set). FR-7 asks for that link
+                        // *beneath* the list; carrying it here instead is
+                        // deliberate — one line rather than two saying the same
+                        // thing. Renders a placeholder before the resolution
+                        // arrives and updates in place when it does.
                         Text {
                             text: `The following dictionaries are available for importing from <a href="https://github.com/${root.catalogue_repo}/releases/">github.com/${root.catalogue_repo}</a> ${root.catalogue_tag || "(resolving...)"}`
                             textFormat: Text.RichText
@@ -894,9 +941,11 @@ ApplicationWindow {
                         }
 
                         // FR-5: combined download size of the checked set.
+                        // Counted over `checked_offered()`, never the raw
+                        // selection — see that function.
                         Label {
-                            visible: root.checked_labels.length > 0
-                            text: `${root.checked_labels.length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
+                            visible: root.checked_offered().length > 0
+                            text: `${root.checked_offered().length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
                             font.pointSize: root.pointSize - 1
                             color: palette.text
                             wrapMode: Text.WordWrap
@@ -907,10 +956,10 @@ ApplicationWindow {
                         // FR-4: disabled while nothing is checked.
                         Button {
                             text: "Download and Import"
-                            enabled: root.checked_labels.length > 0
+                            enabled: root.checked_offered().length > 0
                             Layout.topMargin: 4
                             Layout.bottomMargin: 6
-                            onClicked: root.start_download_run(root.checked_labels)
+                            onClicked: root.start_download_run(root.checked_offered())
                         }
                     }
                 }
