@@ -125,6 +125,19 @@ Item {
         console.log("start_reconcile()");
     }
 
+    function refresh_available_dictionaries() {
+        console.log("refresh_available_dictionaries()");
+    }
+
+    function download_available(labels: list<string>): string {
+        console.log("download_available():", labels);
+        return "ok";
+    }
+
+    function abort_available_download() {
+        console.log("abort_available_download()");
+    }
+
     signal importProgress(stage: string, done: int, total: int);
     signal importFinished(dictionary_id: int, label: string, inserted_count: int, elapsed_ms: int);
     signal importFailed(message: string);
@@ -141,4 +154,8 @@ Item {
     signal labelStatusChecked(label: string, status: string);
     signal reconcileProgress(stage: string, done: int, total: int);
     signal reconcileFinished();
+    signal availableDictionariesReady(items_json: string);
+    signal availableDownloadProgress(label: string, done_bytes: real, total_bytes: real);
+    signal availableDownloadFinished(label: string, path: string);
+    signal availableDownloadFailed(label: string, message: string);
 }

@@ -34,6 +34,17 @@ ApplicationWindow {
     property var user_dictionaries: []
     property bool is_dark: theme_helper.is_dark
 
+    // "Available" section state. `available_items` is the resolved catalogue
+    // (label, name, lang, entries, size_bytes, size_text, url,
+    // size_is_approximate); `checked_labels` the labels ticked for download.
+    // The FR-6 hide rule is a filter over `user_dictionaries`, not a flag —
+    // see `available_filtered()`.
+    property var available_items: []
+    property var checked_labels: []
+    property string catalogue_repo: "digitalpalidictionary/other-dictionaries"
+    property string catalogue_tag: ""
+    property string catalogue_tag_source: ""
+
     // State carried into the shared summary / error frames.
     property string op_label: ""
     property string old_label: ""
@@ -84,6 +95,24 @@ ApplicationWindow {
     property int delete_all_removed: 0
     property var delete_all_failed: []  // [{label, message}]
 
+    // "Available dictionaries" download run (§5.3). The checked labels are
+    // downloaded one at a time, in catalogue order, into the dictionaries
+    // staging directory; each finished archive is appended to
+    // `pending_import_items` and the whole queue is handed to the existing
+    // `start_batch()` once the last download completes. Download failures live
+    // in their **own** list: `start_batch()` resets `batch_failed`, so a
+    // download failure recorded before the hand-off cannot be kept there.
+    property var download_labels: []          // ordered (catalogue order) labels in this run
+    property int download_index: 0            // 0-based index of the item now downloading
+    property int download_total: 0
+    property string download_current_label: ""
+    property real download_done_bytes: 0
+    property real download_total_bytes: 0
+    property bool download_active: false
+    property bool download_cancelling: false  // Cancel clicked; ignore further progress ticks
+    property var pending_import_items: []     // [{kind:"zip", path, member:"", label, lang}]
+    property var download_failed: []          // [{label, message}]
+
     ThemeHelper {
         id: theme_helper
         target_window: root
@@ -99,10 +128,14 @@ ApplicationWindow {
         theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.refresh_list();
+        // Resolves the upstream release tag on a worker thread; the result
+        // arrives on `onAvailableDictionariesReady`. There is no synchronous
+        // getter by design — the lookup can block on a GitHub request.
+        dict_manager.refresh_available_dictionaries();
     }
 
     // Ignore close while a long op is in progress. Idx 1 = deleting,
-    // Idx 2 = importing, Idx 3 = renaming.
+    // Idx 2 = importing, Idx 3 = renaming, Idx 6 = downloading (Available run).
     //
     // Closing this window destroys it (WindowManager::on_window_closed), taking
     // this engine's DictionaryManager and SuttaBridge instances with it. Unlike
@@ -112,7 +145,8 @@ ApplicationWindow {
     onClosing: function(close) {
         if (views_stack.currentIndex === 1
             || views_stack.currentIndex === 2
-            || views_stack.currentIndex === 3) {
+            || views_stack.currentIndex === 3
+            || views_stack.currentIndex === 6) {
             close.accepted = false;
         }
         if (!close.accepted) {
@@ -130,6 +164,203 @@ ApplicationWindow {
             logger.error("DictionariesWindow.refresh_list parse error: " + e);
             root.user_dictionaries = [];
         }
+    }
+
+    // FR-6: an "Available" entry whose label matches an imported dictionary is
+    // not shown. Because `refresh_list()` runs after every import / delete /
+    // rename, keying the filter off `user_dictionaries` makes "disappears on
+    // import, reappears on delete" automatic — there is no parallel refresh.
+    function available_filtered() {
+        const have = {};
+        for (let i = 0; i < root.user_dictionaries.length; i++) {
+            have[root.user_dictionaries[i].label] = true;
+        }
+        return root.available_items.filter(function(it) { return !have[it.label]; });
+    }
+
+    function set_checked(label: string, on: bool) {
+        const arr = root.checked_labels.slice();
+        const idx = arr.indexOf(label);
+        if (on && idx < 0) {
+            arr.push(label);
+        } else if (!on && idx >= 0) {
+            arr.splice(idx, 1);
+        }
+        root.checked_labels = arr;
+    }
+
+    // The checked labels that are still **offered** — i.e. still pass the FR-6
+    // filter. Everything user-visible about the selection (the count, the
+    // combined size, the button's enabled state, and the run itself) must go
+    // through this and never through `checked_labels` directly: an imported
+    // label leaves the list but not the selection, and reading the raw list
+    // there leaves the section claiming a selection with no checkbox to match
+    // it, and re-downloads an already-imported dictionary if pressed.
+    function checked_offered(): var {
+        const offered = root.available_filtered();
+        return root.checked_labels.filter(function(l) {
+            return offered.some(function(it) { return it.label === l; });
+        });
+    }
+
+    function checked_total_bytes(): real {
+        const offered = root.available_filtered();
+        let sum = 0;
+        for (let i = 0; i < offered.length; i++) {
+            if (root.checked_labels.indexOf(offered[i].label) >= 0) {
+                sum += offered[i].size_bytes;
+            }
+        }
+        return sum;
+    }
+
+    function checked_any_approximate(): bool {
+        const offered = root.available_filtered();
+        for (let i = 0; i < offered.length; i++) {
+            const it = offered[i];
+            if (root.checked_labels.indexOf(it.label) >= 0 && it.size_is_approximate) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Matches `import_staging::human_bytes()` exactly — same thresholds, same
+    // precision, same words. The rows render the backend's `size_text` while
+    // the combined-size line and the progress frame are formatted here, and
+    // the two appear on the same screen, so they must not disagree.
+    function human_size(bytes: real): string {
+        const KB = 1024;
+        if (bytes < KB) return Math.round(bytes) + " bytes";
+        if (bytes < KB * KB) return (bytes / KB).toFixed(1) + " KB";
+        if (bytes < KB * KB * KB) return (bytes / (KB * KB)).toFixed(1) + " MB";
+        return (bytes / (KB * KB * KB)).toFixed(1) + " GB";
+    }
+
+    // Resolve a catalogue row (name, lang, size…) by its label, or null.
+    function catalogue_entry(label: string): var {
+        for (let i = 0; i < root.available_items.length; i++) {
+            if (root.available_items[i].label === label) {
+                return root.available_items[i];
+            }
+        }
+        return null;
+    }
+
+    // --- "Available dictionaries" download run (§5.3) -------------------------
+
+    // Begin the download run for the checked labels. Downloads are sequential
+    // and in catalogue order; the backend walks `resolved.items` filtered by
+    // the requested set, so sorting here keeps the "n of m" counter in step
+    // with the order events actually arrive in. Each finished archive lands in
+    // `pending_import_items`; `finish_download_phase()` hands the queue to the
+    // existing `start_batch()` (FR-21) — no new import code path.
+    function start_download_run(labels) {
+        // Ordered over the **filtered** list: an already-imported label must
+        // never enter a run, or it is downloaded again only for `import_zip`
+        // to refuse it as a duplicate label.
+        const offered = root.available_filtered();
+        const ordered = [];
+        for (let i = 0; i < offered.length; i++) {
+            const l = offered[i].label;
+            if (labels.indexOf(l) >= 0) {
+                ordered.push(l);
+            }
+        }
+        if (ordered.length === 0) {
+            return;
+        }
+        root.download_labels = ordered;
+        root.download_total = ordered.length;
+        root.download_index = 0;
+        root.download_current_label = ordered[0];
+        root.download_done_bytes = 0;
+        root.download_total_bytes = 0;
+        root.download_active = true;
+        root.download_cancelling = false;
+        root.pending_import_items = [];
+        root.download_failed = [];
+        // Distinct holder name (CLAUDE.md holder rules): the import phase that
+        // follows acquires `dictionary-import-batch`, and one shared name would
+        // be released by whichever phase finished first. Released in
+        // `finish_download_phase()`, the one function every ending goes through.
+        screen_manager.set_keep_screen_on("dictionary-download-batch", true);
+        views_stack.currentIndex = 6;
+        const result = dict_manager.download_available(ordered);
+        if (result !== "ok") {
+            logger.error("DictionariesWindow.start_download_run: " + result);
+            root.record_download_failure(ordered[0], result);
+            root.finish_download_phase();
+        }
+    }
+
+    function record_download_failure(label: string, message: string) {
+        const f = root.download_failed.slice();
+        f.push({ label: label, message: message });
+        root.download_failed = f;
+    }
+
+    // One download outcome (finished or failed) was just recorded. The backend
+    // has no terminal "run finished" signal — when the outcome count reaches
+    // the number of labels in the run, the download phase is over. A user
+    // cancel is handled by `cancel_download_run()` instead (the worker stops
+    // emitting, so this count would never complete on its own).
+    function advance_download() {
+        const done = root.pending_import_items.length + root.download_failed.length;
+        if (done >= root.download_total) {
+            root.finish_download_phase();
+            return;
+        }
+        root.download_index = done;
+        root.download_current_label = root.download_labels[done] || "";
+        root.download_done_bytes = 0;
+        root.download_total_bytes = 0;
+    }
+
+    // Every ending of the download phase — all succeeded, all failed, or a
+    // user cancel — passes through here. Hand any downloaded archives to the
+    // existing import batch FIRST, then release the download holder:
+    // `start_batch()` acquires `dictionary-import-batch`, so releasing first
+    // would leave an instant with no keep-screen-on holder at all.
+    function finish_download_phase() {
+        root.download_active = false;
+        // Drop this run's labels from the selection. A succeeded one leaves the
+        // Available list (FR-6) and must not stay checked behind it; a failed
+        // one stays listed and is retried "by checking it again" (FR-29), which
+        // means it must come back unchecked.
+        root.checked_labels = root.checked_labels.filter(function(l) {
+            return root.download_labels.indexOf(l) < 0;
+        });
+        if (root.pending_import_items.length > 0) {
+            // Download failures ride into the summary via `download_failed`;
+            // they are NOT merged into `batch_failed`, which `start_batch()`
+            // clears.
+            root.start_batch(root.pending_import_items);
+            screen_manager.set_keep_screen_on("dictionary-download-batch", false);
+            return;
+        }
+        // Nothing downloaded — straight to the shared summary under a
+        // download-only op kind (this ending never reaches `start_batch()`).
+        screen_manager.set_keep_screen_on("dictionary-download-batch", false);
+        root.op_kind = "download_batch";
+        views_stack.currentIndex = 4;
+        root.refresh_list();
+    }
+
+    // Cancel during the download phase (FR-24): stop the worker before the next
+    // item and abort the in-flight download via the shared cancel flag. Once
+    // the import phase has started the frame-2 "Abort" button takes over and
+    // routes to the existing `abort_import()`.
+    function cancel_download_run() {
+        if (!root.download_active) {
+            return;
+        }
+        root.download_cancelling = true;
+        dict_manager.abort_available_download();
+        // The worker stops emitting after the current chunk; drive the
+        // terminal transition ourselves rather than wait for a signal that
+        // will not arrive. Archives already downloaded still import.
+        root.finish_download_phase();
     }
 
     // Begin a sequential batch import from the dialog's selected items.
@@ -367,6 +598,73 @@ ApplicationWindow {
             views_stack.currentIndex = 5;
             root.refresh_list();
         }
+
+        function onAvailableDictionariesReady(items_json: string) {
+            try {
+                const payload = JSON.parse(items_json);
+                root.available_items = payload.items || [];
+                root.catalogue_repo = payload.repo || root.catalogue_repo;
+                root.catalogue_tag = payload.tag || "";
+                root.catalogue_tag_source = payload.tag_source || "";
+            } catch (e) {
+                logger.error("DictionariesWindow.onAvailableDictionariesReady parse error: " + e);
+                root.available_items = [];
+            }
+        }
+
+        function onAvailableDownloadProgress(label: string, done_bytes: real, total_bytes: real) {
+            // Ignore stray ticks once the run is over or a cancel is pending,
+            // matching the `import_aborting` guard on `onImportProgress`.
+            if (!root.download_active || root.download_cancelling) {
+                return;
+            }
+            if (label !== root.download_current_label) {
+                root.download_current_label = label;
+                const idx = root.download_labels.indexOf(label);
+                if (idx >= 0) {
+                    root.download_index = idx;
+                }
+            }
+            root.download_done_bytes = done_bytes;
+            root.download_total_bytes = total_bytes;
+        }
+
+        function onAvailableDownloadFinished(label: string, path: string) {
+            if (!root.download_active) {
+                // A download that completed inside the cancel window: the run
+                // has already ended, so this archive will never enter the batch
+                // queue and `finish_batch()` will never clean it up. Delete it
+                // here rather than leave it for the hour-gated startup sweep
+                // (FR-33: nothing survives a run). `cleanup_staged_file` decides
+                // ownership by location, so a path outside the staging folder is
+                // left alone.
+                logger.info("DictionariesWindow: discarding \"" + label + "\" downloaded after the run ended");
+                dict_manager.cleanup_staged_file(path);
+                return;
+            }
+            const entry = root.catalogue_entry(label);
+            const items = root.pending_import_items.slice();
+            // FR-21/FR-22: whole archive (`member: ""`), label and language
+            // come from the catalogue — `scan_source()` is never run.
+            items.push({
+                kind: "zip",
+                path: path,
+                member: "",
+                label: label,
+                lang: entry ? entry.lang : "",
+            });
+            root.pending_import_items = items;
+            root.advance_download();
+        }
+
+        function onAvailableDownloadFailed(label: string, message: string) {
+            // FR-27: a download failure does not stop the run.
+            if (!root.download_active) {
+                return;
+            }
+            root.record_download_failure(label, message);
+            root.advance_download();
+        }
     }
 
     MessageDialog {
@@ -429,6 +727,10 @@ ApplicationWindow {
                 items = [];
             }
             if (items.length > 0) {
+                // A manual import is not part of a download run — clear any
+                // download failures left from an earlier run so the shared
+                // summary does not report them against this import.
+                root.download_failed = [];
                 root.start_batch(items);
             }
         }
@@ -518,27 +820,15 @@ ApplicationWindow {
                         width: scroll_view.availableWidth
                         spacing: 6
 
-                        Text {
+                        Label {
                             visible: root.user_dictionaries.length === 0
-                            text: `<p>No imported dictionaries yet.</p>
-<p>Stardict / GoldenDict formats can be imported. Useful dictionaries can be downloaded from:</p>
-<p><a href="https://github.com/digitalpalidictionary/other-dictionaries/releases/">https://github.com/digitalpalidictionary/other-dictionaries/releases/</a></p>`
-                            textFormat: Text.RichText
+                            text: "No imported dictionaries yet."
                             font.pointSize: root.pointSize
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                            color: palette.text
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.topMargin: 30
-                            onLinkActivated: function(link) {
-                                Qt.openUrlExternally(link);
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.NoButton
-                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            }
+                            color: palette.mid
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.topMargin: 12
                         }
 
                         Repeater {
@@ -567,6 +857,109 @@ ApplicationWindow {
                                     confirm_delete_dialog.open();
                                 }
                             }
+                        }
+
+                        // ---------------------------------------------------
+                        // Available section (FR-1 … FR-10). Always shown,
+                        // scrolls together with the imported list above.
+                        // ---------------------------------------------------
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 18
+                            Layout.bottomMargin: 6
+                            implicitHeight: 1
+                            color: palette.mid
+                        }
+
+                        Label {
+                            text: "Available"
+                            font.pointSize: root.largePointSize
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        // Does double duty: FR-8 (name the source and the
+                        // resolved release tag, so an upstream mismatch is
+                        // readable from a screenshot) and FR-7 (the always-
+                        // visible link to the releases page, for dictionaries
+                        // not in the curated set). FR-7 asks for that link
+                        // *beneath* the list; carrying it here instead is
+                        // deliberate — one line rather than two saying the same
+                        // thing. Renders a placeholder before the resolution
+                        // arrives and updates in place when it does.
+                        Text {
+                            text: `The following dictionaries are available for importing from <a href="https://github.com/${root.catalogue_repo}/releases/">github.com/${root.catalogue_repo}</a> ${root.catalogue_tag || "(resolving...)"}`
+                            textFormat: Text.RichText
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 4
+                            color: palette.text
+
+                            onLinkActivated: function(link) { Qt.openUrlExternally(link); }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
+                        }
+
+                        Label {
+                            visible: root.available_items.length > 0 && root.available_filtered().length === 0
+                            text: "All curated dictionaries are already imported."
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                            Layout.topMargin: 6
+                        }
+
+                        Repeater {
+                            model: root.available_filtered()
+
+                            delegate: AvailableDictionaryRow {
+                                required property var modelData
+
+                                label_text: modelData.label
+                                name_text: modelData.name
+                                entry_count: modelData.entries
+                                // FR-16: approximate sizes ("~55 MB") when the
+                                // tag came from the fallback (API lookup failed).
+                                size_text: modelData.size_is_approximate
+                                    ? "~" + modelData.size_text
+                                    : modelData.size_text
+                                checked: root.checked_labels.indexOf(modelData.label) >= 0
+                                point_size: root.pointSize
+
+                                onToggled: function(is_checked) {
+                                    root.set_checked(modelData.label, is_checked);
+                                }
+                            }
+                        }
+
+                        // FR-5: combined download size of the checked set.
+                        // Counted over `checked_offered()`, never the raw
+                        // selection — see that function.
+                        Label {
+                            visible: root.checked_offered().length > 0
+                            text: `${root.checked_offered().length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
+                            font.pointSize: root.pointSize - 1
+                            color: palette.text
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                        }
+
+                        // FR-4: disabled while nothing is checked.
+                        Button {
+                            text: "Download and Import"
+                            enabled: root.checked_offered().length > 0
+                            Layout.topMargin: 4
+                            Layout.bottomMargin: 6
+                            onClicked: root.start_download_run(root.checked_offered())
                         }
                     }
                 }
@@ -813,6 +1206,7 @@ ApplicationWindow {
                                 if (root.op_kind === "import") return "Imported";
                                 if (root.op_kind === "import_aborted") return "Import aborted";
                                 if (root.op_kind === "import_batch") return root.batch_aborted ? "Import aborted" : "Import complete";
+                                if (root.op_kind === "download_batch") return root.download_cancelling ? "Download cancelled" : "Download failed";
                                 if (root.op_kind === "rename") return "Renamed";
                                 return "Completed";
                             }
@@ -860,12 +1254,37 @@ ApplicationWindow {
                                         msg += `\nThe batch was aborted; remaining dictionaries were not imported.`;
                                     }
                                     if (root.batch_failed.length > 0) {
-                                        msg += `\n\nFailed (${root.batch_failed.length}):`;
+                                        // "Import failed", not just "Failed" — a download run's
+                                        // summary can carry both kinds and the user needs to
+                                        // know which to act on (FR-29 / FR-30).
+                                        msg += `\n\nImport failed (${root.batch_failed.length}):`;
                                         for (let i = 0; i < root.batch_failed.length; i++) {
                                             msg += `\n• ${root.batch_failed[i].label}: ${root.batch_failed[i].message}`;
                                         }
                                     }
+                                    if (root.download_failed.length > 0) {
+                                        msg += `\n\nDownload failed (${root.download_failed.length}):`;
+                                        for (let i = 0; i < root.download_failed.length; i++) {
+                                            msg += `\n• ${root.download_failed[i].label}: ${root.download_failed[i].message}`;
+                                        }
+                                    }
                                     msg += `\n\nYou can manage more dictionaries, or quit now. The fulltext search index will be updated the next time you start Simsapa.`;
+                                    return msg;
+                                }
+                                if (root.op_kind === "download_batch") {
+                                    // Reached only when nothing downloaded (all failed, or a
+                                    // cancel with no completed item) — this ending never
+                                    // passes through `start_batch()`.
+                                    let msg = root.download_cancelling
+                                        ? `The download run was cancelled. No dictionaries were imported.`
+                                        : `No dictionaries could be downloaded.`;
+                                    if (root.download_failed.length > 0) {
+                                        msg += `\n\nDownload failed (${root.download_failed.length}):`;
+                                        for (let i = 0; i < root.download_failed.length; i++) {
+                                            msg += `\n• ${root.download_failed[i].label}: ${root.download_failed[i].message}`;
+                                        }
+                                    }
+                                    msg += `\n\nThe failed dictionaries are still listed under Available; check your connection and try again.`;
                                     return msg;
                                 }
                                 return "";
@@ -892,7 +1311,7 @@ ApplicationWindow {
                         // quitting. Offer a way back to the list; the re-index
                         // happens on next start.
                         // (Empty abort uses the single "OK" button below.)
-                        visible: root.op_kind === "delete" || root.op_kind === "delete_all" || root.op_kind === "import" || root.op_kind === "rename" || root.op_kind === "import_batch"
+                        visible: root.op_kind === "delete" || root.op_kind === "delete_all" || root.op_kind === "import" || root.op_kind === "rename" || root.op_kind === "import_batch" || root.op_kind === "download_batch"
                         text: "Back to Dictionaries"
                         font.pointSize: root.pointSize
                         onClicked: {
@@ -982,6 +1401,92 @@ ApplicationWindow {
                             views_stack.currentIndex = 0;
                             root.refresh_list();
                         }
+                    }
+
+                    Item { Layout.fillWidth: true }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------
+        // Idx 6 — Download progress frame ("Available dictionaries" run)
+        //
+        // Appended, not inserted: indices 0–5 are hard-coded at many call
+        // sites, so a new frame goes on the end. FR-20.
+        // -------------------------------------------------------------------
+        Frame {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            ColumnLayout {
+                anchors.fill: parent
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.9
+                        spacing: 16
+
+                        Label {
+                            text: `Downloading ${root.download_index + 1} of ${root.download_total}`
+                            visible: root.download_total > 1 && !root.download_cancelling
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Label {
+                            text: {
+                                if (root.download_cancelling) {
+                                    return "Cancelling…";
+                                }
+                                const entry = root.catalogue_entry(root.download_current_label);
+                                const name = entry ? entry.name : root.download_current_label;
+                                return `Downloading ${name}…`;
+                            }
+                            font.pointSize: root.largePointSize
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            color: palette.text
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Label {
+                            text: `${root.human_size(root.download_done_bytes)} / ${root.human_size(root.download_total_bytes)}`
+                            visible: !root.download_cancelling && root.download_total_bytes > 0
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        ProgressBar {
+                            Layout.fillWidth: true
+                            indeterminate: root.download_cancelling || root.download_total_bytes <= 0
+                            from: 0
+                            to: root.download_total_bytes > 0 ? root.download_total_bytes : 1
+                            value: root.download_done_bytes
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.margins: 20
+                    Layout.bottomMargin: 20
+
+                    Item { Layout.fillWidth: true }
+
+                    Button {
+                        text: "Cancel"
+                        font.pointSize: root.pointSize
+                        enabled: !root.download_cancelling
+                        onClicked: root.cancel_download_run()
                     }
 
                     Item { Layout.fillWidth: true }

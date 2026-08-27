@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use core::pin::Pin;
-use cxx_qt_lib::{QString, QUrl};
+use cxx_qt_lib::{QString, QStringList, QUrl};
 use cxx_qt::{CxxQtType, Threading};
 
 use serde::Serialize;
@@ -22,6 +22,9 @@ use simsapa_backend::dictionary_manager_core::{
     validate_label as core_validate_label,
 };
 use simsapa_backend::dict_index_reconcile::{self, ReconcileProgress};
+use simsapa_backend::dictionary_catalog::{self, ResolvedCatalogue};
+use simsapa_backend::dictionary_catalog_download::download_entry;
+use simsapa_backend::import_staging;
 use simsapa_backend::{get_app_data, app_data::refresh_all_dict_caches};
 use simsapa_backend::logger::{error, info};
 use simsapa_backend::stardict_parse::StardictImportProgress;
@@ -39,6 +42,10 @@ pub mod qobject {
         // (`docs/android-file-saving-saf.md`).
         include!("cxx-qt-lib/qurl.h");
         type QUrl = cxx_qt_lib::QUrl;
+
+        // `download_available` takes the checked labels as a QStringList.
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     extern "RustQt" {
@@ -145,6 +152,21 @@ pub mod qobject {
         #[qinvokable]
         fn start_reconcile(self: Pin<&mut DictionaryManager>);
 
+        // "Available dictionaries" — the curated download-and-install catalogue.
+        // Resolution is exposed **only** through the async
+        // `refresh_available_dictionaries` + `availableDictionariesReady` pair.
+        // There is deliberately no synchronous getter: resolving the tag can
+        // block on a GitHub request, and any invokable QML can reach is one a
+        // future caller will eventually reach from the GUI thread.
+        #[qinvokable]
+        fn refresh_available_dictionaries(self: Pin<&mut DictionaryManager>);
+
+        #[qinvokable]
+        fn download_available(self: Pin<&mut DictionaryManager>, labels: QStringList) -> QString;
+
+        #[qinvokable]
+        fn abort_available_download(self: Pin<&mut DictionaryManager>);
+
         // Signals emitted from worker threads via CxxQtThread.
         #[qsignal]
         #[cxx_name = "importProgress"]
@@ -212,6 +234,27 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "reconcileFinished"]
         fn reconcile_finished(self: Pin<&mut DictionaryManager>);
+
+        // "Available dictionaries" download run. There is deliberately no
+        // terminal "run finished" signal: QML counts `availableDownloadFinished`
+        // + `availableDownloadFailed` against the number of checked labels, and
+        // the Cancel handler drives its own transition (a user cancel stops the
+        // worker between items, so fewer events arrive than labels).
+        #[qsignal]
+        #[cxx_name = "availableDictionariesReady"]
+        fn available_dictionaries_ready(self: Pin<&mut DictionaryManager>, items_json: QString);
+
+        #[qsignal]
+        #[cxx_name = "availableDownloadProgress"]
+        fn available_download_progress(self: Pin<&mut DictionaryManager>, label: QString, done_bytes: f64, total_bytes: f64);
+
+        #[qsignal]
+        #[cxx_name = "availableDownloadFinished"]
+        fn available_download_finished(self: Pin<&mut DictionaryManager>, label: QString, path: QString);
+
+        #[qsignal]
+        #[cxx_name = "availableDownloadFailed"]
+        fn available_download_failed(self: Pin<&mut DictionaryManager>, label: QString, message: QString);
     }
 }
 
@@ -227,6 +270,13 @@ pub struct DictionaryManagerRust {
     /// to `true` by `abort_import`. The worker checks it between insert
     /// chunks. Delete does not need a cancel flag.
     pub import_cancel: Arc<AtomicBool>,
+
+    /// Cooperative cancellation flag for the "Available dictionaries" download
+    /// batch, checked between chunks by `dictionary_catalog_download`. A third
+    /// flag alongside `staging_cancel` / `import_cancel` because it is a third
+    /// stage with its own Cancel button — one shared flag would be flipped by
+    /// the wrong screen.
+    pub download_cancel: Arc<AtomicBool>,
 }
 
 impl Default for DictionaryManagerRust {
@@ -234,8 +284,61 @@ impl Default for DictionaryManagerRust {
         Self {
             staging_cancel: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
+            download_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
+}
+
+#[derive(Serialize)]
+struct AvailableItemJson {
+    label: String,
+    name: String,
+    lang: String,
+    entries: u32,
+    size_bytes: u64,
+    /// `import_staging::human_bytes()` output, so the list and the progress
+    /// frame agree on wording. Prefixed "~" by QML when `size_is_approximate`.
+    size_text: String,
+    url: String,
+    size_is_approximate: bool,
+}
+
+#[derive(Serialize)]
+struct AvailablePayloadJson {
+    repo: String,
+    tag: String,
+    tag_source: String,
+    items: Vec<AvailableItemJson>,
+}
+
+/// Serialise a resolved catalogue into the JSON the Available section binds to
+/// (FR-8's source line plus the rows). Adds `size_text` on top of the backend's
+/// `ResolvedEntry` fields.
+fn catalogue_to_json(resolved: &ResolvedCatalogue) -> String {
+    let items = resolved
+        .items
+        .iter()
+        .map(|e| AvailableItemJson {
+            label: e.label.clone(),
+            name: e.name.clone(),
+            lang: e.lang.clone(),
+            entries: e.entries,
+            size_bytes: e.size_bytes,
+            size_text: import_staging::human_bytes(e.size_bytes),
+            url: e.url.clone(),
+            size_is_approximate: e.size_is_approximate,
+        })
+        .collect();
+    let payload = AvailablePayloadJson {
+        repo: resolved.repo.clone(),
+        tag: resolved.tag.clone(),
+        tag_source: resolved.tag_source.as_str().to_string(),
+        items,
+    };
+    serde_json::to_string(&payload).unwrap_or_else(|e| {
+        error(&format!("available_dictionaries serialize: {}", e));
+        "{\"repo\":\"\",\"tag\":\"\",\"tag_source\":\"fallback\",\"items\":[]}".to_string()
+    })
 }
 
 #[derive(Serialize)]
@@ -1002,6 +1105,111 @@ impl qobject::DictionaryManager {
                 qo.as_mut().reconcile_finished();
             });
         });
+    }
+
+    /// Resolve the catalogue on a worker thread and deliver it via
+    /// `availableDictionariesReady`. `resolve_catalogue()` caches a successful
+    /// lookup for the process lifetime, but a failed one is retried, so this can
+    /// block on a GitHub request — which is why there is no synchronous getter
+    /// beside it. The lookup must never run on the GUI thread.
+    fn refresh_available_dictionaries(self: Pin<&mut Self>) {
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            let json = catalogue_to_json(&dictionary_catalog::resolve_catalogue());
+            let json_qs = QString::from(&json);
+            crate::queue_or_log(&qt_thread, "dictionary_manager::refresh_available_dictionaries", move |mut qo| {
+                qo.as_mut().available_dictionaries_ready(json_qs);
+            });
+        });
+    }
+
+    /// Download the checked catalogue entries **sequentially, in catalogue
+    /// order** (FR-18). One worker walks the list, emitting
+    /// `availableDownloadProgress` / `availableDownloadFinished` /
+    /// `availableDownloadFailed` per label, and continues past a failure rather
+    /// than returning (FR-27). A user cancel (`abort_available_download`) stops
+    /// the walk before the next item starts and aborts an in-flight download via
+    /// the shared `download_cancel` flag; the cancelled item emits nothing (its
+    /// error travels as `code == "cancelled"`), and QML's Cancel handler drives
+    /// the transition.
+    fn download_available(self: Pin<&mut Self>, labels: QStringList) -> QString {
+        let want: Vec<String> = labels.iter().map(|q| q.to_string()).collect();
+        if want.is_empty() {
+            return QString::from("No dictionaries selected.");
+        }
+
+        // Reset before the worker starts: a cancel from a previous run must not
+        // kill the new one.
+        let cancel = self.rust().download_cancel.clone();
+        cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let qt_thread = self.qt_thread();
+        thread::spawn(move || {
+            let resolved = dictionary_catalog::resolve_catalogue();
+            // `resolved.items` is already in catalogue order; keep the requested
+            // labels in that order regardless of the QStringList's order.
+            let queue: Vec<_> = resolved
+                .items
+                .iter()
+                .filter(|e| want.iter().any(|w| w == &e.label))
+                .collect();
+
+            for entry in queue {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let label = entry.label.clone();
+
+                let progress_thread = qt_thread.clone();
+                let label_for_progress = label.clone();
+                let mut on_progress = move |done: u64, total: u64| {
+                    let l = QString::from(&label_for_progress);
+                    crate::queue_or_log(&progress_thread, "dictionary_manager::download_available", move |mut qo| {
+                        qo.as_mut().available_download_progress(l, done as f64, total as f64);
+                    });
+                };
+
+                match download_entry(
+                    // The upstream file is `<asset_stem>-gd.zip` — for `nyana`
+                    // that is `nyanatiloka-gd.zip`. The staged file name and the
+                    // 404 diagnostic are derived from this, never from `label`.
+                    &entry.asset_stem,
+                    &resolved.tag,
+                    &entry.url,
+                    Some(entry.size_bytes),
+                    &cancel,
+                    &mut on_progress,
+                ) {
+                    Ok(path) => {
+                        let l = QString::from(&label);
+                        let p = QString::from(&path.to_string_lossy().to_string());
+                        crate::queue_or_log(&qt_thread, "dictionary_manager::download_available", move |mut qo| {
+                            qo.as_mut().available_download_finished(l, p);
+                        });
+                    }
+                    Err(e) if e.code == "cancelled" => {
+                        info("download_available: cancelled by user");
+                        break;
+                    }
+                    Err(e) => {
+                        error(&format!("download_available: \"{}\" failed: {}", label, e));
+                        let l = QString::from(&label);
+                        let m = QString::from(&e.user_message());
+                        crate::queue_or_log(&qt_thread, "dictionary_manager::download_available", move |mut qo| {
+                            qo.as_mut().available_download_failed(l, m);
+                        });
+                    }
+                }
+            }
+        });
+
+        QString::from("ok")
+    }
+
+    /// Cooperative cancel for the download batch: set the flag only. The worker
+    /// observes it between chunks and between items.
+    fn abort_available_download(self: Pin<&mut Self>) {
+        self.rust().download_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

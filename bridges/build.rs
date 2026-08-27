@@ -98,6 +98,7 @@ fn main() {
         "assets/qml/DictionaryIndexProgressWindow.qml",
         "assets/qml/DictionariesWindow.qml",
         "assets/qml/DictionaryListItem.qml",
+        "assets/qml/AvailableDictionaryRow.qml",
         "assets/qml/DictionaryImportRow.qml",
         "assets/qml/DictionaryImportDialog.qml",
         "assets/qml/DictionaryEditDialog.qml",
