@@ -267,8 +267,9 @@ this is QML engine load, not time-to-window, which is dominated by other costs
 >   lines. Each one is a file that was **parsed from source**; there should be
 >   none of ours.
 > - `QML_DISK_CACHE=qmlc` — AOT rejected outright, so every file the startup
->   path reaches parses from source and appears in that list (71 files today; 94
->   are registered, and windows not opened at startup are never loaded).
+>   path reaches parses from source and appears in that list (71 files at the
+>   time of measurement — fewer than are registered in `bridges/build.rs`,
+>   because windows not opened at startup are never loaded).
 > - `QML_DISK_CACHE=aot-native` — units are *found* and then rejected for not
 >   being fully native, so each logs the URL it was located by. This is the
 >   direct proof that the lookup reaches our units at our resource paths, and it

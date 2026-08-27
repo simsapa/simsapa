@@ -1812,9 +1812,25 @@ this file, under the sub-task, so the record lives with the work.
   What *is* known about the two: `build-macos.sh:233`'s `-qmldir=./assets/qml`
   was re-pointed in 6.8, and `build-appimage.sh` + `appimage.conf` — the two
   independent copies of the same value — were both updated and the AppImage
-  proves that path (10.2). No Windows script names the QML tree (6.11's sweep
-  found none), so Windows carries no path edit to verify at all; the risk there
-  is the ordinary "does it still build" risk, unchanged by this work.
+  proves that path (10.2).
+
+  > **CORRECTION (final review pass, 2026-08-27).** This task originally said
+  > *"No Windows script names the QML tree (6.11's sweep found none), so Windows
+  > carries no path edit to verify at all."* **That was wrong.**
+  > `build-windows.ps1:555` passes `--qmldir "assets\qml"` to windeployqt, with a
+  > **backslash** separator, so every sweep in this PRD — all of which grepped
+  > `assets/qml` — missed it, and the path pointed at a directory that no longer
+  > exists. Fixed to `bridges\assets\qml`.
+  >
+  > It is the macOS failure mode 10.3 predicted, on the platform 10.3 declared
+  > exempt: windeployqt scans nothing, discovers no QML imports, and the bundle
+  > ships without them. It fails **silently twice over** — a missing `--qmldir`
+  > does not fail the build, and the script downgrades a non-zero windeployqt
+  > exit to *"completed with warnings (this is often normal)"*.
+  >
+  > Standing lesson for the next path move: **sweep for both separators and
+  > case-insensitively** (`rg -ni 'assets[\\/]+qml'`). A `rg` sweep on one
+  > separator is not a sweep.
 
   **Outstanding, and it belongs to whoever next builds on those platforms:** run
   `make macos` / `build-windows.ps1` once and confirm they configure and
