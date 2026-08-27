@@ -1,6 +1,5 @@
 use std::env;
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
-use qt_build_utils::{QResource, QResourceFile, QResources};
 
 const QML_MODULE_URI: &str = "com.profoundlabs.simsapa";
 
@@ -12,108 +11,108 @@ fn main() {
     let mobile_build = s.contains("Qt::WebView");
 
     let qml_files = vec![
-        "../assets/qml/SuttaSearchWindow.qml",
-        "../assets/qml/DownloadAppdataWindow.qml",
-        "../assets/qml/SuttaLanguagesWindow.qml",
-        "../assets/qml/LibraryWindow.qml",
-        "../assets/qml/ReferenceSearchWindow.qml",
-        "../assets/qml/ReferenceSearchInfoDialog.qml",
-        "../assets/qml/TopicIndexWindow.qml",
-        "../assets/qml/TopicIndexInfoDialog.qml",
-        "../assets/qml/TopicIndexUpdateWindow.qml",
-        "../assets/qml/BooksList.qml",
-        "../assets/qml/ChapterListItem.qml",
-        "../assets/qml/DocumentImportDialog.qml",
-        "../assets/qml/DocumentMetadataEditDialog.qml",
-        "../assets/qml/LanguageListSelector.qml",
-        "../assets/qml/DownloadProgressFrame.qml",
-        "../assets/qml/SearchBarInput.qml",
-        "../assets/qml/MobileKeyboardHelper.qml",
-        "../assets/qml/DialogHeader.qml",
-        "../assets/qml/MobileOverlayTracker.qml",
-        "../assets/qml/FulltextResults.qml",
-        "../assets/qml/CMenuItem.qml",
-        "../assets/qml/KeySequenceDisplay.qml",
-        "../assets/qml/SuttaTabButton.qml",
-        "../assets/qml/TabListDialog.qml",
-        "../assets/qml/WindowListDialog.qml",
-        "../assets/qml/WindowRenameDialog.qml",
-        "../assets/qml/TitleUtils.qml",
-        "../assets/qml/TocUtils.qml",
-        "../assets/qml/SuttaHtmlView.qml",
-        "../assets/qml/WebEngineRepaintNudge.qml",
-        "../assets/qml/SuttaHtmlView_Desktop.qml",
-        "../assets/qml/SuttaHtmlView_Mobile.qml",
-        "../assets/qml/DictionaryHtmlView.qml",
-        "../assets/qml/DictionaryHtmlView_Desktop.qml",
-        "../assets/qml/DictionaryHtmlView_Mobile.qml",
-        "../assets/qml/DictionaryTab.qml",
-        "../assets/qml/TocTab.qml",
-        "../assets/qml/QueryTab.qml",
-        "../assets/qml/SuttaStackLayout.qml",
-        "../assets/qml/AboutDialog.qml",
-        "../assets/qml/DatabaseValidationDialog.qml",
-        "../assets/qml/StorageDiagnosticsDialog.qml",
-        "../assets/qml/DhammaTextSourcesDialog.qml",
-        "../assets/qml/SearchHelpWindow.qml",
-        "../assets/qml/SystemPromptsDialog.qml",
-        "../assets/qml/ModelsDialog.qml",
-        "../assets/qml/ModelUsageLists.qml",
-        "../assets/qml/AiErrorUtils.qml",
-        "../assets/qml/AiResponseCoordinator.qml",
-        "../assets/qml/AnkiExportDialog.qml",
-        "../assets/qml/AppSettingsWindow.qml",
-        "../assets/qml/DrawerMenu.qml",
-        "../assets/qml/DrawerEmptyItem.qml",
-        "../assets/qml/ListBackground.qml",
-        "../assets/qml/WordSummary.qml",
-        "../assets/qml/DeconstructorSelector.qml",
-        "../assets/qml/DeconstructorUtils.qml",
-        "../assets/qml/StorageCandidatesList.qml",
-        "../assets/qml/StorageDialog.qml",
-        "../assets/qml/StorageRecoveryWindow.qml",
-        "../assets/qml/GlossTab.qml",
-        "../assets/qml/GlossWordSelectionDialog.qml",
-        "../assets/qml/PromptsTab.qml",
-        "../assets/qml/AssistantResponses.qml",
-        "../assets/qml/ResponseTabButton.qml",
-        "../assets/qml/ScrollableHelper.qml",
-        "../assets/qml/ThemeHelper.qml",
-        "../assets/qml/Logger.qml",
-        "../assets/qml/UnrecognizedWordsList.qml",
-        "../assets/qml/UpdateNotificationDialog.qml",
-        "../assets/qml/KeybindingCaptureDialog.qml",
-        "../assets/qml/ShortcutConflictDialog.qml",
-        "../assets/qml/ChantingPracticeWindow.qml",
-        "../assets/qml/ChantingPracticeReviewWindow.qml",
-        "../assets/qml/ChantingTreeList.qml",
-        "../assets/qml/RecordingPlaybackItem.qml",
-        "../assets/qml/WaveformView.qml",
-        "../assets/qml/BookmarksTab.qml",
-        "../assets/qml/BookmarkFolderItem.qml",
-        "../assets/qml/BookmarkListItem.qml",
-        "../assets/qml/HistoryListItem.qml",
-        "../assets/qml/HistoryUtils.qml",
-        "../assets/qml/BookmarkEditDialog.qml",
-        "../assets/qml/BookmarkFolderDialog.qml",
-        "../assets/qml/DictionaryIndexProgressWindow.qml",
-        "../assets/qml/DictionariesWindow.qml",
-        "../assets/qml/DictionaryListItem.qml",
-        "../assets/qml/DictionaryImportRow.qml",
-        "../assets/qml/DictionaryImportDialog.qml",
-        "../assets/qml/DictionaryEditDialog.qml",
-        "../assets/qml/DictionarySearchDictionariesPanel.qml",
-        "../assets/qml/DictionaryInfoDialog.qml",
-        "../assets/qml/GlobalHotkeysSection.qml",
-        "../assets/qml/GlobalHotkeysWaylandNote.qml",
+        "assets/qml/SuttaSearchWindow.qml",
+        "assets/qml/DownloadAppdataWindow.qml",
+        "assets/qml/SuttaLanguagesWindow.qml",
+        "assets/qml/LibraryWindow.qml",
+        "assets/qml/ReferenceSearchWindow.qml",
+        "assets/qml/ReferenceSearchInfoDialog.qml",
+        "assets/qml/TopicIndexWindow.qml",
+        "assets/qml/TopicIndexInfoDialog.qml",
+        "assets/qml/TopicIndexUpdateWindow.qml",
+        "assets/qml/BooksList.qml",
+        "assets/qml/ChapterListItem.qml",
+        "assets/qml/DocumentImportDialog.qml",
+        "assets/qml/DocumentMetadataEditDialog.qml",
+        "assets/qml/LanguageListSelector.qml",
+        "assets/qml/DownloadProgressFrame.qml",
+        "assets/qml/SearchBarInput.qml",
+        "assets/qml/MobileKeyboardHelper.qml",
+        "assets/qml/DialogHeader.qml",
+        "assets/qml/MobileOverlayTracker.qml",
+        "assets/qml/FulltextResults.qml",
+        "assets/qml/CMenuItem.qml",
+        "assets/qml/KeySequenceDisplay.qml",
+        "assets/qml/SuttaTabButton.qml",
+        "assets/qml/TabListDialog.qml",
+        "assets/qml/WindowListDialog.qml",
+        "assets/qml/WindowRenameDialog.qml",
+        "assets/qml/TitleUtils.qml",
+        "assets/qml/TocUtils.qml",
+        "assets/qml/SuttaHtmlView.qml",
+        "assets/qml/WebEngineRepaintNudge.qml",
+        "assets/qml/SuttaHtmlView_Desktop.qml",
+        "assets/qml/SuttaHtmlView_Mobile.qml",
+        "assets/qml/DictionaryHtmlView.qml",
+        "assets/qml/DictionaryHtmlView_Desktop.qml",
+        "assets/qml/DictionaryHtmlView_Mobile.qml",
+        "assets/qml/DictionaryTab.qml",
+        "assets/qml/TocTab.qml",
+        "assets/qml/QueryTab.qml",
+        "assets/qml/SuttaStackLayout.qml",
+        "assets/qml/AboutDialog.qml",
+        "assets/qml/DatabaseValidationDialog.qml",
+        "assets/qml/StorageDiagnosticsDialog.qml",
+        "assets/qml/DhammaTextSourcesDialog.qml",
+        "assets/qml/SearchHelpWindow.qml",
+        "assets/qml/SystemPromptsDialog.qml",
+        "assets/qml/ModelsDialog.qml",
+        "assets/qml/ModelUsageLists.qml",
+        "assets/qml/AiErrorUtils.qml",
+        "assets/qml/AiResponseCoordinator.qml",
+        "assets/qml/AnkiExportDialog.qml",
+        "assets/qml/AppSettingsWindow.qml",
+        "assets/qml/DrawerMenu.qml",
+        "assets/qml/DrawerEmptyItem.qml",
+        "assets/qml/ListBackground.qml",
+        "assets/qml/WordSummary.qml",
+        "assets/qml/DeconstructorSelector.qml",
+        "assets/qml/DeconstructorUtils.qml",
+        "assets/qml/StorageCandidatesList.qml",
+        "assets/qml/StorageDialog.qml",
+        "assets/qml/StorageRecoveryWindow.qml",
+        "assets/qml/GlossTab.qml",
+        "assets/qml/GlossWordSelectionDialog.qml",
+        "assets/qml/PromptsTab.qml",
+        "assets/qml/AssistantResponses.qml",
+        "assets/qml/ResponseTabButton.qml",
+        "assets/qml/ScrollableHelper.qml",
+        "assets/qml/ThemeHelper.qml",
+        "assets/qml/Logger.qml",
+        "assets/qml/UnrecognizedWordsList.qml",
+        "assets/qml/UpdateNotificationDialog.qml",
+        "assets/qml/KeybindingCaptureDialog.qml",
+        "assets/qml/ShortcutConflictDialog.qml",
+        "assets/qml/ChantingPracticeWindow.qml",
+        "assets/qml/ChantingPracticeReviewWindow.qml",
+        "assets/qml/ChantingTreeList.qml",
+        "assets/qml/RecordingPlaybackItem.qml",
+        "assets/qml/WaveformView.qml",
+        "assets/qml/BookmarksTab.qml",
+        "assets/qml/BookmarkFolderItem.qml",
+        "assets/qml/BookmarkListItem.qml",
+        "assets/qml/HistoryListItem.qml",
+        "assets/qml/HistoryUtils.qml",
+        "assets/qml/BookmarkEditDialog.qml",
+        "assets/qml/BookmarkFolderDialog.qml",
+        "assets/qml/DictionaryIndexProgressWindow.qml",
+        "assets/qml/DictionariesWindow.qml",
+        "assets/qml/DictionaryListItem.qml",
+        "assets/qml/DictionaryImportRow.qml",
+        "assets/qml/DictionaryImportDialog.qml",
+        "assets/qml/DictionaryEditDialog.qml",
+        "assets/qml/DictionarySearchDictionariesPanel.qml",
+        "assets/qml/DictionaryInfoDialog.qml",
+        "assets/qml/GlobalHotkeysSection.qml",
+        "assets/qml/GlobalHotkeysWaylandNote.qml",
     ];
 
-    // The QML files above are registered as plain Qt resources here, with an
-    // explicitly derived alias, rather than being passed to the QML module as
-    // its `qml_files`. Both halves of that are deliberate.
+    // Every path above must be relative to bridges/ and free of `..`. That is
+    // the whole reason assets/qml/ lives under bridges/ rather than at the repo
+    // root, and it is what makes the AOT QML cache usable at all.
     //
-    // cxx-qt feeds a `qml_files` path string, verbatim, into three separate
-    // derivations that disagree about a leading `../`:
+    // cxx-qt feeds each `qml_files` string, verbatim, into three separate
+    // derivations, and they disagree about a leading `../`:
     //
     //   rcc alias         `../assets/qml/Logger.qml` -- rcc folds the `..` away,
     //                     so the file really lands at
@@ -126,55 +125,24 @@ fn main() {
     //                     the loader looks up through QDir::cleanPath, so a key
     //                     containing `/../` can never be matched
     //
-    // Under cxx-qt 0.7 the generated qmldir carried no component lines, so type
-    // lookup fell through to implicit same-directory resolution and the
-    // mismatch was invisible. 0.8's "correct QML module export" made the broken
-    // entry authoritative, and every lookup through the module then failed at
-    // runtime: "Type Logger unavailable --
-    // qrc:/qt/qml/com/profoundlabs/assets/qml/Logger.qml: No such file".
+    // With `..`-free paths all three agree: the alias is the literal string
+    // below, so the resource path stays byte-identical to the
+    // qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/*.qml literals hardcoded
+    // in cpp/; the qmldir component lines resolve; and qmlcachegen's AOT units
+    // are reachable at runtime instead of being silently unmatched.
     //
-    // Registering the files here keeps every resource path byte-identical to
-    // what the rest of the codebase hardcodes (the
-    // qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/*.qml literals in cpp/),
-    // and restores the 0.7 semantics that ship today: all QML files land in one
-    // resource directory and resolve their neighbours implicitly, which is why
-    // Logger.qml needs no import.
-    //
-    // Consequence: qmlcachegen does not run, so QML is parsed from source at
-    // load time. That is not a regression -- per the third bullet above, the AOT
-    // cache has never once been consulted in this project, under 0.7 or 0.9, so
-    // its 88 compiled units were dead weight in the binary. Enabling it for real
-    // is a separate, measured change; it requires `..`-free paths, i.e. moving
-    // assets/qml/ under bridges/. See docs/cxx-qt-fork.md.
-    let qml_resources = QResources::new().resource(
-        QResource::new()
-            // Set explicitly rather than relying on qrc_resources() applying the
-            // QML module's prefix implicitly, so the resource path this file
-            // produces is greppable here -- an invisible path derivation is what
-            // caused the bug described above.
-            .prefix(format!("/qt/qml/{}", QML_MODULE_URI.replace('.', "/")))
-            .files(qml_files.iter().map(|path| {
-                let path = *path;
-                // The alias becomes the resource path, so it must not contain
-                // `..`. Deriving it here means the list above keeps its usual
-                // "../assets/qml/<Name>.qml" form and a malformed entry fails
-                // the build instead of failing when that screen is first shown.
-                let alias = path.strip_prefix("../").unwrap_or_else(|| {
-                    panic!(
-                        "QML file paths must be written relative to bridges/ as \
-                         \"../assets/qml/<Name>.qml\"; got \"{path}\""
-                    )
-                });
-                QResourceFile::new(path).alias(alias)
-            })),
-    );
+    // docs/cxx-qt-fork.md §5 carries the full account, including the runtime
+    // failure this used to produce ("Type Logger unavailable --
+    // qrc:/qt/qml/com/profoundlabs/assets/qml/Logger.qml: No such file") and the
+    // qrc_resources() workaround that stood in for it until the tree was moved.
 
     // Since cxx-qt 0.8 a QML module carries only its QML files; the Rust bridge
     // sources move to CxxQtBuilder::files(), and there may be only one QML module
     // per builder. CxxQtBuilder::files() panics if the sources span more than one
     // directory (Qt bug QTBUG-93443) -- all nine bridges are under src/.
-    let builder = CxxQtBuilder::new_qml_module(QmlModule::new(QML_MODULE_URI))
-        .qrc_resources(qml_resources)
+    let builder = CxxQtBuilder::new_qml_module(
+        QmlModule::new(QML_MODULE_URI).qml_files(qml_files),
+    )
         // Link Qt's Network library
         // - Qt Core is always linked
         // - Qt Gui is linked by enabling the qt_gui Cargo feature of cxx-qt-lib.

@@ -35,8 +35,8 @@ is a *prerequisite* for this feature, not a coincidence),
 | `assets/general-index.json` | The index shipped with the build (`CIPS_GENERAL_INDEX_JSON`) |
 | `assets/general-index-date.txt` | The **source CSV's** date for that shipped index (`app_settings::cips_general_index_date()`) |
 | `bridges/src/sutta_bridge.rs` | `update_topic_index()`, `reset_topic_index()`, `topic_index_source_info()`, `is_topic_index_update_running()`, `cancel_topic_index_update()`, and the three signals |
-| `assets/qml/TopicIndexWindow.qml` | Header buttons, the two confirm dialogs, the refresh handler |
-| `assets/qml/TopicIndexUpdateWindow.qml` | The progress / results window |
+| `bridges/assets/qml/TopicIndexWindow.qml` | Header buttons, the two confirm dialogs, the refresh handler |
+| `bridges/assets/qml/TopicIndexUpdateWindow.qml` | The progress / results window |
 | `cli/src/bootstrap/parse_cips_index.rs` | Reduced to `parse_cips_to_json()` — the only part that writes files and prints |
 
 ### 1.1 Why the window lifecycle work came first

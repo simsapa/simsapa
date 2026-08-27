@@ -62,7 +62,3 @@ tokio = { version = "1.0", features = ["full"] }
 [build-dependencies]
 # The link_qt_object_files feature is required for statically linking Qt 6.
 cxx-qt-build = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12", features = ["link_qt_object_files"] }
-# For QResourceFile, which build.rs needs to set an explicit resource alias.
-# cxx-qt-build re-exports only QResource and QResources, not QResourceFile.
-# Keep the rev identical to the four crates above -- they are one dependency.
-qt-build-utils = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12" }

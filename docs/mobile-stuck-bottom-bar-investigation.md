@@ -103,7 +103,7 @@ can say which one (if either) is doing the work.
 
 | # | Where | What |
 |---|---|---|
-| 1 | `assets/qml/SuttaHtmlView_Mobile.qml` — `nudge_webview_geometry()` | 1px `anchors.bottomMargin` jiggle, so the native view re-sends a size Chromium must observe. Same remedy `WebEngineRepaintNudge.qml` uses for the desktop stale-frame bug. Exposed through the `SuttaHtmlView.qml` Loader; a no-op in `SuttaHtmlView_Desktop.qml`. **It fires at 250 ms, not immediately** — see §5.1; firing it early made the log credit it for work the ordinary resize had done. |
+| 1 | `bridges/assets/qml/SuttaHtmlView_Mobile.qml` — `nudge_webview_geometry()` | 1px `anchors.bottomMargin` jiggle, so the native view re-sends a size Chromium must observe. Same remedy `WebEngineRepaintNudge.qml` uses for the desktop stale-frame bug. Exposed through the `SuttaHtmlView.qml` Loader; a no-op in `SuttaHtmlView_Desktop.qml`. **It fires at 250 ms, not immediately** — see §5.1; firing it early made the log credit it for work the ordinary resize had done. |
 | 2 | `src-ts/viewport_nudge.ts` — `force_relayout()` | In-page repair: pins `documentElement` to `window.innerHeight` in px for one layout pass (defeating a possibly-stale `height: 100%`), toggles each bottom bar out of and back into the box tree (discarding a stale layer), scrolls 1px and back, dispatches a synthetic `resize`. |
 
 `handle_summary_close()` calls the jiggle first, then the page hook.
@@ -126,15 +126,15 @@ the symptom points at, and what JS cannot touch); the in-page relayout addresses
 a stale ICB or a stale layer *once the size has arrived*. Neither is known to be
 necessary yet.
 
-Files touched: `assets/qml/SuttaSearchWindow.qml` (`handle_summary_close()` and
-`set_summary_query()`), `assets/qml/SuttaHtmlView.qml` (Loader pass-throughs),
-`assets/qml/SuttaHtmlView_Mobile.qml` (the jiggle + timer chain),
-`assets/qml/SuttaHtmlView_Desktop.qml` (no-op counterparts),
+Files touched: `bridges/assets/qml/SuttaSearchWindow.qml` (`handle_summary_close()` and
+`set_summary_query()`), `bridges/assets/qml/SuttaHtmlView.qml` (Loader pass-throughs),
+`bridges/assets/qml/SuttaHtmlView_Mobile.qml` (the jiggle + timer chain),
+`bridges/assets/qml/SuttaHtmlView_Desktop.qml` (no-op counterparts),
 `src-ts/viewport_nudge.ts` (+ `.test.ts`, 18 tests), `src-ts/simsapa.ts` (init).
 
 **No new QML component file and no new Rust bridge function was added**, so
 `bridges/build.rs` and the `qmllint` stubs in
-`assets/qml/com/profoundlabs/simsapa/` need no entry.
+`bridges/assets/qml/com/profoundlabs/simsapa/` need no entry.
 
 ---
 

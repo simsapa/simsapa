@@ -176,7 +176,7 @@ resolve_qt() {
 
     export QT_BASE_DIR="$QT6_PATH"
     export LD_LIBRARY_PATH="$QT6_PATH/lib:${LD_LIBRARY_PATH:-}"
-    export QML_SOURCES_PATHS="$QT6_PATH/qml:./assets/qml"
+    export QML_SOURCES_PATHS="$QT6_PATH/qml:./bridges/assets/qml"
     export PATH="$QT6_PATH/bin:$PATH"
 
     # Only if not already set, so an explicit QMAKE still wins.

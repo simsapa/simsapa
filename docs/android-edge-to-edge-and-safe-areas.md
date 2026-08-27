@@ -36,7 +36,7 @@ installPropertyBinding(this, "bottomPadding"_L1, controlSafeArea, "margins.botto
 the margins from the `QWindow`, any margins added to the content item, and the
 margins Qt adds for the header, footer and menu bar.
 
-So every `ApplicationWindow` in `assets/qml/` is padded correctly for free. The
+So every `ApplicationWindow` in `bridges/assets/qml/` is padded correctly for free. The
 app's `extra_top_margin` property is exactly what its name says: **additional**
 space below Qt's inset, defaulting to `0`, for the rare device where the
 automatic inset is not enough.
@@ -54,7 +54,7 @@ ApplicationWindow {
 }
 ```
 
-Verified: no window does this today — every `padding:` in `assets/qml/` is on an
+Verified: no window does this today — every `padding:` in `bridges/assets/qml/` is on an
 inner control. **This is the first thing to check if an inset ever goes
 missing.** Apply extra space as an anchor margin on the window's root layout,
 inside Qt's padding, which is what `extra_top_margin` does.
@@ -192,7 +192,7 @@ topPadding: control.SafeArea.margins.top
 Not by plumbing `extra_top_margin` into it. The attached property is relative to
 the item it is attached to, so this does not double-count.
 
-**Sweep result (all 55 `Dialog`/`Popup`/`Drawer`/`Menu` roots in `assets/qml/`,
+**Sweep result (all 55 `Dialog`/`Popup`/`Drawer`/`Menu` roots in `bridges/assets/qml/`,
 July 2026):** `DrawerMenu.qml` was the **only** top-anchored one. Every other
 `Dialog` is centered (`anchors.centerIn: parent`, or `x/y: (parent.w|h - w|h) / 2`
 in `TabListDialog.qml`), and the `Menu` popups in `SuttaSearchWindow.qml` open

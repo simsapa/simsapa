@@ -79,7 +79,7 @@ pub fn dpd_lookup_json_async(self: Pin<&mut Self>, query_id: &QString, query: &Q
 }
 ```
 
-#### 2. assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml
+#### 2. bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml
 
 **Signal signature update (line 19):**
 ```qml
@@ -102,7 +102,7 @@ function dpd_lookup_json_async(query_id: string, query: string) {
 }
 ```
 
-#### 3. assets/qml/WordSummary.qml
+#### 3. bridges/assets/qml/WordSummary.qml
 
 **Added query ID tracking property (line 32):**
 ```qml

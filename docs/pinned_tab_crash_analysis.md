@@ -81,12 +81,12 @@ Use these prefixes to filter logs during testing:
 
 ## Files Modified
 
-1. **assets/qml/SuttaSearchWindow.qml** (line 509-520)
+1. **bridges/assets/qml/SuttaSearchWindow.qml** (line 509-520)
    - Fixed blank tab webview creation logic
    - Added debug logging to pin/unpin operations
    - Added debug logging to tab_checked_changed
 
-2. **assets/qml/SuttaStackLayout.qml** (throughout)
+2. **bridges/assets/qml/SuttaStackLayout.qml** (throughout)
    - Added debug logging to add_item, delete_item
    - Added debug logging to current_key changes
    - Added debug logging to update_currentIndex

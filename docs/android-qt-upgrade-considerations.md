@@ -186,7 +186,7 @@ events and instead expects the app to register an `OnBackInvokedCallback`.
 - **The app registers none either**, and deliberately so: Qt Quick Controls
   dismiss a `Dialog`/`Popup`/`Window` off the `Qt::Key_Back` event that the
   legacy path delivers. There is no `Key_Back` handler anywhere in
-  `assets/qml/` — there never needed to be.
+  `bridges/assets/qml/` — there never needed to be.
 
 So with predictive back on, nothing anywhere handles back and the system default
 runs: **finish the activity**. Measured on an Android 16 phone, 2026-07-28 —

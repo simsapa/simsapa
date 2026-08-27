@@ -67,10 +67,10 @@ parse-cips:
 	cd cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
 
 count-code:
-	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude assets/qml/data/ --exclude assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
+	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
 
 count-code-pie:
-	tokei -o json --types Rust,QML,C++,TypeScript,Javascript,CMake --exclude assets/qml/data/ --exclude assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | tokei-pie
+	tokei -o json --types Rust,QML,C++,TypeScript,Javascript,CMake --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | tokei-pie
 
 simsapa.min.js:
 	npx webpack
@@ -87,7 +87,7 @@ js-test:
 	npm test
 
 # qml-test-one:
-# 	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./assets/qml/ -input ./assets/qml/ -functions 'CommonWords::test_clean_stem'
+# 	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/ -functions 'CommonWords::test_clean_stem'
 
 # Sources scripts/qt-env.sh so this is the project's qmllint, not the system
 # Qt's (a bare 'qmllint' resolves to /usr/bin, a version the project targets on
@@ -99,10 +99,10 @@ js-test:
 # function properties); the thing to watch for is a NEW warning naming a file
 # you touched.
 qml-lint:
-	. ./scripts/qt-env.sh && qmllint -I ./assets/qml/ ./assets/qml/*.qml
+	. ./scripts/qt-env.sh && qmllint -I ./bridges/assets/qml/ ./bridges/assets/qml/*.qml
 
 qml-test: qml-lint
-	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./assets/qml/ -input ./assets/qml/
+	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/
 
 project-tree:
 	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I dpd-res/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt

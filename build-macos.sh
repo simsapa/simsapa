@@ -230,7 +230,7 @@ deploy_qt_frameworks() {
     print_status "Deploying Qt frameworks with macdeployqt..."
 
     # Run macdeployqt
-    if ! "$macdeployqt" "$app_bundle" -qmldir=./assets/qml -verbose=1; then
+    if ! "$macdeployqt" "$app_bundle" -qmldir=./bridges/assets/qml -verbose=1; then
         print_error "macdeployqt failed"
         exit 1
     fi

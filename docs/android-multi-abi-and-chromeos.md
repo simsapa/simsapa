@@ -183,7 +183,7 @@ retired, and it would only lapse if the floor ever reached 29.
 
 It is safe here because **Simsapa never touches shared external storage**: a
 grep for `getExternalStorage` / `EXTERNAL_STORAGE` / `/sdcard` across
-`backend/`, `bridges/`, `cpp/`, `assets/qml/` and `android/` (re-run 2026-08-26)
+`backend/`, `bridges/`, `cpp/`, `bridges/assets/qml/` and `android/` (re-run 2026-08-26)
 turns up only three hits, none of them shared-storage access — two comments, and
 `cpp/utils.cpp`'s `Environment.getExternalStorageState(File)` call, which is a
 read-only **mount-state query** on a volume path ("mounted", "removed", …) that

@@ -349,7 +349,7 @@ Notable feature docs:
   `MACOSX_BUNDLE_GUI_IDENTIFIER` in `CMakeLists.txt` + `BUNDLE_ID` in
   `build-macos.sh`; Windows `AppId` is a GUID, Linux has none) and the **QML
   module URI** (`com.profoundlabs.simsapa` — an internal Qt namespace used by
-  `import com.profoundlabs.simsapa`, the `assets/qml/com/profoundlabs/simsapa/`
+  `import com.profoundlabs.simsapa`, the `bridges/assets/qml/com/profoundlabs/simsapa/`
   stubs, `bridges/build.rs` / `cxx_qt_import_qml_module` URI, and the
   `:/qt/qml/com/profoundlabs/simsapa/…` resource paths). **The two are unrelated
   and must NOT be conflated** — the Android applicationId was changed for Google
@@ -1060,7 +1060,7 @@ of text belongs in a `QtQuick.Controls` `Dialog` written this way.
 
 **Any `Dialog` that has a `title` *and* content that wraps
 (`wrapMode: Text.WordWrap`) must set `header: DialogHeader { text: <dialog_id>.title }`
-(`assets/qml/DialogHeader.qml`) instead of using Fusion's default header.**
+(`bridges/assets/qml/DialogHeader.qml`) instead of using Fusion's default header.**
 
 Fusion's `Dialog` computes
 `implicitHeight: … + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0) + …`
@@ -1104,7 +1104,7 @@ here.
 `scripts/tst_dialog_loop_harness.qml.keep` instantiates the real
 `SearchBarInput` in a window and drives the four scenarios that isolated the
 cause; you count `Binding loop detected for property "implicitHeight"` lines
-(baseline 3, with `DialogHeader` 0). Copy it into `assets/qml/` as a `tst_*.qml`
+(baseline 3, with `DialogHeader` 0). Copy it into `bridges/assets/qml/` as a `tst_*.qml`
 to resolve project types and **delete it again after use** — `make qml-test`
 walks that tree. Its header comment carries the run command and the three things
 that invalidated six earlier attempts: `QT_QUICK_CONTROLS_STYLE=Fusion` is
@@ -1124,16 +1124,23 @@ one `header:` line above, and the rig is how you confirm it.
 
 ### New QML components
 
-When you create a new QML component such as `SearchBarInput.qml`, the file has to be added to the `qml_files` list in `bridges/build.rs`.
+The QML tree lives at **`bridges/assets/qml/`**, not at the repo root. When you
+create a new QML component such as `SearchBarInput.qml`, the file has to be added
+to the `qml_files` list in `bridges/build.rs`.
 
 ``` rust
-qml_files.push("../assets/qml/SearchBarInput.qml");
+qml_files.push("assets/qml/SearchBarInput.qml");
 ```
 
-Keep the `"../assets/qml/<Name>.qml"` form exactly — paths are relative to
-`bridges/`, and `build.rs` strips the leading `../` to derive each file's
-resource alias. A path in any other shape `panic!`s the build with a message
-naming the expected form, rather than failing when that screen is first shown.
+**Keep the `"assets/qml/<Name>.qml"` form exactly — relative to `bridges/`, and
+never containing `..`.** The path string is used verbatim as the rcc alias, so
+this is what makes the resource path
+`:/qt/qml/com/profoundlabs/simsapa/assets/qml/<Name>.qml`, matching the `qrc:`
+literals in `cpp/`. A `../`-prefixed path still *compiles*: rcc folds the `..`
+away but the generated `qmldir` and qmlcachegen do not, so the type fails to
+resolve when that screen is first shown and the AOT cache silently misses. That
+trap is why the tree was moved under `bridges/` — see
+[docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
 ### Long operations in QML must keep the screen awake
 
@@ -1206,17 +1213,17 @@ runtime theme change; already-parsed rich text needs a restart to recolour.)
 
 ### Logging in QML (no console API)
 
-In the QML files under `assets/qml/`, do **not** use the `console` API
+In the QML files under `bridges/assets/qml/`, do **not** use the `console` API
 (`console.log()`, `console.error()`, etc.). Use the `Logger { id: logger }`
 module's functions for logging instead.
 
 The one exception is the folder
-`assets/qml/com/profoundlabs/simsapa/`: the `console` API is allowed there
+`bridges/assets/qml/com/profoundlabs/simsapa/`: the `console` API is allowed there
 because those files are type stubs for `qmllint`.
 
 #### Using the Logger module
 
-`Logger.qml` lives in `assets/qml/`, so it is automatically available to any
+`Logger.qml` lives in `bridges/assets/qml/`, so it is automatically available to any
 other component in that directory — no `import` statement is needed. Declare an
 instance once in the component's root element, conventionally with `id: logger`:
 
@@ -1321,7 +1328,7 @@ touching that code for another reason.
 
 When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml
 
-For example, when implementing the `get_api_key()` method in `sutta_bridge.rs`, add a corresponding function in `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with the correct function signature and a simple return value. The internal logic doesn't have to be repeated, because this is only for the benefit of `qmllint`.
+For example, when implementing the `get_api_key()` method in `sutta_bridge.rs`, add a corresponding function in `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with the correct function signature and a simple return value. The internal logic doesn't have to be repeated, because this is only for the benefit of `qmllint`.
 
 ``` qml
 function get_api_key(key_name: string): string {
@@ -1383,8 +1390,9 @@ Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
 `bridges/build.rs`:
 
 ``` rust
-CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
-    .qrc_resources(qml_resources)
+CxxQtBuilder::new_qml_module(
+    QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
+)
     .files([
         "src/sutta_bridge.rs",
         "src/asset_manager.rs",
@@ -1394,15 +1402,12 @@ CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
     ])
 ```
 
-**Note what this does NOT do: the QML files are not passed to the module as
-`.qml_files(…)`.** They are registered as plain Qt resources with an alias
-derived in `build.rs`, because a `qml_files` path containing `../` — which every
-entry in our list has, the list being relative to `bridges/` — is folded away by
-`rcc` but *not* by the qmldir writer or by qmlcachegen, so the three disagree and
-QML type resolution fails **at runtime** (`Type Logger unavailable`). A
-`.qml_files(qml_files)` snippet compiles cleanly and re-introduces that bug; the
-long comment at the `qml_resources` block in `bridges/build.rs` is the
-authoritative explanation. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md).
+**Every path in `qml_files` must be relative to `bridges/` and free of `..`** —
+`"assets/qml/<Name>.qml"`, which is why the QML tree lives at
+`bridges/assets/qml/`. A `../`-prefixed path is folded away by `rcc` but *not* by
+the qmldir writer or by qmlcachegen, so the three disagree and QML type
+resolution fails **at runtime** (`Type Logger unavailable`) while the build stays
+green. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
 All the bridge sources must live in **one directory** (`bridges/src/`).
 `CxxQtBuilder::files()` panics if they span more than one — a Qt limitation
@@ -1419,8 +1424,8 @@ All the bridge sources must live in **one directory** (`bridges/src/`).
 `qmllint` requires that the corresponding QML type definition for the Rust bridge has to be created and it should be declared in the `qmldir` file.
 
 ```
-assets/qml/com/profoundlabs/simsapa/PromptManager.qml
-assets/qml/com/profoundlabs/simsapa/qmldir
+bridges/assets/qml/com/profoundlabs/simsapa/PromptManager.qml
+bridges/assets/qml/com/profoundlabs/simsapa/qmldir
 ```
 
 ### Database migrations
@@ -1660,7 +1665,7 @@ Use this path for any tests or experimental scripts that need to query the actua
     [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing
-- **QML Tests:** `make qml-test` — runs `qmllint` over `assets/qml/*.qml`
+- **QML Tests:** `make qml-test` — runs `qmllint` over `bridges/assets/qml/*.qml`
   first, then all QML tests with the offscreen platform. `make qml-lint` runs
   the lint alone. The lint sources `scripts/qt-env.sh` so it is the project's
   `qmllint`, not the system Qt's, and it does **not** fail the target (qmllint

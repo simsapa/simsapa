@@ -3,7 +3,7 @@
 On Android — and especially on ChromeOS running Android apps — a Qt `TextField`
 / `TextArea` does **not** reliably raise the on-screen keyboard when focused or
 tapped. Two distinct problems were observed and fixed; both are handled by the
-reusable [`MobileKeyboardHelper.qml`](../assets/qml/MobileKeyboardHelper.qml)
+reusable [`MobileKeyboardHelper.qml`](../bridges/assets/qml/MobileKeyboardHelper.qml)
 component plus a per-field `EnterKey.type`.
 
 ## The two problems
@@ -366,7 +366,7 @@ When adding a **new** text input, apply this technique.
 
 ## Component registration
 
-`MobileKeyboardHelper.qml` lives in `assets/qml/` and is listed in the
+`MobileKeyboardHelper.qml` lives in `bridges/assets/qml/` and is listed in the
 `qml_files` array in `bridges/build.rs`. New QML components must be added there
 (see AGENTS.md → "New QML components").
 

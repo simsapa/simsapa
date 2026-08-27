@@ -156,75 +156,85 @@ non-reproducibility the Cargo pin was written to avoid, simply less visible. The
 two pins are a **coupled pair**: a mismatch fails inside generated code, the
 hardest place to read an error. Move them together.
 
-## 5. The `..` trap: why the QML files are not `qml_files`
+## 5. The `..` trap: why `bridges/assets/qml/` lives under `bridges/`
 
-This is the one runtime-only defect the migration produced, and the reason
-`bridges/build.rs` looks unusual. **A green build does not detect it** — the app
-failed on its first launch with:
+**A `qml_files` path containing `..` breaks at runtime while the build stays
+green.** That is the whole reason the QML tree sits at `bridges/assets/qml/`
+rather than at the repo root, and the reason every entry in `bridges/build.rs`
+must stay in the `"bridges/assets/qml/<Name>.qml"` form.
+
+**Cause: cxx-qt feeds a `qml_files` path string, verbatim, into three
+derivations that disagree about a leading `../`:**
+
+| Consumer | Result for `"../assets/qml/Logger.qml"` |
+|---|---|
+| rcc alias (`qt-build-utils/src/lib.rs:364`) | `..` folded → `:/qt/qml/com/profoundlabs/simsapa/assets/qml/Logger.qml` ✅ |
+| qmldir component line (**new in 0.8**) | `Logger 1.0 ../assets/qml/Logger.qml`, resolved as a URL against the module dir → one level too high ❌ |
+| qmlcachegen (`tool/qmlcachegen.rs:74`) | `--resource-path /qt/qml/…/simsapa/../assets/qml/Logger.qml`, inserted **unnormalized** ❌ |
+
+The second row is what the app failed on, on its first launch after the 0.7 → 0.9
+migration:
 
 ```
 Type Logger unavailable
 qrc:/qt/qml/com/profoundlabs/assets/qml/Logger.qml: No such file
 ```
 
-— note the missing `simsapa/` segment.
+— note the missing `simsapa/` segment. Under 0.7 the generated `qmldir` carried
+**no** component lines at all, so type lookup fell through to implicit
+same-directory resolution and the mismatch was invisible; 0.8's "correct QML
+module export" made the broken entry authoritative. The third row is the AOT
+cache, below.
 
-**Cause: cxx-qt feeds a `qml_files` path string, verbatim, into three
-derivations that disagree about a leading `../`.** Our list has always used
-`"../assets/qml/Foo.qml"`, because the paths are relative to `bridges/`:
+**The fix is that the paths no longer contain `..`.** With the tree under
+`bridges/`, all three derivations agree: the rcc alias is the literal string from
+the list, so the resource path stays
+`:/qt/qml/com/profoundlabs/simsapa/assets/qml/Foo.qml` and every such literal in
+`cpp/` (~16 sites) is untouched; the `qmldir` component lines resolve; and the
+AOT cache keys are matchable.
 
-| Consumer | Result for `Logger.qml` |
-|---|---|
-| rcc alias (`qt-build-utils/src/lib.rs:364`) | `..` folded → `:/qt/qml/com/profoundlabs/simsapa/assets/qml/Logger.qml` ✅ |
-| qmldir component line (**new in 0.8**) | `Logger 1.0 ../assets/qml/Logger.qml`, resolved as a URL against the module dir → one level too high ❌ |
-| qmlcachegen (`tool/qmlcachegen.rs:74`) | `--resource-path /qt/qml/…/simsapa/../assets/qml/Logger.qml`, inserted **unnormalized** ❌ |
+Between the migration and the move, the files were registered with
+`CxxQtBuilder::qrc_resources` and the alias derived by hand in `build.rs`
+(stripping the `../`, with a `panic!` on a malformed entry). That workaround kept
+the resource paths correct but left qmlcachegen unable to run at all — see the
+side finding below. It is gone; `QmlModule::new(URI).qml_files(…)` is the normal
+arrangement again.
 
-Under 0.7 the generated `qmldir` carried **no** component lines, so type lookup
-fell through to implicit same-directory resolution and the mismatch was
-invisible. 0.8's "correct QML module export" made the broken entry
-authoritative.
-
-**The fix: register the QML files with `CxxQtBuilder::qrc_resources` and derive
-the alias in `build.rs`** (there is no alias API on `QmlFile`). The list keeps
-its documented `"../assets/qml/Foo.qml"` form — so the rule for adding a QML
-component is unchanged — and a malformed entry now `panic!`s at build time
-naming the expected shape instead of failing when that screen is first shown.
-`qt-build-utils` is in `[build-dependencies]` for `QResourceFile`; `cxx-qt-build`
-re-exports only `QResource` and `QResources`.
-
-Two alternatives were rejected: a `bridges/assets` **symlink** (breaks on Windows
-without `core.symlinks`, and makes every QML file visible at two paths to
-`rg`/`qmllint`/`cargo package`), and **`set_current_dir("..")`** (breaks
-incremental builds — cxx-qt-build emits `rerun-if-changed` with the **raw** path
-at `cxx-qt-build/src/lib.rs:459,586,645,964`, and cargo resolves relative rerun
+Two alternatives to moving the tree were rejected: a `bridges/assets`
+**symlink** (breaks on Windows without `core.symlinks`, and makes every QML file
+visible at two paths to `rg`/`qmllint`/`cargo package`), and
+**`set_current_dir("..")`** (breaks incremental builds — cxx-qt-build emits
+`rerun-if-changed` with the **raw** path at
+`cxx-qt-build/src/lib.rs:459,586,645,964`, and cargo resolves relative rerun
 paths against the package root, so they would point at `bridges/bridges/src/`).
 Both also leave the trap armed: `"../assets/qml/Foo.qml"` still compiles and
 still fails at runtime.
 
-**Verified against the pre-change build**, not by inspection: the 87 registered
-aliases are byte-identical to the old build's once its `../` is folded, the
-prefix is still `/qt/qml/com/profoundlabs/simsapa`, **zero** `..` remain in the
-generated `.qrc`, and the `qmldir` is back to its five-line 0.7 form. So every
-`qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/*.qml` literal in `cpp/` (~16
-sites) keeps resolving.
+> **The one thing to check if the tree ever moves again**, because it is what the
+> whole arrangement rests on: the generated `.qrc` aliases must come out
+> **byte-identical**, the prefix still `/qt/qml/com/profoundlabs/simsapa`, and
+> **zero** `..` anywhere in it. Anything else and the `qrc:` literals in `cpp/`
+> and `assets/icons.qrc`'s prefix break — silently, at first use of a screen.
 
-### Side finding: the AOT QML cache has never been used in this project
+### Side finding: the AOT QML cache was never used before the move
 
-While choosing the fix it emerged that qmlcachegen's output was **never
-consulted** — under 0.7 either. The generated loader inserts its keys raw
+Until the tree moved under `bridges/`, qmlcachegen's output was **never
+consulted** — not under 0.7 either. The generated loader inserts its keys raw
 (`"/qt/qml/com/profoundlabs/simsapa/../assets/qml/SuttaSearchWindow.qml"`) but
 looks them up through `QDir::cleanPath`, which strips `..`, so a key containing
 `/../` can never match. **87 compiled units — 12.4 MB of generated C++ plus a
 52 KB loader — were compiled into the binary and never used.** That is what made
-the chosen fix free rather than a trade-off: not generating them loses nothing.
+the `qrc_resources` workaround free rather than a trade-off: it stopped
+qmlcachegen running, and not generating those units lost nothing.
 
-Enabling AOT for real is a separate, **measured** change, not a regression to
-repair. It requires `..`-free paths, i.e. moving `assets/qml/` under `bridges/`
-(alias-neutral, so no `qrc:` literal would change). Whether app UI belongs under
-`bridges/` is a genuine design question, and if the measured win is small, not
-moving is a legitimate outcome. A green build proves nothing there either —
-unmatched AOT units fail silently by falling back to parsing source, which is
-today's behaviour.
+**A green build proves nothing here**, which is why the move was accompanied by a
+runtime check rather than an inspection: unmatched AOT units fail *silently* by
+falling back to parsing QML from source — exactly the pre-move behaviour. The
+artifact-level checks are that the generated `qmldir` carries resolving component
+lines (`SuttaSearchWindow 1.0 bridges/assets/qml/SuttaSearchWindow.qml`) and that no key
+in the generated `qmlcache_loader.cpp` contains `/../`; the runtime check is
+`QT_LOGGING_RULES="qt.qml.diskcache.debug=true"` showing units loaded from the
+cache, with a deliberate-mismatch control.
 
 Two upstream defects worth reporting, with a one-file reproducer (`"../foo/Bar.qml"`):
 

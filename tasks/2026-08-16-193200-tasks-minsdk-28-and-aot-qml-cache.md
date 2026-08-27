@@ -978,11 +978,16 @@ this file, under the sub-task, so the record lives with the work.
 > work between them.
 > **Depends on:** 5.0 (baseline must exist first). **Blocks:** 7.0.
 
-- [ ] 6.1 `git mv assets/qml bridges/assets/qml`, taking the whole tree: the 108
+- [x] 6.1 `git mv assets/qml bridges/assets/qml`, taking the whole tree: the 108
   root `.qml` files including the 13 `tst_*.qml`, plus
   `com/profoundlabs/simsapa/` (bridge stubs + `qmldir`), `data/`
   (`BojjhangaData.qml` + its own `qmldir`) and `icons/`.
-- [ ] 6.2 **Re-point the `icons` symlink.** `assets/qml/icons` is a tracked
+
+  Done. `mkdir -p bridges/assets` first (the parent did not exist), then
+  `git mv assets/qml bridges/assets/qml`. Git records all 110 files as `R`
+  renames, so history follows. `bridges/assets/qml/` now holds 111 entries: 110
+  files/dirs plus the `icons` symlink.
+- [x] 6.2 **Re-point the `icons` symlink.** `assets/qml/icons` is a tracked
   symlink (git mode `120000`) whose target is `../icons`; after the move that
   resolves to the non-existent `bridges/assets/icons`, and it breaks **silently**
   — the Qt resource still supplies the icons (6.3), so only filesystem consumers
@@ -992,13 +997,36 @@ this file, under the sub-task, so the record lives with the work.
   verify with `readlink` plus an `md5sum` through the link. Do **not** replace it
   with a copy — `assets/icons/32x32/` holds 117 files that `assets/icons.qrc`
   also references.
-- [ ] 6.3 Confirm `assets/icons.qrc` stays where it is and needs no edit: its
+
+  Re-pointed in the same commit. `readlink bridges/assets/qml/icons` →
+  **`../../../assets/icons`**, and `git ls-files -s` confirms mode **`120000`**,
+  i.e. still a symlink and not a materialised copy. Verified it resolves:
+  `ls bridges/assets/qml/icons/32x32 | wc -l` → **117**, and an `md5sum` of the
+  same file through both paths matches
+  (`c3e806c1e4b743edf23e8990c05ce8b0  bxs_book_bookmark.png`).
+- [x] 6.3 Confirm `assets/icons.qrc` stays where it is and needs no edit: its
   `<file>` entries name `icons/32x32/…`, which resolve against the `.qrc`'s own
   directory, i.e. `assets/icons/` (**not** through the `assets/qml/icons`
   symlink), and its `prefix` is the shared QML resource directory. Its only
   consumer is `CMakeLists.txt:398`. Verify by reading the file (FR-13).
-- [ ] 6.4 `bridges/build.rs`: strip the `../` from all 96 entries in the list.
-- [ ] 6.5 `bridges/build.rs`: move the QML files from
+
+  **Confirmed by reading it — no edit made.** `assets/icons.qrc` line 2 is
+  `<qresource prefix="/qt/qml/com/profoundlabs/simsapa/assets/qml">`, and every
+  `<file>` entry is of the form `icons/32x32/fa_angle-down-solid.png`. Those
+  resolve against the `.qrc` file's own directory (`assets/`), i.e. the **real**
+  `assets/icons/32x32/`, never through the `bridges/assets/qml/icons` symlink.
+  So neither half of the file is affected by the move: the prefix is a resource
+  path (which FR-13 keeps byte-identical) and the file paths are filesystem
+  paths rooted at `assets/`, which did not move. Sole consumer confirmed as
+  `CMakeLists.txt:398`, `qt_add_resources(icons "assets/icons.qrc")`.
+- [x] 6.4 `bridges/build.rs`: strip the `../` from all 96 entries in the list.
+
+  Done — **94** list entries, per 5.6's correction (the other two `assets/qml/`
+  occurrences a naive grep counts were placeholders inside the `panic!`
+  message's text, and that message is now deleted by 6.5). Every entry is now
+  `"assets/qml/<Name>.qml"`; `grep -n '\.\./assets/qml' bridges/build.rs`
+  returns only comment lines that *illustrate the trap*.
+- [x] 6.5 `bridges/build.rs`: move the QML files from
   `CxxQtBuilder::qrc_resources(…)` back into
   `QmlModule::new(URI).qml_files(…)` with the now `..`-free paths, and delete the
   alias-derivation block **and** its `panic!` (FR-14). Drop the now-unused
@@ -1006,34 +1034,192 @@ this file, under the sub-task, so the record lives with the work.
   Note that `qml_files` takes anything `Into<QmlFile>`, so plain `&str` paths
   work unchanged; `.singleton(true)` / `.version(…)` are not needed here (no
   registered file is a singleton).
-- [ ] 6.6 Carry the deleted block's long comment — the runtime bug it existed for
+
+  Done. The builder is now
+
+  ```rust
+  let builder = CxxQtBuilder::new_qml_module(
+      QmlModule::new(QML_MODULE_URI).qml_files(qml_files),
+  )
+  ```
+
+  with `.qrc_resources(qml_resources)`, the whole `QResources`/`QResource`
+  /`QResourceFile` block and its `panic!` deleted, and the
+  `use qt_build_utils::{…}` import dropped (nothing else in the file used it).
+  `Vec<&str>` satisfies `qml_files`' `IntoIterator<Item: Into<QmlFile>>` as
+  noted, so the list needed no wrapping.
+
+  **One thing the task did not list: `qt-build-utils` was a *direct*
+  `[build-dependencies]` entry existing only for this block**, with a comment
+  saying so ("For QResourceFile, which build.rs needs to set an explicit
+  resource alias. cxx-qt-build re-exports only QResource and QResources"). With
+  the block gone it is dead, so it was removed from `bridges/Cargo.toml` too —
+  it remains available transitively through `cxx-qt-build` at the same
+  `rev = "2180c12"`. Confirmed by a clean `make build -B` after the removal.
+- [x] 6.6 Carry the deleted block's long comment — the runtime bug it existed for
   — **into `docs/cxx-qt-fork.md` §5** rather than deleting it with the code
   (FR-14). §5 already tells most of this story; make sure nothing is lost.
-- [ ] 6.7 Update the `Makefile`: `qml-lint` (`:102`), `qml-test` (`:105`), the
+
+  §5 rewritten. Its title was *"why the QML files are not `qml_files`"*, which
+  is now false, so it became **"why `assets/qml/` lives under `bridges/`"** —
+  the trap is preserved and is now the section's subject rather than a
+  justification for a workaround. Nothing was lost: the three-derivation table,
+  the `Type Logger unavailable` failure text, the 0.7-vs-0.8 qmldir history and
+  the two rejected alternatives (symlink, `set_current_dir`) all remain; the
+  `qrc_resources` workaround is recorded as the interim arrangement and why it
+  is gone. Added a block-quote rule naming the one check to run if the tree ever
+  moves again (byte-identical aliases, unchanged prefix, zero `..`).
+
+  The "Side finding" heading became *"the AOT QML cache **was** never used
+  **before the move**"*, with the "a green build proves nothing" warning kept
+  and pointed at the checks that replace it. The upstream-defect list at the end
+  of §5 is untouched — that is Part C's deliverable and it is still unfiled.
+- [x] 6.7 Update the `Makefile`: `qml-lint` (`:102`), `qml-test` (`:105`), the
   commented single-test line (`:90`), and both `tokei` exclude lists (`:70`,
   `:73`, which name `assets/qml/data/` and
   `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`).
-- [ ] 6.8 Update `build-macos.sh:233` (`-qmldir=./assets/qml`),
+
+  All five sites updated to `bridges/assets/qml`. `make qml-lint` and
+  `make qml-test` both verified against the moved tree — see 6.12.
+- [x] 6.8 Update `build-macos.sh:233` (`-qmldir=./assets/qml`),
   `build-appimage.sh:179` (`QML_SOURCES_PATHS="$QT6_PATH/qml:./assets/qml"`) and
   **`appimage.conf:8`** (`qml_sources_paths = assets/qml`) — the third is a
   consumer FR-12 does not list. Check whether `build-appimage.sh` reads
   `appimage.conf` or whether the two are independent copies of the same value;
   if independent, say so in a comment so the next mover finds both.
-- [ ] 6.9 Update `AGENTS.md`: the "New QML components" rule and its path form,
+
+  All three updated. **They are independent** — `build-appimage.sh` never reads
+  `appimage.conf` (`grep -n "appimage.conf" build-appimage.sh` returns nothing);
+  it exports its own `QML_SOURCES_PATHS`. So the two really are duplicate copies
+  of the same value, and a comment saying so was added above
+  `appimage.conf`'s `qml_sources_paths`, naming the script, so the next mover
+  finds both.
+- [x] 6.9 Update `AGENTS.md`: the "New QML components" rule and its path form,
   the `console`-API exception for the stub directory, and the
   `tst_dialog_loop_harness` instructions ("copy it into `assets/qml/` as a
   `tst_*.qml`"). `PROJECT_MAP.md` (~30 hits, incl. `:128`, `:196`, `:197`) and
   every `docs/*.md` that names the path.
-- [ ] 6.10 Check `scripts/qml-watch.sh`, `scripts/tst_dialog_loop_harness.qml.keep`
+
+  Done across `AGENTS.md`, `PROJECT_MAP.md` and **26 `docs/*.md` files**, plus
+  two source-comment mentions the task list did not name
+  (`src-ts/viewport_nudge.ts`, `backend/src/cips_parse.rs`) and one in
+  `cpp/gui.cpp:83`.
+
+  **Two path forms had to be kept apart, and conflating them is the easy
+  mistake:** prose and filesystem references become `bridges/assets/qml/…`, but
+  the strings *inside* `bridges/build.rs` stay `"assets/qml/<Name>.qml"`
+  (relative to `bridges/`), as do the `qrc:` resource paths
+  `…/com/profoundlabs/simsapa/assets/qml/…`. A bulk rewrite corrupts both. The
+  substitution was therefore guarded to skip anything already preceded by
+  `bridges/`, by `/`, or by a word character, and the two `build.rs`-form
+  examples in the "New QML components" rule were restored by hand afterwards.
+
+  `AGENTS.md`'s two rules were rewritten rather than path-swapped, since both
+  argued *for* the `../` form that no longer exists:
+  - **"New QML components"** now opens by stating where the tree lives, shows
+    `qml_files.push("assets/qml/SearchBarInput.qml")`, and explains why the
+    `..`-free form matters — the string is used verbatim as the rcc alias — plus
+    the trap that a `../` path still compiles and fails at runtime. The old
+    "`build.rs` strips the leading `../` … a path in any other shape `panic!`s"
+    sentence is gone with the code it described (see 10.1).
+  - **"New Rust bridges"** had a paragraph headed *"Note what this does NOT do:
+    the QML files are not passed to the module as `.qml_files(…)`"*. That is now
+    exactly what the code does, so the snippet and the paragraph were both
+    replaced.
+
+  Relative markdown links needed separate handling — `docs/android-soft-keyboard.md:6`
+  linked `(../assets/qml/MobileKeyboardHelper.qml)`, which the guarded
+  substitution deliberately skipped; corrected by hand to
+  `(../bridges/assets/qml/…)`. Also corrected a pre-existing typo found while
+  sweeping `PROJECT_MAP.md`: `assets/qml/profoundlabs/simsapa/` was missing its
+  `com/` segment.
+- [x] 6.10 Check `scripts/qml-watch.sh`, `scripts/tst_dialog_loop_harness.qml.keep`
   and `scripts/qt-env.sh` for hardcoded `assets/qml` paths. Confirmed during the
   review: **`.claude/settings.json` does not name it**. Note that `.qmlls.ini` is
   gitignored, so each developer's qmlls config may need re-pointing by hand —
   mention it in the commit message rather than trying to fix it in-tree.
-- [ ] 6.11 Grep the whole tree for `assets/qml` and confirm every remaining hit
+
+  - **`scripts/qml-watch.sh` — no hardcoded path.** It takes the `.qml` file as
+    its single argument and derives `QML_DIR` with `dirname`, so it follows the
+    move for free.
+  - **`scripts/tst_dialog_loop_harness.qml.keep`** — five path mentions in its
+    header comment (the copy-in, run and delete-again instructions and the
+    `-import` / `-input` arguments), all updated.
+  - **`scripts/qt-env.sh` — no mention**, confirmed.
+  - **`.claude/settings.json` — no mention**, re-confirmed as the review said.
+  - **A consumer neither FR-12 nor the Relevant Files list names:**
+    `scripts/android-api-scan.sh` greps `"$root/assets/qml"` at two sites (the
+    Android-intent scan at `:365` and the `WRITE_EXTERNAL_STORAGE` audit at
+    `:446` — the very grep task 2.1 re-ran). Left un-updated it would have
+    silently scanned a non-existent directory and reported a clean result. `:365`
+    was re-pointed; at `:446` the explicit QML path was **removed** instead,
+    because that line already scans `$root/bridges`, which now contains the QML
+    tree — keeping both would double-report every hit.
+  - `.qmlls.ini` is gitignored, so each developer's qmlls import path may need
+    re-pointing by hand; noted in the commit message rather than fixed in-tree.
+- [x] 6.11 Grep the whole tree for `assets/qml` and confirm every remaining hit
   is either the new location or an intentionally historical mention. Record the
   count before and after.
-- [ ] 6.12 `make build -B` from clean. The `git mv`, the symlink re-point and the
+
+  **Before: 942 hits** tree-wide (261 outside `tasks/`, 180 outside `tasks/` and
+  `docs/`). **After: 264** outside `tasks/` and `build/`.
+
+  Every remaining bare `assets/qml` hit was inspected and each is correct in
+  context, in one of three classes:
+
+  | Class | Where | Why it stays |
+  |---|---|---|
+  | `build.rs`-relative list entries | `bridges/build.rs` ×94, `AGENTS.md` ×3 | The form the code requires — relative to `bridges/`, and what makes the alias correct |
+  | `qrc:` resource paths | `cpp/` ×12, `assets/icons.qrc`, ~30 doc mentions | `…/com/profoundlabs/simsapa/assets/qml/…` — the resource path is unchanged by design (FR-13) |
+  | Deliberate illustrations of the trap | `bridges/build.rs` comment, `docs/cxx-qt-fork.md` §5 | They quote the **broken** `../assets/qml/…` form on purpose |
+
+  `tasks/` was left alone apart from two stale cross-references in *live* task
+  files that told a future reader to use the old form
+  (`2026-08-11-…-tasks-topic-index-…md:160` and
+  `2026-08-25-…-tasks-fulltext-fix-…md:497`, both *"in the exact
+  `"../assets/qml/<Name>.qml"` form"*); those were corrected, since they are
+  instructions rather than history.
+- [x] 6.12 `make build -B` from clean. The `git mv`, the symlink re-point and the
   `build.rs` switch land as **one commit**.
+
+  `rm -rf build/simsapadhammareader && make build -B` — **exit 0**, run twice
+  (once after the `build.rs` switch, once after dropping the now-dead
+  `qt-build-utils` build-dependency).
+
+  **The move worked, and the artifacts say so immediately** — 7.0 verifies this
+  properly, but the two headline facts were checked at once because a failure
+  here would have meant reverting rather than continuing:
+
+  1. **qmlcachegen now runs.** 5.6 recorded that a clean build produced *"not
+     one `*qmlcache*` file anywhere"*. It now produces
+     `…/out/qmlcachegen/com/profoundlabs/simsapa/qmlcache_loader.cpp` and a
+     compiled `qmlcache_loader.o`. **AOT generation is on**, which was the whole
+     point of the move.
+  2. **The generated `qmldir` has component lines.** 5.6 recorded it as exactly
+     five lines with *"not one of the 94 QML files declared as a module type"*.
+     It now carries a resolving line per file:
+
+     ```
+     module com.profoundlabs.simsapa
+     optional plugin com_profoundlabs_simsapa
+     classname com_profoundlabs_simsapa_plugin
+     typeinfo plugin.qmltypes
+     prefer :/qt/qml/com/profoundlabs/simsapa/
+     SuttaSearchWindow 1.0 assets/qml/SuttaSearchWindow.qml
+     DownloadAppdataWindow 1.0 assets/qml/DownloadAppdataWindow.qml
+     SuttaLanguagesWindow 1.0 assets/qml/SuttaLanguagesWindow.qml
+     ```
+
+     and `grep -c '/\.\./' qmlcache_loader.cpp` → **0**, so no key is
+     unreachable through `QDir::cleanPath`.
+
+  Tests against the moved tree: **`make qml-test` → `Totals: 172 passed, 0
+  failed`**, and `make qml-lint` produces only the pre-existing
+  `missing-property` warning baseline — **no `Type … unavailable` or "not
+  found" error**, which is the failure this whole arrangement guards against.
+
+  `git diff --stat cpp/` shows **one changed line**, a comment in `gui.cpp`; all
+  12 `qrc:/qt/qml/com/profoundlabs/simsapa/assets/qml/…` literals are untouched.
 
 ### 7.0 Part B — artifact checks, before trusting any runtime result
 

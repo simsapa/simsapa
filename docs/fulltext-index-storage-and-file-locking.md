@@ -254,14 +254,14 @@ and the next case like this is a backend change only.
 
 Where the verdict surfaces:
 
-- **The search results empty state** (`assets/qml/FulltextResults.qml`) — gated
+- **The search results empty state** (`bridges/assets/qml/FulltextResults.qml`) — gated
   on the *area* searched **and** on the search **mode**. The mode gate is an
   allowlist (`Fulltext Match`, `Combined`), not a denylist: Contains Match, Title
   Match, Headword Match and DPD Lookup all go through FTS5/SQLite and work
   perfectly on a volume where every Tantivy index failed, so blaming the index
   for one of those would be a fabricated diagnosis — the same dishonesty this
   work exists to remove, pointed the other way.
-- **Database Validation** (`assets/qml/DatabaseValidationDialog.qml`) — a
+- **Database Validation** (`bridges/assets/qml/DatabaseValidationDialog.qml`) — a
   "Search index:" section fed by the existing `database_validation_result`
   signal, no new plumbing. It is deliberately kept **out of**
   `validation_results`: it is not in `expected_databases` (letting it in would

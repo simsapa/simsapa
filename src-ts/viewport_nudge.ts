@@ -5,7 +5,7 @@
 // bottom: 0`, so it resolves against the viewport height. On Android the page
 // lives in a native `QtWebView` that the QML `SplitView` shrinks when the
 // WordSummary panel opens and grows back when it closes
-// (assets/qml/SuttaSearchWindow.qml, `word_summary_wrap`). A user reported the
+// (bridges/assets/qml/SuttaSearchWindow.qml, `word_summary_wrap`). A user reported the
 // column bar staying pinned mid-height after such a close — still anchored to
 // the shorter, summary-open viewport, with sutta text painting above and below
 // it, and recovering neither on scroll nor on a repeat open/close.

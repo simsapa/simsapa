@@ -225,7 +225,7 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 > [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).
 
 **Word Selection...** in the Gloss toolbar (before "Common Words...") opens
-`assets/qml/GlossWordSelectionDialog.qml`: an explanation, a **"Use AI word
+`bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a **"Use AI word
 selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
 the Fallback sequence has no enabled model, and a
 **Clear Word-Selection Cache...** button (confirm dialog shows the row count).
@@ -830,7 +830,7 @@ as the context windows, so the two sides cannot drift.
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
-| UI | `assets/qml/GlossTab.qml`, `assets/qml/GlossWordSelectionDialog.qml`, `assets/qml/SystemPromptsDialog.qml`; shared compound UI: `assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
+| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |

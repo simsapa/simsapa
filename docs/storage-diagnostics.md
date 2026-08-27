@@ -38,9 +38,9 @@ data says it works.
 | Report + probes | `backend/src/storage_diagnostics.rs` |
 | Candidate `Directory` wrapper | `backend/src/search/lenient_directory.rs` |
 | Bridge invokable + signal | `bridges/src/sutta_bridge.rs` (`run_storage_diagnostics`, `storageDiagnosticsCompleted`) |
-| Results window | `assets/qml/StorageDiagnosticsDialog.qml` |
-| Entry points | `assets/qml/AboutDialog.qml`, `assets/qml/DatabaseValidationDialog.qml` |
-| The one instance | `assets/qml/SuttaSearchWindow.qml` |
+| Results window | `bridges/assets/qml/StorageDiagnosticsDialog.qml` |
+| Entry points | `bridges/assets/qml/AboutDialog.qml`, `bridges/assets/qml/DatabaseValidationDialog.qml` |
+| The one instance | `bridges/assets/qml/SuttaSearchWindow.qml` |
 
 `run_storage_diagnostics()` has **exactly one caller**: the bridge invokable
 behind the button. There is deliberately no CLI subcommand and no HTTP route —

@@ -16,7 +16,7 @@ The implementation follows the existing download/extraction pattern but adds lan
 
 ### DownloadAppdataWindow.qml
 
-**Location**: `assets/qml/DownloadAppdataWindow.qml`
+**Location**: `bridges/assets/qml/DownloadAppdataWindow.qml`
 
 **Key Features**:
 - Language input field accepting comma-separated codes (e.g., "hu, pt, it") or "*" for all languages
@@ -61,7 +61,7 @@ property var available_languages: []    // List of "code|Name" strings
    - Deletes existing suttas with same uid
    - Inserts new suttas into appdata
 
-**Type Definition**: `assets/qml/com/profoundlabs/simsapa/AssetManager.qml`
+**Type Definition**: `bridges/assets/qml/com/profoundlabs/simsapa/AssetManager.qml`
 
 ## Download Flow
 

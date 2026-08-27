@@ -348,7 +348,7 @@ user-chosen I/O goes through SAF `content://` URIs, everything else to the
 app-private directory. Raising the floor to 28 keeps the app inside that same
 band and changes nothing here. Re-run the
 `getExternalStorage` / `EXTERNAL_STORAGE` / `/sdcard` grep across `backend/`,
-`bridges/`, `cpp/`, `assets/qml/` and `android/` if a direct filesystem path is
+`bridges/`, `cpp/`, `bridges/assets/qml/` and `android/` if a direct filesystem path is
 ever reintroduced.
 
 ---

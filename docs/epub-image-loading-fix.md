@@ -149,8 +149,8 @@ format!(r#"{}="/book_resources/{}/{}""#, attr, book_uid, full_path)
 ## Files Modified
 
 ### QML Changes (Base URL Fix)
-- `assets/qml/SuttaHtmlView_Desktop.qml` (lines 84-87)
-- `assets/qml/SuttaHtmlView_Mobile.qml` (lines 105-108)
+- `bridges/assets/qml/SuttaHtmlView_Desktop.qml` (lines 84-87)
+- `bridges/assets/qml/SuttaHtmlView_Mobile.qml` (lines 105-108)
 
 ### Backend Changes (OEBPS Prefix Fix)
 - `backend/src/epub_import.rs`:

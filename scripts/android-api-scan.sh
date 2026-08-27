@@ -362,7 +362,7 @@ report_jni() {
 
     section "Android intent actions and flags named anywhere"
     grep -rn --include='*.cpp' --include='*.rs' --include='*.qml' \
-        -oE '"android\.(intent|settings|provider)\.[A-Za-z_.]+"' "$root/cpp" "$root/backend/src" "$root/bridges/src" "$root/assets/qml" 2>/dev/null \
+        -oE '"android\.(intent|settings|provider)\.[A-Za-z_.]+"' "$root/cpp" "$root/backend/src" "$root/bridges/src" "$root/bridges/assets/qml" 2>/dev/null \
         | sed 's|^'"$root"'/||' | sort -u -t: -k3 | sed 's/^/    /'
 
     section "JNI call sites (Rust)"
@@ -443,7 +443,7 @@ report_manifest() {
     # and matching that comment would report the documentation as the defect.
     if { grep -rn --include='*.rs' --include='*.cpp' --include='*.h' --include='*.qml' \
             -E 'getExternalStorage|EXTERNAL_STORAGE|/sdcard' \
-            "$root/backend" "$root/bridges" "$root/cpp" "$root/assets/qml" 2>/dev/null \
+            "$root/backend" "$root/bridges" "$root/cpp" 2>/dev/null \
             | grep -v 'isExternalStorageEmulated\|isExternalStorageRemovable\|getExternalStorageState'
          grep -n 'uses-permission[^>]*EXTERNAL_STORAGE' "$root/android/AndroidManifest.xml" 2>/dev/null \
             | sed "s|^|$root/android/AndroidManifest.xml:|"

@@ -36,7 +36,7 @@ not reintroduce a JS-only nudge.
 
 ## The working fix: resize jiggle
 
-`assets/qml/WebEngineRepaintNudge.qml` — a small helper instantiated next to
+`bridges/assets/qml/WebEngineRepaintNudge.qml` — a small helper instantiated next to
 each desktop `WebEngineView`:
 
 ```qml
@@ -60,8 +60,8 @@ Requirements/notes:
   webview` on each trigger, useful when diagnosing whether activation
   detection fired at all.
 - Wired into both desktop webview components:
-  `assets/qml/SuttaHtmlView_Desktop.qml` and
-  `assets/qml/DictionaryHtmlView_Desktop.qml`. **Add it to any new desktop
+  `bridges/assets/qml/SuttaHtmlView_Desktop.qml` and
+  `bridges/assets/qml/DictionaryHtmlView_Desktop.qml`. **Add it to any new desktop
   component that embeds a `WebEngineView`.** (Mobile variants use `WebView`,
   not QtWebEngine, and don't need it.)
 
