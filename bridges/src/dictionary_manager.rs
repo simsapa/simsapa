@@ -1178,7 +1178,10 @@ impl qobject::DictionaryManager {
                 };
 
                 match download_entry(
-                    &entry.label,
+                    // The upstream file is `<asset_stem>-gd.zip` — for `nyana`
+                    // that is `nyanatiloka-gd.zip`. The staged file name and the
+                    // 404 diagnostic are derived from this, never from `label`.
+                    &entry.asset_stem,
                     &resolved.tag,
                     &entry.url,
                     Some(entry.size_bytes),

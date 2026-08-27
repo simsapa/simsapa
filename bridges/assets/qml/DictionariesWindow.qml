@@ -841,13 +841,22 @@ ApplicationWindow {
                         // FR-8: name the source and the resolved release tag.
                         // Renders a placeholder before the resolution arrives
                         // and updates in place when it does.
-                        Label {
-                            text: `Source: ${root.catalogue_repo} ${root.catalogue_tag || "(resolving…)"}`
+                        Text {
+                            text: `The following dictionaries are available for importing from <a href="https://github.com/${root.catalogue_repo}/releases/">github.com/${root.catalogue_repo}</a> ${root.catalogue_tag || "(resolving...)"}`
+                            textFormat: Text.RichText
                             font.pointSize: root.pointSize - 2
-                            color: palette.mid
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             Layout.bottomMargin: 4
+                            color: palette.text
+
+                            onLinkActivated: function(link) { Qt.openUrlExternally(link); }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
                         }
 
                         Label {
@@ -881,25 +890,6 @@ ApplicationWindow {
                                 onToggled: function(is_checked) {
                                     root.set_checked(modelData.label, is_checked);
                                 }
-                            }
-                        }
-
-                        // FR-7: always-visible one-line link to the releases
-                        // page, for the dictionaries not in the curated set.
-                        Text {
-                            text: `Other dictionaries: <a href="https://github.com/digitalpalidictionary/other-dictionaries/releases/">github.com/digitalpalidictionary/other-dictionaries</a>`
-                            textFormat: Text.RichText
-                            font.pointSize: root.pointSize - 2
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                            Layout.topMargin: 8
-                            color: palette.text
-                            onLinkActivated: function(link) { Qt.openUrlExternally(link); }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.NoButton
-                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
                             }
                         }
 

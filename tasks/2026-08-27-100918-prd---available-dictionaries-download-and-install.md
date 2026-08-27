@@ -58,7 +58,10 @@ to install anything not in the curated list.
 Ten entries. Every field below was read from the shipped v1.0.8 assets, not from
 documentation: the **label** is the asset file name with the `-gd.zip` suffix
 removed, and the **name** is the `bookname` line of the archive's `.ifo` file —
-with one deliberate exception, `abt`, noted below the table.
+with two deliberate exceptions noted below the table: `abt`'s name, and `nyana`'s
+label (shortened from the asset name `nyanatiloka` to keep the uid prefix
+compact — the catalogue entry carries a separate `asset_stem` field so the
+download URL still resolves to `nyanatiloka-gd.zip`).
 
 | Label | Name (from `.ifo` `bookname`) | Entries | Size | Import `lang` |
 |---|---|---|---|---|
@@ -68,7 +71,7 @@ with one deliberate exception, `abt`, noted below the table.
 | `cone` | Dictionary of Pāli by Margaret Cone (pi-en) | 37,391 | 55.69 MB | `pli` |
 | `cpd` | Critical Pāli Dictionary (pi-en) | 29,734 | 6.57 MB | `pli` |
 | `mw` | Monier-Williams Sanskrit-English Dictionary, 1899 (sa-en) | 194,084 | 19.08 MB | `san` |
-| `nyanatiloka` | Buddhist Dictionary: Manual of Buddhist Terms and Doctrines (pi-en) | 1,406 | 0.20 MB | `pli` |
+| `nyana` | Buddhist Dictionary: Manual of Buddhist Terms and Doctrines (pi-en) | 1,406 | 0.20 MB | `pli` |
 | `peu` | Pali English Ultimate (pa-en) | 203,865 | 7.78 MB | `pli` |
 | `sin-eng-sin` | Sinhala-English English-Sinhala (si-en) | 96,050 | 1.85 MB | `si` |
 | `whitney` | Whitney Sanskrit Roots (sa-en) | 1,009 | 0.16 MB | `san` |

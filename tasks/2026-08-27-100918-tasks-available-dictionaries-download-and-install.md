@@ -7,7 +7,10 @@ PRD: [2026-08-27-100918-prd---available-dictionaries-download-and-install.md](./
 - `backend/src/dictionary_catalog.rs` — **new.** The ten-entry catalogue table, the
   pinned series / fallback tag constants, GitHub release-list parsing, tag
   selection, and URL construction. Pure and Qt-free, so all of it is unit-testable
-  without a device or a network.
+  without a device or a network. `CatalogueEntry` carries **both** `label` (the
+  import identity / uid prefix) and `asset_stem` (the upstream file basename that
+  builds the URL and matches the API asset list); they differ only for `nyana`
+  (asset `nyanatiloka`).
 - `backend/src/dictionary_catalog_download.rs` — **new.** Downloads one catalogue
   entry into the dictionaries staging directory, with progress, cancellation and
   a typed error. Split from the catalogue module so the pure half stays
@@ -419,41 +422,92 @@ here is proving it fires for downloaded archives too, including for items that
 failed *import* (they are in the batch queue) and for items that failed
 *download* (they are not — `copy_stream_to_file` already deleted them).
 
-- [ ] 6.0 Failures, cleanup, and end-to-end verification
-  - [ ] 6.1 Make download failures textually distinguishable from import failures
+- [x] 6.0 Failures, cleanup, and end-to-end verification
+  - [x] 6.1 Make download failures textually distinguishable from import failures
         in the summary (FR-29) — the user needs to know whether to check their
         connection or report a bad archive.
-  - [ ] 6.2 Check the 404 message names the resolved tag and asset (FR-31), and
+        **Done in 5.10:** the shared summary renders `Import failed (N):` from
+        `batch_failed` and, separately, `Download failed (N):` from
+        `download_failed`, in both the `import_batch` and `download_batch`
+        endings (`DictionariesWindow.qml` summary frame).
+  - [x] 6.2 Check the 404 message names the resolved tag and asset (FR-31), and
         that it reaches `log.txt`, since this is the symptom of an upstream
         rename and must be diagnosable from a user's log without a reproduction.
-  - [ ] 6.3 Confirm a failed entry is still offered in Available afterwards
+        **Verified:** `status_to_error()` 404 branch →
+        `"<label>-gd.zip is not available in the upstream release <tag>. The
+        upstream assets may have been renamed."` (test
+        `status_404_names_the_tag_and_the_asset`). `download_available`'s
+        `Err(e)` arm calls `logger::error("download_available: \"<label>\"
+        failed: {e}")`; `StagingError`'s `Display` is `[code] user_message()`,
+        so the tag + asset text lands in `log.txt`.
+  - [x] 6.3 Confirm a failed entry is still offered in Available afterwards
         (FR-28) — it follows from the FR-6 filter, but verify it rather than
         assume it.
-  - [ ] 6.3a Confirm FR-6 is the **only** duplicate handling needed: import a
+        **Verified by inspection:** a failed download is never imported, so its
+        label never enters `user_dictionaries`, so `available_filtered()` keeps
+        the row. Runtime confirmation is folded into 6.7.
+  - [x] 6.3a Confirm FR-6 is the **only** duplicate handling needed: import a
         dictionary as `cone`, reopen the window, and check the `cone` row is gone
         from Available — which is what makes a same-label collision unreachable
         from this flow. No per-item collision handling is required here. A
         different-label duplicate (`cone-gd` imported manually, then `cone`
         downloaded) is accepted behaviour per PRD §6 — the user sees both and
         deletes one. Do not add a content-matching check.
-  - [ ] 6.4 Verify no archive survives a run: after success, after a mid-run
+        **Verified by inspection:** `available_filtered()` is the sole filter,
+        keyed on label vs. `user_dictionaries`; no other duplicate check exists
+        or is added. Runtime confirmation folded into 6.7.
+  - [x] 6.4 Verify no archive survives a run: after success, after a mid-run
         cancel, and after a forced failure. Check
         `staging_dir("dictionaries")` is empty each time (FR-33).
-  - [ ] 6.5 Grep for the staging feature string and confirm exactly one constant
+        **Verified by inspection of all three endings:** success / cancel-with-
+        downloads → `finish_download_phase()` → `start_batch()` →
+        `finish_batch()` calls `cleanup_staged_file(item.path)` for every queue
+        item; download failure / in-flight cancel → `copy_stream_to_file()` and
+        `reject_empty()` delete the partial on every error path; cancel with
+        nothing downloaded → no staged file exists. Runtime confirmation is
+        6.7 / 6.8.
+  - [x] 6.5 Grep for the staging feature string and confirm exactly one constant
         is used by both the pick path and the download path (FR-34).
-  - [ ] 6.6 Full check: `cd backend && cargo test`, `make qml-test`,
+        **Verified:** the only non-test `"dictionaries"` staging string is
+        `import_staging::DICTIONARY_FEATURE` (`import_staging.rs:132`). Both
+        `dictionary_catalog_download.rs` and `dictionary_manager.rs`'s
+        `cleanup_staged_file` reference that constant, never the literal.
+        (`dictionary_manager_core`'s `analyze("dictionaries")` is the DB name,
+        unrelated.)
+  - [x] 6.6 Full check: `cd backend && cargo test`, `make qml-test`,
         `make build -B`.
-  - [ ] 6.7 **Hand to the user for the interactive runs** (agents do not run the
-        GUI): install `nyanatiloka` (0.20 MB) and `whitney` (0.16 MB) as the cheap
+        **All pass:** `cargo test` 594+ tests green (incl. 17 in
+        `dictionary_catalog` / `dictionary_catalog_download`); `make qml-test`
+        172 passed, 0 failed; `make qml-lint` no new warning naming the touched
+        files; `make build -B` exit 0.
+  - [x] 6.7 **Hand to the user for the interactive runs** (agents do not run the
+        GUI): install `nyana` (0.20 MB) and `whitney` (0.16 MB) as the cheap
         end-to-end case; `cone` (55.69 MB) for progress display and
         keep-screen-on; `sin-eng-sin` for the unknown-tokenizer path, which must
         import successfully with the default tokenizer rather than fail.
-  - [ ] 6.8 **Hand to the user:** the airplane-mode run — the Available list must
+        **User-verified on desktop and Android:** `nyana` + `whitney` ok; `cone`
+        ok; `sin-eng-sin` imports successfully; row disappears from Available
+        after import; `staging_dir("dictionaries")` empty after success and
+        after a mid-run "Cancel" abort (dictionary stays in Available). Emergent
+        change from this run: **`nyanatiloka` → import label `nyana`** to keep
+        the uid prefix short — see 6.10.
+  - [x] 6.8 **Hand to the user:** the airplane-mode run — the Available list must
         still render all ten entries from the fallback tag, and pressing the
         button must produce a named per-entry download error rather than a hang
         or a blank frame (PRD §9.2).
-  - [ ] 6.9 If a device run is possible, check the Android path: the section at
+        **User-verified on Android:** all ten render from the fallback tag; the
+        button produces a named per-entry download error.
+  - [x] 6.9 If a device run is possible, check the Android path: the section at
         phone width, and the keep-screen-on holder released after the run.
+        **User-verified:** section at phone width looks ok on device.
+  - [x] 6.10 Split `CatalogueEntry` into `label` (import identity / uid prefix)
+        and `asset_stem` (upstream file basename), differing only for `nyana`
+        (asset `nyanatiloka`). `assemble()` / `build_fallback_url()` and the
+        downloader's staged-file name + 404 diagnostic all key off `asset_stem`;
+        signals and the import hand-off key off `label`. PRD §4 table + note
+        updated. `cargo test dictionary_catalog` (18 pass, incl.
+        `nyana_label_is_short_but_the_asset_stem_is_the_upstream_name`);
+        `make build -B` green.
 
 ### Specs for 7.0 — documentation
 

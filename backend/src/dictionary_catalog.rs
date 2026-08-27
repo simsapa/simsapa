@@ -28,9 +28,15 @@ use crate::update_checker::{compare_versions, to_version};
 /// shipped upstream v1.0.8 assets (see PRD §4), not from documentation.
 #[derive(Debug, Clone, Copy)]
 pub struct CatalogueEntry {
-    /// Asset file name minus the `-gd.zip` suffix. Also the import label and the
-    /// row's identity in the UI (the FR-6 hide rule matches on this).
+    /// The import label and the row's identity in the UI (the FR-6 hide rule
+    /// matches on this). It becomes the dictionary's uid prefix, so it is kept
+    /// short. Usually equal to [`asset_stem`](Self::asset_stem); `nyanatiloka`
+    /// is the one entry where they differ (`label = "nyana"`).
     pub label: &'static str,
+    /// The upstream asset file name minus the `-gd.zip` suffix. This — never
+    /// `label` — is what builds the download URL and matches the GitHub API
+    /// asset list, because the published file is `<asset_stem>-gd.zip`.
+    pub asset_stem: &'static str,
     /// Display name — the `bookname` line of the archive's `.ifo`, **except**
     /// `abt` (see the entry's own comment).
     pub name: &'static str,
@@ -76,21 +82,23 @@ pub const CATALOGUE: [CatalogueEntry; 10] = [
     // "Ancient Buddhist Texts Glossary (CPED)" — the name that matches the
     // asset's own label and the CPED the user is looking for. Hard-coded; do
     // not derive. (There is no `cped` asset and there never was.)
-    CatalogueEntry { label: "abt", name: "Ancient Buddhist Texts Glossary (CPED)", lang: "pli", entries: 21_099, fallback_size_bytes: 408_944 },
-    CatalogueEntry { label: "apte", name: "Apte Practical Sanskrit-English Dictionary, 1890 (sa-en)", lang: "san", entries: 34_277, fallback_size_bytes: 5_756_290 },
-    CatalogueEntry { label: "bhs", name: "Edgerton's Buddhist Hybrid Sanskrit Dictionary 1953 (sa-en)", lang: "san", entries: 17_836, fallback_size_bytes: 2_369_684 },
-    CatalogueEntry { label: "cone", name: "Dictionary of Pāli by Margaret Cone (pi-en)", lang: "pli", entries: 37_391, fallback_size_bytes: 58_394_705 },
-    CatalogueEntry { label: "cpd", name: "Critical Pāli Dictionary (pi-en)", lang: "pli", entries: 29_734, fallback_size_bytes: 6_889_144 },
-    CatalogueEntry { label: "mw", name: "Monier-Williams Sanskrit-English Dictionary, 1899 (sa-en)", lang: "san", entries: 194_084, fallback_size_bytes: 20_006_338 },
-    CatalogueEntry { label: "nyanatiloka", name: "Buddhist Dictionary: Manual of Buddhist Terms and Doctrines (pi-en)", lang: "pli", entries: 1_406, fallback_size_bytes: 209_715 },
+    CatalogueEntry { label: "abt", asset_stem: "abt", name: "Ancient Buddhist Texts Glossary (CPED)", lang: "pli", entries: 21_099, fallback_size_bytes: 408_944 },
+    CatalogueEntry { label: "apte", asset_stem: "apte", name: "Apte Practical Sanskrit-English Dictionary, 1890 (sa-en)", lang: "san", entries: 34_277, fallback_size_bytes: 5_756_290 },
+    CatalogueEntry { label: "bhs", asset_stem: "bhs", name: "Edgerton's Buddhist Hybrid Sanskrit Dictionary 1953 (sa-en)", lang: "san", entries: 17_836, fallback_size_bytes: 2_369_684 },
+    CatalogueEntry { label: "cone", asset_stem: "cone", name: "Dictionary of Pāli by Margaret Cone (pi-en)", lang: "pli", entries: 37_391, fallback_size_bytes: 58_394_705 },
+    CatalogueEntry { label: "cpd", asset_stem: "cpd", name: "Critical Pāli Dictionary (pi-en)", lang: "pli", entries: 29_734, fallback_size_bytes: 6_889_144 },
+    CatalogueEntry { label: "mw", asset_stem: "mw", name: "Monier-Williams Sanskrit-English Dictionary, 1899 (sa-en)", lang: "san", entries: 194_084, fallback_size_bytes: 20_006_338 },
+    // `label` is shortened to `nyana` to keep the uid prefix compact; the
+    // upstream asset is still `nyanatiloka-gd.zip`, so `asset_stem` differs.
+    CatalogueEntry { label: "nyana", asset_stem: "nyanatiloka", name: "Buddhist Dictionary: Manual of Buddhist Terms and Doctrines (pi-en)", lang: "pli", entries: 1_406, fallback_size_bytes: 209_715 },
     // `peu`'s `.ifo` says `(pa-en)`; `pa` is ISO 639-1 for Punjabi but upstream
     // means Pali. The import `lang` is `pli`.
-    CatalogueEntry { label: "peu", name: "Pali English Ultimate (pa-en)", lang: "pli", entries: 203_865, fallback_size_bytes: 8_158_740 },
+    CatalogueEntry { label: "peu", asset_stem: "peu", name: "Pali English Ultimate (pa-en)", lang: "pli", entries: 203_865, fallback_size_bytes: 8_158_740 },
     // `si` is absent from `KNOWN_TOKENIZER_LANGS` in the bridge, so `sin-eng-sin`
     // indexes with the default tokenizer — the same outcome a manual import with
     // `si` gives today. Accepted, not a defect to work around.
-    CatalogueEntry { label: "sin-eng-sin", name: "Sinhala-English English-Sinhala (si-en)", lang: "si", entries: 96_050, fallback_size_bytes: 1_939_865 },
-    CatalogueEntry { label: "whitney", name: "Whitney Sanskrit Roots (sa-en)", lang: "san", entries: 1_009, fallback_size_bytes: 167_772 },
+    CatalogueEntry { label: "sin-eng-sin", asset_stem: "sin-eng-sin", name: "Sinhala-English English-Sinhala (si-en)", lang: "si", entries: 96_050, fallback_size_bytes: 1_939_865 },
+    CatalogueEntry { label: "whitney", asset_stem: "whitney", name: "Whitney Sanskrit Roots (sa-en)", lang: "san", entries: 1_009, fallback_size_bytes: 167_772 },
 ];
 
 /// Where a resolved tag (and its URLs / sizes) came from.
@@ -118,6 +126,10 @@ impl TagSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResolvedEntry {
     pub label: String,
+    /// Upstream asset basename (`<asset_stem>-gd.zip` is the published file).
+    /// Equals `label` for every entry except `nyana` (asset `nyanatiloka`).
+    /// The downloader names the 404 diagnostic and the staged file from this.
+    pub asset_stem: String,
     pub name: String,
     pub lang: String,
     pub entries: u32,
@@ -166,9 +178,10 @@ fn releases_api_url() -> String {
 }
 
 /// The constructed download URL for an asset under a given tag, used on the
-/// fallback path (FR-16).
-pub fn build_fallback_url(label: &str, tag: &str) -> String {
-    format!("https://github.com/{REPO}/releases/download/{tag}/{label}-gd.zip")
+/// fallback path (FR-16). `asset_stem` is the upstream file basename — pass
+/// [`CatalogueEntry::asset_stem`], not `label`.
+pub fn build_fallback_url(asset_stem: &str, tag: &str) -> String {
+    format!("https://github.com/{REPO}/releases/download/{tag}/{asset_stem}-gd.zip")
 }
 
 /// The highest tag in [`PINNED_SERIES`], ignoring drafts and prereleases.
@@ -246,7 +259,7 @@ fn assemble(tag: &str, source: TagSource, assets: Option<&[ReleaseAsset]>) -> Re
     let items = CATALOGUE
         .iter()
         .map(|e| {
-            let asset_name = format!("{}-gd.zip", e.label);
+            let asset_name = format!("{}-gd.zip", e.asset_stem);
             let matched = assets.and_then(|list| {
                 list.iter()
                     .find(|a| a.name == asset_name && !a.browser_download_url.is_empty())
@@ -254,6 +267,7 @@ fn assemble(tag: &str, source: TagSource, assets: Option<&[ReleaseAsset]>) -> Re
             match matched {
                 Some(a) => ResolvedEntry {
                     label: e.label.to_string(),
+                    asset_stem: e.asset_stem.to_string(),
                     name: e.name.to_string(),
                     lang: e.lang.to_string(),
                     entries: e.entries,
@@ -263,12 +277,13 @@ fn assemble(tag: &str, source: TagSource, assets: Option<&[ReleaseAsset]>) -> Re
                 },
                 None => ResolvedEntry {
                     label: e.label.to_string(),
+                    asset_stem: e.asset_stem.to_string(),
                     name: e.name.to_string(),
                     lang: e.lang.to_string(),
                     entries: e.entries,
                     size_bytes: e.fallback_size_bytes,
                     size_is_approximate: true,
-                    url: build_fallback_url(e.label, tag),
+                    url: build_fallback_url(e.asset_stem, tag),
                 },
             }
         })
@@ -410,6 +425,8 @@ mod tests {
         assert_eq!(CATALOGUE.len(), 10);
         for e in CATALOGUE.iter() {
             validate_label(e.label).unwrap_or_else(|err| panic!("bad label {}: {}", e.label, err));
+            validate_label(e.asset_stem)
+                .unwrap_or_else(|err| panic!("bad asset_stem {}: {}", e.asset_stem, err));
             assert!(
                 matches!(e.lang, "pli" | "san" | "si"),
                 "unexpected lang {} for {}",
@@ -417,6 +434,21 @@ mod tests {
                 e.label
             );
         }
+    }
+
+    #[test]
+    fn nyana_label_is_short_but_the_asset_stem_is_the_upstream_name() {
+        let e = CATALOGUE.iter().find(|e| e.label == "nyana").unwrap();
+        assert_eq!(e.asset_stem, "nyanatiloka");
+        // The download URL must use the real upstream file name, not the label.
+        assert_eq!(
+            build_fallback_url(e.asset_stem, "v1.0.8"),
+            "https://github.com/digitalpalidictionary/other-dictionaries/releases/download/v1.0.8/nyanatiloka-gd.zip"
+        );
+        let resolved = assemble(FALLBACK_TAG, TagSource::Fallback, None);
+        let row = resolved.items.iter().find(|i| i.label == "nyana").unwrap();
+        assert_eq!(row.asset_stem, "nyanatiloka");
+        assert!(row.url.ends_with("/nyanatiloka-gd.zip"));
     }
 
     #[test]

@@ -33,11 +33,13 @@ use crate::logger::info;
 /// signal queue.
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(100);
 
-/// The staged destination for a catalogue entry: `<staging>/<label>-gd.zip`,
-/// with the file name run through `sanitize_staged_file_name()` so a label can
-/// never decide where the copy lands.
-pub fn staged_dest(label: &str) -> PathBuf {
-    let name = sanitize_staged_file_name(&format!("{label}-gd.zip"));
+/// The staged destination for a catalogue entry:
+/// `<staging>/<asset_stem>-gd.zip`, with the file name run through
+/// `sanitize_staged_file_name()` so it can never decide where the copy lands.
+/// `asset_stem` is the upstream file basename (`CatalogueEntry::asset_stem`),
+/// which differs from the import label for `nyana` (`nyanatiloka`).
+pub fn staged_dest(asset_stem: &str) -> PathBuf {
+    let name = sanitize_staged_file_name(&format!("{asset_stem}-gd.zip"));
     staging_dir(DICTIONARY_FEATURE).join(name)
 }
 
@@ -48,11 +50,11 @@ pub fn staged_dest(label: &str) -> PathBuf {
 /// `log.txt` is enough to diagnose it without a reproduction (FR-31). Every
 /// other non-2xx maps to `http_status`. Callers match on `code`, never on the
 /// message text.
-pub fn status_to_error(status: u16, label: &str, tag: &str) -> Option<StagingError> {
+pub fn status_to_error(status: u16, asset_stem: &str, tag: &str) -> Option<StagingError> {
     if (200..300).contains(&status) {
         return None;
     }
-    let asset_file = format!("{label}-gd.zip");
+    let asset_file = format!("{asset_stem}-gd.zip");
     if status == 404 {
         return Some(StagingError::new(
             "asset_not_found",
@@ -74,7 +76,10 @@ pub fn status_to_error(status: u16, label: &str, tag: &str) -> Option<StagingErr
 ///
 /// `expected_bytes` is the resolved size from the catalogue (or the API): it is
 /// used for the free-space pre-check and as the progress-bar total when the
-/// response carries no `Content-Length`. `tag` is only for the 404 message.
+/// response carries no `Content-Length`. `asset_stem` is the upstream file
+/// basename (`<asset_stem>-gd.zip`) — it names the staged file and the 404
+/// diagnostic, and differs from the import label only for `nyana`. `tag` is
+/// only for the 404 message.
 ///
 /// `progress` receives `(done_bytes, total_bytes)` and is throttled here; the
 /// bridge casts to `f64` at the QML boundary. A cancel via `cancel` travels the
@@ -84,7 +89,7 @@ pub fn status_to_error(status: u16, label: &str, tag: &str) -> Option<StagingErr
 /// result — the partial file is removed (`copy_stream_to_file` / `reject_empty`
 /// do this), so a retry never resumes onto a truncated file (FR-32).
 pub fn download_entry(
-    label: &str,
+    asset_stem: &str,
     tag: &str,
     url: &str,
     expected_bytes: Option<u64>,
@@ -92,7 +97,7 @@ pub fn download_entry(
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<PathBuf, StagingError> {
     let dir = staging_dir(DICTIONARY_FEATURE);
-    let dest = dir.join(sanitize_staged_file_name(&format!("{label}-gd.zip")));
+    let dest = dir.join(sanitize_staged_file_name(&format!("{asset_stem}-gd.zip")));
 
     // Create the folder and check free space *before* opening the connection —
     // no point streaming 55 MB onto a volume that cannot hold it.
@@ -130,7 +135,7 @@ pub fn download_entry(
     })?;
 
     // Check the status before streaming a body.
-    if let Some(err) = status_to_error(response.status().as_u16(), label, tag) {
+    if let Some(err) = status_to_error(response.status().as_u16(), asset_stem, tag) {
         return Err(err);
     }
 
@@ -162,7 +167,7 @@ pub fn download_entry(
 
     info(&format!(
         "dictionary_catalog_download: staged {} ({}) at {}",
-        label,
+        asset_stem,
         import_staging::human_bytes(bytes),
         dest.display()
     ));
