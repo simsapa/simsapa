@@ -163,48 +163,48 @@ check between chunks, and deletion of the destination on **every** failure path
 timeout, no overall timeout — a 55 MB archive on a slow line must be allowed to
 finish).
 
-- [ ] 2.0 Backend: download an archive into the dictionaries staging directory
-  - [ ] 2.1 Create `backend/src/dictionary_catalog_download.rs`, register it in
+- [x] 2.0 Backend: download an archive into the dictionaries staging directory
+  - [x] 2.1 Create `backend/src/dictionary_catalog_download.rs`, register it in
         `backend/src/lib.rs`.
-  - [ ] 2.2 Write `download_entry(label, url, expected_bytes, cancel, progress)
+  - [x] 2.2 Write `download_entry(label, url, expected_bytes, cancel, progress)
         -> Result<PathBuf, StagingError>`: resolve the destination via
         `staging_dir(DICTIONARY_FEATURE)` + `sanitize_staged_file_name()`, create
         the directory, and call `ensure_free_space()` with the expected size
         before opening the connection. (`ensure_free_space` takes
         `Option<u64>`, walks up to the nearest existing directory, and passes
         when the volume figure is unreadable — no extra guarding needed.)
-  - [ ] 2.3 Build the HTTP client with a connect timeout and no overall timeout;
+  - [x] 2.3 Build the HTTP client with a connect timeout and no overall timeout;
         `GET` the asset URL. **Redirects need no configuration** — verified:
         reqwest 0.12's default policy is `Policy::limited(10)`
         (`redirect.rs:161`), which covers the GitHub → CDN hop. Say so in one
         comment so nobody adds a redundant `.redirect(...)` later.
-  - [ ] 2.4 Check the HTTP status **before** streaming. Map `404` to a distinct
+  - [x] 2.4 Check the HTTP status **before** streaming. Map `404` to a distinct
         error code (`asset_not_found`) whose message names the resolved tag and
         the asset file name (FR-31); map other non-2xx to `http_status`.
-  - [ ] 2.5 Stream the body through `copy_stream_to_file()` with the cancel flag
+  - [x] 2.5 Stream the body through `copy_stream_to_file()` with the cancel flag
         and the progress callback. Prefer `Content-Length` for the total; fall
         back to the catalogue's `fallback_size_bytes` so the progress bar is
         determinate either way.
-  - [ ] 2.6 After the copy, reject a zero-byte or implausibly short result via
+  - [x] 2.6 After the copy, reject a zero-byte or implausibly short result via
         `reject_empty()`, deleting the file. A truncated archive must never reach
         the importer (FR-32).
-  - [ ] 2.7 Throttle progress callbacks to ~100 ms, matching `import_staging`'s
+  - [x] 2.7 Throttle progress callbacks to ~100 ms, matching `import_staging`'s
         existing behaviour, and use `f64` byte counts at the boundary that will
         cross into QML.
-  - [ ] 2.8 Give every error a `code` and a `step` so a failure can never be
+  - [x] 2.8 Give every error a `code` and a `step` so a failure can never be
         unattributed, and make sure `code` is what callers match on — never the
         message text. Reuse `cancelled_error()` for a user cancel so it travels
         the same channel and is distinguished by `code == "cancelled"`.
-  - [ ] 2.9 No new sweep. **Verified:** `init_app_data()` already calls
+  - [x] 2.9 No new sweep. **Verified:** `init_app_data()` already calls
         `sweep_orphaned_staged_files(DICTIONARY_FEATURE)` (`backend/src/lib.rs:278`),
         age-gated at an hour, treating an unreadable timestamp as "too young" —
         so an archive orphaned by a crash mid-download is already reclaimed on a
         later launch, *provided* 2.2 puts it in the staging directory. Record
         that dependency in a comment.
-  - [ ] 2.10 Unit-test what can be tested offline: destination path construction,
+  - [x] 2.10 Unit-test what can be tested offline: destination path construction,
         the free-space pre-check, and the error `code`/`step` for each branch.
         The network path itself is covered by the manual run in 6.0.
-  - [ ] 2.11 `cargo test` and `make build -B` pass.
+  - [x] 2.11 `cargo test` and `make build -B` pass.
 
 ### Specs for 3.0 — the bridge surface
 
