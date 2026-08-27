@@ -1227,26 +1227,134 @@ this file, under the sub-task, so the record lives with the work.
 > that are silent at runtime. Do them before measuring anything.
 > **Depends on:** 6.0. **Blocks:** 8.0.
 
-- [ ] 7.1 The generated `qmldir` component lines must now **resolve** — e.g.
+- [x] 7.1 The generated `qmldir` component lines must now **resolve** — e.g.
   `Logger 1.0 assets/qml/Logger.qml`, with no `../`. This is the thing that broke
   under cxx-qt 0.8. Paste the first few lines here.
-- [ ] 7.2 Diff the generated `.qrc` aliases against 5.6's saved pre-change copy.
+
+  `build/simsapadhammareader/cxxqt/qml_modules/com/profoundlabs/simsapa/qmldir`:
+
+  ```
+  module com.profoundlabs.simsapa
+  optional plugin com_profoundlabs_simsapa
+  classname com_profoundlabs_simsapa_plugin
+  typeinfo plugin.qmltypes
+  prefer :/qt/qml/com/profoundlabs/simsapa/
+  SuttaSearchWindow 1.0 assets/qml/SuttaSearchWindow.qml
+  DownloadAppdataWindow 1.0 assets/qml/DownloadAppdataWindow.qml
+  SuttaLanguagesWindow 1.0 assets/qml/SuttaLanguagesWindow.qml
+  LibraryWindow 1.0 assets/qml/LibraryWindow.qml
+  ReferenceSearchWindow 1.0 assets/qml/ReferenceSearchWindow.qml
+  ```
+
+  **94 component lines** (`grep -cE '^[A-Za-z_]+ [0-9]+\.[0-9]+ '`), one per
+  registered file, and **zero** `..` anywhere in the file.
+
+  **The contrast with 5.6 is the result.** Before the move this file was exactly
+  the five header lines with *no component line at all* — the module declared
+  none of its 94 types. Each line now resolves as a URL against the module
+  directory `:/qt/qml/com/profoundlabs/simsapa/`, giving
+  `…/simsapa/assets/qml/Logger.qml`, which is a real resource. The 0.8 failure
+  mode (`…/com/profoundlabs/assets/qml/Logger.qml: No such file`, one level too
+  high) is structurally impossible now that no path carries a `..`.
+- [x] 7.2 Diff the generated `.qrc` aliases against 5.6's saved pre-change copy.
   They must be **byte-identical** (FR-13) — this is the property the whole
   approach rests on. If they are not, stop: the `qrc:` literals in `cpp/` and
   `assets/icons.qrc`'s prefix are about to break.
-- [ ] 7.3 Confirm the prefix is still `/qt/qml/com/profoundlabs/simsapa` and that
+
+  **BYTE-IDENTICAL. 95 aliases both sides, same md5 `a36f45a1ff17fd55e14a1df320227b3e`,
+  `diff` empty.** FR-13 holds.
+
+  > **The comparison is alias-set to alias-set, and it cannot be a file diff** —
+  > worth stating because the obvious check gives a false alarm. The number of
+  > generated `.qrc` files **changed from two to one**: before, `resources_0.qrc`
+  > carried the 94 QML files (from the `qrc_resources` block) and
+  > `qml_module_resources.qrc` carried the `qmldir` alone; now the single
+  > `qml_module_resources_com_profoundlabs_simsapa.qrc` carries all 95 entries.
+  > The `<file>` *bodies* also changed, and must have — they are absolute source
+  > paths, so they moved with the tree. **Only the aliases are the contract**,
+  > because the alias is what becomes the runtime resource path. Extracted with
+  > `grep -o 'alias="[^"]*"' … | sort` from both sides.
+- [x] 7.3 Confirm the prefix is still `/qt/qml/com/profoundlabs/simsapa` and that
   **zero** `..` remain anywhere in the generated `.qrc`.
-- [ ] 7.4 Inspect the generated `qmlcache_loader.cpp`: **every** key must be free
+
+  Prefix: exactly one, `prefix="/qt/qml/com/profoundlabs/simsapa"` — unchanged.
+  `grep -c '\.\.'` over the whole `.qrc` → **0**. 95 `<file>` entries, and it is
+  the only `.qrc` the desktop build generates.
+- [x] 7.4 Inspect the generated `qmlcache_loader.cpp`: **every** key must be free
   of `/../`, so it can match a `QDir::cleanPath`-ed lookup (FR-15). Record the
   key count and the grep that proves none contains `/../`.
-- [ ] 7.5 Confirm implicit same-directory type resolution still works in the
+
+  `…/out/qmlcachegen/com/profoundlabs/simsapa/qmlcache_loader.cpp`, 802 lines.
+  **94 keys, of which 0 contain `/../`:**
+
+  ```sh
+  grep -oE '"/qt/qml/[^"]*"' qmlcache_loader.cpp | wc -l          # 94
+  grep -oE '"/qt/qml/[^"]*"' qmlcache_loader.cpp | grep -c '/\.\./'  # 0
+  ```
+
+  A representative insert (`:680`):
+
+  ```cpp
+  resourcePathToCachedUnit.insert(QStringLiteral("/qt/qml/com/profoundlabs/simsapa/assets/qml/SuttaSearchWindow.qml"), &QmlCacheGeneratedCode::…::unit);
+  ```
+
+  **Stronger than the required check, and worth having: the key set is exactly
+  equal to the resource-path set.** Deriving the resource paths independently
+  from 7.2's aliases (prefix + alias) and `diff`ing against the extracted keys
+  gives an empty diff — 94 = 94, no key without a resource and no resource
+  without a key. So the lookup cannot miss for a *path* reason.
+
+  And the two halves of the upstream defect are visible in one file. The lookup
+  (`Registry::lookupCachedUnit`, `:784`) is
+
+  ```cpp
+  QString resourcePath = QDir::cleanPath(url.path());
+  ```
+
+  while the inserts at `:680-773` are raw. **That asymmetry is harmless only
+  because the keys are already clean** — which is precisely what the move
+  achieved and what a `../` entry would undo, silently. This is the evidence
+  Part C's FR-21 defect 2 needs (task 4.3).
+- [x] 7.5 Confirm implicit same-directory type resolution still works in the
   **root** directory — the reason `Logger.qml` needs no import. (`assets/qml/data/`
   is *not* the case to worry about: it is absent from the resource entirely and
   its only reference is commented out.) `make qml-lint` and `make qml-test` are
   the cheap checks; a launch that opens several windows is the real one.
-- [ ] 7.6 Check the icons still resolve **from the filesystem** as well as from
+
+  - **`make qml-test` → `Totals: 172 passed, 0 failed, 0 skipped`.**
+  - **`make qml-lint`** — only the pre-existing `missing-property` warning
+    baseline (`drag_type` on `QObject` in the bookmark delegates,
+    `copyWithMimeType`, the `tst_*` signal-spy members). **No `Type … unavailable`,
+    no "is not a type", no "module is not installed"** — i.e. no type-resolution
+    warning of any kind, which is the class this task is checking for.
+  - **The real check, a live launch** (`scripts/measure-engine-load.sh -n 1`,
+    the same harness as 5.3, against the bootstrap `SIMSAPA_DIR`): the app
+    started, built its window and reached `app.exec()`. Its `log.txt` contains
+    **zero** matches for `unavailable|is not a type|No such file|Cannot assign|module .* is not installed`,
+    and **zero** `ERROR` or `WARN` lines in the whole run. No stray processes
+    afterwards.
+
+  That launch also reported `986 ms` for `engine.load()` against a baseline
+  median of 1181 ms. **Deliberately not being read as a result** — N = 1, and
+  5.1 fixed the metric at the median of 7. 8.3 measures it properly.
+- [x] 7.6 Check the icons still resolve **from the filesystem** as well as from
   the resource: run `make qml-lint` and open a QML preview, which is what 6.2's
   symlink serves. A broken symlink does not fail the build.
+
+  **Both paths work.** QML references icons by a *relative* path
+  (`icon.source: "icons/32x32/fa_circle-plus-solid.png"`, e.g.
+  `BookmarksTab.qml:291`), which is why there are two resolutions to check and
+  why a broken symlink is invisible to the build:
+
+  - **Resource:** `assets/icons.qrc`'s prefix is
+    `/qt/qml/com/profoundlabs/simsapa/assets/qml`, so the relative path resolves
+    against the same resource directory the QML files are in. Unchanged by the
+    move (6.3), and confirmed by the live launch in 7.5 rendering without a
+    single icon-load warning.
+  - **Filesystem:** `ls -l` → `bridges/assets/qml/icons -> ../../../assets/icons`,
+    and `test -f bridges/assets/qml/icons/32x32/fa_angle-down-solid.png` passes,
+    so the link resolves from its new depth. `make qml-lint` emits no
+    icon-related warning.
 
 ### 8.0 Part B — prove the cache is hit at runtime, then re-measure
 
