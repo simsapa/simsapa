@@ -9,4 +9,4 @@
 # version in bridges/Cargo.toml.
 #
 # Blank lines and #-comments are ignored; the first remaining line is the value.
-7
+8
