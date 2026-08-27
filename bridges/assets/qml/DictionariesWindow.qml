@@ -34,6 +34,17 @@ ApplicationWindow {
     property var user_dictionaries: []
     property bool is_dark: theme_helper.is_dark
 
+    // "Available" section state. `available_items` is the resolved catalogue
+    // (label, name, lang, entries, size_bytes, size_text, url,
+    // size_is_approximate); `checked_labels` the labels ticked for download.
+    // The FR-6 hide rule is a filter over `user_dictionaries`, not a flag —
+    // see `available_filtered()`.
+    property var available_items: []
+    property var checked_labels: []
+    property string catalogue_repo: "digitalpalidictionary/other-dictionaries"
+    property string catalogue_tag: ""
+    property string catalogue_tag_source: ""
+
     // State carried into the shared summary / error frames.
     property string op_label: ""
     property string old_label: ""
@@ -99,6 +110,10 @@ ApplicationWindow {
         theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.refresh_list();
+        // Resolves the upstream release tag on a worker thread; the result
+        // arrives on `onAvailableDictionariesReady`. Never call the synchronous
+        // `available_dictionaries()` here — it can block on a GitHub request.
+        dict_manager.refresh_available_dictionaries();
     }
 
     // Ignore close while a long op is in progress. Idx 1 = deleting,
@@ -130,6 +145,62 @@ ApplicationWindow {
             logger.error("DictionariesWindow.refresh_list parse error: " + e);
             root.user_dictionaries = [];
         }
+    }
+
+    // FR-6: an "Available" entry whose label matches an imported dictionary is
+    // not shown. Because `refresh_list()` runs after every import / delete /
+    // rename, keying the filter off `user_dictionaries` makes "disappears on
+    // import, reappears on delete" automatic — there is no parallel refresh.
+    function available_filtered() {
+        const have = {};
+        for (let i = 0; i < root.user_dictionaries.length; i++) {
+            have[root.user_dictionaries[i].label] = true;
+        }
+        return root.available_items.filter(function(it) { return !have[it.label]; });
+    }
+
+    function set_checked(label: string, on: bool) {
+        const arr = root.checked_labels.slice();
+        const idx = arr.indexOf(label);
+        if (on && idx < 0) {
+            arr.push(label);
+        } else if (!on && idx >= 0) {
+            arr.splice(idx, 1);
+        }
+        root.checked_labels = arr;
+    }
+
+    function checked_total_bytes(): real {
+        let sum = 0;
+        for (let i = 0; i < root.available_items.length; i++) {
+            if (root.checked_labels.indexOf(root.available_items[i].label) >= 0) {
+                sum += root.available_items[i].size_bytes;
+            }
+        }
+        return sum;
+    }
+
+    function checked_any_approximate(): bool {
+        for (let i = 0; i < root.available_items.length; i++) {
+            const it = root.available_items[i];
+            if (root.checked_labels.indexOf(it.label) >= 0 && it.size_is_approximate) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function human_size(bytes: real): string {
+        if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+        if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + " KB";
+        return Math.round(bytes) + " B";
+    }
+
+    // Fleshed out in the download-run step; a no-op placeholder for now so the
+    // button can be wired without a forward reference.
+    function start_download_run(labels) {
+        logger.info("DictionariesWindow.start_download_run: " + JSON.stringify(labels) + " (not wired yet)");
     }
 
     // Begin a sequential batch import from the dialog's selected items.
@@ -367,6 +438,19 @@ ApplicationWindow {
             views_stack.currentIndex = 5;
             root.refresh_list();
         }
+
+        function onAvailableDictionariesReady(items_json: string) {
+            try {
+                const payload = JSON.parse(items_json);
+                root.available_items = payload.items || [];
+                root.catalogue_repo = payload.repo || root.catalogue_repo;
+                root.catalogue_tag = payload.tag || "";
+                root.catalogue_tag_source = payload.tag_source || "";
+            } catch (e) {
+                logger.error("DictionariesWindow.onAvailableDictionariesReady parse error: " + e);
+                root.available_items = [];
+            }
+        }
     }
 
     MessageDialog {
@@ -518,27 +602,15 @@ ApplicationWindow {
                         width: scroll_view.availableWidth
                         spacing: 6
 
-                        Text {
+                        Label {
                             visible: root.user_dictionaries.length === 0
-                            text: `<p>No imported dictionaries yet.</p>
-<p>Stardict / GoldenDict formats can be imported. Useful dictionaries can be downloaded from:</p>
-<p><a href="https://github.com/digitalpalidictionary/other-dictionaries/releases/">https://github.com/digitalpalidictionary/other-dictionaries/releases/</a></p>`
-                            textFormat: Text.RichText
+                            text: "No imported dictionaries yet."
                             font.pointSize: root.pointSize
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
-                            color: palette.text
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.topMargin: 30
-                            onLinkActivated: function(link) {
-                                Qt.openUrlExternally(link);
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.NoButton
-                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            }
+                            color: palette.mid
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.topMargin: 12
                         }
 
                         Repeater {
@@ -567,6 +639,111 @@ ApplicationWindow {
                                     confirm_delete_dialog.open();
                                 }
                             }
+                        }
+
+                        // ---------------------------------------------------
+                        // Available section (FR-1 … FR-10). Always shown,
+                        // scrolls together with the imported list above.
+                        // ---------------------------------------------------
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 18
+                            Layout.bottomMargin: 6
+                            implicitHeight: 1
+                            color: palette.mid
+                        }
+
+                        Label {
+                            text: "Available"
+                            font.pointSize: root.largePointSize
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        // FR-8: name the source and the resolved release tag.
+                        // Renders a placeholder before the resolution arrives
+                        // and updates in place when it does.
+                        Label {
+                            text: `Source: ${root.catalogue_repo} ${root.catalogue_tag || "(resolving…)"}`
+                            font.pointSize: root.pointSize - 2
+                            color: palette.mid
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 4
+                        }
+
+                        Label {
+                            visible: root.available_items.length > 0 && root.available_filtered().length === 0
+                            text: "All curated dictionaries are already imported."
+                            font.pointSize: root.pointSize
+                            color: palette.mid
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                            Layout.topMargin: 6
+                        }
+
+                        Repeater {
+                            model: root.available_filtered()
+
+                            delegate: AvailableDictionaryRow {
+                                required property var modelData
+
+                                label_text: modelData.label
+                                name_text: modelData.name
+                                entry_count: modelData.entries
+                                // FR-16: approximate sizes ("~55 MB") when the
+                                // tag came from the fallback (API lookup failed).
+                                size_text: modelData.size_is_approximate
+                                    ? "~" + modelData.size_text
+                                    : modelData.size_text
+                                checked: root.checked_labels.indexOf(modelData.label) >= 0
+                                point_size: root.pointSize
+
+                                onToggled: function(is_checked) {
+                                    root.set_checked(modelData.label, is_checked);
+                                }
+                            }
+                        }
+
+                        // FR-7: always-visible one-line link to the releases
+                        // page, for the dictionaries not in the curated set.
+                        Text {
+                            text: `Other dictionaries: <a href="https://github.com/digitalpalidictionary/other-dictionaries/releases/">github.com/digitalpalidictionary/other-dictionaries</a>`
+                            textFormat: Text.RichText
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                            color: palette.text
+                            onLinkActivated: function(link) { Qt.openUrlExternally(link); }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            }
+                        }
+
+                        // FR-5: combined download size of the checked set.
+                        Label {
+                            visible: root.checked_labels.length > 0
+                            text: `${root.checked_labels.length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
+                            font.pointSize: root.pointSize - 1
+                            color: palette.text
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                        }
+
+                        // FR-4: disabled while nothing is checked.
+                        Button {
+                            text: "Download and Import"
+                            enabled: root.checked_labels.length > 0
+                            Layout.topMargin: 4
+                            Layout.bottomMargin: 6
+                            onClicked: root.start_download_run(root.checked_labels)
                         }
                     }
                 }

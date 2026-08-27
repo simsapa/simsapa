@@ -291,40 +291,40 @@ called after every import, delete and rename, driving the filter off
 `user_dictionaries` makes FR-6's "disappears on import, reappears on delete"
 automatic — do **not** add a parallel refresh path.
 
-- [ ] 4.0 QML: the Available section in the Dictionaries window
-  - [ ] 4.1 Create `bridges/assets/qml/AvailableDictionaryRow.qml` — a checkbox,
+- [x] 4.0 QML: the Available section in the Dictionaries window
+  - [x] 4.1 Create `bridges/assets/qml/AvailableDictionaryRow.qml` — a checkbox,
         the name (wrapping), the label, and the size. Follow the existing split:
         the **delegate** in `DictionariesWindow.qml` declares
         `required property var modelData` and assigns plain typed properties down
         into the row component; `DictionaryListItem.qml` itself takes ordinary
         properties and knows nothing about `modelData`. Mirror that.
-  - [ ] 4.2 Add `"assets/qml/AvailableDictionaryRow.qml"` to `qml_files` in
+  - [x] 4.2 Add `"assets/qml/AvailableDictionaryRow.qml"` to `qml_files` in
         `bridges/build.rs`, in the exact `"assets/qml/<Name>.qml"` form.
-  - [ ] 4.3 Add the state properties above to `DictionariesWindow.qml` and a
+  - [x] 4.3 Add the state properties above to `DictionariesWindow.qml` and a
         `Logger { id: logger }` usage for any diagnostics (single concatenated
         string argument — never `console.*`, never comma-separated arguments).
-  - [ ] 4.4 Call `refresh_available_dictionaries()` from `Component.onCompleted`
+  - [x] 4.4 Call `refresh_available_dictionaries()` from `Component.onCompleted`
         and handle `onAvailableDictionariesReady` by parsing the JSON into
         `available_items` (inside a `try`/`catch`, logging a parse failure the
         way `refresh_list()` does).
-  - [ ] 4.5 Add the **Available** section header and a `Repeater` over the
+  - [x] 4.5 Add the **Available** section header and a `Repeater` over the
         filtered items, below the imported-dictionaries `Repeater` (FR-1, FR-6).
-  - [ ] 4.6 Render the source line: `<repo> <tag>`, e.g.
+  - [x] 4.6 Render the source line: `<repo> <tag>`, e.g.
         `digitalpalidictionary/other-dictionaries v1.0.8` (FR-8). It must render
         something sensible before the resolution arrives and update when it does.
-  - [ ] 4.7 Add the **Download and Import** button below the list, disabled while
+  - [x] 4.7 Add the **Download and Import** button below the list, disabled while
         `checked_labels` is empty (FR-4), plus the combined-size label for the
         checked set (FR-5).
-  - [ ] 4.8 Mark sizes as approximate (e.g. `~55 MB`) when `size_is_approximate`
+  - [x] 4.8 Mark sizes as approximate (e.g. `~55 MB`) when `size_is_approximate`
         is set, i.e. when the tag came from the fallback (FR-16).
-  - [ ] 4.9 Replace the "No imported dictionaries yet" paragraph with the
+  - [x] 4.9 Replace the "No imported dictionaries yet" paragraph with the
         always-visible one-line link to the releases page, placed under the
         Available list (FR-7).
-  - [ ] 4.10 Check the layout at phone width — name wrapping, checkbox and size
+  - [x] 4.10 Check the layout at phone width — name wrapping, checkbox and size
         legible, no horizontal overflow (FR-10). Any new `Dialog` added here must
         follow the width-clamp rule and, if titled with wrapping text, use
         `header: DialogHeader { … }`.
-  - [ ] 4.11 `make qml-lint` and `make build -B` pass. At this point the list is
+  - [x] 4.11 `make qml-lint` and `make build -B` pass. At this point the list is
         visible and the button does nothing yet.
 
 ### Specs for 5.0 — the download run
