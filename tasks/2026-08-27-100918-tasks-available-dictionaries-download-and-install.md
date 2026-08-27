@@ -82,32 +82,32 @@ URLs come from the API response when it succeeded; under the fallback the URL is
 built as `https://github.com/<REPO>/releases/download/<tag>/<label>-gd.zip` and
 the size is `fallback_size_bytes`.
 
-- [ ] 1.0 Backend: the curated catalogue and release-tag resolution (pure Rust)
-  - [ ] 1.1 Create `backend/src/dictionary_catalog.rs` and register it in
+- [x] 1.0 Backend: the curated catalogue and release-tag resolution (pure Rust)
+  - [x] 1.1 Create `backend/src/dictionary_catalog.rs` and register it in
         `backend/src/lib.rs`.
-  - [ ] 1.2 Define the catalogue entry struct and the ten entries from PRD §4,
+  - [x] 1.2 Define the catalogue entry struct and the ten entries from PRD §4,
         verbatim. Add a comment on `abt` (name deliberately not its `bookname`),
         on `peu` (`pa-en` in the `.ifo` means Pali, so `lang` is `pli`), and on
         `sin-eng-sin` (`si` is absent from `KNOWN_TOKENIZER_LANGS`, so the
         default tokenizer is expected, not a bug).
-  - [ ] 1.3 Define `PINNED_SERIES`, `FALLBACK_TAG` and `REPO` as constants, each
+  - [x] 1.3 Define `PINNED_SERIES`, `FALLBACK_TAG` and `REPO` as constants, each
         with a comment saying raising the pin is a deliberate code change (PRD
         FR-13 / §11.3) and must not become a setting.
-  - [ ] 1.4 Call `update_checker::to_version()` directly on the tag string.
+  - [x] 1.4 Call `update_checker::to_version()` directly on the tag string.
         **Verified: it already strips a leading `v`** (`update_checker.rs:150`,
         `ver.strip_prefix('v').unwrap_or(ver)`, and its doctest asserts
         `to_version("v0.1.0")`). No wrapper helper is needed — do not add one.
-  - [ ] 1.5 Write `select_tag(releases: &[ReleaseEntry]) -> Option<String>`:
+  - [x] 1.5 Write `select_tag(releases: &[ReleaseEntry]) -> Option<String>`:
         skip drafts and prereleases, keep only tags whose major *and* minor equal
         `PINNED_SERIES`, return the highest by `compare_versions()`. A higher
         minor or major must be ignored, not selected (FR-13).
-  - [ ] 1.6 Define the serde structs for the GitHub releases JSON — only the
+  - [x] 1.6 Define the serde structs for the GitHub releases JSON — only the
         fields actually used (`tag_name`, `draft`, `prerelease`, `assets[].name`,
         `assets[].size`, `assets[].browser_download_url`). Unknown fields are
         ignored by default; do not model the whole payload.
-  - [ ] 1.7 Write `build_fallback_url(label, tag)` and the resolution assembler
+  - [x] 1.7 Write `build_fallback_url(label, tag)` and the resolution assembler
         that produces the result struct for either source (FR-16).
-  - [ ] 1.8 Write `fetch_releases()` using the existing `reqwest` blocking client
+  - [x] 1.8 Write `fetch_releases()` using the existing `reqwest` blocking client
         (already a `backend` dependency; keep it on 0.12), following the shape of
         `update_checker::fetch_releases_info()`. **A `User-Agent` is mandatory,
         not polite** — measured: `api.github.com` answers **403** to a request
@@ -115,33 +115,33 @@ the size is `fallback_size_bytes`.
         Map every failure — offline, DNS, HTTP status, rate limit, unparseable
         JSON — to "fall back", never to an error the user sees while browsing
         (FR-14).
-  - [ ] 1.8a Do **not** report a bare 403 as "rate limited". GitHub uses 403 for
+  - [x] 1.8a Do **not** report a bare 403 as "rate limited". GitHub uses 403 for
         both the missing-UA rejection and the rate limit; only a 403 that also
         carries `X-RateLimit-Remaining: 0` is the rate limit. Both fall back
         either way, so this only affects the log line — but a wrong log line here
         would send the next reader hunting a quota problem that does not exist.
-  - [ ] 1.9 Write `resolve_catalogue()`: try `fetch_releases()` + `select_tag()`,
+  - [x] 1.9 Write `resolve_catalogue()`: try `fetch_releases()` + `select_tag()`,
         else the fallback tag. Log the resolved tag once with its source, in the
         form `dictionary_catalog: resolved tag v1.0.8 (source: api)` (FR-17).
-  - [ ] 1.10 Cache a **successful** resolution in a process-global for the
+  - [x] 1.10 Cache a **successful** resolution in a process-global for the
         process lifetime, so reopening the window does not spend another of
         GitHub's 60 unauthenticated requests per hour. Do **not** cache a
         failure: a cached fallback would stick for the whole session even after
         the network came back, and reopening the window is exactly how a user
         retries. Do not poll.
-  - [ ] 1.10a Note in a comment that GitHub returns releases **newest-first**,
+  - [x] 1.10a Note in a comment that GitHub returns releases **newest-first**,
         30 per page by default, and the pinned series currently has 9 releases —
         so page 1 always contains the highest tag and no pagination is needed.
         Revisit only if upstream ever passes 30 releases *above* the pinned
         series.
-  - [ ] 1.11 Unit tests, all offline: highest patch in series wins; `v1.1.0` and
+  - [x] 1.11 Unit tests, all offline: highest patch in series wins; `v1.1.0` and
         `v2.0.0` are ignored; a draft/prerelease is skipped; an empty list yields
         `None`; a malformed tag is skipped rather than panicking; the fallback URL
         matches the real v1.0.8 URL for `mw`; every catalogue `label` is a valid
         label per `dictionary_manager_core::validate_label()`; every `lang` is
         `pli`, `san` or `si`; there are exactly ten entries and none of them is
         one of the five excluded assets.
-  - [ ] 1.12 `cd backend && cargo test dictionary_catalog` passes; `make build -B`
+  - [x] 1.12 `cd backend && cargo test dictionary_catalog` passes; `make build -B`
         succeeds. The app is unchanged at this point — nothing calls the module yet.
 
 ### Specs for 2.0 — downloading into the staging directory

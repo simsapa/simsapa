@@ -13,6 +13,7 @@ pub mod app_data;
 pub mod sutta_display;
 pub mod stardict_parse;
 pub mod dictionary_manager_core;
+pub mod dictionary_catalog;
 pub mod dict_index_reconcile;
 pub mod pali_stemmer;
 pub mod pali_sort;
