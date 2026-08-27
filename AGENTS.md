@@ -1139,11 +1139,13 @@ let qml_files = vec![
 never containing `..`.** The path string is used verbatim as the rcc alias, so
 this is what makes the resource path
 `:/qt/qml/com/profoundlabs/simsapa/assets/qml/<Name>.qml`, matching the `qrc:`
-literals in `cpp/`. A `../`-prefixed path still *compiles*: rcc folds the `..`
-away but the generated `qmldir` and qmlcachegen do not, so the type fails to
-resolve when that screen is first shown and the AOT cache silently misses. That
-trap is why the tree was moved under `bridges/` — see
-[docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
+literals in `cpp/`. **`bridges/build.rs` asserts this over every entry and fails
+the build with the offending path** — because otherwise a `../`-prefixed path
+*builds green*: rcc folds the `..` away but the generated `qmldir` and
+qmlcachegen do not, so the type fails to resolve when that screen is first shown
+and the AOT cache silently misses (falling back to parsing QML from source,
+which looks exactly like success). That trap is why the tree was moved under
+`bridges/` — see [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
 ### Long operations in QML must keep the screen awake
 

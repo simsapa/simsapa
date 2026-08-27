@@ -136,6 +136,19 @@ fn main() {
     // failure this used to produce ("Type Logger unavailable --
     // qrc:/qt/qml/com/profoundlabs/assets/qml/Logger.qml: No such file") and the
     // qrc_resources() workaround that stood in for it until the tree was moved.
+    //
+    // The rule above is enforced here rather than left to review: a malformed
+    // path builds green and fails only at runtime, and an unmatched AOT unit
+    // fails silently by falling back to parsing QML from source -- which looks
+    // exactly like success. Fail the build instead.
+    for f in &qml_files {
+        assert!(
+            f.starts_with("assets/qml/") && !f.contains(".."),
+            "bridges/build.rs: qml_files entry {f:?} must be relative to bridges/ \
+             and free of `..`, i.e. \"assets/qml/<Name>.qml\". \
+             See AGENTS.md \"New QML components\" and docs/cxx-qt-fork.md §5."
+        );
+    }
 
     // Since cxx-qt 0.8 a QML module carries only its QML files; the Rust bridge
     // sources move to CxxQtBuilder::files(), and there may be only one QML module
