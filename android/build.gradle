@@ -49,8 +49,9 @@ android {
 
     // NDK is driven by the QtCreator kit (androidNdkVersion, written into
     // gradle.properties). Stay on the Qt 6.9.3-supported NDK (r26b/r27). Do NOT
-    // force r28: at minSdk 27 its libc++ references pthread_cond_clockwait
-    // (declared by bionic only at API 30+), which breaks the cxx C++ build.
+    // force r28: at this project's minSdk its libc++ references
+    // pthread_cond_clockwait (declared by bionic only at API 30+), which breaks
+    // the cxx C++ build. The exclusion holds at minSdk 28 as well as 27.
     // 16 KB page alignment is achieved instead via the max-page-size linker flag
     // on the main app .so (see target_link_options in CMakeLists.txt).
     ndkVersion androidNdkVersion
@@ -150,7 +151,15 @@ android {
 
     defaultConfig {
         resConfig "en"
-        minSdkVersion 27
+
+        // 28, not 27, and this is a correctness floor rather than a
+        // distribution choice: libQt6Core imports getentropy as a GLOBAL
+        // undefined symbol, and bionic first provides it at API 28 — so on an
+        // API 27 device dlopen fails before any app code runs. Qt 6.9.3 itself
+        // declares qtMinSdkVersion=28; the value here used to override it back
+        // down to 27, which never worked.
+        // See docs/android-api-levels-and-feature-dependencies.md section 2.
+        minSdkVersion 28
 
         // Targeting API 36 opts the app in to three behaviours that Android 16
         // enforces with no per-app opt-out:

@@ -153,13 +153,13 @@ it is dormant, not useless.
 | Component | Pinned at | Why |
 |---|---|---|
 | Qt | 6.9.3 | Desktop, Windows, macOS and Android all ride on it |
-| NDK | r26b / r27 (27.3.13750724 in use) | **Not r28** — at minSdk 27 its libc++ references `pthread_cond_clockwait` (bionic API 30+), which breaks the `cxx` C++ build |
+| NDK | r26b / r27 (27.3.13750724 in use) | **Not r28** — its libc++ references `pthread_cond_clockwait` (bionic API 30+), which breaks the `cxx` C++ build. The exclusion is about API **30**, so it held at minSdk 27 and holds unchanged at 28 |
 | AGP | 8.6.0 | Coupled to the JDK pin and to Qt's `build.gradle` template |
 | Gradle wrapper | 8.10 | **Ours**, checked into `android/gradle/wrapper/` — see §2.4 |
 | JDK | 17–21 (`MAX_JDK_MAJOR=21` in `build-android.sh`) | AGP 8.6.0's bundled lint cannot parse a Java 26 version string |
 | `compileSdk` | android-36 | Written by androiddeployqt; it picks the newest installed platform |
 | `targetSdkVersion` | 36 | `android/build.gradle` `defaultConfig` |
-| `minSdkVersion` | 27 | Overrides Qt's declared floor of 28 — see §2.2 |
+| `minSdkVersion` | 28 | Matches Qt's declared floor, and is a hard requirement of `libQt6Core` — **raised 2026-08-26, decoupled from the upgrade**; see §2.2 |
 
 ---
 
@@ -186,7 +186,7 @@ events and instead expects the app to register an `OnBackInvokedCallback`.
 - **The app registers none either**, and deliberately so: Qt Quick Controls
   dismiss a `Dialog`/`Popup`/`Window` off the `Qt::Key_Back` event that the
   legacy path delivers. There is no `Key_Back` handler anywhere in
-  `assets/qml/` — there never needed to be.
+  `bridges/assets/qml/` — there never needed to be.
 
 So with predictive back on, nothing anywhere handles back and the system default
 runs: **finish the activity**. Measured on an Android 16 phone, 2026-07-28 —
@@ -210,39 +210,78 @@ the opt-out on the following build.
 Until then the attribute must stay. It is a genuine functional dependency, not
 tidiness.
 
-### 2.2 `minSdkVersion 27` vs Qt's declared floor of 28
+### 2.2 `minSdkVersion` 28 — **done 2026-08-26, and decoupled from the upgrade**
 
-**The common framing — that a 28 floor "arrives" with Qt 6.10 — is wrong.**
+**Status: shipped. This section is kept because the reasoning that moved it out
+of this document is worth not re-deriving.**
 
+`android/build.gradle`'s `defaultConfig` now declares `minSdkVersion 28`.
+Verified on the artifact with `aapt2 dump badging`: `minSdkVersion:'28'`,
+`targetSdkVersion:'36'`.
+
+#### Why it was here, and why it left
+
+Two framings were wrong, in sequence.
+
+The first was that a 28 floor **"arrives" with Qt 6.10**. It does not.
 androiddeployqt already writes `qtMinSdkVersion=28` into the *generated*
 `android-build/gradle.properties` on **Qt 6.9.3** (verified 2026-07-28), and
-`android/build.gradle`'s `defaultConfig` overrides it back down to
-`minSdkVersion 27`. The app has therefore shipped one API level below what the
-current Qt declares it supports since the 6.9.3 move.
+`build.gradle` overrode it back down to 27. A Qt upgrade never introduced the
+constraint; it would only have removed our ability to keep ignoring it.
 
-A Qt upgrade does not introduce the constraint; it removes our ability to keep
-ignoring it.
+The second framing is the one that put this section in a *deferred-work*
+document, and it is the one that turned out to be a defect:
 
-**Decision (2026-07-29): raise `minSdkVersion` to 28 as part of the Qt
-upgrade.** Not before — the override demonstrably works for shipped users on
-Qt 6.9.3, so changing it on its own would drop API 27 (Android 8.1) devices for
-no benefit. Doing it *with* the upgrade aligns the app with what Qt declares it
-supports at the moment Qt's own floor becomes unavoidable.
+> **Decision (2026-07-29): raise `minSdkVersion` to 28 as part of the Qt
+> upgrade.** Not before — the override demonstrably works for shipped users on
+> Qt 6.9.3, so changing it on its own would drop API 27 (Android 8.1) devices
+> for no benefit.
 
-When making the change:
+**The override did not work, and there were no such users.** A binary scan run
+for the minSdk-28 PRD (2026-08-16) found that `libQt6Core_arm64-v8a.so` carries
+a **GLOBAL** undefined `getentropy@LIBC_P` — a bionic symbol that first exists
+at **API 28**. A GLOBAL undefined symbol is one the dynamic linker *must*
+resolve, so on an Android 8.1 device `dlopen` fails before a line of app code
+runs. The app was being offered by Play to devices on which it could never
+start.
 
-- Edit `minSdkVersion` in `android/build.gradle`'s `defaultConfig` — that is the
-  only source. There is no `<uses-sdk>` in `android/AndroidManifest.xml` and no
-  `QT_ANDROID_TARGET_SDK_VERSION` in `CMakeLists.txt`.
-- Verify with `aapt2 dump badging` (`minSdkVersion:'28'`), **not** by reading the
-  generated `gradle.properties`.
-- **Re-examine the NDK exclusion.** The r28 problem in §1 is specifically that
-  its libc++ references `pthread_cond_clockwait`, which bionic declares only at
-  API 30+ — that analysis is stated *at minSdk 27* and does not automatically
-  change at 28 (still below 30), but it must be re-derived against whatever NDK
-  the new Qt requires rather than assumed.
-- Play will stop offering updates to devices below API 28. Existing installs on
-  those devices keep the last compatible version; they are not uninstalled.
+That makes the change a **correctness fix rather than a distribution
+trade-off** — which is exactly the property that decoupled it from the Qt
+upgrade and let it ship on its own, on Qt 6.9.3, with no version moves
+anywhere. The measurement, the reproducible commands and the per-feature
+inventory are in
+[android-api-levels-and-feature-dependencies.md](./android-api-levels-and-feature-dependencies.md).
+
+**The general lesson: "no technical risk, only a distribution cost, therefore no
+benefit on its own" is a conclusion that needs a measurement.** Nobody had
+scanned the binaries; the coupling to the Qt upgrade survived for a year on an
+assumption.
+
+#### What was confirmed at the time
+
+- `android/build.gradle`'s `defaultConfig` is the **only** source of the floor —
+  re-confirmed: no `<uses-sdk>` in `android/AndroidManifest.xml`, and no
+  `*_SDK_VERSION` variable of any kind in `CMakeLists.txt`.
+- `./scripts/android-api-scan.sh --floor 28` was run **once per ABI** against a
+  multi-ABI APK. All three — `arm64-v8a`, `x86_64`, `armeabi-v7a` — report *"no
+  hard (GLOBAL) undefined symbol requires more than API 28"*, so **28 is a
+  sufficient floor, not merely a higher one**. The two non-arm64 slices had
+  never been scanned before and neither raised the floor.
+- **The NDK exclusion is unchanged and must not be re-litigated.** The r28
+  problem is that its libc++ references `pthread_cond_clockwait`, which bionic
+  declares only at API **30+**. 28 is still below 30, so the exclusion holds
+  exactly as before. It must still be re-derived against whatever NDK a *new Qt*
+  requires — but not because of this change.
+- `WRITE_EXTERNAL_STORAGE` reasoning is unaffected: the app stays inside the
+  API 27–28 band where the permission would be required, and it still never
+  touches shared external storage (everything goes through SAF `content://` URIs
+  or the app-private directory).
+
+#### User-facing consequence
+
+Play stops offering updates to devices below API 28. **Existing installs on
+those devices keep the last compatible version; they are not uninstalled.**
+Sideloaded APKs from GitHub Releases likewise refuse to install on API 27.
 
 ### 2.3 Deprecated Java APIs in Google Play's report
 
@@ -402,8 +441,12 @@ ways — AAB/APK size, on-device install footprint, `zipalign -c -P 16`, and
   space. **These two are measured, not theoretical, and are the reason 6.10.1
   was not adopted already.**
 - **NDK.** A Qt upgrade changes the supported NDK, which changes the Rust/`cxx`
-  build surface. Re-verify the `pthread_cond_clockwait` issue against the new
-  minSdk (§2.2) rather than assuming the r28 exclusion still applies.
+  build surface. Re-verify the `pthread_cond_clockwait` issue against whatever
+  NDK the new Qt requires, rather than assuming the r28 exclusion still applies.
+  Note the floor itself is settled at 28 (§2.2) and is no longer a variable
+  here; what a new NDK can change is the *symbol* requirement. Re-run
+  `./scripts/android-api-scan.sh --floor 28` per ABI after the bump — the scan
+  is cheap and it is what caught the `getentropy` defect.
 - **cxx-qt.** The bridge layer is version-sensitive; a Qt bump means re-verifying
   every `#[qinvokable]` bridge and the QML module registration.
 - **The multi-ABI mechanism.** The per-ABI ExternalProject setup, the per-ABI Qt
@@ -440,7 +483,8 @@ zipalign -c -P 16 4 <apk>
 ```
 
 **Do the on-device pass FIRST, on a debug APK, before spending a day on AGP,
-Gradle, minSdk and packaging.** The 6.10.3 attempt did those in the documented
+Gradle and packaging.** (minSdk is no longer on that list — it was raised to 28
+on its own in August 2026, §2.2.) The 6.10.3 attempt did those in the documented
 order — packaging work, then device — and every hour of it was wasted, because
 the device pass would have killed the upgrade on the first screen. The cheapest
 build that can be typed into is worth more than a signed bundle.
@@ -488,7 +532,8 @@ unattributable.
    else. Text entry, a dialog, a dropdown, a sutta tab. This is ~1 hour and it is
    what would have ended the 6.10.3 attempt on day one.
 2. **Verify the motivating symptom is actually fixed**, on device.
-3. Only then the packaging work: AGP/Gradle/JDK, minSdk, 16 KB, multi-ABI AAB.
+3. Only then the packaging work: AGP/Gradle/JDK, 16 KB, multi-ABI AAB. (minSdk
+   is already at Qt's declared floor of 28 and needs nothing here.)
 
 Steps 1 and 2 are the *reason* for the upgrade; steps in §2 are the *cost*. The
 2026-08 attempt paid the cost before checking the reason.

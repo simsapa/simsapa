@@ -42,9 +42,9 @@ The two QML toggles are read through the normal `SuttaBridge` getters in
 - Settings struct: `backend/src/app_settings.rs` (three `bool` fields, default false)
 - Get/set + persistence: `backend/src/app_data.rs`
 - Bridge: `bridges/src/sutta_bridge.rs` (+ qmllint stubs in
-  `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`)
+  `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`)
 - Early-read FFI: `backend/src/lib.rs` → consumed in `cpp/gui.cpp`
-- UI: `assets/qml/AppSettingsWindow.qml` (`is_mobile`-gated Rendering tab)
+- UI: `bridges/assets/qml/AppSettingsWindow.qml` (`is_mobile`-gated Rendering tab)
 
 Related: [Android / ChromeOS soft keyboard](./android-soft-keyboard.md),
 [Startup sequence and caches](./startup-sequence-and-caches.md).

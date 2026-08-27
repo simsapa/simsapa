@@ -42,7 +42,7 @@ call sites.
 | Provider-URI probe (JNI) | `backend/src/android_saf.rs` (`probe_document_uri`) |
 | Raw `ACTION_OPEN_DOCUMENT` picker | `cpp/android_raw_pick.{h,cpp}` |
 | Bridge invokables + signal | `bridges/src/sutta_bridge.rs` |
-| Button, picker, result dialog | `assets/qml/AboutDialog.qml` |
+| Button, picker, result dialog | `bridges/assets/qml/AboutDialog.qml` |
 | Qt→log message handler | `cpp/gui.cpp` (`simsapa_message_handler`) |
 
 `backend/src/picker_url.rs` is **Qt-free by construction** (PRD Req. 29 / D-10).

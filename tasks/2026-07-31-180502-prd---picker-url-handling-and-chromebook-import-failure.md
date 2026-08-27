@@ -1278,8 +1278,10 @@ two Android targets are where the fix has to earn its keep.
   chanting import and Gloss "Open JSON" on a phone, not just dictionary import.
 - Memory/disk: per §5.5, a 200 MB import is fine on a modern phone; on a 2–3 GB
   device the chunked copy (Req. 10) is what keeps it so.
-- `minSdkVersion 27` … `targetSdkVersion 36`: scoped storage is fully enforced,
-  so the SAF-only decision is the only viable one without a manifest change.
+- `minSdkVersion 28` (raised from 27 on 2026-08-26) … `targetSdkVersion 36`:
+  scoped storage is fully enforced, so the SAF-only decision is the only viable
+  one without a manifest change. The floor raise does not affect this reasoning
+  — scoped-storage enforcement is driven by `targetSdkVersion`, not the floor.
 
 ### 9.5 Android on Chromebook (the reported platform)
 

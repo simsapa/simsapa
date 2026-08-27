@@ -84,8 +84,10 @@ Verified in the finished packages by extracting `res/*.png` and pixel-comparing:
 the beta APK's 432 px layers are a **0-pixel** match for `res-beta/`'s
 foreground and differ from the release art by exactly the badge region; the
 plain release APK is the inverse. The legacy `ic_launcher.png` is effectively
-unused at `minSdkVersion 27` — the `mipmap-anydpi-v26` adaptive icon wins on
-every supported device — but is generated to keep the set complete.
+unused at `minSdkVersion 28` — the `mipmap-anydpi-v26` adaptive icon wins on
+every supported device — but is generated to keep the set complete. (This was
+already true at the old floor of 27, both being above 26; raising it to 28 only
+widened the margin.)
 
 If the release monochrome layer is ever redrawn as a proper silhouette (today it
 is a copy of the foreground, so themed icons render as a filled blob), redo both
@@ -200,6 +202,11 @@ established until the process exists, which loses exactly the startup messages
 worth reading. Drop the trailing `'*:S'` if something expected is missing — an
 unlisted tag is the usual reason.
 
+> A `tracing::trace!` event is below `android_logger`'s `LevelFilter::Debug` and
+> will not appear at any tag filter. If a message is missing and widening the
+> filter does not recover it, read `log.txt` instead (next paragraph) rather
+> than assuming the code did not run.
+
 Because the beta is debuggable, `adb shell run-as io.github.simsapa.app.beta`
 also works for inspecting its data directory. That is refused for the Play
 build, which is not debuggable.
@@ -259,7 +266,10 @@ future caller cannot reintroduce an off-Play link.
 
 Deprecation note: `getInstallSourceInfo()` replaced `getInstallerPackageName()`
 in API 30. The latter is deprecated but functional on every level the app
-supports (minSdk 27), so it is called directly rather than branched on.
+supports (minSdk 28), so it is called directly rather than branched on. The
+floor raise from 27 to 28 does not change this — 28 is still below 30, so the
+replacement is still not universally available and the direct call stays
+correct.
 
 Two things this does **not** cover, deliberately:
 

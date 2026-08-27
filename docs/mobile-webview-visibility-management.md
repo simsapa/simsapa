@@ -151,7 +151,7 @@ DictionaryTab {
 
 ## Automatic overlay tracking (`MobileOverlayTracker`)
 
-`assets/qml/MobileOverlayTracker.qml` replaces the enumerated dialog list in Layer 4.
+`bridges/assets/qml/MobileOverlayTracker.qml` replaces the enumerated dialog list in Layer 4.
 It is instantiated once in `SuttaSearchWindow.qml` and exposes a single boolean:
 
 ```qml
@@ -525,15 +525,15 @@ If ANY condition is false, the WebView will be hidden through multiple mechanism
 
 The following files implement this solution:
 
-- `assets/qml/SuttaHtmlView_Mobile.qml` - WebView wrapped in Item with explicit visibility
-- `assets/qml/DictionaryHtmlView_Mobile.qml` - Dictionary WebView wrapped with visibility control
-- `assets/qml/SuttaHtmlView.qml` - Loader that propagates visibility through bindings
-- `assets/qml/DictionaryHtmlView.qml` - Dictionary Loader with visibility propagation
-- `assets/qml/SuttaStackLayout.qml` - Manages multiple webviews with should_be_visible and dimension control
-- `assets/qml/SuttaSearchWindow.qml` - Top-level visibility control; instantiates the tracker and defines `webview_visible`
-- `assets/qml/MobileOverlayTracker.qml` - Detects open popups and in-tree child windows; exposes `any_open`
-- `assets/qml/tst_MobileOverlayTracker.qml` - Offscreen tests, including the ToolTip identity exclusion sampled across the whole close transition
-- `src-ts/viewport_nudge.ts` (+ `.test.ts`), `nudge_webview_geometry()` in `assets/qml/SuttaHtmlView_Mobile.qml` - unproven fix + instrumentation for the resize issue above; see [mobile-stuck-bottom-bar-investigation.md](./mobile-stuck-bottom-bar-investigation.md)
+- `bridges/assets/qml/SuttaHtmlView_Mobile.qml` - WebView wrapped in Item with explicit visibility
+- `bridges/assets/qml/DictionaryHtmlView_Mobile.qml` - Dictionary WebView wrapped with visibility control
+- `bridges/assets/qml/SuttaHtmlView.qml` - Loader that propagates visibility through bindings
+- `bridges/assets/qml/DictionaryHtmlView.qml` - Dictionary Loader with visibility propagation
+- `bridges/assets/qml/SuttaStackLayout.qml` - Manages multiple webviews with should_be_visible and dimension control
+- `bridges/assets/qml/SuttaSearchWindow.qml` - Top-level visibility control; instantiates the tracker and defines `webview_visible`
+- `bridges/assets/qml/MobileOverlayTracker.qml` - Detects open popups and in-tree child windows; exposes `any_open`
+- `bridges/assets/qml/tst_MobileOverlayTracker.qml` - Offscreen tests, including the ToolTip identity exclusion sampled across the whole close transition
+- `src-ts/viewport_nudge.ts` (+ `.test.ts`), `nudge_webview_geometry()` in `bridges/assets/qml/SuttaHtmlView_Mobile.qml` - unproven fix + instrumentation for the resize issue above; see [mobile-stuck-bottom-bar-investigation.md](./mobile-stuck-bottom-bar-investigation.md)
 
 ## Key Principles
 

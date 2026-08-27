@@ -80,7 +80,7 @@ extern "C" bool global_hotkeys_enabled_c();
 extern "C" char* get_global_hotkey_dictionary_lookup_c();
 
 // Mobile rendering troubleshooting toggles. Read from settings before the
-// QApplication is constructed (see assets/qml/AppSettingsWindow.qml →
+// QApplication is constructed (see bridges/assets/qml/AppSettingsWindow.qml →
 // "Rendering" section). Each maps to a Qt env var that must be set before
 // QApplication, so changes only take effect after an app restart.
 extern "C" bool render_loop_basic_c();

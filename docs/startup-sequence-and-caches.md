@@ -320,6 +320,16 @@ was made — keep new call sites to it.
    `Component.onCompleted` handlers and re-run; don't attribute the gap
    to the most plausible heavyweight on the path.
 
+   On Android these lines reach both logcat (tag `simsapa`) and the
+   app's own `log.txt`. If a device log ever looks impossibly empty,
+   read `log.txt` rather than concluding the code did not run — it
+   carries messages regardless of logcat's filtering, and it is what a
+   user sends you. On a debuggable build:
+
+   ``` sh
+   adb shell run-as io.github.simsapa.app.beta cat files/log.txt
+   ```
+
 3. **Never instantiate a webview (or anything comparably heavy) before
    `app.exec()`.** Defer the trigger past the first event-loop iteration
    (`Qt.callLater` / `QTimer::singleShot(0, …)`) *and* make the

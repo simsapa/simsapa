@@ -239,8 +239,10 @@ Notable feature docs:
   recorder/player stack (`cpal` + `flacenc` + `rubato` + `symphonia`) that
   replaced Qt Multimedia / FFmpeg for 16 KB compliance. cpal 0.18's Android
   backend is **AAudio via the `ndk` crate** (no `oboe`, no bundled audio lib).
-  **Do NOT use NDK r28** (incompatible with Qt 6.9.3 at minSdk 27 —
-  `pthread_cond_clockwait` breaks the `cxx` C++ build); stay on r26b/r27 and
+  **Do NOT use NDK r28** (incompatible with Qt 6.9.3 at this project's minSdk —
+  `pthread_cond_clockwait` needs bionic API 30+, so the exclusion holds at
+  minSdk 28 just as it did at 27, and breaks the `cxx` C++ build); stay on
+  r26b/r27 and
   16 KB-align the main app `.so` with `-Wl,-z,max-page-size=16384` in
   `CMakeLists.txt`.
 - [Search snippet & highlight pipeline](./docs/search-snippet-highlight-pipeline.md) —
@@ -347,7 +349,7 @@ Notable feature docs:
   `MACOSX_BUNDLE_GUI_IDENTIFIER` in `CMakeLists.txt` + `BUNDLE_ID` in
   `build-macos.sh`; Windows `AppId` is a GUID, Linux has none) and the **QML
   module URI** (`com.profoundlabs.simsapa` — an internal Qt namespace used by
-  `import com.profoundlabs.simsapa`, the `assets/qml/com/profoundlabs/simsapa/`
+  `import com.profoundlabs.simsapa`, the `bridges/assets/qml/com/profoundlabs/simsapa/`
   stubs, `bridges/build.rs` / `cxx_qt_import_qml_module` URI, and the
   `:/qt/qml/com/profoundlabs/simsapa/…` resource paths). **The two are unrelated
   and must NOT be conflated** — the Android applicationId was changed for Google
@@ -382,15 +384,35 @@ Notable feature docs:
 - [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
   work deliberately deferred to the eventual Qt upgrade, with the reasons and the
   pitfalls. Covers removing the predictive-back opt-out (and why Qt implementing
-  the callback may still not be sufficient for Qt Quick popups), the **decision
-  to raise `minSdkVersion` to 28 with the upgrade** (Qt 6.9.3 *already* declares
-  `qtMinSdkVersion=28` and we override it down to 27 — the floor does not
-  "arrive" with 6.10, it just stops being ignorable), the deprecated Java APIs,
+  the callback may still not be sufficient for Qt Quick popups), the **`minSdkVersion`
+  raise to 28 — done on 2026-08-26 and deliberately decoupled from the upgrade**
+  (a binary scan found `libQt6Core` importing `getentropy` as a GLOBAL undefined
+  symbol, first provided by bionic at API 28, so the app could never `dlopen` on
+  an API 27 device and the override was a correctness defect rather than a
+  distribution trade-off — see
+  [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md)),
+  the deprecated Java APIs,
   the AGP / Gradle-wrapper / JDK coupling (**the wrapper is ours at 8.10, not
   Qt's at 8.12** — correcting an earlier note), the 16 KB link flag Qt 6.10 makes
   redundant, and that the x86_64 and armeabi-v7a slices have still never been
   *run*. Pitfalls include the measured Qt 6.10.1 AppImage breakage (libtiff
   SONAME, WebEngine-on-FUSE SIGSEGV) that is why 6.10.1 was not adopted.
+- [Android API levels and feature dependencies](./docs/android-api-levels-and-feature-dependencies.md) —
+  which Android API level each feature actually needs, measured rather than
+  assumed, plus the crash-triage playbook for *"does this user's Android version
+  have the API this feature relies on?"*. The headline finding is that
+  **`libQt6Core` imports `getentropy` as a GLOBAL (non-weak) undefined symbol**,
+  which bionic first provides at API 28 — so below 28 `dlopen` fails before any
+  app code runs, and `minSdkVersion 27` was a correctness defect, not a
+  distribution choice (raised to **28** on 2026-08-26). Symbols above the floor
+  that are **WEAK** are *not* a floor: they resolve to null and the caller falls
+  back (`copy_file_range` 34, `memfd_create` 30). Also records the two Qt floors
+  (6.9.3 and 6.11 both declare 28), the per-feature inventory — cpal/AAudio 26,
+  storage-volume enumeration 24, SAF 21 — and that **no `Build.VERSION`-gated
+  code exists** anywhere in `cpp/`, `bridges/` or `backend/`.
+  `scripts/android-api-scan.sh` regenerates every measurement in it; **re-run it
+  after a Qt upgrade, an NDK change, a new native crate or a new JNI call
+  site**, and pass `--abi` — it scans one ABI at a time and defaults to arm64.
 - [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
   how the signed release AAB is built (`make android-aab` → `build-android.sh`,
   `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
@@ -910,9 +932,11 @@ replacing Qt Multimedia with a **pure-Rust audio stack** (`cpal` + `flacenc` +
 audio native library is bundled at all. See
 [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md).
 
-**Android NDK — do NOT use r28.** It is incompatible with Qt 6.9.3 at
-`minSdkVersion 27` (libc++ `pthread_cond_clockwait` needs API 30+, breaking the
-`cxx` C++ build). Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
+**Android NDK — do NOT use r28.** It is incompatible with Qt 6.9.3 at this
+project's `minSdkVersion` (libc++ `pthread_cond_clockwait` needs API 30+,
+breaking the `cxx` C++ build). **The exclusion is about API 30, not about 27 vs
+28** — raising the floor to 28 did not lapse it and does not re-open the
+question. Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
 main app `.so` is achieved with `target_link_options(... "-Wl,-z,max-page-size=16384")`
 in `CMakeLists.txt`, not by relying on r28's default. Details in the doc above.
 
@@ -1036,7 +1060,7 @@ of text belongs in a `QtQuick.Controls` `Dialog` written this way.
 
 **Any `Dialog` that has a `title` *and* content that wraps
 (`wrapMode: Text.WordWrap`) must set `header: DialogHeader { text: <dialog_id>.title }`
-(`assets/qml/DialogHeader.qml`) instead of using Fusion's default header.**
+(`bridges/assets/qml/DialogHeader.qml`) instead of using Fusion's default header.**
 
 Fusion's `Dialog` computes
 `implicitHeight: … + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0) + …`
@@ -1080,7 +1104,7 @@ here.
 `scripts/tst_dialog_loop_harness.qml.keep` instantiates the real
 `SearchBarInput` in a window and drives the four scenarios that isolated the
 cause; you count `Binding loop detected for property "implicitHeight"` lines
-(baseline 3, with `DialogHeader` 0). Copy it into `assets/qml/` as a `tst_*.qml`
+(baseline 3, with `DialogHeader` 0). Copy it into `bridges/assets/qml/` as a `tst_*.qml`
 to resolve project types and **delete it again after use** — `make qml-test`
 walks that tree. Its header comment carries the run command and the three things
 that invalidated six earlier attempts: `QT_QUICK_CONTROLS_STYLE=Fusion` is
@@ -1100,16 +1124,26 @@ one `header:` line above, and the rig is how you confirm it.
 
 ### New QML components
 
-When you create a new QML component such as `SearchBarInput.qml`, the file has to be added to the `qml_files` list in `bridges/build.rs`.
+The QML tree lives at **`bridges/assets/qml/`**, not at the repo root. When you
+create a new QML component such as `SearchBarInput.qml`, the file has to be added
+to the `qml_files` list in `bridges/build.rs`.
 
 ``` rust
-qml_files.push("../assets/qml/SearchBarInput.qml");
+let qml_files = vec![
+    // ...
+    "assets/qml/SearchBarInput.qml",
+];
 ```
 
-Keep the `"../assets/qml/<Name>.qml"` form exactly — paths are relative to
-`bridges/`, and `build.rs` strips the leading `../` to derive each file's
-resource alias. A path in any other shape `panic!`s the build with a message
-naming the expected form, rather than failing when that screen is first shown.
+**Keep the `"assets/qml/<Name>.qml"` form exactly — relative to `bridges/`, and
+never containing `..`.** The path string is used verbatim as the rcc alias, so
+this is what makes the resource path
+`:/qt/qml/com/profoundlabs/simsapa/assets/qml/<Name>.qml`, matching the `qrc:`
+literals in `cpp/`. A `../`-prefixed path still *compiles*: rcc folds the `..`
+away but the generated `qmldir` and qmlcachegen do not, so the type fails to
+resolve when that screen is first shown and the AOT cache silently misses. That
+trap is why the tree was moved under `bridges/` — see
+[docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
 ### Long operations in QML must keep the screen awake
 
@@ -1182,17 +1216,17 @@ runtime theme change; already-parsed rich text needs a restart to recolour.)
 
 ### Logging in QML (no console API)
 
-In the QML files under `assets/qml/`, do **not** use the `console` API
+In the QML files under `bridges/assets/qml/`, do **not** use the `console` API
 (`console.log()`, `console.error()`, etc.). Use the `Logger { id: logger }`
 module's functions for logging instead.
 
 The one exception is the folder
-`assets/qml/com/profoundlabs/simsapa/`: the `console` API is allowed there
+`bridges/assets/qml/com/profoundlabs/simsapa/`: the `console` API is allowed there
 because those files are type stubs for `qmllint`.
 
 #### Using the Logger module
 
-`Logger.qml` lives in `assets/qml/`, so it is automatically available to any
+`Logger.qml` lives in `bridges/assets/qml/`, so it is automatically available to any
 other component in that directory — no `import` statement is needed. Declare an
 instance once in the component's root element, conventionally with `id: logger`:
 
@@ -1258,6 +1292,37 @@ failure it was added to detect.
 `log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
 also into the app's own `log.txt`, so it is available when a user sends logs.
 
+#### The Android log level comes from the event metadata
+
+`AndroidMakeWriter` (`backend/src/logger.rs`) implements
+`MakeWriter::make_writer_for`, which receives the event's `Metadata`, so the
+writer carries the mapped `log::Level` and `write` is a plain
+`log::log!(self.level, …)`. Message text plays no part in levelling, so `TRACE`,
+`ERROR`, `WARN` and `DEBUG` are safe words to use inside a log message.
+
+> **Trap: never level by inspecting the formatted line, and never reduce the
+> writer to a closure.** The line handed to the writer contains the message body
+> as well as the level, so a `line.contains("TRACE")` test classifies on user
+> content — and since `android_logger` runs at `LevelFilter::Debug`, anything
+> routed to `log::trace!` is *discarded*, not merely mis-levelled. That silently
+> erased the entire `STARTUP-TRACE` convention from logcat, C++ and QML alike.
+>
+> The reason the writer is a **named type** rather than `move || writer.clone()`
+> is that `MakeWriter`'s blanket impl for `Fn() -> W` cannot see the event and
+> only ever gets the default `make_writer_for`, which discards the metadata —
+> making the real level unreachable. Simplifying it back to a closure
+> reintroduces the bug.
+
+A genuine `tracing::trace!` event is still filtered out by `LevelFilter::Debug`.
+That is a level decision, not an accident of wording.
+
+**When instrumentation seems not to have run on device, read the app's own
+`log.txt` before concluding anything** — it is what a user sends you, and it
+carries messages regardless of logcat's filtering. On a debuggable build:
+`adb shell run-as io.github.simsapa.app.beta cat files/log.txt`.
+(`run-as PKG sh -c '…'` does **not** work — SELinux denies it, and the shell does
+not inherit the app home as cwd — but `run-as PKG <binary>` does.)
+
 Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
 in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
 touching that code for another reason.
@@ -1266,7 +1331,7 @@ touching that code for another reason.
 
 When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml
 
-For example, when implementing the `get_api_key()` method in `sutta_bridge.rs`, add a corresponding function in `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with the correct function signature and a simple return value. The internal logic doesn't have to be repeated, because this is only for the benefit of `qmllint`.
+For example, when implementing the `get_api_key()` method in `sutta_bridge.rs`, add a corresponding function in `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with the correct function signature and a simple return value. The internal logic doesn't have to be repeated, because this is only for the benefit of `qmllint`.
 
 ``` qml
 function get_api_key(key_name: string): string {
@@ -1328,8 +1393,9 @@ Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
 `bridges/build.rs`:
 
 ``` rust
-CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
-    .qrc_resources(qml_resources)
+CxxQtBuilder::new_qml_module(
+    QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
+)
     .files([
         "src/sutta_bridge.rs",
         "src/asset_manager.rs",
@@ -1339,15 +1405,12 @@ CxxQtBuilder::new_qml_module(QmlModule::new("com.profoundlabs.simsapa"))
     ])
 ```
 
-**Note what this does NOT do: the QML files are not passed to the module as
-`.qml_files(…)`.** They are registered as plain Qt resources with an alias
-derived in `build.rs`, because a `qml_files` path containing `../` — which every
-entry in our list has, the list being relative to `bridges/` — is folded away by
-`rcc` but *not* by the qmldir writer or by qmlcachegen, so the three disagree and
-QML type resolution fails **at runtime** (`Type Logger unavailable`). A
-`.qml_files(qml_files)` snippet compiles cleanly and re-introduces that bug; the
-long comment at the `qml_resources` block in `bridges/build.rs` is the
-authoritative explanation. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md).
+**Every path in `qml_files` must be relative to `bridges/` and free of `..`** —
+`"assets/qml/<Name>.qml"`, which is why the QML tree lives at
+`bridges/assets/qml/`. A `../`-prefixed path is folded away by `rcc` but *not* by
+the qmldir writer or by qmlcachegen, so the three disagree and QML type
+resolution fails **at runtime** (`Type Logger unavailable`) while the build stays
+green. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
 All the bridge sources must live in **one directory** (`bridges/src/`).
 `CxxQtBuilder::files()` panics if they span more than one — a Qt limitation
@@ -1364,8 +1427,8 @@ All the bridge sources must live in **one directory** (`bridges/src/`).
 `qmllint` requires that the corresponding QML type definition for the Rust bridge has to be created and it should be declared in the `qmldir` file.
 
 ```
-assets/qml/com/profoundlabs/simsapa/PromptManager.qml
-assets/qml/com/profoundlabs/simsapa/qmldir
+bridges/assets/qml/com/profoundlabs/simsapa/PromptManager.qml
+bridges/assets/qml/com/profoundlabs/simsapa/qmldir
 ```
 
 ### Database migrations
@@ -1585,7 +1648,11 @@ Use this path for any tests or experimental scripts that need to query the actua
     would otherwise skip androiddeployqt and report the previous artifact.
     See
     [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
-  - `targetSdkVersion 36` / `minSdkVersion 27`. targetSdk 36 enforces
+  - `targetSdkVersion 36` / `minSdkVersion 28`. The floor is 28 because
+    `libQt6Core` hard-requires `getentropy` (bionic API 28) — below it the app
+    cannot load at all; see
+    [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md).
+    targetSdk 36 enforces
     edge-to-edge and predictive back; the app opts out of the latter with
     `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
     `OnBackInvokedCallback` and back otherwise closes the whole app. See
@@ -1601,7 +1668,7 @@ Use this path for any tests or experimental scripts that need to query the actua
     [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### Testing
-- **QML Tests:** `make qml-test` — runs `qmllint` over `assets/qml/*.qml`
+- **QML Tests:** `make qml-test` — runs `qmllint` over `bridges/assets/qml/*.qml`
   first, then all QML tests with the offscreen platform. `make qml-lint` runs
   the lint alone. The lint sources `scripts/qt-env.sh` so it is the project's
   `qmllint`, not the system Qt's, and it does **not** fail the target (qmllint

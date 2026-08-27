@@ -3,7 +3,7 @@
 ## Overview
 
 The search bar has a **language filter dropdown** (`language_filter_dropdown` in
-`assets/qml/SearchBarInput.qml`) that restricts results to a single language. It
+`bridges/assets/qml/SearchBarInput.qml`) that restricts results to a single language. It
 applies to all three search areas — **Suttas**, **Dictionary**, and
 **Library** — and its selection is **persisted separately per area**, the same
 way the search mode is.

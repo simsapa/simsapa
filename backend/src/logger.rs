@@ -16,8 +16,22 @@ cfg_if! {
         use std::io::Result as IoResult;
         use android_logger::{Config, FilterBuilder};
 
-        #[derive(Clone)]
-        struct AndroidLogWriter;
+        /// Bridges the `tracing` fmt layer onto Android's logcat.
+        ///
+        /// The level is CARRIED, never inferred from the text. The fmt layer
+        /// hands the writer a formatted line that contains the message body as
+        /// well as the level, so a `line.contains("TRACE")`-style test would
+        /// classify on user content -- and since `platform_setup()` runs
+        /// `android_logger` at `LevelFilter::Debug`, anything routed to
+        /// `log::trace!` is DISCARDED rather than merely mis-levelled. That is
+        /// enough to erase a whole logging convention from logcat (it did:
+        /// `STARTUP-TRACE`, C++ and QML alike).
+        ///
+        /// See `AGENTS.md` "Logging in C++".
+        #[derive(Clone, Copy)]
+        struct AndroidLogWriter {
+            level: log::Level,
+        }
 
         impl Write for AndroidLogWriter {
             fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
@@ -25,17 +39,10 @@ cfg_if! {
 
                 for line in msg.lines() {
                     let line = line.trim();
-                    if line.contains("ERROR") {
-                        log::error!("{}", line);
-                    } else if line.contains("WARN") {
-                        log::warn!("{}", line);
-                    } else if line.contains("DEBUG") {
-                        log::debug!("{}", line);
-                    } else if line.contains("TRACE") {
-                        log::trace!("{}", line);
-                    } else {
-                        log::info!("{}", line);
+                    if line.is_empty() {
+                        continue;
                     }
+                    log::log!(self.level, "{}", line);
                 }
 
                 Ok(buf.len())
@@ -43,6 +50,34 @@ cfg_if! {
 
             fn flush(&mut self) -> IoResult<()> {
                 Ok(())
+            }
+        }
+
+        struct AndroidMakeWriter;
+
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for AndroidMakeWriter {
+            type Writer = AndroidLogWriter;
+
+            /// Only reached for writes with no event behind them. Events go
+            /// through `make_writer_for`.
+            fn make_writer(&'a self) -> Self::Writer {
+                AndroidLogWriter { level: log::Level::Info }
+            }
+
+            /// Do not collapse this back into a closure: the blanket
+            /// `MakeWriter` impl for `Fn() -> W` cannot see the event, so it
+            /// only ever gets the default `make_writer_for`, which discards the
+            /// metadata and makes the real level unreachable. Implementing the
+            /// trait by hand is the whole point of the named type.
+            fn make_writer_for(&'a self, meta: &tracing::Metadata<'_>) -> Self::Writer {
+                let level = match *meta.level() {
+                    tracing::Level::ERROR => log::Level::Error,
+                    tracing::Level::WARN => log::Level::Warn,
+                    tracing::Level::INFO => log::Level::Info,
+                    tracing::Level::DEBUG => log::Level::Debug,
+                    tracing::Level::TRACE => log::Level::Trace,
+                };
+                AndroidLogWriter { level }
             }
         }
 
@@ -56,8 +91,7 @@ cfg_if! {
         }
 
         fn make_writer() -> impl for<'a> tracing_subscriber::fmt::MakeWriter<'a> + Send + Sync {
-            let writer = AndroidLogWriter;
-            move || writer.clone()
+            AndroidMakeWriter
         }
     } else {
         fn platform_setup() {}

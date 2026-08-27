@@ -38,10 +38,12 @@ project's Qt Android build at its `minSdkVersion`**:
   this — the backend has no C++. Only the `bridges` (cxx) C++ trips it, i.e. a
   full Qt/Corrosion Android build.
 
-**The exclusion is not tied to minSdk 27, and does not lapse at 28.** Bionic
-gained `pthread_cond_clockwait` only at API 30, so raising `minSdkVersion` to 28
-(done as part of the Qt 6.10.3 upgrade) changes nothing here. Raising it to 30 to
-satisfy r28 would drop Android 8–10 devices, so that is not the fix either.
+**The exclusion is not tied to minSdk 27, and did not lapse at 28.** Bionic
+gained `pthread_cond_clockwait` only at API 30, so the raise of `minSdkVersion`
+to 28 (done on **2026-08-26**, on its own — *not* as part of the Qt 6.10.3
+upgrade, which was abandoned and reverted) changed nothing here. Raising it to
+30 to satisfy r28 would drop Android 8–10 devices, so that is not the fix
+either.
 
 ### The NDK is pinned explicitly
 

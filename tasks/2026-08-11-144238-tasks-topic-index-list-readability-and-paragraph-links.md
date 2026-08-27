@@ -157,7 +157,7 @@ and the post-swap re-init contract) and
 - `npx webpack` (or `make simsapa.min.js`) after editing `src-ts/`; the page
   loads `assets/js/simsapa.min.js`.
 - A new **QML** component file must be added to `qml_files` in `bridges/build.rs`
-  in the exact `"../assets/qml/<Name>.qml"` form. (No new QML component is
+  in the exact `"assets/qml/<Name>.qml"` form. (No new QML component is
   planned below — the new files are TypeScript and Sass.)
 - QML logging goes through `Logger { id: logger }` with a **single** concatenated
   string argument — never `console.*`, never comma-separated arguments.

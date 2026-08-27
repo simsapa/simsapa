@@ -287,7 +287,7 @@ confirm button disabled (FR-31a/FR-34).
 
 ## 6. The startup recovery flow
 
-`assets/qml/StorageRecoveryWindow.qml`, hosted by
+`bridges/assets/qml/StorageRecoveryWindow.qml`, hosted by
 `cpp/storage_recovery_window.{h,cpp}` and created through
 `WindowManager::create_storage_recovery_window()`.
 
@@ -391,7 +391,7 @@ was selected.
 
 ## 9. Where the lists are shown
 
-`assets/qml/StorageCandidatesList.qml` is the one grouped list and the one
+`bridges/assets/qml/StorageCandidatesList.qml` is the one grouped list and the one
 delegate, used by four screens with different rules:
 
 | Screen | `selectable_groups` | `exclude_recorded` | Probes |
@@ -553,7 +553,7 @@ to fail on the internal path.
 | `backend/tests/test_storage_candidates_scan.rs` | tier-1 classification, ordering, the recorded-path extra candidate + trailing-slash de-dup, "Partial", low space, unusable rows, emulated de-duplication, resilience, `same_path()` |
 | `backend/tests/test_ensure_no_empty_db_files_no_sweep.rs` | `sweep = false` records a zero-byte stub as missing without deleting it (its own test binary — it sets `SIMSAPA_DIR` before the `OnceLock`) |
 | `backend/tests/test_storage_probe.rs` | probe verdicts and litter-free cleanup, including the two reason strings |
-| `assets/qml/tst_StorageCandidatesList.qml` | selectability rules, the demote-only merge, group rules, the Database-Validation exclusions, preselect, path matching, selection cleared on demotion |
+| `bridges/assets/qml/tst_StorageCandidatesList.qml` | selectability rules, the demote-only merge, group rules, the Database-Validation exclusions, preselect, path matching, selection cleared on demotion |
 
 The Android-only C++ (`cpp/utils.cpp`'s JNI) is **not compiled by `make build`**.
 Syntax-check it against the Android Qt headers with the NDK clang

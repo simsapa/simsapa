@@ -80,8 +80,8 @@ identifier, and it does not need to equal the package name.
 
 It appears in roughly 70 places that all must agree with each other:
 
-- `import com.profoundlabs.simsapa` at the top of ~50 QML files in `assets/qml/`
-- the type-stub / `qmldir` directory `assets/qml/com/profoundlabs/simsapa/`
+- `import com.profoundlabs.simsapa` at the top of ~50 QML files in `bridges/assets/qml/`
+- the type-stub / `qmldir` directory `bridges/assets/qml/com/profoundlabs/simsapa/`
   (the qmllint stubs for the Rust bridges, e.g. `SuttaBridge.qml`)
 - the cxx-qt module registration:
   - `bridges/build.rs` → `QmlModule { uri: "com.profoundlabs.simsapa", … }`

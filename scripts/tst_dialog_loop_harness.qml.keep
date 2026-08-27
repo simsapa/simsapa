@@ -4,14 +4,14 @@
 // took two non-obvious environment facts, both encoded below.
 //
 // It instantiates the REAL SearchBarInput with all eleven required properties,
-// so it must run from inside assets/qml/ to resolve the project's QML types —
+// so it must run from inside bridges/assets/qml/ to resolve the project's QML types —
 // which is also why it is stored here with a .keep suffix instead of living
-// there: `make qml-test` walks assets/qml/ and would otherwise adopt it.
+// there: `make qml-test` walks bridges/assets/qml/ and would otherwise adopt it.
 //
-//     cp scripts/tst_dialog_loop_harness.qml.keep assets/qml/tst_DialogLoop.qml
+//     cp scripts/tst_dialog_loop_harness.qml.keep bridges/assets/qml/tst_DialogLoop.qml
 //     env QT_QPA_PLATFORM=offscreen QT_QUICK_CONTROLS_STYLE=Fusion \
-//         qmltestrunner -import ./assets/qml/ -input ./assets/qml/tst_DialogLoop.qml
-//     rm assets/qml/tst_DialogLoop.qml      # <- do not leave it there
+//         qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/tst_DialogLoop.qml
+//     rm bridges/assets/qml/tst_DialogLoop.qml      # <- do not leave it there
 //
 // Count the loops in the output:
 //     … 2>&1 | grep -c 'Binding loop detected for property "implicitHeight"'

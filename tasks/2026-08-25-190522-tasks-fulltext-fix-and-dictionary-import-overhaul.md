@@ -494,7 +494,7 @@ Verified by reading, 2026-08-25. Line numbers are from that reading.
   `dictionary-import-batch` held across `start_batch` → `finish_batch`.
 - `assets/qml/com/profoundlabs/simsapa/{SuttaBridge,DictionaryManager}.qml` —
   stubs for every new invokable **and signal** (CLAUDE.md).
-- `bridges/build.rs` — any new `.qml` file, in the `"../assets/qml/<Name>.qml"`
+- `bridges/build.rs` — any new `.qml` file, in the `"assets/qml/<Name>.qml"`
   form exactly.
 
 **Docs**

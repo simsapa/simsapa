@@ -1,7 +1,7 @@
 # Gloss / Prompts session history
 
-The **Gloss** tab (`assets/qml/GlossTab.qml`) and the **Prompts** tab
-(`assets/qml/PromptsTab.qml`) each persist the user's recent sessions so they can
+The **Gloss** tab (`bridges/assets/qml/GlossTab.qml`) and the **Prompts** tab
+(`bridges/assets/qml/PromptsTab.qml`) each persist the user's recent sessions so they can
 re-open earlier work — a previous gloss session (paragraphs + resolved words + AI
 translations) or a previous AI chat conversation. The two histories are almost
 identical and share the DB table, the Rust bridge logic, and the QML list/item
@@ -20,9 +20,9 @@ both tabs must keep them in sync and future edits to either tab will re-hit them
 | Model + `HistoryItemType` | `backend/src/db/appdata_models.rs` (`GlossPromptsHistory`, `NewGlossPromptsHistory`) |
 | CRUD helpers + tests | `backend/src/db/appdata.rs` (`get_history_for_type` / `save_new_history` / `update_history` / `delete_history_item` / `clear_history`; `history_tests`) |
 | Bridge (shared, `item_type`-parameterised) | `bridges/src/sutta_bridge.rs` (`save_history_session_impl` + the `*_background` / `*_blocking` fns + `historyListReady`/`historySaved`/`historyChanged` signals) |
-| Shared list item + helper | `assets/qml/HistoryListItem.qml`, `assets/qml/HistoryUtils.qml` |
-| Tab lifecycle + history UI | `assets/qml/GlossTab.qml`, `assets/qml/PromptsTab.qml` |
-| App-close flush | `assets/qml/SuttaSearchWindow.qml` (`onClosing` + tab `Component.onDestruction`) |
+| Shared list item + helper | `bridges/assets/qml/HistoryListItem.qml`, `bridges/assets/qml/HistoryUtils.qml` |
+| Tab lifecycle + history UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/PromptsTab.qml` |
+| App-close flush | `bridges/assets/qml/SuttaSearchWindow.qml` (`onClosing` + tab `Component.onDestruction`) |
 
 `data_json` is **opaque to the backend** (stored/returned as text); each tab owns
 its own serialization shape:
@@ -119,7 +119,7 @@ Key functions (same shape in both tabs): `save_session(blocking)`,
 
 ## Restore-fidelity gotcha: RichText height (AssistantResponses)
 
-`assets/qml/AssistantResponses.qml` renders the selected response as **RichText**.
+`bridges/assets/qml/AssistantResponses.qml` renders the selected response as **RichText**.
 Its `TextArea.contentHeight` settles only after the document is laid out at the
 final width, which on **restore** happens *after* a height binding first runs (the
 delegates are rebuilt before layout). A one-shot `Layout.preferredHeight:

@@ -366,7 +366,7 @@ lazy_static! {
 ///
 /// "dn33:1.11.0" + "Saṅgītisutta" → "DN 33 Saṅgītisutta"
 ///
-/// This mirrors `format_sutta_ref()` in `assets/qml/TopicIndexWindow.qml`.
+/// This mirrors `format_sutta_ref()` in `bridges/assets/qml/TopicIndexWindow.qml`.
 /// The two must agree, or the suffixes assigned here appear on labels that do
 /// not actually look alike in the window.
 fn display_label(sutta_ref: &str, title: Option<&str>) -> String {

@@ -471,8 +471,8 @@ selection or lock invalidates both automatically (§8).
 | Grouped ordering + lock filter  | `query_task.rs` `dpd_lookup_full` / `use_grouped_dpd_ordering`, `types.rs` `GroupedDpdLookup::ordered_filtered_results` |
 | Grouped lookup + memo           | `backend/src/db/dpd.rs` `dpd_lookup_grouped` / `dpd_lookup_grouped_memo` |
 | Combined merge (3 streams)      | `bridges/src/sutta_bridge.rs` `fetch_combined_page`             |
-| Break-down selector (QML)       | `assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` / `GlossTab.qml` |
-| QML render / header dedup       | `assets/qml/FulltextResults.qml` `update_page` (`show_header`, `find_query`) |
-| Find-bar jump / open path       | `assets/qml/SuttaSearchWindow.qml` `show_result_in_html_view` / `new_tab_data` |
+| Break-down selector (QML)       | `bridges/assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` / `GlossTab.qml` |
+| QML render / header dedup       | `bridges/assets/qml/FulltextResults.qml` `update_page` (`show_header`, `find_query`) |
+| Find-bar jump / open path       | `bridges/assets/qml/SuttaSearchWindow.qml` `show_result_in_html_view` / `new_tab_data` |
 | Find-bar punctuation tolerance  | `src-ts/find.ts` `makeInterWordFlexible` (+ `find.test.ts`)     |
 | Normalization (bootstrap)       | [text-processing doc](./text-processing-for-contains-match-and-fulltext-match-search.md) |

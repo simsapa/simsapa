@@ -169,7 +169,7 @@ string).
 
 **Wire format.** A failed request is delivered through the *existing* response
 signals as a JSON envelope `{"ai_error": {…}}`; a successful response is
-unchanged. QML detects and formats it with `assets/qml/AiErrorUtils.qml`
+unchanged. QML detects and formats it with `bridges/assets/qml/AiErrorUtils.qml`
 (`is_error()`, `parse_error()`, `format_error()`), falling back to the raw body
 for `unknown`.
 
@@ -279,7 +279,7 @@ cancelled id is dropped by the `request_id` fencing.
 
 ## 6. Feature integration
 
-**Shared coordinator — `assets/qml/AiResponseCoordinator.qml`.** Both tabs'
+**Shared coordinator — `bridges/assets/qml/AiResponseCoordinator.qml`.** Both tabs'
 send/receive/retry bookkeeping lives in one non-visual component, instantiated
 once per tab. The coordinator does **not** own the storage: each tab keeps its
 entries as a JSON string on its own ListModel row (Gloss `translations_json`

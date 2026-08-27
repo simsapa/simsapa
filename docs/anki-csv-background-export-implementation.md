@@ -40,7 +40,7 @@ Added new signal and function:
 
 The function spawns a background thread using `thread::spawn()` and emits the signal when complete.
 
-### 4. QML Type Definition (assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml)
+### 4. QML Type Definition (bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml)
 
 Added signal and stub function for qmllint:
 ```qml
@@ -48,7 +48,7 @@ signal ankiCsvExportReady(results_json: string);
 function export_anki_csv_background(input_json: string) { ... }
 ```
 
-### 5. GlossTab Updates (assets/qml/GlossTab.qml)
+### 5. GlossTab Updates (bridges/assets/qml/GlossTab.qml)
 
 #### State Management
 ```qml
@@ -89,7 +89,7 @@ The message appears when export starts and disappears when complete.
 
 ### 6. Tests
 
-#### QML Tests (assets/qml/tst_GlossTabAnkiCsvExport.qml)
+#### QML Tests (bridges/assets/qml/tst_GlossTabAnkiCsvExport.qml)
 Created comprehensive tests for:
 - Basic CSV format
 - Cloze format  
@@ -187,9 +187,9 @@ The export generates files based on format:
 - `backend/src/anki_export.rs` - New module (CSV generation logic)
 - `backend/src/lib.rs` - Added anki_export module
 - `bridges/src/sutta_bridge.rs` - Added signal and background function
-- `assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - Added signal/function stubs
-- `assets/qml/GlossTab.qml` - Updated to use background export with feedback UI
-- `assets/qml/tst_GlossTabAnkiCsvExport.qml` - New QML tests
+- `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - Added signal/function stubs
+- `bridges/assets/qml/GlossTab.qml` - Updated to use background export with feedback UI
+- `bridges/assets/qml/tst_GlossTabAnkiCsvExport.qml` - New QML tests
 - `backend/tests/test_anki_export.rs` - New Rust tests
 
 ## Build & Test
