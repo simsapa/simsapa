@@ -2,11 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// General-purpose info popup: an info button calls `show_with(title, html)` to
+// show a scrollable rich-text note with a Close button. `description_text`
+// accepts RichText; links open externally.
 Dialog {
     id: root
 
     property string description_text: ""
-    property string dialog_title: "Dictionary Info"
+    property string dialog_title: "Info"
 
     title: dialog_title
     modal: true
@@ -39,6 +42,7 @@ Dialog {
                     text: root.description_text
                     textFormat: Text.RichText
                     wrapMode: Text.WordWrap
+                    color: palette.text
                     Layout.fillWidth: true
                     Layout.preferredWidth: scroll.availableWidth
                     onLinkActivated: function(link) {

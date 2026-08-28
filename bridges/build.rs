@@ -103,7 +103,7 @@ fn main() {
         "assets/qml/DictionaryImportDialog.qml",
         "assets/qml/DictionaryEditDialog.qml",
         "assets/qml/DictionarySearchDictionariesPanel.qml",
-        "assets/qml/DictionaryInfoDialog.qml",
+        "assets/qml/InfoDialog.qml",
         "assets/qml/GlobalHotkeysSection.qml",
         "assets/qml/GlobalHotkeysWaylandNote.qml",
     ];

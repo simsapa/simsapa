@@ -740,6 +740,8 @@ ApplicationWindow {
         }
     }
 
+    InfoDialog { id: available_info_dialog }
+
     DictionaryEditDialog {
         id: edit_dialog
         point_size: root.pointSize
@@ -871,39 +873,60 @@ ApplicationWindow {
                             color: palette.mid
                         }
 
-                        Label {
-                            text: "Available"
-                            font.pointSize: root.largePointSize
-                            font.bold: true
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-
-                        // Does double duty: FR-8 (name the source and the
-                        // resolved release tag, so an upstream mismatch is
-                        // readable from a screenshot) and FR-7 (the always-
-                        // visible link to the releases page, for dictionaries
-                        // not in the curated set). FR-7 asks for that link
-                        // *beneath* the list; carrying it here instead is
-                        // deliberate — one line rather than two saying the same
-                        // thing. Renders a placeholder before the resolution
-                        // arrives and updates in place when it does.
-                        Text {
-                            text: `The following dictionaries are available for importing from <a href="https://github.com/${root.catalogue_repo}/releases/">github.com/${root.catalogue_repo}</a> ${root.catalogue_tag || "(resolving...)"}`
-                            textFormat: Text.RichText
-                            font.pointSize: root.pointSize - 2
-                            wrapMode: Text.WordWrap
+                        // The note names the source and the resolved release
+                        // tag and carries the always-visible link to the
+                        // releases page for dictionaries not in the curated set.
+                        // It lives behind the info button rather than
+                        // inline; `show_with` reads `catalogue_tag` at click
+                        // time, by when the worker resolution has arrived.
+                        RowLayout {
                             Layout.fillWidth: true
                             Layout.bottomMargin: 4
-                            color: palette.text
+                            spacing: 8
 
-                            onLinkActivated: function(link) { Qt.openUrlExternally(link); }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                acceptedButtons: Qt.NoButton
-                                cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            Label {
+                                text: "Available"
+                                font.pointSize: root.largePointSize
+                                font.bold: true
+                                wrapMode: Text.WordWrap
                             }
+
+                            Button {
+                                flat: true
+                                icon.source: "icons/32x32/fa_circle-info-solid.png"
+                                implicitWidth: 28
+                                implicitHeight: 28
+                                Layout.alignment: Qt.AlignVCenter
+                                ToolTip.visible: hovered
+                                ToolTip.text: "About the available dictionaries list"
+                                onClicked: available_info_dialog.show_with(
+                                    "Available dictionaries",
+                                    `The listed dictionaries can be automatically downloaded and imported when selected. Source: <a href="https://github.com/${root.catalogue_repo}/releases/">github.com/${root.catalogue_repo}</a> ${root.catalogue_tag || "(resolving...)"}`)
+                            }
+
+                            Item { Layout.fillWidth: true }
+                        }
+
+                        // FR-4: disabled while nothing is checked.
+                        Button {
+                            text: "Download and Import"
+                            enabled: root.checked_offered().length > 0
+                            Layout.topMargin: 4
+                            Layout.bottomMargin: 6
+                            onClicked: root.start_download_run(root.checked_offered())
+                        }
+
+                        // FR-5: combined download size of the checked set.
+                        // Counted over `checked_offered()`, never the raw
+                        // selection — see that function.
+                        Label {
+                            visible: root.checked_offered().length > 0
+                            text: `${root.checked_offered().length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
+                            font.pointSize: root.pointSize - 1
+                            color: palette.text
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
                         }
 
                         Label {
@@ -938,28 +961,6 @@ ApplicationWindow {
                                     root.set_checked(modelData.label, is_checked);
                                 }
                             }
-                        }
-
-                        // FR-5: combined download size of the checked set.
-                        // Counted over `checked_offered()`, never the raw
-                        // selection — see that function.
-                        Label {
-                            visible: root.checked_offered().length > 0
-                            text: `${root.checked_offered().length} selected · ${root.checked_any_approximate() ? "~" : ""}${root.human_size(root.checked_total_bytes())} to download`
-                            font.pointSize: root.pointSize - 1
-                            color: palette.text
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                            Layout.topMargin: 8
-                        }
-
-                        // FR-4: disabled while nothing is checked.
-                        Button {
-                            text: "Download and Import"
-                            enabled: root.checked_offered().length > 0
-                            Layout.topMargin: 4
-                            Layout.bottomMargin: 6
-                            onClicked: root.start_download_run(root.checked_offered())
                         }
                     }
                 }

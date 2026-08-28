@@ -108,7 +108,7 @@ ColumnLayout {
 
     spacing: 4
 
-    DictionaryInfoDialog { id: info_dialog }
+    InfoDialog { id: info_dialog }
 
     GridLayout {
         id: dicts_grid
