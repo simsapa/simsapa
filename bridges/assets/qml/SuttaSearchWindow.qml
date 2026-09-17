@@ -1159,6 +1159,20 @@ ApplicationWindow {
             sutta_html_view_layout.show_transient_message(`Copied: ${query_text.slice(0, 30)} ...`);
             break;
 
+        case "copy-tab-uid": {
+            const tab_key = sutta_html_view_layout.current_key;
+            const tab_uid = (tab_key && sutta_html_view_layout.items_map[tab_key])
+                ? sutta_html_view_layout.items_map[tab_key].get_data_value('item_uid')
+                : "";
+            if (!tab_uid) {
+                sutta_html_view_layout.show_transient_message("No tab uid found");
+                break;
+            }
+            clip.copy_text(tab_uid);
+            sutta_html_view_layout.show_transient_message(`Copied: ${tab_uid}`);
+            break;
+        }
+
         case "lookup-selection":
             sutta_html_view_layout.show_transient_message(`Lookup: ${query_text.slice(0, 30)} ...`);
             root.set_summary_query(query_text);
