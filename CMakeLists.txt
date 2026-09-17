@@ -135,7 +135,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # This one list feeds BOTH rcc invocations in the project:
 #   1. CMake's own AUTORCC, for assets/icons.qrc;
-#   2. the bridge crate's, because cxx-qt-cmake 0.9.1 joins this list with ':'
+#   2. the bridge crate's, because cxx-qt-cmake 0.10.0 joins this list with ':'
 #      and passes it to cargo as CXX_QT_AUTORCC_OPTIONS (cmake/CxxQt.cmake:99,111
 #      -> corrosion_set_env_vars -> `cmake -E env VAR=VALUE cargo ...`).
 #
@@ -363,9 +363,9 @@ if(NOT CxxQt_FOUND)
     FetchContent_Declare(
         CxxQt
         GIT_REPOSITORY https://github.com/kdab/cxx-qt-cmake.git
-        # This is the TAG `0.9.1`, deliberately, not the branch `0.9`. They point
+        # This is the TAG `0.10.0`, deliberately, not the branch `0.10`. They point
         # at the same commit today, but kdab/cxx-qt-cmake publishes both --
-        # refs/heads/0.9 alongside tags 0.9.0, 0.9.1 -- and FetchContent resolving
+        # refs/heads/0.10 alongside tag 0.10.0 -- and FetchContent resolving
         # a branch re-resolves to whatever its latest commit is on every fresh
         # build. That is the same non-reproducibility bridges/Cargo.toml avoids by
         # pinning a rev; it was simply less visible here. The previous pin, `0.7`,
@@ -375,7 +375,7 @@ if(NOT CxxQt_FOUND)
         # fails inside generated code, the hardest place to read an error -- so
         # this must be bumped together with the four crate pins in
         # bridges/Cargo.toml, never on its own.
-        GIT_TAG 0.9.1
+        GIT_TAG 0.10.0
     )
 
     FetchContent_MakeAvailable(CxxQt)

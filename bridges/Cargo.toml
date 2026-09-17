@@ -16,10 +16,10 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 simsapa_backend = { path = "../backend" }
-# cxx-qt 0.9.1 requires cxx >= 1.0.176; keep this floor at or above whatever the
+# cxx-qt 0.10.0 requires cxx >= 1.0.176; keep this floor at or above whatever the
 # pinned cxx-qt revision asks for, or cargo cannot resolve the two together.
 cxx = "1.0.176"
-# Unpatched upstream KDAB/cxx-qt 0.9.1. Pin the commit rev, never a branch: a
+# Unpatched upstream KDAB/cxx-qt 0.10.0 (tag v0.10.0). Pin the commit rev, never a branch: a
 # branch re-resolves to the latest commit on every build and makes the
 # dependency non-reproducible.
 #
@@ -31,9 +31,9 @@ cxx = "1.0.176"
 #
 # The CMake side is a coupled pair: CMakeLists.txt pins cxx-qt-cmake to the
 # matching tag, and a mismatch fails inside generated code. Move them together.
-cxx-qt = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12" }
-cxx-qt-lib = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12", features = ["full"] }
-qt-build-utils = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12" }
+cxx-qt = { git = "https://github.com/KDAB/cxx-qt.git", rev = "6156279" }
+cxx-qt-lib = { git = "https://github.com/KDAB/cxx-qt.git", rev = "6156279", features = ["full"] }
+qt-build-utils = { git = "https://github.com/KDAB/cxx-qt.git", rev = "6156279" }
 rocket = { version = "0.5", features = ["json"] }
 rocket_ws = "0.1"
 rocket_cors = "0.6.0"
@@ -61,4 +61,4 @@ tokio = { version = "1.0", features = ["full"] }
 
 [build-dependencies]
 # The link_qt_object_files feature is required for statically linking Qt 6.
-cxx-qt-build = { git = "https://github.com/KDAB/cxx-qt.git", rev = "2180c12", features = ["link_qt_object_files"] }
+cxx-qt-build = { git = "https://github.com/KDAB/cxx-qt.git", rev = "6156279", features = ["link_qt_object_files"] }

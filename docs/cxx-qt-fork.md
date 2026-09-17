@@ -1,6 +1,6 @@
 # The CXX-Qt fork, and the move back to unpatched upstream
 
-**Status: the app builds against unpatched upstream KDAB/cxx-qt 0.9.1.** The
+**Status: the app builds against unpatched upstream KDAB/cxx-qt 0.10.0.** The
 fork is retired for Linux, Windows and Android. Nothing in `bridges/Cargo.toml`
 points at it any more.
 
@@ -51,7 +51,7 @@ own unfinished PRD.
 ## 2. Patch A is obsolete: `CXX_QT_AUTORCC_OPTIONS`
 
 Patch A hardcoded three `rcc` flags because our Android build must not ship
-zstd-compressed Qt resources. Upstream 0.9.1 has a supported path for exactly
+zstd-compressed Qt resources. Upstream (0.9.1 and later) has a supported path for exactly
 that:
 
 ```
@@ -60,7 +60,7 @@ CXX_QT_AUTORCC_OPTIONS env var  (cxx-qt-build/src/lib.rs:1253-1258, split on ':'
   → QtToolRcc::custom_args()    (qt-build-utils/src/tool/rcc.rs:42, appended after --name)
 ```
 
-**Set it from CMake, never from the shell.** cxx-qt-cmake 0.9.1 sets the variable
+**Set it from CMake, never from the shell.** cxx-qt-cmake (0.9.1 and later) sets the variable
 *itself*, joining CMake's own `CMAKE_AUTORCC_OPTIONS` with `:`
 (`cmake/CxxQt.cmake:99,111` → `corrosion_set_env_vars` → `cmake -E env
 VAR=VALUE cargo …`). An explicit assignment on the command line **overrides the
@@ -149,8 +149,8 @@ cxx-qt 0.9.1 requires `^1.0.176` and cargo would not resolve against the
 lockfile's `1.0.169`.
 
 **Pin revs, not branches, on both halves.** `bridges/Cargo.toml` pins upstream
-rev `2180c12`; `CMakeLists.txt` pins `cxx-qt-cmake` at the **tag** `0.9.1`
-(`06a121e`). The previous CMake pin, `GIT_TAG 0.7`, was the *branch* — kdab
+rev `6156279` (tag `v0.10.0`); `CMakeLists.txt` pins `cxx-qt-cmake` at the **tag** `0.10.0`
+(`64e63f5`). The previous CMake pin, `GIT_TAG 0.7`, was the *branch* — kdab
 publishes `refs/heads/0.7` alongside tags `0.7.0`–`0.7.3` — which is the same
 non-reproducibility the Cargo pin was written to avoid, simply less visible. The
 two pins are a **coupled pair**: a mismatch fails inside generated code, the
