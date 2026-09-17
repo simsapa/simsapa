@@ -74,6 +74,14 @@ pub fn query_text_to_uid_field_query(query_text: &str) -> String {
         static ref re_direct_uid: Regex = Regex::new(r"^(dn|mn|sn|an|pv|vv|vism|iti|kp|khp|snp|th|ud|uda|dhp)(\d+[\.-]\d+[\d\.-]*)$").unwrap();
         // Special case for thag/thig with dots (e.g. thag20.1, thig1.10)
         static ref re_thag_thig_uid: Regex = Regex::new(r"^(thag|thig)(\d+\.\d+)$").unwrap();
+        // Hyphenated collection prefix followed by a number:
+        // pli-tv-kd1, pli-tv-bi-vb-as1-7, tha-ap12, uv-kg3, pli-tv-pvr1.2
+        // The digit is required so hyphenated words ('self-control') are not matched.
+        static ref re_hyphenated_uid: Regex = Regex::new(r"^[a-z]+(-[a-z]+)+\d+([\.-]\d+)*$").unwrap();
+        // Letter prefix with dotted number parts: mil3.1.1, ds2.1.1, mv1.6.13-14, patthana2.6-7
+        static ref re_dotted_uid: Regex = Regex::new(r"^[a-z]{2,}\d+(\.\d+)+(-\d+)?$").unwrap();
+        // Collections whose uids are a prefix and a plain number: ja1, cp1, pdhp1-13
+        static ref re_collection_uid: Regex = Regex::new(r"^(arv|bv|cnd|cp|da|ja|lal|mil|mnd|ne|pdhp|pe|sf|vb)\d+(-\d+)?$").unwrap();
         // Match book UIDs with chapter/section numbers: e.g. bmc.0, bmc.1, test-book.5, my_book.10
         // Require a literal dot to avoid matching regular English words like 'heard', 'karan'
         // Format: alphanumeric with optional hyphens/underscores, followed by dot and digits
@@ -116,6 +124,16 @@ pub fn query_text_to_uid_field_query(query_text: &str) -> String {
     // Detect direct uid formats like dhp320-333, sn56.11
     // This should match formats with dots or hyphens (structural separators in UIDs)
     if re_direct_uid.is_match(&query_text) || re_thag_thig_uid.is_match(&query_text) {
+        return format!("uid:{}", query_text);
+    }
+
+    // Detect other collection uid formats like pli-tv-kd1, mil3.1.1, ja1.
+    // Checked before the sutta ref replacement, which would otherwise rewrite
+    // an embedded ref: dummy-sn12.72-81 -> dummy-uid:sn12.72-81
+    if re_hyphenated_uid.is_match(&query_text)
+        || re_dotted_uid.is_match(&query_text)
+        || re_collection_uid.is_match(&query_text)
+    {
         return format!("uid:{}", query_text);
     }
 
@@ -6353,6 +6371,29 @@ mod tests {
         assert_eq!(query_text_to_uid_field_query("thag20.1"), "uid:thag20.1");
         assert_eq!(query_text_to_uid_field_query("an4.10"), "uid:an4.10");
         assert_eq!(query_text_to_uid_field_query("dn1"), "uid:dn1");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_other_collection_formats() {
+        // Hyphenated prefixes
+        assert_eq!(query_text_to_uid_field_query("pli-tv-kd1"), "uid:pli-tv-kd1");
+        assert_eq!(query_text_to_uid_field_query("PLI-TV-KD1"), "uid:pli-tv-kd1");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-bi-vb-as1-7"), "uid:pli-tv-bi-vb-as1-7");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-pvr1.2"), "uid:pli-tv-pvr1.2");
+        assert_eq!(query_text_to_uid_field_query("tha-ap12"), "uid:tha-ap12");
+        assert_eq!(query_text_to_uid_field_query("uv-kg3"), "uid:uv-kg3");
+        assert_eq!(query_text_to_uid_field_query("dummy-sn12.72-81"), "uid:dummy-sn12.72-81");
+        // Dotted number parts
+        assert_eq!(query_text_to_uid_field_query("mil3.1.1"), "uid:mil3.1.1");
+        assert_eq!(query_text_to_uid_field_query("mv1.6.13-14"), "uid:mv1.6.13-14");
+        assert_eq!(query_text_to_uid_field_query("patthana2.6-7"), "uid:patthana2.6-7");
+        // Prefix and plain number
+        assert_eq!(query_text_to_uid_field_query("ja1"), "uid:ja1");
+        assert_eq!(query_text_to_uid_field_query("pdhp1-13"), "uid:pdhp1-13");
+
+        // Hyphenated words without a number are not uids
+        assert_eq!(query_text_to_uid_field_query("self-control"), "self-control");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-kd"), "pli-tv-kd");
     }
 
     #[test]
