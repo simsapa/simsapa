@@ -856,22 +856,18 @@ ApplicationWindow {
         //     enable_regex: bool
         //     fuzzy_distance: int
 
-        const mode = search_bar_input.search_mode_dropdown.get_text();
         const search_area = search_bar_input.search_area;
-        // The language filter applies to all areas, including Dictionary, where
-        // it filters dict_words by their `language` column.
-        //
-        // Read the per-area language from the PERSISTED key (source of truth),
-        // not the ComboBox's currentIndex. On an area switch the language
-        // dropdown's model is reassigned imperatively; Qt defers the ComboBox's
-        // currentIndex reconciliation, so get_text() can briefly return the
-        // PREVIOUS area's value at the moment the area-switch query fires
-        // ("one step behind"). The persisted key is updated synchronously in the
-        // settings cache on every user change and restored per area, so it is
-        // always correct for the current area. Empty/unset means no filter,
-        // which the backend treats identically to the "Language" sentinel.
-        let lang = SuttaBridge.get_language_filter_key(search_area);
-        if (!lang) lang = "Language";
+        // Read the mode and language through the dropdowns' *_for_query()
+        // functions, never their get_text(). On an area switch the query fires
+        // before the dropdowns restore the new area's saved selection, so
+        // get_text() would still return the previous state (e.g. "Fulltext
+        // Match" while "Contains Match" is about to be shown). The *_for_query()
+        // functions use the saved value until the restore has run, and this
+        // window's own selection after it — the saved values are shared by all
+        // open windows. The language filter applies to all areas, including
+        // Dictionary, where it filters dict_words by their `language` column.
+        const mode = search_bar_input.search_mode_dropdown.mode_for_query();
+        const lang = search_bar_input.language_filter_dropdown.language_for_query();
 
         const nikaya_prefix = nikaya_prefix_input.text.trim().toLowerCase();
         const uid_prefix = uid_prefix_input.text.trim().toLowerCase();

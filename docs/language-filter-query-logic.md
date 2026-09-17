@@ -50,49 +50,71 @@ persistence (`search_last_mode`):
   `set_language_filter_key(area, key)` (`bridges/src/sutta_bridge.rs`).
 - **QML:** `language_filter_dropdown.restore_for_current_area()` rebuilds the
   model for the current area and restores the saved key (defaulting to index 0).
-  It runs on `Component.onCompleted`, on `onSearch_areaChanged`, and on
-  `onIs_wideChanged`. A `suppress_persist` flag + `applied_area` guard prevent
-  programmatic restores and mid-transition model rebinds from persisting or
-  firing a query — identical to `search_mode_dropdown`.
+  It is reached through `SearchBarInput.ensure_dropdowns_restored()` on
+  `Component.onCompleted` and on `onSearch_areaChanged`. On `onIs_wideChanged`
+  the model is rebuilt keeping the dropdown's **own** current key instead. A
+  `suppress_persist` flag + `applied_area` guard prevent programmatic restores
+  and mid-transition model changes from persisting or firing a query —
+  identical to `search_mode_dropdown`.
 
-#### The persisted key is the source of truth for the query
+#### What a query reads: `mode_for_query()` / `language_for_query()`
 
-`get_search_params_from_ui()` (in `SuttaSearchWindow.qml`) reads the language
-from `SuttaBridge.get_language_filter_key(search_area)` — **not** from the
-ComboBox's `currentIndex` / `get_text()`. This is deliberate:
+`get_search_params_from_ui()` (in `SuttaSearchWindow.qml`) takes the mode from
+`search_mode_dropdown.mode_for_query()` and the language from
+`language_filter_dropdown.language_for_query()`. Never read either dropdown's
+`get_text()` or the saved setting directly. Both functions follow one rule:
 
-> On an area switch the language dropdown's `model` is reassigned imperatively
-> (`load_language_labels_for_area`). Qt **defers** the ComboBox's `count` /
-> `currentIndex` reconciliation, so `currentIndex = idx` is briefly clamped
-> against the stale count and `get_text()` can return the *previous* area's
-> value at the exact moment the area-switch query fires ("one step behind").
+- **Before the dropdown is restored for the current area**
+  (`applied_area !== search_area`): the saved per-area value, i.e. what the
+  restore is about to show. A fallback — the entry points below restore first.
+- **After:** the dropdown's own selection (`get_text()`).
 
-The persisted key is updated synchronously in the in-memory settings cache on
-every user change (`onCurrentIndexChanged`) and re-applied to the dropdown on
-every area/width change, so it is always correct for the current area regardless
-of ComboBox timing. The `onCurrentIndexChanged` handler also has a **no-op
-guard**: if the new value already equals the persisted key (e.g. a deferred
-reconciliation re-asserting the restored index), it skips persisting and skips
-the query, so the area switch still fires exactly one query (from the
-coordinator).
+Three traps make that the rule:
+
+1. **Handler order is unspecified.** On an area switch the query and the two
+   restores are separate `onSearch_areaChanged` handlers; on initial load the
+   query is in root's `Component.onCompleted` and the restores in the
+   dropdowns'. Measured offscreen (Qt 6.9.3, Fusion), the query runs **first**
+   in both cases. At that moment `currentIndex` holds what the model change left
+   behind — index 0 of the new area's modes (`QQuickComboBox::setModel` resets
+   it on the spot) and the *previous* area's language — so `get_text()` would
+   run a Fulltext query while "Contains Match" is shown a moment later. Hence
+   `ensure_dropdowns_restored()`, called by **every** entry point (both
+   dropdowns' handlers, the coordinator, root's `onCompleted`) before anything
+   else: whichever runs first restores, the rest find `applied_area` current and
+   skip. Skipping also avoids a second distinct-values query for the language
+   labels.
+2. **The saved values are process-global.** `get_last_search_mode` /
+   `get_language_filter_key` read the one `AppData` settings cache that every
+   open search window shares. Read for a restored dropdown, window A's query
+   would use window B's latest choice while A's dropdown still shows its own.
+   The same reason keeps two other places on the dropdown's own state: the
+   language `onCurrentIndexChanged` **no-op guard** compares the new key with
+   `applied_key` (this dropdown's last applied key), not with the saved key —
+   against the saved key, picking in A the key B has just saved would persist
+   nothing and run no query — and a width relabel keeps the current key rather
+   than re-reading the saved one. A deliberate area switch *does* adopt the saved value: that is the
+   "last used mode/language" behaviour.
+3. **A model assignment resets `currentIndex` to 0 immediately**, so it must sit
+   inside `suppress_persist` together with the index restore. Outside it, a
+   width relabel saves the reset as `"Language"` and fires an unfiltered query
+   while the dropdown goes on showing the old key (a phone rotation crosses
+   `is_wide`). For the same
+   reason the mode dropdown's `model` is assigned in `restore_for_current_area()`
+   rather than bound to `root.search_area`: a binding re-evaluating after the
+   restore would wipe the restored index, with `applied_area` already current.
 
 ### Exactly one query per area switch
 
 Both dropdowns' `restore_for_current_area()` are **pure** — they restore the
 saved mode/language but never fire a query. The single query for an area switch
-is fired by `area_query_coordinator`, a `Connections { target: root }` declared
-**after both dropdowns** in `SearchBarInput.qml`. Because QML connects signal
-handlers in creation order, the coordinator connects last and therefore runs
-*after* the ComboBox `model` bindings have re-evaluated and after both restores
-— so the one query reads the freshly restored mode + language and never fires
-twice. (A second query on every area switch would waste real compute.)
-
-> A root *inline* `onSearch_areaChanged` would connect **before** the child
-> dropdowns' `model` bindings and fire too early (against a stale model),
-> producing a wrong-mode query plus a second corrective query. The coordinator
-> must be a `Connections` object placed after the dropdowns. The one initial
-> query is fired from `root.Component.onCompleted`, which runs after the child
-> dropdowns have restored.
+is fired by `area_query_coordinator`, a `Connections { target: root }` in
+`SearchBarInput.qml`, after `ensure_dropdowns_restored()`. The dropdowns'
+`onCurrentIndexChanged` handlers ignore the index changes of a switch
+(`suppress_persist` during a restore, `applied_area` before it), and nothing
+depends on the coordinator running before or after the dropdowns' handlers. The
+one initial query is fired from `root.Component.onCompleted`, likewise after
+`ensure_dropdowns_restored()`.
 
 > The pre-existing single `sutta_language_filter_key` string was removed in
 > favour of the per-area map. Old persisted settings simply lose that field on

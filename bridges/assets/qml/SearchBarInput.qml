@@ -84,20 +84,17 @@ Frame {
     //
     // Both dropdowns restore their per-area mode/language independently via
     // their own `Connections { onSearch_areaChanged }` (pure restores — no
-    // query). The single query is then fired by `area_query_coordinator`, a
-    // Connections declared AFTER both dropdowns so it connects (and therefore
-    // fires) last: after the ComboBox `model` bindings have re-evaluated and
-    // after both restores have run. This guarantees the query reads the correct
-    // mode + language and never fires twice — a second query would cost real
-    // compute and can cause slowdown.
+    // query). The single query is fired by `area_query_coordinator`. A second
+    // query would cost real compute and can cause slowdown.
     //
-    // Connection-order note: a root *inline* onSearch_areaChanged would connect
-    // before the child dropdowns' `model` bindings and fire too early, so the
-    // coordinator must be a Connections object placed after the dropdowns.
-    //
-    // On initial load the dropdowns restore in their own Component.onCompleted
-    // (children complete before the parent), so root.Component.onCompleted can
-    // fire the one initial query.
+    // Do not rely on the order of these handlers, nor on the order of the
+    // Component.onCompleted handlers on initial load (Qt leaves both
+    // unspecified): measured, the coordinator's query runs BEFORE the
+    // dropdowns' own restore handlers, and root's onCompleted before theirs.
+    // So every one of these entry points calls ensure_dropdowns_restored()
+    // first: whichever runs first restores, the rest find it done. The query
+    // then reads search_mode_dropdown.mode_for_query() and
+    // language_filter_dropdown.language_for_query().
     Component.onCompleted: {
         logger.info("STARTUP-TRACE: SearchBarInput onCompleted start");
         // Keyboard diagnostics: log the detected platform once at startup so we
@@ -106,7 +103,23 @@ Frame {
             + " is_mobile=" + root.is_mobile + " is_desktop=" + root.is_desktop
             + " search_input.focus=" + search_input.focus
             + " inputMethod.visible=" + Qt.inputMethod.visible); // qmllint disable missing-property
+        root.ensure_dropdowns_restored();
         root.handle_query_fn(search_input.text); // qmllint disable use-proper-function
+    }
+
+    // Restore each dropdown's saved selection for the current area, unless it
+    // is already applied. Idempotent, so it is safe to call from every handler
+    // that reacts to an area change or to completion. Skipping an applied
+    // dropdown matters: a restore re-reads the process-global saved value,
+    // which another window may have changed, and the language restore runs a
+    // distinct-values query for its labels.
+    function ensure_dropdowns_restored() {
+        if (search_mode_dropdown.applied_area !== root.search_area) {
+            search_mode_dropdown.restore_for_current_area();
+        }
+        if (language_filter_dropdown.applied_area !== root.search_area) {
+            language_filter_dropdown.restore_for_current_area();
+        }
     }
 
     function user_typed() {
@@ -414,11 +427,15 @@ Frame {
                 // currentIndex means the same thing in either.
                 //
                 // This also makes textAt(i) return the wide label
-                // unconditionally, which is what two callers in
-                // SuttaSearchWindow.qml match against (:1428, :1474). The
-                // "Combined" match at :1474 previously worked only because that
-                // one label happened to be spelled identically in both lists.
-                model: search_mode_label_wide[root.search_area]
+                // unconditionally, which is what the run_*_dictionary_query()
+                // callers in SuttaSearchWindow.qml match against.
+                //
+                // The model is assigned in restore_for_current_area(), not bound
+                // to root.search_area: assigning a model resets currentIndex to
+                // 0 (QQuickComboBox::setModel), and a binding re-evaluates in
+                // whatever order the search_areaChanged handlers happen to run
+                // — after the restore, it would wipe the restored index and the
+                // reset would be saved as the user's choice.
 
                 // Abbreviate the closed control on a narrow screen. Falls back
                 // to currentText while currentIndex is out of range, which it
@@ -434,24 +451,50 @@ Frame {
                     return narrow[currentIndex];
                 }
 
-                // Pure restore (no query). The single query for an area switch
-                // is fired last by root's area_query_coordinator, after BOTH
-                // dropdowns have restored, so it uses the freshly restored mode
-                // + language and never fires twice.
+                // The saved search mode for an area, or the area's first mode
+                // when nothing valid is saved.
+                function mode_for_area(area: string): string {
+                    const wide_list = search_mode_label_wide[area];
+                    const saved_mode = SuttaBridge.get_last_search_mode(area);
+                    return wide_list.indexOf(saved_mode) !== -1 ? saved_mode : wide_list[0];
+                }
+
+                // The mode a query must run with.
+                //
+                // Until restore_for_current_area() has run for the current area,
+                // currentIndex belongs to the previous area or to nothing, so
+                // the saved mode is used — it is exactly what the restore is
+                // about to show. The SearchBarInput entry points restore before
+                // querying, so this branch is a fallback for other callers.
+                //
+                // Once restored, this window's own selection is used and NOT
+                // the saved mode: the saved mode is process-global, shared by
+                // every open search window, so another window choosing a mode
+                // would otherwise change this window's queries while its
+                // dropdown still shows its own choice.
+                function mode_for_query(): string {
+                    if (applied_area !== root.search_area) {
+                        return mode_for_area(root.search_area);
+                    }
+                    return get_text();
+                }
+
+                // Pure restore (no query): sets the model for the area and the
+                // saved mode's index. Call through root.ensure_dropdowns_restored().
+                // The area-switch query is fired separately by root's
+                // area_query_coordinator.
                 function restore_for_current_area() {
                     const wide_list = search_mode_label_wide[root.search_area];
-                    const saved_mode = SuttaBridge.get_last_search_mode(root.search_area);
-                    let idx = wide_list.indexOf(saved_mode);
-                    if (idx === -1) idx = 0;
                     suppress_persist = true;
-                    currentIndex = idx;
+                    model = wide_list;
+                    currentIndex = wide_list.indexOf(mode_for_area(root.search_area));
                     suppress_persist = false;
                     applied_area = root.search_area;
                 }
 
                 Component.onCompleted: {
                     recompute_widest_label_width();
-                    restore_for_current_area();
+                    root.ensure_dropdowns_restored();
                 }
 
                 Connections {
@@ -462,7 +505,7 @@ Frame {
                     // and a Dictionary→shorter-area switch may emit
                     // model-change after ComboBox auto-clips currentIndex.
                     function onSearch_areaChanged() {
-                        search_mode_dropdown.restore_for_current_area();
+                        root.ensure_dropdowns_restored();
                     }
                 }
 
@@ -605,28 +648,60 @@ Frame {
                 property bool suppress_persist: false
 
                 // Tracks the area whose saved language is currently applied, so
-                // is_wide-driven model swaps don't get treated as area changes.
+                // a currentIndex change that arrives mid-area-switch is not
+                // mistaken for a user choice.
                 property string applied_area: ""
+
+                // The language key this dropdown last applied, by restore or by
+                // user choice. The no-op guard in onCurrentIndexChanged compares
+                // against this and not against the saved key, which is
+                // process-global and can have been changed by another window.
+                property string applied_key: "Language"
 
                 // Rebuild the model for the current area and restore the
                 // per-area saved language key (defaulting to index 0 = no
                 // filter). The language key is persisted separately per area,
                 // exactly like the search mode (see set_language_filter_key).
                 function restore_for_current_area() {
+                    apply_labels_and_key(SuttaBridge.get_language_filter_key(root.search_area));
+                }
+
+                // Rebuild the model for the current area and select `key`, or
+                // index 0 (no filter) when the key is not among the labels.
+                //
+                // The model assignment must be inside suppress_persist: it
+                // resets currentIndex to 0 on the spot (QQuickComboBox::setModel),
+                // and on a width relabel applied_area already matches, so that
+                // reset would otherwise be saved as "Language" and fire an
+                // unfiltered query while the dropdown goes on showing `key`.
+                function apply_labels_and_key(key: string) {
+                    suppress_persist = true;
                     root.load_language_labels_for_area(root.search_area);
-                    const saved_key = SuttaBridge.get_language_filter_key(root.search_area);
                     let idx = 0;
-                    if (saved_key && saved_key !== "Language" && saved_key !== "Lang") {
-                        const found = model.indexOf(saved_key);
+                    if (key && key !== "Language" && key !== "Lang") {
+                        const found = model.indexOf(key);
                         if (found !== -1) idx = found;
                     }
-                    suppress_persist = true;
                     currentIndex = idx;
                     suppress_persist = false;
                     applied_area = root.search_area;
+                    applied_key = get_text();
                 }
 
-                Component.onCompleted: restore_for_current_area()
+                // The language key a query must run with. Same rule as
+                // search_mode_dropdown.mode_for_query(): the saved key until
+                // this area has been restored (a fallback — unlike the restore,
+                // it does not check the key is still among the labels), this
+                // window's own selection after.
+                function language_for_query(): string {
+                    if (applied_area !== root.search_area) {
+                        const saved = SuttaBridge.get_language_filter_key(root.search_area);
+                        return saved ? saved : "Language";
+                    }
+                    return get_text();
+                }
+
+                Component.onCompleted: root.ensure_dropdowns_restored()
 
                 Connections {
                     target: root
@@ -634,14 +709,19 @@ Frame {
                     // for the new area. Pure restore — the single query is
                     // fired afterwards by root's area_query_coordinator.
                     function onSearch_areaChanged() {
-                        language_filter_dropdown.restore_for_current_area();
+                        root.ensure_dropdowns_restored();
                     }
                     // is_wide toggles the first-label width ("Language"↔"Lang")
-                    // and rebuilds the model; restore preserves the selection
-                    // from the persisted per-area key. No query is fired (this
-                    // is only a relabel).
+                    // and rebuilds the model. Keeps this window's own selection
+                    // rather than re-reading the saved key, which another window
+                    // may have changed. No query is fired (this is only a
+                    // relabel).
                     function onIs_wideChanged() {
-                        language_filter_dropdown.restore_for_current_area();
+                        if (language_filter_dropdown.applied_area !== root.search_area) {
+                            language_filter_dropdown.restore_for_current_area();
+                        } else {
+                            language_filter_dropdown.apply_labels_and_key(language_filter_dropdown.get_text());
+                        }
                     }
                 }
 
@@ -653,15 +733,12 @@ Frame {
                     // area-restore could run. Ignore — restore_for_current_area
                     // will set the correct index for the new area.
                     if (applied_area !== root.search_area) return;
-                    // No-op guard: a deferred ComboBox model reconciliation can
-                    // re-assert the already-restored index after restore ended
-                    // (suppress_persist is false by then). If the value already
-                    // matches the persisted per-area key, skip — otherwise we'd
-                    // fire a redundant query on top of the area_query_coordinator.
+                    // No-op guard: if the value is the one this dropdown already
+                    // applied, skip — otherwise a re-asserted index would fire a
+                    // redundant query on top of the area_query_coordinator.
                     const new_key = get_text();
-                    let saved = SuttaBridge.get_language_filter_key(root.search_area);
-                    if (!saved) saved = "Language";
-                    if (new_key === saved) return;
+                    if (new_key === applied_key) return;
+                    applied_key = new_key;
                     SuttaBridge.set_language_filter_key(root.search_area, new_key);
                     // Re-run search (handle_query will check text min length)
                     root.handle_query_fn(search_input.text); // qmllint disable use-proper-function
@@ -670,7 +747,7 @@ Frame {
                 function get_text(): string {
                     // Always return "Language" for index 0, because it is a fixed keyword for
                     // "no language filter is selected".
-                    if (currentIndex === 0) {
+                    if (currentIndex <= 0) {
                         return "Language";
                     } else {
                         return model[currentIndex];
@@ -691,16 +768,15 @@ Frame {
                 onClicked: root.helpRequested()
             }
 
-            // Fires the single per-area-switch query. Declared AFTER both
-            // dropdowns so its connection to root.search_areaChanged is made
-            // last — it therefore runs after the dropdowns' model bindings have
-            // re-evaluated and after both restore_for_current_area() calls, so
-            // the one query reads the freshly restored mode + language. This is
-            // what prevents a second (wasteful) query on an area switch.
+            // Fires the single per-area-switch query; the dropdowns' own
+            // search_areaChanged handlers only restore. The order these
+            // handlers run in is not guaranteed, and in practice this one runs
+            // first — hence ensure_dropdowns_restored() before the query.
             Connections {
                 id: area_query_coordinator
                 target: root
                 function onSearch_areaChanged() {
+                    root.ensure_dropdowns_restored();
                     root.handle_query_fn(search_input.text); // qmllint disable use-proper-function
                 }
             }

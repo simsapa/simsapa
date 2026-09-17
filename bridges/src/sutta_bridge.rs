@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::thread;
 
 use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList, QUrl};
-use cxx_qt::Threading;
+use cxx_qt::{CxxQtType, Threading};
 
 use simsapa_backend::app_settings::AiRequestMode;
 use simsapa_backend::query_task::SearchQueryTask;
@@ -2081,6 +2081,13 @@ pub struct SuttaBridgeRust {
     sutta_references_loaded: bool,
     /// Flag to track if topic index has been loaded
     topic_index_loaded: bool,
+    /// Id of the latest `results_page()` request. A search runs on its own
+    /// thread and can finish after a newer one (e.g. a slow Suttas search
+    /// overtaken by a Dictionary search after switching the area), so a
+    /// result is delivered only if its request is still the latest one.
+    results_page_request_id: u64,
+    /// Same as `results_page_request_id`, for `debug_query()`.
+    debug_query_request_id: u64,
 }
 
 
@@ -2434,7 +2441,18 @@ impl qobject::SuttaBridge {
         }
     }
 
-    pub fn results_page(self: Pin<&mut Self>, query: &QString, page_num: usize, search_area: &QString, params_json: &QString) {
+    /// Runs on the Qt thread, so the comparison cannot race with a newer
+    /// `results_page()` call, which also runs there.
+    fn emit_results_page_if_latest(self: Pin<&mut Self>, request_id: u64, json: String) {
+        let latest = self.rust().results_page_request_id;
+        if request_id != latest {
+            info(&format!("SuttaBridge::results_page() discarding stale results (request {} < {})", request_id, latest));
+            return;
+        }
+        self.results_page_ready(QString::from(json));
+    }
+
+    pub fn results_page(mut self: Pin<&mut Self>, query: &QString, page_num: usize, search_area: &QString, params_json: &QString) {
         info(&format!("SuttaBridge::results_page() start - query='{}', page_num={}, search_area='{}'", query, page_num, search_area));
         let qt_thread = self.qt_thread();
 
@@ -2443,18 +2461,93 @@ impl qobject::SuttaBridge {
         let params_json_text = params_json.to_string();
         info(&format!("params_json: {}", params_json_text));
 
+        let request_id = {
+            let rust = self.as_mut().rust_mut().get_mut();
+            rust.results_page_request_id += 1;
+            rust.results_page_request_id
+        };
+
+        // Combined+Dictionary is bridge-orchestrated: fan out DPD Lookup
+        // and Fulltext Match in parallel and serve a merged virtual stream
+        // through `fetch_combined_page`, with its own isolated cache.
+        // Detect that case up front and dispatch separately so the
+        // standard `RESULTS_PAGE_CACHE` flow stays single-mode.
+        let parsed_params = serde_json::from_str::<SearchParams>(&params_json_text)
+            .unwrap_or_default();
+        let is_combined_dict = search_area_text == "Dictionary"
+            && matches!(parsed_params.mode, SearchMode::Combined);
+
+        // Build a cache key from the query, search area, and params.
+        // CST mula/commentary settings are included in params_json, as are
+        // show_all_snippets / snippet_exclude (they live on SearchParams),
+        // so toggling either invalidates cached pages automatically — no
+        // extra key plumbing. See docs/search-snippet-highlight-pipeline.md.
+        //
+        // PRD §6.6: the distinct `|combined` suffix prevents any chance of
+        // colliding with `RESULTS_PAGE_CACHE` keys.
+        let cache_key = if is_combined_dict {
+            format!("{}|{}|{}|combined", query_text, search_area_text, params_json_text)
+        } else {
+            format!("{}|{}|{}", query_text, search_area_text, params_json_text)
+        };
+
+        // Reset the cache here, on the Qt thread, and not in the spawned
+        // thread: resets must happen in request order. The spawned thread
+        // can spend a while in `dpd_lookup_grouped_memo()` first, so an
+        // older request resetting after a newer one would put its own key
+        // back, the newer fetch would abort with `Ok(None)` and emit
+        // nothing, and `emit_results_page_if_latest()` would then drop the
+        // older one's results too — leaving the window loading forever.
+        //
+        // Only a changed key (a new search) or an uninitialized cell resets;
+        // page navigation keeps the cached pages. The key embeds
+        // `params_json_text`, which carries the break-down selection index
+        // and lock state, so toggling the lock or picking a different
+        // break-down resets the cell too. `fetch_combined_page` and
+        // `fetch_and_cache_page` never reset; they re-check the key after
+        // every unlocked sub-query and return `Ok(None)` on mismatch, which
+        // stops a stale prefetch thread from clobbering the live cache.
+        //
+        // A poisoned lock is recovered, not unwrapped: this is the Qt thread,
+        // where a panic aborts the whole app. The cells are only caches: a new
+        // search replaces the cell outright, and the worst a worker's panic
+        // mid-write can leave behind is a bad cached page for that one query.
+        if is_combined_dict {
+            let mut guard = COMBINED_CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+            let needs_reset = match *guard {
+                Some(ref c) => c.cache_key != cache_key,
+                None => true,
+            };
+            if needs_reset {
+                *guard = Some(CombinedCache {
+                    cache_key: cache_key.clone(),
+                    page_len: 0,
+                    dpd_buffer: Vec::new(),
+                    dpd_total: None,
+                    dpd_pages_fetched: 0,
+                    ft_buffer: Vec::new(),
+                    ft_total: None,
+                    ft_pages_fetched: 0,
+                });
+            }
+        } else {
+            let mut cache_guard = RESULTS_PAGE_CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+            let needs_reset = match *cache_guard {
+                Some(ref cache) => cache.cache_key != cache_key,
+                None => true,
+            };
+            if needs_reset {
+                *cache_guard = Some(ResultsPageCache {
+                    cache_key: cache_key.clone(),
+                    pages: HashMap::new(),
+                    total_hits: 0,
+                    page_len: 0,
+                });
+            }
+        }
+
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
-            // Combined+Dictionary is bridge-orchestrated: fan out DPD Lookup
-            // and Fulltext Match in parallel and serve a merged virtual stream
-            // through `fetch_combined_page`, with its own isolated cache.
-            // Detect that case up front and dispatch separately so the
-            // standard `RESULTS_PAGE_CACHE` flow stays single-mode.
-            let parsed_params = serde_json::from_str::<SearchParams>(&params_json_text)
-                .unwrap_or_default();
-            let is_combined_dict = search_area_text == "Dictionary"
-                && matches!(parsed_params.mode, SearchMode::Combined);
-
             // Grouped deconstructor break-downs for the original query, attached
             // to the result page on the Dictionary DPD Lookup / Combined-remap
             // path so FulltextResults can show a break-down selector. Cloned
@@ -2496,48 +2589,6 @@ impl qobject::SuttaBridge {
             };
 
             if is_combined_dict {
-                // PRD §6.6: distinct `|combined` suffix prevents any chance
-                // of colliding with `RESULTS_PAGE_CACHE` keys.
-                let cache_key = format!(
-                    "{}|{}|{}|combined",
-                    query_text, search_area_text, params_json_text
-                );
-
-                // Reset the combined cache cell if the key has changed (new
-                // search) or if it was never initialized. `fetch_combined_page`
-                // itself never resets — only this top-level entry does — so
-                // stale prefetcher threads from a previous search can't clobber
-                // the live cache while a cold-start join is in flight.
-                //
-                // The key embeds `params_json_text`, which now carries the
-                // break-down selection index and lock state, so toggling the
-                // lock or picking a different break-down changes the key and
-                // resets the cell — the DPD side is rebuilt at its new,
-                // filtered length. The same cache_key re-check that protects
-                // against a previous *search*'s prefetch thread also covers a
-                // previous *lock state*'s: both `fetch_combined_page` and
-                // `fetch_and_cache_page` re-check the key after every unlocked
-                // sub-query and return `Ok(None)` on mismatch.
-                {
-                    let mut guard = COMBINED_CACHE.lock().unwrap();
-                    let needs_reset = match *guard {
-                        Some(ref c) => c.cache_key != cache_key,
-                        None => true,
-                    };
-                    if needs_reset {
-                        *guard = Some(CombinedCache {
-                            cache_key: cache_key.clone(),
-                            page_len: 0,
-                            dpd_buffer: Vec::new(),
-                            dpd_total: None,
-                            dpd_pages_fetched: 0,
-                            ft_buffer: Vec::new(),
-                            ft_total: None,
-                            ft_pages_fetched: 0,
-                        });
-                    }
-                }
-
                 match fetch_combined_page(&cache_key, &query_text, &params_json_text, page_num) {
                     Ok(Some((results, total_hits, page_len))) => {
                         let results_page_data = SearchResultPage {
@@ -2550,7 +2601,7 @@ impl qobject::SuttaBridge {
                         };
                         let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                         crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
-                            qo.as_mut().results_page_ready(QString::from(json));
+                            qo.as_mut().emit_results_page_if_latest(request_id, json);
                         });
 
                         let total_pages = if page_len > 0 {
@@ -2592,13 +2643,16 @@ impl qobject::SuttaBridge {
                         // keep the partial buffers — the next user action
                         // retries the same top-up path and previously-served
                         // pages remain consistent.
+                        //
+                        // A cell with a different key belongs to a newer
+                        // search, which is still running against it: leave it
+                        // alone, or that search aborts with `Ok(None)`.
                         {
                             let mut g = COMBINED_CACHE.lock().unwrap();
                             let cold_start_failed = match g.as_ref() {
-                                Some(c) => c.cache_key != cache_key
-                                    || c.dpd_total.is_none()
-                                    || c.ft_total.is_none(),
-                                None => true,
+                                Some(c) => c.cache_key == cache_key
+                                    && (c.dpd_total.is_none() || c.ft_total.is_none()),
+                                None => false,
                             };
                             if cold_start_failed {
                                 *g = None;
@@ -2606,19 +2660,12 @@ impl qobject::SuttaBridge {
                         }
                         let error_json = serde_json::json!({"error": format!("{}", e)}).to_string();
                         crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
-                            qo.as_mut().results_page_ready(QString::from(error_json));
+                            qo.as_mut().emit_results_page_if_latest(request_id, error_json);
                         });
                     }
                 }
                 return;
             }
-
-            // Build a cache key from the query, search area, and params.
-            // CST mula/commentary settings are included in params_json, as are
-            // show_all_snippets / snippet_exclude (they live on SearchParams),
-            // so toggling either invalidates cached pages automatically — no
-            // extra key plumbing. See docs/search-snippet-highlight-pipeline.md.
-            let cache_key = format!("{}|{}|{}", query_text, search_area_text, params_json_text);
 
             // Check cache for a hit
             {
@@ -2638,7 +2685,7 @@ impl qobject::SuttaBridge {
                             };
                             let json = serde_json::to_string(&results_page).unwrap_or_default();
                             crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
-                                qo.as_mut().results_page_ready(QString::from(json));
+                                qo.as_mut().emit_results_page_if_latest(request_id, json);
                             });
 
                             // If the user reached the highest cached page, prefetch the next 2
@@ -2669,23 +2716,6 @@ impl qobject::SuttaBridge {
                 }
             }
 
-            // Cache miss — initialize cache for new search
-            {
-                let mut cache_guard = RESULTS_PAGE_CACHE.lock().unwrap();
-                let needs_reset = match *cache_guard {
-                    Some(ref cache) => cache.cache_key != cache_key,
-                    None => true,
-                };
-                if needs_reset {
-                    *cache_guard = Some(ResultsPageCache {
-                        cache_key: cache_key.clone(),
-                        pages: HashMap::new(),
-                        total_hits: 0,
-                        page_len: 0,
-                    });
-                }
-            }
-
             // Fetch the requested page
             match fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, page_num) {
                 Ok(Some((results, total_hits, page_len))) => {
@@ -2699,7 +2729,7 @@ impl qobject::SuttaBridge {
                     };
                     let json = serde_json::to_string(&results_page_data).unwrap_or_default();
                     crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
-                        qo.as_mut().results_page_ready(QString::from(json));
+                        qo.as_mut().emit_results_page_if_latest(request_id, json);
                     });
 
                     // Prefetch: next page immediately (so page+1 is ready), then 2 more in background
@@ -2740,15 +2770,21 @@ impl qobject::SuttaBridge {
                     error(&e.to_string());
                     let error_json = serde_json::json!({"error": format!("{}", e)}).to_string();
                     crate::queue_or_log(&qt_thread, "sutta_bridge::results_page", move |mut qo| {
-                        qo.as_mut().results_page_ready(QString::from(error_json));
+                        qo.as_mut().emit_results_page_if_latest(request_id, error_json);
                     });
                 }
             }
         });
     }
 
-    pub fn debug_query(self: Pin<&mut Self>, query: &QString, search_area: &QString, params_json: &QString) {
+    pub fn debug_query(mut self: Pin<&mut Self>, query: &QString, search_area: &QString, params_json: &QString) {
         let qt_thread = self.qt_thread();
+
+        let request_id = {
+            let rust = self.as_mut().rust_mut().get_mut();
+            rust.debug_query_request_id += 1;
+            rust.debug_query_request_id
+        };
 
         let query_text = query.to_string();
         let search_area_text = search_area.to_string();
@@ -2778,7 +2814,9 @@ impl qobject::SuttaBridge {
 
                 let json = serde_json::json!({"debug_text": debug_text}).to_string();
                 crate::queue_or_log(&qt_thread, "sutta_bridge::debug_query", move |mut qo| {
-                    qo.as_mut().debug_query_ready(QString::from(json));
+                    if qo.rust().debug_query_request_id == request_id {
+                        qo.as_mut().debug_query_ready(QString::from(json));
+                    }
                 });
                 return;
             }
@@ -2835,7 +2873,9 @@ impl qobject::SuttaBridge {
             };
 
             crate::queue_or_log(&qt_thread, "sutta_bridge::debug_query", move |mut qo| {
-                qo.as_mut().debug_query_ready(QString::from(json));
+                if qo.rust().debug_query_request_id == request_id {
+                    qo.as_mut().debug_query_ready(QString::from(json));
+                }
             });
         });
     }
