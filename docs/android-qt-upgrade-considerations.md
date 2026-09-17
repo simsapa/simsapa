@@ -509,8 +509,13 @@ On device, the cases that actually broke before:
 2. Safe-area top inset: one inset, not zero and not doubled.
 3. The `DrawerMenu` "Menu" label in portrait *and* landscape — a `Drawer` is in
    the window overlay and gets **no** Qt padding.
-4. Soft keyboard raises on the **first** tap.
-5. Audio record/playback, fulltext search, dictionary lookup, SAF file save —
+4. Soft keyboard raises on the **first** tap, and does not flash off and on
+   when a tap moves the cursor in an already-focused field.
+5. The blue cursor handle does **not** stay on screen after closing a window
+   with a focused `TextArea`. The Qt 6.9.3 workaround is one block per window
+   ([android-soft-keyboard.md §5](./android-soft-keyboard.md)); check whether
+   the upgrade makes it unnecessary.
+6. Audio record/playback, fulltext search, dictionary lookup, SAF file save —
    on a non-arm64 device if one can be found (§2.6).
 
 ---

@@ -167,6 +167,24 @@ ApplicationWindow {
 
     // Stop all playback and save state when window is closed
     onClosing: function(close) {
+        // FIRST, before the cleanup below notifies the WindowManager: leave edit
+        // mode exactly as unchecking the Edit button does -- clear focus AND,
+        // through the readOnly binding, make the field read-only. Doing that
+        // while the window is open is measured to remove Android's blue cursor
+        // handle, and a read-only field with no selection takes a different
+        // branch of Qt's updateSelectionHandles() than the focus one. Closing
+        // with the text area focused otherwise leaves the handle painted over
+        // the app until a restart (docs/android-soft-keyboard.md §5 -- read it
+        // before touching this: two other shapes of this fix failed on device).
+        if (pali_edit_button.checked || pali_text.activeFocus) {
+            logger.info("ChantingReviewWindow: leaving edit mode before close");
+            // Before the field goes read-only, since this reads its text.
+            if (pali_save_timer.running) {
+                root.save_pali_text();
+            }
+            root.apply_pali_edit_mode(false);
+        }
+
         // Read before the cleanup below, which sets is_recording false at once
         // while the file is still being finalised in Rust.
         const was_recording = root.any_recording_active();
@@ -205,6 +223,42 @@ ApplicationWindow {
         root.notify_closed();
     }
 
+    // The single place that turns Pali-text editing on and off, so the three
+    // call sites (the Edit button, loading a section, closing) cannot drift.
+    //
+    // activeFocusOnPress is assigned, never bound: MobileKeyboardHelper toggles
+    // it during a tap. On mobile it is off outside edit mode so a tap on the
+    // read-only text cannot take focus from the recording buttons or raise the
+    // keyboard; on desktop it stays on, so the text can still be focused and
+    // copied with the keyboard.
+    function apply_pali_edit_mode(on: bool) {
+        pali_edit_button.checked = on;
+        pali_text.activeFocusOnPress = on || root.is_desktop;
+        if (on) {
+            // Start editing at the beginning of the text.
+            pali_text.cursorPosition = 0;
+            pali_text.forceActiveFocus();
+            let flickable = pali_scroll.contentItem as Flickable;
+            if (flickable !== null) {
+                flickable.contentY = 0;
+            }
+        } else {
+            pali_text.focus = false;
+        }
+    }
+
+    // Writes the edited Pali text back. pali_save_timer coalesces keystrokes;
+    // closing the window flushes whatever it still owes, because the timer dies
+    // with the window and a save within its 400 ms would otherwise be lost.
+    function save_pali_text() {
+        pali_save_timer.stop();
+        if (root.section_data === null) return;
+        root.content_pali = pali_text.text;
+        let data = Object.assign({}, root.section_data);
+        data.content_pali = pali_text.text;
+        SuttaBridge.update_chanting_section(JSON.stringify(data));
+    }
+
     function load_section_data() {
         let json_str = SuttaBridge.get_chanting_section_detail_json(root.current_section_uid);
         if (json_str === "null" || json_str === "") {
@@ -215,6 +269,8 @@ ApplicationWindow {
         root.section_data = data;
         root.section_title = data.title || "";
         root.content_pali = data.content_pali || "";
+        // A newly loaded section opens read-only.
+        root.apply_pali_edit_mode(false);
 
         // Look up parent chant and collection titles from the tree data
         let tree_json = SuttaBridge.get_all_chanting_collections_json();
@@ -443,8 +499,11 @@ ApplicationWindow {
                 color: palette.mid
             }
 
-            // 7.4 Scrollable Pali text area (editable, auto-saves)
+            // 7.4 Scrollable Pali text area. Read-only until the Edit button is
+            // checked, so it neither steals focus from the recording buttons nor
+            // raises the soft keyboard while reviewing. Edits auto-save.
             ScrollView {
+                id: pali_scroll
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(200, pali_text.implicitHeight + 20)
                 Layout.maximumHeight: 300
@@ -456,11 +515,22 @@ ApplicationWindow {
                     wrapMode: TextEdit.Wrap
                     font.pointSize: root.pointSize + 2
                     font.family: "serif"
+                    readOnly: !pali_edit_button.checked
+                    // Set imperatively with the Edit button, not bound:
+                    // MobileKeyboardHelper toggles it during a tap.
+                    activeFocusOnPress: false
                     background: Rectangle {
-                        color: palette.base
+                        color: pali_edit_button.checked ? palette.base : palette.window
                         border.color: pali_text.activeFocus ? palette.highlight : palette.mid
-                        border.width: 1
+                        border.width: pali_edit_button.checked ? 1 : 0
                         radius: 4
+                    }
+
+                    // Only while editing, so a tap on the read-only text never
+                    // requests the keyboard.
+                    Loader {
+                        active: pali_edit_button.checked
+                        sourceComponent: MobileKeyboardHelper { field: pali_text }
                     }
 
                     onTextChanged: {
@@ -475,21 +545,26 @@ ApplicationWindow {
                 id: pali_save_timer
                 interval: 400
                 repeat: false
-                onTriggered: {
-                    if (root.section_data === null) return;
-                    root.content_pali = pali_text.text;
-                    let data = Object.assign({}, root.section_data);
-                    data.content_pali = pali_text.text;
-                    SuttaBridge.update_chanting_section(JSON.stringify(data));
-                }
+                onTriggered: root.save_pali_text()
             }
 
-            Button {
-                text: "Gloss Chanting Text"
+            RowLayout {
                 Layout.alignment: Qt.AlignLeft
-                enabled: pali_text.text.trim().length > 0
-                onClicked: {
-                    SuttaBridge.run_gloss_in_sutta_window(root.window_id, pali_text.text);
+                spacing: 8
+
+                Button {
+                    id: pali_edit_button
+                    text: "Edit"
+                    checkable: true
+                    onToggled: root.apply_pali_edit_mode(checked)
+                }
+
+                Button {
+                    text: "Gloss Chanting Text"
+                    enabled: pali_text.text.trim().length > 0
+                    onClicked: {
+                        SuttaBridge.run_gloss_in_sutta_window(root.window_id, pali_text.text);
+                    }
                 }
             }
 

@@ -2,11 +2,15 @@
 
 On Android — and especially on ChromeOS running Android apps — a Qt `TextField`
 / `TextArea` does **not** reliably raise the on-screen keyboard when focused or
-tapped. Two distinct problems were observed and fixed; both are handled by the
-reusable [`MobileKeyboardHelper.qml`](../bridges/assets/qml/MobileKeyboardHelper.qml)
-component plus a per-field `EnterKey.type`.
+tapped, and it misbehaves in several other ways around taps, selection and
+window close. The fixed ones are handled by the reusable
+[`MobileKeyboardHelper.qml`](../bridges/assets/qml/MobileKeyboardHelper.qml)
+component plus a per-field `EnterKey.type` (§5 also needs one line per window);
+§4 is an unfixed Qt bug, and
+["Tried on device and rejected"](#tried-on-device-and-rejected--do-not-redo)
+lists the approaches that were measured and discarded.
 
-## The two problems
+## The problems
 
 ### 1. The keyboard needs two taps (or never appears)
 
@@ -256,6 +260,61 @@ is no longer part of that checklist:** it was raised on its own on 2026-08-26,
 decoupled from the upgrade, once a binary scan showed the app could not load
 below API 28 in the first place.
 
+### 5. The blue cursor handle stays on screen after a window closes
+
+Symptom (Android 16 device, Qt 6.9.3): tap in a `TextArea` to place the cursor,
+then close the window with Back. The window goes, but Android's blue teardrop
+cursor handle stays painted over the app until it is restarted.
+
+The handle is a Java view, shown and hidden only from
+`QAndroidInputContext::updateSelectionHandles()`
+(`qandroidinputcontext.cpp:596`), which gives up at
+`if (noHandles || !m_focusObject) return;`. Closing a window destroys the focus
+object, so nothing hides the handle. **The leak needs the window to be
+destroyed** — it is not a `TextArea` trait and not a focus-change failure: in
+the Gloss tab, switching tabs or toggling the sidebar hides the handle every
+time, because that window stays alive and focus lands on another item.
+
+**The fix: leave edit mode at the top of the window's own `onClosing`**, before
+anything notifies the `WindowManager` — `ChantingPracticeReviewWindow.qml` is
+the worked example. It does exactly what unchecking its Edit button does:
+
+```qml
+onClosing: function(close) {
+    if (pali_edit_button.checked || pali_text.activeFocus) {
+        pali_edit_button.checked = false;      // readOnly binding follows
+        pali_text.activeFocusOnPress = false;
+        pali_text.focus = false;
+    }
+    // ...the rest of the close handling
+}
+```
+
+Both halves matter. Clearing focus alone is **measured not to work** (below), so
+the read-only half is doing work: a read-only field with no selection takes a
+different branch of `updateSelectionHandles()` than the focus one. A field with
+no edit mode would set `readOnly = true` directly — but only if nothing *binds*
+`readOnly`, since the assignment would replace the binding.
+
+**Two earlier shapes failed on device. Do not re-attempt them:**
+
+1. `MobileKeyboardHelper` cleared focus on the window's `closing` signal (two
+   variants: focus to the field's parent, then to a zero-sized `Item` child of
+   the helper). The log proves it ran and that focus moved
+   (`field.activeFocus=false sink.activeFocus=true`) — and the handle stayed.
+   That signal arrives **after** the window's own `onClosing` has notified the
+   `WindowManager` (`on_window_closed(chanting_review): destroyed` is logged
+   *before* the helper's line), so a helper-side fix cannot be early enough.
+   **This is why the fix belongs in each window, not in the shared helper.**
+2. `ChantingPracticeReviewWindow` moved focus to a plain `Button` as the first
+   statement of its own `onClosing` — early enough, but focus-only. It made
+   things **worse**: Qt repositioned the handle to the top-left corner instead
+   of hiding it.
+
+**Other windows that are destroyed on close and host a text field have not been
+checked** and presumably still leak. Apply the pattern above when one is
+reported; the pooled reader window is not affected, since it is only hidden.
+
 ### References
 
 - [qtbase `f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
@@ -349,8 +408,62 @@ Guidelines:
   Never change it to `WithinBounds`/`ReleaseWithinBounds` — those take an
   exclusive grab and swallow the cursor tap.
 
+- **A tap on an already-focused field with the keyboard up requests nothing.**
+  On Android each `show()` re-runs `QtInputDelegate.showSoftwareKeyboard()`, so
+  redundant requests on a cursor-moving tap make the keyboard flash off and on.
+  The `TapHandler` samples `activeFocus` on press (before the field takes focus)
+  and skips only when the field already had focus **and**
+  `Qt.inputMethod.visible` is true. **Never apply that `visible` check to the
+  focus-in path or the retry `Timer`**: right after a focus change it can read
+  true while the keyboard is not up, and skipping there brings back the two-tap
+  bug.
+- **Qt's own per-press `show()` is suppressed for that same tap.**
+  `QQuickTextInput`/`QQuickTextEdit::mousePressEvent` call
+  `QInputMethod::show()` on every press on an already-focused field
+  (`focusOnPress && hadActiveFocus`), and on Android that alone flashes the
+  keyboard once. Pointer handlers receive the press before the item, so the
+  helper's `TapHandler` sets the field's `activeFocusOnPress = false` on press
+  (same condition as above) and restores it with `Qt.callLater` after release.
+  The cursor still moves and focus is kept. Because this is an assignment,
+  **a field using the helper must not bind `activeFocusOnPress`** — set it
+  imperatively (see `apply_pali_edit_mode()` in
+  `ChantingPracticeReviewWindow.qml`). The restore is skipped when the field has
+  become `readOnly` during the tap, so a mode toggle or a closing window is not
+  handed back a focus-on-press it deliberately turned off.
+- **Long-press selection in a `TextArea` is re-applied after release.** The
+  Controls press handler delays the press and drops it once the press-and-hold
+  interval expires, so `QQuickTextControl` never sees a press, the long-press
+  selection does not set `imSelectionAfterPress`, and the touch release calls
+  `setCursorPosition()` — the highlight vanishes and the cursor jumps to where
+  the finger lifted. (`TextField` guards this with `hasSelectedText()`.) The
+  helper's `TapHandler` sees the release first: a selection that did not exist
+  at press is saved and restored with `Qt.callLater` via `select()`.
+
 The helper is mobile-gated (`Qt.platform.os` android/ios) and is a no-op on
 desktop, so it is safe to add to any field.
+
+## Tried on device and rejected — do not redo
+
+Each of these was written, built and measured on an Android 16 device. They are
+listed so the same ground is not covered twice; the two failed shapes of the §5
+cursor-handle fix are recorded there rather than repeated here.
+
+- **Skipping `show()` whenever `Qt.inputMethod.visible` is true**, in
+  `request_keyboard()` and in the retry `Timer`. Intended to stop the
+  keyboard-flash; it **reintroduced the two-tap bug** — right after a focus
+  change Qt can report the keyboard visible while it is not up, so the first tap
+  raised nothing. The `visible` check is only safe for a tap on a field that
+  *already had focus at the press*, which is where it now lives.
+- **Relying on the helper alone to stop the flash.** Skipping the helper's
+  redundant requests cut the flashing from several per tap to exactly one, and
+  no further: the remaining one is Qt's own `show()` from
+  `QQuickTextInput`/`QQuickTextEdit::mousePressEvent`. Suppressing
+  `activeFocusOnPress` for that tap is what removed it. Measured in that order —
+  do not expect either half to be sufficient alone.
+- **Reading the keyboard/handle diagnostics from `logger.debug()`.** They never
+  reach logcat or `log.txt`: `backend/src/logger.rs` fixes the tracing filter at
+  `info` when the app starts, and the runtime log-level setting does not lift
+  it. Any device diagnostic in QML has to be `logger.info()`.
 
 ## Where it is applied
 
