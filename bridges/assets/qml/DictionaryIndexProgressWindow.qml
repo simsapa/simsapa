@@ -10,7 +10,7 @@ import com.profoundlabs.simsapa
 ApplicationWindow {
     id: root
 
-    title: "Re-indexing Dictionaries"
+    title: "Preparing Dictionaries"
     width: is_mobile ? Screen.desktopAvailableWidth : 520
     height: is_mobile ? Screen.desktopAvailableHeight : 220
     visible: true
@@ -25,7 +25,7 @@ ApplicationWindow {
     // DictionaryManager bridge, drives the progress bar from
     // `reconcileProgress`, and closes itself on `reconcileFinished`. C++ shows
     // the window before the main `SuttaSearchWindow` and waits for it to close.
-    property string stage_text: "Re-indexing imported dictionaries — please wait."
+    property string stage_text: "Preparing imported dictionaries — please wait."
     property real progress_value: 0.0
     property bool indeterminate: true
 

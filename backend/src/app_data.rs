@@ -915,9 +915,10 @@ impl AppData {
             // (<link href=")(main.js)(") class="load_js" rel="preload" as="script">
             static ref RE_LINK_HREF: Regex = Regex::new(r#"(<link +[^>]*href=['"])([^'"]+)(['"])"#).unwrap();
             // Match <html> tag with optional attributes
-            static ref RE_HTML_TAG: Regex = Regex::new(r#"<html[^>]*>"#).unwrap();
+            static ref RE_HTML_TAG: Regex = Regex::new(r#"(?i)<html(\s[^>]*)?>"#).unwrap();
             // Match <body> tag with optional attributes
-            static ref RE_BODY_TAG: Regex = Regex::new(r#"<body[^>]*>"#).unwrap();
+            static ref RE_BODY_TAG: Regex = Regex::new(r#"(?i)<body(\s[^>]*)?>"#).unwrap();
+            static ref RE_HEAD_CLOSE: Regex = Regex::new(r#"(?i)</head\s*>"#).unwrap();
             // Full <link …> tag (for neutralising/rewriting user-dict res links).
             static ref RE_LINK_FULL: Regex = Regex::new(r#"<link\b[^>]*>"#).unwrap();
             // Full <script … src=…></script> tag (for neutralising user-dict res JS).
@@ -992,7 +993,9 @@ impl AppData {
                     js_extra.push_str(DICTIONARY_JS);
                     js_extra.push_str(SIMSAPA_JS);
 
-                    let mut word_html = definition_html.clone();
+                    // Entries stored as fragments have no <html>/<head>/<body>
+                    // for the CSS/JS injection below to attach to.
+                    let mut word_html = crate::html_content::ensure_html_document(definition_html);
 
                     // Normalise a res reference to its dict_resources path: strip
                     // a leading "./" and an optional "res/" prefix (mw-gd refers
@@ -1071,9 +1074,8 @@ impl AppData {
                         js_extra.push('\n');
                         js_extra.push_str(&dict_js);
                     }
-                    word_html = word_html.replace(
-                        "</head>",
-                        &format!(r#"{}<script>{}</script></head>"#, head_style, js_extra));
+                    let head_inject = format!(r#"{}<script>{}</script></head>"#, head_style, js_extra);
+                    word_html = RE_HEAD_CLOSE.replace(&word_html, regex::NoExpand(&head_inject)).to_string();
 
                     // Replace <html> tag to include dark mode class
                     word_html = RE_HTML_TAG.replace(&word_html, &format!(r#"<html class="{}">"#, body_class)).to_string();
@@ -2854,7 +2856,7 @@ impl AppData {
                 Ok(entries) => {
                     for entry in entries.flatten() {
                         let p = entry.path();
-                        if p.file_name().is_some_and(|n| n == "user_dictionaries.sqlite3") {
+                        if p.file_name().is_some_and(|n| n == USER_DICTIONARIES_SNAPSHOT_FILE) {
                             continue;
                         }
                         let res = if p.is_dir() {
@@ -3159,19 +3161,17 @@ impl AppData {
             error(&format!("Failed to import user chanting data: {}", e));
         }
 
-        // Import user-imported dictionaries snapshot. Failure here must NOT
-        // wipe the snapshot — the file remains in import-me/ for the next
-        // startup attempt (the cleanup step below excludes it).
-        if let Err(e) = self.import_user_dictionaries(&import_dir) {
-            error(&format!("Failed to import user dictionaries: {}", e));
-        }
+        // The user-imported dictionaries snapshot is NOT imported here. With
+        // 100k+ words it takes long enough to look like the app is not
+        // starting, and this runs before any window is shown. The dictionary
+        // reconciliation pass consumes it instead, behind the progress window
+        // (`dict_index_reconcile::reconcile_dict_indexes`).
 
         // Clean up: remove the import-me folder, but preserve
-        // `user_dictionaries.sqlite3` if it is still present (PRD task 5.6).
-        // If the dictionary import succeeded the importer already deleted
-        // the file; if it failed, the file must survive so the next startup
-        // can retry.
-        let dict_snapshot = import_dir.join("user_dictionaries.sqlite3");
+        // `user_dictionaries.sqlite3` so the reconciliation pass can consume
+        // it. The importer deletes the file on success; on failure it survives
+        // so the next startup can retry.
+        let dict_snapshot = import_dir.join(USER_DICTIONARIES_SNAPSHOT_FILE);
         let preserve_dict_snapshot = matches!(dict_snapshot.try_exists(), Ok(true));
         if preserve_dict_snapshot {
             // Remove every entry except the snapshot.
@@ -4531,12 +4531,12 @@ impl AppData {
     /// first. The caller (`export_user_data_to_assets`) treats this as a
     /// per-category error.
     pub fn export_user_dictionaries(&self, import_dir: &Path) -> Result<()> {
-        use crate::db::dictionaries_schema::{dictionaries, dict_words};
-        use crate::db::dictionaries_models::{Dictionary, DictWord};
+        use crate::db::dictionaries_schema::{dictionaries, dict_resources, dict_words};
+        use crate::db::dictionaries_models::{Dictionary, DictResource, DictWord, NewDictResource};
         use crate::db::run_dictionaries_migrations;
         use diesel::sqlite::SqliteConnection;
 
-        let dest_path = import_dir.join("user_dictionaries.sqlite3");
+        let dest_path = import_dir.join(USER_DICTIONARIES_SNAPSHOT_FILE);
 
         // Task 5.6: refuse to overwrite an existing snapshot.
         if matches!(dest_path.try_exists(), Ok(true)) {
@@ -4573,9 +4573,21 @@ impl AppData {
                 .context("Failed to load dict_words for export")?
         };
 
+        // The dictionaries' res/ files (CSS, JS, images). Without them a restored
+        // dictionary renders without its own styling and images.
+        let user_resources: Vec<DictResource> = {
+            let db_conn = &mut self.dbm.dictionaries.get_conn()
+                .context("Failed to get dictionaries DB connection for dict_resources export")?;
+            dict_resources::table
+                .filter(dict_resources::dictionary_id.eq_any(&dict_ids))
+                .select(DictResource::as_select())
+                .load::<DictResource>(db_conn)
+                .context("Failed to load dict_resources for export")?
+        };
+
         info(&format!(
-            "export_user_dictionaries(): exporting {} dictionaries / {} words",
-            user_dicts.len(), user_words.len()
+            "export_user_dictionaries(): exporting {} dictionaries / {} words / {} resources",
+            user_dicts.len(), user_words.len(), user_resources.len()
         ));
 
         // Create the snapshot DB and run dictionaries migrations on it.
@@ -4637,6 +4649,18 @@ impl AppData {
                     .execute(tx)
                     .with_context(|| format!("Insert dict_word {} into snapshot failed", w.uid))?;
             }
+
+            for r in &user_resources {
+                diesel::insert_into(dict_resources::table)
+                    .values(NewDictResource {
+                        dictionary_id: r.dictionary_id,
+                        resource_path: &r.resource_path,
+                        mime_type: r.mime_type.as_deref(),
+                        content_data: r.content_data.as_deref(),
+                    })
+                    .execute(tx)
+                    .with_context(|| format!("Insert dict_resource {} into snapshot failed", r.resource_path))?;
+            }
             Ok(())
         })?;
 
@@ -4652,10 +4676,23 @@ impl AppData {
     /// `dict_words.dictionary_id` on insert. `indexed_at` is left NULL so the
     /// reconciliation pass re-indexes on the next startup.
     ///
+    /// Its `dict_resources` rows (the `res/` CSS, JS and images) are re-keyed the
+    /// same way.
+    ///
+    /// A dictionary whose label already exists in the live DB is skipped
+    /// together with its words and resources: the live copy wins. Inserting the words under
+    /// the existing dictionary would collide with its identical uids, fail the
+    /// whole transaction and keep the snapshot — which then fails on every
+    /// startup, and succeeds, re-creating the dictionaries, only once the user
+    /// has deleted them.
+    ///
     /// All inserts run in a single transaction. On failure, the snapshot is
     /// left in place for the next startup to retry.
     ///
     /// On success, the snapshot file is removed.
+    ///
+    /// `on_progress(done, total)` reports inserted words: `(0, 0)` while the
+    /// snapshot is being read, then every 1000 words and once at the end.
     ///
     /// Schema-drift safety (task 5.5): the importer reads explicit columns
     /// via Diesel's typed schema. If a future build adds a `dict_words`
@@ -4663,13 +4700,16 @@ impl AppData {
     /// because they will simply lack that column (and Diesel will reject
     /// only if the new column is NOT NULL without default). If a future
     /// build removes a column, the importer must be updated alongside.
-    pub fn import_user_dictionaries(&self, import_dir: &Path) -> Result<()> {
-        use crate::db::dictionaries_schema::{dictionaries, dict_words};
-        use crate::db::dictionaries_models::{Dictionary, DictWord};
+    pub fn import_user_dictionaries<F>(&self, import_dir: &Path, on_progress: F) -> Result<()>
+    where
+        F: Fn(usize, usize),
+    {
+        use crate::db::dictionaries_schema::{dictionaries, dict_resources, dict_words};
+        use crate::db::dictionaries_models::{Dictionary, DictResource, DictWord, NewDictResource};
         use diesel::sqlite::SqliteConnection;
-        use std::collections::HashMap;
+        use std::collections::{HashMap, HashSet};
 
-        let snapshot_path = import_dir.join("user_dictionaries.sqlite3");
+        let snapshot_path = import_dir.join(USER_DICTIONARIES_SNAPSHOT_FILE);
         if !matches!(snapshot_path.try_exists(), Ok(true)) {
             info("import_user_dictionaries(): no user_dictionaries.sqlite3 snapshot, skipping");
             return Ok(());
@@ -4679,6 +4719,8 @@ impl AppData {
             "import_user_dictionaries(): consuming snapshot {}",
             snapshot_path.display()
         ));
+
+        on_progress(0, 0);
 
         let snap_url = format!("sqlite://{}", snapshot_path.display());
         let mut snap_conn = SqliteConnection::establish(&snap_url)
@@ -4691,7 +4733,10 @@ impl AppData {
 
         if snap_dicts.is_empty() {
             info("import_user_dictionaries(): snapshot has no dictionaries, removing");
-            let _ = std::fs::remove_file(&snapshot_path);
+            drop(snap_conn);
+            if let Err(e) = std::fs::remove_file(&snapshot_path) {
+                warn(&format!("Failed to remove empty snapshot {}: {}", snapshot_path.display(), e));
+            }
             return Ok(());
         }
 
@@ -4702,19 +4747,43 @@ impl AppData {
             .load::<DictWord>(&mut snap_conn)
             .context("Failed to read dict_words from snapshot")?;
 
+        // Read errors are tolerated here: a snapshot without resources restores
+        // the words, while a failed restore would stay pending and be retried
+        // on every startup.
+        let snap_resources: Vec<DictResource> = match dict_resources::table
+            .filter(dict_resources::dictionary_id.eq_any(&snap_dict_ids))
+            .select(DictResource::as_select())
+            .load::<DictResource>(&mut snap_conn)
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                warn(&format!("import_user_dictionaries(): could not read dict_resources from snapshot, restoring without them: {}", e));
+                Vec::new()
+            }
+        };
+
+        // Close the snapshot before it is removed below: Windows refuses to
+        // delete an open file, and a snapshot that is never removed is restored
+        // again, behind the progress window, on every startup.
+        drop(snap_conn);
+
         info(&format!(
-            "import_user_dictionaries(): re-keying {} dictionaries / {} words",
-            snap_dicts.len(), snap_words.len()
+            "import_user_dictionaries(): re-keying {} dictionaries / {} words / {} resources",
+            snap_dicts.len(), snap_words.len(), snap_resources.len()
         ));
+
+        let total_words = snap_words.len();
+        on_progress(0, total_words);
 
         // Insert into the live DB inside a single transaction.
         self.dbm.dictionaries.do_write(|tx| {
             tx.transaction::<_, diesel::result::Error, _>(|tx| {
                 let mut id_map: HashMap<i32, i32> = HashMap::with_capacity(snap_dicts.len());
+                let mut skipped_dict_ids: HashSet<i32> = HashSet::new();
                 for d in &snap_dicts {
                     // Skip if a dictionary with this label already exists in the
-                    // live DB (e.g. if the user re-installed the same archive
-                    // before the upgrade). Defensive — should be rare.
+                    // live DB (e.g. the snapshot was already restored once, or the
+                    // user re-imported the same archive).
                     let existing: Option<i32> = dictionaries::table
                         .filter(dictionaries::label.eq(&d.label))
                         .select(dictionaries::id)
@@ -4722,10 +4791,10 @@ impl AppData {
                         .optional()?;
                     if let Some(eid) = existing {
                         warn(&format!(
-                            "import_user_dictionaries(): live DB already has dictionary '{}' (id {}); skipping snapshot row",
+                            "import_user_dictionaries(): live DB already has dictionary '{}' (id {}); skipping it and its words",
                             d.label, eid
                         ));
-                        id_map.insert(d.id, eid);
+                        skipped_dict_ids.insert(d.id);
                         continue;
                     }
 
@@ -4753,7 +4822,13 @@ impl AppData {
                     id_map.insert(d.id, new_id);
                 }
 
-                for w in &snap_words {
+                for (i, w) in snap_words.iter().enumerate() {
+                    if i > 0 && i % 1000 == 0 {
+                        on_progress(i, total_words);
+                    }
+                    if skipped_dict_ids.contains(&w.dictionary_id) {
+                        continue;
+                    }
                     let new_dict_id = match id_map.get(&w.dictionary_id) {
                         Some(nid) => *nid,
                         None => {
@@ -4790,6 +4865,28 @@ impl AppData {
                         .execute(tx)?;
                 }
 
+                for r in &snap_resources {
+                    if skipped_dict_ids.contains(&r.dictionary_id) {
+                        continue;
+                    }
+                    let Some(new_dict_id) = id_map.get(&r.dictionary_id) else {
+                        warn(&format!(
+                            "import_user_dictionaries(): dict_resource {} references missing dictionary_id {} in snapshot; skipping",
+                            r.resource_path, r.dictionary_id
+                        ));
+                        continue;
+                    };
+                    diesel::insert_into(dict_resources::table)
+                        .values(NewDictResource {
+                            dictionary_id: *new_dict_id,
+                            resource_path: &r.resource_path,
+                            mime_type: r.mime_type.as_deref(),
+                            content_data: r.content_data.as_deref(),
+                        })
+                        .execute(tx)?;
+                }
+                on_progress(total_words, total_words);
+
                 Ok(())
             })
         }).context("import_user_dictionaries transaction failed")?;
@@ -4808,6 +4905,95 @@ impl AppData {
         }
         Ok(())
     }
+}
+
+// --- Pending user-dictionaries upgrade snapshot ---
+//
+// `export_user_dictionaries` writes the snapshot before a database upgrade, and
+// the startup reconcile restores it (`import_user_dictionaries`). Until then it
+// is the copy that will survive the upgrade, so a delete or rename of a user
+// dictionary has to be applied to it as well, or the restore undoes it.
+
+pub const USER_DICTIONARIES_SNAPSHOT_FILE: &str = "user_dictionaries.sqlite3";
+
+/// The `import-me` folder the upgrade export writes to and startup restores from.
+pub fn user_data_import_dir() -> std::path::PathBuf {
+    get_app_globals().paths.app_assets_dir.join("import-me")
+}
+
+pub fn user_dictionaries_snapshot_path() -> std::path::PathBuf {
+    user_data_import_dir().join(USER_DICTIONARIES_SNAPSHOT_FILE)
+}
+
+fn open_pending_snapshot(snapshot_path: &Path) -> Result<Option<diesel::sqlite::SqliteConnection>> {
+    match snapshot_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(e) => return Err(anyhow!("Failed to check snapshot {}: {}", snapshot_path.display(), e)),
+    }
+    let conn = diesel::sqlite::SqliteConnection::establish(&format!("sqlite://{}", snapshot_path.display()))
+        .with_context(|| format!("Failed to open snapshot {}", snapshot_path.display()))?;
+    Ok(Some(conn))
+}
+
+/// Remove the dictionary `label`, its words and its resources from a pending
+/// snapshot.
+/// Deletes the snapshot file when no dictionary is left in it.
+///
+/// Returns whether the snapshot held that dictionary.
+pub fn remove_label_from_user_dictionaries_snapshot(snapshot_path: &Path, label: &str) -> Result<bool> {
+    use crate::db::dictionaries_schema::{dictionaries, dict_resources, dict_words};
+
+    let Some(mut conn) = open_pending_snapshot(snapshot_path)? else {
+        return Ok(false);
+    };
+
+    let (removed, remaining) = conn.transaction::<_, diesel::result::Error, _>(|tx| {
+        let ids: Vec<i32> = dictionaries::table
+            .filter(dictionaries::label.eq(label))
+            .select(dictionaries::id)
+            .load(tx)?;
+        if !ids.is_empty() {
+            diesel::delete(dict_words::table.filter(dict_words::dictionary_id.eq_any(&ids))).execute(tx)?;
+            diesel::delete(dict_resources::table.filter(dict_resources::dictionary_id.eq_any(&ids))).execute(tx)?;
+            diesel::delete(dictionaries::table.filter(dictionaries::id.eq_any(&ids))).execute(tx)?;
+        }
+        let remaining: i64 = dictionaries::table.count().get_result(tx)?;
+        Ok((!ids.is_empty(), remaining))
+    }).with_context(|| format!("Failed to remove '{}' from snapshot {}", label, snapshot_path.display()))?;
+    drop(conn);
+
+    if remaining == 0 {
+        std::fs::remove_file(snapshot_path)
+            .with_context(|| format!("Failed to remove empty snapshot {}", snapshot_path.display()))?;
+        info(&format!("Removed user dictionaries snapshot {}: no dictionaries left in it", snapshot_path.display()));
+    }
+    Ok(removed)
+}
+
+/// Apply a dictionary label rename to a pending snapshot.
+///
+/// Returns whether the snapshot held a dictionary with `old_label`.
+pub fn rename_label_in_user_dictionaries_snapshot(snapshot_path: &Path, old_label: &str, new_label: &str) -> Result<bool> {
+    use crate::db::dictionaries_schema::dictionaries;
+
+    let Some(mut conn) = open_pending_snapshot(snapshot_path)? else {
+        return Ok(false);
+    };
+
+    conn.transaction::<_, diesel::result::Error, _>(|tx| {
+        let found: i64 = dictionaries::table
+            .filter(dictionaries::label.eq(old_label))
+            .count()
+            .get_result(tx)?;
+        if found == 0 {
+            return Ok(false);
+        }
+        crate::db::dictionaries::rename_dictionary_label_in(tx, old_label, new_label)?;
+        Ok(true)
+    }).with_context(|| format!(
+        "Failed to rename '{}' -> '{}' in snapshot {}", old_label, new_label, snapshot_path.display()
+    ))
 }
 
 // --- Gloss data in the appdata upgrade export/import cycle ---

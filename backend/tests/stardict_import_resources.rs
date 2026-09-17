@@ -215,3 +215,131 @@ fn render_applies_dict_resources() {
 
     delete_user_dictionary(dict_id).expect("delete_user_dictionary");
 }
+
+/// Entries stored as HTML fragments (no `<html>`/`<head>`/`<body>`, the shape of
+/// nyanatiloka-gd, peu-gd and reader.dict) must render as a full page with the
+/// dictionary CSS/JS injected, the theme class and the word heading — the same
+/// as full-document entries.
+#[test]
+#[serial]
+fn render_wraps_fragment_entries() {
+    h::app_data_setup();
+
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let label = format!("ssp_test_fragment_{}", millis);
+    let label = label.as_str();
+
+    let app_data = get_app_data();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-stardict-fragment-test-")
+        .tempdir()
+        .expect("tempdir");
+    let stardict_dir = tmp.path().join("sd");
+    fs::create_dir_all(&stardict_dir).unwrap();
+
+    let def_body = b"<p><b>Sostantivo</b></p><ol><li>fragment body</li></ol>";
+    write_synthetic_stardict(&stardict_dir, "test", 2, def_body).expect("write stardict");
+
+    let res_dir = stardict_dir.join("res");
+    fs::create_dir_all(&res_dir).unwrap();
+    let css_marker = "b { color: darkblue; }";
+    fs::write(res_dir.join("test.css"), css_marker.as_bytes()).unwrap();
+
+    let zip_path = tmp.path().join("test.zip");
+    zip_dir_recursive(&stardict_dir, &zip_path).expect("zip");
+
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip(&zip_path, label, "en", &|_p| {}, &cancel)
+        .expect("import_user_zip should succeed");
+    assert!(!outcome.cancelled);
+    let dict_id = outcome.dictionary_id;
+
+    let word_uid = format!("word_000000/{}", label);
+    let html = app_data.render_word_html_by_uid("test_window", &word_uid);
+
+    assert!(html.contains("const WINDOW_ID = 'test_window'"),
+        "dictionary JS must be injected into <head>.\n{}", html);
+    assert!(html.contains(css_marker),
+        "bundled CSS must be injected inline.\n{}", html);
+    assert!(html.contains("<html class="),
+        "<html> must carry the theme class.\n{}", html);
+    assert!(html.contains("word-heading"),
+        "<body> must carry the word heading.\n{}", html);
+    assert!(html.contains("fragment body"),
+        "entry content must be kept.\n{}", html);
+
+    delete_user_dictionary(dict_id).expect("delete_user_dictionary");
+}
+
+/// A database upgrade exports user dictionaries to a snapshot and restores them
+/// on the next startup. Their `res/` resources must survive the round trip, or
+/// the restored dictionary renders without its own CSS and images.
+#[test]
+#[serial]
+fn upgrade_snapshot_round_trip_keeps_resources() {
+    h::app_data_setup();
+
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let label = format!("ssp_test_upgrade_res_{}", millis);
+    let label = label.as_str();
+
+    let app_data = get_app_data();
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-stardict-upgrade-res-test-")
+        .tempdir()
+        .expect("tempdir");
+    let stardict_dir = tmp.path().join("sd");
+    fs::create_dir_all(&stardict_dir).unwrap();
+
+    let def_body = b"<p>entry with <img src=\"logo.png\"></p>";
+    write_synthetic_stardict(&stardict_dir, "test", 2, def_body).expect("write stardict");
+    let res_dir = stardict_dir.join("res");
+    fs::create_dir_all(&res_dir).unwrap();
+    let css_marker = ".upgrade-res { color: teal; }";
+    fs::write(res_dir.join("test.css"), css_marker.as_bytes()).unwrap();
+    let png_bytes: &[u8] = b"\x89PNG\r\n\x1a\nUPGRADE";
+    fs::write(res_dir.join("logo.png"), png_bytes).unwrap();
+
+    let zip_path = tmp.path().join("test.zip");
+    zip_dir_recursive(&stardict_dir, &zip_path).expect("zip");
+
+    let cancel = AtomicBool::new(false);
+    let outcome = import_user_zip(&zip_path, label, "en", &|_p| {}, &cancel)
+        .expect("import_user_zip should succeed");
+    let old_id = outcome.dictionary_id;
+
+    // Export, then stand in for the upgrade's fresh database by deleting the
+    // dictionary. Other user dictionaries in the dev DB are exported too and
+    // skipped on restore, because they still exist.
+    let import_dir = tmp.path().join("import-me");
+    fs::create_dir_all(&import_dir).unwrap();
+    app_data.export_user_dictionaries(&import_dir).expect("export_user_dictionaries");
+    delete_user_dictionary(old_id).expect("delete before restore");
+
+    app_data.import_user_dictionaries(&import_dir, |_, _| {}).expect("import_user_dictionaries");
+
+    let restored = app_data.dbm.dictionaries.list_dictionaries(Some(true)).expect("list")
+        .into_iter()
+        .find(|d| d.label == label)
+        .expect("restored dictionary");
+    let mut resources = app_data.dbm.dictionaries.list_dict_resources(restored.id).expect("resources");
+    resources.sort_by(|a, b| a.resource_path.cmp(&b.resource_path));
+    let summary: Vec<(String, Option<String>, Option<Vec<u8>>)> = resources.into_iter()
+        .map(|r| (r.resource_path, r.mime_type, r.content_data))
+        .collect();
+    assert_eq!(summary, vec![
+        ("logo.png".to_string(), Some("image/png".to_string()), Some(png_bytes.to_vec())),
+        ("test.css".to_string(), Some("text/css".to_string()), Some(css_marker.as_bytes().to_vec())),
+    ]);
+
+    let html = app_data.render_word_html_by_uid("test_window", &format!("word_000000/{}", label));
+    assert!(html.contains(css_marker), "restored CSS must be injected.\n{}", html);
+    let expected_img = format!("/dict_resources/{}/logo.png", restored.id);
+    assert!(html.contains(&expected_img), "image must use the restored dictionary id.\n{}", html);
+
+    delete_user_dictionary(restored.id).expect("delete_user_dictionary");
+}

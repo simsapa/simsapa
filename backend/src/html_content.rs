@@ -258,3 +258,182 @@ pub fn blank_html_page(body_class: Option<String>) -> String {
 
     tt.render("page_html", &ctx).unwrap_or_default()
 }
+
+/// Complete a user-imported dictionary entry into an HTML document with
+/// `<html>`, `<head>…</head>` and `<body>` tags.
+///
+/// StarDict `h`-type entries are either full documents (e.g. whitney-gd) or bare
+/// fragments (e.g. nyanatiloka-gd, peu-gd, reader.dict). The word renderer
+/// injects the dictionary CSS/JS before `</head>` and the theme class and word
+/// heading at `<html>` / `<body>`, so a fragment without those tags would render
+/// unstyled and without the double-click lookup handlers. Tags that are already
+/// present are kept as they are. An entry with no tags at all (e.g. peu-gd) is
+/// plain text and is converted with `plain_text_to_html`.
+pub fn ensure_html_document(html: &str) -> String {
+    use regex::Regex;
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref RE_DOCTYPE: Regex = Regex::new(r"(?i)^\s*<!DOCTYPE[^>]*>").unwrap();
+        static ref RE_HTML_OPEN: Regex = Regex::new(r"(?i)<html(\s[^>]*)?>").unwrap();
+        static ref RE_HTML_CLOSE: Regex = Regex::new(r"(?i)</html\s*>").unwrap();
+        static ref RE_HEAD_OPEN: Regex = Regex::new(r"(?i)<head(\s[^>]*)?>").unwrap();
+        static ref RE_HEAD_CLOSE: Regex = Regex::new(r"(?i)</head\s*>").unwrap();
+        static ref RE_BODY_OPEN: Regex = Regex::new(r"(?i)<body(\s[^>]*)?>").unwrap();
+        static ref RE_BODY_CLOSE: Regex = Regex::new(r"(?i)</body\s*>").unwrap();
+        static ref RE_ANY_TAG: Regex = Regex::new(r"<[a-zA-Z!/][^>]*>").unwrap();
+    }
+
+    if !RE_ANY_TAG.is_match(html) {
+        return format!("<!DOCTYPE html><html><head></head><body>{}</body></html>", plain_text_to_html(html));
+    }
+
+    let has_html = RE_HTML_OPEN.is_match(html);
+    let has_head = RE_HEAD_CLOSE.is_match(html);
+    let has_body = RE_BODY_OPEN.is_match(html);
+
+    if has_html && has_head && has_body {
+        return html.to_string();
+    }
+
+    if !has_html && !has_head && !has_body {
+        return format!("<!DOCTYPE html><html><head></head><body>{}</body></html>", html);
+    }
+
+    // Partial document: split off the doctype and the outer <html> tags, then
+    // rebuild the head and body around what remains.
+    let doctype = RE_DOCTYPE.find(html).map(|m| m.as_str().trim()).unwrap_or("<!DOCTYPE html>");
+    let mut inner = RE_DOCTYPE.replace(html, "").to_string();
+    let html_open = match RE_HTML_OPEN.find(&inner) {
+        Some(m) => m.as_str().to_string(),
+        None => "<html>".to_string(),
+    };
+    inner = RE_HTML_OPEN.replace(&inner, "").to_string();
+    inner = RE_HTML_CLOSE.replace_all(&inner, "").to_string();
+
+    let (head, rest) = match (RE_HEAD_OPEN.find(&inner), RE_HEAD_CLOSE.find(&inner)) {
+        (Some(open), Some(close)) if open.start() < close.start() => (
+            inner[open.start()..close.end()].to_string(),
+            format!("{}{}", &inner[..open.start()], &inner[close.end()..]),
+        ),
+        (None, Some(close)) => (
+            format!("<head>{}</head>", &inner[..close.start()]),
+            inner[close.end()..].to_string(),
+        ),
+        _ => ("<head></head>".to_string(), inner),
+    };
+
+    let body = if RE_BODY_OPEN.is_match(&rest) {
+        if RE_BODY_CLOSE.is_match(&rest) {
+            rest
+        } else {
+            format!("{}</body>", rest)
+        }
+    } else {
+        format!("<body>{}</body>", rest)
+    };
+
+    format!("{}{}{}{}</html>", doctype, html_open, head, body)
+}
+
+/// Convert a plain-text dictionary entry to HTML: blocks separated by blank
+/// lines become `<p>` paragraphs, and single line breaks within a block become
+/// `<br>`. `<`, `>` and bare `&` are escaped, while HTML entities the text
+/// already carries (peu-gd has `&quot;`) are kept.
+pub fn plain_text_to_html(text: &str) -> String {
+    use regex::{Captures, Regex};
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        // A blank line may carry spaces or no-break spaces.
+        static ref RE_BLANK_LINES: Regex = Regex::new(r"\n\s*\n").unwrap();
+        static ref RE_AMPERSAND: Regex = Regex::new(r"&(#[0-9]+;|#[xX][0-9a-fA-F]+;|[a-zA-Z][a-zA-Z0-9]*;)?").unwrap();
+    }
+
+    let normalized = text.replace("\r\n", "\n");
+    let escaped = RE_AMPERSAND.replace_all(&normalized, |caps: &Captures| {
+        if caps.get(1).is_some() { caps[0].to_string() } else { "&amp;".to_string() }
+    });
+    let escaped = escaped.replace('<', "&lt;").replace('>', "&gt;");
+
+    RE_BLANK_LINES
+        .split(&escaped)
+        .map(|block| block.trim())
+        .filter(|block| !block.is_empty())
+        .map(|block| {
+            let lines: Vec<&str> = block.lines().map(|line| line.trim()).collect();
+            format!("<p>{}</p>", lines.join("<br>"))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ensure_html_document, plain_text_to_html};
+
+    #[test]
+    fn full_document_is_unchanged() {
+        let doc = "<html><head><style>b{}</style></head><body><h2>√ac</h2></body></html>";
+        assert_eq!(ensure_html_document(doc), doc);
+    }
+
+    #[test]
+    fn fragment_is_wrapped() {
+        let frag = "<p><b>Sostantivo</b></p><ol><li>x</li></ol>";
+        assert_eq!(
+            ensure_html_document(frag),
+            format!("<!DOCTYPE html><html><head></head><body>{}</body></html>", frag),
+        );
+    }
+
+    #[test]
+    fn plain_text_is_wrapped_in_paragraphs() {
+        let text = "(One) who is a senior (in years of monkhood).";
+        assert_eq!(
+            ensure_html_document(text),
+            format!("<!DOCTYPE html><html><head></head><body><p>{}</p></body></html>", text),
+        );
+    }
+
+    #[test]
+    fn plain_text_blank_lines_split_paragraphs() {
+        let text = "About race; 6 kinds of karma\n\n\nThe cause of race,\nThe six kinds of cause";
+        assert_eq!(
+            plain_text_to_html(text),
+            "<p>About race; 6 kinds of karma</p><p>The cause of race,<br>The six kinds of cause</p>",
+        );
+    }
+
+    #[test]
+    fn plain_text_whitespace_only_lines_and_trailing_space() {
+        let text = "The moment of praying.\u{a0}\n \u{a0}\nSecond.\n";
+        assert_eq!(plain_text_to_html(text), "<p>The moment of praying.</p><p>Second.</p>");
+    }
+
+    #[test]
+    fn plain_text_escapes_but_keeps_entities() {
+        let text = "Arisen & Bright, a < b, the word &quot;elder&quot; &#257; &#x101;";
+        assert_eq!(
+            plain_text_to_html(text),
+            "<p>Arisen &amp; Bright, a &lt; b, the word &quot;elder&quot; &#257; &#x101;</p>",
+        );
+    }
+
+    #[test]
+    fn body_without_head_gets_head() {
+        let out = ensure_html_document("<body class=\"x\"><p>hi</p></body>");
+        assert_eq!(out, "<!DOCTYPE html><html><head></head><body class=\"x\"><p>hi</p></body></html>");
+    }
+
+    #[test]
+    fn head_without_body_gets_body() {
+        let out = ensure_html_document("<HTML><HEAD><style>i{}</style></HEAD><p>hi</p></HTML>");
+        assert_eq!(out, "<!DOCTYPE html><HTML><HEAD><style>i{}</style></HEAD><body><p>hi</p></body></html>");
+    }
+
+    #[test]
+    fn style_before_fragment_without_head_open_tag() {
+        let out = ensure_html_document("<style>i{}</style></head><p>hi</p>");
+        assert_eq!(out, "<!DOCTYPE html><html><head><style>i{}</style></head><body><p>hi</p></body></html>");
+    }
+}

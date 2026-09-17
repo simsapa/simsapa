@@ -1,6 +1,12 @@
 //! Startup reconciliation pass for the user-imported dictionaries.
 //!
 //! Runs once per app launch, before `SuttaSearchWindow` opens, to:
+//!   0. Consume a pending `import-me/user_dictionaries.sqlite3` snapshot from
+//!      a release upgrade (`AppData::import_user_dictionaries`). It is done
+//!      here and not in `import_user_data_from_assets` so that it runs behind
+//!      the progress window: restoring 100k+ words takes long enough to look
+//!      like the app is not starting. Every row it restores has
+//!      `indexed_at = NULL`, so step 2 then indexes it.
 //!   1. Drop orphan entries from the Tantivy dict index (any `source_uid`
 //!      term that no longer corresponds to a current `dictionaries.label`).
 //!   2. For each user-imported dictionary with `indexed_at IS NULL`:
@@ -27,7 +33,7 @@ use crate::db::dictionaries_models::DictWord;
 use crate::db::dpd::DpdDbHandle;
 use crate::get_app_data;
 use crate::get_app_globals;
-use crate::logger::{info, warn};
+use crate::logger::{error, info, warn};
 use crate::search::indexer::{
     delete_from_dict_index_by_source_uid,
     index_dict_words_into_dict_index,
@@ -36,6 +42,9 @@ use crate::search::indexer::{
 
 #[derive(Debug, Clone)]
 pub enum ReconcileProgress {
+    /// Restoring the user-imported dictionaries snapshot. `total = 0` while
+    /// the snapshot is being read.
+    RestoringDictionaries { done: usize, total: usize },
     DroppingOrphans { done: usize, total: usize, label: Option<String> },
     IndexingDictionary {
         label: String,
@@ -66,6 +75,11 @@ pub fn reconcile_needed() -> bool {
         None => return false,
     };
 
+    // A snapshot waiting to be restored?
+    if user_dictionaries_snapshot_pending() {
+        return true;
+    }
+
     // Any pending re-indexes?
     if let Ok(rows) = app_data.dbm.dictionaries.list_dictionaries_needing_index()
         && !rows.is_empty() {
@@ -85,6 +99,10 @@ pub fn reconcile_needed() -> bool {
     };
 
     indexed.difference(&current).next().is_some()
+}
+
+fn user_dictionaries_snapshot_pending() -> bool {
+    matches!(crate::app_data::user_dictionaries_snapshot_path().try_exists(), Ok(true))
 }
 
 /// Run the full reconciliation pass.
@@ -108,6 +126,16 @@ where
         Err(e) => warn(&format!(
             "reconcile: ensure_bold_definitions_parent_dictionary failed: {:#}", e
         )),
+    }
+
+    // Restore a pending user-dictionaries snapshot before the orphan scan, so
+    // the restored labels count as current. A failure keeps the snapshot for
+    // the next startup and must not stop the rest of the pass.
+    if user_dictionaries_snapshot_pending()
+        && let Err(e) = app_data.import_user_dictionaries(&crate::app_data::user_data_import_dir(), |done, total| {
+            on_progress(ReconcileProgress::RestoringDictionaries { done, total });
+        }) {
+        error(&format!("reconcile: restoring user dictionaries failed: {:#}", e));
     }
 
     // Phase 1: orphan cleanup.

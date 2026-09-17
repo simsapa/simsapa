@@ -241,44 +241,9 @@ impl DictionariesDbHandle {
     ///   - rewrite `dict_words.uid` from `<word>/<old_label>` to `<word>/<new_label>`
     ///   - set `dictionaries.indexed_at = NULL`
     pub fn rename_dictionary_label(&self, old_label: &str, new_label: &str) -> Result<()> {
-        use crate::db::dictionaries_schema::dictionaries;
-        use crate::db::dictionaries_schema::dict_words;
-
         self.do_write(|db_conn| {
             db_conn.transaction::<_, diesel::result::Error, _>(|tx| {
-                // Update dictionaries.label and clear indexed_at.
-                diesel::update(
-                    dictionaries::table.filter(dictionaries::label.eq(old_label))
-                )
-                    .set((
-                        dictionaries::label.eq(new_label),
-                        dictionaries::indexed_at.eq::<Option<NaiveDateTime>>(None),
-                    ))
-                    .execute(tx)?;
-
-                // Update dict_words.dict_label.
-                diesel::update(
-                    dict_words::table.filter(dict_words::dict_label.eq(old_label))
-                )
-                    .set(dict_words::dict_label.eq(new_label))
-                    .execute(tx)?;
-
-                // Rewrite dict_words.uid from <word>/<old_label> to <word>/<new_label>.
-                // SQLite's REPLACE on the suffix is unsafe in general, so use a
-                // computed expression that strips the old suffix and appends new.
-                let suffix_old = format!("/{}", old_label);
-                let suffix_new = format!("/{}", new_label);
-                let sql = "UPDATE dict_words \
-                           SET uid = substr(uid, 1, length(uid) - length(?1)) || ?2 \
-                           WHERE uid LIKE ?3";
-                let like_pat = format!("%/{}", old_label);
-                diesel::sql_query(sql)
-                    .bind::<diesel::sql_types::Text, _>(&suffix_old)
-                    .bind::<diesel::sql_types::Text, _>(&suffix_new)
-                    .bind::<diesel::sql_types::Text, _>(&like_pat)
-                    .execute(tx)?;
-
-                Ok(())
+                rename_dictionary_label_in(tx, old_label, new_label)
             })
         }).with_context(|| format!("rename_dictionary_label({} -> {}) failed", old_label, new_label))
     }
@@ -418,4 +383,47 @@ pub fn create_dict_words_batch(
     diesel::insert_into(dict_words::table)
         .values(new_words)
         .execute(db_conn)
+}
+
+/// Rename a dictionary label on any connection holding the dictionaries schema:
+/// the live `dictionaries.sqlite3`, or a pending `user_dictionaries.sqlite3`
+/// upgrade snapshot. Run it inside a transaction.
+///
+/// Clears `indexed_at`, and rewrites `dict_words.dict_label` and the
+/// `<word>/<old_label>` uid suffix of that dictionary's words.
+pub fn rename_dictionary_label_in(
+    conn: &mut SqliteConnection,
+    old_label: &str,
+    new_label: &str,
+) -> diesel::QueryResult<()> {
+    use crate::db::dictionaries_schema::dictionaries;
+    use crate::db::dictionaries_schema::dict_words;
+
+    diesel::update(dictionaries::table.filter(dictionaries::label.eq(old_label)))
+        .set((
+            dictionaries::label.eq(new_label),
+            dictionaries::indexed_at.eq::<Option<NaiveDateTime>>(None),
+        ))
+        .execute(conn)?;
+
+    diesel::update(dict_words::table.filter(dict_words::dict_label.eq(old_label)))
+        .set(dict_words::dict_label.eq(new_label))
+        .execute(conn)?;
+
+    // Rewrite the uid suffix of the renamed dictionary's words only. The suffix
+    // is compared with substr, not LIKE: `_` is a valid label character and a
+    // LIKE wildcard, so `%/a_b` would also match another dictionary's `x/aXb`.
+    let suffix_old = format!("/{}", old_label);
+    let suffix_new = format!("/{}", new_label);
+    diesel::sql_query(
+        "UPDATE dict_words \
+         SET uid = substr(uid, 1, length(uid) - length(?1)) || ?2 \
+         WHERE dict_label = ?3 AND substr(uid, -length(?1)) = ?1",
+    )
+        .bind::<diesel::sql_types::Text, _>(&suffix_old)
+        .bind::<diesel::sql_types::Text, _>(&suffix_new)
+        .bind::<diesel::sql_types::Text, _>(new_label)
+        .execute(conn)?;
+
+    Ok(())
 }

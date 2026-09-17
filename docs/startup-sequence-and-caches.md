@@ -47,7 +47,10 @@ process start
 │   │
 │   ├─ import_user_data_after_upgrade, cleanup_stale_legacy_userdata
 │   ├─ check_and_configure_for_first_start
-│   ├─ reconcile_dict_indexes_blocking_c       [shows its own progress window if work needed]
+│   ├─ DictionaryIndexProgressWindow          [only if work needed: restores a pending
+│   │                                            user_dictionaries.sqlite3 snapshot, then
+│   │                                            re-indexes; reconcile_dict_indexes_blocking_c
+│   │                                            if the window fails to load]
 │   │
 │   └─ WindowManager::create_sutta_search_window
 │       └─ QML parse of SuttaSearchWindow.qml + its directly-instantiated children

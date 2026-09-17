@@ -1666,6 +1666,16 @@ pub fn delete_user_dictionary(dictionary_id: i32) -> Result<(), String> {
         .map_err(|e| format!("delete_dictionary_by_label failed: {}", e))?;
     info(&format!("delete_user_dictionary: removed {} dictionaries row(s) for '{}'", n, target.label));
 
+    // A pending upgrade snapshot still holds the dictionary; the startup
+    // restore would bring it back.
+    match crate::app_data::remove_label_from_user_dictionaries_snapshot(
+        &crate::app_data::user_dictionaries_snapshot_path(), &target.label,
+    ) {
+        Ok(true) => info(&format!("delete_user_dictionary: removed '{}' from the pending upgrade snapshot", target.label)),
+        Ok(false) => {}
+        Err(e) => error(&format!("delete_user_dictionary: {:#}", e)),
+    }
+
     // Refresh stats: a user dictionary delete cascades to thousands of
     // `dict_words` rows (and via FTS triggers, the same count from
     // `dict_words_fts`), which shifts selectivity for the Headword / Contains
@@ -1725,6 +1735,14 @@ pub fn rename_user_dictionary(dictionary_id: i32, new_label: &str) -> Result<(),
     app_data.dbm.dictionaries.rename_dictionary_label(&target.label, new_label)
         .map_err(|e| format!("rename_dictionary_label failed: {}", e))?;
     info(&format!("rename_user_dictionary: '{}' -> '{}'", target.label, new_label));
+
+    match crate::app_data::rename_label_in_user_dictionaries_snapshot(
+        &crate::app_data::user_dictionaries_snapshot_path(), &target.label, new_label,
+    ) {
+        Ok(true) => info(&format!("rename_user_dictionary: renamed '{}' in the pending upgrade snapshot", target.label)),
+        Ok(false) => {}
+        Err(e) => error(&format!("rename_user_dictionary: {:#}", e)),
+    }
     Ok(())
 }
 

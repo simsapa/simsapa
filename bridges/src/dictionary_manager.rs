@@ -422,6 +422,15 @@ fn stardict_progress_to_signal(p: &StardictImportProgress) -> (String, i32, i32)
 
 fn reconcile_progress_to_signal(p: &ReconcileProgress) -> (String, i32, i32) {
     match p {
+        ReconcileProgress::RestoringDictionaries { done, total } => {
+            // total = 0 while the snapshot is being read → indeterminate bar.
+            let stage = if *total == 0 {
+                "Restoring imported dictionaries, please wait…".to_string()
+            } else {
+                format!("Restoring imported dictionaries: {}/{} words", done, total)
+            };
+            (stage, *done as i32, *total as i32)
+        }
         ReconcileProgress::DroppingOrphans { done, total, label } => {
             let stage = match label {
                 Some(l) => format!("Dropping orphan: {}", l),
