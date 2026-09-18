@@ -83,12 +83,160 @@ ApplicationWindow {
         return file_url_str;
     }
 
+    // --- Quick Record ---
+    //
+    // One button instead of the Add Collection / Add Chant / Add Section
+    // sequence: everything the recording needs is created if it is missing, and
+    // the review window opens already recording.
+    //
+    // The collection is "Quick Recordings", the chant is today's date and the
+    // section is the current hour, so repeated quick recordings in the same
+    // hour land in the same section and stay grouped by day.
+
+    readonly property string quick_collection_title: "Quick Recordings"
+
+    function quick_chant_title(now) {
+        return Qt.formatDate(now, "yyyy-MM-dd");
+    }
+
+    function quick_section_title(now) {
+        const hours = now.getHours();
+        const suffix = hours < 12 ? "am" : "pm";
+        let hour_12 = hours % 12;
+        if (hour_12 === 0) {
+            hour_12 = 12;
+        }
+        return hour_12 + suffix;
+    }
+
+    function quick_record() {
+        const now = new Date();
+        const chant_title = root.quick_chant_title(now);
+        const section_title = root.quick_section_title(now);
+
+        let collection = root.collections_list.find(c => c.title === root.quick_collection_title);
+        if (!collection) {
+            const collection_uid = root.generate_uid("col");
+            const collection_data = {
+                uid: collection_uid,
+                title: root.quick_collection_title,
+                description: null,
+                language: "pali",
+                sort_index: root.collections_list.length,
+                is_user_added: true
+            };
+            if (!root.quick_record_step_ok(SuttaBridge.create_chanting_collection(JSON.stringify(collection_data)), "collection")) {
+                return;
+            }
+            root.load_collections();
+            collection = root.collections_list.find(c => c.uid === collection_uid);
+            if (!collection) {
+                root.quick_record_failed("The Quick Recordings collection could not be read back after it was created.");
+                return;
+            }
+        }
+
+        const chants = collection.chants || [];
+        let chant = chants.find(ch => ch.title === chant_title);
+        if (!chant) {
+            const chant_uid = root.generate_uid("chant");
+            const chant_data = {
+                uid: chant_uid,
+                collection_uid: collection.uid,
+                title: chant_title,
+                description: null,
+                sort_index: chants.length,
+                is_user_added: true
+            };
+            if (!root.quick_record_step_ok(SuttaBridge.create_chanting_chant(JSON.stringify(chant_data)), "chant")) {
+                return;
+            }
+            root.load_collections();
+            collection = root.collections_list.find(c => c.uid === collection.uid);
+            chant = collection && collection.chants ? collection.chants.find(ch => ch.uid === chant_uid) : null;
+            if (!chant) {
+                root.quick_record_failed("The chant for today could not be read back after it was created.");
+                return;
+            }
+        }
+
+        const sections = chant.sections || [];
+        let section = sections.find(sec => sec.title === section_title);
+        let section_uid = section ? section.uid : "";
+        if (!section) {
+            section_uid = root.generate_uid("sec");
+            const section_data = {
+                uid: section_uid,
+                chant_uid: chant.uid,
+                title: section_title,
+                content_pali: "",
+                sort_index: sections.length,
+                is_user_added: true
+            };
+            if (!root.quick_record_step_ok(SuttaBridge.create_chanting_section(JSON.stringify(section_data)), "section")) {
+                return;
+            }
+        }
+
+        root.load_collections();
+        root.selected_uid = section_uid;
+        root.selected_type = "section";
+        SuttaBridge.open_chanting_review_window(root.window_id, section_uid, true);
+    }
+
+    // The create_* bridge calls answer with {"ok": true} or {"error": "..."}.
+    function quick_record_step_ok(result_str, step_name) {
+        let result;
+        try {
+            result = JSON.parse(result_str);
+        } catch (e) {
+            result = { error: "Failed to parse result: " + e };
+        }
+        if (result.ok) {
+            return true;
+        }
+        logger.error("quick_record: failed to create the " + step_name + ": " + (result.error || "Unknown error"));
+        root.quick_record_failed("Could not create the " + step_name + ": " + (result.error || "Unknown error"));
+        return false;
+    }
+
+    function quick_record_failed(message) {
+        quick_record_error_dialog.error_message = message;
+        quick_record_error_dialog.open();
+    }
+
     function generate_export_filename() {
         const now = new Date();
         const pad = (n) => n.toString().padStart(2, '0');
         return "chanting-export-" +
             now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) +
             "T" + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds()) + ".zip";
+    }
+
+    // --- Quick Record Error Dialog ---
+
+    Dialog {
+        id: quick_record_error_dialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(400, parent ? parent.width - 40 : 400)
+        title: "Quick Record"
+        header: DialogHeader { text: quick_record_error_dialog.title }
+        modal: true
+        standardButtons: Dialog.Ok
+
+        property string error_message: ""
+
+        ColumnLayout {
+            anchors.fill: parent
+
+            Label {
+                text: quick_record_error_dialog.error_message
+                font.pointSize: root.pointSize
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+        }
     }
 
     // --- Add Collection Dialog ---
@@ -637,6 +785,17 @@ ApplicationWindow {
                 spacing: 10
 
                 Button {
+                    text: "Quick Record"
+                    visible: !root.export_selection_mode
+                    palette.button: "#4CAF50"
+                    palette.buttonText: "white"
+                    icon.source: "icons/32x32/fluent--record-24-regular.png"
+                    icon.width: 16
+                    icon.height: 16
+                    onClicked: root.quick_record()
+                }
+
+                Button {
                     text: "Add Collection"
                     visible: !root.export_selection_mode
                     onClicked: add_collection_dialog.open()
@@ -661,7 +820,7 @@ ApplicationWindow {
                     visible: !root.export_selection_mode
                     enabled: root.selected_type === "section"
                     onClicked: {
-                        SuttaBridge.open_chanting_review_window(root.window_id, root.selected_uid);
+                        SuttaBridge.open_chanting_review_window(root.window_id, root.selected_uid, false);
                     }
                 }
 
@@ -754,7 +913,7 @@ ApplicationWindow {
                     selection_mode: root.export_selection_mode
 
                     onSection_clicked: function(section_uid) {
-                        SuttaBridge.open_chanting_review_window(root.window_id, section_uid);
+                        SuttaBridge.open_chanting_review_window(root.window_id, section_uid, false);
                     }
 
                     onSelection_changed: function(uid, item_type) {

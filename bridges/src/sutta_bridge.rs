@@ -1822,7 +1822,7 @@ pub mod qobject {
         fn open_chanting_practice_window(self: &SuttaBridge, window_id: &QString);
 
         #[qinvokable]
-        fn open_chanting_review_window(self: &SuttaBridge, window_id: &QString, section_uid: &QString);
+        fn open_chanting_review_window(self: &SuttaBridge, window_id: &QString, section_uid: &QString, auto_start_recording: bool);
 
         #[qinvokable]
         fn get_all_chanting_collections_json(self: &SuttaBridge) -> QString;
@@ -5954,9 +5954,9 @@ impl qobject::SuttaBridge {
         ffi::callback_open_chanting_practice_window(window_id.clone());
     }
 
-    pub fn open_chanting_review_window(&self, window_id: &QString, section_uid: &QString) {
+    pub fn open_chanting_review_window(&self, window_id: &QString, section_uid: &QString, auto_start_recording: bool) {
         use crate::api::ffi;
-        ffi::callback_open_chanting_review_window(window_id.clone(), section_uid.clone());
+        ffi::callback_open_chanting_review_window(window_id.clone(), section_uid.clone(), auto_start_recording);
     }
 
     pub fn get_all_chanting_collections_json(&self) -> QString {

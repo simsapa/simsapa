@@ -1148,8 +1148,8 @@ Item {
         console.log("open_chanting_practice_window():", window_id);
     }
 
-    function open_chanting_review_window(window_id: string, section_uid: string) {
-        console.log("open_chanting_review_window():", window_id, section_uid);
+    function open_chanting_review_window(window_id: string, section_uid: string, auto_start_recording: bool) {
+        console.log("open_chanting_review_window():", window_id, section_uid, auto_start_recording);
     }
 
     function get_all_chanting_collections_json(): string {

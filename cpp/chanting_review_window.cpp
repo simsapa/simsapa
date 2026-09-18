@@ -1,15 +1,26 @@
 #include "chanting_review_window.h"
 
+#include <QMetaObject>
 #include <QUrl>
 #include <QQmlContext>
 
-ChantingReviewWindow::ChantingReviewWindow(QApplication* app, const QString& window_id, const QString& section_uid, QObject* parent)
+ChantingReviewWindow::ChantingReviewWindow(QApplication* app, const QString& window_id, const QString& section_uid, bool auto_start_recording, QObject* parent)
     : QObject(parent)
 {
     this->m_app = app;
     this->m_window_id = window_id;
     this->m_section_uid = section_uid;
     setup_qml();
+    if (auto_start_recording) {
+        start_quick_recording();
+    }
+}
+
+/// Invoked after the section uid has been applied, so the QML side already has
+/// the section it is recording into.
+void ChantingReviewWindow::start_quick_recording() {
+    if (!m_root) return;
+    QMetaObject::invokeMethod(m_root, "start_quick_recording");
 }
 
 void ChantingReviewWindow::setup_qml() {

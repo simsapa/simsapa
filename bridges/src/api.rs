@@ -242,7 +242,7 @@ pub mod ffi {
         fn callback_toggle_reading_mode(window_id: QString, is_active: bool);
         fn callback_open_in_lookup_window(result_data_json: QString);
         fn callback_open_chanting_practice_window(window_id: QString);
-        fn callback_open_chanting_review_window(window_id: QString, section_uid: QString);
+        fn callback_open_chanting_review_window(window_id: QString, section_uid: QString, auto_start_recording: bool);
         fn callback_window_closed(window_type: QString);
         fn callback_open_sutta_windows_json(current_window_id: QString) -> QString;
         fn callback_count_open_sutta_search_windows() -> i32;

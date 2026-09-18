@@ -24,7 +24,7 @@ extern "C++" {
     void callback_toggle_reading_mode(QString window_id, bool is_active);
     void callback_open_in_lookup_window(QString result_data_json);
     void callback_open_chanting_practice_window(QString window_id);
-    void callback_open_chanting_review_window(QString window_id, QString section_uid);
+    void callback_open_chanting_review_window(QString window_id, QString section_uid, bool auto_start_recording);
     /// The mobile window switcher's query/command surface. Unlike the callbacks
     /// above, these run synchronously on the GUI thread and forward straight to
     /// the WindowManager -- no signal/slot indirection, and the first two return

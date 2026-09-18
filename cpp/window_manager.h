@@ -80,7 +80,7 @@ class WindowManager : public QObject {
         ReferenceSearchWindow* create_reference_search_window();
         TopicIndexWindow* create_topic_index_window();
         ChantingPracticeWindow* create_chanting_practice_window(const QString& window_id);
-        ChantingReviewWindow* create_chanting_review_window(const QString& window_id, const QString& section_uid);
+        ChantingReviewWindow* create_chanting_review_window(const QString& window_id, const QString& section_uid, bool auto_start_recording = false);
 
         /// Destroy the single-instance secondary window of the given type, after
         /// QML has accepted its close. Called from the QML onClosing handlers via

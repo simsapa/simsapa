@@ -10,7 +10,7 @@ class ChantingReviewWindow : public QObject {
     Q_OBJECT
 
 public:
-    explicit ChantingReviewWindow(QApplication* app, const QString& window_id, const QString& section_uid, QObject* parent = nullptr);
+    explicit ChantingReviewWindow(QApplication* app, const QString& window_id, const QString& section_uid, bool auto_start_recording = false, QObject* parent = nullptr);
     ~ChantingReviewWindow();
 
     QApplication* m_app;
@@ -20,6 +20,9 @@ public:
     QString m_section_uid;
 
     void apply_window_properties(const QString& window_id, const QString& section_uid);
+
+    /// Ask the QML window to add a new recording panel and start recording in it.
+    void start_quick_recording();
 
 private:
     void setup_qml();

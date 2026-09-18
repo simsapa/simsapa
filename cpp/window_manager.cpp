@@ -716,16 +716,19 @@ ChantingPracticeWindow* WindowManager::create_chanting_practice_window(const QSt
     return w;
 }
 
-ChantingReviewWindow* WindowManager::create_chanting_review_window(const QString& window_id, const QString& section_uid) {
+ChantingReviewWindow* WindowManager::create_chanting_review_window(const QString& window_id, const QString& section_uid, bool auto_start_recording) {
     if (ChantingReviewWindow* reused = reuse_or_evict(this->chanting_review_windows)) {
         // Setting current_section_uid is itself the re-init -- see the comment on
         // ChantingReviewWindow::apply_window_properties().
         reused->apply_window_properties(window_id, section_uid);
         show_and_activate_window(reused->m_root);
+        if (auto_start_recording) {
+            reused->start_quick_recording();
+        }
         return reused;
     }
 
-    ChantingReviewWindow* w = new ChantingReviewWindow(this->m_app, window_id, section_uid);
+    ChantingReviewWindow* w = new ChantingReviewWindow(this->m_app, window_id, section_uid, auto_start_recording);
     chanting_review_windows.append(w);
     return w;
 }

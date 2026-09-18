@@ -238,8 +238,8 @@ void callback_open_chanting_practice_window(QString window_id) {
   AppGlobals::manager->create_chanting_practice_window(window_id);
 }
 
-void callback_open_chanting_review_window(QString window_id, QString section_uid) {
-  AppGlobals::manager->create_chanting_review_window(window_id, section_uid);
+void callback_open_chanting_review_window(QString window_id, QString section_uid, bool auto_start_recording) {
+  AppGlobals::manager->create_chanting_review_window(window_id, section_uid, auto_start_recording);
 }
 
 QString callback_open_sutta_windows_json(QString current_window_id) {

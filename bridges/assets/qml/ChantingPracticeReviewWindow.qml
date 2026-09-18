@@ -408,6 +408,47 @@ ApplicationWindow {
         return mins + ":" + String(secs).padStart(2, '0');
     }
 
+    // Append an empty recording panel to the unsaved-recordings list. Shared by
+    // the "New Recording" button and the Quick Record path.
+    function add_new_recording() {
+        let uid = root.current_section_uid + "_user_" + Date.now();
+        new_recordings_model.append({
+            "model_recording_uid": uid,
+            "model_file_path": "",
+            "model_label": "Recording — " + new Date().toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}),
+            "model_recording_type": "user",
+            "model_is_new_recording": true,
+            "model_volume": 1.0,
+            "model_playback_position_ms": 0,
+            "model_markers_json": "[]",
+            "model_waveform_json": ""
+        });
+    }
+
+    // Called from C++ (ChantingReviewWindow::start_quick_recording) when the
+    // window was opened by the Quick Record button: add a recording panel and
+    // start recording into it without any further user action.
+    //
+    // The panel is instantiated by a Repeater, so the delegate does not exist
+    // yet when append() returns; the start is posted with Qt.callLater.
+    function start_quick_recording() {
+        root.add_new_recording();
+        Qt.callLater(function() {
+            if (new_rec_repeater.count === 0) {
+                logger.error("start_quick_recording: no recording panel was created");
+                return;
+            }
+            let item = new_rec_repeater.itemAt(new_rec_repeater.count - 1) as RecordingPlaybackItem;
+            if (!item) {
+                logger.error("start_quick_recording: recording panel is not available yet");
+                return;
+            }
+            if (!item.is_recording) {
+                item.start_recording();
+            }
+        });
+    }
+
     // Format a recording label with date and duration
     function format_recording_info(label: string, duration_ms: int): string {
         if (duration_ms > 0) {
@@ -1199,20 +1240,7 @@ ApplicationWindow {
                     icon.source: "icons/32x32/fa_circle-plus-solid.png"
                     icon.width: 16
                     icon.height: 16
-                    onClicked: {
-                        let uid = root.current_section_uid + "_user_" + Date.now();
-                        new_recordings_model.append({
-                            "model_recording_uid": uid,
-                            "model_file_path": "",
-                            "model_label": "Recording — " + new Date().toLocaleString(undefined, {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}),
-                            "model_recording_type": "user",
-                            "model_is_new_recording": true,
-                            "model_volume": 1.0,
-                            "model_playback_position_ms": 0,
-                            "model_markers_json": "[]",
-                            "model_waveform_json": ""
-                        });
-                    }
+                    onClicked: root.add_new_recording()
                 }
 
                 // Add recording from existing file
