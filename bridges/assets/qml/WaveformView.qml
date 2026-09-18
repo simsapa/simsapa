@@ -193,28 +193,71 @@ Item {
 
     // Mouse interaction area
     MouseArea {
+        id: mouse_area
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
 
+        // A press only becomes a range drag once the pointer has moved further
+        // horizontally than vertically, past this threshold. The waveform lives
+        // inside a vertically scrolling Flickable, and a scroll that starts on
+        // the waveform always drifts a few pixels sideways — without the axis
+        // lock that drift drew an unintended range.
+        readonly property int axis_lock_threshold: 10
+
+        property real press_x: 0
+        property real press_y: 0
+        property bool drag_committed: false
+        property bool scroll_intent: false
+
         onPressed: function(mouse) {
-            root.is_dragging = true;
+            mouse_area.press_x = mouse.x;
+            mouse_area.press_y = mouse.y;
+            mouse_area.drag_committed = false;
+            mouse_area.scroll_intent = false;
+            root.is_dragging = false;
             root.drag_start_x = mouse.x;
             root.drag_current_x = mouse.x;
         }
 
         onPositionChanged: function(mouse) {
-            if (root.is_dragging) {
-                root.drag_current_x = Math.max(0, Math.min(root.width, mouse.x));
+            let dx = mouse.x - mouse_area.press_x;
+            let dy = mouse.y - mouse_area.press_y;
+
+            if (!mouse_area.drag_committed) {
+                if (mouse_area.scroll_intent) return;
+
+                if (Math.abs(dy) > mouse_area.axis_lock_threshold && Math.abs(dy) >= Math.abs(dx)) {
+                    // Vertical intent: this is a scroll. Leave it to the Flickable
+                    // and never draw a range for this press.
+                    mouse_area.scroll_intent = true;
+                    return;
+                }
+                if (Math.abs(dx) <= mouse_area.axis_lock_threshold) return;
+
+                mouse_area.drag_committed = true;
+                root.is_dragging = true;
             }
+
+            root.drag_current_x = Math.max(0, Math.min(root.width, mouse.x));
         }
 
         onReleased: function(mouse) {
+            let was_dragging = mouse_area.drag_committed;
+            let was_scroll = mouse_area.scroll_intent;
             root.is_dragging = false;
-            let end_x = Math.max(0, Math.min(root.width, mouse.x));
-            let drag_distance = Math.abs(end_x - root.drag_start_x);
+            mouse_area.drag_committed = false;
+            mouse_area.scroll_intent = false;
 
-            if (root.range_create_active || drag_distance < 5) {
+            if (was_scroll) {
+                // A scroll gesture the Flickable did not take over: neither a
+                // range nor a seek.
+                return;
+            }
+
+            let end_x = Math.max(0, Math.min(root.width, mouse.x));
+
+            if (root.range_create_active || !was_dragging) {
                 // During range creation, always treat as a position click.
                 // Otherwise, short click: seek to position.
                 root.seek_requested(root.x_to_ms(end_x));
@@ -224,6 +267,14 @@ Item {
                 let end_ms = root.x_to_ms(Math.max(root.drag_start_x, end_x));
                 root.range_selected(start_ms, end_ms);
             }
+        }
+
+        onCanceled: {
+            // The Flickable (or another grabber) took the gesture over. Drop the
+            // drag preview instead of leaving it on screen.
+            root.is_dragging = false;
+            mouse_area.drag_committed = false;
+            mouse_area.scroll_intent = false;
         }
     }
 }
