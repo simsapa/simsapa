@@ -54,6 +54,38 @@ ApplicationWindow {
     // UID of a recording that should auto-open after data reload
     property string auto_open_uid: ""
 
+    // How many recordings currently have their playback panel open. The
+    // reference and user delegates each maintain this as their is_open changes,
+    // and give their count back when destroyed (reloading a section clears both
+    // models while a panel may still be open).
+    property int open_playback_count: 0
+
+    // The Pali text is the flexible part of this layout: an open playback panel
+    // is tall and roughly fixed in height, so on a phone the two together
+    // overflow the window and the playback controls fall off the bottom. While a
+    // panel is open the text collapses to a few lines -- it is still scrollable,
+    // and it stays full size while editing, where seeing the text matters more.
+    readonly property int pali_height_normal: 200
+    readonly property int pali_height_collapsed: Math.max(60, Math.round(root.height * 0.15))
+    readonly property bool pali_collapsed: root.open_playback_count > 0 && !pali_edit_button.checked
+
+    // Bring a just-opened playback panel into view. Collapsing the text above it
+    // is what makes the room; this is what uses it, for the case where the panel
+    // opened below the visible part of the list.
+    function scroll_playback_into_view(item: Item) {
+        if (item === null) return;
+        let flickable = recordings_scroll.contentItem as Flickable;
+        if (flickable === null) return;
+        let top = item.mapToItem(flickable.contentItem, 0, 0).y;
+        let bottom = top + item.height;
+        let max_y = Math.max(0, flickable.contentHeight - flickable.height);
+        if (bottom > flickable.contentY + flickable.height) {
+            flickable.contentY = Math.min(max_y, bottom - flickable.height);
+        } else if (top < flickable.contentY) {
+            flickable.contentY = Math.min(max_y, top);
+        }
+    }
+
     // Emitted when a recording starts playing; other items should pause
     signal pause_other_playback(string playing_uid)
 
@@ -505,8 +537,11 @@ ApplicationWindow {
             ScrollView {
                 id: pali_scroll
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(200, pali_text.implicitHeight + 20)
-                Layout.maximumHeight: 300
+                Layout.preferredHeight: Math.min(root.pali_collapsed
+                                                     ? root.pali_height_collapsed
+                                                     : root.pali_height_normal,
+                                                 pali_text.implicitHeight + 20)
+                Layout.maximumHeight: root.pali_collapsed ? root.pali_height_collapsed : 300
                 clip: true
 
                 TextArea {
@@ -619,6 +654,21 @@ ApplicationWindow {
                                 required property string waveform_json
 
                                 property bool is_open: false
+
+                                onIs_openChanged: {
+                                    root.open_playback_count += ref_delegate.is_open ? 1 : -1;
+                                    if (ref_delegate.is_open) {
+                                        // After the collapse and the panel's own
+                                        // layout have settled.
+                                        Qt.callLater(root.scroll_playback_into_view, ref_delegate);
+                                    }
+                                }
+
+                                Component.onDestruction: {
+                                    if (ref_delegate.is_open) {
+                                        root.open_playback_count -= 1;
+                                    }
+                                }
 
                                 property string computed_file_path: {
                                     if (ref_delegate.file_name === "") return "";
@@ -756,6 +806,21 @@ ApplicationWindow {
                                 required property string waveform_json
 
                                 property bool is_open: false
+
+                                onIs_openChanged: {
+                                    root.open_playback_count += user_delegate.is_open ? 1 : -1;
+                                    if (user_delegate.is_open) {
+                                        // After the collapse and the panel's own
+                                        // layout have settled.
+                                        Qt.callLater(root.scroll_playback_into_view, user_delegate);
+                                    }
+                                }
+
+                                Component.onDestruction: {
+                                    if (user_delegate.is_open) {
+                                        root.open_playback_count -= 1;
+                                    }
+                                }
 
                                 Component.onCompleted: {
                                     if (root.auto_open_uid !== "" && root.auto_open_uid === user_delegate.uid) {
