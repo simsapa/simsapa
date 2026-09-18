@@ -1224,6 +1224,10 @@ Item {
         return '{"ok": true}';
     }
 
+    function replace_recording_file(recording_uid: string, file_path: string): string {
+        return '{"ok": true}';
+    }
+
     function update_recording_label(recording_uid: string, label: string): string {
         return '{"ok": true}';
     }

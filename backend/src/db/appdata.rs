@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 use regex::Regex;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
 use crate::get_app_data;
@@ -1286,6 +1286,104 @@ impl AppdataDbHandle {
                 .execute(db_conn)
                 .map(|_| ())
         })
+    }
+
+    /// Point a recording row at a newly recorded file, as when the user
+    /// re-records an attempt they had already saved.
+    ///
+    /// Everything derived from the previous audio is dropped: `markers_json`,
+    /// `waveform_json` and `playback_position_ms` all index a timeline the new
+    /// take does not have, and `duration_ms` is re-probed rather than kept
+    /// (the lazy backfill in `get_chanting_recordings_for_sections` only fills
+    /// a zero, so a stale non-zero duration would survive forever).
+    ///
+    /// The superseded file is deleted, since nothing references it once the row
+    /// has moved -- but only after the row is written, so a failed write cannot
+    /// leave the row pointing at a file that is already gone. For that reason
+    /// this is for a recording the user owns: it is reached only from a user
+    /// panel's Record button, and a bundled reference recording's file is not
+    /// something to delete.
+    pub fn replace_recording_file(
+        &self,
+        recording_uid_param: &str,
+        new_file_name: &str,
+    ) -> Result<()> {
+        use crate::db::appdata_schema::chanting_recordings::dsl::*;
+
+        if new_file_name.is_empty() {
+            return Err(anyhow!("replace_recording_file: empty file name"));
+        }
+
+        let existing: Option<ChantingRecording> = self.do_read(|db_conn| {
+            chanting_recordings
+                .filter(uid.eq(recording_uid_param))
+                .select(ChantingRecording::as_select())
+                .first(db_conn)
+                .optional()
+        })?;
+
+        let existing = match existing {
+            Some(rec) => rec,
+            None => {
+                return Err(anyhow!(
+                    "replace_recording_file: no recording with uid {}",
+                    recording_uid_param
+                ))
+            }
+        };
+
+        let recordings_dir = crate::get_chanting_recordings_dir();
+        let abs_path = if std::path::Path::new(new_file_name).is_absolute() {
+            std::path::PathBuf::from(new_file_name)
+        } else {
+            recordings_dir.join(new_file_name)
+        };
+        // Refuse if the new file is not there: the write below would leave the
+        // row naming a file that does not exist, and the delete at the end would
+        // then remove the only audio the recording still had.
+        match abs_path.try_exists() {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(anyhow!(
+                    "replace_recording_file: new file does not exist: {}",
+                    abs_path.display()
+                ))
+            }
+            Err(e) => {
+                return Err(anyhow!(
+                    "replace_recording_file: cannot check {}: {}",
+                    abs_path.display(),
+                    e
+                ))
+            }
+        }
+
+        let new_duration_ms = crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy());
+
+        let updated = self.do_write(|db_conn| {
+            diesel::update(chanting_recordings.filter(uid.eq(recording_uid_param)))
+                .set((
+                    file_name.eq(new_file_name),
+                    duration_ms.eq(new_duration_ms),
+                    markers_json.eq(Some("[]")),
+                    waveform_json.eq(None::<String>),
+                    playback_position_ms.eq(0),
+                ))
+                .execute(db_conn)
+        })?;
+
+        if updated == 0 {
+            return Err(anyhow!(
+                "replace_recording_file: no row updated for uid {}",
+                recording_uid_param
+            ));
+        }
+
+        if existing.file_name != new_file_name {
+            self.delete_recording_file(&existing.file_name);
+        }
+
+        Ok(())
     }
 
     pub fn update_recording_label(&self, recording_uid_param: &str, new_label: &str) -> Result<()> {

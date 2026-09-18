@@ -314,6 +314,123 @@ fn test_create_and_read_chanting_recording() {
     assert_eq!(detail.recordings[0].duration_ms, 5000);
 }
 
+/// Re-recording an attempt that is already saved: the row must move to the new
+/// file and drop everything derived from the old take, and the superseded file
+/// must go. Before `replace_recording_file` existed the QML side had nothing to
+/// call, so the new take played in the panel while the row kept the old file.
+#[test]
+#[serial]
+fn test_replace_recording_file() {
+    setup();
+    let app_data = get_app_data();
+
+    let col_data = ChantingCollectionJson {
+        uid: "test-col-for-replace".to_string(),
+        title: "Collection".to_string(),
+        description: None,
+        language: "pali".to_string(),
+        sort_index: 0,
+        is_user_added: true,
+        metadata_json: None,
+        chants: Vec::new(),
+    };
+    app_data.dbm.appdata.create_chanting_collection(&col_data).expect("create collection");
+
+    let chant_data = ChantingChantJson {
+        uid: "test-chant-for-replace".to_string(),
+        collection_uid: "test-col-for-replace".to_string(),
+        title: "Chant".to_string(),
+        description: None,
+        sort_index: 0,
+        is_user_added: true,
+        metadata_json: None,
+        sections: Vec::new(),
+    };
+    app_data.dbm.appdata.create_chanting_chant(&chant_data).expect("create chant");
+
+    let sec_data = ChantingSectionJson {
+        uid: "test-sec-for-replace".to_string(),
+        chant_uid: "test-chant-for-replace".to_string(),
+        title: "Section".to_string(),
+        content_pali: "Pali text".to_string(),
+        sort_index: 0,
+        is_user_added: true,
+        metadata_json: None,
+        recordings: Vec::new(),
+    };
+    app_data.dbm.appdata.create_chanting_section(&sec_data).expect("create section");
+
+    // Two stand-in files in the real recordings dir: the point of the test is
+    // that one of them is gone afterwards.
+    let recordings_dir = simsapa_backend::get_chanting_recordings_dir();
+    let old_name = "test-replace-old.flac";
+    let new_name = "test-replace-new.flac";
+    let old_path = recordings_dir.join(old_name);
+    let new_path = recordings_dir.join(new_name);
+    std::fs::write(&old_path, b"not audio").expect("write old file");
+    std::fs::write(&new_path, b"not audio either").expect("write new file");
+
+    let rec_data = ChantingRecordingJson {
+        uid: "test-recording-replace".to_string(),
+        section_uid: "test-sec-for-replace".to_string(),
+        file_name: old_name.to_string(),
+        recording_type: "user".to_string(),
+        label: Some("Attempt 1".to_string()),
+        duration_ms: 5000,
+        markers_json: Some("[{\"id\":\"m1\",\"type\":\"position\",\"position_ms\":1200}]".to_string()),
+        volume: 0.8,
+        playback_position_ms: 1234,
+        waveform_json: Some("{\"num_bars\":2,\"peaks\":[0.1,0.2]}".to_string()),
+        is_user_added: true,
+    };
+    app_data.dbm.appdata.create_chanting_recording(&rec_data).expect("create recording");
+
+    app_data.dbm.appdata
+        .replace_recording_file("test-recording-replace", new_name)
+        .expect("replace recording file");
+
+    let detail = app_data.dbm.appdata.get_chanting_section_detail("test-sec-for-replace")
+        .expect("get detail")
+        .expect("section should exist");
+    assert_eq!(detail.recordings.len(), 1);
+    let rec = &detail.recordings[0];
+
+    assert_eq!(rec.file_name, new_name);
+    // Re-probed, not carried over: these stand-ins are not decodable, so 0.
+    assert_eq!(rec.duration_ms, 0);
+    // Everything that indexed the old take's timeline is cleared.
+    assert_eq!(rec.markers_json, Some("[]".to_string()));
+    assert_eq!(rec.waveform_json, None);
+    assert_eq!(rec.playback_position_ms, 0);
+    // The label and volume are the user's settings, not derived from the audio.
+    assert_eq!(rec.label, Some("Attempt 1".to_string()));
+    assert!((rec.volume - 0.8).abs() < 1e-6);
+
+    assert!(!old_path.try_exists().expect("check old file"), "superseded file should be deleted");
+    assert!(new_path.try_exists().expect("check new file"), "new file should be kept");
+
+    // An unknown uid is an error, not a silent no-op -- the QML side logs it.
+    assert!(app_data.dbm.appdata
+        .replace_recording_file("test-recording-does-not-exist", new_name)
+        .is_err());
+    // And an empty file name is refused before anything is written.
+    assert!(app_data.dbm.appdata
+        .replace_recording_file("test-recording-replace", "")
+        .is_err());
+    // So is a file that is not there -- otherwise the row would be pointed at
+    // nothing and the delete would take the last remaining audio with it.
+    assert!(app_data.dbm.appdata
+        .replace_recording_file("test-recording-replace", "test-replace-missing.flac")
+        .is_err());
+    let after = app_data.dbm.appdata.get_chanting_section_detail("test-sec-for-replace")
+        .expect("get detail")
+        .expect("section should exist");
+    assert_eq!(after.recordings[0].file_name, new_name);
+    assert!(new_path.try_exists().expect("check new file"), "new file should survive a refused replace");
+
+    let _ = std::fs::remove_file(&new_path);
+}
+
 // --- Cascade delete ---
 
 #[test]

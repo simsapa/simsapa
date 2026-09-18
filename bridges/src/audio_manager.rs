@@ -167,6 +167,19 @@ impl Drop for AudioManagerRust {
 impl qobject::AudioManager {
     fn start_recording(mut self: Pin<&mut Self>, output_path: QString) {
         let path = output_path.to_string();
+
+        // Refuse rather than replace: `Recorder::stop` is what encodes the FLAC
+        // -- dropping a live recorder only tears the stream down -- so
+        // overwriting `rust.recorder` here would silently discard everything
+        // captured so far. The QML Record button is a toggle and does not do
+        // this, but each playback panel owns its own AudioManager.
+        if self.as_ref().rust().recorder.is_some() {
+            let msg = "A recording is already in progress".to_string();
+            error(&msg);
+            self.as_mut().error_occurred(QString::from(&msg));
+            return;
+        }
+
         match Recorder::start(&path) {
             Ok(recorder) => {
                 let rust = self.as_mut().rust_mut().get_mut();

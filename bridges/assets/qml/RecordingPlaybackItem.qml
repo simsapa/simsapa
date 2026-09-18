@@ -372,6 +372,13 @@ Item {
                 icon.source: "icons/32x32/mdi--close.png"
                 Layout.preferredWidth: 24
                 flat: true
+                // Closing destroys this item, and with it the AudioManager
+                // that holds the live Recorder. Only Recorder::stop encodes the
+                // FLAC -- dropping it writes nothing -- so closing mid-recording
+                // discards the take. The elapsed-time indicator and the Stop
+                // button next to it are what explain the disabled state; a
+                // ToolTip cannot, since a disabled control never gets hover.
+                enabled: !root.is_recording
                 onClicked: {
                     root.save_position();
                     root.closed();
@@ -396,8 +403,13 @@ Item {
                 Layout.fillWidth: true
                 spacing: 8
 
+                // Both of these destroy this item. Re-recording a recording
+                // whose file has gone missing leaves this block visible until
+                // the new take lands, so they need the same guard as the header
+                // close button above.
                 Button {
                     text: "Remove Recording"
+                    enabled: !root.is_recording
                     onClicked: {
                         root.remove_requested(root.recording_uid);
                     }
@@ -405,6 +417,7 @@ Item {
 
                 Button {
                     text: "Close"
+                    enabled: !root.is_recording
                     onClicked: root.closed()
                 }
             }
@@ -473,7 +486,7 @@ Item {
                 icon.width: 20
                 icon.height: 20
                 enabled: !root.is_recording && root.file_path !== "" && !root.file_not_found
-                implicitWidth: 40
+                implicitWidth: 50
                 onClicked: {
                     if (audio.state === root.player_playing) {
                         audio.pause();
@@ -492,7 +505,7 @@ Item {
                 icon.width: 20
                 icon.height: 20
                 enabled: !root.is_recording && audio.state !== root.player_stopped
-                implicitWidth: 40
+                implicitWidth: 50
                 onClicked: {
                     root.stop_range_playback();
                     audio.stop();
@@ -504,7 +517,7 @@ Item {
             Button {
                 text: "-5s"
                 enabled: !root.is_recording && root.file_path !== "" && !root.file_not_found
-                implicitWidth: 40
+                implicitWidth: 50
                 onClicked: {
                     root.active_position_marker_id = "";
                     let new_pos = Math.max(0, audio.position_ms - 5000);
@@ -516,7 +529,7 @@ Item {
             Button {
                 text: "+5s"
                 enabled: !root.is_recording && root.file_path !== "" && !root.file_not_found
-                implicitWidth: 40
+                implicitWidth: 50
                 onClicked: {
                     root.active_position_marker_id = "";
                     let max_pos = audio.duration_ms > 0 ? audio.duration_ms : audio.position_ms;

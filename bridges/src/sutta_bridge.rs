@@ -1873,6 +1873,9 @@ pub mod qobject {
         fn delete_chanting_recording(self: &SuttaBridge, recording_uid: &QString) -> QString;
 
         #[qinvokable]
+        fn replace_recording_file(self: &SuttaBridge, recording_uid: &QString, file_path: &QString) -> QString;
+
+        #[qinvokable]
         fn update_recording_label(self: &SuttaBridge, recording_uid: &QString, label: &QString) -> QString;
 
         #[qinvokable]
@@ -6167,6 +6170,27 @@ impl qobject::SuttaBridge {
     pub fn delete_chanting_recording(&self, recording_uid: &QString) -> QString {
         let app_data = get_app_data();
         match app_data.dbm.appdata.delete_chanting_recording(&recording_uid.to_string()) {
+            Ok(_) => QString::from("{\"ok\": true}"),
+            Err(e) => QString::from(&format!("{{\"error\": \"{}\"}}", e)),
+        }
+    }
+
+    /// Point an already-saved recording at a newly recorded file (re-record).
+    /// `file_path` is the path the recorder reported; only its file name is
+    /// stored, matching what `create_chanting_recording` receives.
+    pub fn replace_recording_file(&self, recording_uid: &QString, file_path: &QString) -> QString {
+        let path_str = file_path.to_string();
+        let file_name = std::path::Path::new(&path_str)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path_str.clone());
+
+        let app_data = get_app_data();
+        match app_data
+            .dbm
+            .appdata
+            .replace_recording_file(&recording_uid.to_string(), &file_name)
+        {
             Ok(_) => QString::from("{\"ok\": true}"),
             Err(e) => QString::from(&format!("{{\"error\": \"{}\"}}", e)),
         }

@@ -54,6 +54,10 @@ ApplicationWindow {
     // UID of a recording that should auto-open after data reload
     property string auto_open_uid: ""
 
+    // How many saved-recording panels are recording right now (a re-record of
+    // an attempt that is already in the database).
+    property int recording_panel_count: 0
+
     // How many recordings currently have their playback panel open. The
     // reference and user delegates each maintain this as their is_open changes,
     // and give their count back when destroyed (reloading a section clears both
@@ -146,7 +150,10 @@ ApplicationWindow {
                 return true;
             }
         }
-        return false;
+        // A saved user recording can be re-recorded from its own open panel, and
+        // that take needs the same close deferral as a new one. Reference panels
+        // cannot record (their Record button is hidden), so they never count.
+        return root.recording_panel_count > 0;
     }
 
     Timer {
@@ -163,9 +170,20 @@ ApplicationWindow {
         }
     }
 
+    // Guards against notifying twice for one close. Three things can each reach
+    // notify_closed() for the same close -- the onClosing path, a recording that
+    // finalises and saves, and the failsafe below -- and a second notify asks
+    // WindowManager to destroy a wrapper it has already destroyed. Reset at the
+    // top of onClosing, which is the start of every close cycle.
+    property bool close_notified: false
+
     function notify_closed() {
         root.close_pending = false;
         close_deferral_failsafe.stop();
+        if (root.close_notified) {
+            return;
+        }
+        root.close_notified = true;
         logger.info("ChantingReviewWindow: notifying WindowManager of close");
         SuttaBridge.notify_window_closed("chanting_review");
     }
@@ -190,7 +208,13 @@ ApplicationWindow {
             root.close_pending = false;
             close_deferral_failsafe.stop();
             logger.info("ChantingReviewWindow: reopened while a close was pending, deferred destroy cancelled");
+            // The recording that held the close up saved its row but skipped the
+            // usual list rebuild, because that rebuild would have run inside
+            // onClosing's cleanup loop. Do it now, or the finished take shows
+            // twice: once as a leftover new-recording item and once from the DB.
+            root.refresh_data();
         }
+        root.close_notified = false;
         if (root.is_mobile && !root.screen_lock_held) {
             screen_manager.set_keep_screen_on("chanting-review-window", true);
             root.screen_lock_held = true;
@@ -217,9 +241,22 @@ ApplicationWindow {
             root.apply_pali_edit_mode(false);
         }
 
+        root.close_notified = false;
+
         // Read before the cleanup below, which sets is_recording false at once
         // while the file is still being finalised in Rust.
         const was_recording = root.any_recording_active();
+
+        // Marked *before* the cleanup, not after: cleanup stops the recorder,
+        // and Rust finalises the file and emits recordingFinished synchronously,
+        // so the handler that persists the take runs inside the cleanup loop
+        // below. It resolves the deferral only if the deferral is already
+        // marked -- otherwise the close waits out the 15 s failsafe for a save
+        // that has already landed.
+        if (close.accepted && was_recording) {
+            root.close_pending = true;
+            close_deferral_failsafe.restart();
+        }
 
         if (root.is_mobile && root.screen_lock_held) {
             screen_manager.set_keep_screen_on("chanting-review-window", false);
@@ -244,14 +281,16 @@ ApplicationWindow {
         }
 
         if (!close.accepted) {
+            root.close_pending = false;
+            close_deferral_failsafe.stop();
             return;
         }
-        if (was_recording) {
-            root.close_pending = true;
-            close_deferral_failsafe.restart();
+        if (root.close_pending) {
             logger.info("ChantingReviewWindow: close deferred until the recording is finalised and saved");
             return;
         }
+        // Either nothing was recording, or it finalised and saved during the
+        // cleanup above and already notified -- notify_closed() is idempotent.
         root.notify_closed();
     }
 
@@ -476,8 +515,26 @@ ApplicationWindow {
             "markers_json": "[]",
             "is_user_added": true
         });
-        SuttaBridge.create_chanting_recording(rec_json);
+        root.report_recording_error(SuttaBridge.create_chanting_recording(rec_json), "save", uid);
         load_section_data();
+    }
+
+    // The recording bridge calls return {"ok":true} or {"error":"..."}, and a
+    // dropped error loses a recording with no trace of why. Returns true if the
+    // call failed, so a caller can stop instead of acting on a write that did
+    // not happen.
+    function report_recording_error(result: string, action: string, recording_uid: string): bool {
+        let parsed = {};
+        try {
+            parsed = JSON.parse(result);
+        } catch (e) {
+            parsed = { "error": "unparseable result: " + result };
+        }
+        if (parsed.error) {
+            logger.error("Failed to " + action + " recording " + recording_uid + ": " + parsed.error);
+            return true;
+        }
+        return false;
     }
 
     function remove_recording_and_refresh(recording_uid: string) {
@@ -807,6 +864,21 @@ ApplicationWindow {
 
                                 property bool is_open: false
 
+                                // True while this delegate's open panel is
+                                // recording. Closing the panel, or deleting the
+                                // recording, would destroy the AudioManager that
+                                // holds the live Recorder -- and only
+                                // Recorder::stop encodes the FLAC -- so those
+                                // controls are disabled while it runs.
+                                //
+                                // Derived, not assigned from the panel: the panel
+                                // is destroyed together with this delegate, and a
+                                // reset written from its Component.onDestruction
+                                // would be a write into an object already being
+                                // torn down. A binding cannot go stale either.
+                                readonly property bool panel_recording: user_playback_loader.item !== null
+                                    && (user_playback_loader.item as RecordingPlaybackItem).is_recording
+
                                 onIs_openChanged: {
                                     root.open_playback_count += user_delegate.is_open ? 1 : -1;
                                     if (user_delegate.is_open) {
@@ -866,6 +938,7 @@ ApplicationWindow {
                                         Button {
                                             id: user_open_close_btn
                                             text: user_delegate.is_open ? "Close" : "Open"
+                                            enabled: !user_delegate.panel_recording
                                             onClicked: user_delegate.is_open = !user_delegate.is_open
                                         }
 
@@ -874,6 +947,7 @@ ApplicationWindow {
                                             icon.source: "icons/32x32/ion--trash-outline.png"
                                             implicitHeight: user_open_close_btn.implicitHeight
                                             implicitWidth: implicitHeight
+                                            enabled: !user_delegate.panel_recording
                                             onClicked: {
                                                 delete_confirm_dialog.target_uid = user_delegate.uid;
                                                 delete_confirm_dialog.open();
@@ -885,6 +959,10 @@ ApplicationWindow {
                                     // reference delegate above for why pointer
                                     // handlers are used instead of a MouseArea).
                                     TapHandler {
+                                        // A tap on the frame would close the
+                                        // panel too, and a disabled button is
+                                        // not a guard against that.
+                                        enabled: !user_delegate.panel_recording
                                         onTapped: user_delegate.is_open = !user_delegate.is_open
                                     }
                                     HoverHandler {
@@ -909,7 +987,24 @@ ApplicationWindow {
                                     visible: active
                                     sourceComponent: Component {
                                         RecordingPlaybackItem {
+                                            id: user_playback_item
+
                                             width: user_playback_loader.width
+
+                                            // Counted for root.any_recording_active(), so that
+                                            // closing the window during a re-record defers the
+                                            // destroy until the file is finalised and saved. The
+                                            // give-back on destruction covers a panel closed
+                                            // mid-recording, which drops the take.
+                                            onIs_recordingChanged: {
+                                                root.recording_panel_count += user_playback_item.is_recording ? 1 : -1;
+                                            }
+
+                                            Component.onDestruction: {
+                                                if (user_playback_item.is_recording) {
+                                                    root.recording_panel_count -= 1;
+                                                }
+                                            }
 
                                             recording_uid: user_delegate.uid
                                             file_path: user_delegate.computed_file_path
@@ -936,6 +1031,47 @@ ApplicationWindow {
                                             onLabel_edited: function(new_label) {
                                                 SuttaBridge.update_recording_label(user_delegate.uid, new_label);
                                                 user_model.setProperty(user_delegate.index, "label", new_label);
+                                            }
+
+                                            // Re-recording a saved attempt: the
+                                            // row has to be pointed at the new
+                                            // file, or the panel plays the new
+                                            // take while the section still
+                                            // holds the old one -- which is
+                                            // what it did before this existed.
+                                            onRecording_completed: function(recorded_file_path) {
+                                                let result = SuttaBridge.replace_recording_file(user_delegate.uid, recorded_file_path);
+                                                // On failure the row still names
+                                                // the old file, which is still on
+                                                // disk, and the panel is playing
+                                                // a take that was not saved.
+                                                let failed = root.report_recording_error(result, "re-record", user_delegate.uid);
+
+                                                // During a close this runs inside
+                                                // onClosing's cleanup loop over
+                                                // this very list, so rebuilding it
+                                                // here would destroy the items
+                                                // still to be cleaned up. Resolve
+                                                // the deferred close either way --
+                                                // saved or logged as lost, nothing
+                                                // further is coming.
+                                                if (root.close_pending) {
+                                                    if (!root.any_recording_active()) {
+                                                        root.notify_closed();
+                                                    }
+                                                    return;
+                                                }
+                                                if (failed) {
+                                                    return;
+                                                }
+                                                // Reload rather than patch the
+                                                // model row: duration, markers
+                                                // and the regenerated waveform
+                                                // all have to come from the new
+                                                // file. auto_open_uid reopens
+                                                // this recording afterwards.
+                                                root.auto_open_uid = user_delegate.uid;
+                                                root.load_section_data();
                                             }
                                         }
                                     }
@@ -1016,14 +1152,30 @@ ApplicationWindow {
                                     "markers_json": "[]",
                                     "is_user_added": true
                                 });
-                                SuttaBridge.create_chanting_recording(rec_json);
+                                let failed = root.report_recording_error(SuttaBridge.create_chanting_recording(rec_json), "save", uid);
+
+                                // As in the saved-recording panel: during a
+                                // close this runs inside onClosing's cleanup
+                                // loop over new_recordings_model, so leave the
+                                // model and the lists alone, and resolve the
+                                // deferred close either way.
+                                if (root.close_pending) {
+                                    if (!root.any_recording_active()) {
+                                        root.notify_closed();
+                                    }
+                                    return;
+                                }
+                                if (failed) {
+                                    // Leave the item in the list rather than
+                                    // removing it in favour of a row that was
+                                    // never inserted: the take stays reachable
+                                    // in the UI instead of vanishing.
+                                    return;
+                                }
                                 // Remove from new recordings and auto-open in user list
                                 new_recordings_model.remove(new_rec_delegate.index);
                                 root.auto_open_uid = uid;
                                 root.load_section_data();
-                                if (root.close_pending && !root.any_recording_active()) {
-                                    root.notify_closed();
-                                }
                             }
                         }
                     }
