@@ -1,6 +1,6 @@
 [package]
 name = "simsapa_backend"
-version = "1.0.0-alpha.7"
+version = "1.0.0-alpha.8"
 edition = "2024"
 authors = ["Gambhiro Bhikkhu <profound.labs@gmail.com>"]
 license = "Apache-2.0"
