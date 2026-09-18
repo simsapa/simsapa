@@ -181,6 +181,7 @@ ColumnLayout {
 
             MouseArea {
                 anchors.fill: parent
+                enabled: !root.is_row_disabled_by_lock("__dpd__")
                 cursorShape: Qt.PointingHandCursor
                 onClicked: dpd_check.checked = !dpd_check.checked
                 z: -1
@@ -251,6 +252,7 @@ ColumnLayout {
 
             MouseArea {
                 anchors.fill: parent
+                enabled: !root.is_row_disabled_by_lock("__commentary_definitions__")
                 cursorShape: Qt.PointingHandCursor
                 onClicked: comm_check.checked = !comm_check.checked
                 z: -1
@@ -346,6 +348,7 @@ ColumnLayout {
 
                 MouseArea {
                     anchors.fill: parent
+                    enabled: !root.is_row_disabled_by_lock(user_row.modelData.label)
                     cursorShape: Qt.PointingHandCursor
                     onClicked: user_check.checked = !user_check.checked
                     z: -1
