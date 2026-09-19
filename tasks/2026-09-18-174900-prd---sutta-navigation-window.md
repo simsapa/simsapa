@@ -830,14 +830,62 @@ and `PROJECT_MAP.md`.
 
 ## 9. Success Metrics
 
-1. A user can reach `sn56.11` from a cold window in **five interactions or
-   fewer**, counting a row tap, an enter-level button and an Open button alike
+1. **The section levels of the corpus are visible, and a user can reach any text
+   by walking them.** The path to `sn56.11` is measured and reported
    (Sutta → Linked → SN → Mahāvagga → Saccasaṁyutta → Dhammacakkappavattanavagga
-   → the sutta; measured and reported — if it is more, the level grouping should
-   be reconsidered). Expanding in place and entering a level are both legitimate
-   routes; report which one the count assumes.
-2. Every one of the four CST roots (Mūla, Aṭṭhakathā, Ṭīkā, Añña) is browsable
-   to an openable leaf.
+   → the sutta: six enter-level presses plus Open). Expanding in place and
+   entering a level are both legitimate routes; report which one the count
+   assumes.
+
+   > **CORRECTED 2026-09-19, after reviewing the built tree. The interaction
+   > budget this replaces was wrong, and treating it as a target would have
+   > damaged the feature. Do not re-derive it.**
+   >
+   > The original metric demanded "**five interactions or fewer**" and added
+   > that "if it is more, the level grouping should be reconsidered" — while
+   > enumerating, in the same sentence, a **seven**-step chain. It contradicted
+   > itself, and the resolution is not to flatten the tree.
+   >
+   > **Making the sectioning visible is the point of this window.** Those levels
+   > — that the Saṁyutta Nikāya contains a Mahāvagga, which contains the
+   > Saccasaṁyutta, which contains the Dhammacakkappavattanavagga — are exactly
+   > what a search-only app cannot show, and §1 opens by saying so. Collapsing
+   > them to hit an interaction count would delete the thing being built.
+   >
+   > **The fast path is the filter, not a shallower tree.** A reader who already
+   > knows what they want types it (FR-27), and the filter matches **level names
+   > as well as sutta titles** so a known section is one entry away. The
+   > drill-down serves the reader who does *not* know, and for them the levels
+   > are the information, not an obstacle.
+   >
+   > There is therefore no interaction ceiling, and no level may be collapsed to
+   > reduce a count. The one collapse the design does permit is narrow and
+   > information-preserving: a CST toc leaf whose single fragment carries the
+   > *same title* is rendered as a leaf, because the level being dropped is one
+   > the fragment join invents rather than one the source has (FR-18). A leaf
+   > whose single child means something different — `4. Okkantasaṁyuttaṁ` over
+   > the ranged `1-10. Cakkhusuttādivaṇṇanā`, which stands for ten suttas —
+   > keeps its branch.
+2. Every one of the three CST roots (Aṭṭhakathā, Ṭīkā, Añña) is browsable to an
+   openable leaf.
+
+   > **CORRECTED 2026-09-19.** This said "four CST roots (Mūla, Aṭṭhakathā,
+   > Ṭīkā, Añña)", which contradicts FR-6: `toc1.xml` is read for its `src=`
+   > targets only and is **not** built as a root. The Mūla texts are browsed on
+   > the SC spine, and a fourth root would be a second browsing path to the same
+   > material.
+   >
+   > Mūla division records still exist for every source file (661 today) and are
+   > reachable by search rather than by browsing. That is deliberate: they keep
+   > a file's text present while `tipitaka-xml-parser` catches up, since an
+   > unverified file's suttas have no mapped uid (§5.3). As more files are
+   > verified their suttas become mapped records on the SC spine.
+   >
+   > The CST mūla **fragments** of an already-verified file are reached from the
+   > reader rather than the tree: an SC leaf opens the Mahāsaṅgīti text, and the
+   > reader's translations panel offers the CST mūla beside it **when the user
+   > has enabled that** (`include_cst_mula`). One route per text in the tree;
+   > the editions of it in the reader. See docs/sutta-navigation-tree.md §1.1.
 3. **Every CST toc leaf opens a real text, or is a branch over real texts — the
    unassigned count is zero.** FR-21's bootstrap coverage report is the
    measurement: it names every toc leaf that could not be assigned and every

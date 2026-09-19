@@ -300,9 +300,15 @@ diesel::table! {
         has_children -> Bool,
         child_count -> Integer,
         is_available -> Bool,
+        /// Titles and uids folded for the whole-tree filter; see
+        /// `navigation_tree::normalize_for_search`.
+        search_text -> Text,
         /// Pipe-delimited ancestor `node_uid`s, leading and trailing '|';
         /// empty for a root.
         path -> Text,
+        /// Document order of the whole tree as one sortable string; see
+        /// `navigation_tree::join_sort_path`.
+        sort_path -> Text,
     }
 }
 

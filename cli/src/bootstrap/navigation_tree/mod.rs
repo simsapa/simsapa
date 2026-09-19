@@ -33,7 +33,10 @@ use anyhow::{Context, Result};
 use diesel::prelude::*;
 use simsapa_backend::db::appdata_schema::navigation_nodes;
 use simsapa_backend::logger;
-use simsapa_backend::navigation_tree::{join_path, NewNavigationNode};
+use simsapa_backend::helpers::consistent_niggahita;
+use simsapa_backend::navigation_tree::{
+    build_search_text, join_path, join_sort_path, NewNavigationNode,
+};
 
 /// Rows per `INSERT`. SQLite's default bind-parameter ceiling is 32766 and the
 /// table has 15 insertable columns, so 500 rows (7500 parameters) stays well
@@ -144,14 +147,42 @@ impl DefectReport {
     }
 }
 
+/// Where a spine's roots start counting at the top level.
+///
+/// The two spines are built and written **independently** — each one can be
+/// rebuilt on its own, and each numbers its own roots from zero — so without an
+/// offset the root level interleaves them: `sutta(0) atthakatha(0) vinaya(1)
+/// tika(1) abhidhamma(2) anna(2)`, with the tie broken only by whichever spine
+/// happened to be inserted last. FR-6 wants the two groups whole and in order:
+///
+/// ```text
+/// Sutta / Vinaya / Abhidhamma          (sc)
+/// Aṭṭhakathā / Ṭīkā / Añña             (cst)
+/// ```
+///
+/// The gap is wide enough that a spine can grow a root without colliding.
+/// Nothing below the root level needs this: every other node's siblings all
+/// come from one spine.
+fn root_sort_base(tree_source: &str) -> i32 {
+    match tree_source {
+        sc_spine::TREE_SOURCE => 0,
+        cst_spine::TREE_SOURCE => 100,
+        _ => 1000,
+    }
+}
+
 /// Flatten the built subtrees into insertable rows.
 ///
 /// This is the one pass that assigns the derived columns, so no builder has to
 /// keep them consistent by hand:
 ///
-/// - `sort_index` — the child's position among its siblings, i.e. source order.
+/// - `sort_index` — the child's position among its siblings, i.e. source order,
+///   offset at the root level by [`root_sort_base`] so the two spines do not
+///   interleave.
 /// - `path` — the ancestors' `node_uid`s, which is what makes the whole-tree
-///   filter and its breadcrumbs one indexed query.
+///   filter's breadcrumbs one indexed query.
+/// - `sort_path` — the same walk in `sort_index`es, which is what orders the
+///   filter's flat result list in the tree's own document order.
 /// - `has_children` / `child_count` — from `children.len()`.
 ///
 /// A `node_uid` that repeats is a source-data defect: the first occurrence
@@ -165,14 +196,17 @@ pub fn flatten(
     let mut rows = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut ancestors: Vec<String> = Vec::new();
+    let mut ancestor_indexes: Vec<i32> = Vec::new();
 
+    let base = root_sort_base(tree_source);
     for (index, root) in roots.iter().enumerate() {
         flatten_node(
             root,
             None,
-            index as i32,
+            base + index as i32,
             tree_source,
             &mut ancestors,
+            &mut ancestor_indexes,
             &mut seen,
             &mut rows,
             defects,
@@ -189,6 +223,7 @@ fn flatten_node(
     sort_index: i32,
     tree_source: &str,
     ancestors: &mut Vec<String>,
+    ancestor_indexes: &mut Vec<i32>,
     seen: &mut HashSet<String>,
     rows: &mut Vec<NewNavigationNode>,
     defects: &mut DefectReport,
@@ -198,24 +233,44 @@ fn flatten_node(
         return;
     }
 
+    // The niggahita is folded here, once, for both spines. The sources write it
+    // three ways -- `ṁ` (CST, SuttaCentral MS), `ṃ` (PTS, DPD) and `ŋ` -- and a
+    // title reaches this point from ArangoDB's `names`, from an imported
+    // `suttas` row, or from a CST toc's `text=` attribute, none of which agree.
+    // Folding at the one place every row passes through is what keeps the
+    // displayed title and its `search_text` from drifting apart, and stops two
+    // spellings of one nikāya name reading as two different places.
+    //
+    // Blurbs are left alone: they are prose, shown as the source wrote them.
+    let title_pali = node.title_pali.as_deref().map(fold_title);
+    let title_en = node.title_en.as_deref().map(fold_title);
+
     rows.push(NewNavigationNode {
         node_uid: node.node_uid.clone(),
         parent_uid: parent_uid.map(|s| s.to_string()),
         sort_index,
         node_type: node.node_type.clone(),
         tree_source: tree_source.to_string(),
-        title_pali: node.title_pali.clone(),
-        title_en: node.title_en.clone(),
+        title_pali: title_pali.clone(),
+        title_en: title_en.clone(),
         blurb: node.blurb.clone(),
         sutta_uid: node.sutta_uid.clone(),
         cst_file: node.cst_file.clone(),
         has_children: !node.children.is_empty(),
         child_count: node.children.len() as i32,
         is_available: node.is_available,
+        search_text: build_search_text(
+            title_pali.as_deref(),
+            title_en.as_deref(),
+            &node.node_uid,
+            node.sutta_uid.as_deref(),
+        ),
         path: join_path(ancestors),
+        sort_path: join_sort_path(ancestor_indexes, sort_index),
     });
 
     ancestors.push(node.node_uid.clone());
+    ancestor_indexes.push(sort_index);
     for (index, child) in node.children.iter().enumerate() {
         flatten_node(
             child,
@@ -223,12 +278,20 @@ fn flatten_node(
             index as i32,
             tree_source,
             ancestors,
+            ancestor_indexes,
             seen,
             rows,
             defects,
         );
     }
+    ancestor_indexes.pop();
     ancestors.pop();
+}
+
+/// Trim a title and fold its niggahita to `ṁ`. See the call site in
+/// [`flatten_node`] for why this is done there and only there.
+fn fold_title(s: &str) -> String {
+    consistent_niggahita(Some(s.trim().to_string()))
 }
 
 /// Replace one spine's rows, in a single transaction.

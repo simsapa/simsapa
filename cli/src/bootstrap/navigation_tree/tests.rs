@@ -86,3 +86,121 @@ fn the_defect_report_counts_by_kind() {
     assert_eq!(defects.count_of("missing file"), 1);
     assert_eq!(defects.count_of("nothing of the kind"), 0);
 }
+
+#[test]
+fn the_two_spines_do_not_interleave_at_the_root_level() {
+    // Each spine is built and written independently and numbers its own roots
+    // from zero, so without the offset the root level is
+    // `sutta(0) atthakatha(0) vinaya(1) tika(1) ...` -- the two groups shuffled,
+    // with the tie broken only by whichever spine was inserted last.
+    let sc = flatten(
+        &[leaf("sutta"), leaf("vinaya"), leaf("abhidhamma")],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    let cst = flatten(
+        &[leaf("cst:atthakatha"), leaf("cst:tika"), leaf("cst:anna")],
+        "cst",
+        &mut DefectReport::default(),
+    );
+
+    let sc_indexes: Vec<i32> = sc.iter().map(|r| r.sort_index).collect();
+    let cst_indexes: Vec<i32> = cst.iter().map(|r| r.sort_index).collect();
+    assert_eq!(sc_indexes, vec![0, 1, 2]);
+
+    // Every CST root sorts after every SC root, whichever was written first.
+    assert!(
+        cst_indexes.iter().min().unwrap() > sc_indexes.iter().max().unwrap(),
+        "CST roots {cst_indexes:?} must all follow the SC roots {sc_indexes:?}"
+    );
+    assert!(cst_indexes.windows(2).all(|w| w[0] < w[1]));
+}
+
+#[test]
+fn titles_are_folded_and_carried_into_search_text() {
+    // The CST toc writes `Saccasaṃyuttaṃ` and SuttaCentral writes
+    // `Saccasaṁyutta`: one word, two spellings, two spines. Folding happens in
+    // the single pass every row of both spines goes through, so a displayed
+    // title and its `search_text` cannot drift apart.
+    let mut node = TreeNode::new("sn56", "samyutta");
+    node.title_pali = Some("  Saccasaṃyuttaṃ  ".to_string());
+    node.title_en = Some("On the Truths".to_string());
+    node.sutta_uid = Some("sn56/pli/ms".to_string());
+
+    let rows = flatten(&[node], "sc", &mut DefectReport::default());
+    let row = &rows[0];
+
+    assert_eq!(row.title_pali.as_deref(), Some("Saccasaṁyuttaṁ"));
+    assert!(row.search_text.is_ascii());
+    for expected in ["saccasamyuttam", "on the truths", "sn56", "sn56/pli/ms"] {
+        assert!(
+            row.search_text.contains(expected),
+            "search_text {:?} is missing {expected:?}",
+            row.search_text
+        );
+    }
+}
+
+#[test]
+fn every_flattened_row_carries_a_search_text() {
+    // A row with an empty `search_text` is invisible to the filter and reports
+    // nothing -- the worst shape a defect can take here. A node with no titles
+    // at all still has its uid to be found by.
+    let rows = flatten(
+        &[branch("sutta", vec![leaf("sn56.11")])],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    assert!(!rows.is_empty());
+    for row in &rows {
+        assert!(
+            !row.search_text.trim().is_empty(),
+            "{} has an empty search_text",
+            row.node_uid
+        );
+    }
+}
+
+#[test]
+fn sort_path_puts_filter_results_in_document_order() {
+    // `path` is built from node_uids, so ordering by it is alphabetical: the
+    // CST roots came back before the SC ones (`|cst:...` < `|sutta|`) and Añña
+    // before Aṭṭhakathā, contradicting the level order the user had just been
+    // browsing. `sort_path` is the same walk in sort_indexes.
+    let sc = flatten(
+        &[branch("sutta", vec![leaf("dn"), leaf("mn")]), leaf("vinaya")],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    let cst = flatten(
+        &[leaf("cst:atthakatha"), leaf("cst:anna")],
+        "cst",
+        &mut DefectReport::default(),
+    );
+
+    let mut all: Vec<(String, String)> = sc
+        .iter()
+        .chain(cst.iter())
+        .map(|r| (r.sort_path.clone(), r.node_uid.clone()))
+        .collect();
+    all.sort();
+
+    let order: Vec<&str> = all.iter().map(|(_, uid)| uid.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["sutta", "dn", "mn", "vinaya", "cst:atthakatha", "cst:anna"],
+        "a parent must precede its subtree, a subtree must precede its parent's \
+         next sibling, and every SC root must precede every CST root"
+    );
+
+    // Ordering by `path` instead gives the wrong answer -- the thing this
+    // column exists to prevent.
+    let mut by_path: Vec<(String, String)> = sc
+        .iter()
+        .chain(cst.iter())
+        .map(|r| (r.path.clone(), r.node_uid.clone()))
+        .collect();
+    by_path.sort();
+    let path_order: Vec<&str> = by_path.iter().map(|(_, uid)| uid.as_str()).collect();
+    assert_ne!(path_order, order);
+}

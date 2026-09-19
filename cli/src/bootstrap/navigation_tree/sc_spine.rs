@@ -394,10 +394,10 @@ impl ScSpineBuilder {
         // at all third -- never an invented title, and never a title taken
         // from a row in the wrong language.
         if node.title_pali.is_none() {
-            node.title_pali = self.fallback_pali.get(source_uid).cloned();
+            node.title_pali = self.fallback_pali.get(source_uid).map(|s| clean(s));
         }
         if node.title_en.is_none() {
-            node.title_en = self.fallback_en.get(source_uid).cloned();
+            node.title_en = self.fallback_en.get(source_uid).map(|s| clean(s));
         }
 
         node
@@ -417,6 +417,31 @@ impl ScSpineBuilder {
 fn clean(s: &str) -> String {
     s.trim().to_string()
 }
+
+/// Which `suttas` row an SC leaf opens when several carry the same text.
+///
+/// **Lower wins.** The SC spine's own edition is the Mahāsaṅgīti (`pli/ms`),
+/// which is what the SuttaCentral structure was built around; the CST text of
+/// the same sutta is browsed on the CST spine, under its own toc. Picking
+/// between them by uid order — which is what an unranked "first Pāli row" does,
+/// because `dn1/pli/cst` sorts before `dn1/pli/ms` — silently handed 1,379 SC
+/// leaves the CST edition while the other 5,906 got `ms`, so browsing DN and
+/// browsing SN returned different editions for no stated reason.
+///
+/// A non-Pāli row is the last resort and not a real choice: it is taken only
+/// where the corpus has no Pāli text at all, so that the node opens *something*
+/// rather than being dimmed.
+fn edition_rank(uid: &str, is_pali: bool) -> u8 {
+    if !is_pali {
+        return 30;
+    }
+    match uid.rsplit('/').next() {
+        Some("ms") => 0,
+        Some("cst") => 10,
+        _ => 20,
+    }
+}
+
 
 fn single_key(value: &Value) -> Option<(&str, &Value)> {
     let map = value.as_object()?;
@@ -493,7 +518,7 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
         .context("Failed to read the suttas table for navigation-tree leaf resolution")?;
 
     let mut uids: HashMap<String, String> = HashMap::new();
-    let mut chosen_is_pali: HashMap<String, bool> = HashMap::new();
+    let mut chosen_rank: HashMap<String, u8> = HashMap::new();
     let mut fallback_pali: HashMap<String, String> = HashMap::new();
     let mut fallback_en: HashMap<String, String> = HashMap::new();
 
@@ -501,13 +526,13 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
         let base = uid.split('/').next().unwrap_or(&uid).to_string();
         let is_pali = language == "pli";
 
-        let better = match chosen_is_pali.get(&base) {
+        let rank = edition_rank(&uid, is_pali);
+        let better = match chosen_rank.get(&base) {
             None => true,
-            Some(false) => is_pali,
-            Some(true) => false,
+            Some(current) => rank < *current,
         };
         if better {
-            chosen_is_pali.insert(base.clone(), is_pali);
+            chosen_rank.insert(base.clone(), rank);
             uids.insert(base.clone(), uid);
         }
 
@@ -535,4 +560,25 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
         fallback_en.len()
     ));
     Ok((uids, fallback_pali, fallback_en))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mahasangiti_edition_wins_where_several_exist() {
+        // Lower wins. Without a rank the winner is whichever uid sorts first,
+        // and `dn1/pli/cst` sorts before `dn1/pli/ms` -- which silently handed
+        // 1,379 leaves the CST edition while the rest got `ms`, so browsing DN
+        // and browsing SN returned different editions for no stated reason.
+        assert!(edition_rank("dn1/pli/ms", true) < edition_rank("dn1/pli/cst", true));
+        assert!(edition_rank("dn1/pli/cst", true) < edition_rank("dn1/pli/other", true));
+        // A non-Pāli row is the last resort, not a choice: it is taken only
+        // where the corpus has no Pāli text at all, so the node opens something
+        // rather than being dimmed.
+        assert!(edition_rank("dn1/pli/other", true) < edition_rank("dn1/en/sujato", false));
+        // A uid with no source segment must not outrank a real edition.
+        assert!(edition_rank("dn1/pli/ms", true) < edition_rank("dn1", true));
+    }
 }

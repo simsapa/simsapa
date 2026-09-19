@@ -5,7 +5,17 @@
 //! toc files — and is read here one level at a time. Nothing in this module
 //! ever loads the whole tree: the level query is
 //! `WHERE parent_uid = ? ORDER BY sort_index`, and the whole-tree filter is two
-//! statements over the materialized `path` column.
+//! statements over the materialized `search_text`, `sort_path` and `path`
+//! columns.
+//!
+//! **Three columns are materialized at build time, and changing how any of them
+//! is derived means rebuilding the tree.** `search_text` (what the filter
+//! matches), `sort_path` (what orders the results) and `path` (what
+//! reconstructs the breadcrumbs) are all written by the CLI, and a stale one
+//! fails *silently* -- an edit to `normalize_for_search` alone would leave the
+//! query folded one way and the column folded another, so matches just stop
+//! appearing with nothing logged. Re-run `simsapa_cli build-navigation-tree`
+//! after touching any of them, and see docs/sutta-navigation-tree.md.
 //!
 //! **Every read tolerates the table being absent or empty.** A migration
 //! failure at startup is non-fatal by design (see docs/database-migrations.md),
@@ -20,6 +30,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::db::appdata_schema::navigation_nodes;
+use crate::helpers::{consistent_niggahita, pali_to_ascii};
 use crate::logger::error;
 
 /// Separates ancestor `node_uid`s in the materialized `path` column. A path is
@@ -40,9 +51,128 @@ pub fn join_path(ancestors: &[String]) -> String {
     )
 }
 
+/// Width each `sort_index` is zero-padded to in a `sort_path`.
+///
+/// Fixed width is the whole trick: it makes a lexicographic compare equal a
+/// numeric one, so no collation or splitting is needed to order the tree. Six
+/// digits is far past the largest level in the corpus (728 children under
+/// `patthana`) and past the root offsets.
+const SORT_PATH_WIDTH: usize = 6;
+
+/// Build a `sort_path`: every ancestor's `sort_index`, root first, then the
+/// node's own. Delimited at both ends like [`join_path`].
+///
+/// Ordering by this yields the tree's own document order, which is what the
+/// filter's flat result list is sorted by — so a match appears where the user
+/// would have found it by browsing. A parent's key is a prefix of its
+/// children's, so a parent always precedes its subtree.
+pub fn join_sort_path(ancestor_indexes: &[i32], own_index: i32) -> String {
+    let mut out = String::with_capacity((ancestor_indexes.len() + 1) * (SORT_PATH_WIDTH + 1) + 1);
+    for index in ancestor_indexes.iter().chain(std::iter::once(&own_index)) {
+        out.push(PATH_DELIMITER);
+        // A negative index would break the width and so the ordering. Nothing
+        // produces one -- `flatten` assigns from `enumerate()` -- and clamping
+        // keeps a future mistake from silently reordering the tree.
+        out.push_str(&format!("{:0width$}", (*index).max(0), width = SORT_PATH_WIDTH));
+    }
+    out.push(PATH_DELIMITER);
+    out
+}
+
 /// The ancestor `node_uid`s of a `path` value, root first.
 pub fn split_path(path: &str) -> Vec<&str> {
     path.split(PATH_DELIMITER).filter(|s| !s.is_empty()).collect()
+}
+
+/// Fold a title, a uid or a filter query to the one form the whole-tree filter
+/// compares in.
+///
+/// Four steps, in this order:
+///
+/// 1. [`consistent_niggahita`] — ṃ and ŋ become ṁ, so the three niggahita
+///    conventions in the corpus collapse to one. The spines apply this to the
+///    titles they *store* as well, so what the row displays and what the filter
+///    matches cannot drift apart.
+/// 2. [`pali_to_ascii`] — every diacritic folds to its ASCII letter. This is
+///    what lets a reader on a phone keyboard type `samyutta` and reach
+///    `Saṁyuttaṁ`, or `saccasamyutta` and reach `Saccasaṁyuttaṁ`.
+/// 3. [`fold_typography`] then [`strip_remaining_marks`] — the curly quotes,
+///    dashes and ellipses the corpus writes, and anything accented the Pāli
+///    table does not list. Without these, `lion's roar` typed on a keyboard
+///    matches none of the 203 titles that spell it `lion’s`.
+/// 4. lowercase — SQLite's `LIKE` folds case for ASCII only, so `Ā` would never
+///    match `ā`. By this point there is nothing but ASCII left, but lowercasing
+///    here rather than relying on `LIKE` keeps the column's contract explicit.
+///
+/// **The same function must run over the stored column and over the query**, or
+/// the fold is one-sided and the filter silently misses.
+pub fn normalize_for_search(text: &str) -> String {
+    let folded = pali_to_ascii(Some(&consistent_niggahita(Some(text.to_string()))));
+    strip_remaining_marks(&fold_typography(&folded)).to_lowercase()
+}
+
+/// Map the typographic characters the corpus actually contains onto what a
+/// keyboard produces.
+///
+/// Measured over the built tree, these six are what survive `pali_to_ascii`:
+/// `’` (203 titles — "the lion’s roar"), `…`, `–`, `“`, `”` and `é`. A reader
+/// types a straight apostrophe, a hyphen and three dots, so without this fold
+/// searching `lion's roar` finds nothing at all. The project already treats
+/// curly-vs-straight quotes as a real defect elsewhere — see the iti-sandhi
+/// quote-variant handling in the search normalization path.
+fn fold_typography(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' | '\u{2032}' => out.push('\''),
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{201F}' | '\u{2033}' => out.push('"'),
+            '\u{2010}'..='\u{2015}' | '\u{2212}' => out.push('-'),
+            '\u{00A0}' | '\u{2009}' | '\u{202F}' => out.push(' '),
+            '\u{2026}' => out.push_str("..."),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Drop any combining mark left after the explicit folds.
+///
+/// This is the catch-all, not the main event: `pali_to_ascii` handles the Pāli
+/// letters by table, and a table can only fold what someone listed. It misses
+/// `é` (which is in two English titles today), it misses **uppercase `Ŋ`**
+/// (`consistent_niggahita` replaces only the lowercase one and the table has no
+/// `Ŋ` either), and it misses any Pāli letter written *decomposed* — `a` plus a
+/// combining macron — which is a different byte sequence that looks identical.
+/// Decomposing and dropping the marks catches all three, and costs nothing on
+/// text that is already ASCII.
+fn strip_remaining_marks(text: &str) -> String {
+    use unicode_normalization::char::is_combining_mark;
+    use unicode_normalization::UnicodeNormalization;
+
+    if text.is_ascii() {
+        return text.to_string();
+    }
+    text.nfd().filter(|c| !is_combining_mark(*c)).nfc().collect()
+}
+
+/// The `search_text` value for a node: everything the filter matches on
+/// (FR-27), folded and joined with a space. Empty fields contribute nothing.
+pub fn build_search_text(
+    title_pali: Option<&str>,
+    title_en: Option<&str>,
+    node_uid: &str,
+    sutta_uid: Option<&str>,
+) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(4);
+    for field in [title_pali, title_en, Some(node_uid), sutta_uid] {
+        if let Some(value) = field {
+            let folded = normalize_for_search(value);
+            if !folded.trim().is_empty() {
+                parts.push(folded);
+            }
+        }
+    }
+    parts.join(" ")
 }
 
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, Serialize, Deserialize)]
@@ -63,7 +193,9 @@ pub struct NavigationNode {
     pub has_children: bool,
     pub child_count: i32,
     pub is_available: bool,
+    pub search_text: String,
     pub path: String,
+    pub sort_path: String,
 }
 
 impl NavigationNode {
@@ -95,7 +227,9 @@ pub struct NewNavigationNode {
     pub has_children: bool,
     pub child_count: i32,
     pub is_available: bool,
+    pub search_text: String,
     pub path: String,
+    pub sort_path: String,
 }
 
 /// A whole-tree filter hit: the node, plus the titles of its ancestors so the
@@ -155,7 +289,10 @@ pub fn node_by_uid_conn(
 /// once cleaned, and letting it through would turn the pattern into `%%` and
 /// return the whole tree as a flat list.
 fn like_pattern(query: &str) -> Option<String> {
-    let cleaned: String = query.chars().filter(|c| *c != '%' && *c != '_').collect();
+    // Folded exactly as `search_text` was at build time. A one-sided fold is a
+    // silent miss, not an error, which is why both go through the one function.
+    let folded = normalize_for_search(query);
+    let cleaned: String = folded.chars().filter(|c| *c != '%' && *c != '_').collect();
     let cleaned = cleaned.trim();
     if cleaned.is_empty() {
         return None;
@@ -165,6 +302,12 @@ fn like_pattern(query: &str) -> Option<String> {
 
 /// Filter the **whole** tree on the Pāli title, the English title, the node uid
 /// and the sutta uid, returning each match with its breadcrumb titles.
+///
+/// Matching is against the folded `search_text` column, which carries all four
+/// fields, so `samyutta` reaches `Saṁyuttaṁ` and `MAHAVAGGA` reaches
+/// `Mahāvaggo`. Branch nodes are matched as well as leaves: the filter is how a
+/// reader who already knows what they want skips the drill-down, and a level
+/// name is as legitimate a thing to search for as a sutta title.
 ///
 /// Two statements by design: the matches with their `path` strings, then one
 /// `WHERE node_uid IN (…)` over the union of every match's ancestors. Resolving
@@ -181,18 +324,12 @@ pub fn filter_nodes_conn(
     };
 
     let matches: Vec<NavigationNode> = navigation_nodes::table
-        .filter(
-            navigation_nodes::title_pali
-                .like(&pattern)
-                .or(navigation_nodes::title_en.like(&pattern))
-                .or(navigation_nodes::node_uid.like(&pattern))
-                .or(navigation_nodes::sutta_uid.like(&pattern)),
-        )
+        .filter(navigation_nodes::search_text.like(&pattern))
         .select(NavigationNode::as_select())
-        .order((
-            navigation_nodes::path.asc(),
-            navigation_nodes::sort_index.asc(),
-        ))
+        // Tree order, so a match sits where browsing would have found it --
+        // and so the LIMIT keeps the first N in that order rather than the
+        // first N alphabetically. See `join_sort_path`.
+        .order(navigation_nodes::sort_path.asc())
         .limit(limit)
         .load::<NavigationNode>(db_conn)?;
 

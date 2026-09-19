@@ -44,7 +44,12 @@ fn node(
         has_children: false,
         child_count: 0,
         is_available: true,
+        // Filled by `seeded_db` once the row is finished.
+        search_text: String::new(),
         path: join_path(&ancestors),
+        // Filled by `seeded_db`, which is the only place that can see every
+        // ancestor's `sort_index`.
+        sort_path: String::new(),
     }
 }
 
@@ -102,6 +107,39 @@ fn seeded_db() -> SqliteConnection {
         ),
         sn56_11,
     ];
+
+    // Recompute `search_text` from the finished row, exactly as the bootstrap's
+    // single `flatten_node` pass does. Building it inside `node()` would miss
+    // every field the caller sets afterwards -- `sn56_11.sutta_uid` is one --
+    // and a fixture that folds less than the writer does would let a real
+    // one-sided fold pass its own test.
+    let index_of: std::collections::HashMap<String, i32> = rows
+        .iter()
+        .map(|r| (r.node_uid.clone(), r.sort_index))
+        .collect();
+
+    let rows: Vec<NewNavigationNode> = rows
+        .into_iter()
+        .map(|mut row| {
+            row.search_text = build_search_text(
+                row.title_pali.as_deref(),
+                row.title_en.as_deref(),
+                &row.node_uid,
+                row.sutta_uid.as_deref(),
+            );
+            // Resolve the ancestors' `sort_index`es the way `flatten_node` has
+            // them on hand during its walk. Taking the shortcut of an empty
+            // ancestor list here orders the fixture by each node's own index
+            // alone, which is not document order -- and a fixture ordered
+            // differently from the writer would let a real ordering defect pass.
+            let ancestor_indexes: Vec<i32> = split_path(&row.path)
+                .iter()
+                .map(|uid| index_of[*uid])
+                .collect();
+            row.sort_path = join_sort_path(&ancestor_indexes, row.sort_index);
+            row
+        })
+        .collect();
 
     diesel::insert_into(navigation_nodes::table)
         .values(&rows)
@@ -241,7 +279,9 @@ fn display_title_falls_back_through_english_to_the_uid() {
         has_children: false,
         child_count: 0,
         is_available: true,
+        search_text: String::new(),
         path: String::new(),
+        sort_path: String::new(),
     };
     assert_eq!(row.display_title(), "English");
 
@@ -282,4 +322,135 @@ fn the_public_api_is_empty_without_app_data() {
     assert!(filter_nodes("sutta", 50).is_empty());
     assert!(node_by_uid("sutta").is_none());
     assert!(!tree_is_available());
+}
+
+#[test]
+fn the_filter_folds_accents_case_and_the_niggahita() {
+    let mut db_conn = seeded_db();
+
+    // The seeded titles are `Saccasaṁyutta` and `Saṁyutta Nikāya`. A reader on
+    // a phone keyboard types none of those characters.
+    for typed in ["saccasamyutta", "Saccasaṃyutta", "SACCASAMYUTTA", "saccasaṁyutta"] {
+        let hits = filter_nodes_conn(&mut db_conn, typed, 50).unwrap();
+        assert_eq!(
+            hits.iter().map(|m| m.node.node_uid.as_str()).collect::<Vec<_>>(),
+            vec!["sn56"],
+            "{typed:?} should reach Saccasaṁyutta"
+        );
+    }
+
+    // `Dīgha` and `Saṁyutta Nikāya` -- a long vowel and a capital with a
+    // diacritic, which SQLite's ASCII-only LIKE case folding cannot reach.
+    assert_eq!(
+        filter_nodes_conn(&mut db_conn, "digha", 50).unwrap().len(),
+        1
+    );
+    assert_eq!(
+        filter_nodes_conn(&mut db_conn, "SAMYUTTA NIKAYA", 50).unwrap().len(),
+        1
+    );
+}
+
+#[test]
+fn the_filter_matches_level_names_as_well_as_suttas() {
+    let mut db_conn = seeded_db();
+
+    // A reader who already knows where they are going types the level name.
+    // Branch nodes are matched on equal terms with leaves -- that is what makes
+    // the filter a shortcut past the drill-down rather than a sutta lookup.
+    let hits = filter_nodes_conn(&mut db_conn, "linked", 50).unwrap();
+    let uids: Vec<&str> = hits.iter().map(|m| m.node.node_uid.as_str()).collect();
+    assert_eq!(uids, vec!["sutta/linked", "sn"]);
+    assert!(hits.iter().all(|m| m.node.sutta_uid.is_none()));
+}
+
+#[test]
+fn normalize_for_search_is_idempotent() {
+    // The column is folded once at build time and the query once per keystroke;
+    // if the two ever ran a different number of times the results must not move.
+    let once = normalize_for_search("Saccasaṁyuttaṃ");
+    assert_eq!(once, "saccasamyuttam");
+    assert_eq!(normalize_for_search(&once), once);
+}
+
+#[test]
+fn folding_reaches_every_non_ascii_form_the_corpus_contains() {
+    // The six characters measured as surviving `pali_to_ascii` over the built
+    // tree, plus the two a table can never catch. A reader types the right-hand
+    // side; if any of these stops folding, those titles become unsearchable and
+    // nothing reports it.
+    for (stored, typed) in [
+        ("the lion\u{2019}s roar", "lion's roar"),   // curly apostrophe, 203 titles
+        ("\u{201C}quoted\u{201D}", "\"quoted\""), // curly double quotes
+        ("one\u{2013}two", "one-two"),               // en dash
+        ("and so on\u{2026}", "and so on..."),       // ellipsis
+        ("Pi\u{0301}\u{0301}", "pi"),                  // stray combining marks
+        ("caf\u{e9}", "cafe"),                       // precomposed e-acute
+        ("Sa\u{1E41}yutta\u{1E41}", "samyuttam"),      // niggahita, precomposed
+        ("Sa\u{1E43}yutta\u{1E43}", "samyuttam"),      // the other niggahita
+        ("Sa\u{14B}yutta\u{14B}", "samyuttam"),        // eng
+        ("MAH\u{100}VAGGA", "mahavagga"),            // uppercase with a diacritic
+        ("Di\u{304}gha", "digha"),                   // DECOMPOSED long vowel
+    ] {
+        let folded = normalize_for_search(stored);
+        assert!(
+            folded.is_ascii(),
+            "{stored:?} folded to {folded:?}, which is not ASCII -- the filter \
+             compares against a folded column, so anything left here is a title \
+             the user cannot reach"
+        );
+        assert!(
+            folded.contains(&normalize_for_search(typed)),
+            "typing {typed:?} should reach {stored:?} (folded: {folded:?})"
+        );
+    }
+}
+
+#[test]
+fn every_seeded_row_has_a_non_empty_search_text() {
+    // The filter matches `search_text` and nothing else, so a row with an empty
+    // one is invisible with no error anywhere -- the worst shape a defect can
+    // take here. Any future writer that forgets the column fails this.
+    let mut db_conn = seeded_db();
+    let rows: Vec<(String, String)> = navigation_nodes::table
+        .select((navigation_nodes::node_uid, navigation_nodes::search_text))
+        .load(&mut db_conn)
+        .unwrap();
+
+    assert!(!rows.is_empty());
+    for (node_uid, search_text) in rows {
+        assert!(
+            !search_text.trim().is_empty(),
+            "{node_uid} has an empty search_text and can never be filtered to"
+        );
+        assert!(
+            search_text.contains(&normalize_for_search(&node_uid)),
+            "{node_uid}: its own uid must be in its search_text, or a filter on \
+             the uid misses it"
+        );
+    }
+}
+
+#[test]
+fn sort_path_orders_the_tree_in_document_order() {
+    // Fixed width is what makes a string compare equal a numeric one.
+    assert_eq!(join_sort_path(&[], 0), "|000000|");
+    assert_eq!(join_sort_path(&[0, 2], 5), "|000000|000002|000005|");
+
+    // A parent's key is a prefix of its children's, so it always precedes its
+    // own subtree...
+    let parent = join_sort_path(&[0], 1);
+    let child = join_sort_path(&[0, 1], 0);
+    assert!(parent < child);
+
+    // ...and a whole subtree precedes its parent's next sibling.
+    let uncle = join_sort_path(&[0], 2);
+    assert!(child < uncle);
+
+    // Two digits vs one must not order as text: 9 before 10.
+    assert!(join_sort_path(&[], 9) < join_sort_path(&[], 10));
+
+    // The CST root offset survives the padding, which is the whole point of
+    // ordering the filter by this rather than by `path`.
+    assert!(join_sort_path(&[], 2) < join_sort_path(&[], 100));
 }

@@ -25,6 +25,26 @@ that serves neither structure well.
 fourth CST root — those texts are browsed on the SC spine, and a fourth root
 would be a second path to the same material.
 
+### 1.1 Why the Mūla division records are not reachable from the tree
+
+Splitting runs over **every** source file, Mūla included, so `romn/` Mūla files
+carry division records (`s0305m.mul11.xml/pli/cst`) that no `navigation_nodes`
+row points at — 661 of them today. That is deliberate and is not a gap to close
+by building a Mūla root.
+
+Those records exist so that **no text is missing from the app** while the parser
+catches up. `tipitaka-xml-parser` has mapped 30 of the 217 source files to
+verified sutta-fragment uids (§3.1); until a file is on that list its suttas have
+no mapped uid, and the division records are what keep its text present and
+findable by search. As more files are verified, their suttas become mapped
+records reachable from the SC spine, and the corresponding divisions stop being
+the only route to them.
+
+So a Mūla text is reachable one way or another at every stage: through the SC
+spine once its file is verified, and through search on its division record
+before that. A Mūla root in the tree would add a second browsing path to
+material the SC spine already covers, which §1's rule exists to prevent.
+
 ## 2. Node uids are stable across bootstraps
 
 The UI persists expansion state and the breadcrumb path by `node_uid`, so it is
@@ -40,6 +60,98 @@ enumeration counter.
 | CST `src=` branch | its toc file's stem: `cst:s0101a.att` |
 | CST division | its division file name: `cst:s0305m.mul0.xml` |
 | CST fragment row | `cst:frag:` + the sutta uid: `cst:frag:mn11.att/pli/cst` |
+
+## 2a. Three columns the window depends on
+
+### Root ordering across the two spines
+
+The spines are built and written **independently** — either can be rebuilt on
+its own — and each numbers its own roots from zero. Written as-is the root level
+interleaves them (`sutta(0) atthakatha(0) vinaya(1) tika(1) …`), with the tie
+broken only by whichever spine was inserted last. `root_sort_base()` in
+`cli/src/bootstrap/navigation_tree/mod.rs` offsets the CST roots to 100, so the
+top level is the two whole groups in order:
+
+```
+Suttapiṭaka / Vinayapiṭaka / Abhidhammapiṭaka     sort_index 0, 1, 2   (sc)
+Aṭṭhakathā / Ṭīkā / Añña                          sort_index 100–102  (cst)
+```
+
+Nothing below the root level needs the offset: every other node's siblings all
+come from one spine.
+
+### `search_text` — the folded column the filter matches
+
+The whole-tree filter **cannot** match the title columns. SQLite's `LIKE` folds
+case for ASCII only and does no accent folding at all, so before this column
+existed `samyutta` found 5 nodes where `saṁyutta` found 132, `saccasamyutta`
+found none of the 3 `Saccasaṁyutta` nodes, and `MAHAVAGGA` found nothing.
+
+`navigation_tree::build_search_text` folds the Pāli title, the English title,
+the `node_uid` and the `sutta_uid` through `normalize_for_search`
+(`consistent_niggahita` → `pali_to_ascii` → lowercase) and joins them with a
+space. **`filter_nodes` folds the query with the same function**; a one-sided
+fold is a silent miss, not an error, which is why there is one function and not
+two. All four fields are in the column because the filter matches **branch nodes
+as well as leaves** — it is how a reader who already knows where they are going
+skips the drill-down, so a level name is as legitimate a thing to type as a
+sutta title.
+
+Titles are stored folded too, by `fold_title` in the single `flatten_node` pass
+that every row of both spines passes through. The sources disagree — the CST toc
+writes `Saccasaṃyuttaṃ`, SuttaCentral writes `Saccasaṁyutta` — and folding at the
+one chokepoint is what stops a displayed title and its `search_text` drifting
+apart, and stops two spellings of one nikāya name reading as two places. Blurbs
+are left alone: they are prose, shown as the source wrote them.
+
+### `sort_path` — what orders the filter's results
+
+`path` cannot order them. It is built from `node_uid`s, so sorting by it is
+alphabetical: the filter returned the **CST** roots before the SC ones
+(`|cst:...` < `|sutta|`) and Añña before Aṭṭhakathā, contradicting the level
+order the same user had just been browsing.
+
+`sort_path` is the same ancestor walk in `sort_index`es, zero-padded to a fixed
+width and pipe-joined (`|000000|000002|000005|`). Fixed width is what makes a
+plain string compare equal a numeric one — without it `9` sorts after `10` — and
+it is what makes a parent's key a **prefix** of its children's, so a parent
+always precedes its own subtree and a subtree always precedes its parent's next
+sibling. Ordering the filter by it also makes the `LIMIT` meaningful: the first
+N in tree order, rather than the first N alphabetically.
+
+> **Standing rule: these columns are materialized, so changing how one is
+> derived means rebuilding the tree.** `search_text`, `sort_path` and `path` are
+> all written by the CLI. A stale one fails **silently** — edit
+> `normalize_for_search` without rebuilding and the query is folded one way
+> while the column is folded another, so matches simply stop appearing with
+> nothing logged anywhere. Re-run `simsapa_cli build-navigation-tree` after
+> touching any of them.
+
+### Which edition an SC leaf opens
+
+`edition_rank()` in `sc_spine.rs`: `pli/ms` first, `pli/cst` second, any other
+Pāli source third, a non-Pāli row last. The Mahāsaṅgīti is the edition the
+SuttaCentral structure was built around, and the CST text of the same sutta is
+browsed on the CST spine under its own toc.
+
+Ranking is load-bearing rather than cosmetic. Taking the first Pāli row in uid
+order — which is what an unranked scan does, because `dn1/pli/cst` sorts before
+`dn1/pli/ms` — handed 1,379 leaves the CST edition and 5,906 the Mahāsaṅgīti, so
+browsing DN and browsing SN returned different editions for no stated reason.
+With the rank applied it is 7,283 `ms`, 2 `cst` (ranged uids with no `ms` row)
+and 1 English (a node with no Pāli text at all, opened rather than dimmed).
+
+The CST mūla fragments those 1,379 leaves used to open are now reached the same
+way every other alternative edition is: **the reader's own translations panel**.
+`get_translations_data_json_for_sutta_uid` lists every `<ref>/%` row beside the
+opened one, so `dn1/pli/cst` is offered there for an opened `dn1/pli/ms` — but
+**only when the user has enabled CST mūla**, which is what `include_cst_mula`
+gates (the panel filters those rows out otherwise). Search reaches them
+regardless.
+
+This is the intended division of labour: the tree gives one route to a text, and
+the reader gives the editions of it. Do not add a second `sutta_uid` to a node,
+or a per-edition branch, to reproduce in the tree what the reader already does.
 
 ## 3. CST records: two independent questions
 
@@ -182,6 +294,26 @@ counted in the coverage report as "merged into an adjacent record" — they are
 
 A leaf with no fragments in a file that has none at all is a different matter,
 and is reported.
+
+**A leaf whose one fragment is the same text under the same name becomes a
+leaf, not a branch.** Where the join yields exactly one fragment *and* its title
+matches the toc leaf's (niggahita-folded), the leaf carries that fragment's
+`sutta_uid` directly and has no child. The child would otherwise repeat the
+parent verbatim — a row reading `1. Mahāpadānasuttavaṇṇanā` containing one row
+also reading `1. Mahāpadānasuttavaṇṇanā` — and cost a tap for nothing.
+
+**This skips no source level.** The level being dropped is not in the CST toc at
+all; it is one the fragment join above invents, and a one-element group is not a
+level. The equivalence test is what keeps that true: a leaf whose single
+fragment has a *different* name is a real containment and keeps its branch.
+Today 56 leaves collapse and 2 do not — `4. Okkantasaṁyuttaṁ` over
+`1-10. Cakkhusuttādivaṇṇanā`, in the aṭṭhakathā and its ṭīkā, where the saṁyutta
+really does contain one ranged commentary record.
+
+The test compares the titles verbatim apart from the niggahita (the two strings
+come from different sources and the corpus does not spell it consistently). Do
+not loosen it — ignoring the leading number, say, would collapse genuine
+containments.
 
 > **Trap: several fragments can share one `sc_code`.** 110 do (three in
 > `an4.1.att`), and the import keeps only the first. Anything building rows per

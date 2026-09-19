@@ -68,6 +68,7 @@ use diesel::prelude::*;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+use simsapa_backend::helpers::consistent_niggahita;
 use simsapa_backend::logger;
 use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::nikaya_structure::NikayaStructure;
@@ -439,6 +440,24 @@ impl CstSpineBuilder {
                             .push(format!("{} ({})", leaf.division_file, source_file));
                     }
                 }
+            } else if let [only] = fragments.as_slice()
+                && titles_are_equivalent(&leaf.title, &only.title)
+            {
+                // One fragment, and it is *the same text under the same name*
+                // as the toc leaf. The child would carry an identical title and
+                // an identical level label, adding nothing but a tap: the row
+                // would say "1. Mahāpadānasuttavaṇṇanā", and inside it would be
+                // one row also saying "1. Mahāpadānasuttavaṇṇanā".
+                //
+                // So the leaf opens the fragment directly. **No source level is
+                // skipped by this** -- the level being dropped is not in the CST
+                // toc at all, it is one the fragment join above invents, and a
+                // one-element group is not a level. A leaf whose single
+                // fragment has a *different* name is a real containment
+                // (`4. Okkantasaṁyuttaṁ` over `1-10. Cakkhusuttādivaṇṇanā`) and
+                // keeps its branch.
+                node.node_type = level_label(structure, &leaf.title, depth, true);
+                node.sutta_uid = Some(only.uid.clone());
             } else {
                 node.children = fragments
                     .iter()
@@ -795,6 +814,18 @@ fn group_type_name(group_type: &GroupType) -> &'static str {
         GroupType::Sutta => "sutta",
     }
 }
+/// Whether a toc leaf and a fragment name the same text.
+///
+/// Compared with the niggahita folded, because the two strings reach here from
+/// different sources -- the toc's `text=` attribute and the fragment's own
+/// title -- and the corpus does not spell it consistently. The rest is compared
+/// verbatim: this decides whether a level is real, and a looser test (ignoring
+/// the leading number, say) would collapse a genuine containment.
+fn titles_are_equivalent(leaf_title: &str, fragment_title: &str) -> bool {
+    let fold = |s: &str| consistent_niggahita(Some(s.trim().to_string()));
+    !leaf_title.trim().is_empty() && fold(leaf_title) == fold(fragment_title)
+}
+
 
 /// The last path segment of a toc `src=` or `action=` value, which are written
 /// as `./cscd/x.toc.xml` and `cscd/x.xml` respectively.
@@ -964,6 +995,36 @@ fn load_fragments(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_single_fragment_collapses_only_when_it_is_the_same_text() {
+        // The toc leaf and its one fragment carry the same name: the child
+        // would repeat its parent verbatim, so the leaf opens the fragment.
+        assert!(titles_are_equivalent(
+            "1. Mahāpadānasuttavaṇṇanā",
+            "1. Mahāpadānasuttavaṇṇanā"
+        ));
+        // Spelled with the other niggahita by the other source -- still the
+        // same text, because flatten() folds both to `ṁ` anyway.
+        assert!(titles_are_equivalent("4. Okkantasaṃyuttaṃ", "4. Okkantasaṁyuttaṁ"));
+
+        // A real containment, and the case that makes the equivalence test
+        // necessary rather than a count test: the saṁyutta's one child is a
+        // ranged record standing for ten suttas. Collapsing it would lose the
+        // fragment's own name.
+        assert!(!titles_are_equivalent(
+            "4. Okkantasaṁyuttaṁ",
+            "1-10. Cakkhusuttādivaṇṇanā"
+        ));
+
+        // Do not loosen this to ignore the leading number: two sections of one
+        // book can share a name and differ only by it.
+        assert!(!titles_are_equivalent("1. Yamakavaggo", "2. Yamakavaggo"));
+
+        // An untitled leaf is never "the same text as" anything.
+        assert!(!titles_are_equivalent("", ""));
+        assert!(!titles_are_equivalent("   ", "anything"));
+    }
     use super::*;
 
     #[test]

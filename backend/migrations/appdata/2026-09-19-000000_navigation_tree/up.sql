@@ -59,13 +59,43 @@ CREATE TABLE navigation_nodes (
     -- visible instead of silent.
     is_available INTEGER NOT NULL DEFAULT 1,
 
+    -- Everything the whole-tree filter matches on, folded once at build time:
+    -- the Pāli title, the English title, the node uid and the sutta uid, run
+    -- through `navigation_tree::normalize_for_search` (consistent_niggahita ->
+    -- pali_to_ascii -> lowercase) and joined with a space.
+    --
+    -- The filter cannot match the title columns directly. SQLite's LIKE folds
+    -- case for ASCII only, so 'MAHĀVAGGA' matches nothing, and it does no
+    -- accent folding at all, so a reader typing 'samyutta' misses every one of
+    -- the 132 'saṁyutta' nodes. Folding at write time and normalizing the query
+    -- the same way is what makes 'saccasamyutta' find 'Saccasaṁyuttaṁ'.
+    --
+    -- Deliberately **not** indexed. The filter is `LIKE '%...%'`, whose leading
+    -- wildcard no b-tree can serve: measured, SQLite plans `SCAN
+    -- navigation_nodes` with an index present, and the scan is 6 ms over the
+    -- 12,622 rows of the full corpus. An index here would cost write time and
+    -- space for a plan nothing chooses.
+    search_text TEXT NOT NULL DEFAULT '',
+
     -- Materialized ancestor path: the ancestors' `node_uid`s from the root down
     -- to the parent, pipe-delimited with a leading and trailing '|'
     -- ('|sutta|sutta/linked|sn|'), and the empty string for a root. This is
     -- what makes the whole-tree filter and its breadcrumb reconstruction one
     -- indexed query instead of a walk up the parent chain per match. No
     -- `node_uid` contains '|'.
-    path TEXT NOT NULL DEFAULT ''
+    path TEXT NOT NULL DEFAULT '',
+
+    -- Document order of the whole tree as one sortable string: each ancestor's
+    -- `sort_index` and then the node's own, zero-padded to a fixed width and
+    -- pipe-joined ('|000000|000002|000005|').
+    --
+    -- `path` cannot do this job. It is built from `node_uid`s, so ordering by
+    -- it is alphabetical: the filter returned the CST roots before the SC ones
+    -- (`|cst:...` < `|sutta|`) and Añña before Aṭṭhakathā, contradicting the
+    -- level order the same user had just been browsing. Fixed width is what
+    -- makes a plain string compare equal a numeric one, and what puts a parent
+    -- before its children (its key is their prefix).
+    sort_path TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX idx_navigation_nodes_node_uid ON navigation_nodes (node_uid);

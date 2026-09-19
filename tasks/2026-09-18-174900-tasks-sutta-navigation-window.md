@@ -524,7 +524,9 @@ spine — three roots, three internal structures, **no** cross-root join built.
   - [x] 4.11 Run the full bootstrap; record the FR-21 counts and the class counts
         as the baseline, confirm the `suttas` row count and total `content_plain`
         moved the way the classes predict (no net duplication), and confirm every
-        one of the four CST roots reaches an openable leaf (success metric 2).
+        one of the three CST roots reaches an openable leaf (success metric 2;
+        it said "four" including Mūla, now corrected in the PRD — `toc1.xml` is
+        not built as a root).
   - [x] 4.12 Create `coverage_report.rs` emitting: every toc leaf not assigned to
         a record or a populated branch; every `romn/` file unreachable from any
         toc leaf; each file's coverage class with mapped/total fragment counts;
@@ -674,6 +676,120 @@ Two backend tests had to be updated, neither a behaviour regression:
   Regenerated with the file's own `generate_fulltext_fixture` ignored test. The
   10 result **uids and their order are byte-identical** and the total is still
   2,330.
+
+#### Review corrections — applied 2026-09-19, after reviewing tasks 1.0–4.0
+
+Four defects found by reading the built tree back out of the shipped
+`appdata.sqlite3`. All four are in task 1–4 code and were fixed before task 5
+started, because tasks 5 and 7 build directly on top of them.
+
+**1. The root level interleaved the two spines (FR-6, FR-7).** Each spine is
+built and written independently and numbered its roots from zero, so
+`children_of(None)` returned `sutta(0) atthakatha(0) vinaya(1) tika(1)
+abhidhamma(2) anna(2)` — the two groups shuffled together, with the tie broken
+only by whichever spine was inserted last, so rebuilding one spine could change
+the top-level order. `root_sort_base()` in `navigation_tree/mod.rs` offsets the
+CST roots to 100. Now `sutta / vinaya / abhidhamma` then
+`Aṭṭhakathā / Ṭīkā / Añña`, stable under an independent rebuild of either spine.
+
+**2. The whole-tree filter was accent- and case-blind (FR-27).** It matched the
+title columns with a bare `LIKE`, and SQLite folds case for ASCII only and does
+no accent folding at all. Measured before the fix: `samyutta` → 5 hits,
+`saṁyutta` → 132, `saccasamyutta` → **0** (the node is `Saccasaṁyutta`),
+`MAHAVAGGA` → **0**. The PRD's own "type `dhammacakka`" user story worked only
+because that word carries no diacritics.
+
+Fixed with a folded `search_text` column (migration, `build_search_text`) over
+the Pāli title, English title, `node_uid` and `sutta_uid`, and
+`normalize_for_search` (`consistent_niggahita` → `pali_to_ascii` → lowercase)
+applied to **both** the column and the query — one function, because a one-sided
+fold is a silent miss rather than an error. After: all four spellings converge
+(`samyutta` = `saṁyutta` = 199, `saccasamyutta` = 3, `MAHAVAGGA` = 25).
+
+Titles are stored folded too, by `fold_title` in the single `flatten_node` pass
+both spines share. The CST toc writes `Saccasaṃyuttaṃ` and SuttaCentral writes
+`Saccasaṁyutta`, so the two spines were displaying one word two ways; 0 titles
+now carry `ṃ` or `ŋ`. Blurbs are deliberately left alone — prose, shown as
+written.
+
+**3. SC leaves opened the CST edition for 1,379 texts (undefined by the PRD).**
+`load_sutta_rows` kept the first Pāli row in uid order, and `dn1/pli/cst` sorts
+before `dn1/pli/ms`, so browsing DN gave the CST text while browsing SN gave the
+Mahāsaṅgīti — decided by alphabetical accident. `edition_rank()` makes it
+explicit: `ms` → `cst` → other Pāli → non-Pāli. Now 7,283 `ms`, **2** `cst`
+(`sn12.72-81`, `sn17.13-20` — ranged uids with no `ms` row) and 1 English
+(a node with no Pāli text at all, opened rather than dimmed).
+
+  Consequence, checked rather than assumed: the 1,379 CST mūla fragments those
+  leaves used to open are no longer reached by *browsing*. They are reached the
+  way every other alternative edition is — **the reader's translations panel**.
+  `get_translations_data_json_for_sutta_uid` lists every `<ref>/%` row beside the
+  opened one, so `dn1/pli/cst` is offered for an opened `dn1/pli/ms`, **when the
+  user has enabled CST mūla** (`include_cst_mula`; the panel filters those rows
+  out otherwise). Search reaches them either way. The tree gives one route to a
+  text; the reader gives the editions of it — so do **not** add a second
+  `sutta_uid` per node or a per-edition branch to reproduce that in the tree.
+
+**4. Stale figure corrected.** The 4.0 notes said "1,944 toc leaves, 2
+unassigned" two paragraphs above "Success metric 3 is 0 unassigned". The report
+prints **0 unassigned, 2 merged into an adjacent record**; the 2 are
+`s0301a.att0.xml` and `s0301t.tik0.xml`, the expected preamble case the notes
+describe. Success metric 3 is met.
+
+**Not changed, and why.**
+
+- *The 661 Mūla division records unreachable from the tree are correct.*
+  `toc1.xml` is not built as a fourth root (FR-6), so Mūla divisions have no
+  browse path. They exist so no text is **missing** while
+  `tipitaka-xml-parser` catches up: 30 of 217 files are verified today, and an
+  unverified file's suttas have no mapped uid, so its division records are what
+  keep the text present and findable by search. As more files are verified their
+  suttas become mapped records on the SC spine. A Mūla root would be a second
+  browsing path to material the SC spine already covers.
+  **Success metric 2 named four CST roots including Mūla and has been corrected
+  in the PRD** — three CST roots is the design. Written up as
+  `docs/sutta-navigation-tree.md` §1.1.
+- *56 of the 58 single-child toc-leaf branches are now openable leaves.* Where
+  a fully mapped file's toc leaf joins to exactly one fragment **and** the two
+  titles match, the leaf carries the fragment's `sutta_uid` directly and has no
+  child — the child was repeating its parent verbatim
+  (`1. Mahāpadānasuttavaṇṇanā` containing one row also reading
+  `1. Mahāpadānasuttavaṇṇanā`) and cost a tap for nothing.
+  **No source level is skipped**: the level dropped is not in the CST toc, it is
+  one the fragment join invents, and a one-element group is not a level. The
+  equivalence test is what keeps that honest — the 2 leaves whose single
+  fragment has a different name (`4. Okkantasaṁyuttaṁ` over
+  `1-10. Cakkhusuttādivaṇṇanā`, aṭṭhakathā and ṭīkā) are real containments and
+  keep their branch. CST spine 3,916 → 3,860 nodes, 0 unavailable, 0 unassigned
+  toc leaves, 0 dangling `sutta_uid`s. The other 212 single-child branches are
+  genuine source levels (`sutta/long` → `dn`) and are untouched.
+- *Success metric 1's interaction budget was withdrawn, not missed.* `sn56.11`
+  is `sutta › sutta/linked › sn › sn-mahavaggasamyutta › sn56 ›
+  sn56-dhammacakkappavattanavagga › sn56.11` — six enter-level presses plus
+  Open. The metric demanded "five or fewer" while enumerating a seven-step chain
+  in the same sentence, so it contradicted itself; the PRD now carries the
+  correction.
+  **Making the sectioning visible is the point of the window** — those levels are
+  precisely what search-only cannot show — so no level may be collapsed to
+  reduce a count. The fast path is the filter, which matches level names as well
+  as sutta titles (`the_filter_matches_level_names_as_well_as_suttas`), putting a
+  known section one entry away. Metric 2's "four CST roots" was corrected to
+  three in the same pass.
+- *A minor version bump is required before release and is the user's to make.*
+  The nav tables are new and empty for an existing install, and nothing
+  populates them at runtime (non-goal 1 rules out an in-app build), so the
+  feature only reaches a user who downloads a fresh `appdata.sqlite3`. That
+  needs `major.minor` to differ from the installed DB's
+  (`is_app_version_compatible_with_db_version`). Four sites:
+  `bridges/Cargo.toml`, `backend/Cargo.toml`, `cpp/gui.cpp`
+  (`setApplicationVersion`) and `cli/src/bootstrap/appdata.rs` (`DB_VERSION`).
+  The migration's "no DB version bump and no re-download" comment refers to the
+  *table*, not the data, and should not be read as saying otherwise.
+
+Verification: `cargo test` 623 backend lib (16 navigation_tree, 3 of them new
+folding/level-name regressions) + all backend integration tests + 91 CLI, all
+passing; both spines rebuilt against the real `appdata.sqlite3` and every figure
+above read back out of it.
 
 ### 5.0 Rust bridge API for the tree, plus `qmllint` stubs
 
@@ -909,9 +1025,14 @@ Two backend tests had to be updated, neither a behaviour regression:
 
 - [ ] 9.0 Verification, success metrics, and documentation
   - [ ] 9.1 Run the full test suite (`make test`) and record the result.
-  - [ ] 9.2 Count the taps from a cold window to `sn56.11` and report the number;
-        if it exceeds five, say so and propose a level-grouping change rather
-        than quietly accepting it (metric 1).
+  - [ ] 9.2 Walk from a cold window to `sn56.11`, report the path and the count
+        (measured today: six enter-level presses plus Open), and confirm every
+        section level on it is visible and named. **There is no interaction
+        ceiling and no level may be collapsed to reduce the count** — metric 1's
+        "five or fewer" was withdrawn, see the correction in the PRD. Making the
+        sectioning visible is the point of the window; the filter (FR-27, which
+        matches level names as well as sutta titles) is the fast path for a
+        reader who already knows what they want.
   - [ ] 9.3 Report the FR-21 coverage counts and the per-class file counts; the
         unassigned toc-leaf count must be zero (**measured 0** at the end of task
         4, with 2 leaves counted as "merged into an adjacent record" and
