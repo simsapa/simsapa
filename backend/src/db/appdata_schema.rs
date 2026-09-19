@@ -280,6 +280,32 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    /// One row per node of the browsable corpus hierarchy, written by the CLI
+    /// bootstrap from two spines (`tree_source` = 'sc' or 'cst'). Empty on an
+    /// install that has not been re-bootstrapped; every read tolerates that.
+    /// See docs/sutta-navigation-tree.md.
+    navigation_nodes (id) {
+        id -> Integer,
+        node_uid -> Text,
+        parent_uid -> Nullable<Text>,
+        sort_index -> Integer,
+        node_type -> Text,
+        tree_source -> Text,
+        title_pali -> Nullable<Text>,
+        title_en -> Nullable<Text>,
+        blurb -> Nullable<Text>,
+        sutta_uid -> Nullable<Text>,
+        cst_file -> Nullable<Text>,
+        has_children -> Bool,
+        child_count -> Integer,
+        is_available -> Bool,
+        /// Pipe-delimited ancestor `node_uid`s, leading and trailing '|';
+        /// empty for a root.
+        path -> Text,
+    }
+}
+
 diesel::joinable!(sutta_variants -> suttas (sutta_id));
 diesel::joinable!(sutta_comments -> suttas (sutta_id));
 diesel::joinable!(sutta_glosses -> suttas (sutta_id));
@@ -306,4 +332,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     gloss_word_context_cache,
     gloss_phrase_selections,
     topic_index_data,
+    navigation_nodes,
 );

@@ -12,7 +12,7 @@
 - `backend/migrations/appdata/2026-09-19-000000_navigation_tree/up.sql` — the node table, its indexes and the path column (FR-9, FR-11).
 - `backend/migrations/appdata/2026-09-19-000000_navigation_tree/down.sql` — matching `DROP TABLE`s.
 - `backend/src/navigation_tree.rs` — runtime read layer: level query, filter query, node lookup, translation counts, table-absent tolerance (FR-10, FR-11, FR-13, FR-48).
-- `backend/src/navigation_tree_tests.rs` (or `#[cfg(test)]` inside the above) — unit tests for the read layer against a temp DB.
+- `backend/src/navigation_tree/tests.rs` — unit tests for the read layer against a temp DB built from the real `up.sql`, so schema/`table!` drift fails here rather than at runtime.
 - `cli/src/bootstrap/navigation_tree/mod.rs` — shared node writer, `node_uid` derivation, insert batching, `ANALYZE` (FR-1, FR-7, FR-12, T-3).
 - `cli/src/bootstrap/navigation_tree/sc_spine.rs` — the SuttaCentral spine builder (FR-2, FR-6).
 - `cli/src/bootstrap/navigation_tree/cst_spine.rs` — the CST toc spine builder (FR-3, FR-4, FR-5, FR-6).
@@ -160,40 +160,40 @@ just after completing an entire parent task.
 > **Depends on:** nothing. This task ships first precisely so tasks 2–4 have a
 > writer target and task 5 has something to expose.
 
-- [ ] 1.0 Storage: migration, backend read layer, and honest empty-state
-  - [ ] 1.1 Read `docs/database-migrations.md` and the existing
+- [x] 1.0 Storage: migration, backend read layer, and honest empty-state
+  - [x] 1.1 Read `docs/database-migrations.md` and the existing
         `backend/migrations/appdata/2026-08-13-000000_topic_index_data/` as the
         shape to copy; confirm there is no second list to register a migration in.
-  - [ ] 1.2 Create `backend/migrations/appdata/2026-09-19-000000_navigation_tree/`
+  - [x] 1.2 Create `backend/migrations/appdata/2026-09-19-000000_navigation_tree/`
         with `up.sql` creating the node table (FR-9 columns: `node_uid`,
         `parent_uid`, `sort_index`, `node_type`, `tree_source`, `title_pali`,
         `title_en`, `blurb`, `sutta_uid`, `cst_file`, `has_children`) plus the
         `path` column, and `down.sql` dropping it.
-  - [ ] 1.3 Add indexes in the same `up.sql`: unique on `node_uid`, plain on
+  - [x] 1.3 Add indexes in the same `up.sql`: unique on `node_uid`, plain on
         `parent_uid`, and on `path` (FR-10, FR-11). Note in a SQL comment why
         `has_children` is denormalized.
-  - [ ] 1.4 Add the Diesel `table!` declaration to
+  - [x] 1.4 Add the Diesel `table!` declaration to
         `backend/src/db/appdata_schema.rs` and to
         `allow_tables_to_appear_in_same_query!` if it will be joined to `suttas`.
-  - [ ] 1.5 Create `backend/src/navigation_tree.rs` with the `NavigationNode`
+  - [x] 1.5 Create `backend/src/navigation_tree.rs` with the `NavigationNode`
         struct, `Queryable`/`Insertable` derives, and register the module in
         `backend/src/lib.rs`.
-  - [ ] 1.6 Implement `children_of(parent_uid: Option<&str>)` ordered by
+  - [x] 1.6 Implement `children_of(parent_uid: Option<&str>)` ordered by
         `sort_index` — one level, never a whole-tree load (FR-10).
-  - [ ] 1.7 Implement `filter_nodes(query, limit)` matching `title_pali`,
+  - [x] 1.7 Implement `filter_nodes(query, limit)` matching `title_pali`,
         `title_en` and `node_uid`/`sutta_uid` (FR-27), returning each match with
         its breadcrumb titles resolved from the `path` column (FR-11). Two
         queries is the right shape — matches with their path strings, then one
         `WHERE node_uid IN (…)` over the union of ancestors. Resolving ancestor
         *titles* from a delimiter-joined path inside a single statement needs a
         recursive CTE to split the string; do not build one for this.
-  - [ ] 1.8 Implement `node_by_uid()` and `tree_is_available()`; make **every**
+  - [x] 1.8 Implement `node_by_uid()` and `tree_is_available()`; make **every**
         read return an empty/`false` result rather than an error when the table
         is missing or empty (FR-13) — a migration failure is non-fatal by design.
-  - [ ] 1.9 Add unit tests over a temp SQLite DB: level query ordering, filter
+  - [x] 1.9 Add unit tests over a temp SQLite DB: level query ordering, filter
         matching all three fields, breadcrumb reconstruction, and the
         table-absent path returning empty instead of panicking.
-  - [ ] 1.10 `cd backend && cargo test` and `make build -B`; confirm the app
+  - [x] 1.10 `cd backend && cargo test` and `make build -B`; confirm the app
         still starts for the user with the new empty tables.
 
 ### 2.0 Bootstrap spine A — the SuttaCentral-derived tree from `sc-data`
