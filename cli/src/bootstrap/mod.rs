@@ -299,6 +299,15 @@ RELEASE_CHANNEL=development
         logger::info("=== Build navigation tree (SuttaCentral spine) ===");
         navigation_tree::build_sc_spine(&mut conn, &sc_data_dir)?;
 
+        logger::info("=== Build navigation tree (CST spine) ===");
+        {
+            let cst_site_dir = bootstrap_assets_dir
+                .join("tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn/");
+            let cst_source_dir =
+                bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/romn/");
+            navigation_tree::build_cst_spine(&mut conn, &cst_site_dir, &cst_source_dir)?;
+        }
+
         logger::info("=== Bootstrap Library Imports ===");
 
         // Import library documents from library-imports.toml

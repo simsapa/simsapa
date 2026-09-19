@@ -22,6 +22,7 @@
 //! An unresolvable leaf is kept and marked unavailable rather than dropped, so
 //! the gap is visible in the window instead of silently absent.
 
+pub mod cst_spine;
 pub mod sc_spine;
 
 use std::collections::HashSet;
@@ -283,6 +284,41 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
     logger::info(&format!("sc_spine: wrote {} rows", written));
 
     builder.defects.log_summary("sc_spine", 8);
+    Ok(())
+}
+
+/// Build the CST spine and write it, replacing whatever `cst` rows are there.
+///
+/// `site_dir` is `tipitaka-xml/tipitaka.org/romn/` (the toc files);
+/// `source_dir` is `tipitaka-xml/romn/` (the 217 source XML files). They are
+/// two different directories with the same name, and passing one for the other
+/// yields an empty spine.
+///
+/// Like the SC spine, this must run **after** the CST import: a toc leaf whose
+/// division record does not exist is kept and marked unavailable, and that is
+/// only an honest report if the import has already run.
+pub fn build_cst_spine(
+    db_conn: &mut SqliteConnection,
+    site_dir: &Path,
+    source_dir: &Path,
+) -> Result<()> {
+    if !site_dir.exists() {
+        logger::warn(&format!(
+            "build_cst_spine: tipitaka.org toc files not found, skipping: {}",
+            site_dir.display()
+        ));
+        return Ok(());
+    }
+
+    let mut builder = cst_spine::CstSpineBuilder::new(site_dir, source_dir, db_conn)?;
+    let roots = builder.build()?;
+    log_node_counts("cst_spine", &roots);
+
+    let rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
+    let written = replace_spine(db_conn, cst_spine::TREE_SOURCE, &rows)?;
+    logger::info(&format!("cst_spine: wrote {} rows", written));
+
+    builder.defects.log_summary("cst_spine", 8);
     Ok(())
 }
 

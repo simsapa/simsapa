@@ -15,7 +15,7 @@
 - `backend/src/navigation_tree/tests.rs` — unit tests for the read layer against a temp DB built from the real `up.sql`, so schema/`table!` drift fails here rather than at runtime.
 - `cli/src/bootstrap/navigation_tree/mod.rs` — shared node writer, `node_uid` derivation, insert batching, `ANALYZE` (FR-1, FR-7, FR-12, T-3).
 - `cli/src/bootstrap/navigation_tree/sc_spine.rs` — the SuttaCentral spine builder (FR-2, FR-6).
-- `cli/src/bootstrap/navigation_tree/cst_spine.rs` — the CST toc spine builder (FR-3, FR-4, FR-5, FR-6).
+- `cli/src/bootstrap/navigation_tree/cst_spine.rs` — the CST toc spine builder: toc walk, node-uid derivation, level labels, the 1:1 `romn/` cross-check (FR-3, FR-4, FR-5, FR-6).
 - `cli/src/bootstrap/navigation_tree/coverage_report.rs` — the FR-21 coverage report.
 - `cpp/sutta_navigation_window.cpp` / `.h` — the window wrapper (FR-23, FR-24).
 - `bridges/assets/qml/SuttaNavigationWindow.qml` — the window (FR-27 to FR-46).
@@ -31,7 +31,9 @@
 - `cli/src/bootstrap/mod.rs` — call the tree build after the sutta import (T-1).
 - `cli/src/main.rs` — the `build-navigation-tree` command, so the tree can be
   rebuilt on an existing appdata DB without a full bootstrap (it runs pending
-  migrations first). This is also how success metric 6 is checked.
+  migrations first). `--sc-data-dir` and `--cst-xml-dir` are independent and
+  both optional, so the CST spine can be rebuilt without ArangoDB. This is also
+  how success metric 6 is checked.
 - `cli/src/bootstrap/suttacentral.rs` — `get_titles()` made `pub` for FR-2b.
 - `cli/src/bootstrap/tipitaka_xml.rs` — the computed coverage class replacing `CHECKED_XML_WHITELIST`, per-toc-leaf division records, and the whole-file fallback (FR-14, FR-15, FR-19, FR-20, FR-22).
 - `tipitaka-xml-parser/src/…` — only if a split helper belongs beside `nikaya_structure.rs` / `encoding.rs`; do not add a second decoder (FR-4).
@@ -336,33 +338,97 @@ members, each on its own spine, with no cross-root join.
 > **Writer:** the shared writer from 2.1; `tree_source = 'cst'`.
 > **Depends on:** 1.0, and 2.1–2.2 for the writer and uid conventions.
 
-- [ ] 3.0 Bootstrap spine B — build the CST-derived tree from the tipitaka.org toc files
-  - [ ] 3.1 Create `cli/src/bootstrap/navigation_tree/cst_spine.rs`; read every
+- [x] 3.0 Bootstrap spine B — build the CST-derived tree from the tipitaka.org toc files
+  - [x] 3.1 Create `cli/src/bootstrap/navigation_tree/cst_spine.rs`; read every
         toc file through `read_xml_file` and assert in a test that a
         BOM-mislabelled `toc2.xml` and a real UTF-16 `cscd` toc both decode.
-  - [ ] 3.2 Write the recursive `<tree>` walker: `src=` → descend into that file,
+  - [x] 3.2 Write the recursive `<tree>` walker: `src=` → descend into that file,
         `action=` → leaf. Report a `src=` pointing at a missing file, and a
         duplicate node uid, as defects (FR-8).
-  - [ ] 3.3 Derive `node_uid` for CST nodes from the source identifiers — the
+  - [x] 3.3 Derive `node_uid` for CST nodes from the source identifiers — the
         toc file name plus the leaf's index within it
         (`cst:s0305m.mul.toc:3`) — and document the stability requirement (T-3).
-  - [ ] 3.4 Build the three CST roots Aṭṭhakathā / Ṭīkā / Añña from
+  - [x] 3.4 Build the three CST roots Aṭṭhakathā / Ṭīkā / Añña from
         `toc2`/`toc3`/`toc4` and attach them beside the SC roots at the top level
         (FR-6). Use `toc1.xml` as a cross-check only, not as a fifth root.
-  - [ ] 3.5 Label each level from `NikayaStructure` / `GroupType` where the book
+  - [x] 3.5 Label each level from `NikayaStructure` / `GroupType` where the book
         is one those cover; fall back to the toc's own `text=` where not (FR-5,
         T-5). Do **not** normalize CST grouping toward SC grouping (T-2).
-  - [ ] 3.6 Set `cst_file` on every node that came from a named XML file, and
+  - [x] 3.6 Set `cst_file` on every node that came from a named XML file, and
         `sort_index` from document order (FR-7).
-  - [ ] 3.7 Verify the Añña root against the real `toc4.xml` (T-6); a flat list
+  - [x] 3.7 Verify the Añña root against the real `toc4.xml` (T-6); a flat list
         under the root is acceptable, but note the deviation in the
         implementation notes.
-  - [ ] 3.8 Check the Vinaya case by hand — `vin02m1.mul.xml`, `vin02a1.att.xml`,
+  - [x] 3.8 Check the Vinaya case by hand — `vin02m1.mul.xml`, `vin02a1.att.xml`,
         `vin11t.nrf.xml` land under three different roots with different internal
         structures, and that is the intended outcome (T-4). Build **no**
         cross-root join.
-  - [ ] 3.9 Call the CST spine build from the bootstrap after spine A; record the
+  - [x] 3.9 Call the CST spine build from the bootstrap after spine A; record the
         node count per root and the defect count.
+
+#### Implementation notes — 3.0 (CST spine), measured 2026-09-19
+
+Run with `simsapa_cli build-navigation-tree --db-path <appdata.sqlite3>
+--cst-xml-dir <tipitaka-xml>`. Both spine flags are now optional and
+independent, so the CST spine can be rebuilt without ArangoDB running (the SC
+spine needs it for titles). The bootstrap calls `build_cst_spine()` right after
+`build_sc_spine()`.
+
+**Result: 2,128 nodes, ~0.1 s.** Per root: Aṭṭhakathā 727, Ṭīkā 852, Añña 549.
+Re-running replaces the `cst` rows in place, so it is idempotent and leaves the
+8,762 `sc` rows untouched.
+
+**The 1:1 cross-check passes: 217 source files on disk, 217 reachable from the
+toc files** — zero either way. `toc1.xml` is read for its `src=` targets only
+(61 of the 217) and is *not* built as a fourth root; its Mūla texts are browsed
+on the SC spine. Zero missing `src=` files, zero duplicate node uids, zero
+untitled nodes.
+
+**1,920 toc leaves have no division record yet, and are written with
+`is_available = 0`** — the expected state before task 4, which is what produces
+the division records. They are reported per leaf, never pointed at the
+whole-file record (that would make all twelve leaves of `s0305m.mul.xml` open
+the same text). **24 leaves already resolve**: single-division files whose one
+toc leaf names the source file itself (`e1215n.nrf.xml`, `s0514a2.att.xml`, …),
+so the existing whole-file record *is* the division. Success metric 3's zero is
+task 4's to reach.
+
+**Three findings worth keeping:**
+
+- *Depth must be counted independently of the nikāya structure.* The first
+  version incremented the level index only while a `NikayaStructure` was in
+  scope, so the whole Vinaya, Abhidhamma and Añña subtrees were labelled
+  `group` at every depth. Depth is now the node's own level index, and the
+  structure only decides which *name* that index gets.
+- *The commentary tocs are shallower than the mūla structure they comment on,
+  so a depth index alone mislabels them.* The Aṅguttara aṭṭhakathā's leaves are
+  vaggas (`1. Rūpādivaggavaṇṇanā`) sitting at the depth `NikayaStructure`
+  reserves for a paṇṇāsaka, and the Dhammapada aṭṭhakathā's are vaggas
+  (`1. Yamakavaggo`) at a sutta's depth. `level_label` therefore reads the
+  node's **own title** first (`saṃyutt` / `paṇṇāsa` / `vagg` / `nikāy` / `sutt`,
+  matched on the stem), and falls back to the level list only for a title that
+  names no level — `Ganthārambhakathā` and its like. The vocabulary is still
+  `GroupType`'s, never a parallel one (FR-5), and this is reporting the source's
+  own word rather than reconciling the two spines (T-2). Final labels: 1,074
+  `division`, 489 `vagga`, 261 `sutta`, 128 `book`, 120 `samyutta`, 23
+  `pannasaka`, 17 `nikaya`, 13 `group`, 3 `root`.
+- *`toc1`–`toc4` are UTF-8 with a BOM although they declare `encoding="UTF-16"`,
+  while the `cscd` tocs really are UTF-16.* `read_xml_file` detects by BOM and
+  handles both; `reads_both_toc_encodings` asserts it against the real files
+  (and skips when the checkout is absent).
+
+**Añña (T-6) needed no deviation.** `toc4.xml` is properly structured, not a
+flat grab bag: 9 titled groups (Visuddhimagga 5, Saṅgāyana-puccha vissajjanā 7,
+Leḍī sayāḍo 4, Buddha-vandanā 8, Vaṃsa 3, Byākaraṇa 13, Nīti 10, Pakiṇṇaka 3,
+Sihaḷa 15), each holding `src=` books whose leaves are divisions. The `cscd`
+tocs are flat in all 217 files — one root `<tree>` with leaves under it — which
+is the source's own shape, not a structure the builder failed to derive; the
+leaf walk recurses anyway so a nested one would build rather than truncate.
+
+**Vinaya (T-4) behaves as the PRD expects.** `vin02a1.att.xml` is
+`cst:vin02a1.att` under Aṭṭhakathā › Vinayapiṭaka, `vin11t.nrf.xml` is
+`cst:vin11t.nrf` under Ṭīkā › Vinayapiṭaka, and `vin02m1.mul.xml` is on the SC
+spine — three roots, three internal structures, **no** cross-root join built.
 
 ### 4.0 CST coverage classes, division records, dual-identity rows, and the coverage report
 

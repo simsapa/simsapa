@@ -735,7 +735,11 @@ fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool
 }
 
 /// Rebuild the navigation tree in an existing appdata database.
-fn build_navigation_tree(db_path: &Path, sc_data_dir: &Path) -> Result<(), String> {
+fn build_navigation_tree(
+    db_path: &Path,
+    sc_data_dir: Option<&Path>,
+    cst_xml_dir: Option<&Path>,
+) -> Result<(), String> {
     let mut db_conn = bootstrap::create_database_connection(db_path)
         .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
 
@@ -745,8 +749,23 @@ fn build_navigation_tree(db_path: &Path, sc_data_dir: &Path) -> Result<(), Strin
     bootstrap::run_migrations(&mut db_conn)
         .map_err(|e| format!("Failed to migrate {}: {}", db_path.display(), e))?;
 
-    bootstrap::navigation_tree::build_sc_spine(&mut db_conn, sc_data_dir)
-        .map_err(|e| format!("Failed to build the navigation tree: {:#}", e))?;
+    // Each spine is written independently, so one can be rebuilt without the
+    // other -- the SC spine needs ArangoDB running, the CST spine does not.
+    if let Some(sc_data_dir) = sc_data_dir {
+        bootstrap::navigation_tree::build_sc_spine(&mut db_conn, sc_data_dir)
+            .map_err(|e| format!("Failed to build the SC navigation spine: {:#}", e))?;
+    }
+
+    if let Some(cst_xml_dir) = cst_xml_dir {
+        let site_dir = cst_xml_dir.join("tipitaka.org/romn/");
+        let source_dir = cst_xml_dir.join("romn/");
+        bootstrap::navigation_tree::build_cst_spine(&mut db_conn, &site_dir, &source_dir)
+            .map_err(|e| format!("Failed to build the CST navigation spine: {:#}", e))?;
+    }
+
+    if sc_data_dir.is_none() && cst_xml_dir.is_none() {
+        return Err("Nothing to build: pass --sc-data-dir, --cst-xml-dir, or both".to_string());
+    }
 
     Ok(())
 }
@@ -1471,9 +1490,14 @@ enum Commands {
         #[arg(long, value_name = "DB_PATH")]
         db_path: PathBuf,
 
-        /// Path to the sc-data checkout
+        /// Path to the sc-data checkout (builds the SuttaCentral spine; needs ArangoDB)
         #[arg(long, value_name = "SC_DATA_DIR")]
-        sc_data_dir: PathBuf,
+        sc_data_dir: Option<PathBuf>,
+
+        /// Path to the `tipitaka-xml` directory (builds the CST spine; no ArangoDB needed).
+        /// Its `romn/` holds the source files and its `tipitaka.org/romn/` the toc files.
+        #[arg(long, value_name = "CST_XML_DIR")]
+        cst_xml_dir: Option<PathBuf>,
     },
 
     /// Import suttas from a language database into the appdata database
@@ -1757,8 +1781,8 @@ fn main() {
             import_language(&db_path, &language_db_path)
         }
 
-        Commands::BuildNavigationTree { db_path, sc_data_dir } => {
-            build_navigation_tree(&db_path, &sc_data_dir)
+        Commands::BuildNavigationTree { db_path, sc_data_dir, cst_xml_dir } => {
+            build_navigation_tree(&db_path, sc_data_dir.as_deref(), cst_xml_dir.as_deref())
         }
 
         Commands::Index(subcmd) => {
