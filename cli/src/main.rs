@@ -734,11 +734,46 @@ fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool
     Ok(())
 }
 
+/// Re-run the CST import on an existing appdata database.
+///
+/// The existing CST rows are deleted first: the importer skips a uid that is
+/// already there, so without this a re-run would report every record as
+/// "already exists" and change nothing.
+fn import_cst(
+    db_path: &Path,
+    cst_xml_dir: &Path,
+    fragments_db_path: &Path,
+) -> Result<(), String> {
+    use diesel::prelude::*;
+    use simsapa_backend::db::appdata_schema::suttas;
+
+    let mut db_conn = bootstrap::create_database_connection(db_path)
+        .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
+
+    let deleted = diesel::delete(suttas::table.filter(suttas::uid.like("%/pli/cst")))
+        .execute(&mut db_conn)
+        .map_err(|e| format!("Failed to clear the existing CST rows: {}", e))?;
+    logger::info(&format!("import_cst: removed {} existing CST rows", deleted));
+
+    let mut importer = bootstrap::TipitakaXmlImporter::new(
+        fragments_db_path.to_path_buf(),
+        cst_xml_dir.join("romn/"),
+        cst_xml_dir.join("tipitaka.org/romn/cscd/"),
+    );
+    let report = importer
+        .import(&mut db_conn)
+        .map_err(|e| format!("CST import failed: {:#}", e))?;
+    report.log_summary();
+
+    Ok(())
+}
+
 /// Rebuild the navigation tree in an existing appdata database.
 fn build_navigation_tree(
     db_path: &Path,
     sc_data_dir: Option<&Path>,
     cst_xml_dir: Option<&Path>,
+    fragments_db_path: Option<&Path>,
 ) -> Result<(), String> {
     let mut db_conn = bootstrap::create_database_connection(db_path)
         .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
@@ -759,8 +794,20 @@ fn build_navigation_tree(
     if let Some(cst_xml_dir) = cst_xml_dir {
         let site_dir = cst_xml_dir.join("tipitaka.org/romn/");
         let source_dir = cst_xml_dir.join("romn/");
-        bootstrap::navigation_tree::build_cst_spine(&mut db_conn, &site_dir, &source_dir)
-            .map_err(|e| format!("Failed to build the CST navigation spine: {:#}", e))?;
+        let fragments_db_path = fragments_db_path.map(|p| p.to_path_buf()).unwrap_or_else(|| {
+            cst_xml_dir.join("../../tipitaka-xml-data/fragments.sqlite3")
+        });
+
+        let mut report = bootstrap::navigation_tree::coverage_report::CstCoverageReport::default();
+        bootstrap::navigation_tree::build_cst_spine(
+            &mut db_conn,
+            &site_dir,
+            &source_dir,
+            &fragments_db_path,
+            Some(&mut report),
+        )
+        .map_err(|e| format!("Failed to build the CST navigation spine: {:#}", e))?;
+        report.log_summary();
     }
 
     if sc_data_dir.is_none() && cst_xml_dir.is_none() {
@@ -1478,6 +1525,28 @@ enum Commands {
         minify: bool,
     },
 
+    /// Re-run the CST (tipitaka.org) import on an existing appdata database.
+    ///
+    /// Replaces every `.../pli/cst` sutta row with the records the current
+    /// coverage classification produces, so a batch of new CST-to-SuttaCentral
+    /// mappings can be picked up without re-running the whole bootstrap. Pair
+    /// it with `build-navigation-tree --cst-xml-dir` to rebuild the spine over
+    /// the new records.
+    #[command(arg_required_else_help = true)]
+    ImportCst {
+        /// Path to the appdata database to import into
+        #[arg(long, value_name = "DB_PATH")]
+        db_path: PathBuf,
+
+        /// Path to the `tipitaka-xml` directory
+        #[arg(long, value_name = "CST_XML_DIR")]
+        cst_xml_dir: PathBuf,
+
+        /// Path to `fragments.sqlite3`
+        #[arg(long, value_name = "FRAGMENTS_DB_PATH")]
+        fragments_db_path: PathBuf,
+    },
+
     /// Rebuild the sutta navigation tree in an existing appdata database.
     ///
     /// The same build the bootstrap runs, on a database that is already
@@ -1498,6 +1567,12 @@ enum Commands {
         /// Its `romn/` holds the source files and its `tipitaka.org/romn/` the toc files.
         #[arg(long, value_name = "CST_XML_DIR")]
         cst_xml_dir: Option<PathBuf>,
+
+        /// Path to `fragments.sqlite3`, which supplies the coverage classes and
+        /// the mapped fragment rows. Defaults to the sibling
+        /// `tipitaka-xml-data/fragments.sqlite3` of `--cst-xml-dir`.
+        #[arg(long, value_name = "FRAGMENTS_DB_PATH")]
+        fragments_db_path: Option<PathBuf>,
     },
 
     /// Import suttas from a language database into the appdata database
@@ -1781,8 +1856,17 @@ fn main() {
             import_language(&db_path, &language_db_path)
         }
 
-        Commands::BuildNavigationTree { db_path, sc_data_dir, cst_xml_dir } => {
-            build_navigation_tree(&db_path, sc_data_dir.as_deref(), cst_xml_dir.as_deref())
+        Commands::ImportCst { db_path, cst_xml_dir, fragments_db_path } => {
+            import_cst(&db_path, &cst_xml_dir, &fragments_db_path)
+        }
+
+        Commands::BuildNavigationTree { db_path, sc_data_dir, cst_xml_dir, fragments_db_path } => {
+            build_navigation_tree(
+                &db_path,
+                sc_data_dir.as_deref(),
+                cst_xml_dir.as_deref(),
+                fragments_db_path.as_deref(),
+            )
         }
 
         Commands::Index(subcmd) => {

@@ -73,6 +73,9 @@ use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::nikaya_structure::NikayaStructure;
 use tipitaka_xml_parser::types::GroupType;
 
+use crate::bootstrap::cst_coverage::{coverage_of, CoverageClass, FileCoverage};
+use crate::bootstrap::tipitaka_xml::fragment_uid;
+
 use super::{DefectReport, TreeNode};
 
 pub const TREE_SOURCE: &str = "cst";
@@ -123,17 +126,53 @@ pub struct CstSpineBuilder {
     cst_uids: HashMap<String, String>,
     /// `src=` targets seen, for the 1:1 cross-check against `romn/`.
     reachable_sources: HashSet<String>,
+    /// Which records each source file got, so a fully mapped file's toc leaves
+    /// become branches over its fragments rather than leaves over divisions
+    /// that were deliberately not written.
+    coverage: HashMap<String, FileCoverage>,
+    /// Source file → its mapped Sutta fragments, in source order.
+    fragments: HashMap<String, Vec<FragmentInfo>>,
+    /// Toc leaves seen, and the ones that reached neither a record nor a
+    /// populated branch -- the report's headline number.
+    pub toc_leaves_total: usize,
+    pub unassigned_leaves: Vec<String>,
+    /// Toc leaves opening the adjacent record because their section is merged
+    /// into it. Expected, counted rather than reported as a defect.
+    pub merged_leaves: Vec<String>,
     pub defects: DefectReport,
 }
 
+/// One mapped fragment, as the tree needs it: enough to make a row, and the
+/// titles that decide which toc leaf it falls under.
+#[derive(Debug, Clone)]
+struct FragmentInfo {
+    /// The `suttas.uid` the import wrote, e.g. `mn11.att/pli/cst`.
+    uid: String,
+    title: String,
+    /// The fragment's own title plus its group levels' titles, normalized --
+    /// the set a toc leaf's title is matched against.
+    match_titles: HashSet<String>,
+}
+
 impl CstSpineBuilder {
-    pub fn new(site_dir: &Path, source_dir: &Path, db_conn: &mut SqliteConnection) -> Result<Self> {
+    pub fn new(
+        site_dir: &Path,
+        source_dir: &Path,
+        fragments_db_path: &Path,
+        db_conn: &mut SqliteConnection,
+    ) -> Result<Self> {
         let cst_uids = load_cst_rows(db_conn)?;
+        let (coverage, fragments) = load_fragments(fragments_db_path)?;
         Ok(Self {
             site_dir: site_dir.to_path_buf(),
             source_dir: source_dir.to_path_buf(),
             cst_uids,
             reachable_sources: HashSet::new(),
+            coverage,
+            fragments,
+            toc_leaves_total: 0,
+            unassigned_leaves: Vec::new(),
+            merged_leaves: Vec::new(),
             defects: DefectReport::default(),
         })
     }
@@ -197,8 +236,14 @@ impl CstSpineBuilder {
                 (None, None) => (None, depth),
             };
 
+            // The four root tocs carry no `action=` leaves -- measured, all
+            // 254 of their `<tree>` elements are either a grouping node or a
+            // `src=` branch. One appearing here would be a structure this
+            // walker does not model, so it is reported rather than guessed at.
             let node = if child.is_leaf() {
-                self.make_leaf(child, structure.as_ref(), child_depth)
+                self.defects
+                    .record("root toc has an action= leaf, which is not modelled", title.clone());
+                None
             } else if let Some(src) = &child.src {
                 self.make_src_branch(child, src, structure.as_ref(), child_depth)
             } else {
@@ -270,82 +315,228 @@ impl CstSpineBuilder {
         let mut node =
             TreeNode::new(format!("cst:{}", stem), level_label(structure, &title, depth, false));
         node.title_pali = (!title.is_empty()).then_some(title);
-        node.cst_file = Some(source_file);
-        node.children = self.build_leaves(&inner, &node, structure, depth + 1);
+        node.cst_file = Some(source_file.clone());
+
+        let mut leaves = Vec::new();
+        collect_leaves(&inner, &mut leaves);
+        node.children = self.build_file_children(&source_file, &leaves, structure, depth + 1);
+
         Some(node)
     }
 
-    /// The leaves of one `cscd` toc. They are flat in every one of the 217
-    /// files, but the walk is recursive anyway so a nested one would build
-    /// rather than be silently truncated.
-    fn build_leaves(
+    /// The rows under one source file's branch, decided by its coverage class.
+    ///
+    /// | Class | Rows |
+    /// |---|---|
+    /// | fully mapped | one **branch** per toc leaf, over the fragments that fall under it |
+    /// | partially mapped | the division rows, each followed by the fragment rows that fall under it -- **siblings**, never nested |
+    /// | unmapped | the division rows |
+    /// | unsplittable | one row for the whole file |
+    ///
+    /// The class is read from the fragments, but the *unsplittable* case is
+    /// detected from the database instead: the import assigns it only when a
+    /// split fails, and a file whose divisions are all absent while its
+    /// whole-file record is present is exactly that -- which also keeps this
+    /// right when the spine is rebuilt on its own.
+    fn build_file_children(
         &mut self,
-        element: &TocElement,
-        parent: &TreeNode,
+        source_file: &str,
+        leaves: &[TocLeaf],
         structure: Option<&NikayaStructure>,
         depth: usize,
     ) -> Vec<TreeNode> {
-        let mut out = Vec::new();
+        self.toc_leaves_total += leaves.len();
 
-        for child in &element.children {
-            if child.is_leaf() {
-                if let Some(mut node) = self.make_leaf(child, structure, depth) {
-                    if node.cst_file.is_none() {
-                        node.cst_file = parent.cst_file.clone();
-                    }
-                    out.push(node);
-                }
-            } else {
-                let Some(mut node) = self.make_group(child, &parent.node_uid, structure, depth)
-                else {
-                    continue;
-                };
-                node.cst_file = parent.cst_file.clone();
-                node.children = self.build_leaves(child, &node, structure, depth + 1);
-                out.push(node);
+        let class = coverage_of(&self.coverage, source_file).class;
+
+        if class == CoverageClass::FullyMapped {
+            return self.build_fragment_branches(source_file, leaves, structure, depth);
+        }
+
+        // The whole-file fallback: no division of this file was imported, but
+        // the file itself was.
+        let any_division = leaves
+            .iter()
+            .any(|leaf| self.cst_uids.contains_key(&leaf.division_file));
+        if !any_division && self.cst_uids.contains_key(source_file) {
+            self.defects
+                .record("file imported whole because the split failed", source_file.to_string());
+            let mut node = TreeNode::new(
+                format!("cst:{}", source_file),
+                level_label(structure, "", depth, true),
+            );
+            node.title_pali = Some(source_file.trim_end_matches(".xml").to_string());
+            node.cst_file = Some(source_file.to_string());
+            node.sutta_uid = self.cst_uids.get(source_file).cloned();
+            return vec![node];
+        }
+
+        let fragments = if class == CoverageClass::PartiallyMapped {
+            self.assign_fragments(source_file, leaves)
+        } else {
+            vec![Vec::new(); leaves.len()]
+        };
+
+        let mut out = Vec::new();
+        for (index, leaf) in leaves.iter().enumerate() {
+            out.push(self.make_division(leaf, source_file, structure, depth));
+            // A mapped fragment of a partially mapped file is a sibling of the
+            // division it falls in, in source order -- not a second line on the
+            // division's row, and not nested inside it. Both are openable.
+            for fragment in &fragments[index] {
+                out.push(self.make_fragment_row(fragment, source_file, structure, depth));
             }
         }
 
         out
     }
 
-    /// A `<tree text="…" action="cscd/s0305m.mul0.xml">` — one division.
+    /// A fully mapped file's toc leaves become branches over its fragments.
     ///
-    /// The division records themselves are produced by the CST import, so a
-    /// leaf whose record is not there yet is kept and marked unavailable (the
-    /// window dims it) and reported, never dropped and never pointed at the
-    /// whole-file record — which would make every leaf of a file open the same
-    /// text.
-    fn make_leaf(
+    /// This is what keeps the finest granularity available without storing the
+    /// text twice: the file has no division records, because its fragments
+    /// already cover it.
+    fn build_fragment_branches(
         &mut self,
-        element: &TocElement,
+        source_file: &str,
+        leaves: &[TocLeaf],
         structure: Option<&NikayaStructure>,
         depth: usize,
-    ) -> Option<TreeNode> {
-        let action = element.action.as_ref()?;
-        let division = file_name_of(action);
-        if division.is_empty() {
-            self.defects.record("toc leaf has an empty action=", action.clone());
-            return None;
+    ) -> Vec<TreeNode> {
+        let assigned = self.assign_fragments(source_file, leaves);
+
+        let mut out = Vec::new();
+        for (index, (leaf, fragments)) in leaves.iter().zip(&assigned).enumerate() {
+            let mut node = TreeNode::new(
+                format!("cst:{}", leaf.division_file),
+                level_label(structure, &leaf.title, depth, fragments.is_empty()),
+            );
+            node.title_pali = (!leaf.title.is_empty()).then(|| leaf.title.clone());
+            node.cst_file = Some(source_file.to_string());
+
+            if fragments.is_empty() {
+                // A preamble or postamble section. SuttaCentral has no uid for
+                // one, so the parser merges it into the adjacent sutta record --
+                // correctly, and by design. The toc still lists it, so the leaf
+                // opens the record that carries its text: the next one for a
+                // preamble, the previous for a postamble. It is a real entry
+                // point, not a defect, and not an empty branch.
+                match adjacent_record(&assigned, index) {
+                    Some(uid) => {
+                        node.sutta_uid = Some(uid);
+                        self.merged_leaves
+                            .push(format!("{} ({})", leaf.division_file, source_file));
+                    }
+                    None => {
+                        // No fragment anywhere in the file: nothing to merge
+                        // into, which is a real gap.
+                        node.is_available = false;
+                        self.defects.record(
+                            "toc leaf matches no fragment and the file has none",
+                            format!("{}: {}", source_file, leaf.title),
+                        );
+                        self.unassigned_leaves
+                            .push(format!("{} ({})", leaf.division_file, source_file));
+                    }
+                }
+            } else {
+                node.children = fragments
+                    .iter()
+                    .map(|fragment| self.make_fragment_row(fragment, source_file, structure, depth + 1))
+                    .collect();
+            }
+
+            out.push(node);
         }
 
-        let title = element.text.as_deref().unwrap_or_default().trim().to_string();
-        let mut node = TreeNode::new(
-            format!("cst:{}", division),
-            level_label(structure, &title, depth, true),
-        );
-        node.title_pali = (!title.is_empty()).then_some(title);
-        node.cst_file = Some(division.clone());
+        out
+    }
 
-        match self.cst_uids.get(&division) {
-            Some(full_uid) => node.sutta_uid = Some(full_uid.clone()),
-            None => {
-                node.is_available = false;
-                self.defects.record("toc leaf has no division record in the database", division);
+    /// Group a file's mapped fragments by the toc leaf they fall under.
+    ///
+    /// The join is on the **titles**: a fragment belongs to the leaf whose
+    /// title is one of its own or of its group levels'. Verified exact for
+    /// `s0305m.mul.xml`, whose twelve toc leaf titles are byte-identical and in
+    /// the same order to the distinct group-level titles of its fragments.
+    /// A fragment matching no leaf falls to the previous matched leaf, which
+    /// preserves source order, and is reported.
+    fn assign_fragments(&mut self, source_file: &str, leaves: &[TocLeaf]) -> Vec<Vec<FragmentInfo>> {
+        let mut out: Vec<Vec<FragmentInfo>> = vec![Vec::new(); leaves.len()];
+        let Some(fragments) = self.fragments.get(source_file).cloned() else {
+            return out;
+        };
+
+        let titles: HashMap<String, usize> = leaves
+            .iter()
+            .enumerate()
+            .map(|(index, leaf)| (normalize_title(&leaf.title), index))
+            .collect();
+
+        let mut current: Option<usize> = None;
+        for fragment in fragments {
+            let matched = fragment.match_titles.iter().find_map(|t| titles.get(t).copied());
+            match matched.or(current) {
+                Some(index) => {
+                    current = Some(index);
+                    out[index].push(fragment);
+                }
+                None => self.defects.record(
+                    "fragment falls under no toc leaf",
+                    format!("{}: {}", source_file, fragment.uid),
+                ),
             }
         }
 
-        Some(node)
+        out
+    }
+
+    /// One division row: a toc leaf of a file that was split.
+    fn make_division(
+        &mut self,
+        leaf: &TocLeaf,
+        source_file: &str,
+        structure: Option<&NikayaStructure>,
+        depth: usize,
+    ) -> TreeNode {
+        let mut node = TreeNode::new(
+            format!("cst:{}", leaf.division_file),
+            level_label(structure, &leaf.title, depth, true),
+        );
+        node.title_pali = (!leaf.title.is_empty()).then(|| leaf.title.clone());
+        node.cst_file = Some(source_file.to_string());
+
+        match self.cst_uids.get(&leaf.division_file) {
+            Some(full_uid) => node.sutta_uid = Some(full_uid.clone()),
+            None => {
+                node.is_available = false;
+                self.defects
+                    .record("toc leaf has no division record in the database", leaf.division_file.clone());
+                self.unassigned_leaves
+                    .push(format!("{} ({})", leaf.division_file, source_file));
+            }
+        }
+
+        node
+    }
+
+    /// One mapped-fragment row. `cst_file` carries the file it is a portion of,
+    /// which is what lets the window render the subdued "in s0201a.att.xml"
+    /// affordance so it is not mistaken for a duplicate of the division above.
+    fn make_fragment_row(
+        &mut self,
+        fragment: &FragmentInfo,
+        source_file: &str,
+        structure: Option<&NikayaStructure>,
+        depth: usize,
+    ) -> TreeNode {
+        let mut node = TreeNode::new(
+            format!("cst:frag:{}", fragment.uid),
+            level_label(structure, &fragment.title, depth, true),
+        );
+        node.title_pali = (!fragment.title.is_empty()).then(|| fragment.title.clone());
+        node.cst_file = Some(source_file.to_string());
+        node.sutta_uid = Some(fragment.uid.clone());
+        node
     }
 
     /// Record every `src=` target of a toc file without building nodes from it.
@@ -426,6 +617,46 @@ impl CstSpineBuilder {
                 None
             }
         }
+    }
+}
+
+/// One leaf of a `cscd` toc: the division it names and the title it shows.
+#[derive(Debug, Clone)]
+pub struct TocLeaf {
+    /// The `text=` attribute, which is the division's displayed Pāli title.
+    pub title: String,
+    /// The `action=` target's file name, e.g. `s0305m.mul0.xml`. This is what
+    /// the division record's uid is built from (`s0305m.mul0.xml/pli/cst`).
+    pub division_file: String,
+}
+
+/// The leaves of one `cscd` toc file, in document order.
+///
+/// This is the CST import's view of a toc — it needs the leaves and nothing
+/// else — and it shares this module's single decoder and parser rather than
+/// opening the file a second way.
+pub fn read_toc_leaves(path: &Path) -> Result<Vec<TocLeaf>> {
+    let text = read_xml_file(path)
+        .with_context(|| format!("Failed to decode {}", path.display()))?;
+    let root = parse_toc(&text).with_context(|| format!("Failed to parse {}", path.display()))?;
+
+    let mut out = Vec::new();
+    collect_leaves(&root, &mut out);
+    Ok(out)
+}
+
+fn collect_leaves(element: &TocElement, out: &mut Vec<TocLeaf>) {
+    for child in &element.children {
+        if let Some(action) = &child.action {
+            let division_file = file_name_of(action);
+            if !division_file.is_empty() {
+                out.push(TocLeaf {
+                    title: child.text.as_deref().unwrap_or_default().trim().to_string(),
+                    division_file,
+                });
+            }
+        }
+        collect_leaves(child, out);
     }
 }
 
@@ -618,6 +849,117 @@ fn load_cst_rows(db_conn: &mut SqliteConnection) -> Result<HashMap<String, Strin
 
     logger::info(&format!("cst_spine: {} CST base uids indexed", out.len()));
     Ok(out)
+}
+
+/// The record a leaf with no fragments of its own belongs to: the first
+/// fragment of the next leaf that has any, or -- for a trailing leaf -- the
+/// last fragment of the previous one.
+///
+/// This mirrors how the corpus is built. SuttaCentral has no uid for a
+/// preamble or postamble section, so its text is merged into the first or last
+/// sutta record of the file; the toc still names the section, and this is what
+/// points that name at the record actually carrying it.
+fn adjacent_record(assigned: &[Vec<FragmentInfo>], index: usize) -> Option<String> {
+    assigned[index + 1..]
+        .iter()
+        .find_map(|f| f.first())
+        .or_else(|| assigned[..index].iter().rev().find_map(|f| f.last()))
+        .map(|fragment| fragment.uid.clone())
+}
+
+/// Normalized for the toc-leaf join: trimmed, and with the two niggahita
+/// spellings folded together, because the toc and the fragments do not always
+/// agree on which one they use.
+fn normalize_title(title: &str) -> String {
+    title.trim().replace('ṁ', "ṃ")
+}
+
+/// The coverage classification and every file's mapped fragments.
+///
+/// Read once here rather than per file: the fragments database is 161 MB and
+/// the tree touches 217 files.
+fn load_fragments(
+    fragments_db_path: &Path,
+) -> Result<(HashMap<String, FileCoverage>, HashMap<String, Vec<FragmentInfo>>)> {
+    match fragments_db_path.try_exists() {
+        Ok(true) => {}
+        _ => {
+            logger::warn(&format!(
+                "cst_spine: fragments.sqlite3 not found, no fragment rows will be built: {}",
+                fragments_db_path.display()
+            ));
+            return Ok((HashMap::new(), HashMap::new()));
+        }
+    }
+
+    let db_url = format!("file:{}?mode=ro", fragments_db_path.display());
+    let mut frag_conn = SqliteConnection::establish(&db_url)
+        .with_context(|| format!("Failed to open {}", fragments_db_path.display()))?;
+
+    let coverage = crate::bootstrap::cst_coverage::compute_coverage(&mut frag_conn)?;
+
+    use tipitaka_xml_parser::fragments_schema::xml_fragments;
+    let rows: Vec<(String, Option<String>, Option<String>, String)> = xml_fragments::table
+        .filter(xml_fragments::frag_type.eq("Sutta"))
+        .filter(xml_fragments::sc_code.is_not_null())
+        .select((
+            xml_fragments::cst_file,
+            xml_fragments::sc_code,
+            xml_fragments::cst_sutta,
+            xml_fragments::group_levels,
+        ))
+        .order((xml_fragments::cst_file.asc(), xml_fragments::start_line.asc()))
+        .load(&mut frag_conn)
+        .context("Failed to read fragments for the navigation tree")?;
+
+    let mut fragments: HashMap<String, Vec<FragmentInfo>> = HashMap::new();
+    // One row per *imported record*, not per fragment. Several fragments can
+    // carry the same `sc_code` -- 110 of them do, e.g. three in `an4.1.att` --
+    // and the import keeps only the first, so a tree built per fragment would
+    // name a record that was never written and collide on `node_uid`. Ordered
+    // by (file, start_line), which is the import's own order, so the survivor
+    // is the same one.
+    let mut seen_uids: HashSet<String> = HashSet::new();
+
+    for (cst_file, sc_code, cst_sutta, group_levels) in rows {
+        let Some(sc_code) = sc_code else { continue };
+        let uid = fragment_uid(&cst_file, &sc_code);
+        if !seen_uids.insert(uid.clone()) {
+            continue;
+        }
+        let title = cst_sutta.unwrap_or_default().trim().to_string();
+
+        let mut match_titles: HashSet<String> = HashSet::new();
+        if !title.is_empty() {
+            match_titles.insert(normalize_title(&title));
+        }
+        // The group levels carry the vagga / saṃyutta the fragment sits in,
+        // which is what a toc leaf usually names. The fragment's own title is
+        // matched too: two Dīgha suttas have an empty group-level title and
+        // would otherwise match nothing.
+        if let Ok(levels) = serde_json::from_str::<Vec<serde_json::Value>>(&group_levels) {
+            for level in levels {
+                if let Some(t) = level.get("title").and_then(|v| v.as_str()) {
+                    if !t.trim().is_empty() {
+                        match_titles.insert(normalize_title(t));
+                    }
+                }
+            }
+        }
+
+        fragments.entry(cst_file.clone()).or_default().push(FragmentInfo {
+            uid,
+            title,
+            match_titles,
+        });
+    }
+
+    logger::info(&format!(
+        "cst_spine: {} files classified, {} with mapped fragments",
+        coverage.len(),
+        fragments.len()
+    ));
+    Ok((coverage, fragments))
 }
 
 #[cfg(test)]

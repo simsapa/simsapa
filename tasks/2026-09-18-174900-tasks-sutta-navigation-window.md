@@ -16,12 +16,13 @@
 - `cli/src/bootstrap/navigation_tree/mod.rs` — shared node writer, `node_uid` derivation, insert batching, `ANALYZE` (FR-1, FR-7, FR-12, T-3).
 - `cli/src/bootstrap/navigation_tree/sc_spine.rs` — the SuttaCentral spine builder (FR-2, FR-6).
 - `cli/src/bootstrap/navigation_tree/cst_spine.rs` — the CST toc spine builder: toc walk, node-uid derivation, level labels, the 1:1 `romn/` cross-check (FR-3, FR-4, FR-5, FR-6).
-- `cli/src/bootstrap/navigation_tree/coverage_report.rs` — the FR-21 coverage report.
+- `cli/src/bootstrap/navigation_tree/coverage_report.rs` — the FR-21 coverage report, filled by the import and completed by the spine.
+- `cli/src/bootstrap/cst_coverage.rs` — the four coverage classes computed from `fragments.sqlite3`, and the toc-driven division splitter (FR-14, FR-15, FR-20).
 - `cpp/sutta_navigation_window.cpp` / `.h` — the window wrapper (FR-23, FR-24).
 - `bridges/assets/qml/SuttaNavigationWindow.qml` — the window (FR-27 to FR-46).
 - `bridges/assets/qml/NavigationNodeRow.qml` — leaf/branch row rendering (FR-43 to FR-46, FR-49).
 - `bridges/assets/qml/NavigationBreadcrumbBar.qml` — breadcrumb bar with middle-segment elision (FR-35, FR-37a).
-- `docs/sutta-navigation-tree.md` — the two spines, the dual-identity rule, node-uid stability (T-8).
+- `docs/sutta-navigation-tree.md` — the two spines, `VERIFIED_CST_FILES` and the coverage classes, the dual-identity rule, the split rule, node-uid stability, the rebuild commands (T-8). **Created in task 4**; task 9.8 extends it.
 
 ### Modified files
 
@@ -35,7 +36,11 @@
   both optional, so the CST spine can be rebuilt without ArangoDB. This is also
   how success metric 6 is checked.
 - `cli/src/bootstrap/suttacentral.rs` — `get_titles()` made `pub` for FR-2b.
-- `cli/src/bootstrap/tipitaka_xml.rs` — the computed coverage class replacing `CHECKED_XML_WHITELIST`, per-toc-leaf division records, and the whole-file fallback (FR-14, FR-15, FR-19, FR-20, FR-22).
+- `cli/src/bootstrap/tipitaka_xml.rs` — the coverage class applied *within* the verified-file list, per-toc-leaf division records, and the whole-file fallback (FR-14, FR-15, FR-19, FR-20, FR-22).
+- `cli/src/bootstrap/cst_coverage.rs` — holds **`VERIFIED_CST_FILES`**, the renamed `CHECKED_XML_WHITELIST` (same 30 entries), plus the coverage classes and the division splitter.
+- `cli/src/main.rs` — also the `import-cst` command, which re-runs the CST import on an existing appdata DB (it clears the existing `%/pli/cst` rows first). Re-running it requires `index rebuild --area suttas --lang pli` afterwards.
+- `backend/tests/test_search_normalization.rs` — the Dhovana uid is now the division record, not the removed whole-file one.
+- `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` — BM25 scores regenerated for the re-indexed corpus (same uids, same order).
 - `tipitaka-xml-parser/src/…` — only if a split helper belongs beside `nikaya_structure.rs` / `encoding.rs`; do not add a second decoder (FR-4).
 - `bridges/src/sutta_bridge.rs` — the bridge functions (FR-50, FR-52).
 - `bridges/build.rs` — register the new QML files in `qml_files`.
@@ -66,20 +71,23 @@
     fragments, 3,361 CST rows in the shipped DB. Task 4 is a *subdivision* of the
     187, not a bulk import. (An earlier draft of this note said only 30 of 217
     were imported; that was wrong.)
-  - **`CHECKED_XML_WHITELIST` is a hard-coded Rust array, and it is not the
-    fully-covered set.** Measured per file over `fragments.sqlite3`: **28**
-    files have every Sutta fragment mapped, **22** are partially mapped (98%
-    down to 6%), **2** have fragments but none mapped, and 165 have no
-    fragments. The constant's 30 entries include four *partial* files
-    (`s0101a.att.xml` / `s0101t.tik.xml` at 13 of 14, `s0201a.att.xml` /
-    `s0201t.tik.xml` at 50 of 51) whose unmapped fragments Phase 1 `continue`s
-    past while Phase 2 excludes the file (`tipitaka_xml.rs:246`) — so **four
-    suttas are silently absent from the app today** — and it omits two *fully*
-    mapped files, `s0305a.att.xml` (230) and `s0305m.mul.xml` (605), leaving 835
-    mapped suttas unreachable. Computing the class is task 4.1 and is a
-    prerequisite for success metric 6. The predicate is **full coverage**, not
-    "has any `sc_code`": the latter would import 2 of `s0401m.mul.xml`'s 33
-    suttas and lose 31.
+  - **`CHECKED_XML_WHITELIST` is a hard-coded Rust array — and it is a
+    *verification* gate, not a coverage predicate.** It records which files a
+    human checked after running `tipitaka-xml-parser`'s validations; the parser
+    is a work in progress that produces wrong splits and wrong uid assignments
+    on structures it does not handle. **It is kept and renamed
+    `VERIFIED_CST_FILES`** (`cli/src/bootstrap/cst_coverage.rs`, same 30
+    entries) — "checked" collided with `frag_review = 'checked'`, which means
+    something else entirely. An earlier revision of task 4 deleted it per FR-15
+    and admitted **3,055 fragments from 20 unverified files**; FR-15 has been
+    corrected in the PRD. Only a listed file contributes fragment records.
+    Measured per file over `fragments.sqlite3`, *within* that list: **26** fully
+    mapped, **4** partially mapped (`s0101a.att.xml` / `s0101t.tik.xml` 13 of
+    14, `s0201a.att.xml` / `s0201t.tik.xml` 50 of 51). Because Phase 2 excluded
+    every listed file, those four suttas were silently absent from the app; they
+    are now covered by division records. The predicate inside the list is
+    **full coverage**, not "has any `sc_code`": the latter would import 2 of
+    `s0401m.mul.xml`'s 33 suttas and lose 31.
   - **Whole-file records are 74 MB of the `suttas` table's 163 MB of
     `content_plain`** — 45% of all indexable sutta text, carried by a *trigram*
     FTS5 index and an 841 MB Tantivy index. That is why a coarser record is kept
@@ -454,15 +462,18 @@ spine — three roots, three internal structures, **no** cross-root join built.
 > **Depends on:** 3.0 (the CST spine that these rows hang from), and
 > `cli/src/bootstrap/tipitaka_xml.rs`'s existing import.
 
-- [ ] 4.0 CST coverage classes, division records, dual-identity rows, and the coverage report
-  - [ ] 4.1 **Replace `CHECKED_XML_WHITELIST` with a computed coverage class.**
+- [x] 4.0 CST coverage classes, division records, dual-identity rows, and the coverage report
+  - [x] 4.1 ~~**Replace `CHECKED_XML_WHITELIST` with a computed coverage class.**~~
+        **Done, then reverted — the premise was wrong.** The list is a *verification*
+        gate, not a coverage predicate; it is kept (as `VERIFIED_CST_FILES`) and the
+        computed class applies only within it. See the notes below.
         Derive each file's class from `fragments.sqlite3` — fully mapped only if
         **every** `frag_type='Sutta'` fragment carries an `sc_code` *and* the
         fragments leave no interior gap in the file's line span (FR-14, FR-15).
         A weaker "has any `sc_code`" predicate is a **data-loss defect**:
         `s0401m.mul.xml` has 2 of 33 mapped, and promoting it would keep 2
         suttas and lose 31. Re-run the import and report the class counts.
-  - [ ] 4.2 Confirm the reclassification against the measured baseline before
+  - [x] 4.2 Confirm the reclassification against the measured baseline before
         trusting it: **28** files fully mapped, **22** partially, **167**
         unmapped. The four whitelist entries that are *partial* —
         `s0101a.att.xml` / `s0101t.tik.xml` (13 of 14) and `s0201a.att.xml` /
@@ -471,7 +482,7 @@ spine — three roots, three internal structures, **no** cross-root join built.
         fully-mapped files missing from the whitelist, `s0305a.att.xml` (230)
         and `s0305m.mul.xml` (605), must move into fragment import, which makes
         835 already-mapped suttas reachable.
-  - [ ] 4.3 Implement the split in `cli/src/bootstrap/tipitaka_xml.rs` using the
+  - [x] 4.3 Implement the split in `cli/src/bootstrap/tipitaka_xml.rs` using the
         romn `rend="chapter"` markup **plus a leading division where body text
         precedes the first chapter**, producing one record per toc leaf named to
         line up with it (`s0305m.mul11.xml/pli/cst`) (FR-20). The method is
@@ -479,46 +490,190 @@ spine — three roots, three internal structures, **no** cross-root join built.
         than re-deciding it. Define "body text" explicitly: a head of only
         `rend="nikaya"` / `"book"` / `"title"` / `"centre"` paragraphs is **not**
         a division.
-  - [ ] 4.4 **Drop the whole-file record wherever a finer partition covers the
+  - [x] 4.4 **Drop the whole-file record wherever a finer partition covers the
         file** — for the fully-mapped class (fragments cover it) and for every
         file the split succeeded on (divisions cover it). Keeping both is the
         74 MB duplication FR-14 exists to prevent.
-  - [ ] 4.5 Implement the per-file cross-check: divisions produced must equal toc
+  - [x] 4.5 Implement the per-file cross-check: divisions produced must equal toc
         leaves for that file; report every file where they disagree (FR-20, FR-8)
         and do not silently accept either count. Expect exactly one today —
         `abh05t.nrf.xml` (5 leaves, 6 chapters, plus a leading head).
-  - [ ] 4.6 Keep the whole-file `…xml/pli/cst` import as the fallback for any file
+  - [x] 4.6 Keep the whole-file `…xml/pli/cst` import as the fallback for any file
         the split could not partition, so no text is ever lost (FR-22); flag it
         in the report rather than blocking the import.
-  - [ ] 4.7 Emit division nodes as leaves labelled with the toc leaf's `text=`
+  - [x] 4.7 Emit division nodes as leaves labelled with the toc leaf's `text=`
         title under their toc parent (FR-19), carrying `cst_file` so the row can
         say which source file it came from.
-  - [ ] 4.8 For the **fully mapped** class, emit each toc leaf as a **branch**
+  - [x] 4.8 For the **fully mapped** class, emit each toc leaf as a **branch**
         whose children are that leaf's fragments (FR-18). Join on the fragment's
         group level — verified exact for `s0305m.mul.xml`, whose twelve toc leaf
         titles are byte-identical and in the same order to the distinct
         `json_extract(group_levels,'$[2].title')` values — falling back to
         `start_line` ordering. Report a leaf matching no fragment as a defect
         (FR-8) rather than guessing.
-  - [ ] 4.9 For the **partially mapped** class, emit each mapped fragment as a
+  - [x] 4.9 For the **partially mapped** class, emit each mapped fragment as a
         **sibling row** after its division row, in source order, with a field the
         QML can use to render "in `s0201a.att.xml`" (FR-16, FR-17). Fragments are
         never nested inside the division row.
-  - [ ] 4.10 Confirm FR-15 by construction: the class is computed and the
+  - [x] 4.10 ~~Confirm FR-15 by construction~~ — **FR-15 is not implementable as
+        written**; adding *mappings* to an already-verified file still reclassifies it
+        with no code change, but admitting a new file stays a deliberate act: the class is computed and the
         fragment rows are produced by querying which mapped uids exist, so adding
         mappings and re-running the bootstrap changes only which class a file
         falls in — no code path enumerates files.
-  - [ ] 4.11 Run the full bootstrap; record the FR-21 counts and the class counts
+  - [x] 4.11 Run the full bootstrap; record the FR-21 counts and the class counts
         as the baseline, confirm the `suttas` row count and total `content_plain`
         moved the way the classes predict (no net duplication), and confirm every
         one of the four CST roots reaches an openable leaf (success metric 2).
-  - [ ] 4.12 Create `coverage_report.rs` emitting: every toc leaf not assigned to
+  - [x] 4.12 Create `coverage_report.rs` emitting: every toc leaf not assigned to
         a record or a populated branch; every `romn/` file unreachable from any
         toc leaf; each file's coverage class with mapped/total fragment counts;
         and **counts for all of them**, so a regression is a number (FR-21).
-  - [ ] 4.13 Add the `ANALYZE` call on appdata after the tree tables are
+  - [x] 4.13 Add the `ANALYZE` call on appdata after the tree tables are
         populated (FR-12) and add the new write path to the table in
         `docs/user-data-and-sqlite-analyze.md`.
+
+#### Implementation notes — 4.0 (coverage classes, divisions, coverage report), measured 2026-09-19
+
+Two new CLI commands make this runnable without a full bootstrap, and they are
+what every figure below was measured with:
+
+``` sh
+simsapa_cli import-cst --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
+    --fragments-db-path <fragments.sqlite3>
+simsapa_cli build-navigation-tree --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
+    --fragments-db-path <fragments.sqlite3>
+simsapa_cli index rebuild --area suttas --lang pli --simsapa-dir <SIMSAPA_DIR>
+```
+
+`import-cst` deletes the existing `%/pli/cst` rows first, because the importer
+skips a uid that is already there and a re-run would otherwise change nothing.
+**All three must be run together** — see the index note below.
+
+##### The whitelist is a verification gate, and FR-15 is wrong about it
+
+**`CHECKED_XML_WHITELIST` is kept** (renamed `VERIFIED_CST_FILES`, commented,
+and moved to `cst_coverage.rs`). The PRD's premise — that it was a botched
+attempt at a coverage predicate, and that computing the class would replace it
+(FR-15, success metric 6) — **is incorrect, and implementing FR-15 literally
+was a data-quality defect that had to be reverted.**
+
+`tipitaka-xml-parser` is a work in progress that produces **wrong splits and
+wrong uid assignments** on files whose structure it does not yet handle. The
+list records which files a human verified; it says nothing about coverage.
+Replacing it with "every fragment has an `sc_code` and the spans are gapless"
+admitted **3,055 fragments from 20 unverified files** into the shipped app — a
+confidently wrong parse satisfies that predicate as easily as a correct one.
+
+The verification cannot be recovered from `fragments.sqlite3`, measured over
+the shipped database:
+
+- **`frag_review` is not a verdict.** `checked` means a human eyeballed that
+  fragment so the parser could move past a stuck or edge-case state; its
+  *absence* means the fragment never needed scrutiny, not that it is wrong.
+  Only **155 of 7,349** Sutta fragments carry any review value (142 `checked`,
+  13 `moved`), across 23 files, and **no file** has all of its fragments marked
+  — not even a verified one, where 92 of 3,178 are marked. Two unverified files
+  carry more marks than most verified ones (`s0305a.att.xml`: 47 `checked`;
+  `s0402m1.mul.xml`: 9 `moved`, which reads like repair in progress).
+- **The quality signal lives in the parser.**
+  `tipitaka-xml-parser/src/web/validation.rs` runs nine checks over the parsed
+  fragments — `missing_sc_code`, `unattached_text`, `missing_sc_sutta`,
+  `sutta_review_status`, `xml_reconstruction`, `sc_code_sequence`,
+  `code_uniqueness`, `cst_sc_range_consistency`, `sc_code_not_in_arangodb` —
+  and reports per file whether its fragments are sound. **That verdict is never
+  written back into the fragments database**, so the list is the only record of
+  it. Adding an entry means running those validations, reviewing the output,
+  then re-running the three commands above.
+
+**The two name-spaces correlate by construction, so no mapping table was
+needed.** The list names the files the *parser* read; the navigation tree works
+in the *division* files the CST toc links (`s0101a.att0.xml`, …). Measured: all
+30 entries appear in `cst_file`, in `romn/` and in the toc set, with **zero**
+mismatches in either direction, and a source file's divisions are exactly the
+leaves of its `<name>.toc.xml`. `toc_name_for()` is that derivation and is the
+single place to replace if the naming ever diverges.
+
+##### Result
+
+| Class | Files | Records |
+|---|---|---|
+| fully mapped (verified) | **26** | fragments only |
+| partially mapped (verified) | **4** | divisions + mapped fragments |
+| unverified | **186** | divisions only |
+| unsplittable | **1** (`abh05t.nrf.xml`) | the whole-file record |
+
+**5,623 CST rows: 3,174 fragment, 2,448 division, 1 whole-file** (was 3,361 —
+187 whole-file + 3,174 fragments). The fragment count is **identical to the old
+whitelist output**: no unverified fragment reaches the app. The whole change is
+that the 187 whole-file rows became 2,448 divisions cut at the CST toc's own
+chapter boundaries — which do **not** depend on the parser's sutta splitting at
+all, so they carry no verification risk. `content_plain` over the CST rows:
+93.3 MB → 97.1 MB, the +3.8 MB being the accepted duplication of the 4
+verified-but-partial files. `romn/` ↔ toc pairing 217/217 both ways.
+
+The one genuine gain from the class computation survives: a **verified but
+partially mapped** file (`s0101a.att.xml` 13/14, `s0201a.att.xml` 50/51 and
+their ṭīkās) now gets divisions covering the remainder, which recovers the four
+suttas the old phase 1 silently dropped.
+
+**Spine: 3,916 nodes** (Aṭṭhakathā 1,620, Ṭīkā 1,747, Añña 549), **1,944 toc
+leaves, 2 unassigned**. Shapes verified in the database: a fully mapped file's
+toc leaf is a **branch** over its fragments; a partially mapped file's
+divisions and fragments are **siblings** in source order, each carrying
+`cst_file` for the FR-17 affordance; `abh05t.nrf.xml` has one whole-file row.
+
+##### Findings worth keeping
+
+- *The leading division cannot be read from the markup alone.* Deciding it by
+  "body text precedes the first `rend="chapter"`" matches only **205** of 217
+  files, whatever the definition of body text: eleven files open with real
+  preamble gāthās (`s0508m.mul.xml`, `e0201n.nrf.xml`, `s0401a.att.xml` …)
+  that the toc **folds into the first division** rather than listing. So the
+  chapter markup gives the boundaries and the **toc leaf count decides**
+  whether the head is its own division — 169 files at leaves = chapters, 47 at
+  chapters + 1, `abh05t.nrf.xml` alone at chapters − 1. That is **216 of 217**,
+  the PRD's figure, reached by a different route than the PRD describes. When
+  the counts are equal the head is prepended to division 0, never dropped.
+- *Several fragments can share one `sc_code`.* 110 of them do (three in
+  `an4.1.att`), and the import keeps only the first — so a tree built per
+  *fragment* named records that were never written and collided on `node_uid`,
+  losing 110 subtrees. `load_fragments` de-duplicates by uid in the import's
+  own order. (With the verification gate restored this affects far fewer rows,
+  but the guard stays: it is a property of the data, not of the file set.)
+- *A toc leaf with no fragments of its own opens the adjacent record, and that
+  is correct.* SuttaCentral has no uid for a preamble or postamble section, so
+  the corpus merges such a section into the first or last sutta record of the
+  file **by design**. `s0301a.att.xml` and `s0301t.tik.xml` list
+  `Ganthārambhakathā` as their first toc leaf, and the `sn1.1` fragment begins
+  with that section before running on into the sn1.1 commentary — so the leaf
+  opens `sn1.1.att/pli/cst`, which is where the text is. An earlier revision
+  treated these as defects and dimmed them; they are now counted separately as
+  "merged into an adjacent record". **Success metric 3 is 0 unassigned**, and
+  the CST spine has zero unavailable nodes. A leaf with no fragments in a file
+  that has none at all is still reported.
+- *The join is on titles, not on a fixed group-level index.* A fragment falls
+  under the leaf whose title matches its own `cst_sutta` or any of its group
+  levels' titles (niggahita-folded). Matching group levels alone misses `dn2`
+  and `dn13`, whose sutta-level group title is empty.
+
+##### Replacing the CST records invalidates two things; only one heals itself
+
+`suttas_fts` is kept in sync by its triggers, so ContainsMatch found the new
+division rows immediately. The **Tantivy index does not** — it held
+`s0404a.att.xml/pli/cst`, a uid that no longer exists — so
+`index rebuild --area suttas --lang pli` is part of this change (12,911 Pāli
+documents). **Any future re-run of `import-cst` needs the same rebuild.**
+
+Two backend tests had to be updated, neither a behaviour regression:
+
+- `test_search_normalization.rs` pinned the removed whole-file uid; it now
+  asserts on `s0404a.att25.xml/pli/cst`, the division carrying that text.
+- `test_fulltext_search_results.rs`'s fixture pinned **BM25 scores**, which
+  depend on corpus-wide statistics and move whenever the corpus is re-cut.
+  Regenerated with the file's own `generate_fulltext_fixture` ignored test. The
+  10 result **uids and their order are byte-identical** and the total is still
+  2,330.
 
 ### 5.0 Rust bridge API for the tree, plus `qmllint` stubs
 
@@ -758,9 +913,10 @@ spine — three roots, three internal structures, **no** cross-root join built.
         if it exceeds five, say so and propose a level-grouping change rather
         than quietly accepting it (metric 1).
   - [ ] 9.3 Report the FR-21 coverage counts and the per-class file counts; the
-        unassigned toc-leaf count must be zero (attainable — the split rule
-        measures 216 of 217, with `abh05t.nrf.xml` on the FR-22 fallback), and
-        the unreachable-file count is informational (metric 3).
+        unassigned toc-leaf count must be zero (**measured 0** at the end of task
+        4, with 2 leaves counted as "merged into an adjacent record" and
+        `abh05t.nrf.xml` on the FR-22 fallback), and the unreachable-file count is
+        informational (metric 3).
   - [ ] 9.4 Measure level-render time for the largest level on desktop and report
         it against the 100 ms target (metric 4).
   - [ ] 9.5 Add a small batch of new CST→SC mappings, re-run the bootstrap, and
@@ -776,7 +932,12 @@ spine — three roots, three internal structures, **no** cross-root join built.
   - [ ] 9.7 Ask the user to verify on a device that opening a text and returning
         via the menu restores the exact prior level, filter text and scroll
         position (metric 5, FR-40).
-  - [ ] 9.8 Write `docs/sutta-navigation-tree.md`: the two spines and why they are
+  - [ ] 9.8 **Extend** `docs/sutta-navigation-tree.md` — created during task 4
+        with §1-§7 (the two spines, node-uid stability, `VERIFIED_CST_FILES` and
+        why it cannot be computed, the coverage classes, the split rule and its
+        traps, the coverage report, the rebuild commands). Still to add: the KN
+        deviations from 2.9 and the Añña notes from 3.7, plus anything the
+        window itself needs. Originally scoped as: the two spines and why they are
         not reconciled (T-2), the **four coverage classes and the rule that a
         coarser record is kept only where no finer partition covers the file**
         (§5.3, FR-14) together with the 74 MB / trigram-index reason it exists,

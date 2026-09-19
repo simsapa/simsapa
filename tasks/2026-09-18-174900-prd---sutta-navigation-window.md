@@ -292,28 +292,55 @@ today that is ~4 MB across 22 files, against 163 MB of sutta text.
 > measurement: a file whose fragments are all mapped but leave an interior hole
 > is **not** fully covered, and must be treated as partially mapped.
 
-**FR-15. The import predicate is the coverage class, computed from the data —
-never a hard-coded file list.** Adding new mappings and re-running the
-bootstrap must move a file between classes by itself, with no code change, no
-change to the tree's shape and no change to the QML.
+**FR-15. The import predicate is the coverage class, computed from the data,
+applied *within* the hand-maintained list of verified files.** Adding new
+mappings to an already-verified file and re-running the bootstrap must move it
+between classes by itself, with no code change, no change to the tree's shape
+and no change to the QML.
 
-> **This is not true of the code as it stands, and making it true is in scope.**
-> `CHECKED_XML_WHITELIST` in `cli/src/bootstrap/tipitaka_xml.rs` is a hard-coded
-> array of 30 file names, and **it is not the fully-mapped set**:
+> **CORRECTED 2026-09-19, during implementation. The paragraph this replaces
+> was wrong, and implementing it literally was a data-quality defect that had
+> to be reverted. Do not re-derive it.**
 >
-> - Four of its entries are *partial* — `s0101a.att.xml` and `s0101t.tik.xml`
->   at 13 of 14, `s0201a.att.xml` and `s0201t.tik.xml` at 50 of 51. Phase 1
->   `continue`s past a fragment with no `sc_code`, and Phase 2 excludes
->   whitelisted files (`tipitaka_xml.rs:246`), so **those four suttas are
->   silently absent from the app today**.
-> - Two *fully mapped* files are missing from it — `s0305a.att.xml` (230
->   fragments) and `s0305m.mul.xml` (605) — so 835 already-mapped suttas are
->   unreachable behind the constant.
+> The original text called `CHECKED_XML_WHITELIST` a botched coverage predicate
+> and required it to be deleted. It is not a coverage predicate. It is a
+> **verification gate**: the record of which files a human checked after running
+> `tipitaka-xml-parser`'s validation suite. `tipitaka-xml-parser` is a work in
+> progress that produces **wrong splits and wrong uid assignments** on files
+> whose structure it does not yet handle, and coverage says nothing about
+> correctness -- a confidently wrong parse has every `sc_code` in place.
 >
-> The predicate must therefore be **full coverage**, computed per file. A
-> weaker "has any `sc_code` row" predicate is a data-loss defect: it would
-> promote `s0401m.mul.xml` to fragment-only import, keeping 2 suttas and losing
-> the other 31.
+> Deleting the list admitted **3,055 fragments from 20 unverified files** into
+> the shipped app. The list is kept and **renamed**: `CHECKED_XML_WHITELIST` in
+> `cli/src/bootstrap/tipitaka_xml.rs` is now **`VERIFIED_CST_FILES`** in
+> `cli/src/bootstrap/cst_coverage.rs`, because "checked" collided with
+> `frag_review = 'checked'`, which means something else entirely. Its 30 entries
+> are unchanged. **Only a listed file may contribute
+> fragment records**; everything else is imported as divisions of the source
+> XML, which do not depend on the parser's sutta splitting.
+>
+> The verification cannot be recomputed from `fragments.sqlite3`.
+> `frag_review = 'checked'` is a *parser-progress* marker -- a human eyeballed
+> that fragment so the parser could move past an edge case -- and its absence
+> does not mean a fragment is wrong. Only 155 of 7,349 Sutta fragments carry any
+> review value, no file has all of its fragments marked, and some unverified
+> files carry more marks than verified ones. The real signal is the nine checks
+> in `tipitaka-xml-parser/src/web/validation.rs`, whose per-file verdict is
+> never written back into the database.
+>
+> Within the verified set the class is still computed, and **full coverage** is
+> still the right predicate there. A weaker "has any `sc_code`" test would be a
+> data-loss defect: it would promote `s0401m.mul.xml` to fragment-only import,
+> keeping 2 suttas and losing the other 31.
+>
+> One claim from the original paragraph survives and was fixed: four listed
+> files are *partial* (`s0101a.att.xml` / `s0101t.tik.xml` 13 of 14,
+> `s0201a.att.xml` / `s0201t.tik.xml` 50 of 51), and because Phase 2 excluded
+> every listed file, four suttas were silently absent. They are now covered by
+> division records. The claim that `s0305a.att.xml` and `s0305m.mul.xml` leave
+> "835 already-mapped suttas unreachable" is **withdrawn**: those files are
+> unverified, and withholding their fragments is correct until someone verifies
+> that parse.
 
 **FR-16. A partially mapped file's fragment rows are siblings of its division
 rows**, under the same parent, in source order — not a secondary line on a
@@ -343,7 +370,8 @@ branch.** There are to be no non-openable placeholder leaves in the CST spine.
 
 > **Starting point, measured in the shipped `appdata.sqlite3`:** all 217 source
 > files are *already* imported — 187 as whole-file `…xml/pli/cst` records, and
-> 30 (the `CHECKED_XML_WHITELIST`) as 893 `.att` + 899 `.tik` + 1,382 `.mul`
+> 30 (the verified files, then `CHECKED_XML_WHITELIST`, now
+> `VERIFIED_CST_FILES`) as 893 `.att` + 899 `.tik` + 1,382 `.mul`
 > mapped fragments, 3,361 CST rows in total. What FR-19 adds is therefore
 > **not** a bulk import but the per-toc-leaf subdivision of the whole-file
 > records, and the reclassification of FR-14.
@@ -821,9 +849,12 @@ and `PROJECT_MAP.md`.
    the corpus.
 5. On mobile, opening a text and returning via the menu restores the exact prior
    level, filter text and scroll position — verified by hand on a device.
-6. Adding a batch of new CST→SC uid mappings and re-running the bootstrap changes
-   the tree contents with **no code change** (FR-15), verified by doing it once
-   with a small batch.
+6. Adding a batch of new CST→SC uid mappings to an **already-verified** file and
+   re-running the bootstrap changes the tree contents with **no code change**
+   (FR-15), verified by doing it once with a small batch. Admitting a *new* file
+   to `VERIFIED_CST_FILES` is deliberately **not** covered by this metric — it is
+   a human act that follows running the parser's validations (see the corrected
+   FR-15).
 
 ---
 

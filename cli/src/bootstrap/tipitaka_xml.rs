@@ -1,10 +1,34 @@
+//! Imports the Chaṭṭha Saṅgāyana XML corpus into the `suttas` table.
+//!
+//! Each of the 217 `romn/` source files is imported at the **finest
+//! granularity available for it**, and a coarser record is kept only where the
+//! finer ones do not cover the file — see
+//! [`crate::bootstrap::cst_coverage`] for the four coverage classes, the rule
+//! and the measurements behind it.
+//!
+//! | Class | Records this module produces |
+//! |---|---|
+//! | fully mapped | the mapped fragments only |
+//! | partially mapped | the divisions **plus** the mapped fragments |
+//! | unmapped | the divisions only |
+//! | unsplittable | the whole-file record, as the fallback |
+//!
+//! The class is **computed per file from `fragments.sqlite3` and the toc**, so
+//! adding CST-to-SuttaCentral mappings and re-running the bootstrap moves a
+//! file between classes on its own, with no code change.
+
 use anyhow::{Context, Result};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
+use crate::bootstrap::cst_coverage::{
+    self, coverage_of, CoverageClass, FileCoverage, SplitError,
+};
 use crate::bootstrap::helpers::uid_to_ref;
+use crate::bootstrap::navigation_tree::coverage_report::CstCoverageReport;
+use crate::bootstrap::navigation_tree::cst_spine::read_toc_leaves;
 use simsapa_backend::helpers::{consistent_niggahita, sutta_html_to_plain_text, sutta_range_from_ref, pali_to_ascii};
 use simsapa_backend::logger;
 use html_escape;
@@ -15,44 +39,6 @@ use tipitaka_xml_parser::sutta_builder::xml_to_html;
 use tipitaka_xml_parser::fragments_schema::xml_fragments;
 use tipitaka_xml_parser::fragments_models::XmlFragmentRecord;
 use tipitaka_xml_parser::types::{GroupLevel, GroupType};
-
-static CHECKED_XML_WHITELIST: [&str; 30] = [
-    // Dīgha Nikāya
-    "s0101a.att.xml",
-    "s0101m.mul.xml",
-    "s0101t.tik.xml",
-    "s0102a.att.xml",
-    "s0102m.mul.xml",
-    "s0102t.tik.xml",
-    "s0103a.att.xml",
-    "s0103m.mul.xml",
-    "s0103t.tik.xml",
-
-    // Majjhima Nikāya
-    "s0201a.att.xml",
-    "s0201m.mul.xml",
-    "s0201t.tik.xml",
-    "s0202a.att.xml",
-    "s0202m.mul.xml",
-    "s0202t.tik.xml",
-    "s0203a.att.xml",
-    "s0203m.mul.xml",
-    "s0203t.tik.xml",
-
-    // Saṁyutta Nikāya
-    "s0301a.att.xml",
-    "s0301m.mul.xml",
-    "s0301t.tik.xml",
-    "s0302a.att.xml",
-    "s0302m.mul.xml",
-    "s0302t.tik.xml",
-    "s0303a.att.xml",
-    "s0303m.mul.xml",
-    "s0303t.tik.xml",
-    "s0304a.att.xml",
-    "s0304m.mul.xml",
-    "s0304t.tik.xml",
-];
 
 /// Sutta record matching appdata schema
 #[derive(Debug, Clone)]
@@ -75,48 +61,63 @@ pub struct SuttaRecord {
 pub struct TipitakaXmlImporter {
     fragments_db_path: PathBuf,
     romn_dir: PathBuf,
+    /// `tipitaka.org/romn/cscd/`, holding one `<name>.toc.xml` per source file.
+    /// The toc is what names each division and how many there are, so without
+    /// it no file can be split and every one falls back to a whole-file record.
+    toc_dir: PathBuf,
+}
+
+/// The uid a mapped fragment is imported under, e.g. `mn11.att/pli/cst`.
+///
+/// Shared so the navigation spine can name the same row the import wrote,
+/// rather than rebuilding the convention beside it and drifting from it.
+pub fn fragment_uid(cst_file: &str, sc_code: &str) -> String {
+    let uid_code = if cst_file.ends_with(".att.xml") {
+        format!("{}.att", sc_code)
+    } else if cst_file.ends_with(".tik.xml") {
+        format!("{}.tik", sc_code)
+    } else {
+        sc_code.to_string()
+    };
+    format!("{}/pli/cst", uid_code)
+}
+
+/// The toc file that belongs to a `romn/` source file: `s0305m.mul.xml` →
+/// `s0305m.mul.toc.xml`. The pairing is 1:1 across all 217 of each.
+pub fn toc_name_for(source_file: &str) -> String {
+    format!("{}.toc.xml", source_file.trim_end_matches(".xml"))
 }
 
 impl TipitakaXmlImporter {
-    pub fn new(fragments_db_path: PathBuf, romn_dir: PathBuf) -> Self {
+    pub fn new(fragments_db_path: PathBuf, romn_dir: PathBuf, toc_dir: PathBuf) -> Self {
         Self {
             fragments_db_path,
             romn_dir,
+            toc_dir,
         }
     }
 
-    /// Phase 1: Import suttas from fragments.sqlite3 for whitelisted files
-    fn import_from_fragments(&self) -> Result<Vec<SuttaRecord>> {
-        match self.fragments_db_path.try_exists() {
-            Ok(true) => {}
-            Ok(false) => {
-                logger::warn(&format!(
-                    "fragments.sqlite3 not found: {:?} - skipping Phase 1",
-                    self.fragments_db_path
-                ));
-                return Ok(Vec::new());
-            }
-            Err(e) => {
-                logger::warn(&format!(
-                    "Cannot check fragments.sqlite3 path {:?}: {} - skipping Phase 1",
-                    self.fragments_db_path, e
-                ));
-                return Ok(Vec::new());
-            }
-        }
-
-        let db_url = format!("file:{}?mode=ro", self.fragments_db_path.display());
-        let mut frag_conn = SqliteConnection::establish(&db_url)
-            .with_context(|| format!("Failed to open fragments DB: {:?}", self.fragments_db_path))?;
-
+    /// Import the mapped fragments of the files that have any — the fully and
+    /// partially mapped classes.
+    ///
+    /// A fragment with no `sc_code` is skipped here because it has no uid to be
+    /// imported under; in the partially mapped class the division records cover
+    /// it, and in the fully mapped class there are none by definition.
+    fn import_from_fragments(
+        &self,
+        frag_conn: &mut SqliteConnection,
+        files: &[String],
+    ) -> Result<Vec<SuttaRecord>> {
         let mut suttas = Vec::new();
         let mut used_uids = HashSet::new();
 
-        for filename in &CHECKED_XML_WHITELIST {
+        for filename in files {
+            let filename = filename.as_str();
             let rows: Vec<XmlFragmentRecord> = xml_fragments::table
                 .filter(xml_fragments::cst_file.eq(filename))
                 .filter(xml_fragments::frag_type.eq("Sutta"))
-                .load::<XmlFragmentRecord>(&mut frag_conn)
+                .order(xml_fragments::start_line.asc())
+                .load::<XmlFragmentRecord>(frag_conn)
                 .with_context(|| format!("Failed to query fragments for {}", filename))?;
 
             for (idx, row) in rows.iter().enumerate() {
@@ -132,16 +133,7 @@ impl TipitakaXmlImporter {
                     }
                 };
 
-                // Determine commentary suffix from filename
-                let uid_code = if filename.ends_with(".att.xml") {
-                    format!("{}.att", sc_code)
-                } else if filename.ends_with(".tik.xml") {
-                    format!("{}.tik", sc_code)
-                } else {
-                    sc_code.clone()
-                };
-
-                let uid = format!("{}/pli/cst", uid_code);
+                let uid = fragment_uid(filename, &sc_code);
 
                 // Skip duplicate UIDs
                 if used_uids.contains(&uid) {
@@ -218,73 +210,50 @@ impl TipitakaXmlImporter {
         Ok(suttas)
     }
 
-    /// Phase 2: Import remaining XML files directly from romn/ directory
-    fn import_romn_xml(&self) -> Result<Vec<SuttaRecord>> {
-        match self.romn_dir.try_exists() {
-            Ok(true) => {}
-            Ok(false) => {
-                logger::warn(&format!(
-                    "romn directory not found: {:?} - skipping Phase 2",
-                    self.romn_dir
-                ));
-                return Ok(Vec::new());
-            }
-            Err(e) => {
-                logger::warn(&format!(
-                    "Cannot check romn directory {:?}: {} - skipping Phase 2",
-                    self.romn_dir, e
-                ));
-                return Ok(Vec::new());
-            }
+    /// Cut one source file into the divisions its toc names, and build a
+    /// record for each.
+    ///
+    /// The division records **replace** that file's whole-file record: they
+    /// partition the same text, so keeping both would store it twice.
+    fn import_divisions(&self, filename: &str) -> Result<Vec<SuttaRecord>, DivisionError> {
+        let toc_path = self.toc_dir.join(toc_name_for(filename));
+        let leaves = read_toc_leaves(&toc_path).map_err(|e| DivisionError(format!("{:#}", e)))?;
+        if leaves.is_empty() {
+            return Err(DivisionError("the toc names no divisions".to_string()));
         }
 
-        let mut xml_files: Vec<_> = std::fs::read_dir(&self.romn_dir)
-            .with_context(|| format!("Failed to read romn directory: {:?}", self.romn_dir))?
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                let name = entry.file_name().to_string_lossy().to_string();
-                name.ends_with(".xml") && !CHECKED_XML_WHITELIST.contains(&name.as_str())
-            })
-            .collect();
+        let xml_path = self.romn_dir.join(filename);
+        let xml_content =
+            read_xml_file(&xml_path).map_err(|e| DivisionError(format!("{:#}", e)))?;
 
-        xml_files.sort_by_key(|e| e.file_name());
+        let nikaya = match detect_nikaya_structure(&xml_content) {
+            Ok(ns) => ns.nikaya,
+            Err(_) => "unknown".to_string(),
+        };
 
-        let mut suttas = Vec::new();
-        let mut used_uids = HashSet::new();
+        let divisions = cst_coverage::split_into_divisions(&xml_content, &leaves)
+            .map_err(|e: SplitError| DivisionError(e.to_string()))?;
 
-        for entry in &xml_files {
-            let filename = entry.file_name().to_string_lossy().to_string();
-            let xml_path = entry.path();
-
-            let xml_content = match read_xml_file(&xml_path) {
-                Ok(content) => content,
-                Err(e) => {
-                    logger::error(&format!("Failed to read {}: {}", filename, e));
-                    continue;
-                }
-            };
-
-            let nikaya = match detect_nikaya_structure(&xml_content) {
-                Ok(ns) => ns.nikaya,
-                Err(_) => "unknown".to_string(),
-            };
-
-            let content_html = match xml_to_html(&xml_content) {
+        let mut records = Vec::with_capacity(divisions.len());
+        for (idx, division) in divisions.iter().enumerate() {
+            let content_html = match xml_to_html(&division.xml) {
                 Ok(html) => consistent_niggahita(Some(html)),
                 Err(e) => {
-                    logger::error(&format!("Failed to convert {} to HTML: {}", filename, e));
-                    continue;
+                    return Err(DivisionError(format!(
+                        "division {} ({}) would not convert to HTML: {}",
+                        idx, division.division_file, e
+                    )))
                 }
             };
 
-            let title = filename.trim_end_matches(".xml").to_string();
-            let uid = format!("{}/pli/cst", filename);
-
-            if used_uids.contains(&uid) {
-                logger::warn(&format!("Duplicate UID: {}, skipping", uid));
-                continue;
-            }
-            used_uids.insert(uid.clone());
+            // The toc leaf's own title, which is what the navigation row shows.
+            // A leaf with no text= falls back to the division file name rather
+            // than to an invented title.
+            let title = if division.title.is_empty() {
+                division.division_file.trim_end_matches(".xml").to_string()
+            } else {
+                consistent_niggahita(Some(division.title.clone()))
+            };
 
             let full_html = format!(
                 "<div class=\"cst\">\n<header>\n<h1>{}</h1>\n</header>\n{}</div>",
@@ -292,29 +261,93 @@ impl TipitakaXmlImporter {
                 content_html
             );
 
-            let content_plain = sutta_html_to_plain_text(&content_html);
-            let sutta_ref = uid_to_ref(&title);
-
-            suttas.push(SuttaRecord {
-                uid,
-                sutta_ref,
-                nikaya,
+            records.push(SuttaRecord {
+                uid: format!("{}/pli/cst", division.division_file),
+                sutta_ref: uid_to_ref(division.division_file.trim_end_matches(".xml")),
+                nikaya: nikaya.clone(),
                 language: "pli".to_string(),
                 group_path: None,
-                group_index: None,
-                order_index: None,
+                group_index: Some(idx as i32),
+                order_index: Some(idx as i32),
                 title: Some(title.clone()),
                 title_ascii: Some(pali_to_ascii(Some(&title))),
                 title_pali: Some(title),
-                content_plain: Some(content_plain),
+                content_plain: Some(sutta_html_to_plain_text(&content_html)),
                 content_html: Some(full_html),
                 source_uid: Some("cst".to_string()),
             });
         }
 
-        logger::info(&format!("Phase 2: Built {} sutta records from remaining XML files", suttas.len()));
-        Ok(suttas)
+        Ok(records)
     }
+
+    /// The whole-file fallback: a file the split could not partition is still
+    /// imported under the existing `<name>.xml/pli/cst` uid, so its text is
+    /// never lost. The report flags it as unsplit; the import is never blocked
+    /// on it.
+    fn import_whole_file(&self, filename: &str) -> Result<SuttaRecord> {
+        let xml_path = self.romn_dir.join(filename);
+        let xml_content = read_xml_file(&xml_path)
+            .with_context(|| format!("Failed to read {}", filename))?;
+
+        let nikaya = match detect_nikaya_structure(&xml_content) {
+            Ok(ns) => ns.nikaya,
+            Err(_) => "unknown".to_string(),
+        };
+
+        let content_html = xml_to_html(&xml_content)
+            .map(|html| consistent_niggahita(Some(html)))
+            .with_context(|| format!("Failed to convert {} to HTML", filename))?;
+
+        let title = filename.trim_end_matches(".xml").to_string();
+
+        let full_html = format!(
+            "<div class=\"cst\">\n<header>\n<h1>{}</h1>\n</header>\n{}</div>",
+            html_escape::encode_text(&title),
+            content_html
+        );
+
+        Ok(SuttaRecord {
+            uid: format!("{}/pli/cst", filename),
+            sutta_ref: uid_to_ref(&title),
+            nikaya,
+            language: "pli".to_string(),
+            group_path: None,
+            group_index: None,
+            order_index: None,
+            title: Some(title.clone()),
+            title_ascii: Some(pali_to_ascii(Some(&title))),
+            title_pali: Some(title),
+            content_plain: Some(sutta_html_to_plain_text(&content_html)),
+            content_html: Some(full_html),
+            source_uid: Some("cst".to_string()),
+        })
+    }
+
+    /// The `romn/` source files, sorted, so the import order is deterministic.
+    fn source_files(&self) -> Result<Vec<String>> {
+        match self.romn_dir.try_exists() {
+            Ok(true) => {}
+            _ => {
+                logger::warn(&format!(
+                    "romn directory not found: {:?} - skipping the CST import",
+                    self.romn_dir
+                ));
+                return Ok(Vec::new());
+            }
+        }
+
+        let mut names: Vec<String> = std::fs::read_dir(&self.romn_dir)
+            .with_context(|| format!("Failed to read romn directory: {:?}", self.romn_dir))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.ends_with(".xml"))
+            .collect();
+
+        names.sort();
+        Ok(names)
+    }
+
 
     /// Insert sutta records into the appdata database
     fn insert_suttas(&self, sutta_records: Vec<SuttaRecord>, conn: &mut SqliteConnection) -> Result<usize> {
@@ -386,31 +419,159 @@ impl TipitakaXmlImporter {
         })
     }
 
-    /// Main entry point: import from both phases
-    pub fn import(&mut self, conn: &mut SqliteConnection) -> Result<()> {
-        // Phase 1: Fragment-based import for whitelisted files
-        let phase1_suttas = self.import_from_fragments()?;
-        let phase1_count = phase1_suttas.len();
-        let phase1_inserted = self.insert_suttas(phase1_suttas, conn)?;
+    /// Import the whole CST corpus, at the finest granularity each file
+    /// supports, and return the coverage report.
+    ///
+    /// The order matters: the coverage class decides which files reach the
+    /// fragment import and which reach the division split, and a file whose
+    /// split fails is reclassified as unsplittable *then*, not before.
+    pub fn import(&mut self, conn: &mut SqliteConnection) -> Result<CstCoverageReport> {
+        let mut report = CstCoverageReport::default();
+
+        let sources = self.source_files()?;
+        if sources.is_empty() {
+            return Ok(report);
+        }
+
+        let coverage = self.load_coverage()?;
+        self.check_toc_pairing(&sources, &mut report);
+
+        // Partition the files by class before importing anything, so the two
+        // phases see one consistent classification.
+        let mut fragment_files: Vec<String> = Vec::new();
+        let mut division_files: Vec<String> = Vec::new();
+        let mut classes: BTreeMap<String, CoverageClass> = BTreeMap::new();
+
+        for name in &sources {
+            let file_coverage = coverage_of(&coverage, name);
+            classes.insert(name.clone(), file_coverage.class);
+
+            match file_coverage.class {
+                CoverageClass::FullyMapped => fragment_files.push(name.clone()),
+                CoverageClass::PartiallyMapped => {
+                    report.partial_files.push((
+                        name.clone(),
+                        file_coverage.mapped,
+                        file_coverage.total,
+                    ));
+                    fragment_files.push(name.clone());
+                    division_files.push(name.clone());
+                }
+                // An unverified file is imported as divisions of its source
+                // XML, which do not depend on the parser's sutta splitting.
+                // Unsplittable is never assigned here -- only by a failed split.
+                CoverageClass::Unmapped
+                | CoverageClass::Unverified
+                | CoverageClass::Unsplittable => division_files.push(name.clone()),
+            }
+        }
+
+        // Fragments.
+        let mut records: Vec<SuttaRecord> = Vec::new();
+        if !fragment_files.is_empty() {
+            let mut frag_conn = self.open_fragments_db()?;
+            let fragments = self.import_from_fragments(&mut frag_conn, &fragment_files)?;
+            report.fragment_records = fragments.len();
+            records.extend(fragments);
+        }
+
+        // Divisions, with the whole-file fallback for a file that would not
+        // split. No text is ever lost: one of the two always runs.
+        for name in &division_files {
+            match self.import_divisions(name) {
+                Ok(divisions) => {
+                    report.division_records += divisions.len();
+                    records.extend(divisions);
+                }
+                Err(DivisionError(reason)) => {
+                    logger::warn(&format!(
+                        "{}: could not be split ({}), importing whole",
+                        name, reason
+                    ));
+                    report.unsplittable.push((name.clone(), reason));
+                    classes.insert(name.clone(), CoverageClass::Unsplittable);
+                    records.push(self.import_whole_file(name)?);
+                    report.whole_file_records += 1;
+                }
+            }
+        }
+
+        for class in classes.values() {
+            report.count_class(class.name());
+        }
+
+        let total = records.len();
+        let inserted = self.insert_suttas(records, conn)?;
         logger::info(&format!(
-            "Imported from fragments.sqlite3: {} processed, {} inserted, {} skipped",
-            phase1_count, phase1_inserted, phase1_count - phase1_inserted
+            "Tipitaka XML import complete: {} records built, {} inserted, {} skipped",
+            total,
+            inserted,
+            total - inserted
         ));
 
-        // Phase 2: Direct XML import for remaining files
-        let phase2_suttas = self.import_romn_xml()?;
-        let phase2_count = phase2_suttas.len();
-        let phase2_inserted = self.insert_suttas(phase2_suttas, conn)?;
-        logger::info(&format!(
-            "Imported xml from romn/ folder: {} processed, {} inserted, {} skipped",
-            phase2_count, phase2_inserted, phase2_count - phase2_inserted
-        ));
+        Ok(report)
+    }
 
-        logger::info(&format!(
-            "Tipitaka XML import complete: {} total inserted",
-            phase1_inserted + phase2_inserted
-        ));
+    fn open_fragments_db(&self) -> Result<SqliteConnection> {
+        let db_url = format!("file:{}?mode=ro", self.fragments_db_path.display());
+        SqliteConnection::establish(&db_url)
+            .with_context(|| format!("Failed to open fragments DB: {:?}", self.fragments_db_path))
+    }
 
-        Ok(())
+    /// The coverage classification, or an all-unmapped one when
+    /// `fragments.sqlite3` is absent — in which case every file is imported as
+    /// divisions, which is the correct outcome rather than an error.
+    fn load_coverage(&self) -> Result<HashMap<String, FileCoverage>> {
+        match self.fragments_db_path.try_exists() {
+            Ok(true) => {}
+            _ => {
+                logger::warn(&format!(
+                    "fragments.sqlite3 not found: {:?} - every file will be imported as divisions",
+                    self.fragments_db_path
+                ));
+                return Ok(HashMap::new());
+            }
+        }
+
+        let mut frag_conn = self.open_fragments_db()?;
+        cst_coverage::compute_coverage(&mut frag_conn)
+    }
+
+    /// The `romn/` ↔ `cscd/*.toc.xml` pairing, in both directions. Measured 1:1
+    /// today; a source file with no toc cannot be split, and a toc with no
+    /// source names divisions of nothing.
+    fn check_toc_pairing(&self, sources: &[String], report: &mut CstCoverageReport) {
+        let mut tocs: HashSet<String> = HashSet::new();
+        if let Ok(entries) = std::fs::read_dir(&self.toc_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".toc.xml") {
+                    tocs.insert(name);
+                }
+            }
+        }
+
+        let expected: HashSet<String> = sources.iter().map(|s| toc_name_for(s)).collect();
+
+        for name in sources {
+            if !tocs.contains(&toc_name_for(name)) {
+                report.sources_without_toc.push(name.clone());
+            }
+        }
+        for name in &tocs {
+            if !expected.contains(name) {
+                report.tocs_without_source.push(name.clone());
+            }
+        }
+
+        report.sources_without_toc.sort();
+        report.tocs_without_source.sort();
     }
 }
+
+/// A file that could not be cut into its toc's divisions, with the reason.
+/// Its own type so the fallback is the only way to handle one -- an
+/// `anyhow::Error` here would invite a `?` that aborted the whole import.
+#[derive(Debug)]
+struct DivisionError(String);
+

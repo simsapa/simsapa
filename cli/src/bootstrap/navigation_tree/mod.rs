@@ -22,6 +22,7 @@
 //! An unresolvable leaf is kept and marked unavailable rather than dropped, so
 //! the gap is visible in the window instead of silently absent.
 
+pub mod coverage_report;
 pub mod cst_spine;
 pub mod sc_spine;
 
@@ -284,6 +285,7 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
     logger::info(&format!("sc_spine: wrote {} rows", written));
 
     builder.defects.log_summary("sc_spine", 8);
+    analyze_appdata(db_conn);
     Ok(())
 }
 
@@ -301,6 +303,8 @@ pub fn build_cst_spine(
     db_conn: &mut SqliteConnection,
     site_dir: &Path,
     source_dir: &Path,
+    fragments_db_path: &Path,
+    report: Option<&mut coverage_report::CstCoverageReport>,
 ) -> Result<()> {
     if !site_dir.exists() {
         logger::warn(&format!(
@@ -310,7 +314,8 @@ pub fn build_cst_spine(
         return Ok(());
     }
 
-    let mut builder = cst_spine::CstSpineBuilder::new(site_dir, source_dir, db_conn)?;
+    let mut builder =
+        cst_spine::CstSpineBuilder::new(site_dir, source_dir, fragments_db_path, db_conn)?;
     let roots = builder.build()?;
     log_node_counts("cst_spine", &roots);
 
@@ -319,7 +324,34 @@ pub fn build_cst_spine(
     logger::info(&format!("cst_spine: wrote {} rows", written));
 
     builder.defects.log_summary("cst_spine", 8);
+
+    // Only the spine knows which toc leaves ended up opening something, so it
+    // fills that half of the coverage report.
+    if let Some(report) = report {
+        report.toc_leaves_total = builder.toc_leaves_total;
+        report.toc_leaves_unassigned = builder.unassigned_leaves;
+        report.toc_leaves_merged = builder.merged_leaves;
+    }
+
+    analyze_appdata(db_conn);
     Ok(())
+}
+
+/// Refresh `sqlite_stat1` after a spine has been written.
+///
+/// Every path that grows a shipped database at runtime owes it an `ANALYZE` --
+/// see docs/user-data-and-sqlite-analyze.md. Without one the planner has no
+/// statistics for the new table and can pick a scan over `idx_navigation_nodes_parent`,
+/// which is the whole point of querying a level at a time.
+///
+/// A failure is logged and not propagated: stale statistics make a query slow,
+/// not wrong, and are no reason to fail a bootstrap that has already written
+/// the rows.
+fn analyze_appdata(db_conn: &mut SqliteConnection) {
+    match diesel::sql_query("ANALYZE").execute(db_conn) {
+        Ok(_) => logger::info("navigation_tree: ANALYZE done"),
+        Err(e) => logger::warn(&format!("navigation_tree: ANALYZE failed: {}", e)),
+    }
 }
 
 /// Log the node count per root, which is the figure a build is checked against.
