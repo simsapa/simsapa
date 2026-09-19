@@ -734,6 +734,23 @@ fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool
     Ok(())
 }
 
+/// Rebuild the navigation tree in an existing appdata database.
+fn build_navigation_tree(db_path: &Path, sc_data_dir: &Path) -> Result<(), String> {
+    let mut db_conn = bootstrap::create_database_connection(db_path)
+        .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
+
+    // The target is an existing database, which may predate the navigation
+    // tables. Applying pending migrations is what the app would do on its next
+    // launch anyway, and without them there is nothing to write into.
+    bootstrap::run_migrations(&mut db_conn)
+        .map_err(|e| format!("Failed to migrate {}: {}", db_path.display(), e))?;
+
+    bootstrap::navigation_tree::build_sc_spine(&mut db_conn, sc_data_dir)
+        .map_err(|e| format!("Failed to build the navigation tree: {:#}", e))?;
+
+    Ok(())
+}
+
 /// Import suttas from a language database into the appdata database
 fn import_language(db_path: &Path, language_db_path: &Path) -> Result<(), String> {
     println!("Importing language database...");
@@ -1442,6 +1459,23 @@ enum Commands {
         minify: bool,
     },
 
+    /// Rebuild the sutta navigation tree in an existing appdata database.
+    ///
+    /// The same build the bootstrap runs, on a database that is already
+    /// populated -- so new CST-to-SuttaCentral mappings or a refreshed sc-data
+    /// checkout can be picked up without re-running the whole bootstrap.
+    /// Needs ArangoDB for the `names` titles.
+    #[command(arg_required_else_help = true)]
+    BuildNavigationTree {
+        /// Path to the appdata database to write the tree into
+        #[arg(long, value_name = "DB_PATH")]
+        db_path: PathBuf,
+
+        /// Path to the sc-data checkout
+        #[arg(long, value_name = "SC_DATA_DIR")]
+        sc_data_dir: PathBuf,
+    },
+
     /// Import suttas from a language database into the appdata database
     #[command(arg_required_else_help = true)]
     ImportLanguage {
@@ -1596,7 +1630,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
             // Skip app data initialization for bootstrap, export, stats, suttacentral, import, and parse commands
         }
         _ => {
@@ -1721,6 +1755,10 @@ fn main() {
 
         Commands::ImportLanguage { db_path, language_db_path } => {
             import_language(&db_path, &language_db_path)
+        }
+
+        Commands::BuildNavigationTree { db_path, sc_data_dir } => {
+            build_navigation_tree(&db_path, &sc_data_dir)
         }
 
         Commands::Index(subcmd) => {

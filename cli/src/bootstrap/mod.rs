@@ -13,6 +13,7 @@ pub mod completions;
 pub mod library_imports;
 pub mod chanting_practice;
 pub mod parse_cips_index;
+pub mod navigation_tree;
 
 use anyhow::{Result, Context};
 use chrono::{DateTime, Local};
@@ -291,6 +292,12 @@ RELEASE_CHANNEL=development
                 logger::warn("Dhammapada Munindo resource path not found, skipping");
             }
         }
+
+        // The navigation tree is built after every sutta import, so each
+        // leaf's `sutta_uid` is resolved against rows that exist and one that
+        // is missing can be reported rather than guessed.
+        logger::info("=== Build navigation tree (SuttaCentral spine) ===");
+        navigation_tree::build_sc_spine(&mut conn, &sc_data_dir)?;
 
         logger::info("=== Bootstrap Library Imports ===");
 

@@ -29,6 +29,10 @@
 - `backend/src/lib.rs` — register the `navigation_tree` module.
 - `backend/src/app_data.rs` — hook translation-count cache invalidation into `refresh_language_caches()` (FR-48).
 - `cli/src/bootstrap/mod.rs` — call the tree build after the sutta import (T-1).
+- `cli/src/main.rs` — the `build-navigation-tree` command, so the tree can be
+  rebuilt on an existing appdata DB without a full bootstrap (it runs pending
+  migrations first). This is also how success metric 6 is checked.
+- `cli/src/bootstrap/suttacentral.rs` — `get_titles()` made `pub` for FR-2b.
 - `cli/src/bootstrap/tipitaka_xml.rs` — the computed coverage class replacing `CHECKED_XML_WHITELIST`, per-toc-leaf division records, and the whole-file fallback (FR-14, FR-15, FR-19, FR-20, FR-22).
 - `tipitaka-xml-parser/src/…` — only if a split helper belongs beside `nikaya_structure.rs` / `encoding.rs`; do not add a second decoder (FR-4).
 - `bridges/src/sutta_bridge.rs` — the bridge functions (FR-50, FR-52).
@@ -224,26 +228,26 @@ just after completing an entire parent task.
 > **Writer:** the shared node writer from task 1; `tree_source = 'sc'`.
 > **Depends on:** 1.0 (table + writer target).
 
-- [ ] 2.0 Bootstrap spine A — build the SuttaCentral-derived tree from the local `sc-data` checkout
-  - [ ] 2.1 Create `cli/src/bootstrap/navigation_tree/mod.rs` with the shared
+- [x] 2.0 Bootstrap spine A — build the SuttaCentral-derived tree from the local `sc-data` checkout
+  - [x] 2.1 Create `cli/src/bootstrap/navigation_tree/mod.rs` with the shared
         node-insert writer (batched inserts inside one transaction), a
         `NodeBuilder` that assigns `sort_index` from source order (FR-7), and a
         `defect_report` collector that logs offending identifiers without
         repairing anything (FR-8).
-  - [ ] 2.2 Implement `node_uid` derivation for the SC spine from the source uid
+  - [x] 2.2 Implement `node_uid` derivation for the SC spine from the source uid
         (`sutta`, `sutta/linked`, `sn`, `sn56`, `sn56.11`), documented in a
         module comment as stable across bootstraps (T-3). Never derive it from a
         row id or enumeration order.
-  - [ ] 2.3 Parse `super-tree.json` into the three SC roots and their grouping
+  - [x] 2.3 Parse `super-tree.json` into the three SC roots and their grouping
         levels (FR-6), tolerating the mixed string/object array shape and the
         extra `minor` → `kn` nesting. **Apply the FR-2a scope table as a filter
         while walking**, so the non-Theravāda collections are never built; the
         scope reaches 24 of the 67 trees in `structure/tree/sutta/`. Keep the
         table in one place so widening it later is a one-line change.
-  - [ ] 2.4 Parse each referenced `*-tree.json` recursively, depth-agnostically —
+  - [x] 2.4 Parse each referenced `*-tree.json` recursively, depth-agnostically —
         driven entirely by nesting, never by a hard-coded level count (T-5).
         Record where a referenced tree file is absent as a defect (FR-8).
-  - [ ] 2.5 Fill `title_pali` / `title_en` from ArangoDB's `names` collection
+  - [x] 2.5 Fill `title_pali` / `title_en` from ArangoDB's `names` collection
         via the existing `get_titles(db, lang)`
         (`cli/src/bootstrap/suttacentral.rs:202`) — `is_root == true` for Pāli,
         `lang == @language` for English (FR-2b). Use `misc/uid_expansion.json`
@@ -252,22 +256,67 @@ just after completing an entire parent task.
         `suttas` rows (`title_pali` / `title`) for a leaf `names` does not
         cover, and where neither has one leave the field null rather than
         inventing a title (FR-8).
-  - [ ] 2.6 Load `additional-info/blurbs.json` (`en` only — other languages are
+  - [x] 2.6 Load `additional-info/blurbs.json` (`en` only — other languages are
         out of scope, non-goal 3) and attach blurbs to both grouping nodes and
         text nodes.
-  - [ ] 2.7 Resolve each leaf's `sutta_uid` against the imported `suttas` rows
+  - [x] 2.7 Resolve each leaf's `sutta_uid` against the imported `suttas` rows
         and report leaves that do not resolve (FR-8); mark them unavailable
         rather than dropping them silently, so FR-42 can dim them.
-  - [ ] 2.8 Set `has_children` and the `path` column as part of the write, in one
+  - [x] 2.8 Set `has_children` and the `path` column as part of the write, in one
         pass after the subtree is built.
-  - [ ] 2.9 Verify against the real data that KN's members build sensibly (T-6);
+  - [x] 2.9 Verify against the real data that KN's members build sensibly (T-6);
         where a structure cannot be derived, produce a flat list under the root
         and **write the deviation into the implementation notes**, not into a
         silent fallback. All 20 members have Pāli rows in the shipped DB (`kp` 9
         … `mil` 248), so an empty KN branch means a build defect, not missing
         data.
-  - [ ] 2.10 Call the SC spine build from `cli/src/bootstrap/mod.rs` **after** the
+  - [x] 2.10 Call the SC spine build from `cli/src/bootstrap/mod.rs` **after** the
         sutta import (T-1); run it and record the node count per root.
+
+#### Implementation notes — 2.0 (SC spine), measured 2026-09-19
+
+Run with `simsapa_cli build-navigation-tree --db-path <appdata.sqlite3>
+--sc-data-dir <sc-data>`, added so the tree can be rebuilt on an existing
+database without re-running the whole bootstrap (it applies pending migrations
+first). The bootstrap calls the same `build_sc_spine()`.
+
+**Result: 8,762 nodes, 1.2 s.** Per root: `sutta` 6,650 (5 groups), `vinaya`
+1,001, `abhidhamma` 1,111. Title coverage 8,757 Pāli / 7,052 English; 4,020
+blurbs. Re-running replaces the spine in place (`replace_spine` deletes by
+`tree_source` inside the transaction), so the build is idempotent.
+
+**543 leaves have no text in the corpus** and are written with
+`is_available = 0` — kept and dimmable (FR-42), never dropped. They are **538
+Pātimokkha rules** (`pli-tv-bu-pm-*`, `pli-tv-bi-pm-*`: every individual rule,
+under branches that do exist) plus 5 ranged Bhikkhunī-vibhaṅga uids
+(`pli-tv-bi-vb-ss7-9` and four like it). These 5 are also the only nodes with no
+title at all from any source, so they render by their uid. No other defect kind
+was recorded: **zero** duplicate node uids, zero missing tree files, zero
+malformed entries across all 37 in-scope collections.
+
+**Two findings worth keeping:**
+
+- *The English title fallback must be taken from an English row.* Filling it
+  from the row chosen for opening (a Pāli row) copied `suttas.title`, which
+  holds the **Pāli** name, into the English slot — 1,705 rows printed their Pāli
+  title twice. `load_sutta_rows()` therefore returns three maps, and the two
+  title fallbacks are indexed by language.
+- *`~` is SuttaCentral's own "untitled" marker, not a lookup failure.* 54 leaves
+  (`an5.303`, `an11.22-29`, …) have `title_pali = "~"`; the `names` row really
+  is `"~ "` and so is the imported `suttas` row, while the English title reads
+  "Untitled Discourse on Greed (1st)". Left verbatim — reported, never repaired.
+
+**KN and the flat collections (T-6).** All 20 KN members build, and none needed
+a fallback: where a collection is flat it is **flat in `sc-data` itself**, not a
+structure this code failed to derive. Flat (leaves directly under the
+collection): `kp` 9, `dhp` 26, `bv` 29, `mnd` 16, `pe` 9 — and, in abhidhamma,
+`kv` 219, `ya` 77, `patthana` 728. The rest nest 2–4 levels
+(`ja` 626 descendants, `tha-ap` 619, `thag` 321, `mil` 282). `dhp`'s 26
+"children" are vagga-sized *texts* (`dhp1-20` Yamakavagga), not branches, which
+is SuttaCentral's grouping and is left as it is (T-2).
+
+**Vinaya (T-4) behaves as the PRD expects:** `pli-tv-vi` carries all six
+members, each on its own spine, with no cross-root join.
 
 ### 3.0 Bootstrap spine B — the CST-derived tree from the toc files
 
