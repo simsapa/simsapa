@@ -38,6 +38,15 @@ use crate::logger::error;
 /// unambiguous, and is the empty string for a root. No `node_uid` contains it.
 pub const PATH_DELIMITER: char = '|';
 
+/// Prefix of a mapped-fragment node's `node_uid` (`cst:frag:mn11.att/pli/cst`).
+///
+/// A fragment row and the division row above it are siblings under the same
+/// parent and both carry the same `cst_file`, so the file name alone cannot
+/// tell them apart. The prefix is what FR-17's subdued "in s0201a.att.xml"
+/// affordance keys on: it is written by the CST spine builder and read back by
+/// [`NavigationNode::is_fragment`], so the two must not drift.
+pub const FRAGMENT_UID_PREFIX: &str = "cst:frag:";
+
 /// Build a `path` value from the ancestor `node_uid`s, root first, excluding
 /// the node itself.
 pub fn join_path(ancestors: &[String]) -> String {
@@ -208,6 +217,27 @@ impl NavigationNode {
             .filter(|s| !s.is_empty())
             .or_else(|| self.title_en.as_deref().filter(|s| !s.is_empty()))
             .unwrap_or(&self.node_uid)
+    }
+
+    /// Whether tapping this node's Open button can reach a text (FR-42).
+    ///
+    /// Two conditions, and both are load-bearing: the node must name a sutta,
+    /// and that sutta must have been found in the `suttas` table when the
+    /// spine was built. A branch has no `sutta_uid` at all; a leaf whose
+    /// target text is absent has one but was marked unavailable, and the
+    /// window dims it rather than opening an empty tab.
+    pub fn is_openable(&self) -> bool {
+        self.is_available
+            && self
+                .sutta_uid
+                .as_deref()
+                .is_some_and(|uid| !uid.is_empty())
+    }
+
+    /// Whether this row is a mapped fragment of a partially mapped CST file
+    /// rather than a division of it. See [`FRAGMENT_UID_PREFIX`].
+    pub fn is_fragment(&self) -> bool {
+        self.node_uid.starts_with(FRAGMENT_UID_PREFIX)
     }
 }
 
@@ -436,6 +466,129 @@ pub fn node_by_uid(node_uid: &str) -> Option<NavigationNode> {
 /// window must report as "navigation index not available".
 pub fn tree_is_available() -> bool {
     with_appdata("tree_is_available", false, tree_is_available_conn)
+}
+
+// ============================================================================
+// JSON views
+//
+// The window renders from JSON strings, as the topic-index functions do, so
+// the shape a row is drawn from is defined here rather than in the bridge:
+// every field is derived from a `NavigationNode` in one place, and the derived
+// flags (`is_openable`, `is_fragment`, `in_file`) are unit-testable without a
+// Qt object.
+// ============================================================================
+
+/// One row as the window draws it. Carries the stored columns the rendering
+/// needs plus the three derived flags; the ordering and path columns are
+/// deliberately left out, since the level query already returns rows in order
+/// and the breadcrumbs come from [`NavigationMatchView`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NavigationNodeView {
+    pub node_uid: String,
+    pub parent_uid: Option<String>,
+    pub node_type: String,
+    pub tree_source: String,
+    pub title_pali: Option<String>,
+    pub title_en: Option<String>,
+    pub blurb: Option<String>,
+    pub sutta_uid: Option<String>,
+    pub cst_file: Option<String>,
+    pub has_children: bool,
+    pub child_count: i32,
+    /// [`NavigationNode::is_openable`] — false means the row is dimmed and its
+    /// Open button is disabled, never that a tab opens empty.
+    pub is_openable: bool,
+    pub is_fragment: bool,
+    /// The file a fragment row is a portion of (FR-17), and `None` on every
+    /// other row — including a division row, which carries the same
+    /// `cst_file` but is not a portion of anything the list also shows.
+    pub in_file: Option<String>,
+}
+
+impl From<&NavigationNode> for NavigationNodeView {
+    fn from(node: &NavigationNode) -> Self {
+        let is_fragment = node.is_fragment();
+        Self {
+            node_uid: node.node_uid.clone(),
+            parent_uid: node.parent_uid.clone(),
+            node_type: node.node_type.clone(),
+            tree_source: node.tree_source.clone(),
+            title_pali: node.title_pali.clone(),
+            title_en: node.title_en.clone(),
+            blurb: node.blurb.clone(),
+            sutta_uid: node.sutta_uid.clone(),
+            cst_file: node.cst_file.clone(),
+            has_children: node.has_children,
+            child_count: node.child_count,
+            is_openable: node.is_openable(),
+            is_fragment,
+            in_file: is_fragment.then(|| node.cst_file.clone()).flatten(),
+        }
+    }
+}
+
+/// One whole-tree filter hit: the row, and the titles of its ancestors so the
+/// flat result list shows where it sits (FR-27).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NavigationMatchView {
+    pub node: NavigationNodeView,
+    pub breadcrumbs: Vec<String>,
+}
+
+impl From<&NavigationMatch> for NavigationMatchView {
+    fn from(m: &NavigationMatch) -> Self {
+        Self {
+            node: NavigationNodeView::from(&m.node),
+            breadcrumbs: m.breadcrumbs.clone(),
+        }
+    }
+}
+
+/// Serialize, logging and returning an empty JSON array on failure.
+///
+/// A serialization error here is not recoverable by the caller and must not
+/// leave the window parsing an error string as if it were data, so the empty
+/// array is the one answer that renders as "nothing here" rather than as a
+/// broken level.
+fn to_json_array<T: Serialize>(what: &str, values: &[T]) -> String {
+    match serde_json::to_string(values) {
+        Ok(json) => json,
+        Err(e) => {
+            error(&format!("navigation_tree::{}: {}", what, e));
+            "[]".to_string()
+        }
+    }
+}
+
+/// One level of the tree as a JSON array of [`NavigationNodeView`].
+/// `None` is the root level. Empty array when the table is absent or empty.
+pub fn children_json(parent: Option<&str>) -> String {
+    let views: Vec<NavigationNodeView> =
+        children_of(parent).iter().map(NavigationNodeView::from).collect();
+    to_json_array("children_json", &views)
+}
+
+/// Whole-tree filter as a JSON array of [`NavigationMatchView`].
+pub fn filter_json(query: &str, limit: i64) -> String {
+    let views: Vec<NavigationMatchView> = filter_nodes(query, limit)
+        .iter()
+        .map(NavigationMatchView::from)
+        .collect();
+    to_json_array("filter_json", &views)
+}
+
+/// One node as a JSON object, or `null` when there is no such node. `null` is
+/// distinguishable from a node with every field empty, which an empty object
+/// would not be.
+pub fn node_json(node_uid: &str) -> String {
+    let view = node_by_uid(node_uid).as_ref().map(NavigationNodeView::from);
+    match serde_json::to_string(&view) {
+        Ok(json) => json,
+        Err(e) => {
+            error(&format!("navigation_tree::node_json: {}", e));
+            "null".to_string()
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1119,6 +1119,30 @@ Item {
         console.log("open_topic_index_window()");
     }
 
+    function nav_tree_is_available(): bool {
+        console.log("nav_tree_is_available()");
+        return true;
+    }
+
+    function nav_tree_children_json(parent_uid: string): string {
+        console.log("nav_tree_children_json():", parent_uid);
+        return "[]";
+    }
+
+    function nav_tree_filter_json(query: string, limit: int): string {
+        console.log("nav_tree_filter_json():", query, limit);
+        return "[]";
+    }
+
+    function nav_tree_node_json(node_uid: string): string {
+        console.log("nav_tree_node_json():", node_uid);
+        return "null";
+    }
+
+    function open_sutta_navigation_window() {
+        console.log("open_sutta_navigation_window()");
+    }
+
     function update_topic_index() {
         console.log("update_topic_index()");
     }

@@ -18,6 +18,7 @@ extern "C++" {
     void callback_open_library_window();
     void callback_open_reference_search_window();
     void callback_open_topic_index_window();
+    void callback_open_sutta_navigation_window();
     void callback_show_chapter_in_sutta_window(QString window_id, QString result_data_json);
     void callback_show_toc_tab(QString window_id, QString spine_item_uid);
     void callback_show_sutta_from_reference_search(QString window_id, QString result_data_json);

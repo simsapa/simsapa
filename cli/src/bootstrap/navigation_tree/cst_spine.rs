@@ -70,6 +70,7 @@ use quick_xml::Reader;
 
 use simsapa_backend::helpers::consistent_niggahita;
 use simsapa_backend::logger;
+use simsapa_backend::navigation_tree;
 use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::nikaya_structure::NikayaStructure;
 use tipitaka_xml_parser::types::GroupType;
@@ -549,7 +550,7 @@ impl CstSpineBuilder {
         depth: usize,
     ) -> TreeNode {
         let mut node = TreeNode::new(
-            format!("cst:frag:{}", fragment.uid),
+            format!("{}{}", navigation_tree::FRAGMENT_UID_PREFIX, fragment.uid),
             level_label(structure, &fragment.title, depth, true),
         );
         node.title_pali = (!fragment.title.is_empty()).then(|| fragment.title.clone());

@@ -454,3 +454,110 @@ fn sort_path_orders_the_tree_in_document_order() {
     // ordering the filter by this rather than by `path`.
     assert!(join_sort_path(&[], 2) < join_sort_path(&[], 100));
 }
+
+// ---------------------------------------------------------------------------
+// The JSON views the window renders rows from.
+// ---------------------------------------------------------------------------
+
+/// A branch, a leaf that resolves, a leaf whose text is absent, and a CST
+/// fragment row — the four cases the row rendering distinguishes.
+fn view_of(
+    node_uid: &str,
+    sutta_uid: Option<&str>,
+    is_available: bool,
+    cst_file: Option<&str>,
+) -> NavigationNodeView {
+    let mut row = node(node_uid, Some("sn56"), 0, "Title", None, &["sutta"]);
+    row.sutta_uid = sutta_uid.map(|s| s.to_string());
+    row.is_available = is_available;
+    row.cst_file = cst_file.map(|s| s.to_string());
+
+    let mut db_conn = migrated_db();
+    diesel::insert_into(navigation_nodes::table)
+        .values(&row)
+        .execute(&mut db_conn)
+        .expect("insert");
+    let stored = node_by_uid_conn(&mut db_conn, node_uid)
+        .expect("query")
+        .expect("row");
+    NavigationNodeView::from(&stored)
+}
+
+#[test]
+fn a_branch_is_not_openable() {
+    let view = view_of("sn56.branch", None, true, None);
+    assert!(!view.is_openable);
+    assert!(!view.is_fragment);
+    assert_eq!(view.in_file, None);
+}
+
+#[test]
+fn a_leaf_with_a_present_text_is_openable() {
+    let view = view_of("sn56.11", Some("sn56.11/pli/ms"), true, None);
+    assert!(view.is_openable);
+}
+
+#[test]
+fn a_leaf_whose_text_is_absent_is_not_openable() {
+    // FR-42: dimmed, never an empty tab. The uid is still carried so the row
+    // can show what it would have opened.
+    let view = view_of("sn56.12", Some("sn56.12/pli/ms"), false, None);
+    assert!(!view.is_openable);
+    assert_eq!(view.sutta_uid.as_deref(), Some("sn56.12/pli/ms"));
+}
+
+#[test]
+fn only_a_fragment_row_carries_the_in_file_label() {
+    // A division and a fragment are siblings carrying the same `cst_file`
+    // (FR-16), so the uid prefix is the only thing that tells them apart.
+    let division = view_of("cst:s0201a.att1.xml", None, true, Some("s0201a.att.xml"));
+    assert!(!division.is_fragment);
+    assert_eq!(division.in_file, None);
+    assert_eq!(division.cst_file.as_deref(), Some("s0201a.att.xml"));
+
+    let fragment = view_of(
+        &format!("{}mn11.att/pli/cst", FRAGMENT_UID_PREFIX),
+        Some("mn11.att/pli/cst"),
+        true,
+        Some("s0201a.att.xml"),
+    );
+    assert!(fragment.is_fragment);
+    assert_eq!(fragment.in_file.as_deref(), Some("s0201a.att.xml"));
+}
+
+#[test]
+fn children_json_is_an_array_of_rows_in_order() {
+    let mut db_conn = seeded_db();
+    let rows = children_of_conn(&mut db_conn, Some("sn")).expect("query");
+    let views: Vec<NavigationNodeView> = rows.iter().map(NavigationNodeView::from).collect();
+    let json = serde_json::to_string(&views).expect("serialize");
+
+    let parsed: Vec<NavigationNodeView> = serde_json::from_str(&json).expect("round trip");
+    assert_eq!(parsed, views);
+    assert!(json.contains("\"is_openable\""));
+    assert!(json.contains("\"has_children\""));
+}
+
+#[test]
+fn a_filter_match_serializes_with_its_breadcrumbs() {
+    let mut db_conn = seeded_db();
+    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
+    assert!(!matches.is_empty(), "the seed contains sn56.11");
+
+    let views: Vec<NavigationMatchView> = matches.iter().map(NavigationMatchView::from).collect();
+    assert_eq!(views[0].breadcrumbs, matches[0].breadcrumbs);
+    assert_eq!(views[0].node.node_uid, matches[0].node.node_uid);
+
+    let json = serde_json::to_string(&views).expect("serialize");
+    let parsed: Vec<NavigationMatchView> = serde_json::from_str(&json).expect("round trip");
+    assert_eq!(parsed, views);
+}
+
+#[test]
+fn the_public_json_api_is_empty_without_app_data() {
+    // Same tolerance as the typed readers: no `AppData` (and so no table) must
+    // render as "nothing here", not as a parse error in QML.
+    assert_eq!(children_json(None), "[]");
+    assert_eq!(filter_json("dhamma", 10), "[]");
+    assert_eq!(node_json("sn56.11"), "null");
+}

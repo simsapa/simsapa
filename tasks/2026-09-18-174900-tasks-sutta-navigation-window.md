@@ -43,6 +43,8 @@
 - `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` — BM25 scores regenerated for the re-indexed corpus (same uids, same order).
 - `tipitaka-xml-parser/src/…` — only if a split helper belongs beside `nikaya_structure.rs` / `encoding.rs`; do not add a second decoder (FR-4).
 - `bridges/src/sutta_bridge.rs` — the bridge functions (FR-50, FR-52).
+- `bridges/src/api.rs` — declares `callback_open_sutta_navigation_window()` in the `gui.h` extern block (FR-26).
+- `cpp/gui.h` — the matching C++ declaration.
 - `bridges/build.rs` — register the new QML files in `qml_files`.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs (T-7).
 - `cpp/window_manager.cpp` / `.h` — `create_sutta_navigation_window()`, the new list, close handling (FR-23 to FR-25).
@@ -807,26 +809,60 @@ above read back out of it.
 > **Depends on:** 1.0 (read layer). Data from 2–4 is not required to build this,
 > only to make it return rows.
 
-- [ ] 5.0 Rust bridge API for the tree, plus `qmllint` stubs
-  - [ ] 5.1 Read `SuttaBridge::load_topic_index` / `get_topic_index_letters`
+- [x] 5.0 Rust bridge API for the tree, plus `qmllint` stubs
+  - [x] 5.1 Read `SuttaBridge::load_topic_index` / `get_topic_index_letters`
         (`bridges/src/sutta_bridge.rs:5710`, `:5730`) as the precedent for
         function shape, JSON serialization and signal use.
-  - [ ] 5.2 Add the `nav_tree_*` functions to the `#[cxx_qt::bridge]` block and
+  - [x] 5.2 Add the `nav_tree_*` functions to the `#[cxx_qt::bridge]` block and
         implement them over `simsapa_backend::navigation_tree`.
-  - [ ] 5.3 Serialize nodes with every field the row rendering needs:
+  - [x] 5.3 Serialize nodes with every field the row rendering needs:
         `node_uid`, `title_pali`, `title_en`, `blurb`, `sutta_uid`, `cst_file`,
         `node_type`, `tree_source`, `has_children`, child count, an
         `is_openable` flag (FR-42) and the fragment's parent-file label (FR-17).
-  - [ ] 5.4 Make the unavailable case explicit: when `nav_tree_is_available()` is
+  - [x] 5.4 Make the unavailable case explicit: when `nav_tree_is_available()` is
         false the window shows "navigation index not available", never an empty
         tree (FR-13).
-  - [ ] 5.5 Add `open_sutta_navigation_window()` plus its FFI callback, following
+  - [x] 5.5 Add `open_sutta_navigation_window()` plus its FFI callback, following
         `open_topic_index_window()`.
-  - [ ] 5.6 Add matching stubs with correct signatures and trivial return values
+  - [x] 5.6 Add matching stubs with correct signatures and trivial return values
         to `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` (T-7).
-  - [ ] 5.7 Use `crate::queue_or_log()` for any worker that queues back to the Qt
+  - [x] 5.7 Use `crate::queue_or_log()` for any worker that queues back to the Qt
         thread (FR-52); add none that `.unwrap()`s.
-  - [ ] 5.8 `make build -B`, `cd backend && cargo test`, `make qml-lint`.
+  - [x] 5.8 `make build -B`, `cd backend && cargo test`, `make qml-lint`.
+
+Notes:
+
+- **The JSON shape lives in the backend, not in the bridge.**
+  `NavigationNodeView` / `NavigationMatchView` in `backend/src/navigation_tree.rs`
+  derive the three flags the row rendering needs -- `is_openable` (FR-42),
+  `is_fragment` and `in_file` (FR-17) -- so they are unit-testable without a Qt
+  object. The bridge functions are one line each.
+- **A division row and a fragment row carry the same `cst_file`** (they are
+  siblings under one parent, FR-16), so the file name cannot tell them apart.
+  The discriminator is the `cst:frag:` uid prefix, now the shared constant
+  `navigation_tree::FRAGMENT_UID_PREFIX` written by `cst_spine.rs` and read back
+  by `NavigationNode::is_fragment()` -- previously a literal in the CLI only.
+  `in_file` is `None` on a division so only the fragment gets the subdued label.
+- **`is_openable` is two conditions, not one:** a `sutta_uid` *and*
+  `is_available`. A leaf whose target text was not found when the spine was
+  built keeps its uid (so the row can say what it would have opened) but is
+  dimmed.
+- **`nav_tree_filter_json` refuses a non-positive limit.** SQLite reads a
+  negative `LIMIT` as "no limit", so a QML slip would return the whole tree as a
+  flat list rather than an error.
+- **Nothing here runs off the Qt thread**, so 5.7 adds no `queue_or_log()` call:
+  a level is one indexed `WHERE parent_uid = ?` and the filter is two statements
+  over materialized columns. No `.unwrap()` and no `let _ =` was added.
+- **`callback_open_sutta_navigation_window()` is declared and wired end to end,
+  but `cpp/gui.cpp` logs a placeholder** -- `WindowManager::create_sutta_navigation_window()`
+  arrives in 6.3, which replaces that body. Logging rather than doing nothing
+  keeps an early wiring mistake visible in `log.txt` instead of looking like a
+  dead menu item.
+
+Verification: `make build -B` green; `cargo test` 633 backend lib (26
+navigation_tree, 7 of them new view-layer tests) + all backend integration tests
++ 97 CLI, all passing; `make qml-lint` reports no warning naming
+`SuttaBridge.qml`.
 
 ### 6.0 Window lifecycle: wrapper, `WindowManager` hybrid family, entry points
 
