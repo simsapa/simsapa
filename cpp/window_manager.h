@@ -15,6 +15,7 @@ class DictionariesWindow;
 class LibraryWindow;
 class ReferenceSearchWindow;
 class TopicIndexWindow;
+class SuttaNavigationWindow;
 class ChantingPracticeWindow;
 class ChantingReviewWindow;
 
@@ -79,6 +80,13 @@ class WindowManager : public QObject {
         LibraryWindow* create_library_window();
         ReferenceSearchWindow* create_reference_search_window();
         TopicIndexWindow* create_topic_index_window();
+
+        /// The navigation tree -- a third lifecycle family (see
+        /// docs/window-lifecycle-and-reuse.md). One instance ever, hidden on
+        /// close rather than destroyed, so this revives the existing wrapper
+        /// **without resetting it**: preserving the user's place in the
+        /// hierarchy is the whole reason it is not torn down.
+        SuttaNavigationWindow* create_sutta_navigation_window();
         ChantingPracticeWindow* create_chanting_practice_window(const QString& window_id);
         ChantingReviewWindow* create_chanting_review_window(const QString& window_id, const QString& section_uid, bool auto_start_recording = false);
 
@@ -98,6 +106,9 @@ class WindowManager : public QObject {
         QList<LibraryWindow*> library_windows;
         QList<ReferenceSearchWindow*> reference_search_windows;
         QList<TopicIndexWindow*> topic_index_windows;
+        /// At most one entry, and it is never removed by a close: on_window_closed()
+        /// has no branch for this window because there is nothing to destroy.
+        QList<SuttaNavigationWindow*> sutta_navigation_windows;
         QList<ChantingPracticeWindow*> chanting_practice_windows;
         QList<ChantingReviewWindow*> chanting_review_windows;
 

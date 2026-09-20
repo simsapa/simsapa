@@ -235,12 +235,7 @@ void callback_open_topic_index_window() {
 }
 
 void callback_open_sutta_navigation_window() {
-  // The window itself does not exist yet. This is the bridge entry point every
-  // menu and toolbar action routes through, so it is declared here first and
-  // will call WindowManager::create_sutta_navigation_window() once that window
-  // lands. Logging rather than doing nothing keeps an early wiring mistake
-  // visible in log.txt instead of looking like a dead menu item.
-  log_info_c("callback_open_sutta_navigation_window(): the navigation window is not built yet");
+  AppGlobals::manager->create_sutta_navigation_window();
 }
 
 void callback_open_chanting_practice_window(QString window_id) {

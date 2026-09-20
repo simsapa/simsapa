@@ -48,6 +48,7 @@
 - `bridges/build.rs` — register the new QML files in `qml_files`.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs (T-7).
 - `cpp/window_manager.cpp` / `.h` — `create_sutta_navigation_window()`, the new list, close handling (FR-23 to FR-25).
+- `CMakeLists.txt` — `cpp/sutta_navigation_window.cpp` added to `cpp_files`.
 - `cpp/gui.cpp` — confirm the session save cannot see the new window (FR-25, resolved question 6).
 - `bridges/assets/qml/SuttaSearchWindow.qml` — menu-bar and drawer entry points (FR-26).
 - `docs/window-lifecycle-and-reuse.md`, `docs/user-data-and-sqlite-analyze.md`, `PROJECT_MAP.md` — amendments (T-8).
@@ -878,18 +879,18 @@ navigation_tree, 7 of them new view-layer tests) + all backend integration tests
 > `save_session_now()` (`:444`) iterates `sutta_search_windows` only.
 > **Depends on:** 5.5 (the bridge entry point).
 
-- [ ] 6.0 Window lifecycle: `SuttaNavigationWindow` C++ wrapper, `WindowManager` hybrid family, entry points
-  - [ ] 6.1 Read `docs/window-lifecycle-and-reuse.md` §0 and §7 before writing
+- [x] 6.0 Window lifecycle: `SuttaNavigationWindow` C++ wrapper, `WindowManager` hybrid family, entry points
+  - [x] 6.1 Read `docs/window-lifecycle-and-reuse.md` §0 and §7 before writing
         any of this, and note which of §7's steps do **not** apply to a
         hide-on-close window.
-  - [ ] 6.2 Create `cpp/sutta_navigation_window.{h,cpp}` modelled on
+  - [x] 6.2 Create `cpp/sutta_navigation_window.{h,cpp}` modelled on
         `cpp/topic_index_window.{h,cpp}`, guarding
         `m_root = rootObjects().isEmpty() ? nullptr : …constFirst();`.
-  - [ ] 6.3 Add `sutta_navigation_windows` to `WindowManager` and
+  - [x] 6.3 Add `sutta_navigation_windows` to `WindowManager` and
         `create_sutta_navigation_window()` using `reuse_or_evict()` +
         `show_and_activate_window()` — and **no** `clear_all_tabs()` analogue,
         since preserving state is the whole point (FR-24).
-  - [ ] 6.4 Make the QML `onClosing` **accept** the close and simply **not**
+  - [x] 6.4 Make the QML `onClosing` **accept** the close and simply **not**
         route to `notify_window_closed` / `on_window_closed` — the wrapper is
         never destroyed, so there is no destruction to defer (FR-24, T-8). Do
         **not** reject the close or assign `visible = false`:
@@ -898,24 +899,70 @@ navigation_tree, 7 of them new view-layer tests) + all backend integration tests
         is what would leave a live app with no windows. Accepting it makes Qt
         call `destroy()`, which releases the platform window but leaves
         `m_root`, the engine and all QML state intact.
-  - [ ] 6.5 Read `save_session_now()` and the startup restore and **confirm by
+  - [x] 6.5 Read `save_session_now()` and the startup restore and **confirm by
         reading** that neither can see the new window; if either could, exclude
         it explicitly (FR-25, resolved question 6).
-  - [ ] 6.6 Read `last_open_sutta_search_window()` /
+  - [x] 6.6 Read `last_open_sutta_search_window()` /
         `first_open_sutta_search_window()` and confirm they remain
         sutta-window-only (FR-24).
-  - [ ] 6.7 Add the menu-bar item to `SuttaSearchWindow.qml` beside
+  - [x] 6.7 Add the menu-bar item to `SuttaSearchWindow.qml` beside
         `&Topic Index...` and the drawer-menu entry for mobile (FR-26).
-  - [ ] 6.8 Route both entry points through the one `WindowManager` accessor, so
+  - [x] 6.8 Route both entry points through the one `WindowManager` accessor, so
         the single-instance guarantee holds regardless of which
         `SuttaSearchWindow` asked (FR-23, FR-26).
-  - [ ] 6.9 Verify the last-window case on the built app: nothing in `cpp/` sets
+  - [x] 6.9 Verify the last-window case on the built app: nothing in `cpp/` sets
         `quitOnLastWindowClosed(false)`, and with 6.4's accepted close the quit
         check does run, so closing the navigation window as the only visible
         window should quit the app exactly as closing a `SuttaSearchWindow`
         does. Confirm that, and confirm reopening after a close restores the
         prior level rather than a fresh window.
-  - [ ] 6.10 `make build -B`; the window opens empty and closes without crashing.
+  - [x] 6.10 `make build -B`; the window opens empty and closes without crashing.
+
+Notes:
+
+- **Which of §7's checklist steps do not apply to a hide-on-close window** (6.1):
+  step 4's `on_window_closed()` branch (nothing is ever destroyed, so a request
+  naming this window falls through to the unknown-type error, where a wiring
+  mistake is visible in `log.txt`); step 5's `notify_window_closed()` call; step
+  6's §5b deferral (there is no destruction to defer, so no `close_pending`
+  flag, no failsafe `Timer` and no reopen-cancels-the-close trap); and step 6a's
+  re-init on show, which is **inverted** here -- preserving what
+  `Component.onCompleted` left is the requirement, not a hazard. Steps 1, 2, 3,
+  7 and 8 apply unchanged. The one thing 6a still flags for later: the
+  translation counts of FR-47 *are* time-varying, so task 8 must decide where
+  they refresh rather than assuming the level is still current after a language
+  download.
+- **6.5 and 6.6, confirmed by reading, and no explicit exclusion was needed.**
+  `save_session_now()` and `restore_last_session()` both iterate
+  `this->sutta_search_windows` alone, as do
+  `last_open_sutta_search_window()` / `first_open_sutta_search_window()`. The
+  new window lives in its own `sutta_navigation_windows` list, so it is
+  invisible to all four by construction -- the session array's length stays the
+  sutta-window count, and a `window_id`-less dispatch cannot land on it.
+- **One `CMenuItem` serves both entry points** (6.7, 6.8). `DrawerMenu.qml`
+  builds the mobile menu by walking the same `menu_list` the desktop menu bar
+  renders, and `windows_menu` is in that list -- so the single
+  `action_sutta_navigation` Action is the mobile route as well, and both go
+  through `SuttaBridge.open_sutta_navigation_window()` to the one
+  `WindowManager` accessor.
+- **The `gui.cpp` placeholder from task 5 is gone**; the callback now calls
+  `create_sutta_navigation_window()`.
+- **The QML window is a placeholder body**: the root, the `onClosing` rule and
+  the `nav_tree_is_available()` empty-state message. The filter bar, breadcrumbs
+  and rows are task 7.
+- **6.9's static half is confirmed:** nothing in `cpp/` or the QML tree calls
+  `setQuitOnLastWindowClosed(false)` -- the only two mentions are comments in
+  `storage_recovery_window.cpp` and `gui.cpp` about the startup windows -- so
+  the default `true` holds and 6.4's accepted close does run the quit check.
+  **The runtime half is for the user to check by hand** (GUI runs are not an
+  agent task here): closing the navigation window as the only visible window
+  should quit the app, and reopening after a close should revive the same
+  window rather than build a fresh one -- `log.txt` says which, since the
+  accessor logs `revived` vs `created`.
+
+Verification: `make build -B` green; `make qml-lint` reports no warning naming
+`SuttaNavigationWindow.qml` or `SuttaSearchWindow.qml`. Runtime behaviour
+(6.9, 6.10) pending the user's check.
 
 ### 7.0 QML window: two row modes, breadcrumbs, drill-down, filter bar, blurb toggle
 

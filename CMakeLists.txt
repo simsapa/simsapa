@@ -417,6 +417,7 @@ list(APPEND cpp_files
     cpp/library_window.cpp
     cpp/reference_search_window.cpp
     cpp/topic_index_window.cpp
+    cpp/sutta_navigation_window.cpp
     cpp/chanting_practice_window.cpp
     cpp/chanting_review_window.cpp
     cpp/global_hotkey_manager.cpp)

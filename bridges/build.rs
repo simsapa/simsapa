@@ -18,6 +18,7 @@ fn main() {
         "assets/qml/ReferenceSearchWindow.qml",
         "assets/qml/ReferenceSearchInfoDialog.qml",
         "assets/qml/TopicIndexWindow.qml",
+        "assets/qml/SuttaNavigationWindow.qml",
         "assets/qml/TopicIndexInfoDialog.qml",
         "assets/qml/TopicIndexUpdateWindow.qml",
         "assets/qml/BooksList.qml",
