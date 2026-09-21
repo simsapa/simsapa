@@ -35,6 +35,9 @@
   migrations first). `--sc-data-dir` and `--cst-xml-dir` are independent and
   both optional, so the CST spine can be rebuilt without ArangoDB. This is also
   how success metric 6 is checked.
+- `backend/src/app_settings.rs` — the persisted `show_navigation_blurbs` toggle (FR-31).
+- `bridges/src/sutta_bridge.rs` — the `nav_tree_*` readers and the blurb-toggle accessors.
+- `bridges/build.rs` — the three navigation QML files in `qml_files`.
 - `cli/src/bootstrap/suttacentral.rs` — `get_titles()` made `pub` for FR-2b.
 - `cli/src/bootstrap/tipitaka_xml.rs` — the coverage class applied *within* the verified-file list, per-toc-leaf division records, and the whole-file fallback (FR-14, FR-15, FR-19, FR-20, FR-22).
 - `cli/src/bootstrap/cst_coverage.rs` — holds **`VERIFIED_CST_FILES`**, the renamed `CHECKED_XML_WHITELIST` (same 30 entries), plus the coverage classes and the division splitter.
@@ -997,63 +1000,130 @@ Verification: `make build -B` green; `make qml-lint` reports no warning naming
 > **Depends on:** 5.0 (bridge), 6.0 (a window to put it in).
 
 - [ ] 7.0 QML window: two row modes, breadcrumbs, drill-down, filter bar, row components, blurb toggle
-  - [ ] 7.1 Create `SuttaNavigationWindow.qml` with the root layout, register it
+  - [x] 7.1 Create `SuttaNavigationWindow.qml` with the root layout, register it
         and every new component in `bridges/build.rs`'s `qml_files` using the
         exact `"assets/qml/<Name>.qml"` form (no `..`).
-  - [ ] 7.2 Implement the level model: a list populated from
+  - [x] 7.2 Implement the level model: a list populated from
         `nav_tree_children_json()`, replaced wholesale when the enter-level
         button is pressed (FR-34), with expansion state not carried across.
         Keep the query off the first-paint path (FR-50).
-  - [ ] 7.3 Implement `NavigationBreadcrumbBar.qml`: full path from root to the
+  - [x] 7.3 Implement `NavigationBreadcrumbBar.qml`: full path from root to the
         current level, pressing a segment returns to that level, middle segments
         elided on a narrow screen rather than wrapping (FR-35, FR-37a).
-  - [ ] 7.4 Make a tap on a branch row's body expand/collapse that node in
+  - [x] 7.4 Make a tap on a branch row's body expand/collapse that node in
         place, revealing its children as **tree rows** (FR-32, FR-33). Show the
         state with the two PNG icons exactly as `ChantingTreeList.qml` does —
         the caret is an indicator, the whole row body is the tap target (FR-36).
-  - [ ] 7.4a Add the **enter-level button** to every branch row, in both modes:
+  - [x] 7.4a Add the **enter-level button** to every branch row, in both modes:
         it makes that node the current level, resets indentation to zero and
         appends a breadcrumb segment (FR-34).
-  - [ ] 7.5 Implement the filter input: whole-tree filter via
+  - [x] 7.5 Implement the filter input: whole-tree filter via
         `nav_tree_filter_json()`, results as a **flat list** each carrying its
         breadcrumb path (FR-27); clearing it returns to the pre-filter level
         (FR-28); a result row has no body tap action and carries the same
         buttons as a tree row — **Open** on a leaf, **enter level** on a branch
         (FR-29).
-  - [ ] 7.6 Apply the mobile soft-keyboard rules to the filter input:
+  - [x] 7.6 Apply the mobile soft-keyboard rules to the filter input:
         `MobileKeyboardHelper`, `EnterKey.type: Qt.EnterKeySearch` with a
         matching `onAccepted`, `focus: root.is_desktop`, `Qt.ImhNoAutoUppercase`
         only (FR-30).
-  - [ ] 7.7 Add the blurb toggle to the top bar, shown on by default, persisted
+  - [x] 7.7 Add the blurb toggle to the top bar, shown on by default, persisted
         in `AppSettings` — the struct carries `#[serde(default)]` at the
         container level (`backend/src/app_settings.rs:186`), so a new field
         deserializes safely against existing stored settings (FR-31) — and only this setting; breadcrumbs, filter
         text, expansion and scroll are **not** persisted (FR-25).
-  - [ ] 7.8 Create `NavigationNodeRow.qml` with a `is_tree_row` property
+  - [x] 7.8 Create `NavigationNodeRow.qml` with a `is_tree_row` property
         selecting the two modes. A leaf **level row** renders Pāli title →
         English title → uid (always visible, dimmer and smaller) → blurb →
         translation hint placeholder → **Open** button, in that order; a leaf
         **tree row** renders the first three plus the Open button and nothing
         else (FR-43, FR-33).
-  - [ ] 7.9 Render a branch **level row** with title, English title, uid,
+  - [x] 7.9 Render a branch **level row** with title, English title, uid,
         blurb, child-count indication, caret and enter-level button; a branch
         **tree row** with title, English title, uid, caret and enter-level
         button only (FR-46, FR-33).
-  - [ ] 7.10 Render **no blurb area at all** when there is no blurb — no reserved
+  - [x] 7.10 Render **no blurb area at all** when there is no blurb — no reserved
         space, no placeholder, varying row heights accepted (FR-44).
-  - [ ] 7.11 Truncate the blurb to roughly two lines and add a **button**
+  - [x] 7.11 Truncate the blurb to roughly two lines and add a **button**
         ("more" / "less") that expands and collapses that row's full blurb;
         expansion is per row, not a global mode. It must be a button, not a tap
         on the text: the row body's tap belongs to expand/collapse of the node
         (FR-45, FR-32).
-  - [ ] 7.12 Render a fragment row with its subdued "in `s0201a.att.xml`"
+  - [x] 7.12 Render a fragment row with its subdued "in `s0201a.att.xml`"
         affordance so it cannot be mistaken for a duplicate of the division row
         above it (FR-17).
-  - [ ] 7.13 Render a node whose target text is absent as dimmed with its Open
+  - [x] 7.13 Render a node whose target text is absent as dimmed with its Open
         button disabled (FR-42), and render the whole-window "navigation index
         not available" state when the tree is empty (FR-13).
-  - [ ] 7.14 `make qml-test`; confirm no new `qmllint` warning names a file you
+  - [x] 7.14 `make qml-test`; confirm no new `qmllint` warning names a file you
         touched.
+
+Notes:
+
+- **The row mode is a property of the row, not of the window.**
+  `NavigationNodeRow.qml` takes `is_tree_row` and `is_filter_row`; a level row
+  is neither. The blurb is gated on `!is_tree_row && !is_filter_row &&
+  show_blurbs`, so a tree row cannot show one however the toggle is set.
+- **Blurb "more"/"less" state lives in the window, not in the delegate.** A
+  `ListView` recycles delegates, so a per-delegate flag would land on whichever
+  row scrolled into that delegate. `blurb_expanded_uids` is keyed by `node_uid`,
+  as `expanded_uids` and `children_cache` already are.
+- **Two `ListView`s, not one with a switched model.** The level list keeps its
+  scroll position while the filter list is shown, which is what makes clearing
+  the filter return to the level the user was on with no restore code (FR-28).
+- **Entering a level from a filter hit needs uids the hit does not carry.**
+  `NavigationMatchView.breadcrumbs` is ancestor *titles* — enough to display
+  where a hit sits, not enough to navigate to it. `ancestor_segments()` walks
+  `parent_uid` up through `nav_tree_node_json()`, guarded at 32 steps against a
+  cycle in defective data.
+- **The breadcrumb bar's `…` is a menu, not just an ellipsis.** Collapsing the
+  middle segments to fit a phone screen would otherwise make those levels
+  unreachable, which is the one thing the bar exists for (FR-35). The first
+  segment and the tail stay visible; how many fit is derived from the bar's
+  width rather than a fixed count.
+- **The blurb toggle is the only persisted state** (FR-31 vs FR-25).
+  `show_navigation_blurbs` was added to `AppSettings`, which carries
+  `#[serde(default)]` at the container level, so stored settings from an older
+  build deserialize with the `true` default rather than failing.
+- **`Open` is rendered and gated here but does not yet open anything** — the
+  row's `open_text()` signal reaches `open_node()`, which refuses an
+  unavailable node and logs the uid. The dispatch to a `SuttaSearchWindow` tab
+  is task 8.1, as is the translation count: `NavigationNodeRow` already carries
+  `translation_count`, hidden while it is -1.
+- **The first level query is deferred with `Qt.callLater`** so the window paints
+  before the roots are read (FR-50).
+- **Two defects found in review after the GUI check and fixed.** (1) FR-42's
+  dim was applied to the row's `background` Rectangle only, leaving the title,
+  uid and buttons at full strength -- it read as a style, not as "unavailable";
+  the `opacity` is now on the row. Latent today: the built tree has **0** nodes
+  with a `sutta_uid` but `is_available = 0`, so nothing exercises it yet, but a
+  bootstrap that cannot resolve a leaf produces them by design (FR-8).
+  (2) `append_expanded()` recursed without a depth cap, so a `parent_uid` cycle
+  in defective data would overflow the stack -- a hard crash rather than a
+  visible defect. Capped at 24 with a `logger.error`; the real maximum ancestor
+  depth in the built tree is **7**.
+- **The blurb toggle is an `property alias` to the checkbox, not a mirrored
+  `property bool`.** A `CheckBox` assigns its own `checked` when clicked, which
+  replaces any binding written onto it -- so `checked: root.show_blurbs` would
+  silently stop tracking after the first click. The alias leaves one piece of
+  state, matching `AppSettingsWindow.qml`'s idiom (imperative assignment at
+  load, handler on change). `onToggled` rather than `onCheckedChanged`, because
+  the latter also fires on the load-time assignment and would rewrite the
+  setting on every window open.
+- **Measured against the built tree:** 12,622 nodes, max ancestor depth 7,
+  largest single level **728 rows**, 1,736 fragment rows (so FR-17's "in
+  `<file>`" label renders) and 4,020 blurbs (so FR-31/44/45 render). The
+  728-row level is what task 9.4 must time, and is why task 8's translation
+  count has to be one query per level.
+
+Verification: `make build -B` green; `cargo test` 633 backend lib + all backend
+integration tests passing; `make qml-test` 172 passed, 0 failed; `make qml-lint`
+reports no warning naming `SuttaNavigationWindow.qml`, `NavigationNodeRow.qml`,
+`NavigationBreadcrumbBar.qml` or `SuttaBridge.qml`. Runtime behaviour is for the
+user to check by hand.
+
+
+---
 
 ### 8.0 Opening a text, and the installed-language translation count
 
@@ -1150,6 +1220,11 @@ Verification: `make build -B` green; `make qml-lint` reports no warning naming
         and the KN / Añña deviations found in 2.9 and 3.7.
   - [ ] 9.9 Amend `docs/window-lifecycle-and-reuse.md`: add the third family to
         §0 with the reasoning from FR-23 to FR-25, and extend §5b's table with
-        the fact that this window has no destruction to defer (T-8).
+        the fact that this window has no destruction to defer (T-8). **§5b-bis
+        is already done** -- it carries the once-per-*app-run*
+        `Component.onCompleted` consequence and the three values this window
+        reads at load, including the accepted staleness of
+        `get_mobile_extra_top_margin()` on mobile. Extend it rather than
+        duplicating it.
   - [ ] 9.10 Confirm `docs/user-data-and-sqlite-analyze.md` carries the new write
         path (added in 4.10) and update `PROJECT_MAP.md` with the new files.

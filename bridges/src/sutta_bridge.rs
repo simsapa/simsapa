@@ -1009,6 +1009,10 @@ pub mod qobject {
         #[cxx_name = "showBottomFootnotesChanged"]
         fn show_bottom_footnotes_changed(self: Pin<&mut SuttaBridge>);
 
+        #[qsignal]
+        #[cxx_name = "showNavigationBlurbsChanged"]
+        fn show_navigation_blurbs_changed(self: Pin<&mut SuttaBridge>);
+
         // Update checker signals
         #[qsignal]
         #[cxx_name = "appUpdateAvailable"]
@@ -1816,6 +1820,14 @@ pub mod qobject {
         /// One node as a JSON object, or `null` when there is no such node.
         #[qinvokable]
         fn nav_tree_node_json(self: &SuttaBridge, node_uid: &QString) -> QString;
+
+        /// Whether the navigation window shows blurbs on its level rows
+        /// (FR-31). Tree rows never show one, whatever this says.
+        #[qinvokable]
+        fn get_show_navigation_blurbs(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_show_navigation_blurbs(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         /// Open the Sutta Navigation window, or revive the one that exists.
         #[qinvokable]
@@ -5878,6 +5890,20 @@ impl qobject::SuttaBridge {
     /// One node as JSON, or `null`.
     pub fn nav_tree_node_json(&self, node_uid: &QString) -> QString {
         QString::from(&navigation_tree::node_json(&node_uid.to_string()))
+    }
+
+    /// The FR-31 blurb toggle. It is a setting and persists across sessions;
+    /// the breadcrumb path, filter text, expansion and scroll position
+    /// deliberately do not (FR-25).
+    pub fn get_show_navigation_blurbs(&self) -> bool {
+        let app_data = get_app_data();
+        app_data.get_show_navigation_blurbs()
+    }
+
+    pub fn set_show_navigation_blurbs(mut self: Pin<&mut Self>, enabled: bool) {
+        let app_data = get_app_data();
+        app_data.set_show_navigation_blurbs(enabled);
+        self.as_mut().show_navigation_blurbs_changed();
     }
 
     /// Open the Sutta Navigation window.

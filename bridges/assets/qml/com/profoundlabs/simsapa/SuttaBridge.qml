@@ -1139,6 +1139,15 @@ Item {
         return "null";
     }
 
+    function get_show_navigation_blurbs(): bool {
+        console.log("get_show_navigation_blurbs()");
+        return true;
+    }
+
+    function set_show_navigation_blurbs(enabled: bool) {
+        console.log("set_show_navigation_blurbs():", enabled);
+    }
+
     function open_sutta_navigation_window() {
         console.log("open_sutta_navigation_window()");
     }

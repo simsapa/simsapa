@@ -316,6 +316,23 @@ query twice on every window creation. And `SuttaLanguagesWindow` releases its
 keep-screen-on lock in `Component.onDestruction`, not `onClosing`, so unlike the
 review window it needs no re-acquire.
 
+`SuttaNavigationWindow` is the limiting case of this section and needs no
+`onVisibleChanged` re-init at all. It is never destroyed, so its
+`Component.onCompleted` runs **once per app run**, not once per instance —
+and preserving exactly what the user left behind is the whole point of the
+family (FR-24). Everything it reads at load is therefore read once:
+
+| Read once at load | Consequence |
+|---|---|
+| `nav_tree_is_available()` | The tree is bootstrap data that cannot appear mid-session, so there is nothing to re-check. |
+| `get_show_navigation_blurbs()` | The window's own checkbox is the only thing that changes it, and the property is an **alias** to that checkbox — so there is one piece of state and nothing to re-read. |
+| `get_mobile_extra_top_margin()` | **This one does go stale.** Change the top-margin setting on mobile and this window keeps its old margin until the app restarts, because it is not rebuilt on reopen the way the destroy-on-close windows are. Accepted: the setting is changed rarely, the effect is cosmetic, and adding a re-init here would be the first step toward the state-clearing that FR-24 exists to prevent. |
+
+The general rule that falls out: **in a never-destroyed window, treat every
+value read in `Component.onCompleted` as fixed for the life of the app**, and
+decide per value whether that is acceptable rather than assuming a reopen will
+refresh it.
+
 ### 5c. `qt_thread.queue()` must never be `.unwrap()`ed or discarded
 
 `CxxQtThread::queue()` returns `Err(ThreadingQueueError::ObjectDestroyed)` once
