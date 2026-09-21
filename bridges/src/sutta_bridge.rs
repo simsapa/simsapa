@@ -1821,6 +1821,16 @@ pub mod qobject {
         #[qinvokable]
         fn nav_tree_node_json(self: &SuttaBridge, node_uid: &QString) -> QString;
 
+        /// Translations of each text of one displayed level, in the languages
+        /// installed *right now* (FR-47). Takes a JSON array of `sutta_uid`s
+        /// and returns a JSON object keyed by them; a uid with no translation
+        /// is absent rather than zero, so the row draws no indicator.
+        ///
+        /// One call per level, never one per row (FR-48): the largest level in
+        /// the tree is 728 rows and answers in ~13 ms.
+        #[qinvokable]
+        fn nav_tree_translation_counts_json(self: &SuttaBridge, sutta_uids_json: &QString) -> QString;
+
         /// Whether the navigation window shows blurbs on its level rows
         /// (FR-31). Tree rows never show one, whatever this says.
         #[qinvokable]
@@ -5890,6 +5900,21 @@ impl qobject::SuttaBridge {
     /// One node as JSON, or `null`.
     pub fn nav_tree_node_json(&self, node_uid: &QString) -> QString {
         QString::from(&navigation_tree::node_json(&node_uid.to_string()))
+    }
+
+    /// The level's translation counts as JSON. The count is not cached: both
+    /// query shapes measure around 10 ms against the real database, and a
+    /// cache would only create the stale-count defect FR-48 warns about --
+    /// the number changes whenever a language is downloaded or removed.
+    pub fn nav_tree_translation_counts_json(&self, sutta_uids_json: &QString) -> QString {
+        let uids: Vec<String> = match serde_json::from_str(&sutta_uids_json.to_string()) {
+            Ok(v) => v,
+            Err(e) => {
+                error(&format!("nav_tree_translation_counts_json(): {}", e));
+                return QString::from("{}");
+            }
+        };
+        QString::from(&navigation_tree::translation_counts_json(&uids))
     }
 
     /// The FR-31 blurb toggle. It is a setting and persists across sessions;

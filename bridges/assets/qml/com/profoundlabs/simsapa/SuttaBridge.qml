@@ -1139,6 +1139,11 @@ Item {
         return "null";
     }
 
+    function nav_tree_translation_counts_json(sutta_uids_json: string): string {
+        console.log("nav_tree_translation_counts_json():", sutta_uids_json);
+        return "{}";
+    }
+
     function get_show_navigation_blurbs(): bool {
         console.log("get_show_navigation_blurbs()");
         return true;

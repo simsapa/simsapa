@@ -89,6 +89,14 @@ ApplicationWindow {
     /// ListView: `[{ node, depth, is_tree_row }]`.
     property var display_rows: []
 
+    /// Translations of the current level's texts in the languages installed
+    /// right now, keyed by `sutta_uid` (FR-47). Resolved once per level, never
+    /// once per row (FR-48), and deliberately not cached: the number changes
+    /// whenever a language is downloaded or removed, and a cache would only
+    /// make it stale. A uid with no translation is absent from the map, and
+    /// the row draws no indicator for it.
+    property var translation_counts: ({})
+
     // ------------------------------------------------------------------
     // Filter state
     // ------------------------------------------------------------------
@@ -121,6 +129,16 @@ ApplicationWindow {
             Qt.callLater(function() {
                 root.load_level("");
             });
+        }
+    }
+
+    /// Re-read the level's translation counts each time the window is shown
+    /// again. The window is hidden rather than destroyed, so a language
+    /// downloaded while the user was away would otherwise leave the counts on
+    /// screen describing the languages they had before (FR-47).
+    onVisibleChanged: {
+        if (root.visible && root.tree_is_available) {
+            root.load_translation_counts();
         }
     }
 
@@ -202,8 +220,38 @@ ApplicationWindow {
         root.expanded_uids = ({});
         root.children_cache = ({});
         root.level_nodes = root.fetch_children(parent_uid);
+        root.translation_counts = ({});
         root.rebuild_rows();
         level_list.positionViewAtBeginning();
+        // The rows are drawn first and the counts arrive after: entering a
+        // level must feel instantaneous (FR-50), and the count query is the
+        // one part of a level render that grows with the level's size.
+        Qt.callLater(root.load_translation_counts);
+    }
+
+    /// One query for the whole level (FR-48). Only level rows show the
+    /// indicator, so only their uids are asked for -- an expanded branch's
+    /// tree rows are not counted.
+    function load_translation_counts() {
+        let uids = [];
+        for (let i = 0; i < root.level_nodes.length; i++) {
+            const u = root.level_nodes[i].sutta_uid;
+            if (u && u.length > 0) {
+                uids.push(u);
+            }
+        }
+        if (uids.length === 0) {
+            root.translation_counts = ({});
+            return;
+        }
+        const json = SuttaBridge.nav_tree_translation_counts_json(JSON.stringify(uids));
+        try {
+            const parsed = JSON.parse(json);
+            root.translation_counts = (parsed && typeof parsed === "object") ? parsed : ({});
+        } catch (e) {
+            logger.error("nav_tree_translation_counts_json parse failed: " + e);
+            root.translation_counts = ({});
+        }
     }
 
     function rebuild_rows() {
@@ -325,12 +373,41 @@ ApplicationWindow {
     // Opening a text
     // ------------------------------------------------------------------
 
+    /// Open a leaf's text in a **new tab** of a Sutta Search window (FR-38),
+    /// following `TopicIndexWindow.open_sutta()`.
+    ///
+    /// The navigation window stays open on both platforms (FR-39). On desktop
+    /// the sutta window is raised through `show_and_activate_window()` on the
+    /// C++ side, never a raw show/raise/requestActivate triple (FR-41); on
+    /// mobile that same raise brings it to the front and leaves this window
+    /// behind it with its state intact, so returning through the menu finds
+    /// the same level, breadcrumbs, filter and scroll position (FR-40).
+    ///
+    /// With no Sutta Search window left open there is nothing to raise --
+    /// `show_sutta_from_reference_search` targets the last *visible* one and
+    /// would silently do nothing -- so one is opened with the result instead.
     function open_node(node) {
         if (!node.is_openable) {
             logger.warn("Navigation: refusing to open an unavailable node: " + node.node_uid);
             return;
         }
-        logger.info("Navigation: open " + node.sutta_uid);
+
+        const result_data = JSON.stringify({
+                                               item_uid: node.sutta_uid,
+                                               table_name: "suttas",
+                                               // The tree addresses whole texts, never a
+                                               // paragraph within one.
+                                               anchor: ""
+                                           });
+
+        if (SuttaBridge.count_open_sutta_search_windows() > 0) {
+            SuttaBridge.emit_show_sutta_from_reference_search("", result_data);
+        } else {
+            logger.info("Navigation: no open Sutta Search window, opening one");
+            SuttaBridge.open_sutta_search_window_with_result(result_data);
+        }
+
+        logger.info("Navigation: opened " + node.sutta_uid);
     }
 
     // ------------------------------------------------------------------
@@ -482,6 +559,13 @@ ApplicationWindow {
                     depth: level_item.modelData.depth
                     pointSize: root.pointSize
                     show_blurbs: root.show_blurbs
+                    // -1 until the level's counts have been resolved, and for
+                    // a tree row, which never shows the indicator.
+                    translation_count: (!level_item.modelData.is_tree_row
+                                        && level_item.modelData.node.sutta_uid
+                                        && root.translation_counts[level_item.modelData.node.sutta_uid] !== undefined)
+                                       ? root.translation_counts[level_item.modelData.node.sutta_uid]
+                                       : -1
                     is_expanded: !!root.expanded_uids[level_item.modelData.node.node_uid]
                     blurb_expanded: !!root.blurb_expanded_uids[level_item.modelData.node.node_uid]
 

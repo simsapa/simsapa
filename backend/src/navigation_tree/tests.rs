@@ -561,3 +561,187 @@ fn the_public_json_api_is_empty_without_app_data() {
     assert_eq!(filter_json("dhamma", 10), "[]");
     assert_eq!(node_json("sn56.11"), "null");
 }
+
+// ---------------------------------------------------------------------------
+// Translation counts (FR-47, FR-48)
+// ---------------------------------------------------------------------------
+
+/// Only the three columns the count query touches. The real `suttas` table has
+/// 30-odd more, including the content blobs the prefix-range shape exists to
+/// avoid reading; a query that ever needed one of them would fail here.
+fn suttas_db(rows: &[(&str, &str)]) -> SqliteConnection {
+    let mut db_conn = empty_db();
+    db_conn
+        .batch_execute(
+            "CREATE TABLE suttas (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 uid TEXT NOT NULL,
+                 language TEXT NOT NULL
+             );
+             CREATE INDEX idx_suttas_language_uid ON suttas(language, uid);",
+        )
+        .expect("suttas table");
+    for (row_uid, lang) in rows {
+        diesel::sql_query(format!(
+            "INSERT INTO suttas (uid, language) VALUES ('{}', '{}')",
+            row_uid, lang
+        ))
+        .execute(&mut db_conn)
+        .expect("insert sutta");
+    }
+    db_conn
+}
+
+const SAMPLE_SUTTAS: &[(&str, &str)] = &[
+    ("sn56.11/pli/ms", "pli"),
+    ("sn56.11/en/sujato", "en"),
+    ("sn56.11/en/bodhi", "en"),
+    ("sn56.11/de/sabbamitta", "de"),
+    ("sn56.11/hu/koszi", "hu"),
+    ("sn56.1/en/sujato", "en"),
+    ("sn56.110/en/sujato", "en"),
+    ("mn1/en/sujato", "en"),
+    ("s0305m.mul11.xml/pli/cst", "pli"),
+];
+
+#[test]
+fn a_level_count_is_per_uid_and_excludes_the_root_language() {
+    let mut db_conn = suttas_db(SAMPLE_SUTTAS);
+    let uids = vec!["sn56.11/pli/ms".to_string(), "mn1/pli/ms".to_string()];
+    let langs = vec!["pli".to_string(), "en".to_string(), "de".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    // Two English plus one German; the Pāli root text is not a translation of
+    // itself, and Hungarian is not installed.
+    assert_eq!(counts.get("sn56.11/pli/ms"), Some(&3));
+    assert_eq!(counts.get("mn1/pli/ms"), Some(&1));
+}
+
+#[test]
+fn a_prefix_range_does_not_leak_into_a_neighbouring_uid() {
+    // `sn56.1` and `sn56.110` both start with the characters of `sn56.11`, and
+    // a LIKE 'sn56.11%' would count all three as one text.
+    let mut db_conn = suttas_db(SAMPLE_SUTTAS);
+    let uids = vec![
+        "sn56.1/pli/ms".to_string(),
+        "sn56.11/pli/ms".to_string(),
+        "sn56.110/pli/ms".to_string(),
+    ];
+    let langs = vec!["en".to_string(), "de".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    assert_eq!(counts.get("sn56.1/pli/ms"), Some(&1));
+    assert_eq!(counts.get("sn56.11/pli/ms"), Some(&3));
+    assert_eq!(counts.get("sn56.110/pli/ms"), Some(&1));
+}
+
+#[test]
+fn a_text_with_no_translation_is_absent_rather_than_zero() {
+    // The row renders no indicator at all for such a text, so "missing" and
+    // "zero" must not both be representable.
+    let mut db_conn = suttas_db(SAMPLE_SUTTAS);
+    let uids = vec!["s0305m.mul11.xml/pli/cst".to_string()];
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    assert!(counts.is_empty());
+}
+
+#[test]
+fn counts_are_empty_with_no_uids_and_with_no_installed_language_but_pali() {
+    let mut db_conn = suttas_db(SAMPLE_SUTTAS);
+    let langs = vec!["en".to_string()];
+    assert!(translation_counts_conn(&mut db_conn, &[], &langs).unwrap().is_empty());
+
+    let uids = vec!["sn56.11/pli/ms".to_string()];
+    let only_pali = vec!["pli".to_string()];
+    assert!(translation_counts_conn(&mut db_conn, &uids, &only_pali).unwrap().is_empty());
+}
+
+#[test]
+fn a_level_larger_than_one_chunk_is_counted_in_full() {
+    // The OR chain is chunked because SQLite limits expression depth, and the
+    // largest level in the built tree is 728 rows.
+    let mut rows: Vec<(String, String)> = Vec::new();
+    for i in 0..(COUNT_CHUNK * 3 + 7) {
+        rows.push((format!("x{}/en/tr", i), "en".to_string()));
+    }
+    let borrowed: Vec<(&str, &str)> =
+        rows.iter().map(|(u, l)| (u.as_str(), l.as_str())).collect();
+    let mut db_conn = suttas_db(&borrowed);
+
+    let uids: Vec<String> = (0..(COUNT_CHUNK * 3 + 7))
+        .map(|i| format!("x{}/pli/ms", i))
+        .collect();
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    assert_eq!(counts.len(), COUNT_CHUNK * 3 + 7);
+    assert_eq!(counts.get("x0/pli/ms"), Some(&1));
+}
+
+#[test]
+fn a_node_pointing_at_a_translation_does_not_count_itself() {
+    // Rare but real: the built tree has one node whose `sutta_uid` is a
+    // translation (`an11.22-29/en/sujato`), which the language filter does not
+    // exclude the way it excludes every `…/pli/…` node.
+    let mut db_conn = suttas_db(SAMPLE_SUTTAS);
+    let uids = vec!["sn56.11/pli/ms".to_string(), "sn56.11/en/sujato".to_string()];
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    // Two English texts: the Pāli node sees both, the English one sees the other.
+    assert_eq!(counts.get("sn56.11/pli/ms"), Some(&2));
+    assert_eq!(counts.get("sn56.11/en/sujato"), Some(&1));
+}
+
+#[test]
+fn a_node_that_is_the_only_text_in_an_installed_language_is_absent() {
+    // Subtracting itself leaves nothing, which must read as "no indicator"
+    // rather than as a count of zero.
+    let mut db_conn = suttas_db(&[("mn1/en/sujato", "en"), ("mn1/pli/ms", "pli")]);
+    let uids = vec!["mn1/en/sujato".to_string()];
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    assert!(counts.is_empty());
+}
+
+#[test]
+fn a_commentary_is_not_counted_as_a_translation_of_the_text() {
+    // `mn1.att/pli/cst` sorts before `mn1/`, since '.' < '/', so the prefix
+    // range excludes it. The reader's translations panel may still offer it;
+    // this indicator counts translations only.
+    let mut db_conn = suttas_db(&[
+        ("mn1/pli/ms", "pli"),
+        ("mn1/en/sujato", "en"),
+        ("mn1.att/en/someone", "en"),
+        ("mn1.tik/en/someone", "en"),
+    ]);
+    let uids = vec!["mn1/pli/ms".to_string()];
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    assert_eq!(counts.get("mn1/pli/ms"), Some(&1));
+}
+
+#[test]
+fn the_bare_key_is_the_uid_up_to_the_first_slash() {
+    assert_eq!(bare_sutta_key("sn56.11/pli/ms"), "sn56.11");
+    assert_eq!(bare_sutta_key("s0305m.mul11.xml/pli/cst"), "s0305m.mul11.xml");
+    assert_eq!(bare_sutta_key("sn56.11"), "sn56.11");
+    assert_eq!(bare_sutta_key(""), "");
+}
+
+#[test]
+fn the_public_count_api_is_empty_without_app_data() {
+    assert!(translation_counts(&["sn56.11/pli/ms".to_string()]).is_empty());
+    assert_eq!(translation_counts_json(&["sn56.11/pli/ms".to_string()]), "{}");
+}

@@ -999,7 +999,7 @@ Verification: `make build -B` green; `make qml-lint` reports no warning naming
 > with single-string messages, never `console` (FR-49).
 > **Depends on:** 5.0 (bridge), 6.0 (a window to put it in).
 
-- [ ] 7.0 QML window: two row modes, breadcrumbs, drill-down, filter bar, row components, blurb toggle
+- [x] 7.0 QML window: two row modes, breadcrumbs, drill-down, filter bar, row components, blurb toggle
   - [x] 7.1 Create `SuttaNavigationWindow.qml` with the root layout, register it
         and every new component in `bridges/build.rs`'s `qml_files` using the
         exact `"assets/qml/<Name>.qml"` form (no `..`).
@@ -1138,16 +1138,16 @@ user to check by hand.
 > `AppData::refresh_language_caches()` (`backend/src/app_data.rs:243`).
 > **Depends on:** 7.0 (rows to attach counts to), 5.0 (bridge).
 
-- [ ] 8.0 Opening a text, and the installed-language translation count
-  - [ ] 8.1 Implement leaf tap → open in a **new tab** of a `SuttaSearchWindow`
+- [x] 8.0 Opening a text, and the installed-language translation count
+  - [x] 8.1 Implement leaf tap → open in a **new tab** of a `SuttaSearchWindow`
         following `TopicIndexWindow.open_sutta()` (FR-38).
-  - [ ] 8.2 Keep the navigation window open after opening a text, on desktop and
+  - [x] 8.2 Keep the navigation window open after opening a text, on desktop and
         mobile alike (FR-39).
-  - [ ] 8.3 Desktop: raise the sutta window via `show_and_activate_window()`,
+  - [x] 8.3 Desktop: raise the sutta window via `show_and_activate_window()`,
         never a raw `show`/`raise`/`requestActivate` triple (FR-41).
-  - [ ] 8.4 Mobile: bring the sutta window to the front, leaving the navigation
+  - [x] 8.4 Mobile: bring the sutta window to the front, leaving the navigation
         window hidden behind it with its state intact (FR-40).
-  - [ ] 8.5 Add a backend level-count query: for the `sutta_uid`s of one
+  - [x] 8.5 Add a backend level-count query: for the `sutta_uid`s of one
         displayed level, count `suttas` rows in the installed languages in a
         single query (FR-48). Prefer the indexed prefix-range shape
         (`language IN (…) AND uid >= '<uid>/' AND uid < '<uid>0'`, unioned),
@@ -1158,14 +1158,68 @@ user to check by hand.
         blobs. **Key the range on the bare uid** (`sn56.11`), not on the node's
         full `sutta_uid` (`sn56.11/pli/ms`); FR-9's column list has no bare-key
         column, so split at the first `/` or add one.
-  - [ ] 8.6 Expose it as one bridge call taking the level's uids and returning a
+  - [x] 8.6 Expose it as one bridge call taking the level's uids and returning a
         uid → count map; call it once per level render, never per row.
-  - [ ] 8.7 **Do not add a cache** — both query shapes are ~10 ms against the
+  - [x] 8.7 **Do not add a cache** — both query shapes are ~10 ms against the
         real DB, and a cache only creates the stale-count defect FR-48 warns
         about. If measurement later forces one, invalidate it from
         `AppData::refresh_language_caches()` (`backend/src/app_data.rs:243`).
-  - [ ] 8.8 Render the count as the small indicator of FR-43 item 5.
-  - [ ] 8.9 `make build -B`, `cd backend && cargo test`, `make qml-test`.
+  - [x] 8.8 Render the count as the small indicator of FR-43 item 5.
+  - [x] 8.9 `make build -B`, `cd backend && cargo test`, `make qml-test`.
+
+
+Notes:
+
+- **The dispatch is `emit_show_sutta_from_reference_search("", …)`**, the same
+  route `TopicIndexWindow.open_sutta()` takes with `open_in_new_window` off:
+  it opens a **new tab** in the last *visible* Sutta Search window. The
+  navigation window is not involved in the raise and is never hidden by it, so
+  FR-39 needs no code.
+- **`show_sutta_from_reference_search()` used a raw `show`/`raise` pair**
+  (`cpp/window_manager.cpp:1073`) rather than the shared
+  `show_and_activate_window()` the rule in docs/window-lifecycle-and-reuse.md
+  names. Changed, which satisfies FR-41 for this window and fixes the same
+  omission for the two windows already on that route (Topic Index, Reference
+  Search): the helper also clears `Qt::WindowMinimized` and sends
+  `_NET_ACTIVE_WINDOW` on X11, which is what actually brings a window forward
+  from another window's request. That single raise is also FR-40 on mobile.
+- **With no Sutta Search window open, the route silently does nothing.**
+  `last_open_sutta_search_window()` filters on `visible`, so a user who closed
+  every sutta window would press Open and see no result at all. `open_node()`
+  therefore checks `count_open_sutta_search_windows()` first and falls back to
+  `open_sutta_search_window_with_result()`.
+- **The count is a prefix range per uid, not a `LIKE`.** `uid >= 'sn56.11/'
+  AND uid < 'sn56.110'` (`'0'` is the byte after `'/'`), OR-ed per uid and
+  chunked at 100 because SQLite caps expression depth at 1000. `LIKE
+  'sn56.11%'` would fold `sn56.110` into `sn56.11`; a regression test covers
+  exactly that neighbour case.
+- **Measured against the shipped `appdata.sqlite3`:** `EXPLAIN QUERY PLAN`
+  reports `MULTI-INDEX OR` over `SEARCH suttas USING COVERING INDEX
+  idx_suttas_language_uid`, so none of the content columns is read. The
+  largest leaf level in the built tree is `patthana` at **728 rows**, answered
+  in **13.2 ms** across 8 chunks; a 50-row `sn56` level takes **1.2 ms**.
+- **No cache (8.7).** At those timings a cache buys nothing and creates the
+  stale-count defect FR-48 warns about. The counts are re-read per level and
+  again in `onVisibleChanged`, which is the case that actually matters: the
+  window is hidden rather than destroyed, so a language downloaded while the
+  user was reading would otherwise leave the old numbers on screen.
+- **The root language is excluded.** A text is not a translation of itself, and
+  a node's `sutta_uid` is almost always `…/pli/…`; without the exclusion every
+  Pāli-only text would claim one translation. A uid with no translation is
+  **absent** from the returned map rather than present as `0`, which is what
+  the row already renders as "no indicator" (`translation_count > 0`).
+- **Only level rows are counted.** `load_translation_counts()` collects uids
+  from `level_nodes`, not from `display_rows`, so expanding a branch does not
+  enlarge the query — tree rows never show the indicator anyway (FR-33).
+- Counts are fetched with `Qt.callLater` after the level's rows are drawn, for
+  the same reason the first level query is (FR-50).
+
+Verification: `make build -B` green; `cargo test` 641 backend lib tests + all
+integration suites passing (8 new count tests); `make qml-test` 172 passed, 0
+failed; `make qml-lint` reports no warning naming `SuttaNavigationWindow.qml`
+or `SuttaBridge.qml`. Runtime behaviour is for the user to check by hand.
+
+---
 
 ### 9.0 Verification, success metrics, and documentation
 

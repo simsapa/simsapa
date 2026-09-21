@@ -1071,9 +1071,11 @@ void WindowManager::show_sutta_from_reference_search(const QString& window_id, c
     }
 
     if (target_window && target_window->m_root) {
-        // Show and raise the window
-        QMetaObject::invokeMethod(target_window->m_root, "show");
-        QMetaObject::invokeMethod(target_window->m_root, "raise");
+        // Raise through the shared helper, never a raw show/raise pair: it
+        // also clears the minimized state and sends _NET_ACTIVE_WINDOW on X11,
+        // which is what actually brings the window forward when the request
+        // came from another window (FR-41).
+        show_and_activate_window(target_window->m_root);
 
         // Show the sutta in the HTML view (create a new tab)
         QMetaObject::invokeMethod(target_window->m_root, "show_result_in_html_view_with_json",

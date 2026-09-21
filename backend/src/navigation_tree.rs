@@ -591,5 +591,160 @@ pub fn node_json(node_uid: &str) -> String {
     }
 }
 
+
+// ============================================================================
+// Translation counts (FR-47, FR-48)
+//
+// "Translations installed right now" — the count reflects the languages the
+// user currently has, so it changes with every language download or removal
+// and cannot be computed at bootstrap and stored. It is therefore computed for
+// a whole displayed level in one statement, never once per row: the largest
+// level in the built tree is 728 rows.
+// ============================================================================
+
+/// The language of the root text. It is not a translation, so it is excluded
+/// from every count -- which is also what keeps a Pāli-only text from
+/// reporting a translation it does not have.
+///
+/// Named for the *text*, not for the tree: "root" elsewhere in this module
+/// means the top of the hierarchy (`node_type = "root"`, the root level).
+pub const ROOT_TEXT_LANGUAGE: &str = "pli";
+
+/// How many prefix ranges go into one statement. SQLite limits expression
+/// depth (`SQLITE_MAX_EXPR_DEPTH`, 1000 by default) and a level of 728 rows
+/// would otherwise build one OR chain that deep.
+const COUNT_CHUNK: usize = 100;
+
+/// The `suttas.uid` prefix a text's translations share: `sn56.11/pli/ms` →
+/// `sn56.11`. FR-9's column list has no bare-key column, so the key is derived
+/// at the first `/`.
+pub fn bare_sutta_key(sutta_uid: &str) -> &str {
+    sutta_uid.split('/').next().unwrap_or(sutta_uid)
+}
+
+/// Translations of each of `sutta_uids`, in `languages`, keyed by the uid as
+/// passed in.
+///
+/// Matching is an indexed prefix range per uid — `uid >= 'sn56.11/' AND uid <
+/// 'sn56.110'`, where `'0'` is the byte after `'/'` — so `idx_suttas(language,
+/// uid)` covers the whole statement and none of the 842 MB of content columns
+/// is touched. The range also excludes the commentaries (`mn1.att/pli/cst`
+/// sorts before `mn1/`, since `'.' < '/'`), which are related texts rather
+/// than translations of the text.
+///
+/// **A node whose own text is a translation does not count itself.** Almost
+/// every node points at a `…/pli/…` text, which the language filter already
+/// excludes, but not all of them do, so the node's own uid is subtracted where
+/// it was matched. A uid left with nothing is absent from the map rather than
+/// present with a zero, which is what the caller renders as "no indicator".
+pub fn translation_counts_conn(
+    db_conn: &mut SqliteConnection,
+    sutta_uids: &[String],
+    languages: &[String],
+) -> QueryResult<std::collections::HashMap<String, i32>> {
+    use crate::db::appdata_schema::suttas;
+
+    let mut counts: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    if sutta_uids.is_empty() {
+        return Ok(counts);
+    }
+
+    let langs: Vec<String> = languages
+        .iter()
+        .filter(|l| l.as_str() != ROOT_TEXT_LANGUAGE)
+        .cloned()
+        .collect();
+    if langs.is_empty() {
+        return Ok(counts);
+    }
+
+    // Distinct bare keys, so two nodes pointing into the same text cost one
+    // range rather than two. The map is keyed back to every input uid below.
+    let mut keys: Vec<String> = sutta_uids
+        .iter()
+        .map(|u| bare_sutta_key(u).to_string())
+        .filter(|k| !k.is_empty())
+        .collect();
+    keys.sort();
+    keys.dedup();
+
+    let mut by_key: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    // The matched uids themselves, so a node that points at one of them can be
+    // subtracted from its own count below. Bounded by the level's texts times
+    // their translations -- a few thousand short strings at the largest level.
+    let mut matched: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for chunk in keys.chunks(COUNT_CHUNK) {
+        let mut query = suttas::table
+            .into_boxed()
+            .filter(suttas::language.eq_any(&langs))
+            .select(suttas::uid);
+
+        type RangePredicate = Box<
+            dyn diesel::BoxableExpression<
+                suttas::table,
+                diesel::sqlite::Sqlite,
+                SqlType = diesel::sql_types::Bool,
+            >,
+        >;
+
+        let mut ranges = chunk.iter().map(|k| (format!("{}/", k), format!("{}0", k)));
+        let (first_lo, first_hi) = match ranges.next() {
+            Some(r) => r,
+            None => continue,
+        };
+        let mut predicate: RangePredicate =
+            Box::new(suttas::uid.ge(first_lo).and(suttas::uid.lt(first_hi)));
+        for (lo, hi) in ranges {
+            predicate = Box::new(predicate.or(suttas::uid.ge(lo).and(suttas::uid.lt(hi))));
+        }
+        query = query.filter(predicate);
+
+        for found_uid in query.load::<String>(db_conn)? {
+            let key = bare_sutta_key(&found_uid).to_string();
+            *by_key.entry(key).or_insert(0) += 1;
+            matched.insert(found_uid);
+        }
+    }
+
+    for sutta_uid in sutta_uids {
+        if let Some(n) = by_key.get(bare_sutta_key(sutta_uid)) {
+            let own = if matched.contains(sutta_uid) { 1 } else { 0 };
+            if *n > own {
+                counts.insert(sutta_uid.clone(), *n - own);
+            }
+        }
+    }
+
+    Ok(counts)
+}
+
+/// [`translation_counts_conn`] against the installed sutta languages, which is
+/// what "installed right now" means. Empty when `AppData` is not up yet, when
+/// the query fails, or when nothing has a translation.
+pub fn translation_counts(sutta_uids: &[String]) -> std::collections::HashMap<String, i32> {
+    let languages = match crate::try_get_app_data() {
+        Some(a) => a.get_cached_sutta_languages(),
+        None => return std::collections::HashMap::new(),
+    };
+    with_appdata("translation_counts", std::collections::HashMap::new(), |db_conn| {
+        translation_counts_conn(db_conn, sutta_uids, &languages)
+    })
+}
+
+/// The level's counts as a JSON object, `{"sn56.11/pli/ms": 12, …}`, so one
+/// bridge call serves a whole level (FR-48). Uids with no translation are
+/// absent rather than zero.
+pub fn translation_counts_json(sutta_uids: &[String]) -> String {
+    let counts = translation_counts(sutta_uids);
+    match serde_json::to_string(&counts) {
+        Ok(json) => json,
+        Err(e) => {
+            error(&format!("navigation_tree::translation_counts_json: {}", e));
+            "{}".to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;
