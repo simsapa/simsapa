@@ -805,6 +805,30 @@ Notable feature docs:
   Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
   dialog.
 
+- [QML AOT staleness and the qmltypes guard](./docs/qmltypes-aot-staleness.md) —
+  why adding or removing a `#[qinvokable]` / `#[qsignal]` on a bridge and
+  building **once** produces a binary that segfaults on startup in
+  `QMetaObject::methodOffset()`, before the first window paints, with a
+  backtrace naming a QML file you did not touch. `qmlcachegen` bakes a
+  **hard-coded `QMetaObject` method index** into every AOT binding that calls a
+  bridge singleton, and reads it from a `plugin.qmltypes` that
+  `qmltyperegistrar` rewrites **nine seconds later in the same build** — so the
+  index always describes the *previous* build's bridge API. Records the measured
+  step ordering (moc's JSON and `qmldir` are both already correct before
+  `qmlcachegen` runs; **`qmldir` does not lag**, so adding a QML component is
+  safe), and that `qmlcachegen` regenerates the *whole* QML tree per
+  build-script run. The fix is `scripts/qmltypes-guard.sh`, which every
+  `Makefile` build target now goes through: hash every `plugin.qmltypes` under
+  the build dir, build, re-hash, and on a change touch the QML tree and build
+  once more — **the touch is load-bearing**, because cargo skips the build
+  script when no source changed, which is why "just build twice" by hand does
+  nothing. Covers the two fixes that look right and are not: a **pre-build
+  touch** (conditional or not) cannot help, since `qmltypes` is still stale when
+  `qmlcachegen` reads it; and **cleaning before a release** is safe but ships a
+  degraded binary — with no `qmltypes` at all `qmlcachegen` silently drops
+  **38% of singleton lookups and 30% of object-property lookups** to interpreted
+  bindings, measured tree-wide, and a clean tree's only build is its first one.
+
 ## Qt version per platform — never invoke a bare `qmake6`
 
 **`CMakeLists.txt` is the single source of the Qt version**, declared per
@@ -1607,6 +1631,14 @@ Use this path for any tests or experimental scripts that need to query the actua
 
 ### Development Build
 - **Build:** `make build -B` (CMake + Qt6) or `cmake -S . -B ./build/simsapadhammareader/ && cmake --build ./build/simsapadhammareader/`
+  - **Build through the `Makefile`, not by calling `cmake` directly.** Every
+    `Makefile` build target is wrapped in `scripts/qmltypes-guard.sh`, without
+    which a build that changes the bridge API emits QML AOT code indexed against
+    the *previous* metaobject and the binary segfaults on startup. A bare
+    `cmake --build` bypasses the guard. The guard prints
+    `qmltypes-guard: …rebuilding once…` when it fires; that second pass is
+    expected, not a loop. See
+    [docs/qmltypes-aot-staleness.md](./docs/qmltypes-aot-staleness.md).
 - **Run:** `make run` or `./build/simsapadhammareader/simsapadhammareader`
 - **TypeScript:** `npx webpack` (builds src-ts/ → assets/js/simsapa.min.js)
 - **Sass:** `make sass` or `sass --no-source-map './assets/sass/:./assets/css/'`

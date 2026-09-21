@@ -18,6 +18,20 @@ else
     RUN_CMD = ./build/simsapadhammareader/simsapadhammareader
 endif
 
+# --- QML AOT staleness guard -----------------------------------------------
+#
+# Every build goes through scripts/qmltypes-guard.sh. qmlcachegen bakes a
+# hard-coded QMetaObject method index into each AOT binding that calls a bridge
+# singleton, and reads that index from a plugin.qmltypes that qmltyperegistrar
+# rewrites LATER IN THE SAME BUILD -- so a build which changes the bridge API
+# ships AOT code indexed against the previous one, and the binary segfaults in
+# QMetaObject::methodOffset(). The guard notices the file moved and builds once
+# more. A clean build is not the answer: with no qmltypes at all, qmlcachegen
+# drops ~30% of the AOT lookup sites instead. See
+# docs/qmltypes-aot-staleness.md.
+QMLTYPES_GUARD = ./scripts/qmltypes-guard.sh
+DESKTOP_BUILD_DIR = build/simsapadhammareader
+
 # --- Qt wiring checks ------------------------------------------------------
 #
 # Neither is load-bearing; both are pre-flight checks that make no changes.
@@ -49,10 +63,10 @@ qt-verify-macos:
 qt-checks: qt-env-check qt-verify
 
 build:
-	$(BUILD_CMD)
+	$(QMLTYPES_GUARD) $(DESKTOP_BUILD_DIR) sh -c '$(BUILD_CMD)'
 
 build-offline:
-	$(BUILD_OFFLINE_CMD)
+	$(QMLTYPES_GUARD) $(DESKTOP_BUILD_DIR) sh -c '$(BUILD_OFFLINE_CMD)'
 
 run: build
 	$(RUN_CMD)
@@ -167,18 +181,18 @@ export ANDROID_VERSION_NAME
 
 # Signed App Bundle for Google Play.
 android-aab:
-	./build-android.sh --aab
+	$(QMLTYPES_GUARD) $(ANDROID_BUILD_DIR) ./build-android.sh --aab
 
 # Signed APK for sideloading. Note that a Qt Creator *deploy* of this same APK
 # triggers the spurious "This app isn't 16 KB compatible" dialog while a plain
 # sideload does not — the warning is gated on the install path, not the
 # contents. See CLAUDE.md.
 android-apk:
-	./build-android.sh --apk
+	$(QMLTYPES_GUARD) $(ANDROID_BUILD_DIR) ./build-android.sh --apk
 
 # Unsigned debug APK for local testing.
 android-apk-debug:
-	./build-android.sh --apk --debug
+	$(QMLTYPES_GUARD) $(ANDROID_BUILD_DIR) ./build-android.sh --apk --debug
 
 # --- Beta package ----------------------------------------------------------
 #
@@ -210,7 +224,7 @@ APK_BETA_DEBUG := $(ANDROID_BUILD_DIR)/android-build/build/outputs/apk/debug/and
 ANDROID_BETA_PKG := io.github.simsapa.app.beta
 
 android-beta-debug:
-	./build-android.sh --apk --debug --sign
+	$(QMLTYPES_GUARD) $(ANDROID_BUILD_DIR) ./build-android.sh --apk --debug --sign
 
 # Installs the debuggable beta alongside whatever release build is on the device.
 android-beta-debug-install:
@@ -256,7 +270,7 @@ ANDROID_ARM64_BUILD_DIR ?= build/android-arm64
 APK_BETA_DEBUG_ARM64 := $(ANDROID_ARM64_BUILD_DIR)/android-build/build/outputs/apk/debug/android-build-debug.apk
 
 android-beta-debug-arm64:
-	ANDROID_BUILD_DIR=$(ANDROID_ARM64_BUILD_DIR) ./build-android.sh --apk --debug --sign --abis arm64-v8a
+	ANDROID_BUILD_DIR=$(ANDROID_ARM64_BUILD_DIR) $(QMLTYPES_GUARD) $(ANDROID_ARM64_BUILD_DIR) ./build-android.sh --apk --debug --sign --abis arm64-v8a
 
 android-beta-debug-arm64-install:
 	@test -f "$(APK_BETA_DEBUG_ARM64)" || { echo "Not built yet: $(APK_BETA_DEBUG_ARM64) — run 'make android-beta-debug-arm64'"; exit 1; }
@@ -275,7 +289,7 @@ android-arm64-clean:
 # Note dist/ is shared with the macOS packaging, and `make macos-clean` does
 # `rm -rf ./dist` — so it will take the beta APK with it. Re-run this target.
 android-beta-dist:
-	./build-android.sh --apk --beta
+	$(QMLTYPES_GUARD) $(ANDROID_BUILD_DIR) ./build-android.sh --apk --beta
 	@mkdir -p dist
 	@version=$$(sed -n '/^\[package\]/,/^\[/ s/^version *= *"\([^"]*\)".*/\1/p' bridges/Cargo.toml | head -1); \
 	  src="$(ANDROID_BUILD_DIR)/android-build/build/outputs/apk/release/android-build-release-signed.apk"; \

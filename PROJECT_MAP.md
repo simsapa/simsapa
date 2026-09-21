@@ -656,7 +656,14 @@ Users import, rename, and delete their own StarDict/GoldenDict dictionaries from
 ## Build Commands Quick Reference
 
 ### Development Build
-- **Full Build:** `make build -B`
+- **Full Build:** `make build -B` — always through the `Makefile`. Every build
+  target is wrapped in `scripts/qmltypes-guard.sh`, which re-runs the build once
+  when the bridge API changed, because `qmlcachegen` bakes `QMetaObject` method
+  indexes taken from a `plugin.qmltypes` that `qmltyperegistrar` rewrites later
+  in the same build. Without it, adding or removing a `#[qinvokable]` /
+  `#[qsignal]` ships a binary that segfaults on startup in
+  `QMetaObject::methodOffset()`. A bare `cmake --build` bypasses the guard. See
+  [docs/qmltypes-aot-staleness.md](./docs/qmltypes-aot-staleness.md).
 - **Run Application:** `make run`
 - **TypeScript Build:** `npx webpack`
 - **Sass Build:** `make sass`
