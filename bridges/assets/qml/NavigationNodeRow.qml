@@ -7,13 +7,16 @@ import QtQuick.Controls
 /// One row of the Sutta Navigation window, in either of its two modes.
 ///
 /// **The mode is what the row *is*, not a user setting.** A *level row* is a
-/// direct child of the current breadcrumb level and gets the full rendering
-/// including the blurb; a *tree row* is anything revealed by expanding a row,
-/// at any depth below it, and is compact — title, English title, uid, the
-/// enter-level button, and **no blurb ever**, whatever the blurb toggle says.
-/// Tree rows exist so a branch can be flicked open to check whether the
-/// sub-items are the ones being looked for, then flicked shut; a blurb on each
-/// one would defeat that.
+/// direct child of the current breadcrumb level; a *tree row* is anything
+/// revealed by expanding a row, at any depth below it, and omits the child
+/// count and the translation hint.
+///
+/// **The Summaries toggle is the one thing that is a user setting, and it
+/// governs every row in the window.** Summary and uid are shown, or not shown,
+/// the same way on a level row, a tree row and a filter hit. A toggle that is
+/// on while most rows show nothing reads as a broken toggle rather than as a
+/// rule about row modes — which is what an earlier level-rows-only reading of
+/// it produced. The compact view is what the toggle is *for*.
 ///
 /// **The interaction rule: a tap on the row body expands or collapses this
 /// node, and nothing else.** Opening a text, entering a level and expanding a
@@ -47,8 +50,13 @@ Frame {
     property bool is_expanded: false
     property bool blurb_expanded: false
 
-    /// The window's blurb toggle. It governs level rows only.
-    property bool show_blurbs: true
+    /// The window's Summaries toggle, governing every row mode alike.
+    ///
+    /// It is called "Summaries" in the UI and `blurb` in the data, because
+    /// `blurb` is SuttaCentral's own term and is what `blurbs.json` and the
+    /// `navigation_nodes.blurb` column hold. The label is for readers; the
+    /// field name stays true to its source.
+    property bool show_summaries: true
 
     /// Translations of this text in the languages installed right now, or -1
     /// when the count has not been resolved for this level.
@@ -65,6 +73,11 @@ Frame {
     readonly property bool has_target: !!root.node.sutta_uid
     readonly property bool is_openable: !!root.node.is_openable
 
+    /// This row opens a text that is not its own — a Pātimokkha rule served
+    /// by its Vibhaṅga text. The row says so, rather than silently opening
+    /// something the title did not promise.
+    readonly property bool is_redirected: !!root.node.redirect_uid
+
     /// Only a branch row in the tree has something to expand, and only outside
     /// the flat filter list.
     readonly property bool is_tappable: root.is_branch && !root.is_filter_row
@@ -73,10 +86,20 @@ Frame {
     readonly property bool has_en: !!root.node.title_en && root.node.title_en !== root.title_text
     readonly property bool has_blurb: !!root.node.blurb
 
-    /// A blurb is a level-row affordance: never on a tree row, never on a
-    /// filter result, and never when the toggle is off.
-    readonly property bool blurb_visible: root.has_blurb && root.show_blurbs
-        && !root.is_tree_row && !root.is_filter_row
+    /// The toggle and the data, and nothing else: a row with a summary shows
+    /// it whenever summaries are on, whatever mode the row is in.
+    readonly property bool blurb_visible: root.has_blurb && root.show_summaries
+
+    /// The uid follows the toggle too. It is reference detail of the same kind
+    /// as the summary, so hiding one and keeping the other gives a "compact"
+    /// view that is not much more compact.
+    readonly property bool uid_visible: root.show_summaries
+
+    /// The metadata line is drawn when anything in it is. The parallel badge
+    /// and the "in <file>" note are **not** reference detail — they say the
+    /// row does not open what its title implies — so they survive the toggle.
+    readonly property bool meta_visible: root.uid_visible || root.is_redirected
+        || !!root.node.in_file
 
     padding: 6
 
@@ -152,13 +175,74 @@ Frame {
                     }
 
                     RowLayout {
+                        visible: root.meta_visible
                         Layout.fillWidth: true
+                        Layout.topMargin: 2
                         spacing: 8
 
+                        // A redirected row shows its **own** uid, not the
+                        // one it opens: the uid is how the reader tells this
+                        // bhikkhunī rule from the bhikkhu rule of the same
+                        // name, and the text it borrows is named by the badge.
                         Label {
-                            text: root.node.sutta_uid || root.node.node_uid
+                            visible: root.uid_visible
+                            text: "uid: " + (root.is_redirected
+                                ? root.node.node_uid
+                                : (root.node.sutta_uid || root.node.node_uid))
                             font.pointSize: Math.max(7, root.pointSize - 3)
-                            color: palette.mid
+                            // Legible, but still clearly secondary to the
+                            // title. `palette.mid` is a *frame* colour and
+                            // renders the uid almost invisible on some
+                            // themes; full `palette.text` would make a
+                            // reference string compete with the title. A
+                            // three-quarter-strength text colour is the
+                            // project's idiom for this (StorageCandidatesList
+                            // .qml), and it follows the theme rather than
+                            // hard-coding a grey that only works in one.
+                            color: Qt.rgba(palette.text.r, palette.text.g,
+                                           palette.text.b, 0.75)
+                        }
+
+                        // Why pressing Open on a nuns' rule produces a monks'
+                        // one, and why a range of rules has children at all.
+                        // SuttaCentral renders these uids as a page of
+                        // parallels rather than as a text, and the Pāli text
+                        // it lists is the rule inside the Vibhaṅga.
+                        //
+                        // A badge rather than grey italics: this is the one
+                        // thing on the row that contradicts what the title
+                        // promises, so it has to be the thing that is seen. It
+                        // is tinted from `palette.highlight` so it reads in
+                        // both themes -- the idiom StorageCandidatesList.qml
+                        // already uses.
+                        // A Label with a background, not a Rectangle wrapping
+                        // a Label: the wrapper's size came from the label's
+                        // implicitWidth while the label's width came back from
+                        // the wrapper, and a layout that reflows -- which this
+                        // one does, inside a ListView delegate -- is where that
+                        // shape turns into an implicitWidth binding loop. See
+                        // the DialogHeader note in CLAUDE.md for the same trap
+                        // one level up. Padding sizes the background here, so
+                        // the dependency runs one way only.
+                        Label {
+                            visible: root.is_redirected
+                            text: "Parallel: " + (root.node.redirect_uid || "")
+                            font.pointSize: Math.max(7, root.pointSize - 2)
+                            color: palette.text
+                            elide: Text.ElideRight
+                            topPadding: 2
+                            bottomPadding: 2
+                            leftPadding: 6
+                            rightPadding: 6
+                            Layout.maximumWidth: root.width * 0.6
+
+                            background: Rectangle {
+                                radius: 3
+                                color: Qt.rgba(palette.highlight.r, palette.highlight.g,
+                                               palette.highlight.b, 0.22)
+                                border.color: palette.highlight
+                                border.width: 1
+                            }
                         }
 
                         // A fragment and the division it falls inside are

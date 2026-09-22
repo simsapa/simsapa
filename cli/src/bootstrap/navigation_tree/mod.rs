@@ -56,6 +56,10 @@ pub struct TreeNode {
     pub title_en: Option<String>,
     pub blurb: Option<String>,
     pub sutta_uid: Option<String>,
+    /// Set only where `sutta_uid` is a text the node does not own: the uid of
+    /// that text, for the row to show. See
+    /// [`sc_spine::ScSpineBuilder::parallel_redirect`].
+    pub redirect_uid: Option<String>,
     pub cst_file: Option<String>,
     pub is_available: bool,
     pub children: Vec<TreeNode>,
@@ -70,6 +74,7 @@ impl TreeNode {
             title_en: None,
             blurb: None,
             sutta_uid: None,
+            redirect_uid: None,
             cst_file: None,
             is_available: true,
             children: Vec::new(),
@@ -255,6 +260,7 @@ fn flatten_node(
         title_en: title_en.clone(),
         blurb: node.blurb.clone(),
         sutta_uid: node.sutta_uid.clone(),
+        redirect_uid: node.redirect_uid.clone(),
         cst_file: node.cst_file.clone(),
         has_children: !node.children.is_empty(),
         child_count: node.children.len() as i32,
@@ -342,6 +348,11 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
     let mut builder = sc_spine::ScSpineBuilder::new(sc_data_dir, &arango_db, db_conn)?;
     let roots = builder.build()?;
     log_node_counts("sc_spine", &roots);
+    logger::info(&format!(
+        "sc_spine: {} leaf/leaves opened through a parallel Pāli text, {} ranged leaf/leaves expanded into their rules",
+        builder.redirect_count(),
+        builder.range_expansion_count()
+    ));
 
     let rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
     let written = replace_spine(db_conn, sc_spine::TREE_SOURCE, &rows)?;

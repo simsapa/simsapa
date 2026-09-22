@@ -8,8 +8,15 @@ use diesel::prelude::*;
 use super::*;
 use crate::db::appdata_schema::navigation_nodes;
 
-const UP_SQL: &str =
-    include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql");
+/// Every appdata migration that touches `navigation_nodes`, in order.
+///
+/// **A new one must be added here.** The drift this module exists to catch is
+/// between the diesel `table!` and the migrations as a *set*: leaving one out
+/// makes the tests pass against a schema no installed database ever has.
+const UP_SQL: &[&str] = &[
+    include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
+    include_str!("../../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
+];
 
 fn empty_db() -> SqliteConnection {
     SqliteConnection::establish(":memory:").expect("in-memory db")
@@ -17,7 +24,9 @@ fn empty_db() -> SqliteConnection {
 
 fn migrated_db() -> SqliteConnection {
     let mut db_conn = empty_db();
-    db_conn.batch_execute(UP_SQL).expect("up.sql applies");
+    for sql in UP_SQL {
+        db_conn.batch_execute(sql).expect("migration applies");
+    }
     db_conn
 }
 
@@ -40,6 +49,7 @@ fn node(
         title_en: title_en.map(|s| s.to_string()),
         blurb: None,
         sutta_uid: None,
+        redirect_uid: None,
         cst_file: None,
         has_children: false,
         child_count: 0,
@@ -260,6 +270,107 @@ fn node_by_uid_finds_one_and_misses_cleanly() {
     assert!(node_by_uid_conn(&mut db_conn, "nope").unwrap().is_none());
 }
 
+/// The table from the first migration only — the shape a database has when a
+/// later migration failed, which is non-fatal by design.
+fn partially_migrated_db() -> SqliteConnection {
+    let mut db_conn = empty_db();
+    db_conn.batch_execute(UP_SQL[0]).expect("first migration applies");
+    db_conn
+}
+
+#[test]
+fn a_table_missing_a_later_migrations_column_is_not_available() {
+    // The schema spans two migrations, so "table present, `redirect_uid`
+    // missing" is a real state. A `COUNT(*)` succeeds on it, which would tell
+    // the window the tree is available and then fail every level query --
+    // an empty window with no explanation, which is what FR-13 forbids.
+    let mut db_conn = partially_migrated_db();
+    diesel::sql_query(
+        "INSERT INTO navigation_nodes \
+         (node_uid, sort_index, node_type, tree_source, search_text, path, sort_path) \
+         VALUES ('sutta', 0, 'root', 'sc', '', '', '|000000|')",
+    )
+    .execute(&mut db_conn)
+    .expect("the first migration's schema accepts the row");
+
+    // The row is there, so this is not the empty-table case.
+    let count: i64 = navigation_nodes::table
+        .count()
+        .get_result(&mut db_conn)
+        .expect("count works on the old schema -- which is the trap");
+    assert_eq!(count, 1);
+
+    // Availability must answer for the queries the window will actually run.
+    assert!(
+        tree_is_available_conn(&mut db_conn).is_err(),
+        "a row select must fail on the old schema, so the public wrapper \
+         reports the tree as unavailable rather than empty"
+    );
+    assert!(children_of_conn(&mut db_conn, None).is_err());
+}
+
+#[test]
+fn an_empty_but_fully_migrated_table_is_not_available() {
+    // The ordinary empty case still answers false rather than erroring.
+    let mut db_conn = migrated_db();
+    assert_eq!(tree_is_available_conn(&mut db_conn), Ok(false));
+}
+
+#[test]
+fn a_populated_table_is_available() {
+    let mut db_conn = migrated_db();
+    diesel::insert_into(navigation_nodes::table)
+        .values(&node("sutta", None, 0, "Suttapiṭaka", None, &[]))
+        .execute(&mut db_conn)
+        .expect("insert");
+    assert_eq!(tree_is_available_conn(&mut db_conn), Ok(true));
+}
+
+#[test]
+fn a_redirected_row_carries_the_uid_it_borrows_its_text_from() {
+    // The row must be able to say why pressing Open on a bhikkhunī rule
+    // produces a bhikkhu one, so the view carries the target's own uid
+    // alongside the `suttas.uid` the Open button uses.
+    let mut n = node("pli-tv-bi-pm-ss7", None, 0, "Sañcaritta", None, &[]);
+    n.node_type = "sutta".to_string();
+    n.sutta_uid = Some("pli-tv-bu-vb-ss5/pli/ms".to_string());
+    n.redirect_uid = Some("pli-tv-bu-vb-ss5".to_string());
+
+    let mut db_conn = migrated_db();
+    diesel::insert_into(navigation_nodes::table)
+        .values(&n)
+        .execute(&mut db_conn)
+        .expect("insert");
+
+    let row = node_by_uid_conn(&mut db_conn, "pli-tv-bi-pm-ss7")
+        .unwrap()
+        .expect("row");
+    assert!(row.is_redirected());
+    assert!(row.is_openable());
+
+    let view = NavigationNodeView::from(&row);
+    assert_eq!(view.redirect_uid.as_deref(), Some("pli-tv-bu-vb-ss5"));
+    // Its own uid is untouched: that is what tells this rule apart from the
+    // bhikkhu rule of the same name.
+    assert_eq!(view.node_uid, "pli-tv-bi-pm-ss7");
+}
+
+#[test]
+fn an_ordinary_row_is_not_redirected() {
+    let mut n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
+    n.sutta_uid = Some("sn56.11/pli/ms".to_string());
+
+    let mut db_conn = migrated_db();
+    diesel::insert_into(navigation_nodes::table)
+        .values(&n)
+        .execute(&mut db_conn)
+        .expect("insert");
+
+    let row = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
+    assert!(!row.is_redirected());
+    assert!(NavigationNodeView::from(&row).redirect_uid.is_none());
+}
+
 #[test]
 fn display_title_falls_back_through_english_to_the_uid() {
     let mut n = node("x", None, 0, "", None, &[]);
@@ -275,6 +386,7 @@ fn display_title_falls_back_through_english_to_the_uid() {
         title_en: Some("English".to_string()),
         blurb: None,
         sutta_uid: None,
+        redirect_uid: None,
         cst_file: None,
         has_children: false,
         child_count: 0,

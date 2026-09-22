@@ -534,8 +534,32 @@ navigates to that level and sets the breadcrumbs to its path.
 
 **FR-31.** The top bar also carries a **blurb toggle**. Blurbs are shown **by
 default**; the toggle hides them for a compact view. The setting persists across
-sessions in `AppSettings`. It governs **level rows only** — tree rows never
-show a blurb (FR-33).
+sessions in `AppSettings`.
+
+> **CORRECTED 2026-09-22, after using the built window. The scope this replaces
+> was wrong. Do not re-derive it.**
+>
+> The original text ended "It governs **level rows only** — tree rows never show
+> a blurb (FR-33)", and FR-33 and FR-43 said the same from the other side. In
+> use that reads as a **broken toggle**: the box is ticked, and all but a
+> handful of the rows on screen show nothing, with no way to tell that the rule
+> is about row modes rather than a fault.
+>
+> **The toggle governs every row in the window** — level rows, tree rows and
+> filter hits alike. On means on for all of them; off means off for all of
+> them. The compact view FR-33 wanted is exactly what the toggle is *for*, and
+> the reader chooses it rather than having it imposed per row mode.
+>
+> Two consequences settled with it:
+>
+> - The control is labelled **"Summaries"**, not "Blurbs" — a word a reader
+>   does not have to learn. `blurb` stays the name of the *data* (it is
+>   SuttaCentral's own term, and what `blurbs.json`, the `navigation_nodes.blurb`
+>   column and the persisted setting key hold). Renaming the stored key would
+>   silently reset everyone's preference for no gain.
+> - **The uid follows the toggle too**, reversing FR-43's "always visible". A
+>   uid is reference detail of the same kind as a summary, so hiding one while
+>   keeping the other yields a "compact" view that is barely more compact.
 
 ### 5.6 The two row modes, breadcrumbs, and drill-down navigation
 
@@ -555,9 +579,15 @@ in the list, not a user setting:
 | **Tree row** | anything revealed by expanding a row, at any depth below it | compact: Pāli title, English title where present, uid, the enter-level button — **no blurb**, whatever the toggle says |
 
 Tree rows exist so a user can flick a branch open, see whether the sub-items are
-the ones they are looking for, and flick it shut again. Blurbs would defeat
-that, so they are omitted for space efficiency even when the toggle is on —
-the toggle governs level rows only.
+the ones they are looking for, and flick it shut again.
+
+> **CORRECTED 2026-09-22 — see FR-31.** The table's "no blurb, whatever the
+> toggle says" and the paragraph that justified it are withdrawn. The blurb and
+> the uid are governed by the **Summaries** toggle in every row mode; what
+> still distinguishes a tree row is that it omits the **child count** and the
+> **translation hint**, and that it indents. A reader who wants the flick-open
+> scan turns Summaries off, which is the same compact view without a rule they
+> cannot see.
 
 **FR-34. A branch row carries an "enter level" button.** Pressing it makes that
 node the current level: the list is replaced by its children rendered as level
@@ -615,16 +645,17 @@ empty or error tab.
 
 1. **Pāli title** (primary line).
 2. **English title**, where one exists (secondary line).
-3. **uid** — always visible, in a dimmer and smaller style. This is
-   `sn56.11` for mapped texts and `s0305m.mul11.xml` for CST division records.
+3. **uid** — in a dimmer and smaller style, shown when the **Summaries**
+   toggle is on (**CORRECTED 2026-09-22**: this said "always visible"; see
+   FR-31). This is `sn56.11` for mapped texts and `s0305m.mul11.xml` for CST
+   division records.
 4. **Blurb**, when the blurb toggle is on.
 5. **Translation availability hint** — a small indicator of how many
    translations exist for that text in the installed languages.
 6. An **Open** button (FR-38). A leaf has nothing to expand, so its row body
    has no tap action at all — the button is the only way to open it.
 
-A leaf **tree row** shows items 1–3 and the Open button, and nothing else
-(FR-33).
+A leaf **tree row** shows the same, minus the translation hint (FR-33).
 
 **FR-44. A node with no blurb simply has no blurb area.** The row is shorter; no
 space is reserved and no placeholder is shown. Blurb coverage is partial, and a
@@ -637,10 +668,18 @@ and not a tap on the text because the row body's tap is expand/collapse of the
 node itself (FR-32); only the button may be hit to read more.
 
 **FR-46.** A branch **level row** displays its Pāli title, English title where
-present, its uid, its blurb when the toggle is on, a child-count indication, an
-expand/collapse caret reflecting its state (FR-36), and the **enter-level
-button** of FR-34. A branch **tree row** shows the title, English title, uid,
-caret and enter-level button only.
+present, its uid and blurb when the Summaries toggle is on, a child-count
+indication, an expand/collapse caret reflecting its state (FR-36), and the
+**enter-level button** of FR-34. A branch **tree row** shows the same minus the
+child count.
+
+**FR-46a. A row that does not open what its title implies must say so, and
+visibly.** A leaf resolved through a parallel (a Pātimokkha rule served by its
+Vibhaṅga text) carries a **"Parallel: <uid>" badge** — a tinted rectangle, not
+subdued grey italics. It is the one thing on the row that contradicts the
+title, so it is the thing that has to be seen, and it is therefore **exempt
+from the Summaries toggle**: it is not reference detail. The same applies to
+FR-17's "in `<file>`" fragment note.
 
 **FR-47. The translation count means "translations installed right now."** It
 counts translations of that text in the languages the user currently has

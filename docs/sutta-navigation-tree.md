@@ -45,6 +45,103 @@ spine once its file is verified, and through search on its division record
 before that. A Mūla root in the tree would add a second browsing path to
 material the SC spine already covers, which §1's rule exists to prevent.
 
+### 1.2 The SC grouping levels are collapsed where the Pāli-only scope empties them
+
+The SuttaCentral super-tree's grouping levels exist to hold the **several
+traditions'** collections side by side: `long` holds the Pāli `dn` beside the
+Chinese `da` and `ma-ot`, and `vinaya` is split by school into `pli-tv-vi`,
+`lzh-mg-vi`, `san-mg-vi` and the rest. Simsapa carries Pāli texts only, so the
+scope allowlist leaves every one of those levels holding a single member, and
+the level stops distinguishing anything. `Suttapiṭaka › Dīgha › Dīghanikāya`
+asks the reader to walk two levels that say the same thing.
+
+`collapse_redundant_groups()` in `cli/src/bootstrap/navigation_tree/sc_spine.rs`
+elides them, so the tree reads:
+
+```
+Suttapiṭaka › Dīghanikāya › …          (not Suttapiṭaka › Dīgha › Dīghanikāya)
+Suttapiṭaka › Khuddakanikāya › …       (not Suttapiṭaka › Khuddaka › Khuddakanikāya)
+Vinayapiṭaka › Bhikkhu Vibhaṅga › …    (not Vinayapiṭaka › Theravāda Vinayapiṭaka › …)
+```
+
+**Two shapes, one redundancy.** A parent with exactly one child has a redundant
+*edge*; which end survives depends on what the ends are.
+
+| Shape | Example | Elided | Result |
+|---|---|---|---|
+| a grouping level with a single child | `sutta › long › dn` | the grouping | `sutta › dn` |
+| a **root** whose single child is a grouping level | `vinaya › pli-tv-vi › …` | the grouping | `vinaya › …` |
+
+Three rules keep it from taking the wrong level:
+
+- **The order is shape 2, then shape 1** — and shape 2 asks its question of the
+  tree **as built**. Reversed, `sutta › minor › kn` collapses first to
+  `sutta › kn`, `sutta` momentarily has one grouping child, and the
+  Khuddakanikāya's 20 collections get spliced into the root.
+- **A root is never elided**, which is why the vinaya and abhidhamma cases give
+  up the grouping instead of the root.
+- **Only `group` nodes are elided** (see below). This is also the tie-break
+  that keeps `kn` and drops `minor` — a rule phrased as "elide an only child"
+  would take the wrong one.
+
+**A vagga is never collapsed into a saṁyutta, and the `group` type test is what
+guarantees it.** `sn8` Vaṅgīsasaṁyutta holds exactly one vagga,
+`sn8-vangisavagga` Vaṅgīsavagga, and the shape is indistinguishable from
+`sutta › long › dn`:
+
+```
+sn › sn-sagathavaggasamyutta › sn8 (Vaṅgīsasaṁyutta) › sn8-vangisavagga (Vaṅgīsavagga) › sn8.1 …
+```
+
+The difference is *why* there is one child. `long` holds one member because the
+Pāli-only scope deleted its siblings — the level is an artefact. `sn8` holds one
+vagga because the Saṁyutta Nikāya has one there. A saṁyutta and a vagga are
+**distinct groupings of the original source with distinct names**, and a reader
+may go looking for either *Vaṅgīsasaṁyutta* or *Vaṅgīsavagga*; collapsing them
+into each other would lose a name the corpus uses and a `node_uid` it refers to.
+**180 branch nodes in the built tree have exactly one child, and not one of them
+may go.**
+
+What makes the type test trustworthy is that `"group"` is assigned at exactly
+two places — `build_groups()` and `build_group_children()`, the two super-tree
+walkers. Nothing read from a `*-tree.json` can carry it: `build_collection()`
+writes `"collection"`, `build_subtree()` writes `"branch"`, `make_leaf()` writes
+`"sutta"`. Measured over the built spine: 3 `root`, 1 `group` (`kn`), 37
+`collection`, 890 `branch` and 7,992 `sutta` rows — so the
+elision can reach only the super-tree, and the one surviving `group` is the
+Khuddakanikāya. **If a future change ever gives a `*-tree.json` node the
+`"group"` type, this rule starts eating real levels of the canon.**
+`a_samyutta_over_a_single_vagga_keeps_both_levels` in `sc_spine.rs` is the
+regression test.
+
+**Nothing of substance goes with them.** The elided levels carry the
+cross-tradition blurb ("Collections of “long” discourses and other related
+texts") while the surviving node carries the specific one ("The Long Discourses
+(Dīgha Nikāya, abbreviated DN) is a collection of 34 discourses…");
+`pli-tv-vi` and `pli-tv-ab` have no blurb at all, and their titles ("Theravāda
+Vinayapiṭaka") restate the root's.
+
+**Widening the scope undoes the collapse by itself.** The rule is computed from
+the child counts the walk produced, not from a list of levels to skip, so the
+moment `SC_SCOPE` admits a second collection under `long` the level carries
+information again and reappears — no code change. A unit test in `sc_spine.rs`
+holds this.
+
+**It is done at build time, not in the UI.** `parent_uid`, `path` and
+`sort_path` are derived by the flattening pass from the collapsed tree, so the
+level listing, the breadcrumb bar and the filter results' paths all follow with
+no further code — which is what makes a filter hit read
+`Suttapiṭaka › Saṁyuttanikāya › …` rather than
+`Suttapiṭaka › Saṁyutta › Saṁyuttanikāya › …`.
+
+**Node uids are not rewritten by it.** `kn` keeps the uid `sutta/minor/kn`
+though its parent is now `sutta`: a uid is qualified by the node's ancestry **in
+the source**, which is what makes it stable (§2). Were `minor` to regain a
+sibling and stop being elided, `kn`'s uid would not move.
+
+The CST spine is not touched. Its levels come from the toc files, which describe
+one tradition already and have no tradition-splitting level to lose.
+
 ## 2. Node uids are stable across bootstraps
 
 The UI persists expansion state and the breadcrumb path by `node_uid`, so it is
@@ -53,7 +150,7 @@ enumeration counter.
 
 | Node | `node_uid` |
 |---|---|
-| SC grouping level | qualified by its ancestors: `sutta`, `sutta/linked` |
+| SC grouping level | qualified by its ancestors: `sutta`, `sutta/minor/kn` (kept even when §1.2 elides the ancestor from the tree) |
 | SC collection or text | its bare SuttaCentral uid: `sn`, `sn56`, `sn56.11` |
 | CST root | fixed: `cst:atthakatha`, `cst:tika`, `cst:anna` |
 | CST grouping node | parent uid + a slug of its title |
@@ -152,6 +249,297 @@ regardless.
 This is the intended division of labour: the tree gives one route to a text, and
 the reader gives the editions of it. Do not add a second `sutta_uid` to a node,
 or a per-edition branch, to reproduce in the tree what the reader already does.
+
+## 2b. The breadcrumb bar shows the path, never the history
+
+`SuttaNavigationWindow.enter_level()` recomputes the whole path from the node's
+own ancestry (`ancestor_segments()`, which walks `parent_uid`) rather than
+appending a segment to the path the user happened to walk.
+
+Appending is wrong because a **tree row** can sit several levels below the
+current one: FR-33's expand-in-place reveals descendants at any depth, so
+expanding Suttapiṭaka, then Majjhimanikāya, and entering Mūlapaṇṇāsa produced
+`All › Mūlapaṇṇāsa` — a record of which buttons were pressed, not a statement of
+where the reader is. It must read
+`All › Suttapiṭaka › Majjhimanikāya › Mūlapaṇṇāsa`.
+
+Recomputing also collapses the three routes into a level — a level row, a tree
+row at any depth, and a flat filter hit whose ancestors are nowhere on the
+current path — into **one** function, so the bar cannot say different things
+about the same level depending on how it was reached. For a level row it
+produces exactly what appending did, which is why the level-row case never
+showed the defect.
+
+`go_to_breadcrumb()` slicing the array stays correct precisely because the array
+is now a real path: segment *i* is the ancestor at depth *i*.
+
+## 2c. A textless leaf is redirected through its parallels
+
+Some SuttaCentral leaves have **no document of their own**. The Pātimokkha is
+the rules as they are *recited*, and SuttaCentral gives each rule its own leaf —
+`pli-tv-bu-pm-pj1` — but renders that page as a list of the same rule in every
+tradition it carries (`lzh-dg-bu-vb-pj1/lzh/taisho`, `xct-mu-bu-pm-pj1`, …).
+Among them the Pāli one is `pli-tv-bu-vb-pj1/pli/ms`: the rule inside the
+Vibhaṅga, with its analysis. Simsapa carries only the Pāli, so the parallels
+page has nothing to show and the leaf should simply open that text.
+
+`ScSpineBuilder::parallel_redirect()` does this, from SuttaCentral's own
+`relationship/parallels.json`, and the five leaves that stand for a *span* of
+rules are expanded into them (§2d). Measured: **543 of 543 — the SC spine has
+no dimmed leaf left, and no leaf without a text**, with zero ambiguities. Left
+unresolved they made **both Pātimokkhas unbrowsable** — their collection nodes
+are branches with no text of their own, so every route into them ended on a
+dimmed row.
+
+### Four tiers, own division first
+
+A parallels group is *the corresponding rule across traditions **and across the
+two divisions***, so every vinaya group holds four Pāli members — the bhikkhu
+pair and the bhikkhunī pair:
+
+```
+pli-tv-bi-pm-ss7 → { pli-tv-bu-vb-ss5, pli-tv-bu-pm-ss5,
+                     pli-tv-bi-vb-ss7, pli-tv-bi-pm-ss7 }
+```
+
+Both `pli-tv-bi-vb-ss7` and `pli-tv-bu-vb-ss5` are legitimate answers, but not
+equally: the nun's own rule is her text, and the monk's is what SuttaCentral
+falls back to when the nuns' Vibhaṅga says the rule is the monks'. So the
+resolver walks four tiers and stops at the first that yields one candidate:
+
+| Tier | | Resolved |
+|---|---|---|
+| 1 | own division, a row of its own | 345 |
+| 2 | own division, **inside a ranged row** | 26 |
+| 3 | other division, a row of its own | 335 |
+| 4 | other division, inside a ranged row | 0 |
+
+**706 redirects, 0 ambiguities.** Both Pātimokkhas go from *entirely
+unbrowsable* — their collection nodes are branches with no text of their own —
+to 311/311 and 227/227 openable. Tier 3 grew from 167 to 335 when §2d's
+expansion added the 168 bhikkhunī Vibhaṅga rules, which resolve by this same
+path with no special case.
+
+Two guards keep the cross-division tiers honest:
+
+- **A candidate must itself be a rule**, i.e. have a division (four or more
+  hyphen segments). The groups also name whole Khandhaka chapters
+  (`pli-tv-kd22`), where a rule's story is told rather than its text; admitting
+  them left five leaves ambiguous between the chapter and the rule.
+- **`pli-tv-` is the whole reach of the mechanism.** That is SuttaCentral's
+  Theravāda Vinaya prefix; a Pāli *sutta* uid is `mn10`, with no prefix, so a
+  textless leaf outside the vinaya can never be redirected and stays an honest
+  dimmed row. Every one of the 543 is a vinaya rule, so nothing is given up by
+  refusing to generalise past what was measured.
+
+**The cross-division tier was corroborated independently: all 167 of its
+redirects have a Pāli title *identical* to their target's** — Sañcaritta →
+Sañcaritta, Saṅghabheda → Saṅghabheda — which is evidence the group names the
+same rule rather than a merely related one.
+
+### Ranged rows reuse the sutta range parser
+
+SuttaCentral names a rule individually (`pli-tv-bi-vb-pj1`) where the corpus
+stores several as one document (`pli-tv-bi-vb-pj1-4`, the four pārājikas the
+nuns share with the monks). Tier 2 finds those with
+`helpers::sutta_range_from_ref()` — **the same parser the sutta import uses for
+`sn30.7-16`**, which handles vinaya rule uids unchanged:
+
+```
+pli-tv-bu-vb-as1-7   → group "pli-tv-bu-vb-as", 1..=7
+pli-tv-bi-vb-sk2-74  → group "pli-tv-bi-vb-sk", 2..=74
+```
+
+There is no second range parser here. The index it builds keeps **only rows
+spanning more than one number**: a single-number row is already reachable by
+tiers 1 and 3, so indexing it would let a range tier re-find it and make
+"resolved through a range" mean less than it says.
+
+Tier 2 sitting above tier 3 is what keeps `pli-tv-bi-pm-pj1` on the nuns'
+`pli-tv-bi-vb-pj1-4` instead of reaching across to the monks'
+`pli-tv-bu-vb-pj1`, which is also in its group.
+
+### Why the uid is not simply rewritten
+
+Replacing `-pm-` with `-vb-` reproduces 342 of tier 1 and never disagrees with
+the data. It is still the wrong implementation: it is a guess about uid spelling
+with nothing to check it against, and it is incomplete — `pli-tv-bi-pm-pc91`,
+`pc92` and `pc93` are all one text, `pli-tv-bi-vb-pc90`, which no rewrite finds,
+and it reaches neither the ranged rows nor the cross-division rules, which are
+193 of the 538. The group states the relationship; the code only reads it.
+
+Two further rules:
+
+- **Only the `parallels` relation is followed.** The file also carries
+  `mentions` (2,497 groups) and `retells` (62). Those say one text refers to
+  another, which is no reason to open it in place of the text the reader asked
+  for.
+- **A tie is reported, never guessed.** Where two candidates survive a tier
+  (`pm-pj4`'s group also names `vb-pc8`), the rule designator at the end of the
+  uid breaks it — a tie-break *among candidates the source already vouched
+  for*, not a way of finding one. If it does not single one out, the leaf stays
+  dimmed and the candidates are logged. Zero such cases today.
+
+### The row says where its text comes from
+
+**This is not optional.** A bhikkhunī rule opening a bhikkhu rule with nothing
+to explain it is a reader left wondering whether the app is broken. So
+`navigation_nodes.redirect_uid` stores the **target's own uid**, and
+`NavigationNodeRow.qml` renders it as a **badge**:
+
+```
+Sañcaritta
+uid: pli-tv-bi-pm-ss7       ┃ Parallel: pli-tv-bu-vb-ss5 ┃
+```
+
+A badge, not grey italics, and **exempt from the Summaries toggle** (§2e): this
+is the one thing on the row that contradicts what the title promises, so it has
+to be the thing that is seen, and it is not reference detail that a compact view
+may drop. It is tinted from `palette.highlight` so it reads in both themes —
+the idiom `StorageCandidatesList.qml` already uses. FR-17's "in `<file>`"
+fragment note is exempt for the same reason.
+
+Two details that are easy to get backwards:
+
+- The uid label shows the row's **own** `node_uid`, not `sutta_uid` as an
+  ordinary row does. The uid is how a reader tells this nuns' rule from the
+  monks' rule of the same Pāli name, so borrowing the target's uid there would
+  erase exactly the distinction the label is needed for.
+- `redirect_uid` holds the target's own uid (`pli-tv-bu-vb-ss5`), not the
+  `suttas.uid` (`pli-tv-bu-vb-ss5/pli/ms`) that `sutta_uid` holds. The row shows
+  it to a person, and the edition suffix is noise there.
+
+The column arrived in its **own** migration,
+`2026-09-22-000000_navigation_node_redirect`, rather than as an edit to
+`2026-09-19-000000_navigation_tree`: that one is already stamped in the
+`__diesel_schema_migrations` ledger of every database built since, so an edit
+would never re-run. `backend/src/navigation_tree/tests.rs` applies **both**
+migration files, and a new one must be added to that list or the read-layer
+tests start passing against a schema no installed database has.
+
+**Splitting the schema across two migrations made a new state reachable, and it
+had to be guarded.** A migration failure at startup is non-fatal by design, so
+"table present, `redirect_uid` missing" is a database a user can really have.
+`tree_is_available_conn()` used to answer with `COUNT(*)`, which **succeeds** on
+exactly that table — the window would be told the tree is available and then
+every level query would fail, giving an empty window with no explanation, which
+is the outcome FR-13 exists to prevent. It now selects a whole row, so it fails
+the same way the level queries will and the window shows its honest "navigation
+index not available" message. `a_table_missing_a_later_migrations_column_is_not_available`
+is the regression test, and the rule generalises: **anything that answers "is
+this table usable?" must touch the columns the real queries name.**
+
+## 2d. A leaf that stands for a span of rules becomes a branch over them
+
+Five leaves of the bhikkhunī Vibhaṅga name *several rules at once* —
+`pli-tv-bi-vb-ss7-9`, `ss14-17`, `np13-30`, `pc97-166`, `sk2-74` — because the
+nuns' text says only that those rules are the monks'. There is no document
+behind the ranged uid and none behind it in this corpus either, so §2c's
+redirect found nothing and **168 rules were unreachable** behind five dimmed
+rows.
+
+Each rule *individually* does resolve. `pli-tv-bi-vb-ss7` is in
+`parallels.json`, and its group names `pli-tv-bu-vb-ss5`. So
+`ScSpineBuilder::expand_range_leaf()` turns the range into a **branch** and each
+rule into a leaf, resolved by the ordinary path — §2c needs no special case for
+them, and they pick up their titles and blurbs like any other leaf:
+
+```
+Saṅghādisesa
+  …
+  pli-tv-bi-vb-ss7-9                      ← branch, 3 children
+      Sañcaritta   7. Matchmaking         text: pli-tv-bu-vb-ss5
+      Duṭṭhadosa   8. Making a groundless accusation out of anger
+      Aññabhāgiya  9. …using a pretext
+```
+
+Measured: **all 168 numbers are uids SuttaCentral names, and all 168 resolve**
+(every one at tier 3). 95 of them even have a blurb.
+
+### Three guards, and each one is load-bearing
+
+**Only unresolved leaves reach here.** Expansion is the last arm, after "has its
+own text" and "has a parallel". The SC spine holds **261 other ranged leaves** —
+every SN, AN and Dhp range (`sn30.7-16`, `an1.394-574`, `dhp1-20`) — and the
+corpus stores each under that very uid, so not one of them reaches the
+expansion. Exactly five do. Getting this wrong would shatter the Aṅguttara into
+thousands of nodes for texts that do not exist.
+
+**Every rule uid must be one SuttaCentral names.** The numbers come from the
+range the source itself wrote, but a uid built that way is still a
+*construction*, so each must appear in `parallels.json` before it may become a
+node. One unknown number and the whole range is left alone and reported —
+sprouting rules SuttaCentral has never heard of is precisely the invention FR-8
+forbids.
+
+**At least one rule must have a text**, checked *before* the children are built.
+One honest dimmed leaf beats a branch of 73 dimmed ones, and building first
+would record 73 defects against rows that are then thrown away rather than one
+against the range.
+
+A rule that is named but has no text is still kept and dimmed, like any other
+leaf: the gap is reported where it is rather than hidden by dropping the row.
+Recursion terminates because a single-number uid has `start == end` and returns
+on the first check.
+
+**The watch item: a collision with a sibling.** The expansion mints
+`pli-tv-bi-vb-ss7`, and the bhikkhunī Vibhaṅga tree currently lists `ss1`–`ss6`,
+`ss7-9`, `ss10`–`ss13`, `ss14-17` — so no minted uid is also a leaf of its own.
+If SuttaCentral ever lists **both** a range and one of its members, the two
+nodes collide on `node_uid`, which is `UNIQUE`. `flatten()` already handles it
+without corrupting anything: the first occurrence wins, the second is recorded
+as a defect and **its whole subtree is skipped**. So the failure is visible in
+the defect counts rather than silent — but it is a reason to read those counts
+after an `sc-data` refresh, not only the row total.
+
+### The expanded branches have no title of their own
+
+`pli-tv-bi-vb-ss7-9` has no entry in the `names` collection, none in
+`uid_expansion.json` and no blurb, so the branch falls back to displaying its
+uid — which is legible (`ss 7-9`) and is what the leaf displayed before it
+became a branch. **No source names it, so none is invented.** If a label is ever
+wanted there, it has to come from a source, not from composing the children's
+titles.
+
+## 2e. The Summaries toggle governs every row
+
+The top bar's checkbox is labelled **Summaries** and controls the blurb **and
+the uid**, on **every** row in the window — level rows, tree rows and filter
+hits alike. On means on for all of them; off means off for all of them.
+
+It did not start that way, and the first reading was a defect worth recording.
+The PRD scoped the toggle to *level rows*, so a tree row never showed a blurb
+"whatever the toggle says". In use that reads as a **broken checkbox**: the box
+is ticked and all but a handful of rows on screen show nothing, with no way for
+a reader to tell that the rule is about row modes rather than a fault. The
+compact view the rule was protecting is exactly what the toggle is *for* — so
+the reader chooses it, rather than having it imposed per row mode.
+
+What still distinguishes a **tree row** is that it omits the child count and the
+translation hint, and that it indents.
+
+### Three naming and scope decisions
+
+- **"Summaries" in the UI, `blurb` in the data.** `blurb` is SuttaCentral's own
+  term and is what `blurbs.json`, the `navigation_nodes.blurb` column and the
+  persisted setting key hold; the label is for readers, who should not have to
+  learn it. The bridge functions stay `get_show_navigation_blurbs` /
+  `set_show_navigation_blurbs`: renaming the stored key would silently reset
+  everyone's preference, and a bridge API change carries its own hazard (see
+  docs/qmltypes-aot-staleness.md).
+- **The uid follows the toggle.** A uid is reference detail of the same kind as
+  a summary, so hiding one while keeping the other gives a compact view that is
+  barely more compact. It is prefixed `uid: ` — an unlabelled `pli-tv-bi-pm-ss7`
+  next to a badge and a file note is one opaque string among several — and drawn
+  at **three-quarter-strength `palette.text`**, not `palette.mid`. `palette.mid`
+  is a frame colour and leaves the uid almost invisible on some themes; full
+  `palette.text` would let a reference string compete with the title. Deriving it
+  from the palette is what keeps it correct in both light and dark.
+- **The parallel badge and the "in `<file>`" note do not.** They say the row
+  does not open what its title implies, which is not reference detail — a
+  compact view that drops them is a view that lies. `meta_visible` in
+  `NavigationNodeRow.qml` is the one binding that encodes this split; changing
+  it to follow `show_summaries` alone is the regression to watch for.
 
 ## 3. CST records: two independent questions
 

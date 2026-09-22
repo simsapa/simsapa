@@ -198,6 +198,18 @@ pub struct NavigationNode {
     pub title_en: Option<String>,
     pub blurb: Option<String>,
     pub sutta_uid: Option<String>,
+    /// The uid of the text this leaf opens when it has none of its own.
+    ///
+    /// `None` on every ordinary node. A SuttaCentral parallels-page leaf —
+    /// each Pātimokkha rule is one — carries the uid of the Vibhaṅga text it
+    /// was resolved to at bootstrap, so the row can say where its text comes
+    /// from. Without that the reader presses Open on a bhikkhunī rule and
+    /// lands on a bhikkhu rule with nothing to explain why.
+    ///
+    /// It is the target's **own** uid (`pli-tv-bu-vb-pj1`), not the
+    /// `suttas.uid` (`pli-tv-bu-vb-pj1/pli/ms`) that `sutta_uid` holds: the
+    /// row shows it to a reader, and the edition suffix is noise there.
+    pub redirect_uid: Option<String>,
     pub cst_file: Option<String>,
     pub has_children: bool,
     pub child_count: i32,
@@ -234,6 +246,14 @@ impl NavigationNode {
                 .is_some_and(|uid| !uid.is_empty())
     }
 
+    /// Whether this row opens a text that is not its own (FR-42's sibling
+    /// case): a SuttaCentral parallels page resolved to the Pāli text it lists.
+    pub fn is_redirected(&self) -> bool {
+        self.redirect_uid
+            .as_deref()
+            .is_some_and(|uid| !uid.is_empty())
+    }
+
     /// Whether this row is a mapped fragment of a partially mapped CST file
     /// rather than a division of it. See [`FRAGMENT_UID_PREFIX`].
     pub fn is_fragment(&self) -> bool {
@@ -253,6 +273,7 @@ pub struct NewNavigationNode {
     pub title_en: Option<String>,
     pub blurb: Option<String>,
     pub sutta_uid: Option<String>,
+    pub redirect_uid: Option<String>,
     pub cst_file: Option<String>,
     pub has_children: bool,
     pub child_count: i32,
@@ -411,8 +432,21 @@ pub fn filter_nodes_conn(
 }
 
 pub fn tree_is_available_conn(db_conn: &mut SqliteConnection) -> QueryResult<bool> {
-    let count: i64 = navigation_nodes::table.count().get_result(db_conn)?;
-    Ok(count > 0)
+    // A whole row, not `COUNT(*)`: the question this answers is "will the
+    // level queries work", and those name every column of the table.
+    //
+    // The schema spans **two** migrations (the table, then `redirect_uid`),
+    // and a migration failure at startup is non-fatal by design. So "table
+    // present, later column missing" is reachable -- and a `COUNT(*)`
+    // succeeds on exactly that table. The window would then be told the tree
+    // is available, and every level query after it would fail: an empty
+    // window with no explanation, which is the outcome FR-13 exists to
+    // prevent. Selecting a row fails the same way the level queries will.
+    let row = navigation_nodes::table
+        .select(NavigationNode::as_select())
+        .first::<NavigationNode>(db_conn)
+        .optional()?;
+    Ok(row.is_some())
 }
 
 // ============================================================================
@@ -434,8 +468,10 @@ where
     match app_data.dbm.appdata.do_read(op) {
         Ok(v) => v,
         Err(e) => {
-            // Includes "no such table: navigation_nodes", which is reachable:
-            // a migration failure at startup is non-fatal by design.
+            // Includes "no such table: navigation_nodes" and "no such column:
+            // redirect_uid" -- both reachable, because the schema spans two
+            // migrations and a migration failure at startup is non-fatal by
+            // design.
             error(&format!("navigation_tree::{}: {}", what, e));
             empty
         }
@@ -503,6 +539,15 @@ pub struct NavigationNodeView {
     /// other row — including a division row, which carries the same
     /// `cst_file` but is not a portion of anything the list also shows.
     pub in_file: Option<String>,
+    /// The uid of the text this row opens when it is not the row's own: a
+    /// Pātimokkha rule served by its Vibhaṅga text. `None` on every ordinary
+    /// row.
+    ///
+    /// The row **must** show it. A bhikkhunī rule whose own division has no
+    /// text opens the bhikkhu rule SuttaCentral names, and without the label
+    /// the reader is left wondering why pressing Open on a nuns' rule produced
+    /// a monks' one.
+    pub redirect_uid: Option<String>,
 }
 
 impl From<&NavigationNode> for NavigationNodeView {
@@ -523,6 +568,7 @@ impl From<&NavigationNode> for NavigationNodeView {
             is_openable: node.is_openable(),
             is_fragment,
             in_file: is_fragment.then(|| node.cst_file.clone()).flatten(),
+            redirect_uid: node.redirect_uid.clone(),
         }
     }
 }

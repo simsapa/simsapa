@@ -37,6 +37,16 @@
 //!
 //! Titles and blurbs are always looked up by the **source** uid (the last
 //! segment), never by the qualified node uid.
+//!
+//! ## Collapsed grouping levels
+//!
+//! The super-tree's grouping levels separate the *traditions* — `long` holds
+//! the Pāli `dn` beside the Chinese `da`, `vinaya` holds `pli-tv-vi` beside
+//! `lzh-mg-vi`. In the Pāli-only scope above they each come out holding a
+//! single member, so [`collapse_redundant_groups`] elides them and the tree
+//! reads `Suttapiṭaka › Dīghanikāya` rather than
+//! `Suttapiṭaka › Dīgha › Dīghanikāya`. A node's uid keeps the source
+//! ancestry it was built from; only its place in the tree changes.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -47,6 +57,7 @@ use arangors::client::reqwest::ReqwestClient;
 use diesel::prelude::*;
 use serde_json::Value;
 
+use simsapa_backend::helpers::sutta_range_from_ref;
 use simsapa_backend::logger;
 
 use super::{DefectReport, TreeNode};
@@ -135,10 +146,43 @@ pub struct ScSpineBuilder {
     /// every row would print its Pāli title twice.
     fallback_pali: HashMap<String, String>,
     fallback_en: HashMap<String, String>,
+    /// `relationship/parallels.json`, indexed uid → the other uids in its
+    /// groups. See [`ScSpineBuilder::parallel_redirect`].
+    parallels: HashMap<String, Vec<String>>,
+    /// Corpus rows that cover a *span* of rules, indexed by their
+    /// [`sutta_range_from_ref`] group: `pli-tv-bu-vb-as` → `(1, 7,
+    /// "pli-tv-bu-vb-as1-7")`. See [`ScSpineBuilder::covering_rows`].
+    ranged_rows: HashMap<String, Vec<(u32, u32, String)>>,
+    /// How many leaves were opened through a parallel rather than their own
+    /// uid. Logged as a count, because it is the number that moves when the
+    /// corpus or the sc-data checkout changes.
+    redirects: usize,
+    /// How many ranged leaves became branches over their individual rules.
+    range_expansions: usize,
     pub defects: DefectReport,
 }
 
 impl ScSpineBuilder {
+    /// An empty builder, for unit-testing the resolvers that take no I/O.
+    /// The real [`Self::new`] needs ArangoDB and the sc-data checkout.
+    #[cfg(test)]
+    fn for_test() -> Self {
+        Self {
+            sc_data_dir: PathBuf::new(),
+            titles_pali: HashMap::new(),
+            titles_en: HashMap::new(),
+            blurbs: HashMap::new(),
+            sutta_uids: HashMap::new(),
+            fallback_pali: HashMap::new(),
+            fallback_en: HashMap::new(),
+            parallels: HashMap::new(),
+            ranged_rows: HashMap::new(),
+            redirects: 0,
+            range_expansions: 0,
+            defects: DefectReport::default(),
+        }
+    }
+
     pub fn new(
         sc_data_dir: &Path,
         arango_db: &Database<ReqwestClient>,
@@ -155,7 +199,9 @@ impl ScSpineBuilder {
         ));
 
         let blurbs = load_blurbs(sc_data_dir)?;
+        let parallels = load_parallels(sc_data_dir)?;
         let (sutta_uids, fallback_pali, fallback_en) = load_sutta_rows(db_conn)?;
+        let ranged_rows = index_ranged_rows(&sutta_uids);
 
         Ok(Self {
             sc_data_dir: sc_data_dir.to_path_buf(),
@@ -165,8 +211,23 @@ impl ScSpineBuilder {
             sutta_uids,
             fallback_pali,
             fallback_en,
+            ranged_rows,
+            parallels,
+            redirects: 0,
+            range_expansions: 0,
             defects: DefectReport::default(),
         })
+    }
+
+    /// How many leaves were opened through [`Self::parallel_redirect`].
+    pub fn redirect_count(&self) -> usize {
+        self.redirects
+    }
+
+    /// How many ranged leaves became branches through
+    /// [`Self::expand_range_leaf`].
+    pub fn range_expansion_count(&self) -> usize {
+        self.range_expansions
     }
 
     /// Build the three SC roots, in `super-tree.json`'s own order.
@@ -193,6 +254,7 @@ impl ScSpineBuilder {
 
             let mut root = self.make_node(root_uid, root_uid, "root");
             root.children = self.build_groups(value, root_uid, scope.groups, root_uid);
+            collapse_redundant_groups(&mut root);
             roots.push(root);
         }
 
@@ -384,10 +446,38 @@ impl ScSpineBuilder {
 
         match self.sutta_uids.get(source_uid) {
             Some(full_uid) => node.sutta_uid = Some(full_uid.clone()),
-            None => {
-                node.is_available = false;
-                self.defects.record("leaf has no text in the database", source_uid);
-            }
+            // No text of its own. SuttaCentral renders such a leaf as a page
+            // of parallels, so before dimming it, ask what text it points at.
+            None => match self.parallel_redirect(source_uid) {
+                ParallelRedirect::To { base_uid, sutta_uid } => {
+                    node.sutta_uid = Some(sutta_uid);
+                    // What the row shows, so the reader can see that a
+                    // bhikkhunī rule is being served by a bhikkhu one.
+                    node.redirect_uid = Some(base_uid);
+                    self.redirects += 1;
+                }
+                ParallelRedirect::Ambiguous(candidates) => {
+                    node.is_available = false;
+                    self.defects.record(
+                        "leaf has no text and several Pāli parallels in its division",
+                        format!("{} -- {}", source_uid, candidates.join(", ")),
+                    );
+                }
+                // A leaf that names a *span* of rules and has no text of its
+                // own is not a dead end: each rule in it may have one.
+                ParallelRedirect::None => match self.expand_range_leaf(source_uid) {
+                    Some(children) => {
+                        node.node_type = "branch".to_string();
+                        node.children = children;
+                        self.range_expansions += 1;
+                    }
+                    None => {
+                        node.is_available = false;
+                        self.defects
+                            .record("leaf has no text and no Pāli parallel", source_uid);
+                    }
+                },
+            },
         }
 
         // The `names` collection first, the imported row second, and nothing
@@ -403,12 +493,507 @@ impl ScSpineBuilder {
         node
     }
 
+    /// The Pāli text a textless leaf should open, from SuttaCentral's own
+    /// `relationship/parallels.json`.
+    ///
+    /// ## Why the leaf has no text
+    ///
+    /// The Pātimokkha is the rules as they are **recited**, and SuttaCentral
+    /// gives each rule of it a leaf — `pli-tv-bu-pm-pj1`. There is no document
+    /// behind that uid: SuttaCentral renders the page as a list of the same
+    /// rule in every tradition it carries (`lzh-dg-bu-vb-pj1/lzh/taisho`,
+    /// `xct-mu-bu-pm-pj1`, …), among which the Pāli one is
+    /// `pli-tv-bu-vb-pj1/pli/ms` — the rule inside the Vibhaṅga, with its
+    /// analysis. Simsapa carries only the Pāli, so the parallels page has
+    /// nothing to show and the leaf must simply open that text.
+    ///
+    /// Left unresolved these are 538 of the 543 dimmed leaves, which makes
+    /// **both Pātimokkhas unbrowsable**: their collection nodes are branches
+    /// with no text of their own, so every route into them ends on a dimmed
+    /// row.
+    ///
+    /// ## Two filters, and the second one is the whole point
+    ///
+    /// A parallels group is the *corresponding rule across traditions and
+    /// across the two divisions*, so it always holds four Pāli members — the
+    /// bhikkhu pair and the bhikkhunī pair:
+    ///
+    /// ```text
+    /// pli-tv-bi-pm-ss7 → { pli-tv-bu-vb-ss5, pli-tv-bu-pm-ss5,
+    ///                      pli-tv-bi-vb-ss7, pli-tv-bi-pm-ss7 }
+    /// ```
+    ///
+    /// Only `pli-tv-bi-vb-ss7` is *this* rule's text. `pli-tv-bu-vb-ss5` is
+    /// the monks' corresponding rule — a different rule with different text,
+    /// and following it would silently open the wrong one. So a candidate must
+    /// be **in the same division**: the first three hyphen segments equal
+    /// (`pli-tv-bi`). Measured, dropping that filter "resolves" 425 of 538
+    /// instead of 345, and the extra 80 are all wrong in exactly this way.
+    ///
+    /// The candidate must also have a text in the corpus, which is what makes
+    /// this a redirect rather than a second dead end.
+    ///
+    /// ## Why not rewrite the uid
+    ///
+    /// Replacing `-pm-` with `-vb-` reproduces 342 of these 345 and never
+    /// disagrees with the data — but it is a guess about uid spelling, which
+    /// FR-8 forbids, and it is not complete: `pli-tv-bi-pm-pc91`, `pc92` and
+    /// `pc93` are all one text, `pli-tv-bi-vb-pc90`, which no rewrite finds.
+    /// The group states the relationship; the code only reads it.
+    ///
+    /// **Only the `parallels` relation is followed**, never `mentions` or
+    /// `retells`: those say one text refers to another, which is no reason to
+    /// open it in place of this one.
+    fn parallel_redirect(&self, source_uid: &str) -> ParallelRedirect {
+        let Some(members) = self.parallels.get(source_uid) else {
+            return ParallelRedirect::None;
+        };
+        let own_division = division(source_uid);
+
+        // `pli-tv-` is SuttaCentral's prefix for the **Theravāda Vinaya**, and
+        // it is deliberately the whole reach of this mechanism. A Pāli *sutta*
+        // uid is `mn10`, with no prefix, so a textless leaf anywhere but the
+        // vinaya can never be redirected -- it stays an honest dimmed row.
+        // Every one of the 543 textless leaves in this corpus is a vinaya rule,
+        // so nothing is given up by refusing to generalise past what was
+        // measured.
+        let candidates_pool: Vec<&String> = members
+            .iter()
+            .filter(|m| m.as_str() != source_uid && m.starts_with("pli-tv-"))
+            .collect();
+
+        // Same division first, and a rule of the other division only as a
+        // fallback -- so a leaf whose own division does carry the text never
+        // reaches across for it.
+        let same: Vec<&String> = candidates_pool
+            .iter()
+            .copied()
+            .filter(|m| division(m) == own_division)
+            .collect();
+        let other: Vec<&String> = candidates_pool
+            .iter()
+            .copied()
+            // The candidate must itself be a rule, i.e. have a division. The
+            // groups also name whole Khandhaka chapters (`pli-tv-kd22`), which
+            // are where a rule's story is told, not the rule's text -- five
+            // leaves were ambiguous until this filter was added.
+            .filter(|m| division(m) != own_division && division(m).is_some())
+            .collect();
+
+        for (pool, through_range) in
+            [(&same, false), (&same, true), (&other, false), (&other, true)]
+        {
+            let candidates: Vec<String> = if through_range {
+                pool.iter()
+                    .flat_map(|m| self.covering_rows(m))
+                    .collect()
+            } else {
+                pool.iter()
+                    .filter(|m| self.sutta_uids.contains_key(m.as_str()))
+                    .map(|m| (*m).clone())
+                    .collect()
+            };
+
+            match self.settle(source_uid, candidates) {
+                ParallelRedirect::None => continue,
+                settled => return settled,
+            }
+        }
+
+        ParallelRedirect::None
+    }
+
+    /// Reduce one tier's candidates to a single target, or report the tie.
+    fn settle(&self, source_uid: &str, candidates: Vec<String>) -> ParallelRedirect {
+        let mut candidates = candidates;
+        candidates.sort();
+        candidates.dedup();
+
+        // Several survive only where one rule's group also names a nearby rule
+        // of the same division (`pm-pj4` → `vb-pj4` and `vb-pc8`). The rule
+        // designator is what tells them apart, and it is a tie-break *among
+        // candidates the source already vouched for* -- not a way of finding
+        // one. If it does not single one out, the leaf is reported and stays
+        // dimmed rather than opening a guess.
+        if candidates.len() > 1 {
+            let wanted = rule_segment(source_uid);
+            let exact: Vec<String> = candidates
+                .iter()
+                .filter(|m| rule_segment(m) == wanted)
+                .cloned()
+                .collect();
+            if exact.len() == 1 {
+                candidates = exact;
+            }
+        }
+
+        match candidates.len() {
+            0 => ParallelRedirect::None,
+            1 => {
+                let base = candidates.remove(0);
+                match self.sutta_uids.get(base.as_str()) {
+                    Some(full) => ParallelRedirect::To {
+                        base_uid: base,
+                        sutta_uid: full.clone(),
+                    },
+                    None => ParallelRedirect::None,
+                }
+            }
+            _ => ParallelRedirect::Ambiguous(candidates),
+        }
+    }
+
+    /// The corpus rows whose numeric range **contains** `target`.
+    ///
+    /// SuttaCentral names a rule individually (`pli-tv-bi-vb-pj1`) where the
+    /// corpus stores several rules as one document (`pli-tv-bi-vb-pj1-4`, the
+    /// four pārājikas the nuns share with the monks). Without this the
+    /// redirect resolves to a uid that has no row and the leaf stays dimmed
+    /// although its text is present.
+    ///
+    /// The range comes from [`sutta_range_from_ref`], the same parser the
+    /// sutta import uses for `sn30.7-16` — vinaya rule uids parse under it
+    /// unchanged (`pli-tv-bu-vb-as1-7` → group `pli-tv-bu-vb-as`, 1..=7), so
+    /// there is no second range parser here.
+    fn covering_rows(&self, target: &str) -> Vec<String> {
+        let Some(range) = sutta_range_from_ref(target) else {
+            return Vec::new();
+        };
+        let (Some(start), Some(end)) = (range.start, range.end) else {
+            return Vec::new();
+        };
+        let Some(rows) = self.ranged_rows.get(&range.group) else {
+            return Vec::new();
+        };
+        rows.iter()
+            .filter(|(from, to, _)| *from <= start && end <= *to)
+            .map(|(_, _, uid)| uid.clone())
+            .collect()
+    }
+
+    /// Turn a leaf that names a **span of rules** into a branch over them.
+    ///
+    /// SuttaCentral's bhikkhunī Vibhaṅga has five leaves that stand for
+    /// several rules at once — `pli-tv-bi-vb-ss7-9`, `sk2-74` — because the
+    /// nuns' text says only that those rules are the monks'. There is no
+    /// document behind the ranged uid, and none behind it in this corpus
+    /// either, so the leaf was dimmed and 168 rules were unreachable.
+    ///
+    /// Each rule *individually* does resolve: `pli-tv-bi-vb-ss7` is in
+    /// `parallels.json` and its group names `pli-tv-bu-vb-ss5`. So the range
+    /// becomes a branch and each rule becomes a leaf, resolved by the ordinary
+    /// path — [`Self::parallel_redirect`] needs no special case for them.
+    ///
+    /// ## Why this cannot run away
+    ///
+    /// **Only unresolved leaves reach here.** It is the last arm after "has
+    /// its own text" and "has a parallel", and the SC spine holds **247**
+    /// ranged leaves — every SN, AN and Dhp range (`sn30.7-16`, `an1.394-574`,
+    /// `dhp1-20`) — which the corpus stores under that same ranged uid and
+    /// which therefore never get here. Exactly five do.
+    ///
+    /// **Every rule uid must be one SuttaCentral names.** The numbers are
+    /// expanded from the range the source itself wrote, but a uid built that
+    /// way is still a construction, so each must appear in `parallels.json`
+    /// before it is allowed to become a node. One unknown number and the whole
+    /// range is left alone and reported — expanding a span into rules
+    /// SuttaCentral does not have is precisely the invention FR-8 forbids.
+    /// Measured: all 168 are named, and all 168 resolve.
+    ///
+    /// **At least one rule must have a text.** Checked *before* the children
+    /// are built, so a range that cannot be expanded records one defect
+    /// against itself rather than 73 against children that are then thrown
+    /// away. Without this a future corpus could turn one honest dimmed leaf
+    /// into a branch of dimmed ones.
+    ///
+    /// A rule that is named and has no text is still kept, and dimmed, like
+    /// any other leaf: the gap is reported where it is, not hidden by dropping
+    /// the row.
+    ///
+    /// Recursion terminates because a single-number uid has `start == end` and
+    /// returns on the first check.
+    fn expand_range_leaf(&mut self, source_uid: &str) -> Option<Vec<TreeNode>> {
+        let range = sutta_range_from_ref(source_uid)?;
+        let (Some(start), Some(end)) = (range.start, range.end) else {
+            return None;
+        };
+        if end <= start {
+            return None;
+        }
+
+        let rules: Vec<String> = (start..=end)
+            .map(|n| format!("{}{}", range.group, n))
+            .collect();
+
+        if let Some(unknown) = rules.iter().find(|u| !self.parallels.contains_key(u.as_str())) {
+            self.defects.record(
+                "ranged leaf not expanded: SuttaCentral does not name every rule in it",
+                format!("{} -- e.g. {}", source_uid, unknown),
+            );
+            return None;
+        }
+
+        let any_has_text = rules.iter().any(|u| {
+            self.sutta_uids.contains_key(u.as_str())
+                || matches!(self.parallel_redirect(u), ParallelRedirect::To { .. })
+        });
+        if !any_has_text {
+            self.defects.record(
+                "ranged leaf not expanded: no rule in it has a text",
+                source_uid,
+            );
+            return None;
+        }
+
+        Some(rules.iter().map(|u| self.make_leaf(u)).collect())
+    }
+
     fn make_node(&self, node_uid: &str, source_uid: &str, node_type: &str) -> TreeNode {
         let mut node = TreeNode::new(node_uid, node_type);
         node.title_pali = self.titles_pali.get(source_uid).map(|s| clean(s));
         node.title_en = self.titles_en.get(source_uid).map(|s| clean(s));
         node.blurb = self.blurbs.get(source_uid).map(|s| clean(s));
         node
+    }
+}
+
+/// `node_type` of a super-tree grouping level — the only kind of node
+/// [`collapse_redundant_groups`] is allowed to elide.
+const GROUP: &str = "group";
+
+/// Elide the super-tree grouping levels that the Pāli-only scope has left with
+/// nothing to distinguish.
+///
+/// SuttaCentral's `long` level exists to hold the *several* traditions' long
+/// collections side by side — the Pāli `dn`, the Chinese `da`, and so on.
+/// FR-2a restricts this spine to the Theravāda Pāli canon, so every one of
+/// those levels comes out of the walk holding exactly one member, and
+/// `Suttapiṭaka › Dīgha › Dīghanikāya` asks the reader to walk two levels that
+/// say the same thing. Skipping the grouping loses no information, so the tree
+/// shows `Suttapiṭaka › Dīghanikāya`.
+///
+/// **Two shapes, one rule.** A parent with exactly one child has a redundant
+/// *edge*, and which end survives is decided by what the end is:
+///
+/// | Shape | Example | Elided | Result |
+/// |---|---|---|---|
+/// | a grouping level with a single child | `sutta › long › dn` | the grouping | `sutta › dn` |
+/// | a **root** whose single child is a grouping level | `vinaya › pli-tv-vi › …` | the grouping | `vinaya › …` |
+///
+/// The second shape is the same redundancy one level up: SuttaCentral splits
+/// `vinaya` by school (`pli-tv-vi`, `lzh-mg-vi`, `san-mg-vi`, …) and
+/// `abhidhamma` likewise, and in scope there is only ever the Theravāda one.
+/// A root is never elided, so there the grouping gives way instead. It is
+/// evaluated **before** the first shape and on the tree as built, because it
+/// asks a question about the source: whether the root had one grouping to
+/// begin with.
+///
+/// The tie-break is what makes `sutta › minor › kn` come out as `sutta › kn`
+/// and not as `sutta › minor`: `minor` is the grouping with the single child,
+/// so `minor` goes and `kn` — the Khuddakanikāya, a real collection with 20
+/// members — stays. A rule phrased as "elide an only child" would have taken
+/// the wrong one.
+///
+/// **Only `group` nodes are elided, and this is the load-bearing part.** A
+/// collection, a branch or a leaf keeps its level however few children it has.
+/// `sn8` Vaṅgīsasaṁyutta holds exactly one vagga, `sn8-vangisavagga`
+/// Vaṅgīsavagga, and looks just like `sutta > long > dn` — but `long` holds
+/// one member because the scope deleted its siblings, while `sn8` holds one
+/// vagga because the Saṁyutta Nikāya has one there. A saṁyutta and a vagga are
+/// **distinct groupings of the source with distinct names**, and a reader may
+/// go looking for either of them, so collapsing one into the other would lose
+/// a name the corpus uses and a uid it refers to. 180 branch nodes in the
+/// built tree have exactly one child; not one of them may go.
+///
+/// The type test is what enforces it, and it is safe because `"group"` is
+/// assigned at exactly two places — [`ScSpineBuilder::build_groups`] and
+/// [`ScSpineBuilder::build_group_children`], the two super-tree walkers.
+/// Nothing from a `*-tree.json` can ever carry it: `build_collection` writes
+/// `"collection"`, `build_subtree` writes `"branch"` and `make_leaf` writes
+/// `"sutta"`. If a future change gives a `*-tree.json` node the `"group"` type,
+/// this rule starts eating real levels.
+///
+/// **Nothing of substance is dropped with them.** The elided levels' blurbs
+/// are the cross-tradition summaries ("Collections of “long” discourses and
+/// other related texts"), while the surviving node carries the specific one
+/// ("The Long Discourses (Dīgha Nikāya, abbreviated DN) is a collection of 34
+/// discourses…"); `pli-tv-vi` and `pli-tv-ab` have no blurb at all, and their
+/// titles ("Theravāda Vinayapiṭaka") only restate the root's.
+///
+/// **Node uids are not rewritten.** `kn` keeps the uid `sutta/minor/kn` even
+/// though its parent is now `sutta`: the uid is qualified by the node's
+/// ancestry **in the source**, which is what makes it stable across
+/// bootstraps (T-3). Were the scope later widened so that `minor` regains a
+/// sibling and stops being elided, `kn`'s uid would not move. `parent_uid`,
+/// `path` and `sort_path` are derived by the flattening pass from the tree
+/// this function returns, so the collapse reaches the breadcrumbs and the
+/// filter's result paths with no further code.
+fn collapse_redundant_groups(root: &mut TreeNode) {
+    // Shape 2 runs **first, and on the tree as it was built**, because it asks
+    // whether the root's own grouping is the only one the scope let through.
+    // Run it after shape 1 and the question changes: `sutta > minor > kn`
+    // collapses to `sutta > kn`, `sutta` momentarily has one grouping child,
+    // and the Khuddakanikāya's 20 collections get spliced into the root.
+    if root.children.len() == 1 && root.children[0].node_type == GROUP {
+        let only = root.children.remove(0);
+        root.children = only.children;
+    }
+
+    collapse_pass_through_groups(root);
+}
+
+/// Shape 1 of [`collapse_redundant_groups`], applied at every depth: a
+/// grouping level standing over a single child is a pass-through, so the child
+/// takes its place.
+fn collapse_pass_through_groups(node: &mut TreeNode) {
+    for child in node.children.iter_mut() {
+        collapse_pass_through_groups(child);
+    }
+
+    for child in node.children.iter_mut() {
+        // A loop, not an `if`: the child that moves up may itself be such a
+        // grouping.
+        while child.node_type == GROUP && child.children.len() == 1 {
+            let only = child.children.remove(0);
+            *child = only;
+        }
+    }
+}
+
+/// What [`ScSpineBuilder::parallel_redirect`] found for a leaf with no text.
+enum ParallelRedirect {
+    /// No parallels group, or nothing in it that this corpus can open.
+    None,
+    /// Exactly one same-division Pāli parallel that has a text.
+    To {
+        /// The parallel's own uid. Not written to the row today — the node
+        /// keeps its own uid, as SuttaCentral's page does — but it is what a
+        /// Written to `redirect_uid`, which is what the row renders.
+        base_uid: String,
+        /// The `suttas.uid` the leaf's Open button hands to the reader.
+        sutta_uid: String,
+    },
+    /// Several survived both filters. Reported and left dimmed, never guessed
+    /// between (FR-8). Zero cases on today's data.
+    Ambiguous(Vec<String>),
+}
+
+/// The division a vinaya rule uid belongs to: its first three hyphen segments,
+/// `pli-tv-bu` or `pli-tv-bi`.
+///
+/// `None` for anything with fewer than four segments, which is every sutta uid
+/// (`sn56.11`) and every collection uid — so a non-vinaya leaf can never be
+/// redirected by division equality, and the mechanism stays where it was
+/// measured.
+fn division(uid: &str) -> Option<(&str, &str, &str)> {
+    let mut segments = uid.split('-');
+    let a = segments.next()?;
+    let b = segments.next()?;
+    let c = segments.next()?;
+    segments.next()?;
+    Some((a, b, c))
+}
+
+/// The rule designator at the end of a vinaya uid: `pj1`, `sk27`.
+fn rule_segment(uid: &str) -> &str {
+    uid.rsplit('-').next().unwrap_or(uid)
+}
+
+/// `relationship/parallels.json`, indexed uid → the other uids of every group
+/// it appears in.
+///
+/// The file is a list of single-key objects, and **only the `parallels` key is
+/// read**. The other two relations it carries, `mentions` and `retells`, say
+/// that one text refers to another — true, and no reason at all to open it in
+/// place of the text the user asked for.
+///
+/// Two member spellings are normalized away, and one kind is skipped:
+///
+/// - a leading `~` marks a partial parallel (`~mn10`);
+/// - a `#` suffix narrows it to a segment range (`sn1.20#28.1`);
+/// - a member with a space in it is a **prose label**, not a uid
+///   ("Bhikkhu Parivāra Pārājika 1"), and is dropped rather than looked up.
+fn load_parallels(sc_data_dir: &Path) -> Result<HashMap<String, Vec<String>>> {
+    let path = sc_data_dir.join("relationship/parallels.json");
+    let value: Value = match read_json(&path) {
+        Ok(v) => v,
+        Err(e) => {
+            // Not fatal: without it every textless leaf simply stays dimmed,
+            // which is the behaviour this file improves on, not one it is
+            // required for.
+            logger::warn(&format!("sc_spine: no parallels: {:#}", e));
+            return Ok(HashMap::new());
+        }
+    };
+
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    let mut groups = 0usize;
+
+    for entry in value.as_array().map(|a| a.as_slice()).unwrap_or_default() {
+        let Some(list) = entry.get("parallels").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        let members: Vec<String> = list
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(parallel_uid)
+            .map(|s| s.to_string())
+            .collect();
+        if members.len() < 2 {
+            continue;
+        }
+        groups += 1;
+        for member in &members {
+            let others = out.entry(member.clone()).or_default();
+            others.extend(members.iter().filter(|m| *m != member).cloned());
+        }
+    }
+
+    logger::info(&format!(
+        "sc_spine: {} parallel group(s) over {} uid(s)",
+        groups,
+        out.len()
+    ));
+    Ok(out)
+}
+
+/// Index the corpus's base uids by [`sutta_range_from_ref`] group, keeping
+/// only the rows that span more than one number.
+///
+/// A single-number row is reachable by the exact tiers already, so indexing it
+/// here would only let a range tier re-find it; keeping the index to real
+/// spans is what makes "resolved through a range" mean what it says.
+fn index_ranged_rows(sutta_uids: &HashMap<String, String>) -> HashMap<String, Vec<(u32, u32, String)>> {
+    let mut out: HashMap<String, Vec<(u32, u32, String)>> = HashMap::new();
+    for base in sutta_uids.keys() {
+        let Some(range) = sutta_range_from_ref(base) else {
+            continue;
+        };
+        let (Some(start), Some(end)) = (range.start, range.end) else {
+            continue;
+        };
+        if end > start {
+            out.entry(range.group)
+                .or_default()
+                .push((start, end, base.clone()));
+        }
+    }
+    out
+}
+
+/// One `parallels` member as a uid, or `None` if it is not one.
+fn parallel_uid(entry: &str) -> Option<&str> {
+    let uid = entry
+        .strip_prefix('~')
+        .unwrap_or(entry)
+        .split('#')
+        .next()
+        .unwrap_or("")
+        .trim();
+    if uid.is_empty() || uid.contains(' ') {
+        None
+    } else {
+        Some(uid)
     }
 }
 
@@ -565,6 +1150,494 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn group(uid: &str, children: Vec<TreeNode>) -> TreeNode {
+        let mut n = TreeNode::new(uid, GROUP);
+        n.children = children;
+        n
+    }
+
+    fn collection(uid: &str, children: Vec<TreeNode>) -> TreeNode {
+        let mut n = TreeNode::new(uid, "collection");
+        n.children = children;
+        n
+    }
+
+    fn child_uids(node: &TreeNode) -> Vec<&str> {
+        node.children.iter().map(|c| c.node_uid.as_str()).collect()
+    }
+
+    #[test]
+    fn a_grouping_level_over_one_collection_is_elided() {
+        // `sutta > long > dn`: in a Pāli-only corpus `long` has nothing to
+        // distinguish, so the reader should see `sutta > dn`.
+        let mut sutta = TreeNode::new("sutta", "root");
+        sutta.children = vec![
+            group("sutta/long", vec![collection("dn", vec![])]),
+            group("sutta/middle", vec![collection("mn", vec![])]),
+        ];
+
+        collapse_redundant_groups(&mut sutta);
+
+        assert_eq!(child_uids(&sutta), vec!["dn", "mn"]);
+    }
+
+    #[test]
+    fn the_collection_survives_a_chain_of_groupings_not_the_grouping() {
+        // `sutta > minor > kn`: `minor` is the redundant one and `kn` -- the
+        // Khuddakanikāya, with 20 members -- is the level worth keeping. A
+        // rule phrased as "elide an only child" would have taken `kn`.
+        let mut sutta = TreeNode::new("sutta", "root");
+        sutta.children = vec![group(
+            "sutta/minor",
+            vec![group(
+                "sutta/minor/kn",
+                vec![collection("kp", vec![]), collection("dhp", vec![])],
+            )],
+        )];
+
+        collapse_redundant_groups(&mut sutta);
+
+        assert_eq!(child_uids(&sutta), vec!["sutta/minor/kn"]);
+        assert_eq!(child_uids(&sutta.children[0]), vec!["kp", "dhp"]);
+    }
+
+    #[test]
+    fn a_roots_only_school_grouping_is_elided_and_the_root_kept() {
+        // `vinaya > pli-tv-vi > {6 collections}`. The grouping has six
+        // children so the first shape does not fire; it is redundant because
+        // it is the root's only child, and the root is never the end that
+        // gives way.
+        let mut vinaya = TreeNode::new("vinaya", "root");
+        vinaya.children = vec![group(
+            "vinaya/pli-tv-vi",
+            vec![collection("pli-tv-bu-vb", vec![]), collection("pli-tv-kd", vec![])],
+        )];
+
+        collapse_redundant_groups(&mut vinaya);
+
+        assert_eq!(vinaya.node_uid, "vinaya");
+        assert_eq!(child_uids(&vinaya), vec!["pli-tv-bu-vb", "pli-tv-kd"]);
+    }
+
+    fn branch(uid: &str, title: &str, children: Vec<TreeNode>) -> TreeNode {
+        let mut n = TreeNode::new(uid, "branch");
+        n.title_pali = Some(title.to_string());
+        n.children = children;
+        n
+    }
+
+    #[test]
+    fn a_samyutta_over_a_single_vagga_keeps_both_levels() {
+        // The real shape of `sn8`: a saṁyutta holding exactly one vagga. It
+        // looks like `sutta > long > dn` and is not the same thing. `long`
+        // holds one member because the Pāli-only scope deleted its siblings;
+        // `sn8` holds one vagga because the Saṁyutta Nikāya has one there.
+        //
+        // A saṁyutta and a vagga are distinct groupings of the source with
+        // distinct names, and a reader may go looking for either
+        // Vaṅgīsasaṁyutta or Vaṅgīsavagga, so collapsing them into each other
+        // would lose a name the corpus uses and a uid it refers to. Measured
+        // over the built tree, 180 branch nodes have exactly one child; none
+        // of them may be elided.
+        let mut sutta = TreeNode::new("sutta", "root");
+        sutta.children = vec![group(
+            "sutta/linked",
+            vec![collection(
+                "sn",
+                vec![branch(
+                    "sn-sagathavaggasamyutta",
+                    "Sagāthāvaggasaṁyutta",
+                    vec![branch(
+                        "sn8",
+                        "Vaṅgīsasaṁyutta",
+                        vec![branch(
+                            "sn8-vangisavagga",
+                            "Vaṅgīsavagga",
+                            vec![TreeNode::new("sn8.1", "sutta")],
+                        )],
+                    )],
+                )],
+            )],
+        )];
+
+        collapse_redundant_groups(&mut sutta);
+
+        // Only the grouping level goes.
+        assert_eq!(child_uids(&sutta), vec!["sn"]);
+
+        let sagatha = &sutta.children[0].children[0];
+        assert_eq!(sagatha.node_uid, "sn-sagathavaggasamyutta");
+        let sn8 = &sagatha.children[0];
+        assert_eq!(sn8.title_pali.as_deref(), Some("Vaṅgīsasaṁyutta"));
+        assert_eq!(child_uids(sn8), vec!["sn8-vangisavagga"]);
+        assert_eq!(
+            sn8.children[0].title_pali.as_deref(),
+            Some("Vaṅgīsavagga")
+        );
+    }
+
+    #[test]
+    fn a_roots_single_non_grouping_child_is_kept() {
+        // Shape 2 turns on the child being a grouping level. A root left with
+        // one collection is a corpus that has one collection, not a level to
+        // skip -- splicing it away would put its vaggas straight under the
+        // piṭaka and lose the nikāya's name.
+        let mut abhidhamma = TreeNode::new("abhidhamma", "root");
+        abhidhamma.children = vec![collection("ds", vec![branch("ds1", "Cittuppādakaṇḍa", vec![])])];
+
+        collapse_redundant_groups(&mut abhidhamma);
+
+        assert_eq!(child_uids(&abhidhamma), vec!["ds"]);
+        assert_eq!(child_uids(&abhidhamma.children[0]), vec!["ds1"]);
+    }
+
+    fn builder_with(parallels: &[(&str, &[&str])], corpus: &[&str]) -> ScSpineBuilder {
+        let mut b = ScSpineBuilder::for_test();
+        for (uid, members) in parallels {
+            b.parallels.insert(
+                uid.to_string(),
+                members.iter().map(|m| m.to_string()).collect(),
+            );
+        }
+        for uid in corpus {
+            b.sutta_uids
+                .insert(uid.to_string(), format!("{}/pli/ms", uid));
+        }
+        b.ranged_rows = index_ranged_rows(&b.sutta_uids);
+        b
+    }
+
+    /// The four Pāli members every vinaya parallels group carries: the
+    /// bhikkhu pair and the bhikkhunī pair of the corresponding rule.
+    const SS_GROUP: &[&str] = &[
+        "pli-tv-bu-vb-ss5",
+        "pli-tv-bu-pm-ss5",
+        "pli-tv-bi-vb-ss7",
+        "pli-tv-bi-pm-ss7",
+    ];
+
+    #[test]
+    fn a_patimokkha_rule_opens_its_own_divisions_vibhanga_text() {
+        let b = builder_with(
+            &[("pli-tv-bi-pm-ss7", SS_GROUP)],
+            &["pli-tv-bi-vb-ss7", "pli-tv-bu-vb-ss5"],
+        );
+
+        match b.parallel_redirect("pli-tv-bi-pm-ss7") {
+            ParallelRedirect::To { base_uid, sutta_uid } => {
+                assert_eq!(base_uid, "pli-tv-bi-vb-ss7");
+                assert_eq!(sutta_uid, "pli-tv-bi-vb-ss7/pli/ms");
+            }
+            _ => panic!("expected a redirect"),
+        }
+    }
+
+    #[test]
+    fn the_own_division_text_wins_over_the_other_divisions() {
+        // Both are in the group and both are in the corpus. The nun's own
+        // rule is the one to open; the monk's is the fallback for when hers
+        // is absent, never a competitor when she has one.
+        let b = builder_with(
+            &[("pli-tv-bi-pm-ss7", SS_GROUP)],
+            &["pli-tv-bi-vb-ss7", "pli-tv-bu-vb-ss5"],
+        );
+        match b.parallel_redirect("pli-tv-bi-pm-ss7") {
+            ParallelRedirect::To { base_uid, .. } => assert_eq!(base_uid, "pli-tv-bi-vb-ss7"),
+            _ => panic!("expected the same-division text"),
+        }
+    }
+
+    #[test]
+    fn the_other_divisions_rule_is_the_fallback_when_the_own_one_is_absent() {
+        // SuttaCentral's own page for `pli-tv-bi-pm-ss7` lists
+        // `pli-tv-bu-vb-ss5` as the only openable Pāli text, because the nuns'
+        // Vibhaṅga says the rule is the monks'. All 167 such redirects in the
+        // corpus have a Pāli title **identical** to their target's
+        // (Sañcaritta → Sañcaritta), which is the independent check that the
+        // group names the same rule rather than a related one.
+        let b = builder_with(&[("pli-tv-bi-pm-ss7", SS_GROUP)], &["pli-tv-bu-vb-ss5"]);
+        match b.parallel_redirect("pli-tv-bi-pm-ss7") {
+            ParallelRedirect::To { base_uid, .. } => assert_eq!(base_uid, "pli-tv-bu-vb-ss5"),
+            _ => panic!("expected the cross-division fallback"),
+        }
+    }
+
+    #[test]
+    fn a_whole_chapter_is_not_a_cross_division_candidate() {
+        // The groups also name whole Khandhaka chapters, where a rule's story
+        // is told. `pli-tv-kd22` has no division, and admitting it left five
+        // leaves ambiguous between it and the rule that is actually wanted.
+        let b = builder_with(
+            &[(
+                "pli-tv-bi-pm-np21",
+                &["pli-tv-bu-vb-np18", "pli-tv-kd22"],
+            )],
+            &["pli-tv-bu-vb-np18", "pli-tv-kd22"],
+        );
+        match b.parallel_redirect("pli-tv-bi-pm-np21") {
+            ParallelRedirect::To { base_uid, .. } => assert_eq!(base_uid, "pli-tv-bu-vb-np18"),
+            _ => panic!("expected the Vibhaṅga rule, not the Khandhaka chapter"),
+        }
+    }
+
+    #[test]
+    fn a_target_stored_as_part_of_a_ranged_row_is_found() {
+        // The group names `pli-tv-bi-vb-pj1`; the corpus stores the four
+        // pārājikas the nuns share with the monks as one document. Reusing
+        // `sutta_range_from_ref` is what finds it -- and it must win over the
+        // cross-division monk's rule, which is also in the group.
+        let b = builder_with(
+            &[(
+                "pli-tv-bi-pm-pj1",
+                &["pli-tv-bi-vb-pj1", "pli-tv-bu-vb-pj1"],
+            )],
+            &["pli-tv-bi-vb-pj1-4", "pli-tv-bu-vb-pj1"],
+        );
+        match b.parallel_redirect("pli-tv-bi-pm-pj1") {
+            ParallelRedirect::To { base_uid, .. } => assert_eq!(base_uid, "pli-tv-bi-vb-pj1-4"),
+            _ => panic!("expected the ranged same-division row"),
+        }
+    }
+
+    #[test]
+    fn a_range_that_does_not_contain_the_rule_is_not_a_cover() {
+        let b = builder_with(
+            &[("pli-tv-bi-pm-pj9", &["pli-tv-bi-vb-pj9"])],
+            &["pli-tv-bi-vb-pj1-4"],
+        );
+        assert!(matches!(
+            b.parallel_redirect("pli-tv-bi-pm-pj9"),
+            ParallelRedirect::None
+        ));
+    }
+
+    #[test]
+    fn a_parallel_with_no_text_in_the_corpus_is_not_a_redirect() {
+        let b = builder_with(&[("pli-tv-bi-pm-ss7", SS_GROUP)], &[]);
+        assert!(matches!(
+            b.parallel_redirect("pli-tv-bi-pm-ss7"),
+            ParallelRedirect::None
+        ));
+    }
+
+    #[test]
+    fn the_rule_designator_breaks_a_tie_between_two_candidates() {
+        // The real `pli-tv-bu-pm-pj4` case: its group also names `vb-pc8`,
+        // and both are in the corpus.
+        let b = builder_with(
+            &[(
+                "pli-tv-bu-pm-pj4",
+                &["pli-tv-bu-vb-pj4", "pli-tv-bu-vb-pc8"],
+            )],
+            &["pli-tv-bu-vb-pj4", "pli-tv-bu-vb-pc8"],
+        );
+
+        match b.parallel_redirect("pli-tv-bu-pm-pj4") {
+            ParallelRedirect::To { base_uid, .. } => assert_eq!(base_uid, "pli-tv-bu-vb-pj4"),
+            _ => panic!("expected the tie-break to pick pj4"),
+        }
+    }
+
+    #[test]
+    fn a_tie_the_designator_cannot_break_is_reported_not_guessed() {
+        let b = builder_with(
+            &[(
+                "pli-tv-bu-pm-pj4",
+                &["pli-tv-bu-vb-pc8", "pli-tv-bu-vb-pc9"],
+            )],
+            &["pli-tv-bu-vb-pc8", "pli-tv-bu-vb-pc9"],
+        );
+
+        match b.parallel_redirect("pli-tv-bu-pm-pj4") {
+            ParallelRedirect::Ambiguous(c) => assert_eq!(c.len(), 2),
+            _ => panic!("expected the ambiguity to be reported"),
+        }
+    }
+
+    #[test]
+    fn the_mechanism_cannot_reach_outside_the_theravada_vinaya() {
+        // Two independent guards, and the first is the decisive one: a Pāli
+        // sutta uid is `mn10`, with no `pli-tv-` prefix, so it never enters
+        // the candidate pool at all. A missing sutta stays an honest dimmed
+        // row instead of opening a parallel that happens to exist.
+        let b = builder_with(&[("sn56.11", &["mn10", "dn22"])], &["mn10", "dn22"]);
+        assert!(matches!(
+            b.parallel_redirect("sn56.11"),
+            ParallelRedirect::None
+        ));
+
+        // The second: `division()` is None below four hyphen segments, which
+        // is what keeps the cross-division fallback to rule-shaped uids.
+        assert_eq!(division("sn56.11"), None);
+        assert_eq!(division("pli-tv-kd22"), None);
+        assert_eq!(division("pli-tv-bi-pm-ss7"), Some(("pli", "tv", "bi")));
+    }
+
+    #[test]
+    fn parallel_members_are_normalized_and_prose_labels_dropped() {
+        assert_eq!(parallel_uid("~mn10"), Some("mn10"));
+        assert_eq!(parallel_uid("sn1.20#28.1"), Some("sn1.20"));
+        assert_eq!(parallel_uid("~pli-tv-bu-vb-pj1#3.2"), Some("pli-tv-bu-vb-pj1"));
+        // A prose label, not a uid -- looking it up would find nothing, but
+        // dropping it here keeps it out of the candidate set entirely.
+        assert_eq!(parallel_uid("Bhikkhu Parivāra Pārājika 1"), None);
+    }
+
+    /// A rule that SuttaCentral names, in a group with its bhikkhu counterpart.
+    fn nun_rule(n: u32, monk: &str) -> (String, Vec<String>) {
+        let uid = format!("pli-tv-bi-vb-ss{}", n);
+        let members = vec![uid.clone(), monk.to_string()];
+        (uid, members)
+    }
+
+    fn builder_with_rules(rules: &[(u32, &str)], corpus: &[&str]) -> ScSpineBuilder {
+        let mut b = ScSpineBuilder::for_test();
+        for (n, monk) in rules {
+            let (uid, members) = nun_rule(*n, monk);
+            b.parallels.insert(uid, members);
+        }
+        for uid in corpus {
+            b.sutta_uids
+                .insert(uid.to_string(), format!("{}/pli/ms", uid));
+        }
+        b.ranged_rows = index_ranged_rows(&b.sutta_uids);
+        b
+    }
+
+    #[test]
+    fn a_ranged_leaf_with_no_text_becomes_a_branch_over_its_rules() {
+        // `pli-tv-bi-vb-ss7-9` stands for three rules because the nuns' text
+        // says only that they are the monks'. Each rule resolves on its own,
+        // so the range becomes a branch and nothing needs a special case.
+        let mut b = builder_with_rules(
+            &[(7, "pli-tv-bu-vb-ss5"), (8, "pli-tv-bu-vb-ss8"), (9, "pli-tv-bu-vb-ss9")],
+            &["pli-tv-bu-vb-ss5", "pli-tv-bu-vb-ss8", "pli-tv-bu-vb-ss9"],
+        );
+
+        let node = b.make_leaf("pli-tv-bi-vb-ss7-9");
+
+        assert_eq!(node.node_type, "branch");
+        assert!(node.is_available, "a branch over real rules is not dimmed");
+        assert_eq!(child_uids(&node), vec![
+            "pli-tv-bi-vb-ss7",
+            "pli-tv-bi-vb-ss8",
+            "pli-tv-bi-vb-ss9",
+        ]);
+        assert_eq!(
+            node.children[0].sutta_uid.as_deref(),
+            Some("pli-tv-bu-vb-ss5/pli/ms")
+        );
+        assert_eq!(
+            node.children[0].redirect_uid.as_deref(),
+            Some("pli-tv-bu-vb-ss5")
+        );
+        assert_eq!(b.range_expansion_count(), 1);
+        assert!(b.defects.is_empty());
+    }
+
+    #[test]
+    fn a_ranged_leaf_with_its_own_text_is_never_expanded() {
+        // The SC spine holds 261 ranged leaves the corpus stores under that
+        // very uid -- `sn30.7-16`, `an1.394-574`, `dhp1-20`. Expansion is the
+        // last arm after "has its own text", so none of them reaches it.
+        let mut b = builder_with_rules(&[], &["sn30.7-16"]);
+        let node = b.make_leaf("sn30.7-16");
+
+        assert!(node.children.is_empty());
+        assert_eq!(node.node_type, "sutta");
+        assert_eq!(node.sutta_uid.as_deref(), Some("sn30.7-16/pli/ms"));
+        assert_eq!(b.range_expansion_count(), 0);
+    }
+
+    #[test]
+    fn a_range_whose_rules_suttacentral_does_not_all_name_is_left_alone() {
+        // The numbers come from the range the source wrote, but a uid built
+        // that way is still a construction. Rule 8 is not in parallels.json,
+        // so the whole range is reported and stays a dimmed leaf rather than
+        // sprouting a node SuttaCentral has never heard of.
+        let mut b = builder_with_rules(
+            &[(7, "pli-tv-bu-vb-ss5"), (9, "pli-tv-bu-vb-ss9")],
+            &["pli-tv-bu-vb-ss5", "pli-tv-bu-vb-ss9"],
+        );
+
+        let node = b.make_leaf("pli-tv-bi-vb-ss7-9");
+
+        assert!(node.children.is_empty());
+        assert!(!node.is_available);
+        assert_eq!(
+            b.defects.count_of(
+                "ranged leaf not expanded: SuttaCentral does not name every rule in it"
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn a_range_none_of_whose_rules_has_a_text_is_left_alone() {
+        // One honest dimmed leaf beats a branch of three dimmed ones. The
+        // check runs before the children are built, so the range records one
+        // defect against itself rather than three against rows thrown away.
+        let mut b = builder_with_rules(
+            &[(7, "pli-tv-bu-vb-ss5"), (8, "pli-tv-bu-vb-ss8"), (9, "pli-tv-bu-vb-ss9")],
+            &[],
+        );
+
+        let node = b.make_leaf("pli-tv-bi-vb-ss7-9");
+
+        assert!(node.children.is_empty());
+        assert!(!node.is_available);
+        assert_eq!(
+            b.defects.count_of("ranged leaf not expanded: no rule in it has a text"),
+            1
+        );
+        assert_eq!(
+            b.defects.count_of("leaf has no text and no Pāli parallel"),
+            1,
+            "the range itself is still reported as textless"
+        );
+    }
+
+    #[test]
+    fn expansion_terminates_on_a_single_rule() {
+        // `make_leaf` recurses into `expand_range_leaf` for each rule, so a
+        // single-number uid must not expand again. `start == end` returns on
+        // the first check.
+        let mut b = builder_with_rules(&[(7, "pli-tv-bu-vb-ss5")], &[]);
+        let node = b.make_leaf("pli-tv-bi-vb-ss7");
+        assert!(node.children.is_empty());
+        assert_eq!(b.range_expansion_count(), 0);
+    }
+
+    #[test]
+    fn only_grouping_levels_are_elided() {
+        // The same rule one level down, exercised on the pass directly: a
+        // vagga with a single sutta in it is a real level of the source, not
+        // an artefact of the scope.
+        let mut sn = TreeNode::new("sn", "collection");
+        sn.children = vec![collection("sn56", vec![TreeNode::new("sn56.11", "sutta")])];
+
+        collapse_pass_through_groups(&mut sn);
+
+        assert_eq!(child_uids(&sn), vec!["sn56"]);
+        assert_eq!(child_uids(&sn.children[0]), vec!["sn56.11"]);
+    }
+
+    #[test]
+    fn a_grouping_with_several_members_stays() {
+        // The guarantee that widening SC_SCOPE undoes the collapse by itself:
+        // as soon as `long` holds a second collection it carries information
+        // again and must reappear as a level.
+        let mut sutta = TreeNode::new("sutta", "root");
+        sutta.children = vec![
+            group("sutta/long", vec![collection("dn", vec![]), collection("da", vec![])]),
+            group("sutta/middle", vec![collection("mn", vec![])]),
+        ];
+
+        collapse_redundant_groups(&mut sutta);
+
+        assert_eq!(child_uids(&sutta), vec!["sutta/long", "mn"]);
+    }
 
     #[test]
     fn the_mahasangiti_edition_wins_where_several_exist() {

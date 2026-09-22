@@ -296,6 +296,9 @@ diesel::table! {
         title_en -> Nullable<Text>,
         blurb -> Nullable<Text>,
         sutta_uid -> Nullable<Text>,
+        /// The uid of the text a parallels-page leaf opens instead of its own;
+        /// see `navigation_tree::NavigationNode::redirect_uid`.
+        redirect_uid -> Nullable<Text>,
         cst_file -> Nullable<Text>,
         has_children -> Bool,
         child_count -> Integer,

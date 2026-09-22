@@ -55,12 +55,12 @@ ApplicationWindow {
     /// An **alias** to the checkbox rather than a separate property mirroring
     /// it: a `CheckBox` assigns its own `checked` when the user clicks it,
     /// which replaces whatever binding was written onto that property -- so a
-    /// mirrored `checked: root.show_blurbs` silently stops tracking after the
+    /// mirrored `checked: root.show_summaries` silently stops tracking after the
     /// first click. With one piece of state there is nothing to fall out of
     /// sync. This is the idiom the settings window already uses
     /// (`AppSettingsWindow.qml`: imperative assignment at load, handler on
     /// change, alias where another component needs to read it).
-    property alias show_blurbs: blurb_toggle.checked
+    property alias show_summaries: summaries_toggle.checked
 
     // ------------------------------------------------------------------
     // Level state
@@ -120,7 +120,7 @@ ApplicationWindow {
     Component.onCompleted: {
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.tree_is_available = SuttaBridge.nav_tree_is_available();
-        blurb_toggle.checked = SuttaBridge.get_show_navigation_blurbs();
+        summaries_toggle.checked = SuttaBridge.get_show_navigation_blurbs();
         logger.info("SuttaNavigationWindow: opened, tree_is_available = " + root.tree_is_available);
 
         // Keep the first level query off the first-paint path: the window is
@@ -302,21 +302,32 @@ ApplicationWindow {
         root.rebuild_rows();
     }
 
+    /// Enter a level, and set the breadcrumbs to that level's **full path**.
+    ///
+    /// The path is recomputed from the node's own ancestry rather than
+    /// appended to the path the user happened to walk. Appending made the bar
+    /// a history of what had been pressed, which is not where the user is: a
+    /// tree row (FR-33) can sit several levels below the current one, so
+    /// expanding Suttapiṭaka, then Majjhimanikāya, and entering Mūlapaṇṇāsa
+    /// read `All › Mūlapaṇṇāsa` instead of
+    /// `All › Suttapiṭaka › Majjhimanikāya › Mūlapaṇṇāsa`.
+    ///
+    /// Walking the ancestry also makes one function serve every route into a
+    /// level -- a level row, a tree row at any depth, and a flat filter hit,
+    /// whose ancestors are not on the current path at all -- so the bar cannot
+    /// say different things about the same level depending on how it was
+    /// reached. For a level row it produces exactly what appending did.
     function enter_level(node) {
-        let segments = root.breadcrumbs.slice();
+        let segments = root.ancestor_segments(node);
         segments.push({ node_uid: node.node_uid, title: root.node_title(node) });
         root.breadcrumbs = segments;
         root.load_level(node.node_uid);
     }
 
-    /// Entering a level from a flat filter hit, whose ancestors are not on the
-    /// current breadcrumb path. Clearing the filter input is what returns the
-    /// window to the tree, now standing at that level.
+    /// Entering a level from a flat filter hit. Clearing the filter input is
+    /// what returns the window to the tree, now standing at that level.
     function enter_level_from_filter(node) {
-        let segments = root.ancestor_segments(node);
-        segments.push({ node_uid: node.node_uid, title: root.node_title(node) });
-        root.breadcrumbs = segments;
-        root.load_level(node.node_uid);
+        root.enter_level(node);
         filter_input.text = "";
     }
 
@@ -485,9 +496,14 @@ ApplicationWindow {
                 onClicked: filter_input.text = ""
             }
 
+            // "Summaries", not "Blurbs": the control is for readers, and
+            // `blurb` is SuttaCentral's word for the data rather than one a
+            // reader has to learn. The stored setting and the bridge keep the
+            // `blurb` name -- renaming the persisted key would silently reset
+            // everyone's preference, and it is the data's name that is right.
             CheckBox {
-                id: blurb_toggle
-                text: "Blurbs"
+                id: summaries_toggle
+                text: "Summaries"
                 font.pointSize: root.pointSize
 
                 // The shipped default, replaced by the stored setting in
@@ -558,7 +574,7 @@ ApplicationWindow {
                     is_tree_row: level_item.modelData.is_tree_row
                     depth: level_item.modelData.depth
                     pointSize: root.pointSize
-                    show_blurbs: root.show_blurbs
+                    show_summaries: root.show_summaries
                     // -1 until the level's counts have been resolved, and for
                     // a tree row, which never shows the indicator.
                     translation_count: (!level_item.modelData.is_tree_row
@@ -605,10 +621,16 @@ ApplicationWindow {
                     is_filter_row: true
                     breadcrumb_text: (filter_item.modelData.breadcrumbs || []).join(" › ")
                     pointSize: root.pointSize
-                    show_blurbs: root.show_blurbs
+                    show_summaries: root.show_summaries
+                    // A filter hit shows its summary like any other row now,
+                    // so its "more" button needs the same per-row expansion
+                    // state -- which is keyed by node_uid and so is shared
+                    // with the level list.
+                    blurb_expanded: !!root.blurb_expanded_uids[filter_item.modelData.node.node_uid]
 
                     onEnter_level: root.enter_level_from_filter(filter_item.modelData.node)
                     onOpen_text: root.open_node(filter_item.modelData.node)
+                    onToggle_blurb: root.toggle_blurb(filter_item.modelData.node)
                 }
             }
         }
