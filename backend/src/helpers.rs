@@ -203,18 +203,20 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
         ref_str = ref_str[..ref_str.len() - 4].to_string();
     }
 
-    // FIXME: convert Regex to lazy_static
+    lazy_static! {
+        // sn22.57_a -> sn22.57
+        static ref RE_TRAILING_A: Regex = Regex::new(r"_a$").unwrap();
+        // an2.19_an3.29 -> an2.19 ; an3.29_sn22.57 -> an3.29
+        static ref RE_TRAILING_REF: Regex = Regex::new(r"_[as]n.*$").unwrap();
+        // dn2-a -> dn-a2
+        static ref RE_ATTHAKATHA: Regex = Regex::new(r"([a-z-]+)([0-9-]+)-a").unwrap();
+        // pli-tv-bu-vb-as1-7 -> group "pli-tv-bu-vb-as", numeric "1-7"
+        static ref RE_GROUP_NUMERIC: Regex = Regex::new(r"([a-z-]+)([0-9-]+)").unwrap();
+    }
 
-    // sn22.57_a -> sn22.57
-    ref_str = regex::Regex::new(r"_a$").unwrap()
-        .replace(&ref_str, "")
-        .to_string();
+    ref_str = RE_TRAILING_A.replace(&ref_str, "").to_string();
 
-    // an2.19_an3.29 -> an2.19
-    // an3.29_sn22.57 -> an3.29
-    ref_str = regex::Regex::new(r"_[as]n.*$").unwrap()
-        .replace(&ref_str, "")
-        .to_string();
+    ref_str = RE_TRAILING_REF.replace(&ref_str, "").to_string();
 
     // snp1.2(33-34) -> snp1.2
     if ref_str == "snp1.2(33-34)" {
@@ -224,9 +226,7 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
     // Atthakata
     if ref_str.ends_with("-a") {
         // dn2-a -> dn-a2
-        ref_str = regex::Regex::new(r"([a-z-]+)([0-9-]+)-a").unwrap()
-            .replace(&ref_str, "${1}-a${2}")
-            .to_string();
+        ref_str = RE_ATTHAKATHA.replace(&ref_str, "${1}-a${2}").to_string();
     }
 
     if !ref_str.chars().any(|c| c.is_ascii_digit()) {
@@ -244,8 +244,7 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
         }
         (parts[0].to_string(), parts[1].to_string())
     } else {
-        let re = regex::Regex::new(r"([a-z-]+)([0-9-]+)").unwrap();
-        let caps = re.captures(&ref_str)?;
+        let caps = RE_GROUP_NUMERIC.captures(&ref_str)?;
         // FIXME: if not m: logger.warn(f"Cannot determine range for {ref}")
         (
             caps.get(1)?.as_str().to_string(), // group
