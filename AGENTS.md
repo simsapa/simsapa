@@ -1627,6 +1627,12 @@ The SQLite database is at:
 
 Use this path for any tests or experimental scripts that need to query the actual database or access runtime assets.
 
+**Never commit `appdata.sqlite3`** (or any other `*.sqlite3` database) — it is
+a huge file. It is listed in `.gitignore`; do not force-add it, and check
+`git status` / `git show --stat` before committing whenever a task wrote to a
+database (e.g. `build-navigation-tree`, `import-cst`, a bootstrap run). Databases
+are rebuilt by the bootstrap, not versioned.
+
 ## Build/Test Commands
 
 ### Development Build
