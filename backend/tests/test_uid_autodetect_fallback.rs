@@ -42,7 +42,7 @@ fn dhamma_1_01_self_corrects_via_normalized_uidmatch() {
     };
 
     // The human display form is auto-detected as uid-like...
-    let uid_query = query_text_to_uid_field_query("dhamma 1.01");
+    let uid_query = query_text_to_uid_field_query("dhamma 1.01", &SearchArea::Dictionary);
     assert!(
         uid_query.starts_with("uid:"),
         "expected 'dhamma 1.01' to auto-detect as uid-like, got '{uid_query}'"

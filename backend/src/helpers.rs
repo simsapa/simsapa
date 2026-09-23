@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
 
 use crate::app_settings::SuttaLayout;
-use crate::types::{SearchResult, WordInfo, WordProcessingOptions, WordProcessingResult, ProcessedWord, UnrecognizedWord};
+use crate::types::{SearchArea, SearchResult, WordInfo, WordProcessingOptions, WordProcessingResult, ProcessedWord, UnrecognizedWord};
 use crate::lookup::*;
 use crate::logger::{error, info};
 
@@ -24,8 +24,18 @@ lazy_static! {
     // r"(?i)(?<!/)\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]*)\b"
     // r"(?i)(?<!/)\b(D|DN|M|MN|S|SN|A|AN|Pv|Vv|Vin|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]+([ivxIVX]+)[ \.]+(\d[\d\.]*)\b"
     // (?<!/) error: look-around, including look-ahead and look-behind, is not supported
+    //
+    // Also the other Khuddaka and Abhidhamma collections with numbered uids
+    // (Ja 1, Mil 3.1.1, Kv 1, Tha-ap 12). Several have the same shape as a DPD
+    // headword with a disambiguating number (`ja 1.1`, `ya 1.1`, `ne 1`,
+    // `patthana 1`), which is why `query_text_to_uid_field_query` never tries
+    // this pattern in the Dictionary area.
+    //
+    // The number takes an optional range (`Dhp 1-20`, `SN 30.7-16`). Without it
+    // the match stopped at the hyphen, `Dhp 1` was converted as a verse number,
+    // and the typed `-20` was left dangling: `uid:dhp1-20-20`.
     pub static ref RE_ALL_BOOK_SUTTA_REF: Regex = Regex::new(
-        r"(?i)\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ \.]*(\d[\d\.:]*)\b"
+        r"(?i)\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp|ja|mil|cp|bv|mnd|cnd|ne|pe|ps|ds|vb|dt|pp|kv|ya|patthana|tha-ap|thi-ap)[ \.]*(\d[\d\.:]*(?:-\d[\d\.:]*)?)\b"
     ).unwrap();
 
     // Vin.iii.40; AN.i.78; D iii 264; SN i 190; M. III. 203.
@@ -54,19 +64,29 @@ pub fn is_pts_sutta_ref(reference: &str) -> bool {
     RE_ALL_PTS_VOL_SUTTA_REF.is_match(reference)
 }
 
-pub fn query_text_to_uid_field_query(query_text: &str) -> String {
+/// Rewrite a search query as a `uid:` query when it names a uid or a
+/// reference **of the given search area**; otherwise return it unchanged
+/// (lowercased and trimmed).
+///
+/// The area decides which patterns are tried, and that is what keeps the
+/// areas from colliding: `ja 1.1` is a DPD headword in the Dictionary and the
+/// Jātaka in Suttas, `dhamma 1.01` is a dictionary uid and not a sutta, and a
+/// sutta reference means nothing to a dictionary lookup.
+///
+/// - **Suttas:** sutta uids and references (`sn56.11`, `SN 56.11`, `Dhp 182`).
+/// - **Library:** book uids (`bmc.0`) and sutta references, except `pp 12`,
+///   which in a book is a page reference rather than the Puggalapaññatti.
+/// - **Dictionary:** dictionary uids (`34626/dpd`, `dhamma 1.01`).
+/// - **Every area:** an explicit `uid:` prefix, and a uid with its source
+///   suffix (`sn56.11/pli`, `dhamma 1.01/dpd`), which names its own kind.
+pub fn query_text_to_uid_field_query(query_text: &str, area: &SearchArea) -> String {
     let query_text = query_text.trim().to_lowercase();
     if query_text.starts_with("uid:") {
         return query_text.to_string();
     }
 
-    // Detect if query is already uid-like, e.g. sn56.11/pli/ms
-    if is_complete_sutta_uid(&query_text) {
-        return format!("uid:{}", query_text);
-    }
-
-    // Or it could be a partial uid, e.g. sn56.11/pli
     lazy_static! {
+        // A uid carrying its source suffix, e.g. sn56.11/pli, 34626/dpd
         static ref re_partial_uid: Regex = Regex::new(r"/[a-z0-9-]+$").unwrap();
         // Match direct uid formats with dots or hyphens in the number part
         // e.g. dhp320-333, sn56.11, thag20.1
@@ -94,25 +114,63 @@ pub fn query_text_to_uid_field_query(query_text: &str) -> String {
         // - dict_words UID with disambiguating number: "dhamma 1.01" or "dhamma 1.01/dpd"
         // Format: word (Pāli or ASCII letters, at least 2 chars) + space + disambiguating number (e.g. 1, 1.01, 2.1)
         // Optionally followed by /dpd or other dictionary source
-        // IMPORTANT: Must NOT match sutta references like "SN 44.22" or "Dhp 182"
-        // Sutta refs have 2-4 letter abbreviations; dict words are typically longer Pāli words
-        // We use is_book_sutta_ref() to exclude sutta reference patterns
         static ref re_dict_word_uid: Regex = Regex::new(r"^[a-zāīūṁṃṅñṭḍṇḷ]{2,} \d+(\.\d+)?(/[a-z]+)?$").unwrap();
     }
+
     if re_partial_uid.is_match(&query_text) {
         return format!("uid:{}", query_text);
     }
 
-    // Check for dictionary UID patterns
+    match area {
+        SearchArea::Dictionary => dictionary_uid_query(&query_text, &re_dpd_headword_uid, &re_dict_word_uid),
+        SearchArea::Suttas | SearchArea::Library => {
+            // `Th 1.1`, `thi1.1`, `Thī 10` -> the collection's uid prefix,
+            // before any uid pattern sees them.
+            let query_text = canonical_thag_thig(&query_text);
+            // Detect if query is already uid-like, e.g. sn56.11/pli/ms
+            if is_complete_sutta_uid(&query_text) {
+                return format!("uid:{}", query_text);
+            }
+
+            // Detect direct uid formats like dhp320-333, sn56.11
+            // This should match formats with dots or hyphens (structural separators in UIDs)
+            if re_direct_uid.is_match(&query_text) || re_thag_thig_uid.is_match(&query_text) {
+                return format!("uid:{}", query_text);
+            }
+
+            // Detect other collection uid formats like pli-tv-kd1, mil3.1.1, ja1.
+            // Checked before the sutta ref replacement, which would otherwise rewrite
+            // an embedded ref: dummy-sn12.72-81 -> dummy-uid:sn12.72-81
+            if re_hyphenated_uid.is_match(&query_text)
+                || re_dotted_uid.is_match(&query_text)
+                || re_collection_uid.is_match(&query_text)
+            {
+                return format!("uid:{}", query_text);
+            }
+
+            // Detect book UIDs (e.g. bmc, bmc.0)
+            // This should be checked after sutta patterns to avoid false matches
+            // Only match if it doesn't start with a sutta abbreviation
+            if *area == SearchArea::Library
+                && re_book_uid.is_match(&query_text)
+                && !re_sutta_prefix.is_match(&query_text)
+            {
+                return format!("uid:{}", query_text);
+            }
+
+            sutta_refs_to_uid_query(&query_text, area)
+        }
+    }
+}
+
+fn dictionary_uid_query(query_text: &str, re_dpd_headword_uid: &Regex, re_dict_word_uid: &Regex) -> String {
     // DPD headword numeric UID: 34626/dpd
-    if re_dpd_headword_uid.is_match(&query_text) {
+    if re_dpd_headword_uid.is_match(query_text) {
         return format!("uid:{}", query_text);
     }
 
     // dict_words UID with disambiguating number: "dhamma 1.01" or "dhamma 1.01/dpd"
-    // But NOT sutta references like "SN 44.22" or "Dhp 182"
-    // Use is_book_sutta_ref() to exclude sutta reference patterns
-    if re_dict_word_uid.is_match(&query_text) && !is_book_sutta_ref(&query_text) {
+    if re_dict_word_uid.is_match(query_text) {
         // If no dictionary suffix, assume /dpd
         if query_text.contains('/') {
             return format!("uid:{}", query_text);
@@ -121,52 +179,85 @@ pub fn query_text_to_uid_field_query(query_text: &str) -> String {
         }
     }
 
-    // Detect direct uid formats like dhp320-333, sn56.11
-    // This should match formats with dots or hyphens (structural separators in UIDs)
-    if re_direct_uid.is_match(&query_text) || re_thag_thig_uid.is_match(&query_text) {
-        return format!("uid:{}", query_text);
+    query_text.to_string()
+}
+
+/// Rewrite the short forms of the Theragāthā and Therīgāthā to the uid prefix
+/// of the collection, when a number follows: `th`, `tha` → `thag`, and `thi`,
+/// `thī`, `thīg` → `thig`. `Th 1.1` → `thag 1.1`, `thi1.1` → `thig1.1`.
+///
+/// Every form is in use -- `Th` and `Thī` are the PTS abbreviations, `Tha` and
+/// `Thi` are common elsewhere -- and none is a uid: without this, `th1.1` and
+/// `thi1.1` were passed through as uids that name nothing. The verse-number
+/// conversion (`Th 50` → `thag1.50`) then applies to the canonical form.
+/// Requiring a digit after the prefix leaves `tha-ap12` and `thi-ap1` alone.
+pub fn canonical_thag_thig(query_text: &str) -> String {
+    lazy_static! {
+        static ref RE_THAG_THIG_ALIAS: Regex =
+            Regex::new(r"^(?i)(thag|thīg|thig|thā|tha|thī|thi|th)([ \.]*\d)").unwrap();
+    }
+    RE_THAG_THIG_ALIAS
+        .replace(query_text, |caps: &regex::Captures| {
+            let prefix = caps[1].to_lowercase();
+            let canonical = if prefix.starts_with("thi") || prefix.starts_with("thī") {
+                "thig"
+            } else {
+                "thag"
+            };
+            format!("{}{}", canonical, &caps[2])
+        })
+        .into_owned()
+}
+
+/// The collection and number of a query that is **entirely** a sutta ref:
+/// `SN 56:11` → `("sn", "56.11")`, `Dhp 1-20` → `("dhp", "1-20")`.
+///
+/// Sentence punctuation after the ref is allowed (`DN 1.`), a colon is read
+/// as a dot (`SN 56:11` is how some translations cite, and no uid contains a
+/// colon), and a trailing dot is dropped. `None` for a ref inside a longer
+/// query.
+pub fn whole_sutta_ref(query_text: &str) -> Option<(String, String)> {
+    let query_text = canonical_thag_thig(query_text.trim());
+    let query_text = query_text.as_str();
+    let cap = RE_ALL_BOOK_SUTTA_REF.captures(query_text)?;
+    let full_match = cap.get(0)?;
+    if full_match.start() != 0 || full_match.end() != query_text.trim_end_matches(['.', ':']).len() {
+        return None;
+    }
+    let nikaya = cap.get(1)?.as_str().to_lowercase();
+    let number = cap.get(2)?.as_str().replace(':', ".");
+    Some((nikaya, number.trim_end_matches('.').to_string()))
+}
+
+/// A query that is **entirely** a sutta ref, such as 'SN 56.11', becomes the
+/// query expression uid:sn56.11. Anything else is returned unchanged.
+///
+/// Only the whole query, never a ref inside a longer one. The result is
+/// searched in whatever mode the query was typed in, and ContainsMatch and
+/// FulltextMatch treat an embedded `uid:mn118` as literal text -- so
+/// rewriting `anapanassati mn 118` made the search find nothing, and with
+/// prefixes as short as `pe`, `pp` and `ya` in the pattern, ordinary phrases
+/// would be rewritten too.
+fn sutta_refs_to_uid_query(query_text: &str, area: &SearchArea) -> String {
+    let Some((nikaya, number)) = whole_sutta_ref(query_text) else {
+        return query_text.to_string();
+    };
+
+    // `pp 12` in a book is a page reference.
+    if *area == SearchArea::Library && nikaya == "pp" {
+        return query_text.to_string();
     }
 
-    // Detect other collection uid formats like pli-tv-kd1, mil3.1.1, ja1.
-    // Checked before the sutta ref replacement, which would otherwise rewrite
-    // an embedded ref: dummy-sn12.72-81 -> dummy-uid:sn12.72-81
-    if re_hyphenated_uid.is_match(&query_text)
-        || re_dotted_uid.is_match(&query_text)
-        || re_collection_uid.is_match(&query_text)
-    {
-        return format!("uid:{}", query_text);
+    // Handle special cases for Dhp, Thag, and Thig verse numbers
+    // Try to convert verse references using the helper function
+    let simple_ref = format!("{}{}", nikaya, number);
+    if let Some(converted_uid) = verse_sutta_ref_to_uid(&simple_ref) {
+        // Successfully converted verse reference to proper UID
+        format!("uid:{}", converted_uid)
+    } else {
+        // Not a verse reference, use the standard format
+        format!("uid:{}", simple_ref)
     }
-
-    // Detect book UIDs (e.g. bmc, bmc.0)
-    // This should be checked after sutta patterns to avoid false matches
-    // Only match if it doesn't start with a sutta abbreviation
-    if re_book_uid.is_match(&query_text) && !re_sutta_prefix.is_match(&query_text) {
-        return format!("uid:{}", query_text);
-    }
-
-    // Replace user input sutta refs such as 'SN 56.11' with query expression uid:sn56.11
-    let mut result = query_text.to_string();
-
-    for cap in RE_ALL_BOOK_SUTTA_REF.captures_iter(&query_text) {
-        let full_match = cap.get(0).unwrap().as_str();
-        let nikaya = cap.get(1).unwrap().as_str().to_lowercase();
-        let number = cap.get(2).unwrap().as_str();
-
-        // Handle special cases for Dhp, Thag, and Thig verse numbers
-        // Try to convert verse references using the helper function
-        let simple_ref = format!("{}{}", nikaya, number);
-        let replacement = if let Some(converted_uid) = verse_sutta_ref_to_uid(&simple_ref) {
-            // Successfully converted verse reference to proper UID
-            format!("uid:{}", converted_uid)
-        } else {
-            // Not a verse reference, use the standard format
-            format!("uid:{}{}", nikaya, number)
-        };
-
-        result = result.replace(full_match, &replacement);
-    }
-
-    result
 }
 
 pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
@@ -6332,141 +6423,251 @@ mod tests {
     }
 
     #[test]
+    fn test_query_text_to_uid_other_collections() {
+        let suttas = SearchArea::Suttas;
+        assert_eq!(query_text_to_uid_field_query("Mil 3.1.1", &suttas), "uid:mil3.1.1");
+        assert_eq!(query_text_to_uid_field_query("Kv 1", &suttas), "uid:kv1");
+        assert_eq!(query_text_to_uid_field_query("Cp 1", &suttas), "uid:cp1");
+        assert_eq!(query_text_to_uid_field_query("Tha-ap 12", &suttas), "uid:tha-ap12");
+        assert_eq!(query_text_to_uid_field_query("mnd 1", &suttas), "uid:mnd1");
+        assert_eq!(query_text_to_uid_field_query("Ja 1", &suttas), "uid:ja1");
+        assert_eq!(query_text_to_uid_field_query("ne 1", &suttas), "uid:ne1");
+        assert_eq!(query_text_to_uid_field_query("Pp 12", &suttas), "uid:pp12");
+        assert_eq!(query_text_to_uid_field_query("patthana 1", &suttas), "uid:patthana1");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_areas_do_not_collide() {
+        // The same text is a DPD headword in the Dictionary and a sutta
+        // reference in Suttas.
+        let dict = SearchArea::Dictionary;
+        assert_eq!(query_text_to_uid_field_query("ja 1.1", &dict), "uid:ja 1.1/dpd");
+        assert_eq!(query_text_to_uid_field_query("ne 1", &dict), "uid:ne 1/dpd");
+        assert_eq!(query_text_to_uid_field_query("patthana 1", &dict), "uid:patthana 1/dpd");
+        assert_eq!(query_text_to_uid_field_query("ja 1.1", &SearchArea::Suttas), "uid:ja1.1");
+
+        // A sutta reference is not a dictionary query, and a dictionary uid
+        // is not a sutta query.
+        assert_eq!(query_text_to_uid_field_query("SN 44.22", &dict), "uid:sn 44.22/dpd");
+        assert_eq!(query_text_to_uid_field_query("sn56.11", &dict), "sn56.11");
+        assert_eq!(query_text_to_uid_field_query("dhamma 1.01", &SearchArea::Suttas), "dhamma 1.01");
+
+        // A uid with its source suffix names its own kind in every area.
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("sn56.11/pli", &area), "uid:sn56.11/pli");
+            assert_eq!(query_text_to_uid_field_query("34626/dpd", &area), "uid:34626/dpd");
+        }
+    }
+
+    #[test]
+    fn test_query_text_to_uid_ranges_colons_and_punctuation() {
+        let suttas = SearchArea::Suttas;
+        // A range typed with a space. The match used to stop at the hyphen and
+        // convert `Dhp 1` as a verse: uid:dhp1-20-20.
+        assert_eq!(query_text_to_uid_field_query("Dhp 1-20", &suttas), "uid:dhp1-20");
+        assert_eq!(query_text_to_uid_field_query("SN 30.7-16", &suttas), "uid:sn30.7-16");
+        assert_eq!(query_text_to_uid_field_query("AN 1.1-10", &suttas), "uid:an1.1-10");
+        assert_eq!(query_text_to_uid_field_query("SN 56:11", &suttas), "uid:sn56.11");
+        assert_eq!(query_text_to_uid_field_query("AN 5:114", &suttas), "uid:an5.114");
+        assert_eq!(query_text_to_uid_field_query("DN 1.", &suttas), "uid:dn1");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_theragatha_and_therigatha_short_forms() {
+        let suttas = SearchArea::Suttas;
+        for (query, expected) in [
+            ("Thag 1.1", "uid:thag1.1"),
+            ("Th 1.1", "uid:thag1.1"),
+            ("th1.1", "uid:thag1.1"),
+            ("Tha 1.1", "uid:thag1.1"),
+            ("tha1.1", "uid:thag1.1"),
+            ("Thig 1.1", "uid:thig1.1"),
+            ("Thi 1.1", "uid:thig1.1"),
+            ("thi1.1", "uid:thig1.1"),
+            ("Thī 1.1", "uid:thig1.1"),
+            ("Thīg 1.1", "uid:thig1.1"),
+            // Verse numbers convert through the canonical form.
+            ("Th 50", "uid:thag1.50"),
+            ("Tha 50", "uid:thag1.50"),
+            ("Thi 10", "uid:thig1.10"),
+            ("Thī 10", "uid:thig1.10"),
+            // The Apadānas share the prefix and must be left alone.
+            ("Tha-ap 12", "uid:tha-ap12"),
+            ("thi-ap1", "uid:thi-ap1"),
+        ] {
+            assert_eq!(query_text_to_uid_field_query(query, &suttas), expected, "{}", query);
+        }
+        // No number, no rewrite: these are words.
+        assert_eq!(canonical_thag_thig("thi"), "thi");
+        assert_eq!(canonical_thag_thig("thera"), "thera");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_only_a_whole_query_is_rewritten() {
+        // Contains and Fulltext search the returned text as it is, and read an
+        // embedded `uid:mn118` literally, so a ref inside a phrase stays text.
+        let suttas = SearchArea::Suttas;
+        assert_eq!(query_text_to_uid_field_query("anapanassati mn 118", &suttas), "anapanassati mn 118");
+        assert_eq!(query_text_to_uid_field_query("kamma pp 12", &suttas), "kamma pp 12");
+        assert_eq!(query_text_to_uid_field_query("the pe 2 passage", &suttas), "the pe 2 passage");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_library_page_references() {
+        // `pp 12` in a book is a page, not the Puggalapaññatti.
+        let library = SearchArea::Library;
+        assert_eq!(query_text_to_uid_field_query("pp 12", &library), "pp 12");
+        assert_eq!(query_text_to_uid_field_query("MN 1", &library), "uid:mn1");
+        // Book uids are a Library query only.
+        assert_eq!(query_text_to_uid_field_query("bmc.0", &SearchArea::Suttas), "bmc.0");
+    }
+
+    #[test]
     fn test_query_text_to_uid() {
         let query_text = "SN 44.22";
-        let uid = query_text_to_uid_field_query(query_text);
+        let uid = query_text_to_uid_field_query(query_text, &SearchArea::Suttas);
         assert_eq!(uid, "uid:sn44.22");
     }
 
     #[test]
     fn test_query_text_to_uid_dhp_verse() {
         // Test Dhp verse number conversion to chapter uid
-        assert_eq!(query_text_to_uid_field_query("dhp322"), "uid:dhp320-333");
-        assert_eq!(query_text_to_uid_field_query("Dhp 182"), "uid:dhp179-196");
-        assert_eq!(query_text_to_uid_field_query("dhp15"), "uid:dhp1-20");
-        assert_eq!(query_text_to_uid_field_query("Dhp 25"), "uid:dhp21-32");
+        assert_eq!(query_text_to_uid_field_query("dhp322", &SearchArea::Suttas), "uid:dhp320-333");
+        assert_eq!(query_text_to_uid_field_query("Dhp 182", &SearchArea::Suttas), "uid:dhp179-196");
+        assert_eq!(query_text_to_uid_field_query("dhp15", &SearchArea::Suttas), "uid:dhp1-20");
+        assert_eq!(query_text_to_uid_field_query("Dhp 25", &SearchArea::Suttas), "uid:dhp21-32");
     }
 
     #[test]
     fn test_query_text_to_uid_thag_verse() {
         // Test Thag verse number conversion to uid
-        assert_eq!(query_text_to_uid_field_query("Thag 1207"), "uid:thag20.1");
-        assert_eq!(query_text_to_uid_field_query("thag50"), "uid:thag1.50");
+        assert_eq!(query_text_to_uid_field_query("Thag 1207", &SearchArea::Suttas), "uid:thag20.1");
+        assert_eq!(query_text_to_uid_field_query("thag50", &SearchArea::Suttas), "uid:thag1.50");
     }
 
     #[test]
     fn test_query_text_to_uid_thig_verse() {
         // Test Thig verse number conversion to uid
-        assert_eq!(query_text_to_uid_field_query("thig10"), "uid:thig1.10");
+        assert_eq!(query_text_to_uid_field_query("thig10", &SearchArea::Suttas), "uid:thig1.10");
     }
 
     #[test]
     fn test_query_text_to_uid_direct_uid_formats() {
         // Test that direct uid formats are recognized and preserved
-        assert_eq!(query_text_to_uid_field_query("dhp320-333"), "uid:dhp320-333");
-        assert_eq!(query_text_to_uid_field_query("dhp1-20"), "uid:dhp1-20");
-        assert_eq!(query_text_to_uid_field_query("mn1"), "uid:mn1");
-        assert_eq!(query_text_to_uid_field_query("sn56.11"), "uid:sn56.11");
-        assert_eq!(query_text_to_uid_field_query("thag20.1"), "uid:thag20.1");
-        assert_eq!(query_text_to_uid_field_query("an4.10"), "uid:an4.10");
-        assert_eq!(query_text_to_uid_field_query("dn1"), "uid:dn1");
+        assert_eq!(query_text_to_uid_field_query("dhp320-333", &SearchArea::Suttas), "uid:dhp320-333");
+        assert_eq!(query_text_to_uid_field_query("dhp1-20", &SearchArea::Suttas), "uid:dhp1-20");
+        assert_eq!(query_text_to_uid_field_query("mn1", &SearchArea::Suttas), "uid:mn1");
+        assert_eq!(query_text_to_uid_field_query("sn56.11", &SearchArea::Suttas), "uid:sn56.11");
+        assert_eq!(query_text_to_uid_field_query("thag20.1", &SearchArea::Suttas), "uid:thag20.1");
+        assert_eq!(query_text_to_uid_field_query("an4.10", &SearchArea::Suttas), "uid:an4.10");
+        assert_eq!(query_text_to_uid_field_query("dn1", &SearchArea::Suttas), "uid:dn1");
     }
 
     #[test]
     fn test_query_text_to_uid_other_collection_formats() {
         // Hyphenated prefixes
-        assert_eq!(query_text_to_uid_field_query("pli-tv-kd1"), "uid:pli-tv-kd1");
-        assert_eq!(query_text_to_uid_field_query("PLI-TV-KD1"), "uid:pli-tv-kd1");
-        assert_eq!(query_text_to_uid_field_query("pli-tv-bi-vb-as1-7"), "uid:pli-tv-bi-vb-as1-7");
-        assert_eq!(query_text_to_uid_field_query("pli-tv-pvr1.2"), "uid:pli-tv-pvr1.2");
-        assert_eq!(query_text_to_uid_field_query("tha-ap12"), "uid:tha-ap12");
-        assert_eq!(query_text_to_uid_field_query("uv-kg3"), "uid:uv-kg3");
-        assert_eq!(query_text_to_uid_field_query("dummy-sn12.72-81"), "uid:dummy-sn12.72-81");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-kd1", &SearchArea::Suttas), "uid:pli-tv-kd1");
+        assert_eq!(query_text_to_uid_field_query("PLI-TV-KD1", &SearchArea::Suttas), "uid:pli-tv-kd1");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-bi-vb-as1-7", &SearchArea::Suttas), "uid:pli-tv-bi-vb-as1-7");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-pvr1.2", &SearchArea::Suttas), "uid:pli-tv-pvr1.2");
+        assert_eq!(query_text_to_uid_field_query("tha-ap12", &SearchArea::Suttas), "uid:tha-ap12");
+        assert_eq!(query_text_to_uid_field_query("uv-kg3", &SearchArea::Suttas), "uid:uv-kg3");
+        assert_eq!(query_text_to_uid_field_query("dummy-sn12.72-81", &SearchArea::Suttas), "uid:dummy-sn12.72-81");
         // Dotted number parts
-        assert_eq!(query_text_to_uid_field_query("mil3.1.1"), "uid:mil3.1.1");
-        assert_eq!(query_text_to_uid_field_query("mv1.6.13-14"), "uid:mv1.6.13-14");
-        assert_eq!(query_text_to_uid_field_query("patthana2.6-7"), "uid:patthana2.6-7");
+        assert_eq!(query_text_to_uid_field_query("mil3.1.1", &SearchArea::Suttas), "uid:mil3.1.1");
+        assert_eq!(query_text_to_uid_field_query("mv1.6.13-14", &SearchArea::Suttas), "uid:mv1.6.13-14");
+        assert_eq!(query_text_to_uid_field_query("patthana2.6-7", &SearchArea::Suttas), "uid:patthana2.6-7");
         // Prefix and plain number
-        assert_eq!(query_text_to_uid_field_query("ja1"), "uid:ja1");
-        assert_eq!(query_text_to_uid_field_query("pdhp1-13"), "uid:pdhp1-13");
+        assert_eq!(query_text_to_uid_field_query("ja1", &SearchArea::Suttas), "uid:ja1");
+        assert_eq!(query_text_to_uid_field_query("pdhp1-13", &SearchArea::Suttas), "uid:pdhp1-13");
 
         // Hyphenated words without a number are not uids
-        assert_eq!(query_text_to_uid_field_query("self-control"), "self-control");
-        assert_eq!(query_text_to_uid_field_query("pli-tv-kd"), "pli-tv-kd");
+        assert_eq!(query_text_to_uid_field_query("self-control", &SearchArea::Suttas), "self-control");
+        assert_eq!(query_text_to_uid_field_query("pli-tv-kd", &SearchArea::Suttas), "pli-tv-kd");
     }
 
     #[test]
     fn test_query_text_to_uid_book_uids() {
         // Test that book UIDs with chapter numbers are recognized and converted to uid: format
         // Book UIDs MUST contain a dot to avoid matching regular English words
-        assert_eq!(query_text_to_uid_field_query("bmc.0"), "uid:bmc.0");
-        assert_eq!(query_text_to_uid_field_query("bmc.1"), "uid:bmc.1");
-        assert_eq!(query_text_to_uid_field_query("test-book.5"), "uid:test-book.5");
-        assert_eq!(query_text_to_uid_field_query("my_book.10"), "uid:my_book.10");
+        assert_eq!(query_text_to_uid_field_query("bmc.0", &SearchArea::Library), "uid:bmc.0");
+        assert_eq!(query_text_to_uid_field_query("bmc.1", &SearchArea::Library), "uid:bmc.1");
+        assert_eq!(query_text_to_uid_field_query("test-book.5", &SearchArea::Library), "uid:test-book.5");
+        assert_eq!(query_text_to_uid_field_query("my_book.10", &SearchArea::Library), "uid:my_book.10");
 
         // Book UIDs without chapter numbers are NOT automatically converted
         // to avoid matching regular words - users must use explicit uid: prefix
-        assert_eq!(query_text_to_uid_field_query("bmc"), "bmc");
-        assert_eq!(query_text_to_uid_field_query("test-book"), "test-book");
-        assert_eq!(query_text_to_uid_field_query("my_book"), "my_book");
+        assert_eq!(query_text_to_uid_field_query("bmc", &SearchArea::Library), "bmc");
+        assert_eq!(query_text_to_uid_field_query("test-book", &SearchArea::Library), "test-book");
+        assert_eq!(query_text_to_uid_field_query("my_book", &SearchArea::Library), "my_book");
 
         // Ensure sutta patterns are NOT matched as book UIDs
-        assert_eq!(query_text_to_uid_field_query("mn8"), "uid:mn8");
-        assert_eq!(query_text_to_uid_field_query("dn1"), "uid:dn1");
+        assert_eq!(query_text_to_uid_field_query("mn8", &SearchArea::Library), "uid:mn8");
+        assert_eq!(query_text_to_uid_field_query("dn1", &SearchArea::Library), "uid:dn1");
     }
 
     #[test]
     fn test_query_text_to_uid_regular_words_not_converted() {
         // Test that regular English words are NOT converted to uid: format
         // This prevents false matches that break fulltext search
-        assert_eq!(query_text_to_uid_field_query("heard"), "heard");
-        assert_eq!(query_text_to_uid_field_query("karan"), "karan");
-        assert_eq!(query_text_to_uid_field_query("meditation"), "meditation");
-        assert_eq!(query_text_to_uid_field_query("dharma"), "dharma");
-        assert_eq!(query_text_to_uid_field_query("sutta"), "sutta");
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("heard", &area), "heard");
+        }
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("karan", &area), "karan");
+        }
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("meditation", &area), "meditation");
+        }
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("dharma", &area), "dharma");
+        }
+        for area in [SearchArea::Suttas, SearchArea::Dictionary, SearchArea::Library] {
+            assert_eq!(query_text_to_uid_field_query("sutta", &area), "sutta");
+        }
     }
 
     #[test]
     fn test_query_text_to_uid_dictionary_uids() {
         // Test DPD headword numeric UID: 34626/dpd
-        assert_eq!(query_text_to_uid_field_query("34626/dpd"), "uid:34626/dpd");
-        assert_eq!(query_text_to_uid_field_query("1/dpd"), "uid:1/dpd");
+        assert_eq!(query_text_to_uid_field_query("34626/dpd", &SearchArea::Dictionary), "uid:34626/dpd");
+        assert_eq!(query_text_to_uid_field_query("1/dpd", &SearchArea::Dictionary), "uid:1/dpd");
         assert_eq!(
-            query_text_to_uid_field_query("123456/dpd"),
+            query_text_to_uid_field_query("123456/dpd", &SearchArea::Dictionary),
             "uid:123456/dpd"
         );
 
         // Test dict_words UID with disambiguating number: "dhamma 1.01" -> "uid:dhamma 1.01/dpd"
         assert_eq!(
-            query_text_to_uid_field_query("dhamma 1.01"),
+            query_text_to_uid_field_query("dhamma 1.01", &SearchArea::Dictionary),
             "uid:dhamma 1.01/dpd"
         );
         assert_eq!(
-            query_text_to_uid_field_query("dhamma 1"),
+            query_text_to_uid_field_query("dhamma 1", &SearchArea::Dictionary),
             "uid:dhamma 1/dpd"
         );
         assert_eq!(
-            query_text_to_uid_field_query("kamma 2.1"),
+            query_text_to_uid_field_query("kamma 2.1", &SearchArea::Dictionary),
             "uid:kamma 2.1/dpd"
         );
         assert_eq!(
-            query_text_to_uid_field_query("ñāṇa 1.01"),
+            query_text_to_uid_field_query("ñāṇa 1.01", &SearchArea::Dictionary),
             "uid:ñāṇa 1.01/dpd"
         );
 
         // Test dict_words UID with explicit dictionary source: "dhamma 1.01/dpd"
         assert_eq!(
-            query_text_to_uid_field_query("dhamma 1.01/dpd"),
+            query_text_to_uid_field_query("dhamma 1.01/dpd", &SearchArea::Dictionary),
             "uid:dhamma 1.01/dpd"
         );
         assert_eq!(
-            query_text_to_uid_field_query("dhamma 1/dpd"),
+            query_text_to_uid_field_query("dhamma 1/dpd", &SearchArea::Dictionary),
             "uid:dhamma 1/dpd"
         );
 
         // Regular words without disambiguating numbers should NOT be converted
-        assert_eq!(query_text_to_uid_field_query("dhamma"), "dhamma");
-        assert_eq!(query_text_to_uid_field_query("kamma"), "kamma");
+        assert_eq!(query_text_to_uid_field_query("dhamma", &SearchArea::Dictionary), "dhamma");
+        assert_eq!(query_text_to_uid_field_query("kamma", &SearchArea::Dictionary), "kamma");
     }
 
     // #[test]

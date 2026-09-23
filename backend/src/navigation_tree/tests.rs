@@ -857,3 +857,208 @@ fn the_public_count_api_is_empty_without_app_data() {
     assert!(translation_counts(&["sn56.11/pli/ms".to_string()]).is_empty());
     assert_eq!(translation_counts_json(&["sn56.11/pli/ms".to_string()]), "{}");
 }
+
+// ---------------------------------------------------------------------------
+// The sutta reference shown before a leaf's title.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_mapped_leaf_wants_its_sutta_ref() {
+    let view = view_of("sn56.11", Some("sn56.11/pli/ms"), true, None);
+    assert!(wants_sutta_ref(&view));
+}
+
+#[test]
+fn a_branch_a_cst_division_and_a_redirected_leaf_do_not() {
+    // A branch has no text; a division's stored ref is its file name; a
+    // redirected leaf's ref would be its parallel's, not its own.
+    assert!(!wants_sutta_ref(&view_of("sn56.branch", None, true, None)));
+    assert!(!wants_sutta_ref(&view_of(
+        "cst:s0305m.mul11.xml",
+        Some("s0305m.mul11.xml/pli/cst"),
+        true,
+        Some("s0305m.mul.xml"),
+    )));
+
+    let mut redirected = view_of("pli-tv-bi-vb-pj5", Some("pli-tv-bu-vb-pj1/pli/ms"), true, None);
+    redirected.redirect_uid = Some("pli-tv-bu-vb-pj1".to_string());
+    assert!(!wants_sutta_ref(&redirected));
+}
+
+#[test]
+fn a_mapped_cst_fragment_wants_its_sutta_ref() {
+    // `mn11.att/pli/cst` is a text with a real reference, unlike a division.
+    let view = view_of(
+        "cst:frag:mn11.att/pli/cst",
+        Some("mn11.att/pli/cst"),
+        true,
+        Some("s0201a.att.xml"),
+    );
+    assert!(wants_sutta_ref(&view));
+}
+
+#[test]
+fn sutta_refs_are_looked_up_by_exact_uid_and_skip_empty_values() {
+    let mut db_conn = empty_db();
+    db_conn
+        .batch_execute(
+            "CREATE TABLE suttas (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 uid TEXT NOT NULL,
+                 sutta_ref TEXT NOT NULL
+             );
+             INSERT INTO suttas (uid, sutta_ref) VALUES
+                 ('dn1/pli/ms', 'DN 1'),
+                 ('dn1/en/sujato', 'DN 1'),
+                 ('sn56.11/pli/ms', 'SN 56.11'),
+                 ('xx1/pli/ms', '  ');",
+        )
+        .expect("suttas table");
+
+    let uids = vec![
+        "dn1/pli/ms".to_string(),
+        "sn56.11/pli/ms".to_string(),
+        "xx1/pli/ms".to_string(),
+        "missing/pli/ms".to_string(),
+    ];
+    let refs = sutta_refs_conn(&mut db_conn, &uids).unwrap();
+
+    assert_eq!(refs.get("dn1/pli/ms").map(String::as_str), Some("DN 1"));
+    assert_eq!(refs.get("sn56.11/pli/ms").map(String::as_str), Some("SN 56.11"));
+    assert!(!refs.contains_key("xx1/pli/ms"));
+    assert!(!refs.contains_key("missing/pli/ms"));
+    assert_eq!(refs.len(), 2);
+}
+
+// ---------------------------------------------------------------------------
+// A filter query typed as a sutta reference.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_typed_reference_is_read_as_its_uid() {
+    assert_eq!(ref_query_uids("dn 1"), vec!["dn1"]);
+    assert_eq!(ref_query_uids("DN 1"), vec!["dn1"]);
+    assert_eq!(ref_query_uids("SN 56.11"), vec!["sn56.11"]);
+    assert_eq!(ref_query_uids("sn56.11"), vec!["sn56.11"]);
+    assert_eq!(ref_query_uids("MN 1"), vec!["mn1"]);
+    assert_eq!(ref_query_uids("Mil 3.1.1"), vec!["mil3.1.1"]);
+    assert_eq!(ref_query_uids("tha-ap 12"), vec!["tha-ap12"]);
+}
+
+#[test]
+fn a_reference_that_is_also_a_dpd_headword_is_read_as_the_text() {
+    // `ja 1` and `ne 1` are DPD headwords too, but the tree reads a query the
+    // way the search bar does in the Suttas area.
+    assert_eq!(ref_query_uids("Ja 1"), vec!["ja1"]);
+    assert_eq!(ref_query_uids("ne 1"), vec!["ne1"]);
+}
+
+#[test]
+fn a_verse_reference_keeps_both_readings_literal_first() {
+    // The search bar reads `sn 56` as Suttanipāta verse 56; the tree reader
+    // more likely means the Saccasaṁyutta. Both are offered.
+    assert_eq!(ref_query_uids("sn 56"), vec!["sn56", "snp1.3"]);
+}
+
+#[test]
+fn titles_and_prose_are_not_read_as_references() {
+    for query in ["samyutta", "dhammacakka", "mahavagga", "lion's roar", "the dn 1 sutta", ""] {
+        assert!(ref_query_uids(query).is_empty(), "{:?}", query);
+    }
+}
+
+#[test]
+fn a_reference_with_a_space_finds_the_text() {
+    let mut db_conn = seeded_db();
+    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "SN 56.11", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn56.11"]);
+}
+
+#[test]
+fn the_exact_uid_comes_first_then_the_substring_matches() {
+    let mut db_conn = seeded_db();
+    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "sn 56", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn56", "sn56.11"]);
+}
+
+#[test]
+fn a_reading_that_names_nothing_falls_back_to_the_text_as_typed() {
+    // `ne 1` reads as the Netti uid `ne1`, which this tree does not have, and
+    // `ne1` is no substring of anything either -- so the filter must look for
+    // what was typed, which the English title `Line 1` contains.
+    let mut db_conn = migrated_db();
+    let mut row = node("xx1", None, 0, "Pāli", Some("Line 1"), &[]);
+    row.search_text = build_search_text(row.title_pali.as_deref(), row.title_en.as_deref(), &row.node_uid, None);
+    row.sort_path = join_sort_path(&[], 0);
+    diesel::insert_into(navigation_nodes::table)
+        .values(&row)
+        .execute(&mut db_conn)
+        .expect("insert");
+
+    assert_eq!(ref_query_uids("ne 1"), vec!["ne1"]);
+    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "ne 1", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["xx1"]);
+}
+
+#[test]
+fn a_reference_is_not_matched_through_a_redirected_leafs_text() {
+    let mut db_conn = migrated_db();
+    let mut own = node("pli-tv-bu-vb-pj1", None, 0, "Methunadhamma", None, &[]);
+    own.sutta_uid = Some("pli-tv-bu-vb-pj1/pli/ms".to_string());
+    let mut borrowed = node("pli-tv-bi-vb-pj5", None, 1, "Other", None, &[]);
+    borrowed.sutta_uid = Some("pli-tv-bu-vb-pj1/pli/ms".to_string());
+    borrowed.redirect_uid = Some("pli-tv-bu-vb-pj1".to_string());
+    for row in [&mut own, &mut borrowed] {
+        row.sort_path = join_sort_path(&[], row.sort_index);
+    }
+    diesel::insert_into(navigation_nodes::table)
+        .values(&vec![own, borrowed])
+        .execute(&mut db_conn)
+        .expect("insert");
+
+    let found = exact_uid_nodes_conn(&mut db_conn, "pli-tv-bu-vb-pj1", 50).unwrap();
+    let uids: Vec<&str> = found.iter().map(|n| n.node_uid.as_str()).collect();
+    assert_eq!(uids, vec!["pli-tv-bu-vb-pj1"]);
+}
+
+#[test]
+fn a_reading_that_names_no_node_is_tried_as_a_prefix() {
+    // `kv 1` names no node -- the Kathāvatthu goes straight to `kv1.1` -- so
+    // the reading is matched as a substring before the typed text is.
+    let mut db_conn = seeded_db();
+    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "SN 56.1", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn56.11"]);
+}
+
+#[test]
+fn a_reference_is_read_through_diacritics_colons_ranges_and_punctuation() {
+    assert_eq!(ref_query_uids("Paṭṭhāna 1"), vec!["patthana1"]);
+    assert_eq!(ref_query_uids("SN 56:11"), vec!["sn56.11"]);
+    assert_eq!(ref_query_uids("Dhp 1-20"), vec!["dhp1-20"]);
+    assert_eq!(ref_query_uids("DN 1."), vec!["dn1"]);
+}
+
+#[test]
+fn theragatha_and_therigatha_short_forms_read_as_their_collection() {
+    assert_eq!(ref_query_uids("Th 1.1"), vec!["thag1.1"]);
+    assert_eq!(ref_query_uids("Thī 1.1"), vec!["thig1.1"]);
+    // A verse number keeps both readings: no node is `thig10`, but verse 10
+    // is `thig1.10`.
+    assert_eq!(ref_query_uids("Thi 10"), vec!["thig10", "thig1.10"]);
+}

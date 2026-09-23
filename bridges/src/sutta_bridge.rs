@@ -1170,7 +1170,7 @@ pub mod qobject {
         fn export_succeeded(self: Pin<&mut SuttaBridge>);
 
         #[qinvokable]
-        fn query_text_to_uid_field_query(self: &SuttaBridge, query_text: &QString) -> QString;
+        fn query_text_to_uid_field_query(self: &SuttaBridge, query_text: &QString, search_area: &QString) -> QString;
 
         #[qinvokable]
         fn convert_verse_ref_to_uid(self: &SuttaBridge, sutta_ref: &QString) -> QString;
@@ -2479,8 +2479,16 @@ impl qobject::SuttaBridge {
         }
     }
 
-    pub fn query_text_to_uid_field_query(&self, query_text: &QString) -> QString {
-        QString::from(query_text_to_uid_field_query(&query_text.to_string()))
+    /// `search_area` is the search bar's area name ("Suttas", "Dictionary",
+    /// "Library"); it decides which uid patterns are tried, so a DPD headword
+    /// such as `ja 1.1` is not read as a Jātaka reference, nor the reverse.
+    pub fn query_text_to_uid_field_query(&self, query_text: &QString, search_area: &QString) -> QString {
+        let area = match search_area.to_string().as_str() {
+            "Dictionary" => SearchArea::Dictionary,
+            "Library" => SearchArea::Library,
+            _ => SearchArea::Suttas,
+        };
+        QString::from(query_text_to_uid_field_query(&query_text.to_string(), &area))
     }
 
     /// Convert a verse reference (e.g., "dhp33", "thag50", "thig12") to its proper sutta UID.

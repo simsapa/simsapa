@@ -146,6 +146,10 @@ pub struct ScSpineBuilder {
     /// every row would print its Pāli title twice.
     fallback_pali: HashMap<String, String>,
     fallback_en: HashMap<String, String>,
+    /// Base sutta uid → the translated title stored on the very row the leaf
+    /// opens (`suttas.title_trans`). It outranks every other source of the
+    /// English line: it is the title the corpus itself gives that text.
+    own_trans: HashMap<String, String>,
     /// `relationship/parallels.json`, indexed uid → the other uids in its
     /// groups. See [`ScSpineBuilder::parallel_redirect`].
     parallels: HashMap<String, Vec<String>>,
@@ -175,6 +179,7 @@ impl ScSpineBuilder {
             sutta_uids: HashMap::new(),
             fallback_pali: HashMap::new(),
             fallback_en: HashMap::new(),
+            own_trans: HashMap::new(),
             parallels: HashMap::new(),
             ranged_rows: HashMap::new(),
             redirects: 0,
@@ -200,7 +205,8 @@ impl ScSpineBuilder {
 
         let blurbs = load_blurbs(sc_data_dir)?;
         let parallels = load_parallels(sc_data_dir)?;
-        let (sutta_uids, fallback_pali, fallback_en) = load_sutta_rows(db_conn)?;
+        let SuttaIndex { sutta_uids, fallback_pali, fallback_en, own_trans } =
+            load_sutta_rows(db_conn)?;
         let ranged_rows = index_ranged_rows(&sutta_uids);
 
         Ok(Self {
@@ -211,6 +217,7 @@ impl ScSpineBuilder {
             sutta_uids,
             fallback_pali,
             fallback_en,
+            own_trans,
             ranged_rows,
             parallels,
             redirects: 0,
@@ -483,6 +490,13 @@ impl ScSpineBuilder {
         // The `names` collection first, the imported row second, and nothing
         // at all third -- never an invented title, and never a title taken
         // from a row in the wrong language.
+        //
+        // The English line has one source above `names`: a translated title
+        // saved on the row this leaf opens. It is keyed by the leaf's own uid,
+        // so a redirected leaf never borrows its parallel's title.
+        if let Some(t) = self.own_trans.get(source_uid) {
+            node.title_en = Some(clean(t));
+        }
         if node.title_pali.is_none() {
             node.title_pali = self.fallback_pali.get(source_uid).map(|s| clean(s));
         }
@@ -750,9 +764,12 @@ impl ScSpineBuilder {
 
     fn make_node(&self, node_uid: &str, source_uid: &str, node_type: &str) -> TreeNode {
         let mut node = TreeNode::new(node_uid, node_type);
-        node.title_pali = self.titles_pali.get(source_uid).map(|s| clean(s));
-        node.title_en = self.titles_en.get(source_uid).map(|s| clean(s));
-        node.blurb = self.blurbs.get(source_uid).map(|s| clean(s));
+        // An empty `names` entry is no title at all, and must leave the field
+        // `None` so `make_leaf`'s fallbacks still run.
+        let non_empty = |s: &String| Some(clean(s)).filter(|c| !c.trim().is_empty());
+        node.title_pali = self.titles_pali.get(source_uid).and_then(non_empty);
+        node.title_en = self.titles_en.get(source_uid).and_then(non_empty);
+        node.blurb = self.blurbs.get(source_uid).and_then(non_empty);
         node
     }
 }
@@ -1076,28 +1093,49 @@ fn load_blurbs(sc_data_dir: &Path) -> Result<HashMap<String, String>> {
 /// Index the imported `suttas` rows by their base uid (the part before the
 /// first `/`).
 ///
-/// Three maps, because they answer three different questions:
+/// Four maps, because they answer four different questions:
 ///
 /// - which row a leaf **opens** — a Pāli row where there is one, since the
 ///   navigation tree is a route into the Pāli canon; otherwise the first row by
 ///   uid, which is what keeps a text that exists only in translation openable;
 /// - the Pāli **title** fallback, from a Pāli row;
-/// - the English **title** fallback, from an English row.
+/// - the English **title** fallback, from an English row, preferring the
+///   translators in [`english_title_rank`] order;
+/// - the translated title saved on the opened row itself (`title_trans`).
 ///
-/// The last two must stay separate: a Pāli row's `title` column holds the Pāli
-/// name, so filling the English line from the row that was chosen for opening
-/// would print the same title twice on 1705 of the tree's rows.
-type SuttaIndex = (
-    HashMap<String, String>,
-    HashMap<String, String>,
-    HashMap<String, String>,
-);
+/// The Pāli and English fallbacks must stay separate: a Pāli row's `title`
+/// column holds the Pāli name, so filling the English line from the row that
+/// was chosen for opening would print the same title twice on 1705 of the
+/// tree's rows. `title_trans` is the column that exists to hold the other one.
+struct SuttaIndex {
+    sutta_uids: HashMap<String, String>,
+    fallback_pali: HashMap<String, String>,
+    fallback_en: HashMap<String, String>,
+    own_trans: HashMap<String, String>,
+}
+
+/// Which English translation's title fills the English line when the `names`
+/// collection has none: Sujato, then Brahmali, then any other. Their titles
+/// follow SuttaCentral's own naming, which is what the rest of the tree uses.
+fn english_title_rank(uid: &str) -> u8 {
+    match uid.rsplit('/').next() {
+        Some("sujato") => 0,
+        Some("brahmali") => 1,
+        _ => 2,
+    }
+}
 
 fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
     use simsapa_backend::db::appdata_schema::suttas;
 
-    let rows: Vec<(String, String, Option<String>, Option<String>)> = suttas::table
-        .select((suttas::uid, suttas::language, suttas::title_pali, suttas::title))
+    let rows: Vec<(String, String, Option<String>, Option<String>, Option<String>)> = suttas::table
+        .select((
+            suttas::uid,
+            suttas::language,
+            suttas::title_pali,
+            suttas::title,
+            suttas::title_trans,
+        ))
         .order(suttas::uid.asc())
         .load(db_conn)
         .context("Failed to read the suttas table for navigation-tree leaf resolution")?;
@@ -1106,8 +1144,15 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
     let mut chosen_rank: HashMap<String, u8> = HashMap::new();
     let mut fallback_pali: HashMap<String, String> = HashMap::new();
     let mut fallback_en: HashMap<String, String> = HashMap::new();
+    let mut en_rank: HashMap<String, u8> = HashMap::new();
+    let mut trans_by_uid: HashMap<String, String> = HashMap::new();
 
-    for (uid, language, title_pali, title) in rows {
+    for (uid, language, title_pali, title, title_trans) in rows {
+        if let Some(t) = title_trans.filter(|s| !s.trim().is_empty()) {
+            trans_by_uid.insert(uid.clone(), t.trim().to_string());
+        }
+        let title_rank_en = english_title_rank(&uid);
+
         let base = uid.split('/').next().unwrap_or(&uid).to_string();
         let is_pali = language == "pli";
 
@@ -1133,23 +1178,44 @@ fn load_sutta_rows(db_conn: &mut SqliteConnection) -> Result<SuttaIndex> {
             }
         } else if language == "en" {
             if let Some(t) = first_non_empty(title, title_pali) {
-                fallback_en.entry(base).or_insert(t);
+                let better = en_rank
+                    .get(&base)
+                    .is_none_or(|current| title_rank_en < *current);
+                if better {
+                    en_rank.insert(base.clone(), title_rank_en);
+                    fallback_en.insert(base, t);
+                }
             }
         }
     }
 
+    // Only the row a leaf actually opens contributes: a translated title on
+    // some other edition of the text belongs to that edition.
+    let own_trans: HashMap<String, String> = uids
+        .iter()
+        .filter_map(|(base, full)| trans_by_uid.get(full).map(|t| (base.clone(), t.clone())))
+        .collect();
+
     logger::info(&format!(
-        "sc_spine: {} sutta base uids indexed ({} Pāli, {} English title fallbacks)",
+        "sc_spine: {} sutta base uids indexed ({} Pāli, {} English title fallbacks, {} own translated titles)",
         uids.len(),
         fallback_pali.len(),
-        fallback_en.len()
+        fallback_en.len(),
+        own_trans.len()
     ));
-    Ok((uids, fallback_pali, fallback_en))
+    Ok(SuttaIndex { sutta_uids: uids, fallback_pali, fallback_en, own_trans })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn english_titles_prefer_sujato_then_brahmali_then_any_other() {
+        assert!(english_title_rank("dn1/en/sujato") < english_title_rank("pli-tv-bu-vb-pj1/en/brahmali"));
+        assert!(english_title_rank("pli-tv-bu-vb-pj1/en/brahmali") < english_title_rank("dn1/en/bodhi"));
+        assert_eq!(english_title_rank("dn1/en/bodhi"), english_title_rank("dn1/en/thanissaro"));
+    }
 
     fn group(uid: &str, children: Vec<TreeNode>) -> TreeNode {
         let mut n = TreeNode::new(uid, GROUP);

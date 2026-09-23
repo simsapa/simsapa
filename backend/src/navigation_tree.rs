@@ -30,8 +30,11 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::db::appdata_schema::navigation_nodes;
-use crate::helpers::{consistent_niggahita, pali_to_ascii};
+use crate::helpers::{
+    consistent_niggahita, pali_to_ascii, query_text_to_uid_field_query, whole_sutta_ref,
+};
 use crate::logger::error;
+use crate::types::SearchArea;
 
 /// Separates ancestor `node_uid`s in the materialized `path` column. A path is
 /// delimited at both ends (`|sutta|sutta/linked|sn|`) so that a prefix match is
@@ -351,6 +354,75 @@ fn like_pattern(query: &str) -> Option<String> {
     Some(format!("%{}%", cleaned))
 }
 
+/// The uids a filter query names, when it is typed as a sutta reference or a
+/// uid: `dn 1` → `dn1`, `SN 56.11` → `sn56.11`, `Dhp 182` → the chapter uid.
+///
+/// Two readings, in this order, both kept:
+///
+/// 1. **the reference as typed**, its spaces removed (`sn 56` → `sn56`);
+/// 2. **the Sutta Search window's reading** ([`query_text_to_uid_field_query`]),
+///    so a reference the search bar resolves is one the filter resolves too.
+///
+/// They differ exactly where the search bar converts a verse number: it reads
+/// `sn 56` as Suttanipāta verse 56 (`snp1.3`, `Sn` being the PTS abbreviation),
+/// while a reader browsing the tree most likely means the Saccasaṁyutta. Both
+/// are listed, the literal one first.
+///
+/// Empty when the query is not a single reference — a reading with a space
+/// left in it is prose that merely *contains* a reference.
+pub fn ref_query_uids(query: &str) -> Vec<String> {
+    // Folded first, so `Paṭṭhāna 1` and `Thī 1` read as the ASCII references
+    // the pattern knows. The fold is the filter's own, so it cannot drift from
+    // what `search_text` was folded with.
+    let folded = normalize_for_search(query);
+    let trimmed = folded.trim();
+    let mut uids: Vec<String> = Vec::with_capacity(2);
+
+    if let Some((collection, number)) = whole_sutta_ref(trimmed) {
+        uids.push(format!("{}{}", collection, number));
+    }
+
+    // The tree holds suttas only, so the query is read as the search bar reads
+    // it in the Suttas area.
+    let converted = query_text_to_uid_field_query(trimmed, &SearchArea::Suttas);
+    if let Some(uid) = converted.strip_prefix("uid:") {
+        let uid = uid.trim().trim_end_matches('/');
+        if !uid.is_empty() && !uid.contains(char::is_whitespace) {
+            uids.push(uid.to_string());
+        }
+    }
+
+    // `%` and `_` would be wildcards in the `LIKE` of the exact match.
+    uids.retain(|u| !u.contains(['%', '_']));
+    uids.dedup();
+    uids
+}
+
+/// The nodes a uid names exactly: the node whose own uid it is, and the leaves
+/// that open that text (`dn1` → `dn1/pli/ms`), in tree order.
+///
+/// A redirected leaf is not matched through its `sutta_uid`: that is its
+/// parallel's text, so `pli-tv-bu-vb-pj1` would otherwise list every bhikkhunī
+/// rule served by it.
+fn exact_uid_nodes_conn(
+    db_conn: &mut SqliteConnection,
+    uid: &str,
+    limit: i64,
+) -> QueryResult<Vec<NavigationNode>> {
+    navigation_nodes::table
+        .filter(
+            navigation_nodes::node_uid.eq(uid).or(navigation_nodes::redirect_uid.is_null().and(
+                navigation_nodes::sutta_uid
+                    .eq(uid)
+                    .or(navigation_nodes::sutta_uid.like(format!("{}/%", uid))),
+            )),
+        )
+        .select(NavigationNode::as_select())
+        .order(navigation_nodes::sort_path.asc())
+        .limit(limit)
+        .load::<NavigationNode>(db_conn)
+}
+
 /// Filter the **whole** tree on the Pāli title, the English title, the node uid
 /// and the sutta uid, returning each match with its breadcrumb titles.
 ///
@@ -359,6 +431,10 @@ fn like_pattern(query: &str) -> Option<String> {
 /// `Mahāvaggo`. Branch nodes are matched as well as leaves: the filter is how a
 /// reader who already knows what they want skips the drill-down, and a level
 /// name is as legitimate a thing to search for as a sutta title.
+///
+/// **A query typed as a sutta reference is matched as one** (see
+/// [`ref_query_uids`]): `dn 1` lists DN 1 first, then every node whose
+/// folded fields contain `dn1` — the substring matches a typed `dn1` gives.
 ///
 /// Two statements by design: the matches with their `path` strings, then one
 /// `WHERE node_uid IN (…)` over the union of every match's ancestors. Resolving
@@ -369,20 +445,73 @@ pub fn filter_nodes_conn(
     query: &str,
     limit: i64,
 ) -> QueryResult<Vec<NavigationMatch>> {
-    let pattern = match like_pattern(query) {
-        Some(p) => p,
-        None => return Ok(Vec::new()),
-    };
+    let ref_uids = ref_query_uids(query);
 
-    let matches: Vec<NavigationNode> = navigation_nodes::table
-        .filter(navigation_nodes::search_text.like(&pattern))
-        .select(NavigationNode::as_select())
-        // Tree order, so a match sits where browsing would have found it --
-        // and so the LIMIT keeps the first N in that order rather than the
-        // first N alphabetically. See `join_sort_path`.
-        .order(navigation_nodes::sort_path.asc())
-        .limit(limit)
-        .load::<NavigationNode>(db_conn)?;
+    let mut matches: Vec<NavigationNode> = Vec::new();
+    // The first reading that named a node. The substring pass runs on it,
+    // because `dn 1` as typed contains a space that no folded field has.
+    let mut hit_uid: Option<&str> = None;
+    for uid in &ref_uids {
+        if (matches.len() as i64) >= limit {
+            break;
+        }
+        let found = exact_uid_nodes_conn(db_conn, uid, limit)?;
+        if !found.is_empty() && hit_uid.is_none() {
+            hit_uid = Some(uid);
+        }
+        for n in found {
+            if !matches.iter().any(|m| m.node_uid == n.node_uid) {
+                matches.push(n);
+            }
+        }
+    }
+    matches.truncate(limit.max(0) as usize);
+
+    // Which text the substring pass looks for. A reading that named a node
+    // exactly is the one the reader meant. Failing that, each reading is tried
+    // as a substring in turn -- `kv 1` names no node, but `kv1` is the prefix
+    // of `kv1.1`, `kv1.2`, ... -- and last of all the query as typed, since a
+    // reading that matches nothing at all (`raja 1` → `raja1`) was never a
+    // reference.
+    let mut candidates: Vec<&str> = Vec::with_capacity(ref_uids.len() + 1);
+    match hit_uid {
+        Some(uid) => candidates.push(uid),
+        None => {
+            candidates.extend(ref_uids.iter().map(String::as_str));
+            candidates.push(query);
+        }
+    }
+
+    for text_query in candidates {
+        if (matches.len() as i64) >= limit {
+            break;
+        }
+        let Some(pattern) = like_pattern(text_query) else { continue };
+
+        let substring: Vec<NavigationNode> = navigation_nodes::table
+            .filter(navigation_nodes::search_text.like(&pattern))
+            .select(NavigationNode::as_select())
+            // Tree order, so a match sits where browsing would have found it --
+            // and so the LIMIT keeps the first N in that order rather than the
+            // first N alphabetically. See `join_sort_path`.
+            .order(navigation_nodes::sort_path.asc())
+            .limit(limit)
+            .load::<NavigationNode>(db_conn)?;
+
+        let found_any = !substring.is_empty();
+        let seen: std::collections::HashSet<String> =
+            matches.iter().map(|n| n.node_uid.clone()).collect();
+        let room = (limit as usize).saturating_sub(matches.len());
+        matches.extend(
+            substring
+                .into_iter()
+                .filter(|n| !seen.contains(&n.node_uid))
+                .take(room),
+        );
+        if found_any {
+            break;
+        }
+    }
 
     if matches.is_empty() {
         return Ok(Vec::new());
@@ -548,6 +677,12 @@ pub struct NavigationNodeView {
     /// the reader is left wondering why pressing Open on a nuns' rule produced
     /// a monks' one.
     pub redirect_uid: Option<String>,
+    /// The reference the sidebar's search results show for this text
+    /// (`DN 1`, `SN 56.11`), from the opened row's `suttas.sutta_ref`, so the
+    /// row can read `SN 56.11 Dhammacakkappavattanasutta`. Filled per level by
+    /// [`attach_sutta_refs`]; `None` where [`wants_sutta_ref`] says the row
+    /// should not show one.
+    pub sutta_ref: Option<String>,
 }
 
 impl From<&NavigationNode> for NavigationNodeView {
@@ -569,6 +704,74 @@ impl From<&NavigationNode> for NavigationNodeView {
             is_fragment,
             in_file: is_fragment.then(|| node.cst_file.clone()).flatten(),
             redirect_uid: node.redirect_uid.clone(),
+            sutta_ref: None,
+        }
+    }
+}
+
+/// Whether a row shows its text's `sutta_ref` before the title.
+///
+/// Two kinds of leaf do not:
+///
+/// - a **redirected** leaf: the ref belongs to the parallel it opens, so a
+///   bhikkhunī rule would be labelled with the bhikkhu rule's reference;
+/// - a CST **division or whole-file** record (`s0305m.mul11.xml/pli/cst`): its
+///   stored ref is derived from the file name (`Vin 01a.att0`), which says
+///   nothing a reader can use and duplicates the uid line.
+pub fn wants_sutta_ref(view: &NavigationNodeView) -> bool {
+    if view.redirect_uid.as_deref().is_some_and(|u| !u.is_empty()) {
+        return false;
+    }
+    match view.sutta_uid.as_deref() {
+        Some(uid) if !uid.is_empty() => !bare_sutta_key(uid).ends_with(".xml"),
+        _ => false,
+    }
+}
+
+/// `suttas.uid` → `suttas.sutta_ref` for the given uids, in one indexed
+/// statement per chunk.
+pub fn sutta_refs_conn(
+    db_conn: &mut SqliteConnection,
+    sutta_uids: &[String],
+) -> QueryResult<std::collections::HashMap<String, String>> {
+    use crate::db::appdata_schema::suttas;
+
+    let mut out = std::collections::HashMap::new();
+    for chunk in sutta_uids.chunks(COUNT_CHUNK * 5) {
+        let rows: Vec<(String, String)> = suttas::table
+            .filter(suttas::uid.eq_any(chunk))
+            .select((suttas::uid, suttas::sutta_ref))
+            .load(db_conn)?;
+        for (uid, sutta_ref) in rows {
+            let trimmed = sutta_ref.trim();
+            if !trimmed.is_empty() {
+                out.insert(uid, trimmed.to_string());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Fill `sutta_ref` on every row of a level that should show one. A failed
+/// lookup leaves the refs empty -- the rows still render, titled as before.
+pub fn attach_sutta_refs(views: &mut [&mut NavigationNodeView]) {
+    let mut uids: Vec<String> = views
+        .iter()
+        .filter(|v| wants_sutta_ref(v))
+        .filter_map(|v| v.sutta_uid.clone())
+        .collect();
+    if uids.is_empty() {
+        return;
+    }
+    uids.sort();
+    uids.dedup();
+
+    let refs = with_appdata("attach_sutta_refs", std::collections::HashMap::new(), |db_conn| {
+        sutta_refs_conn(db_conn, &uids)
+    });
+    for view in views.iter_mut() {
+        if wants_sutta_ref(view) {
+            view.sutta_ref = view.sutta_uid.as_ref().and_then(|u| refs.get(u).cloned());
         }
     }
 }
@@ -609,17 +812,19 @@ fn to_json_array<T: Serialize>(what: &str, values: &[T]) -> String {
 /// One level of the tree as a JSON array of [`NavigationNodeView`].
 /// `None` is the root level. Empty array when the table is absent or empty.
 pub fn children_json(parent: Option<&str>) -> String {
-    let views: Vec<NavigationNodeView> =
+    let mut views: Vec<NavigationNodeView> =
         children_of(parent).iter().map(NavigationNodeView::from).collect();
+    attach_sutta_refs(&mut views.iter_mut().collect::<Vec<_>>());
     to_json_array("children_json", &views)
 }
 
 /// Whole-tree filter as a JSON array of [`NavigationMatchView`].
 pub fn filter_json(query: &str, limit: i64) -> String {
-    let views: Vec<NavigationMatchView> = filter_nodes(query, limit)
+    let mut views: Vec<NavigationMatchView> = filter_nodes(query, limit)
         .iter()
         .map(NavigationMatchView::from)
         .collect();
+    attach_sutta_refs(&mut views.iter_mut().map(|m| &mut m.node).collect::<Vec<_>>());
     to_json_array("filter_json", &views)
 }
 
@@ -627,7 +832,10 @@ pub fn filter_json(query: &str, limit: i64) -> String {
 /// distinguishable from a node with every field empty, which an empty object
 /// would not be.
 pub fn node_json(node_uid: &str) -> String {
-    let view = node_by_uid(node_uid).as_ref().map(NavigationNodeView::from);
+    let mut view = node_by_uid(node_uid).as_ref().map(NavigationNodeView::from);
+    if let Some(v) = view.as_mut() {
+        attach_sutta_refs(&mut [v]);
+    }
     match serde_json::to_string(&view) {
         Ok(json) => json,
         Err(e) => {

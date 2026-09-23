@@ -250,10 +250,19 @@ filter and `deconstructor` is `None`.
 ## 5. Named-route UID auto-detect (self-correcting)
 
 `/suttas_fulltext_search` and `/suttas_contains_search` keep a sutta-reference
-auto-detect: if `query_text_to_uid_field_query(query_text)` returns a
-`uid:`-prefixed query (e.g. for `"sn56.11"`, `"MN 44"`, `"dhp182"`), the route
-runs `UidMatch` instead of its fallback mode. `/dict_combined_search` does the
-same for dictionary UID patterns. `/search` does **not** do this (mode is
+auto-detect: if `query_text_to_uid_field_query(query_text, &SearchArea::Suttas)`
+returns a `uid:`-prefixed query (e.g. for `"sn56.11"`, `"MN 44"`, `"dhp182"`),
+the route runs `UidMatch` instead of its fallback mode. `/dict_combined_search`
+does the same with `SearchArea::Dictionary`, which tries **only** the dictionary
+UID patterns — so `"ja 1.1"` is the DPD headword there and the Jātaka in the
+sutta routes. The area is what keeps the two from colliding; there is no
+cross-area exclusion list.
+
+Only a query that is **entirely** a reference is rewritten (`SN 56:11`,
+`Dhp 1-20` and `DN 1.` all are). A reference inside a longer query stays text:
+the result is searched in the route's own mode, where an embedded `uid:mn118`
+is literal text to ContainsMatch and matches nothing in FulltextMatch (the
+Tantivy `uid` field is raw and holds the full `mn118/pli/ms`). `/search` does **not** do this (mode is
 strict — see §4).
 
 **No silent 0-hit — the auto `UidMatch` self-corrects.** When the

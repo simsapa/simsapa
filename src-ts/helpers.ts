@@ -1,5 +1,8 @@
-// Regex pattern for matching sutta references in text
-// Ported from backend/src/helpers.rs:25-27
+// Regex pattern for matching sutta references in link text.
+// Derived from RE_ALL_BOOK_SUTTA_REF in backend/src/helpers.rs, but kept to the
+// original collections on purpose: this reads the text of links inside rendered
+// documents, where `pp 12` is a page and `ne 1`, `ya 1` are Pāli words, while
+// the Rust pattern only ever reads a whole search query.
 const RE_ALL_BOOK_SUTTA_REF = /\b(DN|MN|SN|AN|Pv|Vv|Vism|iti|kp|khp|snp|th|thag|thig|ud|uda|dhp)[ .]*(\d[\d.:]*)\b/i;
 
 // Import the confirmation modal function

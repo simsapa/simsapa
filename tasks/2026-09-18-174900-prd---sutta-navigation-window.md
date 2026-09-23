@@ -667,6 +667,14 @@ empty or error tab.
 
 A leaf **tree row** shows the same, minus the translation hint (FR-33).
 
+> **CORRECTED 2026-09-23, after using the built window.** A leaf's Pāli title
+> is preceded by its **sutta reference**, as the sidebar's search results show
+> it (`SN 56.11 Dhammacakkappavattanasutta`), and its **English title is bold**
+> like the Pāli one — it is the text's name, not a gloss. The English line is
+> taken from the opened row's `title_trans`, then `names`, then an English
+> translation's title (Sujato, then Brahmali, then any other).
+> See docs/sutta-navigation-tree.md §2a.
+
 **FR-44. A node with no blurb simply has no blurb area.** The row is shorter; no
 space is reserved and no placeholder is shown. Blurb coverage is partial, and a
 list of rows with varying heights is the accepted consequence.

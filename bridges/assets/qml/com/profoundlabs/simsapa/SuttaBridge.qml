@@ -106,7 +106,7 @@ Item {
         return true;
     }
 
-    function query_text_to_uid_field_query(query_text: string): string {
+    function query_text_to_uid_field_query(query_text: string, search_area: string): string {
       return query_text;
     }
 

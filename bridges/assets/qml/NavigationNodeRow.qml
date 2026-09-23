@@ -89,6 +89,14 @@ Frame {
     readonly property bool is_tappable: root.is_expandable || root.is_body_openable
 
     readonly property string title_text: root.node.title_pali || root.node.title_en || root.node.node_uid
+
+    /// `DN 1`, `SN 56.11` -- the reference the sidebar's search results show,
+    /// put before the title the same way. Empty on a branch, a CST division
+    /// and a redirected leaf; the backend decides which (`wants_sutta_ref`).
+    readonly property string sutta_ref: root.node.sutta_ref || ""
+    readonly property string headline: root.sutta_ref.length > 0
+        ? root.sutta_ref + " " + root.title_text
+        : root.title_text
     readonly property bool has_en: !!root.node.title_en && root.node.title_en !== root.title_text
     readonly property bool has_blurb: !!root.node.blurb
 
@@ -172,7 +180,7 @@ Frame {
 
                     Label {
                         Layout.fillWidth: true
-                        text: root.title_text
+                        text: root.headline
                         font.pointSize: root.pointSize
                         font.bold: true
                         wrapMode: Text.WordWrap
@@ -183,6 +191,9 @@ Frame {
                         Layout.fillWidth: true
                         text: root.node.title_en || ""
                         font.pointSize: root.pointSize
+                        // A text's translated title is as much its name as the
+                        // Pāli one; a level's English name is a gloss.
+                        font.bold: root.has_target
                         wrapMode: Text.WordWrap
                     }
 

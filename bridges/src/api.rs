@@ -1289,7 +1289,7 @@ fn run_suttas_search(request: &ApiSearchRequest, dbm: &Arc<DbManager>, fallback_
     // reference-like queries (e.g. "sn56.11", "MN 44", "dhp182"). When that auto
     // UidMatch finds nothing, run_search_with_uid_fallback re-runs the original
     // query under fallback_mode (self-correcting, no silent 0-hit).
-    let uid_query = query_text_to_uid_field_query(&query_text_orig);
+    let uid_query = query_text_to_uid_field_query(&query_text_orig, &SearchArea::Suttas);
     let was_uid_auto = uid_query.starts_with("uid:");
     let (query_text, mode) = if was_uid_auto {
         (uid_query, SearchMode::UidMatch)
@@ -1374,7 +1374,7 @@ fn search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Resul
     };
 
     if dict_combined {
-        let uid_query = query_text_to_uid_field_query(&query_text_orig);
+        let uid_query = query_text_to_uid_field_query(&query_text_orig, &SearchArea::Dictionary);
         let was_uid_auto = uid_query.starts_with("uid:");
         let (query_text, mode) = if was_uid_auto {
             (uid_query, SearchMode::UidMatch)
@@ -1407,7 +1407,7 @@ fn dict_combined_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManag
     // is self-correcting: a human form (e.g. "dhamma 1.01") that doesn't match a
     // stored uid yields 0 hits, so run_search_with_uid_fallback transparently
     // re-runs the original query as DpdLookup (no silent 0-hit).
-    let uid_query = query_text_to_uid_field_query(&query_text_orig);
+    let uid_query = query_text_to_uid_field_query(&query_text_orig, &SearchArea::Dictionary);
     let was_uid_auto = uid_query.starts_with("uid:");
     let (query_text, mode) = if was_uid_auto {
         (uid_query, SearchMode::UidMatch)

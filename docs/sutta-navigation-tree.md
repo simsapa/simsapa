@@ -250,6 +250,67 @@ This is the intended division of labour: the tree gives one route to a text, and
 the reader gives the editions of it. Do not add a second `sutta_uid` to a node,
 or a per-edition branch, to reproduce in the tree what the reader already does.
 
+### Where an SC leaf's titles come from
+
+The English line is filled from the first of these that has a non-empty value:
+
+1. `title_trans` on the row the leaf opens — the corpus's own translated title
+   for that exact text;
+2. the ArangoDB `names` collection (`lang = "en"`);
+3. an English row's `title`, preferring `/en/sujato`, then `/en/brahmali`, then
+   any other translator (`english_title_rank()`).
+
+The Pāli line is `names` (`is_root`) first, then the Pāli row's title. **An
+empty `names` entry counts as missing** — `make_node` filters it — or it would
+stop the fallbacks from ever running (`sn47.4` has an empty English name).
+
+The fallbacks are keyed by the leaf's **own** uid, so a redirected leaf never
+borrows its parallel's title. Leaves with no English title after all three
+(1,711 today: `patthana`, `tha-ap`, `thi-ap`, parts of `ds`/`ya`) have English
+rows only with an empty `title`; there is nothing to fall back to.
+
+> **Trap — Thanissaro's rows store the two titles swapped:** `title` holds the
+> Pāli name (`Sālā Sutta`) and `title_pali` the English one (`At Sālā`). Tier 3
+> reads `title`, so where Thanissaro is the only English row with a title, the
+> English line shows the Pāli name. One leaf is affected today (`sn47.4`). This
+> is a source-data defect to report, not one to work around here.
+
+### The sutta reference before a leaf's title
+
+A leaf's headline is `<sutta_ref> <title>` — `SN 56.11 Dhammacakkappavattanasutta`
+— the same reference the sidebar's search results show. It is **not stored in
+the tree**: `attach_sutta_refs()` reads `suttas.sutta_ref` for a whole level in
+one query when `children_json` / `filter_json` / `node_json` serialize it, so it
+always matches the row the leaf opens. `wants_sutta_ref()` leaves it off a
+redirected leaf (the ref would be its parallel's) and off a CST division or
+whole-file record (its stored ref is derived from the file name, e.g.
+`Vin 01a.att0`). The filter does not match on the stored ref; a typed reference
+is recognised instead (next section).
+
+### A filter query typed as a reference
+
+`ref_query_uids()` reads a query such as `dn 1`, `SN 56.11` or `Dhp 182` as
+uids, and `filter_nodes_conn` lists the nodes those uids name **exactly** first
+(`exact_uid_nodes_conn`: the node's own uid, or a leaf whose `sutta_uid` is
+`<uid>/…`, never through a redirected leaf's borrowed text), then the substring
+matches. Two readings, both kept, literal first:
+
+1. the reference with its spaces removed, via `whole_sutta_ref()` in
+   `helpers.rs` (`sn 56` → `sn56`, `SN 56:11` → `sn56.11`, `Dhp 1-20` →
+   `dhp1-20`). The query is folded with `normalize_for_search` first, so
+   `Paṭṭhāna 1` reads as `patthana1`. The Theragāthā and Therīgāthā short
+   forms (`Th`, `Tha`, `Thi`, `Thī`, `Thīg`) are rewritten to `thag` / `thig`
+   first, by `canonical_thag_thig()`, which the search bar shares;
+2. the search bar's own reading in the **Suttas** area,
+   `query_text_to_uid_field_query(query, &SearchArea::Suttas)`. It converts
+   verse numbers, so `sn 56` also yields `snp1.3` (Suttanipāta verse 56) and
+   `Dhp 182` yields `dhp179-196`.
+
+The substring pass runs on the reading that named a node. Failing that, on each
+reading in turn (`kv 1` names no node, but `kv1` prefixes `kv1.1`, `kv1.2`, …),
+and last on the text as typed, because a reading that matches nothing
+(`raja 1` → `raja1`) was never a reference.
+
 ## 2b. The breadcrumb bar shows the path, never the history
 
 `SuttaNavigationWindow.enter_level()` recomputes the whole path from the node's
