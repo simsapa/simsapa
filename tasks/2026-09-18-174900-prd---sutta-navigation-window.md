@@ -570,6 +570,16 @@ blurb — those are explicit buttons (FR-34, FR-38, FR-45). This is the one
 interaction rule the row layout must not blur: a touch screen gives no hover to
 disambiguate with, so an ambiguous row is a row that does the wrong thing.
 
+> **CORRECTED 2026-09-23, after using the built window.** A leaf row whose
+> body did nothing read as broken: the reader taps a sutta and nothing happens.
+> **A tap on an openable leaf's body opens the text**, the same as its Open
+> button, in every row mode including filter hits. The rule that survives is
+> that a tap does the one thing the row is for — a branch expands, a leaf
+> opens — and since no row is both, the tap is still unambiguous. Entering a
+> level and expanding a blurb remain buttons only; a branch filter hit still
+> has no body tap. This also supersedes the "no tap action" clauses of FR-29,
+> FR-42 (an unavailable leaf still has none) and FR-43.
+
 **FR-33. Rows render in one of two modes.** The distinction is what a row *is*
 in the list, not a user setting:
 

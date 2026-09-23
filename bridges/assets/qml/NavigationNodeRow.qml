@@ -18,11 +18,12 @@ import QtQuick.Controls
 /// rule about row modes — which is what an earlier level-rows-only reading of
 /// it produced. The compact view is what the toggle is *for*.
 ///
-/// **The interaction rule: a tap on the row body expands or collapses this
-/// node, and nothing else.** Opening a text, entering a level and expanding a
-/// blurb are buttons. A leaf row body has no tap action at all, and neither
-/// does a filter result row. A touch screen gives no hover to disambiguate
-/// with, so an ambiguous row is a row that does the wrong thing.
+/// **The interaction rule: a tap on the row body does the one thing the row
+/// is for.** On a branch it expands or collapses the node; on an openable leaf
+/// it opens the text, which is also what the Open button does. Entering a level
+/// and expanding a blurb are buttons only. A branch hit in the filter list has
+/// no body tap, because a flat result list has nothing to expand. A row is
+/// never both, so a tap is never ambiguous.
 ///
 /// See docs/sutta-navigation-tree.md
 Frame {
@@ -35,8 +36,8 @@ Frame {
     property bool is_tree_row: false
 
     /// A whole-tree filter hit. Rendered compactly like a tree row, with its
-    /// breadcrumb path above the title and no body tap action, because a flat
-    /// result list has nothing to expand.
+    /// breadcrumb path above the title. A branch hit has no body tap action,
+    /// because a flat result list has nothing to expand; a leaf hit opens.
     property bool is_filter_row: false
 
     /// Breadcrumb path shown on a filter result row.
@@ -80,7 +81,12 @@ Frame {
 
     /// Only a branch row in the tree has something to expand, and only outside
     /// the flat filter list.
-    readonly property bool is_tappable: root.is_branch && !root.is_filter_row
+    readonly property bool is_expandable: root.is_branch && !root.is_filter_row
+
+    /// A leaf whose text is present opens on a body tap, in every row mode.
+    readonly property bool is_body_openable: !root.is_branch && root.is_openable
+
+    readonly property bool is_tappable: root.is_expandable || root.is_body_openable
 
     readonly property string title_text: root.node.title_pali || root.node.title_en || root.node.node_uid
     readonly property bool has_en: !!root.node.title_en && root.node.title_en !== root.title_text
@@ -123,7 +129,13 @@ Frame {
         enabled: root.is_tappable
         cursorShape: root.is_tappable ? Qt.PointingHandCursor : Qt.ArrowCursor
 
-        onClicked: root.toggle_expand()
+        onClicked: {
+            if (root.is_expandable) {
+                root.toggle_expand();
+            } else if (root.is_body_openable) {
+                root.open_text();
+            }
+        }
 
         ColumnLayout {
             id: row_column

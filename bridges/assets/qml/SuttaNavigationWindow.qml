@@ -593,8 +593,9 @@ ApplicationWindow {
             }
         }
 
-        // Filter hits: a flat list with nothing to expand, so no row body has
-        // a tap action. The buttons are the same ones a tree row carries.
+        // Filter hits: a flat list with nothing to expand, so a branch hit's
+        // body has no tap action; a leaf hit's body opens the text. The
+        // buttons are the same ones a tree row carries.
         ListView {
             id: filter_list
             visible: root.tree_is_available && root.filter_active

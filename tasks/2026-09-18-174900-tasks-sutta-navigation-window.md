@@ -973,11 +973,11 @@ Verification: `make build -B` green; `make qml-lint` reports no warning naming
 > **Layout:** filter input on top, breadcrumb bar below it, the level list under
 > that. Entering a level resets indentation to zero, so the deepest level uses
 > the full row width (FR-37).
-> **The interaction rule (FR-32): a tap on a row body expands or collapses that
-> node, and nothing else.** Opening a text, entering a level and expanding a
-> blurb are **buttons**. A leaf row body has no tap action at all. There is no
-> hover on a touch screen to disambiguate with, so an ambiguous row is a row
-> that does the wrong thing.
+> **The interaction rule (FR-32, corrected 2026-09-23): a tap on a row body does
+> the one thing the row is for** — a branch expands or collapses, an openable
+> leaf opens its text (the same as its Open button). Entering a level and
+> expanding a blurb are **buttons** only. A row is never both a branch and a
+> leaf, so there is still no ambiguity for a touch screen to resolve.
 > **Two row modes (FR-33), decided by what the row *is*, not by a setting:** a
 > **level row** is a direct child of the current breadcrumb level and gets the
 > full FR-43 / FR-46 rendering including the blurb; a **tree row** is anything
