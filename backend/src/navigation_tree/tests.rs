@@ -16,6 +16,7 @@ use crate::db::appdata_schema::navigation_nodes;
 const UP_SQL: &[&str] = &[
     include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
     include_str!("../../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
+    include_str!("../../migrations/appdata/2026-10-01-000000_navigation_node_context_note/up.sql"),
 ];
 
 fn empty_db() -> SqliteConnection {
@@ -48,6 +49,7 @@ fn node(
         title_pali: Some(title_pali.to_string()),
         title_en: title_en.map(|s| s.to_string()),
         blurb: None,
+        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,
@@ -280,7 +282,7 @@ fn partially_migrated_db() -> SqliteConnection {
 
 #[test]
 fn a_table_missing_a_later_migrations_column_is_not_available() {
-    // The schema spans two migrations, so "table present, `redirect_uid`
+    // The schema spans several migrations, so "table present, `redirect_uid`
     // missing" is a real state. A `COUNT(*)` succeeds on it, which would tell
     // the window the tree is available and then fail every level query --
     // an empty window with no explanation, which is what FR-13 forbids.
@@ -372,6 +374,27 @@ fn an_ordinary_row_is_not_redirected() {
 }
 
 #[test]
+fn a_context_note_reaches_the_view_beside_the_blurb() {
+    let mut n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
+    n.blurb = Some("The Buddha's first discourse.".to_string());
+    n.context_note = Some("Chanted on Āsāḷha Pūjā.".to_string());
+
+    let mut db_conn = migrated_db();
+    diesel::insert_into(navigation_nodes::table)
+        .values(&[n, node("sn56.12", None, 1, "Tathāgata", None, &[])])
+        .execute(&mut db_conn)
+        .expect("insert");
+
+    let noted = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
+    let view = NavigationNodeView::from(&noted);
+    assert_eq!(view.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
+    assert_eq!(view.blurb.as_deref(), Some("The Buddha's first discourse."));
+
+    let plain = node_by_uid_conn(&mut db_conn, "sn56.12").unwrap().expect("row");
+    assert!(NavigationNodeView::from(&plain).context_note.is_none());
+}
+
+#[test]
 fn display_title_falls_back_through_english_to_the_uid() {
     let mut n = node("x", None, 0, "", None, &[]);
     n.title_pali = None;
@@ -385,6 +408,7 @@ fn display_title_falls_back_through_english_to_the_uid() {
         title_pali: None,
         title_en: Some("English".to_string()),
         blurb: None,
+        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,

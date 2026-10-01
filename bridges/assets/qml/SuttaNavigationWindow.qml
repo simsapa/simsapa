@@ -85,6 +85,9 @@ ApplicationWindow {
     /// would land on whichever row scrolled into that delegate.
     property var blurb_expanded_uids: ({})
 
+    /// The same, for a row's context note, which opens independently.
+    property var context_note_expanded_uids: ({})
+
     /// The level rows plus whatever expanding them revealed, flattened for the
     /// ListView: `{ node, depth, is_tree_row }` per row.
     ///
@@ -380,6 +383,16 @@ ApplicationWindow {
         root.blurb_expanded_uids = expanded;
     }
 
+    function toggle_context_note(node) {
+        let expanded = Object.assign({}, root.context_note_expanded_uids);
+        if (expanded[node.node_uid]) {
+            delete expanded[node.node_uid];
+        } else {
+            expanded[node.node_uid] = true;
+        }
+        root.context_note_expanded_uids = expanded;
+    }
+
     // ------------------------------------------------------------------
     // Filtering
     // ------------------------------------------------------------------
@@ -614,11 +627,13 @@ ApplicationWindow {
                                        : -1
                     is_expanded: !!root.expanded_uids[level_item.node.node_uid]
                     blurb_expanded: !!root.blurb_expanded_uids[level_item.node.node_uid]
+                    context_note_expanded: !!root.context_note_expanded_uids[level_item.node.node_uid]
 
                     onToggle_expand: root.toggle_expand(level_item.index, level_item.node, level_item.depth)
                     onEnter_level: root.enter_level(level_item.node)
                     onOpen_text: root.open_node(level_item.node)
                     onToggle_blurb: root.toggle_blurb(level_item.node)
+                    onToggle_context_note: root.toggle_context_note(level_item.node)
                 }
             }
         }
@@ -658,10 +673,12 @@ ApplicationWindow {
                     // state -- which is keyed by node_uid and so is shared
                     // with the level list.
                     blurb_expanded: !!root.blurb_expanded_uids[filter_item.modelData.node.node_uid]
+                    context_note_expanded: !!root.context_note_expanded_uids[filter_item.modelData.node.node_uid]
 
                     onEnter_level: root.enter_level_from_filter(filter_item.modelData.node)
                     onOpen_text: root.open_node(filter_item.modelData.node)
                     onToggle_blurb: root.toggle_blurb(filter_item.modelData.node)
+                    onToggle_context_note: root.toggle_context_note(filter_item.modelData.node)
                 }
             }
         }

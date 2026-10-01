@@ -602,6 +602,64 @@ translation hint, and that it indents.
   `NavigationNodeRow.qml` is the one binding that encodes this split; changing
   it to follow `show_summaries` alone is the regression to watch for.
 
+## 2f. Context notes — the project's own text below the summary
+
+A row can carry a **context note**, drawn below the blurb and governed by the
+same Summaries toggle. The blurb is SuttaCentral's text and is not ours to edit;
+the note is the project's, so it can say something about a node SuttaCentral has
+no blurb for — every CST node, for a start.
+
+| | Blurb | Context note |
+|---|---|---|
+| Source | `sc-data/additional-info/blurbs.json` | `assets/navigation-context-notes.toml` |
+| Column | `navigation_nodes.blurb` | `navigation_nodes.context_note` |
+| Keyed by | the SuttaCentral uid | `node_uid`, on either spine |
+
+The file is TOML, chosen because it is edited by hand: a flat table of quoted
+keys, each note in a triple-quoted string that can be wrapped freely.
+
+``` toml
+# Dhammacakkappavattanasutta
+"sn56.11" = """
+Lines are joined with a space, so a note
+can be wrapped wherever it reads well.
+
+A blank line starts a new paragraph.
+"""
+```
+
+To add a note, edit the file, rebuild the CLI and re-run
+`build-navigation-tree` (§6). Things to know:
+
+- **The key is the `node_uid`, not the `suttas.uid`.** `sn56.11`, not
+  `sn56.11/pli/ms`; a CST node is `cst:…`. `SELECT node_uid, title_pali FROM
+  navigation_nodes` is how to find one.
+- **The file is embedded in the CLI** (`include_str!`), so the build does not
+  depend on the directory it is run from — and an edit does nothing until the
+  CLI is rebuilt.
+- **A key that names no node is reported, not dropped silently**, as
+  `context note for a node uid not in the tree` in the spine's defect summary.
+  The two spines are built independently, so each checks only the keys it owns:
+  a `cst:` key is the CST spine's, everything else the SC spine's. A typo in a
+  key is therefore visible only in the log of the spine that owns it.
+- **Always quote the key.** Unquoted, TOML reads `sn56.11 = "…"` as the table
+  `sn56` holding the key `11`, so the note would land on no node. That shape,
+  like any file that is not a flat table of strings, fails the build outright
+  rather than being skipped.
+
+The notes written so far give each collection's **origin**: the time period,
+the country, the probable author, and how well anchored the date is. The
+evidence and reference URLs behind every one are in
+[navigation-context-notes-research.md](./navigation-context-notes-research.md);
+a note is refined there first, then in the JSON.
+
+In the row the note comes after the blurb, set apart by a divider line that is
+drawn only when the row has both. It is truncated to two lines like the blurb
+but has **its own** more/less button and its own expansion state
+(`context_note_expanded_uids` in `SuttaNavigationWindow.qml`), so opening one
+does not open the other. It is not part of `search_text`, so the filter does
+not match on it.
+
 ## 3. CST records: two independent questions
 
 Which records a CST source file gets is decided by two questions that must not
@@ -810,8 +868,9 @@ SC spine needs it for titles). Each spine build ends with an `ANALYZE` — see
 
 ## 7. Related
 
-- [database-migrations.md](./database-migrations.md) — the migration that
-  creates `navigation_nodes`, and why a migration failure is non-fatal.
+- [database-migrations.md](./database-migrations.md) — the migrations that
+  create `navigation_nodes` and add its later columns, and why a migration
+  failure is non-fatal.
 - [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md) — the
   `ANALYZE` that follows each spine write.
 - `tasks/2026-09-18-174900-prd---sutta-navigation-window.md` — the PRD, whose

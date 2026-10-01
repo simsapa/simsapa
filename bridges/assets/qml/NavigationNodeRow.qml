@@ -50,6 +50,7 @@ Frame {
 
     property bool is_expanded: false
     property bool blurb_expanded: false
+    property bool context_note_expanded: false
 
     /// The window's Summaries toggle, governing every row mode alike.
     ///
@@ -69,6 +70,7 @@ Frame {
     signal enter_level()
     signal open_text()
     signal toggle_blurb()
+    signal toggle_context_note()
 
     readonly property bool is_branch: !!root.node.has_children
     readonly property bool has_target: !!root.node.sutta_uid
@@ -103,10 +105,15 @@ Frame {
         : root.title_text
     readonly property bool has_en: !!root.node.title_en && root.node.title_en !== root.title_text
     readonly property bool has_blurb: !!root.node.blurb
+    readonly property bool has_context_note: !!root.node.context_note
 
     /// The toggle and the data, and nothing else: a row with a summary shows
     /// it whenever summaries are on, whatever mode the row is in.
     readonly property bool blurb_visible: root.has_blurb && root.show_summaries
+
+    /// The project's own note for the node, drawn below SuttaCentral's summary
+    /// and governed by the same toggle.
+    readonly property bool context_note_visible: root.has_context_note && root.show_summaries
 
     /// The uid follows the toggle too. It is reference detail of the same kind
     /// as the summary, so hiding one and keeping the other gives a "compact"
@@ -355,6 +362,46 @@ Frame {
                 text: root.blurb_expanded ? "less" : "more"
                 font.pointSize: Math.max(7, root.pointSize - 2)
                 onClicked: root.toggle_blurb()
+            }
+
+            // The summary is SuttaCentral's text and the note is the
+            // project's own, so a rule and some air keep them from reading as
+            // one paragraph. Drawn only between the two: a row with just one
+            // of them has nothing to separate.
+            Rectangle {
+                visible: root.blurb_visible && root.context_note_visible
+                Layout.fillWidth: true
+                Layout.leftMargin: root.summary_indent
+                Layout.topMargin: 6
+                Layout.bottomMargin: 6
+                implicitHeight: 1
+                color: palette.mid
+            }
+
+            Label {
+                id: context_note_label
+                visible: root.context_note_visible
+                Layout.fillWidth: true
+                Layout.leftMargin: root.summary_indent
+                text: root.node.context_note || ""
+                font.pointSize: Math.max(8, root.pointSize - 1)
+                color: palette.text
+                wrapMode: Text.WordWrap
+                maximumLineCount: root.context_note_expanded ? 1000 : 2
+                elide: Text.ElideRight
+            }
+
+            // Its own button and its own state: opening the note does not
+            // open the summary above it.
+            Button {
+                visible: root.context_note_visible
+                    && (root.context_note_expanded || context_note_label.truncated)
+                Layout.leftMargin: root.summary_indent
+                flat: true
+                padding: 2
+                text: root.context_note_expanded ? "less" : "more"
+                font.pointSize: Math.max(7, root.pointSize - 2)
+                onClicked: root.toggle_context_note()
             }
         }
     }

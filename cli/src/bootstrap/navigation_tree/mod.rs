@@ -26,7 +26,7 @@ pub mod coverage_report;
 pub mod cst_spine;
 pub mod sc_spine;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -39,9 +39,20 @@ use simsapa_backend::navigation_tree::{
 };
 
 /// Rows per `INSERT`. SQLite's default bind-parameter ceiling is 32766 and the
-/// table has 15 insertable columns, so 500 rows (7500 parameters) stays well
+/// table has 18 insertable columns, so 500 rows (9000 parameters) stays well
 /// inside it on every SQLite the project builds against.
 const INSERT_CHUNK: usize = 500;
+
+/// The project's own per-node notes: `"<node_uid>" = """<note>"""`.
+///
+/// Embedded, so the build does not depend on the directory it is run from. A
+/// rebuild of the CLI is what picks up an edit.
+const CONTEXT_NOTES_TOML: &str =
+    include_str!("../../../../assets/navigation-context-notes.toml");
+
+/// Every CST node uid starts with this, and no SC one does — which is what
+/// lets a note be assigned to the spine that owns it.
+const CST_NODE_UID_PREFIX: &str = "cst:";
 
 /// A node as the spine builders construct it, before it is flattened into rows.
 ///
@@ -259,6 +270,8 @@ fn flatten_node(
         title_pali: title_pali.clone(),
         title_en: title_en.clone(),
         blurb: node.blurb.clone(),
+        // Filled by `apply_context_notes`, once the spine is flat.
+        context_note: None,
         sutta_uid: node.sutta_uid.clone(),
         redirect_uid: node.redirect_uid.clone(),
         cst_file: node.cst_file.clone(),
@@ -292,6 +305,81 @@ fn flatten_node(
     }
     ancestor_indexes.pop();
     ancestors.pop();
+}
+
+/// Parse the notes file. A key with an empty note is dropped: it names a node
+/// and says nothing about it.
+///
+/// A file that does not parse fails the build. It is the project's own file,
+/// so there is no source author to report to and nothing to salvage — and a
+/// silently ignored file would ship a tree with every note missing. That
+/// includes an **unquoted key**: TOML reads `sn56.11 = "…"` as a nested table,
+/// which is not a string and is rejected here.
+pub fn parse_context_notes(toml_text: &str) -> Result<BTreeMap<String, String>> {
+    let notes: BTreeMap<String, String> = toml::from_str(toml_text).context(
+        "assets/navigation-context-notes.toml must be a flat table of \"node_uid\" = \"note text\" (quote every key)",
+    )?;
+    Ok(notes
+        .into_iter()
+        .map(|(uid, note)| (uid, unwrap_note(&note)))
+        .filter(|(_, note)| !note.is_empty())
+        .collect())
+}
+
+/// Undo the hand-wrapping of a note: the file is written to be edited, so a
+/// note is wrapped across lines there, and those line breaks are not part of
+/// it. Lines are joined with a space; a blank line is a paragraph break.
+fn unwrap_note(note: &str) -> String {
+    let mut paragraphs: Vec<String> = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    for line in note.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            if !current.is_empty() {
+                paragraphs.push(current.join(" "));
+                current.clear();
+            }
+        } else {
+            current.extend(words);
+        }
+    }
+    if !current.is_empty() {
+        paragraphs.push(current.join(" "));
+    }
+    paragraphs.join("\n\n")
+}
+
+/// Set `context_note` on the rows the notes file names.
+///
+/// The two spines are built and written independently, so each call sees only
+/// its own rows. A note is therefore checked against the spine that owns its
+/// key ([`CST_NODE_UID_PREFIX`]): one naming a node that spine does not have is
+/// recorded as a defect, and one belonging to the other spine is not this
+/// call's to judge.
+pub fn apply_context_notes(
+    rows: &mut [NewNavigationNode],
+    tree_source: &str,
+    notes: &BTreeMap<String, String>,
+    defects: &mut DefectReport,
+) -> usize {
+    let is_cst_spine = tree_source == cst_spine::TREE_SOURCE;
+    let mut applied: HashSet<&str> = HashSet::new();
+
+    for row in rows.iter_mut() {
+        if let Some((uid, note)) = notes.get_key_value(&row.node_uid) {
+            row.context_note = Some(note.clone());
+            applied.insert(uid.as_str());
+        }
+    }
+
+    for uid in notes.keys() {
+        let owned = uid.starts_with(CST_NODE_UID_PREFIX) == is_cst_spine;
+        if owned && !applied.contains(uid.as_str()) {
+            defects.record("context note for a node uid not in the tree", uid);
+        }
+    }
+
+    applied.len()
 }
 
 /// Trim a title and fold its niggahita to `ṁ`. See the call site in
@@ -354,7 +442,10 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
         builder.range_expansion_count()
     ));
 
-    let rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
+    let mut rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
+    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
+    let noted = apply_context_notes(&mut rows, sc_spine::TREE_SOURCE, &notes, &mut builder.defects);
+    logger::info(&format!("sc_spine: {} context note(s) applied", noted));
     let written = replace_spine(db_conn, sc_spine::TREE_SOURCE, &rows)?;
     logger::info(&format!("sc_spine: wrote {} rows", written));
 
@@ -393,7 +484,10 @@ pub fn build_cst_spine(
     let roots = builder.build()?;
     log_node_counts("cst_spine", &roots);
 
-    let rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
+    let mut rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
+    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
+    let noted = apply_context_notes(&mut rows, cst_spine::TREE_SOURCE, &notes, &mut builder.defects);
+    logger::info(&format!("cst_spine: {} context note(s) applied", noted));
     let written = replace_spine(db_conn, cst_spine::TREE_SOURCE, &rows)?;
     logger::info(&format!("cst_spine: wrote {} rows", written));
 

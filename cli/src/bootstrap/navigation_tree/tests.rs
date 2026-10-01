@@ -204,3 +204,85 @@ fn sort_path_puts_filter_results_in_document_order() {
     let path_order: Vec<&str> = by_path.iter().map(|(_, uid)| uid.as_str()).collect();
     assert_ne!(path_order, order);
 }
+
+#[test]
+fn context_notes_land_on_the_rows_the_file_names() {
+    let roots = vec![branch("sutta", vec![leaf("sn56.11"), leaf("sn56.12")])];
+    let mut defects = DefectReport::default();
+    let mut rows = flatten(&roots, "sc", &mut defects);
+
+    let notes = parse_context_notes(
+        r#"
+"sn56.11" = "  The first discourse.  "
+"sn56.12" = "   "
+"cst:tika" = "Sub-commentaries."
+"#,
+    )
+    .unwrap();
+    // A blank note is dropped at parse time rather than stored as a note.
+    assert_eq!(notes.len(), 2);
+
+    let applied = apply_context_notes(&mut rows, "sc", &notes, &mut defects);
+
+    assert_eq!(applied, 1);
+    let by_uid = |uid: &str| rows.iter().find(|r| r.node_uid == uid).unwrap();
+    assert_eq!(by_uid("sn56.11").context_note.as_deref(), Some("The first discourse."));
+    assert_eq!(by_uid("sn56.12").context_note, None);
+    assert_eq!(by_uid("sutta").context_note, None);
+
+    // The CST key belongs to the other spine, which is built separately, so
+    // its absence here is not a defect.
+    assert!(defects.is_empty());
+}
+
+#[test]
+fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
+    let notes = parse_context_notes(
+        r#"
+"sn99.99" = "No such sutta."
+"cst:nope" = "No such book."
+"#,
+    )
+    .unwrap();
+
+    let mut sc_defects = DefectReport::default();
+    let mut sc_rows = flatten(&[leaf("sutta")], "sc", &mut sc_defects);
+    assert_eq!(apply_context_notes(&mut sc_rows, "sc", &notes, &mut sc_defects), 0);
+    assert_eq!(sc_defects.len(), 1);
+    assert_eq!(sc_defects.count_of("context note for a node uid not in the tree"), 1);
+
+    let mut cst_defects = DefectReport::default();
+    let mut cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
+    assert_eq!(apply_context_notes(&mut cst_rows, "cst", &notes, &mut cst_defects), 0);
+    assert_eq!(cst_defects.len(), 1);
+}
+
+#[test]
+fn a_notes_file_that_is_not_a_string_map_fails_the_build() {
+    assert!(parse_context_notes(r#""sn56.11" = 3"#).is_err());
+    assert!(parse_context_notes("not toml at all").is_err());
+}
+
+#[test]
+fn an_unquoted_dotted_key_fails_the_build_rather_than_nesting() {
+    // TOML reads this as the table `sn56` holding the key `11`, so the note
+    // would land on no node at all.
+    assert!(parse_context_notes(r#"sn56.11 = "The first discourse.""#).is_err());
+}
+
+#[test]
+fn a_hand_wrapped_note_is_joined_and_keeps_its_paragraphs() {
+    let notes = parse_context_notes(
+        "\"dn\" = \"\"\"\nOrigin: 5th–3rd century BCE,\n   northern India.\n\n\nA second\nparagraph.\n\"\"\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        notes["dn"],
+        "Origin: 5th–3rd century BCE, northern India.\n\nA second paragraph."
+    );
+}
+
+#[test]
+fn the_shipped_notes_file_parses() {
+    parse_context_notes(CONTEXT_NOTES_TOML).expect("assets/navigation-context-notes.toml");
+}
