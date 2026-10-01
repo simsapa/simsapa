@@ -124,8 +124,15 @@ Frame {
     // "this one is unavailable".
     opacity: root.has_target && !root.is_openable ? 0.5 : 1.0
 
+    /// A leaf opens a text; a branch expands. The leaf is tinted blue so the
+    /// two read apart at a glance, mixed over the theme's own row colour so
+    /// it holds in both the light and the dark theme.
+    readonly property color row_color: root.is_tree_row || root.is_filter_row
+        ? palette.alternateBase : palette.base
+    readonly property color leaf_tint: Qt.rgba(0.25, 0.55, 1.0, 0.14)
+
     background: Rectangle {
-        color: root.is_tree_row || root.is_filter_row ? palette.alternateBase : palette.base
+        color: root.is_branch ? root.row_color : Qt.tint(root.row_color, root.leaf_tint)
         border.color: palette.mid
         border.width: 1
         radius: 3

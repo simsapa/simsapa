@@ -86,8 +86,18 @@ ApplicationWindow {
     property var blurb_expanded_uids: ({})
 
     /// The level rows plus whatever expanding them revealed, flattened for the
-    /// ListView: `[{ node, depth, is_tree_row }]`.
-    property var display_rows: []
+    /// ListView: `{ node, depth, is_tree_row }` per row.
+    ///
+    /// A ListModel edited in place, never a JS array that is reassigned.
+    /// Assigning an array resets the ListView, which puts it back at the top
+    /// and rebuilds every delegate -- and a rebuilt row settles its height
+    /// only after its first layout pass (the wrapped summary, the "more"
+    /// button that depends on `truncated`), so the scroll position cannot be
+    /// restored exactly afterwards. Inserting and removing below the toggled
+    /// row leaves every row above it untouched.
+    ListModel {
+        id: display_model
+    }
 
     /// Translations of the current level's texts in the languages installed
     /// right now, keyed by `sutta_uid` (FR-47). Resolved once per level, never
@@ -255,13 +265,13 @@ ApplicationWindow {
     }
 
     function rebuild_rows() {
-        let rows = [];
+        display_model.clear();
         for (let i = 0; i < root.level_nodes.length; i++) {
             const n = root.level_nodes[i];
-            rows.push({ node: n, depth: 0, is_tree_row: false });
+            let rows = [{ node: n, depth: 0, is_tree_row: false }];
             root.append_expanded(rows, n, 1);
+            display_model.append(rows);
         }
-        root.display_rows = rows;
     }
 
     /// A cycle in `parent_uid` would make this recurse until the stack runs
@@ -286,20 +296,37 @@ ApplicationWindow {
         }
     }
 
-    function toggle_expand(node) {
+    /// `index` is the toggled row's position in `display_model`.
+    function toggle_expand(index: int, node, depth: int) {
         let expanded = Object.assign({}, root.expanded_uids);
         if (expanded[node.node_uid]) {
             delete expanded[node.node_uid];
-        } else {
-            if (!root.children_cache[node.node_uid]) {
-                let cache = Object.assign({}, root.children_cache);
-                cache[node.node_uid] = root.fetch_children(node.node_uid);
-                root.children_cache = cache;
+            root.expanded_uids = expanded;
+
+            // Everything the node revealed is the run of deeper rows after it.
+            let end = index + 1;
+            while (end < display_model.count && display_model.get(end).depth > depth) {
+                end += 1;
             }
-            expanded[node.node_uid] = true;
+            if (end > index + 1) {
+                display_model.remove(index + 1, end - index - 1);
+            }
+            return;
         }
+
+        if (!root.children_cache[node.node_uid]) {
+            let cache = Object.assign({}, root.children_cache);
+            cache[node.node_uid] = root.fetch_children(node.node_uid);
+            root.children_cache = cache;
+        }
+        expanded[node.node_uid] = true;
         root.expanded_uids = expanded;
-        root.rebuild_rows();
+
+        let rows = [];
+        root.append_expanded(rows, node, depth + 1);
+        for (let i = 0; i < rows.length; i++) {
+            display_model.insert(index + 1 + i, rows[i]);
+        }
     }
 
     /// Enter a level, and set the breadcrumbs to that level's **full path**.
@@ -552,13 +579,16 @@ ApplicationWindow {
             Layout.fillHeight: true
             clip: true
             spacing: 4
-            model: root.display_rows
+            model: display_model
 
             ScrollBar.vertical: ScrollBar {}
 
             delegate: Item {
                 id: level_item
-                required property var modelData
+                required property int index
+                required property var node
+                required property int depth
+                required property bool is_tree_row
                 width: level_list.width
                 implicitHeight: level_row.implicitHeight
 
@@ -568,27 +598,27 @@ ApplicationWindow {
                     anchors.right: parent.right
                     // Tree rows indent; a level row never does, which is what
                     // leaves the full width to the title and blurb.
-                    anchors.leftMargin: level_item.modelData.depth * 18
+                    anchors.leftMargin: level_item.depth * 18
 
-                    node: level_item.modelData.node
-                    is_tree_row: level_item.modelData.is_tree_row
-                    depth: level_item.modelData.depth
+                    node: level_item.node
+                    is_tree_row: level_item.is_tree_row
+                    depth: level_item.depth
                     pointSize: root.pointSize
                     show_summaries: root.show_summaries
                     // -1 until the level's counts have been resolved, and for
                     // a tree row, which never shows the indicator.
-                    translation_count: (!level_item.modelData.is_tree_row
-                                        && level_item.modelData.node.sutta_uid
-                                        && root.translation_counts[level_item.modelData.node.sutta_uid] !== undefined)
-                                       ? root.translation_counts[level_item.modelData.node.sutta_uid]
+                    translation_count: (!level_item.is_tree_row
+                                        && level_item.node.sutta_uid
+                                        && root.translation_counts[level_item.node.sutta_uid] !== undefined)
+                                       ? root.translation_counts[level_item.node.sutta_uid]
                                        : -1
-                    is_expanded: !!root.expanded_uids[level_item.modelData.node.node_uid]
-                    blurb_expanded: !!root.blurb_expanded_uids[level_item.modelData.node.node_uid]
+                    is_expanded: !!root.expanded_uids[level_item.node.node_uid]
+                    blurb_expanded: !!root.blurb_expanded_uids[level_item.node.node_uid]
 
-                    onToggle_expand: root.toggle_expand(level_item.modelData.node)
-                    onEnter_level: root.enter_level(level_item.modelData.node)
-                    onOpen_text: root.open_node(level_item.modelData.node)
-                    onToggle_blurb: root.toggle_blurb(level_item.modelData.node)
+                    onToggle_expand: root.toggle_expand(level_item.index, level_item.node, level_item.depth)
+                    onEnter_level: root.enter_level(level_item.node)
+                    onOpen_text: root.open_node(level_item.node)
+                    onToggle_blurb: root.toggle_blurb(level_item.node)
                 }
             }
         }
