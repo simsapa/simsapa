@@ -88,6 +88,10 @@ Frame {
 
     readonly property bool is_tappable: root.is_expandable || root.is_body_openable
 
+    /// The summary starts where the title does: past the caret (20 + the row
+    /// spacing of 8) on a row that has one, at the edge on a row that does not.
+    readonly property int summary_indent: root.is_expandable ? 28 : 0
+
     readonly property string title_text: root.node.title_pali || root.node.title_en || root.node.node_uid
 
     /// `DN 1`, `SN 56.11` -- the reference the sidebar's search results show,
@@ -174,8 +178,9 @@ Frame {
 
                 // The caret is an indicator of the row's state; the tap target
                 // is the whole row body. PNG icons, never Unicode characters.
+                // A leaf has nothing to expand, so it carries no caret.
                 Image {
-                    visible: root.is_tappable
+                    visible: root.is_expandable
                     source: root.is_expanded ? "icons/32x32/fe--drop-down.png" : "icons/32x32/fe--drop-right.png"
                     sourceSize.width: 20
                     sourceSize.height: 20
@@ -331,7 +336,7 @@ Frame {
                 id: blurb_label
                 visible: root.blurb_visible
                 Layout.fillWidth: true
-                Layout.leftMargin: 28
+                Layout.leftMargin: root.summary_indent
                 text: root.node.blurb || ""
                 font.pointSize: Math.max(8, root.pointSize - 1)
                 color: palette.text
@@ -344,7 +349,7 @@ Frame {
             // expand/collapse of the node itself.
             Button {
                 visible: root.blurb_visible && (root.blurb_expanded || blurb_label.truncated)
-                Layout.leftMargin: 28
+                Layout.leftMargin: root.summary_indent
                 flat: true
                 padding: 2
                 text: root.blurb_expanded ? "less" : "more"
