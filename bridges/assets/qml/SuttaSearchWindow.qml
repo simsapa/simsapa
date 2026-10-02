@@ -2105,6 +2105,22 @@ ${query_text}`;
                 }
             }
 
+            // This one item serves both entry points: DrawerMenu builds the
+            // mobile menu from the same `menu_list` that the desktop menu bar
+            // renders, so there is one Action and one accessor behind it. The
+            // bridge call reaches WindowManager::create_sutta_navigation_window(),
+            // which revives the single instance whichever SuttaSearchWindow
+            // asked.
+            CMenuItem {
+                action: Action {
+                    id: action_sutta_navigation
+                    text: "Sutta &Navigation..."
+                    onTriggered: {
+                        SuttaBridge.open_sutta_navigation_window()
+                    }
+                }
+            }
+
             CMenuItem {
                 action: Action {
                     id: action_sutta_languages
@@ -2151,22 +2167,6 @@ ${query_text}`;
                     text: "&Topic Index..."
                     onTriggered: {
                         SuttaBridge.open_topic_index_window()
-                    }
-                }
-            }
-
-            // This one item serves both entry points: DrawerMenu builds the
-            // mobile menu from the same `menu_list` that the desktop menu bar
-            // renders, so there is one Action and one accessor behind it. The
-            // bridge call reaches WindowManager::create_sutta_navigation_window(),
-            // which revives the single instance whichever SuttaSearchWindow
-            // asked.
-            CMenuItem {
-                action: Action {
-                    id: action_sutta_navigation
-                    text: "Sutta &Navigation..."
-                    onTriggered: {
-                        SuttaBridge.open_sutta_navigation_window()
                     }
                 }
             }
