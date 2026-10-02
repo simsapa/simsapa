@@ -4,29 +4,33 @@ How `WindowManager` (`cpp/window_manager.cpp`, `cpp/window_manager.h`) creates,
 closes and re-shows the app's top-level windows, and the rules that follow from
 it.
 
-> **There are two lifecycle families, and they need opposite code.** Read §0
+> **There are three lifecycle families, and they need different code.** Read §0
 > first and decide which one a new window belongs to before writing anything —
 > the reuse predicate, the close handler and the "is it in the list" question
-> all have different answers in the two families, and each is silently wrong in
-> the other.
+> have different answers in each family, and each answer is silently wrong in
+> the others.
 
 **Adding a new window? §7 is the checklist.**
 
-## 0. The two families
+## 0. The three families
 
-| | **Pooled** | **Single-instance** |
-|---|---|---|
-| Members | `SuttaSearchWindow` only | every secondary window (§5) |
-| On close | hidden, kept in the list | destroyed: removed from the list + `deleteLater()` |
-| "An instance exists" | list membership — tells you **nothing** useful | `m_root != nullptr` |
-| "The user has it open" | `visible` (`window_is_open()`) | same as "an instance exists" |
-| Reuse predicate | `visible`, via `take_closed_sutta_search_window()` | `m_root != nullptr`, via `reuse_or_evict<T>()` |
-| Why | reviving skips a `QQmlApplicationEngine` load — the expensive part, and these host `WebEngineView`s | one at a time is the correct UX, and N opens must not leave N engines resident |
+| | **Pooled** | **Single-instance** | **Single-instance, kept** |
+|---|---|---|---|
+| Members | `SuttaSearchWindow` only | seven secondary windows (§5) | `SuttaNavigationWindow` only (§5d) |
+| On close | hidden, kept in the list | destroyed: removed from the list + `deleteLater()` | close **accepted**, nothing notified: the platform window goes, the wrapper, engine and QML state stay |
+| "An instance exists" | list membership — tells you **nothing** useful | `m_root != nullptr` | `m_root != nullptr` |
+| "The user has it open" | `visible` (`window_is_open()`) | same as "an instance exists" | `visible` — but nothing asks |
+| Reuse predicate | `visible`, via `take_closed_sutta_search_window()` | `m_root != nullptr`, via `reuse_or_evict<T>()` | `m_root != nullptr`, via `reuse_or_evict<T>()` |
+| On revive | reset: `clear_all_tabs()`, title cleared | parameters re-applied, time-varying data re-read (§5b-bis) | **nothing is reset** |
+| Session save / restore | yes, `visible` windows only (§4) | no | no |
+| Why | reviving skips a `QQmlApplicationEngine` load — the expensive part, and these host `WebEngineView`s | one at a time is the correct UX, and N opens must not leave N engines resident | the state the user left behind *is* the feature: they open a text, come back, and carry on from the same place |
 
-**Each predicate is a bug in the other family.** Using `visible` for a
+**Each predicate is a bug in another family.** Using `visible` for a
 single-instance window would treat a window that is merely hidden mid-close as
-absent and construct a second one. Using list membership for a pooled window
-re-opens a window the user closed — that is a real bug that shipped, see §3.
+absent and construct a second one — and for the kept window it would construct
+a second one on **every** reopen, since a closed one is by definition not
+visible. Using list membership for a pooled window re-opens a window the user
+closed — that is a real bug that shipped, see §3.
 
 `DownloadAppdataWindow` and `StorageRecoveryWindow` are in neither family. They
 exist only during startup, inside their own dedicated `app.exec()` which the app
@@ -248,6 +252,7 @@ leaks the window.
 | `ChantingPracticeReviewWindow` | `chanting_review` | an in-progress recording | `onRecording_completed` |
 | `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3, so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
 | `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
+| `SuttaNavigationWindow` | *(none — never notifies)* | **nothing to defer** — it is never destroyed (§5d), so no completion signal can be lost to a close. It also starts nothing off the Qt thread: every `nav_tree_*` read is synchronous | — |
 
 Five traps in that table:
 
@@ -316,17 +321,17 @@ query twice on every window creation. And `SuttaLanguagesWindow` releases its
 keep-screen-on lock in `Component.onDestruction`, not `onClosing`, so unlike the
 review window it needs no re-acquire.
 
-`SuttaNavigationWindow` is the limiting case of this section and needs no
-`onVisibleChanged` re-init at all. It is never destroyed, so its
-`Component.onCompleted` runs **once per app run**, not once per instance —
+`SuttaNavigationWindow` (§5d) is the limiting case of this section and needs
+no `onVisibleChanged` re-init of its state at all. It is never destroyed, so
+its `Component.onCompleted` runs **once per app run**, not once per instance —
 and preserving exactly what the user left behind is the whole point of the
-family (FR-24). Everything it reads at load is therefore read once:
+family. Everything it reads at load is therefore read once:
 
 | Read once at load | Consequence |
 |---|---|
 | `nav_tree_is_available()` | The tree is bootstrap data that cannot appear mid-session, so there is nothing to re-check. |
 | `get_show_navigation_blurbs()` | The window's own checkbox is the only thing that changes it, and the property is an **alias** to that checkbox — so there is one piece of state and nothing to re-read. |
-| `get_mobile_extra_top_margin()` | **This one does go stale.** Change the top-margin setting on mobile and this window keeps its old margin until the app restarts, because it is not rebuilt on reopen the way the destroy-on-close windows are. Accepted: the setting is changed rarely, the effect is cosmetic, and adding a re-init here would be the first step toward the state-clearing that FR-24 exists to prevent. |
+| `get_mobile_extra_top_margin()` | **This one does go stale.** Change the top-margin setting on mobile and this window keeps its old margin until the app restarts, because it is not rebuilt on reopen the way the destroy-on-close windows are. Accepted: the setting is changed rarely, the effect is cosmetic, and adding a re-init here would be the first step toward clearing the state this family exists to keep. |
 
 The general rule that falls out: **in a never-destroyed window, treat every
 value read in `Component.onCompleted` as fixed for the life of the app**, and
@@ -353,6 +358,66 @@ Two rules that came out of that sweep:
 - **`is_destroyed()` is not the fix.** cxx-qt documents it as racy — the object
   can be destroyed between the check and the `queue`. Handle the `Err`.
 
+### 5d. The kept window — `SuttaNavigationWindow`
+
+One instance for the whole app run, and closing it destroys nothing. Reopening
+shows the same object, so the breadcrumb path, expansion state, filter text and
+scroll position are simply still there — there is no save/restore code for
+them anywhere, and none must be added. Its content is described in
+[sutta-navigation-tree.md](./sutta-navigation-tree.md).
+
+**The close is accepted and not notified.** `SuttaNavigationWindow.qml`'s
+`onClosing` logs a line and returns; it does not call
+`SuttaBridge.notify_window_closed()`, so `on_window_closed()` never runs for
+this window and the wrapper stays in `WindowManager::sutta_navigation_windows`
+with its engine alive.
+
+> **Trap: do not reject the close, and do not assign `visible = false`.** The
+> obvious way to write "hide instead of destroy" is `close.accepted = false;
+> visible = false`, and it breaks quitting. Qt runs the quit-on-last-window
+> check, `QGuiApplicationPrivate::maybeLastWindowClosed()`, **only** inside
+> `case QEvent::Close` and **only when the event was accepted**
+> (`qwindow.cpp`). Reject the close and that check never runs, so closing this
+> window while it is the only visible one leaves a live app with no windows
+> and no way back to it.
+>
+> Accepting is what makes it work: Qt calls `destroy()`, which releases the
+> *platform* window but not the `QQuickWindow`. `m_root` stays non-null, every
+> QML property survives, `reuse_or_evict()` still finds it, and
+> `show_and_activate_window()` recreates the surface on the next open. "Hidden,
+> not destroyed" is what is left when the close is accepted and nobody is told.
+
+What follows from that, each of which differs from one of the other families:
+
+- **The reuse predicate is `m_root != nullptr`, never `visible`.**
+  `create_sutta_navigation_window()` is the `reuse_or_evict()` shape of §5
+  verbatim. A hidden window here is *the* window waiting to be shown, not a
+  closed one to be skipped.
+- **Null-`m_root` eviction still applies.** A failed engine load is evicted
+  like any single-instance window's, or one dead wrapper leaks per open.
+- **Revive resets nothing.** There is no `clear_all_tabs()` analogue and no
+  `onVisibleChanged` re-init of the kind §5b-bis describes. The one thing
+  re-read on show is the per-level translation count, which depends on the
+  installed languages and so can change while the window is hidden.
+- **It has no branch in `on_window_closed()` and no type string.** A notify
+  naming it would fall through to the unknown-type error, which is the
+  intended outcome: it makes a wiring mistake visible in `log.txt`.
+- **It is invisible to the session and to dispatch by construction.**
+  `save_session_now()`, `restore_last_session()` and the `window_id`-less
+  fallbacks of §3 all iterate `sutta_search_windows` alone, and this window
+  lives in its own list. Keep it out of that list: the saved session's array
+  length is the restored *sutta* window count.
+- **One accessor, one entry point.** The `Windows` menu's
+  `action_sutta_navigation` serves the desktop menu bar and, through
+  `DrawerMenu.qml` walking the same `menu_list`, the mobile drawer. Both reach
+  `SuttaBridge.open_sutta_navigation_window()` and so the one `WindowManager`
+  accessor, whichever `SuttaSearchWindow` asked.
+- **`Component.onCompleted` runs once per app run.** See the end of §5b-bis
+  for what that fixes in place for the life of the app.
+
+`log.txt` distinguishes the two outcomes of an open: the accessor logs
+`revived` for the kept instance and `created` for a first open.
+
 ## 6. `~WindowManager` never runs
 
 `m_instance` is `new`ed in `instance()` and nothing anywhere deletes it, and the
@@ -370,7 +435,11 @@ missing from them.
 
 1. **Pick a family (§0).** Anything that is not the sutta reader is
    single-instance; there is no second pooled window and adding one needs a
-   reason at the level of §1.
+   reason at the level of §1. The kept family (§5d) has one member and is the
+   right choice only when the state the user leaves in the window is the
+   feature — it costs a resident engine for the rest of the app run. For a
+   kept window steps 4's `on_window_closed()` branch, 5's notify, 6 and 6a's
+   re-init do **not** apply; read §5d instead.
 2. **C++ wrapper** (`cpp/<name>_window.{h,cpp}`): guard the root —
    `m_root = m_engine->rootObjects().isEmpty() ? nullptr : rootObjects().constFirst();`
    — and null-check before any `setProperty`. If the window takes constructor

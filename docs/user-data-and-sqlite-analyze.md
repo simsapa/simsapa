@@ -79,7 +79,7 @@ Notes:
 - The navigation-tree row is a **bootstrap** path, not a user-data one, and is
   listed because the same rule applies to it: `navigation_nodes` is a new table
   whose level query (`WHERE parent_uid = ?`) depends on
-  `idx_navigation_nodes_parent` being chosen, and with no statistics the
+  `idx_navigation_nodes_parent_sort` being chosen, and with no statistics the
   planner may scan instead. The CLI's `build-navigation-tree` command writes
   the same rows outside a bootstrap, so the `ANALYZE` lives with the write and
   not with the archive step.

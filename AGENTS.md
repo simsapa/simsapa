@@ -155,14 +155,18 @@ Notable feature docs:
   new desktop `WebEngineView`.
 - [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
   **read this before adding any new top-level window; §7 is the checklist.**
-  There are **two lifecycle families and they need opposite code** (§0): the
+  There are **three lifecycle families and they need different code** (§0): the
   **pooled** `SuttaSearchWindow`, which is only *hidden* on close and stays in
   its `WindowManager` list so the next open revives it instead of loading
   another `QQmlApplicationEngine` (the expensive part, and these host
-  `WebEngineView`s); and the **single-instance** secondary windows, which are
-  **destroyed on close**. The reuse predicate differs accordingly — `visible`
-  (`window_is_open()`) for the pool, **`m_root != nullptr`** for the rest — and
-  each predicate is a bug in the other family. Covers, for the pool: the revive
+  `WebEngineView`s); the **single-instance** secondary windows, which are
+  **destroyed on close**; and the one **kept** window, `SuttaNavigationWindow`
+  (§5d), single-instance but never destroyed, so the state the user left in it
+  is still there on reopen — its `onClosing` must **accept** the close and
+  notify nothing, because rejecting it skips Qt's quit-on-last-window check and
+  strands a live app with no windows. The reuse predicate differs accordingly —
+  `visible` (`window_is_open()`) for the pool, **`m_root != nullptr`** for the
+  rest — and each predicate is a bug in the other family. Covers, for the pool: the revive
   path in `create_sutta_search_window()` (`clear_all_tabs()` because callers
   assume a blank window, keep the `window_id`, move to the end of the list,
   `show_and_activate_window()`), the two places that must filter on `visible`
@@ -191,6 +195,23 @@ Notable feature docs:
   `qt_thread.queue()`** — destroy-on-close makes `ObjectDestroyed` a live path,
   and `is_destroyed()` is racy and is not the fix. §6 records why
   `~WindowManager` is dead code and must stay empty.
+- [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the browsable
+  hierarchy behind the Sutta Navigation window, built **at bootstrap** into
+  `navigation_nodes` (nothing populates it at runtime). **Two spines, never
+  reconciled**: Sutta / Vinaya / Abhidhamma from the local `sc-data` checkout
+  (Theravāda Pāli scope only) and Aṭṭhakathā / Ṭīkā / Añña from the
+  tipitaka.org toc files. Covers node-uid stability, the materialized
+  `search_text` / `path` / `sort_path` columns (**changing how one is derived
+  means rebuilding the tree** — a stale one fails silently), the edition an SC
+  leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
+  the Summaries toggle and context notes, and the window's own quiet-failure
+  rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
+  in the window, uncached per-level translation counts). On the CST side:
+  **`VERIFIED_CST_FILES` is a verification gate that cannot be replaced by a
+  computed predicate**, the coverage classes applied within it, the toc-driven
+  division split, and the three rebuild commands that must be run together
+  (`import-cst`, `build-navigation-tree`, `index rebuild --area suttas --lang
+  pli` — the Tantivy index does not heal itself).
 - [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
   its data, and the in-app **Update** / **Reset** actions that replace it without
   a Simsapa release. The parser moved from the CLI to
@@ -1368,12 +1389,14 @@ function get_api_key(key_name: string): string {
 ### Adding a new top-level window
 
 **Read [docs/window-lifecycle-and-reuse.md](./docs/window-lifecycle-and-reuse.md)
-before writing any of it — §0 for which of the two lifecycle families it belongs
-to, §7 for the step-by-step checklist.** There are two families and they need
-opposite code: the **pooled** `SuttaSearchWindow` (closing only *hides* it;
-reuse predicate `visible`) and the **single-instance** secondary windows
-(destroyed on close; reuse predicate `m_root != nullptr`). Each predicate is a
-silent bug in the other family.
+before writing any of it — §0 for which of the three lifecycle families it
+belongs to, §7 for the step-by-step checklist.** The two a new window will
+normally choose between need opposite code: the **pooled** `SuttaSearchWindow`
+(closing only *hides* it; reuse predicate `visible`) and the
+**single-instance** secondary windows (destroyed on close; reuse predicate
+`m_root != nullptr`). Each predicate is a silent bug in the other family. The
+third, the **kept** `SuttaNavigationWindow` (§5d), has one member and is right
+only when the state left in the window is the feature.
 
 The three things most easily missed, all of which fail quietly:
 

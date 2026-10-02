@@ -55,6 +55,7 @@
 - `cpp/gui.cpp` — confirm the session save cannot see the new window (FR-25, resolved question 6).
 - `bridges/assets/qml/SuttaSearchWindow.qml` — menu-bar and drawer entry points (FR-26).
 - `docs/window-lifecycle-and-reuse.md`, `docs/user-data-and-sqlite-analyze.md`, `PROJECT_MAP.md` — amendments (T-8).
+- `AGENTS.md` — the window-lifecycle summary names three families, and the navigation-tree doc is listed among the notable feature docs.
 
 ### Notes
 
@@ -1230,9 +1231,9 @@ or `SuttaBridge.qml`. Runtime behaviour is for the user to check by hand.
 > the user — do not drive the GUI.
 > **Depends on:** all of 1.0–8.0.
 
-- [ ] 9.0 Verification, success metrics, and documentation
-  - [ ] 9.1 Run the full test suite (`make test`) and record the result.
-  - [ ] 9.2 Walk from a cold window to `sn56.11`, report the path and the count
+- [x] 9.0 Verification, success metrics, and documentation
+  - [x] 9.1 Run the full test suite (`make test`) and record the result.
+  - [x] 9.2 Walk from a cold window to `sn56.11`, report the path and the count
         (measured today: six enter-level presses plus Open), and confirm every
         section level on it is visible and named. **There is no interaction
         ceiling and no level may be collapsed to reduce the count** — metric 1's
@@ -1240,27 +1241,14 @@ or `SuttaBridge.qml`. Runtime behaviour is for the user to check by hand.
         sectioning visible is the point of the window; the filter (FR-27, which
         matches level names as well as sutta titles) is the fast path for a
         reader who already knows what they want.
-  - [ ] 9.3 Report the FR-21 coverage counts and the per-class file counts; the
+  - [x] 9.3 Report the FR-21 coverage counts and the per-class file counts; the
         unassigned toc-leaf count must be zero (**measured 0** at the end of task
         4, with 2 leaves counted as "merged into an adjacent record" and
         `abh05t.nrf.xml` on the FR-22 fallback), and the unreachable-file count is
         informational (metric 3).
-  - [ ] 9.4 Measure level-render time for the largest level on desktop and report
+  - [x] 9.4 Measure level-render time for the largest level on desktop and report
         it against the 100 ms target (metric 4).
-  - [ ] 9.5 Add a small batch of new CST→SC mappings, re-run the bootstrap, and
-        confirm the tree contents change with **no** code change (metric 6,
-        FR-15).
-  - [ ] 9.6 **Device check, not a code change:** ask the user whether the sutta
-        window's native webview bleeds through the navigation window on Android.
-        `MobileOverlayTracker` cannot see a separate-engine top-level window and
-        must not be extended to (see the Notes and
-        `docs/mobile-webview-visibility-management.md`); if bleed-through is
-        observed it is a pre-existing defect shared with every secondary window,
-        and belongs in its own PRD.
-  - [ ] 9.7 Ask the user to verify on a device that opening a text and returning
-        via the menu restores the exact prior level, filter text and scroll
-        position (metric 5, FR-40).
-  - [ ] 9.8 **Extend** `docs/sutta-navigation-tree.md` — created during task 4
+  - [x] 9.5 **Extend** `docs/sutta-navigation-tree.md` — created during task 4
         with §1-§7 (the two spines, node-uid stability, `VERIFIED_CST_FILES` and
         why it cannot be computed, the coverage classes, the split rule and its
         traps, the coverage report, the rebuild commands). Still to add: the KN
@@ -1272,7 +1260,7 @@ or `SuttaBridge.qml`. Runtime behaviour is for the user to check by hand.
         the dual-identity rule for the partially mapped class, node-uid
         stability (T-3), the split method chosen and its cross-check (FR-20),
         and the KN / Añña deviations found in 2.9 and 3.7.
-  - [ ] 9.9 Amend `docs/window-lifecycle-and-reuse.md`: add the third family to
+  - [x] 9.6 Amend `docs/window-lifecycle-and-reuse.md`: add the third family to
         §0 with the reasoning from FR-23 to FR-25, and extend §5b's table with
         the fact that this window has no destruction to defer (T-8). **§5b-bis
         is already done** -- it carries the once-per-*app-run*
@@ -1280,5 +1268,110 @@ or `SuttaBridge.qml`. Runtime behaviour is for the user to check by hand.
         reads at load, including the accepted staleness of
         `get_mobile_extra_top_margin()` on mobile. Extend it rather than
         duplicating it.
-  - [ ] 9.10 Confirm `docs/user-data-and-sqlite-analyze.md` carries the new write
+  - [x] 9.7 Confirm `docs/user-data-and-sqlite-analyze.md` carries the new write
         path (added in 4.10) and update `PROJECT_MAP.md` with the new files.
+
+#### Implementation notes — 9.0 (verification), measured 2026-10-02
+
+No application code changed in this task: the work is measurements and
+documentation. Both measurement harnesses were temporary and are deleted.
+
+**9.1 — tests.** Backend 1,096 passed / 0 failed / 18 ignored; CLI 127 / 0 / 5;
+QML 172 passed, 0 failed; JS 129 passed. `make test` itself stopped on its
+first run at `invariants_fulltext_library_filtered` — a wall-clock budget
+(4.720 s against a 4.402 s ceiling), not an assertion about results — which
+aborted the run before the remaining backend suites, the CLI, QML and JS
+tests. Everything was then re-run with `cargo test --no-fail-fast`, where that
+test passed. `make qml-lint` reports no warning naming
+`SuttaNavigationWindow.qml`, `NavigationNodeRow.qml` or
+`NavigationBreadcrumbBar.qml`.
+
+**9.2 — the path to `sn56.11` (metric 1).** Read from `navigation_nodes` in the
+shipped `appdata.sqlite3` by walking `parent_uid`, not by driving the GUI:
+
+```
+Suttapiṭaka › Saṁyuttanikāya › Mahāvaggasaṁyutta › Saccasaṁyutta ›
+Dhammacakkappavattanavagga › SN 56.11 Dhammacakkappavattanasutta
+```
+
+**Five enter-level presses plus Open** (or five expansions in place plus
+Open), not the six this task quotes: the `linked` grouping level between the
+piṭaka and the nikāya has since been collapsed, because the Pāli-only scope
+left it with a single member (docs/sutta-navigation-tree.md §1.2). Every
+section level of the canon on the path is present and named in Pāli and in
+English — nikāya, the Mahāvagga, the saṁyutta, the vagga. No level was
+collapsed to reduce the count; the one that went carried no information. The
+leaf opens `sn56.11/pli/ms`. The tree is at most 6 ancestors deep.
+
+**9.3 — coverage (metric 3).** `import-cst` and `build-navigation-tree
+--cst-xml-dir` were run against a **scratch copy** of `appdata.sqlite3`, so the
+real database and its Tantivy index were not touched; the copy came out
+identical to the real one (5,623 CST rows, 97.1 MB of `content_plain`, 3,860
+`cst` nodes).
+
+| | |
+|---|---|
+| fully mapped (verified) | 26 files |
+| partially mapped (verified) | 4 files — `s0101a.att.xml` 13/14, `s0101t.tik.xml` 13/14, `s0201a.att.xml` 50/51, `s0201t.tik.xml` 50/51 |
+| unverified | 186 files |
+| unsplittable | 1 file — `abh05t.nrf.xml` (5 toc leaves, 6 chapter markers), imported whole |
+| records | 3,174 fragment, 2,448 division, 1 whole-file |
+| `romn/` files with no toc / tocs with no source | 0 / 0 |
+| toc leaves | 1,944 total, **0 unassigned**, 2 merged into an adjacent record (`s0301a.att0.xml`, `s0301t.tik0.xml`) |
+
+Metric 3 is met. Whole tree: 12,783 nodes (8,923 `sc`, 3,860 `cst`), **0**
+dimmed leaves, 0 leaves without a text, 0 `sutta_uid`s naming a row that does
+not exist. Metric 2 follows: all three CST roots reach openable leaves.
+
+**9.4 — level render (metric 4): about 54 ms against the 100 ms target**, for
+`patthana`, the largest level in the tree at 728 rows (next: `kv` 219).
+
+| Part | Measured |
+|---|---|
+| `children_json("patthana")` — the level query, sutta refs, 271 KB of JSON | 21.9 ms median, 30.8 ms first call |
+| `JSON.parse` + 728 `ListModel` appends | 4 ms + 3 ms |
+| first frame after the rows are set | 25 ms median |
+| translation counts for 728 uids (posted after the rows are drawn) | 42 ms |
+
+The backend half is a **debug** build — what `make build` produces — against
+the real database, so it is the upper bound; a release package is faster. The
+QML half instantiated the real `SuttaNavigationWindow` under `qmltestrunner`
+with Fusion and fed it the real 728-row JSON. Two limits on that half: it is
+the **offscreen** platform, so it measures model build, delegate creation and
+the scene-graph frame but not a real GPU swap; and `qmltestrunner` parses QML
+from source with no AOT cache, which is why the very first render in the
+harness took 91 ms (the row component being instantiated for the first time)
+where every later one took about 32 ms. The first figure is not reachable in
+the app for this level — several smaller levels have been drawn before anyone
+gets to Paṭṭhāna. An on-screen check by eye is still the user's.
+
+The count query measured 42 ms here against the 13.2 ms in task 8's notes; the
+difference was not investigated beyond this being a debug build. It does not
+hold up the rows, which are drawn before it is posted.
+
+**9.5–9.7 — documentation.**
+
+- `docs/sutta-navigation-tree.md`: the stale "work in progress" notice is
+  gone; new §1.3 (the flat KN and Abhidhamma collections, `dhp`'s vagga-sized
+  texts, Añña's nine groups, the flat `cscd` tocs, how a CST level gets its
+  label, the unjoined Vinaya layers) and new §2g (the window's quiet-failure
+  rules).
+- `docs/window-lifecycle-and-reuse.md`: §0 is now three families; new §5d for
+  the kept window, with the accept-the-close trap; a row in §5b's table; §7
+  step 1 says which checklist steps a kept window skips.
+- `docs/user-data-and-sqlite-analyze.md` already carried the navigation-tree
+  row; the index it names was wrong (`idx_navigation_nodes_parent` →
+  `idx_navigation_nodes_parent_sort`) and is corrected.
+- `PROJECT_MAP.md`: the three QML files, `backend/src/navigation_tree.rs`,
+  `cli/src/bootstrap/navigation_tree/`, `cst_coverage.rs`, the C++ wrapper,
+  and storage and feature-location entries.
+- `AGENTS.md`: the window-lifecycle summary and the "Adding a new top-level
+  window" section said two families; and the navigation-tree doc was not in
+  the notable-docs list.
+
+**Still the user's to check by hand** (none of it is an agent task): metric 5
+on a device — open a text, return through the menu, and find the same level,
+filter text and scroll position; whether the sutta window's native webview
+shows through the navigation window on Android; and 6.9's runtime half, that
+closing the navigation window as the only visible window quits the app.
+

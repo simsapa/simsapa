@@ -4,8 +4,11 @@ The browsable hierarchy behind the Sutta Navigation window, built at bootstrap
 time into the `navigation_nodes` table of `appdata.sqlite3`. The app never
 assembles it at runtime and never queries ArangoDB for it.
 
-> Work in progress: the window itself and its bridge API are not built yet.
-> What follows describes the bootstrap side, which is.
+§1–§2 and §3–§6 are the bootstrap side: where the tree comes from and how its
+rows are derived. §2a–§2g are what the window and its read layer
+(`backend/src/navigation_tree.rs`, the `nav_tree_*` functions on `SuttaBridge`)
+depend on. The window's lifecycle — one instance, kept across a close — is in
+[window-lifecycle-and-reuse.md §5d](./window-lifecycle-and-reuse.md).
 
 ## 1. Two spines, never reconciled
 
@@ -141,6 +144,45 @@ sibling and stop being elided, `kn`'s uid would not move.
 
 The CST spine is not touched. Its levels come from the toc files, which describe
 one tradition already and have no tradition-splitting level to lose.
+
+### 1.3 Shapes that look like a failed build and are the source's own
+
+The tree is depth-agnostic: every level is whatever `parent_uid` says, never a
+fixed number of levels per collection. So a collection whose texts sit directly
+under it, or a level labelled differently from its neighbour's, is the source's
+shape and not a structure the builder failed to derive. The ones that look most
+like defects:
+
+- **Flat collections on the SC spine.** In the Khuddakanikāya `kp`, `dhp`,
+  `bv`, `mnd` and `pe` hold their texts directly, while the other fifteen
+  members nest (`thag` 21 branches, `tha-ap` 56, `ja` 22). All seven Abhidhamma
+  books are flat, which is where the tree's largest level comes from: `patthana`
+  with 728 rows, then `kv` with 219. They are flat in `sc-data`'s own
+  `*-tree.json`. An **empty** KN member, by contrast, is a build defect — all
+  twenty have Pāli rows.
+- **`dhp`'s 26 children are texts, not vaggas to enter.** SuttaCentral stores
+  the Dhammapada one vagga per document (`dhp1-20` Yamakavagga), so the vagga
+  *is* the leaf.
+- **Añña is properly structured.** `toc4.xml` holds nine titled groups
+  (Visuddhimagga, Saṅgāyana-puccha vissajjanā, Leḍī sayāḍo, Buddha-vandanā,
+  Vaṁsa, Byākaraṇa, Nīti, Pakiṇṇaka, Sihaḷa), each over `src=` books whose
+  leaves are divisions. Nothing there needed a flat-list fallback.
+- **Every `cscd/*.toc.xml` is flat** — one root `<tree>` with its leaves under
+  it, in all 217 files. The leaf walk recurses regardless, so a nested toc
+  would build rather than be truncated.
+- **A CST level is labelled from its own title first, and from its depth only
+  when the title names no level.** `level_label()` in `cst_spine.rs` matches the
+  title's stem (`saṁyutt`, `paṇṇāsa`, `vagg`, `nikāy`, `sutt`) and falls back
+  to `NikayaStructure`'s level list for a title such as `Ganthārambhakathā`.
+  Depth alone mislabels the commentaries, whose tocs are shallower than the
+  mūla they comment on: the Aṅguttara aṭṭhakathā's leaves are vaggas sitting
+  at the depth the mūla structure reserves for a paṇṇāsaka. The vocabulary is
+  `GroupType`'s either way; the SC spine's levels keep SuttaCentral's names
+  (§1).
+- **The Vinaya's three layers are under three roots and are not joined.** A
+  rule's mūla is on the SC spine, its aṭṭhakathā under `cst:atthakatha` and
+  its ṭīkā under `cst:tika`, in three files with three internal structures.
+  There is no cross-root "related texts" row.
 
 ## 2. Node uids are stable across bootstraps
 
@@ -660,6 +702,63 @@ but has **its own** more/less button and its own expansion state
 does not open the other. It is not part of `search_text`, so the filter does
 not match on it.
 
+## 2g. The window: what its rows are built from
+
+`SuttaNavigationWindow.qml` is a drill-down, not a mega-tree. **Entering** a
+level replaces the list with that node's children at zero indentation;
+**expanding** a row in place reveals its descendants as indented tree rows, for
+a look inside a branch that is then flicked shut. A tap on a row body does the
+one thing the row is for — a branch expands, an openable leaf opens — and
+entering a level or reading more of a summary is always a button. No row is
+both a branch and a leaf, so a tap is never ambiguous on a touch screen.
+
+The rules below are the ones that break quietly.
+
+- **The level list's model is a `ListModel` edited in place, never a JS array
+  that is reassigned.** Assigning an array resets the `ListView`: it jumps to
+  the top and rebuilds every delegate, and a rebuilt row settles its height
+  only after its first layout pass, so the scroll position cannot be restored
+  afterwards. `toggle_expand()` inserts and removes below the toggled row and
+  leaves every row above it untouched.
+- **Per-row state lives in the window, keyed by `node_uid`** —
+  `expanded_uids`, `blurb_expanded_uids`, `context_note_expanded_uids`. A
+  `ListView` recycles delegates, so a flag kept in the delegate lands on
+  whichever row scrolls into it next.
+- **The level and the filter hits are two `ListView`s, not one with a switched
+  model.** The level list is only hidden while a filter is active, so clearing
+  the filter returns to the same level at the same scroll position with no
+  restore code.
+- **A filter hit carries its ancestors' titles, not their uids.** Entering a
+  level from one walks `parent_uid` up through `nav_tree_node_json()`
+  (`ancestor_segments()`), which is the same walk §2b uses for every other
+  route.
+- **Translation counts are one query per level and are not cached.** The count
+  is "translations in the languages installed right now", so it changes with a
+  language download. `translation_counts_conn()` asks for the whole level at
+  once as indexed prefix ranges (`uid >= 'sn56.11/' AND uid < 'sn56.110'`,
+  never `LIKE 'sn56.11%'`, which would fold `sn56.110` in), excluding the root
+  language. The window re-reads them in `onVisibleChanged`, because it is
+  hidden rather than destroyed and a language can arrive while it is away.
+  Only level rows are counted; a uid with no translation is absent from the
+  map and draws no indicator.
+- **Two reads are posted with `Qt.callLater`**: the first level query, so the
+  window paints before the roots are read, and every level's count query, so
+  the rows are drawn before the counts arrive. Entering a level reads its rows
+  synchronously — one indexed `WHERE parent_uid = ?`.
+- **Opening a text goes to the last *visible* Sutta Search window**, as a new
+  tab, through `emit_show_sutta_from_reference_search("")`. With no such
+  window open that route does nothing at all, so `open_node()` checks
+  `count_open_sutta_search_windows()` first and opens a window with the result
+  instead.
+- **`nav_tree_filter_json()` refuses a non-positive limit.** SQLite reads a
+  negative `LIMIT` as "no limit", so a slip in the QML would return the whole
+  tree as a flat list rather than an error.
+- **No data is said, not shown.** When `nav_tree_is_available()` is false the
+  window shows "The navigation index is not available." rather than an empty
+  list, which would read as a corpus with nothing in it. Nothing populates the
+  tables at runtime, so an install whose `appdata.sqlite3` predates the tree
+  stays in that state until it downloads a database that carries it.
+
 ## 3. CST records: two independent questions
 
 Which records a CST source file gets is decided by two questions that must not
@@ -873,5 +972,8 @@ SC spine needs it for titles). Each spine build ends with an `ANALYZE` — see
   failure is non-fatal.
 - [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md) — the
   `ANALYZE` that follows each spine write.
-- `tasks/2026-09-18-174900-prd---sutta-navigation-window.md` — the PRD, whose
-  FR-15 carries a dated correction about `VERIFIED_CST_FILES`.
+- [window-lifecycle-and-reuse.md](./window-lifecycle-and-reuse.md) §5d — why
+  the window is kept across a close, and why its close must be accepted.
+- `2026-09-18-174900-prd---sutta-navigation-window.md`, under `tasks/` or
+  `tasks/archive/` — the PRD, whose FR-15 carries a dated correction about
+  `VERIFIED_CST_FILES`.
