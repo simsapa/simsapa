@@ -17,6 +17,13 @@ server is down, etc.), the app ships an **embedded fallback snapshot** of the
 same JSON so it can still resolve the asset URLs. This document describes the
 lookup, the fallback, and how the user is informed when things actually fail.
 
+**Not covered here: the Available dictionaries list.** The Dictionaries window
+resolves a release tag of the third-party `digitalpalidictionary/other-dictionaries`
+repository straight from the GitHub API, with its own pinned series and fallback
+tag. That repository is not in this feed and nothing below applies to it; the
+two share only `to_version()` / `compare_versions()`. See
+[dictionary-import-pipeline.md](./dictionary-import-pipeline.md) §12.
+
 ## The two sources of releases info
 
 | Source | Where | When used |

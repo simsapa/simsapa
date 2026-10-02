@@ -250,7 +250,7 @@ leaks the window.
 | `LibraryWindow` | `library` | EPUB/PDF/HTML document import | `DocumentImportDialog.onImport_completed` |
 | `SuttaLanguagesWindow` | `sutta_languages` | language download / import / removal | `onDownloadsCompleted` / `onRemovalCompleted` |
 | `ChantingPracticeReviewWindow` | `chanting_review` | an in-progress recording | `onRecording_completed` |
-| `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3, so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
+| `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3/6 (deleting, importing, renaming, downloading), so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
 | `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
 | `SuttaNavigationWindow` | *(none — never notifies)* | **nothing to defer** — it is never destroyed (§5d), so no completion signal can be lost to a close. It also starts nothing off the Qt thread: every `nav_tree_*` read is synchronous | — |
 

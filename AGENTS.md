@@ -648,10 +648,24 @@ Notable feature docs:
   word**, the feature name is one constant (a mismatch fails *silently*), both
   startup sweeps are age-gated at an hour and treat an unreadable timestamp as
   "too young", and `delete_temp_import_folder` wipes the **shared root** and is
-  deliberately not on this path. §8 the three keep-screen-on holders, §9 why the
+  deliberately not on this path. §8 the four keep-screen-on holders, §9 why the
   scanning frame's Cancel *abandons* rather than cancels, §11 the
   `cargo check --target aarch64-linux-android` hole that is the only check
-  `android_saf.rs` ever gets.
+  `android_saf.rs` ever gets. **§12 is the second entry point, the Available
+  dictionaries list**: ten curated dictionaries downloaded from
+  `digitalpalidictionary/other-dictionaries` and handed to the *existing* batch
+  as `{ kind: "zip", member: "" }` — `scan_source` is never called. Covers the
+  catalogue traps (`label` vs `asset_stem`, which differ only for `nyana`;
+  `abt` is the CPED and its name is deliberately not its `bookname`; `peu`'s
+  `pa-en` means Pali; `si` has no tokenizer and that is expected), the
+  **pinned series** `(1, 0)` with its fallback tag — raising the pin is a code
+  change and must **not** become a setting — and that this is **not** the app's
+  own release lookup (only `to_version()` / `compare_versions()` are shared).
+  The download lands in the dictionaries staging folder so the existing cleanup
+  owns it; the progress frame is `views_stack` index **6, appended** because the
+  indices are literals at every call site; download failures keep their own list
+  because `start_batch()` resets `batch_failed`; and the selection is read
+  through `checked_offered()`, never `checked_labels`.
 - [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
   what happens when the storage location the user chose is no longer where it was
   (a microSD card moved to another socket, a volume back under a different path).

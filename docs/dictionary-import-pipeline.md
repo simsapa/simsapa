@@ -4,6 +4,10 @@ How a user-supplied StarDict/GoldenDict dictionary gets from a file picker into
 `dictionaries.sqlite3`, which stage runs on which thread, who owns each
 temporary file, and the traps that are easy to reintroduce.
 
+§1–§11 follow a file the user picked. §12 covers the other way in: the
+**Available** section, which downloads a curated dictionary and hands it to the
+same import stage.
+
 Source PRD:
 `tasks/2026-07-31-180502-prd---picker-url-handling-and-chromebook-import-failure.md`
 (phase 1 shipped the File Selection Test diagnostic — see
@@ -399,7 +403,7 @@ process has no `Drop`.
 
 | Temporary | Where | Deleted by |
 |---|---|---|
-| the staged copy of the picked archive | `<temp>/simsapa-imports/dictionaries/` | the dialog / `DictionariesWindow.finish_batch()`, via `cleanup_staged_file`; plus `sweep_orphaned_staged_files()` at startup |
+| the staged copy of the picked archive, or an archive downloaded from the Available list (§12) | `<temp>/simsapa-imports/dictionaries/` | the dialog / `DictionariesWindow.finish_batch()`, via `cleanup_staged_file`; plus `sweep_orphaned_staged_files()` at startup |
 | the probe's `.ifo` scratch folder | `SIMSAPA_DIR`, prefix `simsapa-stardict-probe-` | `TempDir` on drop; plus `sweep_orphaned_extract_dirs()` |
 | the import's extraction folder | `SIMSAPA_DIR`, prefix `simsapa-stardict-` | `TempDir` on drop; plus `sweep_orphaned_extract_dirs()` |
 
@@ -447,14 +451,15 @@ measured **identical** on an Android 16 phone and on ARC
 
 ## 8. Keep-screen-on holders
 
-**Three holders, not one**, because the three stages are independently long and
-can end independently:
+**Four holders, not one**, because the stages are independently long and can end
+independently:
 
 | Holder | Acquired | Released |
 |---|---|---|
 | `dictionary-import-staging` | `begin_staging` | `onStagingFinished` **and** `onStagingFailed` |
 | `dictionary-import-scan` | `begin_scan` | `onScanFinished` **and** `onScanFailed` — including when the user abandoned the scan, since the hold must outlive the abandonment |
 | `dictionary-import-batch` | `DictionariesWindow.start_batch` | `finish_batch`, which every ending goes through |
+| `dictionary-download-batch` | `DictionariesWindow.start_download_run` (§12) | `finish_download_phase`, which every ending goes through — **after** it has called `start_batch`, so the two holds overlap rather than leave a gap |
 
 Before this work `set_keep_screen_on` was called **nowhere** in the dictionary
 flow — a standing CLAUDE.md violation that let the device suspend mid-import.
@@ -496,3 +501,234 @@ cargo check --lib --target aarch64-linux-android
 with the `CC_`/`CXX_`/`AR_` environment the recipe in the picker task list's
 §Notes sets (NDK `27.3.13750724`; ~75 s). **Re-run it after any edit to
 `android_saf.rs`.** The same hole applies to `#ifdef Q_OS_ANDROID` C++.
+
+## 12. Available dictionaries — a second entry point into the same import
+
+The **Available** section of the Dictionaries window offers ten curated
+dictionaries from `digitalpalidictionary/other-dictionaries` with a checkbox each
+and one **Download and Import** button. It is a second way *into* the pipeline
+above, not a second pipeline: it replaces **pick → stage → probe → choose** with
+**resolve → download**, and joins the existing batch at **import**.
+
+```
+resolve tag  →  download (into the staging folder)  →  import   ← the §1 import stage, unchanged
+```
+
+| Stage | Runs on | Entry point | Reports through |
+|---|---|---|---|
+| **resolve** | worker thread | `DictionaryManager::refresh_available_dictionaries()` → `dictionary_catalog::resolve_catalogue()` | `availableDictionariesReady(items_json)` |
+| **download** | one worker thread for the whole run, one item at a time | `DictionaryManager::download_available(labels)` → `dictionary_catalog_download::download_entry()` | `availableDownloadProgress` / `availableDownloadFinished` / `availableDownloadFailed` |
+| **import** | the existing batch | `DictionariesWindow.start_batch(items)` → `import_zip(path, "", label, lang)` | the §1 import signals |
+
+**`scan_source` is never called.** Each downloaded archive enters the batch as
+`{ kind: "zip", path, member: "", label, lang }` — `member` empty because every
+catalogue archive holds exactly one dictionary at its root (§5: an empty member
+means the whole archive), `label` and `lang` from the catalogue. Nothing is
+probed and the user is asked nothing; that the answers are already known is the
+feature.
+
+The code is split so the pure half stays offline-testable:
+`backend/src/dictionary_catalog.rs` (the table, the constants, release-list
+parsing, tag selection, URL construction — no test touches the network) and
+`backend/src/dictionary_catalog_download.rs` (the one function that does).
+
+### The catalogue
+
+`CATALOGUE` is a `const` array of ten `CatalogueEntry`. The array order is the
+display order *and* the download order.
+
+- **`label` and `asset_stem` are two fields.** `label` is the import label, the
+  uid prefix of every word in the dictionary, and the row's identity in the UI.
+  `asset_stem` is the upstream file's basename: the published file is
+  `<asset_stem>-gd.zip`. They differ for one entry — `nyana`, whose asset is
+  `nyanatiloka-gd.zip` — so anything that names the *file* (the download URL, the
+  match against the API's asset list, the staged file name, the 404 message) must
+  use `asset_stem`, and anything that names the *dictionary* (the signals, the
+  batch item, the hide rule) must use `label`.
+- **`abt` is the CPED, and its `name` is deliberately not its `.ifo`
+  `bookname`.** Every other `name` is the archive's own `bookname`. `abt`'s
+  reads "Concise Pali English Dictionary (pi-en)"; the catalogue shows "Ancient
+  Buddhist Texts Glossary (CPED)", which matches the asset's label and what a
+  user looking for the CPED will recognise. There is no `cped` asset.
+- **`lang` is stated, never derived from `name`.** `peu`'s `bookname` ends
+  `(pa-en)`, and `pa` is ISO 639-1 for Punjabi; upstream means Pali, and the
+  entry's `lang` is `pli`.
+- **`si` is not a known tokenizer language.** `KNOWN_TOKENIZER_LANGS`
+  (`bridges/src/dictionary_manager.rs`) has no `si`, so `sin-eng-sin` is indexed
+  with the default tokenizer — exactly what a manual import with `si` gets. The
+  import succeeds; this is not a fault to work around.
+- **Five upstream assets are excluded on purpose**: `all-dictionaries` (a bundle
+  of everything), `bold-def`, `dppn`, `dpr` and `simsapa` (shipped with the app,
+  or duplicating what is). Only `-gd.zip` assets are used; the `-mdict.zip`
+  twins are a format the importer does not read. A test asserts none of the five
+  is in the table.
+
+### Which release — the pinned series and the fallback tag
+
+**This is not the app's own release lookup.**
+[releases-info-and-fallback.md](./releases-info-and-fallback.md) describes
+Simsapa's releases feed (the pythonanywhere endpoint plus
+`assets/releases-fallback.json`), keyed on the app's own version and database
+version. `other-dictionaries` is a third-party GitHub repository that does not
+appear in that feed. The two share `update_checker::to_version()` and
+`compare_versions()` and nothing else — do not route this through
+`compatible_assets_release()`.
+
+`resolve_catalogue()` asks
+`https://api.github.com/repos/<REPO>/releases` and `select_tag()` picks the
+**highest tag whose major and minor equal `PINNED_SERIES`** (`(1, 0)`), skipping
+drafts, prereleases and tags that do not parse. `to_version()` strips a leading
+`v` itself, so tags are passed to it as published.
+
+- **A release outside the series is ignored, not downloaded.** A `v1.1.0` or
+  `v2.0.0` upstream changes nothing until `PINNED_SERIES` is edited. **Raising
+  the pin is a code change and must not become a setting**: a minor or major
+  bump is exactly when the import itself is most likely to need work — renamed
+  assets, a different archive layout, a new format — and the pin is the one gate
+  that makes someone compare the new assets against the catalogue first.
+- **Every failure resolves to `FALLBACK_TAG`** (`v1.0.8`) — offline, DNS, an
+  HTTP error, the rate limit, unparseable JSON, or a list with no tag in the
+  series. The list still renders; nothing is shown to a user who is only
+  browsing. The failure is logged, followed by one line per resolution:
+  `dictionary_catalog: resolved tag v1.0.8 (source: fallback)`.
+- **URLs and sizes follow the source.** From the API they are the asset's own
+  `browser_download_url` and `size`. Under the fallback the URL is constructed
+  (`…/releases/download/<tag>/<asset_stem>-gd.zip`) and the size is the entry's
+  baked-in `fallback_size_bytes`, flagged `size_is_approximate` so the UI
+  prefixes it with `~`. A catalogue entry missing from an otherwise successful
+  API response is resolved the fallback way on its own.
+- **Only a successful resolution is cached** (process lifetime), so reopening
+  the window does not spend another of GitHub's 60 unauthenticated requests per
+  hour. A fallback is never cached: reopening the window is how a user retries,
+  and a cached fallback would outlive the outage that caused it.
+- **The `User-Agent` header is required.** `api.github.com` answers 403 to a
+  request without one. That is also why a bare 403 is not logged as the rate
+  limit — only a 403 carrying `X-RateLimit-Remaining: 0` is.
+- **No pagination.** GitHub returns releases newest-first, 30 to a page, so page
+  one holds the highest tag of the series unless upstream publishes more than 30
+  releases *above* it.
+
+The resolved repo and tag are shown to the user: the info button beside the
+**Available** heading opens a note naming
+`github.com/digitalpalidictionary/other-dictionaries` and the tag, with a link to
+the releases page for dictionaries outside the curated set. An upstream mismatch
+is therefore readable from a screenshot.
+
+### The download
+
+`download_entry()` writes `<asset_stem>-gd.zip` into
+`staging_dir(DICTIONARY_FEATURE)` — the **same folder a picked archive is staged
+into** — and that placement is the whole of its cleanup design. It inherits the
+three staging rules of §7 rather than restating them:
+
+1. **Ownership is by location.** `cleanup_staged_file` deletes a path only if it
+   is inside the dictionaries staging folder. A download written anywhere else
+   would be refused silently and survive every run.
+2. **The feature name is the one constant**, `import_staging::DICTIONARY_FEATURE`.
+   The downloader, the cleanup and the startup sweep must agree on it, and a
+   mismatch has no error to report.
+3. **The startup sweep already covers a crash.** `sweep_orphaned_staged_files`
+   reclaims an archive orphaned mid-download on a later launch. No second sweep
+   exists for downloads.
+
+The copy itself is `import_staging::copy_stream_to_file()` reading the HTTP
+response — the same chunked, cancel-checked writer staging uses, which removes
+the partial file on every failure path. Around it:
+
+- Free space is checked **before** the connection is opened.
+- The client has a **connect timeout and no overall timeout**: a slow line must
+  be allowed to finish a 55 MB archive. Redirects need no configuration —
+  reqwest's default policy follows the GitHub → CDN hop.
+- The HTTP status is checked before any byte is streamed. **404 is its own code,
+  `asset_not_found`**, and its message names the asset file and the resolved tag
+  (*"nyanatiloka-gd.zip is not available in the upstream release v1.0.9. The
+  upstream assets may have been renamed."*). That is what an upstream rename
+  looks like, and it is written to `log.txt` so it can be diagnosed without a
+  reproduction. Any other non-2xx is `http_status`.
+- A finished body is rejected if it is empty (`reject_empty`) or shorter than the
+  **response's own `Content-Length`** (`reject_short`, code
+  `truncated_download`), and deleted. `reject_short` never compares against
+  `fallback_size_bytes` — that figure is approximate and a newer patch release
+  legitimately differs from it. A chunked response has nothing to compare
+  against and passes.
+- The progress total is `Content-Length`, else the catalogue size, so the bar is
+  determinate either way. Ticks are throttled to 100 ms, with one forced tick at
+  the end so the bar reaches 100%, and cross into QML as `f64`.
+
+Callers match on `StagingError::code`, never on the message.
+
+### The run, in `DictionariesWindow.qml`
+
+`start_download_run()` → (`onAvailableDownloadFinished` /
+`onAvailableDownloadFailed` → `advance_download()`)… → `finish_download_phase()`
+→ `start_batch()`.
+
+- **The progress frame is `views_stack` index 6 — appended after the error frame
+  (5), not placed beside the other progress frames.** The indices are literals at
+  every call site in this file; inserting a frame in the middle would silently
+  reroute all of them. (The import *dialog* names its frame indices — §1; this
+  window does not.)
+- **There is no "run finished" signal.** The worker emits one outcome per label,
+  and `advance_download()` ends the phase when
+  `pending_import_items.length + download_failed.length` reaches the run's
+  length. A cancelled item emits nothing, so a cancel cannot complete that count
+  — `cancel_download_run()` drives the ending itself.
+- **`finish_download_phase()` is the one function every ending passes through**:
+  all downloaded, all failed, cancelled. It hands the queue to `start_batch()`
+  **first** and releases `dictionary-download-batch` **second**, because
+  `start_batch()` acquires `dictionary-import-batch` and the other order leaves a
+  moment with no holder (§8).
+- **Download failures have their own list.** `start_batch()` resets
+  `batch_failed`, so a failure recorded before the hand-off would be erased if it
+  were kept there. The summary frame renders `Import failed (N):` from
+  `batch_failed` and `Download failed (N):` from `download_failed` as two blocks
+  — the user needs to know whether to check their connection or report a bad
+  archive.
+- **A run that reaches the import phase ends as `import_batch`.**
+  `finish_batch()` sets that op-kind unconditionally and was not given a branch
+  for this flow; the `import_batch` summary appends the download failures
+  whenever there are any. `download_batch` is the op-kind for the one ending that
+  never reaches `start_batch()`: nothing was downloaded.
+- **A failure does not stop the run**, in either phase. The failed dictionary
+  was never imported, so it is still listed under Available, and it comes back
+  **unchecked** — `finish_download_phase()` drops the whole run's labels from the
+  selection.
+- **Cancel** during the download phase sets `download_cancel`, which the worker
+  checks between chunks and between items; archives already downloaded still
+  import. Once the import phase has started, the import frame's Abort and the
+  existing `abort_import()` take over. `download_cancel` is a third flag beside
+  `staging_cancel` and `import_cancel` because it belongs to a third screen.
+- **A download that completes inside the cancel window is deleted on arrival.**
+  The run has already ended, so that archive will never enter the batch queue and
+  `finish_batch()` will never clean it up; `onAvailableDownloadFinished` calls
+  `cleanup_staged_file(path)` itself when `download_active` is false.
+- **The window refuses to close on frame 6**, as it does on 1, 2 and 3. That
+  refusal is what lets this window be destroyed on close without a deferred-
+  destruction path (see
+  [window-lifecycle-and-reuse.md](./window-lifecycle-and-reuse.md) §5b).
+
+### The hide rule is a filter, and the selection must go through it
+
+`available_filtered()` drops every catalogue entry whose `label` matches an
+imported dictionary's. It is computed from `user_dictionaries`, which
+`refresh_list()` already rewrites after every import, delete and rename — so a
+row disappears when its import finishes and reappears when the dictionary is
+deleted, with no refresh path of its own.
+
+- **Read the selection through `checked_offered()`, never `checked_labels`.**
+  The raw list can hold a label the filter has since removed. Counting it claims
+  "1 selected" with no checkbox on screen, and running it downloads a dictionary
+  again only for `import_zip` to refuse the duplicate label. The count, the
+  combined size, the button's enabled state and the run's label list all go
+  through `checked_offered()`.
+- **The match is on label only.** A dictionary imported by hand from the same
+  archive took the label its file name suggested (`cone-gd`), so `cone` is still
+  offered and the user can end up with both. That is accepted — both are visible
+  in the imported list — and no content matching exists.
+- **`human_size()` in QML mirrors `import_staging::human_bytes()` exactly.** The
+  rows show the backend's `size_text`; the combined-size line and the progress
+  frame are formatted in QML. They are on screen together and must agree to the
+  digit.
+- **Resolution is asynchronous only.** There is no synchronous getter for the
+  catalogue: a resolution that is not cached blocks on a GitHub request, so it is
+  reachable only through `refresh_available_dictionaries()` and its signal.

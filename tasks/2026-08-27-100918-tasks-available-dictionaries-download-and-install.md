@@ -41,9 +41,16 @@ PRD: [2026-08-27-100918-prd---available-dictionaries-download-and-install.md](./
 - `bridges/build.rs` — add `"assets/qml/AvailableDictionaryRow.qml"` to `qml_files`.
 - `backend/src/dictionary_catalog.rs` (tests module) — unit tests for tag
   selection, catalogue integrity and URL construction.
-- `docs/dictionary-import-pipeline.md` — a new section for this second entry
-  point into the same import pipeline.
-- `PROJECT_MAP.md` — the two new backend modules and the new QML component.
+- `docs/dictionary-import-pipeline.md` — §12, this second entry point into the
+  same import pipeline; plus the §7 temporary-file row and the §8 holder table,
+  which now name the download.
+- `docs/releases-info-and-fallback.md` — a pointer saying the Available list's
+  tag resolution is a different mechanism and is not covered there.
+- `docs/window-lifecycle-and-reuse.md` — §5b's `DictionariesWindow` row now
+  lists frame 6 among the indices that refuse a close.
+- `PROJECT_MAP.md` — the two new backend modules, the new QML component, the
+  bridge surface and the seventh `views_stack` frame.
+- `CLAUDE.md` — the pipeline doc's index entry summarises §12.
 
 ### Notes
 
@@ -556,22 +563,22 @@ failed *import* (they are in the batch queue) and for items that failed
 
 ### Specs for 7.0 — documentation
 
-- [ ] 7.0 Documentation
-  - [ ] 7.1 Add a section to `docs/dictionary-import-pipeline.md` covering this
+- [x] 7.0 Documentation
+  - [x] 7.1 Add a section to `docs/dictionary-import-pipeline.md` covering this
         second entry point into the same pipeline: the catalogue, the tag
         resolution and its fallback, the download → staging → `import_zip` route
         that skips `scan_source` entirely, and the three staging rules it
         inherits. Cross-link `docs/releases-info-and-fallback.md` with the
         explicit note that this is a *different* mechanism from the app's own
         release check.
-  - [ ] 7.2 Record the traps a future reader would otherwise re-derive: `abt` is
+  - [x] 7.2 Record the traps a future reader would otherwise re-derive: `abt` is
         the CPED and its display name is deliberately not its `bookname`; `peu`'s
         `pa-en` means Pali; `si` is not a known tokenizer language; the new frame
         is `views_stack` index 6 because the earlier indices are hard-coded; and
         raising `PINNED_SERIES` is a code change because a minor/major bump is
         exactly when the import mechanism itself is likely to need work.
-  - [ ] 7.3 Update `PROJECT_MAP.md` with the two new backend modules and the new
+  - [x] 7.3 Update `PROJECT_MAP.md` with the two new backend modules and the new
         QML component.
-  - [ ] 7.4 Follow the docs convention: describe current behaviour and the traps,
+  - [x] 7.4 Follow the docs convention: describe current behaviour and the traps,
         not the history of how it was built. Measurements belong in the commit
         message.
