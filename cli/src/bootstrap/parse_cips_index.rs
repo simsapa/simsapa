@@ -141,13 +141,18 @@ fn format_utc(t: DateTime<Utc>) -> String {
 /// Committer date of the last commit touching `csv_path`, read with `git -C` in
 /// the file's own directory so it works whatever repository the CSV lives in.
 /// `%ct` is a Unix timestamp, which sidesteps git's date formatting and locale.
+///
+/// The pathspec is the bare file name: `-C` makes git resolve it against `dir`,
+/// so a relative `csv_path` would be applied twice, match nothing, and fall
+/// through to the mtime with exit status 0.
 fn git_commit_time(csv_path: &Path) -> Option<DateTime<Utc>> {
     let dir = csv_path.parent()?;
+    let file_name = csv_path.file_name()?;
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(["log", "-1", "--format=%ct", "--"])
-        .arg(csv_path)
+        .arg(file_name)
         .output()
         .ok()?;
     if !out.status.success() {
