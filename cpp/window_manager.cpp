@@ -7,6 +7,7 @@
 #include "library_window.h"
 #include "reference_search_window.h"
 #include "topic_index_window.h"
+#include "sutta_navigation_window.h"
 #include "chanting_practice_window.h"
 #include "chanting_review_window.h"
 #include <QVariant>
@@ -691,6 +692,31 @@ ReferenceSearchWindow* WindowManager::create_reference_search_window() {
     return w;
 }
 
+/// The single entry point for the navigation window, whichever menu or toolbar
+/// asked and from whichever SuttaSearchWindow.
+///
+/// The reuse predicate is `m_root != nullptr` (what reuse_or_evict() tests),
+/// not `visible`: closing this window only hides it, so a hidden wrapper is
+/// *the* window waiting to be shown again, and a `visible` predicate would
+/// build a second instance on every reopen. The null-m_root eviction still
+/// applies, or a failed engine load leaks one wrapper per open.
+///
+/// There is deliberately **no reset of the revived window** -- no
+/// clear_all_tabs() analogue and no re-init on show. Preserving the breadcrumb
+/// path, expansion state, filter text and scroll position is the entire reason
+/// this window is not destroyed. See docs/window-lifecycle-and-reuse.md.
+SuttaNavigationWindow* WindowManager::create_sutta_navigation_window() {
+    if (SuttaNavigationWindow* reused = reuse_or_evict(this->sutta_navigation_windows)) {
+        show_and_activate_window(reused->m_root);
+        log_info_c("create_sutta_navigation_window(): revived the existing window");
+        return reused;
+    }
+    SuttaNavigationWindow* w = new SuttaNavigationWindow(this->m_app);
+    sutta_navigation_windows.append(w);
+    log_info_c("create_sutta_navigation_window(): created the window");
+    return w;
+}
+
 TopicIndexWindow* WindowManager::create_topic_index_window() {
     if (TopicIndexWindow* reused = reuse_or_evict(this->topic_index_windows)) {
         show_and_activate_window(reused->m_root);
@@ -754,6 +780,10 @@ void WindowManager::on_window_closed(const QString& window_type) {
         log_info_c(QString("on_window_closed(%1): destroyed").arg(window_type).toUtf8().constData());
     };
 
+    // There is deliberately no "sutta_navigation" branch: that window is hidden
+    // on close, never destroyed, so its QML accepts the close without notifying
+    // at all. A request naming it would be a wiring mistake, and falls through
+    // to the unknown-type error below where it is visible in log.txt.
     if (window_type == "topic_index") {
         close_one(this->topic_index_windows);
     } else if (window_type == "library") {
@@ -1041,9 +1071,11 @@ void WindowManager::show_sutta_from_reference_search(const QString& window_id, c
     }
 
     if (target_window && target_window->m_root) {
-        // Show and raise the window
-        QMetaObject::invokeMethod(target_window->m_root, "show");
-        QMetaObject::invokeMethod(target_window->m_root, "raise");
+        // Raise through the shared helper, never a raw show/raise pair: it
+        // also clears the minimized state and sends _NET_ACTIVE_WINDOW on X11,
+        // which is what actually brings the window forward when the request
+        // came from another window (FR-41).
+        show_and_activate_window(target_window->m_root);
 
         // Show the sutta in the HTML view (create a new tab)
         QMetaObject::invokeMethod(target_window->m_root, "show_result_in_html_view_with_json",

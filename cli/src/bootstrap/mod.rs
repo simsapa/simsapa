@@ -6,6 +6,7 @@ pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
 pub mod nyanadipa;
 pub mod buddha_ujja;
+pub mod cst_coverage;
 pub mod tipitaka_xml;
 pub mod dpd;
 pub mod dppn;
@@ -13,6 +14,7 @@ pub mod completions;
 pub mod library_imports;
 pub mod chanting_practice;
 pub mod parse_cips_index;
+pub mod navigation_tree;
 
 use anyhow::{Result, Context};
 use chrono::{DateTime, Local};
@@ -234,13 +236,22 @@ RELEASE_CHANNEL=development
             }
         }
 
-        // Import suttas from tipitaka.org (CST)
-        {
+        // Import suttas from tipitaka.org (CST).
+        //
+        // The report is carried to the navigation-tree build below, which fills
+        // in the toc-leaf assignment half of it and logs the whole thing --
+        // only the spine knows which leaves ended up opening a record.
+        let mut cst_report = {
             let tipitaka_xml_fragments_db_path = bootstrap_assets_dir.join("tipitaka-xml-data/fragments.sqlite3");
             let tipitaka_xml_romn_path = bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/romn/");
-            let mut importer = TipitakaXmlImporter::new(tipitaka_xml_fragments_db_path, tipitaka_xml_romn_path);
-            importer.import(&mut conn)?;
-        }
+            let tipitaka_xml_toc_path = bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn/cscd/");
+            let mut importer = TipitakaXmlImporter::new(
+                tipitaka_xml_fragments_db_path,
+                tipitaka_xml_romn_path,
+                tipitaka_xml_toc_path,
+            );
+            importer.import(&mut conn)?
+        };
 
         // Import from Dhammatalks.org
         {
@@ -291,6 +302,30 @@ RELEASE_CHANNEL=development
                 logger::warn("Dhammapada Munindo resource path not found, skipping");
             }
         }
+
+        // The navigation tree is built after every sutta import, so each
+        // leaf's `sutta_uid` is resolved against rows that exist and one that
+        // is missing can be reported rather than guessed.
+        logger::info("=== Build navigation tree (SuttaCentral spine) ===");
+        navigation_tree::build_sc_spine(&mut conn, &sc_data_dir)?;
+
+        logger::info("=== Build navigation tree (CST spine) ===");
+        {
+            let cst_site_dir = bootstrap_assets_dir
+                .join("tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn/");
+            let cst_source_dir =
+                bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/romn/");
+            let fragments_db_path =
+                bootstrap_assets_dir.join("tipitaka-xml-data/fragments.sqlite3");
+            navigation_tree::build_cst_spine(
+                &mut conn,
+                &cst_site_dir,
+                &cst_source_dir,
+                &fragments_db_path,
+                Some(&mut cst_report),
+            )?;
+        }
+        cst_report.log_summary();
 
         logger::info("=== Bootstrap Library Imports ===");
 

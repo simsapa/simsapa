@@ -729,10 +729,11 @@ ApplicationWindow {
 
         // Determine if query_text_orig is a sutta/book/dictionary reference
         // query_text_to_uid_field_query() returns the query as normal (e.g. 'heard') if not recognized as a uid
-        // For all search areas, check if it matches a uid pattern:
-        // - Suttas/Library: sutta refs like 'SN 56.11', book UIDs like 'bmc.0'
-        // - Dictionary: dictionary UIDs like 'dhamma 1.01', '34626/dpd'
-        let query_text = SuttaBridge.query_text_to_uid_field_query(query_text_orig);
+        // The area decides which uid patterns are tried:
+        // - Suttas: sutta refs like 'SN 56.11', 'Ja 1'
+        // - Library: book UIDs like 'bmc.0', and sutta refs
+        // - Dictionary: dictionary UIDs like 'dhamma 1.01', 'ja 1.1', '34626/dpd'
+        let query_text = SuttaBridge.query_text_to_uid_field_query(query_text_orig, search_area);
 
         if (query_text.startsWith('uid:')) {
             params['mode'] = 'Uid Match';
@@ -1381,7 +1382,7 @@ ${query_text}`;
                 !new_tab &&
                 root.last_search_area === "Suttas" &&
                 root.last_query_text.length > 0) {
-                let query_as_uid = SuttaBridge.query_text_to_uid_field_query(root.last_query_text);
+                let query_as_uid = SuttaBridge.query_text_to_uid_field_query(root.last_query_text, "Suttas");
                 if (!query_as_uid.startsWith('uid:')) {
                     // Prefer the clicked snippet's find query (matched word +
                     // following words) so the page jumps to that occurrence;
@@ -2150,6 +2151,22 @@ ${query_text}`;
                     text: "&Topic Index..."
                     onTriggered: {
                         SuttaBridge.open_topic_index_window()
+                    }
+                }
+            }
+
+            // This one item serves both entry points: DrawerMenu builds the
+            // mobile menu from the same `menu_list` that the desktop menu bar
+            // renders, so there is one Action and one accessor behind it. The
+            // bridge call reaches WindowManager::create_sutta_navigation_window(),
+            // which revives the single instance whichever SuttaSearchWindow
+            // asked.
+            CMenuItem {
+                action: Action {
+                    id: action_sutta_navigation
+                    text: "Sutta &Navigation..."
+                    onTriggered: {
+                        SuttaBridge.open_sutta_navigation_window()
                     }
                 }
             }

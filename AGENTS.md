@@ -155,14 +155,18 @@ Notable feature docs:
   new desktop `WebEngineView`.
 - [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
   **read this before adding any new top-level window; §7 is the checklist.**
-  There are **two lifecycle families and they need opposite code** (§0): the
+  There are **three lifecycle families and they need different code** (§0): the
   **pooled** `SuttaSearchWindow`, which is only *hidden* on close and stays in
   its `WindowManager` list so the next open revives it instead of loading
   another `QQmlApplicationEngine` (the expensive part, and these host
-  `WebEngineView`s); and the **single-instance** secondary windows, which are
-  **destroyed on close**. The reuse predicate differs accordingly — `visible`
-  (`window_is_open()`) for the pool, **`m_root != nullptr`** for the rest — and
-  each predicate is a bug in the other family. Covers, for the pool: the revive
+  `WebEngineView`s); the **single-instance** secondary windows, which are
+  **destroyed on close**; and the one **kept** window, `SuttaNavigationWindow`
+  (§5d), single-instance but never destroyed, so the state the user left in it
+  is still there on reopen — its `onClosing` must **accept** the close and
+  notify nothing, because rejecting it skips Qt's quit-on-last-window check and
+  strands a live app with no windows. The reuse predicate differs accordingly —
+  `visible` (`window_is_open()`) for the pool, **`m_root != nullptr`** for the
+  rest — and each predicate is a bug in the other family. Covers, for the pool: the revive
   path in `create_sutta_search_window()` (`clear_all_tabs()` because callers
   assume a blank window, keep the `window_id`, move to the end of the list,
   `show_and_activate_window()`), the two places that must filter on `visible`
@@ -191,6 +195,23 @@ Notable feature docs:
   `qt_thread.queue()`** — destroy-on-close makes `ObjectDestroyed` a live path,
   and `is_destroyed()` is racy and is not the fix. §6 records why
   `~WindowManager` is dead code and must stay empty.
+- [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the browsable
+  hierarchy behind the Sutta Navigation window, built **at bootstrap** into
+  `navigation_nodes` (nothing populates it at runtime). **Two spines, never
+  reconciled**: Sutta / Vinaya / Abhidhamma from the local `sc-data` checkout
+  (Theravāda Pāli scope only) and Aṭṭhakathā / Ṭīkā / Añña from the
+  tipitaka.org toc files. Covers node-uid stability, the materialized
+  `search_text` / `path` / `sort_path` columns (**changing how one is derived
+  means rebuilding the tree** — a stale one fails silently), the edition an SC
+  leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
+  the Summaries toggle and context notes, and the window's own quiet-failure
+  rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
+  in the window, uncached per-level translation counts). On the CST side:
+  **`VERIFIED_CST_FILES` is a verification gate that cannot be replaced by a
+  computed predicate**, the coverage classes applied within it, the toc-driven
+  division split, and the three rebuild commands that must be run together
+  (`import-cst`, `build-navigation-tree`, `index rebuild --area suttas --lang
+  pli` — the Tantivy index does not heal itself).
 - [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
   its data, and the in-app **Update** / **Reset** actions that replace it without
   a Simsapa release. The parser moved from the CLI to
@@ -805,6 +826,30 @@ Notable feature docs:
   Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
   dialog.
 
+- [QML AOT staleness and the qmltypes guard](./docs/qmltypes-aot-staleness.md) —
+  why adding or removing a `#[qinvokable]` / `#[qsignal]` on a bridge and
+  building **once** produces a binary that segfaults on startup in
+  `QMetaObject::methodOffset()`, before the first window paints, with a
+  backtrace naming a QML file you did not touch. `qmlcachegen` bakes a
+  **hard-coded `QMetaObject` method index** into every AOT binding that calls a
+  bridge singleton, and reads it from a `plugin.qmltypes` that
+  `qmltyperegistrar` rewrites **nine seconds later in the same build** — so the
+  index always describes the *previous* build's bridge API. Records the measured
+  step ordering (moc's JSON and `qmldir` are both already correct before
+  `qmlcachegen` runs; **`qmldir` does not lag**, so adding a QML component is
+  safe), and that `qmlcachegen` regenerates the *whole* QML tree per
+  build-script run. The fix is `scripts/qmltypes-guard.sh`, which every
+  `Makefile` build target now goes through: hash every `plugin.qmltypes` under
+  the build dir, build, re-hash, and on a change touch the QML tree and build
+  once more — **the touch is load-bearing**, because cargo skips the build
+  script when no source changed, which is why "just build twice" by hand does
+  nothing. Covers the two fixes that look right and are not: a **pre-build
+  touch** (conditional or not) cannot help, since `qmltypes` is still stale when
+  `qmlcachegen` reads it; and **cleaning before a release** is safe but ships a
+  degraded binary — with no `qmltypes` at all `qmlcachegen` silently drops
+  **38% of singleton lookups and 30% of object-property lookups** to interpreted
+  bindings, measured tree-wide, and a clean tree's only build is its first one.
+
 ## Qt version per platform — never invoke a bare `qmake6`
 
 **`CMakeLists.txt` is the single source of the Qt version**, declared per
@@ -1344,12 +1389,14 @@ function get_api_key(key_name: string): string {
 ### Adding a new top-level window
 
 **Read [docs/window-lifecycle-and-reuse.md](./docs/window-lifecycle-and-reuse.md)
-before writing any of it — §0 for which of the two lifecycle families it belongs
-to, §7 for the step-by-step checklist.** There are two families and they need
-opposite code: the **pooled** `SuttaSearchWindow` (closing only *hides* it;
-reuse predicate `visible`) and the **single-instance** secondary windows
-(destroyed on close; reuse predicate `m_root != nullptr`). Each predicate is a
-silent bug in the other family.
+before writing any of it — §0 for which of the three lifecycle families it
+belongs to, §7 for the step-by-step checklist.** The two a new window will
+normally choose between need opposite code: the **pooled** `SuttaSearchWindow`
+(closing only *hides* it; reuse predicate `visible`) and the
+**single-instance** secondary windows (destroyed on close; reuse predicate
+`m_root != nullptr`). Each predicate is a silent bug in the other family. The
+third, the **kept** `SuttaNavigationWindow` (§5d), has one member and is right
+only when the state left in the window is the feature.
 
 The three things most easily missed, all of which fail quietly:
 
@@ -1603,10 +1650,24 @@ The SQLite database is at:
 
 Use this path for any tests or experimental scripts that need to query the actual database or access runtime assets.
 
+**Never commit `appdata.sqlite3`** (or any other `*.sqlite3` database) — it is
+a huge file. It is listed in `.gitignore`; do not force-add it, and check
+`git status` / `git show --stat` before committing whenever a task wrote to a
+database (e.g. `build-navigation-tree`, `import-cst`, a bootstrap run). Databases
+are rebuilt by the bootstrap, not versioned.
+
 ## Build/Test Commands
 
 ### Development Build
 - **Build:** `make build -B` (CMake + Qt6) or `cmake -S . -B ./build/simsapadhammareader/ && cmake --build ./build/simsapadhammareader/`
+  - **Build through the `Makefile`, not by calling `cmake` directly.** Every
+    `Makefile` build target is wrapped in `scripts/qmltypes-guard.sh`, without
+    which a build that changes the bridge API emits QML AOT code indexed against
+    the *previous* metaobject and the binary segfaults on startup. A bare
+    `cmake --build` bypasses the guard. The guard prints
+    `qmltypes-guard: …rebuilding once…` when it fires; that second pass is
+    expected, not a loop. See
+    [docs/qmltypes-aot-staleness.md](./docs/qmltypes-aot-staleness.md).
 - **Run:** `make run` or `./build/simsapadhammareader/simsapadhammareader`
 - **TypeScript:** `npx webpack` (builds src-ts/ → assets/js/simsapa.min.js)
 - **Sass:** `make sass` or `sass --no-source-map './assets/sass/:./assets/css/'`

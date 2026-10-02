@@ -1,0 +1,390 @@
+# Context notes for the Sutta Navigation window.
+#
+# One entry per node: the key is the node's `node_uid`, the value is the note
+# shown under the SuttaCentral summary. See docs/sutta-navigation-tree.md §2f,
+# and docs/navigation-context-notes-research.md for the evidence behind each.
+#
+# - Always quote the key: "sn56.11", "cst:tika". Unquoted, the dots are read
+#   as nested tables and the build fails.
+# - Wrap lines freely inside the triple quotes. Line breaks are joined into
+#   spaces; a blank line starts a new paragraph.
+# - Find a key with:
+#     SELECT node_uid, title_pali FROM navigation_nodes;
+# - Rebuild the CLI and re-run `build-navigation-tree` to apply an edit.
+
+# ============================================================================
+# Sutta — the four Nikāyas
+# ============================================================================
+
+# Dīghanikāya
+"dn" = """
+Origin: 5th–3rd century BCE, northern India. Discourses of the Buddha and his
+disciples, by tradition recited by Ānanda at the First Council; the compilers
+are unknown, gathered by length into this collection. Largely fixed before
+Aśoka (mid-3rd century BCE) and written down in Sri Lanka in the 1st century
+BCE. Contested: the core is widely held to be early, with later additions,
+modifications and text erosion. The dating rests on internal and
+comparative evidence rather than early manuscripts.
+"""
+
+# Majjhimanikāya
+"mn" = """
+Origin: See Dīghanikāya.
+"""
+
+# Saṁyuttanikāya
+"sn" = """
+Origin: See Dīghanikāya.
+"""
+
+# Aṅguttaranikāya
+"an" = """
+Origin: See Dīghanikāya.
+"""
+
+# ============================================================================
+# Sutta — Khuddaka Nikāya
+# ============================================================================
+
+# Khuddakapāṭha
+"kp" = """
+Origin: a late compilation; date, place and compiler unknown. Nine short
+texts, most of them found elsewhere in the canon and older than the collection
+itself, perhaps put together as a handbook for novices. Estimated: scholars
+place it in the late stratum of the Khuddaka Nikāya, and it became canonical
+late.
+"""
+
+# Dhammapada
+"dhp" = """
+Origin: 5th–3rd century BCE, northern India. Verses ascribed to the Buddha,
+from the early oral tradition; compiler unknown. Gathered as a collection by
+about the 3rd century BCE; the Dharmapadas of other schools share a core of
+some 330 verses. Estimated: counted in the early stratum, with no firm date
+for the compilation.
+"""
+
+# Udāna
+"ud" = """
+Origin: 5th–3rd century BCE, northern India. Inspired utterances ascribed to
+the Buddha, each set in a short narrative; compiler unknown. Counted among the
+early texts and largely fixed by the 1st century BCE. Estimated from internal
+and comparative evidence.
+"""
+
+# Itivuttaka
+"iti" = """
+Origin: 5th–3rd century BCE, northern India. Short discourses of the Buddha,
+by tradition memorised and passed on by the laywoman Khujjuttarā of Kosambī.
+Contested: some scholars place it among the very oldest Buddhist texts, others
+somewhat later; the dating rests on internal and comparative evidence.
+"""
+
+# Suttanipāta
+"snp" = """
+Origin: 5th–3rd century BCE, northern India. Discourses in verse ascribed to
+the Buddha; compilers unknown. Its Aṭṭhakavagga and Pārāyanavagga are among
+the oldest Buddhist texts known. The canon itself comments on them in the
+Niddesa, while the collection as a whole was assembled later. Contested: some
+date those chapters to the Buddha's lifetime, others hold this cannot be
+shown.
+"""
+
+# Vimānavatthu
+"vv" = """
+Origin: not before about 300 BCE, probably India. Authors unknown. Verse
+stories of rebirth in the heavens, added late to the canon; some individual
+stories may be older. Estimated: placed in the late stratum on internal
+grounds, with no external dating.
+"""
+
+# Petavatthu
+"pv" = """
+Origin: not before about 300 BCE, probably India. Authors unknown. Verse
+stories of rebirth among the departed, added late to the canon; some
+individual stories may be older. Estimated: placed in the late stratum on
+internal grounds, with no external dating.
+"""
+
+# Theragāthā
+"thag" = """
+Origin: 5th–3rd century BCE, northern India. Verses ascribed to named monks,
+most of them of the Buddha's time; compilers unknown. Collected over some
+three centuries and closed around the Third Council under Aśoka (mid-3rd
+century BCE). Estimated: metre and content show both early and later verses.
+"""
+
+# Therīgāthā
+"thig" = """
+Origin: 5th–3rd century BCE, northern India. Verses ascribed to named nuns of
+the Buddha's time; compilers unknown. Composed over centuries, the latest
+verses dating to about the late 3rd century BCE. Contested: whether the verses
+were composed by the women they are ascribed to cannot be shown.
+"""
+
+# Therāpadāna
+"tha-ap" = """
+Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse legends
+of the past lives of senior monks, told in their own voice; among the last
+additions to the canon. Estimated: most scholars agree it is late, on internal
+evidence, but there is no external dating.
+"""
+
+# Therīapadāna
+"thi-ap" = """
+Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse legends
+of the past lives of senior nuns, told in their own voice; among the last
+additions to the canon. Estimated: most scholars agree it is late, on internal
+evidence, but there is no external dating.
+"""
+
+# Buddhavaṁsa
+"bv" = """
+Origin: c. 2nd–1st century BCE, probably India. Authors unknown. A verse
+chronicle of Gotama and the Buddhas before him, presented as spoken by the
+Buddha; among the last additions to the canon. Estimated: most scholars agree
+it is late, on internal evidence, but there is no external dating.
+"""
+
+# Cariyāpiṭaka
+"cp" = """
+Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse
+accounts of the Buddha's past lives, presented as spoken by the Buddha; among
+the last additions to the canon. Estimated: most scholars agree it is late, on
+internal evidence, but there is no external dating.
+"""
+
+# Jātaka
+"ja" = """
+Origin: verses from the 5th century BCE onward, India. Authors unknown. Only
+the verses are canonical; the stories around them were fixed in a commentary
+of about the 5th century CE. Partly anchored: reliefs at Bhārhut and Sāñcī
+(2nd–1st century BCE) show that many of the stories were already current then.
+"""
+
+# Mahāniddesa
+"mnd" = """
+Origin: c. 3rd–1st century BCE, India. Traditionally ascribed to Sāriputta;
+the actual author is unknown. A commentary on the Aṭṭhakavagga of the
+Suttanipāta, included in the canon. Contested: placed anywhere from Aśoka's
+time to the 1st century BCE, the latter being the latest date possible.
+"""
+
+# Cūḷaniddesa
+"cnd" = """
+Origin: c. 3rd–1st century BCE, India. Traditionally ascribed to Sāriputta;
+the actual author is unknown. A commentary on the Pārāyanavagga and the
+Khaggavisāṇa Sutta of the Suttanipāta, included in the canon. Contested:
+placed anywhere from Aśoka's time to the 1st century BCE, the latter being the
+latest date possible.
+"""
+
+# Paṭisambhidāmagga
+"ps" = """
+Origin: between the 3rd century BCE and the 2nd century CE, India.
+Traditionally ascribed to Sāriputta; the actual author is unknown. A
+systematic treatise in the manner of the Abhidhamma. Contested: Warder puts an
+early form in the 3rd century BCE, Cousins in the 1st century BCE, von Hinüber
+around the 2nd century CE.
+"""
+
+# Netti
+"ne" = """
+Origin: around the turn of the Common Era, northern India, perhaps Ujjain.
+Ascribed to the Buddha's disciple Mahākaccāna, which scholars do not take
+literally; the actual author is unknown. A guide to interpreting the
+discourses, reworking the Peṭakopadesa. Estimated from metre and style only.
+Canonical in the Burmese tradition.
+"""
+
+# Peṭakopadesa
+"pe" = """
+Origin: date unknown, India; older than the Netti, which reworks it. Ascribed
+to the Buddha's disciple Mahākaccāna, which scholars do not take literally;
+the actual author is unknown. A guide to interpreting the discourses.
+Uncertain: nothing dates it beyond its priority to the Netti. Canonical in the
+Burmese tradition.
+"""
+
+# Milindapañha
+"mil" = """
+Origin: c. 100 BCE–200 CE, north-west India. Author unknown. A dialogue
+between the monk Nāgasena and the Indo-Greek king Menander, who ruled in the
+2nd century BCE; a composite work, enlarged over time, perhaps first composed
+in Gāndhārī. Partly anchored by Menander's reign; the dates of the later books
+are estimates. Canonical in the Burmese tradition.
+"""
+
+# ============================================================================
+# Vinaya
+# ============================================================================
+
+# Bhikkhu Pātimokkha
+"pli-tv-bu-pm" = """
+Origin: 5th–4th century BCE, northern India. The monks' rules, ascribed to the
+Buddha and by tradition recited by Upāli at the First Council. The same code
+is found in every surviving Vinaya lineage, so its core predates the first
+schisms. Well supported by that comparison for the core; absolute dates remain
+estimates.
+"""
+
+# Bhikkhunī Pātimokkha
+"pli-tv-bi-pm" = """
+Origin: 5th–4th century BCE, northern India. The nuns' rules, ascribed to the
+Buddha and by tradition recited by Upāli at the First Council. Estimated:
+supported by comparison between the Vinaya lineages, with no absolute dating.
+"""
+
+# Bhikkhu Vibhaṅga
+"pli-tv-bu-vb" = """
+Origin: 5th–3rd century BCE, northern India. Compilers unknown; by tradition
+recited by Upāli at the First Council. Each rule of the monks' Pātimokkha with
+its origin story, a word-by-word explanation and case rulings. Layers that
+grew around the rules after they were laid down. Contested: the rules are the
+oldest layer, and the dates at which the explanations formed are estimates
+with real scholarly disagreement.
+"""
+
+# Bhikkhunī Vibhaṅga
+"pli-tv-bi-vb" = """
+Origin: 5th–3rd century BCE, northern India. Compilers unknown; by tradition
+recited by Upāli at the First Council. Each rule of the nuns' Pātimokkha with
+its origin story, a word-by-word explanation and case rulings. Layers that
+grew around the rules after they were laid down. Contested: the rules are the
+oldest layer, and the dates at which the explanations formed are estimates
+with real scholarly disagreement.
+"""
+
+# Khandhaka
+"pli-tv-kd" = """
+Origin: 4th–3rd century BCE, northern India. Compilers unknown. The procedures
+of community life; it closes with accounts of the First and Second Councils,
+so its final form is later than the Second, about a century after the Buddha's
+death. Contested: Frauwallner (1956) argued it was composed around that
+council. Still influential, but disputed.
+"""
+
+# Parivāra
+"pli-tv-pvr" = """
+Origin: c. 1st century BCE or later, Sri Lanka. Its colophon names a monk Dīpa
+as the author. A digest and catechism of the rest of the Vinaya, and its
+latest book. Anchored as late by its own list of teachers in Sri Lanka; the
+exact date is an estimate.
+"""
+
+# ============================================================================
+# Aṭṭhakathā
+# ============================================================================
+
+# Vinayapiṭaka (aṭṭhakathā)
+"cst:atthakatha/vinayapiṭaka-aṭṭhakathā" = """
+Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Samantapāsādikā,
+ascribed to Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept
+at the Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well
+anchored in date, it was translated into Chinese in 489 CE, though some
+scholars question Buddhaghosa's own hand in it, and the age of the Sinhala
+sources is known only from tradition.
+"""
+
+# Dīgha nikāya (aṭṭhakathā)
+"cst:atthakatha/suttapiṭaka-aṭṭhakathā/dīgha-nikāya-aṭṭhakathā" = """
+Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Sumaṅgalavilāsinī,
+by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
+Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
+his authorship is accepted by scholarly consensus. The age of the Sinhala
+sources is known only from tradition.
+"""
+
+# Majjhimanikāya (aṭṭhakathā)
+"cst:atthakatha/suttapiṭaka-aṭṭhakathā/majjhimanikāya-aṭṭhakathā" = """
+Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Papañcasūdanī, by
+Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
+Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
+his authorship is accepted by scholarly consensus. The age of the Sinhala
+sources is known only from tradition.
+"""
+
+# Saṁyuttanikāya (aṭṭhakathā)
+"cst:atthakatha/suttapiṭaka-aṭṭhakathā/saṃyuttanikāya-aṭṭhakathā" = """
+Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Sāratthappakāsinī,
+by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
+Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
+his authorship is accepted by scholarly consensus. The age of the Sinhala
+sources is known only from tradition.
+"""
+
+# Aṅguttaranikāya (aṭṭhakathā)
+"cst:atthakatha/suttapiṭaka-aṭṭhakathā/aṅguttaranikāya-aṭṭhakathā" = """
+Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Manorathapūraṇī,
+by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
+Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
+his authorship is accepted by scholarly consensus. The age of the Sinhala
+sources is known only from tradition.
+"""
+
+# Khuddakanikāya (aṭṭhakathā)
+"cst:atthakatha/suttapiṭaka-aṭṭhakathā/khuddakanikāya-aṭṭhakathā" = """
+Origin: 5th century CE and later, Sri Lanka and South India; several authors.
+The Dhammapada and Jātaka commentaries are anonymous works of about the 5th
+century; Dhammapāla, of South India, wrote on the Udāna, Itivuttaka,
+Vimānavatthu, Petavatthu, Thera- and Therīgāthā some time after Buddhaghosa;
+others are by Buddhadatta, Upasena and Mahānāma. Contested: authorship and
+dates are far less secure than for the commentaries on the four Nikāyas, and
+the traditional ascriptions to Buddhaghosa are doubted.
+"""
+
+# ============================================================================
+# Ṭīkā
+# ============================================================================
+
+# Sāratthadīpanī-ṭīkā-1
+"cst:vin01t1.tik" = """
+Origin: 12th century CE, Sri Lanka (Polonnaruva). The Sāratthadīpanī, by
+Sāriputta: a sub-commentary on the Samantapāsādikā, written in the reign of
+Parakkamabāhu I (1153–1186) as part of his reform of the monastic order. Well
+anchored.
+"""
+
+# Sāratthadīpanī-ṭīkā-2
+"cst:vin01t2.tik" = """
+Origin: See Sāratthadīpanī-ṭīkā.
+"""
+
+# Sāratthadīpanī-ṭīkā-3
+"cst:vin02t.tik" = """
+Origin: See Sāratthadīpanī-ṭīkā.
+"""
+
+# Vajirabuddhi-ṭīkā
+"cst:vin06t.nrf" = """
+Origin: between the 7th and 12th centuries CE, Sri Lanka or South India.
+Ascribed to Vajirabuddhi. The oldest surviving sub-commentary on the Vinaya
+commentary. Uncertain: the work is undated; one study argues it cannot be
+earlier than the 9th century.
+"""
+
+# Dīghanikāya (ṭīkā)
+"cst:tika/suttapiṭaka-ṭīkā/dīghanikāya-ṭīkā" = """
+Origin: second half of the first millennium CE, probably South India. The
+Līnatthappakāsinī, the old sub-commentary, ascribed to Dhammapāla. Contested:
+his date is not settled, nor whether he is the Dhammapāla who wrote the
+Khuddaka commentaries. The two Abhinavaṭīkā volumes here are a separate work:
+the Sādhuvilāsinī of Ñāṇābhivaṁsa, Burma, about 1800 CE.
+"""
+
+# Majjhimanikāya (ṭīkā)
+"cst:tika/suttapiṭaka-ṭīkā/majjhimanikāya-ṭīkā" = """
+Origin: See Dīghanikāya (ṭīkā).
+"""
+
+# Saṁyuttanikāya (ṭīkā)
+"cst:tika/suttapiṭaka-ṭīkā/saṃyuttanikāya-ṭīkā" = """
+Origin: See Dīghanikāya (ṭīkā).
+"""
+
+# Aṅguttaranikāya (ṭīkā)
+"cst:tika/suttapiṭaka-ṭīkā/aṅguttaranikāya-ṭīkā" = """
+Origin: 12th century CE, Sri Lanka. The Sāratthamañjūsā, ascribed to
+Sāriputta, of the circle of scholars working under Parakkamabāhu I
+(1153–1186). Well anchored to that period.
+"""

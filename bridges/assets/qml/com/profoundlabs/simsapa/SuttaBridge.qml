@@ -106,7 +106,7 @@ Item {
         return true;
     }
 
-    function query_text_to_uid_field_query(query_text: string): string {
+    function query_text_to_uid_field_query(query_text: string, search_area: string): string {
       return query_text;
     }
 
@@ -1117,6 +1117,44 @@ Item {
 
     function open_topic_index_window() {
         console.log("open_topic_index_window()");
+    }
+
+    function nav_tree_is_available(): bool {
+        console.log("nav_tree_is_available()");
+        return true;
+    }
+
+    function nav_tree_children_json(parent_uid: string): string {
+        console.log("nav_tree_children_json():", parent_uid);
+        return "[]";
+    }
+
+    function nav_tree_filter_json(query: string, limit: int): string {
+        console.log("nav_tree_filter_json():", query, limit);
+        return "[]";
+    }
+
+    function nav_tree_node_json(node_uid: string): string {
+        console.log("nav_tree_node_json():", node_uid);
+        return "null";
+    }
+
+    function nav_tree_translation_counts_json(sutta_uids_json: string): string {
+        console.log("nav_tree_translation_counts_json():", sutta_uids_json);
+        return "{}";
+    }
+
+    function get_show_navigation_blurbs(): bool {
+        console.log("get_show_navigation_blurbs()");
+        return true;
+    }
+
+    function set_show_navigation_blurbs(enabled: bool) {
+        console.log("set_show_navigation_blurbs():", enabled);
+    }
+
+    function open_sutta_navigation_window() {
+        console.log("open_sutta_navigation_window()");
     }
 
     function update_topic_index() {

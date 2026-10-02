@@ -1,0 +1,686 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import QtQuick.Window
+
+import com.profoundlabs.simsapa
+
+/// Browse the corpus as a hierarchy.
+///
+/// **This window is hidden on close, never destroyed** -- the third lifecycle
+/// family in docs/window-lifecycle-and-reuse.md. `onClosing` accepts the close
+/// and deliberately does *not* call `SuttaBridge.notify_window_closed()`, so
+/// the C++ wrapper, the QML engine and every piece of state in this file
+/// survive it. Reopening revives this same object with the breadcrumb path,
+/// expansion state, filter text and scroll position the user left behind, with
+/// no save/restore code anywhere.
+///
+/// The navigation model is a drill-down, not a mega-tree: entering a level
+/// replaces the list with that node's children and resets indentation to zero,
+/// so the deepest level has the full row width available even on a phone.
+/// Expanding a row in place is the other, temporary move -- it reveals compact
+/// tree rows so a branch can be checked and flicked shut again.
+///
+/// See docs/sutta-navigation-tree.md
+ApplicationWindow {
+    id: root
+
+    title: "Sutta Navigation - Simsapa"
+    width: is_mobile ? Screen.desktopAvailableWidth : 900
+    height: is_mobile ? Screen.desktopAvailableHeight : Math.min(900, Screen.desktopAvailableHeight)
+    visible: true
+    color: palette.window
+    flags: Qt.Dialog
+
+    readonly property bool is_mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
+    readonly property bool is_desktop: !root.is_mobile
+    readonly property int pointSize: is_mobile ? 16 : 12
+    readonly property int largePointSize: pointSize + 2
+    property int extra_top_margin: 0
+
+    property bool is_dark: theme_helper.is_dark
+
+    /// False when the navigation tables are absent, empty or unreadable. The
+    /// window then says so rather than drawing an empty tree, which would look
+    /// like a corpus with nothing in it.
+    property bool tree_is_available: false
+
+    /// The FR-31 toggle, and the only piece of this window's state that
+    /// persists across sessions. Breadcrumbs, filter text, expansion and
+    /// scroll position survive close/reopen because the object survives, and
+    /// are gone on app restart by design.
+    ///
+    /// An **alias** to the checkbox rather than a separate property mirroring
+    /// it: a `CheckBox` assigns its own `checked` when the user clicks it,
+    /// which replaces whatever binding was written onto that property -- so a
+    /// mirrored `checked: root.show_summaries` silently stops tracking after the
+    /// first click. With one piece of state there is nothing to fall out of
+    /// sync. This is the idiom the settings window already uses
+    /// (`AppSettingsWindow.qml`: imperative assignment at load, handler on
+    /// change, alias where another component needs to read it).
+    property alias show_summaries: summaries_toggle.checked
+
+    // ------------------------------------------------------------------
+    // Level state
+    //
+    // `current_parent_uid` is "" at the top level, which is how the bridge
+    // asks for the roots without a null. `breadcrumbs` is the path to it as
+    // `[{ node_uid, title }]`, root first, and is empty at the top level.
+    // ------------------------------------------------------------------
+
+    property string current_parent_uid: ""
+    property var breadcrumbs: []
+    property var level_nodes: []
+
+    /// Expansion state and the children it revealed, keyed by `node_uid`.
+    /// Both are dropped when a level is entered: expansion is a temporary look
+    /// inside a branch, not something to carry into the level it belongs to.
+    property var expanded_uids: ({})
+    property var children_cache: ({})
+
+    /// Per-row blurb expansion. It lives here rather than in the delegate
+    /// because a ListView recycles delegates, and a recycled "more" state
+    /// would land on whichever row scrolled into that delegate.
+    property var blurb_expanded_uids: ({})
+
+    /// The same, for a row's context note, which opens independently.
+    property var context_note_expanded_uids: ({})
+
+    /// The level rows plus whatever expanding them revealed, flattened for the
+    /// ListView: `{ node, depth, is_tree_row }` per row.
+    ///
+    /// A ListModel edited in place, never a JS array that is reassigned.
+    /// Assigning an array resets the ListView, which puts it back at the top
+    /// and rebuilds every delegate -- and a rebuilt row settles its height
+    /// only after its first layout pass (the wrapped summary, the "more"
+    /// button that depends on `truncated`), so the scroll position cannot be
+    /// restored exactly afterwards. Inserting and removing below the toggled
+    /// row leaves every row above it untouched.
+    ListModel {
+        id: display_model
+    }
+
+    /// Translations of the current level's texts in the languages installed
+    /// right now, keyed by `sutta_uid` (FR-47). Resolved once per level, never
+    /// once per row (FR-48), and deliberately not cached: the number changes
+    /// whenever a language is downloaded or removed, and a cache would only
+    /// make it stale. A uid with no translation is absent from the map, and
+    /// the row draws no indicator for it.
+    property var translation_counts: ({})
+
+    // ------------------------------------------------------------------
+    // Filter state
+    // ------------------------------------------------------------------
+
+    /// Below two characters the whole-tree filter would return most of the
+    /// tree as a flat list, which is not a useful answer.
+    readonly property int min_filter_length: 2
+    readonly property int filter_limit: 300
+
+    property string filter_text: ""
+    readonly property bool filter_active: root.filter_text.trim().length >= root.min_filter_length
+    property var filter_rows: []
+
+    ThemeHelper {
+        id: theme_helper
+        target_window: root
+    }
+
+    Logger { id: logger }
+
+    Component.onCompleted: {
+        root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
+        root.tree_is_available = SuttaBridge.nav_tree_is_available();
+        summaries_toggle.checked = SuttaBridge.get_show_navigation_blurbs();
+        logger.info("SuttaNavigationWindow: opened, tree_is_available = " + root.tree_is_available);
+
+        // Keep the first level query off the first-paint path: the window is
+        // drawn, then the roots arrive.
+        if (root.tree_is_available) {
+            Qt.callLater(function() {
+                root.load_level("");
+            });
+        }
+    }
+
+    /// Re-read the level's translation counts each time the window is shown
+    /// again. The window is hidden rather than destroyed, so a language
+    /// downloaded while the user was away would otherwise leave the counts on
+    /// screen describing the languages they had before (FR-47).
+    onVisibleChanged: {
+        if (root.visible && root.tree_is_available) {
+            root.load_translation_counts();
+        }
+    }
+
+    /// Accept the close and notify nothing.
+    ///
+    /// Accepting is load-bearing and rejecting is the bug: Qt runs the
+    /// quit-on-last-window check only inside `case QEvent::Close` and only when
+    /// the event was accepted (qwindow.cpp), so a rejected close would leave a
+    /// live app with no windows and no way back when this is the only one open.
+    /// Accepting makes Qt call `destroy()`, which releases the platform window
+    /// but leaves `m_root`, the engine and all QML state intact -- so
+    /// "hidden, not destroyed" falls out of simply not notifying, with no
+    /// `visible = false` assignment and no deferral to arrange.
+    onClosing: function(close) {
+        if (!close.accepted) {
+            return;
+        }
+        logger.info("SuttaNavigationWindow: closing -- hidden, not destroyed");
+    }
+
+    // ------------------------------------------------------------------
+    // Reading the tree
+    // ------------------------------------------------------------------
+
+    function node_title(n): string {
+        if (!n) {
+            return "";
+        }
+        return n.title_pali || n.title_en || n.node_uid;
+    }
+
+    function fetch_children(parent_uid: string): var {
+        const json = SuttaBridge.nav_tree_children_json(parent_uid);
+        try {
+            const parsed = JSON.parse(json);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            logger.error("nav_tree_children_json parse failed for '" + parent_uid + "': " + e);
+            return [];
+        }
+    }
+
+    /// The ancestors of a node, root first, as breadcrumb segments.
+    ///
+    /// A filter hit carries its ancestors' *titles* but not their uids, and
+    /// entering that hit's level needs the uids, so the chain is walked up
+    /// through `parent_uid`. The guard is against a cycle in defective data:
+    /// the tree is at most a handful of levels deep.
+    function ancestor_segments(node): var {
+        let chain = [];
+        let uid = node && node.parent_uid ? node.parent_uid : "";
+        let guard = 0;
+        while (uid.length > 0 && guard < 32) {
+            const json = SuttaBridge.nav_tree_node_json(uid);
+            let n = null;
+            try {
+                n = JSON.parse(json);
+            } catch (e) {
+                logger.error("nav_tree_node_json parse failed for '" + uid + "': " + e);
+                break;
+            }
+            if (!n) {
+                logger.error("Navigation node not found while building a path: " + uid);
+                break;
+            }
+            chain.unshift({ node_uid: n.node_uid, title: root.node_title(n) });
+            uid = n.parent_uid ? n.parent_uid : "";
+            guard += 1;
+        }
+        return chain;
+    }
+
+    // ------------------------------------------------------------------
+    // Level navigation
+    // ------------------------------------------------------------------
+
+    function load_level(parent_uid: string) {
+        root.current_parent_uid = parent_uid;
+        root.expanded_uids = ({});
+        root.children_cache = ({});
+        root.level_nodes = root.fetch_children(parent_uid);
+        root.translation_counts = ({});
+        root.rebuild_rows();
+        level_list.positionViewAtBeginning();
+        // The rows are drawn first and the counts arrive after: entering a
+        // level must feel instantaneous (FR-50), and the count query is the
+        // one part of a level render that grows with the level's size.
+        Qt.callLater(root.load_translation_counts);
+    }
+
+    /// One query for the whole level (FR-48). Only level rows show the
+    /// indicator, so only their uids are asked for -- an expanded branch's
+    /// tree rows are not counted.
+    function load_translation_counts() {
+        let uids = [];
+        for (let i = 0; i < root.level_nodes.length; i++) {
+            const u = root.level_nodes[i].sutta_uid;
+            if (u && u.length > 0) {
+                uids.push(u);
+            }
+        }
+        if (uids.length === 0) {
+            root.translation_counts = ({});
+            return;
+        }
+        const json = SuttaBridge.nav_tree_translation_counts_json(JSON.stringify(uids));
+        try {
+            const parsed = JSON.parse(json);
+            root.translation_counts = (parsed && typeof parsed === "object") ? parsed : ({});
+        } catch (e) {
+            logger.error("nav_tree_translation_counts_json parse failed: " + e);
+            root.translation_counts = ({});
+        }
+    }
+
+    function rebuild_rows() {
+        display_model.clear();
+        for (let i = 0; i < root.level_nodes.length; i++) {
+            const n = root.level_nodes[i];
+            let rows = [{ node: n, depth: 0, is_tree_row: false }];
+            root.append_expanded(rows, n, 1);
+            display_model.append(rows);
+        }
+    }
+
+    /// A cycle in `parent_uid` would make this recurse until the stack runs
+    /// out, which is a hard crash rather than a visible defect. The tree is a
+    /// handful of levels deep, so a cap costs nothing and turns a malformed
+    /// bootstrap into a log line.
+    readonly property int max_expand_depth: 24
+
+    function append_expanded(rows, node, depth) {
+        if (depth > root.max_expand_depth) {
+            logger.error("Navigation: expansion depth cap reached at '" + node.node_uid
+                + "' -- a parent_uid cycle in the navigation tree data?");
+            return;
+        }
+        if (!root.expanded_uids[node.node_uid]) {
+            return;
+        }
+        const kids = root.children_cache[node.node_uid] || [];
+        for (let i = 0; i < kids.length; i++) {
+            rows.push({ node: kids[i], depth: depth, is_tree_row: true });
+            root.append_expanded(rows, kids[i], depth + 1);
+        }
+    }
+
+    /// `index` is the toggled row's position in `display_model`.
+    function toggle_expand(index: int, node, depth: int) {
+        let expanded = Object.assign({}, root.expanded_uids);
+        if (expanded[node.node_uid]) {
+            delete expanded[node.node_uid];
+            root.expanded_uids = expanded;
+
+            // Everything the node revealed is the run of deeper rows after it.
+            let end = index + 1;
+            while (end < display_model.count && display_model.get(end).depth > depth) {
+                end += 1;
+            }
+            if (end > index + 1) {
+                display_model.remove(index + 1, end - index - 1);
+            }
+            return;
+        }
+
+        if (!root.children_cache[node.node_uid]) {
+            let cache = Object.assign({}, root.children_cache);
+            cache[node.node_uid] = root.fetch_children(node.node_uid);
+            root.children_cache = cache;
+        }
+        expanded[node.node_uid] = true;
+        root.expanded_uids = expanded;
+
+        let rows = [];
+        root.append_expanded(rows, node, depth + 1);
+        for (let i = 0; i < rows.length; i++) {
+            display_model.insert(index + 1 + i, rows[i]);
+        }
+    }
+
+    /// Enter a level, and set the breadcrumbs to that level's **full path**.
+    ///
+    /// The path is recomputed from the node's own ancestry rather than
+    /// appended to the path the user happened to walk. Appending made the bar
+    /// a history of what had been pressed, which is not where the user is: a
+    /// tree row (FR-33) can sit several levels below the current one, so
+    /// expanding Suttapiṭaka, then Majjhimanikāya, and entering Mūlapaṇṇāsa
+    /// read `All › Mūlapaṇṇāsa` instead of
+    /// `All › Suttapiṭaka › Majjhimanikāya › Mūlapaṇṇāsa`.
+    ///
+    /// Walking the ancestry also makes one function serve every route into a
+    /// level -- a level row, a tree row at any depth, and a flat filter hit,
+    /// whose ancestors are not on the current path at all -- so the bar cannot
+    /// say different things about the same level depending on how it was
+    /// reached. For a level row it produces exactly what appending did.
+    function enter_level(node) {
+        let segments = root.ancestor_segments(node);
+        segments.push({ node_uid: node.node_uid, title: root.node_title(node) });
+        root.breadcrumbs = segments;
+        root.load_level(node.node_uid);
+    }
+
+    /// Entering a level from a flat filter hit. Clearing the filter input is
+    /// what returns the window to the tree, now standing at that level.
+    function enter_level_from_filter(node) {
+        root.enter_level(node);
+        filter_input.text = "";
+    }
+
+    /// -1 is the top level; any other index is a position in `breadcrumbs`.
+    function go_to_breadcrumb(index: int) {
+        if (index < 0) {
+            root.breadcrumbs = [];
+            root.load_level("");
+            return;
+        }
+        let segments = root.breadcrumbs.slice(0, index + 1);
+        root.breadcrumbs = segments;
+        root.load_level(segments[index].node_uid);
+    }
+
+    function toggle_blurb(node) {
+        let expanded = Object.assign({}, root.blurb_expanded_uids);
+        if (expanded[node.node_uid]) {
+            delete expanded[node.node_uid];
+        } else {
+            expanded[node.node_uid] = true;
+        }
+        root.blurb_expanded_uids = expanded;
+    }
+
+    function toggle_context_note(node) {
+        let expanded = Object.assign({}, root.context_note_expanded_uids);
+        if (expanded[node.node_uid]) {
+            delete expanded[node.node_uid];
+        } else {
+            expanded[node.node_uid] = true;
+        }
+        root.context_note_expanded_uids = expanded;
+    }
+
+    // ------------------------------------------------------------------
+    // Filtering
+    // ------------------------------------------------------------------
+
+    function run_filter() {
+        const query = root.filter_text.trim();
+        if (query.length < root.min_filter_length) {
+            root.filter_rows = [];
+            return;
+        }
+        const json = SuttaBridge.nav_tree_filter_json(query, root.filter_limit);
+        try {
+            const parsed = JSON.parse(json);
+            root.filter_rows = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            logger.error("nav_tree_filter_json parse failed for '" + query + "': " + e);
+            root.filter_rows = [];
+        }
+    }
+
+    Timer {
+        id: filter_timer
+        interval: 250
+        repeat: false
+        onTriggered: root.run_filter()
+    }
+
+    // ------------------------------------------------------------------
+    // Opening a text
+    // ------------------------------------------------------------------
+
+    /// Open a leaf's text in a **new tab** of a Sutta Search window (FR-38),
+    /// following `TopicIndexWindow.open_sutta()`.
+    ///
+    /// The navigation window stays open on both platforms (FR-39). On desktop
+    /// the sutta window is raised through `show_and_activate_window()` on the
+    /// C++ side, never a raw show/raise/requestActivate triple (FR-41); on
+    /// mobile that same raise brings it to the front and leaves this window
+    /// behind it with its state intact, so returning through the menu finds
+    /// the same level, breadcrumbs, filter and scroll position (FR-40).
+    ///
+    /// With no Sutta Search window left open there is nothing to raise --
+    /// `show_sutta_from_reference_search` targets the last *visible* one and
+    /// would silently do nothing -- so one is opened with the result instead.
+    function open_node(node) {
+        if (!node.is_openable) {
+            logger.warn("Navigation: refusing to open an unavailable node: " + node.node_uid);
+            return;
+        }
+
+        const result_data = JSON.stringify({
+                                               item_uid: node.sutta_uid,
+                                               table_name: "suttas",
+                                               // The tree addresses whole texts, never a
+                                               // paragraph within one.
+                                               anchor: ""
+                                           });
+
+        if (SuttaBridge.count_open_sutta_search_windows() > 0) {
+            SuttaBridge.emit_show_sutta_from_reference_search("", result_data);
+        } else {
+            logger.info("Navigation: no open Sutta Search window, opening one");
+            SuttaBridge.open_sutta_search_window_with_result(result_data);
+        }
+
+        logger.info("Navigation: opened " + node.sutta_uid);
+    }
+
+    // ------------------------------------------------------------------
+    // Layout
+    // ------------------------------------------------------------------
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.topMargin: root.extra_top_margin
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        spacing: 6
+
+        // The honest empty state: an empty tree would read as a corpus with
+        // nothing in it.
+        Label {
+            visible: !root.tree_is_available
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            wrapMode: Text.WordWrap
+            font.pointSize: root.pointSize
+            text: "The navigation index is not available."
+        }
+
+        RowLayout {
+            visible: root.tree_is_available
+            Layout.fillWidth: true
+            Layout.topMargin: 6
+            spacing: 8
+
+            TextField {
+                id: filter_input
+                Layout.fillWidth: true
+                placeholderText: "Filter the whole tree: title, English title or uid"
+                font.pointSize: root.pointSize
+                selectByMouse: true
+
+                // A pre-focused persistent field is a desktop affordance; on
+                // mobile it would raise the keyboard over the list.
+                focus: root.is_desktop
+
+                // Never Qt.ImhPreferLowercase, which is inert on Android but
+                // forces the lowercase layer under Qt Virtual Keyboard.
+                inputMethodHints: Qt.ImhNoAutoUppercase
+
+                // The soft keyboard's action key runs the filter.
+                EnterKey.type: Qt.EnterKeySearch
+
+                // Reliably raise the Android/ChromeOS soft keyboard on the
+                // first tap. See docs/android-soft-keyboard.md.
+                MobileKeyboardHelper {}
+
+                onTextChanged: {
+                    root.filter_text = text;
+                    filter_timer.restart();
+                }
+
+                // Fires on desktop Return/Enter and on the mobile soft
+                // keyboard's search action, which emits `accepted` rather than
+                // a Return key event.
+                onAccepted: {
+                    filter_timer.stop();
+                    root.run_filter();
+                }
+            }
+
+            Button {
+                text: "Clear"
+                enabled: filter_input.text.length > 0
+                font.pointSize: root.pointSize
+                // Clearing returns to the tree at the level the window was on
+                // before filtering -- the level list was never torn down.
+                onClicked: filter_input.text = ""
+            }
+
+            // "Summaries", not "Blurbs": the control is for readers, and
+            // `blurb` is SuttaCentral's word for the data rather than one a
+            // reader has to learn. The stored setting and the bridge keep the
+            // `blurb` name -- renaming the persisted key would silently reset
+            // everyone's preference, and it is the data's name that is right.
+            CheckBox {
+                id: summaries_toggle
+                text: "Summaries"
+                font.pointSize: root.pointSize
+
+                // The shipped default, replaced by the stored setting in
+                // Component.onCompleted.
+                checked: true
+
+                // onToggled, not onCheckedChanged: the latter also fires on
+                // that load-time assignment, which would write the setting
+                // back to the database every time the window opens.
+                onToggled: SuttaBridge.set_show_navigation_blurbs(checked)
+            }
+
+            Button {
+                text: "Close"
+                font.pointSize: root.pointSize
+                onClicked: root.close()
+            }
+        }
+
+        NavigationBreadcrumbBar {
+            id: breadcrumb_bar
+            visible: root.tree_is_available && !root.filter_active
+            Layout.fillWidth: true
+            segments: root.breadcrumbs
+            pointSize: root.pointSize
+            onSegment_clicked: function(index) {
+                root.go_to_breadcrumb(index);
+            }
+        }
+
+        Label {
+            visible: root.tree_is_available && root.filter_active
+            Layout.fillWidth: true
+            font.pointSize: Math.max(8, root.pointSize - 1)
+            color: palette.mid
+            text: root.filter_rows.length === root.filter_limit
+                ? "First " + root.filter_limit + " matches"
+                : root.filter_rows.length + (root.filter_rows.length === 1 ? " match" : " matches")
+        }
+
+        // The level, plus whatever expanding a row in it revealed.
+        ListView {
+            id: level_list
+            visible: root.tree_is_available && !root.filter_active
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            spacing: 4
+            model: display_model
+
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: Item {
+                id: level_item
+                required property int index
+                required property var node
+                required property int depth
+                required property bool is_tree_row
+                width: level_list.width
+                implicitHeight: level_row.implicitHeight
+
+                NavigationNodeRow {
+                    id: level_row
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    // Tree rows indent; a level row never does, which is what
+                    // leaves the full width to the title and blurb.
+                    anchors.leftMargin: level_item.depth * 18
+
+                    node: level_item.node
+                    is_tree_row: level_item.is_tree_row
+                    depth: level_item.depth
+                    pointSize: root.pointSize
+                    show_summaries: root.show_summaries
+                    // -1 until the level's counts have been resolved, and for
+                    // a tree row, which never shows the indicator.
+                    translation_count: (!level_item.is_tree_row
+                                        && level_item.node.sutta_uid
+                                        && root.translation_counts[level_item.node.sutta_uid] !== undefined)
+                                       ? root.translation_counts[level_item.node.sutta_uid]
+                                       : -1
+                    is_expanded: !!root.expanded_uids[level_item.node.node_uid]
+                    blurb_expanded: !!root.blurb_expanded_uids[level_item.node.node_uid]
+                    context_note_expanded: !!root.context_note_expanded_uids[level_item.node.node_uid]
+
+                    onToggle_expand: root.toggle_expand(level_item.index, level_item.node, level_item.depth)
+                    onEnter_level: root.enter_level(level_item.node)
+                    onOpen_text: root.open_node(level_item.node)
+                    onToggle_blurb: root.toggle_blurb(level_item.node)
+                    onToggle_context_note: root.toggle_context_note(level_item.node)
+                }
+            }
+        }
+
+        // Filter hits: a flat list with nothing to expand, so a branch hit's
+        // body has no tap action; a leaf hit's body opens the text. The
+        // buttons are the same ones a tree row carries.
+        ListView {
+            id: filter_list
+            visible: root.tree_is_available && root.filter_active
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            spacing: 4
+            model: root.filter_rows
+
+            ScrollBar.vertical: ScrollBar {}
+
+            delegate: Item {
+                id: filter_item
+                required property var modelData
+                width: filter_list.width
+                implicitHeight: filter_row.implicitHeight
+
+                NavigationNodeRow {
+                    id: filter_row
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+
+                    node: filter_item.modelData.node
+                    is_filter_row: true
+                    breadcrumb_text: (filter_item.modelData.breadcrumbs || []).join(" › ")
+                    pointSize: root.pointSize
+                    show_summaries: root.show_summaries
+                    // A filter hit shows its summary like any other row now,
+                    // so its "more" button needs the same per-row expansion
+                    // state -- which is keyed by node_uid and so is shared
+                    // with the level list.
+                    blurb_expanded: !!root.blurb_expanded_uids[filter_item.modelData.node.node_uid]
+                    context_note_expanded: !!root.context_note_expanded_uids[filter_item.modelData.node.node_uid]
+
+                    onEnter_level: root.enter_level_from_filter(filter_item.modelData.node)
+                    onOpen_text: root.open_node(filter_item.modelData.node)
+                    onToggle_blurb: root.toggle_blurb(filter_item.modelData.node)
+                    onToggle_context_note: root.toggle_context_note(filter_item.modelData.node)
+                }
+            }
+        }
+    }
+}

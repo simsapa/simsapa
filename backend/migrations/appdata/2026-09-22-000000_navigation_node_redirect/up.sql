@@ -1,0 +1,19 @@
+-- The text a navigation leaf opens when it has none of its own.
+--
+-- Some SuttaCentral leaves are parallels pages rather than documents: the
+-- Pātimokkha gives every rule a uid (`pli-tv-bu-pm-pj1`), but the text behind
+-- it is the rule inside the Vibhaṅga (`pli-tv-bu-vb-pj1/pli/ms`). Such a leaf
+-- is resolved at bootstrap through `relationship/parallels.json` and opens
+-- that text instead.
+--
+-- The column holds the **target's own uid**, so the row can say where its text
+-- comes from. Without it a reader pressing Open on a bhikkhunī rule lands on a
+-- bhikkhu rule with nothing to explain why -- which is the whole reason the
+-- column exists rather than only `sutta_uid` being rewritten.
+--
+-- NULL on every ordinary node, which is all but 538 of them.
+--
+-- A separate migration rather than an edit to 2026-09-19-000000: that one is
+-- already stamped in the `__diesel_schema_migrations` ledger of every database
+-- built since, so an edit to it would never re-run.
+ALTER TABLE navigation_nodes ADD COLUMN redirect_uid TEXT;

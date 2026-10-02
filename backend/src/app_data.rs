@@ -2356,6 +2356,32 @@ impl AppData {
         }
     }
 
+    pub fn get_show_navigation_blurbs(&self) -> bool {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.show_navigation_blurbs
+    }
+
+    pub fn set_show_navigation_blurbs(&self, enabled: bool) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.show_navigation_blurbs = enabled;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => (),
+            Err(e) => error(&format!("Failed to update app settings: {}", e)),
+        }
+    }
+
     /// Last-used language filter key for the given area (`"Suttas"`,
     /// `"Dictionary"`, `"Library"`). Returns an empty string when unset, which
     /// the UI and query layer both treat as "no language filter" (equivalent to

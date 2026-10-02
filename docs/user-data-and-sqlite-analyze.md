@@ -54,6 +54,7 @@ table**.
 | HTML book import            | `AppData::import_html_to_db` → `html_import::import_html_to_db`       | `appdata`        | wrapper in `app_data.rs` after the inner call returns `Ok`                    |
 | Book delete                 | `SuttaBridge::remove_book` → `appdata::delete_book_by_uid`            | `appdata`        | success arm of `remove_book` in `bridges/src/sutta_bridge.rs`                 |
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
+| Navigation-tree build       | `cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
 
 ### Pattern for adding a new import
 
@@ -75,6 +76,13 @@ Notes:
 - Failures are logged at `warn` level and are non-fatal — stale or missing
   stats just mean the planner falls back to heuristics, not that the data is
   corrupt.
+- The navigation-tree row is a **bootstrap** path, not a user-data one, and is
+  listed because the same rule applies to it: `navigation_nodes` is a new table
+  whose level query (`WHERE parent_uid = ?`) depends on
+  `idx_navigation_nodes_parent_sort` being chosen, and with no statistics the
+  planner may scan instead. The CLI's `build-navigation-tree` command writes
+  the same rows outside a bootstrap, so the `ANALYZE` lives with the write and
+  not with the archive step.
 - For batch operations, prefer to ANALYZE **once at the end** rather than after
   each inserted row. `ANALYZE` rebuilds the stat tables from scratch each time;
   it is not incremental.

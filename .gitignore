@@ -1,7 +1,7 @@
 appdata.sqlite3
 *.log
 .env
-cli/tipitaka_xml_parser_log.txt
+tipitaka_xml_parser_log.txt
 
 suttas.sqlite3
 fragments.sqlite3

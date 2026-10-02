@@ -21,6 +21,7 @@ use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
 use simsapa_backend::topic_index;
+use simsapa_backend::navigation_tree;
 use simsapa_backend::cips_update;
 use simsapa_backend::update_checker;
 use simsapa_backend::types::SearchResult;
@@ -1008,6 +1009,10 @@ pub mod qobject {
         #[cxx_name = "showBottomFootnotesChanged"]
         fn show_bottom_footnotes_changed(self: Pin<&mut SuttaBridge>);
 
+        #[qsignal]
+        #[cxx_name = "showNavigationBlurbsChanged"]
+        fn show_navigation_blurbs_changed(self: Pin<&mut SuttaBridge>);
+
         // Update checker signals
         #[qsignal]
         #[cxx_name = "appUpdateAvailable"]
@@ -1165,7 +1170,7 @@ pub mod qobject {
         fn export_succeeded(self: Pin<&mut SuttaBridge>);
 
         #[qinvokable]
-        fn query_text_to_uid_field_query(self: &SuttaBridge, query_text: &QString) -> QString;
+        fn query_text_to_uid_field_query(self: &SuttaBridge, query_text: &QString, search_area: &QString) -> QString;
 
         #[qinvokable]
         fn convert_verse_ref_to_uid(self: &SuttaBridge, sutta_ref: &QString) -> QString;
@@ -1787,6 +1792,56 @@ pub mod qobject {
 
         #[qinvokable]
         fn open_topic_index_window(self: &SuttaBridge);
+
+        // Sutta Navigation Tree functions
+        //
+        // All three readers are synchronous: a level is one indexed
+        // `WHERE parent_uid = ?` and the filter is two statements over
+        // materialized columns, so there is nothing to queue back from and no
+        // signal to wait on. They answer a missing or empty table with an
+        // empty array rather than an error, which is why
+        // `nav_tree_is_available` exists separately -- "no rows" and "no
+        // index" look identical otherwise (FR-13).
+
+        /// False when the navigation tables are absent, empty or unreadable.
+        /// The window must then say "navigation index not available".
+        #[qinvokable]
+        fn nav_tree_is_available(self: &SuttaBridge) -> bool;
+
+        /// One level as a JSON array of node objects, in `sort_index` order.
+        /// An empty `parent_uid` is the root level.
+        #[qinvokable]
+        fn nav_tree_children_json(self: &SuttaBridge, parent_uid: &QString) -> QString;
+
+        /// Whole-tree filter as a JSON array of `{node, breadcrumbs}`.
+        #[qinvokable]
+        fn nav_tree_filter_json(self: &SuttaBridge, query: &QString, limit: i32) -> QString;
+
+        /// One node as a JSON object, or `null` when there is no such node.
+        #[qinvokable]
+        fn nav_tree_node_json(self: &SuttaBridge, node_uid: &QString) -> QString;
+
+        /// Translations of each text of one displayed level, in the languages
+        /// installed *right now* (FR-47). Takes a JSON array of `sutta_uid`s
+        /// and returns a JSON object keyed by them; a uid with no translation
+        /// is absent rather than zero, so the row draws no indicator.
+        ///
+        /// One call per level, never one per row (FR-48): the largest level in
+        /// the tree is 728 rows and answers in ~13 ms.
+        #[qinvokable]
+        fn nav_tree_translation_counts_json(self: &SuttaBridge, sutta_uids_json: &QString) -> QString;
+
+        /// Whether the navigation window shows blurbs on its level rows
+        /// (FR-31). Tree rows never show one, whatever this says.
+        #[qinvokable]
+        fn get_show_navigation_blurbs(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_show_navigation_blurbs(self: Pin<&mut SuttaBridge>, enabled: bool);
+
+        /// Open the Sutta Navigation window, or revive the one that exists.
+        #[qinvokable]
+        fn open_sutta_navigation_window(self: &SuttaBridge);
 
         /// Fetch the current CIPS index and replace the one in use. Runs on a
         /// background thread; reports through the three topic-index-update
@@ -2424,8 +2479,16 @@ impl qobject::SuttaBridge {
         }
     }
 
-    pub fn query_text_to_uid_field_query(&self, query_text: &QString) -> QString {
-        QString::from(query_text_to_uid_field_query(&query_text.to_string()))
+    /// `search_area` is the search bar's area name ("Suttas", "Dictionary",
+    /// "Library"); it decides which uid patterns are tried, so a DPD headword
+    /// such as `ja 1.1` is not read as a Jātaka reference, nor the reverse.
+    pub fn query_text_to_uid_field_query(&self, query_text: &QString, search_area: &QString) -> QString {
+        let area = match search_area.to_string().as_str() {
+            "Dictionary" => SearchArea::Dictionary,
+            "Library" => SearchArea::Library,
+            _ => SearchArea::Suttas,
+        };
+        QString::from(query_text_to_uid_field_query(&query_text.to_string(), &area))
     }
 
     /// Convert a verse reference (e.g., "dhp33", "thag50", "thig12") to its proper sutta UID.
@@ -5802,6 +5865,89 @@ impl qobject::SuttaBridge {
     pub fn open_topic_index_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_topic_index_window();
+    }
+
+    // =========================================================================
+    // Sutta Navigation Tree Functions
+    //
+    // Thin wrappers over `simsapa_backend::navigation_tree`, which owns both
+    // the queries and the JSON shape the rows are drawn from. Nothing here runs
+    // off the Qt thread: a level query is a single indexed lookup, so there is
+    // no worker to queue back from and no completion signal to miss.
+    // =========================================================================
+
+    /// Whether the navigation tables hold a tree. False for a missing table,
+    /// an empty one, or an unreadable one -- the three cases the window reports
+    /// as "navigation index not available" rather than drawing an empty tree.
+    pub fn nav_tree_is_available(&self) -> bool {
+        navigation_tree::tree_is_available()
+    }
+
+    /// One level of the tree as JSON. An empty `parent_uid` means the root
+    /// level, which is how QML asks for it without a null.
+    pub fn nav_tree_children_json(&self, parent_uid: &QString) -> QString {
+        let parent = parent_uid.to_string();
+        let parent = (!parent.is_empty()).then_some(parent);
+        QString::from(&navigation_tree::children_json(parent.as_deref()))
+    }
+
+    /// Whole-tree filter as JSON, each hit carrying its breadcrumb titles.
+    ///
+    /// A non-positive limit is refused rather than passed on: diesel would
+    /// emit `LIMIT 0` for zero and a negative one means "no limit" in SQLite,
+    /// so a QML slip would silently return either nothing or the whole tree as
+    /// a flat list.
+    pub fn nav_tree_filter_json(&self, query: &QString, limit: i32) -> QString {
+        if limit <= 0 {
+            error(&format!("nav_tree_filter_json(): refusing limit {}", limit));
+            return QString::from("[]");
+        }
+        QString::from(&navigation_tree::filter_json(&query.to_string(), limit as i64))
+    }
+
+    /// One node as JSON, or `null`.
+    pub fn nav_tree_node_json(&self, node_uid: &QString) -> QString {
+        QString::from(&navigation_tree::node_json(&node_uid.to_string()))
+    }
+
+    /// The level's translation counts as JSON. The count is not cached: both
+    /// query shapes measure around 10 ms against the real database, and a
+    /// cache would only create the stale-count defect FR-48 warns about --
+    /// the number changes whenever a language is downloaded or removed.
+    pub fn nav_tree_translation_counts_json(&self, sutta_uids_json: &QString) -> QString {
+        let uids: Vec<String> = match serde_json::from_str(&sutta_uids_json.to_string()) {
+            Ok(v) => v,
+            Err(e) => {
+                error(&format!("nav_tree_translation_counts_json(): {}", e));
+                return QString::from("{}");
+            }
+        };
+        QString::from(&navigation_tree::translation_counts_json(&uids))
+    }
+
+    /// The FR-31 blurb toggle. It is a setting and persists across sessions;
+    /// the breadcrumb path, filter text, expansion and scroll position
+    /// deliberately do not (FR-25).
+    pub fn get_show_navigation_blurbs(&self) -> bool {
+        let app_data = get_app_data();
+        app_data.get_show_navigation_blurbs()
+    }
+
+    pub fn set_show_navigation_blurbs(mut self: Pin<&mut Self>, enabled: bool) {
+        let app_data = get_app_data();
+        app_data.set_show_navigation_blurbs(enabled);
+        self.as_mut().show_navigation_blurbs_changed();
+    }
+
+    /// Open the Sutta Navigation window.
+    ///
+    /// Every entry point routes through here so the single-instance guarantee
+    /// holds however the request was made; the window manager revives the
+    /// existing instance with its state intact rather than building a second
+    /// one (FR-23).
+    pub fn open_sutta_navigation_window(&self) {
+        use crate::api::ffi;
+        ffi::callback_open_sutta_navigation_window();
     }
 
     /// Fetch the current CIPS index from GitHub, parse it, validate it and

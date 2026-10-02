@@ -280,6 +280,44 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    /// One row per node of the browsable corpus hierarchy, written by the CLI
+    /// bootstrap from two spines (`tree_source` = 'sc' or 'cst'). Empty on an
+    /// install that has not been re-bootstrapped; every read tolerates that.
+    /// See docs/sutta-navigation-tree.md.
+    navigation_nodes (id) {
+        id -> Integer,
+        node_uid -> Text,
+        parent_uid -> Nullable<Text>,
+        sort_index -> Integer,
+        node_type -> Text,
+        tree_source -> Text,
+        title_pali -> Nullable<Text>,
+        title_en -> Nullable<Text>,
+        blurb -> Nullable<Text>,
+        /// The project's own note, shown below the blurb; see
+        /// `navigation_tree::NavigationNode::context_note`.
+        context_note -> Nullable<Text>,
+        sutta_uid -> Nullable<Text>,
+        /// The uid of the text a parallels-page leaf opens instead of its own;
+        /// see `navigation_tree::NavigationNode::redirect_uid`.
+        redirect_uid -> Nullable<Text>,
+        cst_file -> Nullable<Text>,
+        has_children -> Bool,
+        child_count -> Integer,
+        is_available -> Bool,
+        /// Titles and uids folded for the whole-tree filter; see
+        /// `navigation_tree::normalize_for_search`.
+        search_text -> Text,
+        /// Pipe-delimited ancestor `node_uid`s, leading and trailing '|';
+        /// empty for a root.
+        path -> Text,
+        /// Document order of the whole tree as one sortable string; see
+        /// `navigation_tree::join_sort_path`.
+        sort_path -> Text,
+    }
+}
+
 diesel::joinable!(sutta_variants -> suttas (sutta_id));
 diesel::joinable!(sutta_comments -> suttas (sutta_id));
 diesel::joinable!(sutta_glosses -> suttas (sutta_id));
@@ -306,4 +344,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     gloss_word_context_cache,
     gloss_phrase_selections,
     topic_index_data,
+    navigation_nodes,
 );

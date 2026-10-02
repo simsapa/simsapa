@@ -205,7 +205,7 @@ RETURN docs
 /// For other languages, queries WHERE lang == @language
 ///
 /// Returns a HashMap mapping uid → title
-fn get_titles(db: &Database<ReqwestClient>, lang: &str) -> Result<HashMap<String, String>> {
+pub fn get_titles(db: &Database<ReqwestClient>, lang: &str) -> Result<HashMap<String, String>> {
     use serde_json::Value;
     use std::collections::HashMap;
 

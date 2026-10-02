@@ -1,0 +1,288 @@
+use super::*;
+
+fn leaf(uid: &str) -> TreeNode {
+    TreeNode::new(uid, "sutta")
+}
+
+fn branch(uid: &str, children: Vec<TreeNode>) -> TreeNode {
+    let mut n = TreeNode::new(uid, "branch");
+    n.children = children;
+    n
+}
+
+#[test]
+fn flatten_assigns_source_order_parents_and_paths() {
+    let roots = vec![branch(
+        "sutta",
+        vec![branch("sn", vec![leaf("sn56.11"), leaf("sn56.12")])],
+    )];
+
+    let mut defects = DefectReport::default();
+    let rows = flatten(&roots, "sc", &mut defects);
+
+    assert!(defects.is_empty());
+    let by_uid = |uid: &str| rows.iter().find(|r| r.node_uid == uid).unwrap();
+
+    assert_eq!(by_uid("sutta").parent_uid, None);
+    assert_eq!(by_uid("sutta").path, "");
+    assert_eq!(by_uid("sn").path, "|sutta|");
+    assert_eq!(by_uid("sn56.11").path, "|sutta|sn|");
+    assert_eq!(by_uid("sn56.11").parent_uid.as_deref(), Some("sn"));
+
+    // sort_index is the position among siblings, i.e. the source's own order.
+    assert_eq!(by_uid("sn56.11").sort_index, 0);
+    assert_eq!(by_uid("sn56.12").sort_index, 1);
+
+    assert!(by_uid("sn").has_children);
+    assert_eq!(by_uid("sn").child_count, 2);
+    assert!(!by_uid("sn56.11").has_children);
+    assert_eq!(by_uid("sn56.11").child_count, 0);
+}
+
+#[test]
+fn a_repeated_node_uid_is_reported_and_its_subtree_skipped() {
+    // The column is unique, so inserting the second occurrence would abort the
+    // whole transaction. The first wins and the second is named in the report.
+    let roots = vec![branch(
+        "root",
+        vec![
+            branch("dup", vec![leaf("kept")]),
+            branch("dup", vec![leaf("dropped")]),
+        ],
+    )];
+
+    let mut defects = DefectReport::default();
+    let rows = flatten(&roots, "sc", &mut defects);
+
+    let uids: Vec<&str> = rows.iter().map(|r| r.node_uid.as_str()).collect();
+    assert_eq!(uids, vec!["root", "dup", "kept"]);
+    assert_eq!(defects.count_of("duplicate node uid (subtree skipped)"), 1);
+}
+
+#[test]
+fn several_roots_are_ordered_and_carry_no_parent() {
+    let roots = vec![leaf("sutta"), leaf("vinaya"), leaf("abhidhamma")];
+    let mut defects = DefectReport::default();
+    let rows = flatten(&roots, "sc", &mut defects);
+
+    assert_eq!(rows.len(), 3);
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(row.sort_index, i as i32);
+        assert_eq!(row.parent_uid, None);
+        assert_eq!(row.path, "");
+        assert_eq!(row.tree_source, "sc");
+    }
+}
+
+#[test]
+fn the_defect_report_counts_by_kind() {
+    let mut defects = DefectReport::default();
+    defects.record("missing text", "a");
+    defects.record("missing text", "b");
+    defects.record("missing file", "c");
+
+    assert_eq!(defects.len(), 3);
+    assert_eq!(defects.count_of("missing text"), 2);
+    assert_eq!(defects.count_of("missing file"), 1);
+    assert_eq!(defects.count_of("nothing of the kind"), 0);
+}
+
+#[test]
+fn the_two_spines_do_not_interleave_at_the_root_level() {
+    // Each spine is built and written independently and numbers its own roots
+    // from zero, so without the offset the root level is
+    // `sutta(0) atthakatha(0) vinaya(1) tika(1) ...` -- the two groups shuffled,
+    // with the tie broken only by whichever spine was inserted last.
+    let sc = flatten(
+        &[leaf("sutta"), leaf("vinaya"), leaf("abhidhamma")],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    let cst = flatten(
+        &[leaf("cst:atthakatha"), leaf("cst:tika"), leaf("cst:anna")],
+        "cst",
+        &mut DefectReport::default(),
+    );
+
+    let sc_indexes: Vec<i32> = sc.iter().map(|r| r.sort_index).collect();
+    let cst_indexes: Vec<i32> = cst.iter().map(|r| r.sort_index).collect();
+    assert_eq!(sc_indexes, vec![0, 1, 2]);
+
+    // Every CST root sorts after every SC root, whichever was written first.
+    assert!(
+        cst_indexes.iter().min().unwrap() > sc_indexes.iter().max().unwrap(),
+        "CST roots {cst_indexes:?} must all follow the SC roots {sc_indexes:?}"
+    );
+    assert!(cst_indexes.windows(2).all(|w| w[0] < w[1]));
+}
+
+#[test]
+fn titles_are_folded_and_carried_into_search_text() {
+    // The CST toc writes `Saccasaṃyuttaṃ` and SuttaCentral writes
+    // `Saccasaṁyutta`: one word, two spellings, two spines. Folding happens in
+    // the single pass every row of both spines goes through, so a displayed
+    // title and its `search_text` cannot drift apart.
+    let mut node = TreeNode::new("sn56", "samyutta");
+    node.title_pali = Some("  Saccasaṃyuttaṃ  ".to_string());
+    node.title_en = Some("On the Truths".to_string());
+    node.sutta_uid = Some("sn56/pli/ms".to_string());
+
+    let rows = flatten(&[node], "sc", &mut DefectReport::default());
+    let row = &rows[0];
+
+    assert_eq!(row.title_pali.as_deref(), Some("Saccasaṁyuttaṁ"));
+    assert!(row.search_text.is_ascii());
+    for expected in ["saccasamyuttam", "on the truths", "sn56", "sn56/pli/ms"] {
+        assert!(
+            row.search_text.contains(expected),
+            "search_text {:?} is missing {expected:?}",
+            row.search_text
+        );
+    }
+}
+
+#[test]
+fn every_flattened_row_carries_a_search_text() {
+    // A row with an empty `search_text` is invisible to the filter and reports
+    // nothing -- the worst shape a defect can take here. A node with no titles
+    // at all still has its uid to be found by.
+    let rows = flatten(
+        &[branch("sutta", vec![leaf("sn56.11")])],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    assert!(!rows.is_empty());
+    for row in &rows {
+        assert!(
+            !row.search_text.trim().is_empty(),
+            "{} has an empty search_text",
+            row.node_uid
+        );
+    }
+}
+
+#[test]
+fn sort_path_puts_filter_results_in_document_order() {
+    // `path` is built from node_uids, so ordering by it is alphabetical: the
+    // CST roots came back before the SC ones (`|cst:...` < `|sutta|`) and Añña
+    // before Aṭṭhakathā, contradicting the level order the user had just been
+    // browsing. `sort_path` is the same walk in sort_indexes.
+    let sc = flatten(
+        &[branch("sutta", vec![leaf("dn"), leaf("mn")]), leaf("vinaya")],
+        "sc",
+        &mut DefectReport::default(),
+    );
+    let cst = flatten(
+        &[leaf("cst:atthakatha"), leaf("cst:anna")],
+        "cst",
+        &mut DefectReport::default(),
+    );
+
+    let mut all: Vec<(String, String)> = sc
+        .iter()
+        .chain(cst.iter())
+        .map(|r| (r.sort_path.clone(), r.node_uid.clone()))
+        .collect();
+    all.sort();
+
+    let order: Vec<&str> = all.iter().map(|(_, uid)| uid.as_str()).collect();
+    assert_eq!(
+        order,
+        vec!["sutta", "dn", "mn", "vinaya", "cst:atthakatha", "cst:anna"],
+        "a parent must precede its subtree, a subtree must precede its parent's \
+         next sibling, and every SC root must precede every CST root"
+    );
+
+    // Ordering by `path` instead gives the wrong answer -- the thing this
+    // column exists to prevent.
+    let mut by_path: Vec<(String, String)> = sc
+        .iter()
+        .chain(cst.iter())
+        .map(|r| (r.path.clone(), r.node_uid.clone()))
+        .collect();
+    by_path.sort();
+    let path_order: Vec<&str> = by_path.iter().map(|(_, uid)| uid.as_str()).collect();
+    assert_ne!(path_order, order);
+}
+
+#[test]
+fn context_notes_land_on_the_rows_the_file_names() {
+    let roots = vec![branch("sutta", vec![leaf("sn56.11"), leaf("sn56.12")])];
+    let mut defects = DefectReport::default();
+    let mut rows = flatten(&roots, "sc", &mut defects);
+
+    let notes = parse_context_notes(
+        r#"
+"sn56.11" = "  The first discourse.  "
+"sn56.12" = "   "
+"cst:tika" = "Sub-commentaries."
+"#,
+    )
+    .unwrap();
+    // A blank note is dropped at parse time rather than stored as a note.
+    assert_eq!(notes.len(), 2);
+
+    let applied = apply_context_notes(&mut rows, "sc", &notes, &mut defects);
+
+    assert_eq!(applied, 1);
+    let by_uid = |uid: &str| rows.iter().find(|r| r.node_uid == uid).unwrap();
+    assert_eq!(by_uid("sn56.11").context_note.as_deref(), Some("The first discourse."));
+    assert_eq!(by_uid("sn56.12").context_note, None);
+    assert_eq!(by_uid("sutta").context_note, None);
+
+    // The CST key belongs to the other spine, which is built separately, so
+    // its absence here is not a defect.
+    assert!(defects.is_empty());
+}
+
+#[test]
+fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
+    let notes = parse_context_notes(
+        r#"
+"sn99.99" = "No such sutta."
+"cst:nope" = "No such book."
+"#,
+    )
+    .unwrap();
+
+    let mut sc_defects = DefectReport::default();
+    let mut sc_rows = flatten(&[leaf("sutta")], "sc", &mut sc_defects);
+    assert_eq!(apply_context_notes(&mut sc_rows, "sc", &notes, &mut sc_defects), 0);
+    assert_eq!(sc_defects.len(), 1);
+    assert_eq!(sc_defects.count_of("context note for a node uid not in the tree"), 1);
+
+    let mut cst_defects = DefectReport::default();
+    let mut cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
+    assert_eq!(apply_context_notes(&mut cst_rows, "cst", &notes, &mut cst_defects), 0);
+    assert_eq!(cst_defects.len(), 1);
+}
+
+#[test]
+fn a_notes_file_that_is_not_a_string_map_fails_the_build() {
+    assert!(parse_context_notes(r#""sn56.11" = 3"#).is_err());
+    assert!(parse_context_notes("not toml at all").is_err());
+}
+
+#[test]
+fn an_unquoted_dotted_key_fails_the_build_rather_than_nesting() {
+    // TOML reads this as the table `sn56` holding the key `11`, so the note
+    // would land on no node at all.
+    assert!(parse_context_notes(r#"sn56.11 = "The first discourse.""#).is_err());
+}
+
+#[test]
+fn a_hand_wrapped_note_is_joined_and_keeps_its_paragraphs() {
+    let notes = parse_context_notes(
+        "\"dn\" = \"\"\"\nOrigin: 5th–3rd century BCE,\n   northern India.\n\n\nA second\nparagraph.\n\"\"\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        notes["dn"],
+        "Origin: 5th–3rd century BCE, northern India.\n\nA second paragraph."
+    );
+}
+
+#[test]
+fn the_shipped_notes_file_parses() {
+    parse_context_notes(CONTEXT_NOTES_TOML).expect("assets/navigation-context-notes.toml");
+}
