@@ -4,6 +4,10 @@ The browsable hierarchy behind the Sutta Navigation window, built at bootstrap
 time into the `navigation_nodes` table of `appdata.sqlite3`. The app never
 assembles it at runtime and never queries ArangoDB for it.
 
+The summaries and context notes a row shows are **not** in that table: they are
+TOML files embedded in the app (§2f), so they change with an app update rather
+than with a database download.
+
 §1–§2 and §3–§6 are the bootstrap side: where the tree comes from and how its
 rows are derived. §2a–§2g are what the window and its read layer
 (`backend/src/navigation_tree.rs`, the `nav_tree_*` functions on `SuttaBridge`)
@@ -624,8 +628,8 @@ translation hint, and that it indents.
 ### Three naming and scope decisions
 
 - **"Summaries" in the UI, `blurb` in the data.** `blurb` is SuttaCentral's own
-  term and is what `blurbs.json`, the `navigation_nodes.blurb` column and the
-  persisted setting key hold; the label is for readers, who should not have to
+  term and is what `blurbs.json`, the `assets/navigation-blurb-*.toml` files,
+  the row's JSON field and the persisted setting key hold; the label is for readers, who should not have to
   learn it. The bridge functions stay `get_show_navigation_blurbs` /
   `set_show_navigation_blurbs`: renaming the stored key would silently reset
   everyone's preference, and a bridge API change carries its own hazard (see
@@ -644,63 +648,199 @@ translation hint, and that it indents.
   `NavigationNodeRow.qml` is the one binding that encodes this split; changing
   it to follow `show_summaries` alone is the regression to watch for.
 
-## 2f. Context notes — the project's own text below the summary
+## 2f. Summaries and context notes — embedded in the app, not in the database
 
-A row can carry a **context note**, drawn below the blurb and governed by the
-same Summaries toggle. The blurb is SuttaCentral's text and is not ours to edit;
-the note is the project's, so it can say something about a node SuttaCentral has
-no blurb for — every CST node, for a start.
+A row can show two pieces of prose under its title: the **summary**
+(SuttaCentral's blurb) and, below it, a **context note** (the project's own
+text). Both are governed by the Summaries toggle.
 
-| | Blurb | Context note |
+**Neither is in `navigation_nodes`.** They live in three TOML files under
+`assets/`, embedded in the app with `include_str!`
+(`backend/src/app_settings.rs`), so a corrected summary or a new note ships with
+an ordinary app update and needs no database download.
+
+| File | Kind | Content |
 |---|---|---|
-| Source | `sc-data/additional-info/blurbs.json` | `assets/navigation-context-notes.toml` |
-| Column | `navigation_nodes.blurb` | `navigation_nodes.context_note` |
-| Keyed by | the SuttaCentral uid | `node_uid`, on either spine |
+| `navigation-blurb-suttacentral.toml` | **generated** by the CLI, never edited by hand | SuttaCentral's English blurbs, from `sc-data/additional-info/blurbs.json` |
+| `navigation-blurb-overrides.toml` | **hand-written**, never written by the CLI | the project's corrections to the file above |
+| `navigation-context-notes.toml` | **hand-written**, never written by the CLI | context notes |
 
-The file is TOML, chosen because it is edited by hand: a flat table of quoted
-keys, each note in a triple-quoted string that can be wrapped freely.
+All three use **one format and one key scheme**: a flat table of quoted
+`node_uid` keys, each value a string that can be wrapped freely.
 
 ``` toml
 # Dhammacakkappavattanasutta
 "sn56.11" = """
-Lines are joined with a space, so a note
+Lines are joined with a space, so a text
 can be wrapped wherever it reads well.
 
 A blank line starts a new paragraph.
 """
 ```
 
-To add a note, edit the file, rebuild the CLI and re-run
-`build-navigation-tree` (§6). Things to know:
+One parser reads all three — `parse_node_texts()` in
+`backend/src/navigation_texts.rs`, used by the app and by the CLI alike. The
+text shown is the **unwrapped** text (`unwrap_note()`): lines joined with one
+space, runs of whitespace collapsed, a blank line kept as a paragraph break.
 
 - **The key is the `node_uid`, not the `suttas.uid`.** `sn56.11`, not
-  `sn56.11/pli/ms`; a CST node is `cst:…`. `SELECT node_uid, title_pali FROM
-  navigation_nodes` is how to find one.
-- **The file is embedded in the CLI** (`include_str!`), so the build does not
-  depend on the directory it is run from — and an edit does nothing until the
-  CLI is rebuilt.
-- **A key that names no node is reported, not dropped silently**, as
-  `context note for a node uid not in the tree` in the spine's defect summary.
-  The two spines are built independently, so each checks only the keys it owns:
-  a `cst:` key is the CST spine's, everything else the SC spine's. A typo in a
-  key is therefore visible only in the log of the spine that owns it.
+  `sn56.11/pli/ms`; a CST node is `cst:…`; a super-tree level is qualified by
+  its ancestors (`sutta/minor/kn`). `SELECT node_uid, title_pali FROM
+  navigation_nodes` finds one, and so does the generated file, where every
+  entry is preceded by the node's title.
 - **Always quote the key.** Unquoted, TOML reads `sn56.11 = "…"` as the table
-  `sn56` holding the key `11`, so the note would land on no node. That shape,
-  like any file that is not a flat table of strings, fails the build outright
-  rather than being skipped.
+  `sn56` holding the key `11`. That shape, like anything that is not a flat
+  table of strings, is a parse failure for the whole file.
+
+### Which text a row shows
+
+`NavigationTexts` (`navigation_texts.rs`) holds the three parsed maps and
+resolves by `node_uid`:
+
+1. an entry in the **overrides** file wins — and if it is empty, the row has no
+   summary;
+2. otherwise the **SuttaCentral** file's entry, if any;
+3. otherwise none.
+
+So an override does one of three things:
+
+| Override | SuttaCentral has an entry | Shown |
+|---|---|---|
+| text | yes | the override (**replace**) |
+| text | no | the override (**add**) — any node, including a `cst:` one |
+| `""` | yes | nothing (**suppress**) |
+
+The context note is the notes file's entry, if any.
+
+The texts are attached where a row's JSON view is built
+(`NavigationNodeView::from_node(node, texts)`), for all three query routes —
+a level's children, filter hits, a single node — under the field names `blurb`
+and `context_note`. The view takes the texts as an **argument** rather than
+reaching for the global, so a view test supplies inline TOML and does not depend
+on the shipped files.
+
+### When the files are parsed
+
+Once per process, on the window's first query — never at startup.
+`navigation_texts()` is a `OnceLock`; its only callers are the three `*_json`
+functions and a warm-up. The warm-up exists because the window's first query is
+a synchronous call on the GUI thread: `SuttaBridge::open_sutta_navigation_window()`
+starts the parse on a background thread before it hands over to the window
+manager, and a query that arrives early waits for that one initialization
+instead of starting a second. The parse time and the three entry counts are
+logged once, at `info`.
+
+> **Do not move the parse to startup**, and do not warm it from
+> `AppData::new()`, `init_app_data()` or a `Component.onCompleted` of
+> `SuttaSearchWindow` — see
+> [startup-sequence-and-caches.md](./startup-sequence-and-caches.md).
+
+**A file that fails to parse does not break the window.** It is logged once,
+naming the file, and treated as empty; the other two are still used and the
+tree itself works regardless. That is the last resort: a `backend` test
+(`the_embedded_files_parse`) fails the test run on an unparsable embedded file,
+and the tree build fails outright on an unparsable hand-written one.
+
+### Editing a hand-written file
+
+Edit the file and **rebuild the app**. No bootstrap run and no database change
+is involved.
+
+**A bad key is reported by the tree build**, not by the app. Every SC or CST
+spine build (the full bootstrap and `build-navigation-tree`, §6) checks the keys
+of the two hand-written files against the tree it has just built —
+`validate_node_text_keys()` in `cli/src/bootstrap/navigation_tree/mod.rs` — and
+records in the spine's defect summary:
+
+| Defect | Meaning |
+|---|---|
+| `context note for a node uid not in the tree` | a notes key names no node |
+| `blurb override for a node uid not in the tree` | an overrides key names no node |
+| `empty blurb override for a node with no SuttaCentral blurb` | a `""` that suppresses nothing |
+
+It reports and does nothing else: no key is dropped, renamed or guessed, and
+none fails the build. The two spines are built independently, so each checks
+only the keys it owns — a `cst:` key is the CST spine's, everything else the SC
+spine's — and a typo is therefore visible only in the log of the spine that owns
+it. The build reads the copies of the two files **embedded in the CLI**, so
+rebuild the CLI after an edit before relying on its report.
+
+### The generated file
+
+`cli/src/bootstrap/navigation_tree/blurb_export.rs` rewrites
+`navigation-blurb-suttacentral.toml` on every SC spine build. It holds **one
+entry per tree node that has a blurb, keyed by that node's `node_uid`, and
+nothing else** — in tree order, each entry preceded by a comment with the
+node's title, the text wrapped at a fixed width, and no timestamp, path or
+count anywhere, so the same sources give a byte-identical file and a
+re-bootstrap leaves `git status` clean.
+
+The text is SuttaCentral's, trimmed. The exporter does not rephrase,
+re-punctuate or strip markup.
+
+Every `blurbs.json` entry is accounted for as exactly one of three things, and
+the lists behind the last two are **fixed data in the code**, each with its
+reason beside it:
+
+- **used by a node** of the final tree — after the single-member grouping
+  levels have been collapsed (§1.2), so an elided level is not a node;
+- **re-keyed** by `BLURB_KEY_REMAPS` — blurbs SuttaCentral files under a uid its
+  own tree does not use, written under the `node_uid` they belong to (a range
+  the tree splits in two gets the text on both nodes). The entry's comment
+  names the source key, e.g. `# Vātasutta (blurbs.json key: sn23.159)`. It is a
+  list of named cases: **nothing is inferred** — no range arithmetic, no
+  nearest uid;
+- **skipped** by one of three lists — the super-tree grouping words, the
+  collections outside the Theravāda Pāli scope, and the per-rule Vibhaṅga
+  blurbs, which have no node of their own and repeat the Pātimokkha rule's
+  text.
+
+Anything that fits none of these is reported, not written, and never forced:
+
+| Defect | Meaning | What to do |
+|---|---|---|
+| `blurb for a uid the tree has no node for` | an entry no node uses, not re-keyed and on no skip list — new upstream, or newly mis-keyed | add it to a skip list or to the re-keying table |
+| `blurb skip list: key not in blurbs.json` | a stale skip-list row | delete the row |
+| `blurb skip list: key is now used by a node` | a stale row; the node gets its blurb as usual | delete the row |
+| `blurb skip list: Vibhaṅga text differs from its Pātimokkha counterpart` | the "redundant" reason no longer holds for that rule | decide where the text belongs |
+| `blurb key remap: source key not in blurbs.json` | SuttaCentral removed or renamed the key | delete the row |
+| `blurb key remap: target node not in the tree` | the tree no longer has that node | fix or delete the row |
+| `blurb key remap: target node has its own blurb` | SuttaCentral fixed it; the node's own entry wins | delete the row |
+| `blurb key remap: prefix not found` | the text no longer starts with the stated prefix | fix the row |
+
+A rejected re-keying row writes nothing, so its blurb is then also reported as
+used by no node.
+
+The write is all-or-nothing: only after `blurbs.json` has loaded with at least
+one English entry **and** the spine has been written to the database, to a
+temporary file that is renamed into place. In every other case the existing
+file is left untouched and a warning says why. It is written only into a folder
+that already holds `navigation-context-notes.toml`, so a wrong working
+directory never creates a stray file.
+
+> **The embedded copy is one build behind a regeneration.** The run rewrites
+> the file on disk; the CLI that wrote it and any existing app binary still
+> embed the previous one. **Rebuild the app** for a changed file to take
+> effect — the build log says so when the file changed. The key validation is
+> unaffected: it uses the blurbs of the tree just built, not the embedded file.
+
+The file is committed: `include_str!` fails the build without it, and the CLI
+that generates it depends on `backend`.
+
+### The context notes
 
 The notes written so far give each collection's **origin**: the time period,
 the country, the probable author, and how well anchored the date is. The
 evidence and reference URLs behind every one are in
 [navigation-context-notes-research.md](./navigation-context-notes-research.md);
-a note is refined there first, then in the JSON.
+a note is refined there first, then in the TOML file.
 
-In the row the note comes after the blurb, set apart by a divider line that is
-drawn only when the row has both. It is truncated to two lines like the blurb
-but has **its own** more/less button and its own expansion state
+In the row the note comes after the summary, set apart by a divider line that
+is drawn only when the row has both. It is truncated to two lines like the
+summary but has **its own** more/less button and its own expansion state
 (`context_note_expanded_uids` in `SuttaNavigationWindow.qml`), so opening one
-does not open the other. It is not part of `search_text`, so the filter does
-not match on it.
+does not open the other. Neither text is part of `search_text`, so the filter
+does not match on them.
 
 ## 2g. The window: what its rows are built from
 
@@ -964,6 +1104,18 @@ uid that already exists, so without that a re-run would change nothing.
 independently, so the CST spine can be rebuilt without a running ArangoDB (the
 SC spine needs it for titles). Each spine build ends with an `ANALYZE` — see
 [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md).
+
+**An SC spine build also rewrites `assets/navigation-blurb-suttacentral.toml`**
+(§2f), in the full bootstrap and in `build-navigation-tree` alike, with no extra
+flag. The folder is `../assets` from the working directory — right when the CLI
+is run from `cli/` — or the one given with `--assets-dir`. When the file
+changed, **rebuild the app**: the summaries are embedded in it. Both spine
+builds also check the keys of the two hand-written texts files and report a
+bad one in their defect summary.
+
+`build-navigation-tree` does not drop columns: a database bootstrapped while
+the table still carried `blurb` and `context_note` keeps both, unread, until a
+full re-bootstrap.
 
 ## 7. Related
 

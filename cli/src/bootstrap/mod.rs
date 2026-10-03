@@ -307,7 +307,10 @@ RELEASE_CHANNEL=development
         // leaf's `sutta_uid` is resolved against rows that exist and one that
         // is missing can be reported rather than guessed.
         logger::info("=== Build navigation tree (SuttaCentral spine) ===");
-        navigation_tree::build_sc_spine(&mut conn, &sc_data_dir)?;
+        // The SC spine build also rewrites the generated blurbs file in the
+        // repository's own `assets/` folder, which the app embeds.
+        let repo_assets_dir = navigation_tree::blurb_export::default_assets_dir()?;
+        navigation_tree::build_sc_spine(&mut conn, &sc_data_dir, Some(&repo_assets_dir))?;
 
         logger::info("=== Build navigation tree (CST spine) ===");
         {

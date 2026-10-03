@@ -1,0 +1,41 @@
+# Summary overrides for the Sutta Navigation window.
+#
+# The summaries come from SuttaCentral, in the generated file
+# `navigation-blurb-suttacentral.toml`. An entry here takes its place for one
+# node. See docs/sutta-navigation-tree.md.
+#
+# One entry per node: the key is the node's `node_uid`, the value is the
+# summary. An entry does one of three things:
+#
+# - Replace: the node has a SuttaCentral summary, and this text is shown
+#   instead.
+#
+#     "sn56.11" = """
+#     The corrected summary.
+#     """
+#
+# - Add: the node has no SuttaCentral summary, and this text is shown. This
+#   works for any node, including the "cst:" ones.
+#
+#     "cst:tika" = """
+#     A summary for a node that has none.
+#     """
+#
+# - Suppress: an empty value hides the node's SuttaCentral summary.
+#
+#     "sn56.11" = ""
+#
+# Rules:
+#
+# - Always quote the key: "sn56.11", "cst:tika". Unquoted, the dots are read
+#   as nested tables and the file fails to parse.
+# - Wrap lines freely inside the triple quotes. Line breaks are joined into
+#   spaces; a blank line starts a new paragraph.
+# - Find a key with:
+#     SELECT node_uid, title_pali FROM navigation_nodes;
+#   or look the node up in `navigation-blurb-suttacentral.toml`, where every
+#   entry is preceded by the node's title.
+# - Rebuild the app to apply an edit. `build-navigation-tree` reports a key
+#   that names no node, and an empty value for a node that has no SuttaCentral
+#   summary to hide.
+# - This file is written by hand only. No command rewrites it.

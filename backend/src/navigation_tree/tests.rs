@@ -16,7 +16,6 @@ use crate::db::appdata_schema::navigation_nodes;
 const UP_SQL: &[&str] = &[
     include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
     include_str!("../../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
-    include_str!("../../migrations/appdata/2026-10-01-000000_navigation_node_context_note/up.sql"),
 ];
 
 fn empty_db() -> SqliteConnection {
@@ -48,8 +47,6 @@ fn node(
         tree_source: "sc".to_string(),
         title_pali: Some(title_pali.to_string()),
         title_en: title_en.map(|s| s.to_string()),
-        blurb: None,
-        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,
@@ -80,7 +77,6 @@ fn seeded_db() -> SqliteConnection {
     );
     sn56_11.node_type = "sutta".to_string();
     sn56_11.sutta_uid = Some("sn56.11/pli/ms".to_string());
-    sn56_11.blurb = Some("The Buddha's first discourse.".to_string());
 
     let rows = vec![
         node("vinaya", None, 1, "Vinaya", Some("Monastic Law"), &[]),
@@ -350,7 +346,7 @@ fn a_redirected_row_carries_the_uid_it_borrows_its_text_from() {
     assert!(row.is_redirected());
     assert!(row.is_openable());
 
-    let view = NavigationNodeView::from(&row);
+    let view = NavigationNodeView::from_node(&row, &NavigationTexts::default());
     assert_eq!(view.redirect_uid.as_deref(), Some("pli-tv-bu-vb-ss5"));
     // Its own uid is untouched: that is what tells this rule apart from the
     // bhikkhu rule of the same name.
@@ -370,14 +366,14 @@ fn an_ordinary_row_is_not_redirected() {
 
     let row = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
     assert!(!row.is_redirected());
-    assert!(NavigationNodeView::from(&row).redirect_uid.is_none());
+    assert!(NavigationNodeView::from_node(&row, &NavigationTexts::default()).redirect_uid.is_none());
 }
 
 #[test]
-fn a_context_note_reaches_the_view_beside_the_blurb() {
-    let mut n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
-    n.blurb = Some("The Buddha's first discourse.".to_string());
-    n.context_note = Some("Chanted on Āsāḷha Pūjā.".to_string());
+fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
+    // The row holds neither text: the view is filled from the texts it is
+    // handed, by `node_uid`.
+    let n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
 
     let mut db_conn = migrated_db();
     diesel::insert_into(navigation_nodes::table)
@@ -385,13 +381,80 @@ fn a_context_note_reaches_the_view_beside_the_blurb() {
         .execute(&mut db_conn)
         .expect("insert");
 
+    let texts = NavigationTexts::from_toml(
+        r#""sn56.11" = "The Buddha's first discourse.""#,
+        "",
+        r#""sn56.11" = "Chanted on Āsāḷha Pūjā.""#,
+    );
+
     let noted = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
-    let view = NavigationNodeView::from(&noted);
+    let view = NavigationNodeView::from_node(&noted, &texts);
     assert_eq!(view.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
     assert_eq!(view.blurb.as_deref(), Some("The Buddha's first discourse."));
 
     let plain = node_by_uid_conn(&mut db_conn, "sn56.12").unwrap().expect("row");
-    assert!(NavigationNodeView::from(&plain).context_note.is_none());
+    let plain_view = NavigationNodeView::from_node(&plain, &texts);
+    assert!(plain_view.blurb.is_none());
+    assert!(plain_view.context_note.is_none());
+
+    // A filter hit is filled the same way.
+    let mut db_conn = seeded_db();
+    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
+    let hit = NavigationMatchView::from_match(&matches[0], &texts);
+    assert_eq!(hit.node.blurb.as_deref(), Some("The Buddha's first discourse."));
+    assert_eq!(hit.node.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
+}
+
+#[test]
+fn the_migrated_table_holds_neither_text_column() {
+    // The summaries and context notes are embedded in the app
+    // (`navigation_texts`), so the table must not carry a copy of them.
+    #[derive(QueryableByName)]
+    struct Column {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        name: String,
+    }
+
+    let mut db_conn = migrated_db();
+    let columns: Vec<String> = diesel::sql_query("PRAGMA table_info(navigation_nodes)")
+        .load::<Column>(&mut db_conn)
+        .expect("table_info")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+
+    assert!(columns.contains(&"redirect_uid".to_string()), "{:?}", columns);
+    assert!(!columns.contains(&"blurb".to_string()), "{:?}", columns);
+    assert!(!columns.contains(&"context_note".to_string()), "{:?}", columns);
+}
+
+#[test]
+fn a_table_with_columns_the_schema_does_not_name_still_answers() {
+    // A database bootstrapped while the table carried `blurb` and
+    // `context_note` keeps both until it is re-bootstrapped. Every query names
+    // its columns, so the extra ones must be invisible to it.
+    let mut db_conn = seeded_db();
+    db_conn
+        .batch_execute(
+            "ALTER TABLE navigation_nodes ADD COLUMN blurb TEXT; \
+             ALTER TABLE navigation_nodes ADD COLUMN context_note TEXT; \
+             UPDATE navigation_nodes SET blurb = 'stale', context_note = 'stale';",
+        )
+        .expect("the old columns are added");
+
+    assert_eq!(tree_is_available_conn(&mut db_conn), Ok(true));
+
+    let roots = children_of_conn(&mut db_conn, None).expect("root level");
+    let uids: Vec<&str> = roots.iter().map(|n| n.node_uid.as_str()).collect();
+    assert_eq!(uids, ["sutta", "vinaya"]);
+
+    let row = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
+    let view = NavigationNodeView::from_node(&row, &NavigationTexts::default());
+    assert!(view.blurb.is_none());
+    assert!(view.context_note.is_none());
+
+    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("filter");
+    assert_eq!(matches.len(), 1);
 }
 
 #[test]
@@ -407,8 +470,6 @@ fn display_title_falls_back_through_english_to_the_uid() {
         tree_source: n.tree_source,
         title_pali: None,
         title_en: Some("English".to_string()),
-        blurb: None,
-        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,
@@ -616,7 +677,7 @@ fn view_of(
     let stored = node_by_uid_conn(&mut db_conn, node_uid)
         .expect("query")
         .expect("row");
-    NavigationNodeView::from(&stored)
+    NavigationNodeView::from_node(&stored, &NavigationTexts::default())
 }
 
 #[test]
@@ -665,7 +726,9 @@ fn only_a_fragment_row_carries_the_in_file_label() {
 fn children_json_is_an_array_of_rows_in_order() {
     let mut db_conn = seeded_db();
     let rows = children_of_conn(&mut db_conn, Some("sn")).expect("query");
-    let views: Vec<NavigationNodeView> = rows.iter().map(NavigationNodeView::from).collect();
+    let texts = NavigationTexts::from_toml(r#""sn56.11" = "The Buddha's first discourse.""#, "", "");
+    let views: Vec<NavigationNodeView> =
+        rows.iter().map(|row| NavigationNodeView::from_node(row, &texts)).collect();
     let json = serde_json::to_string(&views).expect("serialize");
 
     let parsed: Vec<NavigationNodeView> = serde_json::from_str(&json).expect("round trip");
@@ -680,7 +743,9 @@ fn a_filter_match_serializes_with_its_breadcrumbs() {
     let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
     assert!(!matches.is_empty(), "the seed contains sn56.11");
 
-    let views: Vec<NavigationMatchView> = matches.iter().map(NavigationMatchView::from).collect();
+    let texts = NavigationTexts::default();
+    let views: Vec<NavigationMatchView> =
+        matches.iter().map(|m| NavigationMatchView::from_match(m, &texts)).collect();
     assert_eq!(views[0].breadcrumbs, matches[0].breadcrumbs);
     assert_eq!(views[0].node.node_uid, matches[0].node.node_uid);
 

@@ -774,6 +774,7 @@ fn build_navigation_tree(
     sc_data_dir: Option<&Path>,
     cst_xml_dir: Option<&Path>,
     fragments_db_path: Option<&Path>,
+    assets_dir: Option<&Path>,
 ) -> Result<(), String> {
     let mut db_conn = bootstrap::create_database_connection(db_path)
         .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
@@ -787,7 +788,12 @@ fn build_navigation_tree(
     // Each spine is written independently, so one can be rebuilt without the
     // other -- the SC spine needs ArangoDB running, the CST spine does not.
     if let Some(sc_data_dir) = sc_data_dir {
-        bootstrap::navigation_tree::build_sc_spine(&mut db_conn, sc_data_dir)
+        let assets_dir = match assets_dir {
+            Some(dir) => dir.to_path_buf(),
+            None => bootstrap::navigation_tree::blurb_export::default_assets_dir()
+                .map_err(|e| format!("{:#}", e))?,
+        };
+        bootstrap::navigation_tree::build_sc_spine(&mut db_conn, sc_data_dir, Some(&assets_dir))
             .map_err(|e| format!("Failed to build the SC navigation spine: {:#}", e))?;
     }
 
@@ -1573,6 +1579,12 @@ enum Commands {
         /// `tipitaka-xml-data/fragments.sqlite3` of `--cst-xml-dir`.
         #[arg(long, value_name = "FRAGMENTS_DB_PATH")]
         fragments_db_path: Option<PathBuf>,
+
+        /// The repository's `assets/` folder, where the SuttaCentral spine build
+        /// rewrites `navigation-blurb-suttacentral.toml`. Defaults to `../assets`
+        /// from the working directory, which is right when run from `cli/`.
+        #[arg(long, value_name = "ASSETS_DIR")]
+        assets_dir: Option<PathBuf>,
     },
 
     /// Import suttas from a language database into the appdata database
@@ -1860,12 +1872,13 @@ fn main() {
             import_cst(&db_path, &cst_xml_dir, &fragments_db_path)
         }
 
-        Commands::BuildNavigationTree { db_path, sc_data_dir, cst_xml_dir, fragments_db_path } => {
+        Commands::BuildNavigationTree { db_path, sc_data_dir, cst_xml_dir, fragments_db_path, assets_dir } => {
             build_navigation_tree(
                 &db_path,
                 sc_data_dir.as_deref(),
                 cst_xml_dir.as_deref(),
                 fragments_db_path.as_deref(),
+                assets_dir.as_deref(),
             )
         }
 

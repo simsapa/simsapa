@@ -135,7 +135,9 @@ pub struct ScSpineBuilder {
     sc_data_dir: PathBuf,
     titles_pali: HashMap<String, String>,
     titles_en: HashMap<String, String>,
-    blurbs: HashMap<String, String>,
+    /// `blurbs.json`'s English entries by their source uid. Empty when the file
+    /// has no `en` section, which is what tells the blurb export not to write.
+    pub blurbs: HashMap<String, String>,
     /// Base sutta uid (`sn56.11`) → the full `suttas.uid` a leaf opens
     /// (`sn56.11/pli/ms`).
     sutta_uids: HashMap<String, String>,
@@ -764,12 +766,12 @@ impl ScSpineBuilder {
 
     fn make_node(&self, node_uid: &str, source_uid: &str, node_type: &str) -> TreeNode {
         let mut node = TreeNode::new(node_uid, node_type);
+        node.source_uid = Some(source_uid.to_string());
         // An empty `names` entry is no title at all, and must leave the field
         // `None` so `make_leaf`'s fallbacks still run.
         let non_empty = |s: &String| Some(clean(s)).filter(|c| !c.trim().is_empty());
         node.title_pali = self.titles_pali.get(source_uid).and_then(non_empty);
         node.title_en = self.titles_en.get(source_uid).and_then(non_empty);
-        node.blurb = self.blurbs.get(source_uid).and_then(non_empty);
         node
     }
 }

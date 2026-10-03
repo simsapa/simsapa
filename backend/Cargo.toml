@@ -25,6 +25,7 @@ walkdir = "2.5.0"
 time = { version = "0.3.41", features = ["local-offset", "formatting", "macros"] }
 app_dirs = { package = "app_dirs2", version = "2.5" }
 anyhow = "1.0"
+toml = "1.1.6"
 thiserror = "2.0"
 stardict = { version = "0.2.2", features = ["sqlite"] }
 lazy_static = "1.5.0"

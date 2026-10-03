@@ -205,84 +205,169 @@ fn sort_path_puts_filter_results_in_document_order() {
     assert_ne!(path_order, order);
 }
 
+fn texts(toml: &str) -> BTreeMap<String, String> {
+    parse_node_texts(toml).unwrap()
+}
+
+fn sc_blurbs(uids: &[&str]) -> HashSet<String> {
+    uids.iter().map(|s| s.to_string()).collect()
+}
+
 #[test]
-fn context_notes_land_on_the_rows_the_file_names() {
+fn keys_that_name_a_node_are_checked_and_report_nothing() {
     let roots = vec![branch("sutta", vec![leaf("sn56.11"), leaf("sn56.12")])];
     let mut defects = DefectReport::default();
-    let mut rows = flatten(&roots, "sc", &mut defects);
+    let rows = flatten(&roots, "sc", &mut defects);
 
-    let notes = parse_context_notes(
+    let notes = texts(
         r#"
-"sn56.11" = "  The first discourse.  "
-"sn56.12" = "   "
+"sn56.11" = "The first discourse."
 "cst:tika" = "Sub-commentaries."
 "#,
-    )
-    .unwrap();
-    // A blank note is dropped at parse time rather than stored as a note.
-    assert_eq!(notes.len(), 2);
+    );
+    // A replacement, an addition on a node with no SuttaCentral blurb, and a
+    // suppression of a blurb that exists.
+    let overrides = texts(
+        r#"
+"sn56.11" = "A corrected summary."
+"sutta" = "A summary SuttaCentral has none for."
+"sn56.12" = ""
+"cst:tika" = "A summary for a CST node."
+"#,
+    );
 
-    let applied = apply_context_notes(&mut rows, "sc", &notes, &mut defects);
+    let checked = validate_node_text_keys(
+        &rows,
+        "sc",
+        &notes,
+        &overrides,
+        &sc_blurbs(&["sn56.11", "sn56.12"]),
+        &mut defects,
+    );
 
-    assert_eq!(applied, 1);
-    let by_uid = |uid: &str| rows.iter().find(|r| r.node_uid == uid).unwrap();
-    assert_eq!(by_uid("sn56.11").context_note.as_deref(), Some("The first discourse."));
-    assert_eq!(by_uid("sn56.12").context_note, None);
-    assert_eq!(by_uid("sutta").context_note, None);
-
-    // The CST key belongs to the other spine, which is built separately, so
-    // its absence here is not a defect.
+    // The `cst:` keys belong to the other spine, which is built separately:
+    // they are neither counted nor reported here.
+    assert_eq!(checked, CheckedKeys { context_notes: 1, overrides: 3 });
     assert!(defects.is_empty());
 }
 
 #[test]
+fn validation_writes_nothing_to_the_rows() {
+    let mut defects = DefectReport::default();
+    let rows = flatten(&[leaf("sn56.11")], "sc", &mut defects);
+    let before = format!("{:?}", rows);
+
+    validate_node_text_keys(
+        &rows,
+        "sc",
+        &texts(r#""sn56.11" = "A note.""#),
+        &texts(r#""sn56.11" = "An override.""#),
+        &HashSet::new(),
+        &mut defects,
+    );
+
+    assert_eq!(format!("{:?}", rows), before);
+}
+
+#[test]
 fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
-    let notes = parse_context_notes(
+    let notes = texts(
         r#"
 "sn99.99" = "No such sutta."
 "cst:nope" = "No such book."
 "#,
-    )
-    .unwrap();
+    );
+    let none = BTreeMap::new();
 
     let mut sc_defects = DefectReport::default();
-    let mut sc_rows = flatten(&[leaf("sutta")], "sc", &mut sc_defects);
-    assert_eq!(apply_context_notes(&mut sc_rows, "sc", &notes, &mut sc_defects), 0);
+    let sc_rows = flatten(&[leaf("sutta")], "sc", &mut sc_defects);
+    validate_node_text_keys(&sc_rows, "sc", &notes, &none, &HashSet::new(), &mut sc_defects);
     assert_eq!(sc_defects.len(), 1);
     assert_eq!(sc_defects.count_of("context note for a node uid not in the tree"), 1);
 
     let mut cst_defects = DefectReport::default();
-    let mut cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
-    assert_eq!(apply_context_notes(&mut cst_rows, "cst", &notes, &mut cst_defects), 0);
+    let cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
+    validate_node_text_keys(&cst_rows, "cst", &notes, &none, &HashSet::new(), &mut cst_defects);
     assert_eq!(cst_defects.len(), 1);
+    assert_eq!(cst_defects.count_of("context note for a node uid not in the tree"), 1);
 }
 
 #[test]
-fn a_notes_file_that_is_not_a_string_map_fails_the_build() {
-    assert!(parse_context_notes(r#""sn56.11" = 3"#).is_err());
-    assert!(parse_context_notes("not toml at all").is_err());
-}
-
-#[test]
-fn an_unquoted_dotted_key_fails_the_build_rather_than_nesting() {
-    // TOML reads this as the table `sn56` holding the key `11`, so the note
-    // would land on no node at all.
-    assert!(parse_context_notes(r#"sn56.11 = "The first discourse.""#).is_err());
-}
-
-#[test]
-fn a_hand_wrapped_note_is_joined_and_keeps_its_paragraphs() {
-    let notes = parse_context_notes(
-        "\"dn\" = \"\"\"\nOrigin: 5th–3rd century BCE,\n   northern India.\n\n\nA second\nparagraph.\n\"\"\"\n",
-    )
-    .unwrap();
-    assert_eq!(
-        notes["dn"],
-        "Origin: 5th–3rd century BCE, northern India.\n\nA second paragraph."
+fn a_blurb_override_for_an_unknown_node_is_reported_per_spine() {
+    let overrides = texts(
+        r#"
+"sn99.99" = "No such sutta."
+"cst:nope" = "No such book."
+"#,
     );
+    let none = BTreeMap::new();
+    let label = "blurb override for a node uid not in the tree";
+
+    let mut sc_defects = DefectReport::default();
+    let sc_rows = flatten(&[leaf("sutta")], "sc", &mut sc_defects);
+    let checked =
+        validate_node_text_keys(&sc_rows, "sc", &none, &overrides, &HashSet::new(), &mut sc_defects);
+    assert_eq!(checked.overrides, 1);
+    assert_eq!(sc_defects.len(), 1);
+    assert_eq!(sc_defects.count_of(label), 1);
+
+    let mut cst_defects = DefectReport::default();
+    let cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
+    let checked = validate_node_text_keys(
+        &cst_rows,
+        "cst",
+        &none,
+        &overrides,
+        &HashSet::new(),
+        &mut cst_defects,
+    );
+    assert_eq!(checked.overrides, 1);
+    assert_eq!(cst_defects.len(), 1);
+    assert_eq!(cst_defects.count_of(label), 1);
 }
 
 #[test]
-fn the_shipped_notes_file_parses() {
-    parse_context_notes(CONTEXT_NOTES_TOML).expect("assets/navigation-context-notes.toml");
+fn an_empty_override_that_suppresses_nothing_is_reported() {
+    let label = "empty blurb override for a node with no SuttaCentral blurb";
+    let none = BTreeMap::new();
+    let overrides = texts(
+        r#"
+"sn56.11" = ""
+"sn56.12" = ""
+"sn99.99" = ""
+"cst:tika" = ""
+"#,
+    );
+
+    // `sn56.11` has a blurb to suppress; `sn56.12` has none. `sn99.99` names
+    // no node, which is the one thing reported about it.
+    let roots = vec![branch("sutta", vec![leaf("sn56.11"), leaf("sn56.12")])];
+    let mut sc_defects = DefectReport::default();
+    let sc_rows = flatten(&roots, "sc", &mut sc_defects);
+    validate_node_text_keys(
+        &sc_rows,
+        "sc",
+        &none,
+        &overrides,
+        &sc_blurbs(&["sn56.11"]),
+        &mut sc_defects,
+    );
+    assert_eq!(sc_defects.len(), 2);
+    assert_eq!(sc_defects.count_of(label), 1);
+    assert_eq!(sc_defects.count_of("blurb override for a node uid not in the tree"), 1);
+
+    // No CST node has a SuttaCentral blurb, so an empty override there never
+    // suppresses anything.
+    let mut cst_defects = DefectReport::default();
+    let cst_rows = flatten(&[leaf("cst:tika")], "cst", &mut cst_defects);
+    validate_node_text_keys(
+        &cst_rows,
+        "cst",
+        &none,
+        &overrides,
+        &HashSet::new(),
+        &mut cst_defects,
+    );
+    assert_eq!(cst_defects.len(), 1);
+    assert_eq!(cst_defects.count_of(label), 1);
 }

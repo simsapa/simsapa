@@ -22,6 +22,7 @@
 //! An unresolvable leaf is kept and marked unavailable rather than dropped, so
 //! the gap is visible in the window instead of silently absent.
 
+pub mod blurb_export;
 pub mod coverage_report;
 pub mod cst_spine;
 pub mod sc_spine;
@@ -31,27 +32,25 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use diesel::prelude::*;
+use simsapa_backend::app_settings::{
+    NAVIGATION_BLURB_OVERRIDES_TOML, NAVIGATION_CONTEXT_NOTES_TOML,
+};
 use simsapa_backend::db::appdata_schema::navigation_nodes;
 use simsapa_backend::logger;
 use simsapa_backend::helpers::consistent_niggahita;
+use simsapa_backend::navigation_texts::parse_node_texts;
 use simsapa_backend::navigation_tree::{
     build_search_text, join_path, join_sort_path, NewNavigationNode,
 };
 
 /// Rows per `INSERT`. SQLite's default bind-parameter ceiling is 32766 and the
-/// table has 18 insertable columns, so 500 rows (9000 parameters) stays well
+/// table has 16 insertable columns, so 500 rows (8000 parameters) stays well
 /// inside it on every SQLite the project builds against.
 const INSERT_CHUNK: usize = 500;
 
-/// The project's own per-node notes: `"<node_uid>" = """<note>"""`.
-///
-/// Embedded, so the build does not depend on the directory it is run from. A
-/// rebuild of the CLI is what picks up an edit.
-const CONTEXT_NOTES_TOML: &str =
-    include_str!("../../../../assets/navigation-context-notes.toml");
-
 /// Every CST node uid starts with this, and no SC one does — which is what
-/// lets a note be assigned to the spine that owns it.
+/// lets a key of a hand-written texts file be assigned to the spine that owns
+/// it.
 const CST_NODE_UID_PREFIX: &str = "cst:";
 
 /// A node as the spine builders construct it, before it is flattened into rows.
@@ -65,7 +64,11 @@ pub struct TreeNode {
     pub node_type: String,
     pub title_pali: Option<String>,
     pub title_en: Option<String>,
-    pub blurb: Option<String>,
+    /// The uid the node's source knows it by, which is the key of its entry in
+    /// SuttaCentral's `blurbs.json`. Differs from `node_uid` only for a
+    /// super-tree level, whose `node_uid` is qualified by its ancestors
+    /// (`sutta/minor/kn` for the source uid `kn`). `None` on the CST spine.
+    pub source_uid: Option<String>,
     pub sutta_uid: Option<String>,
     /// Set only where `sutta_uid` is a text the node does not own: the uid of
     /// that text, for the row to show. See
@@ -83,7 +86,7 @@ impl TreeNode {
             node_type: node_type.into(),
             title_pali: None,
             title_en: None,
-            blurb: None,
+            source_uid: None,
             sutta_uid: None,
             redirect_uid: None,
             cst_file: None,
@@ -256,8 +259,6 @@ fn flatten_node(
     // Folding at the one place every row passes through is what keeps the
     // displayed title and its `search_text` from drifting apart, and stops two
     // spellings of one nikāya name reading as two different places.
-    //
-    // Blurbs are left alone: they are prose, shown as the source wrote them.
     let title_pali = node.title_pali.as_deref().map(fold_title);
     let title_en = node.title_en.as_deref().map(fold_title);
 
@@ -269,9 +270,6 @@ fn flatten_node(
         tree_source: tree_source.to_string(),
         title_pali: title_pali.clone(),
         title_en: title_en.clone(),
-        blurb: node.blurb.clone(),
-        // Filled by `apply_context_notes`, once the spine is flat.
-        context_note: None,
         sutta_uid: node.sutta_uid.clone(),
         redirect_uid: node.redirect_uid.clone(),
         cst_file: node.cst_file.clone(),
@@ -307,79 +305,97 @@ fn flatten_node(
     ancestors.pop();
 }
 
-/// Parse the notes file. A key with an empty note is dropped: it names a node
-/// and says nothing about it.
+/// The two hand-written texts files, parsed for their keys.
+///
+/// The app embeds both and shows their text at runtime
+/// (`simsapa_backend::navigation_texts`); the tree build reads them only to
+/// check that each key names a node. They are the copies embedded in this
+/// binary, so the build does not depend on the directory it is run from, and a
+/// rebuild of the CLI is what picks up an edit.
 ///
 /// A file that does not parse fails the build. It is the project's own file,
-/// so there is no source author to report to and nothing to salvage — and a
-/// silently ignored file would ship a tree with every note missing. That
-/// includes an **unquoted key**: TOML reads `sn56.11 = "…"` as a nested table,
-/// which is not a string and is rejected here.
-pub fn parse_context_notes(toml_text: &str) -> Result<BTreeMap<String, String>> {
-    let notes: BTreeMap<String, String> = toml::from_str(toml_text).context(
-        "assets/navigation-context-notes.toml must be a flat table of \"node_uid\" = \"note text\" (quote every key)",
-    )?;
-    Ok(notes
-        .into_iter()
-        .map(|(uid, note)| (uid, unwrap_note(&note)))
-        .filter(|(_, note)| !note.is_empty())
-        .collect())
+/// so there is no source author to report to and nothing to salvage — and
+/// carrying on would leave every key in it unchecked.
+struct HandWrittenTexts {
+    /// A key with an empty note is dropped: it names a node and says nothing
+    /// about it.
+    context_notes: BTreeMap<String, String>,
+    /// Empty entries are kept: an empty override suppresses a summary.
+    overrides: BTreeMap<String, String>,
 }
 
-/// Undo the hand-wrapping of a note: the file is written to be edited, so a
-/// note is wrapped across lines there, and those line breaks are not part of
-/// it. Lines are joined with a space; a blank line is a paragraph break.
-fn unwrap_note(note: &str) -> String {
-    let mut paragraphs: Vec<String> = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
-    for line in note.lines() {
-        let words: Vec<&str> = line.split_whitespace().collect();
-        if words.is_empty() {
-            if !current.is_empty() {
-                paragraphs.push(current.join(" "));
-                current.clear();
-            }
-        } else {
-            current.extend(words);
-        }
-    }
-    if !current.is_empty() {
-        paragraphs.push(current.join(" "));
-    }
-    paragraphs.join("\n\n")
+fn load_hand_written_texts() -> Result<HandWrittenTexts> {
+    let mut context_notes = parse_node_texts(NAVIGATION_CONTEXT_NOTES_TOML)
+        .context("assets/navigation-context-notes.toml")?;
+    context_notes.retain(|_, note| !note.is_empty());
+
+    let overrides = parse_node_texts(NAVIGATION_BLURB_OVERRIDES_TOML)
+        .context("assets/navigation-blurb-overrides.toml")?;
+
+    Ok(HandWrittenTexts { context_notes, overrides })
 }
 
-/// Set `context_note` on the rows the notes file names.
+/// How many keys of each hand-written file a spine owned, and so checked.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct CheckedKeys {
+    pub context_notes: usize,
+    pub overrides: usize,
+}
+
+/// Check the keys of the two hand-written texts files against one spine's rows.
+///
+/// It reports and does nothing else: no text is written to a row, no key is
+/// dropped or renamed, and a bad key never fails the build.
 ///
 /// The two spines are built and written independently, so each call sees only
-/// its own rows. A note is therefore checked against the spine that owns its
-/// key ([`CST_NODE_UID_PREFIX`]): one naming a node that spine does not have is
+/// its own rows. A key is therefore checked against the spine that owns it
+/// ([`CST_NODE_UID_PREFIX`]): one naming a node that spine does not have is
 /// recorded as a defect, and one belonging to the other spine is not this
 /// call's to judge.
-pub fn apply_context_notes(
-    rows: &mut [NewNavigationNode],
+///
+/// `nodes_with_sc_blurb` holds the `node_uid`s the generated SuttaCentral file
+/// has an entry for — always empty on the CST spine, where an empty override
+/// can suppress nothing.
+pub fn validate_node_text_keys(
+    rows: &[NewNavigationNode],
     tree_source: &str,
-    notes: &BTreeMap<String, String>,
+    context_notes: &BTreeMap<String, String>,
+    overrides: &BTreeMap<String, String>,
+    nodes_with_sc_blurb: &HashSet<String>,
     defects: &mut DefectReport,
-) -> usize {
+) -> CheckedKeys {
     let is_cst_spine = tree_source == cst_spine::TREE_SOURCE;
-    let mut applied: HashSet<&str> = HashSet::new();
+    let owned = |uid: &str| uid.starts_with(CST_NODE_UID_PREFIX) == is_cst_spine;
+    let in_tree: HashSet<&str> = rows.iter().map(|r| r.node_uid.as_str()).collect();
+    let mut checked = CheckedKeys::default();
 
-    for row in rows.iter_mut() {
-        if let Some((uid, note)) = notes.get_key_value(&row.node_uid) {
-            row.context_note = Some(note.clone());
-            applied.insert(uid.as_str());
-        }
-    }
-
-    for uid in notes.keys() {
-        let owned = uid.starts_with(CST_NODE_UID_PREFIX) == is_cst_spine;
-        if owned && !applied.contains(uid.as_str()) {
+    for uid in context_notes.keys().filter(|uid| owned(uid)) {
+        checked.context_notes += 1;
+        if !in_tree.contains(uid.as_str()) {
             defects.record("context note for a node uid not in the tree", uid);
         }
     }
 
-    applied.len()
+    for (uid, text) in overrides.iter().filter(|(uid, _)| owned(uid)) {
+        checked.overrides += 1;
+        if !in_tree.contains(uid.as_str()) {
+            defects.record("blurb override for a node uid not in the tree", uid);
+        } else if text.is_empty() && !nodes_with_sc_blurb.contains(uid) {
+            defects.record(
+                "empty blurb override for a node with no SuttaCentral blurb",
+                uid,
+            );
+        }
+    }
+
+    checked
+}
+
+fn log_checked_keys(spine: &str, checked: &CheckedKeys) {
+    logger::info(&format!(
+        "{}: checked {} context note key(s) and {} blurb override key(s)",
+        spine, checked.context_notes, checked.overrides
+    ));
 }
 
 /// Trim a title and fold its niggahita to `ṁ`. See the call site in
@@ -421,7 +437,14 @@ pub fn replace_spine(
 /// Must run **after** the sutta import, so that every leaf's `sutta_uid` is
 /// resolved against rows that exist and an unresolvable one can be reported
 /// (it is kept and marked unavailable, never dropped).
-pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Result<()> {
+///
+/// With an `assets_dir` — the repository's `assets/` folder — the build also
+/// rewrites the generated blurbs file there ([`blurb_export`]).
+pub fn build_sc_spine(
+    db_conn: &mut SqliteConnection,
+    sc_data_dir: &Path,
+    assets_dir: Option<&Path>,
+) -> Result<()> {
     if !sc_data_dir.exists() {
         logger::warn(&format!(
             "build_sc_spine: sc-data not found, skipping: {}",
@@ -442,16 +465,106 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
         builder.range_expansion_count()
     ));
 
-    let mut rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
-    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
-    let noted = apply_context_notes(&mut rows, sc_spine::TREE_SOURCE, &notes, &mut builder.defects);
-    logger::info(&format!("sc_spine: {} context note(s) applied", noted));
+    let rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
+    let texts = load_hand_written_texts()?;
     let written = replace_spine(db_conn, sc_spine::TREE_SOURCE, &rows)?;
     logger::info(&format!("sc_spine: wrote {} rows", written));
+
+    // Only now, with the spine built and written: a build that failed above
+    // has left the generated file alone.
+    let nodes_with_sc_blurb =
+        export_blurbs(&roots, &builder.blurbs, assets_dir, &mut builder.defects);
+
+    // Against the blurbs of the tree just built, not the generated file this
+    // binary embeds, which is one build behind a regeneration.
+    let checked = validate_node_text_keys(
+        &rows,
+        sc_spine::TREE_SOURCE,
+        &texts.context_notes,
+        &texts.overrides,
+        &nodes_with_sc_blurb,
+        &mut builder.defects,
+    );
+    log_checked_keys("sc_spine", &checked);
 
     builder.defects.log_summary("sc_spine", 8);
     analyze_appdata(db_conn);
     Ok(())
+}
+
+/// Regenerate `assets/navigation-blurb-suttacentral.toml` from the tree that
+/// was just built.
+///
+/// The existing file is replaced only by a complete one. With no blurbs
+/// loaded, no assets folder, or a write that fails, it is left as it is and a
+/// warning says why: the app embeds this file, so an empty or partial one
+/// would ship a tree with every summary missing.
+///
+/// Returns the `node_uid`s that have a blurb in the tree just built, whether
+/// or not the file was written — empty when no blurbs were loaded.
+fn export_blurbs(
+    roots: &[TreeNode],
+    blurbs: &std::collections::HashMap<String, String>,
+    assets_dir: Option<&Path>,
+    defects: &mut DefectReport,
+) -> HashSet<String> {
+    if blurbs.is_empty() {
+        logger::warn(&format!(
+            "sc_spine: no blurbs were loaded, {} is left as it is",
+            blurb_export::BLURB_FILE_NAME
+        ));
+        return HashSet::new();
+    }
+
+    let export = blurb_export::collect(roots, blurbs, &blurb_export::BLURB_TABLES, defects);
+    let nodes_with_blurb: HashSet<String> = export
+        .tree_entries
+        .iter()
+        .map(|entry| entry.node_uid.clone())
+        .collect();
+    let counts = format!(
+        "{} entries ({} blurbs.json entries skipped, {} re-keyed)",
+        export.tree_entries.len(),
+        export.skipped,
+        export.rekeyed
+    );
+
+    let Some(assets_dir) = assets_dir else {
+        logger::warn(&format!(
+            "sc_spine: no assets folder given, {} is not written: {}",
+            blurb_export::BLURB_FILE_NAME,
+            counts
+        ));
+        return nodes_with_blurb;
+    };
+
+    match blurb_export::write(assets_dir, &blurb_export::render(&export)) {
+        Ok(blurb_export::WriteOutcome::Written(path)) => {
+            logger::info(&format!("sc_spine: wrote {}: {}", path.display(), counts));
+            logger::info(
+                "sc_spine: the summaries are embedded in the app -- REBUILD THE APP for this change to take effect",
+            );
+        }
+        Ok(blurb_export::WriteOutcome::Unchanged(path)) => {
+            logger::info(&format!("sc_spine: {} is unchanged: {}", path.display(), counts));
+        }
+        Ok(blurb_export::WriteOutcome::NotAnAssetsDir) => {
+            logger::warn(&format!(
+                "sc_spine: {} is not the repository's assets folder, {} is not written",
+                assets_dir.display(),
+                blurb_export::BLURB_FILE_NAME
+            ));
+        }
+        Err(e) => {
+            logger::warn(&format!(
+                "sc_spine: {} is left as it is: {:#}",
+                blurb_export::BLURB_FILE_NAME,
+                e
+            ));
+        }
+    }
+
+    nodes_with_blurb
 }
 
 /// Build the CST spine and write it, replacing whatever `cst` rows are there.
@@ -484,12 +597,21 @@ pub fn build_cst_spine(
     let roots = builder.build()?;
     log_node_counts("cst_spine", &roots);
 
-    let mut rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
-    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
-    let noted = apply_context_notes(&mut rows, cst_spine::TREE_SOURCE, &notes, &mut builder.defects);
-    logger::info(&format!("cst_spine: {} context note(s) applied", noted));
+    let rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
+    let texts = load_hand_written_texts()?;
     let written = replace_spine(db_conn, cst_spine::TREE_SOURCE, &rows)?;
     logger::info(&format!("cst_spine: wrote {} rows", written));
+
+    // No CST node has a SuttaCentral blurb.
+    let checked = validate_node_text_keys(
+        &rows,
+        cst_spine::TREE_SOURCE,
+        &texts.context_notes,
+        &texts.overrides,
+        &HashSet::new(),
+        &mut builder.defects,
+    );
+    log_checked_keys("cst_spine", &checked);
 
     builder.defects.log_summary("cst_spine", 8);
 

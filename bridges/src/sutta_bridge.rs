@@ -5947,6 +5947,16 @@ impl qobject::SuttaBridge {
     /// one (FR-23).
     pub fn open_sutta_navigation_window(&self) {
         use crate::api::ffi;
+
+        // The window's first query is a synchronous call on the GUI thread,
+        // and it needs the summaries and context notes parsed. Start that
+        // parse here, off the GUI thread, so it runs while the window's QML
+        // loads; a query that arrives first waits for this same parse. On a
+        // reopen the texts are already there and the thread returns at once.
+        std::thread::spawn(|| {
+            simsapa_backend::navigation_texts::navigation_texts();
+        });
+
         ffi::callback_open_sutta_navigation_window();
     }
 

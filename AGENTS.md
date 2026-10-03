@@ -204,14 +204,24 @@ Notable feature docs:
   `search_text` / `path` / `sort_path` columns (**changing how one is derived
   means rebuilding the tree** — a stale one fails silently), the edition an SC
   leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
-  the Summaries toggle and context notes, and the window's own quiet-failure
+  the Summaries toggle, and the window's own quiet-failure
   rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
   in the window, uncached per-level translation counts). On the CST side:
   **`VERIFIED_CST_FILES` is a verification gate that cannot be replaced by a
   computed predicate**, the coverage classes applied within it, the toc-driven
   division split, and the three rebuild commands that must be run together
   (`import-cst`, `build-navigation-tree`, `index rebuild --area suttas --lang
-  pli` — the Tantivy index does not heal itself).
+  pli` — the Tantivy index does not heal itself). **§2f: the summaries and
+  context notes are not in the table** — they are three TOML files in `assets/`
+  embedded in the app (`backend/src/navigation_texts.rs`, one parser, parsed on
+  the window's first query and never at startup), so a text fix ships with an
+  app update. `navigation-blurb-suttacentral.toml` is **generated** by every SC
+  spine build (`blurb_export.rs`) and never hand-edited; corrections go in
+  `navigation-blurb-overrides.toml` (replace / add / suppress with `""`), which
+  like `navigation-context-notes.toml` the CLI never writes. To apply an edit,
+  **rebuild the app** — no bootstrap run. A key that names no node is reported
+  by the tree build of the spine that owns it, never repaired; the skip lists
+  and the re-keying table are fixed data, and a stale row is a reported defect.
 - [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
   its data, and the in-app **Update** / **Reset** actions that replace it without
   a Simsapa release. The parser moved from the CLI to

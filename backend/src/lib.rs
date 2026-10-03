@@ -41,6 +41,7 @@ pub mod update_checker;
 pub mod provider_models_update;
 pub mod topic_index;
 pub mod navigation_tree;
+pub mod navigation_texts;
 pub mod cips_parse;
 pub mod cips_update;
 pub mod snowball;
