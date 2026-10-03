@@ -350,7 +350,7 @@ fn a_redirected_row_carries_the_uid_it_borrows_its_text_from() {
     assert!(row.is_redirected());
     assert!(row.is_openable());
 
-    let view = NavigationNodeView::from(&row);
+    let view = NavigationNodeView::from_node(&row, &NavigationTexts::default());
     assert_eq!(view.redirect_uid.as_deref(), Some("pli-tv-bu-vb-ss5"));
     // Its own uid is untouched: that is what tells this rule apart from the
     // bhikkhu rule of the same name.
@@ -370,14 +370,16 @@ fn an_ordinary_row_is_not_redirected() {
 
     let row = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
     assert!(!row.is_redirected());
-    assert!(NavigationNodeView::from(&row).redirect_uid.is_none());
+    assert!(NavigationNodeView::from_node(&row, &NavigationTexts::default()).redirect_uid.is_none());
 }
 
 #[test]
-fn a_context_note_reaches_the_view_beside_the_blurb() {
+fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
+    // The row carries its own texts too, and they must be ignored: the view is
+    // filled from the texts it is handed, by `node_uid`.
     let mut n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
-    n.blurb = Some("The Buddha's first discourse.".to_string());
-    n.context_note = Some("Chanted on Āsāḷha Pūjā.".to_string());
+    n.blurb = Some("A stale summary stored on the row.".to_string());
+    n.context_note = Some("A stale note stored on the row.".to_string());
 
     let mut db_conn = migrated_db();
     diesel::insert_into(navigation_nodes::table)
@@ -385,13 +387,28 @@ fn a_context_note_reaches_the_view_beside_the_blurb() {
         .execute(&mut db_conn)
         .expect("insert");
 
+    let texts = NavigationTexts::from_toml(
+        r#""sn56.11" = "The Buddha's first discourse.""#,
+        "",
+        r#""sn56.11" = "Chanted on Āsāḷha Pūjā.""#,
+    );
+
     let noted = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
-    let view = NavigationNodeView::from(&noted);
+    let view = NavigationNodeView::from_node(&noted, &texts);
     assert_eq!(view.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
     assert_eq!(view.blurb.as_deref(), Some("The Buddha's first discourse."));
 
     let plain = node_by_uid_conn(&mut db_conn, "sn56.12").unwrap().expect("row");
-    assert!(NavigationNodeView::from(&plain).context_note.is_none());
+    let plain_view = NavigationNodeView::from_node(&plain, &texts);
+    assert!(plain_view.blurb.is_none());
+    assert!(plain_view.context_note.is_none());
+
+    // A filter hit is filled the same way.
+    let mut db_conn = seeded_db();
+    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
+    let hit = NavigationMatchView::from_match(&matches[0], &texts);
+    assert_eq!(hit.node.blurb.as_deref(), Some("The Buddha's first discourse."));
+    assert_eq!(hit.node.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
 }
 
 #[test]
@@ -616,7 +633,7 @@ fn view_of(
     let stored = node_by_uid_conn(&mut db_conn, node_uid)
         .expect("query")
         .expect("row");
-    NavigationNodeView::from(&stored)
+    NavigationNodeView::from_node(&stored, &NavigationTexts::default())
 }
 
 #[test]
@@ -665,7 +682,9 @@ fn only_a_fragment_row_carries_the_in_file_label() {
 fn children_json_is_an_array_of_rows_in_order() {
     let mut db_conn = seeded_db();
     let rows = children_of_conn(&mut db_conn, Some("sn")).expect("query");
-    let views: Vec<NavigationNodeView> = rows.iter().map(NavigationNodeView::from).collect();
+    let texts = NavigationTexts::from_toml(r#""sn56.11" = "The Buddha's first discourse.""#, "", "");
+    let views: Vec<NavigationNodeView> =
+        rows.iter().map(|row| NavigationNodeView::from_node(row, &texts)).collect();
     let json = serde_json::to_string(&views).expect("serialize");
 
     let parsed: Vec<NavigationNodeView> = serde_json::from_str(&json).expect("round trip");
@@ -680,7 +699,9 @@ fn a_filter_match_serializes_with_its_breadcrumbs() {
     let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
     assert!(!matches.is_empty(), "the seed contains sn56.11");
 
-    let views: Vec<NavigationMatchView> = matches.iter().map(NavigationMatchView::from).collect();
+    let texts = NavigationTexts::default();
+    let views: Vec<NavigationMatchView> =
+        matches.iter().map(|m| NavigationMatchView::from_match(m, &texts)).collect();
     assert_eq!(views[0].breadcrumbs, matches[0].breadcrumbs);
     assert_eq!(views[0].node.node_uid, matches[0].node.node_uid);
 

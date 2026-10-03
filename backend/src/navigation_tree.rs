@@ -34,6 +34,7 @@ use crate::helpers::{
     consistent_niggahita, pali_to_ascii, query_text_to_uid_field_query, whole_sutta_ref,
 };
 use crate::logger::error;
+use crate::navigation_texts::{navigation_texts, NavigationTexts};
 use crate::types::SearchArea;
 
 /// Separates ancestor `node_uid`s in the materialized `path` column. A path is
@@ -663,9 +664,10 @@ pub struct NavigationNodeView {
     pub tree_source: String,
     pub title_pali: Option<String>,
     pub title_en: Option<String>,
+    /// The summary, from [`NavigationTexts::blurb`].
     pub blurb: Option<String>,
-    /// [`NavigationNode::context_note`]. Drawn below the blurb, and governed
-    /// by the same Summaries toggle.
+    /// The project's own note, from [`NavigationTexts::context_note`]. Drawn
+    /// below the blurb, and governed by the same Summaries toggle.
     pub context_note: Option<String>,
     pub sutta_uid: Option<String>,
     pub cst_file: Option<String>,
@@ -696,8 +698,14 @@ pub struct NavigationNodeView {
     pub sutta_ref: Option<String>,
 }
 
-impl From<&NavigationNode> for NavigationNodeView {
-    fn from(node: &NavigationNode) -> Self {
+impl NavigationNodeView {
+    /// The view of a stored node, with its summary and context note looked up
+    /// in `texts` by `node_uid`.
+    ///
+    /// The texts are an argument, not a reach for
+    /// [`navigation_texts()`](crate::navigation_texts::navigation_texts), so a
+    /// view can be built against texts of the caller's choosing.
+    pub fn from_node(node: &NavigationNode, texts: &NavigationTexts) -> Self {
         let is_fragment = node.is_fragment();
         Self {
             node_uid: node.node_uid.clone(),
@@ -706,8 +714,8 @@ impl From<&NavigationNode> for NavigationNodeView {
             tree_source: node.tree_source.clone(),
             title_pali: node.title_pali.clone(),
             title_en: node.title_en.clone(),
-            blurb: node.blurb.clone(),
-            context_note: node.context_note.clone(),
+            blurb: texts.blurb(&node.node_uid).map(|s| s.to_string()),
+            context_note: texts.context_note(&node.node_uid).map(|s| s.to_string()),
             sutta_uid: node.sutta_uid.clone(),
             cst_file: node.cst_file.clone(),
             has_children: node.has_children,
@@ -796,10 +804,10 @@ pub struct NavigationMatchView {
     pub breadcrumbs: Vec<String>,
 }
 
-impl From<&NavigationMatch> for NavigationMatchView {
-    fn from(m: &NavigationMatch) -> Self {
+impl NavigationMatchView {
+    pub fn from_match(m: &NavigationMatch, texts: &NavigationTexts) -> Self {
         Self {
-            node: NavigationNodeView::from(&m.node),
+            node: NavigationNodeView::from_node(&m.node, texts),
             breadcrumbs: m.breadcrumbs.clone(),
         }
     }
@@ -824,17 +832,21 @@ fn to_json_array<T: Serialize>(what: &str, values: &[T]) -> String {
 /// One level of the tree as a JSON array of [`NavigationNodeView`].
 /// `None` is the root level. Empty array when the table is absent or empty.
 pub fn children_json(parent: Option<&str>) -> String {
-    let mut views: Vec<NavigationNodeView> =
-        children_of(parent).iter().map(NavigationNodeView::from).collect();
+    let texts = navigation_texts();
+    let mut views: Vec<NavigationNodeView> = children_of(parent)
+        .iter()
+        .map(|node| NavigationNodeView::from_node(node, texts))
+        .collect();
     attach_sutta_refs(&mut views.iter_mut().collect::<Vec<_>>());
     to_json_array("children_json", &views)
 }
 
 /// Whole-tree filter as a JSON array of [`NavigationMatchView`].
 pub fn filter_json(query: &str, limit: i64) -> String {
+    let texts = navigation_texts();
     let mut views: Vec<NavigationMatchView> = filter_nodes(query, limit)
         .iter()
-        .map(NavigationMatchView::from)
+        .map(|m| NavigationMatchView::from_match(m, texts))
         .collect();
     attach_sutta_refs(&mut views.iter_mut().map(|m| &mut m.node).collect::<Vec<_>>());
     to_json_array("filter_json", &views)
@@ -844,7 +856,9 @@ pub fn filter_json(query: &str, limit: i64) -> String {
 /// distinguishable from a node with every field empty, which an empty object
 /// would not be.
 pub fn node_json(node_uid: &str) -> String {
-    let mut view = node_by_uid(node_uid).as_ref().map(NavigationNodeView::from);
+    let mut view = node_by_uid(node_uid)
+        .as_ref()
+        .map(|node| NavigationNodeView::from_node(node, navigation_texts()));
     if let Some(v) = view.as_mut() {
         attach_sutta_refs(&mut [v]);
     }

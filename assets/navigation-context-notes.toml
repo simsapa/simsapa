@@ -10,7 +10,8 @@
 #   spaces; a blank line starts a new paragraph.
 # - Find a key with:
 #     SELECT node_uid, title_pali FROM navigation_nodes;
-# - Rebuild the CLI and re-run `build-navigation-tree` to apply an edit.
+# - Rebuild the app to apply an edit. `build-navigation-tree` reports a key
+#   that names no node.
 
 # ============================================================================
 # Sutta — the four Nikāyas

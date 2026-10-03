@@ -7,6 +7,13 @@ static PROVIDERS_JSON: &str = include_str!("../../assets/providers.json");
 pub static LANGUAGES_JSON: &str = include_str!("../../assets/languages.json");
 pub static SUTTA_REFERENCE_CONVERTER_JSON: &str = include_str!("../../assets/sutta-reference-converter.json");
 pub static CIPS_GENERAL_INDEX_JSON: &str = include_str!("../../assets/general-index.json");
+/// The per-node texts of the Sutta Navigation window, each a flat TOML table of
+/// `"<node_uid>" = "<text>"`. Read through
+/// `navigation_texts::navigation_texts()`, which parses them on first use.
+/// See docs/sutta-navigation-tree.md.
+pub static NAVIGATION_BLURB_SUTTACENTRAL_TOML: &str = include_str!("../../assets/navigation-blurb-suttacentral.toml");
+pub static NAVIGATION_BLURB_OVERRIDES_TOML: &str = include_str!("../../assets/navigation-blurb-overrides.toml");
+pub static NAVIGATION_CONTEXT_NOTES_TOML: &str = include_str!("../../assets/navigation-context-notes.toml");
 /// UTC `YYYY-MM-DDTHH:MM:SSZ` when the CIPS CSV behind the embedded index above
 /// was last changed (its commit date in the CIPS repository, not the date the
 /// index was generated — re-running the generator over unchanged data must not
