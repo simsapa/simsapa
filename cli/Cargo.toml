@@ -32,7 +32,7 @@ tokio = { version = "1.0", features = ["rt", "rt-multi-thread"] }
 quick-xml = "0.31"
 html-escape = "0.2"
 urlencoding = "2.1"
-toml = "0.8"
+toml = "1.1.6"
 # NOTE: The utils::render_markdown() was removed after mdbook v0.4
 mdbook = "0.4"
 

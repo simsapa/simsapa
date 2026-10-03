@@ -211,7 +211,7 @@ fn context_notes_land_on_the_rows_the_file_names() {
     let mut defects = DefectReport::default();
     let mut rows = flatten(&roots, "sc", &mut defects);
 
-    let notes = parse_context_notes(
+    let mut notes = parse_node_texts(
         r#"
 "sn56.11" = "  The first discourse.  "
 "sn56.12" = "   "
@@ -219,7 +219,9 @@ fn context_notes_land_on_the_rows_the_file_names() {
 "#,
     )
     .unwrap();
-    // A blank note is dropped at parse time rather than stored as a note.
+    // A blank note names a node and says nothing about it, so it is dropped
+    // before the notes are applied.
+    notes.retain(|_, note| !note.is_empty());
     assert_eq!(notes.len(), 2);
 
     let applied = apply_context_notes(&mut rows, "sc", &notes, &mut defects);
@@ -237,7 +239,7 @@ fn context_notes_land_on_the_rows_the_file_names() {
 
 #[test]
 fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
-    let notes = parse_context_notes(
+    let notes = parse_node_texts(
         r#"
 "sn99.99" = "No such sutta."
 "cst:nope" = "No such book."
@@ -258,31 +260,6 @@ fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
 }
 
 #[test]
-fn a_notes_file_that_is_not_a_string_map_fails_the_build() {
-    assert!(parse_context_notes(r#""sn56.11" = 3"#).is_err());
-    assert!(parse_context_notes("not toml at all").is_err());
-}
-
-#[test]
-fn an_unquoted_dotted_key_fails_the_build_rather_than_nesting() {
-    // TOML reads this as the table `sn56` holding the key `11`, so the note
-    // would land on no node at all.
-    assert!(parse_context_notes(r#"sn56.11 = "The first discourse.""#).is_err());
-}
-
-#[test]
-fn a_hand_wrapped_note_is_joined_and_keeps_its_paragraphs() {
-    let notes = parse_context_notes(
-        "\"dn\" = \"\"\"\nOrigin: 5th–3rd century BCE,\n   northern India.\n\n\nA second\nparagraph.\n\"\"\"\n",
-    )
-    .unwrap();
-    assert_eq!(
-        notes["dn"],
-        "Origin: 5th–3rd century BCE, northern India.\n\nA second paragraph."
-    );
-}
-
-#[test]
 fn the_shipped_notes_file_parses() {
-    parse_context_notes(CONTEXT_NOTES_TOML).expect("assets/navigation-context-notes.toml");
+    load_context_notes().expect("assets/navigation-context-notes.toml");
 }

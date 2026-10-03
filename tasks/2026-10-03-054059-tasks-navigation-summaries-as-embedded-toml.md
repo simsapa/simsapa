@@ -16,6 +16,7 @@ Background: [`archive/2026-09-18-174900-prd---sutta-navigation-window.md`](./arc
 **Backend**
 
 - `backend/Cargo.toml` - Add `toml = "1.1.6"`.
+- `backend/Cargo.lock`, `cli/Cargo.lock`, `bridges/Cargo.lock` - Updated by the `toml` 1.1.6 change.
 - `backend/src/navigation_texts.rs` - **New.** The one parser for the three files (`parse_node_texts`, `unwrap_note`), the `NavigationTexts` struct with the override resolution, and the lazily initialised process-wide cache. Tests alongside (`#[cfg(test)] mod tests` or `navigation_texts/tests.rs`, following `navigation_tree`'s layout).
 - `backend/src/lib.rs` - Register `pub mod navigation_texts;`.
 - `backend/src/app_settings.rs` - The three `include_str!` statics, next to `CIPS_GENERAL_INDEX_JSON` (line 9).
@@ -91,14 +92,16 @@ pub fn unwrap_note(note: &str) -> String;
 - The existing CLI `parse_context_notes()` **drops** empty entries. The new parser does not; the context-notes caller filters them itself.
 - Any shape other than a flat string table is an `Err` for the whole file — including an unquoted dotted key, which TOML reads as a nested table.
 
-- [ ] 1.0 Baseline snapshot, `toml` 1.1.6, and one shared parser in `backend`
-  - [ ] 1.1 **Before any other change**, dump the baseline for Success Metric 1. From the runtime database, export every row where `blurb IS NOT NULL OR context_note IS NOT NULL` as JSON (`sqlite3 -json <db> "SELECT node_uid, blurb, context_note FROM navigation_nodes WHERE …"`) to a file **outside the repository** (the session scratchpad or `/tmp`). Record the path and the two counts here; expected 4,111 summaries and 44 notes.
-  - [ ] 1.2 Add `toml = "1.1.6"` to `backend/Cargo.toml`. Change `cli/Cargo.toml` from `"0.8"` to `"1.1.6"`. Run `cargo check` in `backend` and `cli`. `backend`, `cli` and `bridges` each have their own `Cargo.lock` (there is no workspace); `bridges`' is updated by `make build -B` in 1.7, not by a bare `cargo check`, which needs the Qt environment. `toml` 1.1.6 needs Rust 1.85 (local toolchain: 1.96).
-  - [ ] 1.3 Confirm the CLI's other `toml::from_str` call sites (`library_imports.rs`, `chanting_practice.rs`) compile and their tests pass under 1.1.6. If the major-version change alters an error or a parse result, report it rather than adapting silently.
-  - [ ] 1.4 Create `backend/src/navigation_texts.rs` with `parse_node_texts()` and `unwrap_note()` per the spec above; register the module in `backend/src/lib.rs`. Move `unwrap_note()` verbatim from `cli/src/bootstrap/navigation_tree/mod.rs`.
-  - [ ] 1.5 Move the parsing tests from `cli/src/bootstrap/navigation_tree/tests.rs` to `backend`: not-a-string-map fails, not-TOML fails, unquoted key fails, hand-wrapped text is joined and keeps its paragraphs. Add one: an entry with `""` is **returned**, with an empty string.
-  - [ ] 1.6 In the CLI, delete `parse_context_notes()` and `unwrap_note()`; `build_sc_spine` / `build_cst_spine` call `simsapa_backend::navigation_texts::parse_node_texts()` and drop empty entries before `apply_context_notes()`. `CONTEXT_NOTES_TOML` and `apply_context_notes()` stay for now.
-  - [ ] 1.7 `cd backend && cargo test`, `cd cli && cargo test`, `make build -B` (this is what updates `bridges/Cargo.lock`).
+- [x] 1.0 Baseline snapshot, `toml` 1.1.6, and one shared parser in `backend`
+  - [x] 1.1 **Before any other change**, dump the baseline for Success Metric 1. From the runtime database, export every row where `blurb IS NOT NULL OR context_note IS NOT NULL` as JSON (`sqlite3 -json <db> "SELECT node_uid, blurb, context_note FROM navigation_nodes WHERE …"`) to a file **outside the repository** (the session scratchpad or `/tmp`). Record the path and the two counts here; expected 4,111 summaries and 44 notes.
+    - **Recorded:** `/tmp/simsapa-navigation-texts-baseline.json` (914,686 bytes) — 4,111 summaries, 44 notes, out of 12,783 nodes; no empty-string value in either column.
+  - [x] 1.2 Add `toml = "1.1.6"` to `backend/Cargo.toml`. Change `cli/Cargo.toml` from `"0.8"` to `"1.1.6"`. Run `cargo check` in `backend` and `cli`. `backend`, `cli` and `bridges` each have their own `Cargo.lock` (there is no workspace); `bridges`' is updated by `make build -B` in 1.7, not by a bare `cargo check`, which needs the Qt environment. `toml` 1.1.6 needs Rust 1.85 (local toolchain: 1.96).
+  - [x] 1.3 Confirm the CLI's other `toml::from_str` call sites (`library_imports.rs`, `chanting_practice.rs`) compile and their tests pass under 1.1.6. If the major-version change alters an error or a parse result, report it rather than adapting silently.
+    - **Result:** both compile unchanged and their tests pass; no error or parse result differs.
+  - [x] 1.4 Create `backend/src/navigation_texts.rs` with `parse_node_texts()` and `unwrap_note()` per the spec above; register the module in `backend/src/lib.rs`. Move `unwrap_note()` verbatim from `cli/src/bootstrap/navigation_tree/mod.rs`.
+  - [x] 1.5 Move the parsing tests from `cli/src/bootstrap/navigation_tree/tests.rs` to `backend`: not-a-string-map fails, not-TOML fails, unquoted key fails, hand-wrapped text is joined and keeps its paragraphs. Add one: an entry with `""` is **returned**, with an empty string.
+  - [x] 1.6 In the CLI, delete `parse_context_notes()` and `unwrap_note()`; `build_sc_spine` / `build_cst_spine` call `simsapa_backend::navigation_texts::parse_node_texts()` and drop empty entries before `apply_context_notes()`. `CONTEXT_NOTES_TOML` and `apply_context_notes()` stay for now.
+  - [x] 1.7 `cd backend && cargo test`, `cd cli && cargo test`, `make build -B` (this is what updates `bridges/Cargo.lock`).
 
 ### 2.0 — specs and dependencies
 

@@ -34,6 +34,7 @@ use diesel::prelude::*;
 use simsapa_backend::db::appdata_schema::navigation_nodes;
 use simsapa_backend::logger;
 use simsapa_backend::helpers::consistent_niggahita;
+use simsapa_backend::navigation_texts::parse_node_texts;
 use simsapa_backend::navigation_tree::{
     build_search_text, join_path, join_sort_path, NewNavigationNode,
 };
@@ -312,41 +313,12 @@ fn flatten_node(
 ///
 /// A file that does not parse fails the build. It is the project's own file,
 /// so there is no source author to report to and nothing to salvage — and a
-/// silently ignored file would ship a tree with every note missing. That
-/// includes an **unquoted key**: TOML reads `sn56.11 = "…"` as a nested table,
-/// which is not a string and is rejected here.
-pub fn parse_context_notes(toml_text: &str) -> Result<BTreeMap<String, String>> {
-    let notes: BTreeMap<String, String> = toml::from_str(toml_text).context(
-        "assets/navigation-context-notes.toml must be a flat table of \"node_uid\" = \"note text\" (quote every key)",
-    )?;
-    Ok(notes
-        .into_iter()
-        .map(|(uid, note)| (uid, unwrap_note(&note)))
-        .filter(|(_, note)| !note.is_empty())
-        .collect())
-}
-
-/// Undo the hand-wrapping of a note: the file is written to be edited, so a
-/// note is wrapped across lines there, and those line breaks are not part of
-/// it. Lines are joined with a space; a blank line is a paragraph break.
-fn unwrap_note(note: &str) -> String {
-    let mut paragraphs: Vec<String> = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
-    for line in note.lines() {
-        let words: Vec<&str> = line.split_whitespace().collect();
-        if words.is_empty() {
-            if !current.is_empty() {
-                paragraphs.push(current.join(" "));
-                current.clear();
-            }
-        } else {
-            current.extend(words);
-        }
-    }
-    if !current.is_empty() {
-        paragraphs.push(current.join(" "));
-    }
-    paragraphs.join("\n\n")
+/// silently ignored file would ship a tree with every note missing.
+fn load_context_notes() -> Result<BTreeMap<String, String>> {
+    let mut notes = parse_node_texts(CONTEXT_NOTES_TOML)
+        .context("assets/navigation-context-notes.toml")?;
+    notes.retain(|_, note| !note.is_empty());
+    Ok(notes)
 }
 
 /// Set `context_note` on the rows the notes file names.
@@ -443,7 +415,7 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
     ));
 
     let mut rows = flatten(&roots, sc_spine::TREE_SOURCE, &mut builder.defects);
-    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
+    let notes = load_context_notes()?;
     let noted = apply_context_notes(&mut rows, sc_spine::TREE_SOURCE, &notes, &mut builder.defects);
     logger::info(&format!("sc_spine: {} context note(s) applied", noted));
     let written = replace_spine(db_conn, sc_spine::TREE_SOURCE, &rows)?;
@@ -485,7 +457,7 @@ pub fn build_cst_spine(
     log_node_counts("cst_spine", &roots);
 
     let mut rows = flatten(&roots, cst_spine::TREE_SOURCE, &mut builder.defects);
-    let notes = parse_context_notes(CONTEXT_NOTES_TOML)?;
+    let notes = load_context_notes()?;
     let noted = apply_context_notes(&mut rows, cst_spine::TREE_SOURCE, &notes, &mut builder.defects);
     logger::info(&format!("cst_spine: {} context note(s) applied", noted));
     let written = replace_spine(db_conn, cst_spine::TREE_SOURCE, &rows)?;
