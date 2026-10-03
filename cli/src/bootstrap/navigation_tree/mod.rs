@@ -22,6 +22,7 @@
 //! An unresolvable leaf is kept and marked unavailable rather than dropped, so
 //! the gap is visible in the window instead of silently absent.
 
+pub mod blurb_export;
 pub mod coverage_report;
 pub mod cst_spine;
 pub mod sc_spine;
@@ -67,6 +68,11 @@ pub struct TreeNode {
     pub title_pali: Option<String>,
     pub title_en: Option<String>,
     pub blurb: Option<String>,
+    /// The uid the node's source knows it by, which is the key of its entry in
+    /// SuttaCentral's `blurbs.json`. Differs from `node_uid` only for a
+    /// super-tree level, whose `node_uid` is qualified by its ancestors
+    /// (`sutta/minor/kn` for the source uid `kn`). `None` on the CST spine.
+    pub source_uid: Option<String>,
     pub sutta_uid: Option<String>,
     /// Set only where `sutta_uid` is a text the node does not own: the uid of
     /// that text, for the row to show. See
@@ -85,6 +91,7 @@ impl TreeNode {
             title_pali: None,
             title_en: None,
             blurb: None,
+            source_uid: None,
             sutta_uid: None,
             redirect_uid: None,
             cst_file: None,
@@ -393,7 +400,14 @@ pub fn replace_spine(
 /// Must run **after** the sutta import, so that every leaf's `sutta_uid` is
 /// resolved against rows that exist and an unresolvable one can be reported
 /// (it is kept and marked unavailable, never dropped).
-pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Result<()> {
+///
+/// With an `assets_dir` — the repository's `assets/` folder — the build also
+/// rewrites the generated blurbs file there ([`blurb_export`]).
+pub fn build_sc_spine(
+    db_conn: &mut SqliteConnection,
+    sc_data_dir: &Path,
+    assets_dir: Option<&Path>,
+) -> Result<()> {
     if !sc_data_dir.exists() {
         logger::warn(&format!(
             "build_sc_spine: sc-data not found, skipping: {}",
@@ -421,9 +435,78 @@ pub fn build_sc_spine(db_conn: &mut SqliteConnection, sc_data_dir: &Path) -> Res
     let written = replace_spine(db_conn, sc_spine::TREE_SOURCE, &rows)?;
     logger::info(&format!("sc_spine: wrote {} rows", written));
 
+    // Only now, with the spine built and written: a build that failed above
+    // has left the generated file alone.
+    export_blurbs(&roots, &builder.blurbs, assets_dir, &mut builder.defects);
+
     builder.defects.log_summary("sc_spine", 8);
     analyze_appdata(db_conn);
     Ok(())
+}
+
+/// Regenerate `assets/navigation-blurb-suttacentral.toml` from the tree that
+/// was just built.
+///
+/// The existing file is replaced only by a complete one. With no blurbs
+/// loaded, no assets folder, or a write that fails, it is left as it is and a
+/// warning says why: the app embeds this file, so an empty or partial one
+/// would ship a tree with every summary missing.
+fn export_blurbs(
+    roots: &[TreeNode],
+    blurbs: &std::collections::HashMap<String, String>,
+    assets_dir: Option<&Path>,
+    defects: &mut DefectReport,
+) {
+    if blurbs.is_empty() {
+        logger::warn(&format!(
+            "sc_spine: no blurbs were loaded, {} is left as it is",
+            blurb_export::BLURB_FILE_NAME
+        ));
+        return;
+    }
+
+    let export = blurb_export::collect(roots, blurbs, &blurb_export::BLURB_TABLES, defects);
+    let counts = format!(
+        "{} entries ({} blurbs.json entries skipped, {} re-keyed)",
+        export.tree_entries.len(),
+        export.skipped,
+        export.rekeyed
+    );
+
+    let Some(assets_dir) = assets_dir else {
+        logger::warn(&format!(
+            "sc_spine: no assets folder given, {} is not written: {}",
+            blurb_export::BLURB_FILE_NAME,
+            counts
+        ));
+        return;
+    };
+
+    match blurb_export::write(assets_dir, &blurb_export::render(&export)) {
+        Ok(blurb_export::WriteOutcome::Written(path)) => {
+            logger::info(&format!("sc_spine: wrote {}: {}", path.display(), counts));
+            logger::info(
+                "sc_spine: the summaries are embedded in the app -- REBUILD THE APP for this change to take effect",
+            );
+        }
+        Ok(blurb_export::WriteOutcome::Unchanged(path)) => {
+            logger::info(&format!("sc_spine: {} is unchanged: {}", path.display(), counts));
+        }
+        Ok(blurb_export::WriteOutcome::NotAnAssetsDir) => {
+            logger::warn(&format!(
+                "sc_spine: {} is not the repository's assets folder, {} is not written",
+                assets_dir.display(),
+                blurb_export::BLURB_FILE_NAME
+            ));
+        }
+        Err(e) => {
+            logger::warn(&format!(
+                "sc_spine: {} is left as it is: {:#}",
+                blurb_export::BLURB_FILE_NAME,
+                e
+            ));
+        }
+    }
 }
 
 /// Build the CST spine and write it, replacing whatever `cst` rows are there.
