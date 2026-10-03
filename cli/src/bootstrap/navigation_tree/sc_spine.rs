@@ -772,7 +772,6 @@ impl ScSpineBuilder {
         let non_empty = |s: &String| Some(clean(s)).filter(|c| !c.trim().is_empty());
         node.title_pali = self.titles_pali.get(source_uid).and_then(non_empty);
         node.title_en = self.titles_en.get(source_uid).and_then(non_empty);
-        node.blurb = self.blurbs.get(source_uid).and_then(non_empty);
         node
     }
 }

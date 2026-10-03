@@ -200,13 +200,6 @@ pub struct NavigationNode {
     pub tree_source: String,
     pub title_pali: Option<String>,
     pub title_en: Option<String>,
-    pub blurb: Option<String>,
-    /// The project's own note for this node, shown below the blurb.
-    ///
-    /// `blurb` is SuttaCentral's text; this is ours, from
-    /// `assets/navigation-context-notes.toml`, keyed by `node_uid`. `None` on
-    /// every node that file does not name.
-    pub context_note: Option<String>,
     pub sutta_uid: Option<String>,
     /// The uid of the text this leaf opens when it has none of its own.
     ///
@@ -281,8 +274,6 @@ pub struct NewNavigationNode {
     pub tree_source: String,
     pub title_pali: Option<String>,
     pub title_en: Option<String>,
-    pub blurb: Option<String>,
-    pub context_note: Option<String>,
     pub sutta_uid: Option<String>,
     pub redirect_uid: Option<String>,
     pub cst_file: Option<String>,
@@ -572,10 +563,9 @@ pub fn tree_is_available_conn(db_conn: &mut SqliteConnection) -> QueryResult<boo
     // A whole row, not `COUNT(*)`: the question this answers is "will the
     // level queries work", and those name every column of the table.
     //
-    // The schema spans several migrations (the table, then a column each for
-    // `redirect_uid` and `context_note`), and a migration failure at startup
-    // is non-fatal by design. So "table present, later column missing" is
-    // reachable -- and a `COUNT(*)`
+    // The schema spans two migrations (the table, then the `redirect_uid`
+    // column), and a migration failure at startup is non-fatal by design. So
+    // "table present, later column missing" is reachable -- and a `COUNT(*)`
     // succeeds on exactly that table. The window would then be told the tree
     // is available, and every level query after it would fail: an empty
     // window with no explanation, which is the outcome FR-13 exists to
@@ -607,7 +597,7 @@ where
         Ok(v) => v,
         Err(e) => {
             // Includes "no such table: navigation_nodes" and "no such column:
-            // redirect_uid" -- both reachable, because the schema spans several
+            // redirect_uid" -- both reachable, because the schema spans two
             // migrations and a migration failure at startup is non-fatal by
             // design.
             error(&format!("navigation_tree::{}: {}", what, e));

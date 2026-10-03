@@ -16,7 +16,6 @@ use crate::db::appdata_schema::navigation_nodes;
 const UP_SQL: &[&str] = &[
     include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
     include_str!("../../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
-    include_str!("../../migrations/appdata/2026-10-01-000000_navigation_node_context_note/up.sql"),
 ];
 
 fn empty_db() -> SqliteConnection {
@@ -48,8 +47,6 @@ fn node(
         tree_source: "sc".to_string(),
         title_pali: Some(title_pali.to_string()),
         title_en: title_en.map(|s| s.to_string()),
-        blurb: None,
-        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,
@@ -80,7 +77,6 @@ fn seeded_db() -> SqliteConnection {
     );
     sn56_11.node_type = "sutta".to_string();
     sn56_11.sutta_uid = Some("sn56.11/pli/ms".to_string());
-    sn56_11.blurb = Some("The Buddha's first discourse.".to_string());
 
     let rows = vec![
         node("vinaya", None, 1, "Vinaya", Some("Monastic Law"), &[]),
@@ -375,11 +371,9 @@ fn an_ordinary_row_is_not_redirected() {
 
 #[test]
 fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
-    // The row carries its own texts too, and they must be ignored: the view is
-    // filled from the texts it is handed, by `node_uid`.
-    let mut n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
-    n.blurb = Some("A stale summary stored on the row.".to_string());
-    n.context_note = Some("A stale note stored on the row.".to_string());
+    // The row holds neither text: the view is filled from the texts it is
+    // handed, by `node_uid`.
+    let n = node("sn56.11", None, 0, "Dhammacakkappavattana", None, &[]);
 
     let mut db_conn = migrated_db();
     diesel::insert_into(navigation_nodes::table)
@@ -412,6 +406,58 @@ fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
 }
 
 #[test]
+fn the_migrated_table_holds_neither_text_column() {
+    // The summaries and context notes are embedded in the app
+    // (`navigation_texts`), so the table must not carry a copy of them.
+    #[derive(QueryableByName)]
+    struct Column {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        name: String,
+    }
+
+    let mut db_conn = migrated_db();
+    let columns: Vec<String> = diesel::sql_query("PRAGMA table_info(navigation_nodes)")
+        .load::<Column>(&mut db_conn)
+        .expect("table_info")
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
+
+    assert!(columns.contains(&"redirect_uid".to_string()), "{:?}", columns);
+    assert!(!columns.contains(&"blurb".to_string()), "{:?}", columns);
+    assert!(!columns.contains(&"context_note".to_string()), "{:?}", columns);
+}
+
+#[test]
+fn a_table_with_columns_the_schema_does_not_name_still_answers() {
+    // A database bootstrapped while the table carried `blurb` and
+    // `context_note` keeps both until it is re-bootstrapped. Every query names
+    // its columns, so the extra ones must be invisible to it.
+    let mut db_conn = seeded_db();
+    db_conn
+        .batch_execute(
+            "ALTER TABLE navigation_nodes ADD COLUMN blurb TEXT; \
+             ALTER TABLE navigation_nodes ADD COLUMN context_note TEXT; \
+             UPDATE navigation_nodes SET blurb = 'stale', context_note = 'stale';",
+        )
+        .expect("the old columns are added");
+
+    assert_eq!(tree_is_available_conn(&mut db_conn), Ok(true));
+
+    let roots = children_of_conn(&mut db_conn, None).expect("root level");
+    let uids: Vec<&str> = roots.iter().map(|n| n.node_uid.as_str()).collect();
+    assert_eq!(uids, ["sutta", "vinaya"]);
+
+    let row = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");
+    let view = NavigationNodeView::from_node(&row, &NavigationTexts::default());
+    assert!(view.blurb.is_none());
+    assert!(view.context_note.is_none());
+
+    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("filter");
+    assert_eq!(matches.len(), 1);
+}
+
+#[test]
 fn display_title_falls_back_through_english_to_the_uid() {
     let mut n = node("x", None, 0, "", None, &[]);
     n.title_pali = None;
@@ -424,8 +470,6 @@ fn display_title_falls_back_through_english_to_the_uid() {
         tree_source: n.tree_source,
         title_pali: None,
         title_en: Some("English".to_string()),
-        blurb: None,
-        context_note: None,
         sutta_uid: None,
         redirect_uid: None,
         cst_file: None,

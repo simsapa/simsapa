@@ -294,10 +294,6 @@ diesel::table! {
         tree_source -> Text,
         title_pali -> Nullable<Text>,
         title_en -> Nullable<Text>,
-        blurb -> Nullable<Text>,
-        /// The project's own note, shown below the blurb; see
-        /// `navigation_tree::NavigationNode::context_note`.
-        context_note -> Nullable<Text>,
         sutta_uid -> Nullable<Text>,
         /// The uid of the text a parallels-page leaf opens instead of its own;
         /// see `navigation_tree::NavigationNode::redirect_uid`.

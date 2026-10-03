@@ -34,7 +34,6 @@ CREATE TABLE navigation_nodes (
 
     title_pali TEXT,
     title_en TEXT,
-    blurb TEXT,
 
     -- The `suttas.uid` this leaf opens. NULL for a branch.
     sutta_uid TEXT,
