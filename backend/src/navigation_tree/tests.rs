@@ -384,7 +384,7 @@ fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
     let texts = NavigationTexts::from_toml(
         r#""sn56.11" = "The Buddha's first discourse.""#,
         "",
-        r#""sn56.11" = "Chanted on Āsāḷha Pūjā.""#,
+        "[\"sn56.11\"]\nnote = \"Chanted on Āsāḷha Pūjā.\"\n",
     );
 
     let noted = node_by_uid_conn(&mut db_conn, "sn56.11").unwrap().expect("row");

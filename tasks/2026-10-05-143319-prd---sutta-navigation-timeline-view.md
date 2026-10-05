@@ -379,7 +379,7 @@ into the app's assets. The page must not load anything from the network.
 
 ## 8. Success Metrics
 
-1. All 88 context-note entries appear on the page: under a date heading on the
+1. All 44 context-note entries appear on the page: under a date heading on the
    axis if they have a bound, under "Undated" otherwise.
 2. Every entry's bounds can be justified from its note text or the research
    doc; a reviewer reading the TOML finds no number without a source.

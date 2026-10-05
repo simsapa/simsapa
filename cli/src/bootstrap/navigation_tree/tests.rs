@@ -209,6 +209,16 @@ fn texts(toml: &str) -> BTreeMap<String, String> {
     parse_node_texts(toml).unwrap()
 }
 
+/// The context notes of a file in its own shape, as the `{uid: note}` map the
+/// key check takes.
+fn notes(toml: &str) -> BTreeMap<String, String> {
+    parse_context_notes(toml)
+        .unwrap()
+        .into_iter()
+        .map(|(uid, entry)| (uid, entry.note))
+        .collect()
+}
+
 fn sc_blurbs(uids: &[&str]) -> HashSet<String> {
     uids.iter().map(|s| s.to_string()).collect()
 }
@@ -219,10 +229,13 @@ fn keys_that_name_a_node_are_checked_and_report_nothing() {
     let mut defects = DefectReport::default();
     let rows = flatten(&roots, "sc", &mut defects);
 
-    let notes = texts(
+    let notes = notes(
         r#"
-"sn56.11" = "The first discourse."
-"cst:tika" = "Sub-commentaries."
+["sn56.11"]
+note = "The first discourse."
+
+["cst:tika"]
+note = "Sub-commentaries."
 "#,
     );
     // A replacement, an addition on a node with no SuttaCentral blurb, and a
@@ -260,7 +273,7 @@ fn validation_writes_nothing_to_the_rows() {
     validate_node_text_keys(
         &rows,
         "sc",
-        &texts(r#""sn56.11" = "A note.""#),
+        &notes("[\"sn56.11\"]\nnote = \"A note.\"\n"),
         &texts(r#""sn56.11" = "An override.""#),
         &HashSet::new(),
         &mut defects,
@@ -271,10 +284,13 @@ fn validation_writes_nothing_to_the_rows() {
 
 #[test]
 fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
-    let notes = texts(
+    let notes = notes(
         r#"
-"sn99.99" = "No such sutta."
-"cst:nope" = "No such book."
+["sn99.99"]
+note = "No such sutta."
+
+["cst:nope"]
+note = "No such book."
 "#,
     );
     let none = BTreeMap::new();
@@ -290,6 +306,58 @@ fn a_context_note_for_an_unknown_node_is_reported_per_spine() {
     validate_node_text_keys(&cst_rows, "cst", &notes, &none, &HashSet::new(), &mut cst_defects);
     assert_eq!(cst_defects.len(), 1);
     assert_eq!(cst_defects.count_of("context note for a node uid not in the tree"), 1);
+}
+
+#[test]
+fn a_from_later_than_its_to_is_reported_per_spine_and_changes_nothing() {
+    let dated = parse_context_notes(
+        r#"
+["dn"]
+from = -200
+to = -500
+note = "Swapped."
+
+["mn"]
+from = -500
+to = -200
+note = "In order."
+
+["cst:tika"]
+from = 1200
+to = 1100
+note = "Swapped."
+"#,
+    )
+    .unwrap();
+    let before = dated.clone();
+    let label = "context note with from later than to";
+
+    let mut sc_defects = DefectReport::default();
+    report_context_note_date_defects("sc", &dated, &mut sc_defects);
+    assert_eq!(sc_defects.len(), 1);
+    assert_eq!(sc_defects.count_of(label), 1);
+
+    let mut cst_defects = DefectReport::default();
+    report_context_note_date_defects("cst", &dated, &mut cst_defects);
+    assert_eq!(cst_defects.len(), 1);
+    assert_eq!(cst_defects.count_of(label), 1);
+
+    // Reported, never repaired: the bounds are not swapped, and the entry is
+    // still a context note of its node.
+    assert_eq!(dated, before);
+    let rows = flatten(&[leaf("dn"), leaf("mn")], "sc", &mut DefectReport::default());
+    let notes = dated.iter().map(|(uid, entry)| (uid.clone(), entry.note.clone())).collect();
+    let mut key_defects = DefectReport::default();
+    let checked = validate_node_text_keys(
+        &rows,
+        "sc",
+        &notes,
+        &BTreeMap::new(),
+        &HashSet::new(),
+        &mut key_defects,
+    );
+    assert_eq!(checked.context_notes, 2);
+    assert!(key_defects.is_empty());
 }
 
 #[test]

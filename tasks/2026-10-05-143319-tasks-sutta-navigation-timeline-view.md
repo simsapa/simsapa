@@ -6,14 +6,14 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 
 ### Data and backend
 
-- `assets/navigation-context-notes.toml` - The 88 context notes; changes from flat strings to `["uid"]` tables with `note`, `from`, `to`, `circa`.
+- `assets/navigation-context-notes.toml` - The 44 context notes; changes from flat strings to `["uid"]` tables with `note`, `from`, `to`, `circa`.
 - `backend/src/navigation_texts.rs` - Embeds and parses the three TOML files; gets the dated-entry struct, the new parser and the date validation. Tests are in the same file.
 - `backend/src/navigation_timeline.rs` - **New.** Pure timeline logic: join to node titles, clustering, ordering, period text, HTML rendering. Tests in the same file.
 - `backend/src/navigation_tree.rs` - `NavigationNode`, `node_by_uid_conn`, `sort_path`; source of the titles and the tree order.
 - `backend/src/navigation_tree/tests.rs` - Existing context-note tests; their inline TOML fixtures for the context notes (around lines 384 and 729) move to the table shape, their assertions stay as they are.
 - `backend/src/html_content.rs` - `sutta_html_page()` and the page template context; gets `timeline_html_page()`.
 - `backend/src/lib.rs` - Module declaration for `navigation_timeline`.
-- `cli/src/bootstrap/navigation_tree/mod.rs` - `load_hand_written_texts()` / `validate_node_text_keys()`; moves to the new parser and reports bad date bounds.
+- `cli/src/bootstrap/navigation_tree/mod.rs` - `load_hand_written_texts()` / `validate_node_text_keys()`; parses with the new parser, and `report_context_note_date_defects()` reports bad date bounds per spine.
 - `cli/src/bootstrap/navigation_tree/tests.rs` - Tests for the above.
 - `bridges/src/api.rs` - Rocket routes; gets `GET /navigation_timeline` and its registration.
 
@@ -58,7 +58,7 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 **IMPORTANT:** As you complete each task, you must check it off in this markdown file by changing `- [ ]` to `- [x]`. This helps track progress and ensures you don't skip any steps.
 
 Example:
-- `- [ ] 1.1 Read file` → `- [x] 1.1 Read file` (after completing)
+- `- [x] 1.1 Read file` → `- [x] 1.1 Read file` (after completing)
 
 Update the file after completing each sub-task, not just after completing an entire parent task.
 
@@ -106,19 +106,19 @@ impl NavigationTexts {
 
 **Depends on:** nothing.
 
-- [ ] 1.0 Context notes as dated tables: new TOML shape and parser
-  - [ ] 1.1 Read `backend/src/navigation_texts.rs` in full and `docs/sutta-navigation-tree.md` §2f.
-  - [ ] 1.2 Before touching the file, save the current parse for comparison: with a scratchpad Python script (`tomllib`), dump `{uid: note}` of `assets/navigation-context-notes.toml` to a JSON file in the scratchpad directory.
-  - [ ] 1.3 Convert all 88 entries with a scratchpad script: `"uid" = """` becomes `["uid"]` followed by `note = """`. Keep every comment, section banner and blank line. No dates yet.
-  - [ ] 1.4 Verify with the scratchpad script that the new file has the same 88 keys and that each `note` is byte-identical to the saved string (FR-7, FR-10).
-  - [ ] 1.5 Rewrite the file header comment for the new shape: quoted table keys, the `note` field, wrapping rules. The date fields are documented in task 2.
-  - [ ] 1.6 Add `ContextNote`, `parse_context_notes()` and `context_note_date_defects()` to `navigation_texts.rs` per the specs. Apply `unwrap_note()` to `note`.
-  - [ ] 1.7 Change `NavigationTexts.context_notes` to hold `ContextNote` values, built with `parse_context_notes()`. Keep the "does not parse → logged by file name, treated as empty" behaviour. `context_note()` returns the note text; add `dated_context_notes()`.
-  - [ ] 1.8 Tests in `navigation_texts.rs`: a table with only `note`; with one bound; with both and `circa`; `circa` defaults to false; an unknown field is an error; a flat-string entry is an error; an unquoted dotted key is an error; `from > to` is reported and `from == to` is not; the shipped file parses and has 88 entries. Update the existing tests that feed context notes as flat strings (`r#""dn" = 3"#` and the like).
-  - [ ] 1.9 In `cli/src/bootstrap/navigation_tree/mod.rs`, `load_hand_written_texts()` parses with `parse_context_notes()`. Keep `HandWrittenTexts.context_notes` as the `{uid: note}` map it is today (built from the parsed entries), so `validate_node_text_keys()` and its eight test call sites keep their signature. Add the parsed entries as a second field and report the lines of `context_note_date_defects()` through `defects.record(…)`. The two spines are built by two separate runs (the call sites near lines 469 and 601), so apply the same ownership rule as the key check (`CST_NODE_UID_PREFIX`): each run reports only the entries of its own spine.
-  - [ ] 1.10 Update `cli/src/bootstrap/navigation_tree/tests.rs` for the new shape and add a test that a `from > to` entry is recorded as a defect and changes nothing else.
-  - [ ] 1.11 Move the inline context-note fixtures in `backend/src/navigation_tree/tests.rs` to the table shape (`["sn56.11"]` / `note = "…"`); leave every assertion as it is. Run `cd backend && cargo test navigation` and `cd cli && cargo test navigation`; all pass.
-  - [ ] 1.12 `make build -B` succeeds.
+- [x] 1.0 Context notes as dated tables: new TOML shape and parser
+  - [x] 1.1 Read `backend/src/navigation_texts.rs` in full and `docs/sutta-navigation-tree.md` §2f.
+  - [x] 1.2 Before touching the file, save the current parse for comparison: with a scratchpad Python script (`tomllib`), dump `{uid: note}` of `assets/navigation-context-notes.toml` to a JSON file in the scratchpad directory.
+  - [x] 1.3 Convert all 44 entries with a scratchpad script: `"uid" = """` becomes `["uid"]` followed by `note = """`. Keep every comment, section banner and blank line. No dates yet.
+  - [x] 1.4 Verify with the scratchpad script that the new file has the same 44 keys and that each `note` is byte-identical to the saved string (FR-7, FR-10).
+  - [x] 1.5 Rewrite the file header comment for the new shape: quoted table keys, the `note` field, wrapping rules. The date fields are documented in task 2.
+  - [x] 1.6 Add `ContextNote`, `parse_context_notes()` and `context_note_date_defects()` to `navigation_texts.rs` per the specs. Apply `unwrap_note()` to `note`.
+  - [x] 1.7 Change `NavigationTexts.context_notes` to hold `ContextNote` values, built with `parse_context_notes()`. Keep the "does not parse → logged by file name, treated as empty" behaviour. `context_note()` returns the note text; add `dated_context_notes()`.
+  - [x] 1.8 Tests in `navigation_texts.rs`: a table with only `note`; with one bound; with both and `circa`; `circa` defaults to false; an unknown field is an error; a flat-string entry is an error; an unquoted dotted key is an error; `from > to` is reported and `from == to` is not; the shipped file parses and has 44 entries. Update the existing tests that feed context notes as flat strings (`r#""dn" = 3"#` and the like).
+  - [x] 1.9 In `cli/src/bootstrap/navigation_tree/mod.rs`, `load_hand_written_texts()` parses with `parse_context_notes()`. Keep `HandWrittenTexts.context_notes` as the `{uid: note}` map it is today (built from the parsed entries), so `validate_node_text_keys()` and its eight test call sites keep their signature. Add the parsed entries as a second field and report the lines of `context_note_date_defects()` through `defects.record(…)`. The two spines are built by two separate runs (the call sites near lines 469 and 601), so apply the same ownership rule as the key check (`CST_NODE_UID_PREFIX`): each run reports only the entries of its own spine.
+  - [x] 1.10 Update `cli/src/bootstrap/navigation_tree/tests.rs` for the new shape and add a test that a `from > to` entry is recorded as a defect and changes nothing else.
+  - [x] 1.11 Move the inline context-note fixtures in `backend/src/navigation_tree/tests.rs` to the table shape (`["sn56.11"]` / `note = "…"`); leave every assertion as it is. Run `cd backend && cargo test navigation` and `cd cli && cargo test navigation`; all pass.
+  - [x] 1.12 `make build -B` succeeds.
 
 ### 2.0 Author the dates
 
@@ -147,14 +147,14 @@ impl NavigationTexts {
 **Depends on:** 1.0.
 
 - [ ] 2.0 Author the dates
-  - [ ] 2.1 Read `docs/navigation-context-notes-research.md` and all 88 notes.
+  - [ ] 2.1 Read `docs/navigation-context-notes-research.md` and all 44 notes.
   - [ ] 2.2 Add the date-field documentation and the convention table (as comments) to the file header.
   - [ ] 2.3 Add `from` / `to` / `circa` to every dated entry, section by section. Put the date fields above `note` so they are visible without scrolling past the text.
   - [ ] 2.4 Back-reference entries: copy the fields of the entry they refer to. Where it is not certain which entry "See X" means, list it for the user instead of guessing.
   - [ ] 2.5 Entries with no supportable estimate get no date fields; list each with the reason.
   - [ ] 2.6 Shipped-data tests in `navigation_texts.rs`: `context_note_date_defects()` is empty for the shipped file; no bound is `0`; every bound is within `-600..=2000`.
   - [ ] 2.7 Run `cd backend && cargo test navigation_texts` and `cd cli && cargo test navigation`.
-  - [ ] 2.8 Present to the user, in the chat, a table of all 88 entries: uid, Pāli title, the date wording quoted from the note, `from`, `to`, `circa`; followed by the undated list (2.5) and the uncertain back-references (2.4). **(user)** reviews the numbers before task 3 builds on them.
+  - [ ] 2.8 Present to the user, in the chat, a table of all 44 entries: uid, Pāli title, the date wording quoted from the note, `from`, `to`, `circa`; followed by the undated list (2.5) and the uncertain back-references (2.4). **(user)** reviews the numbers before task 3 builds on them.
 
 ### 3.0 Timeline data and page route
 
