@@ -973,7 +973,10 @@ spaces the blocks and draws, and reads everything it needs from the markup:
 ``` html
 <div id="timeline" class="timeline">
   <div class="timeline-controls">
-    <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
+    <div class="timeline-toggles">
+      <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
+      <label><input type="checkbox" id="timeline_minimap_toggle" checked> Minimap</label>
+    </div>
     <p class="timeline-legend">
       <span class="timeline-legend-item" data-form="dated">filled: dated range</span> · …
     </p>
@@ -1042,6 +1045,38 @@ width and the find bar's scroll-into-view therefore need no code.
 The arithmetic is in `src-ts/timeline_layout.ts`, which is tested with jest and
 **must never import d3**: the d3 packages are ESM-only and the jest setup cannot
 load them. Only `timeline.ts` imports d3, and it has no test.
+
+### The minimap
+
+A fixed strip under the page's corner buttons shows the whole page: each
+cluster as a block in its colour, as tall as its texts are on the page, beside
+its extent bar in miniature, with a band over the part in the viewport. A click
+or a drag on it scrolls there. The **Minimap** checkbox hides it; like the
+spacing toggle it is not kept, and the page always opens with the minimap.
+
+- **Page y maps linearly to strip y** — over the whole document height, not
+  over the years. The band and a click's scroll target are then the same
+  arithmetic in both directions (`minimap_view()`, `minimap_scroll_target()` in
+  `timeline_layout.ts`), in either spacing mode.
+- It is redrawn at the end of every `layout()`, from the same measurements as
+  the axis, and on a window `resize`: a new viewport height changes the strip
+  and the band with no change of width to cause a layout.
+- While it is shown, `#timeline` has the class `timeline-minimap-on`, which
+  keeps a right margin for it. That changes the text width, so the toggle
+  re-lays out.
+- Its background is the body's computed background colour, set by the script:
+  the strip lies over the page and the stylesheet knows no theme colour.
+- It has no text node, so the find bar does not see it.
+
+### The controls sit under the template's message strip
+
+`page.html` has an empty, absolutely positioned `.transient-messages` strip,
+two lines tall, over the top of the content. It is painted above ordinary
+content and takes the clicks there. Sutta pages have only a title under it; the
+timeline has its checkboxes, which is why `.timeline-controls` is
+`position: relative` — positioned and later in the document, it is painted
+above the strip. Any other control near the top of a page on this template
+needs the same.
 
 ### Certainty and colour
 

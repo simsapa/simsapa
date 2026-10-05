@@ -240,6 +240,26 @@ the cluster that was at the top of the viewport in view.
 
 **FR-34.** The checkbox state is not persisted; the page always opens unchecked.
 
+### 4.5a Minimap
+
+**FR-34a.** A small minimap of the whole page is shown at a fixed position in
+the top-right corner, under the page's corner buttons. It is a simplified
+drawing: each cluster as a block in its cluster colour, as tall as its texts are
+on the page, with its extent bar in miniature.
+
+**FR-34b.** The minimap marks the part of the page that is in the viewport and
+follows scrolling.
+
+**FR-34c.** A click on the minimap scrolls the page so that the clicked point
+is in the middle of the viewport; a drag keeps scrolling.
+
+**FR-34d.** A checkbox labelled **"Minimap"**, beside the spacing checkbox and
+checked by default, hides the minimap. Its state is not persisted. While the
+minimap is shown the text keeps a margin for it, so it covers no text.
+
+**FR-34e.** The minimap has no text of its own, so the find bar does not match
+in it.
+
 ### 4.6 Find bar
 
 **FR-35.** The page must include the same find bar as sutta pages, opened with
@@ -265,7 +285,8 @@ into the app's assets. The page must not load anything from the network.
 
 - Clicking a timeline entry to reveal the node in the navigation window or to
   open a text.
-- Zooming, panning, or a horizontal timeline.
+- Zooming, panning (other than scrolling from the minimap), or a horizontal
+  timeline.
 - Filtering or grouping by Piṭaka / Aṭṭhakathā / Ṭīkā.
 - Showing the SuttaCentral summaries (blurbs) on the timeline.
 - Persisting the spacing checkbox.

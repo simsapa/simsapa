@@ -30,7 +30,11 @@ $timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, 
     }
 }
 
+// position: the page template has an empty, absolutely positioned strip for
+// transient messages over the top of the content. Positioned, the controls
+// are painted above it and receive their own clicks.
 .timeline-controls {
+    position: relative;
     margin-bottom: 1.5em;
     font-family: "Source Sans 3 SSP", sans-serif;
     font-size: 0.8em;
@@ -48,6 +52,12 @@ $timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, 
         margin: 0;
         flex: none;
     }
+}
+
+.timeline-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em 1.5em;
 }
 
 .timeline-legend {
@@ -226,5 +236,67 @@ $timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, 
 @media (max-width: 768px) {
     .timeline {
         --timeline-gutter: 1.8em;
+    }
+}
+
+// The minimap: a fixed strip under the page's corner buttons, drawn by the
+// script, which also sets its size and its background (the page's own). The
+// page keeps a margin for it while it is shown.
+.timeline-minimap-on {
+    padding-right: calc(var(--timeline-minimap-width, 50px) + 10px);
+}
+
+.timeline-minimap {
+    position: fixed;
+    top: 50px;
+    right: 10px;
+    z-index: 900;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.5);
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+
+    &[hidden] {
+        display: none;
+    }
+
+    svg {
+        display: block;
+    }
+}
+
+.timeline-minimap-block {
+    fill: currentColor;
+    opacity: 0.55;
+}
+
+.timeline-minimap-bar {
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.timeline-minimap-bar-dashed {
+    stroke-dasharray: 2 1.5;
+}
+
+// The band that shows which part of the page is in the viewport.
+.timeline-minimap-view {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    pointer-events: none;
+
+    &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: currentColor;
+        opacity: 0.18;
     }
 }

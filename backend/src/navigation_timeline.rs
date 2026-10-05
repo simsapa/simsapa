@@ -287,7 +287,10 @@ pub fn render_timeline_html(timeline: &Timeline) -> String {
     html.push_str("<div id=\"timeline\" class=\"timeline\">\n");
     html.push_str("<div class=\"timeline-controls\">\n");
     html.push_str(
-        "<label><input type=\"checkbox\" id=\"timeline_scale_toggle\"> Scale spacing with time</label>\n",
+        "<div class=\"timeline-toggles\">\n\
+         <label><input type=\"checkbox\" id=\"timeline_scale_toggle\"> Scale spacing with time</label>\n\
+         <label><input type=\"checkbox\" id=\"timeline_minimap_toggle\" checked> Minimap</label>\n\
+         </div>\n",
     );
     render_legend(&mut html);
     html.push_str("</div>\n");
@@ -365,6 +368,13 @@ mod tests {
             assert!(html.contains(&format!("class=\"timeline-legend-item\" data-form=\"{}\"", form)));
         }
         assert!(html.contains(">filled: dated range</span> · <span"));
+    }
+
+    #[test]
+    fn controls_have_both_toggles_and_the_minimap_starts_on() {
+        let html = render_timeline_html(&build_timeline(Vec::new()));
+        assert!(html.contains("<input type=\"checkbox\" id=\"timeline_scale_toggle\"> Scale spacing with time"));
+        assert!(html.contains("<input type=\"checkbox\" id=\"timeline_minimap_toggle\" checked> Minimap"));
     }
 
     #[test]

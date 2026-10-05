@@ -35,6 +35,7 @@
 }
 
 .timeline-controls {
+  position: relative;
   margin-bottom: 1.5em;
   font-family: "Source Sans 3 SSP", sans-serif;
   font-size: 0.8em;
@@ -50,6 +51,12 @@
   height: 1em;
   margin: 0;
   flex: none;
+}
+
+.timeline-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em 1.5em;
 }
 
 .timeline-legend {
@@ -210,4 +217,58 @@
   .timeline {
     --timeline-gutter: 1.8em;
   }
+}
+.timeline-minimap-on {
+  padding-right: calc(var(--timeline-minimap-width, 50px) + 10px);
+}
+
+.timeline-minimap {
+  position: fixed;
+  top: 50px;
+  right: 10px;
+  z-index: 900;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.timeline-minimap[hidden] {
+  display: none;
+}
+.timeline-minimap svg {
+  display: block;
+}
+
+.timeline-minimap-block {
+  fill: currentColor;
+  opacity: 0.55;
+}
+
+.timeline-minimap-bar {
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.timeline-minimap-bar-dashed {
+  stroke-dasharray: 2 1.5;
+}
+
+.timeline-minimap-view {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.timeline-minimap-view::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0.18;
 }

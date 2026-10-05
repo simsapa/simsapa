@@ -11,7 +11,8 @@ import { select, Selection } from "d3-selection";
 
 import {
   bar_lanes, bar_spans, cluster_form, cluster_gaps, extend_scale_points, gutter_geometry,
-  latest_to_year, scale_points, tick_label, tick_years, visible_ticks,
+  latest_to_year, minimap_scroll_target, minimap_view, minimap_y, scale_points, tick_label, tick_years,
+  visible_ticks,
   BarSpan, ClusterDates, ClusterForm, GutterGeometry,
 } from "./timeline_layout";
 
@@ -40,6 +41,18 @@ const RESIZE_DEBOUNCE_MS = 100;
 /** Length of a legend sample's bar: a whole number of dashes, ending on one. */
 const LEGEND_BAR_LENGTH = 36;
 const LEGEND_SAMPLE_HEIGHT = 14;
+
+/** The minimap is a strip of this width, at most this tall and at most this
+ *  share of the viewport height. */
+const MINIMAP_WIDTH = 50;
+const MINIMAP_MAX_HEIGHT = 340;
+const MINIMAP_MAX_VIEWPORT_SHARE = 0.55;
+/** x of the minimap's axis, the distance between its lanes, and where the
+ *  cluster blocks begin. */
+const MINIMAP_AXIS_X = 5;
+const MINIMAP_LANE_WIDTH = 3.5;
+const MINIMAP_BLOCK_X = 25;
+const MINIMAP_VIEW_MIN_HEIGHT = 6;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -179,6 +192,8 @@ interface TimelinePage {
   clusters_el: HTMLElement;
   svg_el: SVGSVGElement;
   toggle: HTMLInputElement | null;
+  minimap_toggle: HTMLInputElement | null;
+  undated_el: HTMLElement | null;
   cluster_els: HTMLElement[];
   dates: ClusterDates[];
 }
@@ -211,6 +226,8 @@ function find_page(): TimelinePage | null {
   return {
     root, body, clusters_el, svg_el, cluster_els, dates,
     toggle: document.getElementById("timeline_scale_toggle") as HTMLInputElement | null,
+    minimap_toggle: document.getElementById("timeline_minimap_toggle") as HTMLInputElement | null,
+    undated_el: root.querySelector<HTMLElement>(".timeline-undated"),
   };
 }
 
@@ -380,6 +397,9 @@ function layout(page: TimelinePage, force: boolean): void {
 
   draw_axis(page, measured, geometry, scaled);
   laid_out_width = page.clusters_el.clientWidth;
+
+  last_measured = measured;
+  draw_minimap(page);
 }
 
 function set_gutter(page: TimelinePage, lanes: number, scaled: boolean): GutterGeometry {
@@ -389,6 +409,150 @@ function set_gutter(page: TimelinePage, lanes: number, scaled: boolean): GutterG
   );
   page.root.style.setProperty("--timeline-gutter", `${geometry.width}px`);
   return geometry;
+}
+
+// ---- The minimap ----
+//
+// A fixed strip in the corner with the whole page on it: page y maps linearly
+// to strip y, so the band that shows the viewport and a click's scroll target
+// are the same arithmetic in both directions. Each cluster is a block in its
+// colour, as tall as its texts are on the page, beside its extent bar in
+// miniature. Nothing in it is a text node.
+
+let last_measured: Measured | null = null;
+let minimap_el: HTMLElement | null = null;
+let minimap_svg_el: SVGSVGElement | null = null;
+let minimap_view_el: HTMLElement | null = null;
+let minimap_height = 0;
+
+function minimap_is_on(page: TimelinePage): boolean {
+  return page.minimap_toggle !== null && page.minimap_toggle.checked;
+}
+
+function page_height(): number {
+  return document.documentElement.scrollHeight;
+}
+
+function create_minimap(page: TimelinePage): void {
+  minimap_el = document.createElement("div");
+  minimap_el.className = "timeline-minimap";
+  minimap_el.setAttribute("aria-hidden", "true");
+  minimap_el.style.width = `${MINIMAP_WIDTH}px`;
+  // The stylesheet keeps the page's right margin as wide as the strip.
+  page.root.style.setProperty("--timeline-minimap-width", `${MINIMAP_WIDTH}px`);
+  // The page background, which a theme sets on the body: the strip lies over
+  // the text and has to cover it.
+  minimap_el.style.backgroundColor = getComputedStyle(document.body).backgroundColor;
+
+  minimap_svg_el = document.createElementNS(SVG_NS, "svg");
+  minimap_el.appendChild(minimap_svg_el);
+  minimap_view_el = document.createElement("div");
+  minimap_view_el.className = "timeline-minimap-view";
+  minimap_el.appendChild(minimap_view_el);
+  page.root.appendChild(minimap_el);
+
+  const scroll_to = (event: PointerEvent): void => {
+    if (!minimap_el) {
+      return;
+    }
+    const map_y = event.clientY - minimap_el.getBoundingClientRect().top;
+    window.scrollTo(0, minimap_scroll_target(map_y, minimap_height, page_height(), window.innerHeight));
+  };
+  minimap_el.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    // Capture makes a drag keep scrolling when the pointer leaves the strip.
+    // Without it a click still works.
+    try {
+      minimap_el?.setPointerCapture(event.pointerId);
+    } catch (_error) {
+      // No capture for this pointer.
+    }
+    scroll_to(event);
+  });
+  minimap_el.addEventListener("pointermove", (event) => {
+    if (minimap_el?.hasPointerCapture(event.pointerId)) {
+      scroll_to(event);
+    }
+  });
+}
+
+function update_minimap_view(): void {
+  if (!minimap_view_el || minimap_height <= 0) {
+    return;
+  }
+  const view = minimap_view(window.scrollY, window.innerHeight, page_height(), minimap_height,
+                            MINIMAP_VIEW_MIN_HEIGHT);
+  minimap_view_el.style.top = `${view.top}px`;
+  minimap_view_el.style.height = `${view.height}px`;
+}
+
+function draw_minimap(page: TimelinePage): void {
+  if (!minimap_el || !minimap_svg_el || !last_measured || !minimap_is_on(page)) {
+    return;
+  }
+  const measured = last_measured;
+  const total = page_height();
+  minimap_height = Math.round(Math.min(MINIMAP_MAX_HEIGHT, window.innerHeight * MINIMAP_MAX_VIEWPORT_SHARE));
+  minimap_el.style.height = `${minimap_height}px`;
+
+  const to_map = (y: number): number => minimap_y(y, total, minimap_height);
+  const page_top = (el: HTMLElement): number => el.getBoundingClientRect().top + window.scrollY;
+  const body_top = page_top(page.body);
+
+  const svg = select(minimap_svg_el);
+  svg.selectAll("*").remove();
+  svg.attr("width", MINIMAP_WIDTH).attr("height", minimap_height);
+
+  svg.append("line")
+    .attr("class", "timeline-axis-line")
+    .attr("x1", MINIMAP_AXIS_X).attr("x2", MINIMAP_AXIS_X)
+    .attr("y1", to_map(body_top + measured.marker_ys[0]))
+    .attr("y2", to_map(body_top + page.body.clientHeight));
+
+  const block = (el: HTMLElement, color: string | null): void => {
+    const y0 = to_map(page_top(el));
+    const y1 = to_map(page_top(el) + el.offsetHeight);
+    svg.append("rect")
+      .attr("class", "timeline-minimap-block")
+      .style("color", color)
+      .attr("x", MINIMAP_BLOCK_X)
+      .attr("y", y0)
+      .attr("width", MINIMAP_WIDTH - MINIMAP_BLOCK_X - 3)
+      .attr("height", Math.max(1, y1 - y0 - 1));
+  };
+
+  page.cluster_els.forEach((el, i) => {
+    const color = getComputedStyle(el).getPropertyValue("--timeline-color").trim() || null;
+    block(el, color);
+
+    const span = measured.spans[i];
+    const x = MINIMAP_AXIS_X + measured.lanes[i] * MINIMAP_LANE_WIDTH;
+    svg.append("line")
+      .attr("class", cluster_form(page.dates[i]) === "dated"
+        ? "timeline-minimap-bar" : "timeline-minimap-bar timeline-minimap-bar-dashed")
+      .style("color", color)
+      .attr("x1", x).attr("x2", x)
+      .attr("y1", to_map(body_top + span.y0))
+      .attr("y2", to_map(body_top + span.y1));
+  });
+  if (page.undated_el) {
+    block(page.undated_el, null);
+  }
+
+  update_minimap_view();
+}
+
+/** Show or hide the minimap. Shown, the page keeps a margin for it, which
+ *  changes the text width: the caller re-lays out. */
+function apply_minimap_toggle(page: TimelinePage): void {
+  const on = minimap_is_on(page);
+  page.root.classList.toggle("timeline-minimap-on", on);
+  if (on && !minimap_el) {
+    create_minimap(page);
+  }
+  if (minimap_el) {
+    minimap_el.hidden = !on;
+  }
 }
 
 /** Re-lay out for the toggle, keeping the cluster at the top of the viewport
@@ -418,8 +582,22 @@ function init(): void {
     page.toggle.checked = false;
     page.toggle.addEventListener("change", () => relayout_in_place(page));
   }
+  if (page.minimap_toggle) {
+    // Not kept either: the page always opens with the minimap.
+    page.minimap_toggle.checked = true;
+    page.minimap_toggle.addEventListener("change", () => {
+      apply_minimap_toggle(page);
+      relayout_in_place(page);
+    });
+  }
+  apply_minimap_toggle(page);
 
   layout(page, true);
+
+  window.addEventListener("scroll", update_minimap_view, { passive: true });
+  // A new viewport height changes the strip's height and the band's share of
+  // it, with no change of width to cause a layout.
+  window.addEventListener("resize", () => draw_minimap(page));
 
   if (typeof ResizeObserver !== "undefined") {
     let timer: number | undefined;

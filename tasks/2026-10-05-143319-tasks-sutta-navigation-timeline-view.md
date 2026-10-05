@@ -199,7 +199,10 @@ Markup (the contract with task 5):
 ``` html
 <div id="timeline" class="timeline">
   <div class="timeline-controls">
-    <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
+    <div class="timeline-toggles">
+      <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
+      <label><input type="checkbox" id="timeline_minimap_toggle" checked> Minimap</label>
+    </div>
     <p class="timeline-legend">
       <span class="timeline-legend-item" data-form="dated">filled: dated range</span> ·
       <span class="timeline-legend-item" data-form="approximate">hollow: approximate</span> ·
@@ -365,3 +368,27 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
   - [x] 6.9 Run `make test` (Rust, QML, JavaScript) and `make build -B`; report the results as they are.
   - [ ] 6.10 **(user)** Desktop, both themes: find a Pāli title and an English title in even and in scaled mode; toggle while a find is active; narrow the window to phone width.
   - [ ] 6.11 **(user)** Android (`make android-beta-debug-arm64-install`): Timeline button, tab title, the find control, the toggle, wrapping, dark theme, and returning to the navigation window with its state intact.
+
+### 7.0 Minimap, and the checkbox that could not be clicked
+
+**Covers:** FR-34a, 34b, 34c, 34d, 34e.
+
+**Specs**
+
+- The minimap maps **page y linearly to strip y** over the whole document height, so the viewport band and a click's scroll target are one arithmetic in both directions and are the same in both spacing modes. The arithmetic is in `timeline_layout.ts` (`minimap_y`, `minimap_view`, `minimap_scroll_target`) with jest tests.
+- A fixed strip 50 px wide, at most 340 px and at most 55% of the viewport height, at `top: 50px; right: 10px` (under the 30 px corner buttons), `z-index` below the find bar and the menu.
+- Drawn at the end of every `layout()` from the same measurements as the axis, and on a window `resize`. The band follows a passive `scroll` listener.
+- While shown, `#timeline` has the class `timeline-minimap-on` (a right margin of the strip's width + 10 px, through `--timeline-minimap-width`); the toggle re-lays out.
+- The background is the body's computed background colour, set by the script. No text node.
+- The checkbox bug: the page template's empty `.transient-messages` strip is absolutely positioned over the top of the content and took the clicks; `.timeline-controls` is `position: relative`, which paints it above the strip.
+
+**Depends on:** 5.0.
+
+- [ ] 7.0 Minimap, and the checkbox that could not be clicked
+  - [x] 7.1 Reproduce the checkbox defect with a hit test on the page and fix it in `timeline.scss`.
+  - [x] 7.2 Add the "Minimap" checkbox to the markup in `navigation_timeline.rs`, with a test.
+  - [x] 7.3 Minimap arithmetic in `timeline_layout.ts` with jest tests.
+  - [x] 7.4 Draw the minimap, the viewport band, click and drag scrolling and the toggle in `timeline.ts`; styles in `timeline.scss`.
+  - [x] 7.5 Update the PRD and `docs/sutta-navigation-tree.md` §2h.
+  - [x] 7.6 `npx jest`, `npx webpack`, `make sass`, `cd backend && cargo test navigation_timeline`, `make build -B`.
+  - [ ] 7.7 **(user)** Desktop and Android: both checkboxes respond to a click on the box and on the label; the minimap follows scrolling, a click and a drag scroll the page, the checkbox hides it and gives the margin back; both themes; the strip does not cover the find bar or the menu.

@@ -157,6 +157,42 @@ export function tick_label(year: number): string {
   return `${year === 0 ? 1 : year} CE`;
 }
 
+// ---- The minimap: the whole page height mapped onto a short strip. ----
+
+/** A page y as a minimap y. */
+export function minimap_y(page_y: number, page_height: number, map_height: number): number {
+  if (page_height <= 0) {
+    return 0;
+  }
+  return page_y * map_height / page_height;
+}
+
+export interface MinimapView {
+  top: number;
+  height: number;
+}
+
+/** The part of the minimap the viewport covers. It is never thinner than
+ *  `min_height` and never leaves the strip. */
+export function minimap_view(scroll_y: number, viewport_height: number, page_height: number,
+                             map_height: number, min_height: number): MinimapView {
+  const height = Math.min(map_height, Math.max(min_height, minimap_y(viewport_height, page_height, map_height)));
+  const top = Math.min(map_height - height, Math.max(0, minimap_y(scroll_y, page_height, map_height)));
+  return { top, height };
+}
+
+/** The scroll position that puts the page point under minimap y `map_y` in the
+ *  middle of the viewport. */
+export function minimap_scroll_target(map_y: number, map_height: number, page_height: number,
+                                      viewport_height: number): number {
+  if (map_height <= 0) {
+    return 0;
+  }
+  const page_y = map_y * page_height / map_height;
+  const max_scroll = Math.max(0, page_height - viewport_height);
+  return Math.min(max_scroll, Math.max(0, page_y - viewport_height / 2));
+}
+
 export interface GutterGeometry {
   /** x of the axis line and of lane 0. */
   axis_x: number;

@@ -1,5 +1,6 @@
 import {
   bar_lanes, bar_spans, cluster_form, cluster_gaps, extend_scale_points, gutter_geometry, latest_to_year,
+  minimap_scroll_target, minimap_view, minimap_y,
   scale_points, tick_label, tick_years, visible_ticks, ClusterDates,
 } from "./timeline_layout";
 
@@ -152,5 +153,32 @@ describe("gutter_geometry", () => {
 
   test("a single lane needs no lane room", () => {
     expect(gutter_geometry(1, 0, 5, 8, 10, 20).width).toBe(21);
+  });
+});
+
+describe("minimap", () => {
+  test("a page y maps linearly onto the strip", () => {
+    expect(minimap_y(5000, 10000, 300)).toBe(150);
+    expect(minimap_y(10, 0, 300)).toBe(0);
+  });
+
+  test("the view covers the viewport's share of the page", () => {
+    expect(minimap_view(2000, 1000, 10000, 300, 6)).toEqual({ top: 60, height: 30 });
+  });
+
+  test("the view is never thinner than the minimum and stays on the strip", () => {
+    expect(minimap_view(99000, 1000, 100000, 300, 6)).toEqual({ top: 294, height: 6 });
+    expect(minimap_view(-50, 1000, 100000, 300, 6).top).toBe(0);
+  });
+
+  test("a page shorter than the viewport fills the strip", () => {
+    expect(minimap_view(0, 1000, 500, 300, 6)).toEqual({ top: 0, height: 300 });
+  });
+
+  test("a click centres its page point in the viewport, within the scroll range", () => {
+    expect(minimap_scroll_target(150, 300, 10000, 1000)).toBe(4500);
+    expect(minimap_scroll_target(0, 300, 10000, 1000)).toBe(0);
+    expect(minimap_scroll_target(300, 300, 10000, 1000)).toBe(9000);
+    expect(minimap_scroll_target(150, 300, 500, 1000)).toBe(0);
   });
 });
