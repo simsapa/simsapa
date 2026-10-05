@@ -349,19 +349,19 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 **Specs**
 
 - The find bar wraps matches in inline `.ssp-find-highlight` spans inside `#ssp_content`. Inline spans do not change block heights, so a find must not trigger a re-layout loop through the `ResizeObserver`; verify rather than assume.
-- The SVG tick labels are not find targets. The period headings are, because they are HTML.
+- The tick labels are not find targets and are not text nodes: the find bar wraps every text node it matches in `#ssp_content` in a `<span>`, which inside an SVG `<text>` would erase the label. They are empty `<span data-label>` elements shown through `content: attr(data-label)`. The period headings are find targets, because they are HTML.
 
 **Depends on:** 4.0 and 5.0.
 
 - [ ] 6.0 Find bar, themes, phone width, docs
-  - [ ] 6.1 Read `src-ts/find.ts` for how it scrolls a match into view, and confirm nothing in `timeline.ts` (the scroll restore of 5.10, the resize re-layout) fights it. Confirm a find does not cause a re-layout.
-  - [ ] 6.2 Confirm the find bar ignores the checkbox label and legend or matches them harmlessly, and that no timeline element is `user-select: none` in a way that hides it from find.
-  - [ ] 6.3 Themes (FR-40): grep `timeline.scss` and `timeline.ts` for `#`, `rgb(` and named colours; the only ones are the `$timeline-cluster-colors` list and the grey fallbacks of the entry card in `timeline.scss`, and no `body.dark` rule should have been needed. Check the eight cluster colours and the card tint read in both themes.
-  - [ ] 6.4 Phone width (FR-38): confirm in the CSS that the gutter cap of task 5 holds at 360 px, the text column wraps, and nothing sets a fixed width wider than the viewport.
-  - [ ] 6.5 Mobile overlay check: the page adds no Qt overlay, but confirm against `docs/mobile-webview-visibility-management.md` that opening the tab from the navigation window (a separate window) leaves the reader webview visible on return.
-  - [ ] 6.6 `docs/sutta-navigation-tree.md`: update §2f for the table shape and the date convention, and add a section for the timeline — where the data comes from, the cluster rule, the markup contract between `navigation_timeline.rs` and `timeline.ts`, the flow-layout rule, the separate bundle, and the `table_name` value with the sites that must know it.
-  - [ ] 6.7 Add the route to `docs/simsapa-localhost-api-search-endpoints.md`.
-  - [ ] 6.8 Update `PROJECT_MAP.md` (new files) and the `sutta-navigation-tree.md` entry in `CLAUDE.md`.
-  - [ ] 6.9 Run `make test` (Rust, QML, JavaScript) and `make build -B`; report the results as they are.
+  - [x] 6.1 Read `src-ts/find.ts` for how it scrolls a match into view, and confirm nothing in `timeline.ts` (the scroll restore of 5.10, the resize re-layout) fights it. Confirm a find does not cause a re-layout.
+  - [x] 6.2 Confirm the find bar ignores the checkbox label and legend or matches them harmlessly, and that no timeline element is `user-select: none` in a way that hides it from find.
+  - [x] 6.3 Themes (FR-40): grep `timeline.scss` and `timeline.ts` for `#`, `rgb(` and named colours; the only ones are the `$timeline-cluster-colors` list and the grey fallbacks of the entry card in `timeline.scss`, and no `body.dark` rule should have been needed. Check the eight cluster colours and the card tint read in both themes.
+  - [x] 6.4 Phone width (FR-38): confirm in the CSS that the gutter cap of task 5 holds at 360 px, the text column wraps, and nothing sets a fixed width wider than the viewport.
+  - [x] 6.5 Mobile overlay check: the page adds no Qt overlay, but confirm against `docs/mobile-webview-visibility-management.md` that opening the tab from the navigation window (a separate window) leaves the reader webview visible on return.
+  - [x] 6.6 `docs/sutta-navigation-tree.md`: update §2f for the table shape and the date convention, and add a section for the timeline — where the data comes from, the cluster rule, the markup contract between `navigation_timeline.rs` and `timeline.ts`, the flow-layout rule, the separate bundle, and the `table_name` value with the sites that must know it.
+  - [x] 6.7 Add the route to `docs/simsapa-localhost-api-search-endpoints.md`.
+  - [x] 6.8 Update `PROJECT_MAP.md` (new files) and the `sutta-navigation-tree.md` entry in `CLAUDE.md`.
+  - [x] 6.9 Run `make test` (Rust, QML, JavaScript) and `make build -B`; report the results as they are.
   - [ ] 6.10 **(user)** Desktop, both themes: find a Pāli title and an English title in even and in scaled mode; toggle while a find is active; narrow the window to phone width.
   - [ ] 6.11 **(user)** Android (`make android-beta-debug-arm64-install`): Timeline button, tab title, the find control, the toggle, wrapping, dark theme, and returning to the navigation window with its state intact.

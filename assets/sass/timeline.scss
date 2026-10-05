@@ -126,18 +126,39 @@ $timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, 
     fill: currentColor;
 }
 
-.timeline-ticks {
-    line {
-        stroke: currentColor;
-        stroke-width: 1;
-        opacity: 0.5;
-    }
+.timeline-ticks line {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: 0.5;
+}
 
-    text {
-        fill: currentColor;
-        font-family: "Source Sans 3 SSP", sans-serif;
-        font-size: 10px;
-        opacity: 0.7;
+// The year labels of the ticks, placed by the script over the gutter. The
+// text is generated content, so the find bar does not see it.
+//
+// The layer has the gutter's width because the page stylesheet caps every
+// element at 100% of its containing block (`#ssp_main *`): in a layer with no
+// width a label would be zero wide and lose its right alignment.
+.timeline-tick-labels {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--timeline-gutter);
+    pointer-events: none;
+}
+
+.timeline-tick-label {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    text-align: right;
+    white-space: nowrap;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0.7;
+
+    &::before {
+        content: attr(data-label);
     }
 }
 

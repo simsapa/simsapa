@@ -665,8 +665,9 @@ an ordinary app update and needs no database download.
 | `navigation-blurb-overrides.toml` | **hand-written**, never written by the CLI | the project's corrections to the file above |
 | `navigation-context-notes.toml` | **hand-written**, never written by the CLI | context notes |
 
-All three use **one format and one key scheme**: a flat table of quoted
-`node_uid` keys, each value a string that can be wrapped freely.
+All three use **one key scheme**, the quoted `node_uid`, and two shapes. The
+two blurb files are a flat table, each value a string that can be wrapped
+freely:
 
 ``` toml
 # Dhammacakkappavattanasutta
@@ -678,10 +679,39 @@ A blank line starts a new paragraph.
 """
 ```
 
-One parser reads all three — `parse_node_texts()` in
-`backend/src/navigation_texts.rs`, used by the app and by the CLI alike. The
-text shown is the **unwrapped** text (`unwrap_note()`): lines joined with one
-space, runs of whitespace collapsed, a blank line kept as a paragraph break.
+The context notes are **one table per node**, because a note also carries the
+dates that place the node on the Timeline page (§2h):
+
+``` toml
+["dn"]
+from = -500
+to = -200
+note = """
+Origin: 5th–3rd century BCE, northern India. …
+"""
+```
+
+| Field | | Meaning |
+|---|---|---|
+| `note` | required | the text shown in the row, wrapped like a blurb |
+| `from` | optional integer | earliest year of origin; **BCE is negative** (`-500` is 500 BCE) |
+| `to` | optional integer | latest year of origin |
+| `circa` | optional, default `false` | the bounds are approximate |
+
+Only `from` means "not before", only `to` means "not after", and an entry with
+neither is undated. There is no year 0. Centuries are round numbers ("5th–3rd
+century BCE" is `-500` … `-200`, "12th century CE" is `1100` … `1200`); the
+file's header comment carries the whole convention, with a line per wording.
+**The note text is never generated from the numbers** and the numbers are never
+read out of the text: they are two statements of the same date, kept in step by
+hand. A back-reference note ("Origin: See Dīghanikāya.") carries its own copy
+of the fields of the entry it refers to.
+
+Two parsers in `backend/src/navigation_texts.rs`, used by the app and by the
+CLI alike: `parse_node_texts()` for the blurb files and `parse_context_notes()`
+for the notes. The text shown is the **unwrapped** text (`unwrap_note()`): lines
+joined with one space, runs of whitespace collapsed, a blank line kept as a
+paragraph break.
 
 - **The key is the `node_uid`, not the `suttas.uid`.** `sn56.11`, not
   `sn56.11/pli/ms`; a CST node is `cst:…`; a super-tree level is qualified by
@@ -689,8 +719,12 @@ space, runs of whitespace collapsed, a blank line kept as a paragraph break.
   navigation_nodes` finds one, and so does the generated file, where every
   entry is preceded by the node's title.
 - **Always quote the key.** Unquoted, TOML reads `sn56.11 = "…"` as the table
-  `sn56` holding the key `11`. That shape, like anything that is not a flat
-  table of strings, is a parse failure for the whole file.
+  `sn56` holding the key `11`, and `[sn56.11]` the same way. That shape, like
+  anything else that is not the file's own shape, is a parse failure for the
+  whole file.
+- **A context note with a field the app does not know is a parse failure**
+  (`deny_unknown_fields`), so `form = -500` cannot be dropped silently and
+  leave the node undated.
 
 ### Which text a row shows
 
@@ -723,7 +757,8 @@ on the shipped files.
 
 Once per process, on the window's first query — never at startup.
 `navigation_texts()` is a `OnceLock`; its only callers are the three `*_json`
-functions and a warm-up. The warm-up exists because the window's first query is
+functions, a warm-up, and the Timeline page's route (§2h), which runs on a
+Rocket worker thread. The warm-up exists because the window's first query is
 a synchronous call on the GUI thread: `SuttaBridge::open_sutta_navigation_window()`
 starts the parse on a background thread before it hands over to the window
 manager, and a query that arrives early waits for that one initialization
@@ -757,6 +792,7 @@ records in the spine's defect summary:
 | `context note for a node uid not in the tree` | a notes key names no node |
 | `blurb override for a node uid not in the tree` | an overrides key names no node |
 | `empty blurb override for a node with no SuttaCentral blurb` | a `""` that suppresses nothing |
+| `context note with from later than to` | the two bounds of a note are the wrong way round |
 
 It reports and does nothing else: no key is dropped, renamed or guessed, and
 none fails the build. The two spines are built independently, so each checks
@@ -898,6 +934,155 @@ The rules below are the ones that break quietly.
   list, which would read as a corpus with nothing in it. Nothing populates the
   tables at runtime, so an install whose `appdata.sqlite3` predates the tree
   stays in that state until it downloads a database that carries it.
+
+## 2h. The Timeline page
+
+The **Timeline** button of the window opens a reader tab that shows every node
+with a context note on one vertical time axis. It is a page of the localhost
+API, `GET /navigation_timeline?<window_id>`, built on the sutta page template,
+so it has the app's fonts, themes and find bar. It is read-only.
+
+### Where the data comes from
+
+`backend/src/navigation_timeline.rs`, with no Qt and no HTTP in it:
+
+1. `timeline_entries_conn()` joins `NavigationTexts::dated_context_notes()` to
+   `navigation_nodes` by `node_uid`, in one query, for the titles the window
+   shows and the `sort_path`. A note whose key names no node is skipped with a
+   warning; the tree build is what reports it.
+2. `build_timeline()` groups the entries into **clusters**. A cluster is the
+   entries with the same period — identical `from`, `to` **and** `circa` — and
+   has one date heading, one marker and one extent bar. Clusters are ordered by
+   **sort year** (`from`, else `to`), then by `to` with an absent `to` last,
+   then by the tree order of their first entry. Entries with no bound go to a
+   separate "Undated" list below the axis.
+3. `period_text()` writes the heading from the numbers (`500–200 BCE`,
+   `c. 100 BCE – 200 CE`, `after 300 BCE`, `before 100 BCE`).
+4. `render_timeline_html()` writes the page content, and
+   `html_content::timeline_html_page()` wraps it.
+
+The dates are embedded TOML, so a corrected date needs an app rebuild and
+nothing else. With no tree in the database the page shows its controls and "No
+timeline data".
+
+### The markup is the contract with the script
+
+The page is complete and readable with no script. `src-ts/timeline.ts` only
+spaces the blocks and draws, and reads everything it needs from the markup:
+
+``` html
+<div id="timeline" class="timeline">
+  <div class="timeline-controls">
+    <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
+    <p class="timeline-legend">
+      <span class="timeline-legend-item" data-form="dated">filled: dated range</span> · …
+    </p>
+  </div>
+  <div class="timeline-body">
+    <svg class="timeline-axis" aria-hidden="true"></svg>
+    <div class="timeline-clusters">
+      <section class="timeline-cluster" data-from="-500" data-to="-200"
+               data-circa="false" data-sort-year="-500">
+        <h2 class="timeline-period">500–200 BCE</h2>
+        <article class="timeline-entry" data-node-uid="dn">…</article>
+      </section>
+    </div>
+  </div>
+  <section class="timeline-undated">…</section>
+</div>
+```
+
+- **An absent bound is an absent attribute**, never `data-to=""`: the script
+  reads a missing attribute as "no bound".
+- `data-form` on a legend item names the certainty form (`dated`,
+  `approximate`, `open`) whose sample the script draws in front of the text,
+  with the same functions that draw the axis.
+- All text is HTML. **Nothing the script adds is a text node**: the find bar
+  (`src-ts/find.ts`) wraps every text node it matches inside `#ssp_content` in
+  a `<span>`, which inside an SVG `<text>` would erase the text. The year
+  labels of the ticks are therefore empty `<span data-label="500 BCE">`
+  elements shown through `content: attr(data-label)`.
+- **The page stylesheet applies to everything the script adds**: `suttas.css`
+  has `#ssp_main * { max-width: 100% }`, whose id selector outranks any class
+  rule in `timeline.scss`. An absolutely positioned element in a container with
+  no width is therefore zero wide — which is why the tick-label layer is given
+  the gutter's width. Check a new element against the real page, not against
+  `timeline.css` alone.
+
+### The blocks stay in document flow
+
+The script sets `margin-top` on each `.timeline-cluster` and positions nothing
+but the drawing, which fills the gutter left of the text
+(`--timeline-gutter`, set by the script on `#timeline`). Text wrapping at phone
+width and the find bar's scroll-into-view therefore need no code.
+
+- **Even spacing** (the default): a fixed gap between clusters.
+  **Scaled**: the distance between two markers is
+  `max(previous block height + gap, px_per_year × years between the sort years)`.
+  It is "scaled", not a linear axis: a block is never squeezed, so the scale is
+  stretched across a tall cluster.
+- **One piecewise-linear scale for both modes**, from each cluster's sort year
+  to its marker's y, built *after* the blocks are placed. Extent bars and year
+  ticks are drawn through it.
+- **Clusters that share a sort year contribute the last one's y, and a bar
+  starts at its own marker.** The scale can hold one y per year; with the last
+  one, `scale(to) >= scale(from) >= own marker y` for every cluster. With the
+  first one a bar can point backwards.
+- A bar with one bound has no second year to reach: it has a fixed length,
+  downward for `from` only and upward for `to` only.
+- Bars that overlap vertically are put in **lanes**. The gutter is as wide as
+  the lanes need, capped at 30% of the page width; beyond the cap the lanes
+  share the room.
+- **Re-layout happens on a width change only.** The layout changes the height
+  of the element the `ResizeObserver` watches, so `layout()` keeps the width it
+  last ran for and returns early on the same one. It also runs once when the
+  web fonts have loaded, and on the toggle, which keeps the cluster at the top
+  of the viewport in place. The toggle state is not kept.
+
+The arithmetic is in `src-ts/timeline_layout.ts`, which is tested with jest and
+**must never import d3**: the d3 packages are ESM-only and the jest setup cannot
+load them. Only `timeline.ts` imports d3, and it has no test.
+
+### Certainty and colour
+
+| Period | Marker | Extent bar |
+|---|---|---|
+| both bounds | filled | solid |
+| both bounds, `circa` | hollow | dashed |
+| one bound | hollow | dashed, fading out, with an arrowhead at the open end |
+
+Certainty is carried by fill, dash and arrow, never by hue. **Colour says only
+which cluster a line belongs to**: `timeline.scss` gives each cluster a
+`--timeline-color` from a list of eight (`nth-child`), used for the top border
+and the tint of its entry cards; the script reads it from the cluster element
+and sets `color` on that cluster's bar, marker, fade gradient and arrowhead.
+Everything in the drawing is `currentColor`, so the axis line, the ticks and the
+legend samples follow the theme's text colour, and the stylesheet has no
+`body.dark` rule. The lines are clipped away inside every marker disc, so a
+hollow marker stays hollow where another cluster's bar passes behind it.
+
+### A separate bundle
+
+`webpack.config.js` has two entries. d3 (`d3-scale`, `d3-selection`) is only in
+`assets/js/timeline.min.js`, which `timeline_html_page()` loads with a
+`<script src>` at the end of the page content; `simsapa.min.js`, which every
+sutta page loads, does not contain it. Both bundles are committed and served
+from the embedded `assets/` tree, so a script change needs `npx webpack` and
+then an app rebuild.
+
+### The reader tab
+
+The tab is an ordinary reader tab whose result data is
+`{ item_uid: "Timeline", table_name: "navigation_timeline" }`. The `item_uid`
+is the tab's label; the `table_name` is what makes the views load the route.
+Code that treats "not a dictionary or book type" as a sutta must know the value:
+
+| Where | What it does for the timeline |
+|---|---|
+| `SuttaNavigationWindow.qml` `open_timeline()` | opens the tab the way `open_node()` opens a leaf |
+| `SuttaHtmlView_Desktop.qml`, `SuttaHtmlView_Mobile.qml` | `load_timeline()` in both dispatch blocks; `is_sutta_content()` is false |
+| `SuttaSearchWindow.qml` `show_result_in_html_view()` | focuses an existing timeline tab instead of opening a second; loads no translations |
+| `SuttaSearchWindow.qml` `open_bookmark_in_tab_group()` | the same one-tab rule for a restored session or a bookmark |
 
 ## 3. CST records: two independent questions
 

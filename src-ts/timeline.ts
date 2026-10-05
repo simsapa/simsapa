@@ -37,7 +37,8 @@ const GUTTER_PADDING = 10;
 const GUTTER_MAX_SHARE = 0.3;
 const RESIZE_DEBOUNCE_MS = 100;
 
-const LEGEND_SAMPLE_WIDTH = 46;
+/** Length of a legend sample's bar: a whole number of dashes, ending on one. */
+const LEGEND_BAR_LENGTH = 36;
 const LEGEND_SAMPLE_HEIGHT = 14;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -153,16 +154,19 @@ function draw_legend(): void {
     const svg_el = document.createElementNS(SVG_NS, "svg");
     item.insertBefore(svg_el, item.firstChild);
 
+    const y = LEGEND_SAMPLE_HEIGHT / 2;
+    const x = MARKER_RADIUS + 1;
+    const bar_start = x + MARKER_RADIUS;
+    const bar_end = bar_start + LEGEND_BAR_LENGTH;
+
     const svg = select(svg_el)
       .attr("class", "timeline-legend-sample")
       .attr("aria-hidden", "true")
-      .attr("width", LEGEND_SAMPLE_WIDTH)
+      .attr("width", bar_end + 3)
       .attr("height", LEGEND_SAMPLE_HEIGHT);
     const defs = svg.append("defs");
 
-    const y = LEGEND_SAMPLE_HEIGHT / 2;
-    const x = MARKER_RADIUS + 1;
-    draw_bar(svg, defs, [[x + MARKER_RADIUS, y], [LEGEND_SAMPLE_WIDTH - 2, y]], form, null);
+    draw_bar(svg, defs, [[bar_start, y], [bar_end, y]], form, null);
     draw_marker(svg, x, y, form, null);
   });
 }
@@ -304,6 +308,19 @@ function draw_axis(page: TimelinePage, measured: Measured, geometry: GutterGeome
     draw_bar(lines, defs, points, cluster_form(dates), colors[i]);
   });
 
+  // The year labels are not text nodes: the stylesheet shows `data-label` as
+  // generated content. The find bar wraps every text node of the page content
+  // it matches in a <span>, which inside an SVG <text> would erase the label,
+  // and a label is not something to find.
+  let labels = page.body.querySelector<HTMLElement>(".timeline-tick-labels");
+  if (!labels) {
+    labels = document.createElement("div");
+    labels.className = "timeline-tick-labels";
+    labels.setAttribute("aria-hidden", "true");
+    page.body.appendChild(labels);
+  }
+  labels.textContent = "";
+
   if (scaled) {
     const years = tick_years(measured.domain[0], measured.domain[1], TICK_STEP_YEARS);
     const ys = years.map((year) => measured.scale(year));
@@ -316,12 +333,12 @@ function draw_axis(page: TimelinePage, measured: Measured, geometry: GutterGeome
       ticks.append("line")
         .attr("x1", x - r - TICK_LENGTH).attr("x2", x - r)
         .attr("y1", ys[i]).attr("y2", ys[i]);
-      ticks.append("text")
-        .attr("x", x - r - TICK_LENGTH - 2)
-        .attr("y", ys[i])
-        .attr("dy", "0.32em")
-        .attr("text-anchor", "end")
-        .text(tick_label(year));
+      const label = document.createElement("span");
+      label.className = "timeline-tick-label";
+      label.setAttribute("data-label", tick_label(year));
+      label.style.top = `${ys[i]}px`;
+      label.style.width = `${x - r - TICK_LENGTH - 2}px`;
+      labels.appendChild(label);
     });
   }
 
