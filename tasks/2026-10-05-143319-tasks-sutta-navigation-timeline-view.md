@@ -392,3 +392,24 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
   - [x] 7.5 Update the PRD and `docs/sutta-navigation-tree.md` §2h.
   - [x] 7.6 `npx jest`, `npx webpack`, `make sass`, `cd backend && cargo test navigation_timeline`, `make build -B`.
   - [ ] 7.7 **(user)** Desktop and Android: both checkboxes respond to a click on the box and on the label; the minimap follows scrolling, a click and a drag scroll the page, the checkbox hides it and gives the margin back; both themes; the strip does not cover the find bar or the menu.
+
+### 8.0 From a timeline entry to the navigation window
+
+**Covers:** FR-25a.
+
+**Specs**
+
+- Route `GET /open_sutta_navigation?<node_uid>`: 404 for a uid not in the tree; parses the embedded texts if nothing has; then `callback_open_sutta_navigation_at()`.
+- The request is on a Rocket worker thread and may create the window, so `cpp/gui.cpp` emits `WindowManager::signal_open_sutta_navigation_at`, whose slot `open_sutta_navigation_at()` runs on the GUI thread: `create_sutta_navigation_window()`, then `invokeMethod(m_root, "enter_node_by_uid", …)`.
+- `SuttaNavigationWindow.enter_node_by_uid()`: clear the filter, `enter_level(node)`; for a node with no children, the parent's level. The deferred top-level load of `Component.onCompleted` is skipped once the breadcrumbs are set.
+- The button is added by `timeline.ts` to every `.timeline-entry[data-node-uid]`: an icon with a `title`, no text node, floated right in the entry card.
+
+**Depends on:** 3.0, 4.0.
+
+- [ ] 8.0 From a timeline entry to the navigation window
+  - [x] 8.1 The route in `bridges/src/api.rs`, the callback in `cpp/gui.cpp` / `gui.h`, the signal and slot in `cpp/window_manager.*`.
+  - [x] 8.2 `enter_node_by_uid()` in `SuttaNavigationWindow.qml`, and the guard on the deferred top-level load.
+  - [x] 8.3 The button in `timeline.ts` and its style in `timeline.scss`.
+  - [x] 8.4 Update the PRD, `docs/sutta-navigation-tree.md` §2h, `docs/window-lifecycle-and-reuse.md` §5d and the route reference.
+  - [x] 8.5 `npx webpack`, `make sass`, `make build -B`, `make qml-test`.
+  - [ ] 8.6 **(user)** Desktop and Android: with the navigation window closed, open and somewhere else, and open with a filter typed — the button opens or raises it at the entry's level with the right breadcrumbs; an undated entry works; the tooltip shows; Ctrl+F does not match the button.

@@ -186,6 +186,35 @@
   background: color-mix(in srgb, var(--timeline-color, rgb(128, 128, 128)) 10%, transparent);
 }
 
+.timeline-nav-button {
+  float: right;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9em;
+  height: 1.9em;
+  margin: 0 0 0.3em 0.6em;
+  padding: 0;
+  border: 1px solid rgba(128, 128, 128, 0.6);
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.timeline-nav-button:hover, .timeline-nav-button:focus-visible {
+  opacity: 1;
+}
+.timeline-nav-button svg {
+  width: 1.2em;
+  height: 1.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
 .timeline-title-pali {
   margin: 0;
   font-family: "Crimson Pro SSP", serif;

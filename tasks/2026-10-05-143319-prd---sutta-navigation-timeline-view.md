@@ -200,7 +200,13 @@ to its texts. Entries of one cluster share the colour. The palette is mid-tones
 that read in both themes. Undated entries get a neutral grey border. The
 legend samples and the year ticks stay in the text colour.
 
-**FR-25.** The timeline is read-only: clicking an entry does nothing.
+**FR-25.** The timeline is read-only: clicking an entry's text does nothing.
+
+**FR-25a.** Each entry, the undated ones included, has a button that opens the
+Sutta Navigation window — or raises it if it is open — **with that node's level
+entered**: the breadcrumbs lead to the node and its children are listed, as if
+the reader had entered it there. The filter is cleared. The button is an icon
+with a tooltip and has no text, so the find bar does not match it.
 
 ### 4.4 Showing uncertainty
 
@@ -283,8 +289,7 @@ into the app's assets. The page must not load anything from the network.
 
 ## 5. Non-Goals (Out of Scope)
 
-- Clicking a timeline entry to reveal the node in the navigation window or to
-  open a text.
+- Opening a text from a timeline entry.
 - Zooming, panning (other than scrolling from the minimap), or a horizontal
   timeline.
 - Filtering or grouping by Piṭaka / Aṭṭhakathā / Ṭīkā.

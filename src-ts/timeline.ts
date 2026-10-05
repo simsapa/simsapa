@@ -184,6 +184,46 @@ function draw_legend(): void {
   });
 }
 
+// ---- The button on each entry ----
+
+/** A tree: a root line, a trunk, two branches. */
+const NAVIGATION_ICON_PATH = "M2 3h12 M4 3v9 M4 7.5h3 M4 12h3 M9 7.5h5 M9 12h5";
+
+/** Give every entry a button that opens the Sutta Navigation window at its
+ *  node. The button is an icon with no text node, so the find bar does not
+ *  match it once per entry. */
+function add_navigation_buttons(root: HTMLElement): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const api_url = (globalThis as any).API_URL || "http://localhost:4848";
+
+  root.querySelectorAll<HTMLElement>(".timeline-entry[data-node-uid]").forEach((entry) => {
+    const node_uid = entry.getAttribute("data-node-uid");
+    if (!node_uid || entry.querySelector(".timeline-nav-button")) {
+      return;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "timeline-nav-button";
+    button.title = "Show in Sutta Navigation";
+    button.setAttribute("aria-label", button.title);
+
+    const svg_el = document.createElementNS(SVG_NS, "svg");
+    select(svg_el)
+      .attr("viewBox", "0 0 16 16")
+      .attr("aria-hidden", "true")
+      .append("path")
+      .attr("d", NAVIGATION_ICON_PATH);
+    button.appendChild(svg_el);
+
+    button.addEventListener("click", () => {
+      fetch(`${api_url}/open_sutta_navigation?node_uid=${encodeURIComponent(node_uid)}`).catch(() => {
+        // The app is the server: nothing to do in the page if it is not there.
+      });
+    });
+    entry.insertBefore(button, entry.firstChild);
+  });
+}
+
 // ---- The axis ----
 
 interface TimelinePage {
@@ -570,6 +610,13 @@ function relayout_in_place(page: TimelinePage): void {
 
 function init(): void {
   draw_legend();
+
+  // Before the layout: the button is floated in the entry and can change how
+  // a title wraps.
+  const root = document.getElementById("timeline");
+  if (root) {
+    add_navigation_buttons(root);
+  }
 
   const page = find_page();
   if (!page) {

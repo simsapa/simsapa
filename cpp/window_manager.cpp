@@ -181,6 +181,7 @@ WindowManager::WindowManager(QApplication* app, QObject* parent)
     QObject::connect(this, &WindowManager::signal_open_sutta_tab, this, &WindowManager::open_sutta_tab_in_window);
     QObject::connect(this, &WindowManager::signal_toggle_reading_mode, this, &WindowManager::toggle_reading_mode);
     QObject::connect(this, &WindowManager::signal_open_in_lookup_window, this, &WindowManager::open_in_lookup_window);
+    QObject::connect(this, &WindowManager::signal_open_sutta_navigation_at, this, &WindowManager::open_sutta_navigation_at);
 }
 
 /// Deliberately empty. This destructor is unreachable: m_instance is `new`ed in
@@ -715,6 +716,18 @@ SuttaNavigationWindow* WindowManager::create_sutta_navigation_window() {
     sutta_navigation_windows.append(w);
     log_info_c("create_sutta_navigation_window(): created the window");
     return w;
+}
+
+/// Requested from a page of the localhost API (the Timeline page), so it
+/// arrives through signal_open_sutta_navigation_at and runs on the GUI thread:
+/// this can create the window.
+void WindowManager::open_sutta_navigation_at(const QString& node_uid) {
+    SuttaNavigationWindow* w = this->create_sutta_navigation_window();
+    if (!w || !w->m_root) {
+        log_error_c("open_sutta_navigation_at(): the navigation window did not load");
+        return;
+    }
+    QMetaObject::invokeMethod(w->m_root, "enter_node_by_uid", Q_ARG(QString, node_uid));
 }
 
 TopicIndexWindow* WindowManager::create_topic_index_window() {

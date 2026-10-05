@@ -940,7 +940,9 @@ The rules below are the ones that break quietly.
 The **Timeline** button of the window opens a reader tab that shows every node
 with a context note on one vertical time axis. It is a page of the localhost
 API, `GET /navigation_timeline?<window_id>`, built on the sutta page template,
-so it has the app's fonts, themes and find bar. It is read-only.
+so it has the app's fonts, themes and find bar. It shows and does not edit; the
+one action on it is the button on each entry that opens the window at that node
+(below).
 
 ### Where the data comes from
 
@@ -1045,6 +1047,38 @@ width and the find bar's scroll-into-view therefore need no code.
 The arithmetic is in `src-ts/timeline_layout.ts`, which is tested with jest and
 **must never import d3**: the d3 packages are ESM-only and the jest setup cannot
 load them. Only `timeline.ts` imports d3, and it has no test.
+
+### From an entry to the window
+
+Each entry has a button, added by the script, that opens or raises the Sutta
+Navigation window **with that node's level entered**:
+
+```
+button → GET /open_sutta_navigation?node_uid=…        (bridges/src/api.rs)
+       → callback_open_sutta_navigation_at()            (cpp/gui.cpp)
+       → signal_open_sutta_navigation_at                (to the GUI thread)
+       → WindowManager::open_sutta_navigation_at()      create or revive
+       → enter_node_by_uid(node_uid)                    (SuttaNavigationWindow.qml)
+```
+
+- **The request arrives on a Rocket worker thread and may have to create the
+  window**, so it crosses to the GUI thread through a `WindowManager` signal.
+  Calling `create_sutta_navigation_window()` from the callback directly would
+  build QML off the GUI thread.
+- The route answers 404 for a uid the tree does not have, and makes sure the
+  embedded texts are parsed before it hands over: the window's first query is a
+  synchronous call on the GUI thread.
+- `enter_node_by_uid()` clears the filter and enters the level the way a filter
+  hit does (`enter_level()`). A node with no children has no level: its parent's
+  is entered.
+- **A window created by this request must not load the top level afterwards.**
+  `Component.onCompleted` defers that load with `Qt.callLater`, which runs after
+  `enter_node_by_uid()`; it is skipped when the breadcrumbs are no longer empty.
+- This is the one place that moves the kept window from where the user left it
+  ([window-lifecycle-and-reuse.md](./window-lifecycle-and-reuse.md) §5d), because
+  that is what the button asks for. A plain open still resets nothing.
+- The button is an icon with a `title`, and no text node: a label would be a
+  find-bar match in every entry.
 
 ### The minimap
 

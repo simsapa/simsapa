@@ -146,7 +146,11 @@ ApplicationWindow {
         // drawn, then the roots arrive.
         if (root.tree_is_available) {
             Qt.callLater(function() {
-                root.load_level("");
+                // A window opened by enter_node_by_uid() already stands at
+                // that node's level by the time this runs.
+                if (root.breadcrumbs.length === 0) {
+                    root.load_level("");
+                }
             });
         }
     }
@@ -365,6 +369,33 @@ ApplicationWindow {
     function enter_level_from_filter(node) {
         root.enter_level(node);
         filter_input.text = "";
+    }
+
+    /// Enter a node's level from outside the window: the button on a Timeline
+    /// entry, through WindowManager::open_sutta_navigation_at(). A node with
+    /// no children has no level of its own, so its parent's is entered and the
+    /// node is a row there. Clearing the filter returns the window to the tree.
+    function enter_node_by_uid(node_uid: string) {
+        let node = null;
+        try {
+            node = JSON.parse(SuttaBridge.nav_tree_node_json(node_uid));
+        } catch (e) {
+            logger.error("enter_node_by_uid: parse failed for '" + node_uid + "': " + e);
+            return;
+        }
+        if (!node) {
+            logger.error("enter_node_by_uid: no navigation node '" + node_uid + "'");
+            return;
+        }
+        logger.info("Navigation: entering '" + node_uid + "' on request");
+        filter_input.text = "";
+        if (node.has_children) {
+            root.enter_level(node);
+            return;
+        }
+        let segments = root.ancestor_segments(node);
+        root.breadcrumbs = segments;
+        root.load_level(node.parent_uid ? node.parent_uid : "");
     }
 
     /// -1 is the top level; any other index is a position in `breadcrumbs`.
