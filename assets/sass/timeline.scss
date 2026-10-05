@@ -1,16 +1,33 @@
+@use "sass:list";
+
 // The Timeline page of the Sutta Navigation window. The markup is written by
 // backend/src/navigation_timeline.rs.
 //
-// No colour is set anywhere in this file. Text inherits the body's colour,
-// which is what a theme changes; "muted" is an opacity; and the axis drawing
-// uses currentColor. So both themes work with no theme-specific rule.
+// Text inherits the body's colour, which is what a theme changes, and "muted"
+// is an opacity. The only colours set here are the cluster colours: each
+// cluster has one, shared by its extent bar, its marker and the top border of
+// its entries, so that a line on the axis can be traced to its texts. They are
+// mid-tones that read on both the light and the dark page, so no theme rule is
+// needed. Colour says which cluster, never how certain: that stays with fill,
+// dash and arrow.
 //
 // The cluster blocks are in normal document flow: the script spaces them with
 // margin-top and positions nothing but the axis drawing, which fills the
 // gutter to the left of the text.
 
+$timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, #dd7733, #7766cc;
+
 .timeline {
     --timeline-gutter: 2.5em;
+}
+
+// The script reads --timeline-color from the cluster for the drawing.
+@each $color in $timeline-cluster-colors {
+    $i: list.index($timeline-cluster-colors, $color);
+
+    .timeline-cluster:nth-child(#{list.length($timeline-cluster-colors)}n + #{$i}) {
+        --timeline-color: #{$color};
+    }
 }
 
 .timeline-controls {
@@ -35,7 +52,15 @@
 
 .timeline-legend {
     margin: 0.4em 0 0 0;
+    line-height: 1.7;
     opacity: 0.7;
+}
+
+// The sample the script draws in front of each legend text.
+.timeline-legend-sample {
+    margin-right: 0.3em;
+    vertical-align: middle;
+    overflow: visible;
 }
 
 .timeline-empty {
@@ -55,6 +80,65 @@
     height: 100%;
     overflow: visible;
     pointer-events: none;
+}
+
+// The drawing: currentColor throughout. The script sets `color` on a cluster's
+// bar and marker to the cluster colour; the axis, the ticks and the legend
+// samples keep the text colour.
+.timeline-axis-line {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: 0.35;
+}
+
+.timeline-marker {
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.timeline-marker-hollow {
+    fill: none;
+}
+
+.timeline-bar {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 4;
+}
+
+.timeline-bar-dashed {
+    stroke-dasharray: 6 4;
+}
+
+// A bar with one bound fades out towards its open end.
+.timeline-fade-start {
+    stop-color: currentColor;
+    stop-opacity: 1;
+}
+
+.timeline-fade-end {
+    stop-color: currentColor;
+    stop-opacity: 0.15;
+}
+
+.timeline-arrowhead {
+    fill: currentColor;
+}
+
+.timeline-ticks {
+    line {
+        stroke: currentColor;
+        stroke-width: 1;
+        opacity: 0.5;
+    }
+
+    text {
+        fill: currentColor;
+        font-family: "Source Sans 3 SSP", sans-serif;
+        font-size: 10px;
+        opacity: 0.7;
+    }
 }
 
 .timeline-clusters {
@@ -77,8 +161,15 @@
     line-height: 1.6;
 }
 
+// A card per entry. The background is a tint of the cluster colour over the
+// page, so it follows the theme; the grey is for a webview without color-mix().
 .timeline-entry {
-    margin: 0.5em 0 1.2em 0;
+    margin: 0.5em 0 1em 0;
+    padding: 0.5em 0.7em 0.6em 0.7em;
+    border-top: 4px solid var(--timeline-color, rgba(128, 128, 128, 0.6));
+    border-radius: 0 0 4px 4px;
+    background: rgba(128, 128, 128, 0.1);
+    background: color-mix(in srgb, var(--timeline-color, rgb(128, 128, 128)) 10%, transparent);
 }
 
 // The body face, which carries the Pāli diacritics, in place of the heading

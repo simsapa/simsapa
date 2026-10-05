@@ -22,10 +22,11 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 - `assets/sass/timeline.scss` - **New.** Styles for the cluster blocks, the axis gutter, the legend and the controls. Compiled by `make sass` to `assets/css/timeline.css`.
 - `assets/css/timeline.css` - **New.** The compiled CSS, tracked in git and embedded by `html_content.rs`.
 - `src-ts/timeline.ts` - **New.** Entry point of the timeline bundle: reads the cluster blocks, lays them out, draws the SVG with d3.
-- `src-ts/timeline_layout.ts` - **New.** Pure layout functions (gaps, scale points, bar lanes), no DOM and no d3.
+- `src-ts/timeline_layout.ts` - **New.** Pure layout functions (gaps, scale points, bar spans and lanes, ticks, gutter width, certainty form), no DOM and no d3.
 - `src-ts/timeline_layout.test.ts` - **New.** Jest tests for `timeline_layout.ts`.
+- `assets/js/timeline.min.js` - **New.** The compiled timeline bundle (d3 included), tracked in git like `simsapa.min.js` and loaded by the timeline page only.
 - `webpack.config.js` - Gets a second entry so d3 lands in `assets/js/timeline.min.js`, not in `simsapa.min.js`.
-- `package.json` - `d3-scale`, `d3-selection` and their `@types`.
+- `package.json`, `package-lock.json` - `d3-scale`, `d3-selection` and their `@types`.
 - `src-ts/find.ts` - The find bar; read-only reference (it searches inside `#ssp_content`).
 
 ### QML
@@ -319,21 +320,21 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 
 **Depends on:** 3.0 (the markup contract). Independent of 4.0, but 4.0 is what makes it testable in the app.
 
-- [ ] 5.0 d3 drawing and spacing toggle
-  - [ ] 5.1 Add `d3-scale`, `d3-selection`, `@types/d3-scale` and `@types/d3-selection` as `devDependencies` (where every other package of this project is) with npm.
-  - [ ] 5.2 `webpack.config.js`: make `entry` an object with `simsapa` and `timeline` and the output filename `[name].min.js`. Run `npx webpack` and confirm with `git diff --stat assets/js/simsapa.min.js` that it is unchanged (d3 must not be in it) and that `timeline.min.js` exists; report its size. `simsapa.min.js` is tracked in git and served from the embedded `assets/` tree, so `timeline.min.js` is tracked the same way and needs a rebuild of the app to be served.
-  - [ ] 5.3 Load the bundle from the timeline page only: a `<script src="{api_url}/assets/js/timeline.min.js">` added by `timeline_html_page()`. Confirm `tsconfig.json` and the jest config pick up the new files.
-  - [ ] 5.4 Write `timeline_layout.ts` and `timeline_layout.test.ts`. Tests: even gaps are all `base_gap` after the first; a scaled gap grows with the year difference; a scaled gap never goes below `base_gap` when the previous cluster is taller than the time distance; clusters sharing a sort year produce one scale point; scale years are strictly increasing; two bars overlapping in y get different lanes and two that do not overlap share lane 0.
-  - [ ] 5.5 `timeline.ts`: read the `.timeline-cluster` elements and their `data-*` attributes into `ClusterDates` (an absent attribute is `null`). If there are none, do nothing.
-  - [ ] 5.6 Implement `layout()`: measure heights, apply `cluster_gaps()` as `margin-top`, measure marker positions, build the scale, size the SVG to `.timeline-body`.
-  - [ ] 5.7 Draw with d3 in the SVG: the axis line, one marker per cluster, the extent bars in their lanes, the open-ended form with fade and arrowhead (an SVG `linearGradient` and a `marker` definition), per the certainty table.
-  - [ ] 5.8 Year ticks in scaled mode only.
-  - [ ] 5.9 Legend (FR-27): render a small sample of each of the three forms beside its plain-words text in `.timeline-legend`, drawn with the same code as the timeline so the two cannot drift apart.
-  - [ ] 5.10 The toggle: on change, record the first cluster intersecting the top of the viewport and its offset, re-run `layout()` and redraw, then restore the scroll position so that cluster stays in place (FR-33). No persistence; the checkbox starts unchecked (FR-34).
-  - [ ] 5.11 Re-run `layout()` on a `ResizeObserver` of `.timeline-clusters` (debounced, width changes only — see the spec) and once on `document.fonts.ready`.
-  - [ ] 5.12 Add the SVG and gutter styles to `timeline.scss`; `make sass`.
-  - [ ] 5.13 `npx jest`, `npx webpack`, `make build -B`.
-  - [ ] 5.14 **(user)** Look at the result in both modes and tune with the implementer: `px_per_year`, the total page length in scaled mode, whether long extent bars crossing many clusters in even mode read well, and the lane widths.
+- [x] 5.0 d3 drawing and spacing toggle
+  - [x] 5.1 Add `d3-scale`, `d3-selection`, `@types/d3-scale` and `@types/d3-selection` as `devDependencies` (where every other package of this project is) with npm.
+  - [x] 5.2 `webpack.config.js`: make `entry` an object with `simsapa` and `timeline` and the output filename `[name].min.js`. Run `npx webpack` and confirm with `git diff --stat assets/js/simsapa.min.js` that it is unchanged (d3 must not be in it) and that `timeline.min.js` exists; report its size. `simsapa.min.js` is tracked in git and served from the embedded `assets/` tree, so `timeline.min.js` is tracked the same way and needs a rebuild of the app to be served.
+  - [x] 5.3 Load the bundle from the timeline page only: a `<script src="{api_url}/assets/js/timeline.min.js">` added by `timeline_html_page()`. Confirm `tsconfig.json` and the jest config pick up the new files.
+  - [x] 5.4 Write `timeline_layout.ts` and `timeline_layout.test.ts`. Tests: even gaps are all `base_gap` after the first; a scaled gap grows with the year difference; a scaled gap never goes below `base_gap` when the previous cluster is taller than the time distance; clusters sharing a sort year produce one scale point; scale years are strictly increasing; two bars overlapping in y get different lanes and two that do not overlap share lane 0.
+  - [x] 5.5 `timeline.ts`: read the `.timeline-cluster` elements and their `data-*` attributes into `ClusterDates` (an absent attribute is `null`). If there are none, do nothing.
+  - [x] 5.6 Implement `layout()`: measure heights, apply `cluster_gaps()` as `margin-top`, measure marker positions, build the scale, size the SVG to `.timeline-body`.
+  - [x] 5.7 Draw with d3 in the SVG: the axis line, one marker per cluster, the extent bars in their lanes, the open-ended form with fade and arrowhead (an SVG `linearGradient` and a `marker` definition), per the certainty table.
+  - [x] 5.8 Year ticks in scaled mode only.
+  - [x] 5.9 Legend (FR-27): render a small sample of each of the three forms beside its plain-words text in `.timeline-legend`, drawn with the same code as the timeline so the two cannot drift apart.
+  - [x] 5.10 The toggle: on change, record the first cluster intersecting the top of the viewport and its offset, re-run `layout()` and redraw, then restore the scroll position so that cluster stays in place (FR-33). No persistence; the checkbox starts unchecked (FR-34).
+  - [x] 5.11 Re-run `layout()` on a `ResizeObserver` of `.timeline-clusters` (debounced, width changes only — see the spec) and once on `document.fonts.ready`.
+  - [x] 5.12 Add the SVG and gutter styles to `timeline.scss`; `make sass`.
+  - [x] 5.13 `npx jest`, `npx webpack`, `make build -B`.
+  - [x] 5.14 **(user)** Look at the result in both modes and tune with the implementer: `px_per_year`, the total page length in scaled mode, whether long extent bars crossing many clusters in even mode read well, and the lane widths.
 
 ### 6.0 Find bar, themes, phone width, docs
 

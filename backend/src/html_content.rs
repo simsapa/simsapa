@@ -254,8 +254,16 @@ pub fn timeline_html_page(content: &str, window_id: &str, body_class: Option<Str
         window_id,
     );
 
-    sutta_html_page(
+    // The drawing script is its own bundle, loaded by this page only. It comes
+    // after the clusters it reads, and has no text for the find bar to match.
+    let content = format!(
+        "{}\n<script src=\"{}/assets/js/timeline.min.js\"></script>",
         content,
+        get_app_globals().api_url,
+    );
+
+    sutta_html_page(
+        &content,
         None,
         Some(TIMELINE_CSS.to_string()),
         Some(js_extra),

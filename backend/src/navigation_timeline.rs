@@ -207,8 +207,23 @@ pub fn timeline_entries_conn(
         .collect())
 }
 
-const LEGEND_TEXT: &str = "filled: dated range · hollow: approximate · \
-                           arrow: only an earliest or latest date is known";
+/// The three ways a period is drawn, in plain words. `data-form` names the
+/// form for the script, which draws a sample of it beside the text.
+const LEGEND_ITEMS: [(&str, &str); 3] = [
+    ("dated", "filled: dated range"),
+    ("approximate", "hollow: approximate"),
+    ("open", "arrow: only an earliest or latest date is known"),
+];
+
+fn render_legend(html: &mut String) {
+    let items: Vec<String> = LEGEND_ITEMS
+        .iter()
+        .map(|(form, text)| {
+            format!("<span class=\"timeline-legend-item\" data-form=\"{}\">{}</span>", form, escape(text))
+        })
+        .collect();
+    html.push_str(&format!("<p class=\"timeline-legend\">{}</p>\n", items.join(" · ")));
+}
 
 fn escape(text: &str) -> std::borrow::Cow<'_, str> {
     html_escape::encode_double_quoted_attribute(text)
@@ -274,10 +289,8 @@ pub fn render_timeline_html(timeline: &Timeline) -> String {
     html.push_str(
         "<label><input type=\"checkbox\" id=\"timeline_scale_toggle\"> Scale spacing with time</label>\n",
     );
-    html.push_str(&format!(
-        "<p class=\"timeline-legend\">{}</p>\n</div>\n",
-        escape(LEGEND_TEXT)
-    ));
+    render_legend(&mut html);
+    html.push_str("</div>\n");
 
     if timeline.is_empty() {
         html.push_str("<p class=\"timeline-empty\">No timeline data</p>\n</div>\n");
@@ -343,6 +356,15 @@ mod tests {
             .iter()
             .map(|c| c.entries.iter().map(|e| e.node_uid.as_str()).collect())
             .collect()
+    }
+
+    #[test]
+    fn legend_names_each_form_for_the_script() {
+        let html = render_timeline_html(&build_timeline(Vec::new()));
+        for form in ["dated", "approximate", "open"] {
+            assert!(html.contains(&format!("class=\"timeline-legend-item\" data-form=\"{}\"", form)));
+        }
+        assert!(html.contains(">filled: dated range</span> · <span"));
     }
 
     #[test]
