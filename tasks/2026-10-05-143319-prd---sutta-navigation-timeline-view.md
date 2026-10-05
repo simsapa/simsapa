@@ -206,7 +206,8 @@ legend samples and the year ticks stay in the text colour.
 Sutta Navigation window — or raises it if it is open — **with that node's level
 entered**: the breadcrumbs lead to the node and its children are listed, as if
 the reader had entered it there. The filter is cleared. The button is an icon
-with a tooltip and has no text, so the find bar does not match it.
+with a tooltip and has no text, so the find bar does not match it. It has the
+grey button style of the page's menu and find buttons.
 
 ### 4.4 Showing uncertainty
 

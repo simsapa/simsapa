@@ -480,16 +480,16 @@ function create_minimap(page: TimelinePage): void {
   minimap_el.style.width = `${MINIMAP_WIDTH}px`;
   // The stylesheet keeps the page's right margin as wide as the strip.
   page.root.style.setProperty("--timeline-minimap-width", `${MINIMAP_WIDTH}px`);
-  // The page background, which a theme sets on the body: the strip lies over
-  // the text and has to cover it.
-  minimap_el.style.backgroundColor = getComputedStyle(document.body).backgroundColor;
 
   minimap_svg_el = document.createElementNS(SVG_NS, "svg");
   minimap_el.appendChild(minimap_svg_el);
   minimap_view_el = document.createElement("div");
   minimap_view_el.className = "timeline-minimap-view";
   minimap_el.appendChild(minimap_view_el);
-  page.root.appendChild(minimap_el);
+  // A child of the body, whose background the stylesheet makes it inherit:
+  // the strip lies over the text and has to cover it, and a theme is a class
+  // on the body that can change while the page is open.
+  document.body.appendChild(minimap_el);
 
   const scroll_to = (event: PointerEvent): void => {
     if (!minimap_el) {

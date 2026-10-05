@@ -1078,7 +1078,9 @@ button → GET /open_sutta_navigation?node_uid=…        (bridges/src/api.rs)
   ([window-lifecycle-and-reuse.md](./window-lifecycle-and-reuse.md) §5d), because
   that is what the button asks for. A plain open still resets nothing.
 - The button is an icon with a `title`, and no text node: a label would be a
-  find-bar match in every entry.
+  find-bar match in every entry. It is styled with the `--btn-*` custom
+  properties of `_menu.scss`, like the page's menu and find buttons, which is
+  also what themes it.
 
 ### The minimap
 
@@ -1098,8 +1100,10 @@ spacing toggle it is not kept, and the page always opens with the minimap.
 - While it is shown, `#timeline` has the class `timeline-minimap-on`, which
   keeps a right margin for it. That changes the text width, so the toggle
   re-lays out.
-- Its background is the body's computed background colour, set by the script:
-  the strip lies over the page and the stylesheet knows no theme colour.
+- It is a child of `<body>` with `background-color: inherit`: the strip lies
+  over the page and has to cover it, the stylesheet knows no theme colour, and
+  a theme is a class on the body that changes while the page is open — a
+  colour read once by the script would stay behind.
 - It has no text node, so the find bar does not see it.
 
 ### The controls sit under the template's message strip

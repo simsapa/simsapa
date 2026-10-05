@@ -231,7 +231,12 @@ Notable feature docs:
   own bundle (`timeline.min.js`) so sutta pages do not load it, a layout module
   that must **never import d3** (jest cannot load it), re-layout on a width
   change only, and **no text nodes added by the script** — the find bar would
-  wrap and erase an SVG label.
+  wrap and erase an SVG label. Also there: the minimap (page y mapped linearly
+  to a fixed strip; a child of `<body>` so it inherits the theme background),
+  the per-entry button that opens the navigation window at a node (`GET
+  /open_sutta_navigation`, through a `WindowManager` signal because the request
+  is on a worker thread), and why the controls are `position: relative` (the
+  template's empty message strip otherwise takes their clicks).
 - [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
   its data, and the in-app **Update** / **Reset** actions that replace it without
   a Simsapa release. The parser moved from the CLI to

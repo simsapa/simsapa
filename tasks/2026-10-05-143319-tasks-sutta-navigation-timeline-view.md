@@ -366,7 +366,7 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
   - [x] 6.7 Add the route to `docs/simsapa-localhost-api-search-endpoints.md`.
   - [x] 6.8 Update `PROJECT_MAP.md` (new files) and the `sutta-navigation-tree.md` entry in `CLAUDE.md`.
   - [x] 6.9 Run `make test` (Rust, QML, JavaScript) and `make build -B`; report the results as they are.
-  - [ ] 6.10 **(user)** Desktop, both themes: find a Pāli title and an English title in even and in scaled mode; toggle while a find is active; narrow the window to phone width.
+  - [x] 6.10 **(user)** Desktop, both themes: find a Pāli title and an English title in even and in scaled mode; toggle while a find is active; narrow the window to phone width.
   - [ ] 6.11 **(user)** Android (`make android-beta-debug-arm64-install`): Timeline button, tab title, the find control, the toggle, wrapping, dark theme, and returning to the navigation window with its state intact.
 
 ### 7.0 Minimap, and the checkbox that could not be clicked
@@ -379,19 +379,19 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 - A fixed strip 50 px wide, at most 340 px and at most 55% of the viewport height, at `top: 50px; right: 10px` (under the 30 px corner buttons), `z-index` below the find bar and the menu.
 - Drawn at the end of every `layout()` from the same measurements as the axis, and on a window `resize`. The band follows a passive `scroll` listener.
 - While shown, `#timeline` has the class `timeline-minimap-on` (a right margin of the strip's width + 10 px, through `--timeline-minimap-width`); the toggle re-lays out.
-- The background is the body's computed background colour, set by the script. No text node.
+- A child of `<body>` with `background-color: inherit`, so it follows a theme change without a reload. No text node.
 - The checkbox bug: the page template's empty `.transient-messages` strip is absolutely positioned over the top of the content and took the clicks; `.timeline-controls` is `position: relative`, which paints it above the strip.
 
 **Depends on:** 5.0.
 
-- [ ] 7.0 Minimap, and the checkbox that could not be clicked
+- [x] 7.0 Minimap, and the checkbox that could not be clicked
   - [x] 7.1 Reproduce the checkbox defect with a hit test on the page and fix it in `timeline.scss`.
   - [x] 7.2 Add the "Minimap" checkbox to the markup in `navigation_timeline.rs`, with a test.
   - [x] 7.3 Minimap arithmetic in `timeline_layout.ts` with jest tests.
   - [x] 7.4 Draw the minimap, the viewport band, click and drag scrolling and the toggle in `timeline.ts`; styles in `timeline.scss`.
   - [x] 7.5 Update the PRD and `docs/sutta-navigation-tree.md` §2h.
   - [x] 7.6 `npx jest`, `npx webpack`, `make sass`, `cd backend && cargo test navigation_timeline`, `make build -B`.
-  - [ ] 7.7 **(user)** Desktop and Android: both checkboxes respond to a click on the box and on the label; the minimap follows scrolling, a click and a drag scroll the page, the checkbox hides it and gives the margin back; both themes; the strip does not cover the find bar or the menu.
+  - [x] 7.7 **(user)** Desktop and Android: both checkboxes respond to a click on the box and on the label; the minimap follows scrolling, a click and a drag scroll the page, the checkbox hides it and gives the margin back; both themes; the strip does not cover the find bar or the menu.
 
 ### 8.0 From a timeline entry to the navigation window
 
@@ -402,14 +402,14 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 - Route `GET /open_sutta_navigation?<node_uid>`: 404 for a uid not in the tree; parses the embedded texts if nothing has; then `callback_open_sutta_navigation_at()`.
 - The request is on a Rocket worker thread and may create the window, so `cpp/gui.cpp` emits `WindowManager::signal_open_sutta_navigation_at`, whose slot `open_sutta_navigation_at()` runs on the GUI thread: `create_sutta_navigation_window()`, then `invokeMethod(m_root, "enter_node_by_uid", …)`.
 - `SuttaNavigationWindow.enter_node_by_uid()`: clear the filter, `enter_level(node)`; for a node with no children, the parent's level. The deferred top-level load of `Component.onCompleted` is skipped once the breadcrumbs are set.
-- The button is added by `timeline.ts` to every `.timeline-entry[data-node-uid]`: an icon with a `title`, no text node, floated right in the entry card.
+- The button is added by `timeline.ts` to every `.timeline-entry[data-node-uid]`: an icon with a `title`, no text node, floated right in the entry card, styled like the page's corner buttons with the `--btn-*` variables of `_menu.scss`.
 
 **Depends on:** 3.0, 4.0.
 
-- [ ] 8.0 From a timeline entry to the navigation window
+- [x] 8.0 From a timeline entry to the navigation window
   - [x] 8.1 The route in `bridges/src/api.rs`, the callback in `cpp/gui.cpp` / `gui.h`, the signal and slot in `cpp/window_manager.*`.
   - [x] 8.2 `enter_node_by_uid()` in `SuttaNavigationWindow.qml`, and the guard on the deferred top-level load.
   - [x] 8.3 The button in `timeline.ts` and its style in `timeline.scss`.
   - [x] 8.4 Update the PRD, `docs/sutta-navigation-tree.md` §2h, `docs/window-lifecycle-and-reuse.md` §5d and the route reference.
   - [x] 8.5 `npx webpack`, `make sass`, `make build -B`, `make qml-test`.
-  - [ ] 8.6 **(user)** Desktop and Android: with the navigation window closed, open and somewhere else, and open with a filter typed — the button opens or raises it at the entry's level with the right breadcrumbs; an undated entry works; the tooltip shows; Ctrl+F does not match the button.
+  - [x] 8.6 **(user)** Desktop and Android: with the navigation window closed, open and somewhere else, and open with a filter typed — the button opens or raises it at the entry's level with the right breadcrumbs; an undated entry works; the tooltip shows; Ctrl+F does not match the button.
