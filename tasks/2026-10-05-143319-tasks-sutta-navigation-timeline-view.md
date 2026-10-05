@@ -30,7 +30,7 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 
 ### QML
 
-- `bridges/assets/qml/SuttaNavigationWindow.qml` - Gets the Timeline button and `open_timeline()` beside `open_node()`.
+- `bridges/assets/qml/SuttaNavigationWindow.qml` - The Timeline button and `open_timeline()` beside `open_node()`; the toolbar is a `GridLayout` that takes two rows on mobile.
 - `bridges/assets/qml/SuttaSearchWindow.qml` - `show_result_in_html_view()` and the `table_name` switches; gets the focus-existing-tab rule and the new tab type.
 - `bridges/assets/qml/SuttaHtmlView_Desktop.qml` - URL dispatch on `table_name` (two places) and `is_sutta_content()`.
 - `bridges/assets/qml/SuttaHtmlView_Mobile.qml` - The same dispatch for the native webview.
@@ -253,9 +253,10 @@ Markup (the contract with task 5):
 // The one result_data for the timeline. Define the two strings once per file as
 // readonly properties; do not scatter the literals.
 { item_uid: "Timeline", table_name: "navigation_timeline",
-  sutta_title: "Timeline", sutta_ref: "", anchor: "" }
+  sutta_title: "", sutta_ref: "", anchor: "" }
 ```
 
+- `sutta_title` is empty: the list dialogs and the window title show the uid *and* the title, so a title of "Timeline" reads "Timeline Timeline".
 - **The tab label is the `item_uid`.** `SuttaTabButton.qml` shows `elide_long_uid(item_uid)` and the list dialogs follow it, so `item_uid: "Timeline"` is what satisfies FR-15 with no change to those three files. Do not add a label branch for the new type.
 - `item_uid` must not be `"Sutta"` or `"Word"` (`is_blank_tab_uid()`), or the tab is treated as blank and dropped from the saved session.
 - No sutta has the uid `Timeline` (sutta uids contain `/`), but nothing may look the value up as one: see 4.4.
@@ -265,19 +266,19 @@ Markup (the contract with task 5):
 
 **Depends on:** 3.0.
 
-- [ ] 4.0 Open the timeline from the app
-  - [ ] 4.1 List every site that reads `table_name`: `grep -n "table_name" bridges/assets/qml/*.qml bridges/src/*.rs cpp/*`. For each one in `SuttaSearchWindow.qml` (about 23), `SuttaHtmlView_Desktop.qml`, `SuttaHtmlView_Mobile.qml`, `SuttaHtmlView.qml`, `SuttaStackLayout.qml`, `SuttaTabButton.qml`, `TabListDialog.qml`, `WindowListDialog.qml`, write down what it does for a value it does not know. Most fall through to "treat as a sutta": those are the ones to change.
-  - [ ] 4.2 `SuttaHtmlView_Desktop.qml`: add a `load_timeline()` that sets the view's URL, a branch for the new `table_name` in **both** dispatch blocks (`Component.onCompleted` and the data-change handler), and make `is_sutta_content()` false for it. Check what `is_sutta_content()` gates and that none of it should run for the timeline.
-  - [ ] 4.3 `SuttaHtmlView_Mobile.qml`: the same three changes.
-  - [ ] 4.4 `SuttaSearchWindow.qml`: two sites are written as "everything that is not a dictionary or book type is a sutta" and **will** treat the timeline as one. Both must exclude it: (a) in `show_result_in_html_view()` near line 1371, the block that calls `load_translations_for_sutta(tab_data.item_uid)` and arms the find-on-open query; (b) the `"load-translations"` menu action near line 1126, which should answer "Translations not available". The guard near line 1030 (`table_name !== "suttas"`) already excludes it. Where a site falls back with `|| "suttas"` (lines 412, 449, 487, 1881), the timeline's own non-empty value survives; confirm. History entries (`build_nav_entry`, `open_history_item`) carry `table_name` through and reopen by `item_uid`, so they need no change; confirm.
-  - [ ] 4.5 Tab title (FR-15): confirm by reading `SuttaTabButton.qml`, `TabListDialog.qml` and `WindowListDialog.qml` that each labels the tab "Timeline" from the `item_uid`, with no change needed.
-  - [ ] 4.6 Add the focus-existing rule to `show_result_in_html_view()` per the spec, with a small helper `get_tab_with_table_name(table_name)` beside `get_tab_with_id_key()`.
-  - [ ] 4.7 Session restore (FR-17): `restore_last_session()` replays each saved item through `open_bookmark_in_tab_group()`, not through `show_result_in_html_view()`. Read `open_bookmark_in_tab_group()` (near line 1878) and `get_session_data_json()` and confirm a saved timeline item keeps its `table_name` and reaches the view dispatch of 4.2 / 4.3. If any step looks the item up in the database by `item_uid`, make it pass the timeline through; if it cannot, skip the tab on save instead. The same function serves bookmarks: confirm a bookmarked timeline tab reopens too, or that the bookmark action is not offered for it.
-  - [ ] 4.8 `SuttaNavigationWindow.qml`: add `open_timeline()` beside `open_node()`, and a `Button { text: "Timeline" }` immediately after `summaries_toggle`, with `font.pointSize: root.pointSize`. Log the open with `logger.info`.
-  - [ ] 4.9 Check the toolbar still fits at phone width: read the layout around the filter field, Clear, Summaries and Close, and follow whatever wrapping it already uses.
-  - [ ] 4.10 Find control: the "Find in Page" action (`action_find_in_page`, near line 2247) calls `show_find_bar()` on the current view on both platforms and does not depend on `table_name` or `is_sutta_content()` (which only selects the anchor-jump method). No change expected; confirm the view's `show_find_bar()` works for the timeline in both `SuttaHtmlView_Desktop.qml` and `SuttaHtmlView_Mobile.qml`.
-  - [ ] 4.11 `make build -B` and `make qml-test`; no new lint warning in the touched files.
-  - [ ] 4.12 **(user)** Desktop: Timeline button opens a "Timeline" tab and raises the window; the navigation window keeps its state; a second click focuses the same tab; with no Sutta Search window open, one opens with the timeline; quit and restart restores the tab; Ctrl+F finds a title.
+- [x] 4.0 Open the timeline from the app
+  - [x] 4.1 List every site that reads `table_name`: `grep -n "table_name" bridges/assets/qml/*.qml bridges/src/*.rs cpp/*`. For each one in `SuttaSearchWindow.qml` (about 23), `SuttaHtmlView_Desktop.qml`, `SuttaHtmlView_Mobile.qml`, `SuttaHtmlView.qml`, `SuttaStackLayout.qml`, `SuttaTabButton.qml`, `TabListDialog.qml`, `WindowListDialog.qml`, write down what it does for a value it does not know. Most fall through to "treat as a sutta": those are the ones to change.
+  - [x] 4.2 `SuttaHtmlView_Desktop.qml`: add a `load_timeline()` that sets the view's URL, a branch for the new `table_name` in **both** dispatch blocks (`Component.onCompleted` and the data-change handler), and make `is_sutta_content()` false for it. Check what `is_sutta_content()` gates and that none of it should run for the timeline.
+  - [x] 4.3 `SuttaHtmlView_Mobile.qml`: the same three changes.
+  - [x] 4.4 `SuttaSearchWindow.qml`: two sites are written as "everything that is not a dictionary or book type is a sutta" and **will** treat the timeline as one. Both must exclude it: (a) in `show_result_in_html_view()` near line 1371, the block that calls `load_translations_for_sutta(tab_data.item_uid)` and arms the find-on-open query; (b) the `"load-translations"` menu action near line 1126, which should answer "Translations not available". The guard near line 1030 (`table_name !== "suttas"`) already excludes it. Where a site falls back with `|| "suttas"` (lines 412, 449, 487, 1881), the timeline's own non-empty value survives; confirm. History entries (`build_nav_entry`, `open_history_item`) carry `table_name` through and reopen by `item_uid`, so they need no change; confirm.
+  - [x] 4.5 Tab title (FR-15): confirm by reading `SuttaTabButton.qml`, `TabListDialog.qml` and `WindowListDialog.qml` that each labels the tab "Timeline" from the `item_uid`, with no change needed.
+  - [x] 4.6 Add the focus-existing rule to `show_result_in_html_view()` per the spec, with a small helper `get_tab_with_table_name(table_name)` beside `get_tab_with_id_key()`.
+  - [x] 4.7 Session restore (FR-17): `restore_last_session()` replays each saved item through `open_bookmark_in_tab_group()`, not through `show_result_in_html_view()`. Read `open_bookmark_in_tab_group()` (near line 1878) and `get_session_data_json()` and confirm a saved timeline item keeps its `table_name` and reaches the view dispatch of 4.2 / 4.3. If any step looks the item up in the database by `item_uid`, make it pass the timeline through; if it cannot, skip the tab on save instead. The same function serves bookmarks: confirm a bookmarked timeline tab reopens too, or that the bookmark action is not offered for it.
+  - [x] 4.8 `SuttaNavigationWindow.qml`: add `open_timeline()` beside `open_node()`, and a `Button { text: "Timeline" }` immediately after `summaries_toggle`, with `font.pointSize: root.pointSize`. Log the open with `logger.info`.
+  - [x] 4.9 Check the toolbar still fits at phone width: read the layout around the filter field, Clear, Summaries and Close, and follow whatever wrapping it already uses.
+  - [x] 4.10 Find control: the "Find in Page" action (`action_find_in_page`, near line 2247) calls `show_find_bar()` on the current view on both platforms and does not depend on `table_name` or `is_sutta_content()` (which only selects the anchor-jump method). No change expected; confirm the view's `show_find_bar()` works for the timeline in both `SuttaHtmlView_Desktop.qml` and `SuttaHtmlView_Mobile.qml`.
+  - [x] 4.11 `make build -B` and `make qml-test`; no new lint warning in the touched files.
+  - [x] 4.12 **(user)** Desktop: Timeline button opens a "Timeline" tab and raises the window; the navigation window keeps its state; a second click focuses the same tab; with no Sutta Search window open, one opens with the timeline; quit and restart restores the tab; Ctrl+F finds a title.
 
 ### 5.0 d3 drawing and spacing toggle
 

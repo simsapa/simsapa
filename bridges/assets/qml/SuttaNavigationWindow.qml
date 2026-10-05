@@ -62,6 +62,12 @@ ApplicationWindow {
     /// change, alias where another component needs to read it).
     property alias show_summaries: summaries_toggle.checked
 
+    /// The Timeline tab, as the Sutta Search window receives it. The uid is the
+    /// tab's label; the table name is what makes the reader load the timeline
+    /// page instead of looking the uid up as a sutta.
+    readonly property string timeline_item_uid: "Timeline"
+    readonly property string timeline_table_name: "navigation_timeline"
+
     // ------------------------------------------------------------------
     // Level state
     //
@@ -461,6 +467,34 @@ ApplicationWindow {
         logger.info("Navigation: opened " + node.sutta_uid);
     }
 
+    /// Open the Timeline page in a Sutta Search window, the way `open_node()`
+    /// opens a text. A window that already has a timeline tab focuses it
+    /// instead: that rule is the receiving window's, in
+    /// `SuttaSearchWindow.show_result_in_html_view()`.
+    ///
+    /// The tab is labelled with its `item_uid`, so that is the tab title.
+    function open_timeline() {
+        const result_data = JSON.stringify({
+                                               item_uid: root.timeline_item_uid,
+                                               table_name: root.timeline_table_name,
+                                               // Empty: the uid already is the title,
+                                               // and the tab lists and the window title
+                                               // show both.
+                                               sutta_title: "",
+                                               sutta_ref: "",
+                                               anchor: ""
+                                           });
+
+        if (SuttaBridge.count_open_sutta_search_windows() > 0) {
+            SuttaBridge.emit_show_sutta_from_reference_search("", result_data);
+        } else {
+            logger.info("Navigation: no open Sutta Search window, opening one");
+            SuttaBridge.open_sutta_search_window_with_result(result_data);
+        }
+
+        logger.info("Navigation: opened the timeline");
+    }
+
     // ------------------------------------------------------------------
     // Layout
     // ------------------------------------------------------------------
@@ -485,15 +519,21 @@ ApplicationWindow {
             text: "The navigation index is not available."
         }
 
-        RowLayout {
+        // One row on desktop. At phone width the five controls do not fit in
+        // one, so the filter and Clear take the first row and the rest the
+        // second.
+        GridLayout {
             visible: root.tree_is_available
             Layout.fillWidth: true
             Layout.topMargin: 6
-            spacing: 8
+            columns: root.is_mobile ? 3 : 5
+            columnSpacing: 8
+            rowSpacing: 6
 
             TextField {
                 id: filter_input
                 Layout.fillWidth: true
+                Layout.columnSpan: root.is_mobile ? 2 : 1
                 placeholderText: "Filter the whole tree: title, English title or uid"
                 font.pointSize: root.pointSize
                 selectByMouse: true
@@ -554,6 +594,12 @@ ApplicationWindow {
                 // that load-time assignment, which would write the setting
                 // back to the database every time the window opens.
                 onToggled: SuttaBridge.set_show_navigation_blurbs(checked)
+            }
+
+            Button {
+                text: "Timeline"
+                font.pointSize: root.pointSize
+                onClicked: root.open_timeline()
             }
 
             Button {
