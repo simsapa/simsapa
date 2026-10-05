@@ -324,6 +324,22 @@ summary.
     }
 
     #[test]
+    fn the_embedded_context_note_dates_are_in_order_and_in_range() {
+        let notes = parse_context_notes(NAVIGATION_CONTEXT_NOTES_TOML).unwrap();
+
+        assert_eq!(context_note_date_defects(&notes), Vec::<String>::new());
+
+        for (uid, entry) in &notes {
+            for year in [entry.from, entry.to].into_iter().flatten() {
+                // There is no year 0, and nothing here is older than the
+                // Buddha or newer than the texts themselves.
+                assert_ne!(year, 0, "{}", uid);
+                assert!((-600..=2000).contains(&year), "{}: {}", uid, year);
+            }
+        }
+    }
+
+    #[test]
     fn a_context_note_table_reads_its_note_and_optional_dates() {
         let notes = parse_context_notes(
             r#"

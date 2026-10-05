@@ -146,15 +146,15 @@ impl NavigationTexts {
 
 **Depends on:** 1.0.
 
-- [ ] 2.0 Author the dates
-  - [ ] 2.1 Read `docs/navigation-context-notes-research.md` and all 44 notes.
-  - [ ] 2.2 Add the date-field documentation and the convention table (as comments) to the file header.
-  - [ ] 2.3 Add `from` / `to` / `circa` to every dated entry, section by section. Put the date fields above `note` so they are visible without scrolling past the text.
-  - [ ] 2.4 Back-reference entries: copy the fields of the entry they refer to. Where it is not certain which entry "See X" means, list it for the user instead of guessing.
-  - [ ] 2.5 Entries with no supportable estimate get no date fields; list each with the reason.
-  - [ ] 2.6 Shipped-data tests in `navigation_texts.rs`: `context_note_date_defects()` is empty for the shipped file; no bound is `0`; every bound is within `-600..=2000`.
-  - [ ] 2.7 Run `cd backend && cargo test navigation_texts` and `cd cli && cargo test navigation`.
-  - [ ] 2.8 Present to the user, in the chat, a table of all 44 entries: uid, Pāli title, the date wording quoted from the note, `from`, `to`, `circa`; followed by the undated list (2.5) and the uncertain back-references (2.4). **(user)** reviews the numbers before task 3 builds on them.
+- [x] 2.0 Author the dates
+  - [x] 2.1 Read `docs/navigation-context-notes-research.md` and all 44 notes.
+  - [x] 2.2 Add the date-field documentation and the convention table (as comments) to the file header.
+  - [x] 2.3 Add `from` / `to` / `circa` to every dated entry, section by section. Put the date fields above `note` so they are visible without scrolling past the text.
+  - [x] 2.4 Back-reference entries: copy the fields of the entry they refer to. Where it is not certain which entry "See X" means, list it for the user instead of guessing.
+  - [x] 2.5 Entries with no supportable estimate get no date fields; list each with the reason.
+  - [x] 2.6 Shipped-data tests in `navigation_texts.rs`: `context_note_date_defects()` is empty for the shipped file; no bound is `0`; every bound is within `-600..=2000`.
+  - [x] 2.7 Run `cd backend && cargo test navigation_texts` and `cd cli && cargo test navigation`.
+  - [x] 2.8 Present to the user, in the chat, a table of all 44 entries: uid, Pāli title, the date wording quoted from the note, `from`, `to`, `circa`; followed by the undated list (2.5) and the uncertain back-references (2.4). **(user)** reviews the numbers before task 3 builds on them.
 
 ### 3.0 Timeline data and page route
 
