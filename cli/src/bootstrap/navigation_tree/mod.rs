@@ -38,7 +38,9 @@ use simsapa_backend::app_settings::{
 use simsapa_backend::db::appdata_schema::navigation_nodes;
 use simsapa_backend::logger;
 use simsapa_backend::helpers::consistent_niggahita;
-use simsapa_backend::navigation_texts::parse_node_texts;
+use simsapa_backend::navigation_texts::{
+    context_note_date_defects, parse_context_notes, parse_node_texts, ContextNote,
+};
 use simsapa_backend::navigation_tree::{
     build_search_text, join_path, join_sort_path, NewNavigationNode,
 };
@@ -305,11 +307,12 @@ fn flatten_node(
     ancestors.pop();
 }
 
-/// The two hand-written texts files, parsed for their keys.
+/// The two hand-written texts files, parsed for their keys and dates.
 ///
 /// The app embeds both and shows their text at runtime
 /// (`simsapa_backend::navigation_texts`); the tree build reads them only to
-/// check that each key names a node. They are the copies embedded in this
+/// check that each key names a node and that a context note's dates are in
+/// order. They are the copies embedded in this
 /// binary, so the build does not depend on the directory it is run from, and a
 /// rebuild of the CLI is what picks up an edit.
 ///
@@ -320,19 +323,31 @@ struct HandWrittenTexts {
     /// A key with an empty note is dropped: it names a node and says nothing
     /// about it.
     context_notes: BTreeMap<String, String>,
+    /// The same entries as `context_notes`, with their dates.
+    dated_context_notes: BTreeMap<String, ContextNote>,
     /// Empty entries are kept: an empty override suppresses a summary.
     overrides: BTreeMap<String, String>,
 }
 
 fn load_hand_written_texts() -> Result<HandWrittenTexts> {
-    let mut context_notes = parse_node_texts(NAVIGATION_CONTEXT_NOTES_TOML)
+    let mut dated_context_notes = parse_context_notes(NAVIGATION_CONTEXT_NOTES_TOML)
         .context("assets/navigation-context-notes.toml")?;
-    context_notes.retain(|_, note| !note.is_empty());
+    dated_context_notes.retain(|_, entry| !entry.note.is_empty());
+    let context_notes = dated_context_notes
+        .iter()
+        .map(|(uid, entry)| (uid.clone(), entry.note.clone()))
+        .collect();
 
     let overrides = parse_node_texts(NAVIGATION_BLURB_OVERRIDES_TOML)
         .context("assets/navigation-blurb-overrides.toml")?;
 
-    Ok(HandWrittenTexts { context_notes, overrides })
+    Ok(HandWrittenTexts { context_notes, dated_context_notes, overrides })
+}
+
+/// Whether a texts key is the given spine's to check: a `cst:` key is the CST
+/// spine's, everything else the SC spine's.
+fn spine_owns_key(tree_source: &str, node_uid: &str) -> bool {
+    node_uid.starts_with(CST_NODE_UID_PREFIX) == (tree_source == cst_spine::TREE_SOURCE)
 }
 
 /// How many keys of each hand-written file a spine owned, and so checked.
@@ -364,8 +379,7 @@ pub fn validate_node_text_keys(
     nodes_with_sc_blurb: &HashSet<String>,
     defects: &mut DefectReport,
 ) -> CheckedKeys {
-    let is_cst_spine = tree_source == cst_spine::TREE_SOURCE;
-    let owned = |uid: &str| uid.starts_with(CST_NODE_UID_PREFIX) == is_cst_spine;
+    let owned = |uid: &str| spine_owns_key(tree_source, uid);
     let in_tree: HashSet<&str> = rows.iter().map(|r| r.node_uid.as_str()).collect();
     let mut checked = CheckedKeys::default();
 
@@ -389,6 +403,25 @@ pub fn validate_node_text_keys(
     }
 
     checked
+}
+
+/// Report the context notes of one spine whose dates cannot be right.
+///
+/// Like the key check it reports and does nothing else, and each spine judges
+/// only the entries it owns.
+pub fn report_context_note_date_defects(
+    tree_source: &str,
+    dated_context_notes: &BTreeMap<String, ContextNote>,
+    defects: &mut DefectReport,
+) {
+    let owned: BTreeMap<String, ContextNote> = dated_context_notes
+        .iter()
+        .filter(|(uid, _)| spine_owns_key(tree_source, uid))
+        .map(|(uid, entry)| (uid.clone(), entry.clone()))
+        .collect();
+    for line in context_note_date_defects(&owned) {
+        defects.record("context note with from later than to", line);
+    }
 }
 
 fn log_checked_keys(spine: &str, checked: &CheckedKeys) {
@@ -483,6 +516,11 @@ pub fn build_sc_spine(
         &texts.context_notes,
         &texts.overrides,
         &nodes_with_sc_blurb,
+        &mut builder.defects,
+    );
+    report_context_note_date_defects(
+        sc_spine::TREE_SOURCE,
+        &texts.dated_context_notes,
         &mut builder.defects,
     );
     log_checked_keys("sc_spine", &checked);
@@ -609,6 +647,11 @@ pub fn build_cst_spine(
         &texts.context_notes,
         &texts.overrides,
         &HashSet::new(),
+        &mut builder.defects,
+    );
+    report_context_note_date_defects(
+        cst_spine::TREE_SOURCE,
+        &texts.dated_context_notes,
         &mut builder.defects,
     );
     log_checked_keys("cst_spine", &checked);

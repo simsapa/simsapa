@@ -1,7 +1,12 @@
 const path = require('path');
 
 module.exports = {
-  entry: './src-ts/simsapa.ts',
+  // The timeline page has its own bundle, so that d3 is not loaded by every
+  // sutta page.
+  entry: {
+    simsapa: './src-ts/simsapa.ts',
+    timeline: './src-ts/timeline.ts',
+  },
   mode: 'production',
   optimization: {
     minimize: true
@@ -19,7 +24,7 @@ module.exports = {
     extensions: ['.tsx', '.ts', '.js'],
   },
   output: {
-    filename: 'simsapa.min.js',
+    filename: '[name].min.js',
     path: path.resolve(__dirname, 'assets/js/'),
   },
 };

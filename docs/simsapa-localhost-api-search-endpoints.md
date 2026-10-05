@@ -854,6 +854,7 @@ views, not for headless data retrieval.
 | `GET /ai_provider_key?provider=Gemini` | Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
 | `GET /get_book_spine_item_html_by_uid/<window_id>/<spine_item_uid..>` | Full rendered Library-book chapter HTML, by spine-item uid | — |
 | `GET /book_pages/<book_uid>/<resource_path..>` | Rendered Library-book page HTML, by in-book resource path | — |
+| `GET /navigation_timeline?[window_id=<id>]` | The Timeline page of the Sutta Navigation window: every node with a context note on one time axis, as a full HTML page with the find bar. With no navigation tree in the database, the controls and "No timeline data" | [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md) |
 | `GET /sutta_titles_flat_completion_list` | Autocomplete list of sutta titles. **Placeholder — returns `[]`** (the extension uses a bundled list) | — |
 | `GET /dict_words_flat_completion_list` | Autocomplete list of dictionary words. **Placeholder — returns `[]`** | — |
 
@@ -870,6 +871,7 @@ views, not for headless data retrieval.
 | `GET /prev_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the previous Library-book chapter. |
 | `GET /next_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the next Library-book chapter. |
 | `GET /show_toc_tab/<window_id>/<spine_item_uid..>` | Show the sidebar's **TOC** tab in `window_id` with the entry for `spine_item_uid` revealed (ancestors expanded, entry selected and scrolled into view). Called by the in-page TOC button on book chapter pages. Always `200` — it hands off to the GUI and does not read the DB. |
+| `GET /open_sutta_navigation?node_uid=<uid>` | Open or raise the **Sutta Navigation** window with the node's level entered (the button on a Timeline entry). 404 when the tree has no such node. See [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md). |
 | `GET /lookup_window_query/<text>` | Open the word-lookup window and run a query (text in the path). |
 | `POST /lookup_window_query` | Open the word-lookup window. If `query_text` is a word **uid** (contains `/`) it opens that entry directly (dict_words → DPD headword fallback); otherwise it runs a lookup search. Body: `LookupWindowRequest` (§15). |
 | `GET /summary_query/<window_id>/<text>` | Run a summary query in `window_id`. |

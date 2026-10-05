@@ -131,6 +131,7 @@ class WindowManager : public QObject {
         void signal_open_sutta_tab(const QString& window_id, const QString& show_result_data_json);
         void signal_toggle_reading_mode(const QString& window_id, bool is_active);
         void signal_open_in_lookup_window(const QString& result_data_json);
+        void signal_open_sutta_navigation_at(const QString& node_uid);
 
     public slots:
         void run_lookup_query(const QString& query_text);
@@ -145,6 +146,10 @@ class WindowManager : public QObject {
         void show_sutta_from_reference_search(const QString& window_id, const QString& result_data_json);
         void toggle_reading_mode(const QString& window_id, bool is_active);
         void open_in_lookup_window(const QString& result_data_json);
+        /// Open or raise the navigation window and enter the node's level.
+        /// Unlike a plain open, this moves the window from where the user
+        /// left it: that is what was asked for.
+        void open_sutta_navigation_at(const QString& node_uid);
 
 };
 

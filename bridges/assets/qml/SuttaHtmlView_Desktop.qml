@@ -18,6 +18,10 @@ Item {
 
     property string item_uid
     property string table_name
+
+    // The Timeline page of the Sutta Navigation window: a tab that is neither a
+    // sutta, a word nor a book chapter. See docs/sutta-navigation-tree.md.
+    readonly property string timeline_table_name: "navigation_timeline"
     property string sutta_ref
     property string sutta_title
     // The cited Bilara segment id, carried in the sutta URL as both
@@ -180,6 +184,11 @@ Item {
         web.url = `${api_url}/get_word_html_by_uid/${root.window_id}/${enc_uid}/`;
     }
 
+    function load_timeline() {
+        const api_url = SuttaBridge.get_api_url();
+        web.url = `${api_url}/navigation_timeline?window_id=${encodeURIComponent(root.window_id)}`;
+    }
+
     function load_book_spine_uid(spine_item_uid) {
         // Check if this is a PDF book
         const api_url = SuttaBridge.get_api_url();
@@ -204,14 +213,15 @@ Item {
         }
     }
 
-    // Whether this view is showing a sutta, as opposed to a dictionary word or
-    // a book chapter. Mirrors the dispatch in Component.onCompleted.
+    // Whether this view is showing a sutta, as opposed to a dictionary word, a
+    // book chapter or the timeline. Mirrors the dispatch in Component.onCompleted.
     function is_sutta_content(): bool {
         return root.table_name !== "dict_words"
             && root.table_name !== "dpd_headwords"
             && root.table_name !== "dpd_roots"
             && root.table_name !== "bold_definitions"
-            && root.table_name !== "book_spine_items";
+            && root.table_name !== "book_spine_items"
+            && root.table_name !== root.timeline_table_name;
     }
 
     function scroll_to_anchor() {
@@ -296,6 +306,8 @@ Item {
             root.load_word_uid(root.item_uid);
         } else if (root.table_name === "book_spine_items") {
             root.load_book_spine_uid(root.item_uid);
+        } else if (root.table_name === root.timeline_table_name) {
+            root.load_timeline();
         } else {
             root.load_sutta_uid(root.item_uid);
         }
@@ -309,6 +321,8 @@ Item {
             root.load_word_uid(root.item_uid);
         } else if (root.table_name === "book_spine_items") {
             root.load_book_spine_uid(root.item_uid);
+        } else if (root.table_name === root.timeline_table_name) {
+            root.load_timeline();
         } else {
             root.load_sutta_uid(root.item_uid);
         }

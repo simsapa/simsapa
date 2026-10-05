@@ -395,6 +395,12 @@ What follows from that, each of which differs from one of the other families:
   closed one to be skipped.
 - **Null-`m_root` eviction still applies.** A failed engine load is evicted
   like any single-instance window's, or one dead wrapper leaks per open.
+- **One caller moves the window on purpose.**
+  `WindowManager::open_sutta_navigation_at()`, behind the button on a Timeline
+  entry, revives the window and then enters a node's level
+  (`enter_node_by_uid()`). That is the request, not a reset: every other open
+  leaves the window where it was. See
+  [sutta-navigation-tree.md](./sutta-navigation-tree.md) §2h.
 - **Revive resets nothing.** There is no `clear_all_tabs()` analogue and no
   `onVisibleChanged` re-init of the kind §5b-bis describes. The one thing
   re-read on show is the per-level translation count, which depends on the

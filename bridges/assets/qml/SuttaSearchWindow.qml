@@ -137,6 +137,11 @@ ApplicationWindow {
     property var nav_history: []
     property bool nav_history_paused: false
     property bool is_restoring_session: false
+
+    // The Timeline page of the Sutta Navigation window: a tab that is neither a
+    // sutta, a word nor a book chapter, and of which a window holds at most
+    // one. See docs/sutta-navigation-tree.md.
+    readonly property string timeline_table_name: "navigation_timeline"
     // True while restoring a session and the default blank "Sutta" placeholder
     // tab at ResultsTab_0 has not yet been replaced. The first restored
     // results-group item replaces it instead of opening a new tab alongside it.
@@ -1123,7 +1128,7 @@ ApplicationWindow {
             const table_name = sutta_html_view_layout.items_map[current_key].get_data_value('table_name');
 
             // Only load translations for sutta results, not dictionary or library results
-            if (table_name === "dict_words" || table_name === "dpd_headwords" || table_name === "bold_definitions" || table_name === "book_spine_items") {
+            if (table_name === "dict_words" || table_name === "dpd_headwords" || table_name === "bold_definitions" || table_name === "book_spine_items" || table_name === root.timeline_table_name) {
                 sutta_html_view_layout.show_transient_message("Translations not available");
                 break;
             }
@@ -1302,6 +1307,9 @@ ${query_text}`;
 
     function show_result_in_html_view(result_data: var, new_tab) {
         if (new_tab === undefined) new_tab = false;
+        if (result_data.table_name === root.timeline_table_name && root.focus_existing_timeline_tab()) {
+            return;
+        }
         // Capture the uid currently shown in the content view BEFORE we (maybe)
         // replace it, so the find-on-open logic can tell whether the page will
         // actually reload. When the clicked result is the sutta already
@@ -1368,7 +1376,7 @@ ${query_text}`;
 
         // Only add translation tabs for sutta results, not dictionary or library results.
         // During session restore, skip loading translations since they are restored directly from saved items.
-        if (tab_data.table_name && tab_data.table_name !== "dict_words" && tab_data.table_name !== "dpd_headwords" && tab_data.table_name !== "bold_definitions" && tab_data.table_name !== "book_spine_items") {
+        if (tab_data.table_name && tab_data.table_name !== "dict_words" && tab_data.table_name !== "dpd_headwords" && tab_data.table_name !== "bold_definitions" && tab_data.table_name !== "book_spine_items" && tab_data.table_name !== root.timeline_table_name) {
             if (!root.is_restoring_session) {
                 root.load_translations_for_sutta(tab_data.item_uid);
             }
@@ -1849,6 +1857,34 @@ ${query_text}`;
         return tab;
     }
 
+    // The first open tab of that type, as its tab data, or null.
+    function get_tab_with_table_name(table_name: string): var {
+        let models = [tabs_pinned_model, tabs_results_model, tabs_translations_model];
+        for (let m = 0; m < models.length; m++) {
+            for (let i = 0; i < models[m].count; i++) {
+                if (models[m].get(i).table_name === table_name) {
+                    return models[m].get(i);
+                }
+            }
+        }
+        return null;
+    }
+
+    // Focus the timeline tab this window already has, instead of opening a
+    // second one. Returns whether there was one.
+    function focus_existing_timeline_tab(): bool {
+        let timeline_tab = root.get_tab_with_table_name(root.timeline_table_name);
+        if (!timeline_tab) {
+            return false;
+        }
+        root.reveal_html_panel();
+        root.focus_on_tab_with_id_key(timeline_tab.id_key);
+        if (!root.is_wide) {
+            show_sidebar_btn.checked = false;
+        }
+        return true;
+    }
+
     function open_dict_tab(uid: string) {
         show_sidebar_btn.checked = true;
         rightside_tabs.setCurrentIndex(1) // idx 1 = Dictionary
@@ -1882,6 +1918,15 @@ ${query_text}`;
             sutta_title: item_data.title || "",
             sutta_ref: "",
         };
+
+        // A saved or bookmarked timeline never opens beside one already here.
+        if (result_data.table_name === root.timeline_table_name
+            && root.get_tab_with_table_name(root.timeline_table_name)) {
+            if (focus) {
+                root.focus_existing_timeline_tab();
+            }
+            return;
+        }
 
         let tab_group = item_data.tab_group || "results";
 

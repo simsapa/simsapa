@@ -1,13 +1,48 @@
 # Context notes for the Sutta Navigation window.
 #
-# One entry per node: the key is the node's `node_uid`, the value is the note
-# shown under the SuttaCentral summary. See docs/sutta-navigation-tree.md §2f,
-# and docs/navigation-context-notes-research.md for the evidence behind each.
+# One table per node: the table name is the node's `node_uid`, and its `note`
+# field is the note shown under the SuttaCentral summary. See
+# docs/sutta-navigation-tree.md §2f, and
+# docs/navigation-context-notes-research.md for the evidence behind each.
 #
-# - Always quote the key: "sn56.11", "cst:tika". Unquoted, the dots are read
-#   as nested tables and the build fails.
+#     ["dn"]
+#     from = -500
+#     to = -200
+#     note = """
+#     Origin: 5th–3rd century BCE, northern India. …
+#     """
+#
+# - Always quote the table name: ["sn56.11"], ["cst:tika"]. Unquoted, the dots
+#   are read as nested tables and the build fails.
+# - `note` is required. A field the app does not know fails the build, so a
+#   misspelled field name cannot be dropped silently.
 # - Wrap lines freely inside the triple quotes. Line breaks are joined into
 #   spaces; a blank line starts a new paragraph.
+# - `from`, `to` and `circa` say when the text originated. They place the node
+#   on the Timeline page; the note is shown as written and is not generated
+#   from them. All three are optional:
+#     from   earliest year, a whole number. BCE is negative: -500 is 500 BCE.
+#     to     latest year.
+#     circa  true when the bounds are approximate. Left out, it is false.
+#   Only `from` means "not before", only `to` means "not after", and an entry
+#   with neither is listed as undated. There is no year 0: do not write 0.
+# - Centuries are written as round numbers, and "early", "late" and "second
+#   half of" take the matching third or half, with circa:
+#     "5th–3rd century BCE"                      from = -500, to = -200
+#     "12th century CE"                          from = 1100, to = 1200
+#     "c. 2nd–1st century BCE"                   from = -200, to = -1, circa
+#     "early 5th century CE"                     from = 400, to = 430, circa
+#     "second half of the first millennium CE"   from = 500, to = 1000, circa
+#     "c. 100 BCE–200 CE"                        from = -100, to = 200, circa
+#     "around the turn of the Common Era"        from = -50, to = 50, circa
+#     "not before about 300 BCE"                 from = -300, circa
+#     "5th century CE and later"                 from = 400
+#     "date unknown; older than X"               to = X's from, circa
+#     "See Dīghanikāya."                         the fields of that entry
+#     no estimate in the note or the research    no date fields
+#   The 1st century BCE ends at -1, the year before 1 CE.
+# - circa is true whenever the note says c., about, around, probably, early or
+#   late, or the bound is an inference.
 # - Find a key with:
 #     SELECT node_uid, title_pali FROM navigation_nodes;
 # - Rebuild the app to apply an edit. `build-navigation-tree` reports a key
@@ -18,7 +53,10 @@
 # ============================================================================
 
 # Dīghanikāya
-"dn" = """
+["dn"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Discourses of the Buddha and his
 disciples, by tradition recited by Ānanda at the First Council; the compilers
 are unknown, gathered by length into this collection. Largely fixed before
@@ -29,17 +67,26 @@ comparative evidence rather than early manuscripts.
 """
 
 # Majjhimanikāya
-"mn" = """
+["mn"]
+from = -500
+to = -200
+note = """
 Origin: See Dīghanikāya.
 """
 
 # Saṁyuttanikāya
-"sn" = """
+["sn"]
+from = -500
+to = -200
+note = """
 Origin: See Dīghanikāya.
 """
 
 # Aṅguttaranikāya
-"an" = """
+["an"]
+from = -500
+to = -200
+note = """
 Origin: See Dīghanikāya.
 """
 
@@ -48,7 +95,8 @@ Origin: See Dīghanikāya.
 # ============================================================================
 
 # Khuddakapāṭha
-"kp" = """
+["kp"]
+note = """
 Origin: a late compilation; date, place and compiler unknown. Nine short
 texts, most of them found elsewhere in the canon and older than the collection
 itself, perhaps put together as a handbook for novices. Estimated: scholars
@@ -57,7 +105,10 @@ late.
 """
 
 # Dhammapada
-"dhp" = """
+["dhp"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Verses ascribed to the Buddha,
 from the early oral tradition; compiler unknown. Gathered as a collection by
 about the 3rd century BCE; the Dharmapadas of other schools share a core of
@@ -66,7 +117,10 @@ for the compilation.
 """
 
 # Udāna
-"ud" = """
+["ud"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Inspired utterances ascribed to
 the Buddha, each set in a short narrative; compiler unknown. Counted among the
 early texts and largely fixed by the 1st century BCE. Estimated from internal
@@ -74,7 +128,10 @@ and comparative evidence.
 """
 
 # Itivuttaka
-"iti" = """
+["iti"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Short discourses of the Buddha,
 by tradition memorised and passed on by the laywoman Khujjuttarā of Kosambī.
 Contested: some scholars place it among the very oldest Buddhist texts, others
@@ -82,7 +139,10 @@ somewhat later; the dating rests on internal and comparative evidence.
 """
 
 # Suttanipāta
-"snp" = """
+["snp"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Discourses in verse ascribed to
 the Buddha; compilers unknown. Its Aṭṭhakavagga and Pārāyanavagga are among
 the oldest Buddhist texts known. The canon itself comments on them in the
@@ -92,7 +152,10 @@ shown.
 """
 
 # Vimānavatthu
-"vv" = """
+["vv"]
+from = -300
+circa = true
+note = """
 Origin: not before about 300 BCE, probably India. Authors unknown. Verse
 stories of rebirth in the heavens, added late to the canon; some individual
 stories may be older. Estimated: placed in the late stratum on internal
@@ -100,7 +163,10 @@ grounds, with no external dating.
 """
 
 # Petavatthu
-"pv" = """
+["pv"]
+from = -300
+circa = true
+note = """
 Origin: not before about 300 BCE, probably India. Authors unknown. Verse
 stories of rebirth among the departed, added late to the canon; some
 individual stories may be older. Estimated: placed in the late stratum on
@@ -108,7 +174,10 @@ internal grounds, with no external dating.
 """
 
 # Theragāthā
-"thag" = """
+["thag"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Verses ascribed to named monks,
 most of them of the Buddha's time; compilers unknown. Collected over some
 three centuries and closed around the Third Council under Aśoka (mid-3rd
@@ -116,7 +185,10 @@ century BCE). Estimated: metre and content show both early and later verses.
 """
 
 # Therīgāthā
-"thig" = """
+["thig"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Verses ascribed to named nuns of
 the Buddha's time; compilers unknown. Composed over centuries, the latest
 verses dating to about the late 3rd century BCE. Contested: whether the verses
@@ -124,7 +196,11 @@ were composed by the women they are ascribed to cannot be shown.
 """
 
 # Therāpadāna
-"tha-ap" = """
+["tha-ap"]
+from = -200
+to = -1
+circa = true
+note = """
 Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse legends
 of the past lives of senior monks, told in their own voice; among the last
 additions to the canon. Estimated: most scholars agree it is late, on internal
@@ -132,7 +208,11 @@ evidence, but there is no external dating.
 """
 
 # Therīapadāna
-"thi-ap" = """
+["thi-ap"]
+from = -200
+to = -1
+circa = true
+note = """
 Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse legends
 of the past lives of senior nuns, told in their own voice; among the last
 additions to the canon. Estimated: most scholars agree it is late, on internal
@@ -140,7 +220,11 @@ evidence, but there is no external dating.
 """
 
 # Buddhavaṁsa
-"bv" = """
+["bv"]
+from = -200
+to = -1
+circa = true
+note = """
 Origin: c. 2nd–1st century BCE, probably India. Authors unknown. A verse
 chronicle of Gotama and the Buddhas before him, presented as spoken by the
 Buddha; among the last additions to the canon. Estimated: most scholars agree
@@ -148,7 +232,11 @@ it is late, on internal evidence, but there is no external dating.
 """
 
 # Cariyāpiṭaka
-"cp" = """
+["cp"]
+from = -200
+to = -1
+circa = true
+note = """
 Origin: c. 2nd–1st century BCE, probably India. Authors unknown. Verse
 accounts of the Buddha's past lives, presented as spoken by the Buddha; among
 the last additions to the canon. Estimated: most scholars agree it is late, on
@@ -156,7 +244,9 @@ internal evidence, but there is no external dating.
 """
 
 # Jātaka
-"ja" = """
+["ja"]
+from = -500
+note = """
 Origin: verses from the 5th century BCE onward, India. Authors unknown. Only
 the verses are canonical; the stories around them were fixed in a commentary
 of about the 5th century CE. Partly anchored: reliefs at Bhārhut and Sāñcī
@@ -164,7 +254,11 @@ of about the 5th century CE. Partly anchored: reliefs at Bhārhut and Sāñcī
 """
 
 # Mahāniddesa
-"mnd" = """
+["mnd"]
+from = -300
+to = -1
+circa = true
+note = """
 Origin: c. 3rd–1st century BCE, India. Traditionally ascribed to Sāriputta;
 the actual author is unknown. A commentary on the Aṭṭhakavagga of the
 Suttanipāta, included in the canon. Contested: placed anywhere from Aśoka's
@@ -172,7 +266,11 @@ time to the 1st century BCE, the latter being the latest date possible.
 """
 
 # Cūḷaniddesa
-"cnd" = """
+["cnd"]
+from = -300
+to = -1
+circa = true
+note = """
 Origin: c. 3rd–1st century BCE, India. Traditionally ascribed to Sāriputta;
 the actual author is unknown. A commentary on the Pārāyanavagga and the
 Khaggavisāṇa Sutta of the Suttanipāta, included in the canon. Contested:
@@ -181,7 +279,10 @@ latest date possible.
 """
 
 # Paṭisambhidāmagga
-"ps" = """
+["ps"]
+from = -300
+to = 200
+note = """
 Origin: between the 3rd century BCE and the 2nd century CE, India.
 Traditionally ascribed to Sāriputta; the actual author is unknown. A
 systematic treatise in the manner of the Abhidhamma. Contested: Warder puts an
@@ -190,7 +291,11 @@ around the 2nd century CE.
 """
 
 # Netti
-"ne" = """
+["ne"]
+from = -50
+to = 50
+circa = true
+note = """
 Origin: around the turn of the Common Era, northern India, perhaps Ujjain.
 Ascribed to the Buddha's disciple Mahākaccāna, which scholars do not take
 literally; the actual author is unknown. A guide to interpreting the
@@ -199,7 +304,10 @@ Canonical in the Burmese tradition.
 """
 
 # Peṭakopadesa
-"pe" = """
+["pe"]
+to = -50
+circa = true
+note = """
 Origin: date unknown, India; older than the Netti, which reworks it. Ascribed
 to the Buddha's disciple Mahākaccāna, which scholars do not take literally;
 the actual author is unknown. A guide to interpreting the discourses.
@@ -208,7 +316,11 @@ Burmese tradition.
 """
 
 # Milindapañha
-"mil" = """
+["mil"]
+from = -100
+to = 200
+circa = true
+note = """
 Origin: c. 100 BCE–200 CE, north-west India. Author unknown. A dialogue
 between the monk Nāgasena and the Indo-Greek king Menander, who ruled in the
 2nd century BCE; a composite work, enlarged over time, perhaps first composed
@@ -221,7 +333,10 @@ are estimates. Canonical in the Burmese tradition.
 # ============================================================================
 
 # Bhikkhu Pātimokkha
-"pli-tv-bu-pm" = """
+["pli-tv-bu-pm"]
+from = -500
+to = -300
+note = """
 Origin: 5th–4th century BCE, northern India. The monks' rules, ascribed to the
 Buddha and by tradition recited by Upāli at the First Council. The same code
 is found in every surviving Vinaya lineage, so its core predates the first
@@ -230,14 +345,20 @@ estimates.
 """
 
 # Bhikkhunī Pātimokkha
-"pli-tv-bi-pm" = """
+["pli-tv-bi-pm"]
+from = -500
+to = -300
+note = """
 Origin: 5th–4th century BCE, northern India. The nuns' rules, ascribed to the
 Buddha and by tradition recited by Upāli at the First Council. Estimated:
 supported by comparison between the Vinaya lineages, with no absolute dating.
 """
 
 # Bhikkhu Vibhaṅga
-"pli-tv-bu-vb" = """
+["pli-tv-bu-vb"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Compilers unknown; by tradition
 recited by Upāli at the First Council. Each rule of the monks' Pātimokkha with
 its origin story, a word-by-word explanation and case rulings. Layers that
@@ -247,7 +368,10 @@ with real scholarly disagreement.
 """
 
 # Bhikkhunī Vibhaṅga
-"pli-tv-bi-vb" = """
+["pli-tv-bi-vb"]
+from = -500
+to = -200
+note = """
 Origin: 5th–3rd century BCE, northern India. Compilers unknown; by tradition
 recited by Upāli at the First Council. Each rule of the nuns' Pātimokkha with
 its origin story, a word-by-word explanation and case rulings. Layers that
@@ -257,7 +381,10 @@ with real scholarly disagreement.
 """
 
 # Khandhaka
-"pli-tv-kd" = """
+["pli-tv-kd"]
+from = -400
+to = -200
+note = """
 Origin: 4th–3rd century BCE, northern India. Compilers unknown. The procedures
 of community life; it closes with accounts of the First and Second Councils,
 so its final form is later than the Second, about a century after the Buddha's
@@ -266,7 +393,10 @@ council. Still influential, but disputed.
 """
 
 # Parivāra
-"pli-tv-pvr" = """
+["pli-tv-pvr"]
+from = -100
+circa = true
+note = """
 Origin: c. 1st century BCE or later, Sri Lanka. Its colophon names a monk Dīpa
 as the author. A digest and catechism of the rest of the Vinaya, and its
 latest book. Anchored as late by its own list of teachers in Sri Lanka; the
@@ -278,7 +408,11 @@ exact date is an estimate.
 # ============================================================================
 
 # Vinayapiṭaka (aṭṭhakathā)
-"cst:atthakatha/vinayapiṭaka-aṭṭhakathā" = """
+["cst:atthakatha/vinayapiṭaka-aṭṭhakathā"]
+from = 400
+to = 430
+circa = true
+note = """
 Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Samantapāsādikā,
 ascribed to Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept
 at the Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well
@@ -288,7 +422,11 @@ sources is known only from tradition.
 """
 
 # Dīgha nikāya (aṭṭhakathā)
-"cst:atthakatha/suttapiṭaka-aṭṭhakathā/dīgha-nikāya-aṭṭhakathā" = """
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/dīgha-nikāya-aṭṭhakathā"]
+from = 400
+to = 430
+circa = true
+note = """
 Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Sumaṅgalavilāsinī,
 by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
 Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
@@ -297,7 +435,11 @@ sources is known only from tradition.
 """
 
 # Majjhimanikāya (aṭṭhakathā)
-"cst:atthakatha/suttapiṭaka-aṭṭhakathā/majjhimanikāya-aṭṭhakathā" = """
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/majjhimanikāya-aṭṭhakathā"]
+from = 400
+to = 430
+circa = true
+note = """
 Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Papañcasūdanī, by
 Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
 Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
@@ -306,7 +448,11 @@ sources is known only from tradition.
 """
 
 # Saṁyuttanikāya (aṭṭhakathā)
-"cst:atthakatha/suttapiṭaka-aṭṭhakathā/saṃyuttanikāya-aṭṭhakathā" = """
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/saṃyuttanikāya-aṭṭhakathā"]
+from = 400
+to = 430
+circa = true
+note = """
 Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Sāratthappakāsinī,
 by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
 Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
@@ -315,7 +461,11 @@ sources is known only from tradition.
 """
 
 # Aṅguttaranikāya (aṭṭhakathā)
-"cst:atthakatha/suttapiṭaka-aṭṭhakathā/aṅguttaranikāya-aṭṭhakathā" = """
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/aṅguttaranikāya-aṭṭhakathā"]
+from = 400
+to = 430
+circa = true
+note = """
 Origin: early 5th century CE, Sri Lanka (Anurādhapura). The Manorathapūraṇī,
 by Buddhaghosa: a Pāli rendering of older Sinhala commentaries kept at the
 Mahāvihāra, made in the reign of King Mahānāma (c. 410–434). Well anchored:
@@ -324,7 +474,9 @@ sources is known only from tradition.
 """
 
 # Khuddakanikāya (aṭṭhakathā)
-"cst:atthakatha/suttapiṭaka-aṭṭhakathā/khuddakanikāya-aṭṭhakathā" = """
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/khuddakanikāya-aṭṭhakathā"]
+from = 400
+note = """
 Origin: 5th century CE and later, Sri Lanka and South India; several authors.
 The Dhammapada and Jātaka commentaries are anonymous works of about the 5th
 century; Dhammapāla, of South India, wrote on the Udāna, Itivuttaka,
@@ -339,7 +491,10 @@ the traditional ascriptions to Buddhaghosa are doubted.
 # ============================================================================
 
 # Sāratthadīpanī-ṭīkā-1
-"cst:vin01t1.tik" = """
+["cst:vin01t1.tik"]
+from = 1100
+to = 1200
+note = """
 Origin: 12th century CE, Sri Lanka (Polonnaruva). The Sāratthadīpanī, by
 Sāriputta: a sub-commentary on the Samantapāsādikā, written in the reign of
 Parakkamabāhu I (1153–1186) as part of his reform of the monastic order. Well
@@ -347,17 +502,27 @@ anchored.
 """
 
 # Sāratthadīpanī-ṭīkā-2
-"cst:vin01t2.tik" = """
+["cst:vin01t2.tik"]
+from = 1100
+to = 1200
+note = """
 Origin: See Sāratthadīpanī-ṭīkā.
 """
 
 # Sāratthadīpanī-ṭīkā-3
-"cst:vin02t.tik" = """
+["cst:vin02t.tik"]
+from = 1100
+to = 1200
+note = """
 Origin: See Sāratthadīpanī-ṭīkā.
 """
 
 # Vajirabuddhi-ṭīkā
-"cst:vin06t.nrf" = """
+["cst:vin06t.nrf"]
+from = 600
+to = 1200
+circa = true
+note = """
 Origin: between the 7th and 12th centuries CE, Sri Lanka or South India.
 Ascribed to Vajirabuddhi. The oldest surviving sub-commentary on the Vinaya
 commentary. Uncertain: the work is undated; one study argues it cannot be
@@ -365,7 +530,11 @@ earlier than the 9th century.
 """
 
 # Dīghanikāya (ṭīkā)
-"cst:tika/suttapiṭaka-ṭīkā/dīghanikāya-ṭīkā" = """
+["cst:tika/suttapiṭaka-ṭīkā/dīghanikāya-ṭīkā"]
+from = 500
+to = 1000
+circa = true
+note = """
 Origin: second half of the first millennium CE, probably South India. The
 Līnatthappakāsinī, the old sub-commentary, ascribed to Dhammapāla. Contested:
 his date is not settled, nor whether he is the Dhammapāla who wrote the
@@ -374,17 +543,28 @@ the Sādhuvilāsinī of Ñāṇābhivaṁsa, Burma, about 1800 CE.
 """
 
 # Majjhimanikāya (ṭīkā)
-"cst:tika/suttapiṭaka-ṭīkā/majjhimanikāya-ṭīkā" = """
+["cst:tika/suttapiṭaka-ṭīkā/majjhimanikāya-ṭīkā"]
+from = 500
+to = 1000
+circa = true
+note = """
 Origin: See Dīghanikāya (ṭīkā).
 """
 
 # Saṁyuttanikāya (ṭīkā)
-"cst:tika/suttapiṭaka-ṭīkā/saṃyuttanikāya-ṭīkā" = """
+["cst:tika/suttapiṭaka-ṭīkā/saṃyuttanikāya-ṭīkā"]
+from = 500
+to = 1000
+circa = true
+note = """
 Origin: See Dīghanikāya (ṭīkā).
 """
 
 # Aṅguttaranikāya (ṭīkā)
-"cst:tika/suttapiṭaka-ṭīkā/aṅguttaranikāya-ṭīkā" = """
+["cst:tika/suttapiṭaka-ṭīkā/aṅguttaranikāya-ṭīkā"]
+from = 1100
+to = 1200
+note = """
 Origin: 12th century CE, Sri Lanka. The Sāratthamañjūsā, ascribed to
 Sāriputta, of the circle of scholars working under Parakkamabāhu I
 (1153–1186). Well anchored to that period.

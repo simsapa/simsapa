@@ -213,7 +213,7 @@ Notable feature docs:
   (`import-cst`, `build-navigation-tree`, `index rebuild --area suttas --lang
   pli` — the Tantivy index does not heal itself). **§2f: the summaries and
   context notes are not in the table** — they are three TOML files in `assets/`
-  embedded in the app (`backend/src/navigation_texts.rs`, one parser, parsed on
+  embedded in the app (`backend/src/navigation_texts.rs`, parsed on
   the window's first query and never at startup), so a text fix ships with an
   app update. `navigation-blurb-suttacentral.toml` is **generated** by every SC
   spine build (`blurb_export.rs`) and never hand-edited; corrections go in
@@ -221,7 +221,22 @@ Notable feature docs:
   like `navigation-context-notes.toml` the CLI never writes. To apply an edit,
   **rebuild the app** — no bootstrap run. A key that names no node is reported
   by the tree build of the spine that owns it, never repaired; the skip lists
-  and the re-keying table are fixed data, and a stale row is a reported defect.
+  and the re-keying table are fixed data, and a stale row is a reported defect. The context notes are **one table per
+  node** with optional `from` / `to` / `circa` origin dates (BCE negative, no
+  year 0), never derived from the note text. **§2h is the Timeline page** those
+  dates feed (`GET /navigation_timeline`, a reader tab with `table_name:
+  "navigation_timeline"`): clustering and period text in Rust
+  (`backend/src/navigation_timeline.rs`), a markup contract with
+  `src-ts/timeline.ts`, cluster blocks that **stay in document flow**, d3 in its
+  own bundle (`timeline.min.js`) so sutta pages do not load it, a layout module
+  that must **never import d3** (jest cannot load it), re-layout on a width
+  change only, and **no text nodes added by the script** — the find bar would
+  wrap and erase an SVG label. Also there: the minimap (page y mapped linearly
+  to a fixed strip; a child of `<body>` so it inherits the theme background),
+  the per-entry button that opens the navigation window at a node (`GET
+  /open_sutta_navigation`, through a `WindowManager` signal because the request
+  is on a worker thread), and why the controls are `position: relative` (the
+  template's empty message strip otherwise takes their clicks).
 - [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
   its data, and the in-app **Update** / **Reset** actions that replace it without
   a Simsapa release. The parser moved from the CLI to

@@ -1,0 +1,352 @@
+@use "sass:list";
+
+// The Timeline page of the Sutta Navigation window. The markup is written by
+// backend/src/navigation_timeline.rs.
+//
+// Text inherits the body's colour, which is what a theme changes, and "muted"
+// is an opacity. The only colours set here are the cluster colours: each
+// cluster has one, shared by its extent bar, its marker and the top border of
+// its entries, so that a line on the axis can be traced to its texts. They are
+// mid-tones that read on both the light and the dark page, so no theme rule is
+// needed. Colour says which cluster, never how certain: that stays with fill,
+// dash and arrow.
+//
+// The cluster blocks are in normal document flow: the script spaces them with
+// margin-top and positions nothing but the axis drawing, which fills the
+// gutter to the left of the text.
+
+$timeline-cluster-colors: #4477aa, #cc6677, #228833, #b07a00, #aa3377, #2a9d9d, #dd7733, #7766cc;
+
+.timeline {
+    --timeline-gutter: 2.5em;
+}
+
+// The script reads --timeline-color from the cluster for the drawing.
+@each $color in $timeline-cluster-colors {
+    $i: list.index($timeline-cluster-colors, $color);
+
+    .timeline-cluster:nth-child(#{list.length($timeline-cluster-colors)}n + #{$i}) {
+        --timeline-color: #{$color};
+    }
+}
+
+// position: the page template has an empty, absolutely positioned strip for
+// transient messages over the top of the content. Positioned, the controls
+// are painted above it and receive their own clicks.
+.timeline-controls {
+    position: relative;
+    margin-bottom: 1.5em;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 0.8em;
+
+    label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+        width: 1em;
+        height: 1em;
+        margin: 0;
+        flex: none;
+    }
+}
+
+.timeline-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em 1.5em;
+}
+
+.timeline-legend {
+    margin: 0.4em 0 0 0;
+    line-height: 1.7;
+    opacity: 0.7;
+}
+
+// The sample the script draws in front of each legend text.
+.timeline-legend-sample {
+    margin-right: 0.3em;
+    vertical-align: middle;
+    overflow: visible;
+}
+
+.timeline-empty {
+    opacity: 0.7;
+}
+
+.timeline-body {
+    position: relative;
+    padding-left: var(--timeline-gutter);
+}
+
+.timeline-axis {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--timeline-gutter);
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+// The drawing: currentColor throughout. The script sets `color` on a cluster's
+// bar and marker to the cluster colour; the axis, the ticks and the legend
+// samples keep the text colour.
+.timeline-axis-line {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: 0.35;
+}
+
+.timeline-marker {
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.timeline-marker-hollow {
+    fill: none;
+}
+
+.timeline-bar {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 4;
+}
+
+.timeline-bar-dashed {
+    stroke-dasharray: 6 4;
+}
+
+// A bar with one bound fades out towards its open end.
+.timeline-fade-start {
+    stop-color: currentColor;
+    stop-opacity: 1;
+}
+
+.timeline-fade-end {
+    stop-color: currentColor;
+    stop-opacity: 0.15;
+}
+
+.timeline-arrowhead {
+    fill: currentColor;
+}
+
+.timeline-ticks line {
+    stroke: currentColor;
+    stroke-width: 1;
+    opacity: 0.5;
+}
+
+// The year labels of the ticks, placed by the script over the gutter. The
+// text is generated content, so the find bar does not see it.
+//
+// The layer has the gutter's width because the page stylesheet caps every
+// element at 100% of its containing block (`#ssp_main *`): in a layer with no
+// width a label would be zero wide and lose its right alignment.
+.timeline-tick-labels {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--timeline-gutter);
+    pointer-events: none;
+}
+
+.timeline-tick-label {
+    position: absolute;
+    left: 0;
+    transform: translateY(-50%);
+    text-align: right;
+    white-space: nowrap;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 10px;
+    line-height: 1;
+    opacity: 0.7;
+
+    &::before {
+        content: attr(data-label);
+    }
+}
+
+.timeline-clusters {
+    min-width: 0;
+}
+
+.timeline-cluster {
+    margin: 0;
+    padding-bottom: 0.5em;
+}
+
+// The date heading: a label for everything under it, set apart from the entry
+// titles by its face and its tracking, not by its size.
+.timeline-period {
+    margin: 0;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 0.85em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.6;
+}
+
+// A card per entry. The background is a tint of the cluster colour over the
+// page, so it follows the theme; the grey is for a webview without color-mix().
+.timeline-entry {
+    margin: 0.5em 0 1em 0;
+    padding: 0.5em 0.7em 0.6em 0.7em;
+    border-top: 4px solid var(--timeline-color, rgba(128, 128, 128, 0.6));
+    border-radius: 0 0 4px 4px;
+    background: rgba(128, 128, 128, 0.1);
+    background: color-mix(in srgb, var(--timeline-color, rgb(128, 128, 128)) 10%, transparent);
+}
+
+// The button the script adds to an entry, which opens the Sutta Navigation
+// window at its node. Floated, so a long title wraps beside it. It is the
+// page's corner buttons over again (_menu.scss, _find.scss): the same size,
+// the same --btn-* variables, which are themed there.
+.timeline-nav-button {
+    float: right;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin: 0 0 0.3em 0.6em;
+    padding: 0;
+    background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
+    border: 1px solid var(--btn-border);
+    border-radius: 2px;
+    box-shadow:
+        inset 0 1px 0 var(--text-shadow-light),
+        0 1px 2px rgba(0, 0, 0, 0.15);
+    color: var(--btn-icon);
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: linear-gradient(to bottom, var(--btn-bg-hover-start) 0%, var(--btn-bg-hover-end) 100%);
+        border-color: var(--btn-border-hover);
+    }
+
+    &:active {
+        background: linear-gradient(to bottom, var(--btn-bg-active-start) 0%, var(--btn-bg-active-end) 100%);
+        border-color: var(--btn-border-active);
+        box-shadow:
+            inset 0 1px 3px rgba(0, 0, 0, 0.2),
+            inset 0 0 5px rgba(0, 0, 0, 0.1);
+        transform: translateY(1px);
+    }
+
+    svg {
+        width: 16px;
+        height: 16px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        opacity: 0.8;
+    }
+}
+
+// The body face, which carries the Pāli diacritics, in place of the heading
+// face.
+.timeline-title-pali {
+    margin: 0;
+    font-family: "Crimson Pro SSP", serif;
+    font-size: 1.25em;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.timeline-title-en {
+    margin: 0;
+    font-style: italic;
+    opacity: 0.75;
+}
+
+.timeline-note {
+    font-size: 0.9em;
+    line-height: 1.4;
+
+    p {
+        margin: 0.3em 0 0 0;
+    }
+}
+
+.timeline-undated {
+    margin-top: 2em;
+    padding-left: var(--timeline-gutter);
+}
+
+@media (max-width: 768px) {
+    .timeline {
+        --timeline-gutter: 1.8em;
+    }
+}
+
+// The minimap: a fixed strip under the page's corner buttons, drawn by the
+// script, which also sets its size. It is a child of the body and inherits the
+// body's background, so it covers the text under it and follows a theme change
+// without a reload. The page keeps a margin for it while it is shown.
+.timeline-minimap-on {
+    padding-right: calc(var(--timeline-minimap-width, 50px) + 10px);
+}
+
+.timeline-minimap {
+    position: fixed;
+    top: 50px;
+    right: 10px;
+    z-index: 900;
+    background-color: inherit;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.5);
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+
+    &[hidden] {
+        display: none;
+    }
+
+    svg {
+        display: block;
+    }
+}
+
+.timeline-minimap-block {
+    fill: currentColor;
+    opacity: 0.55;
+}
+
+.timeline-minimap-bar {
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.timeline-minimap-bar-dashed {
+    stroke-dasharray: 2 1.5;
+}
+
+// The band that shows which part of the page is in the viewport.
+.timeline-minimap-view {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    pointer-events: none;
+
+    &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: currentColor;
+        opacity: 0.18;
+    }
+}

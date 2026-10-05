@@ -238,6 +238,11 @@ void callback_open_sutta_navigation_window() {
   AppGlobals::manager->create_sutta_navigation_window();
 }
 
+// Called from an API worker thread: the signal takes it to the GUI thread.
+void callback_open_sutta_navigation_at(QString node_uid) {
+  emit AppGlobals::manager->signal_open_sutta_navigation_at(node_uid);
+}
+
 void callback_open_chanting_practice_window(QString window_id) {
   AppGlobals::manager->create_chanting_practice_window(window_id);
 }

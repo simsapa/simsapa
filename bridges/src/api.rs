@@ -237,6 +237,7 @@ pub mod ffi {
         fn callback_open_reference_search_window();
         fn callback_open_topic_index_window();
         fn callback_open_sutta_navigation_window();
+        fn callback_open_sutta_navigation_at(node_uid: QString);
         fn callback_show_chapter_in_sutta_window(window_id: QString, result_data_json: QString);
         fn callback_show_toc_tab(window_id: QString, spine_item_uid: QString);
         fn callback_show_sutta_from_reference_search(window_id: QString, result_data_json: QString);
@@ -1633,6 +1634,40 @@ fn get_word_html_q(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
     word_html_response(window_id, uid)
 }
 
+/// GET /navigation_timeline?<window_id>
+/// The Timeline page of the Sutta Navigation window: every node with a context
+/// note, grouped by period. Always a full page; with no navigation tree it says
+/// "No timeline data". See docs/sutta-navigation-tree.md.
+#[get("/navigation_timeline?<window_id>")]
+fn get_navigation_timeline(window_id: Option<&str>) -> RawHtml<String> {
+    let window_id = window_id.unwrap_or_default();
+    info(&format!("get_navigation_timeline(): window_id: {}", window_id));
+
+    let content = simsapa_backend::navigation_timeline::timeline_content_html();
+    let body_class = get_app_data().get_theme_name();
+    RawHtml(simsapa_backend::html_content::timeline_html_page(&content, window_id, Some(body_class)))
+}
+
+/// GET /open_sutta_navigation?<node_uid>
+/// Open or raise the Sutta Navigation window with the node's level entered.
+/// Called by the button on a Timeline entry. 404 when the tree has no such
+/// node. See docs/sutta-navigation-tree.md.
+#[get("/open_sutta_navigation?<node_uid>")]
+fn open_sutta_navigation(node_uid: &str) -> Status {
+    info(&format!("open_sutta_navigation(): node_uid: {}", node_uid));
+
+    if simsapa_backend::navigation_tree::node_by_uid(node_uid).is_none() {
+        return Status::NotFound;
+    }
+
+    // The window's first query is a synchronous call on the GUI thread and
+    // needs the texts parsed: make sure of it here, on this worker thread.
+    simsapa_backend::navigation_texts::navigation_texts();
+
+    ffi::callback_open_sutta_navigation_at(ffi::QString::from(node_uid));
+    Status::Ok
+}
+
 /// GET /sutta_html?<window_id>&<uid>&<anchor>
 /// Encoding-agnostic variant of `/get_sutta_html_by_uid/<window_id>/<uid..>`,
 /// so a `%2F` / `%20` sutta uid has a tolerant query-param form. Sutta
@@ -2418,6 +2453,8 @@ pub async extern "C" fn start_webserver() {
             get_word_json_q,
             get_word_html_q,
             get_sutta_html_q,
+            get_navigation_timeline,
+            open_sutta_navigation,
             get_sutta_content_block,
             get_translations_for_sutta,
             save_sutta_display_settings,
