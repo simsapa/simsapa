@@ -189,8 +189,16 @@ the timeline, with the same title and note content and no marker, so that Ctrl+F
 them.
 
 **FR-24.** The layout is a single vertical axis with one marker per cluster and
-the cluster's heading and entries beside it. Unlike the reference image, it has no coloured
-labels and no white background; it uses the page's theme colours.
+the cluster's heading and entries beside it. Unlike the reference image, it has
+no white background: text and the axis line use the page's theme colours.
+
+**FR-24a.** Each cluster has a **cluster colour**, taken from a fixed palette of
+eight that repeats by cluster position. The cluster's marker and extent bar are
+drawn in it, and each of its entries is a card with a top border in that colour
+and a light tint of it as background, so that a line on the axis can be traced
+to its texts. Entries of one cluster share the colour. The palette is mid-tones
+that read in both themes. Undated entries get a neutral grey border. The
+legend samples and the year ticks stay in the text colour.
 
 **FR-25.** The timeline is read-only: clicking an entry does nothing.
 
@@ -280,8 +288,14 @@ into the app's assets. The page must not load anything from the network.
   Pāli text, so the diacritics render with the patched Crimson Pro.
 - **Controls:** the checkbox and the legend sit above the timeline and scroll
   away with the page.
-- **Colour:** axis, markers and bars take the theme's text and muted colours.
-  Certainty is carried by fill, dash and arrow (FR-26), never by hue.
+- **Colour:** the axis line, the ticks and the legend take the theme's text and
+  muted colours. Markers, extent bars and entry cards take the cluster colour
+  (FR-24a), which says only which cluster a line belongs to. Certainty is
+  carried by fill, dash and arrow (FR-26), never by hue.
+- **Line weight:** extent bars are 4 px wide in lanes 11 px apart, so that
+  bars running side by side stay distinguishable.
+- **Legend:** each of the three forms has a small drawn sample in front of its
+  text.
 
 ## 7. Technical Considerations
 
@@ -365,7 +379,11 @@ into the app's assets. The page must not load anything from the network.
   the `ResizeObserver` watches.
 - The app's themes are `body.dark` rules over sass variables, not CSS custom
   properties: the timeline inherits the body text colour and the SVG uses
-  `currentColor`, so it needs no theme-specific rule.
+  `currentColor`, so it needs no theme-specific rule. The cluster colours are
+  the only literal colours: a sass list in `timeline.scss` sets
+  `--timeline-color` per cluster by `nth-child`, the script reads it and sets
+  `color` on that cluster's bar and marker, and the card background is a
+  `color-mix()` tint with a grey fallback.
 
 ### 7.4 Tests and docs
 

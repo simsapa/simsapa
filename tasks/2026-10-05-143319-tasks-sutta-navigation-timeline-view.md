@@ -200,7 +200,11 @@ Markup (the contract with task 5):
 <div id="timeline" class="timeline">
   <div class="timeline-controls">
     <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
-    <p class="timeline-legend">…three forms in plain words…</p>
+    <p class="timeline-legend">
+      <span class="timeline-legend-item" data-form="dated">filled: dated range</span> ·
+      <span class="timeline-legend-item" data-form="approximate">hollow: approximate</span> ·
+      <span class="timeline-legend-item" data-form="open">arrow: …</span>
+    </p>
   </div>
   <div class="timeline-body">
     <svg class="timeline-axis" aria-hidden="true"></svg>
@@ -224,7 +228,7 @@ Markup (the contract with task 5):
 - The "Undated" section is omitted when there are no undated entries.
 - Route: `GET /navigation_timeline?<window_id>` returning the full page. `window_id` is injected as `WINDOW_ID` through `js_extra`, exactly as `render_bold_definition()` does: `suttas.js` and the page menu read it.
 - Tree order is `sort_path`. It is unique across both spines in the shipped database (12783 rows, 12783 distinct values), so it is a total order; use `node_uid` as the final tie-break anyway so the output is deterministic on any database.
-- Colours: the sass files have **no** theme CSS custom properties for text. A theme is a `body.dark` rule over the sass variables in `assets/sass/_base.sass`. So `timeline.scss` sets no text colour at all (it inherits the body's), expresses "muted" as `opacity`, and the SVG uses `currentColor` only. That is what makes both themes work with no dark-specific rule.
+- Colours: the sass files have **no** theme CSS custom properties for text. A theme is a `body.dark` rule over the sass variables in `assets/sass/_base.sass`. So `timeline.scss` sets no text colour at all (it inherits the body's), expresses "muted" as `opacity`, and the SVG uses `currentColor` only. That is what makes both themes work with no dark-specific rule. The one exception is the eight cluster colours (`$timeline-cluster-colors`, set as `--timeline-color` per cluster by `nth-child`): mid-tones that read in both themes, used for a cluster's bar, marker and entry-card border and tint.
 - The page is complete and readable with scripts disabled.
 - Performance: the first call to `navigation_texts()` parses the three TOML files (about 27 000 lines). It normally happens when the navigation window opens; with a restored timeline tab it happens in this route instead, on a Rocket worker thread. That is acceptable — it must not be moved to the startup path or called from the UI thread.
 
@@ -310,11 +314,13 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 - Scale: `d3.scaleLinear().domain(years).range(ys).clamp(true)`, extended by one final point at the latest `to` year, placed at the bottom of the last cluster.
 - **A shared sort year maps to the last cluster's marker, and a bar starts at its own marker.** Several clusters share a sort year (`-500 … -300` and `-500 … -200` are two clusters), and the scale can hold only one y per year. With the last cluster's y, `scale(to) >= scale(from) >= own marker y` for every cluster, so no bar can point backwards; with the first cluster's y it can. Add a jest test for exactly this case.
 - Extent bar: from the cluster's **own marker y** to `max(scale(to), marker y + 6)` in its lane. Open-ended: a fixed 48 px from the marker — downward for `from`-only, upward for `to`-only — with a fade-out and an arrowhead at the open end.
-- Certainty (FR-26): both bounds and not circa → filled marker, solid bar; both bounds and circa → hollow marker, dashed bar; one bound → hollow marker, dashed fading bar with arrow. Strokes and fills use `currentColor` only, with `opacity` for the muted parts; a hollow marker is `fill: none`. No literal colour and no theme-specific rule.
-- The SVG has top padding of at least the open-bar length, so a `to`-only bar on the first cluster is not cut off.
-- Year ticks (FR-32): scaled mode only, every 100 years inside the domain, as SVG text in the gutter, drawn by hand through the scale (no `d3-axis`). A tick is dropped if it falls within 14 px of the previous one.
-- The gutter width is `(lanes used) × lane width + tick label width`, capped so that the text column keeps at least 70% of the page width; beyond the cap, lanes share space.
-- `px_per_year`, `base_gap`, the lane width and the open-bar length are named constants at the top of `timeline.ts`.
+- Certainty (FR-26): both bounds and not circa → filled marker, solid bar; both bounds and circa → hollow marker, dashed bar; one bound → hollow marker, dashed fading bar with arrow. Strokes and fills use `currentColor` only, with `opacity` for the muted parts; a hollow marker is `fill: none`. The script sets `color` on a cluster's bar, marker, fade gradient and arrowhead to the cluster's `--timeline-color`, read from the cluster element; the axis line, ticks and legend samples keep the text colour. No theme-specific rule.
+- Lines are clipped away inside every marker disc (an even-odd `clipPath`), so a hollow marker stays hollow where the axis or another cluster's bar passes behind it.
+- Entry cards: each `.timeline-entry` has padding, a 4 px top border in the cluster colour and a `color-mix()` tint of it as background (grey fallback); undated entries get a neutral grey border.
+- `.timeline-body` gets top padding of the open-bar length when the first cluster is `to`-only, so its upward bar is not cut off; otherwise none.
+- Year ticks (FR-32): scaled mode only, every 100 years inside the domain (the tick on the era boundary is labelled "1 CE": the data has no year 0), as SVG text in the gutter, drawn by hand through the scale (no `d3-axis`). A tick is dropped if it falls within 14 px of the previous one.
+- The gutter width is the tick label width (scaled mode only) + the marker + `(lanes used − 1) × lane width` + padding, capped so that the text column keeps at least 70% of the page width; beyond the cap, lanes share space.
+- `px_per_year` (2), `base_gap` (24), the lane width (11), the marker radius (6) and the open-bar length (48) are named constants at the top of `timeline.ts`. Bars are 4 px wide (`timeline.scss`).
 - **Re-layout only on a width change.** `layout()` changes margins, which changes the height of the observed element; a `ResizeObserver` that re-runs `layout()` on every notification loops forever. Keep the last laid-out width and return early when it has not changed.
 - **`timeline_layout.ts` must never import d3.** The d3 packages are ESM-only and the jest setup (`ts-jest`, CommonJS) cannot load them from `node_modules`; keeping the tested module pure is what lets the tests run with no jest configuration change. Only `timeline.ts` imports d3, and it has no jest test.
 
@@ -350,7 +356,7 @@ export function bar_lanes(spans: { y0: number; y1: number }[]): number[];
 - [ ] 6.0 Find bar, themes, phone width, docs
   - [ ] 6.1 Read `src-ts/find.ts` for how it scrolls a match into view, and confirm nothing in `timeline.ts` (the scroll restore of 5.10, the resize re-layout) fights it. Confirm a find does not cause a re-layout.
   - [ ] 6.2 Confirm the find bar ignores the checkbox label and legend or matches them harmlessly, and that no timeline element is `user-select: none` in a way that hides it from find.
-  - [ ] 6.3 Themes (FR-40): grep `timeline.scss` and `timeline.ts` for `#`, `rgb(` and named colours; there must be none, and no `body.dark` rule should have been needed.
+  - [ ] 6.3 Themes (FR-40): grep `timeline.scss` and `timeline.ts` for `#`, `rgb(` and named colours; the only ones are the `$timeline-cluster-colors` list and the grey fallbacks of the entry card in `timeline.scss`, and no `body.dark` rule should have been needed. Check the eight cluster colours and the card tint read in both themes.
   - [ ] 6.4 Phone width (FR-38): confirm in the CSS that the gutter cap of task 5 holds at 360 px, the text column wraps, and nothing sets a fixed width wider than the viewport.
   - [ ] 6.5 Mobile overlay check: the page adds no Qt overlay, but confirm against `docs/mobile-webview-visibility-management.md` that opening the tab from the navigation window (a separate window) leaves the reader webview visible on return.
   - [ ] 6.6 `docs/sutta-navigation-tree.md`: update §2f for the table shape and the date convention, and add a section for the timeline — where the data comes from, the cluster rule, the markup contract between `navigation_timeline.rs` and `timeline.ts`, the flow-layout rule, the separate bundle, and the `table_name` value with the sites that must know it.
