@@ -584,7 +584,7 @@ pub fn tree_is_available_conn(db_conn: &mut SqliteConnection) -> QueryResult<boo
 // tests) and a failed query all answer the same way: empty, and logged.
 // ============================================================================
 
-fn with_appdata<T, F>(what: &str, empty: T, op: F) -> T
+pub(crate) fn with_appdata<T, F>(what: &str, empty: T, op: F) -> T
 where
     F: FnOnce(&mut SqliteConnection) -> QueryResult<T>,
 {

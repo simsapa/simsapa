@@ -9,9 +9,9 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 - `assets/navigation-context-notes.toml` - The 44 context notes; changes from flat strings to `["uid"]` tables with `note`, `from`, `to`, `circa`.
 - `backend/src/navigation_texts.rs` - Embeds and parses the three TOML files; gets the dated-entry struct, the new parser and the date validation. Tests are in the same file.
 - `backend/src/navigation_timeline.rs` - **New.** Pure timeline logic: join to node titles, clustering, ordering, period text, HTML rendering. Tests in the same file.
-- `backend/src/navigation_tree.rs` - `NavigationNode`, `node_by_uid_conn`, `sort_path`; source of the titles and the tree order.
+- `backend/src/navigation_tree.rs` - `NavigationNode`, `sort_path`; source of the titles and the tree order. `with_appdata()` is `pub(crate)` so the timeline reads the tree with the same tolerance rules.
 - `backend/src/navigation_tree/tests.rs` - Existing context-note tests; their inline TOML fixtures for the context notes (around lines 384 and 729) move to the table shape, their assertions stay as they are.
-- `backend/src/html_content.rs` - `sutta_html_page()` and the page template context; gets `timeline_html_page()`.
+- `backend/src/html_content.rs` - `sutta_html_page()` and the page template context; has `timeline_html_page()` and the embedded `TIMELINE_CSS`.
 - `backend/src/lib.rs` - Module declaration for `navigation_timeline`.
 - `cli/src/bootstrap/navigation_tree/mod.rs` - `load_hand_written_texts()` / `validate_node_text_keys()`; parses with the new parser, and `report_context_note_date_defects()` reports bad date bounds per spine.
 - `cli/src/bootstrap/navigation_tree/tests.rs` - Tests for the above.
@@ -20,6 +20,7 @@ PRD: `tasks/2026-10-05-143319-prd---sutta-navigation-timeline-view.md`
 ### Page assets
 
 - `assets/sass/timeline.scss` - **New.** Styles for the cluster blocks, the axis gutter, the legend and the controls. Compiled by `make sass` to `assets/css/timeline.css`.
+- `assets/css/timeline.css` - **New.** The compiled CSS, tracked in git and embedded by `html_content.rs`.
 - `src-ts/timeline.ts` - **New.** Entry point of the timeline bundle: reads the cluster blocks, lays them out, draws the SVG with d3.
 - `src-ts/timeline_layout.ts` - **New.** Pure layout functions (gaps, scale points, bar lanes), no DOM and no d3.
 - `src-ts/timeline_layout.test.ts` - **New.** Jest tests for `timeline_layout.ts`.
@@ -228,19 +229,19 @@ Markup (the contract with task 5):
 
 **Depends on:** 1.0 (parser), 2.0 (dates; the code works without them, every entry then being undated).
 
-- [ ] 3.0 Timeline data and page route
-  - [ ] 3.1 Read how a non-sutta page with a find bar is built and served: `render_bold_definition()` in `backend/src/html_content.rs` (it ends in `sutta_html_page(&content, None, Some(DICTIONARY_CSS…), Some(js_extra), body_class)`) and the route `get_word_html_q` in `bridges/src/api.rs`. Note where `body_class` comes from (`get_theme_name()` in `backend/src/app_data.rs`, plus the `mobile` class if the word path adds one). `DICTIONARY_CSS` is an `include_str!` of the compiled `assets/css/dictionary.css`, which is tracked in git.
-  - [ ] 3.2 `{content}` in `assets/templates/page.html` is rendered inside `#ssp_content`, which is where `src-ts/find.ts` searches (verified in review). The page also gets the sutta page menu and the word-lookup hooks of `suttas.js`, as dictionary pages do; that is accepted, not something to strip.
-  - [ ] 3.3 Create `backend/src/navigation_timeline.rs` with the structs, and declare the module in `backend/src/lib.rs`.
-  - [ ] 3.4 Implement `period_text()` with a test per row of the table above, including the BCE-to-CE range and `circa`.
-  - [ ] 3.5 Implement `build_timeline()`: group by `(from, to, circa)`, order per the spec, separate the entries with no bound. Tests: two entries with the same period share a cluster; same `from` but different `to` are two clusters in `to` order; an open-ended cluster sorts after a bounded one with the same sort year; a `to`-only entry sorts by its `to`; entries inside a cluster follow `sort_path`; an entry with no bounds lands in `undated`.
-  - [ ] 3.6 Implement `timeline_entries_conn()`: load the nodes of all `texts.dated_context_notes()` keys in **one** query (`navigation_nodes::node_uid.eq_any(uids)`), not one query per entry, and take `title_pali`, `title_en` and `sort_path`. A key with no node is skipped with one `warn` log line. Add a test with an in-memory tree, following the fixtures in `backend/src/navigation_tree/tests.rs`. Check which title the navigation row displays (`display_title()` and `NavigationNodeRow.qml`) and use the same fields, so the timeline shows what the panel shows.
-  - [ ] 3.7 Implement `render_timeline_html()` per the markup spec. Tests: escaping of `<` and `&` in a title and a note; absent bounds produce no attribute; two paragraphs produce two `<p>`; no "Undated" section when the list is empty; an entry without an English title has no `.timeline-title-en` element.
-  - [ ] 3.8 Create `assets/sass/timeline.scss`: the controls, the legend, a left gutter for the SVG, the cluster and entry typography (period heading clearly a heading, Pāli title prominent and in the Pāli font class used by sutta pages, note as body text), wrapping at phone width with no horizontal scroll. No text colours and no literal colours, per the colour spec above. The file must not start with `_` (a partial is not compiled). Run `make sass`; the compiled `assets/css/timeline.css` is tracked in git like the other compiled CSS.
-  - [ ] 3.9 Add `timeline_html_page()` to `html_content.rs`, on `sutta_html_page()` with the timeline CSS and no sutta display chrome, following 3.1, with `static TIMELINE_CSS: &str = include_str!("../../assets/css/timeline.css")` passed as `css_extra`.
-  - [ ] 3.10 Add the `GET /navigation_timeline?<window_id>` route in `bridges/src/api.rs` and register it where the other routes are mounted. It must work when the navigation tree table is absent or empty: the page then shows the controls and a one-line "No timeline data" message.
-  - [ ] 3.11 `make build -B`; `cd backend && cargo test navigation`.
-  - [ ] 3.12 **(user)** With the app running, open `http://localhost:<port>/navigation_timeline` in a browser: all entries are listed under date headings in order, undated ones at the end, and the page is unstyled-but-readable on the axis side (no drawing yet).
+- [x] 3.0 Timeline data and page route
+  - [x] 3.1 Read how a non-sutta page with a find bar is built and served: `render_bold_definition()` in `backend/src/html_content.rs` (it ends in `sutta_html_page(&content, None, Some(DICTIONARY_CSS…), Some(js_extra), body_class)`) and the route `get_word_html_q` in `bridges/src/api.rs`. Note where `body_class` comes from (`get_theme_name()` in `backend/src/app_data.rs`, plus the `mobile` class if the word path adds one). `DICTIONARY_CSS` is an `include_str!` of the compiled `assets/css/dictionary.css`, which is tracked in git.
+  - [x] 3.2 `{content}` in `assets/templates/page.html` is rendered inside `#ssp_content`, which is where `src-ts/find.ts` searches (verified in review). The page also gets the sutta page menu and the word-lookup hooks of `suttas.js`, as dictionary pages do; that is accepted, not something to strip.
+  - [x] 3.3 Create `backend/src/navigation_timeline.rs` with the structs, and declare the module in `backend/src/lib.rs`.
+  - [x] 3.4 Implement `period_text()` with a test per row of the table above, including the BCE-to-CE range and `circa`.
+  - [x] 3.5 Implement `build_timeline()`: group by `(from, to, circa)`, order per the spec, separate the entries with no bound. Tests: two entries with the same period share a cluster; same `from` but different `to` are two clusters in `to` order; an open-ended cluster sorts after a bounded one with the same sort year; a `to`-only entry sorts by its `to`; entries inside a cluster follow `sort_path`; an entry with no bounds lands in `undated`.
+  - [x] 3.6 Implement `timeline_entries_conn()`: load the nodes of all `texts.dated_context_notes()` keys in **one** query (`navigation_nodes::node_uid.eq_any(uids)`), not one query per entry, and take `title_pali`, `title_en` and `sort_path`. A key with no node is skipped with one `warn` log line. Add a test with an in-memory tree, following the fixtures in `backend/src/navigation_tree/tests.rs`. Check which title the navigation row displays (`display_title()` and `NavigationNodeRow.qml`) and use the same fields, so the timeline shows what the panel shows.
+  - [x] 3.7 Implement `render_timeline_html()` per the markup spec. Tests: escaping of `<` and `&` in a title and a note; absent bounds produce no attribute; two paragraphs produce two `<p>`; no "Undated" section when the list is empty; an entry without an English title has no `.timeline-title-en` element.
+  - [x] 3.8 Create `assets/sass/timeline.scss`: the controls, the legend, a left gutter for the SVG, the cluster and entry typography (period heading clearly a heading, Pāli title prominent and in the Pāli font class used by sutta pages, note as body text), wrapping at phone width with no horizontal scroll. No text colours and no literal colours, per the colour spec above. The file must not start with `_` (a partial is not compiled). Run `make sass`; the compiled `assets/css/timeline.css` is tracked in git like the other compiled CSS.
+  - [x] 3.9 Add `timeline_html_page()` to `html_content.rs`, on `sutta_html_page()` with the timeline CSS and no sutta display chrome, following 3.1, with `static TIMELINE_CSS: &str = include_str!("../../assets/css/timeline.css")` passed as `css_extra`.
+  - [x] 3.10 Add the `GET /navigation_timeline?<window_id>` route in `bridges/src/api.rs` and register it where the other routes are mounted. It must work when the navigation tree table is absent or empty: the page then shows the controls and a one-line "No timeline data" message.
+  - [x] 3.11 `make build -B`; `cd backend && cargo test navigation`.
+  - [x] 3.12 **(user)** With the app running, open `http://localhost:<port>/navigation_timeline` in a browser: all entries are listed under date headings in order, undated ones at the end, and the page is unstyled-but-readable on the axis side (no drawing yet).
 
 ### 4.0 Open the timeline from the app
 

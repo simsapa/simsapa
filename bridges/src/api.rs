@@ -1633,6 +1633,20 @@ fn get_word_html_q(window_id: &str, uid: &str) -> (Status, RawHtml<String>) {
     word_html_response(window_id, uid)
 }
 
+/// GET /navigation_timeline?<window_id>
+/// The Timeline page of the Sutta Navigation window: every node with a context
+/// note, grouped by period. Always a full page; with no navigation tree it says
+/// "No timeline data". See docs/sutta-navigation-tree.md.
+#[get("/navigation_timeline?<window_id>")]
+fn get_navigation_timeline(window_id: Option<&str>) -> RawHtml<String> {
+    let window_id = window_id.unwrap_or_default();
+    info(&format!("get_navigation_timeline(): window_id: {}", window_id));
+
+    let content = simsapa_backend::navigation_timeline::timeline_content_html();
+    let body_class = get_app_data().get_theme_name();
+    RawHtml(simsapa_backend::html_content::timeline_html_page(&content, window_id, Some(body_class)))
+}
+
 /// GET /sutta_html?<window_id>&<uid>&<anchor>
 /// Encoding-agnostic variant of `/get_sutta_html_by_uid/<window_id>/<uid..>`,
 /// so a `%2F` / `%20` sutta uid has a tolerant query-param form. Sutta
@@ -2418,6 +2432,7 @@ pub async extern "C" fn start_webserver() {
             get_word_json_q,
             get_word_html_q,
             get_sutta_html_q,
+            get_navigation_timeline,
             get_sutta_content_block,
             get_translations_for_sutta,
             save_sutta_display_settings,

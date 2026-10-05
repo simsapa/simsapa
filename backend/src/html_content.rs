@@ -234,6 +234,35 @@ pub fn render_dppn_entry(
     )
 }
 
+static TIMELINE_CSS: &str = include_str!("../../assets/css/timeline.css");
+
+/// The Timeline page of the Sutta Navigation window: `content` is the output of
+/// `navigation_timeline::render_timeline_html()`.
+///
+/// On the sutta page template, so it has the app's fonts, theme and find bar,
+/// with no sutta display chrome.
+pub fn timeline_html_page(content: &str, window_id: &str, body_class: Option<String>) -> String {
+    // suttas.js and the page menu read WINDOW_ID. It lands inside a script
+    // string literal and comes from the request, so only identifier characters
+    // are let through.
+    let window_id: String = window_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    let js_extra = format!(
+        " const WINDOW_ID = '{}'; window.WINDOW_ID = WINDOW_ID;",
+        window_id,
+    );
+
+    sutta_html_page(
+        content,
+        None,
+        Some(TIMELINE_CSS.to_string()),
+        Some(js_extra),
+        body_class,
+    )
+}
+
 pub fn blank_html_page(body_class: Option<String>) -> String {
     let mut tt = TinyTemplate::new();
     tt.set_default_formatter(&tinytemplate::format_unescaped);

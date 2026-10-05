@@ -1,0 +1,118 @@
+// The Timeline page of the Sutta Navigation window. The markup is written by
+// backend/src/navigation_timeline.rs.
+//
+// No colour is set anywhere in this file. Text inherits the body's colour,
+// which is what a theme changes; "muted" is an opacity; and the axis drawing
+// uses currentColor. So both themes work with no theme-specific rule.
+//
+// The cluster blocks are in normal document flow: the script spaces them with
+// margin-top and positions nothing but the axis drawing, which fills the
+// gutter to the left of the text.
+
+.timeline {
+    --timeline-gutter: 2.5em;
+}
+
+.timeline-controls {
+    margin-bottom: 1.5em;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 0.8em;
+
+    label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+        cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+        width: 1em;
+        height: 1em;
+        margin: 0;
+        flex: none;
+    }
+}
+
+.timeline-legend {
+    margin: 0.4em 0 0 0;
+    opacity: 0.7;
+}
+
+.timeline-empty {
+    opacity: 0.7;
+}
+
+.timeline-body {
+    position: relative;
+    padding-left: var(--timeline-gutter);
+}
+
+.timeline-axis {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--timeline-gutter);
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.timeline-clusters {
+    min-width: 0;
+}
+
+.timeline-cluster {
+    margin: 0;
+    padding-bottom: 0.5em;
+}
+
+// The date heading: a label for everything under it, set apart from the entry
+// titles by its face and its tracking, not by its size.
+.timeline-period {
+    margin: 0;
+    font-family: "Source Sans 3 SSP", sans-serif;
+    font-size: 0.85em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.6;
+}
+
+.timeline-entry {
+    margin: 0.5em 0 1.2em 0;
+}
+
+// The body face, which carries the Pāli diacritics, in place of the heading
+// face.
+.timeline-title-pali {
+    margin: 0;
+    font-family: "Crimson Pro SSP", serif;
+    font-size: 1.25em;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.timeline-title-en {
+    margin: 0;
+    font-style: italic;
+    opacity: 0.75;
+}
+
+.timeline-note {
+    font-size: 0.9em;
+    line-height: 1.4;
+
+    p {
+        margin: 0.3em 0 0 0;
+    }
+}
+
+.timeline-undated {
+    margin-top: 2em;
+    padding-left: var(--timeline-gutter);
+}
+
+@media (max-width: 768px) {
+    .timeline {
+        --timeline-gutter: 1.8em;
+    }
+}
