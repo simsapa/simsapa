@@ -76,7 +76,7 @@ use tipitaka_xml_parser::nikaya_structure::NikayaStructure;
 use tipitaka_xml_parser::types::GroupType;
 
 use crate::bootstrap::cst_coverage::{coverage_of, CoverageClass, FileCoverage};
-use crate::bootstrap::tipitaka_xml::fragment_uid;
+use crate::bootstrap::tipitaka_xml::{fragment_title, fragment_uid};
 
 use super::{DefectReport, TreeNode};
 
@@ -959,7 +959,7 @@ fn load_fragments(
         if !seen_uids.insert(uid.clone()) {
             continue;
         }
-        let title = cst_sutta.unwrap_or_default().trim().to_string();
+        let title = fragment_title(cst_sutta.as_deref(), &group_levels);
 
         let mut match_titles: HashSet<String> = HashSet::new();
         if !title.is_empty() {

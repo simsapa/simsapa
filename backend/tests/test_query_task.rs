@@ -810,11 +810,7 @@ fn test_sutta_uid_range_match_more_cases() {
 
     // Clean up
     diesel::delete(suttas::table)
-        .filter(suttas::uid.eq_any(vec![
-            "sn17.13-20/pli/ms",
-            "sn12.72-81/pli/ms",
-            "an11.22-29/pli/ms"
-        ]))
+        .filter(suttas::uid.eq_any(&test_uids))
         .execute(db_conn)
         .unwrap();
 }

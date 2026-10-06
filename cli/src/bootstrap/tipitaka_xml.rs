@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::bootstrap::cst_coverage::{
-    self, coverage_of, CoverageClass, FileCoverage, SplitError,
+    self, coverage_of, CoverageClass, FileCoverage, SplitError, MOVED_REVIEW,
 };
 use crate::bootstrap::helpers::uid_to_ref;
 use crate::bootstrap::navigation_tree::coverage_report::CstCoverageReport;
@@ -71,6 +71,31 @@ pub struct TipitakaXmlImporter {
 ///
 /// Shared so the navigation spine can name the same row the import wrote,
 /// rather than rebuilding the convention beside it and drifting from it.
+/// The title a fragment record is stored and listed under.
+///
+/// `cst_sutta` where the fragment has one. A fragment that stands for a whole
+/// vagga or paṇṇāsaka has none -- the Aṅguttara commentaries treat many vaggas
+/// in one passage, with no sutta heading inside -- and is named after the
+/// innermost group level it sits in, which is the heading its text opens with.
+/// Without this the record has an empty title in the reader, in search results
+/// and in the navigation tree alike.
+pub fn fragment_title(cst_sutta: Option<&str>, group_levels_json: &str) -> String {
+    let title = cst_sutta.unwrap_or_default().trim();
+    if !title.is_empty() {
+        return title.to_string();
+    }
+
+    let levels: Vec<GroupLevel> = serde_json::from_str(group_levels_json).unwrap_or_default();
+    levels
+        .iter()
+        .rev()
+        .filter(|level| !matches!(level.group_type, GroupType::Nikaya))
+        .map(|level| level.title.trim())
+        .find(|title| !title.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
 pub fn fragment_uid(cst_file: &str, sc_code: &str) -> String {
     let uid_code = if cst_file.ends_with(".att.xml") {
         format!("{}.att", sc_code)
@@ -124,6 +149,10 @@ impl TipitakaXmlImporter {
                 // Skip fragments without sc_code
                 let sc_code = match &row.sc_code {
                     Some(code) => code.clone(),
+                    // An empty record whose text and uid a neighbour carries:
+                    // expected, and not worth a warning that would bury a
+                    // fragment which really is missing its mapping.
+                    None if row.frag_review.as_deref() == Some(MOVED_REVIEW) => continue,
                     None => {
                         logger::warn(&format!(
                             "Fragment in {} has no sc_code (cst_sutta: {:?}), skipping",
@@ -142,8 +171,7 @@ impl TipitakaXmlImporter {
                 }
                 used_uids.insert(uid.clone());
 
-                // Title from cst_sutta field
-                let title = row.cst_sutta.clone().unwrap_or_default();
+                let title = fragment_title(row.cst_sutta.as_deref(), &row.group_levels);
                 let normalized_title = consistent_niggahita(Some(title.clone()));
                 let normalized_title_ascii = pali_to_ascii(Some(&title));
 
@@ -575,3 +603,34 @@ impl TipitakaXmlImporter {
 #[derive(Debug)]
 struct DivisionError(String);
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEVELS: &str = r#"[
+        {"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null},
+        {"group_type":"Book","group_number":null,"title":"Dukanipāta-aṭṭhakathā","id":"an2"},
+        {"group_type":"Pannasaka","group_number":null,"title":"2. Dutiyapaṇṇāsakaṃ","id":"an2_2"},
+        {"group_type":"Vagga","group_number":null,"title":"(6) 1. Puggalavaggavaṇṇanā","id":"an2_2_1"}
+    ]"#;
+
+    #[test]
+    fn a_fragment_keeps_its_own_sutta_title() {
+        assert_eq!(fragment_title(Some(" 1. Vajjasuttavaṇṇanā "), LEVELS), "1. Vajjasuttavaṇṇanā");
+    }
+
+    #[test]
+    fn a_fragment_without_a_sutta_title_is_named_after_its_innermost_group() {
+        assert_eq!(fragment_title(Some(""), LEVELS), "(6) 1. Puggalavaggavaṇṇanā");
+        assert_eq!(fragment_title(None, LEVELS), "(6) 1. Puggalavaggavaṇṇanā");
+    }
+
+    #[test]
+    fn the_nikaya_level_never_names_a_fragment() {
+        let nikaya_only =
+            r#"[{"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null}]"#;
+        assert_eq!(fragment_title(None, nikaya_only), "");
+        assert_eq!(fragment_title(None, "not json"), "");
+    }
+}

@@ -365,6 +365,116 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
     })
 }
 
+/// Which text of a sutta a uid names: the sutta itself, or one of its two CST
+/// commentaries (`mn1.att/pli/cst`, `mn1.tik/pli/cst`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuttaRefKind {
+    Mula,
+    Atthakatha,
+    Tika,
+}
+
+/// Split a uid into the sutta reference it is about and the kind of text it
+/// is: `an5.91-100.tik/pli/cst` -> (`an5.91-100`, [`SuttaRefKind::Tika`]).
+pub fn split_sutta_ref_kind(uid: &str) -> (&str, SuttaRefKind) {
+    let uid_ref = uid.split('/').next().unwrap_or(uid);
+    if let Some(base) = uid_ref.strip_suffix(".att") {
+        (base, SuttaRefKind::Atthakatha)
+    } else if let Some(base) = uid_ref.strip_suffix(".tik") {
+        (base, SuttaRefKind::Tika)
+    } else {
+        (uid_ref, SuttaRefKind::Mula)
+    }
+}
+
+/// The numbered span a sutta reference covers, when it has one that two
+/// references can be compared by: `an5.91` -> an5 91..=91, `sn25.1-10` -> sn25
+/// 1..=10, `dhp1-20` -> dhp 1..=20.
+///
+/// `None` for a reference with no number, and for one with more than one `.`
+/// (`mil3.1.1`): [`sutta_range_from_ref`] reads only the first two components
+/// of those, so their spans would compare equal across unrelated chapters.
+pub fn comparable_sutta_range(base_ref: &str) -> Option<SuttaRange> {
+    if base_ref.matches('.').count() > 1 {
+        return None;
+    }
+    let range = sutta_range_from_ref(base_ref)?;
+    match (range.start, range.end) {
+        // A reversed span is a malformed reference, and would overlap almost
+        // nothing or almost everything depending on which side it is on.
+        (Some(start), Some(end)) if start <= end => Some(range),
+        _ => None,
+    }
+}
+
+/// Whether two sutta references are about the same text, or about spans of one
+/// group that share at least one sutta.
+///
+/// The second half is what relates a sutta to a record that covers it under a
+/// different numbering. The CST commentaries treat several suttas in one
+/// passage (`an5.91-100.tik`), and two editions do not always cut a repetition
+/// series at the same places (`sn25.1-10` against `sn25.1`, or `an8.71-627`
+/// against `an8.71-116`). Overlap, not containment: neither side's boundaries
+/// are the reference ones.
+pub fn sutta_refs_are_related(a_base_ref: &str, b_base_ref: &str) -> bool {
+    if a_base_ref == b_base_ref {
+        return true;
+    }
+    let (Some(a), Some(b)) = (comparable_sutta_range(a_base_ref), comparable_sutta_range(b_base_ref)) else {
+        return false;
+    };
+    match (a.start, a.end, b.start, b.end) {
+        (Some(a_start), Some(a_end), Some(b_start), Some(b_end)) => {
+            a.group == b.group && a_start <= b_end && b_start <= a_end
+        }
+        _ => false,
+    }
+}
+
+/// From `candidate_uids`, the records to list beside `opened_uid` in the
+/// translation tabs: other editions and translations of the same sutta, and
+/// its commentaries.
+///
+/// - A sutta always lists the other mūla records, and its commentaries when
+///   `include_cst_commentary` is set.
+/// - A commentary always lists the mūla records. With `include_cst_commentary`
+///   it lists both commentaries, without it only its own kind.
+///
+/// "The same sutta" is [`sutta_refs_are_related`], in both directions.
+pub fn related_sutta_uids(
+    opened_uid: &str,
+    candidate_uids: &[String],
+    include_cst_commentary: bool,
+) -> Vec<String> {
+    let (opened_base, opened_kind) = split_sutta_ref_kind(opened_uid);
+
+    candidate_uids
+        .iter()
+        .filter(|candidate| candidate.as_str() != opened_uid)
+        .filter(|candidate| {
+            let (base, kind) = split_sutta_ref_kind(candidate);
+            let kind_is_listed = match kind {
+                SuttaRefKind::Mula => true,
+                _ => include_cst_commentary || kind == opened_kind,
+            };
+            kind_is_listed && sutta_refs_are_related(opened_base, base)
+        })
+        .cloned()
+        .collect()
+}
+
+/// The `LIKE` pattern that finds every uid [`related_sutta_uids`] could accept
+/// for `opened_uid`. It over-matches (`mn%` also finds `mnd1`); the filter is
+/// what decides.
+pub fn related_sutta_uids_like_pattern(opened_uid: &str) -> String {
+    let (base, _) = split_sutta_ref_kind(opened_uid);
+    match comparable_sutta_range(base) {
+        Some(range) if base.contains('.') => format!("{}.%", range.group),
+        Some(range) => format!("{}%", range.group),
+        None => format!("{}%", base),
+    }
+}
+
 pub fn normalize_sutta_ref(reference: &str, for_ebooks: bool) -> String {
     let mut ref_str = reference.to_lowercase();
 

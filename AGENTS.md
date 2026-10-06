@@ -204,7 +204,12 @@ Notable feature docs:
   `search_text` / `path` / `sort_path` columns (**changing how one is derived
   means rebuilding the tree** — a stale one fails silently), the edition an SC
   leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
-  the Summaries toggle, and the window's own quiet-failure
+  the Summaries toggle, **which records the reader's translation tabs list**
+  (§2a: `related_sutta_uids()` relates two references when their spans
+  *overlap*, in both directions, so `an5.91` lists `an5.91-100.tik` and the
+  reverse — never match on the reference string; multi-dot refs such as
+  `mil5.2.1` have no comparable span and match as strings only), and the
+  window's own quiet-failure
   rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
   in the window, uncached per-level translation counts). On the CST side:
   **`VERIFIED_CST_FILES` is a verification gate that cannot be replaced by a
@@ -1688,6 +1693,14 @@ The SQLite database is at:
 ```
 
 Use this path for any tests or experimental scripts that need to query the actual database or access runtime assets.
+
+**The backend tests run against this database, not a copy.** A test that
+inserts rows must delete exactly the rows it inserted — clean up by the same
+uid list it wrote, and give fixtures a prefix no real record has (`dummy-…`). A
+cleanup that named the real uids instead deleted `sn17.13-20/pli/ms`,
+`sn12.72-81/pli/ms` and `an11.22-29/pli/ms` from the dist database on every test
+run for months, and the only symptom was three navigation leaves opening a
+different edition.
 
 **Never commit `appdata.sqlite3`** (or any other `*.sqlite3` database) — it is
 a huge file. It is listed in `.gitignore`; do not force-add it, and check

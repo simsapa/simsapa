@@ -14,15 +14,15 @@
 //! `tipitaka-xml-parser` is a work in progress. It produces wrong splits and
 //! wrong uid assignments on files whose structure it does not yet handle, and
 //! nothing in `fragments.sqlite3` records whether a given file's output was
-//! found to be correct. The evidence, measured over the shipped database:
+//! found to be correct. The evidence, measured over the fragments database:
 //!
 //! - **`frag_review` is not a verdict.** `checked` means a human eyeballed that
 //!   fragment so the parser could move past a stuck or edge-case state; its
 //!   *absence* means the fragment never needed scrutiny, not that it is wrong.
-//!   Only 155 of 7,349 Sutta fragments carry any review value, spread over 23
-//!   files, and **no file** has all of its fragments marked -- not even a
-//!   verified one, where 92 of 3,178 are marked. Some unverified files carry
-//!   more marks than verified ones (`s0305a.att.xml`: 47).
+//!   `agent-checked` is the same pass made by an agent, and `moved` marks an
+//!   empty record. Only 511 of 7,104 Sutta fragments carry any review value,
+//!   spread over 32 of the 52 files, and **no file** has all of its fragments
+//!   marked.
 //! - **The quality signal lives in the parser, not in the data.**
 //!   `tipitaka-xml-parser/src/web/validation.rs` runs nine checks over the
 //!   parsed fragments -- `missing_sc_code`, `unattached_text`,
@@ -42,7 +42,7 @@
 //! ## The verified list names source files; the toc names divisions
 //!
 //! [`VERIFIED_CST_FILES`] carries the file names the **parser** read, which are
-//! the `romn/` source names and the `cst_file` values (measured: all 30 entries
+//! the `romn/` source names and the `cst_file` values (measured: all 52 entries
 //! appear in all three of `cst_file`, `romn/` and the toc set, with no
 //! mismatch in either direction). The navigation tree, by contrast, works in the
 //! **division** files the CST toc links -- `s0101a.att0.xml`,
@@ -64,6 +64,12 @@
 //!
 //! Within the verified set the class is still **computed**, so adding mappings
 //! to an already-verified file moves it between classes with no code change.
+//!
+//! A fragment with `frag_review = 'moved'` is left out of every count above. It
+//! is an empty, zero-width record whose text was folded into a neighbour, and
+//! the parser clears its `sc_code` deliberately -- so it is not an unmapped
+//! fragment, and counting it as one would keep its file out of the fully mapped
+//! class for a record that carries none of the file's text.
 //!
 //! ## Why a coarser record is dropped where a finer one covers the file
 //!
@@ -98,7 +104,7 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// Adding an entry is a deliberate act: run `tipitaka-xml-parser`'s validations
 /// over the file, review the result, then add it here and re-run the CST import
 /// and the Pāli fulltext index rebuild.
-static VERIFIED_CST_FILES: [&str; 30] = [
+static VERIFIED_CST_FILES: [&str; 52] = [
     // Dīgha Nikāya
     "s0101a.att.xml",
     "s0101m.mul.xml",
@@ -134,6 +140,30 @@ static VERIFIED_CST_FILES: [&str; 30] = [
     "s0304a.att.xml",
     "s0304m.mul.xml",
     "s0304t.tik.xml",
+    "s0305a.att.xml",
+    "s0305m.mul.xml",
+    "s0305t.tik.xml",
+
+    // Aṅguttara Nikāya
+    "s0401m.mul.xml",
+    "s0402m1.mul.xml",
+    "s0402m2.mul.xml",
+    "s0402m3.mul.xml",
+    "s0403m1.mul.xml",
+    "s0403m2.mul.xml",
+    "s0403m3.mul.xml",
+    "s0404m1.mul.xml",
+    "s0404m2.mul.xml",
+    "s0404m3.mul.xml",
+    "s0404m4.mul.xml",
+    "s0401a.att.xml",
+    "s0402a.att.xml",
+    "s0403a.att.xml",
+    "s0404a.att.xml",
+    "s0401t.tik.xml",
+    "s0402t.tik.xml",
+    "s0403t.tik.xml",
+    "s0404t.tik.xml",
 ];
 
 
@@ -183,50 +213,94 @@ pub struct FileCoverage {
 /// [`CoverageClass::Unmapped`] — [`coverage_of`] is what applies that default,
 /// so no caller has to remember it.
 pub fn compute_coverage(frag_conn: &mut SqliteConnection) -> Result<HashMap<String, FileCoverage>> {
-    let rows: Vec<(String, Option<String>, i32, i32)> = xml_fragments::table
+    let rows: Vec<(String, Option<String>, Option<String>, i32, i32, i32, i32)> = xml_fragments::table
         .filter(xml_fragments::frag_type.eq("Sutta"))
         .select((
             xml_fragments::cst_file,
             xml_fragments::sc_code,
+            xml_fragments::frag_review,
             xml_fragments::start_line,
+            xml_fragments::start_char,
             xml_fragments::end_line,
+            xml_fragments::end_char,
         ))
         .order((xml_fragments::cst_file.asc(), xml_fragments::start_line.asc()))
         .load(frag_conn)
         .context("Failed to read fragments for the coverage classification")?;
 
-    let mut per_file: HashMap<String, Vec<(Option<String>, i32, i32)>> = HashMap::new();
-    for (file, sc_code, start, end) in rows {
-        per_file.entry(file).or_default().push((sc_code, start, end));
+    let mut per_file: HashMap<String, Vec<FragmentSpan>> = HashMap::new();
+    for (file, sc_code, frag_review, start_line, start_char, end_line, end_char) in rows {
+        // The file gets an entry even when every fragment of it is moved.
+        let spans = per_file.entry(file).or_default();
+        let is_empty = start_line == end_line && start_char == end_char;
+        if is_moved_fragment(frag_review.as_deref(), is_empty) {
+            continue;
+        }
+        spans.push(FragmentSpan { mapped: sc_code.is_some(), start_line, end_line });
     }
 
-    let mut out = HashMap::new();
-    for (file, mut spans) in per_file {
-        spans.sort_by_key(|(_, start, _)| *start);
+    Ok(per_file
+        .into_iter()
+        .map(|(file, spans)| {
+            let coverage = classify_spans(is_verified(&file), spans);
+            (file, coverage)
+        })
+        .collect())
+}
 
-        let total = spans.len();
-        let mapped = spans.iter().filter(|(sc, _, _)| sc.is_some()).count();
-        // A hole between two consecutive fragments is text no fragment record
-        // carries, so the fragments do not cover the file even if all of them
-        // are mapped.
-        let gapless = spans.windows(2).all(|w| w[1].1 <= w[0].2 + 1);
+/// The `frag_review` value of a fragment whose text was folded into a
+/// neighbour.
+///
+/// Such a record is empty and zero-width, and the parser clears its `sc_code`
+/// on purpose: the neighbour carries both the text and the uid. It is therefore
+/// **not** an unmapped fragment and takes no part in the classification.
+/// Counting it keeps a file out of the fully mapped class for a record that
+/// holds none of the file's text, and the whole file is then stored twice.
+pub const MOVED_REVIEW: &str = "moved";
 
-        // The verification gate comes first: an unverified parse never yields a
-        // fragment record, however completely mapped it looks.
-        let class = if !is_verified(&file) {
-            CoverageClass::Unverified
-        } else if total > 0 && mapped == total && gapless {
-            CoverageClass::FullyMapped
-        } else if mapped > 0 {
-            CoverageClass::PartiallyMapped
-        } else {
-            CoverageClass::Unmapped
-        };
+/// Whether a fragment is a moved record to leave out of the classification.
+///
+/// The mark alone is not enough. A record marked moved that still spans text
+/// is counted like any other fragment: it has no `sc_code`, so its file falls
+/// back to the partially mapped class and keeps its divisions, and the text
+/// stays findable. Trusting the mark there would drop that text from the app
+/// without a word.
+fn is_moved_fragment(frag_review: Option<&str>, is_empty: bool) -> bool {
+    frag_review == Some(MOVED_REVIEW) && is_empty
+}
 
-        out.insert(file, FileCoverage { mapped, total, gapless, class });
-    }
+/// One text-carrying `frag_type = 'Sutta'` fragment, as the classification
+/// sees it.
+#[derive(Debug, Clone, Copy)]
+struct FragmentSpan {
+    mapped: bool,
+    start_line: i32,
+    end_line: i32,
+}
 
-    Ok(out)
+fn classify_spans(verified: bool, mut spans: Vec<FragmentSpan>) -> FileCoverage {
+    spans.sort_by_key(|span| span.start_line);
+
+    let total = spans.len();
+    let mapped = spans.iter().filter(|span| span.mapped).count();
+    // A hole between two consecutive fragments is text no fragment record
+    // carries, so the fragments do not cover the file even if all of them
+    // are mapped.
+    let gapless = spans.windows(2).all(|w| w[1].start_line <= w[0].end_line + 1);
+
+    // The verification gate comes first: an unverified parse never yields a
+    // fragment record, however completely mapped it looks.
+    let class = if !verified {
+        CoverageClass::Unverified
+    } else if total > 0 && mapped == total && gapless {
+        CoverageClass::FullyMapped
+    } else if mapped > 0 {
+        CoverageClass::PartiallyMapped
+    } else {
+        CoverageClass::Unmapped
+    };
+
+    FileCoverage { mapped, total, gapless, class }
 }
 
 /// The coverage of one file, defaulting to unmapped when it has no fragments.
@@ -541,6 +615,38 @@ mod tests {
 </div>
 </div>
 </body></text></TEI.2>"#;
+
+    fn span(mapped: bool, start_line: i32, end_line: i32) -> FragmentSpan {
+        FragmentSpan { mapped, start_line, end_line }
+    }
+
+    #[test]
+    fn classifies_by_mapping_and_gaplessness_within_the_verified_set() {
+        let full = vec![span(true, 1, 10), span(true, 11, 20)];
+        assert_eq!(classify_spans(true, full.clone()).class, CoverageClass::FullyMapped);
+        // The gate comes first, whatever the mapping looks like.
+        assert_eq!(classify_spans(false, full).class, CoverageClass::Unverified);
+
+        let partial = vec![span(true, 1, 10), span(false, 11, 20)];
+        assert_eq!(classify_spans(true, partial).class, CoverageClass::PartiallyMapped);
+
+        let holed = vec![span(true, 1, 10), span(true, 15, 20)];
+        let coverage = classify_spans(true, holed);
+        assert!(!coverage.gapless);
+        assert_eq!(coverage.class, CoverageClass::PartiallyMapped);
+
+        assert_eq!(classify_spans(true, vec![span(false, 1, 10)]).class, CoverageClass::Unmapped);
+        assert_eq!(classify_spans(true, Vec::new()).class, CoverageClass::Unmapped);
+    }
+
+    #[test]
+    fn only_an_empty_moved_record_is_left_out() {
+        assert!(is_moved_fragment(Some("moved"), true));
+        // Marked moved but still carrying text: counted, so nothing is lost.
+        assert!(!is_moved_fragment(Some("moved"), false));
+        assert!(!is_moved_fragment(Some("checked"), true));
+        assert!(!is_moved_fragment(None, true));
+    }
 
     #[test]
     fn splits_at_chapter_markers_and_rebalances_each_piece() {

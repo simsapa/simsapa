@@ -1,5 +1,8 @@
 use diesel::prelude::*;
-use regex::Regex;
+use crate::helpers::{
+    comparable_sutta_range, related_sutta_uids, related_sutta_uids_like_pattern, split_sutta_ref_kind,
+    SuttaRefKind,
+};
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
@@ -322,64 +325,34 @@ impl AppdataDbHandle {
         include_cst_commentary: bool,
         include_cst_mula: bool,
     ) -> String {
-        // See sutta_search_window_state.py::_add_related_tabs()
-
-        // Capture the reference before the first '/'
-        let re = Regex::new(r"^([^/]+)/.*").expect("Invalid regex");
-        let uid_ref = re.replace(sutta_uid, "$1").to_string();
-
-        // Derive the base ref by stripping .att/.tik suffixes.
-        // E.g. "mn1.att" -> "mn1", "mn1.tik" -> "mn1", "mn1" -> "mn1"
-        let base_ref = uid_ref
-            .split(".att").next().unwrap_or(&uid_ref)
-            .split(".tik").next().unwrap_or(&uid_ref);
-
-        let is_commentary = base_ref != uid_ref;
-
+        // The records to list are decided by `related_sutta_uids`: the same
+        // reference, or a span of the same group that shares a sutta with it.
+        // Two steps, so the wide candidate query reads uids only and the full
+        // rows (with their content) are loaded for the matches alone.
         use crate::db::appdata_schema::suttas::dsl::*;
 
         let app_data = get_app_data();
         let _lock = app_data.dbm.appdata.write_lock.lock();
         let mut db_conn = app_data.dbm.appdata.get_conn().expect("get_translations_data_json_for_sutta_uid(): No appdata conn");
 
+        let candidate_uids: Vec<String> = suttas
+            .filter(uid.like(related_sutta_uids_like_pattern(sutta_uid)))
+            .select(uid)
+            .load(&mut db_conn)
+            .unwrap_or_default();
+
+        let related_uids = related_sutta_uids(sutta_uid, &candidate_uids, include_cst_commentary);
+
         let mut res: Vec<Sutta> = Vec::new();
-
-        // Build the uid filter: always include uid_ref/%, optionally include .att/% and .tik/%
-        let mut query = suttas.into_boxed()
-            .select(Sutta::as_select())
-            .filter(uid.ne(sutta_uid));
-
-        if is_commentary {
-            // The opened sutta is a commentary (e.g. mn1.att/pli/cst).
-            // Always include the mūla translations (base_ref/%).
-            // Include other commentary types based on include_cst_commentary setting.
-            if include_cst_commentary {
-                // Include mūla, .att, and .tik variants
-                query = query.filter(
-                    uid.like(format!("{}/%", base_ref))
-                       .or(uid.like(format!("{}.att%/%", base_ref)))
-                       .or(uid.like(format!("{}.tik%/%", base_ref)))
-                );
-            } else {
-                // Include mūla and the same commentary type as the opened sutta
-                query = query.filter(
-                    uid.like(format!("{}/%", base_ref))
-                       .or(uid.like(format!("{}/%", uid_ref)))
-                );
+        // Chunked to stay under SQLite's bound-parameter limit.
+        for chunk in related_uids.chunks(500) {
+            if let Ok(a) = suttas
+                .filter(uid.eq_any(chunk))
+                .select(Sutta::as_select())
+                .load(&mut db_conn)
+            {
+                res.extend(a);
             }
-        } else if include_cst_commentary {
-            // Match mūla and commentary, including .xml variants (e.g. .att.xml/, .tik.xml/)
-            query = query.filter(
-                uid.like(format!("{}/%", uid_ref))
-                   .or(uid.like(format!("{}.att%/%", uid_ref)))
-                   .or(uid.like(format!("{}.tik%/%", uid_ref)))
-            );
-        } else {
-            query = query.filter(uid.like(format!("{}/%", uid_ref)));
-        }
-
-        if let Ok(a) = query.load(&mut db_conn) {
-            res.extend(a);
         }
 
         // Filter out CST mūla records if not included
@@ -1638,15 +1611,21 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     // Sort pli_others so mūla (e.g. mn1/pli/cst) comes before
     // commentary (e.g. mn1.att/pli/cst, mn1.tik/pli/cst).
     // Commentary UIDs contain .att or .tik before the first '/'.
-    pli_others.sort_by(|a, b| {
-        let a_ref = a.uid.split('/').next().unwrap_or("");
-        let b_ref = b.uid.split('/').next().unwrap_or("");
-        let a_is_commentary = a_ref.contains(".att") || a_ref.contains(".tik");
-        let b_is_commentary = b_ref.contains(".att") || b_ref.contains(".tik");
-        a_is_commentary.cmp(&b_is_commentary).then_with(|| a.uid.cmp(&b.uid))
+    //
+    // Within each bucket the order is by sutta number before uid: a list that
+    // spans several suttas (the mūla records beside `an5.91-100.tik`) would
+    // otherwise read an5.100, an5.91, an5.92 as plain strings.
+    let range_start = |s: &Sutta| {
+        let (base, _) = split_sutta_ref_kind(&s.uid);
+        comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0)
+    };
+    results.sort_by_cached_key(|s| (range_start(s), s.uid.clone()));
+    pli_others.sort_by_cached_key(|s| {
+        let (_, kind) = split_sutta_ref_kind(&s.uid);
+        (kind != SuttaRefKind::Mula, range_start(s), s.uid.clone())
     });
-    // Sort non-pli by language, then by uid within the same language
-    remaining.sort_by(|a, b| a.language.cmp(&b.language).then_with(|| a.uid.cmp(&b.uid)));
+    // Sort non-pli by language, then by sutta number and uid within the same language
+    remaining.sort_by_cached_key(|s| (s.language.clone(), range_start(s), s.uid.clone()));
     // Assemble final list
     results.extend(pli_others);
     results.extend(remaining);

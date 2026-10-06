@@ -36,11 +36,11 @@ would be a second path to the same material.
 
 Splitting runs over **every** source file, Mūla included, so `romn/` Mūla files
 carry division records (`s0305m.mul11.xml/pli/cst`) that no `navigation_nodes`
-row points at — 661 of them today. That is deliberate and is not a gap to close
+row points at — 463 of them today. That is deliberate and is not a gap to close
 by building a Mūla root.
 
 Those records exist so that **no text is missing from the app** while the parser
-catches up. `tipitaka-xml-parser` has mapped 30 of the 217 source files to
+catches up. `tipitaka-xml-parser` has mapped 52 of the 217 source files to
 verified sutta-fragment uids (§3.1); until a file is on that list its suttas have
 no mapped uid, and the division records are what keep its text present and
 findable by search. As more files are verified, their suttas become mapped
@@ -281,8 +281,10 @@ Ranking is load-bearing rather than cosmetic. Taking the first Pāli row in uid
 order — which is what an unranked scan does, because `dn1/pli/cst` sorts before
 `dn1/pli/ms` — handed 1,379 leaves the CST edition and 5,906 the Mahāsaṅgīti, so
 browsing DN and browsing SN returned different editions for no stated reason.
-With the rank applied it is 7,283 `ms`, 2 `cst` (ranged uids with no `ms` row)
-and 1 English (a node with no Pāli text at all, opened rather than dimmed).
+With the rank applied every leaf opens the Mahāsaṅgīti — all 7,992 today. A leaf
+with no `ms` row falls back to another Pāli edition and then to a translation,
+opened rather than dimmed; one that does is worth a look, because a missing `ms`
+row is a missing record, not a property of the text.
 
 The CST mūla fragments those 1,379 leaves used to open are now reached the same
 way every other alternative edition is: **the reader's own translations panel**.
@@ -291,6 +293,78 @@ opened one, so `dn1/pli/cst` is offered there for an opened `dn1/pli/ms` — but
 **only when the user has enabled CST mūla**, which is what `include_cst_mula`
 gates (the panel filters those rows out otherwise). Search reaches them
 regardless.
+
+### Which records the translation tabs list
+
+`get_translations_data_json_for_sutta_uid()` (`backend/src/db/appdata.rs`) is
+what fills the tab group beside an opened text, and the column-bar dropdowns
+through `/translations_for_sutta`. It asks one question of every candidate
+record — *is this about the opened text?* — and `related_sutta_uids()` in
+`backend/src/helpers.rs` answers it. The rule is pure and has no database in
+it; `backend/tests/test_related_sutta_uids.rs` covers it.
+
+**Two references are related when they are equal, or when they are spans of the
+same group that share at least one sutta.** A uid is first split into the sutta
+reference and the kind of text (`an5.91-100.tik/pli/cst` → `an5.91-100`, ṭīkā),
+and the reference into a group and a span (`an5`, 91–100; a single sutta is a
+span of one). Then:
+
+| Opened | Candidate | Related |
+|---|---|---|
+| `an5.91` | `an5.91-100.tik` | yes — the span contains it |
+| `an5.91-100.tik` | `an5.95`, `an5.100` | yes — the other direction |
+| `an8.71-627` | `an8.118-627` | yes — different boundaries, shared suttas |
+| `an5.101` | `an5.91-100.tik` | no |
+| `an6.95` | `an5.91-100.tik` | no — another group |
+| `mn1` | `mn10`, `mnd1` | no |
+
+It is **overlap, not containment**, and it is symmetric. Neither numbering is
+the reference one: the CST commentaries treat several suttas in one passage, and
+two editions cut a repetition series at different places, so a record can start
+before the opened one and end inside it.
+
+Which *kinds* are listed is decided separately, by the two settings:
+
+| Opened | Mūla records | Aṭṭhakathā | Ṭīkā |
+|---|---|---|---|
+| a sutta | always | with `include_cst_commentary` | with `include_cst_commentary` |
+| an aṭṭhakathā | always | always | with `include_cst_commentary` |
+| a ṭīkā | always | with `include_cst_commentary` | always |
+
+`include_cst_mula` then removes the `…/pli/cst` mūla rows, as above.
+
+The lookup runs in two steps. A `LIKE` on the group prefix
+(`related_sutta_uids_like_pattern()`: `an5.%`, `mn%`) reads **uids only**, the
+rule filters them, and the full rows are loaded for the matches. The pattern
+over-matches on purpose — `mn%` also returns `mnd1` — and the rule is what
+decides; do not tighten the pattern into the filter. The tabs are ordered by
+sutta number before uid, so a span's suttas read 91, 92 … 100 rather than as
+strings.
+
+> **Trap: matching on the reference string hides every ranged commentary.** A
+> `LIKE '<ref>.att%'` lookup finds a commentary only where its span is spelled
+> exactly like a sutta uid. 620 of the 3,711 commentary records are not, and
+> were listed beside no sutta at all.
+
+> **Trap: a reference with more than one `.` has no comparable span.**
+> `sutta_range_from_ref` reads only the first two components, so `mil5.2.1`
+> through `mil5.2.8` all come out as `mil5` 2–2 and would each list the other
+> seven as editions of itself. 328 Mahāsaṅgīti records have that shape (`mil`,
+> `ya`, `ds`); `comparable_sutta_range()` returns `None` for them and they match
+> as strings only. A reversed span (`an5.100-91`) is treated the same way.
+
+Three things that look like defects and are the data:
+
+- **A commentary over a long series lists many records** — `an5.221-302.tik`
+  lists 107, every sutta of the series in every translation.
+- **Two ṭīkā records overlap each other**: `an8.59-63.tik` and `an8.61-65.tik`.
+  Each lists the other, and `an8.61`–`an8.63` list both.
+- **A sutta with no commentary listed** has no passage of its own in the
+  commentary; about 520 of the 3,499 DN–AN suttas.
+
+Within one edition no two mūla records overlap, so the rule never offers a
+neighbouring sutta as an edition of the opened one. If a source is ever added
+whose records overlap each other, that is where this rule needs a second look.
 
 This is the intended division of labour: the tree gives one route to a text, and
 the reader gives the editions of it. Do not add a second `sutta_uid` to a node,
@@ -1164,7 +1238,7 @@ be conflated. `cli/src/bootstrap/cst_coverage.rs` holds both.
 
 ### 3.1 Is the parse trustworthy? — `VERIFIED_CST_FILES`
 
-A hand-maintained list of 30 source file names. **Only a listed file
+A hand-maintained list of 52 source file names. **Only a listed file
 contributes fragment records.** Everything else is imported as divisions of the
 source XML, which do not depend on the parser's sutta splitting at all.
 
@@ -1187,14 +1261,15 @@ whether its fragments are sound.
 > **Trap: `frag_review` is not a verdict and cannot reconstruct the list.**
 > `checked` means a human eyeballed that fragment so the parser could move past
 > a stuck or edge-case state; its **absence** means the fragment never needed
-> scrutiny, not that it is wrong. Measured over the shipped database: 155 of
-> 7,349 Sutta fragments carry any review value, across 23 files; **no file** has
-> all of its fragments marked, not even a verified one; and some unverified
-> files carry more marks than verified ones. The validation verdict is never
-> written back into `fragments.sqlite3`, so the list is the only record of it.
+> scrutiny, not that it is wrong. The other values are no verdict either:
+> `agent-checked` is the same pass made by an agent, and `moved` marks an empty
+> record (§3.2). Measured over the fragments database: 511 of 7,104 Sutta
+> fragments carry any review value, across 32 of the 52 files, and **no file**
+> has all of its fragments marked. The validation verdict is never written back
+> into `fragments.sqlite3`, so the list is the only record of it.
 
 The list was previously called `CHECKED_XML_WHITELIST` and lived in
-`tipitaka_xml.rs`. It is the same 30 entries; the name changed because
+`tipitaka_xml.rs`. The name changed because
 "checked" collided with `frag_review = 'checked'`, which means something else.
 
 **To add a file:** run the parser's validations over it, review the output, add
@@ -1217,6 +1292,20 @@ verified set.
 Within the verified set the class is computed, so adding mappings to an
 already-verified file moves it between classes with no code change.
 
+**A `frag_review = 'moved'` fragment is left out of every count.** It is an
+empty, zero-width record whose text was folded into a neighbour, and the parser
+clears its `sc_code` on purpose — the neighbour carries the text and the uid.
+The mark alone does not qualify it: the record must also be zero-width. One
+marked moved that still spans text is counted like any other fragment, so its
+file stays partially mapped and the text stays in a division.
+
+> **Trap: counting a moved record as unmapped stores its whole file twice.** One
+> empty record is enough to keep a file out of the fully mapped class, and a
+> partially mapped file gets divisions *plus* fragments. 33 such records in 9
+> files did exactly that — to the whole of the Dīgha and Majjhima first-volume
+> aṭṭhakathā and ṭīkā, among others — while every text-carrying fragment of
+> those files was mapped.
+
 **Full** coverage is the predicate, not "has any `sc_code`": the weaker test
 would promote a file with 2 of 33 fragments mapped to fragment-only import and
 lose the other 31. **Gaplessness** is part of it for the same reason — a file
@@ -1233,7 +1322,8 @@ that matches it.
 
 The accepted exception is the partially mapped class, whose mapped portion is
 stored twice — as a division and as a fragment — so that the *unmapped*
-remainder stays findable. That is a few MB across four files today.
+remainder stays findable. No file is in that class today: all 52 verified
+files are fully mapped.
 
 ### 3.4 Dual identity, in the partially mapped class only
 
@@ -1299,6 +1389,15 @@ counted in the coverage report as "merged into an adjacent record" — they are
 A leaf with no fragments in a file that has none at all is a different matter,
 and is reported.
 
+**A fragment with no `cst_sutta` is named after its innermost group level.**
+The Aṅguttara commentaries treat many vaggas, and a few paṇṇāsakas, in one
+passage with no sutta heading inside; 77 such fragments have an empty
+`cst_sutta`. `fragment_title()` in `tipitaka_xml.rs` gives both the stored
+record and its tree row the vagga's (or paṇṇāsaka's) title, which is the heading
+the text opens with — never the Nikāya level. Left empty, the record has a blank
+title in the reader and in search results, and its row cannot collapse into the
+toc leaf above it.
+
 **A leaf whose one fragment is the same text under the same name becomes a
 leaf, not a branch.** Where the join yields exactly one fragment *and* its title
 matches the toc leaf's (niggahita-folded), the leaf carries that fragment's
@@ -1310,17 +1409,19 @@ also reading `1. Mahāpadānasuttavaṇṇanā` — and cost a tap for nothing.
 all; it is one the fragment join above invents, and a one-element group is not a
 level. The equivalence test is what keeps that true: a leaf whose single
 fragment has a *different* name is a real containment and keeps its branch.
-Today 56 leaves collapse and 2 do not — `4. Okkantasaṁyuttaṁ` over
+Today 164 leaves collapse and 18 do not — `4. Okkantasaṁyuttaṁ` over
 `1-10. Cakkhusuttādivaṇṇanā`, in the aṭṭhakathā and its ṭīkā, where the saṁyutta
-really does contain one ranged commentary record.
+really does contain one ranged commentary record, and Aṅguttara vaggas such as
+`(10) 5. Kakudhavaggo` over `1-10. Paṭhamasampadāsuttādivaṇṇanā`.
 
 The test compares the titles verbatim apart from the niggahita (the two strings
 come from different sources and the corpus does not spell it consistently). Do
 not loosen it — ignoring the leading number, say, would collapse genuine
 containments.
 
-> **Trap: several fragments can share one `sc_code`.** 110 do (three in
-> `an4.1.att`), and the import keeps only the first. Anything building rows per
+> **Trap: several fragments can share one `sc_code`.** None does in today's
+> fragments database, but nothing forbids it, and the import keeps only the
+> first. Anything building rows per
 > *fragment* must de-duplicate by uid in the same order, or it names records
 > that were never written and collides on `node_uid`.
 
