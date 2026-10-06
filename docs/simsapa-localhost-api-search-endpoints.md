@@ -29,6 +29,8 @@ is catalogued with its purpose in the complete route reference (§14), with the
 remaining request/response structs in §15. The **gloss pipeline** routes
 (`POST /gloss_text` and the `GET /word_selection_ws` WebSocket) — for external
 clients building a two-step "Glossing… → Word Selection…" table UI — are in §16.
+**Reference conversion** (`POST /reference_search`: a PTS volume and page to its
+SuttaCentral reference, and back) is in §17.
 
 All search routes reuse the in-app search path
 (`SearchQueryTask::new` + `results_page(page_num)` + `total_hits()`), so the
@@ -93,7 +95,7 @@ small and makes results `grep`-able.
 A ready-to-use example can be found in the Simsapa repository:
 [`scripts/simsapa_fmt.py`](../scripts/simsapa_fmt.py). It is a *formatter only*
 (it does no network I/O — `curl` does the request), and it auto-detects every
-shape these routes return: search results, word records, the `verbose=1` word
+shape these routes return: search results, reference rows (§17), word records, the `verbose=1` word
 envelope, the `/health` and `/sutta_and_dict_search_options` snapshots, and
 rendered sutta/word HTML (tags stripped to plain text). Typical pipeline:
 
@@ -838,6 +840,7 @@ views, not for headless data retrieval.
 | `POST /suttas_fulltext_search` | Suttas, FulltextMatch (tantivy) / Uid auto-detect | §1, §5, §12.1 |
 | `POST /suttas_contains_search` | Suttas, ContainsMatch (literal) / Uid auto-detect | §1, §12.1 |
 | `POST /dict_combined_search` | Dictionary, DpdLookup + deconstructor / Uid auto-detect | §1, §12.2 |
+| `POST /reference_search` | Sutta reference table lookup: PTS volume/page (range-matched), DPR reference, Pāli title or SuttaCentral reference → every reference style of the matching suttas, as `{hits, results[]}` capped by `limit`. 400 on unknown `field` | §17 |
 | `GET /sutta_and_dict_search_options` | Filter option lists (`sutta_languages[]`, `dict_languages[]`, `dict_sources[]`) | §10; struct `SearchOptions` §15 |
 | `GET /get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>` | Full rendered sutta HTML (text retrieval); 404 on miss; optional display params | §13, §14.5 |
 | `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]&[layout=…]&[columns=…]` | Query-param twin of `get_sutta_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss; optional display params | §13, §14.5 |
@@ -993,6 +996,9 @@ struct SearchOptions {
 
 // POST /lookup_window_query  ← request
 struct LookupWindowRequest { query_text: String }
+
+// POST /reference_search  ← request (response rows: §17)
+struct ReferenceSearchRequest { query_text: String, field: Option<String>, limit: Option<usize> }
 
 // POST /sutta_menu_action  ← request
 struct SuttaMenuRequest { window_id: String, action: String, text: String }
@@ -1708,3 +1714,151 @@ $("go").addEventListener("click", gloss);
 </body>
 </html>
 ```
+
+## 17. Reference conversion: `POST /reference_search`
+
+The search of the **Reference Search** window (`ReferenceSearchWindow.qml`), for
+converting a sutta reference from one style to another — typically a PTS volume
+and page (`M iii 24`) to the SuttaCentral reference (`MN 110`).
+
+It reads the bundled reference table (`assets/sutta-reference-converter.json`,
+embedded in the app), so it needs no index and works before any search has run.
+The handler is `reference_search` in `bridges/src/api.rs`; the matching is
+`pts_reference_search::search()` in `backend/src/pts_reference_search.rs`, the
+same function the window calls. The route parses the table on its first call:
+the window otherwise does that when it opens, and the search panics on an
+unparsed table.
+
+This is a different mechanism from the reference auto-detect of the sutta search
+routes (§5), which recognises SuttaCentral-style references only and returns
+sutta records. A PTS volume and page means nothing to those routes.
+
+### 17.1 Request
+
+```json
+{ "query_text": "M iii 24", "field": "pts_reference", "limit": 100 }
+```
+
+| Field | Meaning |
+|---|---|
+| `query_text` | The reference or title to look up. Required. |
+| `field` | Which column to search — the window's drop-down. Optional, default `pts_reference`. An unrecognized value is **HTTP 400** with the accepted names in the body. |
+| `limit` | The most rows to return. Optional, default 100; `0` returns every match. |
+
+| `field` | Matching |
+|---|---|
+| `pts_reference` | **Page-range match.** The query is parsed into book, volume and page, and matches the sutta whose PTS pages contain that page — `M iii 24` finds the sutta printed on M iii 20–25. |
+| `sutta_ref` | Substring of the SuttaCentral reference (`MN 110`). |
+| `title_pali` | Substring of the Pāli title (`Cūḷapuṇṇamasutta`). |
+| `dpr_reference` | Substring of the Digital Pāli Reader reference (`KN 2.1`). |
+
+The three substring fields compare lowercased and without diacritics, so
+`satipatthana` finds `Satipaṭṭhānasutta`.
+
+### 17.2 Response
+
+```json
+{
+  "hits": 1,
+  "results": [
+    {
+      "uid": "mn110/pli/ms",
+      "sc_uid": "mn110",
+      "sutta_ref": "MN 110",
+      "title_pali": "Cūḷapuṇṇamasutta",
+      "pts_reference": "M iii 20",
+      "dpr_reference": null,
+      "dpr_reference_alt": null,
+      "url": "https://suttacentral.net/mn110",
+      "pts_nikaya": "M",
+      "pts_vol": "iii",
+      "pts_vol_verse": null,
+      "pts_start_page": 20,
+      "pts_end_page": 25,
+      "edition": null
+    }
+  ]
+}
+```
+
+`hits` counts every match; `results` holds at most `limit` of them, so
+`hits > results.length` means the answer was cut. No match is HTTP 200 with
+`hits: 0`. There is no paging: narrow the query, or raise `limit`.
+
+| Field | Meaning |
+|---|---|
+| `uid` | The uid of the text **in this app's database**, ready for the retrieval routes (§13): the Pāli Mahāsaṅgīti text when there is one, else another edition of the same uid. **`null` when the row has no directly matching uid** — see §17.3. |
+| `sc_uid` | SuttaCentral's id for the row, the last path segment of `url`. This is what "SuttaCentral style" means as an identifier. **Not a uid for this API** — see §17.3. |
+| `sutta_ref` | The SuttaCentral-style reference as cited (`MN 110`). |
+| `title_pali` | The Pāli title; may be empty. |
+| `pts_reference` | The PTS reference of the sutta's **first** page; empty on the rows the table has no PTS reference for. |
+| `pts_nikaya`, `pts_vol`, `pts_start_page`, `pts_end_page` | The parsed PTS reference the range match runs on. `pts_end_page` is the page the sutta ends on. |
+| `pts_vol_verse` | The verse span, for verse collections (`Dh v1-20`). |
+| `dpr_reference`, `dpr_reference_alt` | Digital Pāli Reader references; null on most rows. |
+| `edition` | The PTS edition where the table distinguishes two (`Feer`, `Somaratne1999`), else null. |
+| `url` | The SuttaCentral page. |
+
+### 17.3 `uid` and `sc_uid` are not interchangeable
+
+The table is SuttaCentral's, and it is wider than this app's database. Take the
+text from `uid`, and the citation from `sutta_ref` / `sc_uid`:
+
+- **`uid` is `null` for texts the app does not hold** — the Chinese Āgama
+  parallels (`sa…`, `ma…`, `ea…`), among others.
+- **`uid` is also `null` where the app stores a text under a wider uid** than
+  SuttaCentral's id: a Dhammapada chapter is `dhp21-32` here and `dhp2` there.
+  `null` therefore does not prove the text is absent.
+- **Never pass `sc_uid` to a sutta route in place of a `null` `uid`.** The sutta
+  routes read `dhp2` as *verse* 2 and return chapter 1 (§14.4), while the table
+  means *chapter* 2. Search for the title or the verse number instead.
+
+### 17.4 Reading the result of a PTS lookup
+
+- **Several rows are a real answer, not noise.** A PTS page often holds more
+  than one short sutta: `A i 10` returns AN 1.47 – AN 1.54. Rows whose sutta
+  *starts* on the queried page come first, then those that merely span it.
+  Which of them a citation means cannot be decided from the page alone.
+- **One sutta can appear once per edition.** `S i 1` returns SN 1.1 three times:
+  `edition` null, `Feer` and `Somaratne1999`. Their pages can differ, so a
+  citation of the Saṁyutta's first volume needs its edition to be converted
+  exactly.
+- **Accepted spellings of one reference:** `M iii 24`, `m iii 24`, `M.III.24`,
+  `MN iii 24`, `PTS M iii 24`, `M iii 24-25`, `M iii 24–25`, `M iii 24ff`. The
+  book is the PTS abbreviation (`A`, `D`, `M`, `S`, `Dh`, `It`, `Kh`, `Sn`, `Th`,
+  `Ud`, `Pv`, `Vv`, `Ap`, `Cv`, `Nett`, `Pet`, `Vin`); `DN`, `MN`, `SN` and
+  `AN` are read as `D`, `M`, `S` and `A` **when a volume follows**.
+- **Without a volume, `Sn` is the Suttanipāta**, never the Saṁyutta. Such a
+  reference (`Sn 235`, `Th 627`) is tried both as a page and as a verse number,
+  so it resolves to the sutta containing the verse. **Dhammapada verse numbers
+  do not resolve** (`Dh 183` is read as page 183 and returns nothing): `Dh` takes
+  a PTS page, and the chapter of a verse comes from the sutta routes (§14.4).
+- **`hits: 0` has three causes that look the same:** a book the table has no PTS
+  reference for (the Jātaka, `J i 1`), a page outside every sutta's span, and a
+  book abbreviation the parser does not know. It never means "bad request".
+- **A query that does not parse** as book + volume + page (`M iii`, `p. 24`)
+  falls back to a substring match over `pts_reference`.
+- **`sutta_ref` is a substring match on the spaced form.** `MN 110` and `mn 110`
+  match; `mn110` does not, and `MN 1` also returns MN 10–19 and MN 100–152. Pick
+  the row whose `sutta_ref` equals the query.
+
+### 17.5 Examples
+
+```sh
+# PTS → SuttaCentral
+curl -s -X POST "localhost:$PORT/reference_search" \
+  -H 'Content-Type: application/json' -d '{"query_text":"S v 421"}' \
+  | jq -r '.results[] | "\(.sutta_ref)  \(.sc_uid)  \(.title_pali)"'
+
+# SuttaCentral → PTS (exact row only)
+curl -s -X POST "localhost:$PORT/reference_search" \
+  -H 'Content-Type: application/json' -d '{"query_text":"MN 10","field":"sutta_ref"}' \
+  | jq -r '.results[] | select(.sutta_ref == "MN 10") | .pts_reference'
+
+# By Pāli title, diacritics optional, through the formatter (§0.1)
+curl -s -X POST "localhost:$PORT/reference_search" \
+  -H 'Content-Type: application/json' -d '{"query_text":"satipatthana","field":"title_pali"}' \
+  | python3 scripts/simsapa_fmt.py
+```
+
+The first returns SN 56.11 (S v 420–424); the second `M i 55`; the third lists
+AN 4.274, DN 22, MN 10 and SN 43.5.

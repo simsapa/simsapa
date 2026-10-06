@@ -369,7 +369,10 @@ Notable feature docs:
   configures a provider first; a self-contained **`scripts/gloss_demo.html`**
   (textarea → Gloss → vocab list, Gemini key field, AI-selection checkbox
   disabled while the key is empty) demonstrates all three routes end-to-end
-  (§16.4). Pairs with
+  (§16.4). **Reference conversion (§17):** `POST /reference_search` is the
+  Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
+  back) over the bundled reference table; the sutta routes' reference
+  auto-detect does **not** understand PTS references. Pairs with
   [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md)
   and [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
 - [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —

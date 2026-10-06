@@ -21,7 +21,10 @@ It auto-detects the response shapes the API returns:
   4. Health snapshot -- the /health object (app_version, counts,
                         dict_sources, fulltext_searcher_ready) and the
                         /sutta_and_dict_search_options filter lists.
-  5. Rendered HTML   -- anything that is not JSON (get_sutta_html_by_uid,
+  5. Reference rows  -- the /reference_search object (`results` rows carrying
+                        `pts_reference`). Prints one line per row: sutta
+                        reference, PTS reference and page span, title, uid.
+  6. Rendered HTML   -- anything that is not JSON (get_sutta_html_by_uid,
                         get_word_html_by_uid). Tags are stripped to plain text.
 
 Typical use (PORT from <SIMSAPA_DIR>/api-port.txt, default 4848):
@@ -168,6 +171,30 @@ def fmt_search(data, args, out):
                 print(f"    {snip}", file=out)
 
 
+def fmt_references(data, args, out):
+    """Format a /reference_search response: {hits, results[]} (docs §17)."""
+    results = data.get("results") or []
+    total = data.get("hits", len(results))
+    shown = results if args.max == 0 else results[: args.max]
+    print(f"# {total} hit(s); showing {len(shown)}", file=out)
+    if not shown:
+        print("# (no results)", file=out)
+        return
+    for i, r in enumerate(shown, 1):
+        pts = r.get("pts_reference") or ""
+        start, end = r.get("pts_start_page"), r.get("pts_end_page")
+        if pts and start is not None and end is not None and end != start:
+            pts += f" (to p. {end})"
+        if pts and r.get("edition"):
+            pts += f" [{r['edition']}]"
+        parts = [r.get("sutta_ref") or "", pts, r.get("title_pali") or "",
+                 r.get("dpr_reference") or ""]
+        line = f"[{i}] " + " — ".join(p for p in parts if p)
+        # `uid` is null when the row has no directly matching text in the app.
+        line += f"  ({r.get('uid') or 'no app uid; sc: ' + (r.get('sc_uid') or '')})"
+        print(line, file=out)
+
+
 def fmt_words(records, args, out):
     """Format a /words/<uid>.json response: a list of DB-row dicts."""
     if not records:
@@ -287,7 +314,12 @@ def main(argv=None):
         return 0
 
     if isinstance(data, dict) and "results" in data:
-        fmt_search(data, args, out)
+        rows = data.get("results") or []
+        # An empty reference result prints the same through fmt_search.
+        if rows and isinstance(rows[0], dict) and "pts_reference" in rows[0]:
+            fmt_references(data, args, out)           # /reference_search (§17)
+        else:
+            fmt_search(data, args, out)
     elif isinstance(data, dict) and "found" in data:
         fmt_word_envelope(data, args, out)            # word.json?verbose=1 (§13.3)
     elif isinstance(data, dict) and "app_version" in data:

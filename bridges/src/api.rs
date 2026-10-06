@@ -30,6 +30,7 @@ use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea}
 use simsapa_backend::types::{AllParagraphsProcessingInput, WordProcessingOptions, AllParagraphsProcessingResult};
 use simsapa_backend::ai_fallback::WalkOutcome;
 use simsapa_backend::query_task::SearchQueryTask;
+use simsapa_backend::pts_reference_search::{self, ReferenceSearchResult};
 use crate::ai_engine::{ChatMessage, fallback_walk_settings, run_walk_blocking, WORD_SELECTION_BATCH_CHAR_LIMIT, WORD_SELECTION_REQUEST_SPACING_MS};
 
 // ============================================================================
@@ -88,6 +89,46 @@ pub struct SearchOptions {
 pub struct LookupWindowRequest {
     pub query_text: String,
 }
+
+/// Request body for POST /reference_search endpoint
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReferenceSearchRequest {
+    pub query_text: String,
+    /// Which field of the reference table to search. Defaults to
+    /// `pts_reference`.
+    pub field: Option<String>,
+    /// The most rows to return. Defaults to `REFERENCE_SEARCH_DEFAULT_LIMIT`;
+    /// 0 returns every match.
+    pub limit: Option<usize>,
+}
+
+/// Response of POST /reference_search. `hits` counts every match, `results`
+/// holds at most `limit` of them.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiReferenceSearchResult {
+    pub hits: usize,
+    pub results: Vec<ApiReferenceResult>,
+}
+
+/// A row of POST /reference_search: the reference table entry, plus the two
+/// identifiers derived from its `url`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiReferenceResult {
+    /// The uid of the text in this app's database, as the retrieval routes
+    /// take it. `None` when the row does not resolve to one directly.
+    pub uid: Option<String>,
+    /// SuttaCentral's own id for the row: the last path segment of `url`.
+    pub sc_uid: String,
+    #[serde(flatten)]
+    pub reference: ReferenceSearchResult,
+}
+
+/// A one-letter title query matches most of the table, about 3 MB of JSON.
+const REFERENCE_SEARCH_DEFAULT_LIMIT: usize = 100;
+
+/// The fields POST /reference_search accepts, as the Reference Search window
+/// names them.
+const REFERENCE_SEARCH_FIELDS: [&str; 4] = ["pts_reference", "dpr_reference", "title_pali", "sutta_ref"];
 
 /// Map a request `mode` string (exact `SearchMode` serde label) to the enum.
 /// Returns `None` for an unrecognized value (caller returns HTTP 400).
@@ -1432,6 +1473,52 @@ fn dict_combined_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManag
     )
 }
 
+/// POST /reference_search
+/// The search of the Reference Search window: look a sutta up by its PTS
+/// volume and page (`M iii 24`, matched against each sutta's page range), DPR
+/// reference, Pāli title or SuttaCentral reference. Returns the matching rows
+/// of the reference table, so one call converts between reference styles. An
+/// unrecognized `field` returns HTTP 400.
+/// See docs/simsapa-localhost-api-search-endpoints.md.
+#[post("/reference_search", data = "<request>")]
+fn reference_search(request: Json<ReferenceSearchRequest>, dbm: &State<Arc<DbManager>>) -> Result<Json<ApiReferenceSearchResult>, (Status, String)> {
+    let field = request.field.as_deref().unwrap_or("pts_reference");
+    if !REFERENCE_SEARCH_FIELDS.contains(&field) {
+        return Err((Status::BadRequest, format!(
+            "Unknown field: '{}'. Expected one of: {}", field, REFERENCE_SEARCH_FIELDS.join(", ")
+        )));
+    }
+
+    // The table is otherwise parsed only when the Reference Search window
+    // opens, and the search panics on an uninitialized table.
+    simsapa_backend::init_sutta_references();
+
+    let matches = pts_reference_search::search(&request.query_text, field);
+    let hits = matches.len();
+    let limit = match request.limit.unwrap_or(REFERENCE_SEARCH_DEFAULT_LIMIT) {
+        0 => hits,
+        n => n,
+    };
+
+    // The uid is resolved as the window resolves it, and only for the rows
+    // returned: it costs up to two queries a row. SuttaCentral's id is not a
+    // uid here -- the table covers texts this database does not hold, and
+    // `dhp2` is a chapter there but a verse to the sutta routes.
+    let results: Vec<ApiReferenceResult> = matches
+        .into_iter()
+        .take(limit)
+        .map(|reference| {
+            let sc_uid = reference.url.rsplit('/').next().unwrap_or_default().to_string();
+            let uid = if sc_uid.is_empty() { None } else { dbm.appdata.get_full_sutta_uid(&sc_uid) };
+            ApiReferenceResult { uid, sc_uid, reference }
+        })
+        .collect();
+
+    info(&format!("reference_search(): query='{}', field={}, hits={}, returned={}", request.query_text, field, hits, results.len()));
+
+    Ok(Json(ApiReferenceSearchResult { hits, results }))
+}
+
 /// GET /suttas/<uid>
 /// Open a sutta in the Simsapa application window (browser extension route)
 /// Returns plain text message for the browser tab
@@ -2447,6 +2534,7 @@ pub async extern "C" fn start_webserver() {
             suttas_fulltext_search,
             suttas_contains_search,
             dict_combined_search,
+            reference_search,
             open_sutta_by_uid,
             lookup_window_query_post,
             get_word_json,

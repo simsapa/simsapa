@@ -44,6 +44,9 @@ pub fn normalize_pts_reference(pts_ref: &str) -> String {
         static ref re_pts_punct: Regex = Regex::new(r#"[\.,;:\(\)~\u{00A0}]+"#).unwrap();
     }
 
+    // A page range is as often written with an en or em dash: "24–25"
+    result = result.replace(['–', '—'], "-");
+
     // Replace punctuation with space
     result = re_pts_punct.replace_all(&result, " ").into_owned();
 
@@ -82,7 +85,12 @@ pub fn parse_pts_reference(pts_ref: &str) -> Option<PTSReference> {
     let normalized = normalize_pts_reference(pts_ref);
     let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
 
-    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    let mut parts: Vec<&str> = normalized.split_whitespace().collect();
+
+    // A citation may name the edition first: "PTS M iii 24"
+    if parts.first() == Some(&"pts") {
+        parts.remove(0);
+    }
 
     if parts.len() < 2 {
         return None;
@@ -99,8 +107,19 @@ pub fn parse_pts_reference(pts_ref: &str) -> Option<PTSReference> {
         let volume = parts[1];
         // Check if second part is a roman numeral (volume)
         if volume.chars().all(|c| matches!(c, 'i' | 'v' | 'x')) {
-            // Third part should be the page number
-            if let Ok(page) = parts[2].parse::<u32>() {
+            // The four nikāyas are also cited by their two-letter names, as
+            // in "MN iii 24". Only with a volume: without one, "sn" is the
+            // Suttanipāta.
+            let nikaya = match nikaya {
+                "dn" => "d",
+                "mn" => "m",
+                "sn" => "s",
+                "an" => "a",
+                other => other,
+            };
+            // Third part should be the page number, with or without a
+            // following-pages mark: "24f", "24ff"
+            if let Ok(page) = parts[2].trim_end_matches('f').parse::<u32>() {
                 return Some(PTSReference {
                     nikaya: nikaya.to_string(),
                     volume: Some(volume.to_string()),
@@ -312,6 +331,19 @@ mod tests {
         assert_eq!(parsed.nikaya, "sn");
         assert_eq!(parsed.volume, None);
         assert_eq!(parsed.page, 52);
+    }
+
+    #[test]
+    fn test_parse_pts_reference_citation_spellings() {
+        let expected = Some(PTSReference { nikaya: "m".to_string(), volume: Some("iii".to_string()), page: 24 });
+        for query in ["M iii 24", "M.III.24", "MN iii 24", "PTS M iii 24", "M iii 24-25", "M iii 24–25", "M iii 24ff"] {
+            assert_eq!(parse_pts_reference(query), expected, "query: {}", query);
+        }
+        // Without a volume, "Sn" stays the Suttanipāta.
+        assert_eq!(
+            parse_pts_reference("SN 235"),
+            Some(PTSReference { nikaya: "sn".to_string(), volume: None, page: 235 })
+        );
     }
 
     #[test]
