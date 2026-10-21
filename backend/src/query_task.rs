@@ -560,6 +560,53 @@ impl<'a> SearchQueryTask<'a> {
         SearchResult::from_book_spine_item(x, snippet)
     }
 
+    /// The advanced search options that restrict which sutta records are
+    /// searched (CST mūla, CST commentaries, MS mūla, nikāya, uid prefix and
+    /// suffix), applied to a `suttas` query. The language filter is not
+    /// included; callers apply it themselves.
+    fn filter_suttas_query<'q>(
+        &self,
+        mut query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
+    ) -> crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite> {
+        use crate::db::appdata_schema::suttas::dsl::*;
+
+        if !self.include_cst_mula {
+            query = query.filter(
+                diesel::dsl::not(
+                    uid.like("%/cst")
+                        .and(uid.not_like("%.att%/cst"))
+                        .and(uid.not_like("%.tik%/cst"))
+                )
+            );
+        }
+
+        if !self.include_cst_commentary {
+            query = query.filter(
+                diesel::dsl::not(
+                    uid.like("%.att%/cst")
+                    .or(uid.like("%.tik%/cst"))
+                )
+            );
+        }
+
+        if let Some(prefix) = sanitize_uid_like_prefix(self.nikaya_prefix.as_deref()) {
+            query = query.filter(nikaya.like(format!("{}%", prefix)));
+        }
+
+        if let Some(prefix) = Self::normalized_filter(&self.uid_prefix) {
+            query = query.filter(uid.like(format!("{}%", prefix)));
+        }
+        if let Some(suffix) = Self::normalized_filter(&self.uid_suffix) {
+            query = query.filter(uid.like(format!("%{}", suffix)));
+        }
+
+        if !self.include_ms_mula {
+            query = query.filter(diesel::dsl::not(source_uid.eq("ms")));
+        }
+
+        query
+    }
+
     fn uid_sutta_all(&mut self) -> Result<Vec<SearchResult>, Box<dyn Error>> {
         use crate::db::appdata_schema::suttas::dsl::*;
         use diesel::result::Error as DieselError;
@@ -579,6 +626,7 @@ impl<'a> SearchQueryTask<'a> {
         if !self.lang.is_empty() && self.lang != "Language" {
             exact_match_query = exact_match_query.filter(language.eq(&self.lang));
         }
+        exact_match_query = self.filter_suttas_query(exact_match_query);
 
         let exact_match_result = exact_match_query
             .select(Sutta::as_select())
@@ -640,6 +688,7 @@ impl<'a> SearchQueryTask<'a> {
         if !self.lang.is_empty() && self.lang != "Language" {
             query = query.filter(language.eq(&self.lang));
         }
+        query = self.filter_suttas_query(query);
 
         // Execute query
         let results = query
@@ -680,6 +729,7 @@ impl<'a> SearchQueryTask<'a> {
         if !self.lang.is_empty() && self.lang != "Language" {
             query = query.filter(language.eq(&self.lang));
         }
+        query = self.filter_suttas_query(query);
 
         // Execute query
         let results = query
@@ -1840,41 +1890,7 @@ impl<'a> SearchQueryTask<'a> {
                 query = query.filter(language.eq(&self.lang));
             }
 
-            if !self.include_cst_mula {
-                query = query.filter(
-                    diesel::dsl::not(
-                        uid.like("%/cst")
-                            .and(uid.not_like("%.att%/cst"))
-                            .and(uid.not_like("%.tik%/cst"))
-                    )
-                );
-            }
-
-            if !self.include_cst_commentary {
-                query = query.filter(
-                    diesel::dsl::not(
-                        uid.like("%.att%/cst")
-                        .or(uid.like("%.tik%/cst"))
-                    )
-                );
-            }
-
-            if let Some(prefix) = sanitize_uid_like_prefix(self.nikaya_prefix.as_deref()) {
-                query = query.filter(nikaya.like(format!("{}%", prefix)));
-            }
-
-            if let Some(prefix) = Self::normalized_filter(&self.uid_prefix) {
-                query = query.filter(uid.like(format!("{}%", prefix)));
-            }
-            if let Some(suffix) = Self::normalized_filter(&self.uid_suffix) {
-                query = query.filter(uid.like(format!("%{}", suffix)));
-            }
-
-            if !self.include_ms_mula {
-                query = query.filter(diesel::dsl::not(source_uid.eq("ms")));
-            }
-
-            query
+            self.filter_suttas_query(query)
         };
 
         let total: i64 = build_query()

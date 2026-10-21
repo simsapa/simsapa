@@ -492,8 +492,6 @@ fn headword_match_dhamma_prefix_dha() {
 // page 1. The suffix filter pins it to a single translator's set.
 // ---------------------------------------------------------------------------
 
-// FIXME: gets the wrong sutta: uid filter suffix 'bodhi' leaked: got uid 'mn1.att/pli/cst'
-#[ignore]
 #[test]
 #[serial]
 fn uid_match_suttas_mn1_suffix_bodhi() {
@@ -508,4 +506,28 @@ fn uid_match_suttas_mn1_suffix_bodhi() {
         None,
         Some("bodhi"),
     );
+}
+
+// UidMatch — Suttas, with the source options off: MS mūla on, CST mūla and
+// CST commentaries off must drop every `/cst` record, as the other modes do.
+#[test]
+#[serial]
+fn uid_match_suttas_mn1_excludes_cst() {
+    helpers::app_data_setup();
+    let app_data = get_app_data();
+    let mut params = make_params(SearchMode::UidMatch, None, None);
+    params.page_len = Some(1000);
+    params.lang = Some("pli".to_string());
+    params.include_cst_mula = false;
+    params.include_cst_commentary = false;
+    params.include_ms_mula = true;
+    let mut task = SearchQueryTask::new(&app_data.dbm, "mn1".to_string(), params, SearchArea::Suttas);
+    let results = task.results_page(0).expect("uid match failed");
+    assert!(
+        results.iter().any(|r| r.uid == "mn1/pli/ms"),
+        "mn1/pli/ms missing from UidMatch results"
+    );
+    for r in &results {
+        assert!(!r.uid.ends_with("/cst"), "CST record leaked into UidMatch results: {}", r.uid);
+    }
 }
