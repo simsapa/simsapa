@@ -453,6 +453,62 @@ components were filtered out of the results.
 `RESULTS_PAGE_CACHE` / `COMBINED_CACHE` keys embed `params_json`, so changing the
 selection or lock invalidates both automatically (§8).
 
+### 9d. Iti-sandhi words: the DPD query is rejoined
+
+This section is the Dictionary-page view; the whole picture, including search,
+glossing, the page's tap / double-click and every quote mark, is in
+[pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md).
+
+`normalize_query_text()` runs `normalize_iti_sandhi()`, which splits a word
+ending in iti sandhi into `<base> ti`: `dhārayāmī’ti`, `dhārayāmī”ti`,
+`dhārayāmī'"ti` and the unquoted `dhārayāmīti` all become `dhārayāmi ti`. That
+suits `content_plain`, but DPD's `lookup` table is keyed by the **joined** sandhi
+form (`dhārayāmīti`, `gantunti`, `viharissāmāti`) and has no row for two words.
+A split query therefore matched nothing and fell through to the "starts with"
+table scans.
+
+So `dpd_lookup()`, `dpd_lookup_grouped()` and `dpd_deconstructor_query()`
+normalize with `normalize_dpd_query_text()` (`backend/src/helpers.rs`), which
+rejoins a single `<base> ti` (`rejoin_iti_sandhi()`: lengthen a final a / i / u,
+final ṁ → `nti`), joins a single apostrophe inside a compound
+(`manopubbaṅ’gamā`), and also returns the base word. Four rules:
+
+- **Use `normalize_dpd_query_text()` for any new DPD query, never
+  `normalize_query_text()` alone.**
+- **The two memo callers pass the split form, `normalize_dpd_query_split()`.**
+  `query_task` keeps it as `SearchQueryTask::dpd_query_text` and
+  `SuttaBridge::results_page()` computes the same string, so the memo key
+  agrees. Normalizing it again gives the same answer as the raw query; never
+  pass on `normalize_query_text`'s output (it has split `manopubbaṅ’gamā`) or
+  the rejoined form (`magganti` is a verb form).
+- **The joined form is used only if DPD analyses it as `… + iti`**
+  (`dpd_has_iti_breakdown()`: a break-down of its `lookup` row ends in `iti`).
+  Otherwise the joined key can be an unrelated word: `magga’’nti` is maggaṁ +
+  iti, but DPD's `magganti` is only the plural of the verb *maggati*, and that
+  must never be the answer. Such a word, and one whose joined form DPD lacks
+  (`tiṭṭhissāmīti`), is resolved as **`<base> + iti`** by
+  `dpd_lookup_grouped_iti_split()`: the base word's results, then the `iti`
+  component's, with no direct uids and the break-downs `<base> + iti` plus each
+  of the base word's own break-downs with `+ iti` appended. The flat
+  `dpd_lookup()` returns the same rows, and `dpd_deconstructor_list()` the same
+  break-downs. Unquoted `magganti` is not split by the normalization, so it
+  stays the verb.
+- **No prefix guesses for an iti-sandhi word.** The deconstructor tries only
+  the exact joined key, and the base word's break-downs are exact only: a
+  "starts with" guess belongs to some other word (`vuccaṁ` matched `vuccati +
+  iti`, giving `vuccati + iti + iti`) and costs two full scans of the 1.28 M-row
+  `lookup` table. A base DPD does not know at all leaves just `iti` under
+  `<base> + iti`.
+
+The "starts with" fallbacks on `dpd_headwords` use an index range
+(`col >= prefix AND col < prefix || char::MAX`), not `LIKE 'prefix%'`. SQLite's
+`LIKE` is case-insensitive and cannot use the BINARY indexes, so it scans the
+table. The two match the same rows only because `lemma_clean`, `word_ascii` and
+`stem` are stored lowercase; `test_dpd_headword_prefix_columns_are_lowercase`
+fails if an import changes that. The deconstructor's own "starts with" on
+`lookup.lookup_key` is still `LIKE`: that column has mixed-case keys, and the
+range form picks a different first row for some prefixes.
+
 ---
 
 ## 10. Where to look in the code

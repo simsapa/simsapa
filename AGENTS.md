@@ -324,9 +324,37 @@ Notable feature docs:
   and are never lock-filtered — so bold rows are visible under lock and the
   counter is exact; the grouped lookup replaces the flat one **unconditionally**
   on that path (equivalence proof + the `grouped_equals_flat_…` guard test), both
-  call sites sharing `dpd_lookup_grouped_memo()`. Pairs with the bootstrap-time
+  call sites sharing `dpd_lookup_grouped_memo()`. **§9d: DPD queries normalize
+  with `normalize_dpd_query_text()`, never `normalize_query_text()` alone** —
+  the latter splits iti sandhi (`dhārayāmī’ti` → `dhārayāmi ti`), which no DPD
+  `lookup` key matches; the DPD form rejoins it (`dhārayāmīti`). A caller that
+  hands the query on (`SearchQueryTask::dpd_query_text`, the break-down
+  selector) passes `normalize_dpd_query_split()`, never `normalize_query_text`
+  output (it splits `manopubbaṅ’gamā`) nor the rejoined form. The
+  joined key is used only when DPD analyses it as `… + iti`; otherwise the word
+  is `<base> + iti` (`magga’’nti` is maggaṁ + iti, never the verb `magganti`).
+  Pairs with the bootstrap-time
   normalization in
   [text-processing-for-contains-match-and-fulltext-match-search.md](./docs/text-processing-for-contains-match-and-fulltext-match-search.md).
+- [Pāli sandhi break-down and quote marks](./docs/pali-sandhi-and-quote-marks.md) —
+  the map of every place that takes apart iti sandhi (`dhārayāmī’ti` =
+  dhārayāmi + iti) and how each handles `'` `"` `‘` `’` `“` `”`: which
+  component recognises which mark (§2 table — a straight quote between letters
+  **joins** a word, a smart one **splits** it), the shared split in
+  `normalize_iti_sandhi` that stored text and queries both take (it must run
+  **before** quotes become spaces), the DPD lookups' **rejoin**
+  (`normalize_dpd_query_text`) and the rule that the joined key is used only
+  when DPD breaks it down as `… + iti` — otherwise `<base> + iti`, so
+  `magga’’nti` is never the verb `magganti`; the Gloss tab looking up the base
+  word; and the page side, `src-ts/pali_word.ts`, whose word regex continues
+  across a quote run into `ti`/`nti` for tap and double-click (Windows
+  double-click also selects the trailing space), and the find bar's iti-sandhi
+  boundary marking. Every iti rule matches only at a **word end** (else
+  `until`, `anaññātaññassāmītindriyaṁ` and `maraṇā’tipi` split), and
+  **any change to these rules changes `content_plain` and the indexes: it ships
+  with a re-bootstrap**. In the dictionary and the Gloss tab a word written
+  with quote marks inside it is joined (`manopubbaṅ’gamā`, `so’pi`, `cā”tipi`)
+  by `join_mid_word_apostrophes`, after the iti split has taken its quotes.
 - [Localhost API search endpoints](./docs/simsapa-localhost-api-search-endpoints.md) —
   the **whole Rocket route surface** in `bridges/src/api.rs` (search, word/sutta
   retrieval, GUI-navigation, assets), plus the **agent quick-start** (§0: search →

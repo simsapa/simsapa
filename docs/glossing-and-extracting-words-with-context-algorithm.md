@@ -4,6 +4,9 @@
 **Test Coverage:** 156/156 backend tests pass  
 **Implementation:** `backend/src/helpers.rs`
 
+How this extraction fits with the search and dictionary handling of iti sandhi
+and quote marks: [pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md).
+
 ## Overview
 
 The word extraction and glossing system extracts individual words from Pāli texts, finds their positions in the original text, and generates context snippets with HTML highlighting. This is used for:
@@ -93,6 +96,14 @@ Pāli uses sandhi (euphonic combinations) where word boundaries are obscured:
 | `sikkhāpadesū'ti` | `sikkhāpadesu ti` | long ū → short u |
 | `gantun'ti` | `gantuṁ ti` | n → niggahita ṁ |
 | `vilapi"nti` | `vilapiṁ ti` | "nti → ṁ + ti |
+| `Manopubbaṅ’gamā` | `manopubbaṅgamā` | apostrophe inside a compound: joined |
+| `so’pi` | `sopi` | elision: joined (DPD: so + api) |
+| `cā”tipi` | `cātipi` | iti + the next word: joined (DPD: ca + iti + api) |
+
+The iti rules match only at the end of a word. Words written with quote marks
+inside them are joined by `join_mid_word_apostrophes`, after the iti split, and
+found in the original text by `match_with_inner_apostrophes`. See
+[pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md) §3–5.
 
 ### Implementation Details
 
@@ -109,6 +120,7 @@ let text = RE_NTI_BEFORE.replace_all(&text, "ṁ ti");   // n'ti → ṁ ti
 **Quote Support:** Single (`'`, U+2019), double (`"`, U+201D), and curly quotes.
 
 **Additional Processing:**
+- Join quote marks inside a word (`join_mid_word_apostrophes`)
 - Remove non-word characters (punctuation)
 - Remove digits
 - Normalize whitespace

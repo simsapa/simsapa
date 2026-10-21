@@ -90,8 +90,12 @@ are preserved. Four structures:
 pre-conversion text), so the footer pass — which runs on post-conversion HTML —
 does not leak the sutta display text back into `definition_plain`.
 
-- ? When removing single and double quote marks, should we remove unicode smart quote?
-Are there examples within compounds? `manopubbaṅ’gamā` (with smart quote)
+- Smart quotes are **not** removed mid-word: `remove_punct` turns them into
+  spaces, so `manopubbaṅ’gamā` is stored and queried as `manopubbaṅ gamā`, while
+  the straight `manopubbaṅ'gamā` is joined. A smart quote is usually the end of
+  quoted speech, and removing it could join two words. Which component handles
+  which quote mark, and the known gaps this leaves, are in
+  [pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md).
 
 `preprocess_text_for_word_extraction()`
 - for glossing, dict matches
