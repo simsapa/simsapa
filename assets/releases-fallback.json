@@ -2,6 +2,13 @@
   "application": {
     "releases": [
       {
+        "date": "2026-10-21T11:21:59",
+        "description": "New app version\n",
+        "github_repo": "simsapa/simsapa",
+        "title": "New app version",
+        "version_tag": "v1.1.0-alpha.1"
+      },
+      {
         "date": "2026-07-31T09:30:00",
         "description": "New app version\n",
         "github_repo": "simsapa/simsapa",
@@ -89,6 +96,16 @@
   },
   "assets": {
     "releases": [
+      {
+        "date": "2026-10-21T11:21:59",
+        "description": "",
+        "github_repo": "simsapa/simsapa-assets",
+        "suttas_lang": [
+          "hu"
+        ],
+        "title": "Updates",
+        "version_tag": "v1.1.0-alpha.1"
+      },
       {
         "date": "2026-07-24T17:34:11",
         "description": "",
