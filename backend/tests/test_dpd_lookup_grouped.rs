@@ -1,5 +1,7 @@
 use serial_test::serial;
 use simsapa_backend::get_app_data;
+use simsapa_backend::query_task::SearchQueryTask;
+use simsapa_backend::types::{SearchArea, SearchMode, SearchParams};
 
 mod helpers;
 use helpers as h;
@@ -151,4 +153,279 @@ fn test_grouped_atthanne_single_breakdown() {
             .map(|d| &d.words_joined)
             .collect::<Vec<_>>()
     );
+}
+
+/// Uids of a grouped lookup's flat results, plus its break-downs.
+fn grouped_uids_and_breakdowns(query: &str) -> (Vec<String>, Vec<String>) {
+    let grouped = get_app_data()
+        .dbm
+        .dpd
+        .dpd_lookup_grouped(query, false, true, false, None, None)
+        .unwrap();
+    (
+        grouped.results.iter().map(|r| r.uid.clone()).collect(),
+        grouped.deconstructions.iter().map(|d| d.words_joined.clone()).collect(),
+    )
+}
+
+/// An iti-sandhi word resolves like DPD's own joined lookup key, whichever
+/// way the quote is written: smart, straight, doubled, with a closing quote
+/// kept by the tap word extraction, without a quote, or already split into
+/// `<base> ti` by a caller that normalized the query first.
+///
+/// The query normalization splits `dhārayāmī’ti` into `dhārayāmi ti`, which no
+/// DPD row matches; that left every such word with no results (sn35.248
+/// `viharissāmā’ti` was the reported case).
+#[test]
+#[serial]
+fn test_grouped_iti_sandhi_variants() {
+    h::app_data_setup();
+
+    let groups: [(&str, &str, &[&str]); 3] = [
+        (
+            "dhārayāmi + iti",
+            "dhārayāmīti",
+            &["dhārayāmī’ti", "dhārayāmī”ti", "dhārayāmī’”ti", "dhārayāmī\"ti", "dhārayāmī'\"ti", "dhārayāmi ti"],
+        ),
+        (
+            "viharissāma + iti",
+            "viharissāmāti",
+            &["viharissāmā’ti", "viharissāmā'ti", "viharissāmā’ti’", "viharissāma ti"],
+        ),
+        (
+            "gantuṁ + iti",
+            "gantunti",
+            &["gantun’ti", "gantu’nti", "gantuṁ ti"],
+        ),
+    ];
+
+    for (breakdown, unquoted, variants) in groups {
+        let (expected_uids, expected_breakdowns) = grouped_uids_and_breakdowns(unquoted);
+        assert!(
+            expected_breakdowns.iter().any(|d| d == breakdown),
+            "{unquoted} should break down as {breakdown}, got {expected_breakdowns:?}"
+        );
+        assert!(!expected_uids.is_empty(), "{unquoted} should have results");
+        for q in variants {
+            assert_eq!(
+                grouped_uids_and_breakdowns(q),
+                (expected_uids.clone(), expected_breakdowns.clone()),
+                "{q} should resolve like {unquoted}"
+            );
+            assert_eq!(
+                get_app_data().dbm.dpd.dpd_deconstructor_list(q),
+                vec![breakdown.to_string()],
+                "{q}: deconstructor list"
+            );
+        }
+    }
+}
+
+/// The `iti` component's uids in DPD's own `dhārayāmi + iti` break-down: what
+/// an `iti` component resolves to (narrower than a lookup of `iti` itself).
+fn iti_component_uids() -> Vec<String> {
+    let grouped = get_app_data()
+        .dbm
+        .dpd
+        .dpd_lookup_grouped("dhārayāmīti", false, true, false, None, None)
+        .unwrap();
+    let iti = grouped.deconstructions[0].components.last().unwrap();
+    assert_eq!(iti.word, "iti");
+    assert!(!iti.result_uids.is_empty());
+    iti.result_uids.clone()
+}
+
+/// Uids of the flat `dpd_lookup()`.
+fn flat_uids(query: &str) -> Vec<String> {
+    get_app_data()
+        .dbm
+        .dpd
+        .dpd_lookup(query, false, true, None, None)
+        .unwrap()
+        .iter()
+        .map(|r| r.uid.clone())
+        .collect()
+}
+
+/// An iti-sandhi word whose joined form DPD does not analyse as `… + iti` is
+/// the base word plus `iti`. `magga’’nti` is maggaṁ + iti: DPD's key `magganti`
+/// is only the plural of the verb `maggati`, which must not be the answer.
+/// Unquoted `magganti` is not split by the normalization and stays the verb.
+#[test]
+#[serial]
+fn test_grouped_iti_sandhi_not_a_verb_form() {
+    h::app_data_setup();
+
+    let (verb_uids, _) = grouped_uids_and_breakdowns("magganti");
+    let (base_uids, _) = grouped_uids_and_breakdowns("maggaṁ");
+    let iti_uids = iti_component_uids();
+    assert!(!verb_uids.is_empty() && !base_uids.is_empty() && !iti_uids.is_empty());
+
+    for q in ["magga’’nti", "magga”nti", "maggan’ti", "maggaṁ ti"] {
+        let grouped = get_app_data()
+            .dbm
+            .dpd
+            .dpd_lookup_grouped(q, false, true, false, None, None)
+            .unwrap();
+        let uids: Vec<String> = grouped.results.iter().map(|r| r.uid.clone()).collect();
+
+        assert!(
+            verb_uids.iter().all(|u| !uids.contains(u)),
+            "{q} must not resolve to the verb magganti, got {uids:?}"
+        );
+        assert!(base_uids.iter().all(|u| uids.contains(u)), "{q}: maggaṁ results");
+        assert!(iti_uids.iter().all(|u| uids.contains(u)), "{q}: iti results");
+        assert!(grouped.direct_uids.is_empty(), "{q}: no direct uids");
+
+        let breakdowns: Vec<&str> =
+            grouped.deconstructions.iter().map(|d| d.words_joined.as_str()).collect();
+        assert_eq!(breakdowns, vec!["maggaṁ + iti"], "{q}");
+        let components: Vec<&str> =
+            grouped.deconstructions[0].components.iter().map(|c| c.word.as_str()).collect();
+        assert_eq!(components, vec!["maggaṁ", "iti"], "{q}");
+
+        assert_eq!(
+            get_app_data().dbm.dpd.dpd_deconstructor_list(q),
+            vec!["maggaṁ + iti".to_string()],
+            "{q}: deconstructor list"
+        );
+
+        let flat = flat_uids(q);
+        assert!(verb_uids.iter().all(|u| !flat.contains(u)), "{q}: flat must not be the verb");
+        assert!(iti_uids.iter().all(|u| flat.contains(u)), "{q}: flat iti results");
+    }
+}
+
+/// `tiṭṭhissāmīti` is not a DPD lookup key, so the word is resolved as
+/// `tiṭṭhissāmi + iti`: what `tiṭṭhissāmi` returns, then `iti`.
+#[test]
+#[serial]
+fn test_grouped_iti_sandhi_unknown_joined_form() {
+    h::app_data_setup();
+
+    let (base_uids, _) = grouped_uids_and_breakdowns("tiṭṭhissāmi");
+    let iti_uids = iti_component_uids();
+    assert!(!base_uids.is_empty(), "tiṭṭhissāmi should have results");
+    let expected: Vec<String> = base_uids.iter().chain(iti_uids.iter()).cloned().collect();
+
+    for q in ["tiṭṭhissāmī’ti", "tiṭṭhissāmi ti"] {
+        assert_eq!(
+            grouped_uids_and_breakdowns(q),
+            (expected.clone(), vec!["tiṭṭhissāmi + iti".to_string()]),
+            "{q}"
+        );
+        assert_eq!(flat_uids(q), expected, "{q}: flat");
+    }
+}
+
+/// A base whose long vowel is a real ending is found in its long form when the
+/// shortened one is not in DPD: `anaññatā’ti` is `anaññatā + iti`.
+#[test]
+#[serial]
+fn test_grouped_iti_sandhi_long_vowel_base() {
+    h::app_data_setup();
+
+    let (_, breakdowns) = grouped_uids_and_breakdowns("anaññatā’ti");
+    assert_eq!(breakdowns, vec!["anañña + tā + iti".to_string()]);
+    let flat = flat_uids("anaññatā’ti");
+    let (long_uids, _) = grouped_uids_and_breakdowns("anaññatā");
+    assert!(long_uids.iter().all(|u| flat.contains(u)), "flat: the anaññatā results");
+}
+
+/// Words that only look like iti sandhi from the inside, and a compound with
+/// an apostrophe, resolve whole.
+#[test]
+#[serial]
+fn test_grouped_not_iti_sandhi() {
+    h::app_data_setup();
+
+    let (uids, breakdowns) = grouped_uids_and_breakdowns("anaññātaññassāmītindriyaṁ");
+    assert!(!uids.is_empty(), "anaññātaññassāmītindriyaṁ should have results");
+    assert!(breakdowns.iter().all(|d| !d.ends_with("+ iti")), "{breakdowns:?}");
+
+    // iti fused with the next word, behind a double quote: ca + iti + api.
+    let catipi = grouped_uids_and_breakdowns("cātipi");
+    assert!(catipi.1.iter().any(|d| d == "ca + iti + api"), "{:?}", catipi.1);
+    assert_eq!(grouped_uids_and_breakdowns("cā”tipi"), catipi, "cā”tipi");
+
+    let joined = grouped_uids_and_breakdowns("manopubbaṅgamā");
+    assert!(!joined.0.is_empty(), "manopubbaṅgamā should have results");
+    for q in ["manopubbaṅ’gamā", "manopubbaṅ'gamā"] {
+        assert_eq!(grouped_uids_and_breakdowns(q), joined, "{q}");
+        assert_eq!(flat_uids(q), flat_uids("manopubbaṅgamā"), "{q}: flat");
+    }
+}
+
+/// The Dictionary search normalizes the query before the DPD lookup, so the
+/// lookup receives `dhārayāmi ti`, not the typed word. The result page must
+/// still carry the dhārayati senses.
+#[test]
+#[serial]
+fn test_dictionary_search_iti_sandhi() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    for q in ["dhārayāmī’”ti", "viharissāmā’ti", "magga’’nti", "manopubbaṅ’gamā"] {
+        let params = SearchParams {
+            mode: SearchMode::DpdLookup,
+            page_len: Some(20),
+            ..Default::default()
+        };
+        let mut task = SearchQueryTask::new(&app_data.dbm, q.to_string(), params, SearchArea::Dictionary);
+        let rows = task.results_page(0).unwrap();
+        let expected = if q.starts_with("dhāray") {
+            "dhārayati"
+        } else if q.starts_with("magga") {
+            "magga "
+        } else if q.starts_with("manopubbaṅ") {
+            "manopubbaṅgama"
+        } else {
+            "viharati"
+        };
+        assert!(
+            rows.iter().all(|r| r.title != "maggati"),
+            "{q}: the verb maggati must not be listed"
+        );
+        assert!(
+            rows.iter().any(|r| r.title.starts_with(expected)),
+            "{q}: expected a {expected} row, got {:?}",
+            rows.iter().map(|r| &r.title).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// The "starts with" fallbacks in `dpd_lookup` / `dpd_lookup_grouped` use an
+/// index range (`col >= prefix AND col < prefix + char::MAX`) instead of
+/// `LIKE 'prefix%'`. That only matches the same rows because these columns
+/// are stored lowercase; an import that breaks this must fail here.
+#[test]
+#[serial]
+fn test_dpd_headword_prefix_columns_are_lowercase() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    let headwords = app_data
+        .dbm
+        .dpd
+        .dpd_lookup_grouped("dhammas", false, true, false, None, None)
+        .unwrap();
+    assert!(!headwords.results.is_empty(), "dhammas should match by prefix");
+
+    let count: i64 = app_data
+        .dbm
+        .dpd
+        .do_read(|db_conn| {
+            use diesel::dsl::sql;
+            use diesel::prelude::*;
+            use diesel::sql_types::Bool;
+            use simsapa_backend::db::dpd_schema::dpd_headwords;
+            dpd_headwords::table
+                .filter(sql::<Bool>(
+                    "lemma_clean <> lower(lemma_clean) OR word_ascii <> lower(word_ascii) OR stem <> lower(stem)",
+                ))
+                .count()
+                .get_result(db_conn)
+        })
+        .unwrap();
+    assert_eq!(count, 0, "dpd_headwords lemma_clean / word_ascii / stem must be lowercase");
 }

@@ -70,6 +70,7 @@ fn gloss_paragraph(text: &str, appdata: Option<&AppdataDbHandle>) -> Vec<Process
         let word_info = WordInfo {
             word: wc.clean_word.clone(),
             sentence: wc.context_snippet.clone(),
+            original_word: wc.original_word.clone(),
         };
         let res = process_word_for_glossing(
             &word_info,
@@ -709,4 +710,30 @@ fn test_imported_builtin_row_resolves_during_glossing() {
         &arame2.results[arame2.selected_index as usize],
         "ārāma-4/dpd"
     ));
+}
+
+/// The Gloss tab keeps a compound or an elision with an apostrophe whole, and
+/// finds an iti-sandhi word whose vowel is really long.
+#[test]
+#[serial]
+fn test_gloss_apostrophe_compounds_and_long_vowel_iti() {
+    h::app_data_setup();
+    let words = gloss_paragraph("Manopubbaṅ’gamā dhammā. So’pi vadati. Anaññatā’ti bhikkhu.", None);
+
+    assert_eq!(find_word(&words, "manopubbaṅgamā").stem, "manopubbaṅgama");
+    let sopi = find_word(&words, "sopi");
+    assert!(
+        sopi.deconstructions.iter().any(|d| d.words_joined == "so + api"),
+        "So’pi: {:?}",
+        sopi.deconstructions.iter().map(|d| &d.words_joined).collect::<Vec<_>>()
+    );
+    // DPD has no anaññata; the text writes anaññatā.
+    let anannata = find_word(&words, "anaññata");
+    assert!(
+        anannata.deconstructions.iter().any(|d| d.words_joined == "anañña + tā"),
+        "Anaññatā’ti: {:?}",
+        anannata.deconstructions.iter().map(|d| &d.words_joined).collect::<Vec<_>>()
+    );
+    // ProcessedWord.original_word is the clean word: no split-off halves.
+    assert!(words.iter().all(|w| w.original_word != "gamā" && w.original_word != "pi"));
 }

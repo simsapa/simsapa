@@ -10,6 +10,7 @@ import * as column_bar from "./column_bar";
 import * as sbs_blocks from "./sbs_blocks";
 import * as viewport_nudge from "./viewport_nudge";
 import * as anchor_jump from "./anchor_jump";
+import * as pali_word from "./pali_word";
 
 /**
  * Attach link handlers to all links within a specific element
@@ -146,6 +147,13 @@ function footnote_bottom_bar_refresh(): void {
 
 // Expose to window for QML access
 (window as any).footnote_bottom_bar_refresh = footnote_bottom_bar_refresh;
+
+// The word lookup in assets/js/suttas.js and dictionary.js (tap, double-click)
+// takes its word boundaries from here, so a quoted iti sandhi such as
+// `lābhanānattan”ti` is looked up whole. Those scripts run before this bundle
+// loads, but only call these from event handlers.
+(window as any).ssp_word_at_offset = pali_word.word_at_offset;
+(window as any).ssp_expand_selection_to_word = pali_word.expand_selection_to_word;
 
 document.addEventListener('DOMContentLoaded', () => {
     // h.log_info('[simsapa] DOMContentLoaded event fired');

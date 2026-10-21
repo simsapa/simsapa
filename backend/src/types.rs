@@ -460,6 +460,11 @@ pub struct WordProcessingOptions {
 pub struct WordInfo {
     pub word: String,
     pub sentence: String,
+    /// The word as written in the text (`anaññatā’ti`), where `word` is the
+    /// clean word (`anaññata`). Lets the lookup see a long vowel the iti-sandhi
+    /// split shortened. Empty when unknown.
+    #[serde(default)]
+    pub original_word: String,
 }
 
 /// Result of processing a single word for glossing

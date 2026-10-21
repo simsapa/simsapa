@@ -1095,16 +1095,25 @@ pub fn consistent_niggahita(text: Option<String>) -> String {
 }
 
 lazy_static! {
-    // Patterns for query lookup in DPD where we have to reverse Pāli n'ti sandhi.
-    // The quote mark may be before or after the n.
-    static ref RE_NTI_BEFORE: Regex =   Regex::new(r#"[’'"”]+nti"#).unwrap();
-    static ref RE_NTI_AFTER: Regex =   Regex::new(r#"n[’'"”]+ti"#).unwrap();
-    static ref RE_IITI_BEFORE: Regex =  Regex::new(r#"[’'"”]+īti"#).unwrap();
-    static ref RE_IITI_AFTER: Regex =  Regex::new(r#"ī[’'"”]+ti"#).unwrap();
-    static ref RE_AATI_BEFORE: Regex =  Regex::new(r#"[’'"”]+āti"#).unwrap();
-    static ref RE_AATI_AFTER: Regex =  Regex::new(r#"ā[’'"”]+ti"#).unwrap();
-    static ref RE_UUTI_BEFORE: Regex =  Regex::new(r#"[’'"”]+ūti"#).unwrap();
-    static ref RE_UUTI_AFTER: Regex =  Regex::new(r#"ū[’'"”]+ti"#).unwrap();
+    // The quoted iti-sandhi forms (see normalize_iti_sandhi). The quote mark
+    // may be before or after the n / long vowel. Only at the end of a word: a
+    // `ti` followed by more letters is not a final iti (`maraṇā’tipi` is iti +
+    // pi, `hevan’tissa` iti + assa), and DPD knows those words joined.
+    static ref RE_NTI_BEFORE: Regex =   Regex::new(r#"[’'"”]+nti\b"#).unwrap();
+    static ref RE_NTI_AFTER: Regex =   Regex::new(r#"n[’'"”]+ti\b"#).unwrap();
+    static ref RE_IITI_BEFORE: Regex =  Regex::new(r#"[’'"”]+īti\b"#).unwrap();
+    static ref RE_IITI_AFTER: Regex =  Regex::new(r#"ī[’'"”]+ti\b"#).unwrap();
+    static ref RE_AATI_BEFORE: Regex =  Regex::new(r#"[’'"”]+āti\b"#).unwrap();
+    static ref RE_AATI_AFTER: Regex =  Regex::new(r#"ā[’'"”]+ti\b"#).unwrap();
+    static ref RE_UUTI_BEFORE: Regex =  Regex::new(r#"[’'"”]+ūti\b"#).unwrap();
+    static ref RE_UUTI_AFTER: Regex =  Regex::new(r#"ū[’'"”]+ti\b"#).unwrap();
+
+    // The unquoted iti-sandhi forms, only at the end of a word. Inside a word
+    // the same letters belong to something else: `until`, `counting`,
+    // `kuntini`, and `anaññātaññassāmītindriyaṁ` (a compound DPD knows whole).
+    static ref RE_MIITI_END: Regex = Regex::new(r"mīti\b").unwrap();
+    static ref RE_BHIKKHUUTI_END: Regex = Regex::new(r"bhikkhūti\b").unwrap();
+    static ref RE_UNTI_END: Regex = Regex::new(r"unti\b").unwrap();
 
     // Don't include parentheses (), interferes with 'contains match' in cst texts,
     // see test_sutta_search_contains_match_with_punctuation()
@@ -1308,7 +1317,7 @@ pub fn normalize_iti_sandhi(text: &str) -> String {
     //
     // dhārayāmīti -> dhārayāmi ti
     // asmīti -> asmi ti
-    let text = text.replace("mīti", "mi ti");
+    let text = RE_MIITI_END.replace_all(&text, "mi ti").into_owned();
 
     // dassanāyā’ti -> dassanāya ti
     // -āti (no quote mark) is ambiguous with verb endings.
@@ -1327,7 +1336,7 @@ pub fn normalize_iti_sandhi(text: &str) -> String {
 
     // Resolve only a specific known case:
     // bhikkhūti -> bhikkhu ti
-    let text = text.replace("bhikkhūti", "bhikkhu ti");
+    let text = RE_BHIKKHUUTI_END.replace_all(&text, "bhikkhu ti").into_owned();
 
     // Pāli sandhi: gantuṁ + ti, the ṁ becomes n, and written as gantunti, gantun’ti or gantu’nti.
     // One or more closing apostrophes may be added before or after the n.
@@ -1338,7 +1347,7 @@ pub fn normalize_iti_sandhi(text: &str) -> String {
     let text = RE_NTI_AFTER.replace_all(&text, "ṁ ti").into_owned();
     // gantunti -> gantuṁ ti
     // We can also handle the specific gantunti case, as there are no -unti verb conjugation endings.
-    let text = text.replace("unti", "uṁ ti");
+    let text = RE_UNTI_END.replace_all(&text, "uṁ ti").into_owned();
 
     // We are not trying to match other -nti endings such as -anti, -enti, etc.
     // because it is ambiguous with plural verb forms, e.g. gacchanti, denti.
@@ -1346,9 +1355,128 @@ pub fn normalize_iti_sandhi(text: &str) -> String {
     text.trim().to_string()
 }
 
+/// Rejoin a single word that `normalize_query_text` split by iti sandhi into
+/// the sandhi form DPD stores as a lookup key, returning `(joined, base)`:
+///
+/// - `dhārayāmi ti` → (`dhārayāmīti`, `dhārayāmi`)
+/// - `viharissāma ti` → (`viharissāmāti`, `viharissāma`)
+/// - `gantuṁ ti` → (`gantunti`, `gantuṁ`)
+///
+/// `normalize_iti_sandhi` shortens the final vowel and restores ṁ, so this
+/// lengthens a final a / i / u and turns a final ṁ back into n. The input must
+/// already be normalized; every quote variant of the word (`’ti`, `”ti`,
+/// `’”ti`, `"ti`, `'"ti`, a trailing closing quote) and the unquoted form
+/// arrive here as the same `<base> ti`. Anything other than exactly one word
+/// followed by `ti` returns `None`.
+pub fn rejoin_iti_sandhi(normalized: &str) -> Option<(String, String)> {
+    let base = normalized.strip_suffix(" ti")?;
+    if base.is_empty() || base.contains(' ') {
+        return None;
+    }
+    let mut stem: Vec<char> = base.chars().collect();
+    let last = stem.pop()?;
+    let joined_end = match last {
+        'a' => "āti".to_string(),
+        'i' => "īti".to_string(),
+        'u' => "ūti".to_string(),
+        'ṁ' => "nti".to_string(),
+        c => format!("{}ti", c),
+    };
+    let joined = format!("{}{}", stem.into_iter().collect::<String>(), joined_end);
+    Some((joined, base.to_string()))
+}
+
+/// Normalize a query for the DPD lookups, returning `(query, iti_base)`.
+///
+/// Like `normalize_query_text`, with two differences that both come from DPD
+/// being keyed by whole words:
+///
+/// - A single word split by iti sandhi is rejoined (see `rejoin_iti_sandhi`),
+///   because DPD's `lookup` table is keyed by the joined sandhi form and has no
+///   entry for the two words `<base> ti`. `iti_base` is then the word without
+///   `ti`, for a lookup to resolve the word as `<base> + iti` when DPD does not
+///   analyse the joined form that way.
+/// - A single apostrophe between two letters is removed, joining the word
+///   (`manopubbaṅ’gamā` → `manopubbaṅgamā`), as the Fulltext query does. The
+///   shared normalizer turns a smart apostrophe into a space instead, which
+///   would look up two words.
+///
+/// Trap: the order is load-bearing. The iti split must take its quote marks
+/// first, and a quote run before a word-final `ti` must become a space before
+/// apostrophes are joined; otherwise `magga’nti` or `kho’ti` would join into a
+/// DPD key that may be an unrelated word (`magganti` is a verb form), and lose
+/// the quote that marks it as iti sandhi.
+///
+/// A caller that hands the query on to a DPD lookup passes
+/// `normalize_dpd_query_split`'s output, which normalizes to the same answer
+/// as the raw text.
+pub fn normalize_dpd_query_text(text: &str) -> (String, Option<String>) {
+    let normalized = normalize_dpd_query_split(text);
+    match rejoin_iti_sandhi(&normalized) {
+        Some((joined, base)) => (joined, Some(base)),
+        None => (normalized, None),
+    }
+}
+
+/// The DPD query before the iti-sandhi rejoin: `maggaṁ ti`, `kho ti`,
+/// `manopubbaṅgamā`. See `normalize_dpd_query_text` for the steps and their
+/// order.
+///
+/// This is the form for a caller that hands the query on to a DPD lookup
+/// (`SearchQueryTask::dpd_query_text`, the Dictionary result page's break-down
+/// selector). It keeps the iti sandhi visible as `<base> ti`, and normalizing it
+/// again gives the same string, so the lookup reaches the same answer as from
+/// the raw text. Never pass on the *rejoined* form: `magganti` normalized again
+/// is the verb, not maggaṁ + iti. Never pass on `normalize_query_text`'s output
+/// either: it has already turned `manopubbaṅ’gamā` into two words.
+pub fn normalize_dpd_query_split(text: &str) -> String {
+    if text.starts_with("uid:") {
+        return text.to_string();
+    }
+    let text = join_mid_word_apostrophes(&normalize_plain_text(text));
+    normalize_query_text(Some(text))
+}
+
+/// Join a word written with quote marks inside it, for the steps that need one
+/// whole word: the DPD lookups and gloss word extraction.
+///
+/// - A single apostrophe (`’`, `‘`, `ʼ`, `'`) between two letters: a compound
+///   or an elision, `manopubbaṅ’gamā` → `manopubbaṅgamā`, `so’pi` → `sopi`.
+/// - A quote run of any kind before `ti` / `nti` with more letters after it:
+///   iti followed by another word, `cā”tipi` → `cātipi` (ca + iti + api),
+///   `hevan’tissa` → `hevantissa`. DPD knows these joined.
+///
+/// Run it on `normalize_plain_text` output, after the iti split has taken the
+/// quote marks it needs. A quote run that is still before a word-final `ti`
+/// (`kho’ti`, `bhante”ti`) is iti sandhi too, for a vowel the split rules do
+/// not cover, so it becomes a space here rather than being joined: `khoti`
+/// could be an unrelated DPD key, as `magganti` is a verb form.
+pub fn join_mid_word_apostrophes(text: &str) -> String {
+    lazy_static! {
+        static ref RE_QUOTES_BEFORE_TI: Regex = Regex::new(r#"(\w)[’‘ʼ'"”“]+ti\b"#).unwrap();
+        static ref RE_QUOTES_BEFORE_TI_IN_WORD: Regex = Regex::new(r#"(\w)[’‘ʼ'"”“]+(n?ti\w)"#).unwrap();
+        static ref RE_MID_WORD_APOSTROPHE: Regex = Regex::new(r"(\w)[’‘ʼ'](\w)").unwrap();
+    }
+    let text = RE_QUOTES_BEFORE_TI.replace_all(text, "$1 ti").into_owned();
+    let mut text = RE_QUOTES_BEFORE_TI_IN_WORD.replace_all(&text, "$1$2").into_owned();
+    // Loop because the pattern consumes the letter after the apostrophe, so
+    // a second apostrophe right after it would be missed on one pass.
+    loop {
+        let next = RE_MID_WORD_APOSTROPHE.replace_all(&text, "$1$2").into_owned();
+        if next == text {
+            return text;
+        }
+        text = next;
+    }
+}
+
 pub fn preprocess_text_for_word_extraction(text: &str) -> String {
     let text = text.replace("\n", " ").replace("\t", " ");
     let text = normalize_plain_text(&text);
+    // Keep a compound with an apostrophe whole (`manopubbaṅ’gamā`); the
+    // nonword->space pass below would split it. `find_word_position_char_based`
+    // skips the apostrophe when it finds the word in the original text.
+    let text = join_mid_word_apostrophes(&text);
 
     // Remove inter-word hyphens *before* the nonword->space pass below, rather
     // than letting them collapse into spaces. Contemporary texts hyphenate
@@ -1685,6 +1813,40 @@ fn try_match_with_niggahita_expansion(
     None
 }
 
+/// Match `search_chars` at `start` in the original text, skipping quote marks
+/// between two letters of the word (`manopubbaṅ’gamā` for the clean word
+/// `manopubbaṅgamā`, `cā”tipi` for `cātipi`, see `join_mid_word_apostrophes`).
+/// Returns the end position, and only when a quote mark was skipped: a plain
+/// match is the caller's ordinary path.
+fn match_with_inner_apostrophes(
+    original_lower_chars: &[char],
+    search_chars: &[char],
+    start: usize,
+) -> Option<usize> {
+    let text_len = original_lower_chars.len();
+    let mut pos = start;
+    let mut skipped = false;
+    for (k, &search_char) in search_chars.iter().enumerate() {
+        if k > 0 && pos < text_len && is_word_char(original_lower_chars[pos - 1]) {
+            let mut after = pos;
+            while after < text_len
+                && (is_quote_char(original_lower_chars[after]) || original_lower_chars[after] == 'ʼ')
+            {
+                after += 1;
+            }
+            if after > pos && after < text_len && is_word_char(original_lower_chars[after]) {
+                pos = after;
+                skipped = true;
+            }
+        }
+        if pos >= text_len || !chars_match_with_sandhi(original_lower_chars[pos], search_char) {
+            return None;
+        }
+        pos += 1;
+    }
+    if skipped { Some(pos) } else { None }
+}
+
 pub fn find_word_position_char_based(
     original_chars: &[char],
     original_lower_chars: &[char],
@@ -1754,6 +1916,23 @@ pub fn find_word_position_char_based(
         } else {
             slice_matches_with_sandhi(slice, &search_chars)
         };
+
+        // A compound written with an apostrophe (`manopubbaṅ’gamā`), which
+        // preprocessing joined into the clean word `manopubbaṅgamā`.
+        if !matches
+            && let Some(end) = match_with_inner_apostrophes(original_lower_chars, &search_chars, char_pos)
+        {
+            let is_word_boundary_start = char_pos == 0 || !is_word_char(original_chars[char_pos - 1]);
+            let is_word_boundary_end = end >= text_len || !is_word_char(original_chars[end]);
+            if is_word_boundary_start && is_word_boundary_end {
+                return Some(WordPosition {
+                    clean_word: search_word.to_string(),
+                    char_start: char_pos,
+                    char_end: end,
+                    original_word: original_chars[char_pos..end].iter().collect(),
+                });
+            }
+        }
 
         if matches {
             let is_word_boundary_start = char_pos == 0
@@ -4246,6 +4425,41 @@ pub fn parse_word_selection_response(
 }
 
 /// Process a single word for glossing, equivalent to QML process_word_for_glossing function
+/// The words to look up for a gloss word, in order: the clean word, then, for an
+/// iti-sandhi word, the clean word with its final vowel long, when that is how
+/// the text writes it. The iti-sandhi split shortens the vowel
+/// (`dhārayāmī’ti` → `dhārayāmi`), which is right for sandhi lengthening but
+/// wrong for a real long ending (`anaññatā’ti` → `anaññata`, which DPD does not
+/// have; it has `anaññatā`). The clean word stays the word's identity (its
+/// cache key and display); only the lookup changes.
+fn gloss_lookup_words(word_info: &WordInfo) -> Vec<String> {
+    lazy_static! {
+        static ref RE_QUOTED_TI_END: Regex = Regex::new(r#"[’‘ʼ'"”“]+n?ti$"#).unwrap();
+    }
+    let word = word_info.word.to_lowercase();
+    let mut words = vec![word.clone()];
+
+    let long_vowel = match word.chars().last() {
+        Some('a') => 'ā',
+        Some('i') => 'ī',
+        Some('u') => 'ū',
+        _ => return words,
+    };
+    let original = consistent_niggahita(Some(word_info.original_word.to_lowercase()));
+    let written = RE_QUOTED_TI_END.replace(&original, "");
+    if written.len() == original.len() {
+        // Not an iti-sandhi word.
+        return words;
+    }
+    let mut long: String = word.chars().collect();
+    long.pop();
+    long.push(long_vowel);
+    if written == long {
+        words.push(long);
+    }
+    words
+}
+
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
     paragraph_shown_stems: &mut std::collections::HashMap<String, bool>,
@@ -4259,10 +4473,22 @@ pub fn process_word_for_glossing(
     // gloss path's behavior). `results` is the flat list: direct results first,
     // then deconstructor-derived components. See
     // docs/gloss-ai-word-selection.md (grouped lookup) and PRD FR-A2/FR-A5.
-    let grouped = match dpd.dpd_lookup_grouped(&word_info.word.to_lowercase(), false, true, true, None, None) {
-        Ok(g) => g,
-        Err(e) => return Err(format!("DPD lookup failed: {}", e)),
-    };
+    //
+    // An iti-sandhi word whose shortened clean word finds nothing is retried
+    // with the long vowel the text shows (see gloss_lookup_words).
+    let mut grouped = None;
+    for lookup_word in gloss_lookup_words(word_info) {
+        let found = match dpd.dpd_lookup_grouped(&lookup_word, false, true, true, None, None) {
+            Ok(g) => g,
+            Err(e) => return Err(format!("DPD lookup failed: {}", e)),
+        };
+        let done = !found.results.is_empty();
+        grouped = Some(found);
+        if done {
+            break;
+        }
+    }
+    let grouped = grouped.expect("gloss_lookup_words is never empty");
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
@@ -4481,6 +4707,7 @@ pub fn process_all_paragraphs(
             let word_info = WordInfo {
                 word: word_context.clean_word.clone(),
                 sentence: word_context.context_snippet.clone(),
+                original_word: word_context.original_word.clone(),
             };
 
             match process_word_for_glossing(
@@ -4551,6 +4778,7 @@ pub fn process_single_paragraph(
         let word_info = WordInfo {
             word: word_context.clean_word.clone(),
             sentence: word_context.context_snippet.clone(),
+            original_word: word_context.original_word.clone(),
         };
 
         match process_word_for_glossing(
@@ -5225,6 +5453,150 @@ mod tests {
     fn test_word_uid() {
         assert_eq!(word_uid("kammavācā", "PTS"), "kammavācā/pts");
         assert_eq!(word_uid("paṭisallāna", "dpd"), "paṭisallāna/dpd");
+    }
+
+    #[test]
+    fn test_normalize_dpd_query_text() {
+        let cases = [
+            // Every quote variant and the unquoted form give DPD's joined key.
+            ("dhārayāmīti", "dhārayāmīti"),
+            ("dhārayāmī’ti", "dhārayāmīti"),
+            ("dhārayāmī”ti", "dhārayāmīti"),
+            ("dhārayāmī’”ti", "dhārayāmīti"),
+            ("dhārayāmī\"ti", "dhārayāmīti"),
+            ("dhārayāmī'\"ti", "dhārayāmīti"),
+            ("viharissāmā’ti", "viharissāmāti"),
+            ("viharissāmā'ti", "viharissāmāti"),
+            // A closing quote kept by the tap word extraction.
+            ("viharissāmā’ti’", "viharissāmāti"),
+            ("‘viharissāmā’ti’”", "viharissāmāti"),
+            ("gantunti", "gantunti"),
+            ("gantun’ti", "gantunti"),
+            ("gantu’nti", "gantunti"),
+            ("bhikkhūti", "bhikkhūti"),
+            // Not split, or more than one word: as normalize_query_text.
+            ("viharissāmāti", "viharissāmāti"),
+            ("dhārayāmi", "dhārayāmi"),
+            ("evaṁ me sutaṁ’ti", "evaṁ me sutaṁ ti"),
+            ("manopubbaṅ'gamā", "manopubbaṅgamā"),
+        ];
+        for (query, expected) in cases {
+            assert_eq!(normalize_dpd_query_text(query).0, expected, "query: {query}");
+            // Normalizing the output again changes nothing, and neither does
+            // normalizing the split form an iti-sandhi word arrives in.
+            assert_eq!(normalize_dpd_query_text(expected).0, expected, "renormalized: {expected}");
+            assert_eq!(
+                normalize_dpd_query_text(&normalize_query_text(Some(query.to_string()))).0,
+                expected,
+                "pre-normalized: {query}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalize_dpd_query_text_apostrophes() {
+        // A single apostrophe inside a compound joins it, smart or straight.
+        assert_eq!(normalize_dpd_query_text("manopubbaṅ’gamā"), ("manopubbaṅgamā".to_string(), None));
+        assert_eq!(normalize_dpd_query_text("manopubbaṅ‘gamā"), ("manopubbaṅgamā".to_string(), None));
+        assert_eq!(normalize_dpd_query_text("manopubbaṅ'gamā"), ("manopubbaṅgamā".to_string(), None));
+        // A quote before a word-final `ti` stays iti sandhi, for every vowel,
+        // and is never joined into a plain DPD key.
+        assert_eq!(normalize_dpd_query_text("kho’ti"), ("khoti".to_string(), Some("kho".to_string())));
+        assert_eq!(normalize_dpd_query_text("bhante”ti"), ("bhanteti".to_string(), Some("bhante".to_string())));
+        assert_eq!(normalize_dpd_query_text("magga’nti"), ("magganti".to_string(), Some("maggaṁ".to_string())));
+        // The split form a caller hands on normalizes to the same answer.
+        for q in ["manopubbaṅ’gamā", "kho’ti", "magga’’nti", "dhārayāmī’”ti"] {
+            let split = normalize_dpd_query_split(q);
+            assert_eq!(normalize_dpd_query_split(&split), split, "{q}");
+            assert_eq!(normalize_dpd_query_text(&split), normalize_dpd_query_text(q), "{q}");
+        }
+    }
+
+    #[test]
+    fn test_join_mid_word_apostrophes() {
+        // A compound or an elision is one word, with any single apostrophe.
+        assert_eq!(join_mid_word_apostrophes("manopubbaṅ’gamā dhammā"), "manopubbaṅgamā dhammā");
+        assert_eq!(join_mid_word_apostrophes("manopubbaṅ'gamā"), "manopubbaṅgamā");
+        assert_eq!(join_mid_word_apostrophes("so’pi"), "sopi");
+        assert_eq!(join_mid_word_apostrophes("maraṇā’tipi"), "maraṇātipi");
+        assert_eq!(join_mid_word_apostrophes("cā”tipi"), "cātipi");
+        assert_eq!(join_mid_word_apostrophes("sampayuttan”tipi"), "sampayuttantipi");
+        // A quote run before a word-final `ti` is iti sandhi: a space.
+        assert_eq!(join_mid_word_apostrophes("kho’ti so"), "kho ti so");
+        assert_eq!(join_mid_word_apostrophes("bhante”ti"), "bhante ti");
+        // Opening and closing quotes around words are left alone.
+        assert_eq!(join_mid_word_apostrophes("‘evaṁ’ ti"), "‘evaṁ’ ti");
+    }
+
+    #[test]
+    fn test_normalize_iti_sandhi_quoted_rules_are_word_final() {
+        // `ti` followed by more letters is not a final iti: iti + pi, iti + assa.
+        for word in ["maraṇā’tipi", "hevan’tissa", "dhārayāmī’tipi"] {
+            assert_eq!(normalize_iti_sandhi(word), word);
+        }
+        assert_eq!(normalize_iti_sandhi("maraṇā’ti."), "maraṇa ti.");
+        assert_eq!(normalize_iti_sandhi("hevan’ti"), "hevaṁ ti");
+    }
+
+    #[test]
+    fn test_extract_words_keeps_apostrophe_compounds_whole() {
+        let words = extract_words_with_context("Manopubbaṅ’gamā dhammā. So’pi evaṁ dhārayāmī’ti. Kho’ti so. Cā”tipi.");
+        let pairs: Vec<(&str, &str)> = words
+            .iter()
+            .map(|w| (w.clean_word.as_str(), w.original_word.as_str()))
+            .collect();
+        assert_eq!(
+            pairs,
+            vec![
+                ("manopubbaṅgamā", "Manopubbaṅ’gamā"),
+                ("dhammā", "dhammā"),
+                ("sopi", "So’pi"),
+                ("evaṁ", "evaṁ"),
+                ("dhārayāmi", "dhārayāmī’ti"),
+                ("kho", "Kho’ti"),
+                ("so", "so"),
+                ("cātipi", "Cā”tipi"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_gloss_lookup_words() {
+        let info = |word: &str, original: &str| WordInfo {
+            word: word.to_string(),
+            sentence: String::new(),
+            original_word: original.to_string(),
+        };
+        // The text writes the vowel long: try that after the clean word.
+        assert_eq!(gloss_lookup_words(&info("anaññata", "Anaññatā’ti")), vec!["anaññata", "anaññatā"]);
+        assert_eq!(gloss_lookup_words(&info("dhārayāmi", "dhārayāmī”ti")), vec!["dhārayāmi", "dhārayāmī"]);
+        // Short in the text, not iti sandhi, or no original: the clean word only.
+        assert_eq!(gloss_lookup_words(&info("dhārayāmi", "dhārayāmi’ti")), vec!["dhārayāmi"]);
+        assert_eq!(gloss_lookup_words(&info("dhamma", "dhamma")), vec!["dhamma"]);
+        assert_eq!(gloss_lookup_words(&info("maggaṁ", "magga’’nti")), vec!["maggaṁ"]);
+        assert_eq!(gloss_lookup_words(&info("anaññata", "")), vec!["anaññata"]);
+    }
+
+    #[test]
+    fn test_normalize_iti_sandhi_unquoted_rules_are_word_final() {
+        // Inside a word, `mīti` / `unti` / `bhikkhūti` are other letters.
+        for word in ["until", "counting", "mounting", "kuntini", "anaññātaññassāmītindriyaṁ", "vadāmītipi"] {
+            assert_eq!(normalize_iti_sandhi(word), word);
+        }
+        assert_eq!(normalize_iti_sandhi("dhārayāmīti so"), "dhārayāmi ti so");
+        assert_eq!(normalize_iti_sandhi("gantunti."), "gantuṁ ti.");
+        assert_eq!(normalize_iti_sandhi("bhikkhūti"), "bhikkhu ti");
+    }
+
+    #[test]
+    fn test_rejoin_iti_sandhi() {
+        assert_eq!(rejoin_iti_sandhi("dhārayāmi ti"), Some(("dhārayāmīti".to_string(), "dhārayāmi".to_string())));
+        assert_eq!(rejoin_iti_sandhi("gantuṁ ti"), Some(("gantunti".to_string(), "gantuṁ".to_string())));
+        assert_eq!(rejoin_iti_sandhi("kho ti"), Some(("khoti".to_string(), "kho".to_string())));
+        assert_eq!(rejoin_iti_sandhi("ti"), None);
+        assert_eq!(rejoin_iti_sandhi(" ti"), None);
+        assert_eq!(rejoin_iti_sandhi("evaṁ me sutaṁ ti"), None);
+        assert_eq!(rejoin_iti_sandhi("dhārayāmi"), None);
     }
 
     #[test]

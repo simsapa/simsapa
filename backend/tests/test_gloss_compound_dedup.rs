@@ -33,7 +33,7 @@ fn default_options() -> WordProcessingOptions {
 }
 
 fn word_info(word: &str) -> WordInfo {
-    WordInfo { word: word.to_string(), sentence: String::new() }
+    WordInfo { word: word.to_string(), sentence: String::new(), original_word: String::new() }
 }
 
 // The lookup itself recognises the compound (sanity check that the deconstructor

@@ -563,6 +563,7 @@ fn gloss_paragraph_words(
         let word_info = WordInfo {
             word: wc.clean_word.clone(),
             sentence: wc.context_snippet.clone(),
+            original_word: wc.original_word.clone(),
         };
         let processed = process_word_for_glossing(
             &word_info,

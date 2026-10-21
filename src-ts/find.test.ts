@@ -191,6 +191,50 @@ describe('Find functionality', () => {
         });
     });
 
+    describe('Iti-sandhi boundaries', () => {
+        // A find query from `content_plain` has the iti sandhi split
+        // (`dhārayāmi ti`, `gantuṁ ti`); the page shows the joined form.
+        beforeEach(() => {
+            const content = document.getElementById('ssp_content');
+            if (content) {
+                content.innerHTML = `
+                    <p id="p1">evaṁ dhārayāmī’ti so.</p>
+                    <p id="p2">evaṁ dhārayāmī”ti so.</p>
+                    <p id="p3">evaṁ dhārayāmīti so.</p>
+                    <p id="p4">na sukaraṁ gantun’ti vadati.</p>
+                    <p id="p5">na sukaraṁ gantu’nti vadati.</p>
+                    <p id="p6">na sukaraṁ gantunti vadati.</p>
+                    <p id="p7">kho bhikkhave”ti so.</p>
+                `;
+            }
+        });
+
+        function matched_paragraphs(): string[] {
+            const ids = Array.from(document.querySelectorAll('.ssp-find-highlight'))
+                .map(h => (h.closest('p') as HTMLElement).id);
+            return Array.from(new Set(ids));
+        }
+
+        test.each([true, false])('dhārayāmi ti finds every written form (accent folding %s)', (fold) => {
+            (document.getElementById('findAccentFold') as HTMLInputElement).checked = fold;
+            findManager.search('dhārayāmi ti so');
+            expect(matched_paragraphs()).toEqual(['p1', 'p2', 'p3']);
+        });
+
+        test.each([true, false])('gantuṁ ti finds n’ti, ’nti and nti (accent folding %s)', (fold) => {
+            (document.getElementById('findAccentFold') as HTMLInputElement).checked = fold;
+            findManager.search('sukaraṁ gantuṁ ti vadati');
+            expect(matched_paragraphs()).toEqual(['p4', 'p5', 'p6']);
+        });
+
+        test('a word that is not iti sandhi still needs its own letters', () => {
+            findManager.search('bhikkhave ti');
+            expect(matched_paragraphs()).toEqual(['p7']);
+            findManager.search('dhārayāma ti');
+            expect(matched_paragraphs()).toEqual([]);
+        });
+    });
+
     describe('Double character accent folding', () => {
         beforeEach(() => {
             // Add content with Pali double characters

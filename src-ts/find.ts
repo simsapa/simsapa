@@ -17,6 +17,28 @@ function getGlobalState(): Map<string, any> {
     return window.SimsapaFindState;
 }
 
+// Quote marks and whitespace that can stand between an iti-sandhi word and its
+// `ti` on the page, zero or more of them (`dhārayāmī’”ti`, `dhārayāmīti`).
+const ITI_SEPARATOR = "[\\s'’‘\"“”]*";
+// Private-use placeholders for `FindManager.markItiSandhi`.
+const ITI_SEPARATOR_MARK = "\uE000";
+const ITI_LAST_LETTER_MARKS: { [letter: string]: string } = {
+    "a": "\uE001", "ā": "\uE001",
+    "i": "\uE002", "ī": "\uE002",
+    "u": "\uE003", "ū": "\uE003",
+    "ṁ": "\uE004", "ṃ": "\uE004",
+};
+const ITI_MARK_PATTERNS: [string, string][] = [
+    // Sandhi lengthens the vowel the split form shortened.
+    ["\uE001", "[aā]"],
+    ["\uE002", "[iī]"],
+    ["\uE003", "[uū]"],
+    // `ṁ ti` is written `ṁ ti`, `nti`, `n’ti` or `’nti`: the quote may sit on
+    // either side of the `n`. The separator mark that follows still applies.
+    ["\uE004", `(?:[mṃṁ]|${ITI_SEPARATOR}n)`],
+    ["\uE000", ITI_SEPARATOR],
+];
+
 /**
  * Find Manager for implementing Ctrl+F functionality in Simsapa
  * Provides text search and highlighting within DOM content
@@ -348,10 +370,13 @@ class FindManager {
             flags += 'i'; // Case insensitive
         }
 
+        // Mark iti-sandhi boundaries before folding (see markItiSandhi).
+        let searchTerm = this.markItiSandhi(term);
         // Process term for accent folding if enabled
-        let searchTerm = this.isAccentFoldingEnabled() ? this.createAccentFoldedPattern(term) : term;
+        searchTerm = this.isAccentFoldingEnabled() ? this.createAccentFoldedPattern(searchTerm) : searchTerm;
         // Make inter-word gaps tolerate punctuation (see makeInterWordFlexible).
         searchTerm = this.makeInterWordFlexible(searchTerm);
+        searchTerm = this.expandItiSandhiMarks(searchTerm);
 
         // Use dom-find-and-replace to highlight matches
         const recover = findAndReplace(this.contentArea, {
@@ -385,6 +410,35 @@ class FindManager {
         this.scrollToElement(highlights[0] as HTMLElement);
 
         return recover as Recover;
+    }
+
+    /**
+     * Mark each iti-sandhi boundary in a search term: a word followed by the
+     * separate word `ti`, as in `dhārayāmi ti` or `gantuṁ ti`.
+     *
+     * A find query taken from `content_plain` (the "jump to this snippet"
+     * query) has the iti sandhi split that way, with the base vowel shortened
+     * and a final `ti` after `ṁ`, while the page shows the joined form:
+     * `dhārayāmī’ti`, `dhārayāmīti`, `gantun’ti`, `gantu’nti`, `gantunti`. The
+     * boundary is replaced with private-use placeholders that accent folding
+     * and `makeInterWordFlexible` pass through unchanged, and
+     * `expandItiSandhiMarks` turns them into the pattern that matches all of
+     * those. See docs/pali-sandhi-and-quote-marks.md.
+     */
+    private markItiSandhi(term: string): string {
+        return term.replace(/(\S)\s+ti(?=\s|$)/g, (_match: string, last: string) => {
+            const mark = ITI_LAST_LETTER_MARKS[last];
+            return (mark !== undefined ? mark : last) + ITI_SEPARATOR_MARK + "ti";
+        });
+    }
+
+    /** Turn the placeholders left by `markItiSandhi` into regex. */
+    private expandItiSandhiMarks(pattern: string): string {
+        let out = pattern;
+        for (const [mark, regex] of ITI_MARK_PATTERNS) {
+            out = out.split(mark).join(regex);
+        }
+        return out;
     }
 
     /**

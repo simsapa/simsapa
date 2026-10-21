@@ -15,13 +15,41 @@ use crate::db::dpd_models::*;
 use crate::db::DatabaseHandle;
 
 use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for_sqlite};
-use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_query_text, word_uid_sanitize};
+use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
 use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup};
 use crate::logger::{info, error};
 
 pub type DpdDbHandle = DatabaseHandle;
+
+/// Exclusive upper bound for a "starts with `prefix`" range filter
+/// (`col >= prefix AND col < prefix_upper_bound(prefix)`).
+///
+/// Use this instead of `LIKE 'prefix%'`: SQLite's `LIKE` is case-insensitive,
+/// so it cannot use the BINARY-collated column indexes and scans the whole
+/// `dpd_headwords` table. The range uses the index. The columns it is applied
+/// to (`lemma_clean`, `word_ascii`, `stem`) are stored lowercase, so the case
+/// sensitivity changes nothing.
+fn prefix_upper_bound(prefix: &str) -> String {
+    format!("{}{}", prefix, char::MAX)
+}
+
+/// The base words to try for an iti-sandhi word resolved as `<base> + iti`, in
+/// order: the base with its final vowel shortened (`dhārayāmi`, what sandhi
+/// lengthening usually hides), then the unshortened one when the vowel is
+/// really long (`cātubhūmikā` is a feminine plural). A final `n` before `ti` is
+/// always the `ṁ` form, so `maggan` is never a candidate.
+fn iti_base_candidates(joined: &str, base: &str) -> Vec<String> {
+    let mut candidates = vec![base.to_string()];
+    if let Some(long) = joined.strip_suffix("ti")
+        && long != base
+        && !long.ends_with('n')
+    {
+        candidates.push(long.to_string());
+    }
+    candidates
+}
 
 /// Argument tuple identifying a memoized grouped lookup:
 /// `(query_text, do_pali_sort, exact_only, deconstructor_exact_only,
@@ -124,7 +152,12 @@ impl DpdDbHandle {
 
         // NOTE: Return exact match if possible because 'starts with' matches show confusing additional words.
 
-        let query_text = normalize_query_text(Some(query_text.to_string()));
+        // An iti-sandhi word is matched exactly in its joined form. The
+        // "starts with" attempts would only guess from a form DPD does not
+        // know (and scan the whole table to do it); the lookups resolve such a
+        // word as `<base> + iti` instead.
+        let (query_text, iti_base) = normalize_dpd_query_text(query_text);
+        let exact_only = exact_only || iti_base.is_some();
 
         // Attempt 1: Exact match.
         let mut result: Option<Lookup> = lookup
@@ -173,7 +206,67 @@ impl DpdDbHandle {
         Ok(result)
     }
 
+    /// Whether DPD analyses the joined sandhi form `joined` (e.g.
+    /// `dhārayāmīti`) as `… + iti` in one of its break-downs.
+    ///
+    /// The lookups resolve an iti-sandhi word through its joined form only
+    /// when this holds. Otherwise the joined key may be an unrelated word:
+    /// `magganti` (from `magga’’nti`, maggaṁ + iti) is in DPD only as the
+    /// plural of the verb `maggati`.
+    fn dpd_has_iti_breakdown(&self, joined: &str) -> Result<bool> {
+        use crate::db::dpd_schema::lookup::dsl::*;
+
+        let db_conn = &mut self.get_conn().expect("Can't get db conn");
+        let row: Option<Lookup> = lookup
+            .filter(lookup_key.eq(joined))
+            .first::<Lookup>(db_conn)
+            .optional()?;
+        Ok(row.is_some_and(|r| {
+            !r.deconstructor.is_empty()
+                && r.deconstructor_nested()
+                    .iter()
+                    .any(|words| words.last().is_some_and(|w| w == "iti"))
+        }))
+    }
+
+    /// The headwords of `iti`, as a deconstructor component resolves them.
+    fn dpd_iti_results(
+        &self,
+        do_pali_sort: bool,
+        uid_prefix_pat: Option<&str>,
+        uid_suffix_pat: Option<&str>,
+    ) -> Result<Vec<SearchResult>> {
+        let hws = self.inflection_to_pali_words("iti", uid_prefix_pat, uid_suffix_pat)?;
+        let mut res = parse_words(
+            hws.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect(),
+            do_pali_sort,
+        );
+        sort_search_results_natural(&mut res);
+        Ok(res)
+    }
+
     pub fn dpd_deconstructor_list(&self, query: &str) -> Vec<String> {
+        // An iti-sandhi word DPD does not analyse as `… + iti` gets the
+        // break-downs the grouped lookup builds for it (`maggaṁ + iti`).
+        if let (joined, Some(_)) = normalize_dpd_query_text(query) {
+            match self.dpd_has_iti_breakdown(&joined) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return match self.dpd_lookup_grouped(query, false, true, false, None, None) {
+                        Ok(g) => g.deconstructions.into_iter().map(|d| d.words_joined).collect(),
+                        Err(e) => {
+                            error(&format!("{}", e));
+                            Vec::new()
+                        }
+                    };
+                }
+                Err(e) => {
+                    error(&format!("{}", e));
+                    return Vec::new();
+                }
+            }
+        }
+
         match self.dpd_deconstructor_query(query, false) {
             Ok(res) => {
                 if let Some(r) = res {
@@ -243,7 +336,10 @@ impl DpdDbHandle {
 
         let db_conn = &mut self.get_conn().expect("Can't get db conn");
 
-        let query_text = normalize_query_text(Some(query_text_orig.to_string()));
+        // An iti-sandhi word is looked up in its joined form (`dhārayāmīti`)
+        // when DPD analyses that as `… + iti`, and otherwise as `<base> + iti`
+        // (`maggaṁ + iti`, never the verb `magganti`).
+        let (query_text, iti_base) = normalize_dpd_query_text(query_text_orig);
 
         // A uid is matched against the stored form as-is; unlike the free-text
         // query it must NOT be normalized (normalize_query_text strips the
@@ -339,6 +435,23 @@ impl DpdDbHandle {
         }
 
         if !results.is_empty() {
+            return Ok(results);
+        }
+
+        // An iti-sandhi word that DPD does not analyse as `… + iti` is the
+        // base word plus `iti` (see `dpd_has_iti_breakdown`).
+        if let Some(base) = &iti_base && !self.dpd_has_iti_breakdown(&query_text)? {
+            let mut results: Vec<SearchResult> = Vec::new();
+            for candidate in iti_base_candidates(&query_text, base) {
+                results = self.dpd_lookup(&candidate, do_pali_sort, exact_only, uid_prefix, uid_suffix)?;
+                if !results.is_empty() {
+                    break;
+                }
+            }
+            let mut iti = self.dpd_iti_results(do_pali_sort, uid_prefix_ref, uid_suffix_ref)?;
+            iti.retain(|i| !results.iter().any(|r| r.uid == i.uid));
+            results.extend(iti);
+            info(&format!("Query took: {:?}", timer.elapsed()));
             return Ok(results);
         }
 
@@ -512,8 +625,8 @@ impl DpdDbHandle {
 
             // Word starts with.
             let mut q = dpd_headwords::table
-                .filter(dpd_headwords::lemma_clean.like(format!("{}%", query_text))
-                        .or(dpd_headwords::word_ascii.like(format!("{}%", query_text))))
+                .filter(dpd_headwords::lemma_clean.ge(&query_text).and(dpd_headwords::lemma_clean.lt(prefix_upper_bound(&query_text)))
+                        .or(dpd_headwords::word_ascii.ge(&query_text).and(dpd_headwords::word_ascii.lt(prefix_upper_bound(&query_text)))))
                 .into_boxed();
             if let Some(p) = uid_prefix_ref {
                 q = q.filter(dpd_headwords::uid.like(p.to_string()));
@@ -538,7 +651,7 @@ impl DpdDbHandle {
                 // Stem form starts with.
                 let stem = pali_stem(&query_text, false);
                 let mut q = dpd_headwords::table
-                    .filter(dpd_headwords::stem.like(format!("{}%", stem)))
+                    .filter(dpd_headwords::stem.ge(&stem).and(dpd_headwords::stem.lt(prefix_upper_bound(&stem))))
                     .into_boxed();
                 if let Some(p) = uid_prefix_ref {
                     q = q.filter(dpd_headwords::uid.like(p.to_string()));
@@ -661,7 +774,10 @@ impl DpdDbHandle {
 
         let db_conn = &mut self.get_conn().expect("Can't get db conn");
 
-        let query_text = normalize_query_text(Some(query_text_orig.to_string()));
+        // An iti-sandhi word is looked up in its joined form (`dhārayāmīti`)
+        // when DPD analyses that as `… + iti`, and otherwise as `<base> + iti`
+        // (`maggaṁ + iti`, never the verb `magganti`).
+        let (query_text, iti_base) = normalize_dpd_query_text(query_text_orig);
         let uid_candidate = query_text_orig.trim().to_lowercase();
 
         let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
@@ -757,6 +873,16 @@ impl DpdDbHandle {
                     direct_uids,
                 });
             }
+        }
+
+        // An iti-sandhi word that DPD does not analyse as `… + iti` is the
+        // base word plus `iti` (see `dpd_has_iti_breakdown`).
+        if let Some(base) = &iti_base && !self.dpd_has_iti_breakdown(&query_text)? {
+            let grouped = self.dpd_lookup_grouped_iti_split(
+                query_text_orig, &query_text, base, do_pali_sort, exact_only, uid_prefix, uid_suffix,
+            )?;
+            info(&format!("Query took: {:?}", timer.elapsed()));
+            return Ok(grouped);
         }
 
         // Phase 2: headword exact match.
@@ -901,8 +1027,8 @@ impl DpdDbHandle {
         // Their uids count as direct_uids.
         if results.is_empty() {
             let mut q = dpd_headwords::table
-                .filter(dpd_headwords::lemma_clean.like(format!("{}%", query_text))
-                        .or(dpd_headwords::word_ascii.like(format!("{}%", query_text))))
+                .filter(dpd_headwords::lemma_clean.ge(&query_text).and(dpd_headwords::lemma_clean.lt(prefix_upper_bound(&query_text)))
+                        .or(dpd_headwords::word_ascii.ge(&query_text).and(dpd_headwords::word_ascii.lt(prefix_upper_bound(&query_text)))))
                 .into_boxed();
             if let Some(p) = uid_prefix_ref {
                 q = q.filter(dpd_headwords::uid.like(p.to_string()));
@@ -919,7 +1045,7 @@ impl DpdDbHandle {
             if results.is_empty() {
                 let stem = pali_stem(&query_text, false);
                 let mut q = dpd_headwords::table
-                    .filter(dpd_headwords::stem.like(format!("{}%", stem)))
+                    .filter(dpd_headwords::stem.ge(&stem).and(dpd_headwords::stem.lt(prefix_upper_bound(&stem))))
                     .into_boxed();
                 if let Some(p) = uid_prefix_ref {
                     q = q.filter(dpd_headwords::uid.like(p.to_string()));
@@ -946,6 +1072,98 @@ impl DpdDbHandle {
             results,
             deconstructions,
             direct_uids,
+        })
+    }
+
+    /// The grouped lookup of an iti-sandhi word resolved as `base + iti`.
+    ///
+    /// Every break-down is the base word's analysis followed by `iti`: `base +
+    /// iti` over the base word's direct matches, then each of the base word's
+    /// own break-downs with `+ iti` appended. A base word with neither (DPD does
+    /// not know it, or only a "starts with" fallback matched) gets the one
+    /// break-down `base + iti` over whatever it returned. There are no direct
+    /// uids, so the break-down lock filters by the base analysis.
+    ///
+    /// The base is the first of `iti_base_candidates` that DPD has results
+    /// for: the shortened vowel, then the long one.
+    ///
+    /// The base word's break-downs are exact matches only: a "starts with"
+    /// guess for it belongs to some other word (`vuccaṁ` matched `vuccati +
+    /// iti`, giving `vuccati + iti + iti`).
+    #[allow(clippy::too_many_arguments)]
+    fn dpd_lookup_grouped_iti_split(
+        &self,
+        query_text_orig: &str,
+        joined: &str,
+        base: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+    ) -> Result<GroupedDpdLookup> {
+        // The first base candidate DPD has results for, else the shortened
+        // base. A base has no ` ti`, so this does not come back here.
+        let mut chosen: Option<(String, GroupedDpdLookup)> = None;
+        for candidate in iti_base_candidates(joined, base) {
+            let lookup = self.dpd_lookup_grouped(
+                &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix,
+            )?;
+            let found = !lookup.results.is_empty();
+            if chosen.is_none() || found {
+                chosen = Some((candidate, lookup));
+            }
+            if found {
+                break;
+            }
+        }
+        let (base, base_lookup) = chosen.expect("iti_base_candidates is never empty");
+        let base = base.as_str();
+
+        let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
+        let iti_results = self.dpd_iti_results(
+            do_pali_sort, uid_prefix_pat.as_deref(), uid_suffix_pat.as_deref(),
+        )?;
+        let iti = DeconstructionComponent {
+            word: "iti".to_string(),
+            result_uids: iti_results.iter().map(|i| i.uid.clone()).collect(),
+        };
+
+        let mut deconstructions: Vec<Deconstruction> = Vec::new();
+        let base_direct = if base_lookup.deconstructions.is_empty() {
+            base_lookup.results.iter().map(|i| i.uid.clone()).collect()
+        } else {
+            base_lookup.direct_uids.clone()
+        };
+        if !base_direct.is_empty() || base_lookup.deconstructions.is_empty() {
+            deconstructions.push(Deconstruction {
+                words_joined: format!("{} + iti", base),
+                components: vec![
+                    DeconstructionComponent { word: base.to_string(), result_uids: base_direct },
+                    iti.clone(),
+                ],
+            });
+        }
+        for d in base_lookup.deconstructions {
+            let mut components = d.components;
+            components.push(iti.clone());
+            deconstructions.push(Deconstruction {
+                words_joined: format!("{} + iti", d.words_joined),
+                components,
+            });
+        }
+
+        let mut results = base_lookup.results;
+        for i in iti_results {
+            if !results.iter().any(|r| r.uid == i.uid) {
+                results.push(i);
+            }
+        }
+
+        Ok(GroupedDpdLookup {
+            query: query_text_orig.to_string(),
+            results,
+            deconstructions,
+            direct_uids: Vec::new(),
         })
     }
 

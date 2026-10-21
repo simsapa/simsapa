@@ -16,7 +16,7 @@ use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultP
 use simsapa_backend::theme_colors::ThemeColors;
 use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file_checked, check_file_exists_print_err, with_fulltext_searcher};
 use simsapa_backend::dir_list::{generate_html_directory_listing, generate_plain_directory_listing};
-use simsapa_backend::helpers::{extract_words, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
+use simsapa_backend::helpers::{extract_words, normalize_dpd_query_split, normalize_fulltext_query, normalize_query_text, query_text_to_uid_field_query};
 use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::provider_models_update::update_all_provider_models;
 use simsapa_backend::logger::{info, warn, error, debug, get_log_level_str, set_log_level_str};
@@ -2622,7 +2622,8 @@ impl qobject::SuttaBridge {
             // paths.
             //
             // This goes through the shared memo with the *same arguments* the
-            // query task's `dpd_lookup_full()` uses — the normalized query text
+            // query task's `dpd_lookup_full()` uses — the DPD query text
+            // (`normalize_dpd_query_split`, as `SearchQueryTask::dpd_query_text`)
             // and the raw uid_prefix / uid_suffix (dpd_lookup_grouped builds
             // its own LIKE patterns; pre-built ones would be double-wrapped).
             // The break-downs the user sees and the uids the backend lock
@@ -2635,7 +2636,7 @@ impl qobject::SuttaBridge {
                 && matches!(parsed_params.mode, SearchMode::DpdLookup | SearchMode::Combined)
             {
                 let app_data = get_app_data();
-                let normalized_query = normalize_query_text(Some(query_text.clone()));
+                let normalized_query = normalize_dpd_query_split(&query_text);
                 match app_data.dbm.dpd.dpd_lookup_grouped_memo(
                     &normalized_query,
                     false,

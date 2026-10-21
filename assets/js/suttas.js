@@ -433,8 +433,16 @@ document.addEventListener("DOMContentLoaded", function(_event) {
             return { node: node, offset: offset };
         }
 
+        // Word boundaries come from src-ts/pali_word.ts, shared with the
+        // desktop double-click, so a quoted iti sandhi (`lābhanānattan”ti`)
+        // is one word. simsapa.min.js loads after this script, from the local
+        // server; if it failed to load, a tap still finds the word without
+        // its quoted `ti`, rather than throwing.
         function word_at_offset(text_node, offset) {
             const value = text_node.nodeValue || "";
+            if (typeof window.ssp_word_at_offset === "function") {
+                return window.ssp_word_at_offset(value, offset);
+            }
             const re = /[\p{L}\p{M}'’]+/gu;
             let match;
             while ((match = re.exec(value)) !== null) {
@@ -786,6 +794,11 @@ document.addEventListener("DOMContentLoaded", function(_event) {
             // Skip if double click is within find bar
             if (event.target.closest('#findContainer')) {
                 return;
+            }
+            // The browser ends a double-clicked word at `”`; take the whole
+            // `lābhanānattan”ti` (src-ts/pali_word.ts).
+            if (typeof window.ssp_expand_selection_to_word === "function") {
+                window.ssp_expand_selection_to_word();
             }
             summary_selection();
         });

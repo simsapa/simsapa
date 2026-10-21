@@ -8,7 +8,7 @@ use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Text, BigInt};
 
-use crate::helpers::{normalize_fulltext_query, normalize_plain_text, normalize_query_text, pali_to_ascii, strip_html, sutta_range_from_ref};
+use crate::helpers::{normalize_dpd_query_split, normalize_fulltext_query, normalize_plain_text, normalize_query_text, pali_to_ascii, strip_html, sutta_range_from_ref};
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::{get_app_data, get_app_globals};
 use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
@@ -89,6 +89,10 @@ fn snippet_is_excluded(snippet: &str, normalized_excludes: &[String]) -> bool {
 pub struct SearchQueryTask<'a> {
     pub dbm: &'a DbManager,
     pub query_text: String,
+    /// The query as the DPD lookups take it (`normalize_dpd_query_split`):
+    /// `query_text` has lost the apostrophe in `manopubbaṅ’gamā`, which the
+    /// DPD normalization joins.
+    pub dpd_query_text: String,
     pub search_mode: SearchMode,
     pub search_area: SearchArea,
     pub page_len: usize,
@@ -139,6 +143,11 @@ impl<'a> SearchQueryTask<'a> {
         // `dhammapadaaṭṭhakathā`). Only hyphens surrounded by word chars are removed, so
         // tantivy's `-term` must-not operator is left alone.
         // For other modes, normalize to handle punctuation and spacing.
+        let dpd_query_text = match params.mode {
+            SearchMode::UidMatch => query_text_orig.to_lowercase(),
+            _ => normalize_dpd_query_split(&query_text_orig),
+        };
+
         let query_text = match params.mode {
             SearchMode::UidMatch => {
                 query_text_orig.to_lowercase()
@@ -160,6 +169,7 @@ impl<'a> SearchQueryTask<'a> {
         SearchQueryTask {
             dbm,
             query_text,
+            dpd_query_text,
             search_mode: params.mode,
             search_area: area,
             page_len: params.page_len.unwrap_or(g.page_len),
@@ -1818,7 +1828,7 @@ impl<'a> SearchQueryTask<'a> {
             // break-downs the user sees and the uids the filter keeps must be
             // computed from the same lookup.
             let grouped = app_data.dbm.dpd.dpd_lookup_grouped_memo(
-                &self.query_text,
+                &self.dpd_query_text,
                 false,
                 true,
                 false,
@@ -1832,7 +1842,7 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         let results = app_data.dbm.dpd.dpd_lookup(
-            &self.query_text,
+            &self.dpd_query_text,
             false,
             true,
             self.uid_prefix.as_deref(),

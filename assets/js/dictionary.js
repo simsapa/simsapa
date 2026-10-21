@@ -108,6 +108,11 @@ document.addEventListener("DOMContentLoaded", function(_event) {
         // On desktop, double click works to select a word and trigger a lookup.
         // Double click always triggers a lookup.
         document.addEventListener("dblclick", function (_event) {
+            // The browser ends a double-clicked word at `”`; take the whole
+            // `lābhanānattan”ti` (src-ts/pali_word.ts).
+            if (typeof window.ssp_expand_selection_to_word === "function") {
+                window.ssp_expand_selection_to_word();
+            }
             summary_selection();
         });
     }
