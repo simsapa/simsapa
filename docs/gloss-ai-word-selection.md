@@ -883,7 +883,9 @@ break-downs. It preserves the flat `dpd_lookup()` phase order but removes the
 `results.is_empty()` gate for the deconstructor phase, so component results are
 fetched **even when direct results exist**. `deconstructor_exact_only` is a
 parameter (gloss passes `true`, WordSummary `false`). `dpd_lookup_grouped_json()`
-is the serialized form; `dpdLookupGroupedReady`/`_async` the Qt async bridge fn.
+is the serialized form; `dpdLookupGroupedReady`/`_async` the Qt async bridge fn,
+whose newer lookup cancels an older one (see
+[word-summary-lookups.md](./word-summary-lookups.md)).
 
 ### The FR-A5 rendering / AI-item case partition
 

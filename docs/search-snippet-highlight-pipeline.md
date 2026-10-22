@@ -441,7 +441,7 @@ someone reorders one function's phases or makes those attempts non-additive.
 
 Both callers — the selector options at `SuttaBridge::results_page()` and the
 filter inside `dpd_lookup_full()` — go through
-`DpdWordDb::dpd_lookup_grouped_memo()`, a single-cell memo keyed on the full
+`DpdDbHandle::dpd_lookup_grouped_memo()`, a single-cell memo keyed on the full
 argument tuple. It exists for two reasons: without it the grouped lookup runs
 3–6× per page request (selector, query task, Combined sub-query thread, every
 prefetched page), and, more importantly, it makes the two call sites' arguments
@@ -452,6 +452,48 @@ components were filtered out of the results.
 
 `RESULTS_PAGE_CACHE` / `COMBINED_CACHE` keys embed `params_json`, so changing the
 selection or lock invalidates both automatically (§8).
+
+**A new query cancels the previous query's grouped lookup.** The Dictionary tab
+calls `dpd_lookup_grouped_memo_cancellable()` (the selector) and
+`dpd_lookup_full()` uses the same through `SearchQueryTask::lookup_cancel`,
+with a `LookupCancel` token (`backend/src/lookup_cancel.rs`) taken from the
+bridge's `results_query_generation` counter. Rules:
+
+- **Bump only on a new query.** The counter moves only in the two `needs_reset`
+  branches of `SuttaBridge::results_page()` (the `COMBINED_CACHE` one and the
+  `RESULTS_PAGE_CACHE` one), and the token is taken after them. It is **not**
+  `results_page_request_id`, which moves on every page turn: cancelling on a
+  page turn would cancel the same query's running lookup and its prefetch
+  threads.
+- **The token reaches every task the query builds:** the selector,
+  `fetch_and_cache_page()`, both `run_sub_query()` threads of
+  `fetch_combined_page()`, and `prefetch_pages()`.
+- **A cancelled worker sends nothing.** The selector's memo call returns the
+  `LookupCancelled` error (`is_lookup_cancelled()`), and the worker returns.
+  `fetch_and_cache_page()` / `run_sub_query()` flatten errors to `String`, so
+  their error arms test the worker's own `cancel.is_cancelled()` instead and
+  log at `info`. The combined arm then also skips its cold-start cache reset:
+  after A, B, A the cell with A's key belongs to the newer search.
+  `emit_results_page_if_latest()` stays the guard for what is shown.
+- **The memo never holds a cancelled lookup.** The lookup returns its error
+  before the memo is written (`test_cancelled_lookup_is_not_memoized`). A memo
+  hit returns without checking the token: it is a finished result.
+- **Cancellation is between statements.** The lookup checks the token before
+  each phase, each deconstructor attempt, each Phase 7 component and each row
+  a guess checks (§9e). A running statement is not interrupted, which is
+  acceptable only because no statement in the grouped lookup scans the
+  `lookup` table.
+- The counter is per bridge, so per window, while the page caches are process
+  globals. A search in another window does not cancel this window's lookup;
+  that worker stops anyway when the cache key changes (the page fetches return
+  `Ok(None)` and the worker emits nothing).
+- API routes, the CLI, `debug_query()` and every other caller use
+  `LookupCancel::none()` (or the unchanged `dpd_lookup_grouped()` /
+  `dpd_lookup_grouped_memo()` wrappers). Fulltext and Contains queries are not
+  cancelled.
+
+WordSummary cancels its own lookups the same way; see
+[word-summary-lookups.md](./word-summary-lookups.md).
 
 ### 9d. Iti-sandhi words: the DPD query is rejoined
 
@@ -465,7 +507,7 @@ ending in iti sandhi into `<base> ti`: `dhārayāmī’ti`, `dhārayāmī”ti`,
 suits `content_plain`, but DPD's `lookup` table is keyed by the **joined** sandhi
 form (`dhārayāmīti`, `gantunti`, `viharissāmāti`) and has no row for two words.
 A split query therefore matched nothing and fell through to the "starts with"
-table scans.
+guesses (§9e).
 
 So `dpd_lookup()`, `dpd_lookup_grouped()` and `dpd_deconstructor_query()`
 normalize with `normalize_dpd_query_text()` (`backend/src/helpers.rs`), which
@@ -496,9 +538,8 @@ final ṁ → `nti`), joins a single apostrophe inside a compound
 - **No prefix guesses for an iti-sandhi word.** The deconstructor tries only
   the exact joined key, and the base word's break-downs are exact only: a
   "starts with" guess belongs to some other word (`vuccaṁ` matched `vuccati +
-  iti`, giving `vuccati + iti + iti`) and costs two full scans of the 1.28 M-row
-  `lookup` table. A base DPD does not know at all leaves just `iti` under
-  `<base> + iti`.
+  iti`, giving `vuccati + iti + iti`). A base DPD does not know at all leaves
+  just `iti` under `<base> + iti`.
 
 The "starts with" fallbacks on `dpd_headwords` use an index range
 (`col >= prefix AND col < prefix || char::MAX`), not `LIKE 'prefix%'`. SQLite's
@@ -506,8 +547,93 @@ The "starts with" fallbacks on `dpd_headwords` use an index range
 table. The two match the same rows only because `lemma_clean`, `word_ascii` and
 `stem` are stored lowercase; `test_dpd_headword_prefix_columns_are_lowercase`
 fails if an import changes that. The deconstructor's own "starts with" on
-`lookup.lookup_key` is still `LIKE`: that column has mixed-case keys, and the
-range form picks a different first row for some prefixes.
+`lookup.lookup_key` is a range too, but reads its candidates differently (§9e).
+
+### 9e. The deconstructor's "starts with" guesses
+
+When `lookup` has no row for the word (attempts 1 and 3 of
+`dpd_deconstructor_query()` miss) and `exact_only` is false, the deconstructor
+guesses: attempt 2 with the whole word, attempt 4 with the word minus its last
+letter, both only for a word of 4+ characters. The callers that reach them are
+WordSummary, the Dictionary tab (DPD Lookup / Combined, through the memo) and
+`dpd_deconstructor_list()`, hence also `POST /dict_combined_search`. The Gloss
+tab, the flat `dpd_lookup()` and iti-sandhi words (§9d) are exact only.
+
+Both attempts run `deconstructor_prefix_guess()` (`backend/src/db/dpd.rs`):
+
+1. `DECONSTRUCTOR_GUESS_KEYS_SQL` reads up to `DECONSTRUCTOR_GUESS_KEY_CAP`
+   (500) keys in the range `[prefix, prefix || U+10FFFF)`, ordered by
+   `length(lookup_key)` (characters, not bytes), then by key.
+2. The rows are loaded by key one at a time, on the same connection, with the
+   cancellation token (§9c) checked before each. The first row with a
+   non-empty `deconstructor` is the guess.
+
+So the guess is **the shortest key starting with the prefix that has a
+break-down**, ties in key order — never "the first row in table order". A row
+without a break-down is never returned: Phase 7 would skip it anyway, and about
+a third of `lookup`'s rows are inflection / headword rows with none. The range
+is on the lowercase query (`normalize_plain_text()` lowercases it); the
+mixed-case keys in `lookup` are English entries (`'I am'`, `-Ar`), so no
+capitalised twin of the range is queried.
+
+The guesses are kept, and on by default, because when one is shown it is
+almost always the word's only answer, and a reviewed sample found about half of
+them leading to the right word, fully or in part.
+
+**Traps:**
+
+- **Never add `deconstructor != ''` to the key query.** The break-down is not
+  in the key index, so SQLite then fetches a table row for every key in the
+  range: about 17.6 MB for `sam` (26,507 keys), in one statement the token
+  cannot stop. Without it the key query is covered by
+  `sqlite_autoindex_lookup_1` and reads index pages only (under 1 MB for
+  `sam`). `test_guess_key_query_is_covered_by_the_key_index` checks for
+  `COVERING INDEX`.
+- **No `LIKE`.** SQLite's `LIKE` is case-insensitive, cannot use the BINARY
+  primary key, and scans the whole 1.28 M-row, ~430 MB table, twice per
+  unknown word. On an old phone that cannot keep the table in the page cache
+  that is seconds per lookup. It also returns the first match in table order,
+  which is arbitrary and often a row with no break-down.
+- **No partial index** (`ON lookup(lookup_key) WHERE deconstructor != ''`). The
+  bundled SQLite (`libsqlite3-sys`, `bundled`) is built with
+  `SQLITE_ENABLE_STAT4`, which plans a range query **for its bound values**:
+  it picks the partial index for most prefixes, but the key index for the
+  largest ranges (`sam`, `par`, `dham`), and then reads table rows. Forcing it
+  with `INDEXED BY` fails outright on a `dpd.sqlite3` without the index, so a
+  second query would be needed. The current form needs no database change.
+- **Plan checks use real values.** For the same reason, `EXPLAIN QUERY PLAN` on
+  the statement with unbound `?` placeholders is not the plan that runs. The
+  plan test substitutes literal prefixes into the same `const` the code runs.
+- **The cap is in the SQL** (`LIMIT`), so a large range never loads into Rust.
+  A prefix with more keys than the cap and no break-down among the first 500
+  gives no guess, silently. The worst Pāli prefix today needs 355 rows
+  (`saṁ`); the prefixes beyond the cap (`sho`, `com`) are English entries with
+  no break-down at all. `test_guess_cap_headroom` (`#[ignore]`d, in
+  `backend/tests/test_dpd_breakdown_guesses.rs`) recomputes this over every
+  3- and 4-letter Pāli-letter prefix. **Run it after a DPD data update**; if it
+  fails, raise the cap.
+- **A guess suppresses Phase 8.** Phase 8 (headword "starts with") runs only
+  when `results` is still empty after Phase 7, and a guessed break-down fills
+  it. So for a word both would answer, the guess's components replace Phase 8's
+  headword matches. A test that needs a Phase 8 word must pick one no guess
+  reaches (`grouped_equals_flat_for_non_deconstructing_words` uses
+  `abbhokirat`).
+
+**The `DPD-LOOKUP-TIMING:` line.** `dpd_lookup_grouped()` writes one `info`
+line per call, reaching `log.txt` and the `simsapa` logcat tag:
+
+```
+DPD-LOOKUP-TIMING: q="<query>" total=<ms> p1=<ms> … p8=<ms> dec=[a1=<ms>,a2=<ms>/<rows>,a3=<ms>,a4=<ms>/<rows>,hit=<1-4|none>] first_results_phase=<n|none>
+```
+
+`-` marks a phase or attempt that did not run, or did not finish because the
+lookup was cancelled during it. `a2` / `a4` carry the rows the guess checked,
+so a guess that hit the cap shows. A cancelled lookup's line ends in
+` cancelled` and still shows the attempts that ran; one resolved as
+`<base> + iti` ends in ` via=iti_split`, and each base lookup writes its own
+line. The cancellable entry points (WordSummary, the Dictionary tab, and so
+also the API's DPD searches) log every call; the plain `dpd_lookup_grouped()`,
+which the Gloss tab calls once per word, logs only a call of 100 ms or more.
 
 ---
 
@@ -525,7 +651,9 @@ range form picks a different first row for some prefixes.
 | Cache                           | `bridges/src/sutta_bridge.rs` `RESULTS_PAGE_CACHE`              |
 | Dictionary stream splicing      | `query_task.rs` `split_page_across_streams`, `dpd_lookup_with_bold` |
 | Grouped ordering + lock filter  | `query_task.rs` `dpd_lookup_full` / `use_grouped_dpd_ordering`, `types.rs` `GroupedDpdLookup::ordered_filtered_results` |
-| Grouped lookup + memo           | `backend/src/db/dpd.rs` `dpd_lookup_grouped` / `dpd_lookup_grouped_memo` |
+| Grouped lookup + memo           | `backend/src/db/dpd.rs` `dpd_lookup_grouped` / `dpd_lookup_grouped_memo` (+ `_cancellable`) |
+| Break-down guesses              | `backend/src/db/dpd.rs` `deconstructor_prefix_guess`, `DECONSTRUCTOR_GUESS_KEYS_SQL`, `DECONSTRUCTOR_GUESS_KEY_CAP` (tests: `backend/tests/test_dpd_breakdown_guesses.rs`) |
+| Lookup cancellation             | `backend/src/lookup_cancel.rs`; `sutta_bridge.rs` `results_query_generation` (tests: `backend/tests/test_dpd_lookup_cancel.rs`) |
 | Combined merge (3 streams)      | `bridges/src/sutta_bridge.rs` `fetch_combined_page`             |
 | Break-down selector (QML)       | `bridges/assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` / `GlossTab.qml` |
 | QML render / header dedup       | `bridges/assets/qml/FulltextResults.qml` `update_page` (`show_header`, `find_query`) |

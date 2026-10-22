@@ -333,6 +333,12 @@ Notable feature docs:
   output (it splits `manopubbaṅ’gamā`) nor the rejoined form. The
   joined key is used only when DPD analyses it as `… + iti`; otherwise the word
   is `<base> + iti` (`magga’’nti` is maggaṁ + iti, never the verb `magganti`).
+  **§9e: the deconstructor's "starts with" break-down guesses** read candidate
+  keys from the `lookup` primary-key index and check rows one by one until one
+  has a break-down (shortest key, capped at 500) — never `LIKE` (a 430 MB table
+  scan), never a `deconstructor` filter in the key query, and no partial index
+  (STAT4 plans per bound value, so `EXPLAIN` with `?` placeholders is not the
+  running plan). Run the `#[ignore]`d cap-headroom test after a DPD data update.
   Pairs with the bootstrap-time
   normalization in
   [text-processing-for-contains-match-and-fulltext-match-search.md](./docs/text-processing-for-contains-match-and-fulltext-match-search.md).
@@ -582,6 +588,14 @@ Notable feature docs:
   multi-line responses; the height is now pushed up via
   `Layout.onPreferredHeightChanged`). **No per-save `ANALYZE`** (see
   [user-data-and-sqlite-analyze.md](./docs/user-data-and-sqlite-analyze.md)).
+- [WordSummary lookups](./docs/word-summary-lookups.md) — the latest lookup
+  always runs and wins: outside callers use `lookup_from_outside()` (never
+  `search_btn.click()`, which does nothing on a disabled button), a word under
+  4 characters starts nothing, one tap runs one lookup (the search-as-you-type
+  timer is stopped), `current_query_id` is the only acceptance gate, and the
+  backend's `LookupCancel` generation token stops a superseded grouped lookup
+  at its next check point. The Dictionary tab cancels the same way but bumps
+  its counter **only when the query changes**, never on a page turn.
 - [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
   the N-column sutta reading view (Lines / Columns / Solo layouts, Repeat Pāli),
   the in-page cogwheel settings menu and the bottom column bar. Covers the
