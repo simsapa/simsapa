@@ -2,11 +2,11 @@
   "application": {
     "releases": [
       {
-        "date": "2026-10-21T11:21:59",
+        "date": "2026-10-22T17:31:29",
         "description": "New app version\n",
         "github_repo": "simsapa/simsapa",
         "title": "New app version",
-        "version_tag": "v1.1.0-alpha.1"
+        "version_tag": "v1.1.0-alpha.2"
       },
       {
         "date": "2026-07-31T09:30:00",
@@ -97,14 +97,62 @@
   "assets": {
     "releases": [
       {
-        "date": "2026-10-21T11:21:59",
+        "date": "2026-10-22T17:31:29",
         "description": "",
         "github_repo": "simsapa/simsapa-assets",
         "suttas_lang": [
-          "hu"
+          "af",
+          "ar",
+          "bn",
+          "ca",
+          "cs",
+          "de",
+          "es",
+          "et",
+          "fa",
+          "fi",
+          "fr",
+          "gsw",
+          "gu",
+          "haw",
+          "he",
+          "hi",
+          "hr",
+          "hu",
+          "id",
+          "it",
+          "jpn",
+          "kan",
+          "ko",
+          "la",
+          "lo",
+          "lt",
+          "lzh",
+          "mr",
+          "my",
+          "nl",
+          "no",
+          "pgd",
+          "pl",
+          "pra",
+          "pt",
+          "ro",
+          "ru",
+          "si",
+          "sk",
+          "sl",
+          "sld",
+          "sr",
+          "sv",
+          "ta",
+          "th",
+          "tr",
+          "vi",
+          "xct",
+          "zh"
         ],
         "title": "Updates",
-        "version_tag": "v1.1.0-alpha.1"
+        "version_tag": "v1.1.0-alpha.2"
       },
       {
         "date": "2026-07-24T17:34:11",
