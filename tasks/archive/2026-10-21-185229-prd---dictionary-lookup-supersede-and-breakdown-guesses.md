@@ -252,7 +252,7 @@ tokens of `ms` + CST Pāli, seed 20261022.
 
 ### 1.4 Supporting data
 
-The measurements behind §1.2, §1.3 and the FR-A5 decision are kept in
+The measurements behind §1.2, §1.3 and the FR-A5 decision were kept in
 `tasks/data/2026-10-21-dictionary-lookup/`:
 - `guess_sample_30k.tsv`: the FR-A3 sample;
 - `guess_review.tsv`: the graded review, read-only, and the only row-level
@@ -262,10 +262,8 @@ The measurements behind §1.2, §1.3 and the FR-A5 decision are kept in
   form D's worst cases over every short prefix (§1.2a);
 - the analysis and review helpers.
 
-The folder's `README.md` describes each file and how to regenerate it. The
-task list's "Supporting data" note says which task uses which file. The
-folder is removed when this PRD is archived (task 8.9), and the archived task
-list records the commit that removed it, so it can be recovered.
+The folder was removed in commit `7345a53c` when this PRD was archived. Recover it
+with `git checkout 7345a53c^ -- tasks/data/2026-10-21-dictionary-lookup/`.
 
 ## 2. Goals
 
