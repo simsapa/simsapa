@@ -2,9 +2,9 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 
 ## Relevant Files
 
-- `bridges/assets/qml/WordSummary.qml` — Summary panel. The search button's `enabled: !root.is_loading` (the tap bug), `set_query()`, `run_lookup()`, `onDpdLookupGroupedReady`, and the new empty-result line.
-- `bridges/assets/qml/SuttaSearchWindow.qml` — `set_summary_query()` (`search_btn.click()` → the new WordSummary function). Callers: the `lookup-selection` action and the Gloss tab's `onRequestWordSummary`.
-- `bridges/assets/qml/tst_WordSummary.qml` — **New.** QML test for FR-T2.
+- `bridges/assets/qml/WordSummary.qml` — Summary panel. Search button no longer disabled while loading; `set_query()` and the `search_btn` alias replaced by `lookup_from_outside()` (rejects < 4 chars, stops the search-as-you-type timer); response handling moved into `handle_grouped_ready()` (called by the `Connections`); `current_query_text` + `empty_result_query` and the `No results for "<word>".` label; `objectName`s on `search_timer` and `summaries_list` for the test.
+- `bridges/assets/qml/SuttaSearchWindow.qml` — `set_summary_query()` calls `word_summary.lookup_from_outside()` instead of `set_query()` + `search_btn.click()`.
+- `bridges/assets/qml/tst_WordSummary.qml` — **New.** QML test: lookup starts while loading (and stops the timer), short word starts none, stale response ignored, empty-result line shown and replaced.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (`dpd_deconstructor_list`, setting getter/setter).
 - `backend/src/db/dpd.rs` — `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
 - `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token and the `LookupCancelled` error type. (Or a small module next to `dpd.rs`; register it in `backend/src/lib.rs`.)
@@ -56,16 +56,16 @@ Update the file after completing each sub-task, not just after completing an ent
   - **Stop the search-as-you-type timer after setting the text.** `lookup_input`'s `onTextChanged` calls `search_timer.restart()` when search-as-you-type is on, so today every tap already runs the lookup **twice**: once from the click, and again 400 ms later from the timer. Once cancellation exists (5.0), that second run would cancel the first and start the slow lookup over. Call `search_timer.stop()` right after setting the text, so one tap runs one lookup.
 - **No clearing on start (FR-C2).** The list, the break-down selector and the empty line are replaced only inside `onDpdLookupGroupedReady`, after the id check.
 
-- [ ] 1.0 WordSummary: every tap starts a lookup, a short word starts none, and an empty result says so (FR-C1, FR-C2, FR-D1, FR-T2)
-  - [ ] 1.1 In `WordSummary.qml`, remove `enabled: !root.is_loading` from `search_btn`. Keep the stopwatch icon and the "Processing..." tooltip bound to `is_loading`.
-  - [ ] 1.2 Add `lookup_from_outside(query)` as specified above, including `search_timer.stop()` after setting the text.
-  - [ ] 1.3 `set_summary_query()` is `set_query()`'s only caller (`SuttaSearchWindow.qml:1007`). Remove `set_query()` in favour of the new function.
-  - [ ] 1.4 In `SuttaSearchWindow.qml` `set_summary_query()`, replace `word_summary.set_query(query_text); word_summary.search_btn.click();` with `word_summary.lookup_from_outside(query_text)`. Keep the panel-open and `ssp_word_summary_opened` lines as they are. Opening the panel for a short word is fine; running the previous word is not.
-  - [ ] 1.5 In `onDpdLookupGroupedReady`, after the id check, set `empty_result_query`. It is the query text when `grouped.results` and `grouped.deconstructions` are both empty, and `""` otherwise. Store the query text alongside `current_query_id` in `run_lookup()` (e.g. `current_query_text`), so the line shows the word that was looked up.
-  - [ ] 1.6 Add a `Label` in place of the list, visible when `empty_result_query !== ""`, with the text `No results for "<word>".` and `wrapMode: Text.WordWrap`. Hide the list while it is shown, so the old rows don't sit under it.
-  - [ ] 1.7 Create `bridges/assets/qml/tst_WordSummary.qml` with the three FR-T2 cases. Instantiate `WordSummary` with its required properties: `is_dark`, `handle_summary_close_fn`, `handle_open_dict_tab_fn`, `window_height` and `search_as_you_type_checked`. Set the last one to `true`, so the test also covers the timer stop: after `lookup_from_outside()`, `search_timer.running` is false. Drive `onDpdLookupGroupedReady` by calling the handler with a crafted `query_id` and JSON. Also cover the empty-result case: a response with no results and no break-downs shows the line, and the next non-empty response hides it.
-  - [ ] 1.8 Run `make qml-test`: the new test passes, and no new `qmllint` warnings appear in `WordSummary.qml` or `SuttaSearchWindow.qml`. Run `make build -B`.
-  - [ ] 1.9 Ask the user to check by hand on desktop: tap an unknown long word, then at once tap a known word; the known word's results appear. Tap `kho`; nothing re-runs.
+- [x] 1.0 WordSummary: every tap starts a lookup, a short word starts none, and an empty result says so (FR-C1, FR-C2, FR-D1, FR-T2)
+  - [x] 1.1 In `WordSummary.qml`, remove `enabled: !root.is_loading` from `search_btn`. Keep the stopwatch icon and the "Processing..." tooltip bound to `is_loading`.
+  - [x] 1.2 Add `lookup_from_outside(query)` as specified above, including `search_timer.stop()` after setting the text.
+  - [x] 1.3 `set_summary_query()` is `set_query()`'s only caller (`SuttaSearchWindow.qml:1007`). Remove `set_query()` in favour of the new function.
+  - [x] 1.4 In `SuttaSearchWindow.qml` `set_summary_query()`, replace `word_summary.set_query(query_text); word_summary.search_btn.click();` with `word_summary.lookup_from_outside(query_text)`. Keep the panel-open and `ssp_word_summary_opened` lines as they are. Opening the panel for a short word is fine; running the previous word is not.
+  - [x] 1.5 In `onDpdLookupGroupedReady`, after the id check, set `empty_result_query`. It is the query text when `grouped.results` and `grouped.deconstructions` are both empty, and `""` otherwise. Store the query text alongside `current_query_id` in `run_lookup()` (e.g. `current_query_text`), so the line shows the word that was looked up.
+  - [x] 1.6 Add a `Label` in place of the list, visible when `empty_result_query !== ""`, with the text `No results for "<word>".` and `wrapMode: Text.WordWrap`. Hide the list while it is shown, so the old rows don't sit under it.
+  - [x] 1.7 Create `bridges/assets/qml/tst_WordSummary.qml` with the three FR-T2 cases. Instantiate `WordSummary` with its required properties: `is_dark`, `handle_summary_close_fn`, `handle_open_dict_tab_fn`, `window_height` and `search_as_you_type_checked`. Set the last one to `true`, so the test also covers the timer stop: after `lookup_from_outside()`, `search_timer.running` is false. Drive `onDpdLookupGroupedReady` by calling the handler with a crafted `query_id` and JSON. Also cover the empty-result case: a response with no results and no break-downs shows the line, and the next non-empty response hides it.
+  - [x] 1.8 Run `make qml-test`: the new test passes, and no new `qmllint` warnings appear in `WordSummary.qml` or `SuttaSearchWindow.qml`. Run `make build -B`.
+  - [x] 1.9 Ask the user to check by hand on desktop: tap an unknown long word, then at once tap a known word; the known word's results appear. Tap `kho`; nothing re-runs.
 
 ### 2.0 — Specs
 

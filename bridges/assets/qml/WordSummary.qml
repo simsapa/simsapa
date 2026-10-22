@@ -28,10 +28,14 @@ Frame {
 
     required property bool search_as_you_type_checked
 
-    property alias search_btn: search_btn
-
+    // Drives the stopwatch icon only. A new lookup may start while one is
+    // running; current_query_id is the only gate for accepting a response.
     property bool is_loading: false
     property string current_query_id: ""
+    property string current_query_text: ""
+    // Non-empty when the last accepted response had no results and no
+    // break-downs: the word that was looked up, for the "No results" line.
+    property string empty_result_query: ""
 
     // Grouped, break-down-aware lookup state (PRD FR-B3). `grouped_data` is the
     // parsed GroupedDpdLookup payload; `grouped_results` is the flat
@@ -54,6 +58,7 @@ Frame {
 
     Timer {
         id: search_timer
+        objectName: "search_timer"
         interval: 400 // milliseconds
         repeat: false
         onTriggered: {
@@ -98,42 +103,51 @@ Frame {
         target: SuttaBridge
 
         function onDpdLookupGroupedReady(query_id: string, grouped_json: string) {
-            // Ignore results from stale queries
-            if (query_id !== root.current_query_id) {
-                logger.info(`Discarding stale query results: ${query_id}, current: ${root.current_query_id}`);
-                return;
-            }
-
-            root.is_loading = false;
-
-            let grouped = JSON.parse(grouped_json);
-            root.grouped_data = grouped;
-
-            // Map SearchResult (uid/title/snippet) to the summary shape the list
-            // consumes (uid/word/summary).
-            let results = grouped.results || [];
-            let mapped = [];
-            for (let i=0; i < results.length; i++) {
-                mapped.push({
-                    uid: results[i].uid,
-                    word: results[i].title,
-                    summary: results[i].snippet,
-                });
-            }
-            root.grouped_results = mapped;
-
-            // Populate the break-down selector from the deconstructions.
-            let decs = grouped.deconstructions || [];
-            let words = [];
-            for (let i=0; i < decs.length; i++) {
-                words.push(decs[i].words_joined);
-            }
-            root.deconstructor_words = words;
-            root.selected_deconstruction_index = 0;
-            root.deconstructor_locked = false;
-
-            root.refilter_summaries();
+            root.handle_grouped_ready(query_id, grouped_json);
         }
+    }
+
+    // The only place a lookup response is accepted. Starting a lookup clears
+    // nothing: the current list, break-downs and empty line stay on screen
+    // until the newest lookup's response replaces them here.
+    function handle_grouped_ready(query_id: string, grouped_json: string) {
+        // Ignore results from stale queries
+        if (query_id !== root.current_query_id) {
+            logger.info(`Discarding stale query results: ${query_id}, current: ${root.current_query_id}`);
+            return;
+        }
+
+        root.is_loading = false;
+
+        let grouped = JSON.parse(grouped_json);
+        root.grouped_data = grouped;
+
+        // Map SearchResult (uid/title/snippet) to the summary shape the list
+        // consumes (uid/word/summary).
+        let results = grouped.results || [];
+        let mapped = [];
+        for (let i=0; i < results.length; i++) {
+            mapped.push({
+                uid: results[i].uid,
+                word: results[i].title,
+                summary: results[i].snippet,
+            });
+        }
+        root.grouped_results = mapped;
+
+        // Populate the break-down selector from the deconstructions.
+        let decs = grouped.deconstructions || [];
+        let words = [];
+        for (let i=0; i < decs.length; i++) {
+            words.push(decs[i].words_joined);
+        }
+        root.deconstructor_words = words;
+        root.selected_deconstruction_index = 0;
+        root.deconstructor_locked = false;
+
+        root.empty_result_query = (results.length === 0 && decs.length === 0) ? root.current_query_text : "";
+
+        root.refilter_summaries();
     }
 
     // For qml preview
@@ -151,11 +165,20 @@ Frame {
     /*     ListElement { summary: "<b>iva 1</b> ind. <b>like; as</b>, ind" } */
     /* } */
 
-    function set_query(query: string) {
+    // A lookup requested from outside the panel (a tap on the sutta page, the
+    // Gloss tab). Starts a lookup even while another is running, and none for a
+    // word under 4 characters, so a short tap never re-runs the previous word.
+    // Returns whether a lookup was started.
+    function lookup_from_outside(query: string): bool {
         if (query.length < 4) {
-            return;
+            return false;
         }
         lookup_input.text = query;
+        // Setting the text restarted the search-as-you-type timer; stop it, so
+        // one tap runs one lookup.
+        search_timer.stop();
+        root.request_lookup();
+        return true;
     }
 
     // Explicit "search" action from the search button (or Enter key). A 3-char
@@ -201,6 +224,7 @@ Frame {
 
         // Generate a unique query ID using timestamp
         root.current_query_id = new Date().toISOString() + "_" + Math.random().toString(36).substring(2, 9);
+        root.current_query_text = query;
 
         root.is_loading = true;
 
@@ -242,7 +266,6 @@ Frame {
             Button {
                 id: search_btn
                 icon.source: root.is_loading ? "icons/32x32/fa_stopwatch-solid.png" : "icons/32x32/bx_search_alt_2.png"
-                enabled: !root.is_loading
                 onClicked: root.request_lookup()
                 Layout.preferredHeight: lookup_input.height
                 Layout.preferredWidth: lookup_input.height
@@ -304,8 +327,24 @@ Frame {
             }
         }
 
+        Label {
+            id: empty_result_label
+            visible: root.empty_result_query !== ""
+            Layout.fillWidth: true
+            // Takes the list's place in the layout: without it nothing claims
+            // the spare height, and the input row drifts down the panel.
+            Layout.fillHeight: true
+            Layout.margins: root.item_padding
+            verticalAlignment: Text.AlignTop
+            wrapMode: Text.WordWrap
+            font.pointSize: root.font_point_size
+            text: `No results for "${root.empty_result_query}".`
+        }
+
         ListView {
             id: summaries_list
+            objectName: "summaries_list"
+            visible: !empty_result_label.visible
             orientation: ListView.Vertical
             clip: !root.render_disable_results_clip
             spacing: 0
