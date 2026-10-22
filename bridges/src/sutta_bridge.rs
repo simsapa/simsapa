@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
 use core::pin::Pin;
@@ -2147,6 +2148,10 @@ pub struct SuttaBridgeRust {
     results_page_request_id: u64,
     /// Same as `results_page_request_id`, for `debug_query()`.
     debug_query_request_id: u64,
+    /// Generation of the latest `dpd_lookup_grouped_json_async()` call (the
+    /// WordSummary panel). Bumping it cancels the lookups started before it;
+    /// see `LookupCancel`.
+    word_summary_lookup_generation: Arc<AtomicU64>,
 }
 
 
@@ -3009,11 +3014,19 @@ impl qobject::SuttaBridge {
         let query_id_string = query_id.to_string();
         let query_text = query.to_string();
 
+        // A newer lookup supersedes every earlier one: bump the generation
+        // first, then take this lookup's token.
+        let generation = &self.rust().word_summary_lookup_generation;
+        generation.fetch_add(1, Ordering::Relaxed);
+        let cancel = LookupCancel::new(generation);
+
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
             let app_data = get_app_data();
-            let Some(s) = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false, &LookupCancel::none()) else {
-                info("SuttaBridge::dpd_lookup_grouped_json_async() cancelled, nothing emitted");
+            // A cancelled lookup emits nothing. WordSummary's query_id check
+            // is the second guard against a stale result.
+            let Some(s) = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false, &cancel) else {
+                info(&format!("SuttaBridge::dpd_lookup_grouped_json_async(): cancelled {}", query_id_string));
                 return;
             };
             let grouped_json = QString::from(s);

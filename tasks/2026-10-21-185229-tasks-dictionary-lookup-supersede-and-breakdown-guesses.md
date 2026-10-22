@@ -9,7 +9,7 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Cancellation: the token is checked before each phase, the iti-split check, each deconstructor attempt, each Phase 7 component and the iti-split's `iti` lookup; `dpd_lookup_grouped_cancellable()` (`Always`) and `dpd_lookup_grouped_memo_cancellable()` sit beside the unchanged wrappers, both memo variants share `dpd_lookup_grouped_memo_inner()`; a cancelled call's timing line ends in ` cancelled`; `dpd_lookup_grouped_json()` takes the token and returns `Option<String>` (`None` = cancelled). Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
 - `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token (`none()`, `new()`, `is_cancelled()`, `check()`), the `LookupCancelled` error and `is_lookup_cancelled()`, with inline unit tests. Registered in `backend/src/lib.rs`.
 - `backend/src/query_task.rs` — `SearchQueryTask` gets the token and the guesses flag as fields; `dpd_lookup_full()` uses them.
-- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (passes `LookupCancel::none()` and emits nothing on `None` until 5.2 adds the WordSummary generation counter), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
+- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (bumps the `word_summary_lookup_generation: Arc<AtomicU64>` counter on the Qt thread, moves a `LookupCancel` into the worker, logs `cancelled <query_id>` and emits nothing when superseded), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
 - `bridges/src/api.rs` — `POST /dict_combined_search` and the other `dpd_deconstructor_list` call; they pass `LookupCancel::none()` and the setting value.
 - `backend/src/app_settings.rs` — *Not needed: the decision is Keep (no setting).*
 - `backend/src/app_data.rs` — *Not needed: the decision is Keep (no setting).*
@@ -221,12 +221,12 @@ Update the file after completing each sub-task, not just after completing an ent
   4. On the cancelled marker, log `info("…dpd_lookup_grouped_json_async(): cancelled <query_id>")` and **do not** queue a signal.
 - The QML `query_id` check stays unchanged as the second guard.
 
-- [ ] 5.0 WordSummary bridge cancels superseded lookups (FR-C5)
-  - [ ] 5.1 Add the counter field to the bridge's Rust struct and initialise it.
-  - [ ] 5.2 Change `dpd_lookup_grouped_json_async()` to the flow above. Use `crate::queue_or_log`, as today.
-  - [ ] 5.3 Check that `dpd_lookup_json_async()` (the flat lookup) needs nothing: it calls the flat path. Leave it unchanged.
-  - [ ] 5.4 Run `make build -B` (no bridge signature change, but build through the guard regardless).
-  - [ ] 5.5 Ask the user to check on desktop: with `DPD-LOOKUP-TIMING` lines visible in the terminal, tap an unknown word and at once a known one. The unknown word's lookup logs `cancelled`, and its timing line stops short or doesn't appear.
+- [x] 5.0 WordSummary bridge cancels superseded lookups (FR-C5)
+  - [x] 5.1 Add the counter field to the bridge's Rust struct and initialise it.
+  - [x] 5.2 Change `dpd_lookup_grouped_json_async()` to the flow above. Use `crate::queue_or_log`, as today.
+  - [x] 5.3 Check that `dpd_lookup_json_async()` (the flat lookup) needs nothing: it calls the flat path. Leave it unchanged.
+  - [x] 5.4 Run `make build -B` (no bridge signature change, but build through the guard regardless).
+  - [x] 5.5 Ask the user to check on desktop: with `DPD-LOOKUP-TIMING` lines visible in the terminal, tap an unknown word and at once a known one. The unknown word's lookup logs `cancelled`, and its timing line stops short or doesn't appear.
 
 ### 6.0 — Specs
 
