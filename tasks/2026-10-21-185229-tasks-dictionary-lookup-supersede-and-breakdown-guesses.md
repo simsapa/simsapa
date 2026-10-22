@@ -17,10 +17,14 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `backend/tests/test_dpd_lookup_cancel.rs` — **New.** Token and memo-not-stored tests.
 - `backend/tests/test_dpd_breakdown_guesses.rs` — **New.** Branch tests: `EXPLAIN QUERY PLAN` on the helper's `const` SQL (uses `idx_lookup_key_with_deconstructor`), equivalence with `INDEXED BY sqlite_autoindex_lookup_1`, shortest key, break-down-only row; or (Remove branch) no guess.
 - `scripts/dpd-btree-indexes.sql` — The partial index `idx_lookup_key_with_deconstructor ON lookup(lookup_key) WHERE deconstructor != ''`, with a comment on the literal-predicate rule (Keep/Setting only).
-- Scratchpad `guess_cost.py` — **Not committed.** The 2.8 cost harness (cold via `posix_fadvise(DONTNEED)`, `rchar` / `read_bytes`); 7.1 extends it for the indexed form on a scratch copy of `lookup`.
+- `tasks/data/2026-10-21-dictionary-lookup/` — Supporting files that must outlive a session: the sample TSV, the graded review, and the scripts below. Its `README.md` says what each is and how to regenerate it.
+- `tasks/data/2026-10-21-dictionary-lookup/guess_cost.py` — The 2.8 cost harness (cold via `posix_fadvise(DONTNEED)`, `rchar` / `read_bytes`); 7.1 extends it for the indexed form on a scratch copy of `lookup`.
 - `backend/tests/test_dpd_breakdown_guess_sample.rs` — **New, `#[ignore]`d.** The FR-A3 usefulness sample: seeded LCG over `content_plain` character offsets (`pli/ms` + `pli/cst`), iti-residue filter, the three guess forms in raw SQL, `other_results` from a guess-free grouped lookup minus Phase 8. TSV to `$DPD_GUESS_SAMPLE_OUT`; sample size `$DPD_GUESS_SAMPLE_SIZE` (default 1000).
-- Scratchpad `analyse.py` — **Not committed.** Structural counts over the sample TSV (3.0 findings).
-- Scratchpad `make_review.py` — **Not committed.** Builds the review file from the sample TSV (one row per distinct query with a `range_bd` guess).
+- `tasks/data/2026-10-21-dictionary-lookup/analyse.py` — Structural counts over the sample TSV (3.0 findings).
+- `tasks/data/2026-10-21-dictionary-lookup/make_review.py` — Builds the review file from the sample TSV (one row per distinct query with a `range_bd` guess). Never point it at `guess_review.tsv`: it would erase the grades.
+- `tasks/data/2026-10-21-dictionary-lookup/comps.py` — Prints each review row's break-down components with the DPD entries they resolve to (used while grading).
+- `tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv` — The 30,000-token sample (3.3); 7.1's equivalence check reads its prefixes.
+- `tasks/data/2026-10-21-dictionary-lookup/guess_review.tsv` — The graded review (3.4); the only row-level record of it.
 - `backend/tests/test_dpd_lookup_grouped.rs`, `test_dpd_deconstructor_list.rs`, `test_deconstructor_result_pagination.rs`, `test_dpd_lookup.rs` — Existing tests to keep passing; update an expectation only where the chosen branch changes a guess.
 - `docs/search-snippet-highlight-pipeline.md` — §9: replace the "still `LIKE`" note; record the decision, numbers and row rule.
 - `docs/pali-sandhi-and-quote-marks.md` — The function table, if signatures change.
@@ -282,8 +286,8 @@ Update the file after completing each sub-task, not just after completing an ent
     - `EXPLAIN QUERY PLAN` with `sqlite_stat1` present:
       - the literal form must show `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`;
       - the bound `deconstructor != ?` form is expected not to; record what it shows.
-    - Extend `guess_cost.py`: cold / warm ms, `rchar`, `read_bytes` for the 2.8 prefix set plus `par`, `paṭ`, `anu`, `upa`.
-    - Equivalence: for every attempt-2 and attempt-4 prefix in the 3.3 TSV, the indexed query returns the same key as `INDEXED BY sqlite_autoindex_lookup_1`.
+    - Extend `tasks/data/2026-10-21-dictionary-lookup/guess_cost.py`: cold / warm ms, `rchar`, `read_bytes` for the 2.8 prefix set plus `par`, `paṭ`, `anu`, `upa`.
+    - Equivalence: for every attempt-2 and attempt-4 prefix in the 3.3 TSV (`tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv`), the indexed query returns the same key as `INDEXED BY sqlite_autoindex_lookup_1`.
     - Record everything under Measurements.
   - [ ] 7.2 **Gate.** Pass if:
     - the plan uses the index;
@@ -342,7 +346,7 @@ Update the file after completing each sub-task, not just after completing an ent
     - that the memo never stores a cancelled lookup.
   - [ ] 8.6 Update `docs/pali-sandhi-and-quote-marks.md`'s function table if `dpd_deconstructor_list`'s or the grouped lookup's signatures changed. Update `docs/simsapa-localhost-api-search-endpoints.md` if `/dict_combined_search` results change.
   - [ ] 8.7 Update `PROJECT_MAP.md`: `lookup_cancel.rs`, the new tests, the `DPD-LOOKUP-TIMING:` log prefix, the partial index (if kept), and the setting (if any).
-  - [ ] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged. Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
+  - [ ] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged (the files in `tasks/data/2026-10-21-dictionary-lookup/` are tracked on purpose). Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
 
 ## Measurements
 
@@ -457,7 +461,7 @@ Findings:
 The fast machines keep `dpd.sqlite3` in the page cache, so their "cold" runs
 are not cold. What carries over to other hardware is how much SQLite reads.
 
-Script: `guess_cost.py` (scratchpad, not committed), Python `sqlite3` 3.53.4
+Script: `tasks/data/2026-10-21-dictionary-lookup/guess_cost.py`, Python `sqlite3` 3.53.4
 on the dist `dpd.sqlite3`, a fresh read-only connection per query. "cold" =
 file evicted with `posix_fadvise(DONTNEED)` first (desktop NVMe). `req_MB` =
 `rchar` delta (bytes SQLite requested; hardware-independent). `disk_MB` =
@@ -558,8 +562,8 @@ Review file: all **63** distinct queries with a `range_bd` guess (one of the
 64 tokens is a repeat). It shows the `range_bd` guess and today's `LIKE`
 guess. `like_useful` is pre-filled `=` where both pick the same key (35),
 `no-bd` where `LIKE`'s row has no break-down (10), and left empty to mark where
-`LIKE` picks a different key with a break-down (18). Built by the scratchpad
-`make_review.py`.
+`LIKE` picks a different key with a break-down (18). Built by
+`tasks/data/2026-10-21-dictionary-lookup/make_review.py`.
 
 ### 3.0 findings (before the review)
 
@@ -610,8 +614,8 @@ Structural facts from the sample. They are not usefulness judgements
 FR-A4's "a person marks the rows". Each guess was read against its sutta
 context, and each component against the DPD headwords it resolves to (what
 Phase 7 shows). One reviewer, so the grades are a judgement, not a
-measurement. The marked file, with a `grade` and a `note` per row, is the
-scratchpad `guess_review.tsv`.
+measurement. The marked file, with a `grade` and a `note` per row, is
+`tasks/data/2026-10-21-dictionary-lookup/guess_review.tsv`.
 
 Grades (a guess with several break-downs is graded by its best one, since
 WordSummary lists every break-down's results):
