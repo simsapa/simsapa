@@ -15,6 +15,7 @@ use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
 use crate::db::DbManager;
+use crate::lookup_cancel::LookupCancel;
 use crate::logger::{debug, info, warn, error};
 
 /// Defense-in-depth ceiling on SQL `LIMIT` for unbounded multi-phase fetches
@@ -120,6 +121,9 @@ pub struct SearchQueryTask<'a> {
     pub snippet_all_chars_after: usize,
     pub db_all_results: Vec<SearchResult>,
     pub db_query_hits_count: i64, // Use i64 for Diesel's count result
+    /// Cancels this task's grouped DPD lookup once a newer query supersedes
+    /// it. `none()` from `new()`; the Dictionary tab's bridge sets it.
+    pub lookup_cancel: LookupCancel,
 }
 
 impl<'a> SearchQueryTask<'a> {
@@ -195,6 +199,7 @@ impl<'a> SearchQueryTask<'a> {
             snippet_all_chars_after: get_app_data().get_snippet_all_chars_after(),
             db_all_results: Vec::new(),
             db_query_hits_count: 0,
+            lookup_cancel: LookupCancel::none(),
         }
     }
 
@@ -1827,13 +1832,14 @@ impl<'a> SearchQueryTask<'a> {
             // `SuttaBridge::results_page()`, via the shared memo — the
             // break-downs the user sees and the uids the filter keeps must be
             // computed from the same lookup.
-            let grouped = app_data.dbm.dpd.dpd_lookup_grouped_memo(
+            let grouped = app_data.dbm.dpd.dpd_lookup_grouped_memo_cancellable(
                 &self.dpd_query_text,
                 false,
                 true,
                 false,
                 self.uid_prefix.as_deref(),
                 self.uid_suffix.as_deref(),
+                &self.lookup_cancel,
             )?;
             return Ok(grouped.ordered_filtered_results(
                 self.deconstruction_selected_index,

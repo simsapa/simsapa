@@ -13,7 +13,7 @@ use cxx_qt::{CxxQtType, Threading};
 
 use simsapa_backend::app_settings::AiRequestMode;
 use simsapa_backend::query_task::SearchQueryTask;
-use simsapa_backend::lookup_cancel::LookupCancel;
+use simsapa_backend::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
 use simsapa_backend::theme_colors::ThemeColors;
 use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file_checked, check_file_exists_print_err, with_fulltext_searcher};
@@ -389,6 +389,7 @@ fn fetch_and_cache_page(
     search_area_text: &str,
     params_json_text: &str,
     page_num: usize,
+    cancel: &LookupCancel,
 ) -> Result<Option<(Vec<SearchResult>, i64, usize)>, String> {
     // Check if this page is already cached (another prefetch thread may have filled it)
     {
@@ -419,6 +420,7 @@ fn fetch_and_cache_page(
         params,
         search_area_enum,
     );
+    query_task.lookup_cancel = cancel.clone();
 
     let results = query_task.results_page(page_num).map_err(|e| format!("{}", e))?;
     let total_hits = query_task.total_hits();
@@ -462,6 +464,7 @@ fn run_sub_query(
     area: SearchArea,
     params: SearchParams,
     sub_page_num: usize,
+    cancel: &LookupCancel,
 ) -> Result<(Vec<SearchResult>, i64, usize), String> {
     let app_data = get_app_data();
     let mut task = SearchQueryTask::new(
@@ -470,6 +473,7 @@ fn run_sub_query(
         params,
         area,
     );
+    task.lookup_cancel = cancel.clone();
     let results = task.results_page(sub_page_num).map_err(|e| format!("{}", e))?;
     let total = task.total_hits();
     let page_len = task.page_len;
@@ -491,6 +495,7 @@ fn fetch_combined_page(
     query_text: &str,
     params_json_text: &str,
     page_num: usize,
+    cancel: &LookupCancel,
 ) -> Result<Option<(Vec<SearchResult>, i64, usize)>, String> {
     let base_params: SearchParams = serde_json::from_str(params_json_text).unwrap_or_default();
     // Skip the DPD sub-fetch entirely when DPD is excluded from the
@@ -547,13 +552,15 @@ fn fetch_combined_page(
         let ((dpd_buf, dpd_total, dpd_pl), (ft_buf, ft_total, ft_pl)) = if dpd_enabled {
             let qt_dpd = query_text.to_string();
             let dpd_p = dpd_params.clone();
+            let dpd_cancel = cancel.clone();
             let dpd_handle = thread::spawn(move || {
-                run_sub_query(&qt_dpd, SearchArea::Dictionary, dpd_p, 0)
+                run_sub_query(&qt_dpd, SearchArea::Dictionary, dpd_p, 0, &dpd_cancel)
             });
             let qt_ft = query_text.to_string();
             let ft_p = ft_params.clone();
+            let ft_cancel = cancel.clone();
             let ft_handle = thread::spawn(move || {
-                run_sub_query(&qt_ft, SearchArea::Dictionary, ft_p, 0)
+                run_sub_query(&qt_ft, SearchArea::Dictionary, ft_p, 0, &ft_cancel)
             });
             let dpd_res = dpd_handle
                 .join()
@@ -568,6 +575,7 @@ fn fetch_combined_page(
                 SearchArea::Dictionary,
                 ft_params.clone(),
                 0,
+                cancel,
             )?;
             // Empty DPD side; page_len falls back to Fulltext's.
             ((Vec::new(), 0i64, ft_res.2), ft_res)
@@ -647,13 +655,15 @@ fn fetch_combined_page(
         ) = if dpd_short && ft_short {
             let qt_dpd = query_text.to_string();
             let dpd_p = dpd_params.clone();
+            let dpd_cancel = cancel.clone();
             let dpd_handle = thread::spawn(move || {
-                run_sub_query(&qt_dpd, SearchArea::Dictionary, dpd_p, dpd_next)
+                run_sub_query(&qt_dpd, SearchArea::Dictionary, dpd_p, dpd_next, &dpd_cancel)
             });
             let qt_ft = query_text.to_string();
             let ft_p = ft_params.clone();
+            let ft_cancel = cancel.clone();
             let ft_handle = thread::spawn(move || {
-                run_sub_query(&qt_ft, SearchArea::Dictionary, ft_p, ft_next)
+                run_sub_query(&qt_ft, SearchArea::Dictionary, ft_p, ft_next, &ft_cancel)
             });
             let dpd_r = dpd_handle
                 .join()
@@ -663,10 +673,10 @@ fn fetch_combined_page(
                 .map_err(|_| "Fulltext top-up thread panicked".to_string())?;
             (Some(dpd_r), Some(ft_r))
         } else if dpd_short {
-            let r = run_sub_query(query_text, SearchArea::Dictionary, dpd_params.clone(), dpd_next);
+            let r = run_sub_query(query_text, SearchArea::Dictionary, dpd_params.clone(), dpd_next, cancel);
             (Some(r), None)
         } else {
-            let r = run_sub_query(query_text, SearchArea::Dictionary, ft_params.clone(), ft_next);
+            let r = run_sub_query(query_text, SearchArea::Dictionary, ft_params.clone(), ft_next, cancel);
             (None, Some(r))
         };
 
@@ -755,6 +765,7 @@ fn prefetch_pages(
     start_page: usize,
     count: usize,
     total_pages: usize,
+    cancel: LookupCancel,
 ) {
     thread::spawn(move || {
         // Combined+Dictionary uses its own cache and orchestrator. Detect
@@ -769,9 +780,9 @@ fn prefetch_pages(
         for p in start_page..end_page {
             debug(&format!("Prefetching page {}", p));
             let res = if is_combined_dict {
-                fetch_combined_page(&cache_key, &query_text, &params_json_text, p)
+                fetch_combined_page(&cache_key, &query_text, &params_json_text, p, &cancel)
             } else {
-                fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, p)
+                fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, p, &cancel)
             };
             match res {
                 Ok(None) => {
@@ -781,6 +792,10 @@ fn prefetch_pages(
                 }
                 Ok(Some(_)) => {
                     debug(&format!("Prefetched page {} successfully", p));
+                }
+                Err(_) if cancel.is_cancelled() => {
+                    info(&format!("Prefetch page {} cancelled: a newer search started", p));
+                    return;
                 }
                 Err(e) => {
                     warn(&format!("Prefetch page {} failed: {}", p, e));
@@ -2152,6 +2167,11 @@ pub struct SuttaBridgeRust {
     /// WordSummary panel). Bumping it cancels the lookups started before it;
     /// see `LookupCancel`.
     word_summary_lookup_generation: Arc<AtomicU64>,
+    /// Generation of the latest Dictionary-tab query, for cancelling its
+    /// grouped DPD lookups. Unlike `results_page_request_id` it moves only
+    /// when the query changes, never on a page turn: a page turn must not
+    /// cancel the same query's running lookup or its prefetch threads.
+    results_query_generation: Arc<AtomicU64>,
 }
 
 
@@ -2584,6 +2604,12 @@ impl qobject::SuttaBridge {
         // where a panic aborts the whole app. The cells are only caches: a new
         // search replaces the cell outright, and the worst a worker's panic
         // mid-write can leave behind is a bad cached page for that one query.
+        //
+        // A reset is a new query, so it also bumps `results_query_generation`,
+        // which cancels the previous query's grouped DPD lookups. The token is
+        // taken after the reset, so a page turn gets the running query's
+        // generation.
+        let generation = Arc::clone(&self.rust().results_query_generation);
         if is_combined_dict {
             let mut guard = COMBINED_CACHE.lock().unwrap_or_else(PoisonError::into_inner);
             let needs_reset = match *guard {
@@ -2591,6 +2617,7 @@ impl qobject::SuttaBridge {
                 None => true,
             };
             if needs_reset {
+                generation.fetch_add(1, Ordering::Relaxed);
                 *guard = Some(CombinedCache {
                     cache_key: cache_key.clone(),
                     page_len: 0,
@@ -2609,6 +2636,7 @@ impl qobject::SuttaBridge {
                 None => true,
             };
             if needs_reset {
+                generation.fetch_add(1, Ordering::Relaxed);
                 *cache_guard = Some(ResultsPageCache {
                     cache_key: cache_key.clone(),
                     pages: HashMap::new(),
@@ -2617,6 +2645,7 @@ impl qobject::SuttaBridge {
                 });
             }
         }
+        let cancel = LookupCancel::new(&generation);
 
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
@@ -2643,15 +2672,20 @@ impl qobject::SuttaBridge {
             {
                 let app_data = get_app_data();
                 let normalized_query = normalize_dpd_query_split(&query_text);
-                match app_data.dbm.dpd.dpd_lookup_grouped_memo(
+                match app_data.dbm.dpd.dpd_lookup_grouped_memo_cancellable(
                     &normalized_query,
                     false,
                     true,
                     false,
                     parsed_params.uid_prefix.as_deref(),
                     parsed_params.uid_suffix.as_deref(),
+                    &cancel,
                 ) {
                     Ok(grouped) => (grouped.deconstructions.clone(), grouped.direct_uids.clone()),
+                    Err(e) if is_lookup_cancelled(&e) => {
+                        info(&format!("SuttaBridge::results_page() cancelled (a newer search started): {}", e));
+                        return;
+                    }
                     Err(e) => {
                         error(&format!("dpd_lookup_grouped for result page failed: {}", e));
                         (Vec::new(), Vec::new())
@@ -2662,7 +2696,7 @@ impl qobject::SuttaBridge {
             };
 
             if is_combined_dict {
-                match fetch_combined_page(&cache_key, &query_text, &params_json_text, page_num) {
+                match fetch_combined_page(&cache_key, &query_text, &params_json_text, page_num, &cancel) {
                     Ok(Some((results, total_hits, page_len))) => {
                         let results_page_data = SearchResultPage {
                             total_hits: total_hits as usize,
@@ -2689,6 +2723,7 @@ impl qobject::SuttaBridge {
                                 &query_text,
                                 &params_json_text,
                                 page_num + 1,
+                                &cancel,
                             );
 
                             if page_num + 2 < total_pages {
@@ -2700,6 +2735,7 @@ impl qobject::SuttaBridge {
                                     page_num + 2,
                                     2,
                                     total_pages,
+                                    cancel.clone(),
                                 );
                             }
                         }
@@ -2708,6 +2744,11 @@ impl qobject::SuttaBridge {
                     }
                     Ok(None) => {
                         info("SuttaBridge::results_page() aborted (new search started; combined)");
+                    }
+                    // A cancelled query's cell may already belong to the same
+                    // query typed again (A, B, A), so it is left alone.
+                    Err(e) if cancel.is_cancelled() => {
+                        info(&format!("SuttaBridge::results_page() cancelled (a newer search started; combined): {}", e));
                     }
                     Err(e) => {
                         error(&e.to_string());
@@ -2779,6 +2820,7 @@ impl qobject::SuttaBridge {
                                     max_cached + 1,
                                     2,
                                     total_pages,
+                                    cancel.clone(),
                                 );
                             }
 
@@ -2790,7 +2832,7 @@ impl qobject::SuttaBridge {
             }
 
             // Fetch the requested page
-            match fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, page_num) {
+            match fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, page_num, &cancel) {
                 Ok(Some((results, total_hits, page_len))) => {
                     let results_page_data = SearchResultPage {
                         total_hits: total_hits as usize,
@@ -2817,7 +2859,7 @@ impl qobject::SuttaBridge {
 
                     if page_num + 1 < total_pages {
                         // Fetch the next page in this thread (so it's ready quickly)
-                        let _ = fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, page_num + 1);
+                        let _ = fetch_and_cache_page(&cache_key, &query_text, &search_area_text, &params_json_text, page_num + 1, &cancel);
 
                         // Prefetch 2 more pages in background
                         if page_num + 2 < total_pages {
@@ -2829,6 +2871,7 @@ impl qobject::SuttaBridge {
                                 page_num + 2,
                                 2,
                                 total_pages,
+                                cancel.clone(),
                             );
                         }
                     }
@@ -2838,6 +2881,9 @@ impl qobject::SuttaBridge {
                 Ok(None) => {
                     // Cache key changed during fetch (new search started), do nothing
                     info("SuttaBridge::results_page() aborted (new search started)");
+                }
+                Err(e) if cancel.is_cancelled() => {
+                    info(&format!("SuttaBridge::results_page() cancelled (a newer search started): {}", e));
                 }
                 Err(e) => {
                     error(&e.to_string());

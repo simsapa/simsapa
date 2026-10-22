@@ -8,8 +8,8 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (none expected under Keep).
 - `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Cancellation: the token is checked before each phase, the iti-split check, each deconstructor attempt, each Phase 7 component and the iti-split's `iti` lookup; `dpd_lookup_grouped_cancellable()` (`Always`) and `dpd_lookup_grouped_memo_cancellable()` sit beside the unchanged wrappers, both memo variants share `dpd_lookup_grouped_memo_inner()`; a cancelled call's timing line ends in ` cancelled`; `dpd_lookup_grouped_json()` takes the token and returns `Option<String>` (`None` = cancelled). Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
 - `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token (`none()`, `new()`, `is_cancelled()`, `check()`), the `LookupCancelled` error and `is_lookup_cancelled()`, with inline unit tests. Registered in `backend/src/lib.rs`.
-- `backend/src/query_task.rs` — `SearchQueryTask` gets the token and the guesses flag as fields; `dpd_lookup_full()` uses them.
-- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (bumps the `word_summary_lookup_generation: Arc<AtomicU64>` counter on the Qt thread, moves a `LookupCancel` into the worker, logs `cancelled <query_id>` and emits nothing when superseded), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
+- `backend/src/query_task.rs` — `SearchQueryTask.lookup_cancel` (`none()` from `new()`); `dpd_lookup_full()` calls `dpd_lookup_grouped_memo_cancellable()` with it.
+- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (bumps the `word_summary_lookup_generation: Arc<AtomicU64>` counter on the Qt thread, moves a `LookupCancel` into the worker, logs `cancelled <query_id>` and emits nothing when superseded), `results_page()` (`results_query_generation` bumped in both `needs_reset` branches, token taken after them; selector through `dpd_lookup_grouped_memo_cancellable()`; cancelled errors logged at `info` and never emitted), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()` and `prefetch_pages()` (take the token and set `lookup_cancel` on each task), `dpd_deconstructor_list()`, and the setting getter/setter invokables.
 - `bridges/src/api.rs` — `POST /dict_combined_search` and the other `dpd_deconstructor_list` call; they pass `LookupCancel::none()` and the setting value.
 - `backend/src/app_settings.rs` — *Not needed: the decision is Keep (no setting).*
 - `backend/src/app_data.rs` — *Not needed: the decision is Keep (no setting).*
@@ -243,15 +243,18 @@ Update the file after completing each sub-task, not just after completing an ent
 - **Errors:** a cancelled error in the results-page worker is **not** an error page. Log at `info` and emit nothing, the same as a stale request. Find where `error_json` is built (the `emit_results_page_if_latest(request_id, error_json)` sites) and branch on `is_lookup_cancelled` first.
 - **API (FR-C7):** `api.rs`'s `SearchQueryTask::new` keeps the default `none()`. No change.
 
-- [ ] 6.0 Dictionary search tab cancels superseded lookups on a query change only (FR-C6)
-  - [ ] 6.1 Add `lookup_cancel` to `SearchQueryTask` (default `none()`), and use it in `dpd_lookup_full()`'s grouped memo call.
-  - [ ] 6.2 Add `results_query_generation` to the bridge struct, bump it in **both** `needs_reset` branches (`COMBINED_CACHE` and `RESULTS_PAGE_CACHE`), and create the token after them.
-  - [ ] 6.3 Pass the token into the spawned worker and use it in the selector's `dpd_lookup_grouped_memo` call in `results_page()`.
-  - [ ] 6.4 Thread it through `fetch_and_cache_page()`, `fetch_combined_page()` → `run_sub_query()` (the DPD sub-query thread; the Fulltext one may take it harmlessly) and `prefetch_pages()`. Set `task.lookup_cancel` on each `SearchQueryTask` they build.
-  - [ ] 6.5 At each place a worker turns an error into `error_json`, check `is_lookup_cancelled` first: log at `info`, emit nothing.
-  - [ ] 6.6 Leave `debug_query()` (the `SearchQueryTask::new` at the `debug_query_request_id` site) on `none()`. It is a debug path with its own request id.
-  - [ ] 6.7 Run `make build -B` and `cargo test` (query task and pagination tests).
-  - [ ] 6.8 Ask the user to check on desktop in the Dictionary tab, DPD Lookup mode:
+- [x] 6.0 Dictionary search tab cancels superseded lookups on a query change only (FR-C6)
+  - [x] 6.1 Add `lookup_cancel` to `SearchQueryTask` (default `none()`), and use it in `dpd_lookup_full()`'s grouped memo call.
+  - [x] 6.2 Add `results_query_generation` to the bridge struct, bump it in **both** `needs_reset` branches (`COMBINED_CACHE` and `RESULTS_PAGE_CACHE`), and create the token after them.
+  - [x] 6.3 Pass the token into the spawned worker and use it in the selector's `dpd_lookup_grouped_memo` call in `results_page()`.
+  - [x] 6.4 Thread it through `fetch_and_cache_page()`, `fetch_combined_page()` → `run_sub_query()` (the DPD sub-query thread; the Fulltext one may take it harmlessly) and `prefetch_pages()`. Set `task.lookup_cancel` on each `SearchQueryTask` they build.
+  - [x] 6.5 At each place a worker turns an error into `error_json`, check `is_lookup_cancelled` first: log at `info`, emit nothing.
+    - *As built:* `fetch_and_cache_page()` and `run_sub_query()` flatten errors to `String`, so the `LookupCancelled` type does not reach the worker's error arms. Those arms (both `error_json` sites and the prefetch loop) check the worker's own token, `cancel.is_cancelled()`, instead. The outcome is the same: a cancelled token means a newer query exists, whose request id makes `emit_results_page_if_latest()` drop this one anyway. Only the selector's memo call, which gets the `anyhow` error directly, uses `is_lookup_cancelled`; when it fires, the worker returns before fetching any page. The combined error arm also skips its cold-start cache reset when cancelled, because after A, B, A the cell with A's key belongs to the newer A search.
+    - The prefetch loop logs `info` and stops on a cancelled error instead of `warn`ing per page.
+    - `dpd_lookup_full()` now always goes through `dpd_lookup_grouped_memo_cancellable()`, so API searches (token `none()`) also log their `DPD-LOOKUP-TIMING:` line on every call, not only when slow.
+  - [x] 6.6 Leave `debug_query()` (the `SearchQueryTask::new` at the `debug_query_request_id` site) on `none()`. It is a debug path with its own request id.
+  - [x] 6.7 Run `make build -B` and `cargo test` (query task and pagination tests).
+  - [x] 6.8 Ask the user to check on desktop in the Dictionary tab, DPD Lookup mode:
     1. Search an unknown word, then at once a known word. The known word's page appears, and the log shows the first lookup cancelled.
     2. Page through a multi-page known word. Nothing logs `cancelled`, and prefetch still fills pages.
 
