@@ -6,10 +6,10 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `bridges/assets/qml/SuttaSearchWindow.qml` — `set_summary_query()` calls `word_summary.lookup_from_outside()` instead of `set_query()` + `search_btn.click()`.
 - `bridges/assets/qml/tst_WordSummary.qml` — **New.** QML test: lookup starts while loading (and stops the timer), short word starts none, stale response ignored, empty-result line shown and replaced.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (none expected under Keep).
-- `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
-- `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token and the `LookupCancelled` error type. (Or a small module next to `dpd.rs`; register it in `backend/src/lib.rs`.)
+- `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Cancellation: the token is checked before each phase, the iti-split check, each deconstructor attempt, each Phase 7 component and the iti-split's `iti` lookup; `dpd_lookup_grouped_cancellable()` (`Always`) and `dpd_lookup_grouped_memo_cancellable()` sit beside the unchanged wrappers, both memo variants share `dpd_lookup_grouped_memo_inner()`; a cancelled call's timing line ends in ` cancelled`; `dpd_lookup_grouped_json()` takes the token and returns `Option<String>` (`None` = cancelled). Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
+- `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token (`none()`, `new()`, `is_cancelled()`, `check()`), the `LookupCancelled` error and `is_lookup_cancelled()`, with inline unit tests. Registered in `backend/src/lib.rs`.
 - `backend/src/query_task.rs` — `SearchQueryTask` gets the token and the guesses flag as fields; `dpd_lookup_full()` uses them.
-- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (WordSummary generation counter), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
+- `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (passes `LookupCancel::none()` and emits nothing on `None` until 5.2 adds the WordSummary generation counter), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
 - `bridges/src/api.rs` — `POST /dict_combined_search` and the other `dpd_deconstructor_list` call; they pass `LookupCancel::none()` and the setting value.
 - `backend/src/app_settings.rs` — *Not needed: the decision is Keep (no setting).*
 - `backend/src/app_data.rs` — *Not needed: the decision is Keep (no setting).*
@@ -188,27 +188,27 @@ Update the file after completing each sub-task, not just after completing an ent
 - **Check points:** before each Phase 1–8; before each attempt inside the timed `dpd_deconstructor_query` variant (from 2.1, so it takes the token too); before each `inflection_to_pali_words` call in Phase 7's component loop. Pass the token to `dpd_lookup_grouped_iti_split()` and its recursive calls.
 - **Memo:** keep the `?` on the lookup, before the store. A cancelled lookup returns early and stores nothing.
 
-- [ ] 4.0 `LookupCancel` token and the cancellable grouped lookup, with the memo never storing a cancelled result (FR-C3, FR-C4, FR-C7, FR-T1 cancellation tests)
-  - [ ] 4.1 Create `backend/src/lookup_cancel.rs` with the API above and register it in `backend/src/lib.rs`. Add unit tests inline:
+- [x] 4.0 `LookupCancel` token and the cancellable grouped lookup, with the memo never storing a cancelled result (FR-C3, FR-C4, FR-C7, FR-T1 cancellation tests)
+  - [x] 4.1 Create `backend/src/lookup_cancel.rs` with the API above and register it in `backend/src/lib.rs`. Add unit tests inline:
     - `none()` is never cancelled;
     - `new()` is not cancelled until the counter is bumped, and is after;
     - `check()` returns an error that `is_lookup_cancelled` recognises.
-  - [ ] 4.2 Thread the token through the timed `dpd_deconstructor_query` variant: check before each attempt. The public untimed function passes `none()`.
-  - [ ] 4.3 Add the token parameter to the inner function from 2.2. Add the phase checks and the Phase 7 per-component check, and pass the token into `dpd_lookup_grouped_iti_split()`. Wire the public functions:
+  - [x] 4.2 Thread the token through the timed `dpd_deconstructor_query` variant: check before each attempt. The public untimed function passes `none()`.
+  - [x] 4.3 Add the token parameter to the inner function from 2.2. Add the phase checks and the Phase 7 per-component check, and pass the token into `dpd_lookup_grouped_iti_split()`. Wire the public functions:
     - `dpd_lookup_grouped_cancellable(…, cancel)` calls the inner function with `TimingLog::Always`;
     - the existing `dpd_lookup_grouped()` passes `none()` and `WhenSlow`.
-  - [ ] 4.4 Split `dpd_lookup_grouped_memo()` the same way. Keep the lock discipline: never hold `GROUPED_LOOKUP_MEMO` across the lookup.
-  - [ ] 4.5 `dpd_lookup_grouped_json()` has **one** caller (`sutta_bridge.rs` `dpd_lookup_grouped_json_async`), so change its signature directly: add `cancel: &LookupCancel` and return `Option<String>`.
+  - [x] 4.4 Split `dpd_lookup_grouped_memo()` the same way. Keep the lock discipline: never hold `GROUPED_LOOKUP_MEMO` across the lookup.
+  - [x] 4.5 `dpd_lookup_grouped_json()` has **one** caller (`sutta_bridge.rs` `dpd_lookup_grouped_json_async`), so change its signature directly: add `cancel: &LookupCancel` and return `Option<String>`.
     - `None` means cancelled.
     - A real error keeps today's behaviour: log it and return `Some(<empty GroupedDpdLookup JSON>)`. WordSummary will then show the FR-D1 empty line, which is acceptable for a real error.
     - Update the one caller to pass `LookupCancel::none()` for now; 5.2 replaces it.
-  - [ ] 4.6 Create `backend/tests/test_dpd_lookup_cancel.rs`:
+  - [x] 4.6 Create `backend/tests/test_dpd_lookup_cancel.rs`:
     1. A pre-bumped token makes `dpd_lookup_grouped_cancellable("pañcaggadāyakaṁ", …)` return an error recognised by `is_lookup_cancelled`.
     2. Memo: call the memo with query X and `none()`, then with query Y and a cancelled token (an error), then with X and `none()`. Assert the third call returns the **same `Arc`** as the first (`Arc::ptr_eq`), which proves the cancelled call stored nothing.
     3. A `none()` token gives results identical to the wrapper.
 
     The memo is a process global, so put the memo test in its own test binary, or make it robust to another test touching the memo between calls. A separate test file runs in its own process; keep it to one memo test per file.
-  - [ ] 4.7 Run `cargo test` for the new file and the four existing DPD test files. Run `make build -B`.
+  - [x] 4.7 Run `cargo test` for the new file and the four existing DPD test files. Run `make build -B`.
 
 ### 5.0 — Specs
 

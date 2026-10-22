@@ -12,6 +12,7 @@ use cxx_qt::{CxxQtType, Threading};
 
 use simsapa_backend::app_settings::AiRequestMode;
 use simsapa_backend::query_task::SearchQueryTask;
+use simsapa_backend::lookup_cancel::LookupCancel;
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
 use simsapa_backend::theme_colors::ThemeColors;
 use simsapa_backend::{get_app_data, try_get_app_data, get_app_globals, get_create_simsapa_dir, save_to_file_checked, check_file_exists_print_err, with_fulltext_searcher};
@@ -3011,7 +3012,10 @@ impl qobject::SuttaBridge {
         // Spawn a thread so Qt event loop is not blocked
         thread::spawn(move || {
             let app_data = get_app_data();
-            let s = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false);
+            let Some(s) = app_data.dbm.dpd.dpd_lookup_grouped_json(&query_text, false, &LookupCancel::none()) else {
+                info("SuttaBridge::dpd_lookup_grouped_json_async() cancelled, nothing emitted");
+                return;
+            };
             let grouped_json = QString::from(s);
             let query_id_qstring = QString::from(query_id_string);
 

@@ -20,6 +20,7 @@ use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
 use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup};
 use crate::logger::{info, error};
+use crate::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 
 pub type DpdDbHandle = DatabaseHandle;
 
@@ -234,15 +235,17 @@ impl DpdDbHandle {
     }
 
     pub fn dpd_deconstructor_query(&self, query_text: &str, exact_only: bool) -> Result<Option<Lookup>> {
-        self.dpd_deconstructor_query_timed(query_text, exact_only).map(|(row, _)| row)
+        self.dpd_deconstructor_query_timed(query_text, exact_only, &LookupCancel::none())
+            .map(|(row, _)| row)
     }
 
     /// `dpd_deconstructor_query()`, also returning how long each attempt took
-    /// and which one produced the row.
+    /// and which one produced the row. Checks `cancel` before each attempt.
     fn dpd_deconstructor_query_timed(
         &self,
         query_text: &str,
         exact_only: bool,
+        cancel: &LookupCancel,
     ) -> Result<(Option<Lookup>, DeconstructorTiming)> {
         use crate::db::dpd_schema::lookup::dsl::*;
 
@@ -259,6 +262,7 @@ impl DpdDbHandle {
         let exact_only = exact_only || iti_base.is_some();
 
         // Attempt 1: Exact match.
+        cancel.check()?;
         let t = Instant::now();
         let mut result: Option<Lookup> = lookup
             .filter(lookup_key.eq(query_text.clone()))
@@ -272,6 +276,7 @@ impl DpdDbHandle {
         // Attempt 2: If not exact_only, try to match as 'starts with'.
         if !exact_only
             && result.is_none() && query_text.chars().count() >= 4 {
+                cancel.check()?;
                 let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.like(&format!("{}%", query_text)))
@@ -288,6 +293,7 @@ impl DpdDbHandle {
             let query_text_no_space = query_text.replace(" ", "");
             // Avoid querying with an empty string if query_text was all spaces.
             if !query_text_no_space.is_empty() {
+                cancel.check()?;
                 let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.eq(&query_text_no_space))
@@ -310,6 +316,7 @@ impl DpdDbHandle {
                 // So, all_but_last_char will not be empty.
                 let all_but_last_char: String = query_text.chars().take(num_chars - 1).collect();
 
+                cancel.check()?;
                 let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.like(&format!("{}%", all_but_last_char)))
@@ -813,7 +820,8 @@ impl DpdDbHandle {
     /// so they cannot diverge.
     ///
     /// Mirrors the `RESULTS_PAGE_CACHE` discipline: the mutex is never held
-    /// across the DB call.
+    /// across the DB call. Never cancelled; see
+    /// `dpd_lookup_grouped_memo_cancellable()`.
     #[allow(clippy::too_many_arguments)]
     pub fn dpd_lookup_grouped_memo(
         &self,
@@ -823,6 +831,49 @@ impl DpdDbHandle {
         deconstructor_exact_only: bool,
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
+    ) -> Result<Arc<GroupedDpdLookup>> {
+        self.dpd_lookup_grouped_memo_inner(
+            query_text, do_pali_sort, exact_only, deconstructor_exact_only,
+            uid_prefix, uid_suffix, None,
+        )
+    }
+
+    /// `dpd_lookup_grouped_memo()` for a caller whose lookups can be
+    /// superseded, through `dpd_lookup_grouped_cancellable()`.
+    ///
+    /// A cancelled lookup returns its `LookupCancelled` error before the memo
+    /// is written, so the memo only ever holds a finished lookup. A memo hit
+    /// returns at once without checking `cancel`: it is a finished result.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dpd_lookup_grouped_memo_cancellable(
+        &self,
+        query_text: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+        cancel: &LookupCancel,
+    ) -> Result<Arc<GroupedDpdLookup>> {
+        self.dpd_lookup_grouped_memo_inner(
+            query_text, do_pali_sort, exact_only, deconstructor_exact_only,
+            uid_prefix, uid_suffix, Some(cancel),
+        )
+    }
+
+    /// The memo of both `dpd_lookup_grouped_memo()` variants. `cancel` is
+    /// `None` for the non-cancellable one, which looks up through
+    /// `dpd_lookup_grouped()` and so keeps its `WhenSlow` timing log.
+    #[allow(clippy::too_many_arguments)]
+    fn dpd_lookup_grouped_memo_inner(
+        &self,
+        query_text: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+        cancel: Option<&LookupCancel>,
     ) -> Result<Arc<GroupedDpdLookup>> {
         let key = (
             query_text.to_string(),
@@ -842,14 +893,17 @@ impl DpdDbHandle {
             }
         }
 
-        let grouped = Arc::new(self.dpd_lookup_grouped(
-            query_text,
-            do_pali_sort,
-            exact_only,
-            deconstructor_exact_only,
-            uid_prefix,
-            uid_suffix,
-        )?);
+        // `?` before the store: a cancelled or failed lookup is never memoized.
+        let grouped = Arc::new(match cancel {
+            Some(cancel) => self.dpd_lookup_grouped_cancellable(
+                query_text, do_pali_sort, exact_only, deconstructor_exact_only,
+                uid_prefix, uid_suffix, cancel,
+            )?,
+            None => self.dpd_lookup_grouped(
+                query_text, do_pali_sort, exact_only, deconstructor_exact_only,
+                uid_prefix, uid_suffix,
+            )?,
+        });
 
         {
             let mut guard = GROUPED_LOOKUP_MEMO.lock().unwrap();
@@ -877,7 +931,8 @@ impl DpdDbHandle {
     /// deduplicated by uid overall.
     ///
     /// Logs a `DPD-LOOKUP-TIMING:` line when the call takes at least
-    /// `TIMING_LOG_SLOW_MS`.
+    /// `TIMING_LOG_SLOW_MS`. Never cancelled; see
+    /// `dpd_lookup_grouped_cancellable()`.
     #[allow(clippy::too_many_arguments)]
     pub fn dpd_lookup_grouped(
         &self,
@@ -890,13 +945,35 @@ impl DpdDbHandle {
     ) -> Result<GroupedDpdLookup> {
         self.dpd_lookup_grouped_inner(
             query_text_orig, do_pali_sort, exact_only, deconstructor_exact_only,
-            uid_prefix, uid_suffix, TimingLog::WhenSlow,
+            uid_prefix, uid_suffix, TimingLog::WhenSlow, &LookupCancel::none(),
+        )
+    }
+
+    /// `dpd_lookup_grouped()` for an interactive caller whose lookups can be
+    /// superseded (WordSummary, the Dictionary search tab). It stops at the
+    /// next check point once `cancel` is cancelled and returns a
+    /// `LookupCancelled` error, never partial results. Always logs its
+    /// `DPD-LOOKUP-TIMING:` line.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dpd_lookup_grouped_cancellable(
+        &self,
+        query_text_orig: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+        cancel: &LookupCancel,
+    ) -> Result<GroupedDpdLookup> {
+        self.dpd_lookup_grouped_inner(
+            query_text_orig, do_pali_sort, exact_only, deconstructor_exact_only,
+            uid_prefix, uid_suffix, TimingLog::Always, cancel,
         )
     }
 
     /// `dpd_lookup_grouped()` with its `DPD-LOOKUP-TIMING:` line written
     /// according to `log_timing`. The line is written for every return,
-    /// including an error.
+    /// including an error or a cancellation.
     #[allow(clippy::too_many_arguments)]
     fn dpd_lookup_grouped_inner(
         &self,
@@ -907,6 +984,7 @@ impl DpdDbHandle {
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
         log_timing: TimingLog,
+        cancel: &LookupCancel,
     ) -> Result<GroupedDpdLookup> {
         info(&format!("dpd_lookup_grouped(): query_text_orig: {}", query_text_orig));
         let timer = Instant::now();
@@ -914,18 +992,20 @@ impl DpdDbHandle {
 
         let res = self.dpd_lookup_grouped_phases(
             query_text_orig, do_pali_sort, exact_only, deconstructor_exact_only,
-            uid_prefix, uid_suffix, log_timing, &mut timing,
+            uid_prefix, uid_suffix, log_timing, cancel, &mut timing,
         );
 
         let total_ms = elapsed_ms(timer);
         if log_timing == TimingLog::Always || total_ms >= TIMING_LOG_SLOW_MS {
-            info(&timing.log_line(query_text_orig, total_ms));
+            let cancelled = if res.as_ref().is_err_and(is_lookup_cancelled) { " cancelled" } else { "" };
+            info(&format!("{}{}", timing.log_line(query_text_orig, total_ms), cancelled));
         }
         res
     }
 
     /// The phases of `dpd_lookup_grouped()`, recording their timings in
-    /// `timing`.
+    /// `timing`. Checks `cancel` before each phase, each deconstructor attempt
+    /// and each Phase 7 component.
     #[allow(clippy::too_many_arguments)]
     fn dpd_lookup_grouped_phases(
         &self,
@@ -936,6 +1016,7 @@ impl DpdDbHandle {
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
         log_timing: TimingLog,
+        cancel: &LookupCancel,
         timing: &mut GroupedTiming,
     ) -> Result<GroupedDpdLookup> {
         use crate::db::dpd_schema::dpd_headwords;
@@ -976,6 +1057,7 @@ impl DpdDbHandle {
         };
 
         // Phase 1: uid / id branch. Early return if it matched.
+        cancel.check()?;
         if uid_candidate.ends_with("/dpd")
             || (!uid_candidate.is_empty() && uid_candidate.chars().all(char::is_numeric))
         {
@@ -1047,15 +1129,17 @@ impl DpdDbHandle {
 
         // An iti-sandhi word that DPD does not analyse as `… + iti` is the
         // base word plus `iti` (see `dpd_has_iti_breakdown`).
+        cancel.check()?;
         if let Some(base) = &iti_base && !self.dpd_has_iti_breakdown(&query_text)? {
             timing.iti_split = true;
             return self.dpd_lookup_grouped_iti_split(
                 query_text_orig, &query_text, base, do_pali_sort, exact_only, uid_prefix, uid_suffix,
-                log_timing,
+                log_timing, cancel,
             );
         }
 
         // Phase 2: headword exact match.
+        cancel.check()?;
         {
             let t = Instant::now();
             let mut q = dpd_headwords::table
@@ -1077,6 +1161,7 @@ impl DpdDbHandle {
         }
 
         // Phase 3: roots.
+        cancel.check()?;
         let t = Instant::now();
         let mut roots: HashSet<DpdRoot> = HashSet::new();
         for col in ["root_clean", "root_no_sign", "word_ascii"] {
@@ -1103,6 +1188,7 @@ impl DpdDbHandle {
         timing.end_phase(3, t, !results.is_empty());
 
         // Phase 4: inflection_to_pali_words — unconditional.
+        cancel.check()?;
         {
             let t = Instant::now();
             let r = self.inflection_to_pali_words(&query_text, uid_prefix_ref, uid_suffix_ref)?;
@@ -1114,6 +1200,7 @@ impl DpdDbHandle {
         }
 
         // Phase 5: stem form exact match — gated on `results` empty.
+        cancel.check()?;
         if results.is_empty() {
             let t = Instant::now();
             let stem = pali_stem(&query_text, false);
@@ -1135,6 +1222,7 @@ impl DpdDbHandle {
         }
 
         // Phase 6: nospace-compound — gated on `results` empty.
+        cancel.check()?;
         if results.is_empty() && query_text.contains(' ') {
             let t = Instant::now();
             let nospace_query = query_text.replace(' ', "");
@@ -1163,7 +1251,7 @@ impl DpdDbHandle {
         // `deconstructor_unpack()`'s `words_joined` strings — same order).
         let t = Instant::now();
         let (dec_row, dec_timing) =
-            self.dpd_deconstructor_query_timed(&query_text, deconstructor_exact_only)?;
+            self.dpd_deconstructor_query_timed(&query_text, deconstructor_exact_only, cancel)?;
         timing.dec = Some(dec_timing);
         if let Some(lookup) = dec_row {
             // A lookup row can match on i2h/headwords while carrying an empty
@@ -1176,6 +1264,7 @@ impl DpdDbHandle {
             for (words_joined_str, component_words) in words_joined.into_iter().zip(nested.into_iter()) {
                 let mut components: Vec<DeconstructionComponent> = Vec::new();
                 for comp_word in component_words {
+                    cancel.check()?;
                     let hws = self.inflection_to_pali_words(&comp_word, uid_prefix_ref, uid_suffix_ref)?;
                     let res_words: Vec<UDpdWord> =
                         hws.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
@@ -1210,6 +1299,7 @@ impl DpdDbHandle {
         // Phase 8: "starts with" fallbacks — only when BOTH direct and
         // component results are empty (i.e. the flat list is still empty).
         // Their uids count as direct_uids.
+        cancel.check()?;
         if results.is_empty() {
             let t = Instant::now();
             let mut q = dpd_headwords::table
@@ -1287,13 +1377,14 @@ impl DpdDbHandle {
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
         log_timing: TimingLog,
+        cancel: &LookupCancel,
     ) -> Result<GroupedDpdLookup> {
         // The first base candidate DPD has results for, else the shortened
         // base. A base has no ` ti`, so this does not come back here.
         let mut chosen: Option<(String, GroupedDpdLookup)> = None;
         for candidate in iti_base_candidates(joined, base) {
             let lookup = self.dpd_lookup_grouped_inner(
-                &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix, log_timing,
+                &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix, log_timing, cancel,
             )?;
             let found = !lookup.results.is_empty();
             if chosen.is_none() || found {
@@ -1307,6 +1398,7 @@ impl DpdDbHandle {
         let base = base.as_str();
 
         let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
+        cancel.check()?;
         let iti_results = self.dpd_iti_results(
             do_pali_sort, uid_prefix_pat.as_deref(), uid_suffix_pat.as_deref(),
         )?;
@@ -1420,11 +1512,24 @@ impl DpdDbHandle {
     ///
     /// WordSummary's lookup path, so it logs `DPD-LOOKUP-TIMING:` for every
     /// call.
-    pub fn dpd_lookup_grouped_json(&self, query: &str, deconstructor_exact_only: bool) -> String {
-        match self.dpd_lookup_grouped_inner(
-            query, false, true, deconstructor_exact_only, None, None, TimingLog::Always,
+    ///
+    /// `None` when `cancel` was cancelled: a newer lookup superseded this one
+    /// and nothing should be shown. A real error is logged and gives an empty
+    /// lookup, which WordSummary shows as "No results".
+    pub fn dpd_lookup_grouped_json(
+        &self,
+        query: &str,
+        deconstructor_exact_only: bool,
+        cancel: &LookupCancel,
+    ) -> Option<String> {
+        match self.dpd_lookup_grouped_cancellable(
+            query, false, true, deconstructor_exact_only, None, None, cancel,
         ) {
-            Ok(grouped) => serde_json::to_string(&grouped).unwrap_or_default(),
+            Ok(grouped) => Some(serde_json::to_string(&grouped).unwrap_or_default()),
+            Err(e) if is_lookup_cancelled(&e) => {
+                info(&format!("dpd_lookup_grouped_json(): {}: {}", query, e));
+                None
+            }
             Err(e) => {
                 error(&format!("{}", e));
                 let empty = GroupedDpdLookup {
@@ -1433,7 +1538,7 @@ impl DpdDbHandle {
                     deconstructions: Vec::new(),
                     direct_uids: Vec::new(),
                 };
-                serde_json::to_string(&empty).unwrap_or_default()
+                Some(serde_json::to_string(&empty).unwrap_or_default())
             }
         }
     }
