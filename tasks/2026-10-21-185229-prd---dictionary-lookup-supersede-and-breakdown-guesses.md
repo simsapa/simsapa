@@ -5,8 +5,9 @@
 Follows commit `a8bff079` (dpd, gloss: resolve quoted iti-sandhi words).
 
 When a word is not in the DPD, the last stage of the dictionary lookup tries to
-guess it. It takes about **1.9 s on desktop and up to 30 s on a phone**, and it
-usually finds nothing useful. Two problems follow from this:
+guess it. It takes about **1.9 s on desktop and up to 30 s on a phone** (the
+30 s is a user report from an older 32-bit phone), and it usually finds nothing
+useful. Two problems follow from this:
 
 1. **A newer lookup does not replace an older one.** If the user taps another
    word while a slow lookup is running, the word summary panel shows the new
@@ -17,7 +18,8 @@ usually finds nothing useful. Two problems follow from this:
 The goal: the latest lookup always runs and always wins, superseded backend work
 stops early, and the guessing stage is either made cheap, put behind a setting
 that is off by default, or removed. Which of these is decided by a measurement
-that is the first part of this PRD.
+that is the first part of this PRD. If the guesses are kept, they are made cheap
+with a **partial index** on the `lookup` table (§1.2, FR-B1).
 
 ### 1.1 What the code does today (verified by reading the source)
 
@@ -108,6 +110,81 @@ So case folding hardly matters for a Pāli query. The real difference is
 returns the first match in table (rowid) order, which is effectively arbitrary,
 while a range returns the first in key order. A range rewrite therefore has to
 define which row it picks, not just match `LIKE`.
+
+### 1.2 How to make the guesses cheap: comparison and choice
+
+Measured during implementation (task list, Measurements, "before" and 2.8).
+
+**Where the time goes, measured.** On desktop (in the app) and on a Galaxy S23,
+attempts 2 and 4 are **96–99 %** of every lookup of an unknown word: about
+360–560 ms per scan in the app's build, ~140 ms in an optimised SQLite. Every
+other phase takes a few milliseconds. Both machines keep `dpd.sqlite3` in the
+page cache, so neither reproduces the 30 s.
+
+**The cost that carries over to other hardware** is how much SQLite reads. Measured on the dist DB,
+with the file evicted from the page cache (`posix_fadvise(DONTNEED)`) for the
+cold runs. The `lookup` table is 105,326 pages (431 MB); its key index is 8,354
+pages (34 MB). `sam` is the largest 3-letter prefix range (26,507 keys, 18,770
+with a break-down), which attempt 4 reaches from any 4-letter word.
+
+| Form | Typical miss | Worst prefix (`sam`) |
+|---|---|---|
+| **A** today's `LIKE 'p%'`, first row in table order | 431 MB, the whole table | 0.2 MB (hits at once) |
+| **B** index range, shortest key, then 1 row | 0.1 MB | 0.8 MB, but the row may have no break-down |
+| **C** range + `deconstructor != ''`, shortest key, one statement, **no** new index | 0.1 MB | 17.7 MB, ~4,300 scattered table pages |
+| **D** shortest keys from the index, then rows one by one until one has a break-down | 0.1 MB | 0.9 MB (18 rows checked; `saṁ` needed 355) |
+
+**Extrapolation to an old 32-bit phone** (assumed: Cortex-A7/A53 at 1.2–1.4 GHz,
+1–2 GB RAM, eMMC 4.5/5.0; not measured):
+- **A:** the 431 MB table cannot stay in the page cache, so each scan reads it
+  from flash, 3–11 s at 40–150 MB/s, plus 1.5–2 s of CPU. A miss runs two
+  scans: **~6–25 s per lookup**. With the double lookup per tap that FR-C1
+  removes, **30 s is consistent with A alone.**
+- **C without an index:** ~4,300 random page reads for `sam`, **≥ 2 s** in one
+  statement that cancellation cannot stop (FR-C8).
+- **B, D:** at most ~1 MB, **under ~0.2 s** worst case at an assumed 2,000
+  random 4 KB reads/s.
+
+**Pros and cons.**
+- **A** needs no change, but it reads the whole table on every miss. Its cost
+  grows with each DPD release, it returns an arbitrary row (table order),
+  possibly one with no break-down, and as one statement it cannot be cancelled.
+- **B** is cheap, index-only and deterministic. But the shortest key often has
+  no break-down (`sam`, `saṁ`, `pupphase`), so the guess costs a query and
+  contributes nothing. It can also hide a useful row just behind the shortest
+  key.
+- **C (without index)** is one statement, deterministic, and always returns a
+  row with a break-down. But the break-down is not in the index, so SQLite
+  fetches a table row for every key in the range. `ORDER BY length(…)` does
+  not follow index order, so it cannot stop early. Short prefixes make it
+  slow, and it cannot be cancelled.
+- **D** gives C's result at B's cost and can be cancelled between statements.
+  But it needs a Rust loop and a cap on rows checked, and the cap can drop a
+  guess.
+
+**Choice: C on a partial index.** The app is in its testing phase, so a new
+`dpd.sqlite3` release costs nothing. With
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_lookup_key_with_deconstructor
+    ON lookup(lookup_key) WHERE deconstructor != '';
+```
+
+the range in C reads only index entries that already have a break-down, and
+fetches one row, the winner. For `sam` this is ~18,770 small index entries
+instead of ~4,300 scattered table pages, **estimated** under 1 MB, close to B.
+Compared with D:
+
+- C gives the same row as D (same rule);
+- it is simpler code, with no loop and no cap;
+- the selection is one short statement, so the cost of not being able to
+  cancel it is small.
+
+These are estimates. FR-B1a plans the measurement that has to confirm them
+before the implementation relies on them, and names D as the fallback if it
+does not.
+
+If the FR-A5 decision is **Remove**, none of this is built.
 
 ## 2. Goals
 
@@ -212,28 +289,85 @@ and in `docs/search-snippet-highlight-pipeline.md` §9.
 
 ### 4.2 Phase B — Make the guesses cheap, then apply the decision
 
-**FR-B1 — Range form for the deconstructor guesses** (needed by Keep and
-Setting; skip if the decision is Remove). Replace both `LIKE '<prefix>%'`
-queries in `dpd_deconstructor_query()` with index ranges on `lookup_key`, so
-neither scans the table.
-- The range runs on the lowercase prefix, using `prefix_upper_bound()`. No
-  second, capitalised range: the mixed-case keys are English entries (§1.1).
-- Only rows **with a break-down** (`deconstructor != ''`) are candidates, since
-  a row without one contributes nothing (§1.1). Adopt this unless FR-A3 shows it
-  loses useful guesses.
-- The row returned must be chosen **deterministically**: the shortest matching
-  key, ties broken by key order. Do not depend on table order.
-- Measured on desktop (warm) for the prefix `saṁ`, a 7,509-key range:
-  - shortest key, over the covering index alone: **0.7 ms**;
-  - adding `deconstructor != ''`, which reads table rows: **3.9 ms**.
+**FR-B1 — Partial index and range form for the deconstructor guesses** (needed
+by Keep and Setting; skip if the decision is Remove). See §1.2 for the
+comparison.
+- **Index.** Add to `scripts/dpd-btree-indexes.sql`:
+  ```sql
+  CREATE INDEX IF NOT EXISTS idx_lookup_key_with_deconstructor
+      ON lookup(lookup_key) WHERE deconstructor != '';
+  ```
+  It goes before the script's `VACUUM`. The bootstrap already runs `ANALYZE` on
+  `dpd.sqlite3` afterwards (`cli/src/bootstrap/mod.rs`), so the planner gets
+  statistics for it. Comment in the script why the index exists and the
+  literal-predicate rule below.
+- **Query.** Replace both `LIKE '<prefix>%'` queries in
+  `dpd_deconstructor_query()` with one helper that selects the key over the
+  partial index, then loads that row by primary key:
+  ```sql
+  SELECT lookup_key FROM lookup
+   WHERE lookup_key >= ?1 AND lookup_key < ?2 AND deconstructor != ''
+   ORDER BY length(lookup_key), lookup_key LIMIT 1
+  -- ?2 = prefix_upper_bound(?1)
+  ```
+  - The range runs on the lowercase prefix. No second, capitalised range: the
+    mixed-case keys are English entries (§1.1). Say in a comment that the query
+    is lowercase (§7).
+  - **Only rows with a break-down are candidates.** A row without one
+    contributes nothing (§1.1). Adopt this unless FR-A3 shows it loses useful
+    guesses; then the index has no purpose and the query drops the filter and
+    runs on the primary-key index (form B).
+  - **The row is chosen deterministically:** shortest key, ties broken by key
+    order. Never table order.
+- **Guard: the literal predicate.** SQLite uses a partial index only when it can
+  prove that the query's `WHERE` implies the index's `WHERE`. A bound parameter
+  cannot be proven: `deconstructor != ?`, which Diesel's `.ne("")` produces,
+  silently bypasses the index. In that case the query still returns the right
+  row, but by fetching table rows (form C without index). So:
+  - the selection SQL is a **`const` string** with the literal `!= ''`, run
+    with `diesel::sql_query`;
+  - the test (FR-T1) runs `EXPLAIN QUERY PLAN` on **that same const**.
+- **Guard: a database without the index.** A device or developer machine with
+  an older `dpd.sqlite3` lacks the index. The query stays correct but is slow
+  for short prefixes (§1.2, C without index).
+  - Detect this once per process (`sqlite_master` lookup, cached).
+  - Log one `info` line naming the index and the consequence, so a user's
+    `log.txt` shows it.
+  - Do **not** add a fallback query path: that would bring back D's code, which
+    the index exists to avoid.
 
-  The row reads are the cost that grows on a phone with a cold cache. FR-A2 must
-  include the largest 3-letter prefix range that attempt 4 can produce (a
-  4-letter word minus its last letter). If that is slow on the device, select
-  the shortest key over the covering index first and check its break-down
-  second.
-- Verify with `EXPLAIN QUERY PLAN` (in a test or by hand) that the statement is
-  `SEARCH lookup USING INDEX sqlite_autoindex_lookup_1`, never `SCAN lookup`.
+**FR-B1a — Verify the index before relying on it** (planned measurement; run at
+implementation time, before the FR-B1 code is written). §1.2's figures for the
+indexed form are estimates. On a **scratch copy** of the `lookup` table, never
+the dist DB:
+1. Recreate `lookup` with its original DDL, copy the rows in rowid order,
+   `ANALYZE`, then create the index and `ANALYZE` again.
+2. Record the index size (`dbstat`) and how long `CREATE INDEX` took.
+3. `EXPLAIN QUERY PLAN`:
+   - with the literal predicate it must be
+     `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`;
+   - with `deconstructor != ?` it is expected **not** to use the index. That
+     confirms the trap the guard is for.
+   - Check both with `sqlite_stat1` present, because statistics change which
+     index the planner picks.
+4. Measure cold and warm time, bytes requested (`rchar`) and bytes from disk
+   (`read_bytes`). Use the same prefix set as the "before" measurement: the
+   five test words' attempt-2 and attempt-4 prefixes, plus `sam`, `par`, `paṭ`,
+   `anu`, `upa` and `saṁ`.
+5. **Equivalence:** for every attempt-2 and attempt-4 prefix in the FR-A3
+   sample, the indexed query returns the same key as the same SQL forced onto
+   the primary-key index (`INDEXED BY sqlite_autoindex_lookup_1`).
+
+**Pass criteria:**
+- the plan uses the index;
+- equivalence is 100 %;
+- the worst case reads **≤ 2 MB** from disk (≈ 500 random pages, ≤ 0.25 s on
+  the assumed old eMMC);
+- warm time for `sam` stays within a few tens of ms on desktop.
+
+If any criterion fails, record why and switch FR-B1 to **form D** (§1.2): keys
+from the primary-key index, then rows one at a time until one has a break-down,
+with a cap, and no new index.
 
 **FR-B2 — Setting** (Setting branch only).
 - Add an `AppSettings` field, e.g. `dpd_breakdown_prefix_guesses: bool`,
@@ -371,9 +505,16 @@ The Dictionary search tab already shows its own
 
 **FR-T1** Backend tests run against the dist database (see `CLAUDE.md`), so
 insert nothing; these tests only read.
-- The FR-A5 branch is enforced by a test: Keep/Setting asserts that attempts 2
-  and 4 use an index (via `EXPLAIN QUERY PLAN`) and pick a deterministic row;
-  Remove asserts that an unknown 6-letter word yields no deconstructor row.
+- The FR-A5 branch is enforced by a test:
+  - **Keep/Setting:**
+    - `EXPLAIN QUERY PLAN` on the helper's `const` SQL shows
+      `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`, never
+      `SCAN lookup`. This requires the dist DB to have the index (task list).
+    - For a few prefixes (`sam`, `saṁ`, `par`, `pupphas`,
+      `aggaphalasukha`), the result equals the same SQL with
+      `INDEXED BY sqlite_autoindex_lookup_1`.
+    - The row picked is the shortest key.
+  - **Remove:** an unknown 6-letter word yields no deconstructor row.
 - A cancelled token makes the cancellable grouped lookup return the
   `LookupCancelled` error, and leaves the memo unchanged: a memo already holding
   query X still holds X after a cancelled lookup of Y.
@@ -408,8 +549,9 @@ function.
 - Changing the Gloss tab's lookups (already exact-only).
 - Changing iti-sandhi handling from `a8bff079`.
 - Making `set_query()` accept words shorter than 4 characters.
-- New indexes or any change to `dpd.sqlite3` (no re-bootstrap, no DB version
-  bump).
+- Any change to `dpd.sqlite3` beyond the one partial index of FR-B1. No other
+  new index, no table or column change. The version bump that ships the
+  re-bootstrapped DB is the maintainer's, not part of the implementation.
 
 ## 6. Design Considerations
 
@@ -428,6 +570,23 @@ function.
   `normalize_plain_text()`, which calls `to_lowercase()`. A `uid:` query skips
   normalization, but it never reaches the deconstructor guesses. FR-B1 relies on
   this; say so in a comment at the range query.
+- **Delivering the index.** `dpd.sqlite3` has no runtime migrations; it is
+  shipped pre-built. The index reaches a device only through a re-bootstrapped
+  `dpd.sqlite3`:
+  - The bootstrap creates it through `create_dpd_indexes()` →
+    `scripts/dpd-btree-indexes.sql`, then runs `ANALYZE`.
+  - Development machines and the test phone need the new DB too. The dist DB
+    must have the index before the FR-T1 plan test can pass; it can be applied
+    to the dist DB by hand (`CREATE INDEX` + `ANALYZE`), with the maintainer's
+    go-ahead.
+  - A device without the index stays correct but slow for short prefixes
+    (FR-B1 guard).
+- **Debug builds understate SQLite speed.** The desktop CMake build has no
+  `CMAKE_BUILD_TYPE` and the beta-debug APK is `Debug`, so the bundled SQLite
+  (`libsqlite3-sys`, `bundled`) is likely compiled without optimisation. A scan
+  took ~430 ms warm in the app and in `cargo test`, against ~140 ms in an
+  optimised SQLite. Compare before/after timings only between builds of the
+  same type, and expect release builds to be faster.
 - **Token plumbing stays narrow** (FR-C3). The lookup functions are called from
   about 50 places (`dpd_lookup` 21, `dpd_lookup_grouped` 24, the memo 5), mostly
   tests. Only the WordSummary bridge call, the `results_page()` selector, the
@@ -456,8 +615,8 @@ function.
 - **Logging:** use `info()` in Rust and `logger` in QML. Never `console`.
 - **Docs to update:**
   - `docs/search-snippet-highlight-pipeline.md` §9: replace the "still `LIKE`"
-    note with the chosen branch, the measured numbers and the
-    deterministic-row rule.
+    note with the chosen branch, the partial index, the literal-predicate rule,
+    the missing-index log line and the deterministic-row rule.
   - `docs/pali-sandhi-and-quote-marks.md` if the function table changes.
   - The API doc if `/dict_combined_search` results change.
   - `PROJECT_MAP.md` for the new cancellation type.
@@ -466,6 +625,10 @@ function.
 
 - FR-A2 rerun after the change: every unknown test word under 2 s on the phone,
   cold, and under 100 ms on desktop warm (from the `DPD-LOOKUP-TIMING:` totals).
+  Includes `sam`'s worst case, the largest 3-letter prefix.
+- FR-B1a pass criteria met: the index is used, results are equivalent, and the
+  worst case reads ≤ 2 MB. Bytes read are the figure that carries over to
+  old hardware; the fast test devices cannot show the 30 s case directly.
 - Manual check on the phone: tap word A (unknown), then within a second tap
   word B. Word B's results appear without waiting for A, and A's results never
   appear. Repeat in the Dictionary search tab by typing a new query during a
@@ -478,3 +641,9 @@ function.
    the review table is ready.
 2. If FR-A2 shows the phone is still slow after FR-B1 for reasons outside the
    `lookup` scans, does that become a follow-up PRD or part of this one?
+3. The old-phone figures in §1.2 are assumed. If the reporting user's phone
+   model is known, or a similar old device is available, an FR-A2 run on it
+   would replace the extrapolation with a measurement.
+4. Are the desktop and beta-debug builds' SQLite really unoptimised (§7)? If
+   so, a release-build timing would show the real user-facing numbers. Not
+   needed for this PRD's decisions, which rest on bytes read.

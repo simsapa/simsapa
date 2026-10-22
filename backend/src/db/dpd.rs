@@ -60,6 +60,94 @@ type GroupedLookupKey = (String, bool, bool, bool, Option<String>, Option<String
 static GROUPED_LOOKUP_MEMO: Mutex<Option<(GroupedLookupKey, Arc<GroupedDpdLookup>)>> =
     Mutex::new(None);
 
+/// Elapsed milliseconds since `t`, for the `DPD-LOOKUP-TIMING:` line.
+fn elapsed_ms(t: Instant) -> f64 {
+    t.elapsed().as_secs_f64() * 1000.0
+}
+
+/// A timing field of the `DPD-LOOKUP-TIMING:` line: `-` for a step that did
+/// not run.
+fn fmt_ms(v: Option<f64>) -> String {
+    match v {
+        Some(ms) => format!("{:.1}", ms),
+        None => "-".to_string(),
+    }
+}
+
+/// Per-attempt timings of `dpd_deconstructor_query()`, and which attempt
+/// produced the row.
+#[derive(Debug, Default, Clone)]
+struct DeconstructorTiming {
+    attempts: [Option<f64>; 4],
+    hit: Option<u8>,
+}
+
+impl DeconstructorTiming {
+    fn format(&self) -> String {
+        let hit = self.hit.map_or("none".to_string(), |n| n.to_string());
+        format!(
+            "[a1={},a2={},a3={},a4={},hit={}]",
+            fmt_ms(self.attempts[0]),
+            fmt_ms(self.attempts[1]),
+            fmt_ms(self.attempts[2]),
+            fmt_ms(self.attempts[3]),
+            hit,
+        )
+    }
+}
+
+/// When the grouped lookup writes its `DPD-LOOKUP-TIMING:` line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimingLog {
+    /// Every call: the interactive entry points (WordSummary, Dictionary tab).
+    Always,
+    /// Only a call that took at least `TIMING_LOG_SLOW_MS`. The Gloss tab
+    /// looks up every word of a text, so logging each call would flood
+    /// `log.txt`.
+    WhenSlow,
+}
+
+const TIMING_LOG_SLOW_MS: f64 = 100.0;
+
+/// The stage timings of one `dpd_lookup_grouped()` call.
+#[derive(Debug, Default)]
+struct GroupedTiming {
+    /// Phases 1–8; `None` for a phase that did not run.
+    phases: [Option<f64>; 8],
+    dec: Option<DeconstructorTiming>,
+    first_results_phase: Option<u8>,
+    /// The lookup was resolved as `<base> + iti`; the base lookups log their
+    /// own lines.
+    iti_split: bool,
+}
+
+impl GroupedTiming {
+    /// Record phase `n` (1-based) as having run since `t`, and note it as the
+    /// first phase with results if `has_results` and none was noted before.
+    fn end_phase(&mut self, n: u8, t: Instant, has_results: bool) {
+        self.phases[(n - 1) as usize] = Some(elapsed_ms(t));
+        if has_results && self.first_results_phase.is_none() {
+            self.first_results_phase = Some(n);
+        }
+    }
+
+    fn log_line(&self, query: &str, total_ms: f64) -> String {
+        let phases: Vec<String> = self
+            .phases
+            .iter()
+            .enumerate()
+            .map(|(i, v)| format!("p{}={}", i + 1, fmt_ms(*v)))
+            .collect();
+        let dec = self.dec.as_ref().map_or("-".to_string(), |d| d.format());
+        let first = self.first_results_phase.map_or("none".to_string(), |n| n.to_string());
+        let via = if self.iti_split { " via=iti_split" } else { "" };
+        format!(
+            "DPD-LOOKUP-TIMING: q=\"{}\" total={:.1} {} dec={} first_results_phase={}{}",
+            query, total_ms, phases.join(" "), dec, first, via,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookupResult {
     pub uid: String,
@@ -146,9 +234,20 @@ impl DpdDbHandle {
     }
 
     pub fn dpd_deconstructor_query(&self, query_text: &str, exact_only: bool) -> Result<Option<Lookup>> {
+        self.dpd_deconstructor_query_timed(query_text, exact_only).map(|(row, _)| row)
+    }
+
+    /// `dpd_deconstructor_query()`, also returning how long each attempt took
+    /// and which one produced the row.
+    fn dpd_deconstructor_query_timed(
+        &self,
+        query_text: &str,
+        exact_only: bool,
+    ) -> Result<(Option<Lookup>, DeconstructorTiming)> {
         use crate::db::dpd_schema::lookup::dsl::*;
 
         let db_conn = &mut self.get_conn().expect("Can't get db conn");
+        let mut timing = DeconstructorTiming::default();
 
         // NOTE: Return exact match if possible because 'starts with' matches show confusing additional words.
 
@@ -160,18 +259,28 @@ impl DpdDbHandle {
         let exact_only = exact_only || iti_base.is_some();
 
         // Attempt 1: Exact match.
+        let t = Instant::now();
         let mut result: Option<Lookup> = lookup
             .filter(lookup_key.eq(query_text.clone()))
             .first::<Lookup>(db_conn)
             .optional()?; // .optional() converts NotFound to Ok(None), other errors propagate.
+        timing.attempts[0] = Some(elapsed_ms(t));
+        if result.is_some() {
+            timing.hit = Some(1);
+        }
 
         // Attempt 2: If not exact_only, try to match as 'starts with'.
         if !exact_only
             && result.is_none() && query_text.chars().count() >= 4 {
+                let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.like(&format!("{}%", query_text)))
                     .first::<Lookup>(db_conn)
                     .optional()?;
+                timing.attempts[1] = Some(elapsed_ms(t));
+                if result.is_some() {
+                    timing.hit = Some(2);
+                }
             }
 
         // Attempt 3: If the query contained multiple words, remove spaces to find compound forms.
@@ -179,10 +288,15 @@ impl DpdDbHandle {
             let query_text_no_space = query_text.replace(" ", "");
             // Avoid querying with an empty string if query_text was all spaces.
             if !query_text_no_space.is_empty() {
+                let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.eq(&query_text_no_space))
                     .first::<Lookup>(db_conn)
                     .optional()?;
+                timing.attempts[2] = Some(elapsed_ms(t));
+                if result.is_some() {
+                    timing.hit = Some(3);
+                }
             }
         }
 
@@ -196,14 +310,19 @@ impl DpdDbHandle {
                 // So, all_but_last_char will not be empty.
                 let all_but_last_char: String = query_text.chars().take(num_chars - 1).collect();
 
+                let t = Instant::now();
                 result = lookup
                     .filter(lookup_key.like(&format!("{}%", all_but_last_char)))
                     .first::<Lookup>(db_conn)
                     .optional()?;
+                timing.attempts[3] = Some(elapsed_ms(t));
+                if result.is_some() {
+                    timing.hit = Some(4);
+                }
             }
         }
 
-        Ok(result)
+        Ok((result, timing))
     }
 
     /// Whether DPD analyses the joined sandhi form `joined` (e.g.
@@ -756,6 +875,9 @@ impl DpdDbHandle {
     /// and in several break-downs. The flat `results` list is
     /// direct-first, then deconstructor-derived in first-seen order,
     /// deduplicated by uid overall.
+    ///
+    /// Logs a `DPD-LOOKUP-TIMING:` line when the call takes at least
+    /// `TIMING_LOG_SLOW_MS`.
     #[allow(clippy::too_many_arguments)]
     pub fn dpd_lookup_grouped(
         &self,
@@ -766,9 +888,56 @@ impl DpdDbHandle {
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
     ) -> Result<GroupedDpdLookup> {
+        self.dpd_lookup_grouped_inner(
+            query_text_orig, do_pali_sort, exact_only, deconstructor_exact_only,
+            uid_prefix, uid_suffix, TimingLog::WhenSlow,
+        )
+    }
+
+    /// `dpd_lookup_grouped()` with its `DPD-LOOKUP-TIMING:` line written
+    /// according to `log_timing`. The line is written for every return,
+    /// including an error.
+    #[allow(clippy::too_many_arguments)]
+    fn dpd_lookup_grouped_inner(
+        &self,
+        query_text_orig: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+        log_timing: TimingLog,
+    ) -> Result<GroupedDpdLookup> {
         info(&format!("dpd_lookup_grouped(): query_text_orig: {}", query_text_orig));
         let timer = Instant::now();
+        let mut timing = GroupedTiming::default();
 
+        let res = self.dpd_lookup_grouped_phases(
+            query_text_orig, do_pali_sort, exact_only, deconstructor_exact_only,
+            uid_prefix, uid_suffix, log_timing, &mut timing,
+        );
+
+        let total_ms = elapsed_ms(timer);
+        if log_timing == TimingLog::Always || total_ms >= TIMING_LOG_SLOW_MS {
+            info(&timing.log_line(query_text_orig, total_ms));
+        }
+        res
+    }
+
+    /// The phases of `dpd_lookup_grouped()`, recording their timings in
+    /// `timing`.
+    #[allow(clippy::too_many_arguments)]
+    fn dpd_lookup_grouped_phases(
+        &self,
+        query_text_orig: &str,
+        do_pali_sort: bool,
+        exact_only: bool,
+        deconstructor_exact_only: bool,
+        uid_prefix: Option<&str>,
+        uid_suffix: Option<&str>,
+        log_timing: TimingLog,
+        timing: &mut GroupedTiming,
+    ) -> Result<GroupedDpdLookup> {
         use crate::db::dpd_schema::dpd_headwords;
         use crate::db::dpd_schema::dpd_roots;
 
@@ -810,6 +979,7 @@ impl DpdDbHandle {
         if uid_candidate.ends_with("/dpd")
             || (!uid_candidate.is_empty() && uid_candidate.chars().all(char::is_numeric))
         {
+            let t = Instant::now();
             let mut res_words: Vec<UDpdWord> = Vec::new();
             let ref_str = uid_candidate.replace("/dpd", "");
             if ref_str.chars().all(char::is_numeric) {
@@ -863,9 +1033,9 @@ impl DpdDbHandle {
 
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
+            timing.end_phase(1, t, !results.is_empty());
 
             if !results.is_empty() {
-                info(&format!("Query took: {:?}", timer.elapsed()));
                 return Ok(GroupedDpdLookup {
                     query: query_text_orig.to_string(),
                     results,
@@ -878,15 +1048,16 @@ impl DpdDbHandle {
         // An iti-sandhi word that DPD does not analyse as `… + iti` is the
         // base word plus `iti` (see `dpd_has_iti_breakdown`).
         if let Some(base) = &iti_base && !self.dpd_has_iti_breakdown(&query_text)? {
-            let grouped = self.dpd_lookup_grouped_iti_split(
+            timing.iti_split = true;
+            return self.dpd_lookup_grouped_iti_split(
                 query_text_orig, &query_text, base, do_pali_sort, exact_only, uid_prefix, uid_suffix,
-            )?;
-            info(&format!("Query took: {:?}", timer.elapsed()));
-            return Ok(grouped);
+                log_timing,
+            );
         }
 
         // Phase 2: headword exact match.
         {
+            let t = Instant::now();
             let mut q = dpd_headwords::table
                 .filter(dpd_headwords::lemma_clean.eq(&query_text)
                         .or(dpd_headwords::word_ascii.eq(&query_text)))
@@ -902,9 +1073,11 @@ impl DpdDbHandle {
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
+            timing.end_phase(2, t, !results.is_empty());
         }
 
         // Phase 3: roots.
+        let t = Instant::now();
         let mut roots: HashSet<DpdRoot> = HashSet::new();
         for col in ["root_clean", "root_no_sign", "word_ascii"] {
             let mut q = dpd_roots::table.into_boxed();
@@ -927,18 +1100,22 @@ impl DpdDbHandle {
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
         }
+        timing.end_phase(3, t, !results.is_empty());
 
         // Phase 4: inflection_to_pali_words — unconditional.
         {
+            let t = Instant::now();
             let r = self.inflection_to_pali_words(&query_text, uid_prefix_ref, uid_suffix_ref)?;
             let res_words: Vec<UDpdWord> =
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
+            timing.end_phase(4, t, !results.is_empty());
         }
 
         // Phase 5: stem form exact match — gated on `results` empty.
         if results.is_empty() {
+            let t = Instant::now();
             let stem = pali_stem(&query_text, false);
             let mut q = dpd_headwords::table
                 .filter(dpd_headwords::stem.eq(&stem))
@@ -954,10 +1131,12 @@ impl DpdDbHandle {
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
+            timing.end_phase(5, t, !results.is_empty());
         }
 
         // Phase 6: nospace-compound — gated on `results` empty.
         if results.is_empty() && query_text.contains(' ') {
+            let t = Instant::now();
             let nospace_query = query_text.replace(' ', "");
             let mut q = dpd_headwords::table
                 .filter(dpd_headwords::lemma_clean.eq(&nospace_query)
@@ -974,6 +1153,7 @@ impl DpdDbHandle {
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
             direct_uids.extend(new_uids);
+            timing.end_phase(6, t, !results.is_empty());
         }
 
         // Phase 7: deconstructor phase — UN-gated (unlike flat lookup). Record
@@ -981,7 +1161,11 @@ impl DpdDbHandle {
         // results to the flat list. Component words come from
         // `deconstructor_nested()` (list-of-lists parallel to
         // `deconstructor_unpack()`'s `words_joined` strings — same order).
-        if let Some(lookup) = self.dpd_deconstructor_query(&query_text, deconstructor_exact_only)? {
+        let t = Instant::now();
+        let (dec_row, dec_timing) =
+            self.dpd_deconstructor_query_timed(&query_text, deconstructor_exact_only)?;
+        timing.dec = Some(dec_timing);
+        if let Some(lookup) = dec_row {
             // A lookup row can match on i2h/headwords while carrying an empty
             // deconstructor (common for ordinary recognized words now that this
             // phase is un-gated). Skip those without unpacking — `deconstructor_unpack`
@@ -1021,11 +1205,13 @@ impl DpdDbHandle {
             }
             }
         }
+        timing.end_phase(7, t, !results.is_empty());
 
         // Phase 8: "starts with" fallbacks — only when BOTH direct and
         // component results are empty (i.e. the flat list is still empty).
         // Their uids count as direct_uids.
         if results.is_empty() {
+            let t = Instant::now();
             let mut q = dpd_headwords::table
                 .filter(dpd_headwords::lemma_clean.ge(&query_text).and(dpd_headwords::lemma_clean.lt(prefix_upper_bound(&query_text)))
                         .or(dpd_headwords::word_ascii.ge(&query_text).and(dpd_headwords::word_ascii.lt(prefix_upper_bound(&query_text)))))
@@ -1059,6 +1245,7 @@ impl DpdDbHandle {
                 let new_uids = add_results(res_words, &mut results, &mut results_uids);
                 direct_uids.extend(new_uids);
             }
+            timing.end_phase(8, t, !results.is_empty());
         }
 
         // `exact_only` is honored by the direct-match phases implicitly (they
@@ -1066,7 +1253,6 @@ impl DpdDbHandle {
         // `dpd_lookup()` and future use.
         let _ = exact_only;
 
-        info(&format!("Query took: {:?}", timer.elapsed()));
         Ok(GroupedDpdLookup {
             query: query_text_orig.to_string(),
             results,
@@ -1100,13 +1286,14 @@ impl DpdDbHandle {
         exact_only: bool,
         uid_prefix: Option<&str>,
         uid_suffix: Option<&str>,
+        log_timing: TimingLog,
     ) -> Result<GroupedDpdLookup> {
         // The first base candidate DPD has results for, else the shortened
         // base. A base has no ` ti`, so this does not come back here.
         let mut chosen: Option<(String, GroupedDpdLookup)> = None;
         for candidate in iti_base_candidates(joined, base) {
-            let lookup = self.dpd_lookup_grouped(
-                &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix,
+            let lookup = self.dpd_lookup_grouped_inner(
+                &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix, log_timing,
             )?;
             let found = !lookup.results.is_empty();
             if chosen.is_none() || found {
@@ -1230,8 +1417,13 @@ impl DpdDbHandle {
     /// Serialized `dpd_lookup_grouped()` (PRD FR-A1). `deconstructor_exact_only`
     /// selects the deconstructor matching behavior: `false` for WordSummary's
     /// fuzzy list, `true` for the gloss path.
+    ///
+    /// WordSummary's lookup path, so it logs `DPD-LOOKUP-TIMING:` for every
+    /// call.
     pub fn dpd_lookup_grouped_json(&self, query: &str, deconstructor_exact_only: bool) -> String {
-        match self.dpd_lookup_grouped(query, false, true, deconstructor_exact_only, None, None) {
+        match self.dpd_lookup_grouped_inner(
+            query, false, true, deconstructor_exact_only, None, None, TimingLog::Always,
+        ) {
             Ok(grouped) => serde_json::to_string(&grouped).unwrap_or_default(),
             Err(e) => {
                 error(&format!("{}", e));

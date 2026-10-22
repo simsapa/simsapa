@@ -6,7 +6,7 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `bridges/assets/qml/SuttaSearchWindow.qml` — `set_summary_query()` calls `word_summary.lookup_from_outside()` instead of `set_query()` + `search_btn.click()`.
 - `bridges/assets/qml/tst_WordSummary.qml` — **New.** QML test: lookup starts while loading (and stops the timer), short word starts none, stale response ignored, empty-result line shown and replaced.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (`dpd_deconstructor_list`, setting getter/setter).
-- `backend/src/db/dpd.rs` — `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
+- `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
 - `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token and the `LookupCancelled` error type. (Or a small module next to `dpd.rs`; register it in `backend/src/lib.rs`.)
 - `backend/src/query_task.rs` — `SearchQueryTask` gets the token and the guesses flag as fields; `dpd_lookup_full()` uses them.
 - `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (WordSummary generation counter), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
@@ -15,7 +15,9 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `backend/src/app_data.rs` — `get_/set_dpd_breakdown_prefix_guesses()`, following `get_/set_search_as_you_type()` (Setting branch only).
 - `bridges/assets/qml/AppSettingsWindow.qml` — Checkbox in Find → Search Behavior, following `search_as_you_type_checkbox` (Setting branch only).
 - `backend/tests/test_dpd_lookup_cancel.rs` — **New.** Token and memo-not-stored tests.
-- `backend/tests/test_dpd_breakdown_guesses.rs` — **New.** Branch tests: `EXPLAIN QUERY PLAN`, deterministic row, break-down-only row, or (Remove branch) no guess.
+- `backend/tests/test_dpd_breakdown_guesses.rs` — **New.** Branch tests: `EXPLAIN QUERY PLAN` on the helper's `const` SQL (uses `idx_lookup_key_with_deconstructor`), equivalence with `INDEXED BY sqlite_autoindex_lookup_1`, shortest key, break-down-only row; or (Remove branch) no guess.
+- `scripts/dpd-btree-indexes.sql` — The partial index `idx_lookup_key_with_deconstructor ON lookup(lookup_key) WHERE deconstructor != ''`, with a comment on the literal-predicate rule (Keep/Setting only).
+- Scratchpad `guess_cost.py` — **Not committed.** The 2.8 cost harness (cold via `posix_fadvise(DONTNEED)`, `rchar` / `read_bytes`); 7.1 extends it for the indexed form on a scratch copy of `lookup`.
 - `backend/tests/test_dpd_breakdown_guess_sample.rs` — **New, `#[ignore]`d.** The FR-A3 usefulness sample; writes a TSV to a path from an env var.
 - `backend/tests/test_dpd_lookup_grouped.rs`, `test_dpd_deconstructor_list.rs`, `test_deconstructor_result_pagination.rs`, `test_dpd_lookup.rs` — Existing tests to keep passing; update an expectation only where the chosen branch changes a guess.
 - `docs/search-snippet-highlight-pipeline.md` — §9: replace the "still `LIKE`" note; record the decision, numbers and row rule.
@@ -83,15 +85,16 @@ Update the file after completing each sub-task, not just after completing an ent
   - Until 4.0 lands, the only `Always` caller is `dpd_lookup_grouped_json()`, which is WordSummary's path. That is enough for the 2.6/2.7 measurements.
 - `dpd_deconstructor_query()` has to report per-attempt times and which attempt hit, without changing its public return type for the other callers. Add a private variant that also returns a small `DeconstructorTiming` struct, and have the public function call it and drop the timing.
 
-- [ ] 2.0 `DPD-LOOKUP-TIMING:` per-stage log in the grouped lookup, and the "before" measurement on desktop and phone (FR-A1, FR-A2 first half)
-  - [ ] 2.1 Add the `DeconstructorTiming` struct and the private timed variant of `dpd_deconstructor_query()`. The public function delegates to it, so it behaves exactly as before.
-  - [ ] 2.2 Move the body of `dpd_lookup_grouped()` into a private inner function taking `TimingLog`; the public function becomes a `WhenSlow` wrapper. Time each phase with `Instant`, collect the timings into a local struct, and emit the one line, per the policy, at **every** return point (Phase 1's early return and the iti-split return included). A small guard or a single exit helper avoids missing one. The inner function is the one 4.3 extends with the token, so this split is not wasted.
-  - [ ] 2.2a Make `dpd_lookup_grouped_json()` (WordSummary's only path) call the inner function with `Always`.
-  - [ ] 2.3 Remove or fold in any existing `Query took:` line that the new line makes redundant inside `dpd_lookup_grouped()`. Leave `dpd_lookup()`'s line alone.
-  - [ ] 2.4 Run `cargo test` for the four existing DPD test files: behaviour is unchanged.
-  - [ ] 2.5 Choose 5 test words (desktop): Pāli forms of 6+ letters with no exact `lookup_key` row. Check with `sqlite3 … "select count(*) from lookup where lookup_key = '<w>'"`. Record them in this task file so 8.0 reuses them.
-  - [ ] 2.6 Desktop "before": look up each word in WordSummary, from a cold app start and again warm, and copy the timing lines into a `### Measurements` section at the end of this file.
-  - [ ] 2.7 Phone "before": ask the user to install the arm64 beta debug build and look up the same 5 words, cold and warm. Collect the lines from `make android-beta-debug-run` or `log.txt` into the same section. Note whether `a2` + `a4` account for most of the total. If they don't, add an entry under the PRD's Open Questions (§9 Q2) before continuing.
+- [x] 2.0 `DPD-LOOKUP-TIMING:` per-stage log in the grouped lookup, and the "before" measurement on desktop and phone (FR-A1, FR-A2 first half)
+  - [x] 2.1 Add the `DeconstructorTiming` struct and the private timed variant of `dpd_deconstructor_query()`. The public function delegates to it, so it behaves exactly as before.
+  - [x] 2.2 Move the body of `dpd_lookup_grouped()` into a private inner function taking `TimingLog`; the public function becomes a `WhenSlow` wrapper. Time each phase with `Instant`, collect the timings into a local struct, and emit the one line, per the policy, at **every** return point (Phase 1's early return and the iti-split return included). A small guard or a single exit helper avoids missing one. The inner function is the one 4.3 extends with the token, so this split is not wasted.
+  - [x] 2.2a Make `dpd_lookup_grouped_json()` (WordSummary's only path) call the inner function with `Always`.
+  - [x] 2.3 Remove or fold in any existing `Query took:` line that the new line makes redundant inside `dpd_lookup_grouped()`. Leave `dpd_lookup()`'s line alone.
+  - [x] 2.4 Run `cargo test` for the four existing DPD test files: behaviour is unchanged.
+  - [x] 2.5 Choose 5 test words (desktop): Pāli forms of 6+ letters with no exact `lookup_key` row. Check with `sqlite3 … "select count(*) from lookup where lookup_key = '<w>'"`. Record them in this task file so 8.0 reuses them.
+  - [x] 2.6 Desktop "before": look up each word in WordSummary, from a cold app start and again warm, and copy the timing lines into a `### Measurements` section at the end of this file.
+  - [x] 2.7 Phone "before": ask the user to install the arm64 beta debug build and look up the same 5 words, cold and warm. Collect the lines from `make android-beta-debug-run` or `log.txt` into the same section. Note whether `a2` + `a4` account for most of the total. If they don't, add an entry under the PRD's Open Questions (§9 Q2) before continuing.
+  - [x] 2.8 Hardware-independent cost per guess approach, to extrapolate to the old 32-bit phone the 30 s report came from: bytes SQLite requests (`rchar`) and bytes read from disk with the file evicted from the page cache (`posix_fadvise(DONTNEED)`), for today's `LIKE` and the candidate range forms. Recorded under Measurements.
 
 ### 3.0 — Specs
 
@@ -121,7 +124,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [ ] 3.3 Run it with `cargo test --test test_dpd_breakdown_guess_sample -- --ignored --nocapture`, with `DPD_GUESS_SAMPLE_OUT` set to a scratchpad path. Then copy about 50 rows into a review file, stratified so that both `other_results` values appear. Prefer rows that the default form for each branch would show (`a2_range_bd` / `a4_range_bd`).
   - [ ] 3.4 **Stop.** Give the user the review file path and the printed counts. Ask them to mark each row's `useful` column. Do not classify the rows yourself (FR-A4).
   - [ ] 3.5 From the marked file, compute the useful share, separately for rows with and without other results. Apply the FR-A5 thresholds, which the user may adjust. Confirm the chosen branch with the user.
-  - [ ] 3.6 Record the counts, the shares and the branch in the `### Measurements` section of this file. This is the source for 7.0 and the docs in 8.0. If the break-down-only filter lost useful guesses that the plain range found, record that too: it decides 7.2.
+  - [ ] 3.6 Record the counts, the shares and the branch in the `### Measurements` section of this file. This is the source for 7.0 and the docs in 8.0. If the break-down-only filter lost useful guesses that the plain range found, record that too: it decides whether the partial index is built at all (7.0).
 
 ### 4.0 — Specs
 
@@ -217,18 +220,42 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ### 7.0 — Specs
 
-- **Depends on:** the 3.0 decision, then 4.0–6.0 (so the setting value can ride with the token through the same call sites).
-- **Range form (Keep and Setting branches).** One helper is used for both attempts:
-  ```rust
-  fn deconstructor_prefix_guess(&self, conn, prefix: &str) -> Result<Option<Lookup>>
-  // SELECT * FROM lookup
-  //  WHERE lookup_key >= ?1 AND lookup_key < ?2 AND deconstructor != ''
-  //  ORDER BY length(lookup_key), lookup_key LIMIT 1
-  // ?2 = prefix_upper_bound(prefix)
+- **Depends on:** the 3.0 decision, then 4.0–6.0 (so the setting value can ride with the token through the same call sites). 7.1, the index measurement, needs only the 3.3 sample TSV, so it can run while the user reviews in 3.0.
+- **Approach (Keep and Setting branches): form C on a partial index.** The reasoning, the A–D comparison and the old-phone extrapolation are in PRD §1.2. The spec is PRD FR-B1, the planned measurement FR-B1a. In short:
+  - Form C without an index reads ~4,300 scattered table pages for `sam`: ≥ 2 s on an old phone, in one statement that cannot be cancelled.
+  - The partial index makes the break-down filter index-only. That is **estimated** close to form B's cost (under 1 MB for `sam`); 7.1 must confirm it.
+  - Form D (keys from the primary-key index, then rows one at a time, capped) is the **fallback** if 7.1 fails. It gives the same row without the index.
+- **Index**, in `scripts/dpd-btree-indexes.sql`, before the `VACUUM`:
+  ```sql
+  CREATE INDEX IF NOT EXISTS idx_lookup_key_with_deconstructor
+      ON lookup(lookup_key) WHERE deconstructor != '';
   ```
-  - Drop `AND deconstructor != ''` only if 3.6 recorded that it loses useful guesses.
-  - If 2.7/8.0 show the row reads are slow on the phone, do it in two steps: select the shortest key over the covering index first, then load that row (and its break-down).
+  The bootstrap runs `ANALYZE` on `dpd.sqlite3` after the script (`cli/src/bootstrap/mod.rs`). Nothing to add there.
+- **Query: one helper for both attempts,** two statements:
+  ```rust
+  /// Selects the guess over idx_lookup_key_with_deconstructor. The literal `!= ''` is
+  /// load-bearing: see PRD FR-B1 / docs §9.
+  pub(crate) const DECONSTRUCTOR_PREFIX_GUESS_SQL: &str =
+      "SELECT lookup_key FROM lookup \
+       WHERE lookup_key >= ?1 AND lookup_key < ?2 AND deconstructor != '' \
+       ORDER BY length(lookup_key), lookup_key LIMIT 1";
+
+  fn deconstructor_prefix_guess(&self, conn, prefix: &str) -> Result<Option<Lookup>>
+  // 1. diesel::sql_query(DECONSTRUCTOR_PREFIX_GUESS_SQL)
+  //      .bind::<Text, _>(prefix).bind::<Text, _>(prefix_upper_bound(prefix))
+  //      → Option<String> via a small #[derive(QueryableByName)] struct
+  // 2. lookup.filter(lookup_key.eq(key)).first::<Lookup>(conn)  (primary key)
+  ```
+  - Make the const reachable from the integration test: `pub`, or a `pub fn` returning it, so the test explains the very statement the code runs.
   - Add a comment stating the lowercase-query assumption (PRD §7).
+  - Drop `AND deconstructor != ''` only if 3.6 recorded that it loses useful guesses. Then the index is not built, and the query runs on the primary-key index (form B).
+- **Guards:**
+  - **Literal predicate.** Never write the filter as Diesel `.ne("")` or with a bound `?`: SQLite then cannot prove the partial index applies and silently fetches table rows. The 7.8 plan test is the check.
+  - **Database without the index** (an older `dpd.sqlite3`).
+    - On the first guess per process, check `sqlite_master` for `idx_lookup_key_with_deconstructor`, cached in a `OnceLock<bool>`.
+    - If missing, log one `info` line: `"dpd: index idx_lookup_key_with_deconstructor missing; break-down guesses will read table rows (slow for short prefixes). Re-download the DPD database."`
+    - No fallback query path.
+  - **Don't write to the dist DB from tests.** The plan test only reads. The dist DB gets the index in 7.4, with the user's go-ahead.
 - **Setting (Setting branch).**
   - `AppSettings.dpd_breakdown_prefix_guesses: bool`, default `false`.
   - Check how `AppSettings` deserialises a missing field: `#[serde(default)]` on the struct or field. Follow the existing fields.
@@ -244,27 +271,51 @@ Update the file after completing each sub-task, not just after completing an ent
   - **Dictionary tab:** read the setting **once** in `results_page()` on the Qt thread, then pass the value to both the selector's memo call and every `SearchQueryTask` the worker builds, overriding the field. This keeps the memo's argument agreement even if the setting changes mid-request.
   - **`dpd_deconstructor_list(query, deconstructor_exact_only)`:** callers in `sutta_bridge.rs` and `api.rs` read the setting and pass it.
 
-- [ ] 7.0 Apply the decision to the break-down guesses everywhere: range form + break-down-only rows + deterministic row, and the setting or the removal (FR-B1–FR-B4, FR-T1 branch tests)
-  - [ ] 7.1 **Remove branch:** delete attempts 2 and 4 from `dpd_deconstructor_query()`, and the timing fields for them. Remove `exact_only`'s and `deconstructor_exact_only`'s effect on them. Then remove the `deconstructor_exact_only` parameter wherever it now does nothing, updating callers and tests. Skip to 7.6.
-  - [ ] 7.2 **Keep/Setting:** add `deconstructor_prefix_guess()` as specified, and replace both `LIKE` queries with it: attempt 2 with the whole word, attempt 4 with the word minus its last letter, under the same 4-character floor.
-  - [ ] 7.3 **Setting only:** add the `AppSettings` field and default, the `AppData` getter/setter, the bridge invokables and the `qmllint` stubs in `SuttaBridge.qml`.
-  - [ ] 7.4 **Setting only:** add the checkbox in `AppSettingsWindow.qml` → Find → Search Behavior, below "Search As You Type", in the same style:
+- [ ] 7.0 Apply the decision to the break-down guesses everywhere: partial index + range form + break-down-only rows + deterministic row, and the setting or the removal (FR-B1, FR-B1a, FR-B2–FR-B4, FR-T1 branch tests)
+  - [ ] 7.1 **Keep/Setting: verify the index first** (PRD FR-B1a). Work on a **scratch copy** of `lookup` in the scratchpad, never the dist DB:
+    - Recreate the table with its original DDL, `INSERT … SELECT` in rowid order, `ANALYZE`, `CREATE INDEX`, `ANALYZE` again.
+    - Record the index size (`dbstat`) and the `CREATE INDEX` time.
+    - `EXPLAIN QUERY PLAN` with `sqlite_stat1` present:
+      - the literal form must show `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`;
+      - the bound `deconstructor != ?` form is expected not to; record what it shows.
+    - Extend `guess_cost.py`: cold / warm ms, `rchar`, `read_bytes` for the 2.8 prefix set plus `par`, `paṭ`, `anu`, `upa`.
+    - Equivalence: for every attempt-2 and attempt-4 prefix in the 3.3 TSV, the indexed query returns the same key as `INDEXED BY sqlite_autoindex_lookup_1`.
+    - Record everything under Measurements.
+  - [ ] 7.2 **Gate.** Pass if:
+    - the plan uses the index;
+    - equivalence is 100 %;
+    - the worst case reads ≤ 2 MB from disk;
+    - `sam` is warm within a few tens of ms.
+
+    If it passes, continue. If not, record why, tell the user, and switch to form D (PRD §1.2, FR-B1a): primary-key index, rows one at a time, a cap (start at 500; count cap hits on the 3.3 sample), cancellation checks between rows, no index. Then adapt 7.3–7.8.
+  - [ ] 7.3 **Remove branch:** delete attempts 2 and 4 from `dpd_deconstructor_query()`, and the timing fields for them. Remove `exact_only`'s and `deconstructor_exact_only`'s effect on them. Then remove the `deconstructor_exact_only` parameter wherever it now does nothing, updating callers and tests. No index. Skip to 7.8.
+  - [ ] 7.4 **Keep/Setting:**
+    - Add the index to `scripts/dpd-btree-indexes.sql` before `VACUUM`, with a comment: why it exists, and that queries must use the literal `deconstructor != ''`.
+    - **Ask the user** before applying it to the dist `dpd.sqlite3`, either by a re-bootstrap of the DPD DB or by hand (`CREATE INDEX` + `ANALYZE`). The 7.8 plan test needs it there.
+    - The DB version bump is the user's.
+    - Never commit the DB.
+  - [ ] 7.5 **Keep/Setting:**
+    - Add `DECONSTRUCTOR_PREFIX_GUESS_SQL` and `deconstructor_prefix_guess()` as specified, plus the missing-index check and log line.
+    - Replace both `LIKE` queries with the helper: attempt 2 with the whole word, attempt 4 with the word minus its last letter, under the same 4-character floor.
+    - Keep the per-attempt timings and the cancellation checks from 2.1 / 4.2.
+  - [ ] 7.6 **Setting only:** add the `AppSettings` field and default, the `AppData` getter/setter, the bridge invokables and the `qmllint` stubs in `SuttaBridge.qml`. Add the checkbox in `AppSettingsWindow.qml` → Find → Search Behavior, below "Search As You Type", in the same style:
     - an alias property;
     - `onCheckedChanged` → setter;
     - load in the init function next to `search_as_you_type_checkbox.checked = …`;
     - label "Guess break-downs for unknown words";
     - wrapped explanation: "When a word is not in the dictionary, also try words that start the same way. Slower, and often finds unrelated words."
-  - [ ] 7.5 **Keep/Setting:** wire the flag as specified, through WordSummary's worker, `SearchQueryTask::new()`'s default, `results_page()`'s override (selector + every task in `fetch_and_cache_page`, `run_sub_query` and `prefetch_pages`), and both `dpd_deconstructor_list` callers. Change `dpd_deconstructor_list`'s signature to take the flag, and update its tests: 6 call sites, some in `backend/tests/test_dpd_deconstructor_list.rs`.
-  - [ ] 7.5a **Setting only**, manual check: with the setting off, `POST /search` with `{"area":"Dictionary","mode":"DpdLookup"}` for an unknown word returns no guessed break-down. With it on, it does.
-  - [ ] 7.6 Create `backend/tests/test_dpd_breakdown_guesses.rs` for the chosen branch:
+  - [ ] 7.7 **Keep/Setting:** wire the flag as specified, through WordSummary's worker, `SearchQueryTask::new()`'s default, `results_page()`'s override (selector + every task in `fetch_and_cache_page`, `run_sub_query` and `prefetch_pages`), and both `dpd_deconstructor_list` callers. Change `dpd_deconstructor_list`'s signature to take the flag, and update its tests: 6 call sites, some in `backend/tests/test_dpd_deconstructor_list.rs`.
+    - **Setting only**, manual check: with the setting off, `POST /search` with `{"area":"Dictionary","mode":"DpdLookup"}` for an unknown word returns no guessed break-down. With it on, it does.
+  - [ ] 7.8 Create `backend/tests/test_dpd_breakdown_guesses.rs` for the chosen branch:
     - **Keep/Setting:**
-      - `EXPLAIN QUERY PLAN` of the helper's SQL contains `SEARCH lookup USING INDEX` and not `SCAN lookup`;
-      - a known prefix (take one from the 3.0 sample) returns the shortest key;
-      - every returned row has a non-empty `deconstructor` (if that filter is kept);
+      - `EXPLAIN QUERY PLAN` of `DECONSTRUCTOR_PREFIX_GUESS_SQL` (the const the code runs, with sample binds) contains `USING INDEX idx_lookup_key_with_deconstructor` and not `SCAN lookup`;
+      - for `sam`, `saṁ`, `par`, `pupphas`, `aggaphalasukha`, the helper's key equals the same SQL with `INDEXED BY sqlite_autoindex_lookup_1`;
+      - the returned key is the shortest matching key with a break-down;
+      - every returned row has a non-empty `deconstructor`;
       - `dpd_deconstructor_query(word, true)` never guesses.
     - **Remove:** an unknown 6+ letter word from the 2.5 list gives `None` from `dpd_deconstructor_query(word, false)`.
-  - [ ] 7.7 Run the four existing DPD test files. Where an expectation changes because a guess changed, update it and list each change (word, old, new) for the commit message.
-  - [ ] 7.8 `make build -B`, `make qml-test`, `cd backend && cargo test`. Expect the known timing-budget drift failures; list any others.
+  - [ ] 7.9 Run the four existing DPD test files. Where an expectation changes because a guess changed, update it and list each change (word, old, new) for the commit message.
+  - [ ] 7.10 `make build -B`, `make qml-test`, `cd backend && cargo test --no-fail-fast`. Compare against the five failures that predate this work (Measurements, 2.0 test run); list any new ones.
 
 ### 8.0 — Specs
 
@@ -273,22 +324,204 @@ Update the file after completing each sub-task, not just after completing an ent
 
 - [ ] 8.0 "After" measurement on desktop and phone, manual supersede checks, and docs (FR-A2 second half, §8 Success Metrics, §7 docs list, `PROJECT_MAP.md`)
   - [ ] 8.1 Desktop "after": the same 5 words from 2.5, cold and warm. Add the lines to `### Measurements`, next to the "before" ones.
-  - [ ] 8.2 Phone "after": ask the user to install the new arm64 beta debug build and repeat the 5 words, cold and warm. Include the largest 3-letter prefix case (PRD FR-B1) if guesses are kept. Record the results. If any word exceeds 2 s, or any single statement exceeds about 200 ms, add it to the PRD's Open Questions and tell the user (FR-C8).
+  - [ ] 8.2 Phone "after": ask the user to install the new arm64 beta debug build **and the re-bootstrapped `dpd.sqlite3`** (check the log has no missing-index line), and repeat the 5 words, cold and warm. Include the largest 3-letter prefix case: a 4-letter unknown word starting with `sam`, so attempt 4 queries `sam`. Do this if guesses are kept. Record the results. If any word exceeds 2 s, or any single statement exceeds about 200 ms, add it to the PRD's Open Questions and tell the user (FR-C8).
   - [ ] 8.3 Ask the user to do the phone checks from PRD §8:
     - tap an unknown word, then another within a second: the second word's results appear and the first's never do;
     - the same in the Dictionary tab;
     - a short word re-runs nothing;
     - an unknown word shows the `No results for …` line.
-  - [ ] 8.4 Update `docs/search-snippet-highlight-pipeline.md` §9. Replace the "deconstructor's own 'starts with' … is still `LIKE`" note with the current behaviour: the chosen branch, the range + row rule (if kept), the setting (if any), and the measured sample counts and timings. Follow the docs rule: describe current behaviour and keep the traps; measurements go in the commit message.
+  - [ ] 8.4 Update `docs/search-snippet-highlight-pipeline.md` §9. Replace the "deconstructor's own 'starts with' … is still `LIKE`" note with the current behaviour: the chosen branch; if kept, the partial index, the literal-predicate rule, the missing-index log line and the row rule; the setting (if any); and the measured sample counts and timings. Follow the docs rule: describe current behaviour and keep the traps; measurements go in the commit message.
   - [ ] 8.5 Add a short paragraph on lookup supersession to the same doc (or the doc that covers WordSummary, if one does). Cover:
     - the `query_id` / `results_page_request_id` display guards;
     - the two generation counters;
     - why the Dictionary tab's counter bumps only on a cache-key change;
     - that the memo never stores a cancelled lookup.
   - [ ] 8.6 Update `docs/pali-sandhi-and-quote-marks.md`'s function table if `dpd_deconstructor_list`'s or the grouped lookup's signatures changed. Update `docs/simsapa-localhost-api-search-endpoints.md` if `/dict_combined_search` results change.
-  - [ ] 8.7 Update `PROJECT_MAP.md`: `lookup_cancel.rs`, the new tests, the `DPD-LOOKUP-TIMING:` log prefix, and the setting (if any).
+  - [ ] 8.7 Update `PROJECT_MAP.md`: `lookup_cancel.rs`, the new tests, the `DPD-LOOKUP-TIMING:` log prefix, the partial index (if kept), and the setting (if any).
   - [ ] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged. Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
 
 ## Measurements
 
 (Filled in by 2.5–2.7, 3.6, 8.1–8.2.)
+
+### Test words (2.5)
+
+From CST commentary texts. Each has no exact `lookup_key` row and no
+`dpd_headwords` `lemma_clean` / `word_ascii` row:
+
+1. `kilesapariruddho`
+2. `aggaphalasukhaṁ`
+3. `salalarukkho`
+4. `sañcuṇṇamathitā`
+5. `pupphasu`
+
+### Desktop "before", backend only (2.6, supplementary)
+
+`dpd_lookup_grouped_json(w, false)` (WordSummary's path) from a temporary
+`cargo test` probe, run twice in one process. The first pass is not a cold
+start (the OS page cache was already warm from earlier test runs); it is
+recorded only to show the second pass matches it. The in-app WordSummary
+cold/warm run is below.
+
+```
+first  kilesapariruddho total=1118.4 p2=1.1 p3=1.3 p4=2.2 p5=0.7 p7=1047.4 p8=1.2 dec=[a1=0.1,a2=614.0,a3=-,a4=433.2,hit=none] first_results_phase=none
+first  aggaphalasukhaṁ  total=497.8  p2=0.7 p3=0.5 p4=0.3 p5=0.4 p7=495.6 p8=-   dec=[a1=0.1,a2=430.1,a3=-,a4=37.0,hit=4]   first_results_phase=7
+first  salalarukkho     total=881.8  p2=0.5 p3=0.7 p4=0.2 p5=0.4 p7=879.1 p8=0.7 dec=[a1=0.1,a2=439.8,a3=-,a4=439.1,hit=none] first_results_phase=none
+first  sañcuṇṇamathitā  total=905.4  p2=0.6 p3=0.5 p4=0.3 p5=0.4 p7=902.5 p8=0.8 dec=[a1=0.1,a2=457.1,a3=-,a4=445.2,hit=none] first_results_phase=none
+first  pupphasu         total=31.4   p2=0.6 p3=0.7 p4=0.3 p5=0.4 p7=28.4  p8=0.8 dec=[a1=0.1,a2=28.2,a3=-,a4=-,hit=2]       first_results_phase=8
+second kilesapariruddho total=866.6  p7=864.6 dec=[a1=0.1,a2=435.3,a4=429.1,hit=none]
+second aggaphalasukhaṁ  total=482.5  p7=481.1 dec=[a1=0.1,a2=438.9,a4=37.0,hit=4]
+second salalarukkho     total=869.6  p7=867.6 dec=[a1=0.1,a2=434.2,a4=433.2,hit=none]
+second sañcuṇṇamathitā  total=858.2  p7=856.0 dec=[a1=0.1,a2=426.5,a4=429.3,hit=none]
+second pupphasu         total=30.8   p7=28.6  dec=[a1=0.1,a2=28.4,a4=-,hit=2]
+```
+(p1 and p6 did not run for any word. Second-pass phases other than p7 were all
+under 1 ms; trimmed.)
+
+Observations:
+- Every phase other than Phase 7 is under ~2 ms. In Phase 7, `a2` + `a4` are
+  ~99% of the total for the three words that get no guess.
+- A full-scan miss costs ~430 ms per attempt in this process, not the 137 ms
+  the PRD measured in the `sqlite3` shell (Diesel's `SELECT *` + the
+  `LIKE` per row; not investigated further).
+- An early hit is cheap: `pupphasu` (a2, 28 ms) and `aggaphalasukhaṁ`'s a4
+  (37 ms) stop scanning at the first match.
+- `pupphasu`: attempt 2 returned a row with an **empty** break-down, so it
+  cost a scan and contributed nothing; the one result came from Phase 8.
+- `aggaphalasukhaṁ`: attempt 4 matched a key starting `aggaphalasukha` whose
+  break-downs all end in `+ iti` (`agga + phalasukhaṁ + iti`, …). The guess
+  supplied a spurious `iti`. Worth noting for the 3.0 review.
+
+### Desktop "before", in-app WordSummary (2.6)
+
+From `<SIMSAPA_DIR>/log.txt`. Pass 1 right after app start (after one known
+word, `kāmayogo`), pass 2 the same words again. p1 and p6 did not run.
+
+```
+kāmayogo         total=59.4  p2=1.1 p3=1.2 p4=8.7 p5=-   p7=0.3   p8=-   dec=[a1=0.1,a2=-,a3=-,a4=-,hit=1]          first_results_phase=4
+— cold —
+kilesapariruddho total=975.4 p2=3.8 p3=1.1 p4=0.4 p5=0.7 p7=965.6 p8=1.1 dec=[a1=0.1,a2=558.9,a3=-,a4=406.4,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=477.1 p2=4.0 p3=0.8 p4=0.4 p5=0.5 p7=468.3 p8=-   dec=[a1=0.1,a2=417.9,a3=-,a4=35.8,hit=4]   first_results_phase=7
+salalarukkho     total=834.0 p2=3.8 p3=1.3 p4=0.4 p5=0.6 p7=824.7 p8=0.9 dec=[a1=0.2,a2=414.0,a3=-,a4=410.4,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=895.8 p2=3.6 p3=0.9 p4=0.3 p5=0.4 p7=887.7 p8=1.0 dec=[a1=0.1,a2=445.5,a3=-,a4=442.0,hit=none] first_results_phase=none
+pupphasu         total=41.4  p2=4.2 p3=0.9 p4=0.5 p5=0.6 p7=31.7  p8=1.4 dec=[a1=0.1,a2=31.4,a3=-,a4=-,hit=2]       first_results_phase=8
+— warm —
+kilesapariruddho total=834.5 p2=0.7 p3=0.9 p4=0.2 p5=0.5 p7=828.3 p8=0.9 dec=[a1=0.2,a2=413.5,a3=-,a4=414.5,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=456.5 p2=0.9 p3=0.9 p4=0.2 p5=0.4 p7=450.3 p8=-   dec=[a1=0.2,a2=410.1,a3=-,a4=33.9,hit=4]   first_results_phase=7
+salalarukkho     total=831.6 p2=0.7 p3=0.9 p4=0.2 p5=0.4 p7=826.2 p8=0.9 dec=[a1=0.2,a2=417.3,a3=-,a4=408.6,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=827.0 p2=0.6 p3=0.8 p4=0.2 p5=0.5 p7=823.3 p8=0.9 dec=[a1=0.2,a2=414.4,a3=-,a4=408.6,hit=none] first_results_phase=none
+pupphasu         total=36.1  p2=0.6 p3=0.8 p4=0.2 p5=0.5 p7=32.8  p8=0.6 dec=[a1=0.2,a2=32.5,a3=-,a4=-,hit=2]       first_results_phase=8
+```
+
+The "cold" pass is a cold *app* start; the OS page cache still held
+`dpd.sqlite3`, so it differs from warm only in the first scan (559 vs 414 ms).
+
+### Phone "before" (2.7)
+
+Samsung SM-S911B (Galaxy S23), arm64 beta debug build, database on internal
+storage (`/data/data/io.github.simsapa.app.beta/files/app-assets/`). From
+`run-as … cat files/log.txt`. p1 and p6 did not run.
+
+```
+kāmayogo         total=93.7   p2=3.4 p3=2.0 p4=15.8 p5=-  p7=0.4    p8=-   dec=[a1=0.2,a2=-,a3=-,a4=-,hit=1]          first_results_phase=4
+— cold —
+kilesapariruddho total=1288.9 p2=3.1 p3=1.9 p4=1.7 p5=1.5 p7=1272.5 p8=1.7 dec=[a1=0.2,a2=876.3,a3=-,a4=395.6,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=456.3  p2=5.5 p3=2.9 p4=1.6 p5=1.5 p7=438.6  p8=-   dec=[a1=0.4,a2=381.3,a3=-,a4=31.9,hit=4]   first_results_phase=7
+salalarukkho     total=760.2  p2=4.5 p3=1.6 p4=1.0 p5=1.0 p7=745.6  p8=1.0 dec=[a1=0.2,a2=382.1,a3=-,a4=363.0,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=770.6  p2=4.7 p3=1.2 p4=0.9 p5=0.9 p7=756.0  p8=1.0 dec=[a1=0.2,a2=383.4,a3=-,a4=372.0,hit=none] first_results_phase=none
+pupphasu         total=61.8   p2=5.0 p3=1.8 p4=1.3 p5=0.9 p7=42.2   p8=4.6 dec=[a1=0.2,a2=41.7,a3=-,a4=-,hit=2]       first_results_phase=8
+— warm —
+kilesapariruddho total=770.5  p2=1.7 p3=2.2 p4=0.5 p5=1.0 p7=756.4  p8=1.2 dec=[a1=0.3,a2=392.2,a3=-,a4=363.5,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=446.7  p2=1.7 p3=1.8 p4=0.4 p5=0.8 p7=436.2  p8=-   dec=[a1=0.2,a2=395.6,a3=-,a4=32.2,hit=4]   first_results_phase=7
+salalarukkho     total=785.8  p2=1.8 p3=2.2 p4=0.6 p5=1.2 p7=772.7  p8=1.1 dec=[a1=0.3,a2=397.9,a3=-,a4=374.0,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=777.1  p2=1.3 p3=1.5 p4=0.4 p5=0.8 p7=770.0  p8=1.2 dec=[a1=0.3,a2=403.8,a3=-,a4=365.4,hit=none] first_results_phase=none
+pupphasu         total=41.2   p2=1.9 p3=2.1 p4=0.4 p5=0.8 p7=33.4   p8=0.9 dec=[a1=0.3,a2=32.7,a3=-,a4=-,hit=2]       first_results_phase=8
+```
+
+Findings:
+- **`a2` + `a4` are 96–99% of every miss**, on desktop and phone. Every
+  other phase is under ~6 ms (Phase 4 of a known word reaches 16 ms on the
+  phone). No entry for PRD §9 Q2 is needed.
+- **The 30 s is not reproduced on this phone.** The worst lookup is 1.3 s
+  (cold). The 30 s comes from a user report on an older 32-bit phone; see the
+  extrapolation below.
+- Already over the PRD §8 desktop goal (< 100 ms) by ~8× for three of the five
+  words.
+
+### Cost per guess approach, for extrapolating to old hardware (2.8)
+
+The fast machines keep `dpd.sqlite3` in the page cache, so their "cold" runs
+are not cold. What carries over to other hardware is how much SQLite reads.
+
+Script: `guess_cost.py` (scratchpad, not committed), Python `sqlite3` 3.53.4
+on the dist `dpd.sqlite3`, a fresh read-only connection per query. "cold" =
+file evicted with `posix_fadvise(DONTNEED)` first (desktop NVMe). `req_MB` =
+`rchar` delta (bytes SQLite requested; hardware-independent). `disk_MB` =
+`read_bytes` delta (bytes from the device when cold). Page size 4096. The
+`lookup` table is 105,326 pages (431 MB); its key index
+`sqlite_autoindex_lookup_1` is 8,354 pages (34 MB).
+
+Approaches:
+- **A** today: `lookup_key LIKE 'p%' LIMIT 1`, table order.
+- **B** range, shortest key, index only; then one row lookup by key.
+- **C** range + `deconstructor != ''` in SQL, `ORDER BY length, key LIMIT 1`.
+- **D** two steps: the keys in the range from the index ordered by (length,
+  key), then look up rows one at a time until one has a break-down.
+
+| case | A cold / warm ms, MB | B | C | D (rows probed) |
+|---|---|---|---|---|
+| miss (8 of the 10 a2/a4 prefixes) | 360–400 / 136–144 ms, **431 MB** | ~2 / 0.6 ms, 0.1 MB | ~1 / 0.6 ms, 0.1 MB | ~1 / 0.6 ms, 0.1 MB |
+| a4 `aggaphalasukha` (hit) | 38 / 14 ms, 42 MB | 2 / 0.6, 0.1 | 1 / 0.7, 0.1 | 1 / 0.6, 0.1 (1) |
+| a2 `pupphasu` (hit) | 32 / 11 ms, 33 MB | 2 / 0.6, 0.1 | 1 / 0.7, 0.1 | 1 / 0.6, 0.1 (3) |
+| `sam` (largest 3-letter range: 26,507 keys, 18,770 with a break-down) | 1 / 0.7 ms, 0.2 MB | 4 / 3, 0.8 MB | **176 / 14 ms, 17.7 MB** | 20 / 16 ms, 0.9 MB (18) |
+| `saṁ` (the PRD's sample, 7,509 keys) | 2 / 0.7, 0.2 MB | 2 / 1.3, 0.3 MB | 54 / 5, 4.8 MB | 16 / 7, 0.6 MB (355) |
+
+Keys returned: C and D agree everywhere (same rule). B can return a row
+with no break-down (`sam`, `saṁ`, `pupphase`), which contributes nothing.
+
+**App build note.** The same `LIKE` miss scans in ~140 ms warm here but
+~430 ms warm in the app and in `cargo test`. The desktop CMake build has no
+`CMAKE_BUILD_TYPE` and the beta-debug APK is `Debug`, so the bundled SQLite
+(`libsqlite3-sys` `bundled`) is likely compiled without optimisation. Users'
+release builds should scan at about the 140 ms rate. Not investigated
+further.
+
+**Extrapolation to an old 32-bit phone** (assumed, not measured: Cortex-A7 /
+A53 at 1.2–1.4 GHz, 1–2 GB RAM, eMMC 4.5/5.0):
+- Its page cache cannot hold the 431 MB table next to the app, so every miss
+  scan reads from flash. Reading in table order is close to sequential:
+  at 40–150 MB/s that is **3–11 s per scan**. The CPU part (140 ms on the
+  desktop) at ~10–15× slower is 1.5–2 s, partly overlapping the reads.
+- A miss runs two scans (a2 + a4): **~6–25 s per lookup**. Before task 1, a
+  tap also ran the lookup a second time from the search-as-you-type timer,
+  and the two competed for the same flash. **30 s is consistent with
+  approach A alone.**
+- **B and D** read at most ~1 MB (a few hundred pages, randomly placed) even
+  for `sam`. A typical miss is ~25 pages. At an assumed 2,000 random 4 KB
+  reads/s for old eMMC, that is **under ~0.2 s worst case, milliseconds
+  typically**.
+- **C** reads table rows across the whole range: 17.7 MB (~4,300 random
+  pages) for `sam`, about **2 s or more** on old eMMC for that one statement.
+  It runs inside SQLite, so cancellation cannot stop it (FR-C8).
+- So: A is the cause of the 30 s; C without an index would be slow in the
+  worst case; B and D stay small.
+- **Decision (2026-10-22, with the user):** the app is in testing, so a new
+  `dpd.sqlite3` costs nothing. Form C goes on a partial index
+  (`idx_lookup_key_with_deconstructor`), estimated to cost about as little as
+  B. The estimate is verified in 7.1 before it is relied on. D is the
+  fallback. Reasoning and risks: PRD §1.2, FR-B1, FR-B1a.
+
+### Backend test run at 2.0 (failures that predate this work)
+
+`cargo test --no-fail-fast` in `backend/`: everything passes except these 5.
+All 5 fail identically with the 2.0 change stashed, and none touch the DPD
+code:
+- `test_fulltext_search_results::test_sort_suttas_cst_mula_before_commentary`
+  (sort order)
+- `test_fulltext_search_results::test_fulltext_search_so_ce_evam_vadeyya`
+  (hits 2331, expected 2330)
+- `test_render_sutta_content::test_resolve_single_column_no_pali_counterpart`
+  (`sn12.72-81/pli/ms` exists again)
+- `test_search_normalization::contains_match_finds_dhovana_sutta`
+- `test_search_normalization::fulltext_match_finds_dhovana_sutta`
+  (the test's own message: re-index `content_plain`)
