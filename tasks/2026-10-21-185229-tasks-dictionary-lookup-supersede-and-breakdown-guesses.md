@@ -352,9 +352,9 @@ Update the file after completing each sub-task, not just after completing an ent
 - The success thresholds from the PRD §8: under 2 s per unknown word on the phone cold, under 100 ms on desktop warm.
 
 - [ ] 8.0 "After" measurement on desktop and phone, manual supersede checks, and docs (FR-A2 second half, §8 Success Metrics, §7 docs list, `PROJECT_MAP.md`)
-  - [ ] 8.1 Desktop "after": the same 5 words from 2.5, cold and warm. Add the lines to `### Measurements`, next to the "before" ones.
-  - [ ] 8.2 Phone "after": ask the user to install the new arm64 beta debug build (the existing `dpd.sqlite3` stays; form D needs no new database), and repeat the 5 words, cold and warm. Include the largest 3-letter prefix case: a 4-letter unknown word starting with `sam`, so attempt 4 queries `sam`. Do this if guesses are kept. Record the results. If any word exceeds 2 s, or any single statement exceeds about 200 ms, add it to the PRD's Open Questions and tell the user (FR-C8).
-  - [ ] 8.3 Ask the user to do the phone checks from PRD §8:
+  - [x] 8.1 Desktop "after": the same 5 words from 2.5, cold and warm. Add the lines to `### Measurements`, next to the "before" ones.
+  - [x] 8.2 Phone "after": ask the user to install the new arm64 beta debug build (the existing `dpd.sqlite3` stays; form D needs no new database), and repeat the 5 words, cold and warm. Include the largest 3-letter prefix case: a 4-letter unknown word starting with `sam`, so attempt 4 queries `sam`. Do this if guesses are kept. Record the results. If any word exceeds 2 s, or any single statement exceeds about 200 ms, add it to the PRD's Open Questions and tell the user (FR-C8).
+  - [x] 8.3 Ask the user to do the phone checks from PRD §8:
     - tap an unknown word, then another within a second: the second word's results appear and the first's never do;
     - the same in the Dictionary tab;
     - a short word re-runs nothing;
@@ -370,7 +370,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 8.6 Update `docs/pali-sandhi-and-quote-marks.md`'s function table if `dpd_deconstructor_list`'s or the grouped lookup's signatures changed. Update `docs/simsapa-localhost-api-search-endpoints.md` if `/dict_combined_search` results change.
     - *Done.* No listed signature changed, so the table stays; the iti-sandhi rule's "two full scans" cost was removed. The API doc needs no change: it describes the `deconstructor` array generally, and its examples are known words that never reach a guess.
   - [x] 8.7 Update `PROJECT_MAP.md`: `lookup_cancel.rs`, the new tests, the `DPD-LOOKUP-TIMING:` log prefix (with the rows-checked counts), the form D guess helper and its cap, and the setting (if any).
-  - [ ] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged (the files in `tasks/data/2026-10-21-dictionary-lookup/` are tracked on purpose). Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
+  - [x] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged (the files in `tasks/data/2026-10-21-dictionary-lookup/` are tracked on purpose). Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
   - [ ] 8.9 **Clean up the supporting data**, after the user confirms 8.0 and the work is committed, as part of moving the PRD and this task list to `tasks/archive/`:
     - Check that nothing still needs `tasks/data/2026-10-21-dictionary-lookup/`: no follow-up PRD (e.g. for PRD §9 Q5) has been started that uses it, and nothing in `docs/` or the code links to it. If a follow-up needs a file, copy that file into the follow-up's own `tasks/data/` folder first.
     - `git rm -r tasks/data/2026-10-21-dictionary-lookup/` in its own commit (ask before committing). If `tasks/data/` is then empty, remove it too.
@@ -452,6 +452,67 @@ pupphasu         total=36.1  p2=0.6 p3=0.8 p4=0.2 p5=0.5 p7=32.8  p8=0.6 dec=[a1
 The "cold" pass is a cold *app* start; the OS page cache still held
 `dpd.sqlite3`, so it differs from warm only in the first scan (559 vs 414 ms).
 
+### Desktop "after", backend only (8.1, supplementary)
+
+Same probe as the "before" one (a temporary `cargo test`, deleted after use),
+`dpd_lookup_grouped_json(w, false, &LookupCancel::none())`, two passes in one
+process, form D. Sixth word `samṭ`: a 4-letter unknown word whose attempt 2
+range is empty, so attempt 4 queries `sam`, the largest 3-letter range. `aN=ms/rows`
+is the attempt's time and the rows it checked.
+
+```
+first  kilesapariruddho total=74.7 p2=0.7 p3=0.9 p4=2.1 p5=0.5 p7=0.5  p8=1.1 dec=[a1=0.1,a2=0.1/0,a3=-,a4=0.1/0,hit=none]   first_results_phase=none
+first  aggaphalasukhaṁ  total=47.2 p2=0.6 p3=0.6 p4=0.1 p5=0.4 p7=45.2 p8=-   dec=[a1=0.1,a2=0.1/0,a3=-,a4=0.3/1,hit=4]     first_results_phase=7
+first  salalarukkho     total=4.0  p2=0.7 p3=0.8 p4=0.3 p5=0.6 p7=0.5  p8=0.9 dec=[a1=0.1,a2=0.1/0,a3=-,a4=0.1/0,hit=none]   first_results_phase=none
+first  sañcuṇṇamathitā  total=3.9  p2=0.5 p3=0.8 p4=0.3 p5=0.6 p7=0.6  p8=1.0 dec=[a1=0.1,a2=0.1/0,a3=-,a4=0.1/0,hit=none]   first_results_phase=none
+first  pupphasu         total=11.5 p2=0.5 p3=0.9 p4=0.2 p5=0.5 p7=9.4  p8=-   dec=[a1=0.1,a2=0.7/3,a3=-,a4=-,hit=2]         first_results_phase=7
+first  samṭ             total=35.2 p2=0.6 p3=0.9 p4=0.2 p5=0.6 p7=32.5 p8=-   dec=[a1=0.1,a2=0.2/0,a3=-,a4=28.8/18,hit=4]   first_results_phase=7
+second kilesapariruddho total=3.6  p7=0.5  dec=[a2=0.1/0,a4=0.1/0,hit=none]
+second aggaphalasukhaṁ  total=10.3 p7=8.3  dec=[a2=0.1/0,a4=0.3/1,hit=4]
+second salalarukkho     total=3.0  p7=0.4  dec=[a2=0.1/0,a4=0.1/0,hit=none]
+second sañcuṇṇamathitā  total=2.5  p7=0.4  dec=[a2=0.1/0,a4=0.1/0,hit=none]
+second pupphasu         total=10.0 p7=8.1  dec=[a2=0.6/3,a4=-,hit=2]
+second samṭ             total=32.1 p7=30.1 dec=[a1=0.1,a2=0.1/0,a4=26.9/18,hit=4]
+```
+
+- Every word is under the 100 ms desktop goal, warm and first pass. Before:
+  31–867 ms warm (three words over 800 ms).
+- The guesses themselves cost 0.1–0.7 ms; `sam` (18 rows checked) 27–29 ms.
+  The rest of Phase 7 is the component lookups of the guessed break-down.
+- First pass, `kilesapariruddho`: 74.7 ms total against ~6 ms of phases. The
+  first lookup in the process pays one-off setup outside the timed phases.
+- `pupphasu` now gets a break-down guess from attempt 2 (3 rows checked;
+  `LIKE` returned a row with no break-down), so its result comes from
+  Phase 7 and Phase 8 does not run (PRD §9 Q5). Before, the result came from
+  Phase 8.
+
+### Desktop "after", in-app WordSummary (8.1)
+
+From `<SIMSAPA_DIR>/log.txt`, one app session (2026-10-22). The first
+lookup after start was a known English word (`ignorance`); then `samṭ`
+twice, around a known word (`avijjāyogo`), then the 5 test words, with
+`kilesapariruddho` repeated, then `samṭ` again. p1 and p6 did not run.
+
+```
+ignorance        total=58.4 p2=0.8 p3=0.8 p4=2.4 p5=0.5 p7=0.2  p8=0.9 dec=[a1=0.1,a2=-,a3=-,a4=-,hit=1]           first_results_phase=none
+samṭ             total=38.6 p2=3.9 p3=1.0 p4=0.2 p5=0.6 p7=29.7 p8=-   dec=[a1=0.1,a2=0.2/0,a3=-,a4=20.5/18,hit=4] first_results_phase=7
+avijjāyogo       total=6.2  p2=0.8 p3=0.8 p4=1.6 p5=-   p7=0.3  p8=-   dec=[a1=0.2,a2=-,a3=-,a4=-,hit=1]           first_results_phase=4
+samṭ             total=28.1 p2=0.8 p3=1.1 p4=0.2 p5=0.4 p7=22.6 p8=-   dec=[a1=0.2,a2=0.2/0,a3=-,a4=19.5/18,hit=4] first_results_phase=7
+kilesapariruddho total=8.3  p2=2.4 p3=1.0 p4=0.4 p5=0.5 p7=0.6  p8=0.8 dec=[a1=0.1,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+kilesapariruddho total=5.6  p2=0.7 p3=0.6 p4=0.2 p5=0.3 p7=0.4  p8=0.9 dec=[a1=0.1,a2=0.1/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=25.1 p2=2.7 p3=1.1 p4=1.0 p5=1.7 p7=15.5 p8=-   dec=[a1=0.2,a2=0.2/0,a3=-,a4=0.8/1,hit=4]   first_results_phase=7
+salalarukkho     total=7.9  p2=2.1 p3=0.7 p4=0.3 p5=1.2 p7=0.5  p8=0.7 dec=[a1=0.1,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=10.7 p2=3.8 p3=1.1 p4=0.5 p5=0.6 p7=0.7  p8=0.9 dec=[a1=0.1,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+pupphasu         total=18.5 p2=1.3 p3=0.9 p4=0.4 p5=0.6 p7=14.2 p8=-   dec=[a1=0.2,a2=1.4/3,a3=-,a4=-,hit=2]       first_results_phase=7
+samṭ             total=27.4 p2=0.8 p3=1.0 p4=0.2 p5=0.5 p7=24.1 p8=-   dec=[a1=0.2,a2=0.2/0,a3=-,a4=20.2/18,hit=4] first_results_phase=7
+```
+
+- Every lookup is under the 100 ms desktop goal; the slowest test word is
+  `aggaphalasukhaṁ` at 25 ms (before: 456–477 ms), and `samṭ`'s `sam`
+  guess is 20 ms. Before, three of the five words took 827–975 ms.
+- The first lookup after start (58 ms) carries the same one-off setup as the
+  backend probe's first call.
+
 ### Phone "before" (2.7)
 
 Samsung SM-S911B (Galaxy S23), arm64 beta debug build, database on internal
@@ -483,6 +544,32 @@ Findings:
   extrapolation below.
 - Already over the PRD §8 desktop goal (< 100 ms) by ~8× for three of the five
   words.
+
+### Phone "after" (8.2)
+
+Same Galaxy S23, new arm64 beta debug build, the existing `dpd.sqlite3`. One
+pass from a cold app start (2026-10-22); the first lookup was a known word
+(`bhikkhave`), and `samṭ` was looked up before and after the 5 test words.
+
+```
+bhikkhave        total=97.4 p2=10.1 p3=1.1 p4=3.9 p5=-   p7=0.3  p8=-   dec=[a1=0.2,a2=-,a3=-,a4=-,hit=1]           first_results_phase=2
+samṭ             total=59.3 p2=4.5  p3=1.8 p4=1.5 p5=2.1 p7=43.1 p8=-   dec=[a1=0.4,a2=0.3/0,a3=-,a4=27.5/18,hit=4] first_results_phase=7
+kilesapariruddho total=14.6 p2=1.9  p3=1.2 p4=1.0 p5=0.9 p7=0.9  p8=1.7 dec=[a1=0.2,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+aggaphalasukhaṁ  total=43.4 p2=4.0  p3=1.8 p4=1.6 p5=0.9 p7=29.0 p8=-   dec=[a1=0.2,a2=0.2/0,a3=-,a4=1.1/1,hit=4]   first_results_phase=7
+salalarukkho     total=13.0 p2=2.1  p3=1.1 p4=0.8 p5=1.0 p7=0.9  p8=1.1 dec=[a1=0.2,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+sañcuṇṇamathitā  total=16.1 p2=4.3  p3=1.1 p4=0.7 p5=0.8 p7=0.9  p8=1.0 dec=[a1=0.2,a2=0.2/0,a3=-,a4=0.1/0,hit=none] first_results_phase=none
+pupphasu         total=44.9 p2=4.7  p3=1.8 p4=1.7 p5=1.4 p7=29.0 p8=-   dec=[a1=0.3,a2=3.6/3,a3=-,a4=-,hit=2]       first_results_phase=7
+samṭ             total=37.2 p2=1.4  p3=1.7 p4=0.4 p5=0.8 p7=25.6 p8=-   dec=[a1=0.2,a2=0.2/0,a3=-,a4=16.8/18,hit=4] first_results_phase=7
+```
+
+- Every lookup is far under the 2 s phone goal: the test words take 13–45 ms
+  (before: 446–1,289 ms cold, 41–786 ms warm). The slowest single step is
+  `samṭ`'s attempt 4 at 27.5 ms, well under FR-C8's ~200 ms; no Open
+  Questions entry is needed.
+- No warm pass was run: at these figures it cannot change the outcome. As
+  before, this phone keeps `dpd.sqlite3` in the page cache, so the "cold"
+  start is not a cold read; the old-phone case rests on the bytes-read
+  figures (2.8, 7.2).
 
 ### Cost per guess approach, for extrapolating to old hardware (2.8)
 
