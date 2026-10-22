@@ -97,3 +97,15 @@ rows.
 For each row of `guess_review.tsv`, prints every break-down component with the
 DPD headwords and meanings it resolves to. It reads the file from the current
 directory and the dist `dpd.sqlite3` by absolute path.
+
+## When to remove this folder
+
+Keep it until the PRD is finished. Task 7.1 reads the sample and extends
+`guess_cost.py`, task 8.2 may re-run the harness, and a reopened Keep
+decision (PRD §9 Q5) starts from `guess_review.tsv`. Remove it in task 8.9,
+when the PRD and task list move to `tasks/archive/`. Do it in its own commit,
+and record that commit's hash in the archived task list so the files can be
+recovered with `git checkout <hash>^ -- tasks/data/2026-10-21-dictionary-lookup/`.
+If a follow-up PRD needs any of these files, copy them into its own
+`tasks/data/` folder first.
+

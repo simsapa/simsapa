@@ -204,6 +204,21 @@ tokens of `ms` + CST Pāli, seed 20261022.
   break-down for 10 words where `LIKE` returned a row with none, and it picks
   a different key for 19 of the 54 words.
 
+### 1.4 Supporting data
+
+The measurements behind §1.2, §1.3 and the FR-A5 decision are kept in
+`tasks/data/2026-10-21-dictionary-lookup/`:
+- `guess_sample_30k.tsv`: the FR-A3 sample;
+- `guess_review.tsv`: the graded review, read-only, and the only row-level
+  record of it;
+- `guess_cost.py`: the cost harness that FR-B1a extends;
+- the analysis and review helpers.
+
+The folder's `README.md` describes each file and how to regenerate it. The
+task list's "Supporting data" note says which task uses which file. The
+folder is removed when this PRD is archived (task 8.9), and the archived task
+list records the commit that removed it, so it can be recovered.
+
 ## 2. Goals
 
 1. The latest lookup request always starts at once, in both the WordSummary
@@ -283,7 +298,7 @@ subcommand, whichever is simpler) that:
      range form from FR-B1, and the range form restricted to rows with a
      break-down;
    - each returned row's break-down, and whether it was empty.
-4. writes a TSV to the scratchpad and prints counts:
+4. writes a TSV (kept as `tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv`, §1.4) and prints counts:
    - how many tokens reached the guesses, and how many of those had no other
      results;
    - how many got a row from attempt 2, and from attempt 4;
@@ -396,7 +411,7 @@ the dist DB:
    five test words' attempt-2 and attempt-4 prefixes, plus `sam`, `par`, `paṭ`,
    `anu`, `upa` and `saṁ`.
 5. **Equivalence:** for every attempt-2 and attempt-4 prefix in the FR-A3
-   sample, the indexed query returns the same key as the same SQL forced onto
+   sample (`tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv`), the indexed query returns the same key as the same SQL forced onto
    the primary-key index (`INDEXED BY sqlite_autoindex_lookup_1`).
 
 **Pass criteria:**

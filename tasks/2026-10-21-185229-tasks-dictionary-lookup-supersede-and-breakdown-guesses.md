@@ -40,6 +40,36 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - Android checks: `make android-beta-debug-arm64-install`, then `make android-beta-debug-run` to stream the `simsapa` tag. Or `adb shell run-as io.github.simsapa.app.beta cat files/log.txt`.
 - Never commit `*.sqlite3`, never bump versions, and ask before committing.
 
+### Supporting data (`tasks/data/2026-10-21-dictionary-lookup/`)
+
+Files from tasks 2.8 and 3.0 that must survive the session. The folder's
+`README.md` describes each one.
+
+**When each file is used:**
+- **7.1** reads the attempt-2 and attempt-4 prefixes from
+  `guess_sample_30k.tsv` for the equivalence check. It also extends
+  `guess_cost.py` for the indexed form. Save the extended script back into
+  the folder, replacing the old one, so 8.2 and any later re-measurement run
+  the same code.
+- **7.8** may take its FR-T1 prefixes from the TSV in addition to the fixed
+  list. The test itself must not read the TSV: tests run without
+  `tasks/data/`.
+- **8.4** takes its sample counts and review shares from Measurements below,
+  not from the files. The files are the evidence behind those numbers.
+- **`guess_review.tsv` is read-only.** It is the only row-level record of the
+  review that chose Keep. If the decision is reopened (PRD §9 Q5, Phase 8),
+  start from it. Never regenerate it: `make_review.py` writes an unmarked
+  file.
+
+**If the sample has to be redone** (the DPD database is updated with new data
+before 7.1, or the sample test's normalization or filters change), regenerate
+`guess_sample_30k.tsv` with the command in the README and re-run
+`analyse.py`. If the counts in Measurements change, update them. Adding the
+partial index (7.4) changes no data, so it does not count.
+
+**Clean-up** happens at **8.9**, when the PRD is archived, not before: 7.1,
+8.2 and a reopened decision all need the files until the work is finished.
+
 ## Instructions for Completing Tasks
 
 **IMPORTANT:** As you complete each task, you must check it off in this markdown file by changing `- [ ]` to `- [x]`. This helps track progress and ensures you don't skip any steps.
@@ -286,7 +316,7 @@ Update the file after completing each sub-task, not just after completing an ent
     - `EXPLAIN QUERY PLAN` with `sqlite_stat1` present:
       - the literal form must show `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`;
       - the bound `deconstructor != ?` form is expected not to; record what it shows.
-    - Extend `tasks/data/2026-10-21-dictionary-lookup/guess_cost.py`: cold / warm ms, `rchar`, `read_bytes` for the 2.8 prefix set plus `par`, `paṭ`, `anu`, `upa`.
+    - Extend `tasks/data/2026-10-21-dictionary-lookup/guess_cost.py`: cold / warm ms, `rchar`, `read_bytes` for the 2.8 prefix set plus `par`, `paṭ`, `anu`, `upa`. Point it at the scratch copy, not the dist DB, and save the extended script back over the one in the folder.
     - Equivalence: for every attempt-2 and attempt-4 prefix in the 3.3 TSV (`tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv`), the indexed query returns the same key as `INDEXED BY sqlite_autoindex_lookup_1`.
     - Record everything under Measurements.
   - [ ] 7.2 **Gate.** Pass if:
@@ -347,6 +377,10 @@ Update the file after completing each sub-task, not just after completing an ent
   - [ ] 8.6 Update `docs/pali-sandhi-and-quote-marks.md`'s function table if `dpd_deconstructor_list`'s or the grouped lookup's signatures changed. Update `docs/simsapa-localhost-api-search-endpoints.md` if `/dict_combined_search` results change.
   - [ ] 8.7 Update `PROJECT_MAP.md`: `lookup_cancel.rs`, the new tests, the `DPD-LOOKUP-TIMING:` log prefix, the partial index (if kept), and the setting (if any).
   - [ ] 8.8 Run `git status`: no `*.sqlite3` and no scratchpad TSVs staged (the files in `tasks/data/2026-10-21-dictionary-lookup/` are tracked on purpose). Ask the user before committing. Draft the commit message with the before/after numbers and the decision.
+  - [ ] 8.9 **Clean up the supporting data**, after the user confirms 8.0 and the work is committed, as part of moving the PRD and this task list to `tasks/archive/`:
+    - Check that nothing still needs `tasks/data/2026-10-21-dictionary-lookup/`: no follow-up PRD (e.g. for PRD §9 Q5) has been started that uses it, and nothing in `docs/` or the code links to it. If a follow-up needs a file, copy that file into the follow-up's own `tasks/data/` folder first.
+    - `git rm -r tasks/data/2026-10-21-dictionary-lookup/` in its own commit (ask before committing). If `tasks/data/` is then empty, remove it too.
+    - In the archived task list, replace the Supporting data section with one line: the folder was removed in commit `<hash>`, and is recovered with `git checkout <hash>^ -- tasks/data/2026-10-21-dictionary-lookup/`. Point the Relevant Files and Measurements references at that line.
 
 ## Measurements
 
