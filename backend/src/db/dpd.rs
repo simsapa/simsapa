@@ -64,8 +64,8 @@ struct LookupKeyRow {
 }
 
 /// The "starts with" break-down guess for `prefix`: the shortest `lookup` key
-/// starting with it whose row has a break-down, or `None`. Also returns how
-/// many rows were checked.
+/// starting with it whose row has a break-down, or `None`. Counts the rows it
+/// checks in `checked`, which holds the count on an error or cancellation too.
 ///
 /// The prefix is lowercase (the query text was normalized with
 /// `normalize_plain_text()`), so the range needs no capitalised twin: the
@@ -77,7 +77,8 @@ fn deconstructor_prefix_guess(
     db_conn: &mut SqliteConnection,
     prefix: &str,
     cancel: &LookupCancel,
-) -> Result<(Option<Lookup>, usize)> {
+    checked: &mut usize,
+) -> Result<Option<Lookup>> {
     use crate::db::dpd_schema::lookup::dsl as lk;
 
     let keys: Vec<LookupKeyRow> = sql_query(DECONSTRUCTOR_GUESS_KEYS_SQL)
@@ -86,10 +87,9 @@ fn deconstructor_prefix_guess(
         .bind::<Integer, _>(DECONSTRUCTOR_GUESS_KEY_CAP)
         .load(db_conn)?;
 
-    let mut checked = 0;
     for key in keys {
         cancel.check()?;
-        checked += 1;
+        *checked += 1;
         let row = lk::lookup
             .filter(lk::lookup_key.eq(&key.lookup_key))
             .first::<Lookup>(db_conn)
@@ -97,10 +97,10 @@ fn deconstructor_prefix_guess(
         if let Some(row) = row
             && !row.deconstructor.is_empty()
         {
-            return Ok((Some(row), checked));
+            return Ok(Some(row));
         }
     }
-    Ok((None, checked))
+    Ok(None)
 }
 
 /// The base words to try for an iti-sandhi word resolved as `<base> + iti`, in
@@ -190,8 +190,11 @@ const TIMING_LOG_SLOW_MS: f64 = 100.0;
 /// The stage timings of one `dpd_lookup_grouped()` call.
 #[derive(Debug, Default)]
 struct GroupedTiming {
-    /// Phases 1–8; `None` for a phase that did not run.
+    /// Phases 1–8; `None` for a phase that did not run, or did not finish
+    /// because the lookup was cancelled during it.
     phases: [Option<f64>; 8],
+    /// Set when Phase 7 starts, so a lookup cancelled during Phase 7 still
+    /// reports the attempts that ran.
     dec: Option<DeconstructorTiming>,
     first_results_phase: Option<u8>,
     /// The lookup was resolved as `<base> + iti`; the base lookups log their
@@ -315,26 +318,31 @@ impl DpdDbHandle {
     /// `dpd_deconstructor_query()`), and the number of rows it checked.
     pub fn dpd_deconstructor_prefix_guess(&self, prefix: &str) -> Result<(Option<Lookup>, usize)> {
         let db_conn = &mut self.get_conn().expect("Can't get db conn");
-        deconstructor_prefix_guess(db_conn, prefix, &LookupCancel::none())
+        let mut checked = 0;
+        let row = deconstructor_prefix_guess(db_conn, prefix, &LookupCancel::none(), &mut checked)?;
+        Ok((row, checked))
     }
 
     pub fn dpd_deconstructor_query(&self, query_text: &str, exact_only: bool) -> Result<Option<Lookup>> {
-        self.dpd_deconstructor_query_timed(query_text, exact_only, &LookupCancel::none())
-            .map(|(row, _)| row)
+        let mut timing = DeconstructorTiming::default();
+        self.dpd_deconstructor_query_timed(query_text, exact_only, &LookupCancel::none(), &mut timing)
     }
 
-    /// `dpd_deconstructor_query()`, also returning how long each attempt took
-    /// and which one produced the row. Checks `cancel` before each attempt.
+    /// `dpd_deconstructor_query()`, also recording in `timing` how long each
+    /// attempt took and which one produced the row. Checks `cancel` before
+    /// each attempt. `timing` is the caller's, so a cancelled lookup's timing
+    /// line still shows the attempts that ran, and how many rows a cut-short
+    /// guess checked.
     fn dpd_deconstructor_query_timed(
         &self,
         query_text: &str,
         exact_only: bool,
         cancel: &LookupCancel,
-    ) -> Result<(Option<Lookup>, DeconstructorTiming)> {
+        timing: &mut DeconstructorTiming,
+    ) -> Result<Option<Lookup>> {
         use crate::db::dpd_schema::lookup::dsl::*;
 
         let db_conn = &mut self.get_conn().expect("Can't get db conn");
-        let mut timing = DeconstructorTiming::default();
 
         // NOTE: Return exact match if possible because 'starts with' matches show confusing additional words.
 
@@ -361,10 +369,11 @@ impl DpdDbHandle {
             && result.is_none() && query_text.chars().count() >= 4 {
                 cancel.check()?;
                 let t = Instant::now();
-                let (row, checked) = deconstructor_prefix_guess(db_conn, &query_text, cancel)?;
-                result = row;
+                let mut checked = 0;
+                let row = deconstructor_prefix_guess(db_conn, &query_text, cancel, &mut checked);
                 timing.attempts[1] = Some(elapsed_ms(t));
                 timing.rows_checked[1] = Some(checked);
+                result = row?;
                 if result.is_some() {
                     timing.hit = Some(2);
                 }
@@ -400,17 +409,18 @@ impl DpdDbHandle {
 
                 cancel.check()?;
                 let t = Instant::now();
-                let (row, checked) = deconstructor_prefix_guess(db_conn, &all_but_last_char, cancel)?;
-                result = row;
+                let mut checked = 0;
+                let row = deconstructor_prefix_guess(db_conn, &all_but_last_char, cancel, &mut checked);
                 timing.attempts[3] = Some(elapsed_ms(t));
                 timing.rows_checked[3] = Some(checked);
+                result = row?;
                 if result.is_some() {
                     timing.hit = Some(4);
                 }
             }
         }
 
-        Ok((result, timing))
+        Ok(result)
     }
 
     /// Whether DPD analyses the joined sandhi form `joined` (e.g.
@@ -1331,9 +1341,10 @@ impl DpdDbHandle {
         // `deconstructor_nested()` (list-of-lists parallel to
         // `deconstructor_unpack()`'s `words_joined` strings — same order).
         let t = Instant::now();
-        let (dec_row, dec_timing) =
-            self.dpd_deconstructor_query_timed(&query_text, deconstructor_exact_only, cancel)?;
-        timing.dec = Some(dec_timing);
+        let dec_row = self.dpd_deconstructor_query_timed(
+            &query_text, deconstructor_exact_only, cancel,
+            timing.dec.insert(DeconstructorTiming::default()),
+        )?;
         if let Some(lookup) = dec_row {
             // A lookup row can match on i2h/headwords while carrying an empty
             // deconstructor (common for ordinary recognized words now that this
