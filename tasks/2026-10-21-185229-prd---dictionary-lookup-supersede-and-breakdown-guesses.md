@@ -19,7 +19,8 @@ The goal: the latest lookup always runs and always wins, superseded backend work
 stops early, and the guessing stage is either made cheap, put behind a setting
 that is off by default, or removed. Which of these is decided by a measurement
 that is the first part of this PRD. If the guesses are kept, they are made cheap
-with a **partial index** on the `lookup` table (§1.2, FR-B1).
+by reading candidate keys from the existing key index and checking rows one at
+a time (form D, §1.2, FR-B1). There is no change to `dpd.sqlite3`.
 
 ### 1.1 What the code does today (verified by reading the source)
 
@@ -162,29 +163,74 @@ with a break-down), which attempt 4 reaches from any 4-letter word.
   But it needs a Rust loop and a cap on rows checked, and the cap can drop a
   guess.
 
-**Choice: C on a partial index.** The app is in its testing phase, so a new
-`dpd.sqlite3` release costs nothing. With
-
-```sql
-CREATE INDEX IF NOT EXISTS idx_lookup_key_with_deconstructor
-    ON lookup(lookup_key) WHERE deconstructor != '';
-```
-
-the range in C reads only index entries that already have a break-down, and
-fetches one row, the winner. For `sam` this is ~18,770 small index entries
-instead of ~4,300 scattered table pages, **estimated** under 1 MB, close to B.
-Compared with D:
-
-- C gives the same row as D (same rule);
-- it is simpler code, with no loop and no cap;
-- the selection is one short statement, so the cost of not being able to
-  cancel it is small.
-
-These are estimates. FR-B1a plans the measurement that has to confirm them
-before the implementation relies on them, and names D as the fallback if it
-does not.
+**Choice: D.** The first choice was C on a partial index
+(`idx_lookup_key_with_deconstructor ON lookup(lookup_key) WHERE deconstructor
+!= ''`), which makes C's break-down filter index-only. The measurement that
+had to confirm it (FR-B1a, §1.2a) showed that the index works, but SQLite
+does not choose it reliably. Making C work needs the query to override the
+planner, plus a second query for databases without the index. D needs neither
+and costs about the same on disk, so it was chosen (2026-10-22).
 
 If the FR-A5 decision is **Remove**, none of this is built.
+
+### 1.2a Why not the partial index: measured (FR-B1a)
+
+Measured on a scratch copy of the `lookup` table with the partial index.
+Details and the full table: task list, Measurements, "Partial index
+verification (7.1, 7.2)".
+
+**The index itself works.** It takes 0.6 s to create, holds 859,851 entries
+and is 24.5 MB. Forced onto it, `sam` reads 0.79 MB from disk, 2.4 ms warm,
+and returns the same key as the key index for all 628 sample prefixes.
+
+**SQLite does not choose it reliably.** The app's bundled SQLite
+(`libsqlite3-sys` `bundled`) is compiled with `SQLITE_ENABLE_STAT4`. With
+STAT4, SQLite estimates a range from sampled keys and re-plans a
+`prepare_v2` statement for each new set of bound range values. So the plan
+depends on the prefix:
+- For most prefixes it picks the partial index.
+- For `sam`, `par`, `dham` and `sañcuṇṇamathit(ā)` it picks the key index,
+  fetches a table row for each key in the range, and reads up to **17.6 MB**
+  (`sam`, 124 ms cold). That is form C without an index, the case the index
+  was meant to remove. The worst prefixes are the ones the plan goes wrong
+  for.
+- `EXPLAIN QUERY PLAN` on the query with unbound `?1`/`?2` shows the partial
+  index. That is not the plan that runs, so a test written that way passes
+  while the app reads table rows.
+
+**Making C reliable costs what C was chosen to avoid.**
+- `INDEXED BY idx_lookup_key_with_deconstructor` forces the index. It
+  overrides the planner, and on a database without the index the statement
+  fails ("no such index") instead of running slowly.
+- So the code needs a second SQL string for databases without the index, and
+  a per-process check to choose between them. That is the fallback path the
+  partial index was meant to make unnecessary.
+- And the speed-up reaches a device only with a re-bootstrapped
+  `dpd.sqlite3`. Until the user downloads it, the guesses run as C without an
+  index.
+
+**D, measured against C.**
+- **Same row.** D and C return the same key for all 628 attempt-2 and
+  attempt-4 prefixes of the FR-A3 sample, with D capped at 500 keys.
+- **Cost.** Every guess's key query is index-only on the key index
+  (`SEARCH lookup USING COVERING INDEX sqlite_autoindex_lookup_1`, checked
+  with literal values). Worst case `sam`: 0.98 MB from disk, 30 ms cold,
+  16 ms warm (18 rows checked), against 0.79 MB and 2.4 ms for the forced
+  C. Test-word misses: 0.02 MB and well under 1 ms, the same as C.
+- **Rows checked.** Over every 3- and 4-letter prefix of Pāli letters in
+  `lookup` (19,409 prefixes; attempt 4 gets these from 4- and 5-letter
+  words), the most rows D checks before it finds a break-down is **355**
+  (`saṁ`). The prefixes that need more than that have no key with a
+  break-down at all. They are English-entry ranges (`sho` 912, `com` 602,
+  `bei` 531, `shou` 825). In the FR-A3 sample the most is 31 (`kam`), and no
+  prefix reaches the cap.
+- **No database change.** The speed-up ships with the app, for every
+  existing `dpd.sqlite3`.
+- **Cancellable** between rows.
+- **Costs:** a loop and a cap in Rust. A prefix with more than 500 keys and
+  no break-down among the first 500 gives no guess. Today no Pāli prefix
+  does (above), but a later DPD release could add one (FR-B1, cap headroom
+  test).
 
 ### 1.3 How often the guesses are reached, and what they return: measured
 
@@ -211,7 +257,9 @@ The measurements behind §1.2, §1.3 and the FR-A5 decision are kept in
 - `guess_sample_30k.tsv`: the FR-A3 sample;
 - `guess_review.tsv`: the graded review, read-only, and the only row-level
   record of it;
-- `guess_cost.py`: the cost harness that FR-B1a extends;
+- `guess_cost.py`: the cost harness, extended by FR-B1a;
+- `equiv_d.py` and `d_probe.py`: form D against form C over the sample, and
+  form D's worst cases over every short prefix (§1.2a);
 - the analysis and review helpers.
 
 The folder's `README.md` describes each file and how to regenerate it. The
@@ -324,9 +372,8 @@ override them in review):
 | 15 – 50 % | **Setting:** guesses behind a setting, off by default (FR-B2). |
 | < 15 % | **Remove:** delete attempts 2 and 4 (FR-B3). |
 
-The decision is about **quality only**. With the FR-B1 index a guess costs
-about as little as the rest of the lookup (§1.2, to be confirmed by FR-B1a),
-so Goal 4 is met by every branch. In the sample a shown guess is almost always
+The decision is about **quality only**. With form D a guess costs about as
+little as the rest of the lookup (§1.2a), so Goal 4 is met by every branch. In the sample a shown guess is almost always
 the word's only answer (§1.3), so a guess removed or switched off turns that
 lookup into "No results". The share is therefore computed over all reviewed
 guesses. The 2 rows that had other results are reported individually; they
@@ -344,86 +391,84 @@ and in `docs/search-snippet-highlight-pipeline.md` §9.
 
 ### 4.2 Phase B — Make the guesses cheap, then apply the decision
 
-**FR-B1 — Partial index and range form for the deconstructor guesses** (needed
-by Keep and Setting; skip if the decision is Remove). See §1.2 for the
-comparison.
-- **Index.** Add to `scripts/dpd-btree-indexes.sql`:
-  ```sql
-  CREATE INDEX IF NOT EXISTS idx_lookup_key_with_deconstructor
-      ON lookup(lookup_key) WHERE deconstructor != '';
-  ```
-  It goes before the script's `VACUUM`. The bootstrap already runs `ANALYZE` on
-  `dpd.sqlite3` afterwards (`cli/src/bootstrap/mod.rs`), so the planner gets
-  statistics for it. Comment in the script why the index exists and the
-  literal-predicate rule below.
+**FR-B1 — Range guesses from the key index, checked row by row (form D)**
+(needed by Keep and Setting; skip if the decision is Remove). See §1.2 and
+§1.2a for the comparison and why the partial index was dropped.
+- **No database change.** No new index; the guesses use the existing primary-key
+  index `sqlite_autoindex_lookup_1`.
 - **Query.** Replace both `LIKE '<prefix>%'` queries in
-  `dpd_deconstructor_query()` with one helper that selects the key over the
-  partial index, then loads that row by primary key:
-  ```sql
-  SELECT lookup_key FROM lookup
-   WHERE lookup_key >= ?1 AND lookup_key < ?2 AND deconstructor != ''
-   ORDER BY length(lookup_key), lookup_key LIMIT 1
-  -- ?2 = prefix_upper_bound(?1)
-  ```
+  `dpd_deconstructor_query()` with one helper, `deconstructor_prefix_guess()`:
+  1. Read up to `DECONSTRUCTOR_GUESS_KEY_CAP` (500) candidate keys in one
+     statement, a `const` string run with `diesel::sql_query`:
+     ```sql
+     SELECT lookup_key FROM lookup
+      WHERE lookup_key >= ?1 AND lookup_key < ?2
+      ORDER BY length(lookup_key), lookup_key LIMIT ?3
+     -- ?2 = prefix_upper_bound(?1), ?3 = DECONSTRUCTOR_GUESS_KEY_CAP
+     ```
+  2. Load the rows by primary key in that order, on the same connection,
+     checking the cancellation token before each. Return the first row whose
+     `deconstructor` is not empty, or `None`.
   - The range runs on the lowercase prefix. No second, capitalised range: the
     mixed-case keys are English entries (§1.1). Say in a comment that the query
     is lowercase (§7).
-  - **Only rows with a break-down are candidates.** A row without one
-    contributes nothing (§1.1). The filter cannot lose a guess that the plain
-    range (form B) would contribute. Both search the same range, so if B's
-    shortest key has a break-down, it is also the shortest key with one, and C
-    returns the same row. The FR-A3 sample confirms this (§1.3).
+  - **Only rows with a break-down are returned.** A row without one
+    contributes nothing (§1.1). This cannot lose a guess that the plain range
+    (form B) would contribute: if B's shortest key has a break-down, it is also
+    the first key D finds with one, so D returns the same row (§1.3).
   - **The row is chosen deterministically:** shortest key, ties broken by key
-    order. Never table order.
-- **Guard: the literal predicate.** SQLite uses a partial index only when it can
-  prove that the query's `WHERE` implies the index's `WHERE`. A bound parameter
-  cannot be proven: `deconstructor != ?`, which Diesel's `.ne("")` produces,
-  silently bypasses the index. In that case the query still returns the right
-  row, but by fetching table rows (form C without index). So:
-  - the selection SQL is a **`const` string** with the literal `!= ''`, run
-    with `diesel::sql_query`;
-  - the test (FR-T1) runs `EXPLAIN QUERY PLAN` on **that same const**.
-- **Guard: a database without the index.** A device or developer machine with
-  an older `dpd.sqlite3` lacks the index. The query stays correct but is slow
-  for short prefixes (§1.2, C without index).
-  - Detect this once per process (`sqlite_master` lookup, cached).
-  - Log one `info` line naming the index and the consequence, so a user's
-    `log.txt` shows it.
-  - Do **not** add a fallback query path: that would bring back D's code, which
-    the index exists to avoid.
+    order. Never table order. SQLite's `length()` counts characters, not bytes,
+    for text.
+  - The timing line reports, for attempts 2 and 4, how many rows were checked
+    as well as the time, so a guess that reached the cap shows in `log.txt`.
+- **Pitfalls to guard against:**
+  - **Never add the break-down filter to the key query.** With `AND
+    deconstructor != ''` the statement is form C without an index: it fetches a
+    table row for every key in the range (17.6 MB for `sam`) in one statement
+    that cannot be cancelled. The key query reads `lookup_key` and filters on
+    `lookup_key` only, so the key index covers it and no table page is read.
+    FR-T1's plan test checks for `COVERING INDEX`.
+  - **Plan tests must use real values.** The bundled SQLite has STAT4, so it
+    plans a range query for the bound values and re-plans when they change.
+    `EXPLAIN QUERY PLAN` on the statement with unbound `?` placeholders is not
+    the plan that runs (§1.2a). The plan test substitutes real prefixes,
+    including the largest ranges (`sam`, `par`), into the same `const`.
+  - **The cap is in the SQL** (`LIMIT`). Without it, a 3-letter prefix such as
+    `sam` loads 26,507 keys into Rust. The `ORDER BY length(…)` still sorts the
+    whole range in a temporary B-tree inside SQLite; that reads index pages only
+    (~0.9 MB for `sam`).
+  - **One connection for the whole loop.** Taking a pool connection per row
+    competes with other lookups for the 5-connection pool
+    (`backend/src/db/mod.rs`).
+  - **Cap headroom.** A prefix with more than 500 keys and no break-down among
+    its first 500 gives no guess, silently. In today's DPD data the most rows
+    any Pāli-letter 3- or 4-letter prefix needs is 355 (`saṁ`) (§1.2a). An
+    `#[ignore]`d test recomputes this and fails if a prefix that has a
+    break-down needs more than the cap. Run it after a DPD data update.
+  - **Don't "optimise" back to a partial index** without reading §1.2a. A
+    partial index is chosen or not by STAT4 per prefix and needs `INDEXED BY`
+    plus a second query for databases without it.
 
-**FR-B1a — Verify the index before relying on it** (planned measurement; run at
-implementation time, before the FR-B1 code is written). §1.2's figures for the
-indexed form are estimates. On a **scratch copy** of the `lookup` table, never
-the dist DB:
-1. Recreate `lookup` with its original DDL, copy the rows in rowid order,
-   `ANALYZE`, then create the index and `ANALYZE` again.
-2. Record the index size (`dbstat`) and how long `CREATE INDEX` took.
-3. `EXPLAIN QUERY PLAN`:
-   - with the literal predicate it must be
-     `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`;
-   - with `deconstructor != ?` it is expected **not** to use the index. That
-     confirms the trap the guard is for.
-   - Check both with `sqlite_stat1` present, because statistics change which
-     index the planner picks.
-4. Measure cold and warm time, bytes requested (`rchar`) and bytes from disk
-   (`read_bytes`). Use the same prefix set as the "before" measurement: the
-   five test words' attempt-2 and attempt-4 prefixes, plus `sam`, `par`, `paṭ`,
-   `anu`, `upa` and `saṁ`.
-5. **Equivalence:** for every attempt-2 and attempt-4 prefix in the FR-A3
-   sample (`tasks/data/2026-10-21-dictionary-lookup/guess_sample_30k.tsv`), the indexed query returns the same key as the same SQL forced onto
-   the primary-key index (`INDEXED BY sqlite_autoindex_lookup_1`).
+**FR-B1a — Verify the indexed form before relying on it.** *Done (task 7.1,
+2026-10-22).* The measurement planned here was run on a scratch copy of
+`lookup` with the partial index:
+1. the index's size and creation time;
+2. `EXPLAIN QUERY PLAN` with the literal and the bound predicate, with
+   `sqlite_stat1` present;
+3. cold and warm time, `rchar` and `read_bytes`, for the five test words'
+   attempt-2 and attempt-4 prefixes, plus `sam`, `par`, `paṭ`, `anu`, `upa`,
+   `saṁ` (and `dham`);
+4. equivalence with `INDEXED BY sqlite_autoindex_lookup_1` over every
+   attempt-2 and attempt-4 prefix of the FR-A3 sample.
 
-**Pass criteria:**
-- the plan uses the index;
-- equivalence is 100 %;
-- the worst case reads **≤ 2 MB** from disk (≈ 500 random pages, ≤ 0.25 s on
-  the assumed old eMMC);
-- warm time for `sam` stays within a few tens of ms on desktop.
-
-If any criterion fails, record why and switch FR-B1 to **form D** (§1.2): keys
-from the primary-key index, then rows one at a time until one has a break-down,
-with a cap, and no new index.
+The pass criteria were: the plan uses the index, equivalence is 100 %, the
+worst case reads ≤ 2 MB from disk, and `sam` stays within a few tens of ms
+warm. Equivalence passed (628 / 628). The plan and the ≤ 2 MB criteria failed
+for `sam`, `par` and `dham`: SQLite chose the key index (§1.2a). They passed
+only with `INDEXED BY`. As specified for a failure, FR-B1 switched to form
+D. Form D meets the same criteria, with the key index in place of the partial
+one: a covering key-index plan, 628 / 628 same key as C, ≤ 1 MB from disk, `sam` 16 ms warm.
+Figures: task list, Measurements, "Partial index verification (7.1, 7.2)".
 
 **FR-B2 — Setting** (Setting branch only).
 - Add an `AppSettings` field, e.g. `dpd_breakdown_prefix_guesses: bool`,
@@ -432,9 +477,9 @@ with a cap, and no new index.
 - Show it in **Settings → Find → Search Behavior** as a checkbox labelled
   "Guess break-downs for unknown words" with one sentence of explanation:
   "When a word is not in the dictionary, also try words that start the same
-  way. Often finds unrelated words." (Not "slower": with the FR-B1 index a
-  guess is estimated to cost about a millisecond, which FR-B1a verifies, so
-  speed is no longer a reason to turn it off.)
+  way. Often finds unrelated words." (Not "slower": with form D a guess
+  costs about a millisecond, at most a few tens of ms (§1.2a), so speed is no
+  longer a reason to turn it off.)
 - The setting covers **only attempts 2 and 4** of the deconstructor. The
   Phase 8 headword "starts with" fallbacks are not affected.
 - Wire it through the parameter that already exists: every caller in the §1.1
@@ -547,7 +592,9 @@ callers pass `LookupCancel::none()`.
 
 **FR-C8 — A running SQL statement is not interrupted.** Cancellation happens
 between statements. That is acceptable only because FR-B1/FR-B3 leave no
-statement that scans the `lookup` table. If FR-A2 shows any remaining single
+statement that scans the `lookup` table. Form D's guesses are many short
+statements, with a check between them, and its one larger statement (the key
+query) reads index pages only. If FR-A2 shows any remaining single
 statement slower than about 200 ms on the phone, record it in Open Questions.
 Do not add `sqlite3_interrupt` in this PRD.
 
@@ -565,21 +612,27 @@ The Dictionary search tab already shows its own
 insert nothing; these tests only read.
 - The FR-A5 branch is enforced by a test:
   - **Keep/Setting:**
-    - `EXPLAIN QUERY PLAN` on the helper's `const` SQL shows
-      `SEARCH lookup USING INDEX idx_lookup_key_with_deconstructor`, never
-      `SCAN lookup`. This requires the dist DB to have the index (task list).
-    - For a few prefixes (`sam`, `saṁ`, `par`, `pupphas`,
-      `aggaphalasukha`), the result equals the same SQL with
-      `INDEXED BY sqlite_autoindex_lookup_1`.
-    - The row picked is the shortest key.
+    - `EXPLAIN QUERY PLAN` on the helper's key-query `const`, with real
+      prefixes substituted for the placeholders (`sam`, `par`, `saṁ`,
+      `pupphas`, `aggaphalasukha`), shows `SEARCH lookup USING COVERING INDEX
+      sqlite_autoindex_lookup_1`, never `SCAN lookup` and never a plain
+      `USING INDEX` (which would mean table rows are read).
+    - For the same prefixes, the helper's key equals form C's: the single
+      statement `… AND deconstructor != '' ORDER BY length(lookup_key),
+      lookup_key LIMIT 1`, used as the oracle.
+    - The row picked is the shortest key with a break-down.
+    - A cap test: a prefix whose range has more keys than the cap and no
+      break-down among them (`sho`) gives `None`; `saṁ` (355 rows) still
+      gives its guess.
+    - An `#[ignore]`d headroom test: no 3- or 4-letter prefix of Pāli
+      letters that has a key with a break-down needs more than the cap.
   - **Remove:** an unknown 6-letter word yields no deconstructor row.
 - A cancelled token makes the cancellable grouped lookup return the
   `LookupCancelled` error, and leaves the memo unchanged: a memo already holding
   query X still holds X after a cancelled lookup of Y.
 - A token bumped after creation reports cancelled; `LookupCancel::none()`
   never does.
-- If FR-B1 adopts the break-down-only filter: a guessed row always has a
-  non-empty `deconstructor`.
+- A guessed row always has a non-empty `deconstructor`.
 - Existing `test_dpd_lookup_grouped.rs`, `test_dpd_deconstructor_list.rs`,
   `test_deconstructor_result_pagination.rs` and `test_dpd_lookup.rs` pass, or
   their expectations change only where the chosen branch changes a guess, with
@@ -607,9 +660,8 @@ function.
 - Changing the Gloss tab's lookups (already exact-only).
 - Changing iti-sandhi handling from `a8bff079`.
 - Making `set_query()` accept words shorter than 4 characters.
-- Any change to `dpd.sqlite3` beyond the one partial index of FR-B1. No other
-  new index, no table or column change. The version bump that ships the
-  re-bootstrapped DB is the maintainer's, not part of the implementation.
+- Any change to `dpd.sqlite3`: no new index, no table or column change. The
+  partial index first planned in FR-B1 was dropped (§1.2a).
 
 ## 6. Design Considerations
 
@@ -628,17 +680,13 @@ function.
   `normalize_plain_text()`, which calls `to_lowercase()`. A `uid:` query skips
   normalization, but it never reaches the deconstructor guesses. FR-B1 relies on
   this; say so in a comment at the range query.
-- **Delivering the index.** `dpd.sqlite3` has no runtime migrations; it is
-  shipped pre-built. The index reaches a device only through a re-bootstrapped
-  `dpd.sqlite3`:
-  - The bootstrap creates it through `create_dpd_indexes()` →
-    `scripts/dpd-btree-indexes.sql`, then runs `ANALYZE`.
-  - Development machines and the test phone need the new DB too. The dist DB
-    must have the index before the FR-T1 plan test can pass; it can be applied
-    to the dist DB by hand (`CREATE INDEX` + `ANALYZE`), with the maintainer's
-    go-ahead.
-  - A device without the index stays correct but slow for short prefixes
-    (FR-B1 guard).
+- **No database delivery.** The guesses use the existing key index, so the
+  change ships with the app and works with every `dpd.sqlite3` already on a
+  device. No re-bootstrap and no DB version bump.
+- **STAT4.** The bundled SQLite is built with `SQLITE_ENABLE_STAT4`
+  (`libsqlite3-sys`'s `build.rs`), so range queries are planned for their
+  bound values. A plan check with unbound placeholders proves nothing about
+  the plan that runs (§1.2a, FR-B1 pitfalls).
 - **Debug builds understate SQLite speed.** The desktop CMake build has no
   `CMAKE_BUILD_TYPE` and the beta-debug APK is `Debug`, so the bundled SQLite
   (`libsqlite3-sys`, `bundled`) is likely compiled without optimisation. A scan
@@ -673,8 +721,9 @@ function.
 - **Logging:** use `info()` in Rust and `logger` in QML. Never `console`.
 - **Docs to update:**
   - `docs/search-snippet-highlight-pipeline.md` §9: replace the "still `LIKE`"
-    note with the chosen branch, the partial index, the literal-predicate rule,
-    the missing-index log line and the deterministic-row rule.
+    note with the chosen branch, form D and its deterministic-row rule, the
+    cap and its headroom test, and the FR-B1 pitfalls, including why there is
+    no partial index (STAT4).
   - `docs/pali-sandhi-and-quote-marks.md` if the function table changes.
   - The API doc if `/dict_combined_search` results change.
   - `PROJECT_MAP.md` for the new cancellation type.
@@ -684,9 +733,10 @@ function.
 - FR-A2 rerun after the change: every unknown test word under 2 s on the phone,
   cold, and under 100 ms on desktop warm (from the `DPD-LOOKUP-TIMING:` totals).
   Includes `sam`'s worst case, the largest 3-letter prefix.
-- FR-B1a pass criteria met: the index is used, results are equivalent, and the
-  worst case reads ≤ 2 MB. Bytes read are the figure that carries over to
-  old hardware; the fast test devices cannot show the 30 s case directly.
+- FR-B1a's criteria met by form D: the key query is covered by the key index,
+  results equal form C's, and the worst case reads ≤ 2 MB (measured 0.98 MB
+  for `sam`). Bytes read are the figure that carries over to old hardware; the
+  fast test devices cannot show the 30 s case directly.
 - Manual check on the phone: tap word A (unknown), then within a second tap
   word B. Word B's results appear without waiting for A, and A's results never
   appear. Repeat in the Dictionary search tab by typing a new query during a

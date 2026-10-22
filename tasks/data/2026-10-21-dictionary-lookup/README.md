@@ -54,23 +54,58 @@ by the agent at the user's request. Columns:
 This file is the only row-level record of the review. It cannot be
 regenerated; don't overwrite it.
 
-### `guess_cost.py` — cost per guess form (task 2.8; task 7.1 extends it)
+### `guess_cost.py` — cost per guess form (tasks 2.8, 7.1)
 
 Times guess forms A (`LIKE`), B (range, shortest key), C (range +
-`deconstructor != ''`) and D (keys from the index, then rows one at a time)
-for the five test words' attempt-2 and attempt-4 prefixes plus `sam` and
-`saṁ`. Each form runs cold (the file is evicted with
-`posix_fadvise(DONTNEED)`) and warm. It reports ms, bytes requested (`rchar`)
-and bytes read from disk (`read_bytes`), from `/proc/self/io`, so it is
-Linux-only.
+`deconstructor != ''`, the planner's choice of index), CI (C forced onto the
+partial index with `INDEXED BY`) and D (keys from the key index, then rows
+one at a time) for the five test words' attempt-2 and attempt-4 prefixes plus
+`sam`, `saṁ`, `par`, `paṭ`, `anu`, `upa` and `dham`. Each form runs cold (the
+file is evicted with `posix_fadvise(DONTNEED)`) and warm. It reports ms,
+bytes requested (`rchar`) and bytes read from disk (`read_bytes`), from
+`/proc/self/io`, so it is Linux-only. Forms C and CI also print the plan
+SQLite chose for the prefix.
 
 ``` sh
-python3 -I guess_cost.py <path to dpd.sqlite3>
+python3 -I guess_cost.py <path to dpd.sqlite3> [A,B,C,D]
 ```
 
-Task 7.1 runs it against a **scratch copy** of the `lookup` table that has the
-partial index, never the dist DB. It adds `par`, `paṭ`, `anu` and `upa` to the
-prefix set.
+The database must be on a disk-backed filesystem: on tmpfs (the agent
+scratchpad) "cold" is not cold. Form CI needs a copy of the `lookup` table
+with `idx_lookup_key_with_deconstructor`; the dist DB does not have that
+index, and the app does not use it (task list, Measurements, "Partial index
+verification (7.1, 7.2)"). To rebuild that copy:
+
+``` sh
+SRC=<path to dpd.sqlite3>
+DDL=$(sqlite3 -readonly $SRC "select sql from sqlite_master where name='lookup'")
+sqlite3 /var/tmp/lookup.sqlite3 "$DDL; ATTACH 'file:$SRC?mode=ro' AS src;
+  INSERT INTO lookup SELECT * FROM src.lookup ORDER BY rowid; DETACH src; ANALYZE;
+  CREATE INDEX idx_lookup_key_with_deconstructor ON lookup(lookup_key)
+    WHERE deconstructor != ''; ANALYZE;"
+```
+
+### `equiv_d.py` — form D against form C over the sample (task 7.1)
+
+For every attempt-2 and attempt-4 prefix of `guess_sample_30k.tsv`, checks
+that form D with its 500-key cap returns the same key as form C, and reports
+the most rows D checked and how many prefixes reached the cap. Also prints the
+plan of D's key query for `sam`, with literal values.
+
+``` sh
+python3 -I equiv_d.py <path to dpd.sqlite3> guess_sample_30k.tsv
+```
+
+### `d_probe.py` — form D's worst cases over all short prefixes (task 7.1)
+
+For every 3- and 4-letter prefix of Pāli letters in `lookup` (what attempt 4
+gets from a 4- or 5-letter word), how many rows form D checks before a key
+with a break-down, or the whole range when none has one. The basis for the
+500 cap. Takes about a minute.
+
+``` sh
+python3 -I d_probe.py <path to dpd.sqlite3>
+```
 
 ### `analyse.py` — structural counts over the sample (task list "3.0 findings")
 
@@ -100,8 +135,7 @@ directory and the dist `dpd.sqlite3` by absolute path.
 
 ## When to remove this folder
 
-Keep it until the PRD is finished. Task 7.1 reads the sample and extends
-`guess_cost.py`, task 8.2 may re-run the harness, and a reopened Keep
+Keep it until the PRD is finished. Task 8.2 may re-run the harness, and a reopened Keep
 decision (PRD §9 Q5) starts from `guess_review.tsv`. Remove it in task 8.9,
 when the PRD and task list move to `tasks/archive/`. Do it in its own commit,
 and record that commit's hash in the archived task list so the files can be

@@ -36,6 +36,73 @@ fn prefix_upper_bound(prefix: &str) -> String {
     format!("{}{}", prefix, char::MAX)
 }
 
+/// Most candidate keys a "starts with" break-down guess checks. In the DPD
+/// data the most any Pāli prefix needs is 355 (`saṁ`); see
+/// docs/search-snippet-highlight-pipeline.md §9 and the `#[ignore]`d headroom
+/// test in `backend/tests/test_dpd_breakdown_guesses.rs`.
+pub const DECONSTRUCTOR_GUESS_KEY_CAP: i32 = 500;
+
+/// Candidate `lookup` keys for a "starts with" break-down guess, shortest
+/// first (`length()` counts characters), ties in key order.
+///
+/// It reads `lookup_key` and filters on it only, so the primary-key index
+/// covers it and no table row is read. Never add a `deconstructor` filter
+/// here: the statement would then fetch a table row for every key in the range
+/// (17.6 MB for `sam`), in one statement that cancellation cannot stop. The
+/// rows are checked one at a time by `deconstructor_prefix_guess()` instead.
+///
+/// ?1 is the prefix, ?2 `prefix_upper_bound(?1)`, ?3 the cap.
+pub const DECONSTRUCTOR_GUESS_KEYS_SQL: &str =
+    "SELECT lookup_key FROM lookup \
+     WHERE lookup_key >= ?1 AND lookup_key < ?2 \
+     ORDER BY length(lookup_key), lookup_key LIMIT ?3";
+
+#[derive(QueryableByName)]
+struct LookupKeyRow {
+    #[diesel(sql_type = Text)]
+    lookup_key: String,
+}
+
+/// The "starts with" break-down guess for `prefix`: the shortest `lookup` key
+/// starting with it whose row has a break-down, or `None`. Also returns how
+/// many rows were checked.
+///
+/// The prefix is lowercase (the query text was normalized with
+/// `normalize_plain_text()`), so the range needs no capitalised twin: the
+/// mixed-case keys are English entries.
+///
+/// Checks the token before each row. The whole guess runs on the one
+/// connection it is given.
+fn deconstructor_prefix_guess(
+    db_conn: &mut SqliteConnection,
+    prefix: &str,
+    cancel: &LookupCancel,
+) -> Result<(Option<Lookup>, usize)> {
+    use crate::db::dpd_schema::lookup::dsl as lk;
+
+    let keys: Vec<LookupKeyRow> = sql_query(DECONSTRUCTOR_GUESS_KEYS_SQL)
+        .bind::<Text, _>(prefix)
+        .bind::<Text, _>(prefix_upper_bound(prefix))
+        .bind::<Integer, _>(DECONSTRUCTOR_GUESS_KEY_CAP)
+        .load(db_conn)?;
+
+    let mut checked = 0;
+    for key in keys {
+        cancel.check()?;
+        checked += 1;
+        let row = lk::lookup
+            .filter(lk::lookup_key.eq(&key.lookup_key))
+            .first::<Lookup>(db_conn)
+            .optional()?;
+        if let Some(row) = row
+            && !row.deconstructor.is_empty()
+        {
+            return Ok((Some(row), checked));
+        }
+    }
+    Ok((None, checked))
+}
+
 /// The base words to try for an iti-sandhi word resolved as `<base> + iti`, in
 /// order: the base with its final vowel shortened (`dhārayāmi`, what sandhi
 /// lengthening usually hides), then the unshortened one when the vowel is
@@ -75,23 +142,33 @@ fn fmt_ms(v: Option<f64>) -> String {
     }
 }
 
-/// Per-attempt timings of `dpd_deconstructor_query()`, and which attempt
-/// produced the row.
+/// Per-attempt timings of `dpd_deconstructor_query()`, which attempt produced
+/// the row, and how many rows the two "starts with" guesses checked.
 #[derive(Debug, Default, Clone)]
 struct DeconstructorTiming {
     attempts: [Option<f64>; 4],
+    /// Rows checked by attempts 2 and 4; `None` for the exact attempts.
+    rows_checked: [Option<usize>; 4],
     hit: Option<u8>,
 }
 
 impl DeconstructorTiming {
+    /// One attempt: `-`, the ms, or `ms/rows checked` for a guess.
+    fn fmt_attempt(&self, i: usize) -> String {
+        match (self.attempts[i], self.rows_checked[i]) {
+            (Some(_), Some(n)) => format!("{}/{}", fmt_ms(self.attempts[i]), n),
+            _ => fmt_ms(self.attempts[i]),
+        }
+    }
+
     fn format(&self) -> String {
         let hit = self.hit.map_or("none".to_string(), |n| n.to_string());
         format!(
             "[a1={},a2={},a3={},a4={},hit={}]",
-            fmt_ms(self.attempts[0]),
-            fmt_ms(self.attempts[1]),
-            fmt_ms(self.attempts[2]),
-            fmt_ms(self.attempts[3]),
+            self.fmt_attempt(0),
+            self.fmt_attempt(1),
+            self.fmt_attempt(2),
+            self.fmt_attempt(3),
             hit,
         )
     }
@@ -234,6 +311,13 @@ impl DpdDbHandle {
         }
     }
 
+    /// The "starts with" break-down guess for `prefix` (attempts 2 and 4 of
+    /// `dpd_deconstructor_query()`), and the number of rows it checked.
+    pub fn dpd_deconstructor_prefix_guess(&self, prefix: &str) -> Result<(Option<Lookup>, usize)> {
+        let db_conn = &mut self.get_conn().expect("Can't get db conn");
+        deconstructor_prefix_guess(db_conn, prefix, &LookupCancel::none())
+    }
+
     pub fn dpd_deconstructor_query(&self, query_text: &str, exact_only: bool) -> Result<Option<Lookup>> {
         self.dpd_deconstructor_query_timed(query_text, exact_only, &LookupCancel::none())
             .map(|(row, _)| row)
@@ -256,8 +340,7 @@ impl DpdDbHandle {
 
         // An iti-sandhi word is matched exactly in its joined form. The
         // "starts with" attempts would only guess from a form DPD does not
-        // know (and scan the whole table to do it); the lookups resolve such a
-        // word as `<base> + iti` instead.
+        // know; the lookups resolve such a word as `<base> + iti` instead.
         let (query_text, iti_base) = normalize_dpd_query_text(query_text);
         let exact_only = exact_only || iti_base.is_some();
 
@@ -273,16 +356,15 @@ impl DpdDbHandle {
             timing.hit = Some(1);
         }
 
-        // Attempt 2: If not exact_only, try to match as 'starts with'.
+        // Attempt 2: If not exact_only, guess a key starting with the word.
         if !exact_only
             && result.is_none() && query_text.chars().count() >= 4 {
                 cancel.check()?;
                 let t = Instant::now();
-                result = lookup
-                    .filter(lookup_key.like(&format!("{}%", query_text)))
-                    .first::<Lookup>(db_conn)
-                    .optional()?;
+                let (row, checked) = deconstructor_prefix_guess(db_conn, &query_text, cancel)?;
+                result = row;
                 timing.attempts[1] = Some(elapsed_ms(t));
+                timing.rows_checked[1] = Some(checked);
                 if result.is_some() {
                     timing.hit = Some(2);
                 }
@@ -309,7 +391,7 @@ impl DpdDbHandle {
         // Attempt 4: remove the last letter
         if !exact_only {
             // If there were no exact match in the deconstructor, and query_text is
-            // long enough, remove the last letter and match as 'starts with'.
+            // long enough, remove the last letter and guess a key starting with the rest.
             if result.is_none() && query_text.chars().count() >= 4 {
                 let num_chars = query_text.chars().count();
                 // Since chars().count() >= 4, num_chars - 1 will be >= 3.
@@ -318,11 +400,10 @@ impl DpdDbHandle {
 
                 cancel.check()?;
                 let t = Instant::now();
-                result = lookup
-                    .filter(lookup_key.like(&format!("{}%", all_but_last_char)))
-                    .first::<Lookup>(db_conn)
-                    .optional()?;
+                let (row, checked) = deconstructor_prefix_guess(db_conn, &all_but_last_char, cancel)?;
+                result = row;
                 timing.attempts[3] = Some(elapsed_ms(t));
+                timing.rows_checked[3] = Some(checked);
                 if result.is_some() {
                     timing.hit = Some(4);
                 }
