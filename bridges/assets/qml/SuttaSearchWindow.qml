@@ -1004,8 +1004,7 @@ ApplicationWindow {
         if (html_view && html_view.item) {
             html_view.item.web.runJavaScript("if (typeof window.ssp_word_summary_opened === 'function') { window.ssp_word_summary_opened(); }");
         }
-        word_summary.set_query(query_text);
-        word_summary.search_btn.click();
+        word_summary.lookup_from_outside(query_text);
     }
 
     function gloss_text(query_text: string) {

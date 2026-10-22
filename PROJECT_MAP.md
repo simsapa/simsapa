@@ -174,6 +174,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── SuttaTabButton.qml
 │   │   ├── TopicIndexUpdateWindow.qml
 │   │   ├── tst_GlossTab.qml
+│   │   ├── tst_WordSummary.qml
 │   │   ├── WebEngineRepaintNudge.qml
 │   │   └── WordSummary.qml
 ```
@@ -269,6 +270,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── lib.rs
 │   │   ├── logger.rs
 │   │   ├── lookup.rs
+│   │   ├── lookup_cancel.rs
 │   │   ├── pali_sort.rs
 │   │   ├── pali_stemmer.rs
 │   │   ├── query_task.rs
@@ -288,8 +290,11 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── tests
 │   │   ├── helpers
 │   │   │   └── mod.rs
+│   │   ├── test_dpd_breakdown_guesses.rs
+│   │   ├── test_dpd_breakdown_guess_sample.rs
 │   │   ├── test_dpd_deconstructor_list.rs
 │   │   ├── test_dpd_lookup.rs
+│   │   ├── test_dpd_lookup_cancel.rs
 │   │   ├── test_gloss_session_export.rs
 │   │   ├── test_gloss_word_resolution.rs
 │   │   ├── test_query_task.rs
@@ -527,6 +532,8 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - **Localhost API search endpoints:** `bridges/src/api.rs` — `POST /search` (general; area-specific default mode; HTTP 400 on unknown mode/area), `POST /suttas_fulltext_search` (FulltextMatch), `POST /suttas_contains_search` (ContainsMatch), `POST /dict_combined_search` (DpdLookup + deconstructor), and `POST /reference_search` (the Reference Search window's lookup over the bundled reference table, `pts_reference_search::search()`: PTS volume/page, DPR reference, Pāli title or SuttaCentral reference → every reference style of the match; §17 of the doc). Shared helpers `parse_search_mode`/`parse_search_area`, `build_search_params`, `run_search`, `run_suttas_search`. Named routes keep the sutta-reference → `UidMatch` auto-detect; `run_search` does lazy mode-gated `init_fulltext_searcher()` for FulltextMatch/Combined. The **gloss pipeline** routes `POST /gloss_text` (synchronous multi-paragraph glossing via `helpers::process_all_paragraphs`) and the `GET /word_selection_ws` WebSocket (AI Word Selection over glossed paragraphs, streaming status/error/result; engine from `bridges/src/ai_engine.rs`) live in the same file — see §16 of the doc. `POST /set_ai_provider_key` (set a provider's key + enable it + prioritize it in the fallback sequence, so the WS engine — which uses the app's saved settings — has a working model; never echoes the key) supports them. A self-contained demo client is `scripts/gloss_demo.html` (gloss → vocab list + AI word selection). Full design: [docs/simsapa-localhost-api-search-endpoints.md](./docs/simsapa-localhost-api-search-endpoints.md).
 - **Grouped DPD lookup (compound break-downs):** `backend/src/db/dpd.rs::dpd_lookup_grouped()` returns `GroupedDpdLookup { query, results, deconstructions, direct_uids }` (structs in `backend/src/types.rs`) — break-down-aware, many-to-many uid membership, fetches component results even when direct results exist. Consumed by the Gloss tab (`ProcessedWord` compound fields), `WordSummary.qml` (client-side lock filter — it is not paginated), the Dictionary DPD-Lookup result page, and `POST /gloss_text`. Shared QML: `DeconstructorSelector.qml` (emit-only: it never writes its own `current_index` / `locked`) / `DeconstructorUtils.qml`. Full design: [docs/gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md) §9.
 - **Dictionary result page ordering & break-down lock:** the Dictionary page is three streams (regular DPD → bold definitions → Fulltext Match on Combined), spliced by `query_task.rs::split_page_across_streams`. On `Dictionary + DpdLookup` (`use_grouped_dpd_ordering()`), `dpd_lookup_full()` takes the **grouped** ordered list via `dpd.rs::dpd_lookup_grouped_memo()` (single-cell memo shared with the selector call in `sutta_bridge.rs::results_page`) and applies the lock filter in Rust — `types.rs::GroupedDpdLookup::ordered_filtered_results()`, `direct_uids ∪ selected break-down components` — **before** pagination, so locked pages are dense and the counter exact. Selection/lock ride in `SearchParams.deconstruction_selected_index` / `deconstruction_locked` (injected in `SuttaSearchWindow.qml::results_page()`); `FulltextResults.qml` only renders and re-requests page 0 on change. Streams 2/3 query the compound as typed and are never lock-filtered. Tests: `backend/tests/test_deconstructor_result_pagination.rs`. Full design: [docs/search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md) §9.
+- **DPD break-down guesses & `DPD-LOOKUP-TIMING:`:** when `lookup` has no row for a word, `dpd_deconstructor_query()` (`backend/src/db/dpd.rs`) guesses with `deconstructor_prefix_guess()`: candidate keys from the primary-key index (`DECONSTRUCTOR_GUESS_KEYS_SQL`, a covering range query, shortest key first, capped at `DECONSTRUCTOR_GUESS_KEY_CAP` = 500), then rows checked one by one until one has a break-down. No `LIKE` (full table scan), no `deconstructor` filter in the key query, no partial index (STAT4 plans per bound value). Every grouped lookup writes one `DPD-LOOKUP-TIMING:` line (per-phase ms, per-attempt ms with rows checked, ` cancelled` when superseded); the plain `dpd_lookup_grouped()` (Gloss tab) only when ≥ 100 ms. Tests: `backend/tests/test_dpd_breakdown_guesses.rs` (incl. the `#[ignore]`d cap-headroom test to run after a DPD data update); `test_dpd_breakdown_guess_sample.rs` is the `#[ignore]`d usefulness sample. Full design: [docs/search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md) §9e.
+- **Lookup supersession & cancellation:** `backend/src/lookup_cancel.rs` (`LookupCancel` generation token, `LookupCancelled`, `is_lookup_cancelled()`); `dpd_lookup_grouped_cancellable()` / `dpd_lookup_grouped_memo_cancellable()` in `dpd.rs` beside the unchanged non-cancelling wrappers; `SearchQueryTask::lookup_cancel`. WordSummary: `lookup_from_outside()` in `WordSummary.qml` (called by `SuttaSearchWindow.qml::set_summary_query()`), the bridge's `word_summary_lookup_generation`, `current_query_id` as the only acceptance gate, the `No results for "<word>".` line; test `tst_WordSummary.qml`. Dictionary tab: `results_query_generation` in `sutta_bridge.rs::results_page()`, bumped only when the query changes. Tests: `backend/tests/test_dpd_lookup_cancel.rs`. Full design: [docs/word-summary-lookups.md](./docs/word-summary-lookups.md) and [docs/search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md) §9c.
 
 ### Content Rendering  
 - **HTML Generation:** `backend/src/html_content.rs`

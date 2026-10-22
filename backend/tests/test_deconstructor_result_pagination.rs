@@ -239,8 +239,11 @@ fn grouped_equals_flat_for_non_deconstructing_words() {
     let app_data = get_app_data();
 
     // One word per phase the proof relies on: an exact headword hit, a root, an
-    // i2h-only inflection, a stem-only hit, and a "starts with" fallback.
-    let words = ["sabbaso", "√akkh", "gacchati", "dhammassa", "vipassan"];
+    // i2h-only inflection, a stem-only hit, and a "starts with" fallback. The
+    // fallback word must get no break-down guess either (no key starting with
+    // `abbhokirat` or `abbhokira` has a break-down), since a guess fills the
+    // results and Phase 8 never runs.
+    let words = ["sabbaso", "√akkh", "gacchati", "dhammassa", "abbhokirat"];
 
     for word in words {
         let grouped = app_data
@@ -265,6 +268,7 @@ fn grouped_equals_flat_for_non_deconstructing_words() {
             .dpd_lookup(word, false, true, None, None)
             .unwrap_or_else(|e| panic!("flat lookup failed for {word}: {e}"));
 
+        assert!(!grouped.results.is_empty(), "{word}: expected results from its phase");
         assert_eq!(
             uids(&grouped.results),
             uids(&flat),

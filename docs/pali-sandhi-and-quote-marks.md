@@ -247,8 +247,8 @@ path and stays the verb.
 **No prefix guesses for an iti-sandhi word.** The deconstructor matches only
 the exact joined key, and the base word's break-downs are exact only. A "starts
 with" guess belongs to some other word (`vuccaṁ` matched `vuccati + iti`, which
-would have given `vuccati + iti + iti`), and on the 1.28 M-row `lookup` table it
-costs two full scans.
+would have given `vuccati + iti + iti`). How the guesses work for other words:
+[search-snippet-highlight-pipeline.md §9e](./search-snippet-highlight-pipeline.md).
 
 The `iti` component resolves to the one `iti` headword DPD uses in its own
 break-downs, which is narrower than a lookup of the word `iti`.
