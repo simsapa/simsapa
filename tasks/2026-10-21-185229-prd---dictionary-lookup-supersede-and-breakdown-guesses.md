@@ -186,6 +186,24 @@ does not.
 
 If the FR-A5 decision is **Remove**, none of this is built.
 
+### 1.3 How often the guesses are reached, and what they return: measured
+
+From the FR-A3 sample (task list, Measurements, "3.0 findings"): 30,000
+tokens of `ms` + CST Pāli, seed 20261022.
+
+- **1.0 %** of tokens reach the guesses (314). 92 % of those are from CST and
+  many are long commentary compounds. A 1,000-token sample reaches them 6
+  times, too few to review.
+- A shown guess is almost always the **only** answer. 302 of the 314 get
+  nothing at all with guesses off. Of the 64 with a break-down guess, 52
+  would otherwise show nothing.
+- Only **2** of the 314 had results from Phases 1–6. 10 more get a Phase 8
+  headword match when guesses are off, which a guess suppresses (§9 Q5).
+- Words given a break-down: today's `LIKE` **54**, form B **44**, form C
+  **64**. Form C is never worse than B (FR-B1). Against `LIKE`, it finds a
+  break-down for 10 words where `LIKE` returned a row with none, and it picks
+  a different key for 19 of the 54 words.
+
 ## 2. Goals
 
 1. The latest lookup request always starts at once, in both the WordSummary
@@ -252,7 +270,9 @@ before continuing.
 **FR-A3 — Usefulness sample.** Write a `#[ignore]`d backend test (or a CLI
 subcommand, whichever is simpler) that:
 1. takes a reproducible sample (fixed seed) of 1000 word tokens from Pāli
-   `content_plain` of the `ms` and CST editions;
+   `content_plain` of the `ms` and CST editions. 1000 is too few: only ~1 %
+   reach the guesses (§1.3). The size is set by `DPD_GUESS_SAMPLE_SIZE`, and
+   the review pool uses 30,000;
 2. keeps the tokens for which attempts 1 and 3 find nothing, i.e. the words that
    reach the guesses. Since Phase 7 is un-gated (§1.1), record for each token
    whether Phases 1–6 **already found results**. A guess added on top of real
@@ -275,6 +295,11 @@ each guess as *useful* (the right word, or a form that leads to it) or *not*.
 The developer must not judge usefulness automatically. A guess that only
 shares a prefix is exactly what is being measured.
 
+*Done differently (2026-10-22):* at the user's request the agent reviewed all
+63 guesses against their sutta context and the DPD entries each component
+resolves to, grading them clean / partial / wrong. Results: task list,
+Measurements, "Review (3.4, 3.5)".
+
 **FR-A5 — Decision gate.** From the review, use these defaults (the user may
 override them in review):
 
@@ -283,6 +308,21 @@ override them in review):
 | ≥ 50 % | **Keep:** guesses on by default, range form only (FR-B1). |
 | 15 – 50 % | **Setting:** guesses behind a setting, off by default (FR-B2). |
 | < 15 % | **Remove:** delete attempts 2 and 4 (FR-B3). |
+
+The decision is about **quality only**. With the FR-B1 index a guess costs
+about as little as the rest of the lookup (§1.2, to be confirmed by FR-B1a),
+so Goal 4 is met by every branch. In the sample a shown guess is almost always
+the word's only answer (§1.3), so a guess removed or switched off turns that
+lookup into "No results". The share is therefore computed over all reviewed
+guesses. The 2 rows that had other results are reported individually; they
+are too few for a share of their own.
+
+**Decision (2026-10-22): Keep.** 33 of 63 reviewed guesses were useful
+(52 %: 18 clean, 15 partial; 30 wrong). Clean alone is 29 %, so the share
+counts on the partial grades and the sample cannot separate Keep from
+Setting. The user chose Keep: a guess appears only when the lookup would
+otherwise show "No results". FR-B1 applies; FR-B2 and FR-B3 are not built.
+Details: task list, Measurements, "Review (3.4, 3.5)".
 
 Record the counts, the useful share and the chosen branch in the commit message
 and in `docs/search-snippet-highlight-pipeline.md` §9.
@@ -314,9 +354,10 @@ comparison.
     mixed-case keys are English entries (§1.1). Say in a comment that the query
     is lowercase (§7).
   - **Only rows with a break-down are candidates.** A row without one
-    contributes nothing (§1.1). Adopt this unless FR-A3 shows it loses useful
-    guesses; then the index has no purpose and the query drops the filter and
-    runs on the primary-key index (form B).
+    contributes nothing (§1.1). The filter cannot lose a guess that the plain
+    range (form B) would contribute. Both search the same range, so if B's
+    shortest key has a break-down, it is also the shortest key with one, and C
+    returns the same row. The FR-A3 sample confirms this (§1.3).
   - **The row is chosen deterministically:** shortest key, ties broken by key
     order. Never table order.
 - **Guard: the literal predicate.** SQLite uses a partial index only when it can
@@ -376,7 +417,9 @@ with a cap, and no new index.
 - Show it in **Settings → Find → Search Behavior** as a checkbox labelled
   "Guess break-downs for unknown words" with one sentence of explanation:
   "When a word is not in the dictionary, also try words that start the same
-  way. Slower, and often finds unrelated words."
+  way. Often finds unrelated words." (Not "slower": with the FR-B1 index a
+  guess is estimated to cost about a millisecond, which FR-B1a verifies, so
+  speed is no longer a reason to turn it off.)
 - The setting covers **only attempts 2 and 4** of the deconstructor. The
   Phase 8 headword "starts with" fallbacks are not affected.
 - Wire it through the parameter that already exists: every caller in the §1.1
@@ -647,3 +690,16 @@ function.
 4. Are the desktop and beta-debug builds' SQLite really unoptimised (§7)? If
    so, a release-build timing would show the real user-facing numbers. Not
    needed for this PRD's decisions, which rest on bytes read.
+5. **A guess suppresses Phase 8.** Phase 8 (headword "starts with") runs only
+   when `results` is empty after Phase 7, and a guessed break-down fills
+   `results`. So for a word where both would answer, keeping the guesses
+   replaces Phase 8's headword matches with the guess's components (10 of the
+   64 guessed words in the FR-A3 sample, §1.3). This PRD does not change
+   Phase 8 (§5). If the review finds those 10 guesses worse than what Phase 8
+   would show, gating Phase 8 on *direct* results instead of on `results` is
+   a follow-up.
+6. **Corpus sampling understates how often the app reaches the guesses.**
+   The sample is weighted by text, but a reader taps the words they don't
+   know, not a random word. 1 % of corpus tokens is a lower bound for the
+   share of real taps. This does not change the decision, which rests on how
+   good a guess is when one is shown.

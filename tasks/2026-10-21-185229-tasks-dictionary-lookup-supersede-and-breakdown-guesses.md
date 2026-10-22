@@ -5,20 +5,22 @@ PRD: [2026-10-21-185229-prd---dictionary-lookup-supersede-and-breakdown-guesses.
 - `bridges/assets/qml/WordSummary.qml` — Summary panel. Search button no longer disabled while loading; `set_query()` and the `search_btn` alias replaced by `lookup_from_outside()` (rejects < 4 chars, stops the search-as-you-type timer); response handling moved into `handle_grouped_ready()` (called by the `Connections`); `current_query_text` + `empty_result_query` and the `No results for "<word>".` label; `objectName`s on `search_timer` and `summaries_list` for the test.
 - `bridges/assets/qml/SuttaSearchWindow.qml` — `set_summary_query()` calls `word_summary.lookup_from_outside()` instead of `set_query()` + `search_btn.click()`.
 - `bridges/assets/qml/tst_WordSummary.qml` — **New.** QML test: lookup starts while loading (and stops the timer), short word starts none, stale response ignored, empty-result line shown and replaced.
-- `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (`dpd_deconstructor_list`, setting getter/setter).
+- `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` — `qmllint` stubs for any new or changed bridge function (none expected under Keep).
 - `backend/src/db/dpd.rs` — `DPD-LOOKUP-TIMING:` line: `GroupedTiming`, `DeconstructorTiming`, `TimingLog` (`Always` / `WhenSlow` at 100 ms), `dpd_deconstructor_query_timed()`, and `dpd_lookup_grouped()` split into the `WhenSlow` wrapper → `dpd_lookup_grouped_inner()` (logs once, at every return) → `dpd_lookup_grouped_phases()`; `dpd_lookup_grouped_json()` logs `Always`. Also: `dpd_deconstructor_query()` (attempts 2 and 4), `dpd_lookup_grouped()` (Phases 1–8), `dpd_lookup_grouped_iti_split()`, `dpd_lookup_grouped_memo()`, `dpd_lookup_grouped_json()`, `dpd_deconstructor_list()`, `prefix_upper_bound()`.
 - `backend/src/lookup_cancel.rs` — **New.** `LookupCancel` token and the `LookupCancelled` error type. (Or a small module next to `dpd.rs`; register it in `backend/src/lib.rs`.)
 - `backend/src/query_task.rs` — `SearchQueryTask` gets the token and the guesses flag as fields; `dpd_lookup_full()` uses them.
 - `bridges/src/sutta_bridge.rs` — `dpd_lookup_grouped_json_async()` (WordSummary generation counter), `results_page()` (`needs_reset` branch, selector memo call), `fetch_and_cache_page()`, `run_sub_query()`, `fetch_combined_page()`, `prefetch_pages()`, `dpd_deconstructor_list()`, and the setting getter/setter invokables.
 - `bridges/src/api.rs` — `POST /dict_combined_search` and the other `dpd_deconstructor_list` call; they pass `LookupCancel::none()` and the setting value.
-- `backend/src/app_settings.rs` — New `dpd_breakdown_prefix_guesses: bool` field, defaulting to false (Setting branch only).
-- `backend/src/app_data.rs` — `get_/set_dpd_breakdown_prefix_guesses()`, following `get_/set_search_as_you_type()` (Setting branch only).
-- `bridges/assets/qml/AppSettingsWindow.qml` — Checkbox in Find → Search Behavior, following `search_as_you_type_checkbox` (Setting branch only).
+- `backend/src/app_settings.rs` — *Not needed: the decision is Keep (no setting).*
+- `backend/src/app_data.rs` — *Not needed: the decision is Keep (no setting).*
+- `bridges/assets/qml/AppSettingsWindow.qml` — *Not needed: the decision is Keep (no setting).*
 - `backend/tests/test_dpd_lookup_cancel.rs` — **New.** Token and memo-not-stored tests.
 - `backend/tests/test_dpd_breakdown_guesses.rs` — **New.** Branch tests: `EXPLAIN QUERY PLAN` on the helper's `const` SQL (uses `idx_lookup_key_with_deconstructor`), equivalence with `INDEXED BY sqlite_autoindex_lookup_1`, shortest key, break-down-only row; or (Remove branch) no guess.
 - `scripts/dpd-btree-indexes.sql` — The partial index `idx_lookup_key_with_deconstructor ON lookup(lookup_key) WHERE deconstructor != ''`, with a comment on the literal-predicate rule (Keep/Setting only).
 - Scratchpad `guess_cost.py` — **Not committed.** The 2.8 cost harness (cold via `posix_fadvise(DONTNEED)`, `rchar` / `read_bytes`); 7.1 extends it for the indexed form on a scratch copy of `lookup`.
-- `backend/tests/test_dpd_breakdown_guess_sample.rs` — **New, `#[ignore]`d.** The FR-A3 usefulness sample; writes a TSV to a path from an env var.
+- `backend/tests/test_dpd_breakdown_guess_sample.rs` — **New, `#[ignore]`d.** The FR-A3 usefulness sample: seeded LCG over `content_plain` character offsets (`pli/ms` + `pli/cst`), iti-residue filter, the three guess forms in raw SQL, `other_results` from a guess-free grouped lookup minus Phase 8. TSV to `$DPD_GUESS_SAMPLE_OUT`; sample size `$DPD_GUESS_SAMPLE_SIZE` (default 1000).
+- Scratchpad `analyse.py` — **Not committed.** Structural counts over the sample TSV (3.0 findings).
+- Scratchpad `make_review.py` — **Not committed.** Builds the review file from the sample TSV (one row per distinct query with a `range_bd` guess).
 - `backend/tests/test_dpd_lookup_grouped.rs`, `test_dpd_deconstructor_list.rs`, `test_deconstructor_result_pagination.rs`, `test_dpd_lookup.rs` — Existing tests to keep passing; update an expectation only where the chosen branch changes a guess.
 - `docs/search-snippet-highlight-pipeline.md` — §9: replace the "still `LIKE`" note; record the decision, numbers and row rule.
 - `docs/pali-sandhi-and-quote-marks.md` — The function table, if signatures change.
@@ -100,6 +102,7 @@ Update the file after completing each sub-task, not just after completing an ent
 
 - **Depends on:** 2.0, for the `dpd_deconstructor_query` internals the sample reuses.
 - The sample runs SQL itself for the three guess forms, so it doesn't depend on 7.0.
+- **Sample size:** 1000 tokens (the PRD's figure) reaches the guesses only ~6 times, so the review pool is drawn from 30,000 (`DPD_GUESS_SAMPLE_SIZE=30000`, about 8 min in a debug build). Both runs are recorded.
 - **Sample source:** Pāli `content_plain` from the appdata `suttas` table, `language = 'pli'`, for the `ms` and CST editions. Check the uid suffixes for each in `appdata.sqlite3`.
 - **Tokenize** with the same normalization as a lookup: `normalize_dpd_query_split`, then split on whitespace. Drop tokens under 4 characters (attempt 2's floor), and drop iti-sandhi tokens, which never guess.
 - **Fixed seed:** a simple deterministic pick, e.g. every k-th token after sorting, or a seeded LCG. Don't add a crate for this.
@@ -110,21 +113,21 @@ Update the file after completing each sub-task, not just after completing an ent
   - `other_results` = whether Phases 1–6 of the grouped lookup gave any result.
   - `useful` is left empty for the user.
 
-- [ ] 3.0 Break-down guess usefulness sample, user review, and the recorded Keep / Setting / Remove decision (FR-A3, FR-A4, FR-A5) — **stop point: waits for the user's review**
-  - [ ] 3.1 Write `backend/tests/test_dpd_breakdown_guess_sample.rs` as one `#[ignore]` test. It builds the sample, keeps the 1000 sampled tokens whose attempts 1 and 3 miss, and computes the columns above using raw SQL for the six guess queries:
+- [x] 3.0 Break-down guess usefulness sample, user review, and the recorded Keep / Setting / Remove decision (FR-A3, FR-A4, FR-A5) — **stop point: waits for the user's review**
+  - [x] 3.1 Write `backend/tests/test_dpd_breakdown_guess_sample.rs` as one `#[ignore]` test. It builds the sample, keeps the 1000 sampled tokens whose attempts 1 and 3 miss, and computes the columns above using raw SQL for the six guess queries:
     - LIKE, as today;
     - range, shortest key, then key order;
     - range restricted to `deconstructor != ''`, same order;
 
     each for attempt 2's prefix and for attempt 4's prefix. Use Diesel `sql_query`, or a direct `rusqlite`-free path through the existing connection.
-  - [ ] 3.2 Print the counts:
+  - [x] 3.2 Print the counts:
     - tokens sampled;
     - tokens reaching the guesses, and how many of those had no other results;
     - per form: rows found, and rows with an empty break-down.
-  - [ ] 3.3 Run it with `cargo test --test test_dpd_breakdown_guess_sample -- --ignored --nocapture`, with `DPD_GUESS_SAMPLE_OUT` set to a scratchpad path. Then copy about 50 rows into a review file, stratified so that both `other_results` values appear. Prefer rows that the default form for each branch would show (`a2_range_bd` / `a4_range_bd`).
-  - [ ] 3.4 **Stop.** Give the user the review file path and the printed counts. Ask them to mark each row's `useful` column. Do not classify the rows yourself (FR-A4).
-  - [ ] 3.5 From the marked file, compute the useful share, separately for rows with and without other results. Apply the FR-A5 thresholds, which the user may adjust. Confirm the chosen branch with the user.
-  - [ ] 3.6 Record the counts, the shares and the branch in the `### Measurements` section of this file. This is the source for 7.0 and the docs in 8.0. If the break-down-only filter lost useful guesses that the plain range found, record that too: it decides whether the partial index is built at all (7.0).
+  - [x] 3.3 Run it with `cargo test --test test_dpd_breakdown_guess_sample -- --ignored --nocapture`, with `DPD_GUESS_SAMPLE_OUT` set to a scratchpad path. Then copy about 50 rows into a review file, stratified so that both `other_results` values appear. Prefer rows that the default form for each branch would show (`a2_range_bd` / `a4_range_bd`).
+  - [x] 3.4 **Stop.** Give the user the review file path and the printed counts. Ask them to mark each row's `useful` column. Do not classify the rows yourself (FR-A4). *(Done by the agent at the user's request, 2026-10-22; see Measurements, "Review (3.4, 3.5)".)*
+  - [x] 3.5 From the marked file, compute the useful share over **all** reviewed guesses. Only 2 rows had other results, too few for a separate share, so list those 2 individually (PRD FR-A5). Also report, from `like_useful`, how many of the rows where today's `LIKE` picked a different key were better under `LIKE`: that decides whether the shortest-key rule needs another look before 7.0. Apply the FR-A5 thresholds, which the user may adjust. Confirm the chosen branch with the user.
+  - [x] 3.6 Record the counts, the shares and the branch in the `### Measurements` section of this file. This is the source for 7.0 and the docs in 8.0. (The break-down-only filter cannot lose a guess the plain range would contribute; see Measurements, 3.0 findings. So the partial index is built in both the Keep and the Setting branch.)
 
 ### 4.0 — Specs
 
@@ -220,7 +223,8 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ### 7.0 — Specs
 
-- **Depends on:** the 3.0 decision, then 4.0–6.0 (so the setting value can ride with the token through the same call sites). 7.1, the index measurement, needs only the 3.3 sample TSV, so it can run while the user reviews in 3.0.
+- **Decision: Keep** (3.0, Measurements "Review (3.4, 3.5)"). Only the Keep parts below apply; the Setting and Remove parts are kept for the record.
+- **Depends on:** the 3.0 decision, then 4.0–6.0 (the guess helper keeps the cancellation checks from 4.2). 7.1, the index measurement, needs only the 3.3 sample TSV, so it can run while the user reviews in 3.0.
 - **Approach (Keep and Setting branches): form C on a partial index.** The reasoning, the A–D comparison and the old-phone extrapolation are in PRD §1.2. The spec is PRD FR-B1, the planned measurement FR-B1a. In short:
   - Form C without an index reads ~4,300 scattered table pages for `sam`: ≥ 2 s on an old phone, in one statement that cannot be cancelled.
   - The partial index makes the break-down filter index-only. That is **estimated** close to form B's cost (under 1 MB for `sam`); 7.1 must confirm it.
@@ -248,7 +252,7 @@ Update the file after completing each sub-task, not just after completing an ent
   ```
   - Make the const reachable from the integration test: `pub`, or a `pub fn` returning it, so the test explains the very statement the code runs.
   - Add a comment stating the lowercase-query assumption (PRD §7).
-  - Drop `AND deconstructor != ''` only if 3.6 recorded that it loses useful guesses. Then the index is not built, and the query runs on the primary-key index (form B).
+  - The `AND deconstructor != ''` filter stays: it cannot lose a guess the plain range would contribute (Measurements, 3.0 findings).
 - **Guards:**
   - **Literal predicate.** Never write the filter as Diesel `.ne("")` or with a bound `?`: SQLite then cannot prove the partial index applies and silently fetches table rows. The 7.8 plan test is the check.
   - **Database without the index** (an older `dpd.sqlite3`).
@@ -288,7 +292,7 @@ Update the file after completing each sub-task, not just after completing an ent
     - `sam` is warm within a few tens of ms.
 
     If it passes, continue. If not, record why, tell the user, and switch to form D (PRD §1.2, FR-B1a): primary-key index, rows one at a time, a cap (start at 500; count cap hits on the 3.3 sample), cancellation checks between rows, no index. Then adapt 7.3–7.8.
-  - [ ] 7.3 **Remove branch:** delete attempts 2 and 4 from `dpd_deconstructor_query()`, and the timing fields for them. Remove `exact_only`'s and `deconstructor_exact_only`'s effect on them. Then remove the `deconstructor_exact_only` parameter wherever it now does nothing, updating callers and tests. No index. Skip to 7.8.
+  - [x] 7.3 *Not applicable (decision: Keep).* **Remove branch:** delete attempts 2 and 4 from `dpd_deconstructor_query()`, and the timing fields for them. Remove `exact_only`'s and `deconstructor_exact_only`'s effect on them. Then remove the `deconstructor_exact_only` parameter wherever it now does nothing, updating callers and tests. No index. Skip to 7.8.
   - [ ] 7.4 **Keep/Setting:**
     - Add the index to `scripts/dpd-btree-indexes.sql` before `VACUUM`, with a comment: why it exists, and that queries must use the literal `deconstructor != ''`.
     - **Ask the user** before applying it to the dist `dpd.sqlite3`, either by a re-bootstrap of the DPD DB or by hand (`CREATE INDEX` + `ANALYZE`). The 7.8 plan test needs it there.
@@ -298,13 +302,13 @@ Update the file after completing each sub-task, not just after completing an ent
     - Add `DECONSTRUCTOR_PREFIX_GUESS_SQL` and `deconstructor_prefix_guess()` as specified, plus the missing-index check and log line.
     - Replace both `LIKE` queries with the helper: attempt 2 with the whole word, attempt 4 with the word minus its last letter, under the same 4-character floor.
     - Keep the per-attempt timings and the cancellation checks from 2.1 / 4.2.
-  - [ ] 7.6 **Setting only:** add the `AppSettings` field and default, the `AppData` getter/setter, the bridge invokables and the `qmllint` stubs in `SuttaBridge.qml`. Add the checkbox in `AppSettingsWindow.qml` → Find → Search Behavior, below "Search As You Type", in the same style:
+  - [x] 7.6 *Not applicable (decision: Keep).* **Setting only:** add the `AppSettings` field and default, the `AppData` getter/setter, the bridge invokables and the `qmllint` stubs in `SuttaBridge.qml`. Add the checkbox in `AppSettingsWindow.qml` → Find → Search Behavior, below "Search As You Type", in the same style:
     - an alias property;
     - `onCheckedChanged` → setter;
     - load in the init function next to `search_as_you_type_checkbox.checked = …`;
     - label "Guess break-downs for unknown words";
-    - wrapped explanation: "When a word is not in the dictionary, also try words that start the same way. Slower, and often finds unrelated words."
-  - [ ] 7.7 **Keep/Setting:** wire the flag as specified, through WordSummary's worker, `SearchQueryTask::new()`'s default, `results_page()`'s override (selector + every task in `fetch_and_cache_page`, `run_sub_query` and `prefetch_pages`), and both `dpd_deconstructor_list` callers. Change `dpd_deconstructor_list`'s signature to take the flag, and update its tests: 6 call sites, some in `backend/tests/test_dpd_deconstructor_list.rs`.
+    - wrapped explanation: "When a word is not in the dictionary, also try words that start the same way. Often finds unrelated words." (No "slower": with the index a guess costs about a millisecond. Re-check this against 7.1's numbers.)
+  - [ ] 7.7 **Keep:** no flag wiring is needed: every caller in PRD §1.1 already passes `deconstructor_exact_only = false`, so they all reach the new range form (FR-B4). Check that this still holds after 4.0–6.0, and leave `dpd_deconstructor_list`'s signature unchanged. *(Setting branch, not taken:* wire the flag as specified, through WordSummary's worker, `SearchQueryTask::new()`'s default, `results_page()`'s override (selector + every task in `fetch_and_cache_page`, `run_sub_query` and `prefetch_pages`), and both `dpd_deconstructor_list` callers. Change `dpd_deconstructor_list`'s signature to take the flag, and update its tests: 6 call sites, some in `backend/tests/test_dpd_deconstructor_list.rs`.*)*
     - **Setting only**, manual check: with the setting off, `POST /search` with `{"area":"Dictionary","mode":"DpdLookup"}` for an unknown word returns no guessed break-down. With it on, it does.
   - [ ] 7.8 Create `backend/tests/test_dpd_breakdown_guesses.rs` for the chosen branch:
     - **Keep/Setting:**
@@ -330,7 +334,7 @@ Update the file after completing each sub-task, not just after completing an ent
     - the same in the Dictionary tab;
     - a short word re-runs nothing;
     - an unknown word shows the `No results for …` line.
-  - [ ] 8.4 Update `docs/search-snippet-highlight-pipeline.md` §9. Replace the "deconstructor's own 'starts with' … is still `LIKE`" note with the current behaviour: the chosen branch; if kept, the partial index, the literal-predicate rule, the missing-index log line and the row rule; the setting (if any); and the measured sample counts and timings. Follow the docs rule: describe current behaviour and keep the traps; measurements go in the commit message.
+  - [ ] 8.4 Update `docs/search-snippet-highlight-pipeline.md` §9. Replace the "deconstructor's own 'starts with' … is still `LIKE`" note with the current behaviour: the chosen branch; if kept, the partial index, the literal-predicate rule, the missing-index log line and the row rule; the setting (if any); that a found guess suppresses Phase 8 (PRD §9 Q5); and the measured sample counts and timings. Follow the docs rule: describe current behaviour and keep the traps; measurements go in the commit message.
   - [ ] 8.5 Add a short paragraph on lookup supersession to the same doc (or the doc that covers WordSummary, if one does). Cover:
     - the `query_id` / `results_page_request_id` display guards;
     - the two generation counters;
@@ -525,3 +529,135 @@ code:
 - `test_search_normalization::contains_match_finds_dhovana_sutta`
 - `test_search_normalization::fulltext_match_finds_dhovana_sutta`
   (the test's own message: re-index `content_plain`)
+
+### Usefulness sample (3.2, 3.3)
+
+`cargo test --test test_dpd_breakdown_guess_sample -- --ignored --nocapture`,
+seed 20261022. A token is dropped when it is under 4 characters, contains a
+digit, or normalizes to more than one word. It is also dropped as iti sandhi
+when its normalization says so, when the next `content_plain` token is an iti
+tail, or when it is one itself. An iti tail is `ti` / `nti`, alone, as
+`tipi` / `ntipi`, or followed by `ādi…` / `ādī…`. The bootstrap split leaves
+`parijānātī tiādinā` and `dhammaṁ ntiādinā`; in the page the user taps the
+whole word, which resolves as iti and never guesses. Attempt 4 runs only when
+the same form's attempt 2 found nothing.
+
+| | 1,000 tokens (PRD figure) | 30,000 tokens (review pool) |
+|---|---|---|
+| draws | 1,112 | 32,771 |
+| dropped short / iti / other | 67 / 30 / 15 | 1,576 / 810 / 385 |
+| **reaching the guesses** | **6 (0.6 %)** | **314 (1.0 %)** |
+| … with results from Phases 1–6 | 0 | 2 |
+| … with Phase 8 results when guesses are off | 0 | 10 |
+| … with nothing at all when guesses are off | 6 | 302 |
+| `LIKE`: a2 rows (empty bd), a4 rows (empty bd), **tokens with a break-down** | 0, 0, 0 | 28 (4), 40 (10), **54** |
+| range: same | 0, 0, 0 | 28 (5), 40 (19), **44** |
+| range + break-down only: same | 0, 0, 0 | 27 (0), 37 (0), **64** |
+
+Review file: all **63** distinct queries with a `range_bd` guess (one of the
+64 tokens is a repeat). It shows the `range_bd` guess and today's `LIKE`
+guess. `like_useful` is pre-filled `=` where both pick the same key (35),
+`no-bd` where `LIKE`'s row has no break-down (10), and left empty to mark where
+`LIKE` picks a different key with a break-down (18). Built by the scratchpad
+`make_review.py`.
+
+### 3.0 findings (before the review)
+
+Structural facts from the sample. They are not usefulness judgements
+(FR-A4).
+
+1. **The guesses are reached rarely.** The `lookup` table covers ~99 % of
+   corpus tokens. 1,000 tokens give 6 words that reach the guesses, none with
+   a guess, which is why the review pool is 30,000. A reader taps unknown
+   words more often than a random token is unknown, so 1 % is a lower bound
+   for real taps (PRD §9 Q6).
+2. **Who reaches them:** CST texts, long words. 289 of the 314 are from CST
+   (CST is 79 % of the sampled text), and 130 are 15+ letters long. Typically
+   a commentary compound. A few are fragments of a word split by a stray
+   space in the source (`vañceta ññavacohi`, `tatthe va ntaradhāyi`).
+3. **A shown guess is almost always the only answer.** 302 of 314 have
+   nothing at all without guesses. Of the 64 words with a `range_bd` guess,
+   52 would otherwise show nothing. Removing the guesses or switching them
+   off turns about 1 in 6 lookups that reach the guesses into "No results"
+   (52 / 314).
+4. **"With other results" is too small to split.** Only 2 rows had Phase 1–6
+   results (`patva`, `ajati`). FR-A5's share is computed over all reviewed
+   guesses, and these 2 are reported by name (task 3.5).
+5. **A guess suppresses Phase 8.** For 10 of the 64 words, Phase 8's headword
+   "starts with" match would answer when guesses are off. With guesses on,
+   the break-down fills `results` and Phase 8 is skipped (PRD §9 Q5).
+6. **The break-down-only filter cannot lose a guess to the plain range.** It
+   searches the same range, so if the plain range's shortest key has a
+   break-down, the filtered query returns that same row. Confirmed: it gives a
+   break-down for 64 words, against 44 for the plain range. The partial index
+   is therefore built in both the Keep and the Setting branch. The "drop the
+   filter" branch is gone from 3.6 and 7.0.
+7. **Against today's `LIKE`:** `range_bd` gives a break-down for 64 words,
+   `LIKE` for 54. `LIKE` returns a row with no break-down for 10 words where
+   `range_bd` finds one. Where both give a break-down, they agree on 35 keys
+   and differ on 19 (18 distinct queries, marked in `like_useful`). Those 18
+   show whether the shortest-key rule picks worse than table order.
+8. **What the guesses look like:** attempt 4 (word minus its last letter)
+   supplies 37, attempt 2 supplies 27. In 25 of the 63 every break-down ends
+   in a particle: `iti`, `api`, `ca`, `eva`, `ādi` or `iccādi`
+   (`munindassā` → `munindassāti` = munindassa + iti). The guessed key is
+   usually 1–4 letters longer than the query (44 of 63), but up to 12 longer
+   (`suvaṇṇabimbo` → `suvaṇṇabimbohanavaggo`).
+
+### Review (3.4, 3.5)
+
+**Reviewed by the agent, at the user's request (2026-10-22)**, which overrides
+FR-A4's "a person marks the rows". Each guess was read against its sutta
+context, and each component against the DPD headwords it resolves to (what
+Phase 7 shows). One reviewer, so the grades are a judgement, not a
+measurement. The marked file, with a `grade` and a `note` per row, is the
+scratchpad `guess_review.tsv`.
+
+Grades (a guess with several break-downs is graded by its best one, since
+WordSummary lists every break-down's results):
+- **clean:** a break-down gives the entry the reader needs, with nothing
+  extra beyond a particle (`iti`, `api`, `ca`, `ādi`, `iccādi`).
+- **partial:** the right main entry is shown, but another component misreads
+  part of the word or adds an unrelated word (`pannagoso` → pannaga + asīti,
+  "eighty").
+- **wrong:** the needed entry is missing, or the guess is a different word
+  (`sombho`, a pond → sombhā, a doll; `nocittā` → only `citta 2`,
+  "decorated").
+
+`useful = y` is clean + partial: PRD FR-A3/FR-A4's "the right word, or a form
+that leads to it".
+
+| | count | share of 63 |
+|---|---|---|
+| clean | 18 | 29 % |
+| partial | 15 | 24 % |
+| wrong | 30 | 48 % |
+| **useful (clean + partial)** | **33** | **52 %** |
+
+- **With other results (2 rows):** `patva` (patvā, "having reached") and
+  `ajati` (root aj) are both wrong.
+- **By word length:** 4–6 letters, 7 of 20 useful (13 wrong); 7–9 letters,
+  11 of 20; 10+ letters, 15 of 23 (12 clean). Long words often get a clean
+  guess because the key rejoins a phrase that the source split with a stray
+  space (`vāraṇatthāna miccādi`, `pūjāvisesena neke`,
+  `mahāthūpatthamuppannāna ssosi`). Short words are mostly roots and
+  paradigm forms quoted in grammar texts (`kamu`, `rabha`, `selu`, `coraya`),
+  for which a longer word is the wrong answer.
+- **By attempt:** attempt 2, 17 of 27 useful; attempt 4, 16 of 36.
+- **Against today's `LIKE`:** on the 18 rows where `LIKE` picks a different
+  key with a break-down, the grade is the same on 13 and better under
+  `range_bd` on 5. It is never worse. On the 10 rows where `LIKE`'s row has
+  no break-down, `range_bd` is useful on 3 (`pabujjhito`,
+  `tenupasaṅkamisu`, `ahaṁna`). The shortest-key rule needs no change.
+
+**FR-A5 outcome:** 52 % meets the Keep threshold (≥ 50 %), but only just. The
+share depends on counting the partial grades: clean alone is 29 %, which
+would be Setting. With 63 rows, a 95 % interval is roughly ±12 points, so the
+sample does not separate Keep from Setting.
+
+**Decision (2026-10-22, the user): Keep.** Guesses stay on for every caller,
+using form C on the partial index (FR-B1). A guess appears only when a lookup
+would otherwise show "No results", and a setting that is off by default would
+hide the useful half from almost everyone. No setting, no word-length floor.
+FR-B2 and FR-B3 are not built.
+
