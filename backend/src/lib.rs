@@ -24,6 +24,8 @@ pub mod app_settings;
 pub mod ai_error;
 pub mod ai_fallback;
 pub mod lookup;
+pub mod lookup_forms;
+pub mod sutta_json;
 pub mod lookup_cancel;
 pub mod html_format;
 pub mod prompt_utils;

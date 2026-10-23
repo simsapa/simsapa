@@ -237,11 +237,10 @@ fn content_plain_preserves_paranum_and_pagebreak_span_separators() {
 // RE_BOLD_SPAN fix above. Keep them serial — they share global app state
 // with the other integration tests.
 
-// The CST corpus is imported one **division** per toc leaf, not one record per
-// source file, so this text lives in `s0404a.att25.xml` rather than in a
-// whole-file `s0404a.att.xml` record -- which no longer exists. See
-// docs/sutta-navigation-tree.md for the coverage classes that decide this.
-const DHOVANA_SUTTA_UID: &str = "s0404a.att25.xml/pli/cst";
+// The CST AN commentary is mapped to sutta references, so this text lives in
+// the `an10.107.att` record rather than in a per-division `s0404a.att25.xml`
+// one. See docs/sutta-navigation-tree.md for how CST records are keyed.
+const DHOVANA_SUTTA_UID: &str = "an10.107.att/pli/cst";
 const DHOVANA_QUERY: &str = "sattame dhovananti aṭṭhidhovanaṃ";
 
 fn search_finds_uid(query: &str, mode: SearchMode, want_uid: &str) -> bool {

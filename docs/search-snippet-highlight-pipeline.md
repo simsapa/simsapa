@@ -635,6 +635,40 @@ line. The cancellable entry points (WordSummary, the Dictionary tab, and so
 also the API's DPD searches) log every call; the plain `dpd_lookup_grouped()`,
 which the Gloss tab calls once per word, logs only a call of 100 ms or more.
 
+### 9f. A final `n` written for `ṁ`
+
+The texts write a niggahita before `ti` or a vowel as `n`, and a spaced
+`vuttan ti` reaches a lookup as the word `vuttan` alone. DPD has no `vuttan`,
+so the fallbacks would guess: the stem match, the deconstructor's "starts
+with" (`vutti + anta`, `vutta + anta`, …) and the headword "starts with"
+(`vuttanaya`). Before any of them, the lookups try the **`ṁ` spelling**
+(`niggahita_spelling()` in `backend/src/db/dpd.rs`: a word that ends in a vowel
+and `n`, with no space):
+
+- `dpd_lookup_grouped()`: after Phase 4, when Phases 2–4 found nothing and
+  DPD's `lookup` row for the word as typed has no headwords or splits
+  (`lookup_row_has_word()`), the result is the grouped lookup of the `ṁ`
+  spelling, with `query` set to the word as typed. Its timing line ends in
+  ` via=niggahita`, and the `ṁ` lookup writes its own line.
+- `dpd_lookup()`: the same gate, before its stem match.
+- `dpd_deconstructor_query()`: when attempt 1 misses and `exact_only` is false,
+  it reads the `ṁ` spelling's row before attempt 2. That row ends the search
+  even without a break-down, so `vuttan` gets no guessed split.
+
+So `vuttan` is `vuttaṁ`, `kin` is `kiṁ` (not the stem match *kināti*), and
+`bhikkhun` is `bhikkhuṁ` (not *bhikkhunī*). If the `ṁ` spelling finds nothing
+either, the fallbacks run as before.
+
+**Trap: the gate is "no exact match", not "no row".** `tan` is the root `√tan`,
+found by Phase 3, so it stays the root. `kin` has a `lookup` row, but one that
+carries only English-to-Pāli data, so a "no row" test would skip it and let the
+stem match answer. Keep the retry after the exact phases and before the stem
+match; moving it after Phase 7 lets the deconstructor read the `ṁ` row's split
+and return that without the word's own headwords.
+
+The exact form lookup (`lookup_forms_exact()`) makes no guesses, so it does not
+respell: `vuttan` stays `not_found` there.
+
 ---
 
 ## 10. Where to look in the code

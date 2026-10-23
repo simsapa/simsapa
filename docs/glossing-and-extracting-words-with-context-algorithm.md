@@ -143,7 +143,13 @@ preprocessed_text
 
 ## Stage 3: Word Position Finding
 
-**Function:** `find_word_position_char_based(...) -> Option<WordPosition>`
+**Function:** `find_word_position(..., iti_follows) -> Option<WordPosition>`
+(`find_word_position_char_based()` is the public form, with `iti_follows = false`).
+
+`iti_follows` is true when the next clean word is `ti`: Stage 1 split an iti
+sandhi off this word, which the text may write without a quote mark
+(`viharāmīti`, `abhinandunti`). Methods 1 and 2 below then also accept a bare
+`ti`. Only with the flag: otherwise `pi` would match inside `pīti`.
 
 **Purpose:** Find where each clean word appears in the **original** (untransformed) text.
 
@@ -187,7 +193,8 @@ fn try_match_with_vowel_ti_expansion(
 
 **Logic:**
 1. Check if search word ends with short vowel (a/i/u)
-2. Try matching with long vowel (ā/ī/ū) + quote chars + 'ti' in original
+2. Try matching with long vowel (ā/ī/ū) + quote chars + 'ti' in original, or a
+   bare 'ti' (`viharāmīti`) when `iti_follows`
 3. If match found, return full sandhi unit: `dhārayāmī'ti`
 
 #### 2. Niggahita Expansion Matching
@@ -204,7 +211,8 @@ fn try_match_with_niggahita_expansion(
 
 **Logic:**
 1. Check if search word ends with `ṁ` or `ṃ`
-2. Try matching prefix + 'n' + quotes + 'ti' or 'nti' in original
+2. Try matching prefix + 'n' + quotes + 'ti' or 'nti' in original, or prefix +
+   'nti' with no quote (`abhinandunti`) when `iti_follows`
 3. Handles multiple consecutive quotes: `gantun'"ti`
 4. Returns full sandhi unit: `gantun'ti`
 
@@ -238,7 +246,8 @@ fn detect_sandhi_unit(
 ```
 
 **Detection Logic:**
-- Check if word followed by quote char(s) + 'ti'
+- Check if word followed by a run of quote char(s) + 'ti' or 'nti'
+  (`parāyaṇo’”ti`, a quote closing inside a quote)
 - If found, expand boundaries to include entire unit
 - Returns adjusted `(start, end)` positions
 
@@ -262,6 +271,16 @@ for clean_word in clean_words {
 
 **Critical Feature:** Sequential search **guarantees** repeated words are found in order.
 
+**Trap: a word that is not placed at its spot costs the rest of the
+paragraph.** The search does not stop at the next word: it finds the clean
+word's *next* occurrence further on and advances past everything in between.
+Those words can then no longer be found, and each one takes the fallback branch
+(`original_word` = the clean word, a context with no `<b>`). Any spelling that
+Stage 1 rewrites must be matchable here, which is why the unquoted iti and the
+inter-word hyphen (`Todeyya-kappā`, matched by `match_with_inner_apostrophes`)
+are handled. `test_extract_words_with_context.rs` asserts that every token of a
+real passage is placed.
+
 ### Handling Standalone 'ti' Particles
 
 **Problem:** After sandhi expansion, both the full unit and standalone 'ti' appear in clean_words:
@@ -271,7 +290,8 @@ for clean_word in clean_words {
 
 If we search for standalone `ti`, it matches the `'ti` already consumed by the sandhi unit, causing position tracking errors.
 
-**Solution:** Skip standalone `ti` particles after sandhi units:
+**Solution:** Skip standalone `ti` particles after sandhi units, quoted or, when
+`iti_follows` matched it, bare:
 
 ```rust
 let mut skip_next_ti = false;
