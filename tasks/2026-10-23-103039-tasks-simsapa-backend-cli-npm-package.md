@@ -1,0 +1,345 @@
+## Relevant Files
+
+### Renamed / moved
+- `cli/` → `bootstrap_cli/` - The bootstrap crate, renamed to `simsapa_bootstrap_cli`. Loses the commands that move to the new CLI.
+- `bootstrap_cli/Cargo.toml` - Package and `[[bin]]` renamed.
+- `bootstrap_cli/src/main.rs` - Moved commands deleted; remaining ones unchanged.
+
+### New crate `api/` (`simsapa_api`)
+- `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
+- `api/src/lib.rs` - `ApiConfig`, `build_rocket()`, `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`. No embedded static assets (PRD FR 9a).
+- `api/src/routes/*.rs` (or one `api/src/routes.rs`) - The moved data routes, grouped (search, words, suttas and book pages, gloss, misc).
+- `api/src/helpers.rs` - `parse_search_mode`, `parse_search_area`, `build_search_params`, `run_search`, `run_suttas_search`, UID fallbacks, verbose envelopes, path helpers.
+- `api/src/tests.rs` (or `#[cfg(test)]` modules) - The unit tests moved from `bridges/src/api.rs`.
+
+### New crate `backend_cli/` (`simsapa_backend_cli`, binary `simsapa`)
+- `backend_cli/Cargo.toml` - Binary crate; CLI-only `[profile.release]`.
+- `backend_cli/src/main.rs` - clap `Cli` / `Commands`, global flags, dispatch, exit codes.
+- `backend_cli/src/exit.rs` - `CliError` with exit codes 1/2/3/4/130 and `--json` error rendering.
+- `backend_cli/src/output.rs` - Text vs `--json` printing; HTML snippet → terminal text.
+- `backend_cli/src/startup.rs` - Data-folder resolution (`--simsapa-dir`), the headless preamble mirroring `cpp/gui.cpp`, the databases-missing check.
+- `backend_cli/src/in_use.rs` - `api-port.txt` + `GET /health` detection; pure decision function + tests.
+- `backend_cli/src/commands/{search,query,word,sutta,gloss,stats,import,index,serve,paths,health}.rs` - One module per command group.
+- `backend_cli/src/setup.rs` - `simsapa setup` (download, extract, language import, move, cleanup, markers).
+- `backend_cli/tests/` - Integration tests (`--json` shapes, exit codes, setup against a local fixture).
+
+### `backend` changes
+- `backend/Cargo.toml` - `[features] default = ["audio"]`, audio crates `optional = true`.
+- `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (and anything audio-only); conditional `api-port.txt` write in `AppGlobals::new()`.
+- `backend/src/update_checker.rs` - Receives `compatible_assets_release()`.
+- `backend/src/cli_support.rs` (new, name open) - `get_query_results` / `query_suttas` / `query_words` cores, `fulltext_search` core, `index_command` / `delete_index_dirs` cores, `appdata_stats` core, moved from `cli/src/main.rs`.
+- `backend/src/dictionary_manager_core.rs` - Existing `import_user_zip`, `import_user_dir`, `suggested_label_for_zip` (already Qt-free; reused as is).
+- `backend/src/dict_index_reconcile.rs` - Existing `reconcile_needed()` / `reconcile_dict_indexes()` (reused).
+- `backend/src/app_data.rs` - Existing `import_epub_to_db` / `import_html_to_db` (reused; they `ANALYZE`).
+- `backend/src/search/indexer.rs` - Existing `build_library_index` (reused after book imports).
+- `backend/src/asset_helpers.rs` - Existing `import_suttas_lang_to_appdata` (reused by setup).
+
+### `bridges` changes
+- `bridges/Cargo.toml` - Add `simsapa_api = { path = "../api" }`; keep `rig-core`, `rocket_ws`.
+- `bridges/src/api.rs` - Keeps only the cxx-qt `ffi` block, GUI-driving routes, AI routes, the static-asset routes with `APP_ASSETS` / `AssetsHandler` (PRD FR 9a), `start_webserver()` (now calling `simsapa_api::build_rocket`), `shutdown_webserver*`, `create_linux_desktop_icon_file`.
+- `bridges/src/sutta_bridge.rs` - `compatible_assets_release()` removed; calls the backend copy.
+- `bridges/src/asset_manager.rs` - Parity comment only.
+- `bridges/assets/qml/DownloadAppdataWindow.qml` - Parity comment only.
+
+### Build, packaging, docs
+- `Makefile` - `bootstrap`, `rust-test`, `cargo-clean-build` paths; new `cli`, `cli-release`, `cli-<target>`, `npm-packages` targets.
+- `.gitignore` - `cli/` entries renamed; `npm/**/bin/` binaries and `*.tgz` ignored.
+- `npm/cli/package.json`, `npm/cli/bin/simsapa.js`, `npm/cli/README.md` - Main package and launcher.
+- `npm/cli-linux-x64/`, `npm/cli-linux-arm64/`, `npm/cli-darwin-arm64/`, `npm/cli-win32-x64/` - `package.json` with `os`/`cpu`; binary copied in at pack time.
+- `scripts/npm-pack.sh` - Copies binaries, writes versions, runs `npm pack`.
+- `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
+- `docs/backend-cli-and-npm-package.md` (new) - Crate layout, parity rule, preamble, in-use detection, packaging, release checklist.
+- `docs/startup-sequence-and-caches.md`, `docs/user-data-and-sqlite-analyze.md` - CLI entry points.
+- `PROJECT_MAP.md`, `CLAUDE.md`, `.claude/skills/gloss-agent-check/SKILL.md`, and the 12 docs referencing `cli/` - Rename.
+
+### Notes
+
+- The Rust crates are **not** a Cargo workspace: `backend/`, `bridges/`,
+  `bootstrap_cli/`, `api/`, `backend_cli/` each have their own `Cargo.lock` and
+  depend on each other by `path`. Build/test one with
+  `cd <crate> && cargo build` / `cargo test`. (`cargo test` does not link in
+  `bridges/` — see the `Makefile` comment — so `simsapa_api` is where the route
+  tests can finally run.)
+- Build the GUI with `make build -B`, never a bare `cmake --build`
+  (`docs/qmltypes-aot-staleness.md`). Task 4.0 changes no `#[qinvokable]`, but
+  build through the Makefile anyway.
+- Backend tests run against the real dist database; a test that writes must
+  delete exactly what it wrote, using `dummy-…` fixtures (`CLAUDE.md`).
+- Do not bump any version (the maintainer does), and do not commit any
+  `*.sqlite3`.
+- Use `try_exists()`, never `.exists()`, in new Rust code that may be shared
+  with Android paths.
+
+## Instructions for Completing Tasks
+
+**IMPORTANT:** As you complete each task, you must check it off in this markdown file by changing `- [ ]` to `- [x]`. This helps track progress and ensures you don't skip any steps.
+
+Example:
+- `- [ ] 1.1 Read file` → `- [x] 1.1 Read file` (after completing)
+
+Update the file after completing each sub-task, not just after completing an entire parent task.
+
+## Tasks
+
+- [ ] 1.0 Rename `cli/` to `bootstrap_cli/` (`simsapa_bootstrap_cli`) and update every reference (PRD FR 1)
+
+  > **Specs:** pure rename; no behaviour change. Folder depth is unchanged, so
+  > `../assets`, `../scripts/...`, `../backend/migrations/appdata` and
+  > `../../tipitaka-xml-parser` keep resolving. **Depends on:** nothing.
+
+  - [ ] 1.1 `git mv cli bootstrap_cli`. In `bootstrap_cli/Cargo.toml` rename the package to `simsapa_bootstrap_cli` and the `[[bin]]` to `simsapa_bootstrap_cli`. Do not change `version`.
+  - [ ] 1.2 Update the `Makefile`: `bootstrap`, `rust-test`, and `cargo-clean-build` (`cd cli` → `cd bootstrap_cli`).
+  - [ ] 1.3 Update `.gitignore` (`cli/*.xml`, `cli/target`).
+  - [ ] 1.4 Update the references in `CLAUDE.md`, `PROJECT_MAP.md`, `.claude/skills/gloss-agent-check/SKILL.md`, `scripts/`, and the 12 docs. Find them with `grep -rn "cli/\|simsapa_cli\|cd cli" docs PROJECT_MAP.md CLAUDE.md .claude scripts Makefile`. Leave `tasks/archive/` untouched (historical records).
+  - [ ] 1.5 Grep the Rust sources for compile-time paths containing `cli` (e.g. `env!("CARGO_MANIFEST_DIR")` joins, `update_releases_fallback`'s default output path) and confirm they still resolve.
+  - [ ] 1.6 `cd bootstrap_cli && cargo build && cargo test` pass. Run `cargo run -- --help` and confirm the command list is unchanged.
+
+- [ ] 2.0 Add the default-on `audio` cargo feature to `simsapa_backend` (FR 5–6)
+
+  > **Specs:** `[features] default = ["audio"]; audio = ["dep:cpal", "dep:symphonia", "dep:flacenc", "dep:rubato"]`.
+  > `bridges` keeps the defaults → GUI unchanged. **Depends on:** nothing.
+
+  - [ ] 2.1 Find every use of the audio crates and modules: `grep -rnE 'cpal|symphonia|flacenc|rubato|crate::audio|crate::waveform|audio::|waveform::' backend/src`. Note any non-audio module that calls into them.
+  - [ ] 2.2 Make the four crates `optional = true` and add the feature. Check whether the Android-only `ndk-context` and `jni` deps are used by audio only (`jni` is also used by `android_saf.rs`, so it stays unconditional).
+  - [ ] 2.3 Gate `pub mod audio;`, `pub mod waveform;` and audio-only items in `lib.rs` (e.g. `init_android_context` if it exists only for cpal; check first) with `#[cfg(feature = "audio")]`. **Known non-audio caller:** `backend/src/db/appdata.rs` calls `crate::waveform::get_audio_duration_ms` at ~1216, ~1334 and ~1526 (chanting recording durations). With the feature off these must compile to the "duration unknown" value the code already handles for an unreadable file (read each site; do not invent a new sentinel). Grep for any other caller the same way.
+  - [ ] 2.4 `cd backend && cargo build` (default) and `cargo build --no-default-features` both succeed. `cargo test` passes with defaults.
+  - [ ] 2.5 Confirm with `cargo tree --no-default-features -e normal | grep -E 'cpal|alsa'` that nothing is left (expect no output).
+  - [ ] 2.6 `make build -B` succeeds (GUI unaffected).
+
+- [ ] 3.0 Move shared Qt-free helpers into `backend` (FR 13, FR 26)
+
+  > **Specs:** pure moves; the old call sites call the new location. No
+  > behaviour change. **Depends on:** 1.0.
+  >
+  > **Correction to the PRD's FR 25 table, found while assessing the code — apply
+  > it in this task and in 7.0:** the CLI's import commands must follow the
+  > **GUI's** import paths, not the bootstrap crate's:
+  > - StarDict: the GUI calls `dictionary_manager_core::import_user_zip_member` /
+  >   `import_user_dir` (which `ANALYZE` at the `import_located_stardict`
+  >   chokepoint) and then indexes with
+  >   `dict_index_reconcile::reconcile_dict_indexes()` +
+  >   `reinit_fulltext_searcher()` (the CLI skips the reinit, see 7.3). The bootstrap `import_stardict_dictionary` uses
+  >   `stardict_parse::import_stardict_as_new` + `append_dict_label_to_index("pli",
+  >   …)` and is a **bootstrap** path (built-in dictionaries, hard-coded `pli`).
+  > - EPUB/HTML: the GUI calls `AppData::import_epub_to_db` /
+  >   `import_html_to_db(…, is_user_added = true)` (which `ANALYZE`) and then
+  >   `indexer::build_library_index(…, effective_lang)`. The bootstrap
+  >   `import_epub` / `import_html` run `embed_migrations!` and shell out to the
+  >   `sqlite3` binary with a **relative** `../scripts/books-fts5-indexes.sql`,
+  >   which cannot work from an npm install. These two commands stay in
+  >   `bootstrap_cli` (they build the shipped DB). The new CLI gets new
+  >   `import epub|html` commands that call the `AppData` methods.
+  >
+  > Update the PRD's FR 25/26 table accordingly when doing 3.4.
+
+  - [ ] 3.1 Move `compatible_assets_release()` from `bridges/src/sutta_bridge.rs` (~line 363) to `backend/src/update_checker.rs` as `pub fn compatible_assets_release() -> Option<ReleaseEntry>`, unchanged. Update `SuttaBridge::get_compatible_asset_version_tag/github_repo` to call it. `make build -B`.
+  - [ ] 3.2 Create `backend/src/cli_support.rs` (pick a better name if one suggests itself; register it in `lib.rs`). Move into it, as `pub fn`s returning `anyhow::Result` or structured values (not printing):
+    - `get_query_results(query, area) -> Vec<SearchResult>` (from `cli/src/main.rs:28`);
+    - the search part of `fulltext_search` (`:1010`), returning the hits plus the `FulltextJsonResult` data, with printing left to the callers;
+    - the logic of `index_command` (`:1099`) and `delete_index_dirs` (`:1224`), with the clap enums replaced by plain backend enums or params;
+    - the stats collection of `appdata_stats` (`:526`), returning a struct that both the Markdown and JSON writers use.
+  - [ ] 3.3 Make `bootstrap_cli` call the moved functions (its printing code stays for now). `cd bootstrap_cli && cargo build && cargo test`; `cd backend && cargo test`.
+  - [x] 3.4 Update the PRD FR 25/26 table with the import-path correction above, so the PRD and tasks agree. (Done while generating the task list.)
+
+- [ ] 4.0 Create the `simsapa_api` crate and move the data routes out of `bridges/src/api.rs` (FR 2, 4, 7–11)
+
+  > **Specs:**
+  > ```rust
+  > pub struct ApiConfig { pub host: IpAddr, pub port: u16, pub mount_shutdown: bool }
+  > pub fn build_rocket(config: ApiConfig) -> Rocket<Build>  // mounts shared routes,
+  >     // .manage(AssetsHandler), .manage(Arc<DbManager>), CORS, log_level Off
+  > pub fn init_app_globals_api(); pub fn get_app_globals_api() -> &'static AppGlobals;
+  > ```
+  > **Stay in `bridges`:** the `#[cxx_qt::bridge] mod ffi`; every route calling
+  > `ffi::callback_*`, `clipboard_manager`, `open_external_url` or
+  > `get_internal_storage_path` (`lookup_window_query` GET+POST, `summary_query`,
+  > `toggle_reading_mode`, `sutta_menu_action`, `dppn_lookup`, `word_lookup`,
+  > `open_book_page_tab`, `prev/next_chapter`, `show_toc_tab`, `prev/next_sutta`,
+  > `copy_to_clipboard`, `open_external_url`, `app_assets_list`,
+  > `open_sutta_window`, `open_sutta_tab`, `open_sutta_by_uid` (`/suttas/<uid>`),
+  > `open_sutta_navigation`); the AI routes (`word_selection_ws` + its `ws_*` /
+  > `build_ws_word_selection_prompt` / `run_ws_word_selection` helpers,
+  > `set_ai_provider_key`, `get_ai_provider_key`); `ai_engine.rs`; the static
+  > page-asset routes and their state (`APP_ASSETS` `include_dir!`,
+  > `AssetsHandler`, `serve_assets` `/assets/<path..>`, `serve_favicon`,
+  > `get_pdf_viewer`, `serve_book_resources`, `serve_dict_resources` — PRD FR 9a);
+  > `start_webserver`, `shutdown_webserver(_tcp)`, `create_linux_desktop_icon_file`.
+  > **Before moving a route, read its body**: several `window_id` HTML routes
+  > (`get_sutta_html_by_uid`, `get_word_html_by_uid`,
+  > `get_book_spine_item_html_by_uid`, `get_navigation_timeline`) only render HTML
+  > and may well be shared. Classify each by what it calls, not by its name, and
+  > record the final list in the new doc (12.x).
+  > **Depends on:** 2.0 (the `api` crate uses `default-features = false`).
+
+  - [ ] 4.1 Make a route inventory: list every route in today's `routes![…]` block (`bridges/src/api.rs` ~2510) with "shared" / "GUI" / "AI" / "asset", based on grepping each handler body for `ffi::`, `clipboard_manager`, `get_internal_storage_path`, `ai_engine`, `rig`. Save it at the top of the new `api/src/lib.rs` as a comment or in the doc draft.
+  - [ ] 4.2 Create `api/Cargo.toml` (`simsapa_api`, edition 2024, version matching `backend`, license Apache-2.0) with the dependencies listed under Relevant Files. Pin the same `rocket`/`rocket_cors`/`tokio` versions as `bridges/Cargo.toml`. `simsapa_backend = { path = "../backend", default-features = false }`.
+  - [ ] 4.3 Move the shared helpers, `APP_GLOBALS_API` and friends, the request/response structs, and the shared routes into `api/src/`. Leave `APP_ASSETS`/`AssetsHandler` and the asset routes in `bridges`. If an asset route uses a moved helper (e.g. `pathbuf_to_forward_slash_string` in `serve_book_resources`), make that helper `pub` in `simsapa_api` and import it. Make the items `bridges` still needs `pub`.
+  - [ ] 4.4 Confirm `gloss_text` (~2066) uses only `backend` helpers (`process_all_paragraphs`, …) and nothing from `ai_engine`. If a helper it uses sits next to the AI code, move that helper to `simsapa_api`.
+  - [ ] 4.5 Implement `ApiConfig` and `build_rocket()`: merge `address = config.host`, `port = config.port`, `log_level = Off`; attach CORS; mount the shared routes, plus `shutdown` only when `config.mount_shutdown`; `.manage()` an `Arc<DbManager>` created inside (as `start_webserver` does today). No `AssetsHandler`.
+  - [ ] 4.6 Move the unit tests from `bridges/src/api.rs` (`test_parse_search_mode`, `test_parse_search_area`, `test_is_verbose_flag`, the envelope tests) to `api/`. `cd api && cargo test` passes. `cd api && cargo tree | grep -E 'cxx|rig-core|cpal'` prints nothing.
+  - [ ] 4.7 In `bridges`: add `simsapa_api = { path = "../api" }`, delete the moved code, import what remains from `simsapa_api`, and rewrite `start_webserver()` as `init_app_globals_api(); let g = get_app_globals_api(); simsapa_api::build_rocket(ApiConfig { host: 127.0.0.1, port, mount_shutdown: true }).mount("/", routes![<GUI + AI + asset routes>]).manage(AssetsHandler::default()).launch().await`, where `port = u16::try_from(g.api_port)`. `find_port_set_env()` stores `-1` when no port was free: log an error and return without launching, rather than casting `-1` with `as`.
+  - [ ] 4.8 Route parity check: the union of the shared routes and the `bridges` routes equals the 4.1 inventory (same paths, same methods). Do it by diffing the inventory against the two `routes![…]` lists, or by logging Rocket's route table at launch once and comparing.
+  - [ ] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/gloss_text`); run AI word selection in the Gloss tab.
+
+- [ ] 5.0 Create the `simsapa_backend_cli` crate skeleton (FR 3, 18–20, 27–29)
+
+  > **Specs:**
+  > - Global flags: `--simsapa-dir <path>` (sets `SIMSAPA_DIR` before any path
+  >   resolves), `--json`, `-v`/`-vv`, `--version` (= backend `CARGO_PKG_VERSION`,
+  >   via `update_checker::get_app_version()`).
+  > - Exit codes: 0 ok, 1 error, 2 DBs missing, 3 folder in use, 4 not found,
+  >   130 interrupted.
+  > - `--json` error: `{"error": "<message>"}` on stdout, plus the exit code.
+  > - Preamble (mirrors `cpp/gui.cpp` lines ~481–800, desktop branch, no Qt):
+  >   `dotenv_c` equivalent → `ensure_no_empty_db_files(true)` →
+  >   `check_delete_files_for_upgrade()` → `appdata_db_exists()` gate →
+  >   `init_app_data()` → `import_user_data_after_upgrade()` →
+  >   `check_and_configure_for_first_start()` → if `reconcile_needed()`:
+  >   `reconcile_dict_indexes(on_progress)` with a stderr spinner.
+  > - Only `serve` writes `api-port.txt` (see 5.3).
+  > **Depends on:** 2.0, 3.0, 4.0.
+
+  - [ ] 5.1 Create `backend_cli/Cargo.toml`: package `simsapa_backend_cli`, `[[bin]] name = "simsapa"`, version matching `backend`. Deps: `simsapa_backend` (`default-features = false`), `simsapa_api`, `clap` (derive, env), `anyhow`, `serde`, `serde_json`, `indicatif`, `tokio`, `ctrlc`, `dialoguer` (or `inquire`) for the prompt, `reqwest` (blocking + rustls, same features as backend), `tar`, `bzip2`, `fs4` (the write lock).
+  - [ ] 5.1a Keep `main` **synchronous** (no `#[tokio::main]`): `reqwest::blocking`, used by `setup`, the in-use check and `fetch_releases_info`, panics when created or dropped inside a runtime. Only `serve` builds a runtime, after its blocking steps.
+  - [ ] 5.2 `exit.rs`: a `CliError { code, message }` type, `From<anyhow::Error>`, and one `fn finish(result, json: bool) -> !` that prints and exits. Every command returns `Result<(), CliError>`.
+  - [ ] 5.3 Make the `api-port.txt` write in `AppGlobals::new()` (`backend/src/lib.rs` ~663) conditional. Add a process-global flag (e.g. `set_write_api_port_file(false)`) or an env var read there, defaulting to **write** so the GUI is unchanged. The CLI turns it off at startup; `serve` turns it on before `init_app_globals_api()`. `make build -B` and confirm the GUI still writes the file.
+  - [ ] 5.4 `startup.rs`: `resolve_data_folder()` (applies `--simsapa-dir`, then the backend's `get_create_simsapa_dir()`), `require_databases()` (exit 2 with the PRD FR 19 message), and `run_headless_preamble(mode: PreambleMode)` in the order above, with a comment naming the `gui.cpp` block it mirrors. Skip mobile-only steps. `PreambleMode::ReadOnly` runs only `dotenv`, `ensure_no_empty_db_files(false)` and `init_app_data()`, and prints one stderr note if an upgrade marker exists or `reconcile_dict_indexes_needed()` is true (PRD FR 18). `PreambleMode::Full` runs everything and requires the write lock (7.1a) to be held.
+  - [ ] 5.5 Logging: initialise the backend logger the way the GUI does (it writes `log.txt`), and add a stderr layer at `warn` (`-v` → `info`, `-vv` → `debug`). Nothing logs to stdout.
+  - [ ] 5.6 `output.rs`: `print_json(&impl Serialize)`; `snippet_to_terminal(html, is_tty)` turning `<span class='match'>…</span>` into ANSI bold (TTY) or `**…**` (pipe) and stripping other tags/entities (reuse `html-escape`). Unit-test it.
+  - [ ] 5.7 `simsapa paths`: data folder, `app-assets/`, each DB path and whether it exists, the index folder, `api-port.txt`. Works without databases. `--json` too.
+  - [ ] 5.8 `simsapa health`: build the same `HealthInfo` that `GET /health` returns, in-process. If needed, move the builder into a `pub fn health_info(&DbManager) -> HealthInfo` in `simsapa_api` that the route calls.
+  - [ ] 5.9 Tests: `paths` with a temp `--simsapa-dir` (no DBs) exits 0; `health` with a temp empty dir exits 2 with the message; `--json` error shape. Use `assert_cmd` (dev-dependency) or `std::process::Command` on the built binary.
+  - [ ] 5.10 `cd backend_cli && cargo build --release` on this machine; `ldd target/release/simsapa` shows no Qt and no `libasound`.
+
+- [ ] 6.0 Read-only commands (FR 25–27)
+
+  > **Specs:** each command calls the same backend/api function as its HTTP
+  > twin, so the `--json` output is the same JSON:
+  > `search` → `simsapa_api::run_search` (`ApiSearchResult`); `word` →
+  > `AppData::resolve_word_uid` + the `/word.json` builder; `sutta` → the
+  > `/sutta_html` builder (`--text` strips tags); `gloss` → `process_all_paragraphs`
+  > (`AllParagraphsProcessingResult`, as `/gloss_text`); `query` /
+  > `fulltext-search` / `stats` → the 3.2 cores. **Depends on:** 5.0.
+
+  - [ ] 6.1 `search <suttas|dict|library> <query>`: flags `--mode` (the exact serde names, e.g. `"Fulltext Match"`; parse with `parse_search_mode`), `--lang`, `--lang-exclude`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`. Build `ApiSearchRequest` and call `run_search`, so area defaults and the Dictionary `Combined → DpdLookup` remap match `/search`. Text output: header line `N results (page p/P)`, then title / uid / snippet blocks.
+  - [ ] 6.2 Make sure the lazy `init_fulltext_searcher()` path in `run_search` works outside Rocket (it is plain Rust; confirm no `State` dependency leaks into the helper).
+  - [ ] 6.3 `query <suttas|words> <query> [--titles] [--count]` and `fulltext-search …` with the same flags as today's bootstrap commands, calling the 3.2 cores. Delete both commands from `bootstrap_cli`.
+  - [ ] 6.4 `word <uid> [--html]`: resolve with `resolve_word_uid` (tolerant forms: `dhamma 1.01`, `34626/dpd`, `dhamma-1-01/dpd`). Text output shows the main fields; `--html` prints the `dict_words` HTML; exit 4 on a miss.
+  - [ ] 6.5 `sutta <uid> [--html | --text]`: the default is text (title, uid, plain content). Exit 4 on a miss. Reuse `lookup_sutta_with_fallback` and `convert_verse_ref_to_sutta_uid` from `simsapa_api` so `dhp182`-style refs work.
+  - [ ] 6.6 `gloss <text | ->`: read stdin for `-`; split paragraphs the same way `/gloss_text` does (read its handler for the request → `AllParagraphsProcessingInput` mapping and reuse it). `--json` prints the full result. Text output gives one line per word: word, first option's short meaning, and break-down(s) for compounds.
+  - [ ] 6.7 `stats [--output-folder] [--write]`: calls the 3.2 stats core on the resolved `appdata.sqlite3`. Delete `appdata-stats` from `bootstrap_cli`.
+  - [ ] 6.8 Tests against the dist DB (read-only): `search suttas "anicca" --json` parses and has results; `word "dhamma 1.01" --json` resolves to `dhamma-1-01/dpd`; `word nosuchword` exits 4; `gloss` on a short sentence containing a compound returns its deconstruction fields; the text output contains no `<span`.
+
+- [ ] 7.0 In-use detection and the write commands (FR 21–22, 25–26)
+
+  > **Specs:** in-use = `api-port.txt` exists and parses, AND
+  > `GET http://localhost:<port>/health` answers within ~1 s, AND its `db_paths`
+  > point at this data folder (compare normalised paths, not `canonicalize()`).
+  > Refused commands: `serve`, `setup`, `import …`, `index build|rebuild|delete`
+  > → exit 3 with the FR 22 message. Write commands follow the GUI's code paths
+  > (see the 3.0 note). **Depends on:** 5.0, 3.0.
+
+  - [ ] 7.1 `in_use.rs`: `fn decide(port_file: Option<&str>, health: Option<HealthInfo>, data_folder: &Path) -> InUse` (pure) plus the I/O wrapper using a short-timeout `reqwest` client. Unit-test the pure function: no file, garbage file, no answer, answer for a different folder, answer for this folder.
+  - [ ] 7.1a `cli-write.lock` (PRD FR 22a): `fn acquire_write_lock(simsapa_dir) -> Result<Option<WriteLock>>` using `fs4::fs_std::FileExt::try_lock_exclusive` on `<simsapa_dir>/cli-write.lock`, held for the whole command (the guard owns the `File`). `WouldBlock` → "held by another process"; an unsupported-locking error (reuse the classification in `backend/src/search/lenient_directory.rs`, don't re-derive errno lists) → `Ok(None)` + one logged warning. Never delete the lock file (same reason as Tantivy's: deleting it races with the next opener).
+  - [ ] 7.2 Wire the mode decision into one place in `main.rs`: write commands, `setup` and `serve` → in-use check (exit 3) → write lock (exit 3 if held) → `PreambleMode::Full`. Read-only commands → in-use check and a non-blocking lock attempt; if the folder is in use or the lock is held → `PreambleMode::ReadOnly`, otherwise take the lock for the preamble only, run `Full`, then release it before running the query.
+  - [ ] 7.3 `import stardict-zip <zip> [--label] [--lang] [--member]`: the default label is `suggested_label_for_zip`, the default lang `pli`. Call `import_user_zip_member` with a cancel flag tied to Ctrl-C and an `indicatif` progress closure, then `reconcile_dict_indexes()` (spinner). Do **not** call `reinit_fulltext_searcher()`: the process exits, and reopening every index first only adds delay (PRD §7). Confirm the `ANALYZE` happens inside the core (per `docs/user-data-and-sqlite-analyze.md`).
+  - [ ] 7.4 `import stardict <dir> [--label] [--lang]`: same, via `import_user_dir`.
+  - [ ] 7.5 Delete `import-stardict-dictionary` and `import-stardict-zip` from `bootstrap_cli` **only if** nothing in the bootstrap uses them. Check `bootstrap/` first: the built-in dictionaries go through `import_stardict_as_new`, so `import-stardict-dictionary` may need to stay as a maintainer command. Record the decision in the PRD.
+  - [ ] 7.6 `import epub <file> --uid [--title] [--author] [--lang]` and `import html …`: call `get_app_data().import_epub_to_db(…, is_user_added = true)` / `import_html_to_db`, then `build_library_index(&dbm.appdata, &paths.library_index_dir, effective_lang)` with `effective_lang` computed as in `sutta_bridge.rs` (~4430: empty → `en`, else lower-cased). The bootstrap `import-epub` / `import-html` stay in `bootstrap_cli`.
+  - [ ] 7.7 `index build|rebuild|delete` with the existing flags, calling the 3.2 cores. No `reinit_fulltext_searcher()` (see 7.3); the doc's "mandatory reinit" rule is about a long-lived process holding a searcher, which a one-shot command is not. **Keep `index` in `bootstrap_cli` as well**, both calling the shared 3.2 core: `docs/sutta-navigation-tree.md` (~1277, ~1451) names `simsapa_cli index rebuild --area suttas --lang pli --simsapa-dir …` as one of the three rebuild commands a maintainer runs together after `import-cst` / `build-navigation-tree`. Update that doc's command name to `simsapa_bootstrap_cli` (in 1.4) and the PRD's FR 26 "move, don't copy" list.
+  - [ ] 7.8 Add the CLI entry points to the table in `docs/user-data-and-sqlite-analyze.md` (the `ANALYZE` site is the same core function).
+  - [ ] 7.9 Tests: in-use decision unit tests; an import test using a tiny StarDict fixture with a `dummy-…` label, which deletes the dictionary afterwards with `delete_user_dictionary` (the dist DB rule).
+
+- [ ] 8.0 `simsapa serve` (FR 23–24)
+
+  > **Specs:** port = `--port` > `API_PORT` > `find_port_set_env()` (from 4848).
+  > `--host <IpAddr>`, default `127.0.0.1`; hostname → exit 1. Non-loopback →
+  > stderr warning (FR 24 text) and `mount_shutdown: false`. Writes
+  > `api-port.txt`. Prints `Simsapa API listening on http://<host>:<port>` on
+  > stdout. Ctrl-C → graceful Rocket shutdown, exit 0. **Depends on:** 4.0, 5.0, 7.1.
+
+  - [ ] 8.1 Parse `--host` as `IpAddr` (`value_parser`) and `--port` as `u16`. Pure `fn serve_config(host, port, env_port) -> ApiConfig` with unit tests: `127.0.0.1`, `::1` (loopback, shutdown mounted), `0.0.0.0`, `192.168.1.5`, `::` (not loopback, no shutdown), `localhost` rejected by the parser.
+  - [ ] 8.2 Order matters, because two `AppGlobals` are created (backend's `APP_GLOBALS` during the preamble, `simsapa_api`'s `APP_GLOBALS_API` afterwards) and each reads `API_PORT` in `AppGlobals::new()`: (1) in-use check + write lock (7.2); (2) resolve the port and set `API_PORT` (`--port` → `set_var`; else keep an existing `API_PORT`; else `find_port_set_env()`); (3) enable the `api-port.txt` write (5.3); (4) `PreambleMode::Full`; (5) `init_app_globals_api()`. Both globals then agree on the port. Release the write lock after the preamble: the in-use check protects the folder while serving.
+  - [ ] 8.3 Launch `build_rocket(config)` on a tokio runtime (`#[tokio::main]` or `rocket::execute`). Rocket 0.5 handles SIGINT by default (`Shutdown.ctrlc = true`, 2 s grace, 3 s mercy); do **not** install a `ctrlc` handler in `serve`. Confirm Ctrl-C shuts down cleanly and the process exits 0. The runtime is built here, not in `main` (5.1a).
+  - [ ] 8.4 Print the warning to stderr for non-loopback addresses before launch. Print the listening line once Rocket has bound (use a `liftoff` fairing, so a bind failure isn't preceded by a false "listening" line).
+  - [ ] 8.5 Manual check (by the user, or by the agent with `curl` against a backgrounded server killed by PID afterwards): `/health`, `/search`, `/gloss_text`, a GUI-only route → 404, an AI route → 404; `--host 0.0.0.0` → `/shutdown` 404, warning printed.
+
+- [ ] 9.0 `simsapa setup` (FR 12, 14–17)
+
+  > **Specs:** mirror PRD §4.4 step for step, with §4.5's simplifications.
+  > Flags: `--languages <codes>`, `--list-languages`, `--yes`. Order (PRD FR 15):
+  > folder → `ensure_no_empty_db_files(true)` + `check_delete_files_for_upgrade()`
+  > → mode decision (initial / language-only / already set up) → **peek** the
+  > markers → releases info → `compatible_assets_release()` → validate languages
+  > → **consume** the markers → build URLs → confirm → download loop → cleanup
+  > `temp-download/` → preamble → `Setup complete.`.
+  > Download loop per URL: recreate `temp-extract/`; client with 30 s connect
+  > timeout, no total timeout; 5 attempts, waits 2/4/8/16 s; a missing
+  > `Content-Length` counts as a failed attempt; stream 8 KB chunks to
+  > `temp-download/<file>`; extract `.tar.bz2` → `temp-extract/`; delete the
+  > archive; `suttas_lang_*` → `import_suttas_lang_to_appdata(temp-extract,
+  > appdata_database_url)`; `move_folder_contents(temp-extract, app-assets)`.
+  > Any error, or Ctrl-C → remove `temp-download/` (+ `app-assets/` if initial)
+  > → exit 1 / 130. No `unwrap()` anywhere in the loop.
+  > **Depends on:** 3.1, 5.0, 7.1.
+
+  - [ ] 9.1 Pure helpers with unit tests: `parse_language_input(&str) -> Vec<String>` (comma/space split, lower-case, dedup); `available_languages() -> Vec<LanguageInfo>` from `LANGUAGES_JSON`, excluding `en`/`pli`/`san`, sorted; `invalid_codes(&[String], &[LanguageInfo]) -> Vec<String>`; `setup_urls(repo, tag, is_initial, langs) -> Vec<String>` (always adds the `v` prefix; base archive order `appdata`, `dictionaries`, `dpd`, `index`); `decide_mode(appdata_exists, langs_given) -> SetupMode`.
+  - [ ] 9.2 `--list-languages`: print `code  name  (N suttas)`, or JSON with `--json`. Works without databases and without network.
+  - [ ] 9.3 Markers: read `auto_start_download.txt` and `download_languages.txt` paths from `AppGlobalPaths`. **Peek** first (`try_exists`, read contents), merge `download_languages.txt` codes into `--languages`, and delete both only after validation (9.5) passes. Print a line saying an app-prepared upgrade is being completed.
+  - [ ] 9.4 Releases info: call `update_checker::fetch_releases_info(None, <disabled stats>)`. On success store it with `simsapa_backend::set_releases_info(info)` (`backend/src/lib.rs` ~351, the process-global `try_get_releases_info()` reads, which `compatible_assets_release()` consults first); on failure continue silently (the fallback snapshot is used). No release → exit 1 with the GUI's "Unable to retrieve download information…" message.
+  - [ ] 9.5 Validate languages; on unknown codes print `Not available for download: <codes>` and exit 1 **before** consuming the markers.
+  - [ ] 9.6 Confirmation: list the archive names, the destination folder and the ~4.8 GB note (initial setup only), then `Continue? [y/N]`. With `--yes`, skip it. If stdin is not a TTY and there is no `--yes`, exit 1 with "Run `simsapa setup --yes` to confirm non-interactively."
+  - [ ] 9.7 Cancel flag (setup and the import commands only, never `serve`): `ctrlc::set_handler` sets an `AtomicBool`; the download and extract loops check it between chunks and between tar entries.
+  - [ ] 9.8 Download loop (`download_one(url, …) -> Result<PathBuf>`): the retry/backoff and `Content-Length` rule from the specs, with an `indicatif` bar `Downloading <file>` (bytes) on stderr. Every `read`/`write`/`create` error is returned, never unwrapped.
+  - [ ] 9.9 `extract_tar_bz2(archive, out, bar, cancel) -> Result<()>`: `File → BufReader → progress-counting reader → BzDecoder → tar::Archive`, `entry.unpack_in(out)`, bar `Extracting <file>` by compressed bytes. Same error wording as `asset_manager.rs`.
+  - [ ] 9.10 Per-archive post-steps: delete the archive; for `suttas_lang_*`, `import_suttas_lang_to_appdata`; `move_folder_contents`. Either failing fails the setup (PRD FR 14).
+  - [ ] 9.11 Cleanup function matching `cleanup_on_failure`: remove `temp-download/` (contains `temp-extract/`); if initial setup, remove `app-assets/`. Called on every error path and on cancel.
+  - [ ] 9.12 Success: remove `temp-download/`, run `run_headless_preamble()` (5.4) so user-data import, first-start config and dictionary-index reconciliation happen now, print `Setup complete.` (`--json`: `{"status":"ok","data_folder":…,"downloaded":[…]}`).
+  - [ ] 9.13 "Already set up" path: exit 0 with `Simsapa is already set up in <path>.` (and a hint about `--languages`).
+  - [ ] 9.14 Fixture test: serve two small `.tar.bz2` files (a fake `appdata.sqlite3` and a `suttas_lang_xx` folder) from a `std::net::TcpListener` thread on `127.0.0.1:0`, point the URL builder at it through an injectable base URL, run the loop into a temp `--simsapa-dir`, and assert the final layout and that `temp-download/` is gone. A second test makes the server drop the connection and asserts that the initial-setup cleanup removed `app-assets/`. Never hit GitHub in tests.
+  - [ ] 9.15 Manual end-to-end check by the user, in a throwaway folder: `simsapa --simsapa-dir /tmp/x setup --languages de --yes`, then open the same folder in the GUI (`SIMSAPA_DIR=/tmp/x`). The GUI shows neither the download window nor reconciliation.
+
+- [ ] 10.0 Release builds per target (FR 33)
+
+  > **Specs:** targets `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
+  > `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. The release profile lives
+  > in `backend_cli/Cargo.toml` (it only applies when building that crate as the
+  > root, so it cannot affect the GUI): `strip = true`, `lto = "thin"`,
+  > `codegen-units = 1`. **Depends on:** 8.0, 9.0 (functionally complete binary).
+
+  - [ ] 10.1 Add the `[profile.release]` to `backend_cli/Cargo.toml`.
+  - [ ] 10.2 Pick the musl toolchain: try `cargo zigbuild --target x86_64-unknown-linux-musl` first (bundled SQLite and `bzip2-sys` need a C cross-compiler). Record what was installed and why in the new doc.
+  - [ ] 10.3 Build both Linux musl targets; check `file target/<t>/release/simsapa` says "statically linked"; run the x64 one against the dist DB (`search`, `word`, `serve`).
+  - [ ] 10.4 Benchmark `fulltext-search` and `search suttas` on musl vs a glibc build of the same commit (5 runs each, same queries). If musl is >20% slower, add `mimalloc` as the global allocator in `backend_cli/src/main.rs` under `#[cfg(target_env = "musl")]` and re-measure. Record the numbers in the new doc (PRD open question 3).
+  - [ ] 10.5 `Makefile`: `cli` (debug), `cli-release` (host), `cli-linux-x64`, `cli-linux-arm64`, `cli-darwin-arm64` (run on the Mac), `cli-win32-x64` (run on Windows; mirror the `build-windows.ps1` approach if needed). Each writes to `dist/cli/<npm-platform>/simsapa[.exe]`.
+  - [ ] 10.6 Record the stripped binary size per target in the new doc. Confirm the 48 MB `assets/` folder is **not** embedded: e.g. `strings target/<t>/release/simsapa | grep -c pdf.worker` should be 0. Likewise confirm the DOCX-export fonts were dropped as dead code (`docx_export` is only called from `bridges`): `grep -c 'Crimson Pro' target/<t>/release/simsapa` and `grep -c 'Abhaya Libre' …` should be 0. (The font names are also stored in UTF-16 in the TTF name table, so if these print 0 but the binary is unexpectedly large, compare against a build with `docx_export` referenced once.)
+  - [ ] 10.7 Windows check (user, on the Windows machine): with the GUI open and indexing (e.g. after a dictionary import in the GUI), run `simsapa search suttas anicca` in a loop for a minute; afterwards confirm the GUI's index folder has no growing pile of orphaned segment files and the GUI log shows only retried (not failed) deletes. Record the outcome in the new doc (PRD §7, Windows and memory-mapped indexes).
+
+- [ ] 11.0 npm packaging (FR 30–32, 34)
+
+  > **Specs:** main `@simsapa/cli` with `bin: { "simsapa": "bin/simsapa.js" }`
+  > and `optionalDependencies` pinned to the exact version of
+  > `@simsapa/cli-{linux-x64,linux-arm64,darwin-arm64,win32-x64}`; each platform
+  > package has `os`/`cpu` and contains `bin/simsapa[.exe]`. No `postinstall`.
+  > Version = `backend/Cargo.toml` `version`. **Depends on:** 10.0.
+
+  - [ ] 11.1 Create `npm/cli/package.json` (name, description, license Apache-2.0, repository, `bin`, `files`, `engines.node >= 18`, `optionalDependencies`) and `npm/cli-<platform>/package.json` ×4 (`os: ["linux"|"darwin"|"win32"]`, `cpu: ["x64"|"arm64"]`, `files: ["bin/"]`, `preferUnplugged: true`).
+  - [ ] 11.2 `npm/cli/bin/simsapa.js`: map `process.platform`/`process.arch` to the package name; `require.resolve(`${pkg}/bin/simsapa${ext}`)`; `spawnSync(binary, process.argv.slice(2), { stdio: "inherit" })`; forward `status`, or re-raise `signal` with `process.kill(process.pid, signal)`. If the package is missing, print the supported platforms and "reinstall without --omit=optional". Keep it dependency-free.
+  - [ ] 11.3 A small jest test for the launcher's platform → package mapping and missing-package message (the repo already runs jest via `make js-test`).
+  - [ ] 11.4 `scripts/npm-pack.sh`: read the version from `backend/Cargo.toml`, write it into all five `package.json`s (including the `optionalDependencies` pins), copy `dist/cli/<platform>/simsapa*` into each platform's `bin/` (chmod +x), run `npm pack` in each folder into `dist/npm/`. Missing binaries for a platform → warning, skip. `make npm-packages` calls it.
+  - [ ] 11.5 Local dry run on Linux: `npm install -g dist/npm/simsapa-cli-linux-x64-*.tgz dist/npm/simsapa-cli-*.tgz`; `simsapa --version`, `simsapa paths`, `simsapa search suttas anicca --simsapa-dir <dist>`; then uninstall. Record each `.tgz` size in the new doc (no official npm size limit was found; PRD §7).
+  - [ ] 11.6 `npm/cli/README.md` covering the FR 34 list: install, the 4.8 GB setup and its location, sharing with the GUI, commands, `--json`, exit codes, `serve` + `--host` warning, the agent glossing workflow, "close the app first". Add `.gitignore` entries for `npm/*/bin/` and `dist/npm/`.
+  - [ ] 11.7 Write the manual publish checklist into the new doc: scope ownership; `npm publish --access public --tag latest` in each platform folder **first**, then the main package. `--tag latest` is required while versions are prereleases (`-alpha.N`): npm 11 rejects a prerelease publish without `--tag`, and without a `latest` tag a plain `npm install -g @simsapa/cli` fails (PRD FR 32). Do not publish.
+
+- [ ] 12.0 Documentation (FR 35–38)
+
+  > **Depends on:** everything above (documents the final state). Follow the
+  > "docs describe current behaviour" rule: no history narration; keep the traps.
+
+  - [ ] 12.1 `docs/simsapa-localhost-api-search-endpoints.md`: the intro says the server is the GUI or `simsapa serve`; mark the GUI-only, AI and static-asset routes (from the 4.1 inventory), and note that HTML from `simsapa serve` keeps `{api_url}/assets/...` links that 404 there (the reader CSS is inline); §9 points at `simsapa_api`; §10 adds `serve --port/--host`, the Docker example, the warning, `/shutdown` on non-loopback, and the in-use limitation; §16 adds the "agent-driven word selection" subsection with a worked `/gloss_text` example. Run each new example against `simsapa serve` before writing it down.
+  - [ ] 12.2 New `docs/backend-cli-and-npm-package.md`: crate layout and reasons; `audio` feature; route inventory and why AI routes stay in `bridges`; **the setup parity rule** (two implementations of one procedure; the §4.4 step list; what the CLI simplifies); preamble ↔ `gui.cpp`; `api-port.txt` write rule; in-use detection + the single-process invariant; command list; the import paths follow the GUI's; builds per target, toolchain, sizes, benchmark; npm layout, dry run, publish checklist.
+  - [ ] 12.3 Parity comments: at the top of `run_download()` in `DownloadAppdataWindow.qml` and of `download_urls_and_extract` in `bridges/src/asset_manager.rs`, add "`backend_cli/src/setup.rs` re-implements this procedure; change both together — see docs/backend-cli-and-npm-package.md". Use `//` comments in QML (no `console` changes). `make build -B` (QML touched).
+  - [ ] 12.4 `docs/startup-sequence-and-caches.md`: a short section on the CLI's headless preamble and that it mirrors `gui.cpp`'s order.
+  - [ ] 12.5 `PROJECT_MAP.md`: the new crates, moved files, renamed `bootstrap_cli/`.
+  - [ ] 12.6 `CLAUDE.md`: add the new doc to "Notable feature docs"; in "New Rust bridges" say data routes go in `simsapa_api` unless they need Qt or an AI provider; update the Build/Test section with `make cli*` / `make npm-packages` and `cd backend_cli && cargo test`; update `rust-test` in the `Makefile` to also run `api/` and `backend_cli/` tests.
+  - [ ] 12.7 Final check: `make test` passes; `make build -B` passes; `cd bootstrap_cli && cargo build`; `cd api && cargo test`; `cd backend_cli && cargo test`; the PRD's Success Metrics §8 items are each either verified or listed as a manual check for the user.
