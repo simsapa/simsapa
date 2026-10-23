@@ -21,7 +21,7 @@ use simsapa_backend::html_content::sutta_html_page;
 use simsapa_backend::dir_list::generate_html_directory_listing;
 use simsapa_backend::db::DbManager;
 use simsapa_backend::db::appdata_models::Sutta;
-use simsapa_backend::helpers::{create_or_update_linux_desktop_icon_file, query_text_to_uid_field_query, verse_sutta_ref_to_uid, normalize_human_word_uid};
+use simsapa_backend::helpers::{create_or_update_linux_desktop_icon_file, query_text_to_uid_field_query, convert_verse_ref_to_sutta_uid, normalize_human_word_uid};
 use simsapa_backend::helpers::{process_all_paragraphs, build_word_selection_items, WordSelectionBuildMode, WordSelectionParagraphInput, parse_word_selection_response, WordSelectionParseMode};
 use simsapa_backend::logger::{info, warn, error, profile};
 use simsapa_backend::app_settings::{SuttaDisplayDefaults, ModelUsageEntry};
@@ -194,31 +194,6 @@ fn pathbuf_to_forward_slash_string(path: &Path) -> String {
 /// `\\server` as `//server`.
 fn fs_path_to_forward_slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
-}
-
-/// Convert verse references to actual sutta UIDs.
-/// E.g., "thag179/pli/ms" -> "thag2.30/pli/ms", "dhp34/pli/ms" -> "dhp33-43/pli/ms"
-/// Returns the original UID if no conversion is needed.
-fn convert_verse_ref_to_sutta_uid(uid_str: &str) -> String {
-    // Extract the sutta code without language/author (before first '/')
-    let code = uid_str.split('/').next().unwrap_or(uid_str);
-
-    // Try to convert verse reference to sutta UID (e.g., "thag179" -> "thag2.30")
-    if let Some(converted_uid) = verse_sutta_ref_to_uid(code) {
-        // Preserve the language/author part if present (e.g., keep "/pli/ms")
-        if uid_str.contains('/') {
-            let parts: Vec<&str> = uid_str.splitn(2, '/').collect();
-            if parts.len() == 2 {
-                format!("{}/{}", converted_uid, parts[1])
-            } else {
-                format!("{}/pli/ms", converted_uid)
-            }
-        } else {
-            format!("{}/pli/ms", converted_uid)
-        }
-    } else {
-        uid_str.to_string()
-    }
 }
 
 /// Look up a sutta by UID with fallback to /pli/ms version.
@@ -1768,6 +1743,54 @@ fn get_sutta_html_q(window_id: &str, uid: &str, anchor: Option<&str>, layout: Op
     sutta_html_response(window_id, uid, anchor, layout, columns, repeat_pali, dbm)
 }
 
+/// The `/sutta.json` response: the stored Bilara JSON as the body, unparsed,
+/// with the uid of the record that answered in `X-Simsapa-Sutta-Uid`; or a
+/// JSON error with its status.
+#[derive(rocket::Responder)]
+enum SuttaJsonResponse {
+    #[response(status = 200, content_type = "json")]
+    Found(String, rocket::http::Header<'static>),
+    Error((Status, Json<serde_json::Value>)),
+}
+
+/// GET /sutta.json?<uid>
+/// A sutta's text in SuttaCentral's Bilara JSON format (`{"mn1:1.1": "…", …}`),
+/// the `suttas.content_json` column **verbatim**. It is never parsed into a
+/// `serde_json::Value`, which (built without `preserve_order`) would sort the
+/// segment ids alphabetically and scramble the text order. The uid resolves
+/// strictly (`sutta_json::resolve_sutta_strict`): a missing translation is a
+/// `404`, never the Pāli. A sutta stored as HTML is a `404` with
+/// `reason: "no_content_json"`. See docs/simsapa-localhost-api-search-endpoints.md.
+#[get("/sutta.json?<uid>")]
+fn get_sutta_json_q(uid: &str, dbm: &State<Arc<DbManager>>) -> SuttaJsonResponse {
+    use simsapa_backend::sutta_json::{get_sutta_content_json, SuttaContentJson};
+
+    info(&format!("get_sutta_json_q(): uid={}", uid));
+
+    match get_sutta_content_json(&dbm.appdata, uid) {
+        SuttaContentJson::Found { uid: found_uid, content_json } => SuttaJsonResponse::Found(
+            content_json,
+            rocket::http::Header::new("X-Simsapa-Sutta-Uid", found_uid),
+        ),
+        SuttaContentJson::NoContentJson { uid: found_uid } => SuttaJsonResponse::Error((
+            Status::NotFound,
+            Json(serde_json::json!({
+                "error": format!("{} has no SuttaCentral JSON content; it is stored as HTML (use /sutta_html)", found_uid),
+                "reason": "no_content_json",
+                "uid": found_uid,
+            })),
+        )),
+        SuttaContentJson::NotFound => SuttaJsonResponse::Error((
+            Status::NotFound,
+            Json(serde_json::json!({
+                "error": format!("sutta not found: {}", uid),
+                "reason": "not_found",
+                "uid": uid,
+            })),
+        )),
+    }
+}
+
 /// The successful `/sutta_content_block` response: the block HTML plus the
 /// server-resolved column list in the `X-SSP-Columns` header (percent-encoded
 /// JSON in the `SUTTA_DISPLAY.columns` shape, `{uid, label, author,
@@ -2541,6 +2564,7 @@ pub async extern "C" fn start_webserver() {
             get_word_json_q,
             get_word_html_q,
             get_sutta_html_q,
+            get_sutta_json_q,
             get_navigation_timeline,
             open_sutta_navigation,
             get_sutta_content_block,

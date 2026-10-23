@@ -181,7 +181,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [ ] 4.6 Move the unit tests from `bridges/src/api.rs` (`test_parse_search_mode`, `test_parse_search_area`, `test_is_verbose_flag`, the envelope tests) to `api/`. `cd api && cargo test` passes. `cd api && cargo tree | grep -E 'cxx|rig-core|cpal'` prints nothing.
   - [ ] 4.7 In `bridges`: add `simsapa_api = { path = "../api" }`, delete the moved code, import what remains from `simsapa_api`, and rewrite `start_webserver()` as `init_app_globals_api(); let g = get_app_globals_api(); simsapa_api::build_rocket(ApiConfig { host: 127.0.0.1, port, mount_shutdown: true }).mount("/", routes![<GUI + AI + asset routes>]).manage(AssetsHandler::default()).launch().await`, where `port = u16::try_from(g.api_port)`. `find_port_set_env()` stores `-1` when no port was free: log an error and return without launching, rather than casting `-1` with `as`.
   - [ ] 4.8 Route parity check: the union of the shared routes and the `bridges` routes equals the 4.1 inventory (same paths, same methods). Do it by diffing the inventory against the two `routes![…]` lists, or by logging Rocket's route table at launch once and comparing.
-  - [ ] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/gloss_text`); run AI word selection in the Gloss tab.
+  - [ ] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/sutta.json?uid=mn1/pli/ms` (body and `X-Simsapa-Sutta-Uid` header unchanged), `/gloss_text`); run AI word selection in the Gloss tab.
 
 - [ ] 5.0 Create the `simsapa_backend_cli` crate skeleton (FR 3, 18–20, 27–29)
 
@@ -219,7 +219,8 @@ Update the file after completing each sub-task, not just after completing an ent
   > twin, so the `--json` output is the same JSON:
   > `search` → `simsapa_api::run_search` (`ApiSearchResult`); `word` →
   > `AppData::resolve_word_uid` + the `/word.json` builder; `sutta` → the
-  > `/sutta_html` builder (`--text` strips tags); `gloss` → `process_all_paragraphs`
+  > `/sutta_html` builder (`--text` strips tags), and `sutta --content-json` →
+  > `sutta_json::get_sutta_content_json()` (as `/sutta.json`); `gloss` → `process_all_paragraphs`
   > (`AllParagraphsProcessingResult`, as `/gloss_text`); `query` /
   > `fulltext-search` / `stats` → the 3.2 cores. **Depends on:** 5.0.
 
@@ -227,10 +228,11 @@ Update the file after completing each sub-task, not just after completing an ent
   - [ ] 6.2 Make sure the lazy `init_fulltext_searcher()` path in `run_search` works outside Rocket (it is plain Rust; confirm no `State` dependency leaks into the helper).
   - [ ] 6.3 `query <suttas|words> <query> [--titles] [--count]` and `fulltext-search …` with the same flags as today's bootstrap commands, calling the 3.2 cores. Delete both commands from `bootstrap_cli`.
   - [ ] 6.4 `word <uid> [--html]`: resolve with `resolve_word_uid` (tolerant forms: `dhamma 1.01`, `34626/dpd`, `dhamma-1-01/dpd`). Text output shows the main fields; `--html` prints the `dict_words` HTML; exit 4 on a miss.
-  - [ ] 6.5 `sutta <uid> [--html | --text]`: the default is text (title, uid, plain content). Exit 4 on a miss. Reuse `lookup_sutta_with_fallback` and `convert_verse_ref_to_sutta_uid` from `simsapa_api` so `dhp182`-style refs work.
+  - [ ] 6.5 `sutta <uid> [--html | --text | --content-json]`: the default is text (title, uid, plain content). Exit 4 on a miss. For `--html` / `--text` reuse `lookup_sutta_with_fallback` from `simsapa_api` and `convert_verse_ref_to_sutta_uid` from backend `helpers` so `dhp182`-style refs work.
+    - [ ] 6.5a `--content-json`: call `simsapa_backend::sutta_json::get_sutta_content_json()` and print `content_json` to stdout **verbatim** — never through `serde_json::Value`, which sorts the segment ids (no `preserve_order`). Print the resolved uid to stderr. `NotFound` and `NoContentJson` exit 4 with the same messages as the `/sutta.json` route's `error` field.
   - [ ] 6.6 `gloss <text | ->`: read stdin for `-`; split paragraphs the same way `/gloss_text` does (read its handler for the request → `AllParagraphsProcessingInput` mapping and reuse it). `--json` prints the full result. Text output gives one line per word: word, first option's short meaning, and break-down(s) for compounds.
   - [ ] 6.7 `stats [--output-folder] [--write]`: calls the 3.2 stats core on the resolved `appdata.sqlite3`. Delete `appdata-stats` from `bootstrap_cli`.
-  - [ ] 6.8 Tests against the dist DB (read-only): `search suttas "anicca" --json` parses and has results; `word "dhamma 1.01" --json` resolves to `dhamma-1-01/dpd`; `word nosuchword` exits 4; `gloss` on a short sentence containing a compound returns its deconstruction fields; the text output contains no `<span`.
+  - [ ] 6.8 Tests against the dist DB (read-only): `search suttas "anicca" --json` parses and has results; `word "dhamma 1.01" --json` resolves to `dhamma-1-01/dpd`; `word nosuchword` exits 4; `sutta mn1 --content-json` prints the same bytes as the `mn1/pli/ms` `content_json` column; `sutta dn1/pli/cst --content-json` and `sutta mn1/en/nosuchauthor --content-json` exit 4; `gloss` on a short sentence containing a compound returns its deconstruction fields; the text output contains no `<span`.
 
 - [ ] 7.0 In-use detection and the write commands (FR 21–22, 25–26)
 

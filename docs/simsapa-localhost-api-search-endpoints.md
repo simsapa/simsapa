@@ -26,7 +26,8 @@ This document covers the **whole route surface**. The four **search** endpoints
 and the **sutta/dictionary retrieval** routes are documented in detail (request /
 response JSON, parameter structs, curl examples) in §1–§13; **every other route**
 is catalogued with its purpose in the complete route reference (§14), with the
-remaining request/response structs in §15. The **gloss pipeline** routes
+remaining request/response structs in §15. A sutta's text as **SuttaCentral
+(Bilara) JSON**, segment id → text, is `GET /sutta.json?uid=` (§13.4). The **gloss pipeline** routes
 (`POST /gloss_text` and the `GET /word_selection_ws` WebSocket) — for external
 clients building a two-step "Glossing… → Word Selection…" table UI — are in §16.
 **Reference conversion** (`POST /reference_search`: a PTS volume and page to its
@@ -65,6 +66,8 @@ curl -s -X POST "localhost:$PORT/suttas_fulltext_search" \
   -H 'Content-Type: application/json' -d '{"query_text":"dukkha"}' | jq '.results[].uid'
 # 2. Retrieve the full rendered HTML for that uid (then strip tags for plain text):
 curl -s "localhost:$PORT/get_sutta_html_by_uid/web/sn56.11/pli/ms"
+# 2b. …or the segmented text as SuttaCentral (Bilara) JSON, segment id → text (§13.4):
+curl -s -G "localhost:$PORT/sutta.json" --data-urlencode "uid=sn56.11/pli/ms" | jq .
 
 # --- Dictionary ---------------------------------------------------------------
 # 1. Search DPD. Copy a .results[].uid (e.g. "dhamma-1-01/dpd" or numeric "34626/dpd").
@@ -360,6 +363,9 @@ readers.
 - `resolve_word_uid` (backend `AppData`) — the shared, tolerant word-uid resolver
   behind the JSON and HTML word routes (§13.3); `normalize_human_word_uid`
   (backend `helpers`) is its pure display-form → canonical-uid normalizer.
+- `get_sutta_content_json` / `resolve_sutta_strict` (backend `sutta_json`) — the
+  Qt-free body of `/sutta.json` (§13.4); `convert_verse_ref_to_sutta_uid`
+  (backend `helpers`) is shared with the sutta routes of §14.4.
 - `word_json_response` / `word_html_response` / `sutta_html_response` — shared
   bodies for the word/sutta retrieval routes (resolver + 404-on-miss + the
   `?verbose=1` envelope, §13).
@@ -648,6 +654,7 @@ endpoints. These return rendered HTML; strip the tags to get plain text.
 | `GET /get_word_html_by_uid/<window_id>/<uid..>` | Full dictionary-word entry HTML for a word uid (e.g. `dhamma-1-01/dpd`). Resolves the same tolerant set of uid forms as the JSON route (§13.3); the numeric headword form `34626/dpd` now renders a full page (was blank). **404 on a genuine miss.** |
 | `GET /word_html?window_id=<id>&uid=<uid>` | **Query-param twin** of `get_word_html_by_uid`. Same HTML, but the uid is a query parameter so its `/` may be `%2F`-encoded (or raw — encoding-agnostic). Both params required (missing either → HTTP 422). Use when a client must percent-encode the uid. |
 | `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]` | **Query-param twin** of `get_sutta_html_by_uid`. Same sutta HTML, uid as an encoding-agnostic query parameter (`%2F` or raw `/`). `window_id` + `uid` required, `anchor` optional. Also applies verse-ref / `/pli/ms` / range normalization (§14.4). |
+| `GET /sutta.json?uid=<uid>` | The sutta's text as **SuttaCentral (Bilara) JSON**, segment id → text, not HTML. Only for segmented texts; see §13.4. |
 
 Both sutta-HTML routes also accept the optional `layout` / `columns` display
 parameters (multi-column side-by-side view) — see §14.5.
@@ -830,6 +837,82 @@ the `dict_words` `DictWord` model) — not the `SearchResult` of §11.
 >    entry.) Use the JSON route when you need structured fields, the HTML route
 >    when you need rendered markup — not as fallbacks for each other.
 
+### 13.4 A sutta as SuttaCentral (Bilara) JSON: `GET /sutta.json`
+
+`GET /sutta.json?uid=<uid>` returns a sutta's text in SuttaCentral's Bilara
+format: one JSON object mapping each **segment id** to that segment's text.
+The body is the `suttas.content_json` column **verbatim**, so the segments come
+in the order of the SuttaCentral file, and the whitespace is the stored file's.
+
+```sh
+curl -s -G "localhost:$PORT/sutta.json" --data-urlencode "uid=mn1/pli/ms" \
+  | jq 'to_entries[:3] | from_entries'
+```
+
+```json
+{
+  "mn1:0.1": "Majjhima Nikāya 1 ",
+  "mn1:0.2": "Mūlapariyāyasutta ",
+  "mn1:1.1": "Evaṁ me sutaṁ—"
+}
+```
+
+The whole `mn1/pli/ms` object has 334 segments. A translation such as
+`mn1/en/sujato` has the same segment ids, so the Pāli and an English
+translation can be zipped by key.
+
+- **Response `200`:** `Content-Type: application/json`, the Bilara object as
+  the body. The `X-Simsapa-Sutta-Uid` header names the record that answered,
+  which can differ from the request (see below). Read it with `curl -sD - …`.
+- **Order: never re-sort `content_json`.** The key order *is* the order of
+  the paragraphs in the text, and the segment ids do not sort into it. Sorted,
+  `mn1:10.1` follows `mn1:1.6`, and 326 of the 334 segments of `mn1/pli/ms`
+  move. The server never parses the column (`serde_json` here is built without
+  `preserve_order`, so a `serde_json::Value` would sort the keys). A client
+  must read it with a parser that keeps key order (`jq` without `-S` or
+  `keys`, Python's `json`, JavaScript's `JSON.parse`) and must not pass it
+  through a sorted or unordered map.
+- **Which texts have it.** Only segmented texts: the SuttaCentral Pāli
+  (`/pli/ms`) and the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`).
+  `pli/cst` texts and most other translations are stored as HTML; for those use
+  `/sutta_html` (§13). `GET /translations_for_sutta?uid=` reports
+  `has_content_json` for each text sharing a reference (§14.5).
+- **uid resolution** (`resolve_sutta_strict`, in backend `sutta_json.rs`):
+  1. a verse reference is converted (`dhp182` → `dhp179-196/pli/ms`, §14.4);
+  2. the uid is read exactly;
+  3. a bare code with no `/lang/author` reads `<code>/pli/ms` (`mn1` →
+     `mn1/pli/ms`);
+  4. a single reference inside a stored range reads the range, with the same
+     `/lang/author` (`sn45.92/en/sujato` → `sn45.92-95/en/sujato`).
+
+  **It never substitutes a different text.** The HTML routes fall back from a
+  missing translation to the Pāli (§14.4); this route does not, so
+  `mn1/en/nosuchauthor` is a `404`, not the Pāli.
+- **Errors**, both `404` with a JSON body (`reason` is stable; the `error`
+  text is for people):
+
+  | Case | Body |
+  |---|---|
+  | No sutta for the uid | `{"error": "sutta not found: <uid>", "reason": "not_found", "uid": "<uid as sent>"}` |
+  | The sutta is stored as HTML | `{"error": "<uid> has no SuttaCentral JSON content; …", "reason": "no_content_json", "uid": "<resolved uid>"}` |
+
+  A missing `uid` parameter is Rocket's own `422`.
+
+```sh
+# A verse reference, and the record that answered:
+curl -s -D - -o /dev/null -G "localhost:$PORT/sutta.json" --data-urlencode "uid=dhp182" \
+  | grep -i x-simsapa-sutta-uid
+# x-simsapa-sutta-uid: dhp179-196/pli/ms
+
+# A text stored as HTML:
+curl -s -G "localhost:$PORT/sutta.json" --data-urlencode "uid=dn1/pli/cst" | jq .reason
+# "no_content_json"
+```
+
+Only the root text is served. The variant readings, the notes and the HTML
+template that SuttaCentral publishes beside it (`content_json_tmpl`, and the
+`sutta_variants` / `sutta_comments` tables) are not part of this route.
+
 ## 14. Complete route reference
 
 Every route mounted in `start_webserver()`'s `routes![...]` (`bridges/src/api.rs`).
@@ -852,6 +935,7 @@ views, not for headless data retrieval.
 | `GET /sutta_and_dict_search_options` | Filter option lists (`sutta_languages[]`, `dict_languages[]`, `dict_sources[]`) | §10; struct `SearchOptions` §15 |
 | `GET /get_sutta_html_by_uid/<window_id>/<uid..>?<anchor>&<layout>&<columns>` | Full rendered sutta HTML (text retrieval); 404 on miss; optional display params | §13, §14.5 |
 | `GET /sutta_html?window_id=<id>&uid=<uid>&[anchor=<id>]&[layout=…]&[columns=…]` | Query-param twin of `get_sutta_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss; optional display params | §13, §14.5 |
+| `GET /sutta.json?uid=<uid>` | The sutta's text as SuttaCentral (Bilara) JSON, segment id → text, the stored `content_json` verbatim; the resolved uid is in `X-Simsapa-Sutta-Uid`; strict uid resolution; 404 + JSON `reason` (`not_found` / `no_content_json`) | §13.4 |
 | `GET /sutta_content_block?uid=<uid>&[layout=…]&[columns=…]&[show_references=…]` | Just the sutta content-block HTML (no page chrome) for in-page layout/column re-renders; 400 bad layout, 404 unknown uid/column; 200 carries the resolved column list in the `X-SSP-Columns` header | §14.5 |
 | `GET /translations_for_sutta?uid=<uid>` | JSON array of the other texts sharing the sutta's reference (column-bar dropdowns): `item_uid`, `sutta_title`, `sutta_ref`, `language`, `author`, `has_content_json` | §14.5 |
 | `POST /save_sutta_display_settings` | Persist the `sutta_display` defaults (cogwheel menu "Save as default"). Body: `SuttaDisplayDefaults` JSON; 200 on success, 400/422 on malformed body | §14.5 |
@@ -919,6 +1003,12 @@ share two helpers, so they accept more than a literal stored uid:
 - **Fallback + range lookup** (`lookup_sutta_with_fallback`): if the exact uid
   isn't found it retries the `…/pli/ms` edition, then looks for a stored **range**
   sutta containing the reference (e.g. `sn45.92/pli/ms` → `sn45.92-95/pli/ms`).
+
+`GET /sutta.json` (§13.4) uses the verse-reference conversion but **not**
+`lookup_sutta_with_fallback`: it never falls back from a translation to the
+Pāli, and it keeps a range hit only when the `/lang/author` matches.
+`convert_verse_ref_to_sutta_uid` lives in backend `helpers.rs`, so the CLI can
+use it as well.
 
 The search routes' reference auto-detect (§5) is a different mechanism
 (`query_text_to_uid_field_query`, query-string → `uid:` field query).

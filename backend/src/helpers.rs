@@ -626,6 +626,31 @@ pub fn verse_sutta_ref_to_uid(sutta_ref: &str) -> Option<String> {
     }
 }
 
+/// Convert verse references to actual sutta UIDs.
+/// E.g., "thag179/pli/ms" -> "thag2.30/pli/ms", "dhp34/pli/ms" -> "dhp33-43/pli/ms"
+/// Returns the original UID if no conversion is needed.
+pub fn convert_verse_ref_to_sutta_uid(uid_str: &str) -> String {
+    // Extract the sutta code without language/author (before first '/')
+    let code = uid_str.split('/').next().unwrap_or(uid_str);
+
+    // Try to convert verse reference to sutta UID (e.g., "thag179" -> "thag2.30")
+    if let Some(converted_uid) = verse_sutta_ref_to_uid(code) {
+        // Preserve the language/author part if present (e.g., keep "/pli/ms")
+        if uid_str.contains('/') {
+            let parts: Vec<&str> = uid_str.splitn(2, '/').collect();
+            if parts.len() == 2 {
+                format!("{}/{}", converted_uid, parts[1])
+            } else {
+                format!("{}/pli/ms", converted_uid)
+            }
+        } else {
+            format!("{}/pli/ms", converted_uid)
+        }
+    } else {
+        uid_str.to_string()
+    }
+}
+
 pub fn dhammatalks_org_ref_notation_convert(ref_str: &str) -> String {
     let mut ref_str = ref_str.replace('_', ".").to_lowercase();
     ref_str = ref_str.replace(".html", "");

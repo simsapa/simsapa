@@ -414,6 +414,14 @@ Notable feature docs:
   `ṁ` respelling, stem match and "starts with" guesses; nothing says which step
   answered) → `/search` Dictionary `Headword Match` / `Contains Match`
   (candidates only); widen only the forms the narrower tier could not answer.
+  **Sutta Bilara JSON (§13.4):** `GET /sutta.json?uid=` returns the
+  `content_json` column (SuttaCentral segment id → text) **verbatim**. **Never
+  re-sort `content_json`**: its key order is the paragraph order of the text,
+  and sorted segment ids scramble it (`mn1:10.1` lands after `mn1:1.6`), so
+  never pass it through `serde_json::Value` (no `preserve_order`), with the resolved
+  uid in `X-Simsapa-Sutta-Uid`; its uid resolution (`backend/src/sutta_json.rs`)
+  never falls back from a translation to the Pāli, unlike the HTML routes, and
+  an HTML-only sutta is a `404` with `reason: "no_content_json"`.
   **Reference conversion (§17):** `POST /reference_search` is the
   Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
   back) over the bundled reference table; the sutta routes' reference
