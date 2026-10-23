@@ -51,16 +51,16 @@ These must be taken **before any code change**, while the installed build is
 still the old code. Agents do not run the GUI, so ask the user to start the app.
 Save the outputs in the scratchpad, not in the repo.
 
-- [ ] 0.0 Baselines from the unchanged build
-  - [ ] 0.1 Default `/gloss_text`: `curl` a fixed two-paragraph Pāli text (with
+- [x] 0.0 Baselines from the unchanged build
+  - [x] 0.1 Default `/gloss_text`: `curl` a fixed two-paragraph Pāli text (with
         a repeated word, an unknown word, `iti`, a `'ti` word and `atthaññe`)
         and save the raw response body byte for byte (`curl -s … > baseline.json`,
         no `jq`, so key order is kept).
-  - [ ] 0.2 Body limit: send a `/gloss_text` body just over 8 KiB and record
+  - [x] 0.2 Body limit: send a `/gloss_text` body just over 8 KiB and record
         the status and body. Expected from the rocket-0.5.1 source: `400` with
         Rocket's HTML error page (PRD FR 14). If it differs, update PRD FR 14
         with what was measured.
-  - [ ] 0.3 `curl /health | jq 'keys'` and save it, to confirm later that only
+  - [x] 0.3 `curl /health | jq 'keys'` and save it, to confirm later that only
         `dpd_version` was added.
 
 ### 1.0 Backend exact lookup core
