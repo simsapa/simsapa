@@ -1956,9 +1956,10 @@ fn resolve_form_exact(
         None => (Vec::new(), Vec::new(), false),
     };
 
-    if iti_base.is_some() && !has_iti_breakdown {
-        // TODO: resolve as `<base> + iti` (docs/search-snippet-highlight-pipeline.md §9d).
-        // Until then the joined row's result is returned.
+    if let Some(base) = iti_base
+        && !has_iti_breakdown
+    {
+        return iti_rule_form(db_conn, cache, form, &key, &base);
     }
 
     let deconstructions = dpd_splits(db_conn, cache, splits)?;
@@ -1968,6 +1969,71 @@ fn resolve_form_exact(
         lookup_key: key,
         invalid_note: None,
         headword_ids,
+        deconstructions,
+    })
+}
+
+/// An iti-sandhi form whose joined key DPD does not analyse as `… + iti`,
+/// resolved as `<base> + iti` over exact rows. This is the rule of
+/// `dpd_lookup_grouped_iti_split()` (docs/search-snippet-highlight-pipeline.md
+/// §9d), except that the base is read by equality, never through a "starts
+/// with" guess. A test keeps the two from drifting apart.
+///
+/// The base is the first of `iti_base_candidates()` with an exact row that has
+/// headwords or splits, else the first candidate. There are no headwords; the
+/// splits are `<base> + iti` (when the base has headwords, or has neither
+/// headwords nor splits), then each of the base's own splits with ` + iti`.
+fn iti_rule_form(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    form: &str,
+    joined: &str,
+    base: &str,
+) -> Result<PendingForm> {
+    let candidates = iti_base_candidates(joined, base);
+    let mut chosen = &candidates[0];
+    for candidate in &candidates {
+        let known = cache
+            .get(db_conn, candidate)?
+            .is_some_and(|row| !row.headwords.is_empty() || !row.deconstructor.is_empty());
+        if known {
+            chosen = candidate;
+            break;
+        }
+    }
+    let base = chosen.as_str();
+
+    let (base_ids, base_splits) = match cache.get(db_conn, base)? {
+        Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row)),
+        None => (Vec::new(), Vec::new()),
+    };
+    let iti = FormComponent { word: "iti".to_string(), uids: dpd_uids(&cache.headword_ids(db_conn, "iti")?) };
+
+    let mut deconstructions = Vec::with_capacity(base_splits.len() + 1);
+    if !base_ids.is_empty() || base_splits.is_empty() {
+        deconstructions.push(FormDeconstruction {
+            split: format!("{} + iti", base),
+            kind: FormSplitKind::ItiSandhi,
+            source: FormSplitSource::ItiRule,
+            components: vec![FormComponent { word: base.to_string(), uids: dpd_uids(&base_ids) }, iti.clone()],
+        });
+    }
+    for d in dpd_splits(db_conn, cache, base_splits)? {
+        let mut components = d.components;
+        components.push(iti.clone());
+        deconstructions.push(FormDeconstruction {
+            split: format!("{} + iti", d.split),
+            kind: FormSplitKind::ItiSandhi,
+            source: FormSplitSource::ItiRule,
+            components,
+        });
+    }
+
+    Ok(PendingForm {
+        input: form.to_string(),
+        lookup_key: base.to_string(),
+        invalid_note: None,
+        headword_ids: Vec::new(),
         deconstructions,
     })
 }

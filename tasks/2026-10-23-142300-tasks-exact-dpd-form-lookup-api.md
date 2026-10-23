@@ -4,12 +4,12 @@ PRD: [2026-10-23-142300-prd---exact-dpd-form-lookup-api.md](./2026-10-23-142300-
 
 ## Relevant Files
 
-- `backend/src/db/dpd.rs` - The DPD handle. New `lookup_forms_exact()`, `dpd_release_version()`, and module-level helpers: `lookup_row_exact()` (free fn, it needs no handle), `LookupRowCache`, `row_has_iti_breakdown()` (factored out of `dpd_has_iti_breakdown()`), `resolve_form_exact()`, `dpd_splits()`, `headwords_by_ids()`, `PendingForm`. The `<base> + iti` branch is a marked `TODO` in `resolve_form_exact()`, for task 2.0.
+- `backend/src/db/dpd.rs` - The DPD handle. New `lookup_forms_exact()`, `dpd_release_version()`, and module-level helpers: `lookup_row_exact()` (free fn, it needs no handle), `LookupRowCache`, `row_has_iti_breakdown()` (factored out of `dpd_has_iti_breakdown()`), `resolve_form_exact()`, `iti_rule_form()` (the exact `<base> + iti` rule), `dpd_splits()`, `headwords_by_ids()`, `PendingForm`.
 - `backend/src/db/dpd_models.rs` - `Lookup` with `headwords_unpack()` / `deconstructor_unpack()` (the verbatim split strings) / `deconstructor_nested()` (the components), `DbInfo`, `DpdHeadword`. Read only, unless a small accessor is missing.
 - `backend/src/types.rs` - New serialisable result types (`FormLookupResult`, `FormHeadword` + `from_headword()`, `FormDeconstruction`, `FormComponent`, and the snake_case enums `FormLookupStatus`, `FormMatchedAs`, `FormSplitKind`, `FormSplitSource`) and the exact-mode gloss types (`ExactGlossResult`, `ExactGlossParagraph`, `ExactGlossToken`).
 - `backend/src/helpers.rs` - `normalize_dpd_query_text()` (around line 1413), `extract_words_with_context()` (around line 2144), `GlossWordContext`. New `process_all_paragraphs_exact()` next to `process_all_paragraphs()` (around line 4687).
 - `backend/src/lookup_forms.rs` *(new, optional)* - Request validation (`validate_lookup_forms_request()`, `MAX_LOOKUP_FORMS`) and the `/gloss_text` exact-option check, kept Qt-free so `cargo test` can reach them. Put them in `helpers.rs` instead if a new module is not worth it. If you create it, register it in `backend/src/lib.rs`.
-- `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25), with the `sqlite3` commands that verify their facts in the header comment.
+- `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25), the iti-sandhi cases, and the drift test against `dpd_lookup_grouped()`, with the `sqlite3` commands that verify their facts in the header comment.
 - `backend/src/db/appdata.rs` - `sort_suttas()`: new `sorts_as_commentary()` so XML-sourced CST `att`/`tik`/`nrf` records sort with the commentaries; range-less refs sort after numbered ones (fixes `test_sort_suttas_cst_mula_before_commentary`, broken since `bce0dd82`).
 - `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` - Fixture regenerated after the DB re-bootstrap (same uids and order; total 2330 → 2331, BM25 scores shifted).
 - `backend/tests/test_search_normalization.rs` - Dhovana record is now `an10.107.att/pli/cst` (CST AN mapped to sutta refs).
@@ -200,19 +200,19 @@ a "starts with" guess.
 `dpd_has_iti_breakdown()`. **Do not change** `dpd_lookup_grouped_iti_split()`
 or the grouped lookup's behaviour.
 
-- [ ] 2.0 Exact iti-sandhi resolution
-  - [ ] 2.1 Check the needed facts in the DB: `magganti` (one headword, the
+- [x] 2.0 Exact iti-sandhi resolution
+  - [x] 2.1 Check the needed facts in the DB: `magganti` (one headword, the
         verb `maggati`, no `+ iti` split), `maggaṁ` (headwords), and a word
         whose shortened base is unknown but whose long-vowel base is known (find
         one with `iti_base_candidates` in mind, e.g. a feminine plural `…āti`).
         Record them in the test file's header comment.
-  - [ ] 2.2 Implement the `<base> + iti` branch in a private
+  - [x] 2.2 Implement the `<base> + iti` branch in a private
         `fn iti_rule_result(&self, cache, conn, joined, base, …)`. Reuse
         `iti_base_candidates()` unchanged. All rows, including `iti` (read once
         per request), come through the `LookupRowCache`.
         `dpd_lookup_grouped_iti_split()` is **not** modified (PRD §7).
-  - [ ] 2.3 Replace the 1.7 placeholder with a call to it.
-  - [ ] 2.4 Add the iti tests to `test_lookup_forms_exact.rs`:
+  - [x] 2.3 Replace the 1.7 placeholder with a call to it.
+  - [x] 2.4 Add the iti tests to `test_lookup_forms_exact.rs`:
         - `cittan'ti` and `cittan’ti` are `found`, `lookup_key == "cittanti"`,
           with headwords **and** the `dpd` split `cittaṁ + iti`.
         - `bhavissan'ti` is the same shape (`bhavissaṁ + iti`).
@@ -220,7 +220,7 @@ or the grouped lookup's behaviour.
           `maggati`, `lookup_key == "maggaṁ"`, and its first split is
           `maggaṁ + iti` with `source: "iti_rule"`.
         - The long-vowel case from 2.1 picks the long base.
-  - [ ] 2.5 Add a drift test for the `iti_rule` case. Pick 3–5 quoted iti words
+  - [x] 2.5 Add a drift test for the `iti_rule` case. Pick 3–5 quoted iti words
         whose joined form has **no** `+ iti` split and whose base has an
         **exact** lookup row (verified in 2.1, e.g. `magga’’nti` → `maggaṁ`).
         For each, assert that the list of `split` strings from
@@ -229,7 +229,7 @@ or the grouped lookup's behaviour.
         the test to exact bases is what makes the two comparable: for those,
         the grouped lookup's base read is exact too. This catches the two
         copies of the rule drifting apart.
-  - [ ] 2.6 Run the 1.10 test set again.
+  - [x] 2.6 Run the 1.10 test set again.
 
 ### 3.0 Backend request handling and gloss exact mode
 

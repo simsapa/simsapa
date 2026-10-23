@@ -20,6 +20,20 @@
 //!
 //! sqlite3 dpd.sqlite3 "SELECT value FROM db_info WHERE key = 'dpd_release_version';"
 //! # v0.4.20260501
+//!
+//! # The iti-sandhi words resolved as `<base> + iti`:
+//! sqlite3 dpd.sqlite3 "SELECT lookup_key, headwords, deconstructor FROM lookup
+//!   WHERE lookup_key IN ('magganti','maggaṁ','gopālikāti','gopālika','gopālikā',
+//!   'idhāhanti','idhāhaṁ','vikālāyanti','vikālāyaṁ','sāyanti','sāyaṁ');"
+//! # magganti [50519] (no split); maggaṁ 11 ids (no split);
+//! # no rows for gopālikāti, gopālika; gopālikā [25347];
+//! # no row for idhāhanti; idhāhaṁ [13708, 13709] + ["idha + ahaṁ"];
+//! # no row for vikālāyanti; vikālāyaṁ ["vikālā + ayaṁ", "vikāla + ayaṁ"] (no headwords);
+//! # sāyanti [62397] (no split); sāyaṁ 7 ids + ["sā + ayaṁ"].
+//!
+//! sqlite3 dpd.sqlite3 "SELECT id, lemma_1 FROM dpd_headwords WHERE id IN (50519, 25347);"
+//! # 50519 | maggati   (the verb `magganti` belongs to)
+//! # 25347 | gopālikā
 //! ```
 
 use serial_test::serial;
@@ -192,4 +206,101 @@ fn test_dpd_release_version() {
     assert!(v.starts_with('v'), "got {}", v);
     // The cached second read gives the same answer.
     assert_eq!(app_data.dbm.dpd.dpd_release_version(), Some(v));
+}
+
+#[test]
+#[serial]
+fn test_quoted_iti_with_joined_iti_split() {
+    for form in ["cittan'ti", "cittan’ti"] {
+        let r = lookup_one(form);
+        assert_eq!(r.status, FormLookupStatus::Found, "{}", form);
+        assert_eq!(r.lookup_key, "cittanti", "{}", form);
+        assert_eq!(r.headwords.len(), 10, "{}", form);
+        assert_eq!(splits(&r), vec!["cittaṁ + iti"], "{}", form);
+        let d = &r.deconstructions[0];
+        assert_eq!(d.kind, FormSplitKind::ItiSandhi);
+        assert_eq!(d.source, FormSplitSource::Dpd);
+    }
+
+    let r = lookup_one("bhavissan'ti");
+    assert_eq!(r.status, FormLookupStatus::Found);
+    assert_eq!(r.lookup_key, "bhavissanti");
+    assert_eq!(r.headwords.len(), 9);
+    assert_eq!(splits(&r), vec!["bhavissaṁ + iti"]);
+    assert_eq!(r.deconstructions[0].source, FormSplitSource::Dpd);
+}
+
+#[test]
+#[serial]
+fn test_iti_rule_never_returns_the_verb() {
+    let r = lookup_one("magga’’nti");
+    assert_eq!(r.status, FormLookupStatus::Deconstructed);
+    assert_eq!(r.lookup_key, "maggaṁ");
+    assert!(r.headwords.is_empty());
+    assert_eq!(splits(&r), vec!["maggaṁ + iti"]);
+
+    let d = &r.deconstructions[0];
+    assert_eq!(d.source, FormSplitSource::ItiRule);
+    assert_eq!(d.kind, FormSplitKind::ItiSandhi);
+    let words: Vec<&str> = d.components.iter().map(|c| c.word.as_str()).collect();
+    assert_eq!(words, vec!["maggaṁ", "iti"]);
+    assert_eq!(d.components[0].uids.len(), 11);
+    assert_eq!(d.components[1].uids, vec!["13466/dpd"]);
+
+    let all_uids: Vec<&String> = r.deconstructions.iter()
+        .flat_map(|d| d.components.iter().flat_map(|c| c.uids.iter()))
+        .collect();
+    assert!(!all_uids.iter().any(|u| *u == "50519/dpd"), "the verb maggati must not appear");
+
+    let v = serde_json::to_value(&r).unwrap();
+    assert_eq!(v["deconstructions"][0]["source"], "iti_rule");
+    assert_eq!(v["deconstructions"][0]["kind"], "iti_sandhi");
+}
+
+#[test]
+#[serial]
+fn test_iti_rule_picks_the_long_vowel_base() {
+    let r = lookup_one("gopālikā’ti");
+    assert_eq!(r.status, FormLookupStatus::Deconstructed);
+    assert_eq!(r.lookup_key, "gopālikā");
+    assert_eq!(splits(&r), vec!["gopālikā + iti"]);
+    assert_eq!(r.deconstructions[0].components[0].uids, vec!["25347/dpd"]);
+}
+
+#[test]
+#[serial]
+fn test_iti_rule_appends_iti_to_the_base_splits() {
+    let r = lookup_one("idhāhan’ti");
+    assert_eq!(r.lookup_key, "idhāhaṁ");
+    assert_eq!(splits(&r), vec!["idhāhaṁ + iti", "idha + ahaṁ + iti"]);
+    let words: Vec<&str> = r.deconstructions[1].components.iter().map(|c| c.word.as_str()).collect();
+    assert_eq!(words, vec!["idha", "ahaṁ", "iti"]);
+    assert!(r.deconstructions.iter().all(|d| d.source == FormSplitSource::ItiRule));
+
+    // A base with splits and no headwords gets no bare `<base> + iti`.
+    let r = lookup_one("vikālāyan’ti");
+    assert_eq!(r.lookup_key, "vikālāyaṁ");
+    assert_eq!(splits(&r), vec!["vikālā + ayaṁ + iti", "vikāla + ayaṁ + iti"]);
+}
+
+/// The exact `<base> + iti` rule is a copy of `dpd_lookup_grouped_iti_split()`'s.
+/// For words whose base has an exact lookup row, the grouped lookup's base read
+/// is exact too, so the two must give the same splits in the same order.
+#[test]
+#[serial]
+fn test_iti_rule_matches_grouped_lookup() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let dpd = &app_data.dbm.dpd;
+
+    for word in ["magga’’nti", "gopālikā’ti", "idhāhan’ti", "vikālāyan’ti", "sāyan’ti"] {
+        let exact = dpd.lookup_forms_exact(&[word.to_string()]).unwrap().remove(0);
+        assert!(
+            exact.deconstructions.iter().all(|d| d.source == FormSplitSource::ItiRule),
+            "{} should resolve by the iti rule", word
+        );
+        let grouped = dpd.dpd_lookup_grouped(word, false, true, true, None, None).unwrap();
+        let grouped_splits: Vec<&str> = grouped.deconstructions.iter().map(|d| d.words_joined.as_str()).collect();
+        assert_eq!(splits(&exact), grouped_splits, "{}", word);
+    }
 }
