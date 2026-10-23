@@ -31,6 +31,10 @@ remaining request/response structs in §15. The **gloss pipeline** routes
 clients building a two-step "Glossing… → Word Selection…" table UI — are in §16.
 **Reference conversion** (`POST /reference_search`: a PTS volume and page to its
 SuttaCentral reference, and back) is in §17.
+**Iti sandhi** (`vuttan'ti`, `satipaṭṭhānāti`, `vuttan ti`): which route resolves
+it and what each returns is §18. **How exact a dictionary answer is**, and how
+to widen a lookup step by step (`/lookup_forms` → `/dict_combined_search` →
+`/search` Headword / Contains Match), is §19.
 
 All search routes reuse the in-app search path
 (`SearchQueryTask::new` + `results_page(page_num)` + `total_hits()`), so the
@@ -83,6 +87,10 @@ Three things that remove guesswork (all detailed below):
   routes reject `%2F` with HTTP 422 (§13, §13.3).
 - **A miss is HTTP 404** (the JSON route still returns a `[]` body); add
   `?verbose=1` to `word.json` for a `{found, canonical_uid, hint}` envelope (§13.3).
+- **Start exact, then widen** (§19): `/lookup_forms` answers exactly and its
+  `not_found` can be trusted; `/dict_combined_search` adds the app's respellings
+  and guesses; `/search` with `Headword Match` / `Contains Match` casts the
+  widest net. Send an iti-sandhi word whole, `ti` included (§18).
 
 ### 0.1 Recommended setup: a formatter script + a permission allowlist
 
@@ -1862,3 +1870,220 @@ curl -s -X POST "localhost:$PORT/reference_search" \
 
 The first returns SN 56.11 (S v 420–424); the second `M i 55`; the third lists
 AN 4.274, DN 22, MN 10 and SN 43.5.
+
+---
+
+## 18. Iti sandhi: which route to use
+
+Pāli joins the quotative particle *iti* to the word before it, and editions
+write the join in three ways:
+
+| Written | Example | Means |
+|---|---|---|
+| quoted | `vuttan'ti`, `dhārayāmī’ti`, `magga’’nti`, `parāyaṇo’”ti` | vuttaṁ / dhārayāmi / maggaṁ / parāyaṇo + iti |
+| joined, no quote | `satipaṭṭhānāti`, `abhinandunti`, `viharāmīti` | satipaṭṭhānā / abhinanduṁ / viharāmi + iti |
+| spaced | `vuttan ti`, `vuttaṁ ti`, `punabbhavo ti` | vuttaṁ / punabbhavo + iti |
+
+A final `n` before `ti` stands for `ṁ`, and a vowel before `ti` is often
+lengthened (`dhārayāmī` for `dhārayāmi`). The rules that take these apart are
+in [pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md); the DPD
+lookup rule is
+[search-snippet-highlight-pipeline.md §9d](./search-snippet-highlight-pipeline.md).
+
+**Rule for agents: send the whole form, `ti` included.** Any of the three
+spellings works, and a spaced form is sent as one form (`"vuttan ti"`). The
+part before `ti` alone loses the iti. For an exact answer use `POST
+/lookup_forms` (§19.1); to see what the app's own lookup makes of the form, use
+`POST /dict_combined_search` and read its `deconstructor` field (§18.1). §19
+says when to use which.
+
+### 18.1 `POST /dict_combined_search`
+
+The query is normalised the DPD way (lowercased, `ṃ` → `ṁ`, quotes handled,
+`<word> ti` rejoined) before the lookup. Then:
+
+- If DPD's own entry for the **joined** form (`vuttanti`, `satipaṭṭhānāti`)
+  analyses it as `… + iti`, that entry is used as it is: its headwords and its
+  split.
+- Otherwise the word is resolved as **`<base> + iti`**: the results are the
+  base word's, plus `iti`, and the split is `<base> + iti`. So `magga’’nti` is
+  maggaṁ + iti and never the verb `magganti`.
+- A form written **joined with no quote** that DPD does not analyse as
+  `… + iti` is taken as written. `magganti` is the verb *maggati* (third person
+  plural), with no split, which is what that spelling means.
+- A word ending in a vowel and **`n`** that has no exact match is looked up as
+  its `ṁ` spelling before any guess: `vuttan` is `vuttaṁ`, `kin` is `kiṁ`. See
+  [search-snippet-highlight-pipeline.md §9f](./search-snippet-highlight-pipeline.md).
+
+Measured on the dist DB (`dpd_release_version = v0.4.20260501`). `results`
+shows the first few uids; `iti` (`13466/dpd`) is appended to the results of an
+iti-sandhi word, after the base word's own:
+
+| `query_text` | First results | `deconstructor` |
+|---|---|---|
+| `vuttan'ti` | vutta 1.1, 1.2, 2.1, … (11 hits) | `["vuttaṁ + iti"]` |
+| `vuttan ti` | same as above | `["vuttaṁ + iti"]` |
+| `vuttaṁ ti` | same as above | `["vuttaṁ + iti"]` |
+| `vuttan` | vutta 1.1, 1.2, 2.1, … (10 DPD rows, no `iti`; 503 hits with the bold definitions after them) | absent |
+| `punabbhavo ti` | punabbhava, iti | `["punabbhavo + iti"]` |
+| `satipaṭṭhānāti` | satipaṭṭha, satipaṭṭhāna 1, 2, iti | `["satipaṭṭhānā + iti", "satipaṭṭhāna + iti"]` |
+| `abhinandunti` | abhinandi 1, iti | `["abhinanduṁ + iti"]` |
+| `viharāmīti` | viharati 1, 2, iti | `["viharāmi + iti"]` |
+| `dhārayāmī’ti` | dhārayati 1–4, … | `["dhārayāmi + iti"]` |
+| `magga’’nti` | magga 1–4, … | `["maggaṁ + iti"]` |
+| `magganti` | maggati, … | absent (the field is omitted) |
+| `kho’ti` | kho, iti, … | `["kho + iti"]` |
+| `parāyaṇo’”ti` | parāyaṇa 1, 2, 3, 5 | `["parāyaṇo + iti"]` |
+| `cā”tipi` | ca 1.1, 1.2, 2.1, … | `["ca + iti + api"]` |
+
+```sh
+curl -s -X POST "localhost:$PORT/dict_combined_search" \
+  -H 'Content-Type: application/json' -d '{"query_text":"vuttan ti"}' \
+  | jq '{deconstructor, first: [.results[0:3][] | {uid, title}]}'
+```
+
+For a form DPD does not list, the results can be "starts with" guesses for some
+longer word, so a non-empty `results` does not prove that DPD knows the form.
+Check the result titles and the `deconstructor` against the query.
+
+### 18.2 `POST /gloss_text`
+
+The gloss splits the text into words first, then looks each word up. How an iti
+form comes out depends on how it is written:
+
+- **Quoted, or joined with no quote:** one entry. The `ti` is not given an entry
+  of its own. The entry is the **base** word (`vuttan'ti` → `vuttaṁ`,
+  `viharāmīti` → `viharāmi`, `magga’’nti` → `maggaṁ`), and the iti is dropped,
+  so `deconstructions` is empty. The exceptions are forms DPD lists joined with
+  more letters after the iti (`cā”tipi` → `ca + iti + api`) and joined forms DPD
+  lists as a headword with an iti split (`satipaṭṭhānāti` keeps both splits).
+- **Spaced:** two entries, the word and a separate `ti`. The word is looked up
+  alone, and a final `n` is read as `ṁ` (§18.1): in `vuttan ti`, `vuttan` is
+  glossed as *vutta* through `vuttaṁ`, and `ti` is its own entry.
+
+In both cases the gloss entry does not show the iti split. To see it, send the
+form to `/dict_combined_search` (§18.1) as written: `"vuttan'ti"`, or
+`"<word> ti"` for a word followed by a separate `ti` entry (`"vuttan ti"`).
+
+---
+
+## 19. Tiers of exactness: widening a lookup
+
+The dictionary routes answer at three levels of exactness. Start at the
+narrowest one that fits the job, and widen only for the forms it could not
+answer. Each wider tier finds more, and is less sure that what it found is the
+word that was asked about.
+
+| Tier | Routes | Matches | A miss means |
+|---|---|---|---|
+| 1. Exact | `POST /lookup_forms`; `POST /gloss_text` with `"exact": true` | DPD's lookup table, by equality on the normalised form | DPD has no such form |
+| 2. The app's lookup | `POST /dict_combined_search`; `POST /gloss_text` (default) | tier 1, then a respelling, the stem, and "starts with" guesses | DPD has nothing like it |
+| 3. Wide search | `POST /search`, `"search_area": "Dictionary"`, `"mode": "Headword Match"` or `"Contains Match"` | substrings of headwords (and definitions), in every dictionary | no dictionary has it |
+
+**The order to widen in:**
+
+1. Look the forms up with `/lookup_forms` (up to 5,000 per call). Use the
+   `found` and `deconstructed` answers as they are.
+2. For a `not_found` form, first check that it is the whole word: an iti form
+   split over two tokens (`vuttan` followed by `ti`) goes back to tier 1 as
+   one form, `"vuttan ti"` (§18).
+3. Send the remaining `not_found` forms to `/dict_combined_search`. What it
+   returns for them is, by definition, not DPD's entry for that form: it is a
+   respelling or a guess, a **candidate** to check against the text.
+4. Use tier 3 only to discover candidates (a rare spelling, a word in a
+   non-DPD dictionary), never as an answer.
+
+### 19.1 Tier 1: `POST /lookup_forms`
+
+```jsonc
+// request
+{ "forms": ["bhagavantaṁ", "cittan'ti", "atthaññe", "vuttan ti", "xyzqq"],
+  "exact": true }          // optional, default true; false → 400
+// response
+{ "dpd_version": "v0.4.20260501",
+  "results": [ { "input", "lookup_key", "status", "note"?,
+                 "headwords": [ … ], "deconstructions": [ … ] }, … ] }
+```
+
+- **One result per form, in input order**, duplicates kept. `results[i]`
+  answers `forms[i]`.
+- **The match is exact.** Each form is normalised as the DPD lookups do it
+  (lowercase, `ṃ` → `ṁ`, the quote and iti rules of §18) and matched by
+  equality on DPD's `lookup` key, shown back as `lookup_key`. No stem match,
+  no "starts with", no respelling: `bhagav` and `vuttan` are `not_found`.
+- **Iti sandhi** follows the rule of §18.1, over exact rows only: the joined
+  form when DPD analyses it as `… + iti` (`cittan'ti` → `cittanti`, with its
+  10 headwords **and** the split `cittaṁ + iti`), otherwise `<base> + iti`
+  with `"source": "iti_rule"` (`magga’’nti` → `maggaṁ + iti`, never the verb).
+- **Nothing is chosen.** Every headword id and every split of the row is
+  returned in DPD's order, with no ranking and no word-selection cache.
+- `status`: `found` (one or more headwords; splits may be present too),
+  `deconstructed` (splits only), `not_found` (no DPD row with headwords or
+  splits), `invalid` (empty after normalisation, more than one word, or a
+  `uid:` query; `note` says which).
+- Each headword carries `uid` (the numeric `<id>/dpd`, which `/word.json`
+  accepts), `lemma_1`, `pos`, `grammar`, `construction[]`, `root_key`,
+  `meaning_1` and `matched_as` (`lemma` when the key is the citation form,
+  else `inflection`). Each split carries `split` (DPD's string), `kind`
+  (`iti_sandhi` / `sandhi`), `source` (`dpd` / `iti_rule`) and
+  `components[]` with each component's exact headword uids.
+- A root form loses its `√` in normalisation and is `not_found`
+  (`√bhaj` → `lookup_key: "bhaj"`): roots are not returned.
+- Cache answers on `dpd_version`, not on the app version.
+
+### 19.2 Tier 1 for a passage: `/gloss_text` with `"exact": true`
+
+`{ "text": "…", "options": { "exact": true } }` returns, for every word of each
+paragraph, in order, a token `{ token_index, original_word, clean_word,
+context, lookup }`, where `lookup` is the §19.1 result for `original_word`.
+Nothing is deduplicated, skipped or chosen, and `token_index` runs 0..n-1 in
+each paragraph, so the tokens zip against the words by position.
+
+- The words are the gloss tokeniser's, with annotations (sutta references,
+  verse numbers) stripped. A quoted or joined iti form is one token and keeps
+  its `ti` (`bhavissan'ti` → `bhavissanti`, found, with `bhavissaṁ + iti`).
+- A **spaced** iti form is two tokens: `vuttan`, `not_found`, then `ti`. Widen
+  it by sending `"vuttan ti"` to `/lookup_forms`, which stays exact.
+- `no_duplicates_globally`, `skip_common` and `common_words` do not apply in
+  exact mode; sending any of them with a non-default value is a `400`.
+- A database error is a `500` with `{ "error" }`; no token is ever dropped.
+
+### 19.3 Tier 2: `/dict_combined_search` and the default `/gloss_text`
+
+These run the app's own DPD lookup, the one behind the Dictionary tab and
+WordSummary. For a word with an exact match, the DPD rows are the same as in
+tier 1. When there is none, it goes on, in this order:
+
+1. **The `ṁ` spelling of a final `n`**: `vuttan` → `vuttaṁ`, `kin` → `kiṁ`.
+   This is usually right, because the texts write `ṁ` as `n` before `ti` or a
+   vowel, but it is not DPD's entry for `vuttan`.
+2. **The stem match**: headwords with the same stem. `bhagav` gets
+   `bhagavant` this way.
+3. **"Starts with" guesses**: a break-down guessed from a longer key, then
+   headwords that start with the form. `bhagav` also gets the split
+   `bhaga + vata`, and `atthañ` gets `atthaṁ + ca` and its `attha` headwords.
+   A guess belongs to some other word.
+
+Nothing in the `/dict_combined_search` response says which step answered, so
+compare the result titles and the `deconstructor` with the form, or ask tier 1:
+a form that is `not_found` there has only respellings and guesses here.
+`hits` counts every row of the page, including the commentary bold-definition
+rows that follow the DPD rows (`vuttan`: 10 DPD rows, 503 hits); the DPD rows
+are the ones whose `uid` ends in `/dpd`.
+
+The default `/gloss_text` uses the same lookup for each word, and also
+**chooses**: it drops repeats and, with `skip_common`, common words; it applies
+the app's cached sense selections (`selected_index`); and it cuts a quoted iti
+form to its base (`vuttan’ti` → `vuttaṁ`), so the split is not shown (§18.2).
+Use it to build a reading aid, not to check forms.
+
+### 19.4 Tier 3: `Headword Match` and `Contains Match`
+
+`POST /search` with `"search_area": "Dictionary"` and `"mode": "Headword
+Match"` matches headwords containing the form, in every installed dictionary;
+`"Contains Match"` matches the form inside headwords or definitions. For `vuttan`,
+Headword Match returns 500 hits (`vuttanayatta`, `vuttanaya`, `vuttaniyāma`, …)
+and Contains Match 12,795. These are for finding candidates, such as a spelling
+DPD lacks or a word only another dictionary has; confirm a candidate with
+tier 1 before using it.
+

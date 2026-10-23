@@ -1644,16 +1644,20 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     //
     // Within each bucket the order is by sutta number before uid: a list that
     // spans several suttas (the mūla records beside `an5.91-100.tik`) would
-    // otherwise read an5.100, an5.91, an5.92 as plain strings. A reference
-    // with no comparable number (`s0101m.mul.xml`) sorts after the numbered
-    // ones.
+    // otherwise read an5.100, an5.91, an5.92 as plain strings.
     let range_start = |s: &Sutta| {
+        let (base, _) = split_sutta_ref_kind(&s.uid);
+        comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0)
+    };
+    // Among the other Pāli sources, a reference with no comparable number (the
+    // CST XML records, `s0101m.mul.xml`) sorts after the numbered ones.
+    let numbered_first = |s: &Sutta| {
         let (base, _) = split_sutta_ref_kind(&s.uid);
         let start = comparable_sutta_range(base).and_then(|r| r.start);
         (start.is_none(), start)
     };
     results.sort_by_cached_key(|s| (range_start(s), s.uid.clone()));
-    pli_others.sort_by_cached_key(|s| (sorts_as_commentary(&s.uid), range_start(s), s.uid.clone()));
+    pli_others.sort_by_cached_key(|s| (sorts_as_commentary(&s.uid), numbered_first(s), s.uid.clone()));
     // Sort non-pli by language, then by sutta number and uid within the same language
     remaining.sort_by_cached_key(|s| (s.language.clone(), range_start(s), s.uid.clone()));
     // Assemble final list

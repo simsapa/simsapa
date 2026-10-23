@@ -11,7 +11,7 @@ PRD: [2026-10-23-142300-prd---exact-dpd-form-lookup-api.md](./2026-10-23-142300-
 - `backend/src/lookup_forms.rs` *(new)* - Request validation (`validate_lookup_forms_request()`, `MAX_LOOKUP_FORMS`) and the `/gloss_text` exact-option check (`validate_gloss_exact_options()`), kept Qt-free so `cargo test` can reach them.
 - `backend/src/lib.rs` - Registers `pub mod lookup_forms`.
 - `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25), the iti-sandhi cases, and the drift test against `dpd_lookup_grouped()`, with the `sqlite3` commands that verify their facts in the header comment.
-- `backend/src/db/appdata.rs` - `sort_suttas()`: new `sorts_as_commentary()` so XML-sourced CST `att`/`tik`/`nrf` records sort with the commentaries; range-less refs sort after numbered ones (fixes `test_sort_suttas_cst_mula_before_commentary`, broken since `bce0dd82`).
+- `backend/src/db/appdata.rs` - `sort_suttas()`: new `sorts_as_commentary()` so XML-sourced CST `att`/`tik`/`nrf` records sort with the commentaries; among the other Pāli sources only, range-less refs sort after numbered ones (fixes `test_sort_suttas_cst_mula_before_commentary`, broken since `bce0dd82`).
 - `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` - Fixture regenerated after the DB re-bootstrap (same uids and order; total 2330 → 2331, BM25 scores shifted).
 - `backend/tests/test_search_normalization.rs` - Dhovana record is now `an10.107.att/pli/cst` (CST AN mapped to sutta refs).
 - `backend/tests/test_render_sutta_content.rs` - No-Pāli-counterpart case now uses `pdhp14-33/en/anandajoti`; `sn12.72-81/pli/ms` is back in the re-bootstrapped DB.
@@ -56,7 +56,10 @@ Update the file after completing each sub-task, not just after completing an ent
 
 These must be taken **before any code change**, while the installed build is
 still the old code. Agents do not run the GUI, so ask the user to start the app.
-Save the outputs in the scratchpad, not in the repo.
+Save the outputs outside the repo. They were taken into a session scratchpad
+under `/tmp` and copied to
+`/home/gambhiro/prods/apps/simsapa-ng-project/baselines/exact-dpd-form-lookup-api/`
+(the request bodies, the responses, and `take_baselines.sh`, which took them).
 
 - [x] 0.0 Baselines from the unchanged build
   - [x] 0.1 Default `/gloss_text`: `curl` a fixed two-paragraph Pāli text (with
@@ -342,9 +345,11 @@ untouched.
 **Depends on.** 1.0–3.0.
 
 - [ ] 4.0 Routes in `bridges/src/api.rs`
-  - [ ] 4.1 Check that the baselines from 0.0 exist. If they don't, take them
-        now, before rebuilding, or the "before" side of every comparison in
-        4.8 is lost.
+  - [ ] 4.1 Check that the baselines from 0.0 exist in
+        `/home/gambhiro/prods/apps/simsapa-ng-project/baselines/exact-dpd-form-lookup-api/`.
+        If they don't, take them now, before rebuilding, or the "before" side
+        of every comparison in 4.8 is lost. Measured in 0.2: a body over 8 KiB
+        gets `400 Bad Request`, `content-type: text/html`, Rocket's page.
   - [ ] 4.2 Add the `lookup_forms` route: request struct
         (`LookupFormsRequest { forms: Option<Vec<String>>, exact: Option<bool> }`,
         so that a missing `forms` reaches the validator rather than serde),
@@ -352,7 +357,12 @@ untouched.
         `info("lookup_forms(): <n> form(s), <found>/<deconstructed>/<not_found>/<invalid>")`.
   - [ ] 4.3 Register `lookup_forms` in `routes![…]`.
   - [ ] 4.4 Add `exact` to `GlossTextOptions` and branch in `gloss_text()` as
-        in the Specs. Update the struct's doc comment.
+        in the Specs. Update the struct's doc comment. An **unparseable body**
+        keeps today's bare `Status::BadRequest` (Rocket's HTML `400`) in both
+        modes: whether `exact` was set is unknown until the body parses, and
+        the default mode must not change. Only the errors found after parsing
+        (the exact-option conflicts, the exact-mode `500`) get the JSON
+        `{ "error" }` body. Document the split in §16.1.
   - [ ] 4.5 Add `dpd_version` to `HealthInfo` and fill it from
         `dbm.dpd.dpd_release_version()`.
   - [ ] 4.6 Add `.merge(("limits", rocket::data::Limits::default().limit("string", 2.mebibytes())))`
@@ -381,13 +391,20 @@ untouched.
 **Depends on.** 4.0 (real outputs for the examples).
 
 - [ ] 5.0 Documentation and coordination
+  - [ ] 5.0a §19 (tiers of exactness) already describes `/lookup_forms` (§19.1)
+        and exact gloss mode (§19.2) from the PRD contract and the backend
+        tests. Check every statement in §19.1–§19.2 against the served routes,
+        and fold 5.1–5.2 into those sections rather than adding duplicate ones.
   - [ ] 5.1 In `docs/simsapa-localhost-api-search-endpoints.md`, add a
         `/lookup_forms` section: request, response, field tables (`status`,
         `matched_as`, `kind`, `source`), the normalisation and iti rules, the
         batch limit, the "nothing chosen" contract, and the numeric-uid lane
         note. Include the `curl … | jq` example with the real output from 4.8.
         State explicitly that `cittan'ti` is `found` **with** a split,
-        because DPD lists both (PRD open question 2).
+        because DPD lists both (PRD open question 2). Say that a root form
+        loses its `√` in normalisation (`√bhaj` → `lookup_key: "bhaj"`,
+        `not_found`), and list the three `invalid` notes, including
+        `uid:` queries.
   - [ ] 5.2 In §16.1, document `options.exact`: the response shape, the
         options it rejects, its `500` error, and that tokenisation is
         `extract_words_with_context()` (annotations are stripped). Note the
@@ -399,6 +416,11 @@ untouched.
         `app_version`, keys caches of DPD-derived answers.
   - [ ] 5.4 In §0, add a one-line pointer for exact checks; in §1 and §14, add
         the route; update the opening summary.
+  - [ ] 5.4a Extend §18 (iti sandhi: which route to use) with `/lookup_forms`
+        and exact gloss mode, and update its "rule for agents" line to name
+        `/lookup_forms` for exact checks. Re-measure §18.2 for exact mode: a
+        spaced `vuttan ti` is two tokens, and `vuttan` alone is `not_found`
+        unless that is changed first.
   - [ ] 5.5 If 4.1 showed the default body limit, record the limit in the doc.
   - [ ] 5.6 Update `PROJECT_MAP.md`: `lookup_forms_exact`,
         `dpd_release_version`, `process_all_paragraphs_exact`, the new

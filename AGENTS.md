@@ -403,7 +403,18 @@ Notable feature docs:
   configures a provider first; a self-contained **`scripts/gloss_demo.html`**
   (textarea → Gloss → vocab list, Gemini key field, AI-selection checkbox
   disabled while the key is empty) demonstrates all three routes end-to-end
-  (§16.4). **Reference conversion (§17):** `POST /reference_search` is the
+  (§16.4). **Iti sandhi (§18):** which route resolves `vuttan'ti`,
+  `satipaṭṭhānāti` and spaced `vuttan ti` — send the whole form, `ti`
+  included, to `/dict_combined_search` and read `deconstructor`; a gloss entry
+  never shows the iti split. A final `n` with no exact match is looked up as
+  its `ṁ` spelling before any guess (`vuttan` → `vuttaṁ`, never `vuttanaya`;
+  search-snippet doc §9f). **Tiers of exactness (§19):** exact
+  `/lookup_forms` and `/gloss_text` `"exact": true` (a `not_found` is
+  trustworthy) → `/dict_combined_search` and default `/gloss_text` (adds the
+  `ṁ` respelling, stem match and "starts with" guesses; nothing says which step
+  answered) → `/search` Dictionary `Headword Match` / `Contains Match`
+  (candidates only); widen only the forms the narrower tier could not answer.
+  **Reference conversion (§17):** `POST /reference_search` is the
   Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
   back) over the bundled reference table; the sutta routes' reference
   auto-detect does **not** understand PTS references. Pairs with

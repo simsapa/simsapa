@@ -214,6 +214,14 @@ the word summary passing the raw word. Never pass on:
 - the rejoined form: `magganti` normalized again is a plain word, the verb, not
   maggaṁ + iti.
 
+### A final `n` written for `ṁ`
+
+A spaced `vuttan ti` is two words, and the first reaches the lookup as `vuttan`,
+which DPD does not have. When a word ending in a vowel and `n` has no exact
+match, the DPD lookups try its `ṁ` spelling (`vuttaṁ`) before their fallback
+guesses. See
+[search-snippet-highlight-pipeline.md §9f](./search-snippet-highlight-pipeline.md).
+
 ### The joined form is used only when DPD calls it iti sandhi
 
 A joined key can be an unrelated word. `magga’’nti` is *maggaṁ* + *iti*, but
@@ -288,7 +296,9 @@ joined iti form:
   whole paragraph, not one word. `test_extract_words_with_context.rs` asserts
   that every token of a real passage is placed.
 - Each word is looked up with `dpd_lookup_grouped(word)`, so `magga’’nti` glosses
-  as *maggaṁ* → *magga*, consistent with §4. When the clean word finds nothing
+  as *maggaṁ* → *magga*, consistent with §4. A spaced `vuttan ti` is two words;
+  `vuttan` glosses as *vuttaṁ* by the `ṁ` spelling of §4, and the `ti` is its
+  own word. When the clean word finds nothing
   and the text writes its final vowel long before the quote run,
   `gloss_lookup_words` retries the long form (`anaññatā’ti`: *anaññata* is not
   in DPD, *anaññatā* is). `WordInfo.original_word` carries the word as written

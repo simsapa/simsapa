@@ -157,9 +157,11 @@ key its cache on the DPD release rather than on the app version.
        non-empty, as for `cittanti` and `bhavissanti`.
      - `"deconstructed"`: no headwords, at least one split.
      - `"not_found"`: no lookup row, or a row with neither headwords nor splits.
-     - `"invalid"`: the form is empty after normalisation, or still contains a
-       space (more than one word). A short `note` field says which. This keeps
-       `not_found` meaning only "DPD does not know this form".
+     - `"invalid"`: the form is empty after normalisation, still contains a
+       space (more than one word), or is a `uid:` query (which
+       `normalize_dpd_query_text()` passes through untouched for the search
+       routes). A short `note` field says which. This keeps `not_found`
+       meaning only "DPD does not know this form".
    - `headwords[]`: see FR 6.
    - `deconstructions[]`: see FR 9.
 6. **Headword fields** (`FormHeadword`), one per id in the row's `headwords`
@@ -382,8 +384,9 @@ key its cache on the DPD release rather than on the app version.
   selections. Choosing is the caller's job.
 - **No other `lookup` columns.** `roots`, `variant`, `spelling`, `see`, the
   per-form `grammar` analysis and the rest are not returned. Root forms
-  (`√…`) therefore give no headwords. That is expected, and a future additive
-  field can add it.
+  (`√…`) therefore give no headwords. The normalisation drops the `√`, so
+  `√bhaj` reads `lookup_key: "bhaj"`, `not_found`. That is expected, and a
+  future additive field can add it.
 - **No inflection tables** inline. Callers still use `/word.json` for
   `inflections_html`.
 - **No change** to the default `/gloss_text` output, to the GUI's Gloss tab,

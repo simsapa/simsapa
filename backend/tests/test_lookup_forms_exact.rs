@@ -156,11 +156,15 @@ fn test_unknown_is_not_found() {
 #[test]
 #[serial]
 fn test_invalid_forms() {
-    let res = lookup(&["", "a b"]);
+    let res = lookup(&["", "a b", "uid:iti"]);
     assert_eq!(res[0].status, FormLookupStatus::Invalid);
     assert_eq!(res[0].note.as_deref(), Some("empty after normalisation"));
     assert_eq!(res[1].status, FormLookupStatus::Invalid);
     assert_eq!(res[1].note.as_deref(), Some("more than one word"));
+    // The DPD normalisation passes a `uid:` query through for the search
+    // routes; it must not read as "DPD does not know this form".
+    assert_eq!(res[2].status, FormLookupStatus::Invalid);
+    assert_eq!(res[2].note.as_deref(), Some("a uid query, not a word form"));
 }
 
 #[test]

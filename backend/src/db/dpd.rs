@@ -124,6 +124,22 @@ fn iti_base_candidates(joined: &str, base: &str) -> Vec<String> {
     candidates
 }
 
+/// The `ṁ` spelling of a word that ends in a vowel and `n` (`vuttan` →
+/// `vuttaṁ`), as the texts write a niggahita before a following `ti` or vowel
+/// (`vuttan ti`). `None` for any other word.
+///
+/// The lookups try it only when a word has no exact match and their fallbacks
+/// (stem match, break-down guess, "starts with") would begin: DPD has no
+/// `vuttan`, so a guess finds the unrelated `vuttanaya`.
+fn niggahita_spelling(word: &str) -> Option<String> {
+    if word.contains(' ') {
+        return None;
+    }
+    let stem = word.strip_suffix('n')?;
+    let last = stem.chars().last()?;
+    "aāiīuūeo".contains(last).then(|| format!("{}ṁ", stem))
+}
+
 /// Whether a lookup row has a break-down whose last word is `iti`.
 fn row_has_iti_breakdown(row: &Lookup) -> bool {
     !row.deconstructor.is_empty()
@@ -214,6 +230,9 @@ struct GroupedTiming {
     /// The lookup was resolved as `<base> + iti`; the base lookups log their
     /// own lines.
     iti_split: bool,
+    /// The lookup was resolved as the `ṁ` spelling of a final `n`; that
+    /// lookup logs its own line.
+    niggahita: bool,
 }
 
 impl GroupedTiming {
@@ -235,7 +254,13 @@ impl GroupedTiming {
             .collect();
         let dec = self.dec.as_ref().map_or("-".to_string(), |d| d.format());
         let first = self.first_results_phase.map_or("none".to_string(), |n| n.to_string());
-        let via = if self.iti_split { " via=iti_split" } else { "" };
+        let via = if self.iti_split {
+            " via=iti_split"
+        } else if self.niggahita {
+            " via=niggahita"
+        } else {
+            ""
+        };
         format!(
             "DPD-LOOKUP-TIMING: q=\"{}\" total={:.1} {} dec={} first_results_phase={}{}",
             query, total_ms, phases.join(" "), dec, first, via,
@@ -376,6 +401,23 @@ impl DpdDbHandle {
         timing.attempts[0] = Some(elapsed_ms(t));
         if result.is_some() {
             timing.hit = Some(1);
+        }
+
+        // Before guessing: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`). Its row ends the search even without a break-down, since
+        // the word is then known.
+        if !exact_only
+            && result.is_none()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+        {
+            cancel.check()?;
+            result = lookup
+                .filter(lookup_key.eq(&niggahita))
+                .first::<Lookup>(db_conn)
+                .optional()?;
+            if result.is_some() {
+                timing.hit = Some(1);
+            }
         }
 
         // Attempt 2: If not exact_only, guess a key starting with the word.
@@ -771,6 +813,21 @@ impl DpdDbHandle {
             results_uids.extend(res.iter().map(|i| i.uid.clone()));
             sort_search_results_natural(&mut res);
             results.extend(res);
+        }
+
+        // Before the fallbacks: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`), when no exact match was found and DPD's row for the word
+        // as typed has no headwords or splits. The stem, deconstructor and
+        // "starts with" steps would only guess (`vuttanaya`, `kināti` for
+        // `kin`).
+        if results.is_empty()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+            && !lookup_row_has_word(db_conn, &query_text)?
+        {
+            let res = self.dpd_lookup(&niggahita, do_pali_sort, exact_only, uid_prefix, uid_suffix)?;
+            if !res.is_empty() {
+                return Ok(res);
+            }
         }
 
         if results.is_empty() {
@@ -1299,6 +1356,27 @@ impl DpdDbHandle {
             timing.end_phase(4, t, !results.is_empty());
         }
 
+        // Before the fallbacks: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`), when Phases 2–4 found nothing and DPD's row for the word
+        // as typed has no headwords or splits. Phases 5–8 would only guess
+        // (`vuttanaya`, `kināti` for `kin`). The answer is that word's lookup,
+        // under the query as typed.
+        cancel.check()?;
+        if results.is_empty()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+            && !lookup_row_has_word(db_conn, &query_text)?
+        {
+            let mut res = self.dpd_lookup_grouped_inner(
+                &niggahita, do_pali_sort, exact_only, deconstructor_exact_only,
+                uid_prefix, uid_suffix, log_timing, cancel,
+            )?;
+            if !res.results.is_empty() {
+                timing.niggahita = true;
+                res.query = query_text_orig.to_string();
+                return Ok(res);
+            }
+        }
+
         // Phase 5: stem form exact match — gated on `results` empty.
         cancel.check()?;
         if results.is_empty() {
@@ -1746,6 +1824,9 @@ fn parse_words(
 const HEADWORD_ID_CHUNK: usize = 900;
 
 /// `db_info.dpd_release_version`, cached after the first successful read.
+/// Process-wide is sound because a new `dpd.sqlite3` takes effect only after a
+/// restart: the re-download in `DownloadAppdataWindow` ends by asking the user
+/// to quit and start the app again.
 static DPD_RELEASE_VERSION: OnceLock<String> = OnceLock::new();
 static DPD_RELEASE_VERSION_FAILURE_LOGGED: AtomicBool = AtomicBool::new(false);
 
@@ -1758,6 +1839,14 @@ fn lookup_row_exact(db_conn: &mut SqliteConnection, key: &str) -> Result<Option<
         .first::<Lookup>(db_conn)
         .optional()
         .with_context(|| format!("lookup_row_exact({}) failed", key))
+}
+
+/// Whether DPD's `lookup` row for exactly `key` has headwords or splits. A row
+/// with neither carries only other data, such as the English-to-Pāli entry of
+/// `kin`.
+fn lookup_row_has_word(db_conn: &mut SqliteConnection, key: &str) -> Result<bool> {
+    Ok(lookup_row_exact(db_conn, key)?
+        .is_some_and(|row| !row.headwords.is_empty() || !row.deconstructor.is_empty()))
 }
 
 /// Request-scoped cache of exact `lookup` rows. Split components repeat
@@ -1934,8 +2023,12 @@ fn resolve_form_exact(
 ) -> Result<PendingForm> {
     let (key, iti_base) = normalize_dpd_query_text(form);
 
+    // `normalize_dpd_query_text()` passes a `uid:` query through untouched,
+    // for the search routes; here it is not a word form.
     let invalid_note = if key.is_empty() {
         Some("empty after normalisation")
+    } else if key.starts_with("uid:") {
+        Some("a uid query, not a word form")
     } else if key.contains(char::is_whitespace) {
         Some("more than one word")
     } else {

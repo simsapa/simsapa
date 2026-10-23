@@ -437,7 +437,8 @@ pub enum FormLookupStatus {
     /// DPD's `lookup` table has no row for the key, or a row with neither
     /// headwords nor splits.
     NotFound,
-    /// The form is empty after normalisation, or is more than one word.
+    /// The form is empty after normalisation, is more than one word, or is a
+    /// `uid:` query.
     Invalid,
 }
 
