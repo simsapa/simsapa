@@ -7,14 +7,17 @@ PRD: [2026-10-23-142300-prd---exact-dpd-form-lookup-api.md](./2026-10-23-142300-
 - `backend/src/db/dpd.rs` - The DPD handle. New `lookup_forms_exact()`, `dpd_release_version()`, and module-level helpers: `lookup_row_exact()` (free fn, it needs no handle), `LookupRowCache`, `row_has_iti_breakdown()` (factored out of `dpd_has_iti_breakdown()`), `resolve_form_exact()`, `iti_rule_form()` (the exact `<base> + iti` rule), `dpd_splits()`, `headwords_by_ids()`, `PendingForm`.
 - `backend/src/db/dpd_models.rs` - `Lookup` with `headwords_unpack()` / `deconstructor_unpack()` (the verbatim split strings) / `deconstructor_nested()` (the components), `DbInfo`, `DpdHeadword`. Read only, unless a small accessor is missing.
 - `backend/src/types.rs` - New serialisable result types (`FormLookupResult`, `FormHeadword` + `from_headword()`, `FormDeconstruction`, `FormComponent`, and the snake_case enums `FormLookupStatus`, `FormMatchedAs`, `FormSplitKind`, `FormSplitSource`) and the exact-mode gloss types (`ExactGlossResult`, `ExactGlossParagraph`, `ExactGlossToken`).
-- `backend/src/helpers.rs` - `normalize_dpd_query_text()` (around line 1413), `extract_words_with_context()` (around line 2144), `GlossWordContext`. New `process_all_paragraphs_exact()` next to `process_all_paragraphs()` (around line 4687).
-- `backend/src/lookup_forms.rs` *(new, optional)* - Request validation (`validate_lookup_forms_request()`, `MAX_LOOKUP_FORMS`) and the `/gloss_text` exact-option check, kept Qt-free so `cargo test` can reach them. Put them in `helpers.rs` instead if a new module is not worth it. If you create it, register it in `backend/src/lib.rs`.
+- `backend/src/helpers.rs` - `normalize_dpd_query_text()` (around line 1413), `extract_words_with_context()` (around line 2144), `GlossWordContext`. New `process_all_paragraphs_exact()` next to `process_all_paragraphs()` (around line 4687). Tokeniser fixes (3.8): `find_word_position()` with `iti_follows`, the bare-`ti` branches of the two expansion matchers, quote runs in `detect_sandhi_unit()`, hyphens in `match_with_inner_apostrophes()`.
+- `backend/src/lookup_forms.rs` *(new)* - Request validation (`validate_lookup_forms_request()`, `MAX_LOOKUP_FORMS`) and the `/gloss_text` exact-option check (`validate_gloss_exact_options()`), kept Qt-free so `cargo test` can reach them.
+- `backend/src/lib.rs` - Registers `pub mod lookup_forms`.
 - `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25), the iti-sandhi cases, and the drift test against `dpd_lookup_grouped()`, with the `sqlite3` commands that verify their facts in the header comment.
 - `backend/src/db/appdata.rs` - `sort_suttas()`: new `sorts_as_commentary()` so XML-sourced CST `att`/`tik`/`nrf` records sort with the commentaries; range-less refs sort after numbered ones (fixes `test_sort_suttas_cst_mula_before_commentary`, broken since `bce0dd82`).
 - `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` - Fixture regenerated after the DB re-bootstrap (same uids and order; total 2330 → 2331, BM25 scores shifted).
 - `backend/tests/test_search_normalization.rs` - Dhovana record is now `an10.107.att/pli/cst` (CST AN mapped to sutta refs).
 - `backend/tests/test_render_sutta_content.rs` - No-Pāli-counterpart case now uses `pdhp14-33/en/anandajoti`; `sn12.72-81/pli/ms` is back in the re-bootstrapped DB.
-- `backend/tests/test_gloss_text_exact.rs` *(new)* - Exact-mode gloss tests and the request-validator unit tests (PRD FR 26–27).
+- `backend/tests/test_gloss_text_exact.rs` *(new)* - Exact-mode gloss tests (token order, repeats, unknown words, quoted iti words with punctuation and capitals, paragraph indexes) and the request-validator unit tests (PRD FR 26–27).
+- `backend/tests/test_extract_words_with_context.rs` - Regression tests for the 3.8 tokeniser fixes.
+- `docs/pali-sandhi-and-quote-marks.md` §5, `docs/glossing-and-extracting-words-with-context-algorithm.md` Stage 3 - The unquoted-iti match, quote runs, hyphens, and the skip-ahead trap.
 - `backend/tests/helpers/mod.rs` - Existing `app_data_setup()`; use it, don't change it.
 - `bridges/src/api.rs` - `GlossTextOptions` / `gloss_text` (around line 2040), `HealthInfo` / `health` (around line 1977), the `rocket::Config::figment()` chain (around line 2493), the `routes![…]` list (around line 2552). New `lookup_forms` route.
 - `docs/simsapa-localhost-api-search-endpoints.md` - New `/lookup_forms` section, §16.1 exact mode, `/health` `dpd_version`, §0, §1, §14.
@@ -256,38 +259,38 @@ or the grouped lookup's behaviour.
 **Depends on.** 1.0 and 2.0. The default `process_all_paragraphs()` must stay
 untouched.
 
-- [ ] 3.0 Backend request handling and gloss exact mode
-  - [ ] 3.1 Confirm that nothing in this task edits `process_all_paragraphs()`,
+- [x] 3.0 Backend request handling and gloss exact mode
+  - [x] 3.1 Confirm that nothing in this task edits `process_all_paragraphs()`,
         `process_word_for_glossing()`, `gloss_lookup_words()` or
         `extract_words_with_context()`. Exact mode is a separate function. The
         default output is protected by the existing backend tests (3.7) and the
         route-level `diff` against baseline 0.1 (4.8). Do **not** add a
         committed snapshot file (PRD FR 27).
-  - [ ] 3.2 Add `MAX_LOOKUP_FORMS`, `validate_lookup_forms_request()` and
+  - [x] 3.2 Add `MAX_LOOKUP_FORMS`, `validate_lookup_forms_request()` and
         `validate_gloss_exact_options()` (in `backend/src/lookup_forms.rs` or
         `helpers.rs`). Unit-test every branch, including the 5,000 / 5,001
         boundary and an empty list.
-  - [ ] 3.3 Add the exact-gloss types to `backend/src/types.rs`.
-  - [ ] 3.4 Implement `process_all_paragraphs_exact()` in `helpers.rs`. It does
+  - [x] 3.3 Add the exact-gloss types to `backend/src/types.rs`.
+  - [x] 3.4 Implement `process_all_paragraphs_exact()` in `helpers.rs`. It does
         **not** call `process_word_for_glossing()`, `gloss_lookup_words()`,
         `GlossResolutionData` or `is_common_word()`. `token_index` is the
         position in `extract_words_with_context()`'s output, starting at 0 in
         each paragraph. `dpd_version` comes from `dpd_release_version()`.
-  - [ ] 3.5 Check what `original_word` holds for quoted iti words, both with
+  - [x] 3.5 Check what `original_word` holds for quoted iti words, both with
         trailing punctuation (`bhavissan'ti,`, `cittan’ti.`) and with a capital
         letter at the start of a sentence. If it carries punctuation that
         `normalize_dpd_query_text()` does not remove, so that the lookup
         returns `invalid` or `not_found`, strip only the leading and trailing
         punctuation before the lookup. Keep `original_word` verbatim in the
         response, and add a test for it.
-  - [ ] 3.5a Measure the tokeniser's fallback branch. When
+  - [x] 3.5a Measure the tokeniser's fallback branch. When
         `find_word_position_char_based()` returns `None`,
         `extract_words_with_context()` sets `original_word = clean_word`, which
         loses the `'ti`. Run the tokeniser over a few real sutta paragraphs
         that contain many quoted `'ti` words (from the dist appdata DB) and
         count how often it happens. Record the count for the doc (5.2). Do
         **not** change the tokeniser; it is shared with the Gloss tab.
-  - [ ] 3.6 Add the exact-mode tests to `test_gloss_text_exact.rs`, on a line
+  - [x] 3.6 Add the exact-mode tests to `test_gloss_text_exact.rs`, on a line
         with a repeated word, an unknown word (`xyzqq`), `iti`, `bhante`,
         `āvuso` and `bhavissan'ti`:
         - the token count equals the `extract_words_with_context()` length;
@@ -296,9 +299,22 @@ untouched.
         - `xyzqq` is present with `not_found`;
         - `bhavissan'ti` has `lookup_key == "bhavissanti"` and the split
           `bhavissaṁ + iti`.
-  - [ ] 3.7 Run `test_process_all_paragraphs`, `test_gloss_compound_dedup`,
+  - [x] 3.7 Run `test_process_all_paragraphs`, `test_gloss_compound_dedup`,
         `test_extract_words_with_context` and `test_gloss_word_resolution`. All
         must pass unchanged.
+  - [x] 3.8 Fix the tokeniser fallback found in 3.5a (the user's request,
+        overriding 3.5a's "do not change the tokeniser"). The matcher did not
+        know the *unquoted* iti that preprocessing splits (`viharāmīti` →
+        `viharāmi ti`), so the search matched a later occurrence and every word
+        in between fell back. `find_word_position()` takes `iti_follows` and
+        matches the bare form; `detect_sandhi_unit()` accepts a quote run
+        (`parāyaṇo’”ti`); `match_with_inner_apostrophes()` skips an inter-word
+        hyphen (`Todeyya-kappā`) and extends over a following quoted iti
+        (`maraṇā’tipī”ti`). Fallback tokens: 2,908 of 38,153 before, 0 after,
+        and 0 in 680,469 tokens of DN/MN/SN/Snp. Baseline 0.1's text tokenises
+        identically, so 4.8's byte-identical check still holds. Context hashes
+        change for the affected words; no curated word-selection data exists
+        yet.
 
 ### 4.0 Routes in `bridges/src/api.rs`
 
@@ -375,7 +391,8 @@ untouched.
   - [ ] 5.2 In §16.1, document `options.exact`: the response shape, the
         options it rejects, its `500` error, and that tokenisation is
         `extract_words_with_context()` (annotations are stripped). Note the
-        fallback-branch caveat with the 3.5a count. Add a worked example. In
+        3.8 tokeniser fix (an unquoted iti such as `abhinandunti` stays whole
+        too; there is no fallback caveat to document). Add a worked example. In
         §16.1's **Errors** line, add that a body over the `string` limit gets
         Rocket's own non-JSON `400`.
   - [ ] 5.3 In the `/health` section, add `dpd_version`, and say that it, not

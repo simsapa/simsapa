@@ -98,8 +98,11 @@ key its cache on the DPD release rather than on the app version.
   selections.
 - **As a cache owner**, I key my cached answers on `dpd_version`, so an app
   update that ships the same DPD release does not invalidate my cache.
-- **As a Simsapa GUI user**, I notice no change: the Gloss tab, WordSummary and
-  the Dictionary tab behave exactly as before.
+- **As a Simsapa GUI user**, I notice no change in WordSummary and the
+  Dictionary tab. The Gloss tab is unchanged except for the tokeniser fix
+  (task 3.8): words written with an unquoted iti, a quote run or an inter-word
+  hyphen are now placed in the text, instead of degrading the rest of the
+  paragraph.
 
 ## 4. Functional Requirements
 
@@ -255,11 +258,11 @@ key its cache on the DPD release rather than on the app version.
       (`original_word`, which keeps the `'ti`), not on the cut-down
       `clean_word`. That keeps `bhavissan'ti` whole. The tokeniser has already
       removed the separate `ti` token that follows a quoted `'ti` word
-      (`skip_next_ti`), so the iti is not counted twice. **Caveat:** in
-      `extract_words_with_context()`'s fallback branch (the word's position in
-      the text is not found), `original_word` is set to `clean_word`, so the
-      iti is lost there. Exact mode inherits this. Measure how often it happens
-      (task 3.5) and document it. Do not change the tokeniser in this feature.
+      (`skip_next_ti`), so the iti is not counted twice. The tokeniser's fallback
+      branch (a word not placed in the text, `original_word` set to
+      `clean_word`) was measured at 7.6% of tokens on long suttas, caused by
+      unquoted iti sandhi, and fixed in the tokeniser (task 3.8). An unquoted
+      iti (`abhinandunti`) stays whole too.
     - Do not call `process_word_for_glossing()`. Exact mode has no dedup, no
       `skip_common`, no unrecognized filtering, no `gloss_lookup_words()`
       long-vowel retry, and no `GlossResolutionData` cache lookup.
@@ -384,7 +387,10 @@ key its cache on the DPD release rather than on the app version.
 - **No inflection tables** inline. Callers still use `/word.json` for
   `inflections_html`.
 - **No change** to the default `/gloss_text` output, to the GUI's Gloss tab,
-  WordSummary, the Dictionary tab, or the search routes' prefix guesses.
+  WordSummary, the Dictionary tab, or the search routes' prefix guesses, apart
+  from the tokeniser fix of task 3.8, which both Gloss paths share. That fix
+  changes no output for text without the affected spellings (baseline 0.1's
+  text tokenises identically).
 - **No change to the iti-sandhi or quote rules.** This feature reuses them, so
   no re-bootstrap and no index rebuild are needed.
 - **No CLI implementation** in this PRD (FR 22 only amends the CLI PRD).

@@ -542,6 +542,33 @@ pub struct FormLookupResult {
     pub deconstructions: Vec<FormDeconstruction>,
 }
 
+/// `/gloss_text` exact mode: one token per word of each paragraph, in order,
+/// each with its exact form lookup. See `helpers::process_all_paragraphs_exact()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossResult {
+    pub success: bool,
+    pub exact: bool,
+    pub dpd_version: Option<String>,
+    pub paragraphs: Vec<ExactGlossParagraph>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossParagraph {
+    pub paragraph_index: usize,
+    pub tokens: Vec<ExactGlossToken>,
+}
+
+/// One word of the paragraph. `token_index` starts at 0 in each paragraph and
+/// has no gaps; every token appears, whatever its lookup status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossToken {
+    pub token_index: usize,
+    pub original_word: String,
+    pub clean_word: String,
+    pub context: String,
+    pub lookup: FormLookupResult,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultPage {
     pub total_hits: usize,
