@@ -4,12 +4,16 @@ PRD: [2026-10-23-142300-prd---exact-dpd-form-lookup-api.md](./2026-10-23-142300-
 
 ## Relevant Files
 
-- `backend/src/db/dpd.rs` - The DPD handle. New `lookup_forms_exact()`, `dpd_release_version()`, exact lookup-row and batched headword reads. Reuses the existing `dpd_has_iti_breakdown()` (around line 432) and `iti_base_candidates()` (around line 111).
+- `backend/src/db/dpd.rs` - The DPD handle. New `lookup_forms_exact()`, `dpd_release_version()`, and module-level helpers: `lookup_row_exact()` (free fn, it needs no handle), `LookupRowCache`, `row_has_iti_breakdown()` (factored out of `dpd_has_iti_breakdown()`), `resolve_form_exact()`, `dpd_splits()`, `headwords_by_ids()`, `PendingForm`. The `<base> + iti` branch is a marked `TODO` in `resolve_form_exact()`, for task 2.0.
 - `backend/src/db/dpd_models.rs` - `Lookup` with `headwords_unpack()` / `deconstructor_unpack()` (the verbatim split strings) / `deconstructor_nested()` (the components), `DbInfo`, `DpdHeadword`. Read only, unless a small accessor is missing.
-- `backend/src/types.rs` - New serialisable result types (`FormLookupResult`, `FormHeadword`, `FormDeconstruction`, `FormComponent`, `FormLookupStatus`) and the exact-mode gloss types (`ExactGlossResult`, `ExactGlossParagraph`, `ExactGlossToken`).
+- `backend/src/types.rs` - New serialisable result types (`FormLookupResult`, `FormHeadword` + `from_headword()`, `FormDeconstruction`, `FormComponent`, and the snake_case enums `FormLookupStatus`, `FormMatchedAs`, `FormSplitKind`, `FormSplitSource`) and the exact-mode gloss types (`ExactGlossResult`, `ExactGlossParagraph`, `ExactGlossToken`).
 - `backend/src/helpers.rs` - `normalize_dpd_query_text()` (around line 1413), `extract_words_with_context()` (around line 2144), `GlossWordContext`. New `process_all_paragraphs_exact()` next to `process_all_paragraphs()` (around line 4687).
 - `backend/src/lookup_forms.rs` *(new, optional)* - Request validation (`validate_lookup_forms_request()`, `MAX_LOOKUP_FORMS`) and the `/gloss_text` exact-option check, kept Qt-free so `cargo test` can reach them. Put them in `helpers.rs` instead if a new module is not worth it. If you create it, register it in `backend/src/lib.rs`.
-- `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25).
+- `backend/tests/test_lookup_forms_exact.rs` *(new)* - Core lookup tests against the dist DB (PRD FR 25), with the `sqlite3` commands that verify their facts in the header comment.
+- `backend/src/db/appdata.rs` - `sort_suttas()`: new `sorts_as_commentary()` so XML-sourced CST `att`/`tik`/`nrf` records sort with the commentaries; range-less refs sort after numbered ones (fixes `test_sort_suttas_cst_mula_before_commentary`, broken since `bce0dd82`).
+- `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` - Fixture regenerated after the DB re-bootstrap (same uids and order; total 2330 → 2331, BM25 scores shifted).
+- `backend/tests/test_search_normalization.rs` - Dhovana record is now `an10.107.att/pli/cst` (CST AN mapped to sutta refs).
+- `backend/tests/test_render_sutta_content.rs` - No-Pāli-counterpart case now uses `pdhp14-33/en/anandajoti`; `sn12.72-81/pli/ms` is back in the re-bootstrapped DB.
 - `backend/tests/test_gloss_text_exact.rs` *(new)* - Exact-mode gloss tests and the request-validator unit tests (PRD FR 26–27).
 - `backend/tests/helpers/mod.rs` - Existing `app_data_setup()`; use it, don't change it.
 - `bridges/src/api.rs` - `GlossTextOptions` / `gloss_text` (around line 2040), `HealthInfo` / `health` (around line 1977), the `rocket::Config::figment()` chain (around line 2493), the `routes![…]` list (around line 2552). New `lookup_forms` route.
@@ -88,18 +92,18 @@ In this task, iti-sandhi inputs are handled only through the joined key (the
 `dpd_has_iti_breakdown() == true` case). Task 2.0 adds the `<base> + iti`
 branch.
 
-- [ ] 1.0 Backend exact lookup core
-  - [ ] 1.1 Using `sqlite3` on the dist `dpd.sqlite3`, record the facts the
+- [x] 1.0 Backend exact lookup core
+  - [x] 1.1 Using `sqlite3` on the dist `dpd.sqlite3`, record the facts the
         tests will assert: the `lookup` rows for `bhagavantaṁ`, `atthaññe`,
         `cittanti`, `bhavissanti`, `iti`, `bhante`, `āvuso`, `aññe`, `atthi`;
         the absence of rows for `bhagav`, `atthañ`, `xyzqq`; the `lemma_1`,
         `lemma_clean`, `construction` and `root_key` of `49139`; and
         `db_info.dpd_release_version`. Put the commands in a comment at the top
         of the test file, so a later DPD update can re-check them.
-  - [ ] 1.2 Add the result types to `backend/src/types.rs` (Specs above).
+  - [x] 1.2 Add the result types to `backend/src/types.rs` (Specs above).
         Derive `Debug, Clone, Serialize`, and add `Deserialize` too if the
         gloss types in 3.0 need to round-trip them in tests.
-  - [ ] 1.3 Add a private `fn lookup_row_exact(&self, conn, key: &str) -> Result<Option<Lookup>>`.
+  - [x] 1.3 Add a private `fn lookup_row_exact(&self, conn, key: &str) -> Result<Option<Lookup>>`.
         It is an **equality** filter on `lookup_key`, the primary key. Do not
         add a `LIKE`, and do not call the prefix-guess or "starts with"
         functions. Wrap it in a request-scoped cache,
@@ -108,24 +112,24 @@ branch.
         feature (inputs, components, the iti row, iti bases) goes through it,
         on **one** pooled connection taken at the start of
         `lookup_forms_exact()`.
-  - [ ] 1.3a Factor the predicate out of `dpd_has_iti_breakdown()` into
+  - [x] 1.3a Factor the predicate out of `dpd_has_iti_breakdown()` into
         `fn row_has_iti_breakdown(row: &Lookup) -> bool`. It is a pure
         function: a non-empty `deconstructor` with any break-down whose last
         word is `iti`. `dpd_has_iti_breakdown()` keeps its signature and
         behaviour and calls it. Run `test_dpd_lookup_grouped` and
         `test_dpd_lookup` to confirm nothing changed.
-  - [ ] 1.4 Add the batched headword fetch,
+  - [x] 1.4 Add the batched headword fetch,
         `fn headwords_by_ids(&self, conn, ids: &[i32]) -> Result<HashMap<i32, DpdHeadword>>`,
         using `id.eq_any(chunk)` in chunks of ≤ 900. Collect the ids of **all**
         inputs and components first, then fetch once per request, not once per
         form.
-  - [ ] 1.5 Write `FormHeadword::from_headword(hw, lookup_key)`: `uid` =
+  - [x] 1.5 Write `FormHeadword::from_headword(hw, lookup_key)`: `uid` =
         `format!("{}/dpd", hw.id)`; `construction` = the `construction` column
         split on `\n`, trimmed, with empty lines dropped; `matched_as` =
         `"lemma"` iff `hw.lemma_clean == lookup_key`. An id in the lookup row
         with no `dpd_headwords` row is **logged with `error(...)` and
         skipped**, never invented.
-  - [ ] 1.6 Build the `dpd` splits, keeping DPD's order. Zip
+  - [x] 1.6 Build the `dpd` splits, keeping DPD's order. Zip
         `deconstructor_unpack()` (`split` = the raw string, verbatim) with
         `deconstructor_nested()` (the components). Both come from the same JSON
         list, so their lengths match; assert it with a `debug_assert_eq!`.
@@ -133,7 +137,7 @@ branch.
         component's `uids` come from the cached row (1.3) →
         `headwords_unpack()`, in the row's order; an unknown component gets
         `[]`.
-  - [ ] 1.7 Write the per-form flow:
+  - [x] 1.7 Write the per-form flow:
         `normalize_dpd_query_text(input)` → `(key, iti_base)`.
         - If `key` is empty or contains a space, the result is `invalid`, with
           the `note` `"empty after normalisation"` or `"more than one word"`.
@@ -146,10 +150,10 @@ branch.
           comment pointing at task 2.0. Decide this from the row already in the
           cache; **do not** call `dpd_has_iti_breakdown()`, which would read the
           row again on a fresh connection.
-  - [ ] 1.8 Add `dpd_release_version()`: read the `db_info` row whose `key` is
+  - [x] 1.8 Add `dpd_release_version()`: read the `db_info` row whose `key` is
         `dpd_release_version` and cache it. On a missing row or an error,
         return `None` and log once. Never return an empty string.
-  - [ ] 1.9 Write `backend/tests/test_lookup_forms_exact.rs` with the
+  - [x] 1.9 Write `backend/tests/test_lookup_forms_exact.rs` with the
         non-iti cases of PRD FR 25:
         - `bhagavantaṁ` is `found`, contains `49139/dpd` with the two-line
           `construction`, and `matched_as: "inflection"`.
@@ -163,7 +167,7 @@ branch.
         - `dpd_release_version()` starts with `v`.
         - A `ṃ` spelling (`bhagavantaṃ`) gives the same `lookup_key` as
           `bhagavantaṁ`.
-  - [ ] 1.10 Run `cd backend && cargo test --test test_lookup_forms_exact`,
+  - [x] 1.10 Run `cd backend && cargo test --test test_lookup_forms_exact`,
         then the existing DPD tests (`test_dpd_lookup`, `test_dpd_lookup_grouped`,
         `test_dpd_breakdown_guesses`) to confirm nothing else moved.
 

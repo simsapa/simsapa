@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use diesel::prelude::*;
@@ -18,7 +19,11 @@ use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
-use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup};
+use crate::types::{
+    SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup,
+    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent,
+    FormSplitKind, FormSplitSource,
+};
 use crate::logger::{info, error};
 use crate::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 
@@ -117,6 +122,15 @@ fn iti_base_candidates(joined: &str, base: &str) -> Vec<String> {
         candidates.push(long.to_string());
     }
     candidates
+}
+
+/// Whether a lookup row has a break-down whose last word is `iti`.
+fn row_has_iti_breakdown(row: &Lookup) -> bool {
+    !row.deconstructor.is_empty()
+        && row
+            .deconstructor_nested()
+            .iter()
+            .any(|words| words.last().is_some_and(|w| w == "iti"))
 }
 
 /// Argument tuple identifying a memoized grouped lookup:
@@ -438,12 +452,7 @@ impl DpdDbHandle {
             .filter(lookup_key.eq(joined))
             .first::<Lookup>(db_conn)
             .optional()?;
-        Ok(row.is_some_and(|r| {
-            !r.deconstructor.is_empty()
-                && r.deconstructor_nested()
-                    .iter()
-                    .any(|words| words.last().is_some_and(|w| w == "iti"))
-        }))
+        Ok(row.is_some_and(|r| row_has_iti_breakdown(&r)))
     }
 
     /// The headwords of `iti`, as a deconstructor component resolves them.
@@ -1731,6 +1740,276 @@ fn parse_words(
     }
 
     res_page
+}
+
+/// Ids per `IN (…)` headword read, below SQLite's bound-variable limit.
+const HEADWORD_ID_CHUNK: usize = 900;
+
+/// `db_info.dpd_release_version`, cached after the first successful read.
+static DPD_RELEASE_VERSION: OnceLock<String> = OnceLock::new();
+static DPD_RELEASE_VERSION_FAILURE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// The `lookup` row whose primary key is exactly `key`. An equality match:
+/// never `LIKE`, never a "starts with" guess.
+fn lookup_row_exact(db_conn: &mut SqliteConnection, key: &str) -> Result<Option<Lookup>> {
+    use crate::db::dpd_schema::lookup::dsl as lk;
+    lk::lookup
+        .filter(lk::lookup_key.eq(key))
+        .first::<Lookup>(db_conn)
+        .optional()
+        .with_context(|| format!("lookup_row_exact({}) failed", key))
+}
+
+/// Request-scoped cache of exact `lookup` rows. Split components repeat
+/// heavily across a batch (`iti`, `ca`, `pi`, …), so every row read of
+/// `lookup_forms_exact()` goes through one of these.
+struct LookupRowCache {
+    rows: HashMap<String, Option<Lookup>>,
+}
+
+impl LookupRowCache {
+    fn new() -> Self {
+        Self { rows: HashMap::new() }
+    }
+
+    fn get(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Option<&Lookup>> {
+        if !self.rows.contains_key(key) {
+            let row = lookup_row_exact(db_conn, key)?;
+            self.rows.insert(key.to_string(), row);
+        }
+        Ok(self.rows.get(key).and_then(|r| r.as_ref()))
+    }
+
+    /// The headword ids of the exact row for `key`, in the row's order. Empty
+    /// when there is no row or it has no headwords.
+    fn headword_ids(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<i32>> {
+        Ok(self.get(db_conn, key)?.map(lookup_row_headword_ids).unwrap_or_default())
+    }
+}
+
+fn lookup_row_headword_ids(row: &Lookup) -> Vec<i32> {
+    if row.headwords.is_empty() {
+        Vec::new()
+    } else {
+        row.headwords_unpack()
+    }
+}
+
+/// The row's splits as `(DPD's string verbatim, its components)`, in order.
+fn lookup_row_splits(row: &Lookup) -> Vec<(String, Vec<String>)> {
+    if row.deconstructor.is_empty() {
+        return Vec::new();
+    }
+    let splits = row.deconstructor_unpack();
+    let nested = row.deconstructor_nested();
+    debug_assert_eq!(splits.len(), nested.len());
+    splits.into_iter().zip(nested).collect()
+}
+
+fn dpd_uids(ids: &[i32]) -> Vec<String> {
+    ids.iter().map(|i| format!("{}/dpd", i)).collect()
+}
+
+/// One input form, resolved to a key, headword ids and splits, before the
+/// headword rows are fetched in one batch.
+struct PendingForm {
+    input: String,
+    lookup_key: String,
+    invalid_note: Option<&'static str>,
+    headword_ids: Vec<i32>,
+    deconstructions: Vec<FormDeconstruction>,
+}
+
+impl PendingForm {
+    fn finish(self, headwords: &HashMap<i32, DpdHeadword>) -> FormLookupResult {
+        if let Some(note) = self.invalid_note {
+            return FormLookupResult {
+                input: self.input,
+                lookup_key: self.lookup_key,
+                status: FormLookupStatus::Invalid,
+                note: Some(note.to_string()),
+                headwords: Vec::new(),
+                deconstructions: Vec::new(),
+            };
+        }
+
+        let mut form_headwords = Vec::with_capacity(self.headword_ids.len());
+        for id in &self.headword_ids {
+            match headwords.get(id) {
+                Some(hw) => form_headwords.push(FormHeadword::from_headword(hw, &self.lookup_key)),
+                None => error(&format!(
+                    "lookup_forms_exact(): lookup row '{}' names headword id {}, which has no dpd_headwords row",
+                    self.lookup_key, id
+                )),
+            }
+        }
+
+        let status = if !form_headwords.is_empty() {
+            FormLookupStatus::Found
+        } else if !self.deconstructions.is_empty() {
+            FormLookupStatus::Deconstructed
+        } else {
+            FormLookupStatus::NotFound
+        };
+
+        FormLookupResult {
+            input: self.input,
+            lookup_key: self.lookup_key,
+            status,
+            note: None,
+            headwords: form_headwords,
+            deconstructions: self.deconstructions,
+        }
+    }
+}
+
+impl DpdDbHandle {
+    /// Exact DPD lookup of a batch of word forms: one result per input, in
+    /// input order, duplicates kept. Each form is normalised with
+    /// `normalize_dpd_query_text()` and matched by equality on
+    /// `lookup.lookup_key`. Every headword and split of the row is returned in
+    /// DPD's order. Nothing is ranked, filtered, deduplicated or chosen, and no
+    /// word-selection cache is consulted.
+    ///
+    /// See docs/simsapa-localhost-api-search-endpoints.md (`POST /lookup_forms`).
+    pub fn lookup_forms_exact(&self, forms: &[String]) -> Result<Vec<FormLookupResult>> {
+        let mut pooled_conn = self.get_conn().context("lookup_forms_exact(): no db connection")?;
+        let db_conn: &mut SqliteConnection = &mut pooled_conn;
+        let mut cache = LookupRowCache::new();
+
+        let mut pending: Vec<PendingForm> = Vec::with_capacity(forms.len());
+        for form in forms {
+            pending.push(resolve_form_exact(db_conn, &mut cache, form)?);
+        }
+
+        let mut seen: HashSet<i32> = HashSet::new();
+        let ids: Vec<i32> = pending
+            .iter()
+            .flat_map(|p| p.headword_ids.iter().copied())
+            .filter(|i| seen.insert(*i))
+            .collect();
+        let headwords = headwords_by_ids(db_conn, &ids)?;
+
+        Ok(pending.into_iter().map(|p| p.finish(&headwords)).collect())
+    }
+
+    /// DPD's own release (`db_info.dpd_release_version`, e.g.
+    /// `v0.4.20260501`), the cache key for DPD-derived answers. `None` when the
+    /// row is missing, empty or cannot be read; logged once.
+    pub fn dpd_release_version(&self) -> Option<String> {
+        if let Some(v) = DPD_RELEASE_VERSION.get() {
+            return Some(v.clone());
+        }
+
+        use crate::db::dpd_schema::db_info::dsl::*;
+        let res = self.do_read(|db_conn| {
+            db_info
+                .filter(key.eq("dpd_release_version"))
+                .select(value)
+                .first::<String>(db_conn)
+                .optional()
+        });
+
+        let failure = match res {
+            Ok(Some(v)) if !v.trim().is_empty() => {
+                let v = v.trim().to_string();
+                let _ = DPD_RELEASE_VERSION.set(v.clone());
+                return Some(v);
+            }
+            Ok(_) => "no dpd_release_version row in db_info".to_string(),
+            Err(e) => format!("{}", e),
+        };
+        if !DPD_RELEASE_VERSION_FAILURE_LOGGED.swap(true, Ordering::Relaxed) {
+            error(&format!("dpd_release_version(): {}", failure));
+        }
+        None
+    }
+}
+
+/// Resolve one input form of `lookup_forms_exact()` against exact rows.
+fn resolve_form_exact(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    form: &str,
+) -> Result<PendingForm> {
+    let (key, iti_base) = normalize_dpd_query_text(form);
+
+    let invalid_note = if key.is_empty() {
+        Some("empty after normalisation")
+    } else if key.contains(char::is_whitespace) {
+        Some("more than one word")
+    } else {
+        None
+    };
+    if invalid_note.is_some() {
+        return Ok(PendingForm {
+            input: form.to_string(),
+            lookup_key: key,
+            invalid_note,
+            headword_ids: Vec::new(),
+            deconstructions: Vec::new(),
+        });
+    }
+
+    let (headword_ids, splits, has_iti_breakdown) = match cache.get(db_conn, &key)? {
+        Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row), row_has_iti_breakdown(row)),
+        None => (Vec::new(), Vec::new(), false),
+    };
+
+    if iti_base.is_some() && !has_iti_breakdown {
+        // TODO: resolve as `<base> + iti` (docs/search-snippet-highlight-pipeline.md §9d).
+        // Until then the joined row's result is returned.
+    }
+
+    let deconstructions = dpd_splits(db_conn, cache, splits)?;
+
+    Ok(PendingForm {
+        input: form.to_string(),
+        lookup_key: key,
+        invalid_note: None,
+        headword_ids,
+        deconstructions,
+    })
+}
+
+/// The `dpd`-source splits of a row, with each component's exact headword uids.
+fn dpd_splits(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    splits: Vec<(String, Vec<String>)>,
+) -> Result<Vec<FormDeconstruction>> {
+    let mut res = Vec::with_capacity(splits.len());
+    for (split, words) in splits {
+        let kind = if words.last().is_some_and(|w| w == "iti") {
+            FormSplitKind::ItiSandhi
+        } else {
+            FormSplitKind::Sandhi
+        };
+        let mut components = Vec::with_capacity(words.len());
+        for word in words {
+            let uids = dpd_uids(&cache.headword_ids(db_conn, &word)?);
+            components.push(FormComponent { word, uids });
+        }
+        res.push(FormDeconstruction { split, kind, source: FormSplitSource::Dpd, components });
+    }
+    Ok(res)
+}
+
+/// The `dpd_headwords` rows for `ids`, read in chunked `IN (…)` queries.
+fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashMap<i32, DpdHeadword>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let rows: Vec<DpdHeadword> = hd::dpd_headwords
+            .filter(hd::id.eq_any(chunk))
+            .load(db_conn)
+            .context("headwords_by_ids failed")?;
+        for hw in rows {
+            res.insert(hw.id, hw);
+        }
+    }
+    Ok(res)
 }
 
 pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf>, limit: Option<i32>) -> Result<(), String> {

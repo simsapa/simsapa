@@ -1599,6 +1599,21 @@ pub fn delete_sutta() {
     info(&format!("Deleted {} suttas", num_deleted));
 }
 
+/// Whether `sort_suttas()` places a record with the commentaries: an `.att`
+/// or `.tik` reference (`mn1.att/pli/cst`), or an XML-sourced CST record whose
+/// file kind is `att`, `tik` or `nrf` (`s0510a.att0.xml/pli/cst`,
+/// `abh06t.nrf28.xml/pli/cst`). `split_sutta_ref_kind()` reads the XML records
+/// as mūla, because their kind is not a suffix.
+fn sorts_as_commentary(uid: &str) -> bool {
+    let (base, kind) = split_sutta_ref_kind(uid);
+    if kind != SuttaRefKind::Mula {
+        return true;
+    }
+    base.strip_suffix(".xml")
+        .and_then(|stem| stem.split_once('.'))
+        .is_some_and(|(_, file_kind)| ["att", "tik", "nrf"].iter().any(|k| file_kind.starts_with(k)))
+}
+
 pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     // Sort Pali ms first as the results.
     // Then add Pali other sources,
@@ -1624,21 +1639,21 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     }
 
     // Sort pli_others so mūla (e.g. mn1/pli/cst) comes before
-    // commentary (e.g. mn1.att/pli/cst, mn1.tik/pli/cst).
-    // Commentary UIDs contain .att or .tik before the first '/'.
+    // commentary (e.g. mn1.att/pli/cst, mn1.tik/pli/cst,
+    // s0101a.att.xml/pli/cst); see `sorts_as_commentary()`.
     //
     // Within each bucket the order is by sutta number before uid: a list that
     // spans several suttas (the mūla records beside `an5.91-100.tik`) would
-    // otherwise read an5.100, an5.91, an5.92 as plain strings.
+    // otherwise read an5.100, an5.91, an5.92 as plain strings. A reference
+    // with no comparable number (`s0101m.mul.xml`) sorts after the numbered
+    // ones.
     let range_start = |s: &Sutta| {
         let (base, _) = split_sutta_ref_kind(&s.uid);
-        comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0)
+        let start = comparable_sutta_range(base).and_then(|r| r.start);
+        (start.is_none(), start)
     };
     results.sort_by_cached_key(|s| (range_start(s), s.uid.clone()));
-    pli_others.sort_by_cached_key(|s| {
-        let (_, kind) = split_sutta_ref_kind(&s.uid);
-        (kind != SuttaRefKind::Mula, range_start(s), s.uid.clone())
-    });
+    pli_others.sort_by_cached_key(|s| (sorts_as_commentary(&s.uid), range_start(s), s.uid.clone()));
     // Sort non-pli by language, then by sutta number and uid within the same language
     remaining.sort_by_cached_key(|s| (s.language.clone(), range_start(s), s.uid.clone()));
     // Assemble final list

@@ -426,6 +426,122 @@ impl GroupedDpdLookup {
     }
 }
 
+/// How an exact DPD form lookup went. See `DpdDbHandle::lookup_forms_exact()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormLookupStatus {
+    /// At least one headword. Splits may be present too (`cittanti`).
+    Found,
+    /// No headwords, at least one split.
+    Deconstructed,
+    /// DPD's `lookup` table has no row for the key, or a row with neither
+    /// headwords nor splits.
+    NotFound,
+    /// The form is empty after normalisation, or is more than one word.
+    Invalid,
+}
+
+/// Whether the lookup key is the headword's citation form. A plain comparison
+/// with `lemma_clean`, not a ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormMatchedAs {
+    Lemma,
+    Inflection,
+}
+
+/// Informational label of a split: `iti_sandhi` when its last component is
+/// `iti`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormSplitKind {
+    ItiSandhi,
+    Sandhi,
+}
+
+/// Where a split came from: DPD's `deconstructor` column, or the app's
+/// `<base> + iti` rule (docs/search-snippet-highlight-pipeline.md §9d).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormSplitSource {
+    Dpd,
+    ItiRule,
+}
+
+/// One DPD headword of an exact form lookup, with the fields a caller compares
+/// inline. `uid` is the numeric `<id>/dpd` form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormHeadword {
+    pub uid: String,
+    pub lemma_1: String,
+    pub pos: String,
+    pub grammar: String,
+    pub construction: Vec<String>,
+    pub root_key: String,
+    pub meaning_1: String,
+    pub matched_as: FormMatchedAs,
+}
+
+impl FormHeadword {
+    /// `construction` is the column split on newlines, with empty lines
+    /// dropped (`bhagavant 1` has two).
+    pub fn from_headword(hw: &DpdHeadword, lookup_key: &str) -> Self {
+        FormHeadword {
+            uid: format!("{}/dpd", hw.id),
+            lemma_1: hw.lemma_1.clone(),
+            pos: hw.pos.clone(),
+            grammar: hw.grammar.clone(),
+            construction: hw
+                .construction
+                .split('\n')
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .map(|line| line.to_string())
+                .collect(),
+            root_key: hw.root_key.clone(),
+            meaning_1: hw.meaning_1.clone(),
+            matched_as: if hw.lemma_clean == lookup_key {
+                FormMatchedAs::Lemma
+            } else {
+                FormMatchedAs::Inflection
+            },
+        }
+    }
+}
+
+/// One component of a split, with the headword uids of its **exact** lookup
+/// row. A component DPD does not know has no uids.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormComponent {
+    pub word: String,
+    pub uids: Vec<String>,
+}
+
+/// One split of an exact form lookup. `split` is DPD's string verbatim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormDeconstruction {
+    pub split: String,
+    pub kind: FormSplitKind,
+    pub source: FormSplitSource,
+    pub components: Vec<FormComponent>,
+}
+
+/// The answer for one input form of `DpdDbHandle::lookup_forms_exact()`:
+/// every headword and split of the exact lookup row, in DPD's order, with
+/// nothing ranked or chosen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormLookupResult {
+    /// The form exactly as sent.
+    pub input: String,
+    /// The key actually looked up after normalisation.
+    pub lookup_key: String,
+    pub status: FormLookupStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub headwords: Vec<FormHeadword>,
+    pub deconstructions: Vec<FormDeconstruction>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResultPage {
     pub total_hits: usize,
