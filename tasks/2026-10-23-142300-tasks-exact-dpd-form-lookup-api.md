@@ -344,34 +344,34 @@ untouched.
 
 **Depends on.** 1.0–3.0.
 
-- [ ] 4.0 Routes in `bridges/src/api.rs`
-  - [ ] 4.1 Check that the baselines from 0.0 exist in
+- [x] 4.0 Routes in `bridges/src/api.rs`
+  - [x] 4.1 Check that the baselines from 0.0 exist in
         `/home/gambhiro/prods/apps/simsapa-ng-project/baselines/exact-dpd-form-lookup-api/`.
         If they don't, take them now, before rebuilding, or the "before" side
         of every comparison in 4.8 is lost. Measured in 0.2: a body over 8 KiB
         gets `400 Bad Request`, `content-type: text/html`, Rocket's page.
-  - [ ] 4.2 Add the `lookup_forms` route: request struct
+  - [x] 4.2 Add the `lookup_forms` route: request struct
         (`LookupFormsRequest { forms: Option<Vec<String>>, exact: Option<bool> }`,
         so that a missing `forms` reaches the validator rather than serde),
         validation, the `lookup_forms_exact()` call, and the response. Log
         `info("lookup_forms(): <n> form(s), <found>/<deconstructed>/<not_found>/<invalid>")`.
-  - [ ] 4.3 Register `lookup_forms` in `routes![…]`.
-  - [ ] 4.4 Add `exact` to `GlossTextOptions` and branch in `gloss_text()` as
+  - [x] 4.3 Register `lookup_forms` in `routes![…]`.
+  - [x] 4.4 Add `exact` to `GlossTextOptions` and branch in `gloss_text()` as
         in the Specs. Update the struct's doc comment. An **unparseable body**
         keeps today's bare `Status::BadRequest` (Rocket's HTML `400`) in both
         modes: whether `exact` was set is unknown until the body parses, and
         the default mode must not change. Only the errors found after parsing
         (the exact-option conflicts, the exact-mode `500`) get the JSON
         `{ "error" }` body. Document the split in §16.1.
-  - [ ] 4.5 Add `dpd_version` to `HealthInfo` and fill it from
+  - [x] 4.5 Add `dpd_version` to `HealthInfo` and fill it from
         `dbm.dpd.dpd_release_version()`.
-  - [ ] 4.6 Add `.merge(("limits", rocket::data::Limits::default().limit("string", 2.mebibytes())))`
+  - [x] 4.6 Add `.merge(("limits", rocket::data::Limits::default().limit("string", 2.mebibytes())))`
         (`use rocket::data::ToByteUnit;`) to the config chain in
         `start_webserver()`, with a one-line comment: the `body: String` routes
         are capped by the `string` limit (8 KiB default), and `/lookup_forms`
         batches and long `/gloss_text` texts exceed it.
-  - [ ] 4.7 Run `make build -B`. Fix warnings in the touched code.
-  - [ ] 4.8 Ask the user to run the app, then check with `curl` (the port is
+  - [x] 4.7 Run `make build -B`. Fix warnings in the touched code.
+  - [x] 4.8 Ask the user to run the app, then check with `curl` (the port is
         from `$SIMSAPA_DIR/api-port.txt`, default 4848):
         - the PRD's example batch, plus `bhante`;
         - `exact:false`, a missing `forms`, and 5,001 forms → `400` with JSON

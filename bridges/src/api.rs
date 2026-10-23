@@ -13,6 +13,7 @@ use ureq;
 use rocket::{get, post, routes, State, Shutdown};
 use rocket::response::content::RawHtml;
 use rocket::http::{ContentType, Status};
+use rocket::data::ToByteUnit;
 use rocket_cors::CorsOptions;
 use rocket_ws as ws;
 
@@ -28,6 +29,9 @@ use simsapa_backend::app_settings::{SuttaDisplayDefaults, ModelUsageEntry};
 use simsapa_backend::sutta_display::parse_display_overrides;
 use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea};
 use simsapa_backend::types::{AllParagraphsProcessingInput, WordProcessingOptions, AllParagraphsProcessingResult};
+use simsapa_backend::types::{ExactGlossResult, FormLookupResult, FormLookupStatus};
+use simsapa_backend::helpers::process_all_paragraphs_exact;
+use simsapa_backend::lookup_forms::{validate_lookup_forms_request, validate_gloss_exact_options};
 use simsapa_backend::ai_fallback::WalkOutcome;
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::pts_reference_search::{self, ReferenceSearchResult};
@@ -2011,6 +2015,9 @@ pub struct HealthInfo {
     pub counts: HealthCounts,
     pub sutta_languages: Vec<String>,
     pub dict_sources: Vec<String>,
+    /// DPD's own release (`db_info.dpd_release_version`), `null` when unreadable.
+    /// The cache key for DPD-derived answers, not `app_version`.
+    pub dpd_version: Option<String>,
 }
 
 /// GET /health
@@ -2050,6 +2057,7 @@ fn health(dbm: &State<Arc<DbManager>>) -> Json<HealthInfo> {
         },
         sutta_languages: dbm.appdata.get_sutta_languages(),
         dict_sources: dbm.dictionaries.get_distinct_sources(),
+        dpd_version: dbm.dpd.dpd_release_version(),
     };
 
     Json(info_doc)
@@ -2070,14 +2078,43 @@ pub struct GlossTextRequest {
 }
 
 /// Per-call gloss options. All fields optional; defaults: `no_duplicates_globally`
-/// = false, `skip_common` = false, `common_words` = []. The route is **stateless**
-/// — there is no cross-call dedup state (unlike in-app incremental glossing), so
-/// `no_duplicates_globally` applies within the single submitted text only.
+/// = false, `skip_common` = false, `common_words` = [], `exact` = false. The
+/// route is **stateless** — there is no cross-call dedup state (unlike in-app
+/// incremental glossing), so `no_duplicates_globally` applies within the single
+/// submitted text only.
+///
+/// `exact: true` returns one exact DPD form lookup per token instead
+/// (`ExactGlossResult`); the other three options do not apply to it, and
+/// setting any of them to a non-default value with it is a `400`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct GlossTextOptions {
     pub no_duplicates_globally: Option<bool>,
     pub skip_common: Option<bool>,
     pub common_words: Option<Vec<String>>,
+    pub exact: Option<bool>,
+}
+
+/// The two `/gloss_text` response shapes. Untagged, so each serialises exactly
+/// as its struct; never a `serde_json::Value`, which (built without
+/// `preserve_order`) would sort the keys and change the default output.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum GlossTextResponse {
+    Default(AllParagraphsProcessingResult),
+    Exact(ExactGlossResult),
+}
+
+/// `/gloss_text` errors: an unparseable body keeps Rocket's bare `400` (the
+/// mode is unknown until the body parses); errors found after parsing in exact
+/// mode carry a JSON `{ "error" }` body.
+#[derive(rocket::Responder)]
+pub enum GlossTextError {
+    Bare(Status),
+    Json((Status, Json<serde_json::Value>)),
+}
+
+fn json_error(status: Status, msg: &str) -> (Status, Json<serde_json::Value>) {
+    (status, Json(serde_json::json!({ "error": msg })))
 }
 
 /// POST /gloss_text
@@ -2085,11 +2122,15 @@ pub struct GlossTextOptions {
 /// same `AllParagraphsProcessingResult` shape the GlossTab consumes (full
 /// `ProcessedWord` per word, incl. the grouped deconstruction fields). 400 on
 /// an unparseable body; empty text → 200 with empty paragraphs.
+///
+/// With `options.exact: true`, returns `ExactGlossResult` instead: every token
+/// in order with its exact DPD form lookup. 400 with `{ "error" }` when an
+/// option exact mode ignores is set, 500 with `{ "error" }` on a DB error.
 #[post("/gloss_text", data = "<body>")]
-fn gloss_text(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<AllParagraphsProcessingResult>, Status> {
+fn gloss_text(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<GlossTextResponse>, GlossTextError> {
     let req: GlossTextRequest = serde_json::from_str(&body).map_err(|e| {
         error(&format!("gloss_text(): bad request: {}", e));
-        Status::BadRequest
+        GlossTextError::Bare(Status::BadRequest)
     })?;
 
     // Split on blank lines; trim; drop empties. Empty text -> no paragraphs.
@@ -2100,6 +2141,25 @@ fn gloss_text(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<AllParag
         .collect();
 
     let opts = req.options.unwrap_or_default();
+
+    if opts.exact == Some(true) {
+        validate_gloss_exact_options(opts.no_duplicates_globally, opts.skip_common, opts.common_words.as_ref())
+            .map_err(|msg| {
+                error(&format!("gloss_text(): bad request: {}", msg));
+                GlossTextError::Json(json_error(Status::BadRequest, &msg))
+            })?;
+
+        info(&format!("gloss_text(): exact, {} paragraph(s)", paragraphs.len()));
+
+        return match process_all_paragraphs_exact(&paragraphs, &dbm.dpd) {
+            Ok(result) => Ok(Json(GlossTextResponse::Exact(result))),
+            Err(e) => {
+                error(&format!("gloss_text(): exact: {}", e));
+                Err(GlossTextError::Json(json_error(Status::InternalServerError, &e)))
+            }
+        };
+    }
+
     let options = WordProcessingOptions {
         no_duplicates_globally: opts.no_duplicates_globally.unwrap_or(false),
         skip_common: opts.skip_common.unwrap_or(false),
@@ -2115,17 +2175,72 @@ fn gloss_text(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<AllParag
     info(&format!("gloss_text(): {} paragraph(s)", input.paragraphs.len()));
 
     match process_all_paragraphs(&input, &dbm.appdata, &dbm.dpd) {
-        Ok(result) => Ok(Json(result)),
+        Ok(result) => Ok(Json(GlossTextResponse::Default(result))),
         Err(e) => {
             error(&format!("gloss_text(): {}", e));
-            Ok(Json(AllParagraphsProcessingResult {
+            Ok(Json(GlossTextResponse::Default(AllParagraphsProcessingResult {
                 success: false,
                 paragraphs: Vec::new(),
                 global_unrecognized_words: Vec::new(),
                 updated_global_stems: std::collections::HashMap::new(),
-            }))
+            })))
         }
     }
+}
+
+/// Request body for `POST /lookup_forms`. `forms` is an `Option` so a missing
+/// field reaches the validator and gets its message, not serde's.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LookupFormsRequest {
+    pub forms: Option<Vec<String>>,
+    pub exact: Option<bool>,
+}
+
+/// The `/lookup_forms` response: `results[i]` answers `forms[i]`.
+#[derive(Debug, Serialize)]
+pub struct LookupFormsResponse {
+    pub dpd_version: Option<String>,
+    pub results: Vec<FormLookupResult>,
+}
+
+/// POST /lookup_forms
+/// Exact DPD form lookup: one result per input form, in input order, with
+/// every headword and split of the form's `lookup` row and nothing chosen.
+/// 400 with `{ "error" }` for an unparseable body or a validation failure,
+/// 500 with `{ "error" }` on a DB error. See
+/// docs/simsapa-localhost-api-search-endpoints.md.
+#[post("/lookup_forms", data = "<body>")]
+fn lookup_forms(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<LookupFormsResponse>, (Status, Json<serde_json::Value>)> {
+    let req: LookupFormsRequest = serde_json::from_str(&body).map_err(|e| {
+        error(&format!("lookup_forms(): bad request: {}", e));
+        json_error(Status::BadRequest, &format!("invalid request body: {}", e))
+    })?;
+
+    validate_lookup_forms_request(req.forms.as_ref(), req.exact).map_err(|msg| {
+        error(&format!("lookup_forms(): bad request: {}", msg));
+        json_error(Status::BadRequest, &msg)
+    })?;
+    let forms = req.forms.unwrap_or_default();
+
+    let results = dbm.dpd.lookup_forms_exact(&forms).map_err(|e| {
+        error(&format!("lookup_forms(): {}", e));
+        json_error(Status::InternalServerError, &e.to_string())
+    })?;
+
+    let count = |status: FormLookupStatus| results.iter().filter(|r| r.status == status).count();
+    info(&format!(
+        "lookup_forms(): {} form(s), {}/{}/{}/{}",
+        forms.len(),
+        count(FormLookupStatus::Found),
+        count(FormLookupStatus::Deconstructed),
+        count(FormLookupStatus::NotFound),
+        count(FormLookupStatus::Invalid),
+    ));
+
+    Ok(Json(LookupFormsResponse {
+        dpd_version: dbm.dpd.dpd_release_version(),
+        results,
+    }))
 }
 
 /// A message the walk worker thread hands back to the async WS handler for
@@ -2516,7 +2631,10 @@ pub async extern "C" fn start_webserver() {
     let config = rocket::Config::figment()
         .merge(("log_level", rocket::config::LogLevel::Off))
         .merge(("address", "127.0.0.1"))
-        .merge(("port", g.api_port));
+        .merge(("port", g.api_port))
+        // The `body: String` routes are capped by the `string` limit (8 KiB by
+        // default); `/lookup_forms` batches and long `/gloss_text` texts exceed it.
+        .merge(("limits", rocket::data::Limits::default().limit("string", 2.mebibytes())));
 
     let _ = rocket::build()
         .configure(config)
@@ -2574,6 +2692,7 @@ pub async extern "C" fn start_webserver() {
             dict_words_completion,
             health,
             gloss_text,
+            lookup_forms,
             word_selection_ws,
             set_ai_provider_key,
             get_ai_provider_key,
