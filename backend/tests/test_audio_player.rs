@@ -3,6 +3,8 @@
 //! without an audio output device: duration/position math, seek rounding, and
 //! range + loop behaviour.
 
+#![cfg(feature = "audio")]
+
 use simsapa_backend::audio::format::CANONICAL_SAMPLE_RATE;
 use simsapa_backend::audio::player::{decode_file_to_core, PlayerState};
 use simsapa_backend::audio::recorder::encode_canonical_pcm_to_flac;

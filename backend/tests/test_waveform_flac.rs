@@ -4,6 +4,8 @@
 //! by `encode_canonical_pcm_to_flac` (the format user recordings now use after
 //! the move off Qt Multimedia) and return a non-empty, plausible waveform.
 
+#![cfg(feature = "audio")]
+
 use simsapa_backend::audio::format::CANONICAL_SAMPLE_RATE;
 use simsapa_backend::audio::recorder::encode_canonical_pcm_to_flac;
 use simsapa_backend::waveform::{get_audio_duration_ms, get_waveform_peaks};

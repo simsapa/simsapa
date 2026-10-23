@@ -48,7 +48,9 @@ pub mod cips_parse;
 pub mod cips_update;
 pub mod snowball;
 pub mod search;
+#[cfg(feature = "audio")]
 pub mod waveform;
+#[cfg(feature = "audio")]
 pub mod audio;
 pub mod global_hotkeys;
 pub mod storage_probe;

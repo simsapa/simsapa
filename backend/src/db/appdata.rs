@@ -21,6 +21,21 @@ static GLOSS_PHRASE_SELECTIONS_JSON: &str = include_str!("../../../assets/gloss-
 /// Precedence rank of a `gloss_word_context_cache.origin` value:
 /// user-selected > built-in-human-checked > built-in-agent-checked >
 /// ai-selected. Unknown origins rank lowest.
+/// A recording file's duration in milliseconds, 0 when unknown. Without the
+/// `audio` feature nothing can probe the file, so it is always unknown, which
+/// every caller already handles (the listing backfills it later).
+fn recording_duration_ms(abs_path: &std::path::Path) -> i32 {
+    #[cfg(feature = "audio")]
+    {
+        crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy())
+    }
+    #[cfg(not(feature = "audio"))]
+    {
+        let _ = abs_path;
+        0
+    }
+}
+
 pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
     match origin {
         "user-selected" => 4,
@@ -1213,7 +1228,7 @@ impl AppdataDbHandle {
             } else {
                 recordings_dir.join(&data.file_name)
             };
-            crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy())
+            recording_duration_ms(&abs_path)
         };
 
         let new = NewChantingRecording {
@@ -1331,7 +1346,7 @@ impl AppdataDbHandle {
             }
         }
 
-        let new_duration_ms = crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy());
+        let new_duration_ms = recording_duration_ms(&abs_path);
 
         let updated = self.do_write(|db_conn| {
             diesel::update(chanting_recordings.filter(uid.eq(recording_uid_param)))
@@ -1523,7 +1538,7 @@ impl AppdataDbHandle {
             } else {
                 recordings_dir.join(&rec.file_name)
             };
-            let ms = crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy());
+            let ms = recording_duration_ms(&abs_path);
             if ms > 0 {
                 if let Err(e) = self.update_recording_duration(&rec.uid, ms) {
                     crate::logger::warn(&format!(

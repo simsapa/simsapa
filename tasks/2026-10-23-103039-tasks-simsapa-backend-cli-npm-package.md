@@ -24,8 +24,10 @@
 - `backend_cli/tests/` - Integration tests (`--json` shapes, exit codes, setup against a local fixture).
 
 ### `backend` changes
-- `backend/Cargo.toml` - `[features] default = ["audio"]`, audio crates `optional = true`.
-- `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (and anything audio-only); conditional `api-port.txt` write in `AppGlobals::new()`.
+- `backend/Cargo.toml` - `[features] default = ["audio"]`, audio crates `optional = true`; `[[example]] dbg_flac` has `required-features = ["audio"]`. `ndk-context` stays unconditional (`android_saf.rs` uses it too).
+- `backend/src/db/appdata.rs` - Private `recording_duration_ms()` wraps `waveform::get_audio_duration_ms`; returns 0 (the existing "unknown" value) without `audio`.
+- `backend/tests/test_audio_player.rs`, `test_audio_recorder.rs`, `test_waveform_flac.rs` - `#![cfg(feature = "audio")]`.
+- `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (`init_android_context` stays: SAF needs it); conditional `api-port.txt` write in `AppGlobals::new()`.
 - `backend/src/update_checker.rs` - Receives `compatible_assets_release()`.
 - `backend/src/cli_support.rs` (new, name open) - `get_query_results` / `query_suttas` / `query_words` cores, `fulltext_search` core, `index_command` / `delete_index_dirs` cores, `appdata_stats` core, moved from `cli/src/main.rs`.
 - `backend/src/dictionary_manager_core.rs` - Existing `import_user_zip`, `import_user_dir`, `suggested_label_for_zip` (already Qt-free; reused as is).
@@ -94,17 +96,17 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 1.5 Grep the Rust sources for compile-time paths containing `cli` (e.g. `env!("CARGO_MANIFEST_DIR")` joins, `update_releases_fallback`'s default output path) and confirm they still resolve.
   - [x] 1.6 `cd bootstrap_cli && cargo build && cargo test` pass. Run `cargo run -- --help` and confirm the command list is unchanged.
 
-- [ ] 2.0 Add the default-on `audio` cargo feature to `simsapa_backend` (FR 5–6)
+- [x] 2.0 Add the default-on `audio` cargo feature to `simsapa_backend` (FR 5–6)
 
   > **Specs:** `[features] default = ["audio"]; audio = ["dep:cpal", "dep:symphonia", "dep:flacenc", "dep:rubato"]`.
   > `bridges` keeps the defaults → GUI unchanged. **Depends on:** nothing.
 
-  - [ ] 2.1 Find every use of the audio crates and modules: `grep -rnE 'cpal|symphonia|flacenc|rubato|crate::audio|crate::waveform|audio::|waveform::' backend/src`. Note any non-audio module that calls into them.
-  - [ ] 2.2 Make the four crates `optional = true` and add the feature. Check whether the Android-only `ndk-context` and `jni` deps are used by audio only (`jni` is also used by `android_saf.rs`, so it stays unconditional).
-  - [ ] 2.3 Gate `pub mod audio;`, `pub mod waveform;` and audio-only items in `lib.rs` (e.g. `init_android_context` if it exists only for cpal; check first) with `#[cfg(feature = "audio")]`. **Known non-audio caller:** `backend/src/db/appdata.rs` calls `crate::waveform::get_audio_duration_ms` at ~1216, ~1334 and ~1526 (chanting recording durations). With the feature off these must compile to the "duration unknown" value the code already handles for an unreadable file (read each site; do not invent a new sentinel). Grep for any other caller the same way.
-  - [ ] 2.4 `cd backend && cargo build` (default) and `cargo build --no-default-features` both succeed. `cargo test` passes with defaults.
-  - [ ] 2.5 Confirm with `cargo tree --no-default-features -e normal | grep -E 'cpal|alsa'` that nothing is left (expect no output).
-  - [ ] 2.6 `make build -B` succeeds (GUI unaffected).
+  - [x] 2.1 Find every use of the audio crates and modules: `grep -rnE 'cpal|symphonia|flacenc|rubato|crate::audio|crate::waveform|audio::|waveform::' backend/src`. Note any non-audio module that calls into them.
+  - [x] 2.2 Make the four crates `optional = true` and add the feature. Check whether the Android-only `ndk-context` and `jni` deps are used by audio only (`jni` is also used by `android_saf.rs`, so it stays unconditional).
+  - [x] 2.3 Gate `pub mod audio;`, `pub mod waveform;` and audio-only items in `lib.rs` (e.g. `init_android_context` if it exists only for cpal; check first) with `#[cfg(feature = "audio")]`. **Known non-audio caller:** `backend/src/db/appdata.rs` calls `crate::waveform::get_audio_duration_ms` at ~1216, ~1334 and ~1526 (chanting recording durations). With the feature off these must compile to the "duration unknown" value the code already handles for an unreadable file (read each site; do not invent a new sentinel). Grep for any other caller the same way.
+  - [x] 2.4 `cd backend && cargo build` (default) and `cargo build --no-default-features` both succeed. `cargo test` passes with defaults.
+  - [x] 2.5 Confirm with `cargo tree --no-default-features -e normal | grep -E 'cpal|alsa'` that nothing is left (expect no output).
+  - [x] 2.6 `make build -B` succeeds (GUI unaffected).
 
 - [ ] 3.0 Move shared Qt-free helpers into `backend` (FR 13, FR 26)
 

@@ -3,6 +3,8 @@
 //! container reports the canonical format. (Live cpal capture needs a real input
 //! device, so only the encode/decode path is exercised here.)
 
+#![cfg(feature = "audio")]
+
 use std::path::Path;
 
 use symphonia::core::codecs::DecoderOptions;
