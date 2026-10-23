@@ -35,7 +35,12 @@ SuttaCentral reference, and back) is in §17.
 **Iti sandhi** (`vuttan'ti`, `satipaṭṭhānāti`, `vuttan ti`): which route resolves
 it and what each returns is §18. **How exact a dictionary answer is**, and how
 to widen a lookup step by step (`/lookup_forms` → `/dict_combined_search` →
-`/search` Headword / Contains Match), is §19.
+`/search` Headword / Contains Match), is §19. The **exact DPD form lookup**,
+`POST /lookup_forms` (up to 5,000 forms per call, one exact, unranked result per
+form, in input order), and `/gloss_text`'s **`"exact": true` mode** (one such
+result per word of a passage, nothing dropped or chosen) are §19.1–§19.2.
+`GET /health` reports `dpd_version`, the cache key for DPD-derived answers
+(§10).
 
 All search routes reuse the in-app search path
 (`SearchQueryTask::new` + `results_page(page_num)` + `total_hits()`), so the
@@ -77,6 +82,10 @@ curl -s -X POST "localhost:$PORT/dict_combined_search" \
 curl -s "localhost:$PORT/words/dhamma-1-01/dpd.json" | jq '.[0]'
 # 2b. …or the rendered entry HTML:
 curl -s "localhost:$PORT/get_word_html_by_uid/web/dhamma-1-01/dpd"
+# Checking whether DPD knows forms? Use /lookup_forms, not /dict_combined_search:
+# exact, batched, and its "not_found" can be trusted (§19.1).
+curl -s -X POST "localhost:$PORT/lookup_forms" \
+  -H 'Content-Type: application/json' -d '{"forms":["bhagavantaṁ","bhagav"]}' | jq '.results[].status'
 ```
 
 Three things that remove guesswork (all detailed below):
@@ -172,6 +181,9 @@ while keeping everything else gated.
 
 The three Suttas/general routes plus `/dict_combined_search` are mounted in the
 `routes![...]` list in `start_webserver()`.
+
+These are **search** routes: they rank, respell and guess. To check whether DPD
+knows a form *exactly*, use `POST /lookup_forms` instead (§19.1).
 
 > **Note — `/suttas_fulltext_search` changed.** It previously ran `ContainsMatch`
 > (despite the name). It now runs real `FulltextMatch` (tantivy). No legacy alias
@@ -433,7 +445,8 @@ fulltext searcher has been initialized (§8):
     "dpd_headwords": 88864
   },
   "sutta_languages": ["en","pli"],    // same lists as /sutta_and_dict_search_options
-  "dict_sources": ["dpd","dppn", …]
+  "dict_sources": ["dpd","dppn", …],
+  "dpd_version": "v0.4.20260501"      // DPD's own release; null when unreadable
 }
 ```
 
@@ -496,6 +509,12 @@ fulltext searcher has been initialized (§8):
   it before expecting `/words/<uid>.json` or `dict_dict` filters to resolve a
   given source (the §13.3 verbose-miss `hint` points here for exactly this
   reason).
+- **`dpd_version`** is DPD's own release (`db_info.dpd_release_version` in
+  `dpd.sqlite3`), the same value `/lookup_forms` and exact `/gloss_text` return.
+  **Key caches of DPD-derived answers on it, not on `app_version`**: an app
+  update that ships the same DPD release leaves every DPD answer unchanged,
+  while a DPD update can change them without an app version a cache would
+  notice. `null` (never `""`) when the row cannot be read.
 
 ## 11. Response fields (`SearchResult`)
 
@@ -943,7 +962,8 @@ views, not for headless data retrieval.
 | `GET /word_html?window_id=<id>&uid=<uid>` | Query-param twin of `get_word_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss | §13 |
 | `GET /words/<uid>.json` | Full dictionary-word record as JSON (path form; raw `/` only); 404 + `[]` on miss | §13.3 |
 | `GET /word.json?uid=<uid>&[verbose=1]` | Full dictionary-word record as JSON (query form; uid encoding-agnostic). Default bare array, 404 + `[]` on miss; `verbose=1` → diagnostic envelope | §13.3 |
-| `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, incl. grouped deconstruction fields). 400 on bad body; empty text → 200 empty paragraphs | §16.1 |
+| `POST /lookup_forms` | Exact DPD form lookup: up to 5,000 forms → one result per form, in input order, with every headword and split of the form's DPD `lookup` row and nothing chosen; `dpd_version`. 400 / 500 with JSON `{ "error" }` | §19.1 |
+| `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, incl. grouped deconstruction fields). With `options.exact: true`, every token in order with its exact lookup instead. 400 on bad body; empty text → 200 empty paragraphs | §16.1, §19.2 |
 | `GET /word_selection_ws` | WebSocket word-selection run over glossed paragraphs; streams `status` / `error` / final `result` messages; accepts `cancel` | §16.2 |
 | `POST /set_ai_provider_key` | Set a provider's API key + enable it (and optionally a model), so the WebSocket engine — which uses the app's **saved** settings — can reach it. Never echoes the key | §16.4 |
 | `GET /ai_provider_key?provider=Gemini` | Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
@@ -1153,7 +1173,14 @@ Synchronous JSON glossing of one or more `\n\n`-separated paragraphs.
 
 - **Request:** `{ "text": "<paragraphs, \n\n separated>", "options"?: {…} }`.
   `options` (all optional): `no_duplicates_globally` (bool, default `false`),
-  `skip_common` (bool, default `false`), `common_words` (string[], default `[]`).
+  `skip_common` (bool, default `false`), `common_words` (string[], default `[]`),
+  `exact` (bool, default `false`).
+- **`exact: true`** switches to a different response, `ExactGlossResult`: one
+  token per word of each paragraph, in order, each with its exact DPD lookup,
+  and nothing deduplicated, skipped or chosen. Its shape, tokenisation and an
+  example are §19.2. The other three options do not apply to it, and setting
+  any of them to a non-default value with `exact: true` is a `400`. Without
+  `exact`, or with `false`, the response below is unchanged.
 - **Stateless per call.** Unlike in-app incremental glossing, the route keeps no
   cross-call dedup state; `no_duplicates_globally` applies **within the one
   submitted text only** (the `existing_global_*` carry fields are zeroed).
@@ -1161,7 +1188,14 @@ Synchronous JSON glossing of one or more `\n\n`-separated paragraphs.
   `{ success, paragraphs[], global_unrecognized_words[], updated_global_stems{} }`.
   Each `paragraphs[]` is `{ paragraph_index, unrecognized_words[], words_data[] }`;
   each `words_data[]` is a full `ProcessedWord`.
-- **Errors:** 400 on an unparseable body; empty text → 200 with `paragraphs: []`.
+- **Errors:** 400 on an unparseable body, with Rocket's own HTML error page
+  (the mode is not known until the body parses); empty text → 200 with
+  `paragraphs: []`. A body over the server's 2 MiB `string` limit is also
+  Rocket's own non-JSON `400`. A database error in the default mode is a `200`
+  with `success: false`. In exact mode the errors found after parsing carry a
+  JSON `{ "error": "…" }` body: `400` for an option it rejects
+  (`"exact mode does not support these options: skip_common"`), `500` for a
+  database error.
 
 **`ProcessedWord` — the grouped deconstruction fields** (added by this feature;
 see PRD FR-A1/FR-A3). The key fields for a compound-aware client:
@@ -1983,9 +2017,10 @@ lookup rule is
 **Rule for agents: send the whole form, `ti` included.** Any of the three
 spellings works, and a spaced form is sent as one form (`"vuttan ti"`). The
 part before `ti` alone loses the iti. For an exact answer use `POST
-/lookup_forms` (§19.1); to see what the app's own lookup makes of the form, use
-`POST /dict_combined_search` and read its `deconstructor` field (§18.1). §19
-says when to use which.
+/lookup_forms` (§18.3, §19.1); for a whole passage, `/gloss_text` with
+`"exact": true` keeps every quoted or joined iti form whole (§18.2). To see what
+the app's own lookup makes of the form, use `POST /dict_combined_search` and
+read its `deconstructor` field (§18.1). §19 says when to use which.
 
 ### 18.1 `POST /dict_combined_search`
 
@@ -2051,9 +2086,49 @@ form comes out depends on how it is written:
   alone, and a final `n` is read as `ṁ` (§18.1): in `vuttan ti`, `vuttan` is
   glossed as *vutta* through `vuttaṁ`, and `ti` is its own entry.
 
-In both cases the gloss entry does not show the iti split. To see it, send the
+In both cases the default gloss entry does not show the iti split. To see it, send the
 form to `/dict_combined_search` (§18.1) as written: `"vuttan'ti"`, or
 `"<word> ti"` for a word followed by a separate `ti` entry (`"vuttan ti"`).
+
+**With `"exact": true`** (§19.2) a quoted or joined iti form is one token whose
+lookup is the **whole** form, iti included, by the §18.3 rule: `vuttan'ti` →
+`vuttanti`, found, with `vuttaṁ + iti`; `viharāmīti`, `abhinandunti` and
+`satipaṭṭhānāti` likewise; `magga’’nti` → `maggaṁ + iti` (`iti_rule`);
+`cā”tipi` → `ca + iti + api`. A **spaced** form is still two tokens, and exact
+means exact: `vuttan` is `not_found` (DPD has no form `vuttan`; the `ṁ`
+respelling is tier 2), and `ti` is its own `found` token. Send `"vuttan ti"` to
+`/lookup_forms` to resolve it exactly.
+
+### 18.3 `POST /lookup_forms`
+
+The same normalisation and the same iti rule as §18.1, over **exact** rows
+only: no `ṁ` respelling of a final `n`, no stem match, no guesses. The iti rule
+reads the base word with an equality match too, so a `<base> + iti` result never
+rests on a guess. A split DPD lists is `"source": "dpd"`; one built by the rule
+is `"source": "iti_rule"`, and then `lookup_key` is the base and `headwords` is
+empty. Measured on `v0.4.20260501`:
+
+| `input` | `lookup_key` | `status` | headwords | splits |
+|---|---|---|---|---|
+| `vuttan'ti` | `vuttanti` | found | 10 | `vuttaṁ + iti` (dpd) |
+| `vuttan ti` | `vuttanti` | found | 10 | `vuttaṁ + iti` (dpd) |
+| `vuttaṁ ti` | `vuttanti` | found | 10 | `vuttaṁ + iti` (dpd) |
+| `vuttan` | `vuttan` | not_found | 0 | |
+| `punabbhavo ti` | `punabbhavoti` | found | 1 | `punabbhavo + iti` (dpd) |
+| `satipaṭṭhānāti` | `satipaṭṭhānāti` | found | 3 | `satipaṭṭhānā + iti`, `satipaṭṭhāna + iti` (dpd) |
+| `abhinandunti` | `abhinandunti` | found | 1 | `abhinanduṁ + iti` (dpd) |
+| `viharāmīti` | `viharāmīti` | found | 2 | `viharāmi + iti` (dpd) |
+| `dhārayāmī’ti` | `dhārayāmīti` | found | 4 | `dhārayāmi + iti` (dpd) |
+| `magga’’nti` | `maggaṁ` | deconstructed | 0 | `maggaṁ + iti` (iti_rule) |
+| `magganti` | `magganti` | found | 1 (the verb *maggati*) | |
+| `kho’ti` | `khoti` | found | 1 | `kho + iti` (dpd) |
+| `parāyaṇo’”ti` | `parāyaṇoti` | found | 4 | `parāyaṇo + iti` (dpd) |
+| `cā”tipi` | `cātipi` | deconstructed | 0 | `ca + iti + api` (dpd) |
+
+The headwords of a `found` iti form are the ones DPD lists for the joined form,
+which are the base word's (`vuttanti`: the ten *vutta* headwords). Unlike
+`/dict_combined_search`, `iti` (`13466/dpd`) is **not** added to them; it is in
+the split's `iti` component.
 
 ---
 
@@ -2095,6 +2170,17 @@ word that was asked about.
                  "headwords": [ … ], "deconstructions": [ … ] }, … ] }
 ```
 
+- **Batch size:** up to **5,000** forms per call; 5,001 is a `400`. An empty
+  `forms` list is valid and returns `results: []`. The request body may be up
+  to 2 MiB (the server's `string` limit), which 5,000 forms fit with room to
+  spare; a larger body gets Rocket's own **non-JSON** `400`.
+- **Errors** are a JSON `{ "error": "…" }` body: `400` for an unparseable body
+  (`"invalid request body: …"`), a missing `forms` (`"missing field: forms"`),
+  `"exact": false` (`"only exact lookups are supported; use
+  /dict_combined_search for fuzzy matching"`) or too many forms (`"too many
+  forms: 5001 (max 5000)"`); `500` for a database error. **A form DPD does not
+  know is never an error**: it is a `not_found` result.
+
 - **One result per form, in input order**, duplicates kept. `results[i]`
   answers `forms[i]`.
 - **The match is exact.** Each form is normalised as the DPD lookups do it
@@ -2121,6 +2207,78 @@ word that was asked about.
   (`√bhaj` → `lookup_key: "bhaj"`): roots are not returned.
 - Cache answers on `dpd_version`, not on the app version.
 
+**Field values.** Every enum is a lowercase snake_case string, safe to `match` on.
+
+| Field | Value | Meaning |
+|---|---|---|
+| `status` | `found` | One or more headwords. `deconstructions` may be non-empty too (`cittan'ti`). |
+| | `deconstructed` | No headwords, at least one split (`atthaññe`, `magga’’nti`). |
+| | `not_found` | DPD's lookup table has no row for `lookup_key`, or a row with neither headwords nor splits. |
+| | `invalid` | Not a single word form. `note` is one of `"empty after normalisation"` (`""`, or only punctuation), `"more than one word"` (`"a b"`), `"a uid query, not a word form"` (`"uid:iti"`). |
+| `matched_as` | `lemma` | `lookup_key` is the headword's citation form (`lemma_clean`): `iti` → `iti`, `bhante` → `bhante`. |
+| | `inflection` | Any other form of the headword. A plain comparison, a hint, not a ranking. |
+| `kind` | `iti_sandhi` | The split's last component is `iti`. |
+| | `sandhi` | Any other split. Informational only. |
+| `source` | `dpd` | The split is DPD's, verbatim from the lookup row. |
+| | `iti_rule` | Built by the `<base> + iti` rule (§18.3); not in DPD's row. |
+
+`note` is omitted unless the status is `invalid`. `construction` is DPD's
+`construction` column split into its lines (`[]` when empty); `root_key` is
+`""` when DPD has none.
+
+**Two uid lanes.** A headword `uid` and a component's `uids` are the numeric
+`<id>/dpd` form, which `/word.json` resolves to the structured `dpd_headwords`
+record. The rendered HTML entry is a `dict_words` row with a different,
+hyphenated uid (`dhamma-1-01/dpd`); see "DPD records correlate to dict_words"
+in the repository's `CLAUDE.md`, and §13.3. `/word_html?uid=49139/dpd` also
+resolves the numeric form.
+
+```sh
+curl -s -X POST "localhost:$PORT/lookup_forms" -H 'Content-Type: application/json' \
+  -d '{"forms":["bhagavantaṁ","cittan'"'"'ti","atthaññe","bhante","xyzqq"]}' \
+  | jq -c '.dpd_version, (.results[] | {input, lookup_key, status,
+           headwords: [.headwords[] | "\(.uid) \(.lemma_1) (\(.matched_as))"],
+           splits: [.deconstructions[] | .split]})'
+```
+
+```jsonc
+"v0.4.20260501"
+{"input":"bhagavantaṁ","lookup_key":"bhagavantaṁ","status":"found","headwords":["49139/dpd bhagavant 1 (inflection)","49140/dpd bhagavant 2 (inflection)"],"splits":[]}
+{"input":"cittan'ti","lookup_key":"cittanti","status":"found","headwords":["26555/dpd citta 1.1 (inflection)","26556/dpd citta 1.2 (inflection)","26557/dpd citta 2.1 (inflection)","26558/dpd citta 2.2 (inflection)","26559/dpd citta 2.3 (inflection)","26560/dpd citta 2.4 (inflection)","26561/dpd citta 2.5 (inflection)","26562/dpd citta 2.6 (inflection)","26563/dpd citta 1.3 (inflection)","77246/dpd cittā (inflection)"],"splits":["cittaṁ + iti"]}
+{"input":"atthaññe","lookup_key":"atthaññe","status":"deconstructed","headwords":[],"splits":["atthi + aññe"]}
+{"input":"bhante","lookup_key":"bhante","status":"found","headwords":["49400/dpd bhanta 1 (inflection)","49401/dpd bhanta 2 (inflection)","49402/dpd bhanta 3 (inflection)","49408/dpd bhante (lemma)","49552/dpd bhavant (inflection)","49699/dpd bhāti 1.1 (inflection)"],"splits":[]}
+{"input":"xyzqq","lookup_key":"xyzqq","status":"not_found","headwords":[],"splits":[]}
+```
+
+**`cittan'ti` is `found` with a split, and that is not a bug.** DPD's row for
+`cittanti` lists ten headwords (it is also an inflected form of *citta*) **and**
+the split `cittaṁ + iti`. Nothing is chosen, so both come back: the caller
+decides which reading the text means.
+
+One headword in full (`.results[0].headwords[0]`), and one split
+(`.results[2].deconstructions`):
+
+```jsonc
+{ "uid": "49139/dpd",
+  "lemma_1": "bhagavant 1",
+  "pos": "masc",
+  "grammar": "masc, from bhaga",
+  "construction": ["√bhaj > bhag + a + vant", "bhaga + vant"],
+  "root_key": "√bhaj 1",
+  "meaning_1": "Sublime One; Blessed One; Fortunate One; Auspicious One; epithet of the Buddha",
+  "matched_as": "inflection" }
+
+[ { "split": "atthi + aññe",
+    "kind": "sandhi",
+    "source": "dpd",
+    "components": [
+      { "word": "atthi", "uids": ["2736/dpd","2737/dpd","2738/dpd","2757/dpd"] },
+      { "word": "aññe",  "uids": ["1497/dpd","1498/dpd","1601/dpd","1631/dpd","1660/dpd","74340/dpd","80675/dpd"] } ] } ]
+```
+
+A component's `uids` are its own exact lookup row's headwords; a component DPD
+does not know gets `[]`, never a guess.
+
 ### 19.2 Tier 1 for a passage: `/gloss_text` with `"exact": true`
 
 `{ "text": "…", "options": { "exact": true } }` returns, for every word of each
@@ -2137,6 +2295,43 @@ each paragraph, so the tokens zip against the words by position.
 - `no_duplicates_globally`, `skip_common` and `common_words` do not apply in
   exact mode; sending any of them with a non-default value is a `400`.
 - A database error is a `500` with `{ "error" }`; no token is ever dropped.
+- `original_word` is the word as written, capitals and inner quote marks
+  kept, without the punctuation around it (`Bhavissan'ti,` → `Bhavissan'ti`).
+  It is the form looked up, so `lookup.input` equals it.
+
+```jsonc
+{ "success": true,
+  "exact": true,
+  "dpd_version": "v0.4.20260501",
+  "paragraphs": [
+    { "paragraph_index": 0,
+      "tokens": [
+        { "token_index": 0, "original_word": "Evaṁ", "clean_word": "evaṁ",
+          "context": "<b>Evaṁ</b>, bhante, iti kho āvuso bhavissan'ti.",
+          "lookup": { /* a /lookup_forms result, §19.1 */ } }, … ] } ] }
+```
+
+`paragraph_index` counts the non-empty `\n\n`-separated paragraphs from 0;
+`token_index` restarts at 0 in each. `clean_word` is the tokeniser's own
+cut-down form (the base of an iti word) and is informational: the lookup is
+always on the whole word.
+
+```sh
+curl -s -X POST "localhost:$PORT/gloss_text" -H 'Content-Type: application/json' \
+  -d '{"text":"Evaṁ, bhante, iti kho āvuso bhavissan'"'"'ti.","options":{"exact":true}}' \
+  | jq -c '.paragraphs[].tokens[] | {token_index, original_word, clean_word,
+           lookup_key: .lookup.lookup_key, status: .lookup.status,
+           headwords: (.lookup.headwords | length), splits: [.lookup.deconstructions[].split]}'
+```
+
+```jsonc
+{"token_index":0,"original_word":"Evaṁ","clean_word":"evaṁ","lookup_key":"evaṁ","status":"found","headwords":2,"splits":[]}
+{"token_index":1,"original_word":"bhante","clean_word":"bhante","lookup_key":"bhante","status":"found","headwords":6,"splits":[]}
+{"token_index":2,"original_word":"iti","clean_word":"iti","lookup_key":"iti","status":"found","headwords":1,"splits":[]}
+{"token_index":3,"original_word":"kho","clean_word":"kho","lookup_key":"kho","status":"found","headwords":1,"splits":[]}
+{"token_index":4,"original_word":"āvuso","clean_word":"āvuso","lookup_key":"āvuso","status":"found","headwords":1,"splits":[]}
+{"token_index":5,"original_word":"bhavissan'ti","clean_word":"bhavissaṁ","lookup_key":"bhavissanti","status":"found","headwords":9,"splits":["bhavissaṁ + iti"]}
+```
 
 ### 19.3 Tier 2: `/dict_combined_search` and the default `/gloss_text`
 

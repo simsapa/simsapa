@@ -389,7 +389,9 @@ Notable feature docs:
   / `run_search_with_uid_fallback`: a 0-hit auto-`UidMatch` re-runs as normalized
   `UidMatch` → `DpdLookup` for dict, or the route's fallback mode for suttas — no
   silent 0-hit); and the **`GET /health`** readiness snapshot (version, port,
-  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources). **Gloss
+  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources, and
+  **`dpd_version`** — DPD's own release, the cache key for DPD-derived answers,
+  never `app_version`). **Gloss
   pipeline routes (§16):** `POST /gloss_text` (synchronous multi-paragraph
   glossing → `AllParagraphsProcessingResult`, full `ProcessedWord` incl. the
   grouped deconstruction fields; stateless per call) and `GET /word_selection_ws`
@@ -405,8 +407,8 @@ Notable feature docs:
   disabled while the key is empty) demonstrates all three routes end-to-end
   (§16.4). **Iti sandhi (§18):** which route resolves `vuttan'ti`,
   `satipaṭṭhānāti` and spaced `vuttan ti` — send the whole form, `ti`
-  included, to `/dict_combined_search` and read `deconstructor`; a gloss entry
-  never shows the iti split. A final `n` with no exact match is looked up as
+  included, to `/dict_combined_search` and read `deconstructor`; a default
+  gloss entry never shows the iti split (an exact one does). A final `n` with no exact match is looked up as
   its `ṁ` spelling before any guess (`vuttan` → `vuttaṁ`, never `vuttanaya`;
   search-snippet doc §9f). **Tiers of exactness (§19):** exact
   `/lookup_forms` and `/gloss_text` `"exact": true` (a `not_found` is
@@ -414,6 +416,18 @@ Notable feature docs:
   `ṁ` respelling, stem match and "starts with" guesses; nothing says which step
   answered) → `/search` Dictionary `Headword Match` / `Contains Match`
   (candidates only); widen only the forms the narrower tier could not answer.
+  **Exact DPD form lookup (§19.1–§19.2, §18.3):** `POST /lookup_forms` takes up
+  to 5,000 forms and returns one result per form **in input order** — an
+  equality match on DPD's `lookup` key after `normalize_dpd_query_text()`,
+  every headword and split of the row with nothing ranked or chosen, statuses
+  `found` / `deconstructed` / `not_found` / `invalid`, numeric `<id>/dpd` uids;
+  an iti form is the joined row when DPD splits it `… + iti`, else an exact
+  `<base> + iti` (`source: "iti_rule"`). `/gloss_text` with `"exact": true`
+  gives one such lookup per token, in order, on the whole `original_word`
+  (rejecting `skip_common` & co. with a JSON `400`); its default output is
+  unchanged because the route returns an untagged enum, **never a
+  `serde_json::Value`** (key order). The Rocket `string` body limit is 2 MiB;
+  over it is Rocket's own non-JSON `400`.
   **Sutta Bilara JSON (§13.4):** `GET /sutta.json?uid=` returns the
   `content_json` column (SuttaCentral segment id → text) **verbatim**. **Never
   re-sort `content_json`**: its key order is the paragraph order of the text,

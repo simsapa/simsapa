@@ -119,7 +119,9 @@ layout the GUI app's first-run setup would produce.
 7. Move every route from `bridges/src/api.rs` that needs **neither the GUI nor an
    AI provider** into `simsapa_api`, unchanged in behaviour:
    - search: `/search`, `/suttas_fulltext_search`, `/suttas_contains_search`,
-     `/dict_combined_search`, `/reference_search`;
+     `/dict_combined_search`, `/reference_search`, and the exact DPD form
+     lookup `/lookup_forms` (its core is `DpdDbHandle::lookup_forms_exact()` and
+     its validation `backend/src/lookup_forms.rs`, both Qt-free already);
    - word and sutta retrieval: `/words/<uid>`, `/word.json`, `/word_html`,
      `/sutta_html`, `/sutta.json` (the SuttaCentral Bilara JSON, whose
      Qt-free body is `backend/src/sutta_json.rs`), `/sutta_content_block`,
@@ -128,7 +130,10 @@ layout the GUI app's first-run setup would produce.
      `/sutta_html`);
    - the rest: the completion lists, `/sutta_and_dict_search_options`,
      `/health`, `/gloss_text`, `/logger`, `/save_sutta_display_settings`, `/`,
-     and `/shutdown`.
+     and `/shutdown`. `/health`'s `dpd_version` (`dpd_release_version()`) and
+     `/gloss_text`'s `exact` mode (`process_all_paragraphs_exact()`, the
+     untagged `GlossTextResponse` enum) move with their routes, as does the
+     Rocket `string` limit of 2 MiB set in the server config.
 
    Also move the shared helpers (`parse_search_mode`, `parse_search_area`,
    `build_search_params`, `run_search`, `run_suttas_search`, the UID-fallback
@@ -476,7 +481,8 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
     | `simsapa fulltext-search ...` | moved from `cli` `FulltextSearch` |
     | `simsapa word <uid> [--html]` | new; uses `AppData::resolve_word_uid` (same tolerance as `/word.json`) |
     | `simsapa sutta <uid> [--html\|--text\|--content-json]` | new; `--html` / `--text` as `/sutta_html`; `--content-json` prints the SuttaCentral (Bilara) JSON exactly as `GET /sutta.json` serves it, through the same `sutta_json::get_sutta_content_json()` (strict uid resolution, no fallback to the Pāli) |
-    | `simsapa gloss <text\|->` | new; same pipeline and JSON as `POST /gloss_text`, including the grouped deconstruction fields (reads stdin for `-`) |
+    | `simsapa gloss <text\|-> [--exact]` | new; same pipeline and JSON as `POST /gloss_text`, including the grouped deconstruction fields (reads stdin for `-`). `--exact` is `/gloss_text`'s `"exact": true`: `process_all_paragraphs_exact()`, the same `ExactGlossResult` JSON, and the same rejection of `--skip-common`-style options alongside it |
+    | `simsapa lookup <form…\|->` | new; the exact DPD form lookup, the same core (`lookup_forms_exact()`), validation (`MAX_LOOKUP_FORMS`) and JSON (`{ dpd_version, results }`) as `POST /lookup_forms`. Forms come from the arguments, or one per line from stdin for `-` |
     | `simsapa import stardict <dir> [--label] [--lang]` / `import stardict-zip <zip> [--label] [--lang] [--member]` | new; follows the **GUI's** import path: `dictionary_manager_core::import_user_dir` / `import_user_zip_member` (which `ANALYZE` at the `import_located_stardict` chokepoint), then `dict_index_reconcile::reconcile_dict_indexes()` (no `reinit_fulltext_searcher()`: the process exits; see §7). Not the bootstrap's `import_stardict_as_new` + hard-coded `pli` index append |
     | `simsapa import epub <file> --uid` / `import html <file> --uid` | new; follows the GUI's path: `AppData::import_epub_to_db` / `import_html_to_db(…, is_user_added = true)` (which `ANALYZE`), then `indexer::build_library_index` for the book's language. The bootstrap `import-epub` / `import-html` stay in `bootstrap_cli`: they run `embed_migrations!` and shell out to `sqlite3` with a relative `../scripts/books-fts5-indexes.sql`, which cannot work from an npm install |
     | `simsapa index build\|rebuild\|delete ...` | shared with `bootstrap_cli` (both call one backend core) |
@@ -505,8 +511,10 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
     document to stdout: for `search` the same shape as `ApiSearchResult`, for
     `word` the same as `/word.json`, for `sutta --content-json` the same body as
     `/sutta.json` (with or without `--json`; a sutta stored as HTML exits 4 with
-    the route's `no_content_json` message), for `gloss` the same as `/gloss_text`, for
-    `health` the same as `/health`. Progress bars, spinners and log lines go to
+    the route's `no_content_json` message), for `gloss` the same as `/gloss_text`
+    (with `--exact`, the same as its exact mode), for `lookup` the same as
+    `/lookup_forms` (a `not_found` form is a result, never exit 4), for
+    `health` the same as `/health` (including `dpd_version`). Progress bars, spinners and log lines go to
     **stderr**, so stdout stays parseable. Errors under `--json` are
     `{"error": "<message>"}` on stdout with a non-zero exit code.
 28. **Exit codes:** 0 success; 1 general error; 2 databases missing (FR 19);

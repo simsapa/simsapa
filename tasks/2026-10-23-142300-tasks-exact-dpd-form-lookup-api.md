@@ -390,12 +390,12 @@ untouched.
 
 **Depends on.** 4.0 (real outputs for the examples).
 
-- [ ] 5.0 Documentation and coordination
-  - [ ] 5.0a §19 (tiers of exactness) already describes `/lookup_forms` (§19.1)
+- [x] 5.0 Documentation and coordination
+  - [x] 5.0a §19 (tiers of exactness) already describes `/lookup_forms` (§19.1)
         and exact gloss mode (§19.2) from the PRD contract and the backend
         tests. Check every statement in §19.1–§19.2 against the served routes,
         and fold 5.1–5.2 into those sections rather than adding duplicate ones.
-  - [ ] 5.1 In `docs/simsapa-localhost-api-search-endpoints.md`, add a
+  - [x] 5.1 In `docs/simsapa-localhost-api-search-endpoints.md`, add a
         `/lookup_forms` section: request, response, field tables (`status`,
         `matched_as`, `kind`, `source`), the normalisation and iti rules, the
         batch limit, the "nothing chosen" contract, and the numeric-uid lane
@@ -405,33 +405,33 @@ untouched.
         loses its `√` in normalisation (`√bhaj` → `lookup_key: "bhaj"`,
         `not_found`), and list the three `invalid` notes, including
         `uid:` queries.
-  - [ ] 5.2 In §16.1, document `options.exact`: the response shape, the
+  - [x] 5.2 In §16.1, document `options.exact`: the response shape, the
         options it rejects, its `500` error, and that tokenisation is
         `extract_words_with_context()` (annotations are stripped). Note the
         3.8 tokeniser fix (an unquoted iti such as `abhinandunti` stays whole
         too; there is no fallback caveat to document). Add a worked example. In
         §16.1's **Errors** line, add that a body over the `string` limit gets
         Rocket's own non-JSON `400`.
-  - [ ] 5.3 In the `/health` section, add `dpd_version`, and say that it, not
+  - [x] 5.3 In the `/health` section, add `dpd_version`, and say that it, not
         `app_version`, keys caches of DPD-derived answers.
-  - [ ] 5.4 In §0, add a one-line pointer for exact checks; in §1 and §14, add
+  - [x] 5.4 In §0, add a one-line pointer for exact checks; in §1 and §14, add
         the route; update the opening summary.
-  - [ ] 5.4a Extend §18 (iti sandhi: which route to use) with `/lookup_forms`
+  - [x] 5.4a Extend §18 (iti sandhi: which route to use) with `/lookup_forms`
         and exact gloss mode, and update its "rule for agents" line to name
         `/lookup_forms` for exact checks. Re-measure §18.2 for exact mode: a
         spaced `vuttan ti` is two tokens, and `vuttan` alone is `not_found`
         unless that is changed first.
-  - [ ] 5.5 If 4.1 showed the default body limit, record the limit in the doc.
-  - [ ] 5.6 Update `PROJECT_MAP.md`: `lookup_forms_exact`,
+  - [x] 5.5 If 4.1 showed the default body limit, record the limit in the doc.
+  - [x] 5.6 Update `PROJECT_MAP.md`: `lookup_forms_exact`,
         `dpd_release_version`, `process_all_paragraphs_exact`, the new
         validation module if one was created, and the route.
-  - [ ] 5.7 Update the `CLAUDE.md` bullet for the API doc: name
+  - [x] 5.7 Update the `CLAUDE.md` bullet for the API doc: name
         `/lookup_forms`, gloss exact mode and `/health` `dpd_version`, and
         keep the bullet's existing style.
-  - [ ] 5.8 Amend the CLI PRD (FR 7's route list gets `/lookup_forms`; the
+  - [x] 5.8 Amend the CLI PRD (FR 7's route list gets `/lookup_forms`; the
         command table gets `simsapa lookup <form…|->` and `simsapa gloss
         --exact`; note that `dpd_version` moves with `/health`) and its task
         list (the matching sub-tasks, unchecked). Text only; no CLI code.
-  - [ ] 5.9 Final check: `cd backend && cargo test` (the known timing-budget
+  - [x] 5.9 Final check: `cd backend && cargo test` (the known timing-budget
         failures are drift, not regressions), `make build -B`, and `git status`
         to confirm no `*.sqlite3` is staged.
