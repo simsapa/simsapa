@@ -50,7 +50,7 @@
 - `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
 - `docs/backend-cli-and-npm-package.md` (new) - Crate layout, parity rule, preamble, in-use detection, packaging, release checklist.
 - `docs/startup-sequence-and-caches.md`, `docs/user-data-and-sqlite-analyze.md` - CLI entry points.
-- `PROJECT_MAP.md`, `CLAUDE.md`, `.claude/skills/gloss-agent-check/SKILL.md`, and the 12 docs referencing `cli/` - Rename.
+- `PROJECT_MAP.md`, `AGENTS.md` (`CLAUDE.md` is a tracked symlink to it — edit `AGENTS.md`; `sed -i CLAUDE.md` replaces the symlink with a file), `.claude/skills/gloss-agent-check/SKILL.md`, the 12 docs and the backend/bootstrap comments referencing `cli/` - Rename.
 
 ### Notes
 
@@ -81,18 +81,18 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ## Tasks
 
-- [ ] 1.0 Rename `cli/` to `bootstrap_cli/` (`simsapa_bootstrap_cli`) and update every reference (PRD FR 1)
+- [x] 1.0 Rename `cli/` to `bootstrap_cli/` (`simsapa_bootstrap_cli`) and update every reference (PRD FR 1)
 
   > **Specs:** pure rename; no behaviour change. Folder depth is unchanged, so
   > `../assets`, `../scripts/...`, `../backend/migrations/appdata` and
   > `../../tipitaka-xml-parser` keep resolving. **Depends on:** nothing.
 
-  - [ ] 1.1 `git mv cli bootstrap_cli`. In `bootstrap_cli/Cargo.toml` rename the package to `simsapa_bootstrap_cli` and the `[[bin]]` to `simsapa_bootstrap_cli`. Do not change `version`.
-  - [ ] 1.2 Update the `Makefile`: `bootstrap`, `rust-test`, and `cargo-clean-build` (`cd cli` → `cd bootstrap_cli`).
-  - [ ] 1.3 Update `.gitignore` (`cli/*.xml`, `cli/target`).
-  - [ ] 1.4 Update the references in `CLAUDE.md`, `PROJECT_MAP.md`, `.claude/skills/gloss-agent-check/SKILL.md`, `scripts/`, and the 12 docs. Find them with `grep -rn "cli/\|simsapa_cli\|cd cli" docs PROJECT_MAP.md CLAUDE.md .claude scripts Makefile`. Leave `tasks/archive/` untouched (historical records).
-  - [ ] 1.5 Grep the Rust sources for compile-time paths containing `cli` (e.g. `env!("CARGO_MANIFEST_DIR")` joins, `update_releases_fallback`'s default output path) and confirm they still resolve.
-  - [ ] 1.6 `cd bootstrap_cli && cargo build && cargo test` pass. Run `cargo run -- --help` and confirm the command list is unchanged.
+  - [x] 1.1 `git mv cli bootstrap_cli`. In `bootstrap_cli/Cargo.toml` rename the package to `simsapa_bootstrap_cli` and the `[[bin]]` to `simsapa_bootstrap_cli`. Do not change `version`.
+  - [x] 1.2 Update the `Makefile`: `bootstrap`, `rust-test`, and `cargo-clean-build` (`cd cli` → `cd bootstrap_cli`).
+  - [x] 1.3 Update `.gitignore` (`cli/*.xml`, `cli/target`).
+  - [x] 1.4 Update the references in `CLAUDE.md`, `PROJECT_MAP.md`, `.claude/skills/gloss-agent-check/SKILL.md`, `scripts/`, and the 12 docs. Find them with `grep -rn "cli/\|simsapa_cli\|cd cli" docs PROJECT_MAP.md CLAUDE.md .claude scripts Makefile`. Leave `tasks/archive/` untouched (historical records).
+  - [x] 1.5 Grep the Rust sources for compile-time paths containing `cli` (e.g. `env!("CARGO_MANIFEST_DIR")` joins, `update_releases_fallback`'s default output path) and confirm they still resolve.
+  - [x] 1.6 `cd bootstrap_cli && cargo build && cargo test` pass. Run `cargo run -- --help` and confirm the command list is unchanged.
 
 - [ ] 2.0 Add the default-on `audio` cargo feature to `simsapa_backend` (FR 5–6)
 

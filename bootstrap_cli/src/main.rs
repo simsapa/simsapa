@@ -1582,7 +1582,7 @@ enum Commands {
 
         /// The repository's `assets/` folder, where the SuttaCentral spine build
         /// rewrites `navigation-blurb-suttacentral.toml`. Defaults to `../assets`
-        /// from the working directory, which is right when run from `cli/`.
+        /// from the working directory, which is right when run from `bootstrap_cli/`.
         #[arg(long, value_name = "ASSETS_DIR")]
         assets_dir: Option<PathBuf>,
     },
@@ -1670,7 +1670,7 @@ enum Commands {
 
         /// Path to write the fallback releases JSON.
         /// Defaults to the source-tree assets/ folder regardless of the current
-        /// working directory, so the command works when run from cli/.
+        /// working directory, so the command works when run from bootstrap_cli/.
         #[arg(long, value_name = "OUTPUT_PATH", default_value = DEFAULT_RELEASES_FALLBACK_PATH)]
         output: PathBuf,
     },

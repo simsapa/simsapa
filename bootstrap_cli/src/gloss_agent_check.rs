@@ -497,7 +497,7 @@ fn status(data_cache: &Path) -> Result<(), String> {
 }
 
 // Integration-style tests against the real dictionaries/DPD databases
-// (SIMSAPA_DIR from cli/.env), per project convention. The candidate fixture
+// (SIMSAPA_DIR from bootstrap_cli/.env), per project convention. The candidate fixture
 // is synthetic but its option uids are real records ("34626/dpd" is the
 // numeric dpd_headwords uid of dhamma 1.01, "dhamma-1-01/dpd" the correlated
 // dict_words uid — both resolve via AppData::resolve_word_uid), so `apply`'s

@@ -278,7 +278,7 @@ step `appdata.sqlite3` already has:
 | Shipped DB | Created during bootstrap by |
 |---|---|
 | `appdata.sqlite3` | `AppdataBootstrap::run()` → `run_migrations()` (`APPDATA_MIGRATIONS`) |
-| `dictionaries.sqlite3` | `init_dictionaries_db()` in `cli/src/bootstrap/mod.rs` (`DICTIONARIES_MIGRATIONS`) |
+| `dictionaries.sqlite3` | `init_dictionaries_db()` in `bootstrap_cli/src/bootstrap/mod.rs` (`DICTIONARIES_MIGRATIONS`) |
 | `dpd.sqlite3` | `import_migrate_dpd()` — copied wholesale from upstream DPD, no migrations |
 | `user_dictionaries.sqlite3` (export snapshot) | `export_user_dictionaries()` runs `run_dictionaries_migrations()` on the new file |
 

@@ -14,7 +14,7 @@ occurrence, using the sentence context. Confirmed selections are shipped as
 
 ## Paths and environment
 
-All commands run from the `cli/` directory of this repo. The data-cache root
+All commands run from the `bootstrap_cli/` directory of this repo. The data-cache root
 defaults to `../../bootstrap-assets-resources/gloss-data-cache` (override with
 `--data-cache DIR`). Folders under it:
 

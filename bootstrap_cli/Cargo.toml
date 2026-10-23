@@ -1,12 +1,12 @@
 [package]
-name = "simsapa_cli"
+name = "simsapa_bootstrap_cli"
 version = "0.1.0"
 edition = "2024"
 authors = ["Gambhiro Bhikkhu <profound.labs@gmail.com>"]
 license = "Apache-2.0"
 
 [[bin]]
-name = "simsapa_cli"
+name = "simsapa_bootstrap_cli"
 path = "src/main.rs"
 
 [dependencies]

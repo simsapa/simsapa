@@ -94,7 +94,7 @@ write path is reused unchanged.
 
 ### Cache lifecycle
 
-**Write at bootstrap.** At the end of `cli/src/bootstrap/mod.rs`,
+**Write at bootstrap.** At the end of `bootstrap_cli/src/bootstrap/mod.rs`,
 `warm_caches_into_appdata(appdata_path, dict_path, dpd_path)` computes
 all five values and writes them into the shipped `appdata.sqlite3`. A
 freshly downloaded DB therefore arrives with the caches pre-warmed —

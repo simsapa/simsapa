@@ -199,13 +199,13 @@ command after updating the server data:
 
 ```sh
 # defaults: --channel main, output → the source-tree assets/ folder
-cargo run --manifest-path cli/Cargo.toml -- update-releases-fallback
-# equivalently, from inside cli/:
+cargo run --manifest-path bootstrap_cli/Cargo.toml -- update-releases-fallback
+# equivalently, from inside bootstrap_cli/:
 cargo run -- update-releases-fallback
 ```
 
-Implementation: `cli/src/update_releases_fallback.rs`, wired into
-`cli/src/main.rs` as the `UpdateReleasesFallback { channel, output }` command
+Implementation: `bootstrap_cli/src/update_releases_fallback.rs`, wired into
+`bootstrap_cli/src/main.rs` as the `UpdateReleasesFallback { channel, output }` command
 (in the skip-`init_app_data` list, like `UpdateProviderModels`). It does a
 `GET {RELEASES_API_URL}?channel=<channel>&no_stats=true`, validates the response
 parses as `ReleasesInfo` before overwriting the file (so a bad response can't
@@ -214,7 +214,7 @@ break the build), and writes the raw JSON.
 The `--output` default is `DEFAULT_RELEASES_FALLBACK_PATH`, resolved at compile
 time via `concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/releases-fallback.json")`
 — so it always targets the workspace `assets/` folder regardless of the current
-working directory (running from `cli/` works). Errors from this command are
+working directory (running from `bootstrap_cli/` works). Errors from this command are
 printed with the full anyhow context chain (`{:#}`) so path/IO causes are
 visible.
 

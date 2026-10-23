@@ -497,7 +497,7 @@ pub fn write(assets_dir: &Path, content: &str) -> Result<WriteOutcome> {
     Ok(WriteOutcome::Written(path))
 }
 
-/// The repository's `assets/` folder, for a CLI run from `cli/` — resolved from
+/// The repository's `assets/` folder, for a CLI run from `bootstrap_cli/` — resolved from
 /// the working directory, the way the bootstrap resolves its input folder.
 pub fn default_assets_dir() -> Result<PathBuf> {
     let cwd = std::env::current_dir().context("Failed to get current working directory")?;

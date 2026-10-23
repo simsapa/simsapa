@@ -6,8 +6,8 @@ tipitaka_xml_parser_log.txt
 suttas.sqlite3
 fragments.sqlite3
 
-cli/*.xml
-cli/*.xml
+bootstrap_cli/*.xml
+bootstrap_cli/*.xml
 
 # build folders
 build/
@@ -15,7 +15,7 @@ build/
 !assets/pdf-viewer/build/
 dist/
 target/
-cli/target
+bootstrap_cli/target
 backend/target
 bridges/target
 .cache/

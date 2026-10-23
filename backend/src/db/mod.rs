@@ -359,7 +359,7 @@ impl DbManager {
         };
 
         // NOTE: No runtime `ANALYZE` self-heal here. Shipped DBs are
-        // ANALYZEd at bootstrap time (`cli/src/bootstrap/mod.rs`, just before
+        // ANALYZEd at bootstrap time (`bootstrap_cli/src/bootstrap/mod.rs`, just before
         // each `*.tar.bz2` archive is created), so `sqlite_stat1` /
         // `sqlite_stat4` arrive with the install. Without those stats the
         // planner picks a catastrophic plan for FTS5-trigram + `dict_label IN

@@ -21,7 +21,7 @@ time. Don't rely on that — make sure stats are present.
 There are two paths that produce `sqlite_stat1` / `sqlite_stat4`:
 
 1. **Bootstrap (the primary source).** Every shipped DB is `ANALYZE`d in
-   `cli/src/bootstrap/mod.rs` right before its `.tar.bz2` archive is created.
+   `bootstrap_cli/src/bootstrap/mod.rs` right before its `.tar.bz2` archive is created.
    This means a fresh install of the app gets correct stats on first launch
    with zero runtime work. The helper is
    `simsapa_backend::helpers::analyze_sqlite_db_via_cli` (uses the `sqlite3`
@@ -126,6 +126,6 @@ Notes:
 
 - `backend/src/db/mod.rs::DatabaseHandle::analyze` — the runtime hook.
 - `backend/src/helpers.rs::analyze_sqlite_db_via_cli` — the bootstrap hook.
-- `cli/src/bootstrap/mod.rs` — call sites just before each
+- `bootstrap_cli/src/bootstrap/mod.rs` — call sites just before each
   `create_database_archive` / `create_appdata_archive`.
 - `tasks/prd-fixing-headword-match-slow-query.md` — the original investigation.

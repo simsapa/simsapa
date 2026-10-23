@@ -181,12 +181,12 @@ moment `create_dir_all()` has created it (which `get_create_simsapa_dir()` does
 on the miss), the wrong path exists and wins on every later run. The CLI
 bootstrap hit exactly this: it set `SIMSAPA_DIR` to the relative
 `../../bootstrap-assets-resources/dist/simsapa`, and with `cargo run` the exe
-lives in `cli/target/debug/`, so it resolved to
-`simsapa/cli/bootstrap-assets-resources/dist/simsapa` and created it — after
+lives in `bootstrap_cli/target/debug/`, so it resolved to
+`simsapa/bootstrap_cli/bootstrap-assets-resources/dist/simsapa` and created it — after
 which the bootstrap read its inputs cwd-relative from the project-level folder
-but wrote all its output under `cli/` (and `clean_and_create_folders()` wiped the
+but wrote all its output under `bootstrap_cli/` (and `clean_and_create_folders()` wiped the
 project-level `dist/`, keeping the exe-relative miss permanent). `bootstrap()` in
-`cli/src/bootstrap/mod.rs` now builds `bootstrap_assets_dir` absolute
+`bootstrap_cli/src/bootstrap/mod.rs` now builds `bootstrap_assets_dir` absolute
 (`normalize_lexically(current_dir()?.join("../../bootstrap-assets-resources"))`),
 which sidesteps the exe-dir rule entirely. **Any code that sets `SIMSAPA_DIR`
 itself should set an absolute path**; the relative form is for portable installs

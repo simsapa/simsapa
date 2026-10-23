@@ -4516,7 +4516,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "simsapa_cli"
+name = "simsapa_bootstrap_cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",

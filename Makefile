@@ -78,7 +78,7 @@ sass-watch:
 	sass --no-source-map --watch './assets/sass/:./assets/css/'
 
 parse-cips:
-	cd cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
+	cd bootstrap_cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
 
 count-code:
 	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
@@ -95,7 +95,7 @@ test: rust-test qml-test js-test
 # error: linking with `cc` failed
 
 rust-test:
-	cd backend && cargo test && cd ../cli && cargo test
+	cd backend && cargo test && cd ../bootstrap_cli && cargo test
 
 js-test:
 	npm test
@@ -122,12 +122,12 @@ project-tree:
 	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I dpd-res/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt
 
 bootstrap:
-	cd cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv
+	cd bootstrap_cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv
 
 # First 'cargo clean' on each module, then build.
 cargo-clean-build:
-	cd backend && cargo clean && cd ../bridges && cargo clean && cd ../cli && cargo clean && cd .. && \
-	cd backend && cargo build && cd ../bridges && cargo build && cd ../cli && cargo build && cd ..
+	cd backend && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
+	cd backend && cargo build && cd ../bridges && cargo build && cd ../bootstrap_cli && cargo build && cd ..
 
 appimage: build
 	./build-appimage.sh

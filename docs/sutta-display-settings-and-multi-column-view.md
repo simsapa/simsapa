@@ -552,7 +552,7 @@ hit. Run `make sass`; never hand-edit `assets/css/`.
 
 The paragraph locations come from the CIPS index, and two things are
 pre-computed by the parser in `backend/src/cips_parse.rs` (moved there from
-`cli/src/bootstrap/parse_cips_index.rs`, which now only writes the JSON file
+`bootstrap_cli/src/bootstrap/parse_cips_index.rs`, which now only writes the JSON file
 and prints the diagnostics) so runtime does no extra work:
 
 - **Disambiguation suffixes.** When two refs in one sub-topic entry produce the

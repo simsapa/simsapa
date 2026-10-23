@@ -426,7 +426,7 @@ Notable feature docs:
   fallback covers it; the real user-facing failure is the **asset download**,
   surfaced by `AssetManager`'s retry loop + `cleanup_on_failure` and
   `DownloadAppdataWindow.run_download()`'s `error_dialog`), and the manual
-  refresh CLI command `update-releases-fallback` (`cli/src/update_releases_fallback.rs`;
+  refresh CLI command `update-releases-fallback` (`bootstrap_cli/src/update_releases_fallback.rs`;
   `GET …?channel=…&no_stats=true`, validates before writing, rebuild needed to
   re-embed). The channel comes from `get_release_channel()`
   (`RELEASE_CHANNEL` env → `AppSettings` → default `main`).
@@ -1591,7 +1591,7 @@ generate <name>`.)
 
 The runtime **never fabricates** a missing `dictionaries.sqlite3` — the CLI
 bootstrap creates it explicitly (`init_dictionaries_db()` in
-`cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
+`bootstrap_cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
 ever remove a database's runtime auto-creation, check the bootstrap for a hidden
 dependency on it.
 
@@ -1638,7 +1638,7 @@ The fulltext search tables are FTS5 virtual tables created by the SQL scripts in
 `dpd-bold-definitions-fts5-indexes.sql`). There is **no Diesel migration** for
 these — the scripts drop and recreate the FTS table + sync triggers, so any
 schema change requires a **manual re-bootstrap** of the affected DB (run the
-script again). The scripts are run from the bootstrap code in `cli/src/`.
+script again). The scripts are run from the bootstrap code in `bootstrap_cli/src/`.
 
 **IMPORTANT — store the source row id as the FTS5 `rowid`, never as an
 `UNINDEXED` column.** FTS5 has no secondary indexes, so a lookup like

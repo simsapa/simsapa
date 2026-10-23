@@ -5,7 +5,7 @@
 // files for review in the Gloss UI (Open JSON -> AI selection -> confirm ->
 // Export As JSON into gloss-data-cache/).
 //
-// Rust-in-`cli/` by design (not a Python API client): only in-process reuse of
+// Rust-in-`bootstrap_cli/` by design (not a Python API client): only in-process reuse of
 // `extract_words_with_context` / `process_word_for_glossing` /
 // `normalize_gloss_context` / `gloss_context_hash` guarantees hash and
 // words_data format parity with the app.
@@ -793,7 +793,7 @@ mod tests {
     }
 
     // Integration test against the real dev databases (SIMSAPA_DIR from the
-    // cli/.env): a generated candidate file parses as the session envelope, a
+    // bootstrap_cli/.env): a generated candidate file parses as the session envelope, a
     // sampled paragraph's source_uid names a sutta whose content_json-derived
     // paragraphs contain the paragraph text verbatim, its words_data equals
     // re-running the gloss processing on the paragraph text, and the run

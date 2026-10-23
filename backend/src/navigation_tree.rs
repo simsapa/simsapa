@@ -14,7 +14,7 @@
 //! reconstructs the breadcrumbs) are all written by the CLI, and a stale one
 //! fails *silently* -- an edit to `normalize_for_search` alone would leave the
 //! query folded one way and the column folded another, so matches just stop
-//! appearing with nothing logged. Re-run `simsapa_cli build-navigation-tree`
+//! appearing with nothing logged. Re-run `simsapa_bootstrap_cli build-navigation-tree`
 //! after touching any of them, and see docs/sutta-navigation-tree.md.
 //!
 //! **Every read tolerates the table being absent or empty.** A migration

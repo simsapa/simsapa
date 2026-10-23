@@ -90,7 +90,7 @@ It enables exactly one model per provider and never disables anything.
 
 **Callers.**
 
-- CLI: `cli/src/update_provider_models.rs` (`update-provider-models`) —
+- CLI: `bootstrap_cli/src/update_provider_models.rs` (`update-provider-models`) —
   `apply_defaults = true`, validate-before-write, regenerates
   `assets/providers.json`.
 - In-app: `SuttaBridge::update_model_lists()` spawns a thread,

@@ -131,7 +131,7 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
         logger::info(&format!("Limit set to {}", lim));
     }
 
-    // Running the binary with 'cargo run', the PWD is simsapa/cli/.
+    // Running the binary with 'cargo run', the PWD is simsapa/bootstrap_cli/.
     // The asset folders are one level above simsapa/.
     //
     // The path is made **absolute against the current working directory** on
@@ -139,10 +139,10 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
     // `get_create_simsapa_dir()` resolves a *relative* `SIMSAPA_DIR` against the
     // executable's directory first (a Windows portable-install requirement, see
     // docs/windows-portable-install.md). With `cargo run` the exe lives in
-    // `cli/target/debug/`, so a relative `../../bootstrap-assets-resources/...`
-    // would resolve to `cli/bootstrap-assets-resources/...` and be created
+    // `bootstrap_cli/target/debug/`, so a relative `../../bootstrap-assets-resources/...`
+    // would resolve to `bootstrap_cli/bootstrap-assets-resources/...` and be created
     // there — inputs read from the project-level folder, outputs written under
-    // `cli/`. An absolute value sidesteps that rule entirely.
+    // `bootstrap_cli/`. An absolute value sidesteps that rule entirely.
     let bootstrap_assets_dir = normalize_lexically(
         &env::current_dir()
             .context("Failed to get current working directory")?
@@ -275,7 +275,7 @@ RELEASE_CHANNEL=development
                 importer.import(&mut conn)?;
             } else {
                 logger::warn(&format!("Dhammapada Tipitaka.net exported database not found: {:?}", exported_db_path));
-                logger::warn("Run: simsapa_cli dhammapada-tipitaka-net-export <legacy_db> <output_db>");
+                logger::warn("Run: simsapa_bootstrap_cli dhammapada-tipitaka-net-export <legacy_db> <output_db>");
             }
         }
 
@@ -772,7 +772,7 @@ RELEASE_CHANNEL=development
         // Copy languages.json from release_dir to the Simsapa project's assets/ folder
         let languages_json_src = release_dir.join("languages.json");
 
-        // Use CARGO_MANIFEST_DIR to get the cli/ directory, then go up one level to project root
+        // Use CARGO_MANIFEST_DIR to get the bootstrap_cli/ directory, then go up one level to project root
         let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR")
             .context("CARGO_MANIFEST_DIR environment variable not set")?;
         let project_assets_dir = PathBuf::from(cargo_manifest_dir)

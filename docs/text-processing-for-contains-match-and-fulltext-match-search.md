@@ -58,7 +58,7 @@ Flagged as a possible follow-up, not part of this rule.
 ### DPD dictionary — `dpd_strip_footer()` (`backend/src/helpers.rs`)
 
 Applied by the `strip_dpd_footers_from_plain()` DB pass (`backend/src/db/dpd.rs`,
-wired into `cli/src/bootstrap/dpd.rs` before the dictionaries FTS5 indexes) which
+wired into `bootstrap_cli/src/bootstrap/dpd.rs` before the dictionaries FTS5 indexes) which
 recomputes only `definition_plain` (never `definition_html`) as
 `compact_rich_text( dpd_strip_footer( dpd_strip_sutta_ref_paragraphs( definition_html ) ) )`.
 Footer boilerplate is **interleaved with real content** (example verse, declension

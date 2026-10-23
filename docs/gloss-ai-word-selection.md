@@ -661,7 +661,7 @@ shield because it covers both runtime AI selections (`ai-selected`) and shipped
 agent rows (`built-in-agent-checked`). Flagged answers are a `confidence` field
 on the entry, never a pseudo-origin.
 
-**`gloss-corpus-explore`** (`cli/src/gloss_corpus_explore.rs`) is a read-only
+**`gloss-corpus-explore`** (`bootstrap_cli/src/gloss_corpus_explore.rs`) is a read-only
 frequency/n-gram scan of the shipped suttas that generates review-ready candidate
 session files:
 
@@ -677,7 +677,7 @@ session files:
 
 It counts surface forms with the **same** `clean_word_pali` + word-key
 normalization the gloss uses, keeps only ambiguous non-Common-Words words, mines
-2–4-word n-grams (shared module `cli/src/gloss_ngrams.rs`), groups occurrences by
+2–4-word n-grams (shared module `bootstrap_cli/src/gloss_ngrams.rs`), groups occurrences by
 normalized context (dedup key only), and emits `simsapa-gloss-session` files whose
 `words_data` is produced by **`process_word_for_glossing` itself** — so options,
 uids, `example_sentence` and `context_hash` are identical-by-construction to what
@@ -687,7 +687,7 @@ Being a Rust subcommand rather than a Python client of the localhost API was a
 deliberate decision (PRD §7.6): the API exposes **no gloss-processing route**, so
 Python would have to re-implement the DPD lookup + cleaning + normalization +
 hashing pipeline, and any drift silently produces cache keys that never match
-in-app glossing. The `cli` crate already links `backend`, so parity is free.
+in-app glossing. The `bootstrap_cli` crate already links `backend`, so parity is free.
 Tantivy is deliberately unused — its stemming conflates the inflected surface
 forms the scan must count separately.
 
@@ -707,9 +707,9 @@ Gotchas found while building it:
 
 ### The agent review stage: `gloss-agent-check`
 
-**`gloss-agent-check {prepare|apply|status}`** (`cli/src/gloss_agent_check.rs`;
+**`gloss-agent-check {prepare|apply|status}`** (`bootstrap_cli/src/gloss_agent_check.rs`;
 `--data-cache` defaults to `../../bootstrap-assets-resources/gloss-data-cache`,
-run from `cli/`; `SIMSAPA_DIR` must point at the dist assets because `apply`
+run from `bootstrap_cli/`; `SIMSAPA_DIR` must point at the dist assets because `apply`
 validates uids against the real dictionaries):
 
 - **`prepare <candidate.json> [--out FILE]`** emits the shared
@@ -744,7 +744,7 @@ agent-checked files are never edited by hand, which preserves the
 identical-by-construction guarantee of options, uids and context hashes.
 
 **`import-gloss-data <appdata.sqlite3> [dir-or-files]`**
-(`cli/src/import_gloss_data.rs`, default input `gloss-data-cache/`) scans the
+(`bootstrap_cli/src/import_gloss_data.rs`, default input `gloss-data-cache/`) scans the
 committed session exports and writes the confirmed entries into the target DB.
 For a directory input it scans the top level **plus the `human-checked/` and
 `agent-checked/` subdirs explicitly** (otherwise non-recursive — which is what
@@ -780,7 +780,7 @@ It also prints:
   which is the metric to watch as the bank grows.
 
 The **bootstrap** runs the same import into the freshly built appdata DB *before*
-`appdata.tar.bz2` is created (`cli/src/bootstrap/mod.rs`), after the phrase-table
+`appdata.tar.bz2` is created (`bootstrap_cli/src/bootstrap/mod.rs`), after the phrase-table
 seeding; its `has_session_files` gate checks the top level **and** the
 `human-checked/` / `agent-checked/` subdirs. So: **a new database version ships
 new built-in data** — there is no in-app re-seeding or version guard. An import
@@ -831,10 +831,10 @@ as the context windows, so the two sides cannot drift.
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
-| CLI | `cli/src/import_gloss_data.rs`, `cli/src/gloss_corpus_explore.rs`, `cli/src/gloss_ngrams.rs`, `cli/src/gloss_agent_check.rs` |
+| CLI | `bootstrap_cli/src/import_gloss_data.rs`, `bootstrap_cli/src/gloss_corpus_explore.rs`, `bootstrap_cli/src/gloss_ngrams.rs`, `bootstrap_cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
-| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs`, `backend/tests/test_gloss_upgrade_export.rs`, in-module tests in `cli/src/gloss_agent_check.rs` |
+| Tests | `backend/tests/test_gloss_word_resolution.rs`, `backend/tests/test_gloss_session_export.rs`, `backend/tests/test_gloss_upgrade_export.rs`, in-module tests in `bootstrap_cli/src/gloss_agent_check.rs` |
 
 No per-write `ANALYZE` for the two new tables (same rationale as
 `gloss_prompts_history`; see
@@ -984,7 +984,7 @@ sense) and cases (c)/(d) as one line per **visible** component (lock filtering
 applied) with that component's selected sense. All state persists in
 `words_data_json`, so JSON export / Open JSON and history restore carry it.
 
-The gloss data-bank format (`cli/src/gloss_agent_check.rs`, the `/gloss-agent-check`
+The gloss data-bank format (`bootstrap_cli/src/gloss_agent_check.rs`, the `/gloss-agent-check`
 skill, `import-gloss-data`) handles the new item/response formats incl. `d` items
 and imports the `deconstruction` value. Pre-existing `candidates/` session files
 were **regenerated** with `gloss-corpus-explore` (no compat mapping — pre-release).
