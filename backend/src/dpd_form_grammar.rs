@@ -18,14 +18,22 @@ pub fn pos_class(pos: &str) -> &str {
 }
 
 /// The `parse` of every triple whose lemma is the headword's `lemma_clean` and
-/// whose class is `pos_class(pos)`, in DPD's order, duplicates kept.
+/// whose class is `pos_class(pos)`, in DPD's order, duplicates kept. A `noun`
+/// triple also needs the parse's gender (its first word: `masc`, `nt`, `fem`)
+/// to equal the headword's `pos`, so `nt nom sg` of `magga 7` is not given to
+/// the masc `magga 1`. Verbs have no such check: a `pr` headword's forms
+/// include every tense (`bhavati` gets `fut 3rd pl`).
 ///
 /// Called once per headword, so when several homonyms match (`bhavissati
 /// 1/2/3`, all `fut`) each gets the entry: DPD's data cannot tell them apart.
 pub fn assign_form_grammar(lemma_clean: &str, pos: &str, raw: &[GrammarTriple]) -> Vec<String> {
     let class = pos_class(pos);
     raw.iter()
-        .filter(|[lemma, triple_class, _]| lemma == lemma_clean && triple_class == class)
+        .filter(|[lemma, triple_class, parse]| {
+            lemma == lemma_clean
+                && triple_class == class
+                && (class != "noun" || parse.split(' ').next() == Some(pos))
+        })
         .map(|[_, _, parse]| parse.clone())
         .collect()
 }
@@ -80,6 +88,31 @@ mod tests {
         // Right lemma, wrong class.
         assert!(assign_form_grammar("bhagavant", "pron", &raw).is_empty());
         assert!(assign_form_grammar("bhagavant", "masc", &[]).is_empty());
+    }
+
+    fn maggam_noun_raw() -> Vec<GrammarTriple> {
+        vec![
+            triple("magga", "noun", "masc acc sg"),
+            triple("magga", "noun", "nt nom sg"),
+            triple("magga", "noun", "nt acc sg"),
+            triple("magga", "adj", "nt nom sg"),
+        ]
+    }
+
+    #[test]
+    fn assign_noun_by_gender() {
+        let raw = maggam_noun_raw();
+        assert_eq!(assign_form_grammar("magga", "masc", &raw), vec!["masc acc sg"]);
+        assert_eq!(assign_form_grammar("magga", "nt", &raw), vec!["nt nom sg", "nt acc sg"]);
+        assert!(assign_form_grammar("magga", "fem", &raw).is_empty());
+        // Adjectives take every gender.
+        assert_eq!(assign_form_grammar("magga", "adj", &raw), vec!["nt nom sg"]);
+    }
+
+    #[test]
+    fn assign_verb_any_tense() {
+        let raw = vec![triple("bhavati", "verb", "fut 3rd pl")];
+        assert_eq!(assign_form_grammar("bhavati", "pr", &raw), vec!["fut 3rd pl"]);
     }
 
     #[test]

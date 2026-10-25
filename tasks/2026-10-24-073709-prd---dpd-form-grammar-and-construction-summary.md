@@ -78,8 +78,9 @@ each split component's grammar list. `/word.json` also gains
   matching headword's `form_grammar` (`carati 1.1` → `["fut 3rd pl"]` for
   `carissanti`). When my tag is in none of them, I have a review item.
 - **As the same script**, when an entry was not given to any headword (a
-  lemma the row's headword list does not contain, such as `maggi` in the
-  `maggaṁ` row), I can still see it in `form_grammar_raw`.
+  class no `pos` maps to, such as `katama interr masc nom sg` in the `katamo`
+  row, whose headword `katama` is `pron`), I can still see it in
+  `form_grammar_raw`.
 - **As a script checking iti forms**, for `cittan'ti` I read the split
   `cittaṁ + iti` and find `["citta","noun","nt nom sg"]` in the `cittaṁ`
   component's `form_grammar_raw`.
@@ -223,8 +224,13 @@ each split component's grammar list. `/word.json` also gains
    accessor next to `Lookup::headwords_unpack()` in `dpd_models.rs`, e.g.
    `Lookup::grammar_unpack()`.
 9. **Assignment rule.** An entry `[lemma, class, parse]` is assigned to
-   **every** headword in the result's `headwords` list for which both hold:
-   - `headword.lemma_clean == lemma`, and
+   **every** headword in the result's `headwords` list for which all hold:
+   - `headword.lemma_clean == lemma`,
+   - for a `noun` entry, the parse's first word (its gender: `masc`, `nt` or
+     `fem`) equals `headword.pos`, so `nt nom sg` of `magga 7` (`nt`) is not
+     given to `magga 1` (`masc`). Verbs get no such check, since a `pr`
+     headword's forms include every tense (`bhavati` gets `fut 3rd pl`), and
+     adjectives and pronouns take every gender; and
    - `pos_class(headword.pos) == class`, where `pos_class` maps DPD's
      fine-grained `pos` to the `lookup.grammar` class:
 
@@ -242,10 +248,17 @@ each split component's grammar list. `/word.json` also gains
    `form_grammar_raw`.
 
    The classes `interr`, `prep` and `adv` occur in the column with no
-   identically named `pos`. Whether they map to `pron` / `ind` (or to nothing)
-   is decided by the measurement in FR 21 before the map is finalised; until
-   then they map to themselves, so those entries stay unassigned rather than
-   wrongly assigned.
+   identically named `pos`. They map to themselves, so their entries stay
+   unassigned: the FR 21 measurement found no single `pos` behind any of them
+   (`interr` lemmas are `adj` 871 times, `pron` 212, and mixed sets; `prep` is
+   always mixed; `adv` is `adj` or `masc`).
+
+   Measured on `v0.4.20260501` (FR 21): every entry's lemma is among its row's
+   headwords, so these three classes (1,542 of 922,707 entries, 0.17%) are the
+   only unassigned entries. Every `noun` entry's parse starts with `masc`, `nt`
+   or `fem`, and every one has at least one headword of that gender, so the
+   gender condition removes only cross-gender duplicates (24,620 of 439,350
+   noun assignments) and leaves no noun entry unassigned.
 10. Assignment is a pure function over (headword rows, raw list), in
     `backend/`, unit-tested without the DB.
 
@@ -347,8 +360,11 @@ each split component's grammar list. `/word.json` also gains
     - `bhavissanti`: both `bhavati` and all three `bhavissati` headwords have
       `["fut 3rd pl"]`; `bhavissantī` (`fem`) has `["fem voc sg"]`; `bhavissa`
       (`cond`) and the `sandhi` headword have `[]`.
-    - `maggaṁ`: an entry whose lemma is not a headword
-      (`maggi`) is in `form_grammar_raw` and in no headword's `form_grammar`.
+    - `maggaṁ`: `maggi` (`50561/dpd`, `aor`) gets `["reflx aor 1st sg"]`;
+      masc `magga 1` gets only `["masc acc sg"]`, and nt `magga 7` the three
+      `nt` parses.
+    - `katamo`: the `interr` entry is in `form_grammar_raw` and in no
+      headword's `form_grammar`.
     - `cittan'ti`: result `form_grammar_raw == []`; split `cittaṁ + iti`'s
       `cittaṁ` component raw contains `["citta","noun","nt nom sg"]`; its
       `iti` component raw is `[]`.
@@ -466,7 +482,8 @@ each split component's grammar list. `/word.json` also gains
 
 ## 9. Open Questions
 
-1. **`interr` / `prep` / `adv`** mapping: decided by the FR 21 measurement.
+1. **`interr` / `prep` / `adv`** mapping: decided by the FR 21 measurement
+   — left unmapped (FR 9).
 2. **Should a malformed summary line fail the bootstrap** (non-zero exit) so
    a DPD template change is noticed? Proposed: no, `warn(...)` only,
    consistent with "report, never repair"; revisit after the first DPD

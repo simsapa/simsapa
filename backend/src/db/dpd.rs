@@ -21,7 +21,7 @@ use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
 use crate::types::{
     SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup,
-    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent,
+    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent, GrammarTriple,
     FormSplitKind, FormSplitSource,
 };
 use crate::logger::{info, error};
@@ -1874,6 +1874,19 @@ impl LookupRowCache {
     fn headword_ids(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<i32>> {
         Ok(self.get(db_conn, key)?.map(lookup_row_headword_ids).unwrap_or_default())
     }
+
+    /// The grammar triples of the exact row for `key`, in the row's order.
+    /// Empty when there is no row or it has no grammar.
+    fn grammar(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<GrammarTriple>> {
+        Ok(self.get(db_conn, key)?.map(|row| row.grammar_unpack()).unwrap_or_default())
+    }
+
+    /// The component for `word`: its exact row's headword uids and grammar.
+    fn component(&mut self, db_conn: &mut SqliteConnection, word: String) -> Result<FormComponent> {
+        let uids = dpd_uids(&self.headword_ids(db_conn, &word)?);
+        let form_grammar_raw = self.grammar(db_conn, &word)?;
+        Ok(FormComponent { word, uids, form_grammar_raw })
+    }
 }
 
 fn lookup_row_headword_ids(row: &Lookup) -> Vec<i32> {
@@ -1907,6 +1920,8 @@ struct PendingForm {
     invalid_note: Option<&'static str>,
     headword_ids: Vec<i32>,
     deconstructions: Vec<FormDeconstruction>,
+    /// The grammar of the row that supplied `headword_ids`.
+    form_grammar_raw: Vec<GrammarTriple>,
 }
 
 impl PendingForm {
@@ -1919,13 +1934,14 @@ impl PendingForm {
                 note: Some(note.to_string()),
                 headwords: Vec::new(),
                 deconstructions: Vec::new(),
+                form_grammar_raw: Vec::new(),
             };
         }
 
         let mut form_headwords = Vec::with_capacity(self.headword_ids.len());
         for id in &self.headword_ids {
             match headwords.get(id) {
-                Some(hw) => form_headwords.push(FormHeadword::from_headword(hw, &self.lookup_key)),
+                Some(hw) => form_headwords.push(FormHeadword::from_headword(hw, &self.lookup_key, &self.form_grammar_raw)),
                 None => error(&format!(
                     "lookup_forms_exact(): lookup row '{}' names headword id {}, which has no dpd_headwords row",
                     self.lookup_key, id
@@ -1948,6 +1964,7 @@ impl PendingForm {
             note: None,
             headwords: form_headwords,
             deconstructions: self.deconstructions,
+            form_grammar_raw: self.form_grammar_raw,
         }
     }
 }
@@ -2041,12 +2058,18 @@ fn resolve_form_exact(
             invalid_note,
             headword_ids: Vec::new(),
             deconstructions: Vec::new(),
+            form_grammar_raw: Vec::new(),
         });
     }
 
-    let (headword_ids, splits, has_iti_breakdown) = match cache.get(db_conn, &key)? {
-        Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row), row_has_iti_breakdown(row)),
-        None => (Vec::new(), Vec::new(), false),
+    let (headword_ids, splits, has_iti_breakdown, form_grammar_raw) = match cache.get(db_conn, &key)? {
+        Some(row) => (
+            lookup_row_headword_ids(row),
+            lookup_row_splits(row),
+            row_has_iti_breakdown(row),
+            row.grammar_unpack(),
+        ),
+        None => (Vec::new(), Vec::new(), false, Vec::new()),
     };
 
     if let Some(base) = iti_base
@@ -2063,6 +2086,7 @@ fn resolve_form_exact(
         invalid_note: None,
         headword_ids,
         deconstructions,
+        form_grammar_raw,
     })
 }
 
@@ -2100,7 +2124,7 @@ fn iti_rule_form(
         Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row)),
         None => (Vec::new(), Vec::new()),
     };
-    let iti = FormComponent { word: "iti".to_string(), uids: dpd_uids(&cache.headword_ids(db_conn, "iti")?) };
+    let iti = cache.component(db_conn, "iti".to_string())?;
 
     let mut deconstructions = Vec::with_capacity(base_splits.len() + 1);
     if !base_ids.is_empty() || base_splits.is_empty() {
@@ -2108,7 +2132,7 @@ fn iti_rule_form(
             split: format!("{} + iti", base),
             kind: FormSplitKind::ItiSandhi,
             source: FormSplitSource::ItiRule,
-            components: vec![FormComponent { word: base.to_string(), uids: dpd_uids(&base_ids) }, iti.clone()],
+            components: vec![cache.component(db_conn, base.to_string())?, iti.clone()],
         });
     }
     for d in dpd_splits(db_conn, cache, base_splits)? {
@@ -2128,6 +2152,9 @@ fn iti_rule_form(
         invalid_note: None,
         headword_ids: Vec::new(),
         deconstructions,
+        // The joined row's grammar is the analysis the iti rule rejected, and
+        // the base's is on its component.
+        form_grammar_raw: Vec::new(),
     })
 }
 
@@ -2146,8 +2173,7 @@ fn dpd_splits(
         };
         let mut components = Vec::with_capacity(words.len());
         for word in words {
-            let uids = dpd_uids(&cache.headword_ids(db_conn, &word)?);
-            components.push(FormComponent { word, uids });
+            components.push(cache.component(db_conn, word)?);
         }
         res.push(FormDeconstruction { split, kind, source: FormSplitSource::Dpd, components });
     }

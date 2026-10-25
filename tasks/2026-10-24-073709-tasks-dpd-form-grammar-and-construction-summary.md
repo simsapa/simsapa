@@ -130,39 +130,39 @@ Save raw bodies with `curl -s … > file` (no `jq`), so key order is kept.
 **Depends on.** 1.0; the existing `PendingForm`, `resolve_form_exact()`,
 `iti_rule_form()`, `dpd_splits()` and `LookupRowCache`.
 
-- [ ] 2.0 Form grammar and root fields in the exact lookup
-  - [ ] 2.1 Add the fields to `FormHeadword`, `FormComponent` and
+- [x] 2.0 Form grammar and root fields in the exact lookup
+  - [x] 2.1 Add the fields to `FormHeadword`, `FormComponent` and
         `FormLookupResult` (Specs). Fix every constructor the compiler
         reports (`iti_rule_form()`'s `iti` and base components, `dpd_splits()`,
         `PendingForm::finish()`'s invalid branch, tests that build these
         structs).
-  - [ ] 2.2 Add `form_grammar_raw: Vec<GrammarTriple>` to `PendingForm`. In
+  - [x] 2.2 Add `form_grammar_raw: Vec<GrammarTriple>` to `PendingForm`. In
         `resolve_form_exact()`, take it from the same `cache.get(key)` row as
         `headword_ids`; `[]` for invalid, no row, and the `iti_rule_form()`
         path.
-  - [ ] 2.3 Add a `LookupRowCache::grammar(&mut self, conn, key) -> Result<Vec<GrammarTriple>>`
+  - [x] 2.3 Add a `LookupRowCache::grammar(&mut self, conn, key) -> Result<Vec<GrammarTriple>>`
         helper next to `headword_ids()`, and use it to fill each component's
         `form_grammar_raw` in `dpd_splits()` and in `iti_rule_form()` (the base
         component and the shared `iti` component).
-  - [ ] 2.4 Pass `form_grammar_raw` into `FormHeadword::from_headword()` from
+  - [x] 2.4 Pass `form_grammar_raw` into `FormHeadword::from_headword()` from
         `PendingForm::finish()`, and fill `root_base` / `root_sign` from the
         headword row.
-  - [ ] 2.5 Check the facts with `sqlite3` and record them in
+  - [x] 2.5 Check the facts with `sqlite3` and record them in
         `test_lookup_forms_exact.rs`'s header: the `grammar` of
         `bhagavantaṁ`, `carissanti`, `bhavissanti`, `cittanti`, `cittaṁ`,
         `maggaṁ`, `iti`; the `pos` / `lemma_clean` of the headwords those rows
         list; `root_base` / `root_sign` of `carati 1.1` (26276) and
         `bhaṇāmase` (49236).
-  - [ ] 2.6 Add the tests of PRD FR 22 that do not need
+  - [x] 2.6 Add the tests of PRD FR 22 that do not need
         `construction_summary`: `bhagavantaṁ`, `carissanti`, `bhavissanti`,
         `maggaṁ` (`maggi` only in the raw list), `cittan'ti` (result raw `[]`,
         `cittaṁ` component raw contains `["citta","noun","nt nom sg"]`, `iti`
         component raw `[]`), `magga’’nti` (result raw `[]`, base component raw
         = the `maggaṁ` row's triples), and `root_base` / `root_sign` of
         `carati 1.1`.
-  - [ ] 2.7 Add to `test_gloss_text_exact.rs`: an exact token for
+  - [x] 2.7 Add to `test_gloss_text_exact.rs`: an exact token for
         `bhagavantaṁ` carries non-empty `form_grammar` on `49139/dpd`.
-  - [ ] 2.8 **Coverage measurement** (PRD FR 21): a throwaway script or
+  - [x] 2.8 **Coverage measurement** (PRD FR 21): a throwaway script or
         `#[ignore]`d test over the whole `lookup` table that counts entries
         assigned to ≥ 1 headword, to > 1, and to none, by class, and lists
         sample unassigned rows. Record the numbers in this file under the
@@ -172,9 +172,62 @@ Save raw bodies with `curl -s … > file` (no `jq`), so key order is kept.
         otherwise leave it unmapped and write down why. If a large share is
         unassigned for another reason, stop and ask the user before changing
         the rule.
-  - [ ] 2.9 Run `test_lookup_forms_exact`, `test_gloss_text_exact`,
+  - [x] 2.9 Run `test_lookup_forms_exact`, `test_gloss_text_exact`,
         `test_dpd_lookup`, `test_dpd_lookup_grouped`. The existing assertions
         (including the iti drift test) pass unchanged.
+
+  **2.8 coverage, measured 2026-10-25 on `v0.4.20260501`** (a read-only
+  Python script over the whole `lookup` table, applying the same rule): 290,283
+  rows have grammar, with 922,707 entries. 921,165 are assigned to ≥ 1 headword,
+  155,385 of them to > 1, and 1,542 (0.17%) to none.
+
+  | class | ≥ 1 | > 1 | none |
+  |---|---:|---:|---:|
+  | adj | 357,913 | 35,575 | 0 |
+  | noun | 330,475 | 60,777 | 0 |
+  | pp | 83,065 | 28,792 | 0 |
+  | verb | 59,063 | 16,663 | 0 |
+  | prp | 59,050 | 8,900 | 0 |
+  | ptp | 23,538 | 4,014 | 0 |
+  | ordin | 2,866 | 0 | 0 |
+  | card | 1,948 | 62 | 0 |
+  | pron | 1,735 | 545 | 0 |
+  | root | 734 | 0 | 0 |
+  | letter | 409 | 6 | 0 |
+  | ve | 227 | 0 | 0 |
+  | cs | 142 | 51 | 0 |
+  | interr | 0 | 0 | 1,161 |
+  | prep | 0 | 0 | 335 |
+  | adv | 0 | 0 | 46 |
+
+  **No entry names a lemma that is missing from its row's headwords.** Every
+  unassigned entry is `interr` / `prep` / `adv`, and in each case the lemma is
+  a headword under another `pos`. **Decision: leave all three unmapped**,
+  because none maps to a single `pos`. The `pos` sets of the same-lemma
+  headwords are:
+  - `interr` (`ka`, `ki`, `katara`, `katama`, …): `adj` 871, `pron` 212,
+    `nt`+`pron` 39, `adj`+`nt` 22, `nt` 10, `masc` 5, `pr` 2;
+  - `prep` (`pubba`, `anta`, `antara`, `antarika`, `dūra`): always mixed:
+    `adj`+`nt` 112, `adj` 91, `adj`+`masc` 68, `adj`+`masc`+`nt` 64;
+  - `adv` (`pañcadvārika`, `bhāradvāja`): `adj` 31, `masc` 15.
+
+  Mapping any of them would assign entries by guess. They stay visible in
+  `form_grammar_raw` (test: `katamo` → `katama interr masc nom sg`, `katama` is
+  `pron`).
+
+  **PRD corrected** (user story 3, FR 9, FR 22): `maggi` is a headword of the
+  `maggaṁ` row (`50561/dpd`, `aor`), so its entry is assigned; `katamo` is the
+  unassigned-entry test.
+
+  **Noun gender condition, added with the user's go-ahead** (PRD FR 9): a
+  `noun` entry is assigned only when the parse's first word equals the
+  headword's `pos`, because without it the masc `magga 1`–`6` also got
+  `nt nom sg` from `magga 7`. Measured first: all 330,475 noun entries start
+  with `masc` / `nt` / `fem` (126,184 / 131,559 / 72,732); every one keeps at
+  least one headword (314,583 had only same-gender headwords, 15,892 lose
+  cross-gender ones, 0 become unassigned); 24,620 of 439,350 noun
+  assignments are removed. Verbs are not checked (a `pr` headword's forms
+  include every tense).
 
 ### 3.0 `construction_summary` at bootstrap
 
