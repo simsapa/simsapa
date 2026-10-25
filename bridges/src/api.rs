@@ -1643,10 +1643,17 @@ fn word_json_response(uid: &str, verbose: Option<&str>) -> (Status, Json<serde_j
 
     match resolved {
         Some(rw) => {
+            let body = match get_app_data().word_json_with_extras(&rw) {
+                Ok(v) => v,
+                Err(e) => {
+                    error(&format!("word_json_response(): uid={}: {}", uid, e));
+                    return json_error(Status::InternalServerError, &e.to_string());
+                }
+            };
             if verbose {
-                (Status::Ok, Json(word_hit_verbose_envelope(uid, rw.canonical_uid(), rw.as_json())))
+                (Status::Ok, Json(word_hit_verbose_envelope(uid, rw.canonical_uid(), &body)))
             } else {
-                (Status::Ok, Json(serde_json::Value::Array(vec![rw.as_json().clone()])))
+                (Status::Ok, Json(serde_json::Value::Array(vec![body])))
             }
         }
         None => {

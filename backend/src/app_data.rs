@@ -1857,6 +1857,34 @@ impl AppData {
         None
     }
 
+    /// The `/word.json` body for a resolved word: `rw.as_json()`, plus
+    /// `construction_summary` (a string, or `null` when the installed
+    /// `dpd.sqlite3` predates the column) on the `dpd_headwords` lane. Every
+    /// other lane is returned unchanged.
+    ///
+    /// Kept out of `resolve_word_uid()`, which the word-page renderer also
+    /// calls, so the extra query runs only for `/word.json`.
+    pub fn word_json_with_extras(&self, rw: &ResolvedWord) -> Result<serde_json::Value> {
+        let mut value = rw.as_json().clone();
+        if rw.kind() != ResolvedWordKind::DpdHeadword {
+            return Ok(value);
+        }
+
+        let headword_id: i32 = rw.canonical_uid()
+            .strip_suffix("/dpd")
+            .and_then(|n| n.parse().ok())
+            .ok_or_else(|| anyhow!("word_json_with_extras(): not a numeric DPD headword uid: {}", rw.canonical_uid()))?;
+
+        let mut conn = self.dbm.dpd.get_conn().context("word_json_with_extras(): no dpd db connection")?;
+        let summary = crate::db::dpd::construction_summaries_by_ids(&mut conn, &[headword_id])?
+            .and_then(|m| m.get(&headword_id).cloned());
+
+        let obj = value.as_object_mut()
+            .ok_or_else(|| anyhow!("word_json_with_extras(): the headword row is not a JSON object: {}", rw.canonical_uid()))?;
+        obj.insert("construction_summary".to_string(), serde_json::json!(summary));
+        Ok(value)
+    }
+
     /// Wrap a found `dict_words` row as a `ResolvedWord` (structured value =
     /// rendered-HTML row, both lanes the same record for a plain dict word).
     fn dict_word_resolved(&self, dw: DictWord) -> Option<ResolvedWord> {

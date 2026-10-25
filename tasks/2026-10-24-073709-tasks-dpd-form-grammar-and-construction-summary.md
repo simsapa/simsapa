@@ -15,7 +15,7 @@ PRD: [2026-10-24-073709-prd---dpd-form-grammar-and-construction-summary.md](./20
 - `bootstrap_cli/src/bootstrap/dpd.rs` - No change: `dpd_bootstrap()` imports the DPD StarDict before `dpd_migrate()` → `import_migrate_dpd()`, which now runs the step (confirmed).
 - `backend/tests/test_lookup_forms_exact.rs` - Grammar and root-field tests on the dist DB; header comment with the `sqlite3` commands.
 - `backend/tests/test_gloss_text_exact.rs` - One test that an exact token carries `form_grammar`.
-- `backend/tests/test_dpd_construction_summary.rs` *(new)* - The populate step on a hand-built temp DPD DB (reads the dist `dictionaries.sqlite3`); later: old-DB tolerance (temporary SQLite file without the column), the populate step on a temporary copy, and the value tests (skip with a log line while the dist DB lacks the column).
+- `backend/tests/test_dpd_construction_summary.rs` *(new)* - The populate step on a hand-built temp DPD DB (reads the dist `dictionaries.sqlite3`); old-DB tolerance (temporary SQLite file without the column), the populate step on a temporary copy, and the value tests (skip with a log line while the dist DB lacks the column).
 - `backend/tests/test_resolve_word_uid.rs` - `word_json_with_extras()`: the numeric lane carries `construction_summary`, the `dict_words` lane does not.
 - `bridges/src/api.rs` - `word_json_response()`: call `word_json_with_extras()` instead of `rw.as_json()` (both the plain and the `verbose` body). `/lookup_forms` and `/gloss_text` need no change.
 - `docs/database-migrations.md` - `dpd.sqlite3` row: the bootstrap-added column and the runtime tolerance.
@@ -337,30 +337,43 @@ DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
 
 **Depends on.** 2.0 (the field exists), 3.0 (the column's name and type).
 
-- [ ] 4.0 `construction_summary` at runtime
-  - [ ] 4.1 Implement `construction_summaries_by_ids()` and the once-only warning.
-  - [ ] 4.2 Wire it into `lookup_forms_exact()` / `PendingForm::finish()`.
-  - [ ] 4.3 Add `word_json_with_extras()` in `app_data.rs` (it reads through
+- [x] 4.0 `construction_summary` at runtime
+  - [x] 4.1 Implement `construction_summaries_by_ids()` and the once-only warning.
+  - [x] 4.2 Wire it into `lookup_forms_exact()` / `PendingForm::finish()`.
+  - [x] 4.3 Add `word_json_with_extras()` in `app_data.rs` (it reads through
         `construction_summaries_by_ids()` on a pooled DPD connection; the id is
         parsed from the canonical `<id>/dpd` uid), and switch
         `word_json_response()` in `bridges/src/api.rs` to it for both the plain
         and the `verbose` body. Confirm `resolve_word_uid()` is untouched.
-  - [ ] 4.4 Old-DB tolerance test in `test_dpd_construction_summary.rs`: a temp
+  - [x] 4.4 Old-DB tolerance test in `test_dpd_construction_summary.rs`: a temp
         SQLite file with a `dpd_headwords` table **without** the column →
         `has_construction_summary_column()` is `false`; with it → `true`, and
         the uncached read returns the values.
-  - [ ] 4.5 Value tests that read the dist DB (`carati 1.1` →
+  - [x] 4.5 Value tests that read the dist DB (`carati 1.1` →
         `Some("√car + a + ti")`, `bhaṇāmase` → `Some("√bhaṇ + a + mase")`,
         `/word.json` lane for `49236/dpd` carries it): if the dist DB lacks the
         column, the test logs that it is skipping and returns; otherwise it
         asserts. Also assert that, against today's dist DB, `lookup_forms_exact()`
         still succeeds and gives `construction_summary: None`.
-  - [ ] 4.6 Add to `test_resolve_word_uid.rs`: `word_json_with_extras()` on
+  - [x] 4.6 Add to `test_resolve_word_uid.rs`: `word_json_with_extras()` on
         `49236/dpd` has the `construction_summary` key (value or `null`); on
         the `dict_words` lane (`dhamma-1-01/dpd`) it has **no** such key and
         equals `rw.as_json()`.
-  - [ ] 4.7 Run the 2.9 test set, `test_resolve_word_uid`, the new test file,
+  - [x] 4.7 Run the 2.9 test set, `test_resolve_word_uid`, the new test file,
         and `make build -B`. Fix warnings in touched code.
+
+  Done 2026-10-25. In `db/dpd.rs`: `has_construction_summary_column()`
+  (uncached), `read_construction_summaries()` (uncached, chunked, bound
+  `Integer` placeholders via `into_boxed()`), and the cached
+  `construction_summaries_by_ids()` (`OnceLock<bool>`, one `warn(...)` when
+  absent). All three are `pub` so the integration tests can reach the
+  uncached pair. `word_json_with_extras()` returns `Result<Value>`, not a bare
+  `Value`, so a DB error reaches the route, which answers `500` via
+  `json_error()`; `resolve_word_uid()` is untouched. The dist DB has no column
+  yet, so the 4.5 value tests take their `null` branch (logged).
+  `cd backend && cargo test`: 1254 passed, 0 failed, 19 ignored;
+  `make build -B` clean (only pre-existing C++ warnings; the qmltypes guard
+  did not fire).
 
 ### 5.0 Populate the dist DPD DB and verify end to end
 

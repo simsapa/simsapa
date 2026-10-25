@@ -1926,7 +1926,9 @@ struct PendingForm {
 }
 
 impl PendingForm {
-    fn finish(self, headwords: &HashMap<i32, DpdHeadword>) -> FormLookupResult {
+    /// `summaries` is `None` when the installed DB has no
+    /// `construction_summary` column.
+    fn finish(self, headwords: &HashMap<i32, DpdHeadword>, summaries: Option<&HashMap<i32, String>>) -> FormLookupResult {
         if let Some(note) = self.invalid_note {
             return FormLookupResult {
                 input: self.input,
@@ -1942,7 +1944,11 @@ impl PendingForm {
         let mut form_headwords = Vec::with_capacity(self.headword_ids.len());
         for id in &self.headword_ids {
             match headwords.get(id) {
-                Some(hw) => form_headwords.push(FormHeadword::from_headword(hw, &self.lookup_key, &self.form_grammar_raw)),
+                Some(hw) => {
+                    let mut fh = FormHeadword::from_headword(hw, &self.lookup_key, &self.form_grammar_raw);
+                    fh.construction_summary = summaries.and_then(|m| m.get(id).cloned());
+                    form_headwords.push(fh);
+                }
                 None => error(&format!(
                     "lookup_forms_exact(): lookup row '{}' names headword id {}, which has no dpd_headwords row",
                     self.lookup_key, id
@@ -1996,8 +2002,9 @@ impl DpdDbHandle {
             .filter(|i| seen.insert(*i))
             .collect();
         let headwords = headwords_by_ids(db_conn, &ids)?;
+        let summaries = construction_summaries_by_ids(db_conn, &ids)?;
 
-        Ok(pending.into_iter().map(|p| p.finish(&headwords)).collect())
+        Ok(pending.into_iter().map(|p| p.finish(&headwords, summaries.as_ref())).collect())
     }
 
     /// DPD's own release (`db_info.dpd_release_version`, e.g.
@@ -2179,6 +2186,73 @@ fn dpd_splits(
         res.push(FormDeconstruction { split, kind, source: FormSplitSource::Dpd, components });
     }
     Ok(res)
+}
+
+/// Whether the installed `dpd_headwords` has the bootstrap column
+/// `construction_summary`, cached for the process on the first answer. A DB
+/// that gains the column while the app runs is seen after a restart.
+static HAS_CONSTRUCTION_SUMMARY_COLUMN: OnceLock<bool> = OnceLock::new();
+
+#[derive(QueryableByName)]
+struct ConstructionSummaryRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    construction_summary: String,
+}
+
+/// Whether `dpd_headwords` has the `construction_summary` column, from
+/// `PRAGMA table_info`. Uncached; `construction_summaries_by_ids()` caches it.
+pub fn has_construction_summary_column(db_conn: &mut SqliteConnection) -> Result<bool> {
+    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
+        .load(db_conn)
+        .context("PRAGMA table_info(dpd_headwords) failed")?;
+    Ok(cols.iter().any(|c| c.name == "construction_summary"))
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, in chunked `IN (…)`
+/// queries. Assumes the column exists; ids without a row are absent.
+pub fn read_construction_summaries(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashMap<i32, String>> {
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let mut query = sql_query(format!(
+            "SELECT id, construction_summary FROM dpd_headwords WHERE id IN ({})",
+            placeholders
+        ))
+        .into_boxed();
+        for id in chunk {
+            query = query.bind::<Integer, _>(*id);
+        }
+        let rows: Vec<ConstructionSummaryRow> = query
+            .load(db_conn)
+            .context("read_construction_summaries failed")?;
+        for row in rows {
+            res.insert(row.id, row.construction_summary);
+        }
+    }
+    Ok(res)
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, or `None` when the
+/// installed `dpd.sqlite3` predates the column (it is added at bootstrap and
+/// is not in the Diesel model). The column check runs once per process and an
+/// absent column is logged once.
+pub fn construction_summaries_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<Option<HashMap<i32, String>>> {
+    let present = match HAS_CONSTRUCTION_SUMMARY_COLUMN.get() {
+        Some(p) => *p,
+        None => {
+            let p = has_construction_summary_column(db_conn)?;
+            if HAS_CONSTRUCTION_SUMMARY_COLUMN.set(p).is_ok() && !p {
+                warn("dpd_headwords has no construction_summary column (dpd.sqlite3 predates it); construction_summary is null");
+            }
+            p
+        }
+    };
+    if !present {
+        return Ok(None);
+    }
+    read_construction_summaries(db_conn, ids).map(Some)
 }
 
 /// The `dpd_headwords` rows for `ids`, read in chunked `IN (…)` queries.
