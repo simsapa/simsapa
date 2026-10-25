@@ -1870,10 +1870,10 @@ impl AppData {
             return Ok(value);
         }
 
-        let headword_id: i32 = rw.canonical_uid()
-            .strip_suffix("/dpd")
-            .and_then(|n| n.parse().ok())
-            .ok_or_else(|| anyhow!("word_json_with_extras(): not a numeric DPD headword uid: {}", rw.canonical_uid()))?;
+        let headword_id: i32 = value.get("id")
+            .and_then(|v| v.as_i64())
+            .and_then(|n| i32::try_from(n).ok())
+            .ok_or_else(|| anyhow!("word_json_with_extras(): the headword row has no integer id: {}", rw.canonical_uid()))?;
 
         let mut conn = self.dbm.dpd.get_conn().context("word_json_with_extras(): no dpd db connection")?;
         let summary = crate::db::dpd::construction_summaries_by_ids(&mut conn, &[headword_id])?

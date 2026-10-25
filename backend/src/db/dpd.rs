@@ -2204,7 +2204,7 @@ struct ConstructionSummaryRow {
 /// Whether `dpd_headwords` has the `construction_summary` column, from
 /// `PRAGMA table_info`. Uncached; `construction_summaries_by_ids()` caches it.
 pub fn has_construction_summary_column(db_conn: &mut SqliteConnection) -> Result<bool> {
-    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
         .load(db_conn)
         .context("PRAGMA table_info(dpd_headwords) failed")?;
     Ok(cols.iter().any(|c| c.name == "construction_summary"))
@@ -2634,8 +2634,9 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// One row of `PRAGMA table_info(<table>)`, only the column name.
 #[derive(QueryableByName)]
-struct BoldDefColInfo {
+struct TableColumnInfo {
     #[diesel(sql_type = Text)]
     name: String,
 }
@@ -2674,7 +2675,7 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
         .with_context(|| format!("Failed to connect to {}", database_url))?;
 
     // Pre-check column existence (SQLite ADD COLUMN has no IF NOT EXISTS).
-    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(bold_definitions)")
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(bold_definitions)")
         .load(&mut conn)
         .context("PRAGMA table_info(bold_definitions) failed")?;
     let has_uid = cols.iter().any(|c| c.name == "uid");
@@ -2859,10 +2860,7 @@ pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<Constru
         .with_context(|| format!("Failed to connect to {}", database_url))?;
 
     // SQLite ADD COLUMN has no IF NOT EXISTS.
-    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
-        .load(&mut conn)
-        .context("PRAGMA table_info(dpd_headwords) failed")?;
-    if !cols.iter().any(|c| c.name == "construction_summary") {
+    if !has_construction_summary_column(&mut conn)? {
         sql_query("ALTER TABLE dpd_headwords ADD COLUMN construction_summary VARCHAR NOT NULL DEFAULT ''")
             .execute(&mut conn)
             .context("Failed to ADD COLUMN construction_summary")?;
