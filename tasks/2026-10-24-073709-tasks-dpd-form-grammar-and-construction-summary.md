@@ -12,10 +12,10 @@ PRD: [2026-10-24-073709-prd---dpd-form-grammar-and-construction-summary.md](./20
 - `backend/src/db/dpd.rs` - `lookup_forms_exact()`, `PendingForm` / `finish()`, `resolve_form_exact()`, `iti_rule_form()`, `dpd_splits()`, `headwords_by_ids()`, `LookupRowCache`. New: `construction_summaries_by_ids()`, `populate_dpd_construction_summaries()`, `ConstructionSummaryReport`; the call in `import_migrate_dpd()`.
 - `backend/src/app_data.rs` - New `word_json_with_extras()` (adds `construction_summary` for the DPD headword lane). **Do not** change `resolve_word_uid()`: `render_word_html_by_uid()` (GUI word pages, `/word_html`) calls it too.
 - `bootstrap_cli/src/main.rs` - New `PopulateDpdConstructionSummary { dpd_db_path }` subcommand.
-- `bootstrap_cli/src/bootstrap/dpd.rs` - No change expected (the step runs inside `import_migrate_dpd()`); confirm.
+- `bootstrap_cli/src/bootstrap/dpd.rs` - No change: `dpd_bootstrap()` imports the DPD StarDict before `dpd_migrate()` → `import_migrate_dpd()`, which now runs the step (confirmed).
 - `backend/tests/test_lookup_forms_exact.rs` - Grammar and root-field tests on the dist DB; header comment with the `sqlite3` commands.
 - `backend/tests/test_gloss_text_exact.rs` - One test that an exact token carries `form_grammar`.
-- `backend/tests/test_dpd_construction_summary.rs` *(new)* - Old-DB tolerance (temporary SQLite file without the column), the populate step on a temporary copy, and the value tests (skip with a log line while the dist DB lacks the column).
+- `backend/tests/test_dpd_construction_summary.rs` *(new)* - The populate step on a hand-built temp DPD DB (reads the dist `dictionaries.sqlite3`); later: old-DB tolerance (temporary SQLite file without the column), the populate step on a temporary copy, and the value tests (skip with a log line while the dist DB lacks the column).
 - `backend/tests/test_resolve_word_uid.rs` - `word_json_with_extras()`: the numeric lane carries `construction_summary`, the `dict_words` lane does not.
 - `bridges/src/api.rs` - `word_json_response()`: call `word_json_with_extras()` instead of `rw.as_json()` (both the plain and the `verbose` body). `/lookup_forms` and `/gloss_text` need no change.
 - `docs/database-migrations.md` - `dpd.sqlite3` row: the bootstrap-added column and the runtime tolerance.
@@ -273,9 +273,9 @@ Save raw bodies with `curl -s … > file` (no `jq`), so key order is kept.
 **Depends on.** The existing bootstrap order: `dpd_bootstrap()` imports the
 DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
 
-- [ ] 3.0 `construction_summary` at bootstrap
-  - [ ] 3.1 Implement `extract_dpd_construction_summary()` and `SummaryExtract`.
-  - [ ] 3.2 Unit tests with the three real lines from the PRD
+- [x] 3.0 `construction_summary` at bootstrap
+  - [x] 3.1 Implement `extract_dpd_construction_summary()` and `SummaryExtract`.
+  - [x] 3.2 Unit tests with the three real lines from the PRD
         (`bhaṇāmase` → `√bhaṇ + a + mase`, `carati 1.1` → `√car + a + ti`,
         `bhagavant 1` with `; lit.` → `√bhaj + a + vant`; copy each line from
         the dist `dictionaries.sqlite3` with `sqlite3`), a no-meaning line
@@ -283,16 +283,16 @@ DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
         bracket (`akataññujātaka`), no `<div class=dpd>`, and each malformed
         shape (two `[`, `[` with no `] <span class=gray>`, `<b>` inside,
         `&gt;` inside).
-  - [ ] 3.3 Implement `ConstructionSummaryReport` and
+  - [x] 3.3 Implement `ConstructionSummaryReport` and
         `populate_dpd_construction_summaries()` (Specs). Use `sql_query`
         only; do not touch `dpd_schema.rs` or `DpdHeadword`.
-  - [ ] 3.4 Call it from `import_migrate_dpd()` and log the report (Specs).
+  - [x] 3.4 Call it from `import_migrate_dpd()` and log the report (Specs).
         Map its error into the function's `String` error like the
         neighbouring calls.
-  - [ ] 3.5 Add the `PopulateDpdConstructionSummary` subcommand to
+  - [x] 3.5 Add the `PopulateDpdConstructionSummary` subcommand to
         `bootstrap_cli/src/main.rs` (doc comment: what it does and that it
         writes the given DB in place); check the path with `try_exists()`.
-  - [ ] 3.6 Test in `backend/tests/test_dpd_construction_summary.rs`: build a
+  - [x] 3.6 Test in `backend/tests/test_dpd_construction_summary.rs`: build a
         small temp SQLite DB (the dist `dpd.sqlite3` is 2.5 GB; never copy it
         in a test) with a minimal `dpd_headwords` table (`id`, `lemma_1`,
         `meaning_1`, `construction`) holding `bhaṇāmase` (49236),
@@ -301,7 +301,7 @@ DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
         `get_app_data()`), and assert: the column exists, the two values,
         `""` for the dummy, and a second run gives the same values
         (idempotent). Delete the temp file.
-  - [ ] 3.7 `cargo test` for the new tests; `cd bootstrap_cli && cargo build`.
+  - [x] 3.7 `cargo test` for the new tests; `cd bootstrap_cli && cargo build`.
 
 ### 4.0 `construction_summary` at runtime
 

@@ -1335,6 +1335,18 @@ enum Commands {
         dpd_output_path: Option<PathBuf>,
     },
 
+    /// Add and fill `dpd_headwords.construction_summary` in an existing DPD
+    /// SQLite database, from the summary lines of the DPD pages already
+    /// imported into Simsapa's dictionaries database. This is the step
+    /// `import-migrate-dpd` runs; use it to update a DB without a full
+    /// bootstrap. Writes the given DB in place: run it with the app closed.
+    #[command(arg_required_else_help = true)]
+    PopulateDpdConstructionSummary {
+        /// Path to the DPD SQLite database to update in place
+        #[arg(value_name = "DPD_DB_PATH")]
+        dpd_db_path: PathBuf,
+    },
+
     /// Import confirmed gloss word-selection data from exported gloss session
     /// JSON files as built-in cache rows into the given appdata database.
     /// Directory inputs are scanned non-recursively for *.json files.
@@ -1809,6 +1821,16 @@ fn main() {
              } else {
                  db::dpd::import_migrate_dpd(&dpd_input_path, dpd_output_path, None)
              }
+        }
+
+        Commands::PopulateDpdConstructionSummary { dpd_db_path } => {
+            match dpd_db_path.try_exists() {
+                Ok(true) => db::dpd::populate_dpd_construction_summaries(&dpd_db_path)
+                    .map(|report| report.log())
+                    .map_err(|e| format!("{}", e)),
+                Ok(false) => Err(format!("DPD database not found: {:?}", dpd_db_path)),
+                Err(e) => Err(format!("Cannot access DPD database {:?}: {}", dpd_db_path, e)),
+            }
         }
 
         Commands::ImportGlossData { db_path, inputs } => {

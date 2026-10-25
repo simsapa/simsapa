@@ -24,7 +24,8 @@ use crate::types::{
     FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent, GrammarTriple,
     FormSplitKind, FormSplitSource,
 };
-use crate::logger::{info, error};
+use crate::logger::{info, warn, error};
+use crate::dpd_form_grammar::{extract_dpd_construction_summary, SummaryExtract};
 use crate::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 
 pub type DpdDbHandle = DatabaseHandle;
@@ -2239,6 +2240,11 @@ pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf
     populate_bold_definitions_derived_columns(&output_path, limit)
         .map_err(|e| format!("{}", e))?;
 
+    // The DPD StarDict pages are already in dictionaries.sqlite3.
+    populate_dpd_construction_summaries(&output_path)
+        .map_err(|e| format!("{}", e))?
+        .log();
+
     create_dpd_indexes(&output_path).map_err(|e| format!("{}", e))?;
 
     Ok(())
@@ -2685,6 +2691,176 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
 
     info(&format!("Updated {} bold_definitions rows", updates.len()));
     Ok(())
+}
+
+/// How many items of each `ConstructionSummaryReport` list are logged.
+const CONSTRUCTION_SUMMARY_REPORT_SAMPLE: usize = 20;
+
+/// The outcome of `populate_dpd_construction_summaries()`.
+#[derive(Debug, Clone, Default)]
+pub struct ConstructionSummaryReport {
+    /// Headwords written (every headword, so a re-run is complete).
+    pub updated: usize,
+    pub with_summary: usize,
+    pub without_summary: usize,
+    /// `(lemma_1, summary line)` of the headwords whose summary line did not
+    /// have the shape the extraction relies on.
+    pub malformed: Vec<(String, String)>,
+    /// `lemma_1` of the headwords with both a `meaning_1` and a
+    /// `construction` that got no summary.
+    pub meaning_and_construction_but_none: Vec<String>,
+}
+
+impl ConstructionSummaryReport {
+    /// Log the counts, then each list's total and its first few items. The
+    /// lists are logged as warnings but never fail the caller: the source data
+    /// is reported, never repaired.
+    pub fn log(&self) {
+        info(&format!(
+            "construction_summary: {} headwords updated, {} with a summary, {} without, {} malformed summary lines",
+            self.updated, self.with_summary, self.without_summary, self.malformed.len(),
+        ));
+
+        if !self.malformed.is_empty() {
+            warn(&format!(
+                "construction_summary: {} malformed summary lines (first {} shown)",
+                self.malformed.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for (lemma_1, line) in self.malformed.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: malformed: {}: {}", lemma_1, line));
+            }
+        }
+
+        if !self.meaning_and_construction_but_none.is_empty() {
+            warn(&format!(
+                "construction_summary: {} headwords with meaning_1 and construction but no summary (first {} shown)",
+                self.meaning_and_construction_but_none.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for lemma_1 in self.meaning_and_construction_but_none.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: no summary: {}", lemma_1));
+            }
+        }
+    }
+}
+
+#[derive(QueryableByName)]
+struct DpdSummaryLineRow {
+    #[diesel(sql_type = Text)]
+    word: String,
+    #[diesel(sql_type = Text)]
+    summary_line: String,
+}
+
+#[derive(QueryableByName)]
+struct HeadwordSummaryInputRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    lemma_1: String,
+    #[diesel(sql_type = Integer)]
+    has_meaning_and_construction: i32,
+}
+
+/// Add `dpd_headwords.construction_summary` if it is missing, and fill it for
+/// every headword from the summary line of its rendered DPD page in
+/// `dictionaries.sqlite3` (`dict_words.word` = `lemma_1`, `dict_label =
+/// 'dpd'`). A headword with no page or no well-formed bracket gets `""`.
+///
+/// Reads the dictionaries DB through `get_app_data()`, so the DPD StarDict
+/// must already be imported there. Writes only the DPD DB at `dpd_db_path`.
+///
+/// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
+/// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
+/// the `table!`. See docs/simsapa-localhost-api-search-endpoints.md §19.1.
+pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<ConstructionSummaryReport> {
+    info("populate_dpd_construction_summaries()");
+
+    let abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
+    let database_url = abs
+        .to_str()
+        .context("dpd.sqlite3 path is not valid UTF-8")?
+        .to_string();
+
+    let mut conn = SqliteConnection::establish(&database_url)
+        .with_context(|| format!("Failed to connect to {}", database_url))?;
+
+    // SQLite ADD COLUMN has no IF NOT EXISTS.
+    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
+        .load(&mut conn)
+        .context("PRAGMA table_info(dpd_headwords) failed")?;
+    if !cols.iter().any(|c| c.name == "construction_summary") {
+        sql_query("ALTER TABLE dpd_headwords ADD COLUMN construction_summary VARCHAR NOT NULL DEFAULT ''")
+            .execute(&mut conn)
+            .context("Failed to ADD COLUMN construction_summary")?;
+    }
+
+    // Cut the summary line out in SQL: the DPD pages hold hundreds of MB of
+    // definition_html, and sql_query loads the whole result.
+    let lines: Vec<DpdSummaryLineRow> = get_app_data().dbm.dictionaries.do_read(|db_conn| {
+        sql_query(
+            "SELECT word, \
+                    substr(definition_html, instr(definition_html, '<div class=dpd><p>'), \
+                           instr(substr(definition_html, instr(definition_html, '<div class=dpd><p>')), '</div>') + 5) \
+                    AS summary_line \
+             FROM dict_words \
+             WHERE dict_label = 'dpd' AND instr(definition_html, '<div class=dpd><p>') > 0",
+        )
+        .load(db_conn)
+    }).context("Failed to read the DPD summary lines from dict_words")?;
+
+    let lines: HashMap<String, String> = lines.into_iter()
+        .map(|r| (r.word, r.summary_line))
+        .collect();
+
+    let headwords: Vec<HeadwordSummaryInputRow> = sql_query(
+        "SELECT id, lemma_1, \
+                (COALESCE(meaning_1, '') <> '' AND COALESCE(construction, '') <> '') AS has_meaning_and_construction \
+         FROM dpd_headwords ORDER BY id",
+    )
+    .load(&mut conn)
+    .context("Failed to load dpd_headwords rows")?;
+
+    let mut report = ConstructionSummaryReport::default();
+    let mut updates: Vec<(i32, String)> = Vec::with_capacity(headwords.len());
+
+    for hw in &headwords {
+        let line = lines.get(&hw.lemma_1);
+        let summary = match line.map(|l| extract_dpd_construction_summary(l)) {
+            Some(SummaryExtract::Found(s)) => Some(s),
+            Some(SummaryExtract::Malformed) => {
+                report.malformed.push((hw.lemma_1.clone(), line.cloned().unwrap_or_default()));
+                None
+            }
+            Some(SummaryExtract::NoBracket) | None => None,
+        };
+
+        match summary {
+            Some(s) => {
+                report.with_summary += 1;
+                updates.push((hw.id, s));
+            }
+            None => {
+                report.without_summary += 1;
+                if hw.has_meaning_and_construction != 0 {
+                    report.meaning_and_construction_but_none.push(hw.lemma_1.clone());
+                }
+                updates.push((hw.id, String::new()));
+            }
+        }
+    }
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        for (id, summary) in &updates {
+            sql_query("UPDATE dpd_headwords SET construction_summary = ? WHERE id = ?")
+                .bind::<Text, _>(summary)
+                .bind::<Integer, _>(*id)
+                .execute(conn)?;
+        }
+        Ok(())
+    })?;
+
+    report.updated = updates.len();
+    Ok(report)
 }
 
 /// Save cf_set and sandhi_contractions
