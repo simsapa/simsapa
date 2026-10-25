@@ -469,6 +469,10 @@ pub enum FormSplitSource {
     ItiRule,
 }
 
+/// One entry of DPD's `lookup.grammar` column: `[lemma, class, parse]`, e.g.
+/// `["bhagavant", "noun", "masc acc sg"]`. Serialised as a JSON array.
+pub type GrammarTriple = [String; 3];
+
 /// One DPD headword of an exact form lookup, with the fields a caller compares
 /// inline. `uid` is the numeric `<id>/dpd` form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

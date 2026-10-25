@@ -6,6 +6,7 @@ use regex::Regex;
 
 use crate::db::dpd_schema::*;
 use crate::logger::{debug, warn, error};
+use crate::types::GrammarTriple;
 
 #[derive(Debug, Clone)]
 pub enum UDpdWord {
@@ -190,6 +191,26 @@ impl Lookup {
         };
 
         res
+    }
+
+    /// Parses .grammar to its `[lemma, class, parse]` triples, in DPD's order.
+    ///
+    /// An empty grammar is the common case (every iti and indeclinable row), so
+    /// unlike `deconstructor_unpack()` it logs nothing.
+    pub fn grammar_unpack(&self) -> Vec<GrammarTriple> {
+        if self.grammar.is_empty() {
+            return Vec::new();
+        }
+        match serde_json::from_str(&self.grammar) {
+            Ok(x) => x,
+            Err(e) => {
+                error(&format!("Cannot parse grammar on lookup_key: {}\n'{}'\n'{}'",
+                         e,
+                         &self.lookup_key,
+                         &self.grammar));
+                Vec::new()
+            }
+        }
     }
 
     // === Methods used in Simsapa ===

@@ -61,10 +61,18 @@ the script that took them in
 `/home/gambhiro/prods/apps/simsapa-ng-project/baselines/dpd-form-grammar-and-construction-summary/`.
 Save raw bodies with `curl -s … > file` (no `jq`), so key order is kept.
 
-- [ ] 0.0 Baselines from the unchanged build
-  - [ ] 0.1 `POST /lookup_forms` with `["bhagavantaṁ", "carissanti", "bhavissanti", "cittan'ti", "magga’’nti", "maggaṁ", "bhaṇāmase", "atthaññe", "iti", "xyzqq", ""]`.
-  - [ ] 0.2 `POST /gloss_text` with `"exact": true` on one line containing `bhagavantaṁ`, `cittan'ti` and `iti`.
-  - [ ] 0.3 `GET /word.json?uid=49236/dpd` (`bhaṇāmase`) and `GET /word.json?uid=dhamma-1-01/dpd` (the `dict_words` lane, which must not change).
+- [x] 0.0 Baselines from the unchanged build
+  - [x] 0.1 `POST /lookup_forms` with `["bhagavantaṁ", "carissanti", "bhavissanti", "cittan'ti", "magga’’nti", "maggaṁ", "bhaṇāmase", "atthaññe", "iti", "xyzqq", ""]`.
+  - [x] 0.2 `POST /gloss_text` with `"exact": true` on one line containing `bhagavantaṁ`, `cittan'ti` and `iti`.
+  - [x] 0.3 `GET /word.json?uid=49236/dpd` (`bhaṇāmase`) and `GET /word.json?uid=dhamma-1-01/dpd` (the `dict_words` lane, which must not change).
+
+  Taken 2026-10-25 on app `1.1.0-alpha.2`, `dpd_version` `v0.4.20260501`,
+  into `baselines/dpd-form-grammar-and-construction-summary/before/` by
+  `take-baselines.sh` (re-run with `after` as the argument for 5.4). All four
+  requests answered `200`. `/lookup_forms` statuses: `found` ×7, `deconstructed`
+  ×2 (`magga’’nti` → `maggaṁ`, `atthaññe`), `not_found` (`xyzqq`), `invalid`
+  (`""`). The exact gloss line (`Evaṁ bhagavantaṁ cittan'ti iti vadati.`) gave
+  5 tokens, all `found`.
 
 ### 1.0 Grammar column primitives
 
@@ -85,20 +93,20 @@ Save raw bodies with `curl -s … > file` (no `jq`), so key order is kept.
 
 **Depends on.** The existing `Lookup` model only. No DB access in the new module.
 
-- [ ] 1.0 Grammar column primitives
-  - [ ] 1.1 Read `Lookup::headwords_unpack()` / `deconstructor_unpack()` in
+- [x] 1.0 Grammar column primitives
+  - [x] 1.1 Read `Lookup::headwords_unpack()` / `deconstructor_unpack()` in
         `dpd_models.rs` to match their style (both return `[]` and log
         `error(...)` on bad JSON; neither panics).
-  - [ ] 1.2 Add `GrammarTriple` to `types.rs` and `Lookup::grammar_unpack()`.
-  - [ ] 1.3 Create `backend/src/dpd_form_grammar.rs` with `pos_class()` and
+  - [x] 1.2 Add `GrammarTriple` to `types.rs` and `Lookup::grammar_unpack()`.
+  - [x] 1.3 Create `backend/src/dpd_form_grammar.rs` with `pos_class()` and
         `assign_form_grammar()`; register it in `lib.rs`.
-  - [ ] 1.4 Unit tests (in the module, `#[cfg(test)]`): every row of the
+  - [x] 1.4 Unit tests (in the module, `#[cfg(test)]`): every row of the
         `pos_class` table plus an unknown `pos`; the `bhagavantaṁ` triples
         assigned to (`bhagavant`, `masc`) → `["masc acc sg"]` and
         (`bhagavant`, `adj`) → `["nt nom sg", "masc acc sg", "nt acc sg"]`;
         a lemma that matches nothing → `[]`; duplicates kept. `grammar_unpack`
         tests on a hand-built `Lookup`: `""`, `"[]"`, two triples, malformed.
-  - [ ] 1.5 `cd backend && cargo test --lib dpd_form_grammar` and the
+  - [x] 1.5 `cd backend && cargo test --lib dpd_form_grammar` and the
         `grammar_unpack` tests pass; `cargo build` has no new warnings.
 
 ### 2.0 Form grammar and root fields in the exact lookup
