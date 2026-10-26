@@ -11,6 +11,7 @@ mod commands;
 mod exit;
 mod in_use;
 mod output;
+mod setup;
 mod startup;
 
 use std::path::PathBuf;
@@ -102,6 +103,10 @@ enum Commands {
 
     /// Serve the localhost API (the GUI app's data routes) until Ctrl-C
     Serve(commands::serve::ServeArgs),
+
+    /// Download the Simsapa databases (about 4.8 GB on disk), or add sutta
+    /// languages to an existing setup
+    Setup(setup::SetupArgs),
 }
 
 fn parse_cli() -> Cli {
@@ -215,6 +220,15 @@ fn run(cli: &Cli) -> CliResult {
             simsapa_backend::set_write_api_port_file(true);
             simsapa_api::init_app_globals_api();
             commands::serve::run(args, cli.json, lock, port_file)
+        }
+        Commands::Setup(args) => {
+            if args.list_languages {
+                return setup::list_languages(cli.json);
+            }
+            // No preamble first: setup runs without databases, and runs the
+            // full preamble itself once they are installed.
+            let _lock = acquire_for_writing()?;
+            setup::run(args, cli.json)
         }
     }
 }

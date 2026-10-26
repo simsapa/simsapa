@@ -56,7 +56,7 @@ table**.
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
 | Navigation-tree build       | `bootstrap_cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
 
-The `simsapa` CLI (`backend_cli/src/commands/import.rs`) calls the same entry
+The `simsapa` CLI (`backend_cli/src/commands/import.rs`, `backend_cli/src/setup.rs`) calls the same entry
 points as the GUI, so the `ANALYZE` sites are the same and it adds none of its
 own:
 
@@ -66,6 +66,7 @@ own:
 | `simsapa import stardict`      | `dictionary_manager_core::import_user_dir`           |
 | `simsapa import epub`          | `AppData::import_epub_to_db`                         |
 | `simsapa import html`          | `AppData::import_html_to_db`                         |
+| `simsapa setup --languages`    | `asset_helpers::import_suttas_lang_to_appdata`       |
 
 A stopped StarDict import with no entries kept removes its empty row through
 `delete_user_dictionary`, as the GUI does, which `ANALYZE`s too.

@@ -47,10 +47,6 @@ impl CliError {
         Self::new(NOT_FOUND, message)
     }
 
-    pub fn interrupted() -> Self {
-        Self::new(INTERRUPTED, "Interrupted.")
-    }
-
     pub fn interrupted_with(message: impl Into<String>) -> Self {
         Self::new(INTERRUPTED, message)
     }
