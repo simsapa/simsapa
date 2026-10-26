@@ -4015,6 +4015,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
+name = "simsapa_api"
+version = "1.1.0-alpha.2"
+dependencies = [
+ "anyhow",
+ "percent-encoding",
+ "rocket",
+ "rocket_cors",
+ "serde",
+ "serde_json",
+ "simsapa_backend",
+ "tokio",
+]
+
+[[package]]
 name = "simsapa_backend"
 version = "1.1.0-alpha.2"
 dependencies = [
@@ -4083,7 +4097,6 @@ dependencies = [
  "http 1.3.1",
  "include_dir",
  "lazy_static",
- "percent-encoding",
  "qt-build-utils",
  "regex",
  "reqwest",
@@ -4093,6 +4106,7 @@ dependencies = [
  "rocket_ws",
  "serde",
  "serde_json",
+ "simsapa_api",
  "simsapa_backend",
  "tar",
  "tokio",

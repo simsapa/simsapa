@@ -7,11 +7,16 @@
 - `bootstrap_cli/Cargo.toml` - `indexmap` dependency dropped (only `appdata_stats` used it).
 
 ### New crate `api/` (`simsapa_api`)
-- `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
-- `api/src/lib.rs` - `ApiConfig`, `build_rocket()`, `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`. No embedded static assets (PRD FR 9a).
-- `api/src/routes/*.rs` (or one `api/src/routes.rs`) - The moved data routes, grouped (search, words, suttas and book pages, gloss, misc).
-- `api/src/helpers.rs` - `parse_search_mode`, `parse_search_area`, `build_search_params`, `run_search`, `run_suttas_search`, UID fallbacks, verbose envelopes, path helpers.
-- `api/src/tests.rs` (or `#[cfg(test)]` modules) - The unit tests moved from `bridges/src/api.rs`.
+- `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `anyhow`, `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
+- `api/Cargo.lock` - Seeded from `bridges/Cargo.lock` so both resolve the same versions.
+- `api/src/lib.rs` - The route inventory (doc comment), `ApiConfig` (+ `ApiConfig::loopback`), `shared_routes()`, `build_rocket()` (returns `anyhow::Result<Rocket<Build>>`, so a `DbManager` failure is reported rather than a panic), `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`, route-list tests. No embedded static assets (PRD FR 9a).
+- `api/src/helpers.rs` - Request/response types, `parse_search_mode`/`parse_search_area`, `build_search_params`, `run_search` (returns `ApiSearchResult`, not `Json`), the UID-fallback helpers, `run_suttas_search`, `run_api_search` (the `/search` body: area/mode defaults, Dictionary `Combined → DpdLookup` remap; `Err` = 400 message), `run_dict_combined_search`, path helpers, `lookup_sutta_with_fallback`, `render_error_status`, `json_error`, verbose envelopes, `HealthInfo` + `health_info(&DbManager)`; unit tests moved from `bridges`.
+- `api/src/routes/mod.rs` - Route modules.
+- `api/src/routes/search.rs` - Search routes, search options, completion lists.
+- `api/src/routes/words.rs` - Word JSON/HTML routes (incl. `/get_word_html_by_uid`).
+- `api/src/routes/suttas.rs` - Sutta HTML/JSON, content block, translations, display settings, book pages, `/get_book_spine_item_html_by_uid`, `/navigation_timeline`.
+- `api/src/routes/gloss.rs` - `/gloss_text` (+ `split_gloss_paragraphs`, `gloss_word_processing_options` for the CLI) and `/lookup_forms`.
+- `api/src/routes/misc.rs` - `/`, `/shutdown`, `/logger`, `/health`.
 
 ### New crate `backend_cli/` (`simsapa_backend_cli`, binary `simsapa`)
 - `backend_cli/Cargo.toml` - Binary crate; CLI-only `[profile.release]`.
@@ -38,8 +43,9 @@
 - `backend/src/asset_helpers.rs` - Existing `import_suttas_lang_to_appdata` (reused by setup).
 
 ### `bridges` changes
-- `bridges/Cargo.toml` - Add `simsapa_api = { path = "../api" }`; keep `rig-core`, `rocket_ws`.
-- `bridges/src/api.rs` - Keeps only the cxx-qt `ffi` block, GUI-driving routes, AI routes, the static-asset routes with `APP_ASSETS` / `AssetsHandler` (PRD FR 9a), `start_webserver()` (now calling `simsapa_api::build_rocket`), `shutdown_webserver*`, `create_linux_desktop_icon_file`.
+- `bridges/Cargo.toml` - Adds `simsapa_api = { path = "../api" }`; drops `percent-encoding` (moved with `/sutta_content_block`); keeps `rig-core`, `rocket_ws`.
+- `bridges/Cargo.lock` - Updated for `simsapa_api`.
+- `bridges/src/api.rs` - Keeps only the cxx-qt `ffi` block, GUI-driving routes, AI routes, the static-asset routes with `APP_ASSETS` / `AssetsHandler` (PRD FR 9a), `start_webserver()` (now calling `simsapa_api::build_rocket(ApiConfig::loopback(port))`, returning early with a logged error on an unusable port or a `build_rocket` error), `shutdown_webserver*`, `create_linux_desktop_icon_file`, and `LookupWindowRequest`. Imports `pathbuf_to_forward_slash_string`, `lookup_sutta_with_fallback` and the globals from `simsapa_api`.
 - `bridges/src/sutta_bridge.rs` - `compatible_assets_release()` removed; calls `update_checker::compatible_assets_release()` (done).
 - `bridges/src/asset_manager.rs` - Parity comment only.
 - `bridges/assets/qml/DownloadAppdataWindow.qml` - Parity comment only.
@@ -146,7 +152,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 3.3 Make `bootstrap_cli` call the moved functions (its printing code stays for now). `cd bootstrap_cli && cargo build && cargo test`; `cd backend && cargo test`.
   - [x] 3.4 Update the PRD FR 25/26 table with the import-path correction above, so the PRD and tasks agree. (Done while generating the task list.)
 
-- [ ] 4.0 Create the `simsapa_api` crate and move the data routes out of `bridges/src/api.rs` (FR 2, 4, 7–11)
+- [x] 4.0 Create the `simsapa_api` crate and move the data routes out of `bridges/src/api.rs` (FR 2, 4, 7–11)
 
   > **Specs:**
   > ```rust
@@ -176,16 +182,16 @@ Update the file after completing each sub-task, not just after completing an ent
   > record the final list in the new doc (12.x).
   > **Depends on:** 2.0 (the `api` crate uses `default-features = false`).
 
-  - [ ] 4.1 Make a route inventory: list every route in today's `routes![…]` block (`bridges/src/api.rs` ~2510) with "shared" / "GUI" / "AI" / "asset", based on grepping each handler body for `ffi::`, `clipboard_manager`, `get_internal_storage_path`, `ai_engine`, `rig`. Save it at the top of the new `api/src/lib.rs` as a comment or in the doc draft.
-  - [ ] 4.2 Create `api/Cargo.toml` (`simsapa_api`, edition 2024, version matching `backend`, license Apache-2.0) with the dependencies listed under Relevant Files. Pin the same `rocket`/`rocket_cors`/`tokio` versions as `bridges/Cargo.toml`. `simsapa_backend = { path = "../backend", default-features = false }`.
-  - [ ] 4.3 Move the shared helpers, `APP_GLOBALS_API` and friends, the request/response structs, and the shared routes into `api/src/`. Leave `APP_ASSETS`/`AssetsHandler` and the asset routes in `bridges`. If an asset route uses a moved helper (e.g. `pathbuf_to_forward_slash_string` in `serve_book_resources`), make that helper `pub` in `simsapa_api` and import it. Make the items `bridges` still needs `pub`.
-  - [ ] 4.4 Confirm `gloss_text` (~2066) uses only `backend` helpers (`process_all_paragraphs`, …) and nothing from `ai_engine`. If a helper it uses sits next to the AI code, move that helper to `simsapa_api`.
-  - [ ] 4.4a Move the exact DPD form lookup with the shared routes: `lookup_forms` (with `LookupFormsRequest`, `LookupFormsResponse`, `json_error`), and `gloss_text`'s exact mode as one unit with `gloss_text` (`GlossTextOptions.exact`, the untagged `GlossTextResponse` enum, `GlossTextError`). Their cores (`lookup_forms_exact()`, `process_all_paragraphs_exact()`, `backend/src/lookup_forms.rs`) are already in `backend`. Keep the `limits` merge (`string` = 2 MiB) in `build_rocket()`'s config, so the CLI server accepts the same bodies. `HealthInfo.dpd_version` moves with `/health`.
-  - [ ] 4.5 Implement `ApiConfig` and `build_rocket()`: merge `address = config.host`, `port = config.port`, `log_level = Off`; attach CORS; mount the shared routes, plus `shutdown` only when `config.mount_shutdown`; `.manage()` an `Arc<DbManager>` created inside (as `start_webserver` does today). No `AssetsHandler`.
-  - [ ] 4.6 Move the unit tests from `bridges/src/api.rs` (`test_parse_search_mode`, `test_parse_search_area`, `test_is_verbose_flag`, the envelope tests) to `api/`. `cd api && cargo test` passes. `cd api && cargo tree | grep -E 'cxx|rig-core|cpal'` prints nothing.
-  - [ ] 4.7 In `bridges`: add `simsapa_api = { path = "../api" }`, delete the moved code, import what remains from `simsapa_api`, and rewrite `start_webserver()` as `init_app_globals_api(); let g = get_app_globals_api(); simsapa_api::build_rocket(ApiConfig { host: 127.0.0.1, port, mount_shutdown: true }).mount("/", routes![<GUI + AI + asset routes>]).manage(AssetsHandler::default()).launch().await`, where `port = u16::try_from(g.api_port)`. `find_port_set_env()` stores `-1` when no port was free: log an error and return without launching, rather than casting `-1` with `as`.
-  - [ ] 4.8 Route parity check: the union of the shared routes and the `bridges` routes equals the 4.1 inventory (same paths, same methods). Do it by diffing the inventory against the two `routes![…]` lists, or by logging Rocket's route table at launch once and comparing.
-  - [ ] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/sutta.json?uid=mn1/pli/ms` (body and `X-Simsapa-Sutta-Uid` header unchanged), `/gloss_text`, `/gloss_text` with `"exact": true`, `/lookup_forms`, and a `/gloss_text` body over 8 KiB still gets `200`); run AI word selection in the Gloss tab.
+  - [x] 4.1 Make a route inventory: list every route in today's `routes![…]` block (`bridges/src/api.rs` ~2510) with "shared" / "GUI" / "AI" / "asset", based on grepping each handler body for `ffi::`, `clipboard_manager`, `get_internal_storage_path`, `ai_engine`, `rig`. Save it at the top of the new `api/src/lib.rs` as a comment or in the doc draft.
+  - [x] 4.2 Create `api/Cargo.toml` (`simsapa_api`, edition 2024, version matching `backend`, license Apache-2.0) with the dependencies listed under Relevant Files. Pin the same `rocket`/`rocket_cors`/`tokio` versions as `bridges/Cargo.toml`. `simsapa_backend = { path = "../backend", default-features = false }`.
+  - [x] 4.3 Move the shared helpers, `APP_GLOBALS_API` and friends, the request/response structs, and the shared routes into `api/src/`. Leave `APP_ASSETS`/`AssetsHandler` and the asset routes in `bridges`. If an asset route uses a moved helper (e.g. `pathbuf_to_forward_slash_string` in `serve_book_resources`), make that helper `pub` in `simsapa_api` and import it. Make the items `bridges` still needs `pub`.
+  - [x] 4.4 Confirm `gloss_text` (~2066) uses only `backend` helpers (`process_all_paragraphs`, …) and nothing from `ai_engine`. If a helper it uses sits next to the AI code, move that helper to `simsapa_api`.
+  - [x] 4.4a Move the exact DPD form lookup with the shared routes: `lookup_forms` (with `LookupFormsRequest`, `LookupFormsResponse`, `json_error`), and `gloss_text`'s exact mode as one unit with `gloss_text` (`GlossTextOptions.exact`, the untagged `GlossTextResponse` enum, `GlossTextError`). Their cores (`lookup_forms_exact()`, `process_all_paragraphs_exact()`, `backend/src/lookup_forms.rs`) are already in `backend`. Keep the `limits` merge (`string` = 2 MiB) in `build_rocket()`'s config, so the CLI server accepts the same bodies. `HealthInfo.dpd_version` moves with `/health`.
+  - [x] 4.5 Implement `ApiConfig` and `build_rocket()`: merge `address = config.host`, `port = config.port`, `log_level = Off`; attach CORS; mount the shared routes, plus `shutdown` only when `config.mount_shutdown`; `.manage()` an `Arc<DbManager>` created inside (as `start_webserver` does today). No `AssetsHandler`.
+  - [x] 4.6 Move the unit tests from `bridges/src/api.rs` (`test_parse_search_mode`, `test_parse_search_area`, `test_is_verbose_flag`, the envelope tests) to `api/`. `cd api && cargo test` passes. `cd api && cargo tree | grep -E 'cxx|rig-core|cpal'` prints nothing.
+  - [x] 4.7 In `bridges`: add `simsapa_api = { path = "../api" }`, delete the moved code, import what remains from `simsapa_api`, and rewrite `start_webserver()` as `init_app_globals_api(); let g = get_app_globals_api(); simsapa_api::build_rocket(ApiConfig { host: 127.0.0.1, port, mount_shutdown: true }).mount("/", routes![<GUI + AI + asset routes>]).manage(AssetsHandler::default()).launch().await`, where `port = u16::try_from(g.api_port)`. `find_port_set_env()` stores `-1` when no port was free: log an error and return without launching, rather than casting `-1` with `as`.
+  - [x] 4.8 Route parity check: the union of the shared routes and the `bridges` routes equals the 4.1 inventory (same paths, same methods). Do it by diffing the inventory against the two `routes![…]` lists, or by logging Rocket's route table at launch once and comparing.
+  - [x] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/sutta.json?uid=mn1/pli/ms` (body and `X-Simsapa-Sutta-Uid` header unchanged), `/gloss_text`, `/gloss_text` with `"exact": true`, `/lookup_forms`, and a `/gloss_text` body over 8 KiB still gets `200`); run AI word selection in the Gloss tab.
 
 - [ ] 5.0 Create the `simsapa_backend_cli` crate skeleton (FR 3, 18–20, 27–29)
 

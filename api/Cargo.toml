@@ -1,0 +1,30 @@
+[package]
+name = "simsapa_api"
+version = "1.1.0-alpha.2"
+edition = "2024"
+authors = ["Gambhiro Bhikkhu <profound.labs@gmail.com>"]
+license = "Apache-2.0"
+
+# The data routes of the localhost HTTP API, shared by the GUI (`bridges`) and
+# the `simsapa` CLI. Qt-free: it must build with no Qt installed. No AI
+# provider (`rig-core`), no WebSocket (`rocket_ws`) and no embedded static
+# assets (`include_dir`) — those stay in `bridges`.
+# See docs/backend-cli-and-npm-package.md.
+
+[lib]
+name = "simsapa_api"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+# No `audio`: the backend's only default feature.
+simsapa_backend = { path = "../backend", default-features = false }
+anyhow = "1.0"
+rocket = { version = "0.5", features = ["json"] }
+rocket_cors = "0.6.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# X-SSP-Columns header value encoding (JSON with non-ASCII labels; decoded
+# client-side with decodeURIComponent).
+percent-encoding = "2"
+tokio = { version = "1.0", features = ["full"] }
