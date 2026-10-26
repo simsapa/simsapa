@@ -2,6 +2,8 @@
 
 pub mod gloss;
 pub mod health;
+pub mod import;
+pub mod index;
 pub mod paths;
 pub mod query;
 pub mod search;

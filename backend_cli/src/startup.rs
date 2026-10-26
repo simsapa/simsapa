@@ -172,7 +172,7 @@ fn has_pending_upgrade_work() -> bool {
     .any(|p| matches!(p.try_exists(), Ok(true)))
 }
 
-fn run_reconcile_with_spinner() -> CliResult {
+pub fn run_reconcile_with_spinner() -> CliResult {
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(ProgressStyle::with_template("{spinner} {msg}").unwrap_or_else(|_| ProgressStyle::default_spinner()));
     spinner.enable_steady_tick(Duration::from_millis(120));

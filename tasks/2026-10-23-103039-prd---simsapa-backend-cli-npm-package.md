@@ -497,9 +497,14 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
       `docs/sutta-navigation-tree.md` names `index rebuild --area suttas --lang
       pli` as one of the three commands a maintainer runs together after
       `import-cst` / `build-navigation-tree`.
-    - `import-stardict-dictionary`, `import-stardict-zip`, `import-epub` and
-      `import-html` stay in `bootstrap_cli` while the bootstrap or a maintainer
-      workflow uses them (check before deleting). The new CLI's `import`
+    - `import-stardict-dictionary`, `import-epub` and `import-html` stay in
+      `bootstrap_cli`: the bootstrap's DPD step calls the
+      `import_stardict_dictionary` function behind the first (built-in
+      dictionaries, `import_stardict_as_new`), and the other two build the
+      shipped library. `import-stardict-zip` was **deleted**: it was a
+      user-dictionary import (`import_user_zip`) that nothing in the bootstrap
+      used (the bootstrap has its own `import_stardict_zip_bootstrap`), and
+      `simsapa import stardict-zip` replaces it. The new CLI's `import`
       commands are separate and use the GUI's code paths (FR 25).
 
     `bootstrap_cli` also keeps: `bootstrap`, `import-cst`, `build-navigation-tree`,

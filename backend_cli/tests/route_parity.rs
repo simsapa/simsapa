@@ -30,6 +30,11 @@ fn cli_stdout(args: &[&str]) -> String {
 fn client() -> Client {
     // SAFETY: set before any thread of this test reads the environment.
     unsafe { std::env::set_var("SIMSAPA_DIR", DIST_SIMSAPA_DIR) };
+    // Don't rotate the dist folder's log.txt, as the CLI doesn't.
+    simsapa_backend::logger::set_host_options(simsapa_backend::logger::LoggerHostOptions {
+        rotate_on_init: false,
+        emit_tracing: false,
+    });
     simsapa_backend::set_write_api_port_file(false);
     simsapa_backend::init_app_globals();
     simsapa_backend::init_app_data();

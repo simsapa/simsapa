@@ -1,6 +1,7 @@
 //! The read-only commands, through the built binary, against the dist
-//! databases (read-only: nothing here writes to them). Skipped when the dist
-//! databases are absent.
+//! databases. The commands write nothing themselves; when nothing else is
+//! using the folder, each first runs the full startup preamble, as opening the
+//! app would. Skipped when the dist databases are absent.
 
 use std::path::Path;
 use std::process::{Command, Output, Stdio};

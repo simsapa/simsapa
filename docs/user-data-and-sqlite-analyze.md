@@ -54,7 +54,21 @@ table**.
 | HTML book import            | `AppData::import_html_to_db` → `html_import::import_html_to_db`       | `appdata`        | wrapper in `app_data.rs` after the inner call returns `Ok`                    |
 | Book delete                 | `SuttaBridge::remove_book` → `appdata::delete_book_by_uid`            | `appdata`        | success arm of `remove_book` in `bridges/src/sutta_bridge.rs`                 |
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
-| Navigation-tree build       | `cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+| Navigation-tree build       | `bootstrap_cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+
+The `simsapa` CLI (`backend_cli/src/commands/import.rs`) calls the same entry
+points as the GUI, so the `ANALYZE` sites are the same and it adds none of its
+own:
+
+| CLI command                    | Entry point                                          |
+|--------------------------------|------------------------------------------------------|
+| `simsapa import stardict-zip`  | `dictionary_manager_core::import_user_zip_member`    |
+| `simsapa import stardict`      | `dictionary_manager_core::import_user_dir`           |
+| `simsapa import epub`          | `AppData::import_epub_to_db`                         |
+| `simsapa import html`          | `AppData::import_html_to_db`                         |
+
+A stopped StarDict import with no entries kept removes its empty row through
+`delete_user_dictionary`, as the GUI does, which `ANALYZE`s too.
 
 ### Pattern for adding a new import
 

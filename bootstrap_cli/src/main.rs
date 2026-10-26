@@ -54,68 +54,6 @@ fn append_dict_label_to_index(lang: &str, dict_label: &str) -> Result<(), String
     Ok(())
 }
 
-/// Import a user-supplied StarDict `.zip` archive.
-///
-/// If `label` is `None`, a label is inferred from the zip filename stem.
-fn import_stardict_zip(zip_path: &Path, label: Option<&str>, lang: &str) -> Result<(), String> {
-    use simsapa_backend::dictionary_manager_core::{import_user_zip, suggested_label_for_zip};
-    use simsapa_backend::stardict_parse::StardictImportProgress;
-
-    match zip_path.try_exists() {
-        Ok(true) => {}
-        Ok(false) => return Err(format!("Zip file not found: {:?}", zip_path)),
-        Err(e) => return Err(format!("Cannot access zip {:?}: {}", zip_path, e)),
-    }
-
-    let resolved_label = match label {
-        Some(l) => l.to_string(),
-        None => {
-            let s = suggested_label_for_zip(zip_path);
-            if s.is_empty() {
-                return Err("Could not infer dictionary label from filename; please pass --label.".to_string());
-            }
-            s
-        }
-    };
-
-    println!("Importing StarDict zip: {}", zip_path.display());
-    println!("Label: {}", resolved_label);
-    println!("Language: {}", lang);
-
-    let cancel = std::sync::atomic::AtomicBool::new(false);
-    let outcome = import_user_zip(zip_path, &resolved_label, lang, &|p| {
-        match p {
-            StardictImportProgress::Extracting { .. } => println!("  extracting..."),
-            StardictImportProgress::Parsing => println!("  parsing..."),
-            StardictImportProgress::InsertingWords { done, total } => {
-                if total > 0 && (done == 0 || done == total || done % 1000 == 0) {
-                    println!("  inserting words: {}/{}", done, total);
-                }
-            }
-            StardictImportProgress::Identified { title, total } => {
-                println!("  importing {}, {} total entries...", title, total);
-            }
-            StardictImportProgress::Done => println!("  done."),
-            StardictImportProgress::Failed { msg } => eprintln!("  failed: {}", msg),
-            StardictImportProgress::Aborted { inserted } => {
-                println!("  aborted (kept {} entries).", inserted);
-            }
-        }
-    }, &cancel)?;
-    let id = outcome.dictionary_id;
-
-    println!("Successfully imported as dictionary id {}", id);
-
-    append_dict_label_to_index(lang, &resolved_label)?;
-
-    let app_data = get_app_data();
-    let now = chrono::Utc::now().naive_utc();
-    app_data.dbm.dictionaries.set_indexed_at_by_label(&resolved_label, now)
-        .map_err(|e| format!("Failed to set indexed_at for '{}': {:#}", resolved_label, e))?;
-
-    Ok(())
-}
-
 /// Export Dhammapada Tipitaka.net suttas from legacy database
 fn export_dhammapada_tipitaka_net(legacy_db_path: &Path, output_db_path: &Path) -> Result<(), String> {
     use simsapa_backend::db::appdata_schema::suttas;
@@ -752,24 +690,6 @@ enum Commands {
         limit: Option<usize>,
     },
 
-    /// Import a StarDict dictionary from a .zip archive (user-imported).
-    /// Extracts the zip into a temporary directory, locates the StarDict files,
-    /// and imports them as a user dictionary.
-    #[command(arg_required_else_help = true)]
-    ImportStardictZip {
-        /// Path to the StarDict .zip archive
-        #[arg(value_name = "ZIP_PATH")]
-        zip_path: PathBuf,
-
-        /// Optional dictionary label. If omitted, inferred from the zip filename.
-        #[arg(long, value_name = "LABEL")]
-        label: Option<String>,
-
-        /// Language code for the imported dictionary
-        #[arg(long, value_name = "LANG", default_value = "en")]
-        lang: String,
-    },
-
     /// Import a newly downloaded or generated DPD SQLite database for use in Simsapa
     /// by migrating the db schema and moving the file to Simsapa's local assets folder.
     /// The input db is modified and migrated before moving.
@@ -1183,10 +1103,6 @@ fn main() {
                  import_stardict_dictionary(&dict_label, &path, limit)
                      .and_then(|_| append_dict_label_to_index("pli", &dict_label))
              }
-        }
-
-        Commands::ImportStardictZip { zip_path, label, lang } => {
-            import_stardict_zip(&zip_path, label.as_deref(), &lang)
         }
 
         Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path } => {

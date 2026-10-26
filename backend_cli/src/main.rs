@@ -6,8 +6,10 @@
 //! only `simsapa serve` builds one, after its blocking steps.
 //! See docs/backend-cli-and-npm-package.md.
 
+mod cancel;
 mod commands;
 mod exit;
+mod in_use;
 mod output;
 mod startup;
 
@@ -19,7 +21,8 @@ use simsapa_backend::logger;
 use simsapa_backend::update_checker::get_app_version;
 
 use crate::exit::{CliError, CliResult, EXIT_CODES_HELP, finish, json_error_document};
-use crate::startup::PreambleMode;
+use crate::in_use::{InUse, WriteLock, WriteLockOutcome, check_in_use, in_use_error, lock_held_error, try_acquire_write_lock};
+use crate::startup::{PreambleMode, data_folder};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -88,6 +91,14 @@ enum Commands {
 
     /// Row and content-source counts of appdata.sqlite3
     Stats(commands::stats::StatsArgs),
+
+    /// Import a StarDict dictionary or an EPUB / HTML book
+    #[command(subcommand)]
+    Import(commands::import::ImportCommands),
+
+    /// Build, rebuild or delete the fulltext search indexes
+    #[command(subcommand)]
+    Index(commands::index::IndexCommands),
 }
 
 fn parse_cli() -> Cli {
@@ -181,10 +192,52 @@ fn run(cli: &Cli) -> CliResult {
             startup::require_databases()?;
             commands::stats::run(args, cli.json)
         }
+        Commands::Import(cmd) => {
+            let _lock = write_preamble()?;
+            commands::import::run(cmd, cli.json)
+        }
+        Commands::Index(cmd) => {
+            let _lock = write_preamble()?;
+            commands::index::run(cmd, cli.json)
+        }
     }
 }
 
-/// The preamble for a read-only command.
-fn read_only_preamble() -> Result<(), CliError> {
-    startup::run_headless_preamble(PreambleMode::ReadOnly)
+/// The preamble for a read-only command. The full preamble writes (it may
+/// delete files, import user data and rebuild the dictionary index), so it runs
+/// only when nothing else is using the folder, under the write lock, which is
+/// released again before the command's own work. Otherwise only the steps that
+/// write nothing run.
+fn read_only_preamble() -> CliResult {
+    if let InUse::Serving { .. } = check_in_use() {
+        return startup::run_headless_preamble(PreambleMode::ReadOnly);
+    }
+    match try_acquire_write_lock(&data_folder())? {
+        WriteLockOutcome::Held => startup::run_headless_preamble(PreambleMode::ReadOnly),
+        WriteLockOutcome::Acquired(_lock) => startup::run_headless_preamble(PreambleMode::Full),
+        WriteLockOutcome::Unsupported => startup::run_headless_preamble(PreambleMode::Full),
+    }
+}
+
+/// The preamble for a command that writes (`import`, `index`; `setup` and
+/// `serve` take the same steps). Refuses with exit code 3 while a server or
+/// another `simsapa` command is using the folder, then runs the full preamble.
+/// Hold the returned lock for the whole command. `None` means this volume
+/// cannot lock files, and the command proceeds unprotected.
+fn write_preamble() -> Result<Option<WriteLock>, CliError> {
+    let lock = acquire_for_writing()?;
+    startup::run_headless_preamble(PreambleMode::Full)?;
+    Ok(lock)
+}
+
+/// The in-use check and the write lock, without the preamble.
+fn acquire_for_writing() -> Result<Option<WriteLock>, CliError> {
+    if let InUse::Serving { port } = check_in_use() {
+        return Err(in_use_error(&data_folder(), port));
+    }
+    match try_acquire_write_lock(&data_folder())? {
+        WriteLockOutcome::Acquired(lock) => Ok(Some(lock)),
+        WriteLockOutcome::Held => Err(lock_held_error(&data_folder())),
+        WriteLockOutcome::Unsupported => Ok(None),
+    }
 }
