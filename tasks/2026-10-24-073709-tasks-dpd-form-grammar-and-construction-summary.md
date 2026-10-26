@@ -379,24 +379,57 @@ DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
 
 **Depends on.** 1.0–4.0 built and passing.
 
-- [ ] 5.0 Populate the dist DPD DB and verify end to end
-  - [ ] 5.1 **Ask the user** before writing the dist DB. Offer: (a) run
+- [x] 5.0 Populate the dist DPD DB and verify end to end
+  - [x] 5.1 **Ask the user** before writing the dist DB. Offer: (a) run
         `populate-dpd-construction-summary` on the dist `dpd.sqlite3` (fast,
         in place; **with the app closed**, since it `ALTER TABLE`s a DB the app
         may hold open), or (b) the user runs a full bootstrap. Either way the
         user decides; do not bump any version. The app must be restarted
         afterwards (column presence is cached per process).
-  - [ ] 5.2 Read the report: expect `with_summary` 75,595, `without_summary`
+  - [x] 5.2 Read the report: expect `with_summary` 75,595, `without_summary`
         13,269, `malformed` 0, "meaning and construction but none" 0 (on
         `v0.4.20260501`). Record the numbers here. Any malformed line is
         investigated before the extractor is changed.
-  - [ ] 5.3 Re-run `cd backend && cargo test` (the 4.5 value tests now
+  - [x] 5.3 Re-run `cd backend && cargo test` (the 4.5 value tests now
         assert). Known timing-budget failures are drift, not regressions.
-  - [ ] 5.4 Ask the user to restart the app on the new build, then repeat
+
+  **5.1–5.3, 2026-10-26.** Option (a), with the user's go-ahead and the app
+  closed: `SIMSAPA_DIR=…/dist/simsapa cargo run --release --
+  populate-dpd-construction-summary …/app-assets/dpd.sqlite3` (19 s). Report:
+  88,864 headwords updated, 75,595 with a summary, 13,269 without, 0 malformed,
+  0 with meaning and construction but no summary — all as expected. Checked
+  with `sqlite3`: `carati 1.1` `√car + a + ti`, `bhagavant 1` `√bhaj + a + vant`,
+  `bhaṇāmase` `√bhaṇ + a + mase`. The file grew from 2,560,331,776 to
+  2,566,565,888 bytes. Logically equivalent to a re-bootstrap's column (same
+  function, same DPD release on both sides, column appended last in both); the
+  `dpd.tar.bz2` release archive is not rebuilt by this command.
+  `cd backend && cargo test`: 1254 passed, 0 failed, 19 ignored; the 4.5 value
+  tests assert the values (no "asserting null only" line).
+  - [x] 5.4 Ask the user to restart the app on the new build, then repeat
         0.1–0.3 into an `after/` folder and diff with `jq -S` against the
         baselines: only the new keys appear; no existing value changes.
         `dhamma-1-01/dpd` is byte-identical.
-  - [ ] 5.5 `git status`: no `*.sqlite3` staged or tracked.
+  - [x] 5.5 `git status`: no `*.sqlite3` staged or tracked.
+
+  **5.4–5.5, 2026-10-26**, on a fresh `make build -B` (the previous binary
+  predated the last two commits), app `1.1.0-alpha.2`, `dpd_version`
+  `v0.4.20260501`. `take-baselines.sh after`: all four requests `200`.
+  - `dhamma-1-01/dpd`: byte-identical (`cmp`).
+  - `/lookup_forms` and exact `/gloss_text`: after deleting `root_base`,
+    `root_sign`, `construction_summary`, `form_grammar`, `form_grammar_raw`
+    recursively, `jq -S` output is identical to `before/`, and `before/` has
+    none of those keys. In the raw bodies the new keys come after the existing
+    ones (headword: `… matched_as, root_base, root_sign, construction_summary,
+    form_grammar`; result: `… deconstructions, form_grammar_raw`; component:
+    `word, uids, form_grammar_raw`).
+  - `49236/dpd` `/word.json`: identical apart from `construction_summary`
+    (`"√bhaṇ + a + mase"`); `root_base` / `root_sign` were already in this body.
+  - Spot checks in `/lookup_forms`: `bhagavantaṁ` raw has the 4 triples in DPD
+    order, `49139/dpd` `["masc acc sg"]`, `49140/dpd`
+    `["nt nom sg","masc acc sg","nt acc sg"]`; `cittan'ti` result raw `[]`,
+    `cittaṁ` component 9 triples incl. `citta noun nt nom sg`, `iti` component
+    `[]`; `magga’’nti` result raw `[]`, `maggaṁ` component 13 triples.
+  - `git status`: only this task file modified; no `*.sqlite3` tracked.
 
 ### 6.0 Documentation
 
