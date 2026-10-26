@@ -9,7 +9,7 @@
 ### New crate `api/` (`simsapa_api`)
 - `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `anyhow`, `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
 - `api/Cargo.lock` - Seeded from `bridges/Cargo.lock` so both resolve the same versions.
-- `api/src/lib.rs` - The route inventory (doc comment), `ApiConfig` (+ `ApiConfig::loopback`), `shared_routes()`, `build_rocket()` (returns `anyhow::Result<Rocket<Build>>`, so a `DbManager` failure is reported rather than a panic), `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`, route-list tests. No embedded static assets (PRD FR 9a).
+- `api/src/lib.rs` - The route inventory (doc comment), `ApiConfig` (+ `ApiConfig::loopback`), `shared_routes()`, `build_rocket()` (returns `anyhow::Result<Rocket<Build>>`, so a `DbManager` failure is reported rather than a panic), `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`, route-list tests (the shared-route count is 27 since `/sutta_bilara.json`). No embedded static assets (PRD FR 9a).
 - `api/src/helpers.rs` - Request/response types, `parse_search_mode`/`parse_search_area`, `build_search_params`, `run_search` (returns `ApiSearchResult`, not `Json`), the UID-fallback helpers, `run_suttas_search`, `run_api_search` (the `/search` body: area/mode defaults, Dictionary `Combined → DpdLookup` remap; `Err` = 400 message), `run_dict_combined_search`, path helpers, `lookup_sutta_with_fallback`, `render_error_status`, `json_error`, verbose envelopes, `HealthInfo` + `health_info(&DbManager)`; unit tests moved from `bridges`.
 - `api/src/routes/mod.rs` - Route modules.
 - `api/src/routes/search.rs` - Search routes, search options, completion lists.
@@ -19,11 +19,15 @@
 - `api/src/routes/misc.rs` - `/`, `/shutdown`, `/logger`, `/health`.
 
 ### New crate `backend_cli/` (`simsapa_backend_cli`, binary `simsapa`)
-- `backend_cli/Cargo.toml` - Binary crate; CLI-only `[profile.release]`.
-- `backend_cli/src/main.rs` - clap `Cli` / `Commands`, global flags, dispatch, exit codes.
-- `backend_cli/src/exit.rs` - `CliError` with exit codes 1/2/3/4/130 and `--json` error rendering.
-- `backend_cli/src/output.rs` - Text vs `--json` printing; HTML snippet → terminal text.
-- `backend_cli/src/startup.rs` - Data-folder resolution (`--simsapa-dir`), the headless preamble mirroring `cpp/gui.cpp`, the databases-missing check.
+- `backend_cli/Cargo.toml` - Binary crate `simsapa`; backend without `audio`, `simsapa_api`, clap (`derive`, `env`, `string` — the version is set at runtime from `get_app_version()`), indicatif, tokio, ctrlc, dialoguer, reqwest (blocking, rustls), tar, bzip2, fs4, html-escape, tracing(-subscriber); dev: tempfile. CLI-only `[profile.release]` comes in 10.1.
+- `backend_cli/Cargo.lock` - Seeded from `api/Cargo.lock`.
+- `backend_cli/src/main.rs` - Synchronous `main`; clap `Cli` / `Commands` (`paths`, `health` so far), global `--simsapa-dir` / `--json` / `-v`, runtime `--version`; a clap usage error exits 1 (clap's own 2 means "databases missing") and is `{"error"}` under `--json`; `read_only_preamble()` is the one place read-only commands get their preamble mode (always `ReadOnly` until 7.2).
+- `backend_cli/src/exit.rs` - Exit-code constants, `EXIT_CODES_HELP` (shown after `--help`), `CliError` / `CliResult`, `From<anyhow/io/serde_json>`, `json_error_document()`, `finish()`.
+- `backend_cli/src/output.rs` - `print_json()` (compact, as Rocket's `Json<T>`), `stdout_is_tty()`, `snippet_to_terminal()` + unit tests.
+- `backend_cli/src/startup.rs` - `apply_simsapa_dir_flag()` (relative → cwd-relative, sets `SIMSAPA_DIR`), `init_logging()` (stderr subscriber, ANSI only on a TTY, logger host options), `init_globals()`, `data_folder()`, `require_databases()` (exit 2), `PreambleMode` + `run_headless_preamble()` mirroring `cpp/gui.cpp` (also `remove_download_temp_folder()` and `check_remove_lang_index_dirs()`, which `gui.cpp` runs too), reconcile spinner.
+- `backend_cli/src/commands/paths.rs` - `simsapa paths` (text / `--json`), no databases needed.
+- `backend_cli/src/commands/health.rs` - `simsapa health`, via `simsapa_api::health_info()`; opens the fulltext indexes first so readiness is meaningful.
+- `backend_cli/tests/cli_skeleton.rs` - Flags, exit codes 0/1/2, `--json` error shape, `--version`, relative `--simsapa-dir`, `health --json` on the dist DB (read-only).
 - `backend_cli/src/in_use.rs` - `api-port.txt` + `GET /health` detection; pure decision function + tests.
 - `backend_cli/src/commands/{search,query,word,sutta,gloss,stats,import,index,serve,paths,health}.rs` - One module per command group.
 - `backend_cli/src/setup.rs` - `simsapa setup` (download, extract, language import, move, cleanup, markers).
@@ -33,7 +37,8 @@
 - `backend/Cargo.toml` - `[features] default = ["audio"]`, audio crates `optional = true`; `[[example]] dbg_flac` has `required-features = ["audio"]`. `ndk-context` stays unconditional (`android_saf.rs` uses it too).
 - `backend/src/db/appdata.rs` - Private `recording_duration_ms()` wraps `waveform::get_audio_duration_ms`; returns 0 (the existing "unknown" value) without `audio`.
 - `backend/tests/test_audio_player.rs`, `test_audio_recorder.rs`, `test_waveform_flac.rs` - `#![cfg(feature = "audio")]`.
-- `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (`init_android_context` stays: SAF needs it); conditional `api-port.txt` write in `AppGlobals::new()`.
+- `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (`init_android_context` stays: SAF needs it); `WRITE_API_PORT_FILE` + `set_write_api_port_file()` (default write, so the GUI is unchanged) gating the `api-port.txt` write in `AppGlobals::new()`; `get_create_simsapa_dir()` asks `logger::pre_logger_print_enabled()` before its pre-logger `println!`.
+- `backend/src/logger.rs` - `LoggerHostOptions` / `set_host_options()` (no rotation, messages as `tracing` events for the host's subscriber, no pre-logger `println!`); `pre_logger_print_enabled()`; `init_tracing()` keeps a subscriber the host already installed. The GUI sets none of it.
 - `backend/src/update_checker.rs` - Receives `compatible_assets_release()` (done).
 - `backend/src/cli_support.rs` (new) - `get_query_results()`, `fulltext_search()` + `FulltextJsonOutput`, `IndexArea` / `index_dirs_for()` / `delete_index_dirs()` / `build_indexes()` (progress via a `report` closure), `collect_appdata_stats()` → `AppdataStats` (`to_markdown_table`, `to_json_pretty`, `write_files`) + `appdata_stats_output_folder()`; moved from `bootstrap_cli/src/main.rs`. Registered in `lib.rs`.
 - `backend/src/dictionary_manager_core.rs` - Existing `import_user_zip`, `import_user_dir`, `suggested_label_for_zip` (already Qt-free; reused as is).
@@ -80,6 +85,11 @@
   `*.sqlite3`.
 - Use `try_exists()`, never `.exists()`, in new Rust code that may be shared
   with Android paths.
+- Pre-existing backend test failures, present before this feature's backend
+  changes (checked by stashing them): `test_database_comparison` (13,
+  `content_json mismatch`) and `test_render_sutta_content` (9). Because cargo
+  stops at the first failing binary, run `cargo test --no-fail-fast` in
+  `backend/` to see the rest of the suite.
 
 ## Instructions for Completing Tasks
 
@@ -193,7 +203,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 4.8 Route parity check: the union of the shared routes and the `bridges` routes equals the 4.1 inventory (same paths, same methods). Do it by diffing the inventory against the two `routes![…]` lists, or by logging Rocket's route table at launch once and comparing.
   - [x] 4.9 `make build -B` succeeds. Ask the user to check by hand: open a sutta, a dictionary word, and a book in the GUI; run a lookup-window query; run one `curl` per route family (`/health`, `/search`, `/words/…`, `/sutta_html?…`, `/sutta.json?uid=mn1/pli/ms` (body and `X-Simsapa-Sutta-Uid` header unchanged), `/gloss_text`, `/gloss_text` with `"exact": true`, `/lookup_forms`, and a `/gloss_text` body over 8 KiB still gets `200`); run AI word selection in the Gloss tab.
 
-- [ ] 5.0 Create the `simsapa_backend_cli` crate skeleton (FR 3, 18–20, 27–29)
+- [x] 5.0 Create the `simsapa_backend_cli` crate skeleton (FR 3, 18–20, 27–29)
 
   > **Specs:**
   > - Global flags: `--simsapa-dir <path>` (sets `SIMSAPA_DIR` before any path
@@ -211,17 +221,17 @@ Update the file after completing each sub-task, not just after completing an ent
   > - Only `serve` writes `api-port.txt` (see 5.3).
   > **Depends on:** 2.0, 3.0, 4.0.
 
-  - [ ] 5.1 Create `backend_cli/Cargo.toml`: package `simsapa_backend_cli`, `[[bin]] name = "simsapa"`, version matching `backend`. Deps: `simsapa_backend` (`default-features = false`), `simsapa_api`, `clap` (derive, env), `anyhow`, `serde`, `serde_json`, `indicatif`, `tokio`, `ctrlc`, `dialoguer` (or `inquire`) for the prompt, `reqwest` (blocking + rustls, same features as backend), `tar`, `bzip2`, `fs4` (the write lock).
-  - [ ] 5.1a Keep `main` **synchronous** (no `#[tokio::main]`): `reqwest::blocking`, used by `setup`, the in-use check and `fetch_releases_info`, panics when created or dropped inside a runtime. Only `serve` builds a runtime, after its blocking steps.
-  - [ ] 5.2 `exit.rs`: a `CliError { code, message }` type, `From<anyhow::Error>`, and one `fn finish(result, json: bool) -> !` that prints and exits. Every command returns `Result<(), CliError>`.
-  - [ ] 5.3 Make the `api-port.txt` write in `AppGlobals::new()` (`backend/src/lib.rs` ~663) conditional. Add a process-global flag (e.g. `set_write_api_port_file(false)`) or an env var read there, defaulting to **write** so the GUI is unchanged. The CLI turns it off at startup; `serve` turns it on before `init_app_globals_api()`. `make build -B` and confirm the GUI still writes the file.
-  - [ ] 5.4 `startup.rs`: `resolve_data_folder()` (applies `--simsapa-dir`, then the backend's `get_create_simsapa_dir()`), `require_databases()` (exit 2 with the PRD FR 19 message), and `run_headless_preamble(mode: PreambleMode)` in the order above, with a comment naming the `gui.cpp` block it mirrors. Skip mobile-only steps. `PreambleMode::ReadOnly` runs only `dotenv`, `ensure_no_empty_db_files(false)` and `init_app_data()`, and prints one stderr note if an upgrade marker exists or `reconcile_dict_indexes_needed()` is true (PRD FR 18). `PreambleMode::Full` runs everything and requires the write lock (7.1a) to be held.
-  - [ ] 5.5 Logging: initialise the backend logger the way the GUI does (it writes `log.txt`), and add a stderr layer at `warn` (`-v` → `info`, `-vv` → `debug`). Nothing logs to stdout.
-  - [ ] 5.6 `output.rs`: `print_json(&impl Serialize)`; `snippet_to_terminal(html, is_tty)` turning `<span class='match'>…</span>` into ANSI bold (TTY) or `**…**` (pipe) and stripping other tags/entities (reuse `html-escape`). Unit-test it.
-  - [ ] 5.7 `simsapa paths`: data folder, `app-assets/`, each DB path and whether it exists, the index folder, `api-port.txt`. Works without databases. `--json` too.
-  - [ ] 5.8 `simsapa health`: build the same `HealthInfo` that `GET /health` returns, in-process, including `dpd_version`. If needed, move the builder into a `pub fn health_info(&DbManager) -> HealthInfo` in `simsapa_api` that the route calls.
-  - [ ] 5.9 Tests: `paths` with a temp `--simsapa-dir` (no DBs) exits 0; `health` with a temp empty dir exits 2 with the message; `--json` error shape. Use `assert_cmd` (dev-dependency) or `std::process::Command` on the built binary.
-  - [ ] 5.10 `cd backend_cli && cargo build --release` on this machine; `ldd target/release/simsapa` shows no Qt and no `libasound`.
+  - [x] 5.1 Create `backend_cli/Cargo.toml`: package `simsapa_backend_cli`, `[[bin]] name = "simsapa"`, version matching `backend`. Deps: `simsapa_backend` (`default-features = false`), `simsapa_api`, `clap` (derive, env), `anyhow`, `serde`, `serde_json`, `indicatif`, `tokio`, `ctrlc`, `dialoguer` (or `inquire`) for the prompt, `reqwest` (blocking + rustls, same features as backend), `tar`, `bzip2`, `fs4` (the write lock).
+  - [x] 5.1a Keep `main` **synchronous** (no `#[tokio::main]`): `reqwest::blocking`, used by `setup`, the in-use check and `fetch_releases_info`, panics when created or dropped inside a runtime. Only `serve` builds a runtime, after its blocking steps.
+  - [x] 5.2 `exit.rs`: a `CliError { code, message }` type, `From<anyhow::Error>`, and one `fn finish(result, json: bool) -> !` that prints and exits. Every command returns `Result<(), CliError>`.
+  - [x] 5.3 Make the `api-port.txt` write in `AppGlobals::new()` (`backend/src/lib.rs` ~663) conditional. Add a process-global flag (e.g. `set_write_api_port_file(false)`) or an env var read there, defaulting to **write** so the GUI is unchanged. The CLI turns it off at startup; `serve` turns it on before `init_app_globals_api()`. `make build -B` and confirm the GUI still writes the file.
+  - [x] 5.4 `startup.rs`: `resolve_data_folder()` (applies `--simsapa-dir`, then the backend's `get_create_simsapa_dir()`), `require_databases()` (exit 2 with the PRD FR 19 message), and `run_headless_preamble(mode: PreambleMode)` in the order above, with a comment naming the `gui.cpp` block it mirrors. Skip mobile-only steps. `PreambleMode::ReadOnly` runs only `dotenv`, `ensure_no_empty_db_files(false)` and `init_app_data()`, and prints one stderr note if an upgrade marker exists or `reconcile_dict_indexes_needed()` is true (PRD FR 18). `PreambleMode::Full` runs everything and requires the write lock (7.1a) to be held.
+  - [x] 5.5 Logging: initialise the backend logger the way the GUI does (it writes `log.txt`), and add a stderr layer at `warn` (`-v` → `info`, `-vv` → `debug`). Nothing logs to stdout.
+  - [x] 5.6 `output.rs`: `print_json(&impl Serialize)`; `snippet_to_terminal(html, is_tty)` turning `<span class='match'>…</span>` into ANSI bold (TTY) or `**…**` (pipe) and stripping other tags/entities (reuse `html-escape`). Unit-test it.
+  - [x] 5.7 `simsapa paths`: data folder, `app-assets/`, each DB path and whether it exists, the index folder, `api-port.txt`. Works without databases. `--json` too.
+  - [x] 5.8 `simsapa health`: build the same `HealthInfo` that `GET /health` returns, in-process, including `dpd_version`. If needed, move the builder into a `pub fn health_info(&DbManager) -> HealthInfo` in `simsapa_api` that the route calls.
+  - [x] 5.9 Tests: `paths` with a temp `--simsapa-dir` (no DBs) exits 0; `health` with a temp empty dir exits 2 with the message; `--json` error shape. Use `assert_cmd` (dev-dependency) or `std::process::Command` on the built binary.
+  - [x] 5.10 `cd backend_cli && cargo build --release` on this machine; `ldd target/release/simsapa` shows no Qt and no `libasound`.
 
 - [ ] 6.0 Read-only commands (FR 25–27)
 
@@ -278,6 +288,7 @@ Update the file after completing each sub-task, not just after completing an ent
 
   - [ ] 8.1 Parse `--host` as `IpAddr` (`value_parser`) and `--port` as `u16`. Pure `fn serve_config(host, port, env_port) -> ApiConfig` with unit tests: `127.0.0.1`, `::1` (loopback, shutdown mounted), `0.0.0.0`, `192.168.1.5`, `::` (not loopback, no shutdown), `localhost` rejected by the parser.
   - [ ] 8.2 Order matters, because two `AppGlobals` are created (backend's `APP_GLOBALS` during the preamble, `simsapa_api`'s `APP_GLOBALS_API` afterwards) and each reads `API_PORT` in `AppGlobals::new()`: (1) in-use check + write lock (7.2); (2) resolve the port and set `API_PORT` (`--port` → `set_var`; else keep an existing `API_PORT`; else `find_port_set_env()`); (3) enable the `api-port.txt` write (5.3); (4) `PreambleMode::Full`; (5) `init_app_globals_api()`. Both globals then agree on the port. Release the write lock after the preamble: the in-use check protects the folder while serving.
+  - [ ] 8.2a `find_available_port()` (`backend/src/lib.rs`) prints its two "Warning: API_PORT …" lines with `println!`, i.e. to stdout. Route them through the logger (or `eprintln!`) so `serve`'s stdout carries only the listening line.
   - [ ] 8.3 Launch `build_rocket(config)` on a tokio runtime (`#[tokio::main]` or `rocket::execute`). Rocket 0.5 handles SIGINT by default (`Shutdown.ctrlc = true`, 2 s grace, 3 s mercy); do **not** install a `ctrlc` handler in `serve`. Confirm Ctrl-C shuts down cleanly and the process exits 0. The runtime is built here, not in `main` (5.1a).
   - [ ] 8.4 Print the warning to stderr for non-loopback addresses before launch. Print the listening line once Rocket has bound (use a `liftoff` fairing, so a bind failure isn't preceded by a false "listening" line).
   - [ ] 8.5 Manual check (by the user, or by the agent with `curl` against a backgrounded server killed by PID afterwards): `/health`, `/search`, `/gloss_text`, `/lookup_forms`, a GUI-only route → 404, an AI route → 404; `--host 0.0.0.0` → `/shutdown` 404, warning printed.

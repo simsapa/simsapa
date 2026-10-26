@@ -333,6 +333,48 @@ fn rotate_log_files(log_file: &PathBuf) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+/// How a host process other than the GUI wants the logger to behave. The GUI
+/// never sets these, so its behaviour is the defaults below.
+#[derive(Debug, Clone, Copy)]
+pub struct LoggerHostOptions {
+    /// Rotate `log.txt` when the logger starts (the default). The GUI rotates
+    /// once per launch. A CLI invocation must not: only five rotated logs are
+    /// kept, so a handful of commands would push a running GUI's log out.
+    pub rotate_on_init: bool,
+    /// Emit every message as a `tracing` event, for a subscriber the host has
+    /// installed itself. This replaces `ENABLE_PRINT_LOG`, and the messages
+    /// written before the logger exists are then not `println!`ed, because the
+    /// host owns stdout (the CLI's `--json` output goes there).
+    pub emit_tracing: bool,
+}
+
+static HOST_OPTIONS: OnceLock<LoggerHostOptions> = OnceLock::new();
+
+/// Set once, before the first log call. Returns false if options were already
+/// set or the logger has already started (and so did not see them).
+pub fn set_host_options(options: LoggerHostOptions) -> bool {
+    if LOGGER.get().is_some() {
+        return false;
+    }
+    HOST_OPTIONS.set(options).is_ok()
+}
+
+/// Whether a message logged before the logger exists is `println!`ed.
+pub(crate) fn pre_logger_print_enabled() -> bool {
+    if HOST_OPTIONS.get().is_some() {
+        return false;
+    }
+    cfg_if! {
+        if #[cfg(target_os = "android")] {
+            true
+        } else {
+            std::env::var("ENABLE_PRINT_LOG")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false)
+        }
+    }
+}
+
 pub struct Logger {
     log_file: PathBuf,
     time_log: Option<Arc<Mutex<TimeLog>>>,
@@ -349,10 +391,13 @@ impl Logger {
         std::fs::create_dir_all(&data_dir)?;
         let log_file = data_dir.join("log.txt");
 
+        let host_options = HOST_OPTIONS.get().copied();
+
         // Rotate existing log file before creating a new one
-        if let Err(e) = rotate_log_files(&log_file) {
-            eprintln!("Failed to rotate log files: {}", e);
-        }
+        if host_options.is_none_or(|o| o.rotate_on_init)
+            && let Err(e) = rotate_log_files(&log_file) {
+                eprintln!("Failed to rotate log files: {}", e);
+            }
 
         // Read environment variables
         let disable_log = std::env::var("DISABLE_LOG")
@@ -364,9 +409,12 @@ impl Logger {
             if #[cfg(target_os = "android")] {
                 let enable_print_log = true;
             } else {
-                let enable_print_log = std::env::var("ENABLE_PRINT_LOG")
-                    .map(|v| v.to_lowercase() == "true")
-                    .unwrap_or(false);
+                let enable_print_log = match host_options {
+                    Some(o) => o.emit_tracing,
+                    None => std::env::var("ENABLE_PRINT_LOG")
+                        .map(|v| v.to_lowercase() == "true")
+                        .unwrap_or(false),
+                };
             }
         }
 
@@ -398,6 +446,12 @@ impl Logger {
     }
 
     pub fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
+        // A host that installed its own subscriber (the CLI's stderr layer)
+        // keeps it.
+        if tracing::dispatcher::has_been_set() {
+            return Ok(());
+        }
+
         platform_setup();
 
         let env_filter = EnvFilter::try_from_default_env()

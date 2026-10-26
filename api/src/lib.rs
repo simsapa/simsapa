@@ -207,7 +207,7 @@ mod tests {
         let mut dedup = keys.clone();
         dedup.dedup();
         assert_eq!(keys, dedup);
-        assert_eq!(keys.len(), 26);
+        assert_eq!(keys.len(), 27);
     }
 
     #[test]

@@ -1,0 +1,40 @@
+[package]
+name = "simsapa_backend_cli"
+version = "1.1.0-alpha.3"
+edition = "2024"
+authors = ["Gambhiro Bhikkhu <profound.labs@gmail.com>"]
+license = "Apache-2.0"
+description = "Simsapa from the command line: set up the databases, search suttas and dictionaries, gloss Pāli text, and serve the localhost API."
+
+# The public `simsapa` CLI, published to npm as `@simsapa/cli`. Qt-free, with no
+# audio, no AI provider and no bootstrap tooling (that is `bootstrap_cli`).
+# See docs/backend-cli-and-npm-package.md.
+
+[[bin]]
+name = "simsapa"
+path = "src/main.rs"
+
+[dependencies]
+# No `audio`: the backend's only default feature.
+simsapa_backend = { path = "../backend", default-features = false }
+simsapa_api = { path = "../api" }
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "env", "string"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+indicatif = "0.17"
+tokio = { version = "1.0", features = ["full"] }
+ctrlc = "3.4"
+dialoguer = { version = "0.11", default-features = false }
+# The same features as the backend's: blocking, rustls, no OpenSSL.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tar = "0.4.44"
+bzip2 = "0.6.0"
+# The `cli-write.lock` advisory lock (the version tantivy and the backend use).
+fs4 = "0.13"
+html-escape = "0.2.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"

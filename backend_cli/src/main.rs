@@ -1,0 +1,123 @@
+//! `simsapa`: Simsapa's search, dictionary and glossing engine from the
+//! command line, and the localhost API server for agents.
+//!
+//! `main` stays synchronous: `reqwest::blocking` (setup, the in-use check, the
+//! releases lookup) panics when created or dropped inside an async runtime, so
+//! only `simsapa serve` builds one, after its blocking steps.
+//! See docs/backend-cli-and-npm-package.md.
+
+mod commands;
+mod exit;
+mod output;
+mod startup;
+
+use std::path::PathBuf;
+
+use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
+
+use simsapa_backend::logger;
+use simsapa_backend::update_checker::get_app_version;
+
+use crate::exit::{CliError, CliResult, EXIT_CODES_HELP, finish, json_error_document};
+use crate::startup::PreambleMode;
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "simsapa",
+    about = "Search suttas and dictionaries, gloss Pāli text, and serve the Simsapa localhost API.",
+    after_help = EXIT_CODES_HELP,
+    arg_required_else_help = true,
+)]
+struct Cli {
+    /// The Simsapa data folder. Defaults to the Simsapa app's own folder
+    /// (or SIMSAPA_DIR).
+    #[arg(long, global = true, value_name = "DIRECTORY_PATH")]
+    simsapa_dir: Option<PathBuf>,
+
+    /// Print one JSON document on stdout (errors as {"error": "..."}).
+    #[arg(long, global = true)]
+    json: bool,
+
+    /// More log output on stderr: -v info, -vv debug.
+    #[arg(short = 'v', long = "verbose", global = true, action = ArgAction::Count)]
+    verbose: u8,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Show the data folder, the database paths and whether each exists
+    Paths,
+
+    /// Show the version, database paths, counts and fulltext index status,
+    /// as `GET /health` returns them
+    Health,
+}
+
+fn parse_cli() -> Cli {
+    let json_requested = std::env::args_os().any(|a| a == "--json");
+    let command = Cli::command().version(get_app_version());
+
+    let parsed = command
+        .try_get_matches()
+        .and_then(|m| Cli::from_arg_matches(&m));
+
+    match parsed {
+        Ok(cli) => cli,
+        Err(e) => {
+            // `--help` and `--version` print to stdout and succeed.
+            if !e.use_stderr() {
+                let _ = e.print();
+                std::process::exit(exit::OK);
+            }
+            // A usage error. clap's own exit code would be 2, which here means
+            // "databases missing", so it exits 1 instead.
+            if json_requested {
+                println!("{}", json_error_document(e.render().to_string().trim()));
+            } else {
+                let _ = e.print();
+            }
+            std::process::exit(exit::ERROR);
+        }
+    }
+}
+
+fn main() {
+    let cli = parse_cli();
+
+    if let Err(e) = startup::apply_simsapa_dir_flag(cli.simsapa_dir.as_deref()) {
+        finish(Err(e), cli.json);
+    }
+    startup::init_logging(cli.verbose);
+
+    // Only `simsapa serve` writes api-port.txt; any other command would
+    // overwrite a running GUI's port with one nobody listens on.
+    simsapa_backend::set_write_api_port_file(false);
+
+    let result = run(&cli);
+    finish(result, cli.json)
+}
+
+fn run(cli: &Cli) -> CliResult {
+    startup::init_globals();
+    logger::info(&format!(
+        "simsapa {} (CLI): {}",
+        get_app_version(),
+        std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+    ));
+
+    match &cli.command {
+        Commands::Paths => commands::paths::run(cli.json),
+        Commands::Health => {
+            read_only_preamble()?;
+            commands::health::run(cli.json)
+        }
+    }
+}
+
+/// The preamble for a read-only command.
+fn read_only_preamble() -> Result<(), CliError> {
+    startup::run_headless_preamble(PreambleMode::ReadOnly)
+}

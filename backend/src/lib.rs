@@ -70,7 +70,7 @@ use std::fs::{self, File, create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::net::{TcpListener, SocketAddr};
 
 use app_dirs::{get_app_root, AppDataType, AppInfo};
@@ -602,6 +602,18 @@ pub extern "C" fn reconcile_dict_indexes_blocking_c() {
     reinit_fulltext_searcher();
 }
 
+/// Whether `AppGlobals::new()` writes `api-port.txt`. On by default, which is
+/// what the GUI needs. The `simsapa` CLI turns it off, because a query command
+/// would otherwise overwrite a running GUI's port with one nobody listens on,
+/// and turns it back on only for `simsapa serve`.
+/// See docs/backend-cli-and-npm-package.md.
+static WRITE_API_PORT_FILE: AtomicBool = AtomicBool::new(true);
+
+/// Set before the first `AppGlobals::new()` (i.e. before `init_app_globals()`).
+pub fn set_write_api_port_file(write: bool) {
+    WRITE_API_PORT_FILE.store(write, Ordering::SeqCst);
+}
+
 #[derive(Debug)]
 pub struct AppGlobals {
     pub page_len: usize,
@@ -666,7 +678,9 @@ impl AppGlobals {
 
         let api_url = format!("http://localhost:{}", api_port);
 
-        save_to_file(format!("{}", api_port).as_bytes(), paths.simsapa_api_port_path.to_str().expect("Path error"));
+        if WRITE_API_PORT_FILE.load(Ordering::SeqCst) {
+            save_to_file(format!("{}", api_port).as_bytes(), paths.simsapa_api_port_path.to_str().expect("Path error"));
+        }
 
         let save_stats = Self::determine_save_stats();
 
@@ -1303,15 +1317,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
 
     // When the logger is not yet available, determine whether to print info
     // level log messages using the env variable.
-    cfg_if! {
-        if #[cfg(target_os = "android")] {
-            let enable_print_log = true;
-        } else {
-            let enable_print_log = std::env::var("ENABLE_PRINT_LOG")
-                .map(|v| v.to_lowercase() == "true")
-                .unwrap_or(false);
-        }
-    }
+    let enable_print_log = crate::logger::pre_logger_print_enabled();
 
     let msg = "get_create_simsapa_dir()";
     if logger_initialized {
