@@ -99,6 +99,9 @@ enum Commands {
     /// Build, rebuild or delete the fulltext search indexes
     #[command(subcommand)]
     Index(commands::index::IndexCommands),
+
+    /// Serve the localhost API (the GUI app's data routes) until Ctrl-C
+    Serve(commands::serve::ServeArgs),
 }
 
 fn parse_cli() -> Cli {
@@ -146,6 +149,10 @@ fn main() {
 }
 
 fn run(cli: &Cli) -> CliResult {
+    // Before any `AppGlobals` exists: it reads API_PORT once.
+    if let Commands::Serve(args) = &cli.command {
+        commands::serve::prepare_port(args)?;
+    }
     startup::init_globals();
     logger::info(&format!(
         "simsapa {} (CLI): {}",
@@ -200,6 +207,15 @@ fn run(cli: &Cli) -> CliResult {
             let _lock = write_preamble()?;
             commands::index::run(cmd, cli.json)
         }
+        Commands::Serve(args) => {
+            let lock = write_preamble()?;
+            // Only these globals write api-port.txt, now that the folder is
+            // known to be free.
+            let port_file = commands::serve::PortFileBackup::read();
+            simsapa_backend::set_write_api_port_file(true);
+            simsapa_api::init_app_globals_api();
+            commands::serve::run(args, cli.json, lock, port_file)
+        }
     }
 }
 
@@ -219,8 +235,8 @@ fn read_only_preamble() -> CliResult {
     }
 }
 
-/// The preamble for a command that writes (`import`, `index`; `setup` and
-/// `serve` take the same steps). Refuses with exit code 3 while a server or
+/// The preamble for a command that writes (`import`, `index`, `serve`; `setup`
+/// takes the same steps). Refuses with exit code 3 while a server or
 /// another `simsapa` command is using the folder, then runs the full preamble.
 /// Hold the returned lock for the whole command. `None` means this volume
 /// cannot lock files, and the command proceeds unprotected.

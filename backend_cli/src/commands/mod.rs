@@ -7,6 +7,7 @@ pub mod index;
 pub mod paths;
 pub mod query;
 pub mod search;
+pub mod serve;
 pub mod stats;
 pub mod sutta;
 pub mod word;

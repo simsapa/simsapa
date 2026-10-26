@@ -1960,9 +1960,10 @@ pub fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
                 return Ok(port);
             }
             // If the specified port is not available, we'll fall back to the default logic
-            println!("Warning: API_PORT {} is not available, falling back to default", port);
+            // stderr: `simsapa serve`'s stdout carries only its listening line.
+            eprintln!("Warning: API_PORT {} is not available, falling back to default", port);
         } else {
-            println!("Warning: API_PORT value '{}' is not a valid port number", port_str);
+            eprintln!("Warning: API_PORT value '{}' is not a valid port number", port_str);
         }
     }
 

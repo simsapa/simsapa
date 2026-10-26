@@ -33,10 +33,10 @@ bzip2 = "0.6.0"
 # The `cli-write.lock` advisory lock (the version tantivy and the backend use).
 fs4 = "0.13"
 html-escape = "0.2.13"
+# `simsapa serve` launches `simsapa_api::build_rocket()` (the same version).
+rocket = { version = "0.5", features = ["json"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3"
-# Rocket's local client, to compare `--json` output with the routes' bodies.
-rocket = { version = "0.5", features = ["json"] }
