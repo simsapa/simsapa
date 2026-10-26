@@ -34,12 +34,41 @@
 //! sqlite3 dpd.sqlite3 "SELECT id, lemma_1 FROM dpd_headwords WHERE id IN (50519, 25347);"
 //! # 50519 | maggati   (the verb `magganti` belongs to)
 //! # 25347 | gopālikā
+//!
+//! # Form grammar (`lookup.grammar`, `[lemma, class, parse]` triples):
+//! sqlite3 dpd.sqlite3 "SELECT lookup_key, headwords, grammar FROM lookup
+//!   WHERE lookup_key IN ('bhagavantaṁ','carissanti','bhavissanti','cittanti',
+//!   'cittaṁ','maggaṁ','iti','katamo');"
+//! # bhagavantaṁ: bhagavant noun masc acc sg; bhagavant adj nt nom sg,
+//! #   masc acc sg, nt acc sg (4 triples, in that order)
+//! # carissanti [26276..26279]: carati verb fut 3rd pl (1 triple)
+//! # bhavissanti 9 ids: bhavati verb fut 3rd pl; bhavissati verb fut 3rd pl;
+//! #   bhavissantī noun fem voc sg
+//! # cittanti: '' (no grammar); cittaṁ: 9 triples, first citta noun nt nom sg
+//! # maggaṁ: 13 triples (magga ×8, magganta prp ×4, maggi verb reflx aor 1st sg)
+//! # iti: '' (no grammar)
+//! # katamo [19645]: katama interr masc nom sg
+//!
+//! sqlite3 dpd.sqlite3 "SELECT id, lemma_1, lemma_clean, pos FROM dpd_headwords
+//!   WHERE id IN (49139,49140,26276,26277,26278,26279,49534,49535,49621,49622,
+//!   49623,49624,49625,49626,49628,50561,19645);"
+//! # 49139 bhagavant 1 masc; 49140 bhagavant 2 adj; 26276..26279 carati 1.1, 2.1,
+//! # 2.2, 2.3 pr; 49534/49535 bhavati 1/2 pr; 49621 bhavissa cond;
+//! # 49622..49624 bhavissati 1/2/3 fut; 49625 bhavissanti sandhi;
+//! # 49626 bhavissantī fem; 49628 bhavissaṁ fut; 50561 maggi aor;
+//! # 19645 katama pron (no `pos` maps to the `interr` class)
+//! # 50495 magga 1 masc; 50501 magga 7 nt
+//!
+//! sqlite3 dpd.sqlite3 "SELECT id, lemma_1, root_base, root_sign FROM dpd_headwords
+//!   WHERE id IN (26276, 49236);"
+//! # 26276 | carati 1.1 | √car + a > cara | a
+//! # 49236 | bhaṇāmase  | √bhaṇ + a > bhaṇa | a
 //! ```
 
 use serial_test::serial;
 use simsapa_backend::get_app_data;
 use simsapa_backend::types::{
-    FormLookupResult, FormLookupStatus, FormMatchedAs, FormSplitKind, FormSplitSource,
+    GrammarTriple, FormLookupResult, FormLookupStatus, FormMatchedAs, FormSplitKind, FormSplitSource,
 };
 
 mod helpers;
@@ -307,4 +336,137 @@ fn test_iti_rule_matches_grouped_lookup() {
         let grouped_splits: Vec<&str> = grouped.deconstructions.iter().map(|d| d.words_joined.as_str()).collect();
         assert_eq!(splits(&exact), grouped_splits, "{}", word);
     }
+}
+
+fn triple(lemma: &str, class: &str, parse: &str) -> GrammarTriple {
+    [lemma.to_string(), class.to_string(), parse.to_string()]
+}
+
+fn form_grammar<'a>(r: &'a FormLookupResult, uid: &str) -> &'a [String] {
+    &r.headwords.iter().find(|hw| hw.uid == uid).unwrap_or_else(|| panic!("no headword {uid}")).form_grammar
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_bhagavantam() {
+    let r = lookup_one("bhagavantaṁ");
+    assert_eq!(r.form_grammar_raw, vec![
+        triple("bhagavant", "noun", "masc acc sg"),
+        triple("bhagavant", "adj", "nt nom sg"),
+        triple("bhagavant", "adj", "masc acc sg"),
+        triple("bhagavant", "adj", "nt acc sg"),
+    ]);
+    assert_eq!(form_grammar(&r, "49139/dpd"), ["masc acc sg"]);
+    assert_eq!(form_grammar(&r, "49140/dpd"), ["nt nom sg", "masc acc sg", "nt acc sg"]);
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_each_homonym_gets_the_entry() {
+    let r = lookup_one("carissanti");
+    assert_eq!(uids(&r), vec!["26276/dpd", "26277/dpd", "26278/dpd", "26279/dpd"]);
+    for hw in &r.headwords {
+        assert_eq!(hw.form_grammar, ["fut 3rd pl"], "{}", hw.lemma_1);
+    }
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_bhavissanti() {
+    let r = lookup_one("bhavissanti");
+    for uid in ["49534/dpd", "49535/dpd", "49622/dpd", "49623/dpd", "49624/dpd"] {
+        assert_eq!(form_grammar(&r, uid), ["fut 3rd pl"], "{uid}");
+    }
+    assert_eq!(form_grammar(&r, "49626/dpd"), ["fem voc sg"]);
+    // bhavissa (cond), the sandhi headword and bhavissaṁ have no entry.
+    for uid in ["49621/dpd", "49625/dpd", "49628/dpd"] {
+        assert!(form_grammar(&r, uid).is_empty(), "{uid}");
+    }
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_maggam_verb_headword() {
+    let r = lookup_one("maggaṁ");
+    assert_eq!(r.form_grammar_raw.len(), 13);
+    assert_eq!(r.form_grammar_raw[12], triple("maggi", "verb", "reflx aor 1st sg"));
+    // maggi is a headword of the row (aor → verb), so it gets the entry.
+    assert_eq!(form_grammar(&r, "50561/dpd"), ["reflx aor 1st sg"]);
+    // Noun entries go by gender: masc magga 1 does not get magga 7's nt forms.
+    assert_eq!(form_grammar(&r, "50495/dpd"), ["masc acc sg"]);
+    assert_eq!(form_grammar(&r, "50501/dpd"), ["nt nom sg", "nt acc sg", "nt voc sg"]);
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_unmapped_class_only_in_raw() {
+    // `interr` maps to no `pos`: the entry stays in the raw list only.
+    let r = lookup_one("katamo");
+    assert_eq!(r.form_grammar_raw, vec![triple("katama", "interr", "masc nom sg")]);
+    assert_eq!(uids(&r), vec!["19645/dpd"]);
+    assert!(form_grammar(&r, "19645/dpd").is_empty());
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_joined_iti_and_components() {
+    let r = lookup_one("cittan'ti");
+    assert_eq!(r.lookup_key, "cittanti");
+    assert!(r.form_grammar_raw.is_empty());
+    for hw in &r.headwords {
+        assert!(hw.form_grammar.is_empty(), "{}", hw.lemma_1);
+    }
+    let d = r.deconstructions.iter().find(|d| d.split == "cittaṁ + iti").unwrap();
+    assert_eq!(d.components[0].word, "cittaṁ");
+    assert_eq!(d.components[0].form_grammar_raw.len(), 9);
+    assert!(d.components[0].form_grammar_raw.contains(&triple("citta", "noun", "nt nom sg")));
+    assert_eq!(d.components[1].word, "iti");
+    assert!(d.components[1].form_grammar_raw.is_empty());
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_iti_rule() {
+    let r = lookup_one("magga’’nti");
+    assert_eq!(r.lookup_key, "maggaṁ");
+    assert!(r.form_grammar_raw.is_empty());
+    let d = r.deconstructions.iter().find(|d| d.split == "maggaṁ + iti").unwrap();
+    assert_eq!(d.source, FormSplitSource::ItiRule);
+    let maggam = lookup_one("maggaṁ");
+    assert_eq!(d.components[0].form_grammar_raw, maggam.form_grammar_raw);
+    assert_eq!(d.components[0].form_grammar_raw.len(), 13);
+    assert!(d.components[1].form_grammar_raw.is_empty());
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_empty_for_invalid_and_unknown() {
+    let res = lookup(&["", "xyzqq"]);
+    for r in &res {
+        assert!(r.form_grammar_raw.is_empty(), "{:?}", r.input);
+    }
+}
+
+#[test]
+#[serial]
+fn test_root_base_and_sign() {
+    let r = lookup_one("carati");
+    let hw = r.headwords.iter().find(|hw| hw.uid == "26276/dpd").unwrap();
+    assert_eq!(hw.root_base, "√car + a > cara");
+    assert_eq!(hw.root_sign, "a");
+
+    let r = lookup_one("bhaṇāmase");
+    let hw = r.headwords.iter().find(|hw| hw.uid == "49236/dpd").unwrap();
+    assert_eq!(hw.root_base, "√bhaṇ + a > bhaṇa");
+    assert_eq!(hw.root_sign, "a");
+}
+
+#[test]
+#[serial]
+fn test_form_grammar_serialised_as_arrays() {
+    let r = lookup_one("bhagavantaṁ");
+    let v = serde_json::to_value(&r).unwrap();
+    assert_eq!(v["form_grammar_raw"][0], serde_json::json!(["bhagavant", "noun", "masc acc sg"]));
+    assert_eq!(v["headwords"][0]["form_grammar"], serde_json::json!(["masc acc sg"]));
+    assert_eq!(v["headwords"][0]["root_base"], serde_json::json!(""));
 }

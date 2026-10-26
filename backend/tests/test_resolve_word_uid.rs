@@ -77,3 +77,28 @@ fn test_unknown_uid_resolves_to_none() {
     assert!(app_data.resolve_word_uid("no-such-word-xyz/dpd").is_none());
     assert!(app_data.resolve_word_uid("").is_none());
 }
+
+// `word_json_with_extras()` adds `construction_summary` on the numeric
+// dpd_headwords lane only (`null` while the installed dpd.sqlite3 lacks the
+// column). 49236 = bhaṇāmase.
+#[test]
+fn test_word_json_with_extras_lanes() {
+    app_data_setup();
+    let app_data = get_app_data();
+
+    let rw = app_data.resolve_word_uid("49236/dpd").expect("49236/dpd resolves");
+    assert_eq!(rw.kind(), ResolvedWordKind::DpdHeadword);
+    let v = app_data.word_json_with_extras(&rw).unwrap();
+    let summary = v.get("construction_summary").expect("construction_summary key on the headword lane");
+    assert!(summary.is_string() || summary.is_null(), "{summary:?}");
+    // Nothing else changes.
+    let mut without = v.clone();
+    without.as_object_mut().unwrap().remove("construction_summary");
+    assert_eq!(&without, rw.as_json());
+
+    let rw = app_data.resolve_word_uid(CANONICAL_DICT_UID).expect("dict_words lane resolves");
+    assert_eq!(rw.kind(), ResolvedWordKind::DictWord);
+    let v = app_data.word_json_with_extras(&rw).unwrap();
+    assert!(v.get("construction_summary").is_none());
+    assert_eq!(&v, rw.as_json());
+}

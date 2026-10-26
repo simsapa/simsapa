@@ -21,10 +21,11 @@ use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
 use crate::types::{
     SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup,
-    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent,
+    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent, GrammarTriple,
     FormSplitKind, FormSplitSource,
 };
-use crate::logger::{info, error};
+use crate::logger::{info, warn, error};
+use crate::dpd_form_grammar::{extract_dpd_construction_summary, SummaryExtract};
 use crate::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 
 pub type DpdDbHandle = DatabaseHandle;
@@ -1874,6 +1875,19 @@ impl LookupRowCache {
     fn headword_ids(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<i32>> {
         Ok(self.get(db_conn, key)?.map(lookup_row_headword_ids).unwrap_or_default())
     }
+
+    /// The grammar triples of the exact row for `key`, in the row's order.
+    /// Empty when there is no row or it has no grammar.
+    fn grammar(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<GrammarTriple>> {
+        Ok(self.get(db_conn, key)?.map(|row| row.grammar_unpack()).unwrap_or_default())
+    }
+
+    /// The component for `word`: its exact row's headword uids and grammar.
+    fn component(&mut self, db_conn: &mut SqliteConnection, word: String) -> Result<FormComponent> {
+        let uids = dpd_uids(&self.headword_ids(db_conn, &word)?);
+        let form_grammar_raw = self.grammar(db_conn, &word)?;
+        Ok(FormComponent { word, uids, form_grammar_raw })
+    }
 }
 
 fn lookup_row_headword_ids(row: &Lookup) -> Vec<i32> {
@@ -1907,10 +1921,14 @@ struct PendingForm {
     invalid_note: Option<&'static str>,
     headword_ids: Vec<i32>,
     deconstructions: Vec<FormDeconstruction>,
+    /// The grammar of the row that supplied `headword_ids`.
+    form_grammar_raw: Vec<GrammarTriple>,
 }
 
 impl PendingForm {
-    fn finish(self, headwords: &HashMap<i32, DpdHeadword>) -> FormLookupResult {
+    /// `summaries` is `None` when the installed DB has no
+    /// `construction_summary` column.
+    fn finish(self, headwords: &HashMap<i32, DpdHeadword>, summaries: Option<&HashMap<i32, String>>) -> FormLookupResult {
         if let Some(note) = self.invalid_note {
             return FormLookupResult {
                 input: self.input,
@@ -1919,13 +1937,18 @@ impl PendingForm {
                 note: Some(note.to_string()),
                 headwords: Vec::new(),
                 deconstructions: Vec::new(),
+                form_grammar_raw: Vec::new(),
             };
         }
 
         let mut form_headwords = Vec::with_capacity(self.headword_ids.len());
         for id in &self.headword_ids {
             match headwords.get(id) {
-                Some(hw) => form_headwords.push(FormHeadword::from_headword(hw, &self.lookup_key)),
+                Some(hw) => {
+                    let mut fh = FormHeadword::from_headword(hw, &self.lookup_key, &self.form_grammar_raw);
+                    fh.construction_summary = summaries.and_then(|m| m.get(id).cloned());
+                    form_headwords.push(fh);
+                }
                 None => error(&format!(
                     "lookup_forms_exact(): lookup row '{}' names headword id {}, which has no dpd_headwords row",
                     self.lookup_key, id
@@ -1948,6 +1971,7 @@ impl PendingForm {
             note: None,
             headwords: form_headwords,
             deconstructions: self.deconstructions,
+            form_grammar_raw: self.form_grammar_raw,
         }
     }
 }
@@ -1978,8 +2002,9 @@ impl DpdDbHandle {
             .filter(|i| seen.insert(*i))
             .collect();
         let headwords = headwords_by_ids(db_conn, &ids)?;
+        let summaries = construction_summaries_by_ids(db_conn, &ids)?;
 
-        Ok(pending.into_iter().map(|p| p.finish(&headwords)).collect())
+        Ok(pending.into_iter().map(|p| p.finish(&headwords, summaries.as_ref())).collect())
     }
 
     /// DPD's own release (`db_info.dpd_release_version`, e.g.
@@ -2041,12 +2066,18 @@ fn resolve_form_exact(
             invalid_note,
             headword_ids: Vec::new(),
             deconstructions: Vec::new(),
+            form_grammar_raw: Vec::new(),
         });
     }
 
-    let (headword_ids, splits, has_iti_breakdown) = match cache.get(db_conn, &key)? {
-        Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row), row_has_iti_breakdown(row)),
-        None => (Vec::new(), Vec::new(), false),
+    let (headword_ids, splits, has_iti_breakdown, form_grammar_raw) = match cache.get(db_conn, &key)? {
+        Some(row) => (
+            lookup_row_headword_ids(row),
+            lookup_row_splits(row),
+            row_has_iti_breakdown(row),
+            row.grammar_unpack(),
+        ),
+        None => (Vec::new(), Vec::new(), false, Vec::new()),
     };
 
     if let Some(base) = iti_base
@@ -2063,6 +2094,7 @@ fn resolve_form_exact(
         invalid_note: None,
         headword_ids,
         deconstructions,
+        form_grammar_raw,
     })
 }
 
@@ -2100,7 +2132,7 @@ fn iti_rule_form(
         Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row)),
         None => (Vec::new(), Vec::new()),
     };
-    let iti = FormComponent { word: "iti".to_string(), uids: dpd_uids(&cache.headword_ids(db_conn, "iti")?) };
+    let iti = cache.component(db_conn, "iti".to_string())?;
 
     let mut deconstructions = Vec::with_capacity(base_splits.len() + 1);
     if !base_ids.is_empty() || base_splits.is_empty() {
@@ -2108,7 +2140,7 @@ fn iti_rule_form(
             split: format!("{} + iti", base),
             kind: FormSplitKind::ItiSandhi,
             source: FormSplitSource::ItiRule,
-            components: vec![FormComponent { word: base.to_string(), uids: dpd_uids(&base_ids) }, iti.clone()],
+            components: vec![cache.component(db_conn, base.to_string())?, iti.clone()],
         });
     }
     for d in dpd_splits(db_conn, cache, base_splits)? {
@@ -2128,6 +2160,9 @@ fn iti_rule_form(
         invalid_note: None,
         headword_ids: Vec::new(),
         deconstructions,
+        // The joined row's grammar is the analysis the iti rule rejected, and
+        // the base's is on its component.
+        form_grammar_raw: Vec::new(),
     })
 }
 
@@ -2146,12 +2181,78 @@ fn dpd_splits(
         };
         let mut components = Vec::with_capacity(words.len());
         for word in words {
-            let uids = dpd_uids(&cache.headword_ids(db_conn, &word)?);
-            components.push(FormComponent { word, uids });
+            components.push(cache.component(db_conn, word)?);
         }
         res.push(FormDeconstruction { split, kind, source: FormSplitSource::Dpd, components });
     }
     Ok(res)
+}
+
+/// Whether the installed `dpd_headwords` has the bootstrap column
+/// `construction_summary`, cached for the process on the first answer. A DB
+/// that gains the column while the app runs is seen after a restart.
+static HAS_CONSTRUCTION_SUMMARY_COLUMN: OnceLock<bool> = OnceLock::new();
+
+#[derive(QueryableByName)]
+struct ConstructionSummaryRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    construction_summary: String,
+}
+
+/// Whether `dpd_headwords` has the `construction_summary` column, from
+/// `PRAGMA table_info`. Uncached; `construction_summaries_by_ids()` caches it.
+pub fn has_construction_summary_column(db_conn: &mut SqliteConnection) -> Result<bool> {
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
+        .load(db_conn)
+        .context("PRAGMA table_info(dpd_headwords) failed")?;
+    Ok(cols.iter().any(|c| c.name == "construction_summary"))
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, in chunked `IN (…)`
+/// queries. Assumes the column exists; ids without a row are absent.
+pub fn read_construction_summaries(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashMap<i32, String>> {
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let mut query = sql_query(format!(
+            "SELECT id, construction_summary FROM dpd_headwords WHERE id IN ({})",
+            placeholders
+        ))
+        .into_boxed();
+        for id in chunk {
+            query = query.bind::<Integer, _>(*id);
+        }
+        let rows: Vec<ConstructionSummaryRow> = query
+            .load(db_conn)
+            .context("read_construction_summaries failed")?;
+        for row in rows {
+            res.insert(row.id, row.construction_summary);
+        }
+    }
+    Ok(res)
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, or `None` when the
+/// installed `dpd.sqlite3` predates the column (it is added at bootstrap and
+/// is not in the Diesel model). The column check runs once per process and an
+/// absent column is logged once.
+pub fn construction_summaries_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<Option<HashMap<i32, String>>> {
+    let present = match HAS_CONSTRUCTION_SUMMARY_COLUMN.get() {
+        Some(p) => *p,
+        None => {
+            let p = has_construction_summary_column(db_conn)?;
+            if HAS_CONSTRUCTION_SUMMARY_COLUMN.set(p).is_ok() && !p {
+                warn("dpd_headwords has no construction_summary column (dpd.sqlite3 predates it); construction_summary is null");
+            }
+            p
+        }
+    };
+    if !present {
+        return Ok(None);
+    }
+    read_construction_summaries(db_conn, ids).map(Some)
 }
 
 /// The `dpd_headwords` rows for `ids`, read in chunked `IN (…)` queries.
@@ -2212,6 +2313,11 @@ pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf
     // bold_definitions.uid, which depends on population having run.
     populate_bold_definitions_derived_columns(&output_path, limit)
         .map_err(|e| format!("{}", e))?;
+
+    // The DPD StarDict pages are already in dictionaries.sqlite3.
+    populate_dpd_construction_summaries(&output_path)
+        .map_err(|e| format!("{}", e))?
+        .log();
 
     create_dpd_indexes(&output_path).map_err(|e| format!("{}", e))?;
 
@@ -2528,8 +2634,9 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// One row of `PRAGMA table_info(<table>)`, only the column name.
 #[derive(QueryableByName)]
-struct BoldDefColInfo {
+struct TableColumnInfo {
     #[diesel(sql_type = Text)]
     name: String,
 }
@@ -2568,7 +2675,7 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
         .with_context(|| format!("Failed to connect to {}", database_url))?;
 
     // Pre-check column existence (SQLite ADD COLUMN has no IF NOT EXISTS).
-    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(bold_definitions)")
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(bold_definitions)")
         .load(&mut conn)
         .context("PRAGMA table_info(bold_definitions) failed")?;
     let has_uid = cols.iter().any(|c| c.name == "uid");
@@ -2659,6 +2766,173 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
 
     info(&format!("Updated {} bold_definitions rows", updates.len()));
     Ok(())
+}
+
+/// How many items of each `ConstructionSummaryReport` list are logged.
+const CONSTRUCTION_SUMMARY_REPORT_SAMPLE: usize = 20;
+
+/// The outcome of `populate_dpd_construction_summaries()`.
+#[derive(Debug, Clone, Default)]
+pub struct ConstructionSummaryReport {
+    /// Headwords written (every headword, so a re-run is complete).
+    pub updated: usize,
+    pub with_summary: usize,
+    pub without_summary: usize,
+    /// `(lemma_1, summary line)` of the headwords whose summary line did not
+    /// have the shape the extraction relies on.
+    pub malformed: Vec<(String, String)>,
+    /// `lemma_1` of the headwords with both a `meaning_1` and a
+    /// `construction` that got no summary.
+    pub meaning_and_construction_but_none: Vec<String>,
+}
+
+impl ConstructionSummaryReport {
+    /// Log the counts, then each list's total and its first few items. The
+    /// lists are logged as warnings but never fail the caller: the source data
+    /// is reported, never repaired.
+    pub fn log(&self) {
+        info(&format!(
+            "construction_summary: {} headwords updated, {} with a summary, {} without, {} malformed summary lines",
+            self.updated, self.with_summary, self.without_summary, self.malformed.len(),
+        ));
+
+        if !self.malformed.is_empty() {
+            warn(&format!(
+                "construction_summary: {} malformed summary lines (first {} shown)",
+                self.malformed.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for (lemma_1, line) in self.malformed.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: malformed: {}: {}", lemma_1, line));
+            }
+        }
+
+        if !self.meaning_and_construction_but_none.is_empty() {
+            warn(&format!(
+                "construction_summary: {} headwords with meaning_1 and construction but no summary (first {} shown)",
+                self.meaning_and_construction_but_none.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for lemma_1 in self.meaning_and_construction_but_none.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: no summary: {}", lemma_1));
+            }
+        }
+    }
+}
+
+#[derive(QueryableByName)]
+struct DpdSummaryLineRow {
+    #[diesel(sql_type = Text)]
+    word: String,
+    #[diesel(sql_type = Text)]
+    summary_line: String,
+}
+
+#[derive(QueryableByName)]
+struct HeadwordSummaryInputRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    lemma_1: String,
+    #[diesel(sql_type = Integer)]
+    has_meaning_and_construction: i32,
+}
+
+/// Add `dpd_headwords.construction_summary` if it is missing, and fill it for
+/// every headword from the summary line of its rendered DPD page in
+/// `dictionaries.sqlite3` (`dict_words.word` = `lemma_1`, `dict_label =
+/// 'dpd'`). A headword with no page or no well-formed bracket gets `""`.
+///
+/// Reads the dictionaries DB through `get_app_data()`, so the DPD StarDict
+/// must already be imported there. Writes only the DPD DB at `dpd_db_path`.
+///
+/// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
+/// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
+/// the `table!`. See docs/simsapa-localhost-api-search-endpoints.md §19.1.
+pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<ConstructionSummaryReport> {
+    info("populate_dpd_construction_summaries()");
+
+    let abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
+    let database_url = abs
+        .to_str()
+        .context("dpd.sqlite3 path is not valid UTF-8")?
+        .to_string();
+
+    let mut conn = SqliteConnection::establish(&database_url)
+        .with_context(|| format!("Failed to connect to {}", database_url))?;
+
+    // SQLite ADD COLUMN has no IF NOT EXISTS.
+    if !has_construction_summary_column(&mut conn)? {
+        sql_query("ALTER TABLE dpd_headwords ADD COLUMN construction_summary VARCHAR NOT NULL DEFAULT ''")
+            .execute(&mut conn)
+            .context("Failed to ADD COLUMN construction_summary")?;
+    }
+
+    // Cut the summary line out in SQL: the DPD pages hold hundreds of MB of
+    // definition_html, and sql_query loads the whole result.
+    let lines: Vec<DpdSummaryLineRow> = get_app_data().dbm.dictionaries.do_read(|db_conn| {
+        sql_query(
+            "SELECT word, \
+                    substr(definition_html, instr(definition_html, '<div class=dpd><p>'), \
+                           instr(substr(definition_html, instr(definition_html, '<div class=dpd><p>')), '</div>') + 5) \
+                    AS summary_line \
+             FROM dict_words \
+             WHERE dict_label = 'dpd' AND instr(definition_html, '<div class=dpd><p>') > 0",
+        )
+        .load(db_conn)
+    }).context("Failed to read the DPD summary lines from dict_words")?;
+
+    let lines: HashMap<String, String> = lines.into_iter()
+        .map(|r| (r.word, r.summary_line))
+        .collect();
+
+    let headwords: Vec<HeadwordSummaryInputRow> = sql_query(
+        "SELECT id, lemma_1, \
+                (COALESCE(meaning_1, '') <> '' AND COALESCE(construction, '') <> '') AS has_meaning_and_construction \
+         FROM dpd_headwords ORDER BY id",
+    )
+    .load(&mut conn)
+    .context("Failed to load dpd_headwords rows")?;
+
+    let mut report = ConstructionSummaryReport::default();
+    let mut updates: Vec<(i32, String)> = Vec::with_capacity(headwords.len());
+
+    for hw in &headwords {
+        let line = lines.get(&hw.lemma_1);
+        let summary = match line.map(|l| extract_dpd_construction_summary(l)) {
+            Some(SummaryExtract::Found(s)) => Some(s),
+            Some(SummaryExtract::Malformed) => {
+                report.malformed.push((hw.lemma_1.clone(), line.cloned().unwrap_or_default()));
+                None
+            }
+            Some(SummaryExtract::NoBracket) | None => None,
+        };
+
+        match summary {
+            Some(s) => {
+                report.with_summary += 1;
+                updates.push((hw.id, s));
+            }
+            None => {
+                report.without_summary += 1;
+                if hw.has_meaning_and_construction != 0 {
+                    report.meaning_and_construction_but_none.push(hw.lemma_1.clone());
+                }
+                updates.push((hw.id, String::new()));
+            }
+        }
+    }
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        for (id, summary) in &updates {
+            sql_query("UPDATE dpd_headwords SET construction_summary = ? WHERE id = ?")
+                .bind::<Text, _>(summary)
+                .bind::<Integer, _>(*id)
+                .execute(conn)?;
+        }
+        Ok(())
+    })?;
+
+    report.updated = updates.len();
+    Ok(report)
 }
 
 /// Save cf_set and sandhi_contractions

@@ -204,3 +204,13 @@ fn test_exact_gloss_unquoted_iti_stays_whole() {
     assert_eq!(t.lookup.status, FormLookupStatus::Found);
     assert!(t.lookup.deconstructions.iter().any(|d| d.split == "abhinanduṁ + iti"));
 }
+
+#[test]
+#[serial]
+fn test_exact_gloss_token_carries_form_grammar() {
+    let res = gloss_exact(&["Evaṁ bhagavantaṁ vadati."]);
+    let token = res.paragraphs[0].tokens.iter().find(|t| t.clean_word == "bhagavantaṁ").unwrap();
+    assert_eq!(token.lookup.form_grammar_raw.len(), 4);
+    let hw = token.lookup.headwords.iter().find(|hw| hw.uid == "49139/dpd").unwrap();
+    assert_eq!(hw.form_grammar, ["masc acc sg"]);
+}

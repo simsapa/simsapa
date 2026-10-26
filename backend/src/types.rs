@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
+use crate::dpd_form_grammar::assign_form_grammar;
 use crate::db::dpd_models::{DpdHeadword, DpdRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -469,6 +470,10 @@ pub enum FormSplitSource {
     ItiRule,
 }
 
+/// One entry of DPD's `lookup.grammar` column: `[lemma, class, parse]`, e.g.
+/// `["bhagavant", "noun", "masc acc sg"]`. Serialised as a JSON array.
+pub type GrammarTriple = [String; 3];
+
 /// One DPD headword of an exact form lookup, with the fields a caller compares
 /// inline. `uid` is the numeric `<id>/dpd` form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -481,12 +486,23 @@ pub struct FormHeadword {
     pub root_key: String,
     pub meaning_1: String,
     pub matched_as: FormMatchedAs,
+    pub root_base: String,
+    pub root_sign: String,
+    /// DPD's display summary of the construction (`√car + a + ti`), from the
+    /// bootstrap column. `""` when DPD shows none; `None` when the installed
+    /// `dpd.sqlite3` has no such column.
+    pub construction_summary: Option<String>,
+    /// The parses of the result's `form_grammar_raw` entries that match this
+    /// headword's `lemma_clean` and `pos` class (`dpd_form_grammar`).
+    pub form_grammar: Vec<String>,
 }
 
 impl FormHeadword {
     /// `construction` is the column split on newlines, with empty lines
-    /// dropped (`bhagavant 1` has two).
-    pub fn from_headword(hw: &DpdHeadword, lookup_key: &str) -> Self {
+    /// dropped (`bhagavant 1` has two). `form_grammar` is assigned from `raw`,
+    /// the grammar of the lookup row that listed this headword.
+    /// `construction_summary` is left `None` for the caller to fill.
+    pub fn from_headword(hw: &DpdHeadword, lookup_key: &str, raw: &[GrammarTriple]) -> Self {
         FormHeadword {
             uid: format!("{}/dpd", hw.id),
             lemma_1: hw.lemma_1.clone(),
@@ -506,16 +522,21 @@ impl FormHeadword {
             } else {
                 FormMatchedAs::Inflection
             },
+            root_base: hw.root_base.clone(),
+            root_sign: hw.root_sign.clone(),
+            construction_summary: None,
+            form_grammar: assign_form_grammar(&hw.lemma_clean, &hw.pos, raw),
         }
     }
 }
 
-/// One component of a split, with the headword uids of its **exact** lookup
-/// row. A component DPD does not know has no uids.
+/// One component of a split, with the headword uids and the grammar of its
+/// **exact** lookup row. A component DPD does not know has neither.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FormComponent {
     pub word: String,
     pub uids: Vec<String>,
+    pub form_grammar_raw: Vec<GrammarTriple>,
 }
 
 /// One split of an exact form lookup. `split` is DPD's string verbatim.
@@ -541,6 +562,10 @@ pub struct FormLookupResult {
     pub note: Option<String>,
     pub headwords: Vec<FormHeadword>,
     pub deconstructions: Vec<FormDeconstruction>,
+    /// The grammar of the lookup row that supplied `headwords`, verbatim and
+    /// in DPD's order. Empty for `iti_rule` results (the base's grammar is on
+    /// its component), `invalid`, and forms with no row.
+    pub form_grammar_raw: Vec<GrammarTriple>,
 }
 
 /// `/gloss_text` exact mode: one token per word of each paragraph, in order,

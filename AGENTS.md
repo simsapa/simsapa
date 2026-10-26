@@ -422,7 +422,14 @@ Notable feature docs:
   every headword and split of the row with nothing ranked or chosen, statuses
   `found` / `deconstructed` / `not_found` / `invalid`, numeric `<id>/dpd` uids;
   an iti form is the joined row when DPD splits it `… + iti`, else an exact
-  `<base> + iti` (`source: "iti_rule"`). `/gloss_text` with `"exact": true`
+  `<base> + iti` (`source: "iti_rule"`). Each result also carries
+  `form_grammar_raw` (the lookup row's `[lemma, class, parse]` triples,
+  verbatim; `[]` for an `iti_rule` result, whose base component carries them),
+  each split component its own row's `form_grammar_raw`, and each headword
+  `root_base`, `root_sign`, `construction_summary` (DPD's displayed
+  construction; `null` on a `dpd.sqlite3` without the column) and
+  `form_grammar` (the triples matching its `lemma_clean`, its `pos` class and,
+  for nouns, its gender; every matching homonym gets one). `/gloss_text` with `"exact": true`
   gives one such lookup per token, in order, on the whole `original_word`
   (rejecting `skip_common` & co. with a JSON `400`); its default output is
   unchanged because the route returns an untagged enum, **never a
@@ -442,6 +449,24 @@ Notable feature docs:
   auto-detect does **not** understand PTS references. Pairs with
   [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md)
   and [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
+- [DPD `construction_summary`](./docs/dpd-construction-summary.md) — the
+  `dpd_headwords` column behind `/lookup_forms`' and `/word.json`'s
+  `construction_summary` (`√car + a + ti` where `construction` is
+  `cara + ti`). It is **cut out of DPD's own rendered entry** (the bracket at
+  the end of the summary line of the `dict_words` page, `word = lemma_1`), not
+  computed with a port of DPD's Python rule, so it is what DPD shows its
+  readers for that release. `populate_dpd_construction_summaries()` runs in
+  `import_migrate_dpd()` (and alone as `populate-dpd-construction-summary
+  <dpd.sqlite3>`, app closed, `SIMSAPA_DIR` naming the matching
+  `dictionaries.sqlite3`); it cuts the line out **in SQL** (never loads the
+  840 MB of HTML), writes every headword, and logs a report whose malformed
+  count is the signal that DPD changed its template — report, never repair.
+  **Never add the column to `dpd_schema.rs` or `DpdHeadword`**: Diesel selects
+  every `table!` column, so every headword query would fail on an installed
+  `dpd.sqlite3` without it. The runtime read checks presence once per process
+  (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
+  when absent; `/word.json` adds it in `word_json_with_extras()`, never in
+  `resolve_word_uid()` (the word-page renderer calls that).
 - [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live
