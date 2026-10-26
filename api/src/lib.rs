@@ -28,6 +28,7 @@
 //! | `GET /sutta_html` | shared | api |
 //! | `GET /get_sutta_html_by_uid/<window_id>/<uid..>` | shared (renders HTML only) | api |
 //! | `GET /sutta.json` | shared | api |
+//! | `GET /sutta_bilara.json` | shared | api |
 //! | `GET /sutta_content_block` | shared | api |
 //! | `GET /translations_for_sutta` | shared | api |
 //! | `POST /save_sutta_display_settings` | shared (writes the GUI's settings) | api |
@@ -146,6 +147,7 @@ pub fn shared_routes() -> Vec<Route> {
         suttas::get_sutta_html_by_uid,
         suttas::get_sutta_html_q,
         suttas::get_sutta_json_q,
+        suttas::get_sutta_bilara_json_q,
         suttas::get_sutta_content_block,
         suttas::get_translations_for_sutta,
         suttas::save_sutta_display_settings,

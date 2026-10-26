@@ -443,6 +443,10 @@ Notable feature docs:
   uid in `X-Simsapa-Sutta-Uid`; its uid resolution (`backend/src/sutta_json.rs`)
   never falls back from a translation to the Pāli, unlike the HTML routes, and
   an HTML-only sutta is a `404` with `reason: "no_content_json"`.
+  **`GET /sutta_bilara.json?uid=` (§13.5)** returns the same text with its
+  HTML template, variant readings, comments and glosses in one object, each
+  segment object embedded verbatim as a `RawValue`; for a translation the
+  variant readings are the `<ref>/pli/ms` text's, named by `variants.uid`.
   **Reference conversion (§17):** `POST /reference_search` is the
   Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
   back) over the bundled reference table; the sutta routes' reference

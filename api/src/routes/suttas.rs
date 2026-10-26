@@ -130,23 +130,53 @@ pub fn get_sutta_json_q(uid: &str, dbm: &State<Arc<DbManager>>) -> SuttaJsonResp
             content_json,
             rocket::http::Header::new("X-Simsapa-Sutta-Uid", found_uid),
         ),
-        SuttaContentJson::NoContentJson { uid: found_uid } => SuttaJsonResponse::Error((
-            Status::NotFound,
-            Json(serde_json::json!({
-                "error": format!("{} has no SuttaCentral JSON content; it is stored as HTML (use /sutta_html)", found_uid),
-                "reason": "no_content_json",
-                "uid": found_uid,
-            })),
-        )),
-        SuttaContentJson::NotFound => SuttaJsonResponse::Error((
-            Status::NotFound,
-            Json(serde_json::json!({
-                "error": format!("sutta not found: {}", uid),
-                "reason": "not_found",
-                "uid": uid,
-            })),
-        )),
+        SuttaContentJson::NoContentJson { uid: found_uid } => no_content_json_response(&found_uid),
+        SuttaContentJson::NotFound => not_found_response(uid),
     }
+}
+
+/// GET /sutta_bilara.json?<uid>
+/// The sutta's Bilara JSON together with the records SuttaCentral publishes
+/// beside it: the HTML template, variant readings, comments and glosses
+/// (`sutta_json::get_sutta_bilara_json`). Every segment object is embedded
+/// verbatim, never through a `serde_json::Value`. Same uid resolution, header
+/// and `404` bodies as `/sutta.json`.
+#[get("/sutta_bilara.json?<uid>")]
+pub fn get_sutta_bilara_json_q(uid: &str, dbm: &State<Arc<DbManager>>) -> SuttaJsonResponse {
+    use simsapa_backend::sutta_json::{get_sutta_bilara_json, SuttaBilaraJson};
+
+    info(&format!("get_sutta_bilara_json_q(): uid={}", uid));
+
+    match get_sutta_bilara_json(&dbm.appdata, uid) {
+        SuttaBilaraJson::Found { uid: found_uid, json } => SuttaJsonResponse::Found(
+            json,
+            rocket::http::Header::new("X-Simsapa-Sutta-Uid", found_uid),
+        ),
+        SuttaBilaraJson::NoContentJson { uid: found_uid } => no_content_json_response(&found_uid),
+        SuttaBilaraJson::NotFound => not_found_response(uid),
+    }
+}
+
+fn no_content_json_response(found_uid: &str) -> SuttaJsonResponse {
+    SuttaJsonResponse::Error((
+        Status::NotFound,
+        Json(serde_json::json!({
+            "error": format!("{} has no SuttaCentral JSON content; it is stored as HTML (use /sutta_html)", found_uid),
+            "reason": "no_content_json",
+            "uid": found_uid,
+        })),
+    ))
+}
+
+fn not_found_response(uid: &str) -> SuttaJsonResponse {
+    SuttaJsonResponse::Error((
+        Status::NotFound,
+        Json(serde_json::json!({
+            "error": format!("sutta not found: {}", uid),
+            "reason": "not_found",
+            "uid": uid,
+        })),
+    ))
 }
 
 /// The successful `/sutta_content_block` response: the block HTML plus the

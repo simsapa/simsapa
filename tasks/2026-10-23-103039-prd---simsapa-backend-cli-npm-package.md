@@ -480,7 +480,7 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
     | `simsapa query <suttas\|words> <query> [--titles] [--count]` | moved from `cli` `Query` |
     | `simsapa fulltext-search ...` | moved from `cli` `FulltextSearch` |
     | `simsapa word <uid> [--html]` | new; uses `AppData::resolve_word_uid` (same tolerance as `/word.json`) |
-    | `simsapa sutta <uid> [--html\|--text\|--content-json]` | new; `--html` / `--text` as `/sutta_html`; `--content-json` prints the SuttaCentral (Bilara) JSON exactly as `GET /sutta.json` serves it, through the same `sutta_json::get_sutta_content_json()` (strict uid resolution, no fallback to the Pāli) |
+    | `simsapa sutta <uid> [--html\|--text\|--content-json\|--bilara]` | new; `--html` / `--text` as `/sutta_html`; `--content-json` prints the SuttaCentral (Bilara) JSON exactly as `GET /sutta.json` serves it, through the same `sutta_json::get_sutta_content_json()` (strict uid resolution, no fallback to the Pāli); `--bilara` prints the text with its HTML template, variant readings, comments and glosses exactly as `GET /sutta_bilara.json` serves it, through `sutta_json::get_sutta_bilara_json()` |
     | `simsapa gloss <text\|-> [--exact]` | new; same pipeline and JSON as `POST /gloss_text`, including the grouped deconstruction fields (reads stdin for `-`). `--exact` is `/gloss_text`'s `"exact": true`: `process_all_paragraphs_exact()`, the same `ExactGlossResult` JSON, and the same rejection of `--skip-common`-style options alongside it |
     | `simsapa lookup <form…\|->` | new; the exact DPD form lookup, the same core (`lookup_forms_exact()`), validation (`MAX_LOOKUP_FORMS`) and JSON (`{ dpd_version, results }`) as `POST /lookup_forms`. Forms come from the arguments, or one per line from stdin for `-` |
     | `simsapa import stardict <dir> [--label] [--lang]` / `import stardict-zip <zip> [--label] [--lang] [--member]` | new; follows the **GUI's** import path: `dictionary_manager_core::import_user_dir` / `import_user_zip_member` (which `ANALYZE` at the `import_located_stardict` chokepoint), then `dict_index_reconcile::reconcile_dict_indexes()` (no `reinit_fulltext_searcher()`: the process exits; see §7). Not the bootstrap's `import_stardict_as_new` + hard-coded `pli` index append |
@@ -511,7 +511,8 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
     document to stdout: for `search` the same shape as `ApiSearchResult`, for
     `word` the same as `/word.json`, for `sutta --content-json` the same body as
     `/sutta.json` (with or without `--json`; a sutta stored as HTML exits 4 with
-    the route's `no_content_json` message), for `gloss` the same as `/gloss_text`
+    the route's `no_content_json` message), for `sutta --bilara` the same body
+    as `/sutta_bilara.json` (likewise), for `gloss` the same as `/gloss_text`
     (with `--exact`, the same as its exact mode), for `lookup` the same as
     `/lookup_forms` (a `not_found` form is a result, never exit 4), for
     `health` the same as `/health` (including `dpd_version`). Progress bars, spinners and log lines go to
