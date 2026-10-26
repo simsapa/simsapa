@@ -242,10 +242,16 @@ fn read_only_preamble() -> CliResult {
     if let InUse::Serving { .. } = check_in_use() {
         return startup::run_headless_preamble(PreambleMode::ReadOnly);
     }
-    match try_acquire_write_lock(&data_folder())? {
-        WriteLockOutcome::Held => startup::run_headless_preamble(PreambleMode::ReadOnly),
-        WriteLockOutcome::Acquired(_lock) => startup::run_headless_preamble(PreambleMode::Full),
-        WriteLockOutcome::Unsupported => startup::run_headless_preamble(PreambleMode::Full),
+    match try_acquire_write_lock(&data_folder()) {
+        Ok(WriteLockOutcome::Held) => startup::run_headless_preamble(PreambleMode::ReadOnly),
+        Ok(WriteLockOutcome::Acquired(_lock)) => startup::run_headless_preamble(PreambleMode::Full),
+        Ok(WriteLockOutcome::Unsupported) => startup::run_headless_preamble(PreambleMode::Full),
+        // The lock file cannot be created (e.g. a read-only folder). A query
+        // can still run; only the steps that write are skipped.
+        Err(e) => {
+            logger::warn(&format!("{} Running without the startup steps that write.", e.message));
+            startup::run_headless_preamble(PreambleMode::ReadOnly)
+        }
     }
 }
 

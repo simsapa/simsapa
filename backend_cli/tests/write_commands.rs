@@ -257,3 +257,103 @@ fn test_import_stardict_into_dist_and_search_it() {
         .collect();
     assert!(uids.contains(&format!("{}/{}", word, label)), "uids: {:?}", uids);
 }
+
+/// Removes the imported book on drop, also when an assertion failed, and
+/// rebuilds the `en` library index without it.
+struct ImportedBook {
+    uid: String,
+}
+
+impl Drop for ImportedBook {
+    fn drop(&mut self) {
+        use simsapa_backend::logger::{LoggerHostOptions, set_host_options};
+        set_host_options(LoggerHostOptions { rotate_on_init: false, emit_tracing: false });
+        simsapa_backend::set_write_api_port_file(false);
+        // SAFETY: the other tests in this binary only read their own env.
+        unsafe { std::env::set_var("SIMSAPA_DIR", DIST_SIMSAPA_DIR) };
+        simsapa_backend::init_app_data();
+        let app_data = simsapa_backend::get_app_data();
+        if let Err(e) = app_data.dbm.appdata.delete_book_by_uid(&self.uid) {
+            eprintln!("cleanup: delete_book_by_uid({}) failed: {:#}", self.uid, e);
+        }
+        if let Err(e) = simsapa_backend::search::indexer::build_library_index(
+            &app_data.dbm.appdata,
+            &simsapa_backend::get_app_globals().paths.library_index_dir,
+            "en",
+        ) {
+            eprintln!("cleanup: build_library_index(en) failed: {:#}", e);
+        }
+    }
+}
+
+/// A minimal EPUB whose metadata declares `language`, with one chapter
+/// containing `text`.
+fn write_epub(path: &Path, language: &str, text: &str) {
+    use zip::write::SimpleFileOptions;
+    let mut zip = zip::ZipWriter::new(fs::File::create(path).unwrap());
+    let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let files = [
+        ("mimetype", "application/epub+zip".to_string()),
+        (
+            "META-INF/container.xml",
+            r#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#.to_string(),
+        ),
+        (
+            "OEBPS/content.opf",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">dummy</dc:identifier><dc:title>Dummy CLI book</dc:title><dc:language>{}</dc:language></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>"#,
+                language
+            ),
+        ),
+        (
+            "OEBPS/c1.xhtml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter</title></head><body><p>{}</p></body></html>"#,
+                text
+            ),
+        ),
+    ];
+    for (name, body) in files {
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(body.as_bytes()).unwrap();
+    }
+    zip.finish().unwrap();
+}
+
+/// A book whose metadata declares another language is still indexed: without
+/// `--lang` it is imported as `en` (the app dialog's default), the language
+/// whose library index the command rebuilds.
+#[test]
+fn test_import_epub_without_lang_is_searchable() {
+    if !dist_available() {
+        return;
+    }
+    let dist = Path::new(DIST_SIMSAPA_DIR);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let uid = format!("dummy-cli-book-{}", nanos);
+    let word = format!("dummyclibook{}", nanos);
+
+    let fixture = tempfile::tempdir().unwrap();
+    let epub_path = fixture.path().join("book.epub");
+    write_epub(&epub_path, "pli", &format!("The word {} is in this book.", word));
+
+    let out = simsapa(dist, &["import", "epub", epub_path.to_str().unwrap(), "--uid", &uid, "--json"]);
+    if out.status.code() == Some(3) {
+        eprintln!("skipped: the dist folder is in use: {}", stderr(&out));
+        return;
+    }
+    let _cleanup = ImportedBook { uid: uid.clone() };
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["status"], "ok");
+    assert_eq!(doc["index_lang"], "en");
+
+    let out = simsapa(dist, &["search", "library", &word, "--mode", "Fulltext Match", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let results = stdout_json(&out)["results"].as_array().unwrap().clone();
+    assert!(
+        results.iter().any(|r| r["uid"].as_str().is_some_and(|u| u.starts_with(&uid))),
+        "the book is not in the library index: {:?}",
+        results
+    );
+}

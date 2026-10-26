@@ -91,11 +91,12 @@ simsapa.min.js:
 
 test: rust-test qml-test js-test
 
-# NOTE: Running 'cargo test' in 'bridges/' doesn't compile, but there are no tests there anyway.
+# NOTE: Running 'cargo test' in 'bridges/' doesn't compile.
 # error: linking with `cc` failed
+# The API route tests are in 'api/' (simsapa_api), which builds without Qt.
 
 rust-test:
-	cd backend && cargo test && cd ../bootstrap_cli && cargo test
+	cd backend && cargo test && cd ../bootstrap_cli && cargo test && cd ../api && cargo test && cd ../backend_cli && cargo test
 
 js-test:
 	npm test

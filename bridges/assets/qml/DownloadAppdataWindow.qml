@@ -407,6 +407,8 @@ ApplicationWindow {
     }
 
     function run_download() {
+        // backend_cli/src/setup.rs (`simsapa setup`) re-implements this procedure;
+        // change both together. See docs/backend-cli-and-npm-package.md.
         // TODO _run_download_pre_hook
 
         const github_repo = SuttaBridge.get_compatible_asset_github_repo();

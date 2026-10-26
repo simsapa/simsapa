@@ -465,8 +465,7 @@ fn install_archives(
 
         if is_language_archive(&file_name) {
             eprintln!("Importing {}", file_name);
-            import_lang(&folders.extract_temp)
-                .map_err(|e| InstallError::Failed(format!("Import failed for {}: {}", file_name, e)))?;
+            import_language_archive(&folders.extract_temp, &file_name, import_lang)?;
             info(&format!("Successfully imported {}", file_name));
         }
 
@@ -476,6 +475,55 @@ fn install_archives(
             .map_err(|e| InstallError::Failed(format!("Failed to move files: {}", e)))?;
     }
     Ok(())
+}
+
+/// Import an extracted `suttas_lang_*` archive. `import_suttas_lang_to_appdata`
+/// logs a failed database import and still returns `Ok`, and returns `Ok` when
+/// it finds no database at all; it removes each database it did import. So the
+/// outcome is read from the folder: the archive must hold a language database,
+/// and none may be left afterwards. Otherwise the leftover database would be
+/// moved into `app-assets/` and setup would report success.
+fn import_language_archive(
+    extract_dir: &Path,
+    file_name: &str,
+    import_lang: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<(), InstallError> {
+    let failed = |msg: String| InstallError::Failed(format!("Import failed for {}: {}", file_name, msg));
+    let databases = |what: &str| {
+        language_databases(extract_dir)
+            .map_err(|e| failed(format!("cannot read {} {}: {}", extract_dir.display(), what, e)))
+    };
+
+    if databases("before the import")?.is_empty() {
+        return Err(failed("the archive contains no suttas_lang_*.sqlite3 database".to_string()));
+    }
+    import_lang(extract_dir).map_err(failed)?;
+
+    let left = databases("after the import")?;
+    if !left.is_empty() {
+        return Err(failed(format!("{} was not imported (see log.txt)", left.join(", "))));
+    }
+    Ok(())
+}
+
+/// The `suttas_lang_*.sqlite3` files in `dir`, as `import_suttas_lang_to_appdata`
+/// selects them.
+fn language_databases(dir: &Path) -> io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.starts_with("suttas_lang_")
+            && name.ends_with(".sqlite3")
+        {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// The outcome of one attempt that did not succeed.
@@ -1046,6 +1094,44 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, InstallError::Failed("Import failed for suttas_lang_xx.tar.bz2: bad db".to_string()));
         assert!(!f.app_assets.join("index/suttas/xx").exists(), "nothing is moved after a failed import");
+    }
+
+    #[test]
+    fn test_language_database_left_after_import_fails_the_setup() {
+        // The real import logs a failed database import and returns Ok, leaving
+        // the database in the extract folder.
+        let dir = tempfile::tempdir().unwrap();
+        let f = folders(dir.path());
+        let (base, _) = serve(fixture_archives(), Serve::Ok);
+        let urls = vec![format!("{base}/suttas_lang_xx.tar.bz2")];
+        let cancel = AtomicBool::new(false);
+
+        let err = download_and_install(&urls, &f, false, &cancel, &no_wait(), &|_| Ok(())).unwrap_err();
+        assert_eq!(
+            err,
+            InstallError::Failed(
+                "Import failed for suttas_lang_xx.tar.bz2: suttas_lang_xx.sqlite3 was not imported (see log.txt)"
+                    .to_string()
+            )
+        );
+        assert!(!f.app_assets.join("suttas_lang_xx.sqlite3").exists(), "the leftover database is not moved");
+    }
+
+    #[test]
+    fn test_language_archive_without_database_fails_the_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = folders(dir.path());
+        let archives = vec![("suttas_lang_xx.tar.bz2".to_string(), tar_bz2(&[("index/suttas/xx/meta.json", b"{}")]))];
+        let (base, _) = serve(archives, Serve::Ok);
+        let urls = vec![format!("{base}/suttas_lang_xx.tar.bz2")];
+        let cancel = AtomicBool::new(false);
+
+        let err = download_and_install(&urls, &f, false, &cancel, &no_wait(), &|_| panic!("not called"))
+            .unwrap_err();
+        match err {
+            InstallError::Failed(msg) => assert!(msg.contains("contains no suttas_lang_"), "{msg}"),
+            e => panic!("unexpected {e:?}"),
+        }
     }
 
     #[test]

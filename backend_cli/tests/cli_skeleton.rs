@@ -134,3 +134,20 @@ fn test_health_json_against_dist_databases() {
     assert!(doc["counts"]["suttas"].as_i64().unwrap() > 0);
     assert!(doc["dpd_version"].is_string());
 }
+
+/// A read-only command does not need the write lock: when `cli-write.lock`
+/// cannot be opened it runs the read-only preamble, which here ends at the
+/// databases check (exit 2), not at the lock (exit 1). A write command still
+/// refuses.
+#[test]
+fn test_unopenable_write_lock_does_not_stop_a_read_only_command() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("cli-write.lock")).unwrap();
+
+    let out = simsapa(&with_dir(tmp.path(), &["health", "--json"]));
+    assert_eq!(out.status.code(), Some(2), "stdout: {}", String::from_utf8_lossy(&out.stdout));
+
+    let out = simsapa(&with_dir(tmp.path(), &["index", "delete", "--json"]));
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stdout_json(&out)["error"].as_str().unwrap().contains("cli-write.lock"));
+}

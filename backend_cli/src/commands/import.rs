@@ -111,9 +111,11 @@ pub struct BookArgs {
     #[arg(long)]
     pub author: Option<String>,
 
-    /// The language code, instead of the one in the file
-    #[arg(long, value_name = "LANG_CODE")]
-    pub lang: Option<String>,
+    /// The book's language code, which also picks the library index it is
+    /// searched in. As in the app's import dialog it defaults to `en`, and it
+    /// replaces the language in the file's metadata.
+    #[arg(long, value_name = "LANG_CODE", default_value = "en")]
+    pub lang: String,
 }
 
 #[derive(Serialize)]
@@ -298,11 +300,15 @@ fn import_book(args: &BookArgs, kind: BookKind, json: bool) -> CliResult {
 
     let title = args.title.as_deref().filter(|s| !s.trim().is_empty());
     let author = args.author.as_deref().filter(|s| !s.trim().is_empty());
-    let lang = args.lang.as_deref().filter(|s| !s.trim().is_empty());
+    // Always passed, as the app's dialog passes its pre-filled `en`. Left out,
+    // the importer stores the file's own metadata language (`pli`, `en-GB`, …)
+    // while the book is indexed under `index_lang` below, and
+    // `build_library_index` skips a book whose language is not that one.
+    let lang = Some(args.lang.trim()).filter(|s| !s.is_empty()).unwrap_or("en");
 
     let imported = match kind {
-        BookKind::Epub => app_data.import_epub_to_db(&args.file, &args.uid, title, author, lang, None, true),
-        BookKind::Html => app_data.import_html_to_db(&args.file, &args.uid, title, author, lang, None, true),
+        BookKind::Epub => app_data.import_epub_to_db(&args.file, &args.uid, title, author, Some(lang), None, true),
+        BookKind::Html => app_data.import_html_to_db(&args.file, &args.uid, title, author, Some(lang), None, true),
     };
     if let Err(e) = imported {
         spinner.finish_and_clear();
@@ -310,7 +316,7 @@ fn import_book(args: &BookArgs, kind: BookKind, json: bool) -> CliResult {
     }
 
     // The language the GUI indexes an imported book under.
-    let index_lang = lang.map(str::to_lowercase).unwrap_or_else(|| "en".to_string());
+    let index_lang = lang.to_lowercase();
     spinner.set_message(format!("Updating the library index ({})", index_lang));
     let indexed = indexer::build_library_index(
         &app_data.dbm.appdata,

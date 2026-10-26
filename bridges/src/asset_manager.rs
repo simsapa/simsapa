@@ -355,6 +355,9 @@ impl qobject::AssetManager {
         });
     }
 
+    /// `backend_cli/src/setup.rs` (`simsapa setup`) re-implements this
+    /// procedure, and `cleanup_on_failure`; change both together. See
+    /// docs/backend-cli-and-npm-package.md.
     fn download_urls_and_extract(self: Pin<&mut Self>, urls: QStringList, is_initial_setup: bool) {
         info(&format!("download_urls_and_extract(): {} urls", urls.len()));
 
