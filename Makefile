@@ -127,8 +127,8 @@ bootstrap:
 
 # First 'cargo clean' on each module, then build.
 cargo-clean-build:
-	cd backend && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
-	cd backend && cargo build && cd ../bridges && cargo build && cd ../bootstrap_cli && cargo build && cd ..
+	cd backend && cargo clean && cd ../backend_cli && cargo clean && cd ../api && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
+	cd backend && cargo build && cd ../backend_cli && cargo build && cd ../api && cargo build && cd ../bridges && cargo build && cd ../bootstrap_cli && cargo build && cd ..
 
 appimage: build
 	./build-appimage.sh
