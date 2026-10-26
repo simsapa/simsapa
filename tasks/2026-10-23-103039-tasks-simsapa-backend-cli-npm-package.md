@@ -3,7 +3,8 @@
 ### Renamed / moved
 - `cli/` → `bootstrap_cli/` - The bootstrap crate, renamed to `simsapa_bootstrap_cli`. Loses the commands that move to the new CLI.
 - `bootstrap_cli/Cargo.toml` - Package and `[[bin]]` renamed.
-- `bootstrap_cli/src/main.rs` - Moved commands deleted; remaining ones unchanged.
+- `bootstrap_cli/src/main.rs` - `query`, `fulltext-search`, `index` and `appdata-stats` now call the `backend::cli_support` cores and only print (the moved commands are deleted in 6.3 / 6.7).
+- `bootstrap_cli/Cargo.toml` - `indexmap` dependency dropped (only `appdata_stats` used it).
 
 ### New crate `api/` (`simsapa_api`)
 - `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
@@ -28,8 +29,8 @@
 - `backend/src/db/appdata.rs` - Private `recording_duration_ms()` wraps `waveform::get_audio_duration_ms`; returns 0 (the existing "unknown" value) without `audio`.
 - `backend/tests/test_audio_player.rs`, `test_audio_recorder.rs`, `test_waveform_flac.rs` - `#![cfg(feature = "audio")]`.
 - `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (`init_android_context` stays: SAF needs it); conditional `api-port.txt` write in `AppGlobals::new()`.
-- `backend/src/update_checker.rs` - Receives `compatible_assets_release()`.
-- `backend/src/cli_support.rs` (new, name open) - `get_query_results` / `query_suttas` / `query_words` cores, `fulltext_search` core, `index_command` / `delete_index_dirs` cores, `appdata_stats` core, moved from `cli/src/main.rs`.
+- `backend/src/update_checker.rs` - Receives `compatible_assets_release()` (done).
+- `backend/src/cli_support.rs` (new) - `get_query_results()`, `fulltext_search()` + `FulltextJsonOutput`, `IndexArea` / `index_dirs_for()` / `delete_index_dirs()` / `build_indexes()` (progress via a `report` closure), `collect_appdata_stats()` → `AppdataStats` (`to_markdown_table`, `to_json_pretty`, `write_files`) + `appdata_stats_output_folder()`; moved from `bootstrap_cli/src/main.rs`. Registered in `lib.rs`.
 - `backend/src/dictionary_manager_core.rs` - Existing `import_user_zip`, `import_user_dir`, `suggested_label_for_zip` (already Qt-free; reused as is).
 - `backend/src/dict_index_reconcile.rs` - Existing `reconcile_needed()` / `reconcile_dict_indexes()` (reused).
 - `backend/src/app_data.rs` - Existing `import_epub_to_db` / `import_html_to_db` (reused; they `ANALYZE`).
@@ -39,7 +40,7 @@
 ### `bridges` changes
 - `bridges/Cargo.toml` - Add `simsapa_api = { path = "../api" }`; keep `rig-core`, `rocket_ws`.
 - `bridges/src/api.rs` - Keeps only the cxx-qt `ffi` block, GUI-driving routes, AI routes, the static-asset routes with `APP_ASSETS` / `AssetsHandler` (PRD FR 9a), `start_webserver()` (now calling `simsapa_api::build_rocket`), `shutdown_webserver*`, `create_linux_desktop_icon_file`.
-- `bridges/src/sutta_bridge.rs` - `compatible_assets_release()` removed; calls the backend copy.
+- `bridges/src/sutta_bridge.rs` - `compatible_assets_release()` removed; calls `update_checker::compatible_assets_release()` (done).
 - `bridges/src/asset_manager.rs` - Parity comment only.
 - `bridges/assets/qml/DownloadAppdataWindow.qml` - Parity comment only.
 
@@ -52,6 +53,8 @@
 - `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
 - `docs/backend-cli-and-npm-package.md` (new) - Crate layout, parity rule, preamble, in-use detection, packaging, release checklist.
 - `docs/startup-sequence-and-caches.md`, `docs/user-data-and-sqlite-analyze.md` - CLI entry points.
+- `docs/releases-info-and-fallback.md` - `compatible_assets_release()` location updated to `backend/src/update_checker.rs`.
+- `PROJECT_MAP.md` - Entries for `backend/src/cli_support.rs` and `backend/src/update_checker.rs`.
 - `PROJECT_MAP.md`, `AGENTS.md` (`CLAUDE.md` is a tracked symlink to it — edit `AGENTS.md`; `sed -i CLAUDE.md` replaces the symlink with a file), `.claude/skills/gloss-agent-check/SKILL.md`, the 12 docs and the backend/bootstrap comments referencing `cli/` - Rename.
 
 ### Notes
@@ -108,7 +111,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 2.5 Confirm with `cargo tree --no-default-features -e normal | grep -E 'cpal|alsa'` that nothing is left (expect no output).
   - [x] 2.6 `make build -B` succeeds (GUI unaffected).
 
-- [ ] 3.0 Move shared Qt-free helpers into `backend` (FR 13, FR 26)
+- [x] 3.0 Move shared Qt-free helpers into `backend` (FR 13, FR 26)
 
   > **Specs:** pure moves; the old call sites call the new location. No
   > behaviour change. **Depends on:** 1.0.
@@ -134,13 +137,13 @@ Update the file after completing each sub-task, not just after completing an ent
   >
   > Update the PRD's FR 25/26 table accordingly when doing 3.4.
 
-  - [ ] 3.1 Move `compatible_assets_release()` from `bridges/src/sutta_bridge.rs` (~line 363) to `backend/src/update_checker.rs` as `pub fn compatible_assets_release() -> Option<ReleaseEntry>`, unchanged. Update `SuttaBridge::get_compatible_asset_version_tag/github_repo` to call it. `make build -B`.
-  - [ ] 3.2 Create `backend/src/cli_support.rs` (pick a better name if one suggests itself; register it in `lib.rs`). Move into it, as `pub fn`s returning `anyhow::Result` or structured values (not printing):
+  - [x] 3.1 Move `compatible_assets_release()` from `bridges/src/sutta_bridge.rs` (~line 363) to `backend/src/update_checker.rs` as `pub fn compatible_assets_release() -> Option<ReleaseEntry>`, unchanged. Update `SuttaBridge::get_compatible_asset_version_tag/github_repo` to call it. `make build -B`.
+  - [x] 3.2 Create `backend/src/cli_support.rs` (pick a better name if one suggests itself; register it in `lib.rs`). Move into it, as `pub fn`s returning `anyhow::Result` or structured values (not printing):
     - `get_query_results(query, area) -> Vec<SearchResult>` (from `cli/src/main.rs:28`);
     - the search part of `fulltext_search` (`:1010`), returning the hits plus the `FulltextJsonResult` data, with printing left to the callers;
     - the logic of `index_command` (`:1099`) and `delete_index_dirs` (`:1224`), with the clap enums replaced by plain backend enums or params;
     - the stats collection of `appdata_stats` (`:526`), returning a struct that both the Markdown and JSON writers use.
-  - [ ] 3.3 Make `bootstrap_cli` call the moved functions (its printing code stays for now). `cd bootstrap_cli && cargo build && cargo test`; `cd backend && cargo test`.
+  - [x] 3.3 Make `bootstrap_cli` call the moved functions (its printing code stays for now). `cd bootstrap_cli && cargo build && cargo test`; `cd backend && cargo test`.
   - [x] 3.4 Update the PRD FR 25/26 table with the import-path correction above, so the PRD and tasks agree. (Done while generating the task list.)
 
 - [ ] 4.0 Create the `simsapa_api` crate and move the data routes out of `bridges/src/api.rs` (FR 2, 4, 7–11)

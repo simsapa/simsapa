@@ -116,25 +116,25 @@ able to download the asset**, which is handled and shown separately (below).
 
 `get_compatible_asset_version_tag()` / `get_compatible_asset_github_repo()` do
 **not** rely on `check_for_updates()` having run. They go through the shared
-helper `compatible_assets_release()` (in `bridges/src/sutta_bridge.rs`), which
-prefers `try_get_releases_info()` (the live global) and **falls back to
+helper `update_checker::compatible_assets_release()` (Qt-free, in
+`backend/src/update_checker.rs`), which prefers `try_get_releases_info()` (the live global) and **falls back to
 `get_fallback_releases_info()`** — both when the global is empty **and when the
 live info yields no compatible assets release**:
 
 ```rust
-fn compatible_assets_release() -> Option<update_checker::ReleaseEntry> {
-    let app_version = update_checker::to_version(&update_checker::get_app_version()).ok()?;
+pub fn compatible_assets_release() -> Option<ReleaseEntry> {
+    let app_version = to_version(&get_app_version()).ok()?;
 
-    if let Some(releases_info) = simsapa_backend::try_get_releases_info()
+    if let Some(releases_info) = crate::try_get_releases_info()
         && let Some(release) =
-            update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version)
+            get_latest_app_compatible_assets_release(&releases_info, &app_version)
     {
         return Some(release.clone());
     }
 
-    let fallback_info = update_checker::get_fallback_releases_info()?;
+    let fallback_info = get_fallback_releases_info()?;
     // … log + return the fallback's compatible release, if any
-    update_checker::get_latest_app_compatible_assets_release(&fallback_info, &app_version).cloned()
+    get_latest_app_compatible_assets_release(&fallback_info, &app_version).cloned()
 }
 ```
 

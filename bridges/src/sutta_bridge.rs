@@ -342,47 +342,6 @@ fn format_category_errors(errs: &[(String, String)]) -> String {
         .join("\n")
 }
 
-/// Resolve the highest assets release that is compatible with the running app
-/// version, used to build the GitHub asset download URLs (appdata / dictionaries
-/// / DPD / index / per-language archives).
-///
-/// Prefers the live releases info stored in the process-global (populated by a
-/// successful `check_for_updates()`), and falls back to the embedded snapshot
-/// (`assets/releases-fallback.json`) when the global is empty — e.g. the server
-/// was unreachable, or no update check ran this session because update
-/// notifications are disabled. This is why language downloads from
-/// `SuttaLanguagesWindow` keep working offline without an explicit update check.
-///
-/// The fallback is **also** consulted when the live info was fetched fine but
-/// contains no assets release compatible with the running app version. That
-/// happens when the app is published on one release channel (e.g. `main`) while
-/// the matching assets are still only announced on another (e.g.
-/// `development`), and the embedded snapshot carries the newer entry. Without
-/// this second attempt the download windows would report "Unable to retrieve
-/// download information" despite having usable URLs bundled.
-fn compatible_assets_release() -> Option<update_checker::ReleaseEntry> {
-    let app_version = update_checker::to_version(&update_checker::get_app_version()).ok()?;
-
-    if let Some(releases_info) = simsapa_backend::try_get_releases_info()
-        && let Some(release) =
-            update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version)
-    {
-        return Some(release.clone());
-    }
-
-    let fallback_info = update_checker::get_fallback_releases_info()?;
-    match update_checker::get_latest_app_compatible_assets_release(&fallback_info, &app_version) {
-        Some(release) => {
-            info(&format!(
-                "compatible_assets_release(): no compatible assets release in the live releases info, using embedded fallback: {}",
-                release.version_tag
-            ));
-            Some(release.clone())
-        }
-        None => None,
-    }
-}
-
 fn fetch_and_cache_page(
     cache_key: &str,
     query_text: &str,
@@ -5812,7 +5771,7 @@ impl qobject::SuttaBridge {
     /// Get the version_tag of the highest compatible assets release.
     /// Returns empty string if no compatible release can be determined.
     pub fn get_compatible_asset_version_tag(&self) -> QString {
-        match compatible_assets_release() {
+        match update_checker::compatible_assets_release() {
             Some(release) => QString::from(&release.version_tag),
             None => QString::from(""),
         }
@@ -5821,7 +5780,7 @@ impl qobject::SuttaBridge {
     /// Get the github_repo of the highest compatible assets release.
     /// Returns empty string if no compatible release can be determined.
     pub fn get_compatible_asset_github_repo(&self) -> QString {
-        match compatible_assets_release() {
+        match update_checker::compatible_assets_release() {
             Some(release) => QString::from(&release.github_repo),
             None => QString::from(""),
         }

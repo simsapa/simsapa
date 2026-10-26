@@ -14,84 +14,21 @@ use dotenvy::dotenv;
 use anyhow::Result;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use indexmap::IndexMap;
 
-use simsapa_backend::{db, init_app_data, get_app_data, get_create_simsapa_dir, logger, normalize_path_for_sqlite};
-use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResult};
-use simsapa_backend::query_task::SearchQueryTask;
+use simsapa_backend::{cli_support, db, init_app_data, get_app_data, get_create_simsapa_dir, logger, normalize_path_for_sqlite};
+use simsapa_backend::types::SearchArea;
 use simsapa_backend::stardict_parse::import_stardict_as_new;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::asset_helpers::import_suttas_from_db;
 use simsapa_backend::search::indexer;
-use simsapa_backend::search::searcher::{FulltextSearcher, SearchFilters};
 
-fn get_query_results(query: &str, area: SearchArea) -> Vec<SearchResult> {
-    let app_data = get_app_data();
-
-    let params = SearchParams {
-        mode: SearchMode::ContainsMatch,
-        page_len: None,
-        lang: Some("en".to_string()),
-        lang_include: true,
-        source: None,
-        source_include: true,
-        enable_regex: false,
-        fuzzy_distance: 0,
-        include_cst_mula: true,
-        include_cst_commentary: true,
-        nikaya_prefix: None,
-        uid_prefix: None,
-        uid_suffix: None,
-        include_ms_mula: true,
-        include_comm_bold_definitions: true,
-        dict_source_uids: None,
-        show_all_snippets: false,
-        snippet_exclude: None,
-        deconstruction_selected_index: None,
-        deconstruction_locked: false,
-    };
-
-    let mut query_task = SearchQueryTask::new(
-        &app_data.dbm,
-        query.to_string(),
-        params,
-        area,
-    );
-
-    match query_task.results_page(0) {
-        Ok(x) => x,
-        Err(s) => {
-            panic!("{}", s);
-        }
-    }
-}
-
-fn query_suttas(
+fn print_query_results(
     query: &str,
+    area: SearchArea,
     print_titles: bool,
     print_count: bool,
 ) -> Result<(), String> {
-
-    let results = get_query_results(query, SearchArea::Suttas);
-
-    if print_titles {
-        for i in results.iter() {
-            println!("{}: {}", i.uid, i.title);
-        }
-    }
-    if print_count {
-        println!("{}", results.len());
-    }
-
-    Ok(())
-}
-
-fn query_words(
-    query: &str,
-    print_titles: bool,
-    print_count: bool,
-) -> Result<(), String> {
-    let results = get_query_results(query, SearchArea::Dictionary);
+    let results = cli_support::get_query_results(query, area).map_err(|e| e.to_string())?;
 
     if print_titles {
         for i in results.iter() {
@@ -524,210 +461,17 @@ fn import_chanting_practice_command(
 
 /// Generate statistics for an appdata.sqlite3 database
 fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool) -> Result<(), String> {
-    use std::fs;
-
-    // Define helper structs for raw SQL queries
-    #[derive(Debug, QueryableByName)]
-    struct CountResult {
-        #[diesel(sql_type = diesel::sql_types::BigInt)]
-        count: i64,
-    }
-
-    #[derive(Debug, QueryableByName)]
-    struct LanguageCount {
-        #[diesel(sql_type = diesel::sql_types::Text)]
-        language: String,
-        #[diesel(sql_type = diesel::sql_types::BigInt)]
-        count: i64,
-    }
-
-    // Check if database exists
-    if !db_path.exists() {
-        return Err(format!("Database file not found: {:?}", db_path));
-    }
-
-    // Connect to the database
-    let mut conn = SqliteConnection::establish(db_path.to_str().unwrap())
-        .map_err(|e| format!("Failed to connect to database: {}", e))?;
-
-    let mut stats: IndexMap<String, String> = IndexMap::new();
-
-    // Helper function to check if a table exists
-    let table_exists = |conn: &mut SqliteConnection, table_name: &str| -> bool {
-        let query = format!(
-            "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table' AND name='{}'",
-            table_name
-        );
-        diesel::sql_query(&query)
-            .get_result::<CountResult>(conn)
-            .map(|r| r.count > 0)
-            .unwrap_or(false)
-    };
-
-    // Helper function to get row count for a table
-    let get_row_count = |conn: &mut SqliteConnection, table_name: &str| -> Result<i64, String> {
-        if !table_exists(conn, table_name) {
-            return Ok(0);
-        }
-
-        let query = format!("SELECT COUNT(*) as count FROM {}", table_name);
-        let result: Result<i64, diesel::result::Error> = diesel::sql_query(&query)
-            .get_result::<CountResult>(conn)
-            .map(|r| r.count);
-
-        result.map_err(|e| format!("Failed to query {}: {}", table_name, e))
-    };
-
-    // Total rows in main tables
-    for table in &["suttas", "sutta_variants", "sutta_glosses", "sutta_comments"] {
-        let count = get_row_count(&mut conn, table)?;
-        stats.insert(format!("Total rows in {}", table), count.to_string());
-    }
-
-    // Total rows in suttas_fts
-    let fts_count = get_row_count(&mut conn, "suttas_fts")?;
-    stats.insert("Total rows in suttas_fts".to_string(), fts_count.to_string());
-
-    // Count distinct source_uid values
-    if table_exists(&mut conn, "suttas") {
-        let query = "SELECT COUNT(DISTINCT source_uid) as count FROM suttas WHERE source_uid IS NOT NULL";
-        let source_uid_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Number of source_uid variants".to_string(), source_uid_count.to_string());
-
-        // Count distinct nikaya values
-        let query = "SELECT COUNT(DISTINCT nikaya) as count FROM suttas WHERE nikaya IS NOT NULL";
-        let nikaya_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Number of nikaya variants".to_string(), nikaya_count.to_string());
-
-        // Count distinct language values
-        let query = "SELECT COUNT(DISTINCT language) as count FROM suttas WHERE language IS NOT NULL";
-        let lang_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Number of language variants".to_string(), lang_count.to_string());
-
-        // Count suttas with source_uid 'ms'
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE source_uid = 'ms'";
-        let ms_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas with source_uid 'ms'".to_string(), ms_count.to_string());
-
-        // Count suttas with source_uid 'cst'
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE source_uid = 'cst'";
-        let cst_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas with source_uid 'cst'".to_string(), cst_count.to_string());
-
-        // Count rows per language
-        let query = "SELECT language, COUNT(*) as count FROM suttas GROUP BY language ORDER BY count DESC";
-
-        let lang_counts: Vec<LanguageCount> = diesel::sql_query(query)
-            .load(&mut conn)
-            .unwrap_or_default();
-
-        for lc in lang_counts {
-            stats.insert(format!("Rows for language '{}'", lc.language), lc.count.to_string());
-        }
-
-        // Count suttas from dhammatalks.org
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE content_html LIKE '%<div class=\"dhammatalks_org\">%'";
-        let dhammatalks_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas from dhammatalks.org".to_string(), dhammatalks_count.to_string());
-
-        // Count suttas from tipitaka.net
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE content_html LIKE '%<div class=\"tipitaka_net\">%'";
-        let tipitaka_net_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas from tipitaka.net".to_string(), tipitaka_net_count.to_string());
-
-        // Count suttas from Nyanadipa
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE source_uid = 'nyanadipa'";
-        let nyanadipa_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas from Nyanadipa".to_string(), nyanadipa_count.to_string());
-
-        // Count suttas from Ajahn Munindo
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE source_uid = 'munindo'";
-        let munindo_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas from Ajahn Munindo".to_string(), munindo_count.to_string());
-
-        // Count suttas from a-buddha-ujja.hu (Hungarian)
-        let query = "SELECT COUNT(*) as count FROM suttas WHERE language = 'hu'";
-        let buddha_ujja_count: i64 = diesel::sql_query(query)
-            .get_result::<CountResult>(&mut conn)
-            .map(|r| r.count)
-            .unwrap_or(0);
-        stats.insert("Suttas from a-buddha-ujja.hu".to_string(), buddha_ujja_count.to_string());
-    }
+    let stats = cli_support::collect_appdata_stats(db_path).map_err(|e| e.to_string())?;
 
     // Print as Markdown table
     println!("\n## Appdata Statistics\n");
-    println!("| Statistic | Value |");
-    println!("|-----------|-------|");
-    for (key, value) in &stats {
-        println!("| {} | {} |", key, value);
-    }
+    print!("{}", stats.to_markdown_table());
 
-    // Write to files if --write-stats is enabled
     if write_stats {
-        // Determine the output folder
-        let target_folder = match output_folder {
-            Some(folder) => folder.to_path_buf(),
-            None => {
-                // Use the database file's parent directory
-                db_path.parent()
-                    .ok_or_else(|| format!("Could not determine parent directory of database: {:?}", db_path))?
-                    .to_path_buf()
-            }
-        };
-
-        // Create folder if it doesn't exist
-        if !target_folder.exists() {
-            fs::create_dir_all(&target_folder)
-                .map_err(|e| format!("Failed to create output folder: {}", e))?;
-        }
-
-        // Write Markdown file
-        let md_path = target_folder.join("appdata_stats.md");
-        let mut md_content = String::from("# Appdata Statistics\n\n");
-        md_content.push_str("| Statistic | Value |\n");
-        md_content.push_str("|-----------|-------|\n");
-        for (key, value) in &stats {
-            md_content.push_str(&format!("| {} | {} |\n", key, value));
-        }
-
-        fs::write(&md_path, md_content)
-            .map_err(|e| format!("Failed to write Markdown file: {}", e))?;
+        let target_folder = cli_support::appdata_stats_output_folder(db_path, output_folder)
+            .map_err(|e| e.to_string())?;
+        let (md_path, json_path) = stats.write_files(&target_folder).map_err(|e| e.to_string())?;
         logger::info(&format!("Wrote Markdown file: {:?}", md_path));
-
-        // Write JSON file
-        let json_path = target_folder.join("appdata_stats.json");
-        let json_content = serde_json::to_string_pretty(&stats)
-            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
-
-        fs::write(&json_path, json_content)
-            .map_err(|e| format!("Failed to write JSON file: {}", e))?;
         logger::info(&format!("Wrote JSON file: {:?}", json_path));
     }
 
@@ -986,25 +730,6 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
     }
 }
 
-/// Fulltext search result for JSON output
-#[derive(serde::Serialize)]
-struct FulltextJsonResult {
-    uid: String,
-    title: String,
-    language: String,
-    source_uid: String,
-    score: f32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    snippet_html: Option<String>,
-}
-
-/// Top-level JSON output with total hits and results.
-#[derive(serde::Serialize)]
-struct FulltextJsonOutput {
-    total: usize,
-    results: Vec<FulltextJsonResult>,
-}
-
 /// Run a fulltext (tantivy) search and print results.
 #[allow(clippy::too_many_arguments)]
 fn fulltext_search(
@@ -1019,50 +744,12 @@ fn fulltext_search(
 ) -> Result<(), String> {
     let globals = simsapa_backend::get_app_globals();
 
-    let searcher = FulltextSearcher::open(&globals.paths)
-        .map_err(|e| format!("Failed to open fulltext indexes: {}", e))?;
-
-    let filters = SearchFilters {
-        lang: lang.map(|s| s.to_string()),
-        lang_include: lang.is_some(),
-        source_uid: source.map(|s| s.to_string()),
-        source_include: source.is_some(),
-        nikaya_prefix: None,
-        uid_prefix: None,
-        uid_suffix: None,
-        sutta_ref: None,
-        include_cst_mula: true,
-        include_cst_commentary: true,
-        include_ms_mula: true,
-        include_bold_definitions: true,
-        dict_source_uids: None,
-        show_all_snippets: false,
-    };
-
-    let (total_hits, results) = match area {
-        SearchArea::Suttas => searcher.search_suttas_with_count(query, &filters, limit, 0),
-        SearchArea::Dictionary => searcher.search_dict_words_with_count(query, &filters, limit, 0),
-        _ => return Err(format!("Fulltext search not supported for area: {:?}", area)),
-    }.map_err(|e| format!("Search error: {}", e))?;
+    let (total_hits, results) = cli_support::fulltext_search(&globals.paths, query, area, limit, lang, source)
+        .map_err(|e| e.to_string())?;
 
     let text = match format {
         "json" => {
-            let json_results: Vec<FulltextJsonResult> = results.iter().map(|r| {
-                FulltextJsonResult {
-                    uid: r.uid.clone(),
-                    title: r.title.clone(),
-                    language: r.lang.clone().unwrap_or_default(),
-                    source_uid: r.source_uid.clone().unwrap_or_default(),
-                    score: r.score.unwrap_or(0.0),
-                    snippet_html: if snippet { Some(r.snippet.clone()) } else { None },
-                }
-            }).collect();
-
-            let output = FulltextJsonOutput {
-                total: total_hits,
-                results: json_results,
-            };
-
+            let output = cli_support::FulltextJsonOutput::from_results(total_hits, &results, snippet);
             serde_json::to_string_pretty(&output)
                 .map_err(|e| format!("JSON serialization error: {}", e))?
         }
@@ -1099,155 +786,29 @@ fn fulltext_search(
 fn index_command(cmd: IndexCommands) -> Result<(), String> {
     let app_data = get_app_data();
     let globals = simsapa_backend::get_app_globals();
-    let paths = &globals.paths;
 
-    let is_rebuild = matches!(cmd, IndexCommands::Rebuild { .. });
-
-    let (area, lang) = match &cmd {
-        IndexCommands::Build { area, lang } | IndexCommands::Rebuild { area, lang } => {
-            (area.clone(), lang.clone())
-        }
+    let (area, lang, rebuild) = match cmd {
+        IndexCommands::Build { area, lang } => (area, lang, false),
+        IndexCommands::Rebuild { area, lang } => (area, lang, true),
     };
 
-    if is_rebuild {
-        // Delete existing index directories before rebuilding
-        delete_index_dirs(paths, &area, &lang)?;
-    }
+    let area = area.map(|a| match a {
+        IndexArea::Suttas => cli_support::IndexArea::Suttas,
+        IndexArea::DictWords => cli_support::IndexArea::DictWords,
+        IndexArea::Library => cli_support::IndexArea::Library,
+    });
 
-    match (&area, &lang) {
-        // Build everything
-        (None, None) => {
-            println!("Building all fulltext indexes...");
-            indexer::build_all_indexes(
-                &app_data.dbm.appdata,
-                &app_data.dbm.dictionaries,
-                &app_data.dbm.dpd,
-                paths,
-            )
-            .map_err(|e| e.to_string())?;
-        }
-
-        // Build all languages for a specific area
-        (Some(IndexArea::Suttas), None) => {
-            println!("Building sutta indexes for all languages...");
-            let langs = indexer::get_sutta_languages(&app_data.dbm.appdata)
-                .map_err(|e| e.to_string())?;
-            for l in &langs {
-                println!("  Building sutta index for language: {}", l);
-                indexer::build_sutta_index(&app_data.dbm.appdata, &paths.suttas_index_dir, l)
-                    .map_err(|e| e.to_string())?;
-            }
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        (Some(IndexArea::DictWords), None) => {
-            println!("Building dictionary indexes for all languages...");
-            let langs = indexer::get_dict_word_languages(&app_data.dbm.dictionaries)
-                .map_err(|e| e.to_string())?;
-            for l in &langs {
-                println!("  Building dict_word index for language: {}", l);
-                indexer::build_dict_index(&app_data.dbm.dictionaries, &paths.dict_words_index_dir, l)
-                    .map_err(|e| e.to_string())?;
-            }
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        (Some(IndexArea::Library), None) => {
-            println!("Building library indexes for all languages...");
-            let langs = indexer::get_library_languages(&app_data.dbm.appdata)
-                .map_err(|e| e.to_string())?;
-            for l in &langs {
-                println!("  Building library index for language: {}", l);
-                indexer::build_library_index(&app_data.dbm.appdata, &paths.library_index_dir, l)
-                    .map_err(|e| e.to_string())?;
-            }
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        // Build a specific language across all areas (or filtered)
-        (None, Some(lang_code)) => {
-            println!("Building indexes for language: {}", lang_code);
-            let sutta_langs = indexer::get_sutta_languages(&app_data.dbm.appdata)
-                .map_err(|e| e.to_string())?;
-            if sutta_langs.contains(lang_code) {
-                println!("  Building sutta index for language: {}", lang_code);
-                indexer::build_sutta_index(&app_data.dbm.appdata, &paths.suttas_index_dir, lang_code)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            let dict_langs = indexer::get_dict_word_languages(&app_data.dbm.dictionaries)
-                .map_err(|e| e.to_string())?;
-            if dict_langs.contains(lang_code) {
-                println!("  Building dict_word index for language: {}", lang_code);
-                indexer::build_dict_index(&app_data.dbm.dictionaries, &paths.dict_words_index_dir, lang_code)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            let library_langs = indexer::get_library_languages(&app_data.dbm.appdata)
-                .map_err(|e| e.to_string())?;
-            if library_langs.contains(lang_code) {
-                println!("  Building library index for language: {}", lang_code);
-                indexer::build_library_index(&app_data.dbm.appdata, &paths.library_index_dir, lang_code)
-                    .map_err(|e| e.to_string())?;
-            }
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        // Build a specific area + language
-        (Some(IndexArea::Suttas), Some(lang_code)) => {
-            println!("Building sutta index for language: {}", lang_code);
-            indexer::build_sutta_index(&app_data.dbm.appdata, &paths.suttas_index_dir, lang_code)
-                .map_err(|e| e.to_string())?;
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        (Some(IndexArea::DictWords), Some(lang_code)) => {
-            println!("Building dict_word index for language: {}", lang_code);
-            indexer::build_dict_index(&app_data.dbm.dictionaries, &paths.dict_words_index_dir, lang_code)
-                .map_err(|e| e.to_string())?;
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-
-        (Some(IndexArea::Library), Some(lang_code)) => {
-            println!("Building library index for language: {}", lang_code);
-            indexer::build_library_index(&app_data.dbm.appdata, &paths.library_index_dir, lang_code)
-                .map_err(|e| e.to_string())?;
-            indexer::write_version_file(&paths.index_dir).map_err(|e| e.to_string())?;
-        }
-    }
+    cli_support::build_indexes(
+        &app_data.dbm,
+        &globals.paths,
+        area,
+        lang.as_deref(),
+        rebuild,
+        &mut |line| println!("{}", line),
+    )
+    .map_err(|e| e.to_string())?;
 
     println!("Done.");
-    Ok(())
-}
-
-/// Delete index directories based on area and language filters.
-fn delete_index_dirs(
-    paths: &simsapa_backend::AppGlobalPaths,
-    area: &Option<IndexArea>,
-    lang: &Option<String>,
-) -> Result<(), String> {
-    let dirs_to_delete: Vec<PathBuf> = match (area, lang) {
-        (None, None) => vec![paths.index_dir.clone()],
-        (Some(IndexArea::Suttas), None) => vec![paths.suttas_index_dir.clone()],
-        (Some(IndexArea::DictWords), None) => vec![paths.dict_words_index_dir.clone()],
-        (Some(IndexArea::Library), None) => vec![paths.library_index_dir.clone()],
-        (None, Some(l)) => vec![
-            paths.suttas_index_dir.join(l),
-            paths.dict_words_index_dir.join(l),
-            paths.library_index_dir.join(l),
-        ],
-        (Some(IndexArea::Suttas), Some(l)) => vec![paths.suttas_index_dir.join(l)],
-        (Some(IndexArea::DictWords), Some(l)) => vec![paths.dict_words_index_dir.join(l)],
-        (Some(IndexArea::Library), Some(l)) => vec![paths.library_index_dir.join(l)],
-    };
-
-    for dir in &dirs_to_delete {
-        if let Ok(true) = dir.try_exists() {
-            println!("  Removing: {}", dir.display());
-            std::fs::remove_dir_all(dir).map_err(|e| format!("Failed to remove {}: {}", dir.display(), e))?;
-        }
-    }
-
     Ok(())
 }
 
@@ -1790,14 +1351,11 @@ fn main() {
 
     let command_result = match cli.command {
         Commands::Query { query_type, query, print_titles, print_count } => {
-            match query_type {
-                QueryType::Suttas => {
-                    query_suttas(&query, print_titles, print_count)
-                }
-                QueryType::Words => {
-                    query_words(&query, print_titles, print_count)
-                }
-            }
+            let area = match query_type {
+                QueryType::Suttas => SearchArea::Suttas,
+                QueryType::Words => SearchArea::Dictionary,
+            };
+            print_query_results(&query, area, print_titles, print_count)
         }
 
         Commands::ImportStardictDictionary { dict_label, path, limit } => {

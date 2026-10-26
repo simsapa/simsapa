@@ -5,6 +5,7 @@ pub mod types;
 pub mod helpers;
 pub mod highlight;
 pub mod asset_helpers;
+pub mod cli_support;
 pub mod query_task;
 pub mod fulltext_status;
 pub mod html_content;
