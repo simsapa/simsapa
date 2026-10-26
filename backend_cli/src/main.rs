@@ -54,6 +54,40 @@ enum Commands {
     /// Show the version, database paths, counts and fulltext index status,
     /// as `GET /health` returns them
     Health,
+
+    /// Search suttas, dictionary words or library books, as `POST /search` does
+    #[command(arg_required_else_help = true)]
+    Search(commands::search::SearchArgs),
+
+    /// List the suttas or dictionary words containing a text (first page,
+    /// English only)
+    #[command(arg_required_else_help = true)]
+    Query(commands::query::QueryArgs),
+
+    /// Search the fulltext index directly
+    #[command(arg_required_else_help = true)]
+    FulltextSearch(commands::query::FulltextSearchArgs),
+
+    /// Show a dictionary entry, as `/word.json` (or `/word_html`) returns it
+    #[command(arg_required_else_help = true)]
+    Word(commands::word::WordArgs),
+
+    /// Show a sutta as text, HTML (`/sutta_html`) or Bilara JSON
+    /// (`/sutta.json`, `/sutta_bilara.json`)
+    #[command(arg_required_else_help = true)]
+    Sutta(commands::sutta::SuttaArgs),
+
+    /// Gloss Pāli text: dictionary options and compound break-downs for every
+    /// word, as `POST /gloss_text` returns them
+    #[command(arg_required_else_help = true)]
+    Gloss(commands::gloss::GlossArgs),
+
+    /// Exact DPD lookup of word forms, as `POST /lookup_forms` returns it
+    #[command(arg_required_else_help = true)]
+    Lookup(commands::gloss::LookupArgs),
+
+    /// Row and content-source counts of appdata.sqlite3
+    Stats(commands::stats::StatsArgs),
 }
 
 fn parse_cli() -> Cli {
@@ -113,6 +147,39 @@ fn run(cli: &Cli) -> CliResult {
         Commands::Health => {
             read_only_preamble()?;
             commands::health::run(cli.json)
+        }
+        Commands::Search(args) => {
+            read_only_preamble()?;
+            commands::search::run(args, cli.json)
+        }
+        Commands::Query(args) => {
+            read_only_preamble()?;
+            commands::query::run_query(args, cli.json)
+        }
+        Commands::FulltextSearch(args) => {
+            read_only_preamble()?;
+            commands::query::run_fulltext_search(args, cli.json)
+        }
+        Commands::Word(args) => {
+            read_only_preamble()?;
+            commands::word::run(args, cli.json)
+        }
+        Commands::Sutta(args) => {
+            read_only_preamble()?;
+            commands::sutta::run(args, cli.json)
+        }
+        Commands::Gloss(args) => {
+            read_only_preamble()?;
+            commands::gloss::run_gloss(args, cli.json)
+        }
+        Commands::Lookup(args) => {
+            read_only_preamble()?;
+            commands::gloss::run_lookup(args, cli.json)
+        }
+        Commands::Stats(args) => {
+            // Opens its own connection to appdata.sqlite3.
+            startup::require_databases()?;
+            commands::stats::run(args, cli.json)
         }
     }
 }

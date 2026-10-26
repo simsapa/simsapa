@@ -77,7 +77,7 @@ fn generate_fulltext_fixture() {
 /// Integration test: fulltext search with phrase query
 ///
 /// Reproduces the CLI command:
-///   fulltext-search --limit 10 --snippet --lang "pli" --source "ms" --format "json" '"so ce" evaṁ vadeyya'
+///   simsapa fulltext-search --limit 10 --snippet --lang "pli" --source "ms" --format "json" '"so ce" evaṁ vadeyya'
 #[test]
 #[serial]
 fn test_fulltext_search_so_ce_evam_vadeyya() {

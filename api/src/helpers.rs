@@ -3,7 +3,6 @@
 //! See docs/simsapa-localhost-api-search-endpoints.md.
 
 use std::path::Path;
-use std::sync::Arc;
 
 use rocket::serde::{Deserialize, Serialize};
 use rocket::serde::json::Json;
@@ -284,7 +283,7 @@ pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &
 /// `load_searcher` ran). Non-fulltext modes never touch the index.
 /// See docs/simsapa-localhost-api-search-endpoints.md.
 pub fn run_search(
-    dbm: &Arc<DbManager>,
+    dbm: &DbManager,
     query_text: String,
     params: SearchParams,
     area: SearchArea,
@@ -325,7 +324,7 @@ pub fn run_search(
 /// docs/simsapa-localhost-api-search-endpoints.md.
 #[allow(clippy::too_many_arguments)]
 pub fn run_search_with_uid_fallback(
-    dbm: &Arc<DbManager>,
+    dbm: &DbManager,
     request: &ApiSearchRequest,
     area: SearchArea,
     page_num: usize,
@@ -366,7 +365,7 @@ pub fn run_search_with_uid_fallback(
 /// docs/simsapa-localhost-api-search-endpoints.md.
 #[allow(clippy::too_many_arguments)]
 pub fn run_dict_combined_with_fallback(
-    dbm: &Arc<DbManager>,
+    dbm: &DbManager,
     request: &ApiSearchRequest,
     page_num: usize,
     was_uid_auto: bool,
@@ -406,7 +405,7 @@ pub fn run_dict_combined_with_fallback(
 /// ContainsMatch for `/suttas_contains_search`). Builds params via
 /// `build_search_params` and executes via `run_search` (deconstructor `None`).
 /// See docs/simsapa-localhost-api-search-endpoints.md.
-pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &Arc<DbManager>, fallback_mode: SearchMode) -> ApiSearchResult {
+pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &DbManager, fallback_mode: SearchMode) -> ApiSearchResult {
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
 
@@ -447,7 +446,7 @@ fn deconstructor_for(dbm: &DbManager, query_text: &str) -> Option<Vec<String>> {
 /// named convenience routes, this honors the requested mode strictly (no
 /// reference → UidMatch override). See
 /// docs/simsapa-localhost-api-search-endpoints.md.
-pub fn run_api_search(request: &ApiSearchRequest, dbm: &Arc<DbManager>) -> Result<ApiSearchResult, String> {
+pub fn run_api_search(request: &ApiSearchRequest, dbm: &DbManager) -> Result<ApiSearchResult, String> {
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
 
@@ -507,7 +506,7 @@ pub fn run_api_search(request: &ApiSearchRequest, dbm: &Arc<DbManager>) -> Resul
 
 /// The body of `POST /dict_combined_search`: dictionary words with language and
 /// source filtering, plus the deconstructor results.
-pub fn run_dict_combined_search(request: &ApiSearchRequest, dbm: &Arc<DbManager>) -> ApiSearchResult {
+pub fn run_dict_combined_search(request: &ApiSearchRequest, dbm: &DbManager) -> ApiSearchResult {
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
 

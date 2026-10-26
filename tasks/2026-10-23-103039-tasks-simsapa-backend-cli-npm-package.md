@@ -3,33 +3,41 @@
 ### Renamed / moved
 - `cli/` → `bootstrap_cli/` - The bootstrap crate, renamed to `simsapa_bootstrap_cli`. Loses the commands that move to the new CLI.
 - `bootstrap_cli/Cargo.toml` - Package and `[[bin]]` renamed.
-- `bootstrap_cli/src/main.rs` - `query`, `fulltext-search`, `index` and `appdata-stats` now call the `backend::cli_support` cores and only print (the moved commands are deleted in 6.3 / 6.7).
+- `bootstrap_cli/src/main.rs` - `index` calls the `backend::cli_support` core and only prints; `query`, `fulltext-search` and `appdata-stats` are deleted (moved to the `simsapa` CLI).
 - `bootstrap_cli/Cargo.toml` - `indexmap` dependency dropped (only `appdata_stats` used it).
 
 ### New crate `api/` (`simsapa_api`)
 - `api/Cargo.toml` - Qt-free library: `simsapa_backend` (no default `audio`), `anyhow`, `rocket`, `rocket_cors`, `tokio`, `serde`, `serde_json`, `percent-encoding`. No `rig-core`, no `rocket_ws`, no `include_dir`, no `ureq` (only `shutdown_webserver` in `bridges` uses it).
 - `api/Cargo.lock` - Seeded from `bridges/Cargo.lock` so both resolve the same versions.
 - `api/src/lib.rs` - The route inventory (doc comment), `ApiConfig` (+ `ApiConfig::loopback`), `shared_routes()`, `build_rocket()` (returns `anyhow::Result<Rocket<Build>>`, so a `DbManager` failure is reported rather than a panic), `APP_GLOBALS_API` / `init_app_globals_api()` / `get_app_globals_api()`, route-list tests (the shared-route count is 27 since `/sutta_bilara.json`). No embedded static assets (PRD FR 9a).
-- `api/src/helpers.rs` - Request/response types, `parse_search_mode`/`parse_search_area`, `build_search_params`, `run_search` (returns `ApiSearchResult`, not `Json`), the UID-fallback helpers, `run_suttas_search`, `run_api_search` (the `/search` body: area/mode defaults, Dictionary `Combined → DpdLookup` remap; `Err` = 400 message), `run_dict_combined_search`, path helpers, `lookup_sutta_with_fallback`, `render_error_status`, `json_error`, verbose envelopes, `HealthInfo` + `health_info(&DbManager)`; unit tests moved from `bridges`.
+- `api/src/helpers.rs` - The search helpers take `&DbManager` (not `&Arc<DbManager>`), so the CLI calls them with `get_app_data().dbm`. Request/response types, `parse_search_mode`/`parse_search_area`, `build_search_params`, `run_search` (returns `ApiSearchResult`, not `Json`), the UID-fallback helpers, `run_suttas_search`, `run_api_search` (the `/search` body: area/mode defaults, Dictionary `Combined → DpdLookup` remap; `Err` = 400 message), `run_dict_combined_search`, path helpers, `lookup_sutta_with_fallback`, `render_error_status`, `json_error`, verbose envelopes, `HealthInfo` + `health_info(&DbManager)`; unit tests moved from `bridges`.
 - `api/src/routes/mod.rs` - Route modules.
 - `api/src/routes/search.rs` - Search routes, search options, completion lists.
 - `api/src/routes/words.rs` - Word JSON/HTML routes (incl. `/get_word_html_by_uid`).
-- `api/src/routes/suttas.rs` - Sutta HTML/JSON, content block, translations, display settings, book pages, `/get_book_spine_item_html_by_uid`, `/navigation_timeline`.
+- `api/src/routes/suttas.rs` - `sutta_json_no_content_message()` / `sutta_json_not_found_message()` (the `/sutta.json` error texts, shared with `simsapa sutta`). Sutta HTML/JSON, content block, translations, display settings, book pages, `/get_book_spine_item_html_by_uid`, `/navigation_timeline`.
 - `api/src/routes/gloss.rs` - `/gloss_text` (+ `split_gloss_paragraphs`, `gloss_word_processing_options` for the CLI) and `/lookup_forms`.
 - `api/src/routes/misc.rs` - `/`, `/shutdown`, `/logger`, `/health`.
 
 ### New crate `backend_cli/` (`simsapa_backend_cli`, binary `simsapa`)
-- `backend_cli/Cargo.toml` - Binary crate `simsapa`; backend without `audio`, `simsapa_api`, clap (`derive`, `env`, `string` — the version is set at runtime from `get_app_version()`), indicatif, tokio, ctrlc, dialoguer, reqwest (blocking, rustls), tar, bzip2, fs4, html-escape, tracing(-subscriber); dev: tempfile. CLI-only `[profile.release]` comes in 10.1.
+- `backend_cli/Cargo.toml` - Binary crate `simsapa`; backend without `audio`, `simsapa_api`, clap (`derive`, `env`, `string` — the version is set at runtime from `get_app_version()`), indicatif, tokio, ctrlc, dialoguer, reqwest (blocking, rustls), tar, bzip2, fs4, html-escape, tracing(-subscriber); dev: tempfile, rocket (local client for the route-parity test). CLI-only `[profile.release]` comes in 10.1.
 - `backend_cli/Cargo.lock` - Seeded from `api/Cargo.lock`.
-- `backend_cli/src/main.rs` - Synchronous `main`; clap `Cli` / `Commands` (`paths`, `health` so far), global `--simsapa-dir` / `--json` / `-v`, runtime `--version`; a clap usage error exits 1 (clap's own 2 means "databases missing") and is `{"error"}` under `--json`; `read_only_preamble()` is the one place read-only commands get their preamble mode (always `ReadOnly` until 7.2).
+- `backend_cli/src/main.rs` - Synchronous `main`; clap `Cli` / `Commands` (`paths`, `health`, `search`, `query`, `fulltext-search`, `word`, `sutta`, `gloss`, `lookup`, `stats`; each command's args are a `clap::Args` struct in its module), global `--simsapa-dir` / `--json` / `-v`, runtime `--version`; a clap usage error exits 1 (clap's own 2 means "databases missing") and is `{"error"}` under `--json`; `read_only_preamble()` is the one place read-only commands get their preamble mode (always `ReadOnly` until 7.2).
 - `backend_cli/src/exit.rs` - Exit-code constants, `EXIT_CODES_HELP` (shown after `--help`), `CliError` / `CliResult`, `From<anyhow/io/serde_json>`, `json_error_document()`, `finish()`.
-- `backend_cli/src/output.rs` - `print_json()` (compact, as Rocket's `Json<T>`), `stdout_is_tty()`, `snippet_to_terminal()` + unit tests.
+- `backend_cli/src/output.rs` - `print_json()` (compact, as Rocket's `Json<T>`), `stdout_is_tty()`, `snippet_to_terminal()`, `html_to_text()` (block-aware, for `sutta` / `word` text output) + unit tests.
 - `backend_cli/src/startup.rs` - `apply_simsapa_dir_flag()` (relative → cwd-relative, sets `SIMSAPA_DIR`), `init_logging()` (stderr subscriber, ANSI only on a TTY, logger host options), `init_globals()`, `data_folder()`, `require_databases()` (exit 2), `PreambleMode` + `run_headless_preamble()` mirroring `cpp/gui.cpp` (also `remove_download_temp_folder()` and `check_remove_lang_index_dirs()`, which `gui.cpp` runs too), reconcile spinner.
 - `backend_cli/src/commands/paths.rs` - `simsapa paths` (text / `--json`), no databases needed.
 - `backend_cli/src/commands/health.rs` - `simsapa health`, via `simsapa_api::health_info()`; opens the fulltext indexes first so readiness is meaningful.
 - `backend_cli/tests/cli_skeleton.rs` - Flags, exit codes 0/1/2, `--json` error shape, `--version`, relative `--simsapa-dir`, `health --json` on the dist DB (read-only).
+- `backend_cli/src/commands/search.rs` - `simsapa search <suttas|dict|library>`: builds an `ApiSearchRequest` (1-based `--page`), calls `run_api_search()`; text output `N results (page p/P)` + title/uid/snippet blocks.
+- `backend_cli/src/commands/query.rs` - `simsapa query` and `simsapa fulltext-search` (moved from `bootstrap_cli`), via `cli_support`.
+- `backend_cli/src/commands/word.rs` - `simsapa word <uid> [--html]` via `resolve_word_uid()` / `word_json_with_extras()` / `render_word_html_by_uid()`; exit 4 on a miss.
+- `backend_cli/src/commands/sutta.rs` - `simsapa sutta <uid> [--html|--text|--content-json|--bilara]`: text from the Solo-layout content block, `--html` via `sutta_html_response()`, the two JSON forms verbatim via `sutta_json`.
+- `backend_cli/src/commands/gloss.rs` - `simsapa gloss [--exact]` and `simsapa lookup`, the `/gloss_text` and `/lookup_forms` pipelines with the routes' request handling and response types.
+- `backend_cli/src/commands/stats.rs` - `simsapa stats [--write] [--output-folder]` (moved from `appdata-stats`).
+- `backend_cli/tests/read_only_commands.rs` - The read-only commands against the dist DB: JSON shapes, exit codes 2/4, verbatim `content_json`, stdin input, no HTML in text output.
+- `backend_cli/tests/route_parity.rs` - Each `--json` output byte-compared with the matching route's body from `build_rocket()` through Rocket's local client.
 - `backend_cli/src/in_use.rs` - `api-port.txt` + `GET /health` detection; pure decision function + tests.
-- `backend_cli/src/commands/{search,query,word,sutta,gloss,stats,import,index,serve,paths,health}.rs` - One module per command group.
+- `backend_cli/src/commands/{import,index,serve}.rs` - The remaining command modules.
 - `backend_cli/src/setup.rs` - `simsapa setup` (download, extract, language import, move, cleanup, markers).
 - `backend_cli/tests/` - Integration tests (`--json` shapes, exit codes, setup against a local fixture).
 
@@ -40,6 +48,8 @@
 - `backend/src/lib.rs` - `#[cfg(feature = "audio")]` on `pub mod audio; pub mod waveform;` (`init_android_context` stays: SAF needs it); `WRITE_API_PORT_FILE` + `set_write_api_port_file()` (default write, so the GUI is unchanged) gating the `api-port.txt` write in `AppGlobals::new()`; `get_create_simsapa_dir()` asks `logger::pre_logger_print_enabled()` before its pre-logger `println!`.
 - `backend/src/logger.rs` - `LoggerHostOptions` / `set_host_options()` (no rotation, messages as `tracing` events for the host's subscriber, no pre-logger `println!`); `pre_logger_print_enabled()`; `init_tracing()` keeps a subscriber the host already installed. The GUI sets none of it.
 - `backend/src/update_checker.rs` - Receives `compatible_assets_release()` (done).
+- `backend/tests/test_fulltext_search_results.rs` - Comment names `simsapa fulltext-search`.
+- `PROJECT_MAP.md` - `cli_support.rs` entry names its callers in both CLIs.
 - `backend/src/cli_support.rs` (new) - `get_query_results()`, `fulltext_search()` + `FulltextJsonOutput`, `IndexArea` / `index_dirs_for()` / `delete_index_dirs()` / `build_indexes()` (progress via a `report` closure), `collect_appdata_stats()` → `AppdataStats` (`to_markdown_table`, `to_json_pretty`, `write_files`) + `appdata_stats_output_folder()`; moved from `bootstrap_cli/src/main.rs`. Registered in `lib.rs`.
 - `backend/src/dictionary_manager_core.rs` - Existing `import_user_zip`, `import_user_dir`, `suggested_label_for_zip` (already Qt-free; reused as is).
 - `backend/src/dict_index_reconcile.rs` - Existing `reconcile_needed()` / `reconcile_dict_indexes()` (reused).
@@ -85,11 +95,11 @@
   `*.sqlite3`.
 - Use `try_exists()`, never `.exists()`, in new Rust code that may be shared
   with Android paths.
-- Pre-existing backend test failures, present before this feature's backend
-  changes (checked by stashing them): `test_database_comparison` (13,
-  `content_json mismatch`) and `test_render_sutta_content` (9). Because cargo
-  stops at the first failing binary, run `cargo test --no-fail-fast` in
-  `backend/` to see the rest of the suite.
+- `cd backend && cargo test --no-fail-fast` passes in full (70 test binaries)
+  since the sutta fixtures were regenerated after the SuttaCentral
+  re-bootstrap (`test_database_comparison` and `test_render_sutta_content`
+  used to fail). Keep `--no-fail-fast`: cargo otherwise stops at the first
+  failing binary.
 
 ## Instructions for Completing Tasks
 
@@ -233,7 +243,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 5.9 Tests: `paths` with a temp `--simsapa-dir` (no DBs) exits 0; `health` with a temp empty dir exits 2 with the message; `--json` error shape. Use `assert_cmd` (dev-dependency) or `std::process::Command` on the built binary.
   - [x] 5.10 `cd backend_cli && cargo build --release` on this machine; `ldd target/release/simsapa` shows no Qt and no `libasound`.
 
-- [ ] 6.0 Read-only commands (FR 25–27)
+- [x] 6.0 Read-only commands (FR 25–27)
 
   > **Specs:** each command calls the same backend/api function as its HTTP
   > twin, so the `--json` output is the same JSON:
@@ -245,18 +255,18 @@ Update the file after completing each sub-task, not just after completing an ent
   > (`AllParagraphsProcessingResult`, as `/gloss_text`); `query` /
   > `fulltext-search` / `stats` → the 3.2 cores. **Depends on:** 5.0.
 
-  - [ ] 6.1 `search <suttas|dict|library> <query>`: flags `--mode` (the exact serde names, e.g. `"Fulltext Match"`; parse with `parse_search_mode`), `--lang`, `--lang-exclude`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`. Build `ApiSearchRequest` and call `run_search`, so area defaults and the Dictionary `Combined → DpdLookup` remap match `/search`. Text output: header line `N results (page p/P)`, then title / uid / snippet blocks.
-  - [ ] 6.2 Make sure the lazy `init_fulltext_searcher()` path in `run_search` works outside Rocket (it is plain Rust; confirm no `State` dependency leaks into the helper).
-  - [ ] 6.3 `query <suttas|words> <query> [--titles] [--count]` and `fulltext-search …` with the same flags as today's bootstrap commands, calling the 3.2 cores. Delete both commands from `bootstrap_cli`.
-  - [ ] 6.4 `word <uid> [--html]`: resolve with `resolve_word_uid` (tolerant forms: `dhamma 1.01`, `34626/dpd`, `dhamma-1-01/dpd`). Text output shows the main fields; `--html` prints the `dict_words` HTML; exit 4 on a miss.
-  - [ ] 6.5 `sutta <uid> [--html | --text | --content-json | --bilara]`: the default is text (title, uid, plain content). Exit 4 on a miss. For `--html` / `--text` reuse `lookup_sutta_with_fallback` from `simsapa_api` and `convert_verse_ref_to_sutta_uid` from backend `helpers` so `dhp182`-style refs work.
-    - [ ] 6.5a `--content-json`: call `simsapa_backend::sutta_json::get_sutta_content_json()` and print `content_json` to stdout **verbatim** — never through `serde_json::Value`, which sorts the segment ids (no `preserve_order`). Print the resolved uid to stderr. `NotFound` and `NoContentJson` exit 4 with the same messages as the `/sutta.json` route's `error` field.
-    - [ ] 6.5b `--bilara`: call `simsapa_backend::sutta_json::get_sutta_bilara_json()` and print its `json` to stdout unchanged — the text with its HTML template, variant readings (for a translation, the `/pli/ms` root's), comments and glosses, the same body as `GET /sutta_bilara.json`. Print the resolved uid to stderr. `NotFound` and `NoContentJson` exit 4 with the route's messages, as 6.5a.
-  - [ ] 6.6 `gloss <text | ->`: read stdin for `-`; split paragraphs the same way `/gloss_text` does (read its handler for the request → `AllParagraphsProcessingInput` mapping and reuse it). `--json` prints the full result. Text output gives one line per word: word, first option's short meaning, and break-down(s) for compounds.
-  - [ ] 6.6a `gloss --exact`: the same as `/gloss_text`'s `"exact": true`, calling `process_all_paragraphs_exact()` and printing `ExactGlossResult` with `--json`. Reject `--no-duplicates-globally` / `--skip-common` / `--common-words` alongside it through `validate_gloss_exact_options()` (exit 1 with its message). Text output gives one line per token: `token_index`, word, status, headword count, splits.
-  - [ ] 6.6b `lookup <form… | ->`: forms from the arguments, or one per line from stdin for `-` (skip nothing: an empty line is an `invalid` result, as in the route). Validate with `validate_lookup_forms_request()` (`MAX_LOOKUP_FORMS`), call `lookup_forms_exact()`, and with `--json` print `{ dpd_version, results }`, the same JSON as `POST /lookup_forms`. A `not_found` form is a result, never exit 4. Text output gives one line per form: input, `lookup_key`, status, headword lemmas, splits.
-  - [ ] 6.7 `stats [--output-folder] [--write]`: calls the 3.2 stats core on the resolved `appdata.sqlite3`. Delete `appdata-stats` from `bootstrap_cli`.
-  - [ ] 6.8 Tests against the dist DB (read-only): `search suttas "anicca" --json` parses and has results; `word "dhamma 1.01" --json` resolves to `dhamma-1-01/dpd`; `word nosuchword` exits 4; `sutta mn1 --content-json` prints the same bytes as the `mn1/pli/ms` `content_json` column; `sutta dn1/pli/cst --content-json` and `sutta mn1/en/nosuchauthor --content-json` exit 4; `sutta mn1/en/sujato --bilara` has `comments.uid` `mn1/en/sujato` and `variants.uid` `mn1/pli/ms`, and its `content` is the stored column's bytes; `sutta dn1/pli/cst --bilara` exits 4; `gloss` on a short sentence containing a compound returns its deconstruction fields; `gloss --exact --json` gives one token per word with `token_index` 0..n-1; `lookup --json bhagavantaṁ bhagav` gives `found` then `not_found` and the same bytes as `POST /lookup_forms` for the same forms; the text output contains no `<span`.
+  - [x] 6.1 `search <suttas|dict|library> <query>`: flags `--mode` (the exact serde names, e.g. `"Fulltext Match"`; parse with `parse_search_mode`), `--lang`, `--lang-exclude`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`. Build `ApiSearchRequest` and call `run_search`, so area defaults and the Dictionary `Combined → DpdLookup` remap match `/search`. Text output: header line `N results (page p/P)`, then title / uid / snippet blocks.
+  - [x] 6.2 Make sure the lazy `init_fulltext_searcher()` path in `run_search` works outside Rocket (it is plain Rust; confirm no `State` dependency leaks into the helper).
+  - [x] 6.3 `query <suttas|words> <query> [--titles] [--count]` and `fulltext-search …` with the same flags as today's bootstrap commands, calling the 3.2 cores. Delete both commands from `bootstrap_cli`.
+  - [x] 6.4 `word <uid> [--html]`: resolve with `resolve_word_uid` (tolerant forms: `dhamma 1.01`, `34626/dpd`, `dhamma-1-01/dpd`). Text output shows the main fields; `--html` prints the `dict_words` HTML; exit 4 on a miss.
+  - [x] 6.5 `sutta <uid> [--html | --text | --content-json | --bilara]`: the default is text (title, uid, plain content). Exit 4 on a miss. For `--html` / `--text` reuse `lookup_sutta_with_fallback` from `simsapa_api` and `convert_verse_ref_to_sutta_uid` from backend `helpers` so `dhp182`-style refs work.
+    - [x] 6.5a `--content-json`: call `simsapa_backend::sutta_json::get_sutta_content_json()` and print `content_json` to stdout **verbatim** — never through `serde_json::Value`, which sorts the segment ids (no `preserve_order`). Print the resolved uid to stderr. `NotFound` and `NoContentJson` exit 4 with the same messages as the `/sutta.json` route's `error` field.
+    - [x] 6.5b `--bilara`: call `simsapa_backend::sutta_json::get_sutta_bilara_json()` and print its `json` to stdout unchanged — the text with its HTML template, variant readings (for a translation, the `/pli/ms` root's), comments and glosses, the same body as `GET /sutta_bilara.json`. Print the resolved uid to stderr. `NotFound` and `NoContentJson` exit 4 with the route's messages, as 6.5a.
+  - [x] 6.6 `gloss <text | ->`: read stdin for `-`; split paragraphs the same way `/gloss_text` does (read its handler for the request → `AllParagraphsProcessingInput` mapping and reuse it). `--json` prints the full result. Text output gives one line per word: word, first option's short meaning, and break-down(s) for compounds.
+  - [x] 6.6a `gloss --exact`: the same as `/gloss_text`'s `"exact": true`, calling `process_all_paragraphs_exact()` and printing `ExactGlossResult` with `--json`. Reject `--no-duplicates-globally` / `--skip-common` / `--common-words` alongside it through `validate_gloss_exact_options()` (exit 1 with its message). Text output gives one line per token: `token_index`, word, status, headword count, splits.
+  - [x] 6.6b `lookup <form… | ->`: forms from the arguments, or one per line from stdin for `-` (skip nothing: an empty line is an `invalid` result, as in the route). Validate with `validate_lookup_forms_request()` (`MAX_LOOKUP_FORMS`), call `lookup_forms_exact()`, and with `--json` print `{ dpd_version, results }`, the same JSON as `POST /lookup_forms`. A `not_found` form is a result, never exit 4. Text output gives one line per form: input, `lookup_key`, status, headword lemmas, splits.
+  - [x] 6.7 `stats [--output-folder] [--write]`: calls the 3.2 stats core on the resolved `appdata.sqlite3`. Delete `appdata-stats` from `bootstrap_cli`.
+  - [x] 6.8 Tests against the dist DB (read-only): `search suttas "anicca" --json` parses and has results; `word "dhamma 1.01" --json` resolves to `dhamma-1-01/dpd`; `word nosuchword` exits 4; `sutta mn1 --content-json` prints the same bytes as the `mn1/pli/ms` `content_json` column; `sutta dn1/pli/cst --content-json` and `sutta mn1/en/nosuchauthor --content-json` exit 4; `sutta mn1/en/sujato --bilara` has `comments.uid` `mn1/en/sujato` and `variants.uid` `mn1/pli/ms`, and its `content` is the stored column's bytes; `sutta dn1/pli/cst --bilara` exits 4; `gloss` on a short sentence containing a compound returns its deconstruction fields; `gloss --exact --json` gives one token per word with `token_index` 0..n-1; `lookup --json bhagavantaṁ bhagav` gives `found` then `not_found` and the same bytes as `POST /lookup_forms` for the same forms; the text output contains no `<span`.
 
 - [ ] 7.0 In-use detection and the write commands (FR 21–22, 25–26)
 

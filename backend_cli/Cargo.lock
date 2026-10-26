@@ -3251,6 +3251,7 @@ dependencies = [
  "html-escape",
  "indicatif",
  "reqwest",
+ "rocket",
  "serde",
  "serde_json",
  "simsapa_api",

@@ -77,6 +77,92 @@ pub fn snippet_to_terminal(html: &str, is_tty: bool) -> String {
     out.trim().to_string()
 }
 
+/// Turn a rendered text's HTML (a sutta content block, a dictionary
+/// definition) into plain text with its paragraphs: block-level tags start a
+/// new line, the end of a paragraph-like block leaves a blank line, every
+/// other tag is dropped, entities are decoded, whitespace runs
+/// inside a paragraph collapse to one space, and blank-line runs to one blank
+/// line. `<script>` / `<style>` bodies are dropped.
+pub fn html_to_text(html: &str) -> String {
+    const BLOCK_TAGS: [&str; 22] = [
+        "p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol",
+        "blockquote", "header", "footer", "section", "article", "table", "tr", "dt", "dd", "hr",
+    ];
+    const PARAGRAPH_TAGS: [&str; 12] = [
+        "p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "header", "section", "ul", "ol",
+    ];
+
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut rest = html;
+    let mut skip_until: Option<&str> = None;
+
+    let end_line = |current: &mut String, lines: &mut Vec<String>| {
+        let line = current.trim().to_string();
+        current.clear();
+        if line.is_empty() {
+            if lines.last().is_some_and(|l| !l.is_empty()) {
+                lines.push(String::new());
+            }
+        } else {
+            lines.push(line);
+        }
+    };
+
+    while let Some(lt) = rest.find('<') {
+        if skip_until.is_none() {
+            push_text(&mut current, &rest[..lt]);
+        }
+        let after = &rest[lt..];
+        let Some(gt) = after.find('>') else {
+            if skip_until.is_none() {
+                push_text(&mut current, after);
+            }
+            rest = "";
+            break;
+        };
+        let lower = after[..=gt].to_ascii_lowercase();
+        rest = &after[gt + 1..];
+
+        if let Some(closing) = skip_until {
+            if lower.starts_with(closing) {
+                skip_until = None;
+            }
+            continue;
+        }
+        if lower.starts_with("<script") {
+            skip_until = Some("</script");
+            continue;
+        }
+        if lower.starts_with("<style") {
+            skip_until = Some("</style");
+            continue;
+        }
+
+        let name: String = lower
+            .trim_start_matches('<')
+            .trim_start_matches('/')
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if BLOCK_TAGS.contains(&name.as_str()) {
+            end_line(&mut current, &mut lines);
+            if lower.starts_with("</") && PARAGRAPH_TAGS.contains(&name.as_str()) {
+                end_line(&mut current, &mut lines);
+            }
+        }
+    }
+    if skip_until.is_none() {
+        push_text(&mut current, rest);
+    }
+    end_line(&mut current, &mut lines);
+
+    while lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    lines.join("\n")
+}
+
 fn is_match_span(lower_tag: &str) -> bool {
     lower_tag.contains("class='match'") || lower_tag.contains("class=\"match\"")
 }
@@ -140,6 +226,23 @@ mod tests {
     #[test]
     fn test_lone_less_than_is_text() {
         assert_eq!(snippet_to_terminal("1 < 2", false), "1 < 2");
+    }
+
+    #[test]
+    fn test_html_to_text_keeps_paragraphs() {
+        let html = "<div><h1>Title</h1><p>One <b>two</b>\n three.</p><p>Four&nbsp;five</p></div>";
+        assert_eq!(html_to_text(html), "Title\n\nOne two three.\n\nFour five");
+    }
+
+    #[test]
+    fn test_html_to_text_collapses_blank_lines_and_drops_scripts() {
+        let html = "<p>a</p><br><br><br><p>b</p><script>var x = '<p>';</script><style>p { }</style>c";
+        assert_eq!(html_to_text(html), "a\n\nb\n\nc");
+    }
+
+    #[test]
+    fn test_html_to_text_inline_tags_join_words() {
+        assert_eq!(html_to_text("dhamm<b>āya</b> <span class='x'>ca</span>"), "dhammāya ca");
     }
 
     #[test]

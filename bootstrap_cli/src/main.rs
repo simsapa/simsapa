@@ -16,31 +16,10 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
 use simsapa_backend::{cli_support, db, init_app_data, get_app_data, get_create_simsapa_dir, logger, normalize_path_for_sqlite};
-use simsapa_backend::types::SearchArea;
 use simsapa_backend::stardict_parse::import_stardict_as_new;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::asset_helpers::import_suttas_from_db;
 use simsapa_backend::search::indexer;
-
-fn print_query_results(
-    query: &str,
-    area: SearchArea,
-    print_titles: bool,
-    print_count: bool,
-) -> Result<(), String> {
-    let results = cli_support::get_query_results(query, area).map_err(|e| e.to_string())?;
-
-    if print_titles {
-        for i in results.iter() {
-            println!("{}: {}", i.uid, i.title);
-        }
-    }
-    if print_count {
-        println!("{}", results.len());
-    }
-
-    Ok(())
-}
 
 /// Simulates importing a dictionary into a specific database file.
 fn import_stardict_dictionary(new_dict_label: &str,
@@ -459,25 +438,6 @@ fn import_chanting_practice_command(
     Ok(())
 }
 
-/// Generate statistics for an appdata.sqlite3 database
-fn appdata_stats(db_path: &Path, output_folder: Option<&Path>, write_stats: bool) -> Result<(), String> {
-    let stats = cli_support::collect_appdata_stats(db_path).map_err(|e| e.to_string())?;
-
-    // Print as Markdown table
-    println!("\n## Appdata Statistics\n");
-    print!("{}", stats.to_markdown_table());
-
-    if write_stats {
-        let target_folder = cli_support::appdata_stats_output_folder(db_path, output_folder)
-            .map_err(|e| e.to_string())?;
-        let (md_path, json_path) = stats.write_files(&target_folder).map_err(|e| e.to_string())?;
-        logger::info(&format!("Wrote Markdown file: {:?}", md_path));
-        logger::info(&format!("Wrote JSON file: {:?}", json_path));
-    }
-
-    Ok(())
-}
-
 /// Re-run the CST import on an existing appdata database.
 ///
 /// The existing CST rows are deleted first: the importer skips a uid that is
@@ -730,58 +690,6 @@ fn parse_cips_index_command(csv_path: &Path, json_path: &Path, db_path: Option<&
     }
 }
 
-/// Run a fulltext (tantivy) search and print results.
-#[allow(clippy::too_many_arguments)]
-fn fulltext_search(
-    query: &str,
-    area: SearchArea,
-    limit: usize,
-    snippet: bool,
-    lang: Option<&str>,
-    source: Option<&str>,
-    format: &str,
-    output: Option<&Path>,
-) -> Result<(), String> {
-    let globals = simsapa_backend::get_app_globals();
-
-    let (total_hits, results) = cli_support::fulltext_search(&globals.paths, query, area, limit, lang, source)
-        .map_err(|e| e.to_string())?;
-
-    let text = match format {
-        "json" => {
-            let output = cli_support::FulltextJsonOutput::from_results(total_hits, &results, snippet);
-            serde_json::to_string_pretty(&output)
-                .map_err(|e| format!("JSON serialization error: {}", e))?
-        }
-        _ => {
-            let mut buf = String::new();
-            for (i, r) in results.iter().enumerate() {
-                buf.push_str(&format!("{}. [{}] {} (score: {:.2})\n",
-                    i + 1,
-                    r.uid,
-                    r.title,
-                    r.score.unwrap_or(0.0),
-                ));
-                if snippet && !r.snippet.is_empty() {
-                    buf.push_str(&format!("   {}\n", r.snippet));
-                }
-            }
-            buf.push_str(&format!("\nTotal: {} hits, showing {}", total_hits, results.len()));
-            buf
-        }
-    };
-
-    if let Some(path) = output {
-        std::fs::write(path, &text)
-            .map_err(|e| format!("Failed to write output file: {}", e))?;
-        println!("Wrote results to {}", path.display());
-    } else {
-        println!("{}", text);
-    }
-
-    Ok(())
-}
-
 /// Handle the `index build` and `index rebuild` CLI commands.
 fn index_command(cmd: IndexCommands) -> Result<(), String> {
     let app_data = get_app_data();
@@ -827,25 +735,6 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Query suttas or dictionary words
-    #[command(arg_required_else_help = true)]
-    Query {
-        /// Type of query to perform
-        #[arg(value_enum)]
-        query_type: QueryType,
-
-        /// The search query string
-        query: String,
-
-        /// Print the titles/keys of the results
-        #[arg(long, default_value_t = true)]
-        print_titles: bool,
-
-        /// Print the count of the results
-        #[arg(long, default_value_t = true)]
-        print_count: bool,
-    },
-
     /// Import a StarDict dictionary
     #[command(arg_required_else_help = true)]
     ImportStardictDictionary {
@@ -1008,22 +897,6 @@ enum Commands {
         output_db_path: PathBuf,
     },
 
-    /// Generate statistics for an appdata.sqlite3 database
-    #[command(arg_required_else_help = true)]
-    AppdataStats {
-        /// Path to the appdata.sqlite3 database file
-        #[arg(value_name = "DB_PATH")]
-        db_path: PathBuf,
-
-        /// Optional folder path to write the stats as Markdown and JSON files
-        #[arg(value_name = "OUTPUT_FOLDER")]
-        output_folder: Option<PathBuf>,
-
-        /// Write stats to files (uses output_folder if specified, otherwise database folder)
-        #[arg(long, default_value_t = false)]
-        write_stats: bool,
-    },
-
     /// List available languages in SuttaCentral ArangoDB
     SuttacentralImportLanguagesList,
 
@@ -1176,41 +1049,6 @@ enum Commands {
     #[command(subcommand)]
     Index(IndexCommands),
 
-    /// Fulltext (tantivy) search for suttas or dictionary words
-    #[command(arg_required_else_help = true)]
-    FulltextSearch {
-        /// The search query string
-        query: String,
-
-        /// Maximum number of results
-        #[arg(long, default_value_t = 10)]
-        limit: usize,
-
-        /// Show matching snippets
-        #[arg(long, default_value_t = false)]
-        snippet: bool,
-
-        /// Filter by language code (e.g., "pli", "en")
-        #[arg(long)]
-        lang: Option<String>,
-
-        /// Filter by source UID (e.g., "ms", "cst")
-        #[arg(long)]
-        source: Option<String>,
-
-        /// Output format: "text" or "json"
-        #[arg(long, default_value = "text")]
-        format: String,
-
-        /// Search area: "suttas" or "words"
-        #[arg(long, value_enum, default_value_t = FulltextSearchArea::Suttas)]
-        area: FulltextSearchArea,
-
-        /// Write output to a file instead of stdout
-        #[arg(long, value_name = "FILENAME")]
-        output: Option<PathBuf>,
-    },
-
     /// Refresh model names in a providers.json from keyless public sources:
     /// models.dev for most providers, plus OpenRouter's and SambaNova's own
     /// /models endpoints. HuggingFace is skipped. No API keys are used.
@@ -1254,20 +1092,6 @@ enum Commands {
 /// matter where the binary is run from.
 const DEFAULT_RELEASES_FALLBACK_PATH: &str =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/releases-fallback.json");
-
-/// Enum for the different types of queries available.
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
-enum QueryType {
-    Suttas,
-    Words,
-}
-
-/// Search area for fulltext search command.
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
-enum FulltextSearchArea {
-    Suttas,
-    Words,
-}
 
 /// Area filter for index build commands.
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -1314,8 +1138,8 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::AppdataStats { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
-            // Skip app data initialization for bootstrap, export, stats, suttacentral, import, and parse commands
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
+            // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
             init_app_data();
@@ -1350,14 +1174,6 @@ fn main() {
     // === Execute the requested command ===
 
     let command_result = match cli.command {
-        Commands::Query { query_type, query, print_titles, print_count } => {
-            let area = match query_type {
-                QueryType::Suttas => SearchArea::Suttas,
-                QueryType::Words => SearchArea::Dictionary,
-            };
-            print_query_results(&query, area, print_titles, print_count)
-        }
-
         Commands::ImportStardictDictionary { dict_label, path, limit } => {
              if !path.exists() {
                   Err(format!("Dictionary source path does not exist: {:?}", path))
@@ -1414,10 +1230,6 @@ fn main() {
         Commands::DhammapadaTipitakaNetExport { legacy_db_path, output_db_path } => {
             export_dhammapada_tipitaka_net(&legacy_db_path, &output_db_path)
                 .map_err(|e| e.to_string())
-        }
-
-        Commands::AppdataStats { db_path, output_folder, write_stats } => {
-            appdata_stats(&db_path, output_folder.as_deref(), write_stats)
         }
 
         Commands::SuttacentralImportLanguagesList => {
@@ -1478,13 +1290,6 @@ fn main() {
                 .map_err(|e| format!("{:#}", e))
         }
 
-        Commands::FulltextSearch { query, limit, snippet, lang, source, format, area, output } => {
-            let search_area = match area {
-                FulltextSearchArea::Suttas => SearchArea::Suttas,
-                FulltextSearchArea::Words => SearchArea::Dictionary,
-            };
-            fulltext_search(&query, search_area, limit, snippet, lang.as_deref(), source.as_deref(), &format, output.as_deref())
-        }
     };
 
     if let Err(e) = command_result {

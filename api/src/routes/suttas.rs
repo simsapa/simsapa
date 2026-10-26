@@ -157,11 +157,23 @@ pub fn get_sutta_bilara_json_q(uid: &str, dbm: &State<Arc<DbManager>>) -> SuttaJ
     }
 }
 
+/// The `error` text of a `/sutta.json` / `/sutta_bilara.json` `404` for a
+/// sutta stored as HTML. The CLI prints the same text.
+pub fn sutta_json_no_content_message(found_uid: &str) -> String {
+    format!("{} has no SuttaCentral JSON content; it is stored as HTML (use /sutta_html)", found_uid)
+}
+
+/// The `error` text of a `/sutta.json` / `/sutta_bilara.json` `404` for an
+/// unknown uid. The CLI prints the same text.
+pub fn sutta_json_not_found_message(uid: &str) -> String {
+    format!("sutta not found: {}", uid)
+}
+
 fn no_content_json_response(found_uid: &str) -> SuttaJsonResponse {
     SuttaJsonResponse::Error((
         Status::NotFound,
         Json(serde_json::json!({
-            "error": format!("{} has no SuttaCentral JSON content; it is stored as HTML (use /sutta_html)", found_uid),
+            "error": sutta_json_no_content_message(found_uid),
             "reason": "no_content_json",
             "uid": found_uid,
         })),
@@ -172,7 +184,7 @@ fn not_found_response(uid: &str) -> SuttaJsonResponse {
     SuttaJsonResponse::Error((
         Status::NotFound,
         Json(serde_json::json!({
-            "error": format!("sutta not found: {}", uid),
+            "error": sutta_json_not_found_message(uid),
             "reason": "not_found",
             "uid": uid,
         })),

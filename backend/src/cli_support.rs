@@ -1,6 +1,6 @@
-//! Command cores shared by the command-line programs (`simsapa_bootstrap_cli`,
-//! and the end-user `simsapa` CLI): sutta/word queries, fulltext search, index
-//! build/rebuild/delete and appdata statistics.
+//! Command cores of the command-line programs: sutta/word queries, fulltext
+//! search and appdata statistics (the end-user `simsapa` CLI), and index
+//! build/rebuild/delete (both `simsapa` and `simsapa_bootstrap_cli`).
 //!
 //! The functions here return values and do no printing to stdout. Callers
 //! decide how to present the results; where a long operation reports progress,
@@ -64,7 +64,7 @@ pub fn get_query_results(query: &str, area: SearchArea) -> Result<Vec<SearchResu
 
 // ===== Fulltext search =====
 
-/// One fulltext hit in the `fulltext-search --format json` output.
+/// One fulltext hit in the `simsapa fulltext-search --format json` output.
 #[derive(Serialize)]
 pub struct FulltextJsonResult {
     pub uid: String,
@@ -76,7 +76,7 @@ pub struct FulltextJsonResult {
     pub snippet_html: Option<String>,
 }
 
-/// Top-level `fulltext-search --format json` output with total hits and results.
+/// Top-level `simsapa fulltext-search --format json` output with total hits and results.
 #[derive(Serialize)]
 pub struct FulltextJsonOutput {
     pub total: usize,
@@ -435,7 +435,7 @@ pub fn collect_appdata_stats(db_path: &Path) -> Result<AppdataStats> {
     Ok(AppdataStats { entries: stats })
 }
 
-/// Where `appdata-stats --write-stats` writes its files: the given folder, or
+/// Where `simsapa stats --write` writes its files: the given folder, or
 /// else the database's own folder.
 pub fn appdata_stats_output_folder(db_path: &Path, output_folder: Option<&Path>) -> Result<PathBuf> {
     match output_folder {
