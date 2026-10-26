@@ -38,7 +38,10 @@ to widen a lookup step by step (`/lookup_forms` → `/dict_combined_search` →
 `/search` Headword / Contains Match), is §19. The **exact DPD form lookup**,
 `POST /lookup_forms` (up to 5,000 forms per call, one exact, unranked result per
 form, in input order), and `/gloss_text`'s **`"exact": true` mode** (one such
-result per word of a passage, nothing dropped or chosen) are §19.1–§19.2.
+result per word of a passage, nothing dropped or chosen) are §19.1–§19.2. Each
+result carries DPD's own parse of the form (`form_grammar_raw`, and per
+headword `form_grammar`) and each headword the construction as DPD displays
+it (`construction_summary`).
 `GET /health` reports `dpd_version`, the cache key for DPD-derived answers
 (§10).
 
@@ -514,7 +517,11 @@ fulltext searcher has been initialized (§8):
   **Key caches of DPD-derived answers on it, not on `app_version`**: an app
   update that ships the same DPD release leaves every DPD answer unchanged,
   while a DPD update can change them without an app version a cache would
-  notice. `null` (never `""`) when the row cannot be read.
+  notice. The exception is a Simsapa update that **adds fields** to these
+  answers (as `form_grammar` and `construction_summary` were added): the values
+  stay the same but the shape does not, so also invalidate on an
+  `app_version` change if the cache stores whole responses (§19.1). `null`
+  (never `""`) when the row cannot be read.
 
 ## 11. Response fields (`SearchResult`)
 
@@ -823,6 +830,15 @@ curl -s "localhost:$PORT/words/dhamma-1-01/dpd.json"
 The element shape is the serialized DB row (DPD headword JSON, DPD root JSON, or
 the `dict_words` `DictWord` model) — not the `SearchResult` of §11.
 
+A DPD headword record (the numeric `<id>/dpd` lane only) also carries
+`construction_summary`, the construction as DPD's entry displays it
+(`49236/dpd` *bhaṇāmase*: `"√bhaṇ + a + mase"`, where `construction` is
+`bhaṇa + mase`); `""` when the entry shows none, `null` when the installed
+`dpd.sqlite3` predates the column (see §19.1 and
+[dpd-construction-summary.md](./dpd-construction-summary.md)). The
+`dict_words` lane and roots do not have it. Keys are alphabetical, so the
+added key moves no other.
+
 > **Gotchas — read before using `/words/<uid>.json`:**
 >
 > 1. **Prefer a uid discovered from a search; the resolver has some fuzzy
@@ -961,8 +977,8 @@ views, not for headless data retrieval.
 | `GET /get_word_html_by_uid/<window_id>/<uid..>` | Full rendered dictionary-word HTML; 404 on miss | §13 |
 | `GET /word_html?window_id=<id>&uid=<uid>` | Query-param twin of `get_word_html_by_uid`; uid encoding-agnostic (`%2F` ok); 404 on miss | §13 |
 | `GET /words/<uid>.json` | Full dictionary-word record as JSON (path form; raw `/` only); 404 + `[]` on miss | §13.3 |
-| `GET /word.json?uid=<uid>&[verbose=1]` | Full dictionary-word record as JSON (query form; uid encoding-agnostic). Default bare array, 404 + `[]` on miss; `verbose=1` → diagnostic envelope | §13.3 |
-| `POST /lookup_forms` | Exact DPD form lookup: up to 5,000 forms → one result per form, in input order, with every headword and split of the form's DPD `lookup` row and nothing chosen; `dpd_version`. 400 / 500 with JSON `{ "error" }` | §19.1 |
+| `GET /word.json?uid=<uid>&[verbose=1]` | Full dictionary-word record as JSON (query form; uid encoding-agnostic). Default bare array, 404 + `[]` on miss; `verbose=1` → diagnostic envelope. A DPD headword (`<id>/dpd`) also carries `construction_summary` | §13.3 |
+| `POST /lookup_forms` | Exact DPD form lookup: up to 5,000 forms → one result per form, in input order, with every headword and split of the form's DPD `lookup` row and nothing chosen, DPD's parses of the form (`form_grammar_raw`, per headword `form_grammar`, per split component its own row's) and each headword's `root_base` / `root_sign` / `construction_summary`; `dpd_version`. 400 / 500 with JSON `{ "error" }` | §19.1 |
 | `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, incl. grouped deconstruction fields). With `options.exact: true`, every token in order with its exact lookup instead. 400 on bad body; empty text → 200 empty paragraphs | §16.1, §19.2 |
 | `GET /word_selection_ws` | WebSocket word-selection run over glossed paragraphs; streams `status` / `error` / final `result` messages; accepts `cancel` | §16.2 |
 | `POST /set_ai_provider_key` | Set a provider's API key + enable it (and optionally a model), so the WebSocket engine — which uses the app's **saved** settings — can reach it. Never echoes the key | §16.4 |
@@ -1137,7 +1153,8 @@ struct CopyToClipboardRequest { text: String }
 struct OpenExternalUrlRequest { url: String }
 ```
 
-`/words/<uid>.json` returns `Vec<serde_json::Value>` (the raw DB row, §13.3); the
+`/words/<uid>.json` returns `Vec<serde_json::Value>` (the raw DB row, plus
+`construction_summary` on a DPD headword, §13.3); the
 two `*_flat_completion_list` routes return `Vec<String>` (currently empty). The
 HTML routes (`get_*_html_by_uid`, `book_pages`, `get_pdf_viewer`, `index`,
 `app-assets-list`) return `RawHtml<String>`; the asset/resource routes return raw
@@ -2130,6 +2147,18 @@ which are the base word's (`vuttanti`: the ten *vutta* headwords). Unlike
 `/dict_combined_search`, `iti` (`13466/dpd`) is **not** added to them; it is in
 the split's `iti` component.
 
+**The parses of an iti form's base word are on its base component.** A
+result's `form_grammar_raw` is the joined row's grammar, and that row parses
+the joined form only as a word in its own right. Usually it has none
+(`cittanti`), so the result's `form_grammar_raw` and its headwords'
+`form_grammar` are empty. When the joined form is also an inflection, its
+grammar is that other reading (`bhavissanti`: `bhavati verb fut 3rd pl`;
+`santi`: `atthi verb pr 3rd pl`), 28 such rows on `v0.4.20260501`. Either
+way, the base component's `form_grammar_raw` holds the base word's parses
+(`cittan'ti`: `cittaṁ`, with `["citta","noun","nt nom sg"]` & co.). An
+`iti_rule` result's `form_grammar_raw` is `[]`, since the joined row it
+rejected is not shown (§19.1).
+
 ---
 
 ## 19. Tiers of exactness: widening a lookup
@@ -2167,7 +2196,8 @@ word that was asked about.
 // response
 { "dpd_version": "v0.4.20260501",
   "results": [ { "input", "lookup_key", "status", "note"?,
-                 "headwords": [ … ], "deconstructions": [ … ] }, … ] }
+                 "headwords": [ … ], "deconstructions": [ … ],
+                 "form_grammar_raw": [ … ] }, … ] }
 ```
 
 - **Batch size:** up to **5,000** forms per call; 5,001 is a `400`. An empty
@@ -2199,13 +2229,20 @@ word that was asked about.
   `uid:` query; `note` says which).
 - Each headword carries `uid` (the numeric `<id>/dpd`, which `/word.json`
   accepts), `lemma_1`, `pos`, `grammar`, `construction[]`, `root_key`,
-  `meaning_1` and `matched_as` (`lemma` when the key is the citation form,
-  else `inflection`). Each split carries `split` (DPD's string), `kind`
-  (`iti_sandhi` / `sandhi`), `source` (`dpd` / `iti_rule`) and
-  `components[]` with each component's exact headword uids.
+  `meaning_1`, `matched_as` (`lemma` when the key is the citation form,
+  else `inflection`), `root_base`, `root_sign`, `construction_summary` and
+  `form_grammar` (see "Form grammar" and "`construction_summary`" below).
+  Each split carries `split` (DPD's string), `kind` (`iti_sandhi` /
+  `sandhi`), `source` (`dpd` / `iti_rule`) and `components[]` with each
+  component's exact headword uids and `form_grammar_raw`.
+- Each result carries `form_grammar_raw`: DPD's own parses of the form.
 - A root form loses its `√` in normalisation and is `not_found`
   (`√bhaj` → `lookup_key: "bhaj"`): roots are not returned.
-- Cache answers on `dpd_version`, not on the app version.
+- **Caching.** Cache answers on `dpd_version`, not on the app version: the
+  same DPD release gives the same answers. But `dpd_version` does not change
+  when Simsapa adds fields to these results, so a cache keyed on it alone
+  keeps serving the older shape. Also invalidate when `/health`'s
+  `app_version` changes.
 
 **Field values.** Every enum is a lowercase snake_case string, safe to `match` on.
 
@@ -2223,8 +2260,67 @@ word that was asked about.
 | | `iti_rule` | Built by the `<base> + iti` rule (§18.3); not in DPD's row. |
 
 `note` is omitted unless the status is `invalid`. `construction` is DPD's
-`construction` column split into its lines (`[]` when empty); `root_key` is
-`""` when DPD has none.
+`construction` column split into its lines (`[]` when empty); `root_key`,
+`root_base` and `root_sign` are the columns verbatim, `""` when DPD has none.
+
+**Form grammar.** DPD's `lookup` table gives each surface form a list of
+`[lemma, class, parse]` triples, one per analysis (`bhagavantaṁ`:
+`["bhagavant","noun","masc acc sg"]`, `["bhagavant","adj","nt nom sg"]`, …).
+The lemma has no homonym number and the class is broad (`noun`, `verb`,
+`adj`), so the API also assigns each triple to the headwords it belongs to.
+
+- `form_grammar_raw` (result) is that list **verbatim**, in DPD's order, as
+  JSON arrays, from the lookup row that supplied `headwords`. For a joined iti
+  row that is the joined row, which parses the joined form only as a word in
+  its own right: none for `cittanti`, `bhavati verb fut 3rd pl` for
+  `bhavissanti` (§18.3). An `iti_rule` result (`magga’’nti`) gives `[]`: the joined
+  row's grammar is exactly the analysis the rule rejected (`magganti` is the
+  verb *maggati*), and the base's grammar is on the base component. `invalid`
+  and "no row" give `[]`.
+- `form_grammar_raw` (split component) is the component word's **own** exact
+  lookup row's list, for `dpd` and `iti_rule` splits alike: `cittan'ti`'s
+  `cittaṁ` component lists `["citta","noun","nt nom sg"]` & co.; the `iti`
+  component lists `[]` (DPD's `iti` row has no grammar); an unknown component
+  gets `[]`. Components get no per-headword assignment: the triples carry the
+  lemma and the class, which is what a caller compares.
+- `form_grammar` (headword) is the `parse` of every triple of the result's
+  `form_grammar_raw` assigned to that headword, in DPD's order, duplicates
+  kept. A triple is assigned to a headword when its lemma equals the
+  headword's `lemma_clean`, its class equals the headword's `pos` class
+  (table below), **and**, for a `noun` triple, the parse's first word (its
+  gender) equals the headword's `pos`, so `nt nom sg` of the nt *magga 7* is
+  not given to the masc *magga 1*. Verbs are not checked by tense: a `pr`
+  headword's forms include every tense (`bhavati` gets `fut 3rd pl`).
+- **Each matching homonym gets the triple.** `carissanti`'s
+  `["carati","verb","fut 3rd pl"]` goes to all four *carati* headwords: DPD's
+  data cannot tell them apart, and choosing is the caller's job.
+- A triple no headword matches stays in `form_grammar_raw` only, so an audit
+  is a set difference. On `v0.4.20260501` these are exactly the `interr`,
+  `prep` and `adv` triples (1,542 of 922,707, 0.17%), whose lemmas are
+  headwords under other `pos` values: `katamo` lists
+  `["katama","interr","masc nom sg"]`, and the headword *katama* is `pron`.
+
+| headword `pos` | class |
+|---|---|
+| `masc`, `nt`, `fem` | `noun` |
+| `pr`, `aor`, `fut`, `opt`, `imp`, `perf`, `cond`, `imperf` | `verb` |
+| every other `pos` (`adj`, `pron`, `pp`, `prp`, `ptp`, `card`, `ordin`, `cs`, `letter`, `root`, `ve`, …) | itself |
+
+`interr`, `prep` and `adv` are deliberately not mapped: no single `pos` is
+behind any of them (`interr` lemmas are `adj` 871 times, `pron` 212, and
+mixed sets; `prep` lemmas are always mixed; `adv` lemmas are `adj` or
+`masc`), so a mapping would assign by guess. The parses are returned as
+strings, never parsed into case, number or gender. Rows list up to 39
+triples and components repeat their rows' lists, so responses grow with
+them, most for exact `/gloss_text` on long texts.
+
+**`construction_summary`** is the construction as DPD's entry displays it,
+root base replaced by root + sign: *carati 1.1* (`construction` `cara + ti`)
+has `"√car + a + ti"`. It is the bracketed text of DPD's rendered summary
+line, taken at bootstrap; see [dpd-construction-summary.md](./dpd-construction-summary.md).
+`""` means DPD's entry shows no bracket (no `construction`, no `meaning_1`,
+or neither). `null` means the installed `dpd.sqlite3` predates the column;
+everything else in the result is unaffected.
 
 **Two uid lanes.** A headword `uid` and a component's `uids` are the numeric
 `<id>/dpd` form, which `/word.json` resolves to the structured `dpd_headwords`
@@ -2255,8 +2351,9 @@ curl -s -X POST "localhost:$PORT/lookup_forms" -H 'Content-Type: application/jso
 the split `cittaṁ + iti`. Nothing is chosen, so both come back: the caller
 decides which reading the text means.
 
-One headword in full (`.results[0].headwords[0]`), and one split
-(`.results[2].deconstructions`):
+One headword in full (`.results[0].headwords[0]`), its result's
+`form_grammar_raw`, and one split (`.results[2].deconstructions`, the
+components' `form_grammar_raw` cut short):
 
 ```jsonc
 { "uid": "49139/dpd",
@@ -2266,18 +2363,49 @@ One headword in full (`.results[0].headwords[0]`), and one split
   "construction": ["√bhaj > bhag + a + vant", "bhaga + vant"],
   "root_key": "√bhaj 1",
   "meaning_1": "Sublime One; Blessed One; Fortunate One; Auspicious One; epithet of the Buddha",
-  "matched_as": "inflection" }
+  "matched_as": "inflection",
+  "root_base": "",
+  "root_sign": "a",
+  "construction_summary": "√bhaj + a + vant",
+  "form_grammar": ["masc acc sg"] }
+
+"form_grammar_raw": [["bhagavant","noun","masc acc sg"],["bhagavant","adj","nt nom sg"],
+                     ["bhagavant","adj","masc acc sg"],["bhagavant","adj","nt acc sg"]]
 
 [ { "split": "atthi + aññe",
     "kind": "sandhi",
     "source": "dpd",
     "components": [
-      { "word": "atthi", "uids": ["2736/dpd","2737/dpd","2738/dpd","2757/dpd"] },
-      { "word": "aññe",  "uids": ["1497/dpd","1498/dpd","1601/dpd","1631/dpd","1660/dpd","74340/dpd","80675/dpd"] } ] } ]
+      { "word": "atthi", "uids": ["2736/dpd","2737/dpd","2738/dpd","2757/dpd"],
+        "form_grammar_raw": [["atthi","verb","pr 3rd sg"],["atthi","verb","pr 3rd pl"],
+                             ["atthi","noun","masc nom sg"], …] },
+      { "word": "aññe",  "uids": ["1497/dpd","1498/dpd","1601/dpd","1631/dpd","1660/dpd","74340/dpd","80675/dpd"],
+        "form_grammar_raw": [["añña","pron","masc nom pl"],["añña","pron","nt nom pl"], …] } ] } ]
 ```
 
 A component's `uids` are its own exact lookup row's headwords; a component DPD
 does not know gets `[]`, never a guess.
+
+The form grammar of a few forms, one line per result:
+
+```sh
+curl -s -X POST "localhost:$PORT/lookup_forms" -H 'Content-Type: application/json' \
+  -d '{"forms":["bhagavantaṁ","carissanti","katamo","cittan'"'"'ti"]}' \
+  | jq -c '.results[] | {input, raw: (.form_grammar_raw | length),
+           headwords: [.headwords[] | "\(.uid) \(.lemma_1) [\(.pos)] \(.form_grammar) \(.construction_summary)"],
+           components: [.deconstructions[].components[] | "\(.word): \(.form_grammar_raw | length)"]}'
+```
+
+```jsonc
+{"input":"bhagavantaṁ","raw":4,"headwords":["49139/dpd bhagavant 1 [masc] [\"masc acc sg\"] √bhaj + a + vant","49140/dpd bhagavant 2 [adj] [\"nt nom sg\",\"masc acc sg\",\"nt acc sg\"] √bhaj"],"components":[]}
+{"input":"carissanti","raw":1,"headwords":["26276/dpd carati 1.1 [pr] [\"fut 3rd pl\"] √car + a + ti","26277/dpd carati 2.1 [pr] [\"fut 3rd pl\"] √car + a + ti","26278/dpd carati 2.2 [pr] [\"fut 3rd pl\"] √car + a + ti","26279/dpd carati 2.3 [pr] [\"fut 3rd pl\"] √car"],"components":[]}
+{"input":"katamo","raw":1,"headwords":["19645/dpd katama [pron] [] ka + tama"],"components":[]}
+{"input":"cittan'ti","raw":0,"headwords":["26555/dpd citta 1.1 [nt] [] √cit + ta","26556/dpd citta 1.2 [nt] [] √cit + ta","26557/dpd citta 2.1 [adj] [] √citt + a","26558/dpd citta 2.2 [adj] [] √citt + a","26559/dpd citta 2.3 [nt] [] √citt + a","26560/dpd citta 2.4 [masc] [] √citt + a","26561/dpd citta 2.5 [masc] [] √citt + a","26562/dpd citta 2.6 [masc] [] √citt + a","26563/dpd citta 1.3 [nt] [] √cit","77246/dpd cittā [fem] [] √citt + a + ā"],"components":["cittaṁ: 9","iti: 0"]}
+```
+
+`katama`'s only triple is `interr`, so it is in `raw` and in no headword's
+`form_grammar`. `cittan'ti`'s joined row has no grammar; the parses are on
+its `cittaṁ` component.
 
 ### 19.2 Tier 1 for a passage: `/gloss_text` with `"exact": true`
 
@@ -2285,7 +2413,9 @@ does not know gets `[]`, never a guess.
 paragraph, in order, a token `{ token_index, original_word, clean_word,
 context, lookup }`, where `lookup` is the §19.1 result for `original_word`.
 Nothing is deduplicated, skipped or chosen, and `token_index` runs 0..n-1 in
-each paragraph, so the tokens zip against the words by position.
+each paragraph, so the tokens zip against the words by position. Each
+`lookup` carries every §19.1 field, including `form_grammar`,
+`form_grammar_raw` and `construction_summary`.
 
 - The words are the gloss tokeniser's, with annotations (sutta references,
   verse numbers) stripped. A quoted or joined iti form is one token and keeps

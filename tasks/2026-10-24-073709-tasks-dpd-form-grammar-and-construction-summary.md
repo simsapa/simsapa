@@ -20,7 +20,8 @@ PRD: [2026-10-24-073709-prd---dpd-form-grammar-and-construction-summary.md](./20
 - `bridges/src/api.rs` - `word_json_response()`: call `word_json_with_extras()` instead of `rw.as_json()` (both the plain and the `verbose` body). `/lookup_forms` and `/gloss_text` need no change.
 - `docs/database-migrations.md` - `dpd.sqlite3` row: the bootstrap-added column and the runtime tolerance.
 - `docs/simsapa-localhost-api-search-endpoints.md` - §19.1, §19.2, the `/word.json` section, the bootstrap-column section.
-- `PROJECT_MAP.md`, `CLAUDE.md` - New module/functions/subcommand; API-doc bullet.
+- `docs/dpd-construction-summary.md` *(new)* - The bootstrap column: source, line shape, the step and its report, the populate command, the "never in the Diesel model" trap.
+- `PROJECT_MAP.md`, `AGENTS.md` (`CLAUDE.md` is a symlink to it) - New module/functions/subcommand; API-doc bullet; doc-list bullet.
 - `tasks/2026-10-23-103039-prd---simsapa-backend-cli-npm-package.md` - Check only (PRD FR 20).
 
 ### Notes
@@ -435,35 +436,53 @@ DPD StarDict into `dictionaries.sqlite3` before `dpd_migrate()`.
 
 **Depends on.** 5.0 (real outputs for the examples).
 
-- [ ] 6.0 Documentation
-  - [ ] 6.1 API doc §19.1: the new fields (headword, result, component), the
+- [x] 6.0 Documentation
+  - [x] 6.1 API doc §19.1: the new fields (headword, result, component), the
         assignment rule with the `pos_class` table (and the final
         `interr`/`prep`/`adv` decision from 2.8), "each matching homonym gets
         the entry", where `form_grammar_raw` comes from for joined-iti and
         `iti_rule` results, `construction_summary` semantics (`""` vs `null`).
         Replace the worked example's output with the 5.4 output.
-  - [ ] 6.2 §19.2: one line that exact tokens carry the same fields. The
+  - [x] 6.2 §19.2: one line that exact tokens carry the same fields. The
         `/word.json` section: `construction_summary` on the numeric lane only.
-  - [ ] 6.3 A bootstrap-column section (in the API doc or a new
+  - [x] 6.3 A bootstrap-column section (in the API doc or a new
         `docs/dpd-construction-summary.md`, linked from the API doc): taken from
         DPD's rendered summary line, not from DPD's Python rule, and why; the
         measured line shape the extractor relies on; the report and its
         expected counts; the `populate-dpd-construction-summary` command; the
         "never in the Diesel model or `dpd_schema.rs`" trap. Describe current
         behaviour only; no history narration.
-  - [ ] 6.4 `PROJECT_MAP.md`: `dpd_form_grammar.rs`, the new `dpd.rs`
+  - [x] 6.4 `PROJECT_MAP.md`: `dpd_form_grammar.rs`, the new `dpd.rs`
         functions, `word_json_with_extras()`, the subcommand.
-  - [ ] 6.4a `docs/database-migrations.md` (PRD FR 18): the `dpd.sqlite3` rows
+  - [x] 6.4a `docs/database-migrations.md` (PRD FR 18): the `dpd.sqlite3` rows
         (the table at the top and the bootstrap table) gain one sentence: the
         bootstrap adds and fills `construction_summary`; the app tolerates
         its absence instead of migrating it.
-  - [ ] 6.4b API doc: a note in §19.1 that `dpd_version` does not change when
+  - [x] 6.4b API doc: a note in §19.1 that `dpd_version` does not change when
         Simsapa adds fields, so a caller caching by `dpd_version` also
         invalidates on an `app_version` change that adds fields.
-  - [ ] 6.5 `CLAUDE.md`: in the API-doc bullet's exact-lookup sentence, name
+  - [x] 6.5 `CLAUDE.md`: in the API-doc bullet's exact-lookup sentence, name
         `form_grammar` / `form_grammar_raw` and `construction_summary`; if 6.3
         made a new doc, add a one-paragraph bullet for it in the same style.
-  - [ ] 6.6 Check the CLI PRD (PRD FR 20). Edit only if it lists
+  - [x] 6.6 Check the CLI PRD (PRD FR 20). Edit only if it lists
         `simsapa lookup` output fields one by one.
-  - [ ] 6.7 Final: `cd backend && cargo test`, `make build -B`, `git status`
+  - [x] 6.7 Final: `cd backend && cargo test`, `make build -B`, `git status`
         (no `*.sqlite3`).
+
+  **6.0, 2026-10-26.** New doc `docs/dpd-construction-summary.md` (6.3),
+  linked from the API doc's §19.1 and §13.3, `database-migrations.md` and the
+  `CLAUDE.md` doc list. §19.1's existing worked example re-run against the new
+  build: output unchanged. A new form-grammar example was added, and its output
+  was checked to match the live response exactly. 6.6: the CLI PRD says
+  `simsapa lookup` prints "the same JSON as `POST /lookup_forms`" and lists no
+  fields, so it is unchanged. `CLAUDE.md` is a symlink to `AGENTS.md`; the edit
+  is in `AGENTS.md`. `cd backend && cargo test`: 1254 passed, 0 failed,
+  19 ignored; `make build -B` clean; no `*.sqlite3` tracked.
+
+  Completeness pass over the API doc: the intro, §10's `dpd_version` caching
+  advice (it said "not on `app_version`" with no exception for added fields),
+  the §14 route table rows for `/lookup_forms` and `/word.json`, §15's
+  "raw DB row" note, and §18.3 (where an iti form's parses are) were updated
+  too. Measured for §18.3: 140,115 `lookup` rows have a `… + iti` break-down;
+  28 of them also have grammar, all joined forms that are inflections in their
+  own right (`bhavissanti`, `santi`, `jānāti`, `kinti`).
