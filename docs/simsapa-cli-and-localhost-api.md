@@ -303,6 +303,30 @@ unasked. These two checks are off when, in this order:
 `updates.disabled_reason` is then `flag`, `environment` or `setting`. `simsapa
 check-updates` is an explicit request and checks regardless of all three.
 
+`simsapa health` puts the result on one `Updates` line, among its other lines:
+
+```
+$ simsapa health
+…
+Updates          simsapa 1.1.0-alpha.4 available (npm install -g @simsapa/cli@latest); database up to date
+```
+
+Other forms of the line:
+
+```
+Updates          simsapa up to date; database 1.1.1 available (simsapa db-upgrade)
+Updates          simsapa 1.2.0 available (npm install -g @simsapa/cli@latest), then simsapa setup; database up to date
+Updates          simsapa up to date; database not installed (simsapa setup)
+Updates          unknown (offline)
+Updates          not checked (--no-update-check)
+Updates          not checked (SIMSAPA_NO_UPDATE_CHECK)
+Updates          not checked (turned off in Simsapa's settings)
+```
+
+Being offline is not an error for `health`: its exit code does not depend on
+the update check. `simsapa health --json` carries the same result as its
+`updates` object (§10).
+
 ---
 
 # Part B. The localhost API
