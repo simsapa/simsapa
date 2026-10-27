@@ -1,6 +1,6 @@
 {
   "name": "@simsapa/cli",
-  "version": "1.1.0-alpha.3",
+  "version": "1.1.0-alpha.4",
   "description": "Search suttas and Pāli dictionaries, gloss Pāli text, and serve the Simsapa localhost API from the command line.",
   "keywords": [
     "pali",
@@ -28,9 +28,9 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@simsapa/cli-linux-x64": "1.1.0-alpha.3",
-    "@simsapa/cli-linux-arm64": "1.1.0-alpha.3",
-    "@simsapa/cli-darwin-arm64": "1.1.0-alpha.3",
-    "@simsapa/cli-win32-x64": "1.1.0-alpha.3"
+    "@simsapa/cli-linux-x64": "1.1.0-alpha.4",
+    "@simsapa/cli-linux-arm64": "1.1.0-alpha.4",
+    "@simsapa/cli-darwin-arm64": "1.1.0-alpha.4",
+    "@simsapa/cli-win32-x64": "1.1.0-alpha.4"
   }
 }

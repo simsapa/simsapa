@@ -14,7 +14,7 @@ use simsapa_backend::helpers::run_fts5_indexes_sql_script;
 use crate::bootstrap::{create_database_connection, run_migrations, ensure_directory_exists};
 
 // Declare database version without the 'v' prefix.
-pub static DB_VERSION: &str = "1.1.0-alpha.3";
+pub static DB_VERSION: &str = "1.1.0-alpha.4";
 
 pub struct AppdataBootstrap {
     output_path: PathBuf,

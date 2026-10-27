@@ -1,6 +1,6 @@
 {
   "name": "@simsapa/cli-darwin-arm64",
-  "version": "1.1.0-alpha.3",
+  "version": "1.1.0-alpha.4",
   "description": "The macOS arm64 binary of @simsapa/cli.",
   "homepage": "https://github.com/simsapa/simsapa",
   "license": "Apache-2.0",
