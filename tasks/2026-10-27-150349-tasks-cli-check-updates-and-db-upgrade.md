@@ -2,7 +2,7 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 
 ## Relevant Files
 
-- `backend/src/update_status.rs` - **New.** The Qt-free update check: `UpdateStatus` / `CliUpdate` / `DatabaseUpdate` types, npm dist-tag fetch, status computation, opt-out check. Unit tests inline (`#[cfg(test)]`), against a local `TcpListener`.
+- `backend/src/update_status.rs` - **New.** `releases_request_params()` (no stats + the installed databases' release channel) shared by the check and `db-upgrade`. The Qt-free update check: `UpdateStatus` / `CliUpdate` / `DatabaseUpdate` types, npm dist-tag fetch, status computation, opt-out check. Unit tests inline (`#[cfg(test)]`), against a local `TcpListener`.
 - `backend/src/update_checker.rs` - `fetch_releases_info()` gains a timeout + URL variant; reuse `to_version`, `compare_versions`, `is_local_db_obsolete`, `has_db_update`, `is_app_version_compatible_with_db_version`, `resolve_db_version`, `get_release_channel`.
 - `backend/src/lib.rs` - `pub mod update_status;`.
 - `backend/src/db/mod.rs` - `read_appdata_db_version()` (existing, reused); `read_appdata_settings_json()` (plain-connection read of the stored settings, for the `release_channel` setting when no `AppData` exists).
@@ -12,7 +12,7 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `api/src/lib.rs` - `pub mod update_cache;` and re-exports; route inventory unchanged (no new route).
 - `api/src/routes/misc.rs` - `GET /health` (no code change expected beyond the struct; test here).
 - `api/tests/` or inline tests - `/health` responds immediately while the check is blocked.
-- `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch; global `--no-update-check` flag passed to `serve`.
+- `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch (`db-upgrade` under `acquire_for_writing()`, no preamble first); global `--no-update-check` flag passed to `serve`.
 - `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`: runs the check (10 s), text/JSON output, exit 1 via `CliError::reported` when a part is `unknown`.
 - `backend_cli/src/exit.rs` - `CliError::reported(code)`: the command already printed its result; `finish()` prints nothing more.
 - `backend_cli/tests/check_updates.rs` - **New.** `check-updates` integration tests against a local listener, temp folders.
@@ -24,10 +24,10 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `bridges/src/sutta_bridge.rs` - `check_for_updates()` writes the GUI's `/health` cache at the obsolete return and both live-fetch arms (no new request).
 - `backend_cli/src/commands/mod.rs` - register new modules.
 - `backend_cli/src/setup.rs` - the upgrade split into shared `pub(crate)` functions reused by `db-upgrade`: `OpenedDatabases`, `open_installed_databases()`, `installed_languages_for_download()`, `replace_databases(…, command)`, `install_release(urls, is_initial, action)`, `finish_install()`, `confirm(prompt, command)`.
-- `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals).
+- `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals): `DbUpgradeArgs`, pure `decide_db_upgrade()` (unit-tested), live release lookup with the bundled list only for a newer release, then `setup`'s shared export → delete → download → import.
 - `backend_cli/tests/read_only_commands.rs` - `check-updates` / `health` integration tests (offline, overridden URLs).
 - `backend_cli/tests/setup.rs` - must stay green after the refactor.
-- `backend_cli/tests/db_upgrade.rs` - **New.** Refusal paths in temporary folders.
+- `backend_cli/tests/db_upgrade.rs` - **New.** Refusal and no-op paths in temporary folders against a local releases listener: no databases (2), lock held (3), incompatible (1, names `setup`), up to date (0, text and JSON), non-tty without `--yes` (1), releases unreachable (1, not "up to date"), unknown language (1).
 - `backend_cli/src/output.rs` - `test_no_print_macros_in_sources` (run, don't edit).
 - `bridges/src/api.rs` - `start_webserver()` stores the initial `checking` / `disabled(setting)` with `init_update_status()` (set only if unset, since the GUI's check may finish first); no request of its own.
 - `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()`.
@@ -207,12 +207,12 @@ Depends on: 1.0 (`database_update_from`, `fetch_releases_info_from`), 5.0 (share
 
 Order note: open the `AppData` only after the "up to date" decision, so a no-op `db-upgrade` neither migrates nor holds the databases.
 
-- [ ] 6.0 `simsapa db-upgrade` command
-  - [ ] 6.1 Add `DbUpgrade(db_upgrade::DbUpgradeArgs)` to `Commands` with help text, and the dispatch arm (`let _lock = acquire_for_writing()?;` — bound to a name so the lock is held for the whole run — then `db_upgrade::run`). Add `mod db_upgrade;`.
-  - [ ] 6.2 Implement steps 1–3 and a pure `decide_db_upgrade(installed: Option<&str>, app_version, release: Option<&ReleaseEntry>, live: bool) -> DbUpgradeDecision` (`NotInstalled | Incompatible | UpToDate | Upgrade | ReleasesUnreachable`) and unit-test every arm.
-  - [ ] 6.3 Implement steps 4–8 using the 5.0 shared functions; release notes printed as received.
-  - [ ] 6.4 Integration tests in `backend_cli/tests/db_upgrade.rs`, temp folders only: no databases → exit 2; folder in use (hold `cli-write.lock` from the test) → exit 3; incompatible db (`DB_VERSION` env override, as `setup`'s tests do) → exit 1 naming `simsapa setup`; up to date (releases override serving a release equal to the installed version) → exit 0, nothing deleted; non-tty without `--yes` → exit 1, nothing deleted. The download/extract/cleanup path is already covered by `setup`'s `download_and_install` tests, which the shared code uses.
-  - [ ] 6.5 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
+- [x] 6.0 `simsapa db-upgrade` command
+  - [x] 6.1 Add `DbUpgrade(db_upgrade::DbUpgradeArgs)` to `Commands` with help text, and the dispatch arm (`let _lock = acquire_for_writing()?;` — bound to a name so the lock is held for the whole run — then `db_upgrade::run`). Add `mod db_upgrade;`.
+  - [x] 6.2 Implement steps 1–3 and a pure `decide_db_upgrade(installed: Option<&str>, app_version, release: Option<&ReleaseEntry>, live: bool) -> DbUpgradeDecision` (`NotInstalled | Incompatible | UpToDate | Upgrade | ReleasesUnreachable`) and unit-test every arm.
+  - [x] 6.3 Implement steps 4–8 using the 5.0 shared functions; release notes printed as received.
+  - [x] 6.4 Integration tests in `backend_cli/tests/db_upgrade.rs`, temp folders only: no databases → exit 2; folder in use (hold `cli-write.lock` from the test) → exit 3; incompatible db (`DB_VERSION` env override, as `setup`'s tests do) → exit 1 naming `simsapa setup`; up to date (releases override serving a release equal to the installed version) → exit 0, nothing deleted; non-tty without `--yes` → exit 1, nothing deleted. The download/extract/cleanup path is already covered by `setup`'s `download_and_install` tests, which the shared code uses.
+  - [x] 6.5 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
 
 ### 7.0 — Specs and dependencies
 

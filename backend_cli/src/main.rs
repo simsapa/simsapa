@@ -8,6 +8,7 @@
 
 mod cancel;
 mod commands;
+mod db_upgrade;
 mod exit;
 mod in_use;
 mod output;
@@ -123,6 +124,10 @@ enum Commands {
     /// Download the Simsapa databases (about 4.8 GB on disk), or add sutta
     /// languages to an existing setup
     Setup(setup::SetupArgs),
+
+    /// Install a newer compatible database release (new content for this
+    /// version of simsapa), keeping your user data
+    DbUpgrade(db_upgrade::DbUpgradeArgs),
 
     /// Print the reference for these commands and the localhost API
     /// (Markdown), or save it with --output
@@ -258,6 +263,12 @@ fn run(cli: &Cli) -> CliResult {
             // full preamble itself once they are installed.
             let _lock = acquire_for_writing()?;
             setup::run(args, cli.json)
+        }
+        Commands::DbUpgrade(args) => {
+            // As setup: no preamble first, the full preamble once the new
+            // databases are installed. The lock is held for the whole run.
+            let _lock = acquire_for_writing()?;
+            db_upgrade::run(args, cli.json)
         }
     }
 }

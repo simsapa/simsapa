@@ -405,6 +405,12 @@ pub fn installed_db_version(appdata_db_path: &Path, appdata_database_url: &str) 
     }
 }
 
+/// The releases request of an update check: no stats, and the release channel
+/// of the installed databases' settings (see [`release_channel`]).
+pub fn releases_request_params(installed: &InstalledDb, appdata_database_url: &str) -> ReleasesRequestParams {
+    ReleasesRequestParams::without_stats(release_channel(installed, appdata_database_url))
+}
+
 /// The release channel to ask the releases server for, as
 /// `get_release_channel()` decides it. Without `AppData` (`simsapa
 /// check-updates` opens no databases) the `release_channel` setting is read
@@ -473,7 +479,7 @@ pub fn check_updates(config: &UpdateCheckConfig, appdata_db_path: &Path, appdata
     });
     // Local and quick; the releases request needs the channel setting.
     let installed = installed_db_version(appdata_db_path, appdata_database_url);
-    let params = ReleasesRequestParams::without_stats(release_channel(&installed, appdata_database_url));
+    let params = releases_request_params(&installed, appdata_database_url);
     let releases = {
         let url = config.releases_api_url.clone();
         let timeout = config.timeout;
