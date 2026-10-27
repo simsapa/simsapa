@@ -197,7 +197,7 @@ fn run(cli: &Cli) -> CliResult {
         Commands::CheckUpdates => commands::check_updates::run(cli.json),
         Commands::Health => {
             read_only_preamble()?;
-            commands::health::run(cli.json)
+            commands::health::run(cli.json, cli.no_update_check)
         }
         Commands::Search(args) => {
             read_only_preamble()?;

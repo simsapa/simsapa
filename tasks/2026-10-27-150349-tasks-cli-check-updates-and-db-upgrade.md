@@ -16,7 +16,8 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`: runs the check (10 s), text/JSON output, exit 1 via `CliError::reported` when a part is `unknown`.
 - `backend_cli/src/exit.rs` - `CliError::reported(code)`: the command already printed its result; `finish()` prints nothing more.
 - `backend_cli/tests/check_updates.rs` - **New.** `check-updates` integration tests against a local listener, temp folders.
-- `backend_cli/src/commands/health.rs` - inline check, `Updates` line, `updates` in JSON.
+- `backend_cli/src/commands/health.rs` - inline check on a `std::thread` overlapping the index open (3 s), `updates_line()` for the `Updates` line (unit-tested), `updates` in JSON.
+- `backend_cli/tests/check_updates.rs` - also `health` against the dist databases with refused URLs: offline → exit 0 `unknown (offline)`; `--no-update-check` → `flag`; `SIMSAPA_NO_UPDATE_CHECK=1` → `environment`.
 - `backend_cli/src/commands/serve.rs` - decides with `implicit_check_disabled()`; stores `disabled(reason)` or spawns the background check from the `on_liftoff` fairing.
 - `backend_cli/tests/serve.rs` - `start_serve_with_env()`; `/health` answers promptly with `checking` while the check hangs; `--no-update-check` → `flag`; `SIMSAPA_NO_UPDATE_CHECK=1` → `environment`.
 - `backend/src/app_data.rs` - `get_notify_about_simsapa_updates()` (existing, reused by the CLI).
@@ -160,10 +161,10 @@ Depends on: 1.0, 3.3 (`HealthInfo.updates`).
 
 `simsapa health`: start `check_updates(3 s, check_cli: true)` on a `std::thread` at the top of `run()`, before `init_fulltext_searcher()`; join after it; put the result into `HealthInfo.updates` (set the cache, or overwrite the field). Disabled per `implicit_check_disabled(cli.no_update_check, get_app_data().get_notify_about_simsapa_updates())` (after the preamble, which opens the databases) → `disabled(reason)`, no thread. Exit code unaffected.
 
-- [ ] 4.0 `simsapa health` inline check
-  - [ ] 4.1 In `commands/health.rs`, spawn the check at the start of `run()`, join after the searcher init, and set `info.updates`.
-  - [ ] 4.2 Text: one `Updates          …` line in `print_text()` summarising both parts (`unknown (offline)` when both are `unknown`; when disabled, `not checked (--no-update-check)` / `not checked (SIMSAPA_NO_UPDATE_CHECK)` / `not checked (turned off in Simsapa's settings)`).
-  - [ ] 4.3 Tests: with the URL overrides pointing to a refusing port, `health` exits 0 and prints `Updates` `unknown`; with `--no-update-check`, `disabled` / `"flag"`; with `SIMSAPA_NO_UPDATE_CHECK=1`, `"environment"`; `--json` contains `updates`.
+- [x] 4.0 `simsapa health` inline check
+  - [x] 4.1 In `commands/health.rs`, spawn the check at the start of `run()`, join after the searcher init, and set `info.updates`.
+  - [x] 4.2 Text: one `Updates          …` line in `print_text()` summarising both parts (`unknown (offline)` when both are `unknown`; when disabled, `not checked (--no-update-check)` / `not checked (SIMSAPA_NO_UPDATE_CHECK)` / `not checked (turned off in Simsapa's settings)`).
+  - [x] 4.3 Tests: with the URL overrides pointing to a refusing port, `health` exits 0 and prints `Updates` `unknown`; with `--no-update-check`, `disabled` / `"flag"`; with `SIMSAPA_NO_UPDATE_CHECK=1`, `"environment"`; `--json` contains `updates`.
 
 ### 5.0 — Specs and dependencies
 

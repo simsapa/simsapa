@@ -206,3 +206,69 @@ fn test_releases_down_is_unknown() {
     assert_eq!(doc["database"]["status"], "unknown");
     assert!(doc["database"]["latest"].is_null());
 }
+
+const DIST_SIMSAPA_DIR: &str = "/home/gambhiro/prods/apps/simsapa-ng-project/bootstrap-assets-resources/dist/simsapa";
+
+/// A URL on a port nothing listens on: every request is refused at once.
+fn refusing_url() -> String {
+    let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    format!("http://127.0.0.1:{}/x", port)
+}
+
+/// `simsapa health` against the dist databases (read-only; the check writes
+/// nothing). `None` when they are not there.
+fn health(extra: &[&str], no_update_check_env: bool) -> Option<Output> {
+    let dir = Path::new(DIST_SIMSAPA_DIR);
+    if !matches!(dir.join("app-assets/appdata.sqlite3").try_exists(), Ok(true)) {
+        eprintln!("skipped: no dist databases at {}", dir.display());
+        return None;
+    }
+    let url = refusing_url();
+    let mut c = Command::new(env!("CARGO_BIN_EXE_simsapa"));
+    c.arg("--simsapa-dir").arg(dir).arg("health").args(extra);
+    c.env_remove("API_PORT")
+        .env_remove("DB_VERSION")
+        .env_remove("SIMSAPA_NO_UPDATE_CHECK")
+        .env("SIMSAPA_NPM_DIST_TAGS_URL", &url)
+        .env("SIMSAPA_RELEASES_API_URL", &url);
+    if no_update_check_env {
+        c.env("SIMSAPA_NO_UPDATE_CHECK", "1");
+    }
+    Some(c.output().expect("failed to run simsapa"))
+}
+
+#[test]
+fn test_health_offline_exits_0_with_updates_unknown() {
+    let Some(out) = health(&[], false) else { return };
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("Updates          unknown (offline)"), "{}", stdout(&out));
+
+    let Some(out) = health(&["--json"], false) else { return };
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["updates"]["state"], "checked");
+    assert_eq!(doc["updates"]["cli"]["status"], "unknown");
+    assert_eq!(doc["updates"]["database"]["status"], "unknown");
+}
+
+#[test]
+fn test_health_no_update_check_flag() {
+    let Some(out) = health(&["--json", "--no-update-check"], false) else { return };
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["updates"]["state"], "disabled");
+    assert_eq!(doc["updates"]["disabled_reason"], "flag");
+    assert_eq!(doc["updates"]["cli"]["status"], "disabled");
+
+    let Some(out) = health(&["--no-update-check"], false) else { return };
+    assert!(stdout(&out).contains("Updates          not checked (--no-update-check)"), "{}", stdout(&out));
+}
+
+#[test]
+fn test_health_no_update_check_environment() {
+    let Some(out) = health(&["--json"], true) else { return };
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["updates"]["state"], "disabled");
+    assert_eq!(doc["updates"]["disabled_reason"], "environment");
+}
