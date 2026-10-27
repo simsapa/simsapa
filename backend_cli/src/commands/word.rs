@@ -9,7 +9,7 @@ use serde::Serialize;
 use simsapa_backend::get_app_data;
 
 use crate::exit::{CliError, CliResult};
-use crate::output::{html_to_text, print_json};
+use crate::output::{html_to_text, outln, print_json};
 
 #[derive(Args, Debug)]
 pub struct WordArgs {
@@ -63,7 +63,7 @@ pub fn run(args: &WordArgs, json: bool) -> CliResult {
         if json {
             return print_json(&WordHtml { uid: resolved.canonical_uid(), html });
         }
-        println!("{}", html);
+        outln!("{}", html);
         return Ok(());
     }
 
@@ -73,7 +73,7 @@ pub fn run(args: &WordArgs, json: bool) -> CliResult {
         return print_json(&serde_json::Value::Array(vec![body]));
     }
 
-    println!("{}", resolved.canonical_uid());
+    outln!("{}", resolved.canonical_uid());
     let mut shown: Vec<String> = Vec::new();
     for (key, label) in TEXT_FIELDS {
         let Some(value) = body.get(key) else { continue };
@@ -87,9 +87,9 @@ pub fn run(args: &WordArgs, json: bool) -> CliResult {
             continue;
         }
         if text.contains('\n') {
-            println!("{}:\n{}", label, text);
+            outln!("{}:\n{}", label, text);
         } else {
-            println!("{}: {}", label, text);
+            outln!("{}: {}", label, text);
         }
         shown.push(text);
     }

@@ -12,7 +12,7 @@ use simsapa_backend::get_app_globals;
 use simsapa_backend::types::SearchArea;
 
 use crate::exit::{CliError, CliResult};
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QueryArea {
@@ -63,11 +63,11 @@ pub fn run_query(args: &QueryArgs, json: bool) -> CliResult {
     let both = !args.titles && !args.count;
     if args.titles || both {
         for r in &results {
-            println!("{}: {}", r.uid, r.title);
+            outln!("{}: {}", r.uid, r.title);
         }
     }
     if args.count || both {
-        println!("{}", results.len());
+        outln!("{}", results.len());
     }
     Ok(())
 }
@@ -144,7 +144,7 @@ pub fn run_fulltext_search(args: &FulltextSearchArgs, json: bool) -> CliResult {
                 .map_err(|e| CliError::error(format!("Failed to write {}: {}", path.display(), e)))?;
             eprintln!("Wrote results to {}", path.display());
         }
-        None => println!("{}", text),
+        None => outln!("{}", text),
     }
     Ok(())
 }

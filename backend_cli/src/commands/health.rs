@@ -11,7 +11,7 @@ use simsapa_api::{HealthFulltextArea, HealthInfo, health_info, init_app_globals_
 use simsapa_backend::{get_app_data, init_fulltext_searcher};
 
 use crate::exit::CliResult;
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 
 /// Requires the preamble to have run.
 pub fn run(json: bool) -> CliResult {
@@ -41,23 +41,23 @@ fn area_line(name: &str, a: &HealthFulltextArea) -> String {
 }
 
 fn print_text(h: &HealthInfo) {
-    println!("Simsapa {}", h.app_version);
-    println!("DPD release      {}", h.dpd_version.as_deref().unwrap_or("unknown"));
-    println!("appdata          {}", h.db_paths.appdata);
-    println!("dictionaries     {}", h.db_paths.dictionaries);
-    println!("dpd              {}", h.db_paths.dpd);
-    println!("Suttas           {}", count(h.counts.suttas));
-    println!("Dictionary words {}", count(h.counts.dict_words));
-    println!("DPD headwords    {}", count(h.counts.dpd_headwords));
-    println!("Sutta languages  {}", h.sutta_languages.join(", "));
-    println!("Dictionaries     {}", h.dict_sources.len());
+    outln!("Simsapa {}", h.app_version);
+    outln!("DPD release      {}", h.dpd_version.as_deref().unwrap_or("unknown"));
+    outln!("appdata          {}", h.db_paths.appdata);
+    outln!("dictionaries     {}", h.db_paths.dictionaries);
+    outln!("dpd              {}", h.db_paths.dpd);
+    outln!("Suttas           {}", count(h.counts.suttas));
+    outln!("Dictionary words {}", count(h.counts.dict_words));
+    outln!("DPD headwords    {}", count(h.counts.dpd_headwords));
+    outln!("Sutta languages  {}", h.sutta_languages.join(", "));
+    outln!("Dictionaries     {}", h.dict_sources.len());
     let mut fulltext = format!("Fulltext search  {}", h.fulltext.state);
     if !h.fulltext.message.is_empty() {
         fulltext.push_str(" — ");
         fulltext.push_str(&h.fulltext.message);
     }
-    println!("{}", fulltext);
-    println!("{}", area_line("suttas", &h.fulltext.sutta));
-    println!("{}", area_line("dict", &h.fulltext.dict));
-    println!("{}", area_line("library", &h.fulltext.library));
+    outln!("{}", fulltext);
+    outln!("{}", area_line("suttas", &h.fulltext.sutta));
+    outln!("{}", area_line("dict", &h.fulltext.dict));
+    outln!("{}", area_line("library", &h.fulltext.library));
 }

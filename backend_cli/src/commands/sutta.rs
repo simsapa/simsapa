@@ -23,7 +23,7 @@ use simsapa_backend::sutta_display::SuttaDisplayOverrides;
 use simsapa_backend::sutta_json::{SuttaBilaraJson, SuttaContentJson, get_sutta_bilara_json, get_sutta_content_json};
 
 use crate::exit::{CliError, CliResult};
-use crate::output::{html_to_text, print_json};
+use crate::output::{html_to_text, outln, print_json};
 
 #[derive(Args, Debug)]
 pub struct SuttaArgs {
@@ -89,7 +89,7 @@ pub fn run(args: &SuttaArgs, json: bool) -> CliResult {
         if json {
             return print_json(&SuttaHtml { uid: sutta.uid, html: html.0 });
         }
-        println!("{}", html.0);
+        outln!("{}", html.0);
         return Ok(());
     }
 
@@ -118,21 +118,18 @@ pub fn run(args: &SuttaArgs, json: bool) -> CliResult {
         });
     }
 
-    println!("{}", if title.is_empty() { &sutta.sutta_ref } else { &title });
-    println!("{}", sutta.uid);
-    println!();
-    println!("{}", text);
+    outln!("{}", if title.is_empty() { &sutta.sutta_ref } else { &title });
+    outln!("{}", sutta.uid);
+    outln!();
+    outln!("{}", text);
     Ok(())
 }
 
 /// Print a stored JSON body unchanged: never through a `serde_json::Value`,
 /// which would sort the segment ids and scramble the text order.
 fn print_verbatim(found_uid: &str, body: &str) -> CliResult {
-    use std::io::Write;
     eprintln!("{}", found_uid);
-    let mut out = std::io::stdout().lock();
-    out.write_all(body.as_bytes())?;
-    out.write_all(b"\n")?;
+    outln!("{}", body);
     Ok(())
 }
 

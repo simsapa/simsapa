@@ -330,3 +330,48 @@ fn test_read_only_commands_need_databases() {
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
     }
 }
+
+/// Runs `simsapa` with its stdout pipe closed before it writes anything, as
+/// `simsapa … | head` does once `head` has read enough.
+fn simsapa_closed_stdout(args: &[&str]) -> Output {
+    let mut child = command(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to run simsapa");
+    // The process opens the databases before it prints, so the read end is
+    // closed long before the first write.
+    drop(child.stdout.take());
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn test_closed_stdout_is_not_a_panic() {
+    if !have_dist() { return; }
+    for args in [
+        &["search", "suttas", "anicca", "--json"][..],
+        &["search", "suttas", "anicca"][..],
+        &["word", "dhamma 1.01"][..],
+    ] {
+        let out = simsapa_closed_stdout(args);
+        let err = stderr(&out);
+        assert!(!err.contains("panicked"), "{args:?} panicked: {err}");
+        assert!(!err.contains("Broken pipe"), "{args:?} reported the closed pipe: {err}");
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {err}");
+    }
+}
+
+#[test]
+fn test_failed_stdout_write_exits_1() {
+    if !have_dist() { return; }
+    let Ok(dev_full) = std::fs::OpenOptions::new().write(true).open("/dev/full") else { return; };
+    let out = command(&["search", "suttas", "anicca", "--json"])
+        .stdout(dev_full)
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to run simsapa");
+    let err = stderr(&out);
+    assert!(!err.contains("panicked"), "panicked: {err}");
+    assert!(err.contains("failed writing to stdout"), "stderr: {err}");
+    assert_eq!(out.status.code(), Some(1), "stderr: {err}");
+}

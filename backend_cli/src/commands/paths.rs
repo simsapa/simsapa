@@ -8,7 +8,7 @@ use serde::Serialize;
 use simsapa_backend::get_app_globals;
 
 use crate::exit::CliResult;
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 
 #[derive(Debug, Serialize)]
 pub struct PathEntry {
@@ -90,7 +90,7 @@ pub fn run(json: bool) -> CliResult {
         ("Log file", &info.log_file),
     ];
     for (label, e) in rows {
-        println!("{:<22} {}{}", label, e.path, mark(e));
+        outln!("{:<22} {}{}", label, e.path, mark(e));
     }
 
     let port_file = &info.api_port_file;
@@ -99,7 +99,7 @@ pub fn run(json: bool) -> CliResult {
         (true, Some(port)) => format!("  (port {})", port),
         (true, None) => "  (no port recorded)".to_string(),
     };
-    println!("{:<22} {}{}", "api-port.txt", port_file.path, port_note);
+    outln!("{:<22} {}{}", "api-port.txt", port_file.path, port_note);
 
     Ok(())
 }

@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use crate::output::{outln, stdout_write_failed};
+
 /// The command succeeded.
 pub const OK: i32 = 0;
 /// Any error without a code of its own, including a command-line usage error.
@@ -83,13 +85,16 @@ pub fn json_error_document(message: &str) -> String {
 
 /// Print a failed result and exit with its code. With `--json` the error is
 /// `{"error": "<message>"}` on stdout, so stdout always holds one JSON
-/// document; otherwise the message goes to stderr.
+/// document; otherwise the message goes to stderr. A command that succeeded
+/// but could not write its output (other than to a closed pipe, see
+/// `output::write_stdout`) exits 1.
 pub fn finish(result: CliResult, json: bool) -> ! {
     match result {
+        Ok(()) if stdout_write_failed() => std::process::exit(ERROR),
         Ok(()) => std::process::exit(OK),
         Err(e) => {
             if json {
-                println!("{}", json_error_document(&e.message));
+                outln!("{}", json_error_document(&e.message));
             } else if e.code == ERROR {
                 eprintln!("Error: {}", e.message);
             } else {

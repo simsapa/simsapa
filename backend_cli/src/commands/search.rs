@@ -10,7 +10,7 @@ use simsapa_api::{ApiSearchRequest, ApiSearchResult, run_api_search};
 use simsapa_backend::get_app_data;
 
 use crate::exit::{CliError, CliResult};
-use crate::output::{print_json, snippet_to_terminal, stdout_is_tty};
+use crate::output::{outln, print_json, snippet_to_terminal, stdout_is_tty};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SearchAreaArg {
@@ -135,20 +135,20 @@ fn print_text(result: &ApiSearchResult, args: &SearchArgs) {
     let is_tty = stdout_is_tty();
     let pages = page_count(result.hits, args.page_len);
     let noun = if result.hits == 1 { "result" } else { "results" };
-    println!("{} {} (page {}/{})", result.hits, noun, args.page, pages);
+    outln!("{} {} (page {}/{})", result.hits, noun, args.page, pages);
 
     if let Some(decon) = &result.deconstructor {
-        println!("Break-downs: {}", decon.join("; "));
+        outln!("Break-downs: {}", decon.join("; "));
     }
 
     for r in &result.results {
-        println!();
+        outln!();
         let title = snippet_to_terminal(&r.title, is_tty);
-        println!("{}", if title.is_empty() { r.uid.as_str() } else { title.as_str() });
-        println!("  {}", r.uid);
+        outln!("{}", if title.is_empty() { r.uid.as_str() } else { title.as_str() });
+        outln!("  {}", r.uid);
         let snippet = snippet_to_terminal(&r.snippet, is_tty);
         if !snippet.is_empty() {
-            println!("  {}", snippet);
+            outln!("  {}", snippet);
         }
     }
 }

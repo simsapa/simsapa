@@ -14,7 +14,7 @@ use simsapa_backend::cli_support::{self, IndexArea};
 use simsapa_backend::{get_app_data, get_app_globals};
 
 use crate::exit::CliResult;
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IndexAreaArg {
@@ -103,7 +103,7 @@ pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
             lang: filter.lang.clone(),
         })
     } else {
-        println!("Done.");
+        outln!("Done.");
         Ok(())
     }
 }

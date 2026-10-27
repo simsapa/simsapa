@@ -23,6 +23,7 @@ use simsapa_backend::update_checker::get_app_version;
 
 use crate::exit::{CliError, CliResult, EXIT_CODES_HELP, finish, json_error_document};
 use crate::in_use::{InUse, WriteLock, WriteLockOutcome, check_in_use, in_use_error, lock_held_error, try_acquire_write_lock};
+use crate::output::outln;
 use crate::startup::{PreambleMode, data_folder};
 
 // musl's allocator made fulltext searches ~70% slower than the glibc build; see
@@ -134,7 +135,7 @@ fn parse_cli() -> Cli {
             // A usage error. clap's own exit code would be 2, which here means
             // "databases missing", so it exits 1 instead.
             if json_requested {
-                println!("{}", json_error_document(e.render().to_string().trim()));
+                outln!("{}", json_error_document(e.render().to_string().trim()));
             } else {
                 let _ = e.print();
             }

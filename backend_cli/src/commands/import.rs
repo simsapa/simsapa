@@ -33,7 +33,7 @@ use simsapa_backend::{get_app_data, get_app_globals};
 
 use crate::cancel::install_ctrlc_handler;
 use crate::exit::{CliError, CliResult};
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 use crate::startup::run_reconcile_with_spinner;
 
 #[derive(Subcommand, Debug)]
@@ -243,7 +243,7 @@ where
             inserted: outcome.inserted,
         })
     } else {
-        println!(
+        outln!(
             "Imported \"{}\": {} entries (dictionary id {}).",
             label, outcome.inserted, outcome.dictionary_id
         );
@@ -341,7 +341,7 @@ fn import_book(args: &BookArgs, kind: BookKind, json: bool) -> CliResult {
             index_lang,
         })
     } else {
-        println!("Imported \"{}\".", args.uid);
+        outln!("Imported \"{}\".", args.uid);
         Ok(())
     }
 }

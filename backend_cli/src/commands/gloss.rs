@@ -19,7 +19,7 @@ use simsapa_backend::types::{
 };
 
 use crate::exit::{CliError, CliResult};
-use crate::output::{print_json, snippet_to_terminal, stdout_is_tty};
+use crate::output::{outln, print_json, snippet_to_terminal, stdout_is_tty};
 
 /// The words given as arguments joined with spaces, or stdin for a single `-`.
 fn text_or_stdin(words: &[String]) -> Result<String, CliError> {
@@ -119,9 +119,9 @@ fn print_gloss_text(result: &AllParagraphsProcessingResult) {
     for (n, p) in result.paragraphs.iter().enumerate() {
         if many {
             if n > 0 {
-                println!();
+                outln!();
             }
-            println!("Paragraph {}", p.paragraph_index + 1);
+            outln!("Paragraph {}", p.paragraph_index + 1);
         }
         let width = p.words_data.iter().map(|w| w.original_word.chars().count()).max().unwrap_or(0);
         for w in &p.words_data {
@@ -134,10 +134,10 @@ fn print_gloss_text(result: &AllParagraphsProcessingResult) {
                 let splits: Vec<&str> = w.deconstructions.iter().map(|d| d.words_joined.as_str()).collect();
                 line.push_str(&format!("  [{}]", splits.join(" | ")));
             }
-            println!("{}", line.trim_end());
+            outln!("{}", line.trim_end());
         }
         if !p.unrecognized_words.is_empty() {
-            println!("Unrecognized: {}", p.unrecognized_words.join(", "));
+            outln!("Unrecognized: {}", p.unrecognized_words.join(", "));
         }
     }
 }
@@ -158,9 +158,9 @@ fn print_exact_text(result: &ExactGlossResult) {
     for (n, p) in result.paragraphs.iter().enumerate() {
         if many {
             if n > 0 {
-                println!();
+                outln!();
             }
-            println!("Paragraph {}", p.paragraph_index + 1);
+            outln!("Paragraph {}", p.paragraph_index + 1);
         }
         for t in &p.tokens {
             let mut line = format!(
@@ -175,7 +175,7 @@ fn print_exact_text(result: &ExactGlossResult) {
             if !splits.is_empty() {
                 line.push_str(&format!("  [{}]", splits));
             }
-            println!("{}", line);
+            outln!("{}", line);
         }
     }
 }
@@ -223,7 +223,7 @@ pub fn run_lookup(args: &LookupArgs, json: bool) -> CliResult {
         if !splits.is_empty() {
             line.push_str(&format!("  [{}]", splits));
         }
-        println!("{}", line);
+        outln!("{}", line);
     }
     Ok(())
 }

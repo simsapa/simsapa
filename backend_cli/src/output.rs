@@ -1,19 +1,69 @@
 //! Printing: `--json` documents on stdout, and search-result HTML turned into
 //! terminal text. Progress, spinners and log lines go to stderr, never here.
 
-use std::io::{IsTerminal, Write};
+use std::fmt;
+use std::io::{self, IsTerminal, Write};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::Serialize;
 
 use crate::exit::CliResult;
+
+/// All stdout output goes through [`write_stdout`] (via `out!` / `outln!`),
+/// never `print!` / `println!`, which panic when a write fails. A reader that
+/// closes the pipe early (`simsapa … | head`) is routine for an agent.
+///
+/// After the first failed write, all further output is dropped and the command
+/// carries on: an `import` or `index` whose stdout went away must still finish
+/// its work rather than stop half-way, so the default `SIGPIPE` action (which
+/// would also kill `serve` on a dropped socket) is deliberately not restored.
+/// A closed pipe keeps the command's own exit code; any other write error
+/// (e.g. a full disk behind `> out.json`) makes [`crate::exit::finish`] exit 1.
+static STDOUT_STATE: AtomicU8 = AtomicU8::new(STDOUT_OPEN);
+
+const STDOUT_OPEN: u8 = 0;
+const STDOUT_PIPE_CLOSED: u8 = 1;
+const STDOUT_FAILED: u8 = 2;
+
+pub fn write_stdout(args: fmt::Arguments) {
+    if STDOUT_STATE.load(Ordering::Relaxed) != STDOUT_OPEN {
+        return;
+    }
+    let mut out = io::stdout().lock();
+    if let Err(e) = out.write_fmt(args).and_then(|_| out.flush()) {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            STDOUT_STATE.store(STDOUT_PIPE_CLOSED, Ordering::Relaxed);
+        } else {
+            STDOUT_STATE.store(STDOUT_FAILED, Ordering::Relaxed);
+            eprintln!("Error: failed writing to stdout: {}", e);
+        }
+    }
+}
+
+/// Whether a stdout write failed for a reason other than a closed pipe.
+pub fn stdout_write_failed() -> bool {
+    STDOUT_STATE.load(Ordering::Relaxed) == STDOUT_FAILED
+}
+
+/// `print!` through [`write_stdout`].
+macro_rules! out {
+    ($($arg:tt)*) => { $crate::output::write_stdout(format_args!($($arg)*)) };
+}
+
+/// `println!` through [`write_stdout`].
+macro_rules! outln {
+    () => { $crate::output::write_stdout(format_args!("\n")) };
+    ($($arg:tt)*) => { $crate::output::write_stdout(format_args!("{}\n", format_args!($($arg)*))) };
+}
+
+pub(crate) use {out, outln};
 
 /// Print one JSON document on stdout, compact, as the API's `Json<T>`
 /// responses serialize it, so the same request gives the same bytes from
 /// `simsapa … --json` and from `simsapa serve`.
 pub fn print_json<T: Serialize + ?Sized>(value: &T) -> CliResult {
     let s = serde_json::to_string(value)?;
-    let mut out = std::io::stdout().lock();
-    writeln!(out, "{}", s)?;
+    outln!("{}", s);
     Ok(())
 }
 
@@ -188,6 +238,30 @@ fn push_text(out: &mut String, raw: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `print!` / `println!` panic on a closed stdout; see [`write_stdout`].
+    #[test]
+    fn test_no_print_macros_in_sources() {
+        fn visit(dir: &std::path::Path, found: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    visit(&path, found);
+                } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("output.rs") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    for (n, line) in text.lines().enumerate() {
+                        let code = line.replace("eprintln!", "").replace("eprint!", "");
+                        if code.contains("println!") || code.contains("print!(") {
+                            found.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
+                        }
+                    }
+                }
+            }
+        }
+        let mut found = Vec::new();
+        visit(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
+        assert!(found.is_empty(), "use outln! / out! instead:\n{}", found.join("\n"));
+    }
 
     #[test]
     fn test_match_span_to_markdown_bold_in_a_pipe() {

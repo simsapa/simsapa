@@ -48,7 +48,7 @@ use simsapa_backend::{
 
 use crate::cancel::install_ctrlc_handler;
 use crate::exit::{CliError, CliResult};
-use crate::output::print_json;
+use crate::output::{outln, print_json};
 use crate::startup::{PreambleMode, run_headless_preamble};
 
 /// Always part of the base databases, never a separate download.
@@ -205,9 +205,8 @@ pub fn list_languages(json: bool) -> CliResult {
     if json {
         return print_json(&langs);
     }
-    let mut out = io::stdout().lock();
     for l in &langs {
-        writeln!(out, "{:<6}{}  ({} suttas)", l.code, l.name, l.sutta_count)?;
+        outln!("{:<6}{}  ({} suttas)", l.code, l.name, l.sutta_count);
     }
     Ok(())
 }
@@ -236,8 +235,8 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
                 downloaded: Vec::new(),
             });
         }
-        println!("Simsapa is already set up in {}.", data_folder.display());
-        println!("To add sutta languages, run `simsapa setup --languages <codes>` (see --list-languages).");
+        outln!("Simsapa is already set up in {}.", data_folder.display());
+        outln!("To add sutta languages, run `simsapa setup --languages <codes>` (see --list-languages).");
         return Ok(());
     }
     let is_initial = mode == SetupMode::Initial;
@@ -325,7 +324,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
             downloaded: file_names,
         })
     } else {
-        println!("Setup complete.");
+        outln!("Setup complete.");
         Ok(())
     }
 }

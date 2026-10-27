@@ -21,6 +21,7 @@ use simsapa_backend::{dotenv_c, find_port_set_env, get_app_globals, logger};
 
 use crate::exit::{CliError, CliResult};
 use crate::in_use::WriteLock;
+use crate::output::outln;
 
 #[derive(Args, Debug)]
 pub struct ServeArgs {
@@ -155,7 +156,7 @@ fn serve(args: &ServeArgs, json: bool) -> CliResult {
     // false "listening" line.
     let rocket = rocket.attach(AdHoc::on_liftoff("Listening line", move |_| {
         Box::pin(async move {
-            println!("{}", listening_line);
+            outln!("{}", listening_line);
             logger::info(&log_line);
         })
     }));

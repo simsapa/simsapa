@@ -101,3 +101,20 @@ files). Two things it must **not** contain:
 
 The linux-x64 binary links no `libasound` (the backend's `audio` feature is
 off); being static, it links nothing at all.
+
+## Output on stdout
+
+Every stdout write goes through `output::write_stdout`, via the `out!` /
+`outln!` macros. **Never use `print!` / `println!` in `backend_cli/src/`**
+(a unit test rejects them): they panic when the write fails, and a reader that
+closes the pipe early (`simsapa search … | head`) is routine for an agent.
+
+After the first failed write, all further output is dropped and the command
+runs to the end. A closed pipe keeps the command's own exit code; any other
+write failure (a full disk behind `> out.json`) prints an error on stderr and
+the command exits 1.
+
+> **Trap: do not "fix" this by restoring the default `SIGPIPE` action.** It
+> would apply to every socket in the process as well, and it would kill an
+> `import`, `index` or `setup` mid-write when its stdout went away. Finishing
+> the work matters more than the output.

@@ -9,7 +9,7 @@ use simsapa_backend::cli_support;
 use simsapa_backend::get_app_globals;
 
 use crate::exit::CliResult;
-use crate::output::print_json;
+use crate::output::{out, print_json};
 
 #[derive(Args, Debug)]
 pub struct StatsArgs {
@@ -37,6 +37,6 @@ pub fn run(args: &StatsArgs, json: bool) -> CliResult {
     if json {
         return print_json(&stats);
     }
-    print!("{}", stats.to_markdown_table());
+    out!("{}", stats.to_markdown_table());
     Ok(())
 }
