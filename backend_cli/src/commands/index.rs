@@ -11,6 +11,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use simsapa_backend::cli_support::{self, IndexArea};
+use simsapa_backend::errln;
 use simsapa_backend::{get_app_data, get_app_globals};
 
 use crate::exit::CliResult;
@@ -73,7 +74,7 @@ fn area_name(a: IndexAreaArg) -> &'static str {
 /// Requires the full preamble and the write lock. Progress lines go to stderr.
 pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
     let paths = &get_app_globals().paths;
-    let mut report = |line: &str| eprintln!("{}", line);
+    let mut report = |line: &str| errln!("{}", line);
 
     let (action, filter) = match cmd {
         IndexCommands::Build(f) => ("build", f),

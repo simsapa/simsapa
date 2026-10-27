@@ -17,6 +17,7 @@ use serde::Serialize;
 use simsapa_api::routes::suttas::{sutta_html_response, sutta_json_no_content_message, sutta_json_not_found_message};
 use simsapa_api::lookup_sutta_with_fallback;
 use simsapa_backend::app_settings::SuttaLayout;
+use simsapa_backend::errln;
 use simsapa_backend::get_app_data;
 use simsapa_backend::helpers::convert_verse_ref_to_sutta_uid;
 use simsapa_backend::sutta_display::SuttaDisplayOverrides;
@@ -128,7 +129,7 @@ pub fn run(args: &SuttaArgs, json: bool) -> CliResult {
 /// Print a stored JSON body unchanged: never through a `serde_json::Value`,
 /// which would sort the segment ids and scramble the text order.
 fn print_verbatim(found_uid: &str, body: &str) -> CliResult {
-    eprintln!("{}", found_uid);
+    errln!("{}", found_uid);
     outln!("{}", body);
     Ok(())
 }

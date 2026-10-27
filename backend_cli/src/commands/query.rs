@@ -8,6 +8,7 @@ use clap::{Args, ValueEnum};
 
 use simsapa_api::ApiSearchResult;
 use simsapa_backend::cli_support::{self, FulltextJsonOutput};
+use simsapa_backend::errln;
 use simsapa_backend::get_app_globals;
 use simsapa_backend::types::SearchArea;
 
@@ -142,7 +143,7 @@ pub fn run_fulltext_search(args: &FulltextSearchArgs, json: bool) -> CliResult {
         Some(path) => {
             std::fs::write(path, &text)
                 .map_err(|e| CliError::error(format!("Failed to write {}: {}", path.display(), e)))?;
-            eprintln!("Wrote results to {}", path.display());
+            errln!("Wrote results to {}", path.display());
         }
         None => outln!("{}", text),
     }

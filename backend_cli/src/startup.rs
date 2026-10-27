@@ -15,6 +15,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tracing_subscriber::EnvFilter;
 
 use simsapa_backend::dict_index_reconcile::{self, ReconcileProgress};
+use simsapa_backend::errln;
 use simsapa_backend::logger::{self, LoggerHostOptions};
 use simsapa_backend::{
     appdata_db_exists, check_and_configure_for_first_start, check_delete_files_for_upgrade,
@@ -72,6 +73,9 @@ pub fn init_logging(verbosity: u8) {
         .without_time()
         .with_ansi(std::io::stderr().is_terminal())
         .with_writer(std::io::stderr)
+        // Its report of a failed write is an `eprintln!`, which panics on a
+        // closed stderr; a lost log line is not worth that.
+        .log_internal_errors(false)
         .finish();
     // Fails only if a subscriber is already set, which nothing here does.
     let _ = tracing::subscriber::set_global_default(subscriber);
@@ -148,7 +152,7 @@ pub fn run_headless_preamble(mode: PreambleMode) -> CliResult {
             run_reconcile_with_spinner()?;
         }
     } else if pending_upgrade || dict_index_reconcile::reconcile_needed() {
-        eprintln!(
+        errln!(
             "Note: {} has pending startup work (an upgrade step or a dictionary index update). \
              It was skipped because the folder is in use; it runs on the next start that has the folder to itself.",
             data_folder().display()

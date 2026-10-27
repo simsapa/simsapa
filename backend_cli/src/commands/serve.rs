@@ -17,6 +17,7 @@ use rocket::fairing::AdHoc;
 use rocket::error::ErrorKind;
 
 use simsapa_api::{ApiConfig, build_rocket};
+use simsapa_backend::errln;
 use simsapa_backend::{dotenv_c, find_port_set_env, get_app_globals, logger};
 
 use crate::exit::{CliError, CliResult};
@@ -139,7 +140,7 @@ fn serve(args: &ServeArgs, json: bool) -> CliResult {
     let url = listening_url(config.host, config.port);
 
     if !config.host.is_loopback() {
-        eprintln!("{}", non_loopback_warning(config.host, config.port));
+        errln!("{}", non_loopback_warning(config.host, config.port));
     }
 
     let rocket = build_rocket(config.clone())

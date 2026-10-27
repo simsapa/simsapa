@@ -3,6 +3,8 @@
 
 use std::fmt;
 
+use simsapa_backend::errln;
+
 use crate::output::{outln, stdout_write_failed};
 
 /// The command succeeded.
@@ -96,9 +98,9 @@ pub fn finish(result: CliResult, json: bool) -> ! {
             if json {
                 outln!("{}", json_error_document(&e.message));
             } else if e.code == ERROR {
-                eprintln!("Error: {}", e.message);
+                errln!("Error: {}", e.message);
             } else {
-                eprintln!("{}", e.message);
+                errln!("{}", e.message);
             }
             std::process::exit(e.code);
         }

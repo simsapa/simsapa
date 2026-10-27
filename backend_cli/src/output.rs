@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::Serialize;
 
+use simsapa_backend::errln;
+
 use crate::exit::CliResult;
 
 /// All stdout output goes through [`write_stdout`] (via `out!` / `outln!`),
@@ -35,7 +37,7 @@ pub fn write_stdout(args: fmt::Arguments) {
             STDOUT_STATE.store(STDOUT_PIPE_CLOSED, Ordering::Relaxed);
         } else {
             STDOUT_STATE.store(STDOUT_FAILED, Ordering::Relaxed);
-            eprintln!("Error: failed writing to stdout: {}", e);
+            errln!("Error: failed writing to stdout: {}", e);
         }
     }
 }
@@ -239,28 +241,70 @@ fn push_text(out: &mut String, raw: &str) {
 mod tests {
     use super::*;
 
-    /// `print!` / `println!` panic on a closed stdout; see [`write_stdout`].
+    /// `print!` / `println!` / `eprint!` / `eprintln!` panic on a closed
+    /// stdout or stderr, so none may appear in code the `simsapa` binary runs:
+    /// this crate, `simsapa_api` and `simsapa_backend`. Comment lines and the
+    /// `#[cfg(test)] mod … { … }` blocks are not scanned (the block is found by
+    /// counting braces, which format strings like `"{}"` keep balanced).
+    /// See docs/backend-cli-and-npm-package.md, "Output on stdout and stderr".
     #[test]
     fn test_no_print_macros_in_sources() {
+        const MACROS: [&str; 4] = ["println!(", "print!(", "eprintln!(", "eprint!("];
+
+        fn scan_file(path: &std::path::Path, found: &mut Vec<String>) {
+            let text = std::fs::read_to_string(path).unwrap();
+            let lines: Vec<&str> = text.lines().collect();
+            // Brace depth inside a skipped test module, if in one.
+            let mut test_depth: Option<i64> = None;
+            for (n, line) in lines.iter().enumerate() {
+                let code = line.trim_start();
+                if let Some(depth) = test_depth.as_mut() {
+                    *depth += code.matches('{').count() as i64 - code.matches('}').count() as i64;
+                    if *depth <= 0 {
+                        test_depth = None;
+                    }
+                    continue;
+                }
+                if code.starts_with("#[cfg(test)]")
+                    && lines.get(n + 1).is_some_and(|next| {
+                        let next = next.trim_start();
+                        next.starts_with("mod ") && next.contains('{')
+                    })
+                {
+                    test_depth = Some(0);
+                    continue;
+                }
+                if code.starts_with("//") {
+                    continue;
+                }
+                if MACROS.iter().any(|m| code.contains(m)) {
+                    found.push(format!("{}:{}: {}", path.display(), n + 1, code));
+                }
+            }
+        }
+
         fn visit(dir: &std::path::Path, found: &mut Vec<String>) {
             for entry in std::fs::read_dir(dir).unwrap() {
                 let path = entry.unwrap().path();
                 if path.is_dir() {
                     visit(&path, found);
-                } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("output.rs") {
-                    let text = std::fs::read_to_string(&path).unwrap();
-                    for (n, line) in text.lines().enumerate() {
-                        let code = line.replace("eprintln!", "").replace("eprint!", "");
-                        if code.contains("println!") || code.contains("print!(") {
-                            found.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
-                        }
-                    }
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    scan_file(&path, found);
                 }
             }
         }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut found = Vec::new();
-        visit(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
-        assert!(found.is_empty(), "use outln! / out! instead:\n{}", found.join("\n"));
+        for crate_src in ["src", "../api/src", "../backend/src"] {
+            visit(&root.join(crate_src), &mut found);
+        }
+        assert!(
+            found.is_empty(),
+            "Use outln! / out! (stdout, backend_cli) or simsapa_backend::errln! (stderr) instead, \
+             or logger::write_stdout in the backend:\n{}",
+            found.join("\n")
+        );
     }
 
     #[test]

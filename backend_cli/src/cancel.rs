@@ -9,6 +9,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use simsapa_backend::errln;
+
 use crate::exit::{CliError, INTERRUPTED};
 
 pub fn install_ctrlc_handler() -> Result<Arc<AtomicBool>, CliError> {
@@ -18,7 +20,7 @@ pub fn install_ctrlc_handler() -> Result<Arc<AtomicBool>, CliError> {
         if flag.swap(true, Ordering::SeqCst) {
             std::process::exit(INTERRUPTED);
         }
-        eprintln!("\nStopping… (press Ctrl-C again to quit immediately)");
+        errln!("\nStopping… (press Ctrl-C again to quit immediately)");
     })
     .map_err(|e| CliError::error(format!("Cannot install the Ctrl-C handler: {}", e)))?;
     Ok(cancel)

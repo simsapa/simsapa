@@ -1311,7 +1311,7 @@ pub fn storage_path_state() -> (StorageState, Option<PathBuf>) {
 }
 
 pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
-    // NOTE: this function is also called in Logger::new(), so we use println!()
+    // NOTE: this function is also called in Logger::new(), so it prints to stdout
     // when the logger is not yet available.
     let logger_initialized = LOGGER.get().is_some();
 
@@ -1323,7 +1323,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
     if logger_initialized {
         info(msg);
     } else if enable_print_log {
-        println!("{}", msg);
+        crate::logger::write_stdout(format_args!("{}\n", msg));
     }
 
     match env::var("SIMSAPA_DIR") {
@@ -1377,7 +1377,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         info(&msg);
                     } else if enable_print_log {
-                        println!("{}", msg);
+                        crate::logger::write_stdout(format_args!("{}\n", msg));
                     }
                     file
                 },
@@ -1388,7 +1388,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         warn(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                     return Ok(internal_app_root);
                 },
@@ -1402,7 +1402,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         error(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                     return Ok(internal_app_root);
                 },
@@ -1412,7 +1412,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
             if logger_initialized {
                 info(&msg);
             } else if enable_print_log {
-                println!("{}", msg);
+                crate::logger::write_stdout(format_args!("{}\n", msg));
             }
 
             // Trim: a file written by hand, by a script or by `adb` carries a
@@ -1425,7 +1425,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 if logger_initialized {
                     warn(&msg);
                 } else {
-                    eprintln!("{}", msg);
+                    crate::errln!("{}", msg);
                 }
                 return Ok(internal_app_root);
             }
@@ -1450,7 +1450,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 if logger_initialized {
                     warn(&msg);
                 } else {
-                    eprintln!("{}", msg);
+                    crate::errln!("{}", msg);
                 }
                 return Ok(internal_app_root);
             }
@@ -1473,7 +1473,7 @@ pub fn get_create_simsapa_app_assets_path() -> PathBuf {
                     if logger_initialized {
                         error(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                 },
             };
@@ -1483,7 +1483,7 @@ pub fn get_create_simsapa_app_assets_path() -> PathBuf {
             if logger_initialized {
                 error(&msg);
             } else {
-                eprintln!("{}", msg);
+                crate::errln!("{}", msg);
             }
         },
     }
@@ -1563,16 +1563,16 @@ pub extern "C" fn ensure_no_empty_db_files(sweep: bool) {
                     Ok(metadata) if metadata.len() == 0 => {
                         // Recorded as missing whether or not it is deleted.
                         if sweep && let Err(e) = fs::remove_file(&p) {
-                            eprintln!("Failed to remove file {:?}: {}", p, e);
+                            crate::errln!("Failed to remove file {:?}: {}", p, e);
                             present = true;
                         }
                     }
                     Ok(_) => present = true, // File exists but is not empty
-                    Err(e) => eprintln!("Failed to get metadata for {:?}: {}", p, e),
+                    Err(e) => crate::errln!("Failed to get metadata for {:?}: {}", p, e),
                 }
             }
             Ok(false) => {}, // File doesn't exist
-            Err(e) => eprintln!("Failed to check if file exists {:?}: {}", p, e),
+            Err(e) => crate::errln!("Failed to check if file exists {:?}: {}", p, e),
         }
         crate::db::record_db_presence(kind, present);
     }
@@ -1961,9 +1961,9 @@ pub fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
             }
             // If the specified port is not available, we'll fall back to the default logic
             // stderr: `simsapa serve`'s stdout carries only its listening line.
-            eprintln!("Warning: API_PORT {} is not available, falling back to default", port);
+            crate::errln!("Warning: API_PORT {} is not available, falling back to default", port);
         } else {
-            eprintln!("Warning: API_PORT value '{}' is not a valid port number", port_str);
+            crate::errln!("Warning: API_PORT value '{}' is not a valid port number", port_str);
         }
     }
 

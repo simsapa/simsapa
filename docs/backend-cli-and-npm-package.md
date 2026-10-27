@@ -102,17 +102,37 @@ files). Two things it must **not** contain:
 The linux-x64 binary links no `libasound` (the backend's `audio` feature is
 off); being static, it links nothing at all.
 
-## Output on stdout
+## Output on stdout and stderr
 
-Every stdout write goes through `output::write_stdout`, via the `out!` /
-`outln!` macros. **Never use `print!` / `println!` in `backend_cli/src/`**
-(a unit test rejects them): they panic when the write fails, and a reader that
-closes the pipe early (`simsapa search … | head`) is routine for an agent.
+**Never use `print!`, `println!`, `eprint!` or `eprintln!` outside test code
+in `backend_cli/`, `api/` or `backend/`** — everything the `simsapa` binary
+runs. They panic when the write fails (exit 101), and both cases are routine
+for an agent: a reader that closes the pipe early (`simsapa search … | head`),
+or a caller that closes stderr.
 
-After the first failed write, all further output is dropped and the command
-runs to the end. A closed pipe keeps the command's own exit code; any other
-write failure (a full disk behind `> out.json`) prints an error on stderr and
-the command exits 1.
+`test_no_print_macros_in_sources` in `backend_cli/src/output.rs` enforces this
+over all three crates, skipping comment lines and `#[cfg(test)] mod … { … }`
+blocks; it names each offending file and line. Fix the call site rather than
+adding an exception. The rule and its replacements are also in `AGENTS.md`,
+"No `println!` / `eprintln!` in code the `simsapa` CLI runs".
+
+- **stdout** goes through `output::write_stdout`, via the CLI's `out!` /
+  `outln!` macros. After the first failed write, all further output is
+  dropped and the command runs to the end. A closed pipe keeps the command's
+  own exit code; any other write failure (a full disk behind `> out.json`)
+  prints an error on stderr and the command exits 1.
+- **stderr** goes through `simsapa_backend::logger::write_stderr`, via the
+  backend's `errln!` macro, which drops a failed write. The backend uses it for
+  its own stderr messages (the logger's fallbacks, the pre-logger messages in
+  `lib.rs`), because the CLI reaches that code too. The backend's few stdout
+  messages (pre-logger, in `get_create_simsapa_dir()`) use
+  `logger::write_stdout`, which likewise drops a failed write.
+- The CLI's `tracing` subscriber is built with `.log_internal_errors(false)`:
+  tracing-subscriber reports a failed write with an `eprintln!` of its own,
+  which panics on a closed stderr. indicatif, dialoguer and console already
+  ignore write errors, and Rocket's logging is off. **A new dependency that
+  prints can bring the panic back with no macro in our code** — check what it
+  does on a write error before adding it.
 
 > **Trap: do not "fix" this by restoring the default `SIGPIPE` action.** It
 > would apply to every socket in the process as well, and it would kill an

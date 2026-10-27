@@ -26,8 +26,8 @@ use crate::in_use::{InUse, WriteLock, WriteLockOutcome, check_in_use, in_use_err
 use crate::output::outln;
 use crate::startup::{PreambleMode, data_folder};
 
-// musl's allocator made fulltext searches ~70% slower than the glibc build; see
-// docs/backend-cli-and-npm-package.md for the measurements.
+// musl's own allocator is the slower one under `simsapa serve`. It does not
+// explain musl's slower start-up; see docs/backend-cli-and-npm-package.md.
 #[cfg(target_env = "musl")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

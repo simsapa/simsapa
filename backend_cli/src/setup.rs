@@ -39,6 +39,7 @@ use tar::Archive;
 use simsapa_backend::app_settings::LANGUAGES_JSON;
 use simsapa_backend::asset_helpers::import_suttas_lang_to_appdata;
 use simsapa_backend::cips_update::status_is_retryable;
+use simsapa_backend::errln;
 use simsapa_backend::logger::{error, info, warn};
 use simsapa_backend::update_checker::{SaveStatsBehaviour, compatible_assets_release, fetch_releases_info};
 use simsapa_backend::{
@@ -216,7 +217,7 @@ pub fn list_languages(json: bool) -> CliResult {
 pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     let paths = &get_app_globals().paths;
     let data_folder = paths.simsapa_dir.clone();
-    eprintln!("Data folder: {}", data_folder.display());
+    errln!("Data folder: {}", data_folder.display());
 
     // gui.cpp's order: the leftover download folder, the zero-byte sweep, then
     // the upgrade deletions (which act only when their marker exists).
@@ -246,7 +247,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     let auto_start = matches!(paths.auto_start_download_marker.try_exists(), Ok(true));
     let marker_langs = read_marker(&paths.download_languages_marker);
     if auto_start || marker_langs.is_some() {
-        eprintln!("Completing a database upgrade prepared by the Simsapa app.");
+        errln!("Completing a database upgrade prepared by the Simsapa app.");
     }
 
     let mut langs = cli_langs;
@@ -267,7 +268,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
         return Err(CliError::error("Run `simsapa setup --yes` to confirm non-interactively."));
     }
 
-    eprintln!("Looking up the database release for Simsapa {}…", simsapa_backend::update_checker::get_app_version());
+    errln!("Looking up the database release for Simsapa {}…", simsapa_backend::update_checker::get_app_version());
     match fetch_releases_info(None, SaveStatsBehaviour::Disabled) {
         Ok(releases) => set_releases_info(releases),
         // compatible_assets_release() falls back to the embedded snapshot.
@@ -280,14 +281,14 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     let urls = setup_urls(&release.github_repo, &release.version_tag, is_initial, &langs);
     let file_names: Vec<String> = urls.iter().filter_map(|u| archive_file_name(u)).collect();
 
-    eprintln!();
-    eprintln!("Release {} from github.com/{}. Archives:", release.version_tag, release.github_repo);
+    errln!();
+    errln!("Release {} from github.com/{}. Archives:", release.version_tag, release.github_repo);
     for name in &file_names {
-        eprintln!("  {}", name);
+        errln!("  {}", name);
     }
-    eprintln!("Destination: {}", paths.app_assets_dir.display());
+    errln!("Destination: {}", paths.app_assets_dir.display());
     if is_initial {
-        eprintln!("The initial download takes about 4.8 GB on disk once extracted.");
+        errln!("The initial download takes about 4.8 GB on disk once extracted.");
     }
     if !args.yes && !confirm()? {
         return Err(CliError::error("Setup cancelled."));
@@ -413,7 +414,7 @@ pub fn download_and_install(
             if let InstallError::Failed(msg) = e {
                 error(&format!("setup: {}", msg));
             }
-            eprintln!("Removing partially downloaded files…");
+            errln!("Removing partially downloaded files…");
             cleanup_after_failure(folders, is_initial);
         }
     }
@@ -463,7 +464,7 @@ fn install_archives(
         }
 
         if is_language_archive(&file_name) {
-            eprintln!("Importing {}", file_name);
+            errln!("Importing {}", file_name);
             import_language_archive(&folders.extract_temp, &file_name, import_lang)?;
             info(&format!("Successfully imported {}", file_name));
         }
@@ -563,7 +564,7 @@ fn download_one(
                 last_error = msg;
                 if attempt < policy.attempts {
                     let wait = (policy.wait_after)(attempt);
-                    eprintln!(
+                    errln!(
                         "Download failed for {}: {}. Retrying in {} seconds... (Attempt {}/{})",
                         file_name,
                         last_error,

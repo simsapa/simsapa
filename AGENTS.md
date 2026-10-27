@@ -1525,6 +1525,52 @@ Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
 in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
 touching that code for another reason.
 
+### No `println!` / `eprintln!` in code the `simsapa` CLI runs
+
+**In `backend_cli/`, `api/` and `backend/`, never write `print!`, `println!`,
+`eprint!` or `eprintln!` outside test code.** These macros **panic** when the
+write fails, and for the CLI that is routine, not exotic: an agent pipes
+output into `head` (stdout closed), or runs the command with stderr closed.
+The result is `thread 'main' panicked … Broken pipe` and exit code 101, in
+place of the command's documented exit code.
+
+Use instead:
+
+| Where | stdout | stderr |
+|---|---|---|
+| `backend_cli/src/` | `outln!` / `out!` (`crate::output`) | `errln!` (`use simsapa_backend::errln;`) |
+| `backend/src/`, `api/src/` | `crate::logger::write_stdout(format_args!(…))` | `crate::errln!` |
+
+Prefer the logger (`info()` / `warn()` / `tracing`) over either in the
+backend; these are for the few messages printed before the logger exists.
+
+The rule is **enforced by a test**:
+`backend_cli/src/output.rs` `test_no_print_macros_in_sources` scans all three
+crates (skipping comment lines and `#[cfg(test)] mod … { … }` blocks) and fails
+on any of the four macros, naming the file and line. Run it with
+`cd backend_cli && cargo test --bin simsapa test_no_print_macros`. **Do not
+silence it with an allow-list**: fix the call site. `bridges/` is GUI-only and
+not scanned.
+
+Two traps:
+
+- **Never "fix" a broken pipe by restoring the default `SIGPIPE` action.**
+  It applies to the whole process: it would also cover `serve`'s sockets and
+  the HTTP client in `setup`, and it would kill an `import`, `index` or `setup`
+  mid-write when its stdout closed. The CLI drops further output and finishes
+  the work instead.
+- **A new crate that writes to stderr can reintroduce the panic without any
+  macro in our code.** tracing-subscriber's own failed-write report is an
+  `eprintln!`, which is why `startup::init_logging()` sets
+  `.log_internal_errors(false)`. When adding a dependency that prints
+  (progress bars, prompts, a logger), check what it does on a write error.
+
+The behaviour is covered by `backend_cli/tests/read_only_commands.rs`
+(`test_closed_stdout_is_not_a_panic`, `test_closed_stderr_is_not_a_panic`,
+`test_failed_stdout_write_exits_1`). See
+[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md),
+"Output on stdout and stderr".
+
 ### New functions on Rust bridge QML components
 
 When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml
@@ -1917,7 +1963,7 @@ Use lowercase snake_case for new functions, variables and id names, E.g:
 - `id: next_message, id: message_item, property bool is_collapsed`
 - `function export_dialog_accepted()`
 
-- **Rust:** snake_case, standard rustfmt, use `anyhow::Result` for error handling, prefer `tracing` over `println!`
+- **Rust:** snake_case, standard rustfmt, use `anyhow::Result` for error handling, prefer `tracing` over `println!` (and never `println!` / `eprintln!` in `backend/`, `api/` or `backend_cli/` — see "No `println!` / `eprintln!` in code the `simsapa` CLI runs")
 
 - **TypeScript:** 2-space indents, import * as alias style, use webpack for bundling
 

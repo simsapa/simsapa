@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use clap::Args;
 
 use simsapa_backend::cli_support;
+use simsapa_backend::errln;
 use simsapa_backend::get_app_globals;
 
 use crate::exit::CliResult;
@@ -30,8 +31,8 @@ pub fn run(args: &StatsArgs, json: bool) -> CliResult {
     if args.write {
         let folder = cli_support::appdata_stats_output_folder(db_path, args.output_folder.as_deref())?;
         let (md_path, json_path) = stats.write_files(&folder)?;
-        eprintln!("Wrote {}", md_path.display());
-        eprintln!("Wrote {}", json_path.display());
+        errln!("Wrote {}", md_path.display());
+        errln!("Wrote {}", json_path.display());
     }
 
     if json {

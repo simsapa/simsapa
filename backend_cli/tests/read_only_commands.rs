@@ -375,3 +375,39 @@ fn test_failed_stdout_write_exits_1() {
     assert!(err.contains("failed writing to stdout"), "stderr: {err}");
     assert_eq!(out.status.code(), Some(1), "stderr: {err}");
 }
+
+/// Runs `simsapa` with its stderr pipe closed before it writes anything, as
+/// `2>&-` or a caller that never reads stderr and closes it does.
+fn simsapa_closed_stderr(args: &[&str], close_stdout: bool) -> Output {
+    let mut child = command(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to run simsapa");
+    drop(child.stderr.take());
+    if close_stdout {
+        drop(child.stdout.take());
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn test_closed_stderr_is_not_a_panic() {
+    if !have_dist() { return; }
+    // `-vv` logs through the tracing subscriber; `--content-json` prints the
+    // resolved uid with errln!; an unknown uid prints its error with errln!.
+    for (args, code) in [
+        (&["-vv", "search", "suttas", "anicca", "--json"][..], 0),
+        (&["sutta", "mn1/pli/ms", "--content-json"][..], 0),
+        (&["word", "dummy-no-such-word-xyz"][..], 4),
+    ] {
+        // A panic cannot report itself on a closed stderr; its exit code 101 shows it.
+        let out = simsapa_closed_stderr(args, false);
+        assert_eq!(out.status.code(), Some(code), "{args:?}");
+        if code == 0 {
+            stdout_json(&out);
+        }
+        let out = simsapa_closed_stderr(args, true);
+        assert_eq!(out.status.code(), Some(code), "{args:?} with stdout closed too");
+    }
+}
