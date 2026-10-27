@@ -590,7 +590,11 @@ drafts, prereleases and tags that do not parse. `to_version()` strips a leading
   HTTP error, the rate limit, unparseable JSON, or a list with no tag in the
   series. The list still renders; nothing is shown to a user who is only
   browsing. The failure is logged, followed by one line per resolution:
-  `dictionary_catalog: resolved tag v1.0.8 (source: fallback)`.
+  `dictionary_catalog: resolved tag v1.0.8 (source: fallback)`. Set the tag
+  with `scripts/set-version.py --dpd-fallback <version>`, which writes the `v`
+  prefix and refuses a tag outside `PINNED_SERIES`. It must be a published
+  upstream tag, and the entries' `fallback_size_bytes` are that release's
+  asset sizes, so check them against it.
 - **URLs and sizes follow the source.** From the API they are the asset's own
   `browser_download_url` and `size`. Under the fallback the URL is constructed
   (`…/releases/download/<tag>/<asset_stem>-gd.zip`) and the size is the entry's

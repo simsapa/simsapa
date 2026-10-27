@@ -65,7 +65,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   any value). See
   [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
 - `version.txt` - The Android versionCode, a single integer. Bump before each
-  Play upload; `build-android.sh` reads it (the versionName comes from
+  Play upload with `scripts/set-version.py --android-code next`; `build-android.sh` reads it (the versionName comes from
   `bridges/Cargo.toml`), so `make android-aab` needs no version arguments.
 - Work deferred to the eventual Qt upgrade — the predictive-back opt-out, the
   deprecated Java APIs in Play's report, the AGP/Gradle/JDK coupling — is
@@ -715,6 +715,12 @@ Users import, rename, and delete their own StarDict/GoldenDict dictionaries from
 - **QML Tests:** `make qml-test`
 
 ### Distribution Packages
+
+#### Versions
+- **Show / set:** `scripts/set-version.py` (show every place, exit 1 on a
+  disagreement), `--app`, `--db`, `--android-code`, `--dpd-fallback`,
+  `--dry-run`. It writes each place in its own form (`v` prefix or not). The
+  places are its `PLACES` table; see `AGENTS.md`, "Versions".
 
 #### Linux AppImage
 - **Build AppImage:** `make appimage -B`

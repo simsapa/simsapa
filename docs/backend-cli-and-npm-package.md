@@ -202,10 +202,12 @@ packed.
    otherwise.
 2. Writes that version into the tracked `npm/*/package.json` files, in
    `version` and in the main package's `optionalDependencies` pins, if any of
-   them differs, and names each file it changed. After a version bump, the
-   first `make npm-packages` updates them; commit them with the bump. The files
-   are written in `JSON.stringify(…, null, 2)` form, so keep them in that form
-   or the script rewrites them.
+   them differs, and names each file it changed. `scripts/set-version.py --app`
+   already sets them with every other app-version place (AGENTS.md,
+   "Versions"), so this is a backstop for a version changed by hand; a file it
+   names belongs in the version commit. The files are written in
+   `JSON.stringify(…, null, 2)` form, so keep them in that form or the script
+   rewrites them.
 3. Copies each `npm/<package>/` to `dist/npm/stage/<package>/`, and packs from
    there.
 4. Copies `dist/cli/<platform>/simsapa[.exe]` into each platform package's
@@ -268,10 +270,13 @@ publishes.
    publishing account must be allowed to publish to it (`npm whoami`,
    `npm org ls simsapa`). With two-factor authentication on the account, pass
    `--otp <code>` to each `npm publish`, or use a granular access token.
-2. **Version.** The version is the app's: `backend_cli/Cargo.toml` and
-   `backend/Cargo.toml` must agree, and the maintainer bumps both. Commit the
-   `npm/*/package.json` files `make npm-packages` updates. An npm version can never be published twice (not even
-   after an unpublish), so a broken publish is fixed with a new version.
+2. **Version.** The npm version is the app version. Set it with
+   `scripts/set-version.py --app <version>`, which writes it into the
+   `Cargo.toml`s, `Cargo.lock`s, `cpp/gui.cpp` and all five `package.json`s in
+   the form each needs; `scripts/set-version.py` alone shows every place and
+   exits 1 if they disagree. Commit those files before packing. An npm version
+   can never be published twice (not even after an unpublish), so a broken
+   publish is fixed with a new version.
 3. **Build all four binaries** and collect them in `dist/cli/` (see "Release
    builds per target").
 4. **`make npm-packages`** must report all four platform packages; never

@@ -10,9 +10,10 @@
 # script refuses to pack on a mismatch.
 #
 # The tracked npm/*/package.json files carry that version, in `version` and in
-# the main package's optionalDependencies pins. The script writes it into them
-# when they are out of date (after the maintainer's version bump) and says so;
-# commit those changes with the bump. Each package folder is then copied to
+# the main package's optionalDependencies pins. scripts/set-version.py --app
+# sets them along with every other app-version place; this script writes the
+# version into them as well when they are out of date (a version changed by
+# hand) and says so. Each package folder is then copied to
 # dist/npm/stage/<package>/ and packed from there.
 #
 # A platform package gets its binary from dist/cli/<platform>/, written by the
@@ -44,7 +45,7 @@ if [[ -z "$VERSION" || -z "$BACKEND_VERSION" ]]; then
 fi
 if [[ "$VERSION" != "$BACKEND_VERSION" ]]; then
     echo "npm-pack: backend_cli/Cargo.toml is $VERSION but backend/Cargo.toml is $BACKEND_VERSION." >&2
-    echo "npm-pack: the binary reports the backend's version, so set both to the same version." >&2
+    echo "npm-pack: the binary reports the backend's version; set both with scripts/set-version.py --app <version>." >&2
     exit 1
 fi
 echo "npm-pack: version $VERSION"
@@ -73,7 +74,7 @@ JS
 for dir in npm/cli npm/cli-*; do
     changed="$(sync_version "$dir/package.json")"
     if [[ -n "$changed" ]]; then
-        echo "npm-pack: wrote $VERSION into $changed (commit it with the version bump)"
+        echo "npm-pack: wrote $VERSION into $changed (commit it with the version change; scripts/set-version.py --app sets every place)"
     fi
 done
 
