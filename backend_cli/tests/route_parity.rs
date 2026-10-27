@@ -19,6 +19,8 @@ fn cli_stdout(args: &[&str]) -> String {
         .arg(DIST_SIMSAPA_DIR)
         .args(args)
         .env_remove("API_PORT")
+        // No test reaches npm or the releases server.
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .output()
         .expect("failed to run simsapa");
     assert_eq!(out.status.code(), Some(0), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));

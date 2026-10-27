@@ -40,6 +40,7 @@ Crate layout, builds and npm packaging are in
 | Iti sandhi rules | [pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md); DPD lookup rule and the `ṁ` respelling: [search-snippet-highlight-pipeline.md §9d, §9f](./search-snippet-highlight-pipeline.md) |
 | `/health` fulltext block | `fulltext_status.rs`; see [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md) |
 | `/health` `sc_data_version` | `AppdataDbHandle::sc_data_version()` reads the `app_settings` rows `sc_data_date` / `sc_data_commit`, written by `record_sc_data_version()` in `bootstrap_cli/src/bootstrap/appdata.rs` from `git log -1` of the `sc-data` checkout, after the SuttaCentral import. The About window shows it through `SuttaBridge.sc_data_version()` |
+| `/health` `updates` | `api/src/update_cache.rs`; see "The `updates` field of `/health`" below |
 | `/shutdown` | `Shutdown::notify`; used by `shutdown_webserver` / `shutdown_webserver_tcp` |
 
 The two uid lanes of DPD records (`34626/dpd` vs `dhamma-1-01/dpd`) are
@@ -97,3 +98,62 @@ behind an `RwLock`; the API and QML threads are concurrent readers.
 any dictionary-index reconciliation) to completion before it listens, so there
 are no concurrent index writes to avoid, but the cold index-open cost is still
 paid only by the first fulltext query.
+
+## The `updates` field of `/health`
+
+`api/src/update_cache.rs` holds the last update-check result of the process,
+an `RwLock<Option<UpdateStatus>>` behind `set_update_status()`,
+`init_update_status()` and `current_update_status()`. `health_info()` only
+reads it, a read lock and a clone, so `/health`'s response time does not
+depend on the network. That matters beyond latency: the CLI's in-use check
+(`backend_cli/src/in_use.rs`) calls `/health` with a 2 s timeout, and a slow
+`/health` would make a running server look absent. Nothing stored reads as
+`checking`. The check itself is `backend/src/update_status.rs`, described in
+[backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md), "Update
+checks".
+
+**`simsapa serve`** makes **one** check per start, with no periodic refresh:
+`spawn_background_update_check()` stores `checking` and runs `check_updates()`
+(3 s per request, npm included) on a `std::thread`, then stores the result and
+logs one `update check: …` line. It is called from the `on_liftoff` fairing,
+so it starts only after the bind and the fairing never blocks; a second call
+in the same process does nothing. When `implicit_check_disabled()` answers a
+reason, `serve` stores `UpdateStatus::disabled(reason)` instead and spawns
+nothing.
+
+**The GUI's server makes no request of its own** and never asks npm. Its cache
+is fed from the check the GUI already makes, `SuttaBridge::check_for_updates()`
+(at startup when "Notify about Simsapa updates" is on, and from the "Check for
+updates" menu action), whose request, stats behaviour, signals and dialogs are
+unchanged:
+
+- `start_webserver()` stores `disabled` / `setting` when the setting is off,
+  else `checking`, with `init_update_status()` — set only if nothing is stored,
+  because `check_for_updates()` runs on its own thread and may finish first.
+- `check_for_updates()` stores `UpdateStatus::from_releases()` at three points:
+  the obsolete-database return (`incompatible`, no fetch made), the live
+  fetch's `Ok` arm, and its `Err` arm. The `Err` arm stores database `unknown`
+  even though the GUI goes on with the embedded snapshot: the snapshot is never
+  used to *detect* an update.
+
+`from_releases()` sets `cli` to `not_applicable` (the GUI is not the npm
+package) and drops `database.command`: while the GUI runs it holds the folder,
+so `simsapa db-upgrade` and `simsapa setup` would refuse.
+
+**The release channel without `AppData`.** The releases request names the
+channel the app would use (`RELEASE_CHANNEL` env → the `release_channel`
+setting → `main`). `get_release_channel()` reads the setting through
+`AppData`, which `serve`, `health` and the GUI have, but `check-updates` opens
+no databases. For it, `releases_request_params()` reads the stored settings
+JSON through one plain connection (`read_appdata_settings_json()` in
+`backend/src/db/mod.rs`) and `release_channel_from()` applies the same order.
+Only the `release_channel` key is parsed, so settings written by another
+version of the app still answer.
+
+**Test overrides.** `UpdateCheckConfig::from_env()` replaces the npm and
+releases URLs with `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`
+when set (`db-upgrade` reads the releases one too). They exist for the
+integration tests, which point them at a local listener; they are deliberately
+not in the bundled doc. The unit tests of the cache (`api/src/update_cache.rs`)
+use a listener that accepts and never answers, to show `current_update_status()`
+stays `checking` and immediate while a check is blocked.

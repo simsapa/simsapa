@@ -183,6 +183,8 @@ Known limitations:
 | Command | What it does | Same as |
 |---|---|---|
 | `setup [--languages] [--list-languages] [--yes]` | Download the databases, or add sutta languages | the GUI's first-run download |
+| `db-upgrade [--yes] [--ignore-export-errors] [--languages]` | Install a newer **compatible** database release, keeping the user data | the GUI's "Database Update Available → Yes" |
+| `check-updates` | Newer CLI on npm, newer compatible database release; works without databases, takes no lock | the GUI's "Check for updates" (database part) |
 | `serve [--port] [--host]` | Serve the shared routes until Ctrl-C | the GUI's server minus GUI/AI/asset routes |
 | `search <suttas\|dict\|library> <query> [--mode] [--lang] [--source] [--page] [--page-len] [--all-snippets] …` | Search | `POST /search` (`run_search`) |
 | `query <suttas\|words> <query>` | ContainsMatch, first page | — |
@@ -195,7 +197,7 @@ Known limitations:
 | `index build\|rebuild\|delete …` | Fulltext indexes | `bootstrap_cli index` |
 | `stats` | Row and source counts of `appdata.sqlite3` | — |
 | `paths` | Data folder and database paths (works without databases) | — |
-| `health` | The `/health` document, computed in-process | `GET /health` |
+| `health` | The `/health` document, computed in-process, with an inline update check | `GET /health` |
 | `docs [--output <file>]` | Print or save `docs/simsapa-cli-and-localhost-api.md`, `include_str!`'d into the binary (`commands/docs.rs`); runs before the globals are initialised, so it needs no data folder | — |
 
 **The bundled doc is read outside this repository**, by agents that have only
@@ -205,9 +207,14 @@ fails on one. Implementation notes for the routes go in
 [localhost-api-implementation.md](./localhost-api-implementation.md). A doc
 edit needs a rebuild of the binary to reach `simsapa docs`.
 
-Every command takes `--json`, `--simsapa-dir` and `-v`/`-vv`. With `--json`,
+Every command takes `--json`, `--simsapa-dir`, `-v`/`-vv` and
+`--no-update-check` (which only `health` and `serve` act on; see "Update
+checks"). With `--json`,
 stdout holds exactly one JSON document, the route's JSON where there is a
 route; an error is `{"error": "<message>"}` on stdout with a non-zero exit.
+The exception is `check-updates`, whose exit 1 (a part is `unknown`) prints
+only its own document, which carries the errors: it returns
+`CliError::reported(code)`, for which `exit::finish()` prints nothing.
 Progress bars, spinners and log lines go to stderr. The log also goes to the
 data folder's `log.txt`, appended and never rotated (the GUI may be writing
 it).
@@ -217,9 +224,11 @@ clap's own 2 would read as "databases missing"), 2 databases missing, 3 folder
 in use, 4 not found (unknown uid; a `not_found` form from `lookup` is a result,
 not exit 4), 130 interrupted.
 
-`main` stays synchronous: `reqwest::blocking` (setup, the in-use check, the
-releases lookup) panics when created or dropped inside an async runtime. Only
-`serve` gets a runtime, from `rocket::execute`, after its blocking steps.
+`main` stays synchronous: `reqwest::blocking` (setup, db-upgrade, the in-use
+check, the releases lookup, the update check) panics when created or dropped
+inside an async runtime. Only `serve` gets a runtime, from `rocket::execute`,
+after its blocking steps; its update check therefore runs on a `std::thread`
+spawned from the `on_liftoff` fairing, which only spawns it.
 Rocket handles Ctrl-C for `serve`; `setup` and `import` install their own
 handler, which sets a cancel flag checked between chunks and entries.
 
@@ -248,13 +257,18 @@ implementations of one procedure.** The GUI's is `DownloadAppdataWindow.qml`
 (`Component.onCompleted`, `validate_download()`, `run_download()`) and
 `bridges/src/asset_manager.rs` (`download_urls_and_extract`,
 `cleanup_on_failure`); both carry a comment pointing here, as do the
-upgrade's `prepare_for_database_upgrade()` and the obsolete-database case of
-`UpdateNotificationDialog.qml`. A change to either
+upgrade's `prepare_for_database_upgrade()` and the obsolete-database and
+database-update cases of `UpdateNotificationDialog.qml`. A change to either
 must be mirrored in the other, or a folder made by one stops opening cleanly in
 the other. Shared code: `compatible_assets_release()` (in
 `backend/src/update_checker.rs`), so both pick the same database release, and,
-for the upgrade of an incompatible database, `is_local_db_obsolete()`,
+for an upgrade, `is_local_db_obsolete()`,
 `AppData::export_user_data_to_assets()` and `write_upgrade_marker_files()`.
+
+The GUI's upgrade has two triggers, and the CLI one command for each: a
+database of **another major.minor** is `simsapa setup`'s (below), a **newer
+compatible** release is `simsapa db-upgrade`'s (next section). Both run the same
+`setup.rs` functions, so the procedure exists once in the CLI.
 
 **The upgrade of an incompatible database is the GUI's procedure in one run.**
 In the GUI, `check_for_updates()` finds a database of another major.minor
@@ -358,6 +372,107 @@ What the CLI does differently, on purpose:
 
 The download, extraction and cleanup are tested against a local HTTP listener
 serving a small `.tar.bz2`, never GitHub.
+
+### `simsapa db-upgrade`: the newer compatible release
+
+`backend_cli/src/db_upgrade.rs` is the CLI copy of the GUI's "Database Update
+Available → Yes": `check_for_updates()` finds a newer release of the same
+major.minor (`has_db_update()`), `UpdateNotificationDialog` asks, and
+`prepare_for_database_upgrade()` exports and writes the markers; the next start
+deletes and downloads. `prepare_for_database_upgrade()` and the dialog's
+database-update section carry a comment pointing to `db_upgrade.rs`: change both
+together. It takes the GUI's order, **export → delete → download**, never
+download-first.
+
+The upgrade itself is `setup`'s, through the functions `setup.rs` shares
+(`pub(crate)`):
+
+| Function | What it does |
+|---|---|
+| `open_installed_databases()` → `OpenedDatabases` | the local `AppData::try_new()` and its `db_version` |
+| `installed_languages_for_download()` | the old databases' sutta languages, split into those still offered and those named and left out |
+| `replace_databases(old, ignore_export_errors, interactive, command)` | step 10: export, markers, drop, delete, check |
+| `install_release(urls, is_initial, action)` | Ctrl-C handler, `InstallFolders`, `download_and_install()`, error mapping ("Setup stopped." / "Upgrade stopped.") |
+| `finish_install()` | step 12: consume the markers, run the full preamble |
+| `confirm(prompt, command)` | the `[y/N]` prompt; without a terminal, names `<command> --yes` |
+
+The `command` argument names the command to re-run **only for failures before
+the deletion** (an export error, a refused confirmation). After the markers are
+written the retry is always `simsapa setup`: a second `db-upgrade` finds no
+databases and exits 2, while `setup` finds `import-me/` and the markers and
+completes the upgrade. `db-upgrade` adds that hint to a failed download.
+
+What differs from `setup`:
+
+1. Steps 1–2 as `setup`, then: no databases → exit 2, incompatible → exit 1
+   naming `setup`, an unreadable version → exit 1. The pure
+   `decide_db_upgrade()` holds the decision and is unit-tested per arm.
+2. The releases info is fetched **live** (`post_releases_request()`, 30 s, no
+   stats, the release channel of `releases_request_params()`), and the release
+   is the newest compatible one in it. Only that live answer can say "up to
+   date" (exit 0). When the fetch fails, or the server lists no usable
+   release, the embedded snapshot (`compatible_assets_release()`) is used
+   **only if it names a release newer than the installed one**, and the output
+   says so; otherwise exit 1 with the reason. A snapshot that is not newer
+   says nothing about what the server has.
+3. `AppData` is opened only after that decision, so a no-op run neither
+   migrates nor holds the databases.
+4. The release must have a `github_repo` and `version_tag` before anything is
+   deleted: a bad URL would otherwise fail only after the deletion.
+
+The refusal and no-op paths are tested in `tests/db_upgrade.rs`, in temporary
+folders against a local releases listener: an upgrade deletes databases, so it
+never runs against the dist `SIMSAPA_DIR`. The download path is `setup`'s,
+covered by its tests.
+
+## Update checks
+
+`backend/src/update_status.rs` holds the Qt-free check behind `simsapa
+check-updates`, `simsapa health` and the `updates` field of `/health`: two
+requests, each on its own `std::thread` so one failing does not hide the other,
+both `reqwest::blocking` and so never on an async runtime.
+
+- **npm**: `GET https://registry.npmjs.org/-/package/@simsapa/cli/dist-tags`,
+  the `latest` tag, compared with `get_app_version()`. A version
+  `to_version()` cannot parse is `unknown`, never `update_available`.
+  `requires_new_database` is `!is_app_version_compatible_with_db_version(latest, installed)`.
+- **Releases server**: `post_releases_request()` with no stats and the release
+  channel the app would use (`releases_request_params()`). The installed
+  version is read as `setup` reads it (`read_appdata_db_version()` +
+  `resolve_db_version()`, never the `DbManager`); a zero-byte `appdata.sqlite3`
+  is `not_installed`. `not_installed` and `incompatible` are decided before the
+  releases answer, so they are reported offline. "No compatible release listed"
+  is told apart from "up to date" before `has_db_update()`, which answers
+  `None` for both.
+
+**Detection never uses the embedded snapshot**
+(`get_fallback_releases_info()`): it is frozen at build time, so it would
+report a stale release as if live. A failed fetch is `unknown`. The check also
+never writes: no database, no settings, no markers, no `api-port.txt`, and not
+`set_releases_info()`, which other code reads as "fetched for a download".
+
+Who checks, with what timeout per request:
+
+| Caller | Timeout | Off when |
+|---|---|---|
+| `check-updates` | 10 s | never: an explicit request |
+| `health` | 3 s, on a thread started before the indexes open, joined after | `implicit_check_disabled()` |
+| `serve` | 3 s, once per start, after the bind (`spawn_background_update_check()`) | `implicit_check_disabled()` |
+
+`implicit_check_disabled(flag, notify_setting)` answers in this order: the
+global `--no-update-check` flag, `SIMSAPA_NO_UPDATE_CHECK` = `1`/`true`, the
+app's "Notify about Simsapa updates" setting off. The result is
+`UpdateStatus::disabled(reason)` and no request. The GUI's server makes no
+request at all; see
+[localhost-api-implementation.md](./localhost-api-implementation.md).
+
+**Only `check-updates`, `health`, `serve`, `setup` and `db-upgrade` use the
+network.** The other commands make no update check and print no update hint.
+
+The tests reach neither npm nor the releases server: every test helper that
+spawns `health` or `serve` sets `SIMSAPA_NO_UPDATE_CHECK=1`, and the tests of
+the check itself point `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`
+at a local listener (`UpdateCheckConfig::from_env()` reads them).
 
 ## Release builds per target
 

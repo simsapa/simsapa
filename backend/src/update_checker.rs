@@ -319,23 +319,23 @@ pub fn resolve_db_version(stored: Option<String>) -> Option<String> {
 ///
 /// The release channel string
 pub fn get_release_channel() -> String {
-    use std::env;
-    use crate::try_get_app_data;
+    release_channel_from(crate::try_get_app_data().and_then(|app_data| app_data.get_release_channel()))
+}
 
-    // Check environment variable first
-    if let Ok(channel) = env::var("RELEASE_CHANNEL")
+/// [`get_release_channel`] with the `release_channel` setting given by the
+/// caller, for a caller without `AppData` that read it from the database
+/// itself: the `RELEASE_CHANNEL` environment variable, then the setting, then
+/// `main`.
+pub fn release_channel_from(setting: Option<String>) -> String {
+    if let Ok(channel) = std::env::var("RELEASE_CHANNEL")
         && !channel.is_empty() {
             return channel;
         }
 
-    // Check app settings
-    if let Some(app_data) = try_get_app_data()
-        && let Some(channel) = app_data.get_release_channel() {
-            return channel;
-        }
-
-    // Default to main
-    "main".to_string()
+    match setting {
+        Some(channel) if !channel.is_empty() => channel,
+        _ => "main".to_string(),
+    }
 }
 
 /// Check if an application version is compatible with a database version.
@@ -411,6 +411,24 @@ pub struct ReleasesRequestParams {
     pub screen: Option<String>,
     /// If true, don't save stats on the server
     pub no_stats: bool,
+}
+
+impl ReleasesRequestParams {
+    /// A request that sends no system information and asks the server not to
+    /// save stats.
+    pub fn without_stats(channel: String) -> Self {
+        ReleasesRequestParams {
+            channel,
+            app_version: None,
+            system: None,
+            machine: None,
+            cpu_max: None,
+            cpu_cores: None,
+            mem_total: None,
+            screen: None,
+            no_stats: true,
+        }
+    }
 }
 
 /// A single release entry from the API response.
@@ -514,17 +532,7 @@ pub fn collect_system_info(screen_size: Option<&str>, save_stats_behaviour: Save
 
     if no_stats {
         // Don't collect system info at all.
-        return ReleasesRequestParams {
-            channel: get_release_channel(),
-            app_version: None,
-            system: None,
-            machine: None,
-            cpu_max: None,
-            cpu_cores: None,
-            mem_total: None,
-            screen: None,
-            no_stats,
-        };
+        return ReleasesRequestParams::without_stats(get_release_channel());
     }
 
     // Get CPU info using platform-specific implementations
@@ -591,17 +599,40 @@ fn get_dont_send_stats() -> bool {
 /// println!("Latest app version: {}", info.application.releases[0].version_tag);
 /// ```
 pub fn fetch_releases_info(screen_size: Option<&str>, save_stats_behaviour: SaveStatsBehaviour) -> Result<ReleasesInfo> {
+    fetch_releases_info_from(
+        RELEASES_API_URL,
+        Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        screen_size,
+        save_stats_behaviour,
+    )
+}
+
+/// [`fetch_releases_info`] from a given URL with a given request timeout.
+///
+/// Uses `reqwest::blocking`, so it must not be called inside an async runtime.
+pub fn fetch_releases_info_from(
+    url: &str,
+    timeout: Duration,
+    screen_size: Option<&str>,
+    save_stats_behaviour: SaveStatsBehaviour,
+) -> Result<ReleasesInfo> {
     info("fetch_releases_info()");
     let params = collect_system_info(screen_size, save_stats_behaviour);
+    post_releases_request(url, timeout, &params)
+}
 
+/// POST `params` to the releases server at `url`.
+///
+/// Uses `reqwest::blocking`, so it must not be called inside an async runtime.
+pub fn post_releases_request(url: &str, timeout: Duration, params: &ReleasesRequestParams) -> Result<ReleasesInfo> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(timeout)
         .build()
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
     let response = client
-        .post(RELEASES_API_URL)
-        .json(&params)
+        .post(url)
+        .json(params)
         .send()
         .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
 

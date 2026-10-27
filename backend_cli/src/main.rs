@@ -8,6 +8,7 @@
 
 mod cancel;
 mod commands;
+mod db_upgrade;
 mod exit;
 mod in_use;
 mod output;
@@ -52,6 +53,11 @@ struct Cli {
     /// More log output on stderr: -v info, -vv debug.
     #[arg(short = 'v', long = "verbose", global = true, action = ArgAction::Count)]
     verbose: u8,
+
+    /// Make no update check (health, serve); check-updates ignores it.
+    /// SIMSAPA_NO_UPDATE_CHECK=1 does the same.
+    #[arg(long, global = true)]
+    no_update_check: bool,
 
     #[command(subcommand)]
     command: Commands,
@@ -108,12 +114,20 @@ enum Commands {
     #[command(subcommand)]
     Index(commands::index::IndexCommands),
 
+    /// Check npm and the releases server for a newer simsapa and a newer
+    /// compatible database release, and show the command that installs each
+    CheckUpdates,
+
     /// Serve the localhost API (the GUI app's data routes) until Ctrl-C
     Serve(commands::serve::ServeArgs),
 
     /// Download the Simsapa databases (about 4.8 GB on disk), or add sutta
     /// languages to an existing setup
     Setup(setup::SetupArgs),
+
+    /// Install a newer compatible database release (new content for this
+    /// version of simsapa), keeping your user data
+    DbUpgrade(db_upgrade::DbUpgradeArgs),
 
     /// Print the reference for these commands and the localhost API
     /// (Markdown), or save it with --output
@@ -182,9 +196,13 @@ fn run(cli: &Cli) -> CliResult {
 
     match &cli.command {
         Commands::Paths => commands::paths::run(cli.json),
+        // No preamble, no lock: reads one version from appdata.sqlite3 and
+        // asks the network, so it works without databases and while the
+        // folder is in use.
+        Commands::CheckUpdates => commands::check_updates::run(cli.json),
         Commands::Health => {
             read_only_preamble()?;
-            commands::health::run(cli.json)
+            commands::health::run(cli.json, cli.no_update_check)
         }
         Commands::Search(args) => {
             read_only_preamble()?;
@@ -234,7 +252,7 @@ fn run(cli: &Cli) -> CliResult {
             let port_file = commands::serve::PortFileBackup::read();
             simsapa_backend::set_write_api_port_file(true);
             simsapa_api::init_app_globals_api();
-            commands::serve::run(args, cli.json, lock, port_file)
+            commands::serve::run(args, cli.json, cli.no_update_check, lock, port_file)
         }
         Commands::Docs(_) => unreachable!("handled before the globals are initialised"),
         Commands::Setup(args) => {
@@ -245,6 +263,12 @@ fn run(cli: &Cli) -> CliResult {
             // full preamble itself once they are installed.
             let _lock = acquire_for_writing()?;
             setup::run(args, cli.json)
+        }
+        Commands::DbUpgrade(args) => {
+            // As setup: no preamble first, the full preamble once the new
+            // databases are installed. The lock is held for the whole run.
+            let _lock = acquire_for_writing()?;
+            db_upgrade::run(args, cli.json)
         }
     }
 }

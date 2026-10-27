@@ -31,7 +31,8 @@ use simsapa_backend::helpers::{build_word_selection_items, WordSelectionBuildMod
 use simsapa_backend::logger::{info, warn, error};
 use simsapa_backend::app_settings::ModelUsageEntry;
 use simsapa_backend::ai_fallback::WalkOutcome;
-use simsapa_api::{ApiConfig, build_rocket, init_app_globals_api, get_app_globals_api, pathbuf_to_forward_slash_string, lookup_sutta_with_fallback};
+use simsapa_api::{ApiConfig, build_rocket, init_app_globals_api, get_app_globals_api, init_update_status, pathbuf_to_forward_slash_string, lookup_sutta_with_fallback};
+use simsapa_backend::update_status::{DisabledReason, UpdateStatus};
 use crate::ai_engine::{ChatMessage, fallback_walk_settings, run_walk_blocking, WORD_SELECTION_BATCH_CHAR_LIMIT, WORD_SELECTION_REQUEST_SPACING_MS};
 
 /// Request body for POST /lookup_window_query endpoint
@@ -1218,6 +1219,16 @@ pub async extern "C" fn start_webserver() {
     info("start_webserver()");
     init_app_globals_api();
     let g = get_app_globals_api();
+
+    // The `updates` field of `/health`. This server makes no update request:
+    // `SuttaBridge::check_for_updates()` fills it from the GUI's own check,
+    // possibly before this line runs, hence init_ (set only if unset).
+    let app_version = simsapa_backend::update_checker::get_app_version();
+    init_update_status(if get_app_data().get_notify_about_simsapa_updates() {
+        UpdateStatus::checking(&app_version, false)
+    } else {
+        UpdateStatus::disabled(DisabledReason::Setting, &app_version, false)
+    });
 
     // find_port_set_env() stores -1 when no port was free.
     let port = match u16::try_from(g.api_port) {

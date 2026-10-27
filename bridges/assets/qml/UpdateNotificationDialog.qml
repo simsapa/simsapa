@@ -418,6 +418,9 @@ ApplicationWindow {
         // - An installed app should filter available db versions.
         // - Show db update notification only about compatible versions.
         // - App notifications will alert to new app version.
+        // backend_cli/src/db_upgrade.rs (`simsapa db-upgrade`) re-implements
+        // this update (export → delete → download); change both together. See
+        // docs/backend-cli-and-npm-package.md.
         // - When the new app is installed, it will remove old db and download a compatible version.
         //
         // - Appends: "This update is optional, and the download may take a while."

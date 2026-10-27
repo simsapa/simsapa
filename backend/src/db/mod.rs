@@ -417,6 +417,23 @@ pub fn read_appdata_db_version(database_url: &str) -> Result<Option<String>> {
     Ok(version.flatten())
 }
 
+/// The stored `app_settings` JSON, through one plain connection, as
+/// [`read_appdata_db_version`] reads the version: for a caller that has no
+/// `AppData` and must not open the full `DbManager`.
+pub fn read_appdata_settings_json(database_url: &str) -> Result<Option<String>> {
+    use crate::db::appdata_schema::app_settings;
+
+    let mut db_conn = SqliteConnection::establish(database_url)
+        .with_context(|| format!("Error connecting to {}", database_url))?;
+    let json = app_settings::table
+        .filter(app_settings::key.eq("app_settings"))
+        .select(app_settings::value)
+        .first::<Option<String>>(&mut db_conn)
+        .optional()
+        .with_context(|| format!("Error reading app_settings from {}", database_url))?;
+    Ok(json.flatten())
+}
+
 pub fn get_app_settings() -> AppSettings {
     info("get_app_settings()");
     use crate::db::appdata_schema::app_settings;

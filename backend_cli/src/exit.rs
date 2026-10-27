@@ -34,13 +34,23 @@ Exit codes:
 pub struct CliError {
     pub code: i32,
     pub message: String,
+    /// The command has already printed its result, which carries the error;
+    /// `finish()` prints nothing more.
+    pub reported: bool,
 }
 
 pub type CliResult = Result<(), CliError>;
 
 impl CliError {
     pub fn new(code: i32, message: impl Into<String>) -> Self {
-        CliError { code, message: message.into() }
+        CliError { code, message: message.into(), reported: false }
+    }
+
+    /// Exit with `code` after the command printed its own result (in
+    /// `--json` mode a document of its own, which an `{"error": …}` document
+    /// would follow as a second one).
+    pub fn reported(code: i32) -> Self {
+        CliError { code, message: String::new(), reported: true }
     }
 
     pub fn error(message: impl Into<String>) -> Self {
@@ -94,6 +104,7 @@ pub fn finish(result: CliResult, json: bool) -> ! {
     match result {
         Ok(()) if stdout_write_failed() => std::process::exit(ERROR),
         Ok(()) => std::process::exit(OK),
+        Err(e) if e.reported => std::process::exit(e.code),
         Err(e) => {
             if json {
                 outln!("{}", json_error_document(&e.message));

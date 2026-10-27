@@ -1,0 +1,233 @@
+PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md)
+
+## Relevant Files
+
+- `backend/src/update_status.rs` - **New.** `releases_request_params()` (no stats + the installed databases' release channel) shared by the check and `db-upgrade`. The Qt-free update check: `UpdateStatus` / `CliUpdate` / `DatabaseUpdate` types, npm dist-tag fetch, status computation, opt-out check. Unit tests inline (`#[cfg(test)]`), against a local `TcpListener`.
+- `backend/src/update_checker.rs` - `fetch_releases_info()` gains a timeout + URL variant; reuse `to_version`, `compare_versions`, `is_local_db_obsolete`, `has_db_update`, `is_app_version_compatible_with_db_version`, `resolve_db_version`, `get_release_channel`.
+- `backend/src/lib.rs` - `pub mod update_status;`.
+- `backend/src/db/mod.rs` - `read_appdata_db_version()` (existing, reused); `read_appdata_settings_json()` (plain-connection read of the stored settings, for the `release_channel` setting when no `AppData` exists).
+- `api/src/helpers.rs` - `HealthInfo` gains `updates`; `health_info()` reads the cache (a read lock and a clone).
+- `api/src/update_cache.rs` - **New.** `UpdateCache` (the process-global `/health` cache: `set`, `set_if_unset`, `current`, `spawn_check` once per process) and the free functions `set_update_status`, `init_update_status`, `current_update_status`, `spawn_background_update_check`; unit tests against a never-answering listener.
+- `api/Cargo.toml` - `tempfile` dev-dependency for the cache tests.
+- `api/src/lib.rs` - `pub mod update_cache;` and re-exports; route inventory unchanged (no new route).
+- `api/src/routes/misc.rs` - `GET /health` (no code change expected beyond the struct; test here).
+- `api/tests/` or inline tests - `/health` responds immediately while the check is blocked.
+- `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch (`db-upgrade` under `acquire_for_writing()`, no preamble first); global `--no-update-check` flag passed to `serve`.
+- `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`: runs the check (10 s), text/JSON output, exit 1 via `CliError::reported` when a part is `unknown`.
+- `backend_cli/src/exit.rs` - `CliError::reported(code)`: the command already printed its result; `finish()` prints nothing more.
+- `backend_cli/tests/check_updates.rs` - **New.** `check-updates` integration tests against a local listener, temp folders.
+- `backend_cli/src/commands/health.rs` - inline check on a `std::thread` overlapping the index open (3 s), `updates_line()` for the `Updates` line (unit-tested), `updates` in JSON.
+- `backend_cli/tests/check_updates.rs` - also `health` against the dist databases with refused URLs: offline → exit 0 `unknown (offline)`; `--no-update-check` → `flag`; `SIMSAPA_NO_UPDATE_CHECK=1` → `environment`.
+- `backend_cli/src/commands/serve.rs` - decides with `implicit_check_disabled()`; stores `disabled(reason)` or spawns the background check from the `on_liftoff` fairing.
+- `backend_cli/tests/serve.rs` - `start_serve_with_env()`; `/health` answers promptly with `checking` while the check hangs; `--no-update-check` → `flag`; `SIMSAPA_NO_UPDATE_CHECK=1` → `environment`.
+- `backend/src/app_data.rs` - `get_notify_about_simsapa_updates()` (existing, reused by the CLI).
+- `bridges/src/sutta_bridge.rs` - `check_for_updates()` writes the GUI's `/health` cache at the obsolete return and both live-fetch arms (no new request).
+- `backend_cli/src/commands/mod.rs` - register new modules.
+- `backend_cli/src/setup.rs` - the upgrade split into shared `pub(crate)` functions reused by `db-upgrade`: `OpenedDatabases`, `open_installed_databases()`, `installed_languages_for_download()`, `replace_databases(…, command)`, `install_release(urls, is_initial, action)`, `finish_install()`, `confirm(prompt, command)`.
+- `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals): `DbUpgradeArgs`, pure `decide_db_upgrade()` (unit-tested), live release lookup with the bundled list only for a newer release, then `setup`'s shared export → delete → download → import.
+- `backend_cli/tests/read_only_commands.rs` - `check-updates` / `health` integration tests (offline, overridden URLs).
+- `backend_cli/tests/setup.rs` - must stay green after the refactor.
+- `backend_cli/tests/db_upgrade.rs` - **New.** Refusal and no-op paths in temporary folders against a local releases listener: no databases (2), lock held (3), incompatible (1, names `setup`), up to date (0, text and JSON), non-tty without `--yes` (1), releases unreachable (1, not "up to date"), server reached but no usable release (1, says so, not "could not reach"), unknown language (1).
+- `backend_cli/src/output.rs` - `test_no_print_macros_in_sources` (run, don't edit).
+- `bridges/src/api.rs` - `start_webserver()` stores the initial `checking` / `disabled(setting)` with `init_update_status()` (set only if unset, since the GUI's check may finish first); no request of its own.
+- `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()` names both CLI copies (`setup.rs` `replace_databases()`, `db_upgrade.rs`).
+- `bridges/assets/qml/UpdateNotificationDialog.qml` - cross-reference comment in the database-update section, naming `db_upgrade.rs`.
+- `docs/simsapa-cli-and-localhost-api.md` - bundled doc: A.1 pointer, A.2 commands + network rule, A.5, new A.8 (check-updates, db-upgrade, opt-outs), `/health` `updates` field reference.
+- `docs/backend-cli-and-npm-package.md` - commands table, `--no-update-check`, the `check-updates` JSON exception, the `db-upgrade` section with the shared `setup.rs` functions, new "Update checks" section.
+- `docs/localhost-api-implementation.md` - "The `updates` field of `/health`": the cache, `serve`'s one check, the GUI feed, the release channel without `AppData`, test URL overrides.
+- `docs/releases-info-and-fallback.md` - `fetch_releases_info_from()` / `post_releases_request()`, "Update detection never uses the fallback" consumer table, `release_channel_from()`.
+- `PROJECT_MAP.md` - `update_status.rs`, `update_cache.rs`, `db_upgrade.rs`, `check_updates`, shared `setup.rs` functions, CLI note in Database Upgrade Flow.
+
+### Notes
+
+- Run backend tests with `cd backend && cargo test update_status`, API tests with `cd api && cargo test`, CLI tests with `cd backend_cli && cargo test`. `make rust-test` runs all four Rust crates.
+- **No test may reach npm, pythonanywhere or GitHub.** Use a local `TcpListener` serving canned responses, or one that accepts and never answers (for timeout tests).
+- **No test may run an upgrade against the dist `SIMSAPA_DIR`** — an upgrade deletes databases. Use `tempfile` folders and `--simsapa-dir`.
+- No `println!` / `eprintln!` in `backend/`, `api/`, `backend_cli/` (use `outln!` / `errln!` / logger).
+- `reqwest::blocking` only on a `std::thread` — never inside Rocket's/Tokio's runtime.
+- Timing-assertion failures in `cargo test` elsewhere in the suite are known drift, not regressions.
+- Ask before committing; never bump versions.
+
+## Instructions for Completing Tasks
+
+**IMPORTANT:** As you complete each task, you must check it off in this markdown file by changing `- [ ]` to `- [x]`. This helps track progress and ensures you don't skip any steps.
+
+Example:
+- `- [ ] 1.1 Read file` → `- [x] 1.1 Read file` (after completing)
+
+Update the file after completing each sub-task, not just after completing an entire parent task.
+
+## Tasks
+
+### 1.0 — Specs and dependencies
+
+Depends on: existing `update_checker.rs` (version parsing/comparison, `has_db_update`, `is_local_db_obsolete`, `fetch_releases_info`), `db::read_appdata_db_version`.
+
+Types (serde, field names per PRD FR-7; all `Serialize + Deserialize + Clone + Debug`):
+
+```rust
+pub struct UpdateStatus {            // the `updates` object
+    pub state: UpdateCheckState,     // "checked" | "checking" | "disabled"
+    pub disabled_reason: Option<DisabledReason>, // "flag" | "environment" | "setting"; Some only when disabled
+    pub checked_at: Option<String>,  // UTC ISO 8601 to the second
+    pub cli: CliUpdate,
+    pub database: DatabaseUpdate,
+}
+pub struct CliUpdate {
+    pub status: CliUpdateStatus,     // update_available | up_to_date | unknown | not_applicable | checking | disabled
+    pub current: String,
+    pub latest: Option<String>,
+    pub requires_new_database: bool,
+    pub command: Option<String>,     // "npm install -g @simsapa/cli@latest"
+    pub error: Option<String>,
+}
+pub struct DatabaseUpdate {
+    pub status: DatabaseUpdateStatus, // update_available | up_to_date | incompatible | not_installed | unknown | checking | disabled
+    pub current: Option<String>,
+    pub latest: Option<String>,
+    pub command: Option<String>,      // "simsapa db-upgrade" | "simsapa setup"
+    pub release_notes: Option<String>,
+    pub error: Option<String>,
+}
+pub struct UpdateCheckConfig {
+    pub npm_dist_tags_url: String,    // default https://registry.npmjs.org/-/package/@simsapa/cli/dist-tags
+    pub releases_api_url: String,     // default RELEASES_API_URL
+    pub timeout: Duration,
+    pub check_cli: bool,              // false in the GUI's server → not_applicable
+}
+```
+
+This resolves PRD Open Question 1 in favour of **always the full object**, with per-part `checking` / `disabled` statuses, plus a top-level `state` — easiest for agents to parse. Record it in the PRD.
+
+Pure functions (unit-tested, no I/O): `cli_update_from(current, latest_result, installed_db_version)`, `database_update_from(app_version, installed_db_version, releases_result)`. I/O wrapper: `check_updates(config, appdata_database_url) -> UpdateStatus`, running the two fetches on two `std::thread`s and joining both.
+
+- [x] 1.0 Update-check core in the backend (Qt-free)
+  - [x] 1.1 In `update_checker.rs`, add `fetch_releases_info_from(url: &str, timeout: Duration, screen_size, behaviour)` and make `fetch_releases_info()` call it with `RELEASES_API_URL` and `REQUEST_TIMEOUT_SECS` (no behaviour change for existing callers).
+  - [x] 1.2 Create `backend/src/update_status.rs` with the types above, `pub mod update_status;` in `backend/src/lib.rs`, and constants `NPM_DIST_TAGS_URL`, `NPM_INSTALL_COMMAND`, `DB_UPGRADE_COMMAND`, `SETUP_COMMAND`.
+  - [x] 1.3 `fetch_npm_latest(url, timeout) -> Result<String>`: `reqwest::blocking` GET, non-2xx → `Err`, parse `{"latest": "…"}`, missing key → `Err`.
+  - [x] 1.4 `cli_update_from(...)`: parse both with `to_version`; an unparseable `latest` (e.g. `-beta.1`, which `to_version` rejects) → `unknown` with the parse error, **never** `update_available`; newer → `update_available` + `command`; `requires_new_database` = installed db version known **and** `!is_app_version_compatible_with_db_version(latest, db)`.
+  - [x] 1.5 `database_update_from(...)`: no installed version (no `appdata.sqlite3`) → `not_installed` + `simsapa setup`; `is_local_db_obsolete()` → `incompatible` + `simsapa setup` (decided **before** looking at the releases result, so it is reported offline too); releases `Err` → `unknown` + error; `has_db_update()` → `update_available` + `simsapa db-upgrade` + `release_notes` (`description`, verbatim); no compatible release in the live info (`get_latest_app_compatible_assets_release()` → `None`) → `unknown` "the releases server lists no database release for simsapa <v>" — **check this before `has_db_update()`**, which returns `None` for both this and "up to date"; else `up_to_date` with `latest` = newest compatible release tag.
+  - [x] 1.6 `installed_db_version(appdata_database_url)`: `appdata_db_exists()`-style `try_exists()` check, then `read_appdata_db_version()` + `resolve_db_version()`; a read error → treat as unknown, not as `not_installed` (log a warning).
+  - [x] 1.7 `check_updates(config, appdata_database_url) -> UpdateStatus`: spawn two `std::thread`s (npm skipped when `!check_cli` → `not_applicable`), join, assemble, set `checked_at` (`chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")`, as `cips_update.rs` does). Releases request with `SaveStatsBehaviour::Disabled`. **Never** call `get_fallback_releases_info()` or `set_releases_info()` here (FR-4, FR-10).
+  - [x] 1.8 `implicit_check_disabled(flag: bool, notify_setting: bool) -> Option<DisabledReason>` — pure, in FR-11's order: flag → `Flag`; `SIMSAPA_NO_UPDATE_CHECK` = `1`/`true` (case-insensitive) → `Environment`; setting off → `Setting`; else `None` (read the env through a small seam so the order is unit-testable without mutating the process environment). Constructors `UpdateStatus::disabled(reason, current_app_version)` / `UpdateStatus::checking(current_app_version, check_cli)`.
+  - [x] 1.8a `UpdateStatus::from_releases(app_version, installed_db_version, releases: Result<&ReleasesInfo, String>, check_cli: false)` — the database part from an already-fetched releases info, for the GUI (task 3.5). Shares `database_update_from` with the CLI path.
+  - [x] 1.9 `UpdateCheckConfig::from_env(timeout, check_cli)`: defaults, overridden by `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL` when set (test hooks for the CLI integration tests; documented in the implementation doc only, not the bundled doc).
+  - [x] 1.10 Unit tests for the pure functions: every status, prerelease ordering (`1.1.0-alpha.3` < `1.1.0-alpha.4` < `1.1.0`), unparseable npm version → `unknown`, `requires_new_database` true/false/no-db, incompatible reported while releases fetch failed.
+  - [x] 1.11 I/O tests with a local `TcpListener` thread: canned npm + releases JSON → expected statuses; npm 500 + releases OK → cli `unknown`, database still computed (FR-5); a listener that accepts and never answers → returns `unknown` within `timeout` + margin; assert the embedded fallback is never consulted (releases URL unreachable → `unknown`, not the snapshot's tag).
+  - [x] 1.12 Keep the existing CLI tests offline: add `.env("SIMSAPA_NO_UPDATE_CHECK", "1")` to the command helpers that can run `health` or `serve` — `backend_cli/tests/cli_skeleton.rs` (`simsapa()` and the inline `Command::new` near line 60), `write_commands.rs` (`simsapa()`), `serve.rs` (both `Command::new`s), `read_only_commands.rs` (`command()`), `route_parity.rs`. Tests that exercise the check itself set the URL overrides instead.
+  - [x] 1.13 `cd backend && cargo test update_status` and `cargo test update_checker` green; `cargo clippy` clean for the new module.
+
+### 2.0 — Specs and dependencies
+
+Depends on: 1.0.
+
+`simsapa check-updates` — global flags only (`--no-update-check` has no effect on it). Dispatch in `main.rs` **without** any preamble and **without** the in-use check or write lock (needs only `startup::init_globals()` for the paths). Timeout 10 s per request. `check_cli: true`. Ignores `--no-update-check`, `SIMSAPA_NO_UPDATE_CHECK` and the app setting (explicit request, like the GUI's menu action). Exit 0 when both parts were determined (incl. `not_installed` / `incompatible`), 1 when either is `unknown`. `--json`: exactly the `UpdateStatus` document (on exit 1 too — not the `{"error": …}` envelope, since the document carries the errors; state this in the docs).
+
+- [x] 2.0 `simsapa check-updates` command
+  - [x] 2.1 Add `CheckUpdates` to `Commands` in `backend_cli/src/main.rs` with a `///` help line, and its dispatch arm (no preamble).
+  - [x] 2.2 Create `backend_cli/src/commands/check_updates.rs` (`pub fn run(json: bool) -> CliResult`), register it in `commands/mod.rs`.
+  - [x] 2.3 Text output with `outln!` (layout per PRD §6): CLI block, then the "After updating, run `simsapa setup` …" line when `requires_new_database`; database block with status, versions, command; release notes under it when an update is available; `unknown` parts show the error.
+  - [x] 2.4 Exit code 1 when either part is `unknown`, **without a second JSON document**: `exit::finish()` prints `{"error": …}` for every `Err` in `--json` mode. Add `CliError::reported(code)` (result already printed; `finish()` prints nothing for it, in either mode), and assert in 2.5 that stdout parses as exactly one JSON document on exit 1.
+  - [x] 2.5 Integration tests in `backend_cli/tests/read_only_commands.rs` (or a new `check_updates.rs`): local listener via `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`; temp `--simsapa-dir` with no databases → `not_installed`, exit 0; npm down → exit 1 with database part still present; `--json` parses as `UpdateStatus`.
+  - [x] 2.6 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
+
+### 3.0 — Specs and dependencies
+
+Depends on: 1.0.
+
+`api/src/update_cache.rs`:
+
+```rust
+static UPDATE_STATUS: RwLock<Option<UpdateStatus>>;
+pub fn set_update_status(status: UpdateStatus);   // used by serve's thread, the health command and the GUI bridge
+pub fn current_update_status() -> UpdateStatus;   // clone out, drop the guard; None → "checking"
+pub fn spawn_background_update_check();           // `serve` only: std::thread, check_cli = true; no-op on a second call
+```
+
+`HealthInfo.updates: UpdateStatus` filled from `current_update_status()` — a read lock and a clone, nothing else. Timeout 3 s per request. One check per `serve` start, no refresh.
+
+- **`serve`**: `implicit_check_disabled(cli.no_update_check, get_app_data().get_notify_about_simsapa_updates())` → `Some(reason)` stores `disabled(reason)` and spawns nothing; `None` spawns the check.
+- **GUI** (FR-17): **no new request.** `start_webserver()` stores `disabled(Setting)` when the setting is off, else `checking`. `SuttaBridge::check_for_updates()` (bridges depends on `simsapa_api`) then stores: obsolete → database `incompatible`; live fetch OK → `UpdateStatus::from_releases(Ok(&info))`; live fetch failed → `from_releases(Err(e))` (database `unknown`, even though the GUI then uses the snapshot). `cli` is `not_applicable` throughout.
+
+- [x] 3.0 `updates` field in `GET /health` + background check
+  - [x] 3.1 Create `api/src/update_cache.rs` with the cache and functions above; register in `api/src/lib.rs` and re-export what `backend_cli` and `bridges` need.
+  - [x] 3.2 `spawn_background_update_check()`: store `checking`, then `std::thread::spawn` → `check_updates(UpdateCheckConfig::from_env(3 s, check_cli: true), appdata_database_url)` → `set_update_status`. Log one `info` line with the outcome; never print. A second call in the same process is a no-op (`OnceLock`/`AtomicBool` guard).
+  - [x] 3.3 Add `updates: UpdateStatus` to `HealthInfo` in `api/src/helpers.rs`, fill it in `health_info()`. Before any spawn (e.g. the `health` command, which sets it itself in 4.0) the default is `checking`; make sure nothing else that builds `HealthInfo` breaks (`grep -rn HealthInfo`).
+  - [x] 3.4 Add the **global** `--no-update-check` flag to `Cli` in `backend_cli/src/main.rs` (`#[arg(long, global = true)]`, help: "Make no update check (health, serve); check-updates ignores it") and pass it to `serve::run` / `health::run`. In `serve()`: decide with `implicit_check_disabled(...)`; disabled → `set_update_status(disabled(reason))`; else call `spawn_background_update_check()` from the existing `on_liftoff` fairing (spawned there so it starts only after the bind; the fairing must not block).
+  - [x] 3.5 GUI, **no new network request**: in `bridges/src/api.rs` `start_webserver()`, after `init_app_globals_api()`, `set_update_status(disabled(Setting))` when `get_app_data().get_notify_about_simsapa_updates()` is false, else `checking`. In `bridges/src/sutta_bridge.rs` `check_for_updates()`'s thread, call `set_update_status(...)` at the three points: the obsolete early return, the live-fetch `Ok` arm, the live-fetch `Err` arm (before falling back to the snapshot). Do not change any signal, dialog or request parameter. The manual menu check updates the cache too, which is correct (it is a live result).
+  - [x] 3.6 Unit tests in `api/src/update_cache.rs` (no databases needed): `current_update_status()` returns `checking` immediately while a spawned check is blocked on a never-answering listener; the second-spawn no-op; serialisation shape of `updates`. The end-to-end `/health` promptness test goes in 3.7, because it needs the dist databases. (`HealthProbe` in `in_use.rs` reads only `db_paths`, so the extra field cannot break the in-use check.)
+  - [x] 3.7 `backend_cli/tests/serve.rs`: with `SIMSAPA_RELEASES_API_URL` / `SIMSAPA_NPM_DIST_TAGS_URL` pointing at a listener that never answers, `/health` answers promptly and shows `updates.state == "checking"`; `serve --no-update-check` → `/health` `updates.state == "disabled"`, `disabled_reason == "flag"`; `SIMSAPA_NO_UPDATE_CHECK=1` → `"environment"`. (The `"setting"` path is covered by the unit test of `implicit_check_disabled`; don't toggle the setting in the shared dist database.) Check the route-parity test (`route_parity.rs`) still passes.
+  - [x] 3.8 `make build -B` (bridges compiles; no QML change, so no qmltypes concern).
+
+### 4.0 — Specs and dependencies
+
+Depends on: 1.0, 3.3 (`HealthInfo.updates`).
+
+`simsapa health`: start `check_updates(3 s, check_cli: true)` on a `std::thread` at the top of `run()`, before `init_fulltext_searcher()`; join after it; put the result into `HealthInfo.updates` (set the cache, or overwrite the field). Disabled per `implicit_check_disabled(cli.no_update_check, get_app_data().get_notify_about_simsapa_updates())` (after the preamble, which opens the databases) → `disabled(reason)`, no thread. Exit code unaffected.
+
+- [x] 4.0 `simsapa health` inline check
+  - [x] 4.1 In `commands/health.rs`, spawn the check at the start of `run()`, join after the searcher init, and set `info.updates`.
+  - [x] 4.2 Text: one `Updates          …` line in `print_text()` summarising both parts (`unknown (offline)` when both are `unknown`; when disabled, `not checked (--no-update-check)` / `not checked (SIMSAPA_NO_UPDATE_CHECK)` / `not checked (turned off in Simsapa's settings)`).
+  - [x] 4.3 Tests: with the URL overrides pointing to a refusing port, `health` exits 0 and prints `Updates` `unknown`; with `--no-update-check`, `disabled` / `"flag"`; with `SIMSAPA_NO_UPDATE_CHECK=1`, `"environment"`; `--json` contains `updates`.
+
+### 5.0 — Specs and dependencies
+
+Depends on: nothing new (pure refactor). Must not change `setup`'s behaviour or output.
+
+Target shape in `setup.rs`:
+
+```rust
+pub(crate) struct OpenedDatabases { pub app_data: AppData, pub db_version: String }
+pub(crate) fn open_installed_databases() -> Option<OpenedDatabases>;     // AppData::try_new()
+pub(crate) fn installed_languages_for_download(old, &available) -> (kept, dropped);
+pub(crate) fn replace_databases(old: OpenedDatabases, ignore_export_errors, interactive, rerun_hint: &str) -> Result<String, CliError>;
+pub(crate) fn install_release(urls, is_initial) -> Result<(), CliError>; // ctrl-c, folders, import_lang, download_and_install, error mapping
+pub(crate) fn finish_install() -> CliResult;                             // consume markers, full preamble
+```
+
+`detect_incompatible_databases()` becomes "read version → `is_local_db_obsolete` → `open_installed_databases()`". The error text in `replace_databases` that names `simsapa setup --ignore-export-errors` takes the command name from `rerun_hint` so `db-upgrade` can name itself.
+
+- [x] 5.0 Refactor `setup.rs` upgrade code into shared functions
+  - [x] 5.1 Extract `OpenedDatabases` (rename of `IncompatibleDatabases`) and `open_installed_databases()`.
+  - [x] 5.2 Generalise `replace_incompatible_databases()` → `replace_databases(…, rerun_hint)`; `setup` passes `"simsapa setup"`. The hint applies only to failures **before** the deletion (export errors, and `confirm()`'s "Run `… --yes`" message, which must take it too). After the markers are written, the retry is always `simsapa setup` (a second `db-upgrade` would find no databases and exit 2), so "could not be removed… run `simsapa setup` again" and the post-deletion download failures keep naming `setup`. Check whether `download_and_install()` already removes `temp-download/` (FR-29.5); add the step to `finish_install()` if it does not.
+  - [x] 5.3 Extract the installed-languages merge (the `split_available` block) into `installed_languages_for_download()`.
+  - [x] 5.4 Extract the Ctrl-C / `InstallFolders` / `import_lang` / `download_and_install` / error-mapping block into `install_release()`, and the marker-consume + full-preamble tail into `finish_install()`. The interrupted message takes the command name too ("Setup stopped." / "Upgrade stopped.").
+  - [x] 5.5 `cd backend_cli && cargo test` — `tests/setup.rs` and the unit tests unchanged and green. Diff `setup`'s user-visible strings: none changed.
+
+### 6.0 — Specs and dependencies
+
+Depends on: 1.0 (`database_update_from`, `fetch_releases_info_from`), 5.0 (shared functions).
+
+`simsapa db-upgrade [--yes] [--ignore-export-errors] [--languages <codes>]`, in `backend_cli/src/db_upgrade.rs`. Dispatch: `acquire_for_writing()` (exit 3 when in use), **no** preamble first (as `setup`). Flow:
+
+1. `remove_download_temp_folder()`, `ensure_no_empty_db_files(true)`, `check_delete_files_for_upgrade()`.
+2. No `appdata.sqlite3` → exit 2 "No databases in <path>. Run `simsapa setup`."
+3. Read version (`read_appdata_db_version` + `resolve_db_version`); obsolete → exit 1 pointing to `simsapa setup`; unreadable → exit 1.
+4. Live `fetch_releases_info_from(…, 30 s, Disabled)`; `set_releases_info()` on success (this *is* a download, as in `setup`). Release = `compatible_assets_release()`. If the live fetch failed, say "Using the release list bundled with simsapa." Proceed only if the release is newer than installed (`compare_versions`), else exit 0 "The databases are up to date (<v>)." — or, when the live fetch failed and the bundled release is not newer, exit 1 "Could not reach the releases server: …".
+5. Validate `--languages`; refuse without `--yes` when stdin is not a terminal.
+6. Open the databases (`open_installed_databases()`), merge installed languages; print current → new, release notes, archives (`setup_urls(…, is_initial: true, …)`), destination, 4.8 GB note; confirm "Install the new databases and migrate your user data now?".
+7. `replace_databases(…, "simsapa db-upgrade")` → `install_release(urls, true)` → `finish_install()`.
+8. Text "Database upgrade complete: <old> → <new>."; JSON `{"status":"ok","upgraded_from","upgraded_to","languages"}`; "up to date" JSON `{"status":"up_to_date","version"}`.
+
+Order note: open the `AppData` only after the "up to date" decision, so a no-op `db-upgrade` neither migrates nor holds the databases.
+
+- [x] 6.0 `simsapa db-upgrade` command
+  - [x] 6.1 Add `DbUpgrade(db_upgrade::DbUpgradeArgs)` to `Commands` with help text, and the dispatch arm (`let _lock = acquire_for_writing()?;` — bound to a name so the lock is held for the whole run — then `db_upgrade::run`). Add `mod db_upgrade;`.
+  - [x] 6.2 Implement steps 1–3 and a pure `decide_db_upgrade(installed: Option<&str>, app_version, release: Option<&ReleaseEntry>, live: bool) -> DbUpgradeDecision` (`NotInstalled | Incompatible | UpToDate | Upgrade | ReleasesUnreachable`) and unit-test every arm.
+  - [x] 6.3 Implement steps 4–8 using the 5.0 shared functions; release notes printed as received.
+  - [x] 6.4 Integration tests in `backend_cli/tests/db_upgrade.rs`, temp folders only: no databases → exit 2; folder in use (hold `cli-write.lock` from the test) → exit 3; incompatible db (`DB_VERSION` env override, as `setup`'s tests do) → exit 1 naming `simsapa setup`; up to date (releases override serving a release equal to the installed version) → exit 0, nothing deleted; non-tty without `--yes` → exit 1, nothing deleted. The download/extract/cleanup path is already covered by `setup`'s `download_and_install` tests, which the shared code uses.
+  - [x] 6.5 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
+
+### 7.0 — Specs and dependencies
+
+Depends on: 1.0–6.0. Docs describe current behaviour only (no history narration).
+
+- [x] 7.0 Docs, cross-references, final run
+  - [x] 7.1 `docs/simsapa-cli-and-localhost-api.md` (bundled): `check-updates` and `db-upgrade` in Part A with exit codes and examples; `updates` in the `/health` section with every status and what to do; the three opt-outs and their order (`--no-update-check`, `SIMSAPA_NO_UPDATE_CHECK`, the app's "Notify about Simsapa updates" setting) and `disabled_reason`; that the GUI's `/health` reflects the app's own check; the `--json` exception for `check-updates` exit 1; that in the GUI's `/health` `database.command` is always `null` (the GUI holds the folder, so `db-upgrade` / `setup` would refuse — use the app's update dialog); that a zero-byte `appdata.sqlite3` is `not_installed`; that the releases request uses the app's release channel setting. Self-contained (run `test_bundled_doc_has_no_repo_references`).
+  - [x] 7.2 `docs/backend-cli-and-npm-package.md`: commands table; "two implementations of one procedure" covers the compatible-newer upgrade and the shared functions; the network rules (only `check-updates`, `health`, `serve`, `setup`, `db-upgrade` use the network; `reqwest::blocking` on `std::thread`).
+  - [x] 7.3 `docs/localhost-api-implementation.md`: `api/src/update_cache.rs`, one check per server start, GUI scope (`UpdateStatus::from_releases()` drops `command`), how `check-updates` finds the release channel without `AppData` (`read_appdata_settings_json()` + `release_channel_from()`, only the `release_channel` key parsed), and the `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL` test overrides.
+  - [x] 7.4 `docs/releases-info-and-fallback.md`: the new consumers; the fallback is never used for *detection*; `db-upgrade` uses it only for the download, and only if it names a newer release.
+  - [x] 7.5 Comments: `prepare_for_database_upgrade()` in `bridges/src/sutta_bridge.rs` and the "Database Update Dialog" section of `UpdateNotificationDialog.qml` name `backend_cli/src/db_upgrade.rs` as the CLI copy ("change both together").
+  - [x] 7.6 `PROJECT_MAP.md`: new files (`backend/src/update_status.rs`, `api/src/update_cache.rs`, `backend_cli/src/commands/check_updates.rs`, `backend_cli/src/db_upgrade.rs`).
+  - [x] 7.7 Update the PRD's Open Questions with the decisions taken (OQ1: full object with per-part statuses; OQ3: `npm install -g @simsapa/cli@latest`).
+  - [x] 7.8 `make rust-test` and `make build -B` green; `git status` shows no `*.sqlite3`.
