@@ -12,7 +12,9 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `api/src/routes/misc.rs` - `GET /health` (no code change expected beyond the struct; test here).
 - `api/tests/` or inline tests - `/health` responds immediately while the check is blocked.
 - `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch.
-- `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`.
+- `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`: runs the check (10 s), text/JSON output, exit 1 via `CliError::reported` when a part is `unknown`.
+- `backend_cli/src/exit.rs` - `CliError::reported(code)`: the command already printed its result; `finish()` prints nothing more.
+- `backend_cli/tests/check_updates.rs` - **New.** `check-updates` integration tests against a local listener, temp folders.
 - `backend_cli/src/commands/health.rs` - inline check, `Updates` line, `updates` in JSON.
 - `backend_cli/src/commands/serve.rs` - spawn the background check (honouring `--no-update-check`, the env var and the app setting).
 - `backend/src/app_data.rs` - `get_notify_about_simsapa_updates()` (existing, reused by the CLI).
@@ -114,13 +116,13 @@ Depends on: 1.0.
 
 `simsapa check-updates` — global flags only (`--no-update-check` has no effect on it). Dispatch in `main.rs` **without** any preamble and **without** the in-use check or write lock (needs only `startup::init_globals()` for the paths). Timeout 10 s per request. `check_cli: true`. Ignores `--no-update-check`, `SIMSAPA_NO_UPDATE_CHECK` and the app setting (explicit request, like the GUI's menu action). Exit 0 when both parts were determined (incl. `not_installed` / `incompatible`), 1 when either is `unknown`. `--json`: exactly the `UpdateStatus` document (on exit 1 too — not the `{"error": …}` envelope, since the document carries the errors; state this in the docs).
 
-- [ ] 2.0 `simsapa check-updates` command
-  - [ ] 2.1 Add `CheckUpdates` to `Commands` in `backend_cli/src/main.rs` with a `///` help line, and its dispatch arm (no preamble).
-  - [ ] 2.2 Create `backend_cli/src/commands/check_updates.rs` (`pub fn run(json: bool) -> CliResult`), register it in `commands/mod.rs`.
-  - [ ] 2.3 Text output with `outln!` (layout per PRD §6): CLI block, then the "After updating, run `simsapa setup` …" line when `requires_new_database`; database block with status, versions, command; release notes under it when an update is available; `unknown` parts show the error.
-  - [ ] 2.4 Exit code 1 when either part is `unknown`, **without a second JSON document**: `exit::finish()` prints `{"error": …}` for every `Err` in `--json` mode. Add `CliError::reported(code)` (result already printed; `finish()` prints nothing for it, in either mode), and assert in 2.5 that stdout parses as exactly one JSON document on exit 1.
-  - [ ] 2.5 Integration tests in `backend_cli/tests/read_only_commands.rs` (or a new `check_updates.rs`): local listener via `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`; temp `--simsapa-dir` with no databases → `not_installed`, exit 0; npm down → exit 1 with database part still present; `--json` parses as `UpdateStatus`.
-  - [ ] 2.6 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
+- [x] 2.0 `simsapa check-updates` command
+  - [x] 2.1 Add `CheckUpdates` to `Commands` in `backend_cli/src/main.rs` with a `///` help line, and its dispatch arm (no preamble).
+  - [x] 2.2 Create `backend_cli/src/commands/check_updates.rs` (`pub fn run(json: bool) -> CliResult`), register it in `commands/mod.rs`.
+  - [x] 2.3 Text output with `outln!` (layout per PRD §6): CLI block, then the "After updating, run `simsapa setup` …" line when `requires_new_database`; database block with status, versions, command; release notes under it when an update is available; `unknown` parts show the error.
+  - [x] 2.4 Exit code 1 when either part is `unknown`, **without a second JSON document**: `exit::finish()` prints `{"error": …}` for every `Err` in `--json` mode. Add `CliError::reported(code)` (result already printed; `finish()` prints nothing for it, in either mode), and assert in 2.5 that stdout parses as exactly one JSON document on exit 1.
+  - [x] 2.5 Integration tests in `backend_cli/tests/read_only_commands.rs` (or a new `check_updates.rs`): local listener via `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`; temp `--simsapa-dir` with no databases → `not_installed`, exit 0; npm down → exit 1 with database part still present; `--json` parses as `UpdateStatus`.
+  - [x] 2.6 `cd backend_cli && cargo test` green, incl. `test_no_print_macros`.
 
 ### 3.0 — Specs and dependencies
 
