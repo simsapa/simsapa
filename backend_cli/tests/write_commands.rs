@@ -24,6 +24,8 @@ fn simsapa(simsapa_dir: &Path, args: &[&str]) -> Output {
         .arg(simsapa_dir)
         .args(args)
         .env_remove("API_PORT")
+        // No test reaches npm or the releases server.
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .output()
         .expect("failed to run simsapa")
 }

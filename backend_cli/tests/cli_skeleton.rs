@@ -13,6 +13,8 @@ fn simsapa(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_simsapa"))
         .args(args)
         .env_remove("API_PORT")
+        // No test reaches npm or the releases server.
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .output()
         .expect("failed to run simsapa")
 }
@@ -59,6 +61,7 @@ fn test_relative_simsapa_dir_is_relative_to_the_current_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_simsapa"))
         .args(["--simsapa-dir", "data", "paths", "--json"])
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .current_dir(tmp.path())
         .output()
         .unwrap();

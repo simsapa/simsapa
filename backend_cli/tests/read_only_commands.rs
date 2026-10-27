@@ -20,6 +20,8 @@ fn have_dist() -> bool {
 fn command(args: &[&str]) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_simsapa"));
     c.arg("--simsapa-dir").arg(DIST_SIMSAPA_DIR).args(args).env_remove("API_PORT");
+    // No test reaches npm or the releases server.
+    c.env("SIMSAPA_NO_UPDATE_CHECK", "1");
     c
 }
 
@@ -325,6 +327,7 @@ fn test_read_only_commands_need_databases() {
             .arg("--simsapa-dir")
             .arg(tmp.path())
             .args(&args)
+            .env("SIMSAPA_NO_UPDATE_CHECK", "1")
             .output()
             .unwrap();
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));

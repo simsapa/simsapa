@@ -69,6 +69,8 @@ fn start_serve(args: &[&str]) -> (ServeGuard, Option<String>) {
         .arg("serve")
         .args(args)
         .env_remove("API_PORT")
+        // No test reaches npm or the releases server.
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -150,6 +152,8 @@ fn test_serve_on_loopback() {
     let out = Command::new(env!("CARGO_BIN_EXE_simsapa"))
         .args(["--simsapa-dir", DIST_SIMSAPA_DIR, "index", "delete", "--area", "library", "--lang", "zz"])
         .env_remove("API_PORT")
+        // No test reaches npm or the releases server.
+        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(3), "stderr: {}", String::from_utf8_lossy(&out.stderr));

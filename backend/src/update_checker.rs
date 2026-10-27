@@ -591,16 +591,33 @@ fn get_dont_send_stats() -> bool {
 /// println!("Latest app version: {}", info.application.releases[0].version_tag);
 /// ```
 pub fn fetch_releases_info(screen_size: Option<&str>, save_stats_behaviour: SaveStatsBehaviour) -> Result<ReleasesInfo> {
+    fetch_releases_info_from(
+        RELEASES_API_URL,
+        Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        screen_size,
+        save_stats_behaviour,
+    )
+}
+
+/// [`fetch_releases_info`] from a given URL with a given request timeout.
+///
+/// Uses `reqwest::blocking`, so it must not be called inside an async runtime.
+pub fn fetch_releases_info_from(
+    url: &str,
+    timeout: Duration,
+    screen_size: Option<&str>,
+    save_stats_behaviour: SaveStatsBehaviour,
+) -> Result<ReleasesInfo> {
     info("fetch_releases_info()");
     let params = collect_system_info(screen_size, save_stats_behaviour);
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .timeout(timeout)
         .build()
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
     let response = client
-        .post(RELEASES_API_URL)
+        .post(url)
         .json(&params)
         .send()
         .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
