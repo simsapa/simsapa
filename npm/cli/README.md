@@ -44,6 +44,13 @@ Run `simsapa setup --languages de` again later to add a language to an existing
 setup. If a download fails or you press Ctrl-C, setup removes what it
 downloaded. Run it again to start over.
 
+### After an update: new databases
+
+A new version of the CLI can need new databases. Commands then print a warning
+and still answer, but results may be missing or wrong. Run `simsapa setup`: it
+offers to install the new databases, keeps your user data (settings, bookmarks,
+imported books and dictionaries) and downloads your sutta languages again.
+
 ### Where the data goes
 
 The CLI uses **the same data folder as the Simsapa desktop app**. On Linux this

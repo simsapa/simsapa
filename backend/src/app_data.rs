@@ -168,16 +168,24 @@ pub struct AppData {
 
 impl AppData {
     pub fn new() -> Self {
+        Self::try_new().expect("Can't create DbManager")
+    }
+
+    /// `new()` without the panic. An `AppData` built here and not handed to
+    /// `init_app_data()` closes its databases when dropped, which is what lets
+    /// `simsapa setup` export user data from an incompatible database and then
+    /// delete that database in the same process.
+    pub fn try_new() -> anyhow::Result<Self> {
         init_app_globals();
-        let dbm = DbManager::new().expect("Can't create DbManager");
+        let dbm = DbManager::new()?;
         let app_settings_cache = RwLock::new(dbm.appdata.get_app_settings().clone());
         let g = get_app_globals();
 
-        AppData {
+        Ok(AppData {
             dbm,
             app_settings_cache,
             api_url: g.api_url.clone(),
-        }
+        })
     }
 
     /// Recompute the cached shipped + commentary-definitions source-uid lists

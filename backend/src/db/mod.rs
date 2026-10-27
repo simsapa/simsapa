@@ -399,6 +399,24 @@ impl DbManager {
     }
 }
 
+/// The stored `db_version` of `appdata.sqlite3`, through one plain connection
+/// and no migrations: cheap, and fast to fail on a file that is not a
+/// database (a pool would retry until its timeout). `Ok(None)` when there is
+/// no such row.
+pub fn read_appdata_db_version(database_url: &str) -> Result<Option<String>> {
+    use crate::db::appdata_schema::app_settings;
+
+    let mut db_conn = SqliteConnection::establish(database_url)
+        .with_context(|| format!("Error connecting to {}", database_url))?;
+    let version = app_settings::table
+        .filter(app_settings::key.eq("db_version"))
+        .select(app_settings::value)
+        .first::<Option<String>>(&mut db_conn)
+        .optional()
+        .with_context(|| format!("Error reading db_version from {}", database_url))?;
+    Ok(version.flatten())
+}
+
 pub fn get_app_settings() -> AppSettings {
     info("get_app_settings()");
     use crate::db::appdata_schema::app_settings;

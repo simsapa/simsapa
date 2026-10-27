@@ -587,6 +587,8 @@ ApplicationWindow {
         // - Major and minor version must agree.
         // - On app startup, if obsolete db is found, delete it and show download window.
         // - Appends: "Download the new database and migrate data now?"
+        // backend_cli/src/setup.rs (`simsapa setup`) re-implements this upgrade;
+        // change both together. See docs/backend-cli-and-npm-package.md.
         Frame {
             Layout.fillWidth: true
             Layout.fillHeight: true

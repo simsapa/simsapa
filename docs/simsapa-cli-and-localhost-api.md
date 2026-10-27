@@ -44,6 +44,16 @@ any command. `simsapa setup --languages de,hu` adds sutta languages,
 `--list-languages` lists them. `simsapa paths` shows the folder and which
 databases exist; any other command run before `setup` says so and exits 2.
 
+**After an app update, the databases may be incompatible** (another major or
+minor version than the program's). Then the read-only commands and `serve`
+print a warning on stderr and still answer, though results may be missing or
+wrong, and `import` and `index` refuse. `simsapa setup` offers to install the
+new databases: it exports your user data (settings, bookmarks, imported books
+and dictionaries, gloss and prompt history, chanting recordings), replaces the
+databases, downloads your sutta languages again and imports the user data into
+the new databases. If part of the user data cannot be exported it asks whether
+to go on without it; `--ignore-export-errors` answers yes in a script.
+
 ## A.2 Commands
 
 `simsapa --help` lists them and `simsapa <command> --help` gives every option.

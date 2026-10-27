@@ -411,3 +411,49 @@ fn test_closed_stderr_is_not_a_panic() {
         assert_eq!(out.status.code(), Some(code), "{args:?} with stdout closed too");
     }
 }
+
+/// Databases of another major.minor version (`DB_VERSION` overrides the
+/// stored one, as in the GUI): a read-only command warns on stderr and still
+/// answers.
+#[test]
+fn test_incompatible_databases_read_only_warns_and_continues() {
+    if !have_dist() {
+        return;
+    }
+    let out = command(&["search", "suttas", "anicca", "--json"]).env("DB_VERSION", "0.9.0").output().unwrap();
+    assert_ok(&out);
+    let err = stderr(&out);
+    assert!(err.contains("(version 0.9.0) are not compatible with this version of simsapa"), "stderr: {err}");
+    assert!(err.contains("Run `simsapa setup`"), "stderr: {err}");
+    assert!(stdout_json(&out)["hits"].as_i64().unwrap() > 0);
+}
+
+/// A compatible database prints no warning.
+#[test]
+fn test_compatible_databases_print_no_warning() {
+    if !have_dist() {
+        return;
+    }
+    let out = command(&["search", "suttas", "anicca", "--json"]).env_remove("DB_VERSION").output().unwrap();
+    assert_ok(&out);
+    assert!(!stderr(&out).contains("not compatible"), "stderr: {}", stderr(&out));
+}
+
+/// A write command refuses before doing its own work. The index build is for
+/// a language that has no suttas, so a broken refusal would build nothing.
+#[test]
+fn test_incompatible_databases_write_command_refuses() {
+    if !have_dist() {
+        return;
+    }
+    let out = command(&["index", "build", "--area", "library", "--lang", "zz"]).env("DB_VERSION", "0.9.0").output().unwrap();
+    // 3 when the app is using the folder: that refusal comes first.
+    if out.status.code() == Some(3) {
+        eprintln!("skipped: the dist folder is in use");
+        return;
+    }
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("not compatible"), "stderr: {err}");
+    assert!(err.contains("Run `simsapa setup` to install the new databases first"), "stderr: {err}");
+}

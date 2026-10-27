@@ -128,6 +128,18 @@ installs, and an npm-installed executable lives in `node_modules`). For the
 same reason a Windows portable install's `config.txt` does not apply to the npm
 binary: point `--simsapa-dir` or `SIMSAPA_DIR` at the portable folder.
 
+### Incompatible databases
+
+After the preamble every command that opens the databases checks their version
+the way the GUI's `check_for_updates()` does (`startup::check_db_compatible()`;
+a different major.minor is incompatible). The read-only commands and `serve`
+print a warning on stderr naming both versions and `simsapa setup`, and
+continue: the answer may be missing or wrong, but a read cannot damage
+anything. `import` and `index` refuse (exit 1) before their own work, rather
+than write into databases that are about to be replaced. `simsapa setup`
+offers the upgrade (below). `stats` and `paths` do not check. The GUI shows its
+dialog instead and never runs on regardless.
+
 ## Coexisting with the GUI: in-use detection and the write lock
 
 Tantivy's lock fallback is a process-internal mutex (the **single-process
@@ -235,37 +247,79 @@ exits, and `serve` refuses to run beside a writer.
 implementations of one procedure.** The GUI's is `DownloadAppdataWindow.qml`
 (`Component.onCompleted`, `validate_download()`, `run_download()`) and
 `bridges/src/asset_manager.rs` (`download_urls_and_extract`,
-`cleanup_on_failure`); both carry a comment pointing here. A change to either
+`cleanup_on_failure`); both carry a comment pointing here, as do the
+upgrade's `prepare_for_database_upgrade()` and the obsolete-database case of
+`UpdateNotificationDialog.qml`. A change to either
 must be mirrored in the other, or a folder made by one stops opening cleanly in
-the other. Only `compatible_assets_release()` is shared code (in
-`backend/src/update_checker.rs`), so both pick the same database release.
+the other. Shared code: `compatible_assets_release()` (in
+`backend/src/update_checker.rs`), so both pick the same database release, and,
+for the upgrade of an incompatible database, `is_local_db_obsolete()`,
+`AppData::export_user_data_to_assets()` and `write_upgrade_marker_files()`.
+
+**The upgrade of an incompatible database is the GUI's procedure in one run.**
+In the GUI, `check_for_updates()` finds a database of another major.minor
+version (`is_local_db_obsolete()`), `UpdateNotificationDialog` asks, and
+`prepare_for_database_upgrade()` exports the user data to `import-me/` and
+writes `delete_files_for_upgrade.txt` and `auto_start_download.txt`; the app
+quits, and the next start deletes the old databases and opens the download
+window with the exported languages preselected. `simsapa setup` makes the same
+check (step 2), and after the confirmation exports, writes the same two
+markers, closes the old databases and deletes them with the same
+`check_delete_files_for_upgrade()`, then downloads. The old databases are
+opened through a local `AppData::try_new()`, never `init_app_data()`: the
+global cannot be dropped, and on Windows an open database cannot be deleted.
+A run stopped after the deletion leaves `import-me/` and
+`auto_start_download.txt`, so the next `setup` completes it as an upgrade the
+app prepared. Ctrl-C is honoured between archive entries, so inside a large
+entry (`dpd.sqlite3`, 2.4 GB) it takes effect when that entry is written.
 
 The procedure, in the CLI's order:
 
 1. Print the data folder. `remove_download_temp_folder()`,
    `ensure_no_empty_db_files(true)`, `check_delete_files_for_upgrade()` — the
    order of `gui.cpp`.
-2. Decide the mode: no `appdata.sqlite3` → **initial** (the four base archives
-   plus languages); databases present and `--languages` given →
+2. Check the databases' version: `read_appdata_db_version()` (one plain
+   connection, no migrations), `resolve_db_version()` (`DB_VERSION` in the
+   environment overrides the stored version, as in the GUI) and
+   `is_local_db_obsolete()`. **Never open the full `DbManager` for this
+   check**: a pool retries a file that is not a database until its timeout
+   (about 30 s per call), and a compatible folder would be migrated by every
+   `setup`. Only incompatible databases are then opened, with
+   `AppData::try_new()`, for the export. Incompatible →
+   an **upgrade**, which is an initial setup once the old databases are gone;
+   its languages are the old databases' sutta languages (those still offered
+   for download; the rest are named and left out) plus `--languages`.
+3. Otherwise decide the mode: no `appdata.sqlite3` → **initial** (the four
+   base archives plus languages); databases present and `--languages` given →
    **languages only**; otherwise "Simsapa is already set up in <path>." and
    exit 0.
-3. **Peek** at the upgrade markers the app writes before a database upgrade
+4. **Peek** at the upgrade markers the app writes before a database upgrade
    (`app-assets/auto_start_download.txt`, `download_languages.txt`) and merge
    the marker's languages into `--languages`.
-4. Validate the language codes against the embedded `languages.json`
+5. Validate the language codes against the embedded `languages.json`
    (commas/spaces, case-insensitive, `en`/`pli`/`san` skipped): "Not available
    for download: …".
-5. Refuse without `--yes` when stdin is not a terminal (rather than hang).
-6. Fetch the releases info (live, else the embedded snapshot silently; no
+6. Refuse without `--yes` when stdin is not a terminal (rather than hang).
+7. Fetch the releases info (live, else the embedded snapshot silently; no
    stats) and pick the release with `compatible_assets_release()`; none →
    the GUI's "Unable to retrieve download information…".
-7. Build the URLs as `run_download()` does: `https://github.com/<repo>/releases/download/<v-tag>/`
+8. Build the URLs as `run_download()` does: `https://github.com/<repo>/releases/download/<v-tag>/`
    + `appdata`, `dictionaries`, `dpd`, `index` `.tar.bz2` (initial only), then
    `suttas_lang_<code>.tar.bz2` per language. The CLI adds the `v` prefix in
    both modes.
-8. List the archives and the destination, note the 4.8 GB, ask
-   `Continue? [y/N]`.
-9. Per archive: re-create `temp-download/temp-extract/`; download with a 30 s
+9. List the archives and the destination, note the 4.8 GB, ask
+   `Continue? [y/N]` (for an upgrade, "Install the new databases and migrate
+   your user data now?").
+10. Upgrade only: `export_user_data_to_assets()`. On an export error, list
+    the failed categories and ask whether to go on without them; without a
+    terminal, stop unless `--ignore-export-errors` was given (`--yes` does not
+    imply it: it would lose data silently). Then `write_upgrade_marker_files()`,
+    drop the `AppData`, `check_delete_files_for_upgrade()`, and check that
+    `appdata.sqlite3` is gone. Nothing is deleted before the export and both
+    markers succeeded, and a run stopped after this point continues as the
+    app's prepared upgrade (step 4). The `--json` document of an upgrade
+    carries `"upgraded_from": "<old db_version>"`.
+11. Per archive: re-create `temp-download/temp-extract/`; download with a 30 s
    connect timeout and no overall timeout, up to 5 attempts with 2/4/8/16 s
    back-off; extract the `.tar.bz2` into `temp-extract/`; delete the archive;
    for `suttas_lang_*` run `import_suttas_lang_to_appdata()`; then
@@ -273,7 +327,7 @@ The procedure, in the CLI's order:
    its own `index/suttas/<lang>/`, which the move merges in, so no sutta index
    is built afterwards. One `indicatif` bar per archive on stderr,
    `Downloading <file>` / `Extracting <file>`.
-10. Delete `temp-download/`, **then consume the markers**, then run the full
+12. Delete `temp-download/`, **then consume the markers**, then run the full
     preamble (user-data import, first-start settings, index reconciliation) so
     the first query does not pay for it. Print `Setup complete.`
 
@@ -285,6 +339,8 @@ What the CLI does differently, on purpose:
 
 - **No storage chooser**: the default folder or `--simsapa-dir`.
 - **Languages from a flag**, plus the upgrade marker's list.
+- **No restart in an upgrade**: the export, the deletion and the download are
+  one run, where the GUI quits after the export.
 - **No Retry button.** A missing `Content-Length`, an HTTP 429/5xx or a
   connection lost mid-body is a failed attempt in the same five-attempt loop;
   any other HTTP error status stops at once (the GUI does not check the status).

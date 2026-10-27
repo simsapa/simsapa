@@ -286,55 +286,6 @@ fn on_import_raw_pick_finished(
 /// Fetch, highlight, and cache a single page of search results.
 /// Returns (results, total_hits, page_len) on success.
 /// If the cache key has changed (new search started), returns None to signal abort.
-/// Write the two marker files that trigger the upgrade flow on next app start.
-///
-/// Used by both `prepare_for_database_upgrade` (happy path) and
-/// `force_database_upgrade` (after user confirms export failure).
-///
-/// Returns `Err(Vec<(category, message)>)` if either marker write fails.
-/// A silently-missing marker file would produce a silently-failed upgrade
-/// on the next start (the old DB is not deleted and the new download is
-/// not auto-started), so marker-write failures must surface to the UI.
-/// See PRD §11.3.
-fn write_upgrade_marker_files() -> std::result::Result<(), Vec<(String, String)>> {
-    let globals = get_app_globals();
-    let mut errors: Vec<(String, String)> = Vec::new();
-
-    let delete_marker_path = &globals.paths.delete_files_for_upgrade_marker;
-    match std::fs::write(delete_marker_path, "") {
-        Ok(()) => {
-            info(&format!("Created marker file: {}", delete_marker_path.display()));
-        }
-        Err(e) => {
-            error(&format!("Failed to create delete_files_for_upgrade.txt: {}", e));
-            errors.push((
-                "marker_delete_files".to_string(),
-                format!("{}: {}", delete_marker_path.display(), e),
-            ));
-        }
-    }
-
-    let auto_download_path = &globals.paths.auto_start_download_marker;
-    match std::fs::write(auto_download_path, "") {
-        Ok(()) => {
-            info(&format!("Created marker file: {}", auto_download_path.display()));
-        }
-        Err(e) => {
-            error(&format!("Failed to create auto_start_download.txt: {}", e));
-            errors.push((
-                "marker_auto_start_download".to_string(),
-                format!("{}: {}", auto_download_path.display(), e),
-            ));
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
-}
-
 fn format_category_errors(errs: &[(String, String)]) -> String {
     errs.iter()
         .map(|(cat, msg)| format!("{}: {}", cat, msg))
@@ -5661,6 +5612,11 @@ impl qobject::SuttaBridge {
     ///
     /// The user should quit the app after calling this function and restart it
     /// to begin the database download process.
+    ///
+    /// `backend_cli/src/setup.rs` (`simsapa setup`,
+    /// `replace_incompatible_databases()`) re-implements this upgrade, with the
+    /// same export and markers; change both together. See
+    /// docs/backend-cli-and-npm-package.md.
     pub fn prepare_for_database_upgrade(self: Pin<&mut Self>) {
         // Run the export on a background thread so the UI thread is free to
         // repaint button-state/label bindings (e.g. "Exporting user data…")
@@ -5677,7 +5633,7 @@ impl qobject::SuttaBridge {
                     // files are also on disk (see PRD §11.3 — a silent marker
                     // failure would otherwise produce a no-op upgrade on
                     // restart).
-                    match write_upgrade_marker_files() {
+                    match simsapa_backend::write_upgrade_marker_files() {
                         Ok(()) => {
                             if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                                 *guard = None;
@@ -5752,7 +5708,7 @@ impl qobject::SuttaBridge {
             }
             info("force_database_upgrade(): writing upgrade marker files after user opted to continue past export failure");
 
-            match write_upgrade_marker_files() {
+            match simsapa_backend::write_upgrade_marker_files() {
                 Ok(()) => {
                     if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                         *guard = None;

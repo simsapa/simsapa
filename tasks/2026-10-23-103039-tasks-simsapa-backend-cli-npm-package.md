@@ -447,3 +447,12 @@ Update the file after completing each sub-task, not just after completing an ent
   - [x] 14.4 `scripts/simsapa_fmt.py` deleted: the CLI's text output replaces it; the doc says an agent wanting another shape reads `--json` and writes its own formatter.
   - [x] 14.5 `simsapa docs [--output <file>]` prints or saves the doc, `include_str!`'d into the binary. The doc is self-contained (no repo links, source paths or `CLAUDE.md`), enforced by `test_bundled_doc_has_no_repo_references`; the implementation notes moved to `docs/localhost-api-implementation.md`.
   - [ ] 14.6 The dist `appdata.sqlite3` predates 14.1 (`sc_data_version` is `null`); the next bootstrap records it.
+
+- [x] 15.0 Incompatible databases: detect and upgrade, as the GUI does
+
+  - [x] 15.1 `simsapa setup` checks the stored `db_version` (`read_appdata_db_version()`, one plain connection; `resolve_db_version()`; `is_local_db_obsolete()`). Incompatible → explain, list the archives, ask "Install the new databases and migrate your user data now?" (`--yes` skips it), then `export_user_data_to_assets()` through a local `AppData::try_new()`, `write_upgrade_marker_files()` (moved from `bridges` to `backend`), drop the `AppData`, `check_delete_files_for_upgrade()`, and the initial download with the old databases' sutta languages.
+  - [x] 15.2 Export errors are listed; interactive → ask whether to go on; non-interactive → stop with the old databases kept unless `--ignore-export-errors`.
+  - [x] 15.3 Read-only commands and `serve` warn on stderr and continue; `import` and `index` refuse (exit 1).
+  - [x] 15.4 Tests: `split_available`; through the binary with `DB_VERSION=0.9.0` against the dist databases: read-only warns, a compatible database does not, `index build` refuses, `setup` without a terminal offers the upgrade and changes nothing.
+  - [x] 15.5 End to end on a scratch copy of `appdata.sqlite3`: the export-failure stop (old databases kept, no markers); with `--ignore-export-errors` the export, markers, deletion and download of three archives, then Ctrl-C keeping `import-me/` and `auto_start_download.txt`; the next `setup` resumes it as a prepared upgrade.
+  - [ ] 15.6 A full upgrade through to `Setup complete.` and the user-data import (needs the 4.8 GB download): manual check.

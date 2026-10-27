@@ -1025,7 +1025,15 @@ Notable feature docs:
   (`DownloadAppdataWindow.qml` + `asset_manager.rs`) — change both together;
   the doc lists every step and what the CLI does differently on purpose (no
   Retry button, failures are fatal, upgrade markers consumed only after
-  success). The **startup preamble** (`backend_cli/src/startup.rs`) mirrors
+  success). It is also the second implementation of the GUI's **upgrade of an
+  incompatible database** (`is_local_db_obsolete()` →
+  `prepare_for_database_upgrade()`): the same export and markers, then the
+  deletion and download in the same run. Its version check reads `db_version`
+  through one plain connection (`read_appdata_db_version()`), **never the full
+  `DbManager`**, whose pool retries a damaged file until its timeout; the
+  other commands warn (read-only, `serve`) or refuse (`import`, `index`). The
+  setup integration tests use temporary folders only: an upgrade deletes the
+  databases it replaces. The **startup preamble** (`backend_cli/src/startup.rs`) mirrors
   `gui.cpp`'s startup and has a **read-only mode** for when the folder is in
   use; **in-use detection** (`api-port.txt` + `/health`) plus the
   `cli-write.lock` protect the single-process invariant of the Tantivy lock

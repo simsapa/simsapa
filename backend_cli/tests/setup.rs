@@ -1,4 +1,5 @@
-//! `simsapa setup` through the built binary, in temporary folders. None of
+//! `simsapa setup` through the built binary, in temporary folders (never the
+//! dist databases: an upgrade deletes the databases it replaces). None of
 //! these reach the network: each stops before the releases lookup. The
 //! download loop itself is tested against a local server in `src/setup.rs`.
 
@@ -91,4 +92,71 @@ fn test_non_interactive_needs_yes() {
     assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
     assert!(stderr(&out).contains("Run `simsapa setup --yes` to confirm non-interactively."), "{}", stderr(&out));
     assert!(!dir.path().join("temp-download").exists());
+}
+
+/// An `appdata.sqlite3` holding only `app_settings` with this `db_version`.
+fn minimal_appdata(app_assets: &Path, db_version: &str) {
+    fs::create_dir_all(app_assets).unwrap();
+    let status = Command::new("sqlite3")
+        .arg(app_assets.join("appdata.sqlite3"))
+        .arg(format!(
+            "CREATE TABLE app_settings (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT);\
+             INSERT INTO app_settings (key, value) VALUES ('db_version', '{}');",
+            db_version
+        ))
+        .status()
+        .expect("sqlite3 is needed for this test");
+    assert!(status.success());
+}
+
+/// Incompatible databases (the stored `db_version` is of another minor
+/// version): `setup` names both versions and offers the upgrade instead of
+/// "already set up". Without a terminal and without `--yes` it stops before
+/// the network and the export, so nothing is exported, marked or deleted.
+#[test]
+fn test_incompatible_databases_offer_the_upgrade() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_assets = dir.path().join("app-assets");
+    minimal_appdata(&app_assets, "0.9.0");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_simsapa"))
+        .arg("--simsapa-dir")
+        .arg(dir.path())
+        .arg("setup")
+        .env_remove("API_PORT")
+        .env_remove("DB_VERSION")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("(version 0.9.0) are not compatible with this version of simsapa"), "{err}");
+    assert!(err.contains("Setup can install the new databases"), "{err}");
+    assert!(err.contains("Run `simsapa setup --yes`"), "{err}");
+    assert!(!stdout(&out).contains("already set up"));
+
+    assert!(app_assets.join("appdata.sqlite3").exists());
+    for kept_absent in ["import-me", "delete_files_for_upgrade.txt", "auto_start_download.txt"] {
+        assert!(!app_assets.join(kept_absent).exists(), "{kept_absent} was written");
+    }
+}
+
+/// A compatible stored version is "already set up", as before.
+#[test]
+fn test_compatible_databases_are_already_set_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let app_assets = dir.path().join("app-assets");
+    let app_version = env!("CARGO_PKG_VERSION");
+    minimal_appdata(&app_assets, app_version);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_simsapa"))
+        .arg("--simsapa-dir")
+        .arg(dir.path())
+        .arg("setup")
+        .env_remove("API_PORT")
+        .env_remove("DB_VERSION")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("already set up"));
+    assert!(!stderr(&out).contains("not compatible"));
 }

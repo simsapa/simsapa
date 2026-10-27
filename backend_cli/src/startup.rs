@@ -16,11 +16,14 @@ use tracing_subscriber::EnvFilter;
 
 use simsapa_backend::dict_index_reconcile::{self, ReconcileProgress};
 use simsapa_backend::errln;
+use simsapa_backend::app_data::AppData;
 use simsapa_backend::logger::{self, LoggerHostOptions};
+use simsapa_backend::update_checker::{db_version_of, get_app_version, is_local_db_obsolete};
 use simsapa_backend::{
     appdata_db_exists, check_and_configure_for_first_start, check_delete_files_for_upgrade,
     check_remove_lang_index_dirs, dotenv_c, ensure_no_empty_db_files, get_app_globals,
-    import_user_data_after_upgrade, init_app_data, init_app_globals, remove_download_temp_folder,
+    get_app_data, import_user_data_after_upgrade, init_app_data, init_app_globals,
+    remove_download_temp_folder,
 };
 
 use crate::exit::{CliError, CliResult, DATABASES_MISSING};
@@ -204,5 +207,55 @@ fn reconcile_message(p: &ReconcileProgress) -> String {
         }
         ReconcileProgress::FinalizingIndex { label, .. } => format!("Finalizing the index for {}", label),
         ReconcileProgress::Done => "Done".to_string(),
+    }
+}
+
+/// What a command does when the databases are incompatible with this program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncompatibleDb {
+    /// Print a warning on stderr and carry on (read-only commands, `serve`).
+    Warn,
+    /// Stop before writing anything of the command's own (`import`, `index`).
+    Refuse,
+}
+
+/// The databases' version when it is incompatible with this program's: a
+/// different major.minor, the check the GUI's `check_for_updates()` makes with
+/// `is_local_db_obsolete()`. `DB_VERSION` in the environment overrides the
+/// stored version, as in the GUI.
+pub fn incompatible_db_version(app_data: &AppData) -> Option<String> {
+    let db_version = db_version_of(app_data)?;
+    is_local_db_obsolete(&get_app_version(), Some(&db_version)).map(|_| db_version)
+}
+
+/// One sentence naming the folder and both versions.
+pub fn incompatible_db_sentence(db_version: &str) -> String {
+    format!(
+        "The databases in {} (version {}) are not compatible with this version of simsapa ({}).",
+        data_folder().display(),
+        db_version,
+        get_app_version()
+    )
+}
+
+/// Apply `policy` to the open databases. Requires the preamble.
+pub fn check_db_compatible(policy: IncompatibleDb) -> CliResult {
+    let Some(db_version) = incompatible_db_version(get_app_data()) else {
+        return Ok(());
+    };
+    let sentence = incompatible_db_sentence(&db_version);
+    logger::warn(&sentence);
+    match policy {
+        IncompatibleDb::Warn => {
+            errln!(
+                "Warning: {}\nResults may be missing or wrong. Run `simsapa setup` to install the new databases; your user data is kept.",
+                sentence
+            );
+            Ok(())
+        }
+        IncompatibleDb::Refuse => Err(CliError::error(format!(
+            "{}\nRun `simsapa setup` to install the new databases first; your user data is kept.",
+            sentence
+        ))),
     }
 }

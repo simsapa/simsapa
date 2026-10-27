@@ -276,24 +276,29 @@ pub fn get_app_version() -> String {
 /// 1. `DB_VERSION` environment variable (for testing update flows)
 /// 2. The `db_version` key in the `app_settings` table.
 ///
-/// # Arguments
-///
-/// * `dbm` - Reference to the database manager
-///
 /// # Returns
 ///
 /// * `Some(String)` - The database version if found
 /// * `None` - If the database doesn't exist or version not found
 pub fn get_db_version() -> Option<String> {
-    use crate::try_get_app_data;
+    db_version_of(crate::try_get_app_data()?)
+}
 
+/// [`get_db_version`] for a given `AppData`, which need not be the global one.
+pub fn db_version_of(app_data: &crate::app_data::AppData) -> Option<String> {
+    resolve_db_version(app_data.get_db_version())
+}
+
+/// The database version from its stored `db_version` value, as
+/// [`get_db_version`] reports it: the `DB_VERSION` override, then the stored
+/// value, with the legacy `"1"` mapped to `v0.1.7`.
+pub fn resolve_db_version(stored: Option<String>) -> Option<String> {
     if let Ok(version) = std::env::var("DB_VERSION")
         && !version.is_empty() {
             return Some(version);
         }
 
-    let app_data = try_get_app_data()?;
-    let version = app_data.get_db_version()?;
+    let version = stored?;
 
     // Handle legacy database version "1" from pre-semver releases (app v0.1.7)
     if version == "1" {

@@ -1578,6 +1578,56 @@ pub extern "C" fn ensure_no_empty_db_files(sweep: bool) {
     }
 }
 
+/// Write the two marker files that trigger the upgrade flow on next app start.
+///
+/// Used by the GUI's `prepare_for_database_upgrade` (happy path) and
+/// `force_database_upgrade` (after the user confirms an export failure), and by
+/// `simsapa setup` when it upgrades an incompatible database.
+///
+/// Returns `Err(Vec<(category, message)>)` if either marker write fails.
+/// A silently-missing marker file would produce a silently-failed upgrade
+/// on the next start (the old DB is not deleted and the new download is
+/// not auto-started), so marker-write failures must surface to the UI.
+/// See PRD §11.3.
+pub fn write_upgrade_marker_files() -> std::result::Result<(), Vec<(String, String)>> {
+    let globals = get_app_globals();
+    let mut errors: Vec<(String, String)> = Vec::new();
+
+    let delete_marker_path = &globals.paths.delete_files_for_upgrade_marker;
+    match std::fs::write(delete_marker_path, "") {
+        Ok(()) => {
+            info(&format!("Created marker file: {}", delete_marker_path.display()));
+        }
+        Err(e) => {
+            error(&format!("Failed to create delete_files_for_upgrade.txt: {}", e));
+            errors.push((
+                "marker_delete_files".to_string(),
+                format!("{}: {}", delete_marker_path.display(), e),
+            ));
+        }
+    }
+
+    let auto_download_path = &globals.paths.auto_start_download_marker;
+    match std::fs::write(auto_download_path, "") {
+        Ok(()) => {
+            info(&format!("Created marker file: {}", auto_download_path.display()));
+        }
+        Err(e) => {
+            error(&format!("Failed to create auto_start_download.txt: {}", e));
+            errors.push((
+                "marker_auto_start_download".to_string(),
+                format!("{}: {}", auto_download_path.display(), e),
+            ));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 /// Check for the delete_files_for_upgrade.txt marker file and delete database files if found.
 ///
 /// This is called during app startup. If the marker file exists, it deletes:

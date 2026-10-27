@@ -23,6 +23,11 @@
 //!   user data the app exported before an upgrade) and the two upgrade markers,
 //!   which are consumed only once every download has succeeded. The GUI's
 //!   cleanup removes the whole of `app-assets/`.
+//! - An incompatible database (the GUI's `check_for_updates()` →
+//!   `local_db_obsolete` → `UpdateNotificationDialog` → `prepare_for_database_upgrade()`)
+//!   is upgraded in one run: the same export and the same two markers, then the
+//!   old databases are closed and deleted and the download starts, where the GUI
+//!   quits and does those steps on its next start.
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, IsTerminal, Read, Write};
@@ -36,21 +41,26 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 use tar::Archive;
 
+use simsapa_backend::app_data::AppData;
 use simsapa_backend::app_settings::LANGUAGES_JSON;
 use simsapa_backend::asset_helpers::import_suttas_lang_to_appdata;
 use simsapa_backend::cips_update::status_is_retryable;
 use simsapa_backend::errln;
 use simsapa_backend::logger::{error, info, warn};
-use simsapa_backend::update_checker::{SaveStatsBehaviour, compatible_assets_release, fetch_releases_info};
+use simsapa_backend::db::read_appdata_db_version;
+use simsapa_backend::update_checker::{
+    SaveStatsBehaviour, compatible_assets_release, fetch_releases_info, get_app_version, is_local_db_obsolete,
+    resolve_db_version,
+};
 use simsapa_backend::{
     appdata_db_exists, check_delete_files_for_upgrade, ensure_no_empty_db_files, get_app_globals,
-    move_folder_contents, remove_download_temp_folder, set_releases_info,
+    move_folder_contents, remove_download_temp_folder, set_releases_info, write_upgrade_marker_files,
 };
 
 use crate::cancel::install_ctrlc_handler;
 use crate::exit::{CliError, CliResult};
 use crate::output::{outln, print_json};
-use crate::startup::{PreambleMode, run_headless_preamble};
+use crate::startup::{PreambleMode, incompatible_db_sentence, run_headless_preamble};
 
 /// Always part of the base databases, never a separate download.
 const BASE_LANGUAGES: [&str; 3] = ["en", "pli", "san"];
@@ -79,6 +89,11 @@ pub struct SetupArgs {
     /// Start the download without asking
     #[arg(long, short = 'y')]
     pub yes: bool,
+
+    /// When upgrading an incompatible database, continue even if some user
+    /// data could not be exported (that data is not in the new databases)
+    #[arg(long)]
+    pub ignore_export_errors: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -149,6 +164,16 @@ pub fn available_languages() -> Vec<LanguageInfo> {
     langs
 }
 
+/// Split the sutta languages of the old databases into those offered for
+/// download (downloaded again on an upgrade) and those that are not.
+pub fn split_available(codes: &[String], available: &[LanguageInfo]) -> (Vec<String>, Vec<String>) {
+    codes
+        .iter()
+        .filter(|c| !BASE_LANGUAGES.contains(&c.as_str()))
+        .cloned()
+        .partition(|c| available.iter().any(|l| &l.code == c))
+}
+
 /// The codes not offered for download.
 pub fn invalid_codes(codes: &[String], available: &[LanguageInfo]) -> Vec<String> {
     codes
@@ -198,6 +223,45 @@ struct SetupOutput {
     status: &'static str,
     data_folder: String,
     downloaded: Vec<String>,
+    /// The version of the incompatible databases this setup replaced.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    upgraded_from: Option<String>,
+}
+
+/// Databases incompatible with this program, kept open until their user data
+/// is exported.
+struct IncompatibleDatabases {
+    app_data: AppData,
+    db_version: String,
+}
+
+/// Check the installed databases' version, as the GUI's `check_for_updates()`
+/// does at every start, and open them for the export only when they are
+/// incompatible. The version is read through one plain connection first, so a
+/// compatible folder is not migrated by `setup` and a damaged file fails at
+/// once. A folder whose version cannot be read is not treated as incompatible
+/// (the check cannot be made).
+fn detect_incompatible_databases() -> Option<IncompatibleDatabases> {
+    if !appdata_db_exists() {
+        return None;
+    }
+    let stored = match read_appdata_db_version(&get_app_globals().paths.appdata_database_url) {
+        Ok(v) => v,
+        Err(e) => {
+            warn(&format!("setup: could not read the database version: {:#}", e));
+            return None;
+        }
+    };
+    let db_version = resolve_db_version(stored)?;
+    is_local_db_obsolete(&get_app_version(), Some(&db_version))?;
+
+    match AppData::try_new() {
+        Ok(app_data) => Some(IncompatibleDatabases { app_data, db_version }),
+        Err(e) => {
+            warn(&format!("setup: could not open the incompatible databases: {:#}", e));
+            None
+        }
+    }
 }
 
 /// `simsapa setup --list-languages`. Needs no databases and no network.
@@ -225,8 +289,15 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     ensure_no_empty_db_files(true);
     check_delete_files_for_upgrade();
 
+    let incompatible = detect_incompatible_databases();
+
     let cli_langs = parse_language_input(args.languages.as_deref().unwrap_or(""));
-    let mode = decide_mode(appdata_db_exists(), !cli_langs.is_empty());
+    let mode = if incompatible.is_some() {
+        // The old databases are replaced: an initial setup once they are gone.
+        SetupMode::Initial
+    } else {
+        decide_mode(appdata_db_exists(), !cli_langs.is_empty())
+    };
 
     if mode == SetupMode::AlreadySetUp {
         if json {
@@ -234,6 +305,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
                 status: "already_set_up",
                 data_folder: data_folder.display().to_string(),
                 downloaded: Vec::new(),
+                upgraded_from: None,
             });
         }
         outln!("Simsapa is already set up in {}.", data_folder.display());
@@ -246,7 +318,14 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     // succeed, so a failed or stopped setup can be run again with them.
     let auto_start = matches!(paths.auto_start_download_marker.try_exists(), Ok(true));
     let marker_langs = read_marker(&paths.download_languages_marker);
-    if auto_start || marker_langs.is_some() {
+    if let Some(old) = &incompatible {
+        errln!("{}", incompatible_db_sentence(&old.db_version));
+        errln!(
+            "Setup can install the new databases. Your user data (settings, bookmarks, imported books and \
+             dictionaries, gloss and prompt history, chanting recordings) is exported first and imported into \
+             the new databases, and your sutta languages are downloaded again."
+        );
+    } else if auto_start || marker_langs.is_some() {
         errln!("Completing a database upgrade prepared by the Simsapa app.");
     }
 
@@ -257,9 +336,25 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
         }
     }
 
-    let invalid = invalid_codes(&langs, &available_languages());
+    let available = available_languages();
+    let invalid = invalid_codes(&langs, &available);
     if !invalid.is_empty() {
         return Err(CliError::error(format!("Not available for download: {}", invalid.join(", "))));
+    }
+
+    // The languages the old databases have, as the GUI's export writes them to
+    // download_languages.txt for the download window to preselect.
+    if let Some(old) = &incompatible {
+        let installed = parse_language_input(&old.app_data.dbm.appdata.get_sutta_languages().join(","));
+        let (kept, dropped) = split_available(&installed, &available);
+        if !dropped.is_empty() {
+            errln!("Not available for download, so not in the new databases: {}", dropped.join(", "));
+        }
+        for code in kept {
+            if !langs.contains(&code) {
+                langs.push(code);
+            }
+        }
     }
 
     // Before the network: refuse early rather than after the releases lookup.
@@ -268,7 +363,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
         return Err(CliError::error("Run `simsapa setup --yes` to confirm non-interactively."));
     }
 
-    errln!("Looking up the database release for Simsapa {}…", simsapa_backend::update_checker::get_app_version());
+    errln!("Looking up the database release for Simsapa {}…", get_app_version());
     match fetch_releases_info(None, SaveStatsBehaviour::Disabled) {
         Ok(releases) => set_releases_info(releases),
         // compatible_assets_release() falls back to the embedded snapshot.
@@ -290,9 +385,19 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     if is_initial {
         errln!("The initial download takes about 4.8 GB on disk once extracted.");
     }
-    if !args.yes && !confirm()? {
+    let prompt = if incompatible.is_some() {
+        "Install the new databases and migrate your user data now?"
+    } else {
+        "Continue?"
+    };
+    if !args.yes && !confirm(prompt)? {
         return Err(CliError::error("Setup cancelled."));
     }
+
+    let upgraded_from = match incompatible {
+        Some(old) => Some(replace_incompatible_databases(old, args.ignore_export_errors, interactive)?),
+        None => None,
+    };
 
     let cancel = install_ctrlc_handler()?;
     let folders = InstallFolders {
@@ -323,6 +428,7 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
             status: "ok",
             data_folder: data_folder.display().to_string(),
             downloaded: file_names,
+            upgraded_from,
         })
     } else {
         outln!("Setup complete.");
@@ -330,9 +436,64 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     }
 }
 
-fn confirm() -> Result<bool, CliError> {
+/// `prepare_for_database_upgrade()` and the next start's
+/// `check_delete_files_for_upgrade()`, in one run: export the user data to
+/// `import-me/`, write the two upgrade markers, close the old databases and
+/// delete them. Nothing is deleted unless the export (or the user's decision
+/// to go on without part of it) and both markers succeeded. Returns the old
+/// version.
+fn replace_incompatible_databases(
+    old: IncompatibleDatabases,
+    ignore_export_errors: bool,
+    interactive: bool,
+) -> Result<String, CliError> {
+    errln!("Exporting your user data…");
+    if let Err(errors) = old.app_data.export_user_data_to_assets() {
+        errln!("Some user data could not be exported:");
+        for (category, message) in &errors {
+            errln!("  {}: {}", category, message);
+        }
+        let go_on = if ignore_export_errors {
+            true
+        } else if interactive {
+            confirm("Install the new databases anyway? The data that was not exported will not be in them.")?
+        } else {
+            false
+        };
+        if !go_on {
+            return Err(CliError::error(
+                "The old databases were kept. To install the new ones without the data that could not be \
+                 exported, run `simsapa setup --ignore-export-errors`.",
+            ));
+        }
+    }
+
+    if let Err(errors) = write_upgrade_marker_files() {
+        let list: Vec<String> = errors.iter().map(|(c, m)| format!("  {}: {}", c, m)).collect();
+        return Err(CliError::error(format!(
+            "The old databases were kept: the upgrade markers could not be written:\n{}",
+            list.join("\n")
+        )));
+    }
+
+    // Close the old databases before deleting them: on Windows an open file
+    // cannot be deleted.
+    let IncompatibleDatabases { app_data, db_version } = old;
+    drop(app_data);
+    check_delete_files_for_upgrade();
+
+    if appdata_db_exists() {
+        return Err(CliError::error(format!(
+            "The old databases could not be removed from {}. Close any program using them and run `simsapa setup` again.",
+            get_app_globals().paths.app_assets_dir.display()
+        )));
+    }
+    Ok(db_version)
+}
+
+fn confirm(prompt: &str) -> Result<bool, CliError> {
     dialoguer::Confirm::new()
-        .with_prompt("Continue?")
+        .with_prompt(prompt)
         .default(false)
         .interact()
         .map_err(|e| CliError::error(format!("Cannot ask for confirmation ({}). Run `simsapa setup --yes`.", e)))
@@ -798,6 +959,18 @@ mod tests {
 
     fn codes(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_split_available() {
+        let available = vec![
+            LanguageInfo { code: "de".into(), name: "German".into(), sutta_count: 1 },
+            LanguageInfo { code: "hu".into(), name: "Hungarian".into(), sutta_count: 1 },
+        ];
+        let codes: Vec<String> = ["hu", "xx", "en", "de"].iter().map(|s| s.to_string()).collect();
+        let (kept, dropped) = split_available(&codes, &available);
+        assert_eq!(kept, vec!["hu".to_string(), "de".to_string()]);
+        assert_eq!(dropped, vec!["xx".to_string()]);
     }
 
     #[test]

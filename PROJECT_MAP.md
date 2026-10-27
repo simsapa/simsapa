@@ -413,7 +413,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `src/main.rs` - clap commands, the read-only vs writing preamble choice, the musl `mimalloc` allocator
 - `src/startup.rs` - `--simsapa-dir`, logging, `run_headless_preamble()` (mirrors `cpp/gui.cpp`'s startup; `Full` / `ReadOnly` modes), the exit-2 "not set up" check
 - `src/in_use.rs` - In-use detection (`api-port.txt` + `GET /health`, pure `decide()`) and the `cli-write.lock` write lock
-- `src/setup.rs` - `simsapa setup`: the second implementation of the GUI's first-run download (`DownloadAppdataWindow.qml` + `bridges/src/asset_manager.rs`); change both together
+- `src/setup.rs` - `simsapa setup`: the second implementation of the GUI's first-run download (`DownloadAppdataWindow.qml` + `bridges/src/asset_manager.rs`); change both together. Also the GUI's upgrade of an incompatible database in one run (`detect_incompatible_databases()`, `replace_incompatible_databases()`: export to `import-me/`, `write_upgrade_marker_files()`, delete, download); `startup::check_db_compatible()` makes the other commands warn (read-only, `serve`) or refuse (`import`, `index`)
 - `src/commands/` - One module per command: `search`, `query` (+ `fulltext-search`), `word`, `sutta`, `gloss` (+ `lookup`), `import`, `index`, `serve`, `stats`, `paths`, `health`, `docs` (prints or saves the `include_str!`'d `docs/simsapa-cli-and-localhost-api.md`; its test rejects repo references in that doc)
 - `src/output.rs` - `out!` / `outln!`, `print_json`, and the test that rejects `print!`-family macros in `backend_cli/`, `api/` and `backend/`
 - `src/exit.rs` - Exit codes and `finish()` (`--json` errors as `{"error": …}`); `src/cancel.rs` - the Ctrl-C cancel flag

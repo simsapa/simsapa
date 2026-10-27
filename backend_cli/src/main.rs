@@ -24,7 +24,7 @@ use simsapa_backend::update_checker::get_app_version;
 use crate::exit::{CliError, CliResult, EXIT_CODES_HELP, finish, json_error_document};
 use crate::in_use::{InUse, WriteLock, WriteLockOutcome, check_in_use, in_use_error, lock_held_error, try_acquire_write_lock};
 use crate::output::outln;
-use crate::startup::{PreambleMode, data_folder};
+use crate::startup::{IncompatibleDb, PreambleMode, data_folder};
 
 // musl's own allocator is the slower one under `simsapa serve`. It does not
 // explain musl's slower start-up; see docs/backend-cli-and-npm-package.md.
@@ -220,15 +220,15 @@ fn run(cli: &Cli) -> CliResult {
             commands::stats::run(args, cli.json)
         }
         Commands::Import(cmd) => {
-            let _lock = write_preamble()?;
+            let _lock = write_preamble(IncompatibleDb::Refuse)?;
             commands::import::run(cmd, cli.json)
         }
         Commands::Index(cmd) => {
-            let _lock = write_preamble()?;
+            let _lock = write_preamble(IncompatibleDb::Refuse)?;
             commands::index::run(cmd, cli.json)
         }
         Commands::Serve(args) => {
-            let lock = write_preamble()?;
+            let lock = write_preamble(IncompatibleDb::Warn)?;
             // Only these globals write api-port.txt, now that the folder is
             // known to be free.
             let port_file = commands::serve::PortFileBackup::read();
@@ -255,6 +255,11 @@ fn run(cli: &Cli) -> CliResult {
 /// released again before the command's own work. Otherwise only the steps that
 /// write nothing run.
 fn read_only_preamble() -> CliResult {
+    run_read_only_preamble()?;
+    startup::check_db_compatible(IncompatibleDb::Warn)
+}
+
+fn run_read_only_preamble() -> CliResult {
     if let InUse::Serving { .. } = check_in_use() {
         return startup::run_headless_preamble(PreambleMode::ReadOnly);
     }
@@ -275,10 +280,12 @@ fn read_only_preamble() -> CliResult {
 /// takes the same steps). Refuses with exit code 3 while a server or
 /// another `simsapa` command is using the folder, then runs the full preamble.
 /// Hold the returned lock for the whole command. `None` means this volume
-/// cannot lock files, and the command proceeds unprotected.
-fn write_preamble() -> Result<Option<WriteLock>, CliError> {
+/// cannot lock files, and the command proceeds unprotected. `incompatible` is
+/// what to do when the databases are incompatible with this program.
+fn write_preamble(incompatible: IncompatibleDb) -> Result<Option<WriteLock>, CliError> {
     let lock = acquire_for_writing()?;
     startup::run_headless_preamble(PreambleMode::Full)?;
+    startup::check_db_compatible(incompatible)?;
     Ok(lock)
 }
 
