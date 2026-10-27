@@ -609,12 +609,12 @@ fn test_resolve_single_column_pali_only() {
 fn test_resolve_single_column_no_pali_counterpart() {
     h::app_data_setup();
     let app_data = get_app_data();
-    // sn12.72-81/en/sujato is segmented but has no sn12.72-81/pli/ms sibling.
-    let sutta = app_data.dbm.appdata.get_sutta("sn12.72-81/en/sujato").expect("Can't get sutta from db");
+    // pdhp14-33/en/anandajoti is segmented but has no pdhp14-33/pli/ms sibling.
+    let sutta = app_data.dbm.appdata.get_sutta("pdhp14-33/en/anandajoti").expect("Can't get sutta from db");
 
     let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None, show_references: None };
     let options = app_data.resolve_sutta_display_options(&sutta, &overrides);
-    assert_eq!(options.columns, vec!["sn12.72-81/en/sujato".to_string()]);
+    assert_eq!(options.columns, vec!["pdhp14-33/en/anandajoti".to_string()]);
 
     let html = app_data.render_sutta_content(&sutta, None, None, &options).expect("Can't render the html");
     assert!(html.contains("<div class='suttacentral bilara-text'>"));

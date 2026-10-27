@@ -2100,7 +2100,7 @@ impl<'a> SearchQueryTask<'a> {
     /// `dict_label = "dpd"`, `dict_words.word` equals the corresponding
     /// `dpd_headwords.lemma_1`. This holds by construction — DPD is imported
     /// via `import_stardict_as_new` from the DPD StarDict export, whose entry
-    /// keys are the `lemma_1` values (see `cli/src/bootstrap/dpd.rs`). If a
+    /// keys are the `lemma_1` values (see `bootstrap_cli/src/bootstrap/dpd.rs`). If a
     /// future DPD import path breaks this invariant, headword-match results
     /// for DPD will silently diverge from the old `dpd_headwords_fts.lemma_1`
     /// retrieval. `dpd_headwords_fts` is retained for DPD Lookup mode.

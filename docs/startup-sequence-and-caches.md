@@ -70,6 +70,27 @@ reconcile; only the path from "reconcile finished" (or "no reconcile
 needed") to `apply_theme()` is the un-themed window. That path is what
 this design protects.
 
+### 2a. The CLI's headless copy of this sequence
+
+The `simsapa` CLI runs the same steps, through the same backend functions and
+in the same order, in `backend_cli/src/startup.rs` `run_headless_preamble()`:
+`dotenv_c` / `init_app_globals`, `remove_download_temp_folder`,
+`ensure_no_empty_db_files`, `check_delete_files_for_upgrade`,
+`check_remove_lang_index_dirs`, the `appdata_db_exists()` gate (exit code 2
+instead of the download window), `init_app_data()`,
+`import_user_data_after_upgrade`, `check_and_configure_for_first_start`, and
+the dictionary-index reconciliation (a stderr spinner instead of
+`DictionaryIndexProgressWindow`). Everything Qt is left out, as is the
+mobile-only storage-path recovery. **A step added to or moved in `gui.cpp`'s
+startup must be mirrored there**; each step in `startup.rs` names its `gui.cpp`
+counterpart in a comment.
+
+Two differences: the CLI writes no `api-port.txt` except under `simsapa serve`,
+and it has a **read-only mode** (only `ensure_no_empty_db_files(false)` and
+`init_app_data()`) used while the GUI or another `simsapa` command is using the
+data folder, so a query never rebuilds an index under a running app. See
+[backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md).
+
 ## 3. The five `AppSettings` caches
 
 Five queries used to run on the GUI thread during startup or during
@@ -94,7 +115,7 @@ write path is reused unchanged.
 
 ### Cache lifecycle
 
-**Write at bootstrap.** At the end of `cli/src/bootstrap/mod.rs`,
+**Write at bootstrap.** At the end of `bootstrap_cli/src/bootstrap/mod.rs`,
 `warm_caches_into_appdata(appdata_path, dict_path, dpd_path)` computes
 all five values and writes them into the shipped `appdata.sqlite3`. A
 freshly downloaded DB therefore arrives with the caches pre-warmed —

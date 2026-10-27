@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use diesel::prelude::*;
@@ -18,8 +19,13 @@ use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
-use crate::types::{SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup};
-use crate::logger::{info, error};
+use crate::types::{
+    SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup,
+    FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent, GrammarTriple,
+    FormSplitKind, FormSplitSource,
+};
+use crate::logger::{info, warn, error};
+use crate::dpd_form_grammar::{extract_dpd_construction_summary, SummaryExtract};
 use crate::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 
 pub type DpdDbHandle = DatabaseHandle;
@@ -119,6 +125,31 @@ fn iti_base_candidates(joined: &str, base: &str) -> Vec<String> {
     candidates
 }
 
+/// The `ṁ` spelling of a word that ends in a vowel and `n` (`vuttan` →
+/// `vuttaṁ`), as the texts write a niggahita before a following `ti` or vowel
+/// (`vuttan ti`). `None` for any other word.
+///
+/// The lookups try it only when a word has no exact match and their fallbacks
+/// (stem match, break-down guess, "starts with") would begin: DPD has no
+/// `vuttan`, so a guess finds the unrelated `vuttanaya`.
+fn niggahita_spelling(word: &str) -> Option<String> {
+    if word.contains(' ') {
+        return None;
+    }
+    let stem = word.strip_suffix('n')?;
+    let last = stem.chars().last()?;
+    "aāiīuūeo".contains(last).then(|| format!("{}ṁ", stem))
+}
+
+/// Whether a lookup row has a break-down whose last word is `iti`.
+fn row_has_iti_breakdown(row: &Lookup) -> bool {
+    !row.deconstructor.is_empty()
+        && row
+            .deconstructor_nested()
+            .iter()
+            .any(|words| words.last().is_some_and(|w| w == "iti"))
+}
+
 /// Argument tuple identifying a memoized grouped lookup:
 /// `(query_text, do_pali_sort, exact_only, deconstructor_exact_only,
 /// uid_prefix, uid_suffix)`. See `dpd_lookup_grouped_memo()`.
@@ -200,6 +231,9 @@ struct GroupedTiming {
     /// The lookup was resolved as `<base> + iti`; the base lookups log their
     /// own lines.
     iti_split: bool,
+    /// The lookup was resolved as the `ṁ` spelling of a final `n`; that
+    /// lookup logs its own line.
+    niggahita: bool,
 }
 
 impl GroupedTiming {
@@ -221,7 +255,13 @@ impl GroupedTiming {
             .collect();
         let dec = self.dec.as_ref().map_or("-".to_string(), |d| d.format());
         let first = self.first_results_phase.map_or("none".to_string(), |n| n.to_string());
-        let via = if self.iti_split { " via=iti_split" } else { "" };
+        let via = if self.iti_split {
+            " via=iti_split"
+        } else if self.niggahita {
+            " via=niggahita"
+        } else {
+            ""
+        };
         format!(
             "DPD-LOOKUP-TIMING: q=\"{}\" total={:.1} {} dec={} first_results_phase={}{}",
             query, total_ms, phases.join(" "), dec, first, via,
@@ -364,6 +404,23 @@ impl DpdDbHandle {
             timing.hit = Some(1);
         }
 
+        // Before guessing: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`). Its row ends the search even without a break-down, since
+        // the word is then known.
+        if !exact_only
+            && result.is_none()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+        {
+            cancel.check()?;
+            result = lookup
+                .filter(lookup_key.eq(&niggahita))
+                .first::<Lookup>(db_conn)
+                .optional()?;
+            if result.is_some() {
+                timing.hit = Some(1);
+            }
+        }
+
         // Attempt 2: If not exact_only, guess a key starting with the word.
         if !exact_only
             && result.is_none() && query_text.chars().count() >= 4 {
@@ -438,12 +495,7 @@ impl DpdDbHandle {
             .filter(lookup_key.eq(joined))
             .first::<Lookup>(db_conn)
             .optional()?;
-        Ok(row.is_some_and(|r| {
-            !r.deconstructor.is_empty()
-                && r.deconstructor_nested()
-                    .iter()
-                    .any(|words| words.last().is_some_and(|w| w == "iti"))
-        }))
+        Ok(row.is_some_and(|r| row_has_iti_breakdown(&r)))
     }
 
     /// The headwords of `iti`, as a deconstructor component resolves them.
@@ -762,6 +814,21 @@ impl DpdDbHandle {
             results_uids.extend(res.iter().map(|i| i.uid.clone()));
             sort_search_results_natural(&mut res);
             results.extend(res);
+        }
+
+        // Before the fallbacks: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`), when no exact match was found and DPD's row for the word
+        // as typed has no headwords or splits. The stem, deconstructor and
+        // "starts with" steps would only guess (`vuttanaya`, `kināti` for
+        // `kin`).
+        if results.is_empty()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+            && !lookup_row_has_word(db_conn, &query_text)?
+        {
+            let res = self.dpd_lookup(&niggahita, do_pali_sort, exact_only, uid_prefix, uid_suffix)?;
+            if !res.is_empty() {
+                return Ok(res);
+            }
         }
 
         if results.is_empty() {
@@ -1290,6 +1357,27 @@ impl DpdDbHandle {
             timing.end_phase(4, t, !results.is_empty());
         }
 
+        // Before the fallbacks: the `ṁ` spelling of a final `n` (`vuttan` is
+        // `vuttaṁ`), when Phases 2–4 found nothing and DPD's row for the word
+        // as typed has no headwords or splits. Phases 5–8 would only guess
+        // (`vuttanaya`, `kināti` for `kin`). The answer is that word's lookup,
+        // under the query as typed.
+        cancel.check()?;
+        if results.is_empty()
+            && let Some(niggahita) = niggahita_spelling(&query_text)
+            && !lookup_row_has_word(db_conn, &query_text)?
+        {
+            let mut res = self.dpd_lookup_grouped_inner(
+                &niggahita, do_pali_sort, exact_only, deconstructor_exact_only,
+                uid_prefix, uid_suffix, log_timing, cancel,
+            )?;
+            if !res.results.is_empty() {
+                timing.niggahita = true;
+                res.query = query_text_orig.to_string();
+                return Ok(res);
+            }
+        }
+
         // Phase 5: stem form exact match — gated on `results` empty.
         cancel.check()?;
         if results.is_empty() {
@@ -1733,6 +1821,457 @@ fn parse_words(
     res_page
 }
 
+/// Ids per `IN (…)` headword read, below SQLite's bound-variable limit.
+const HEADWORD_ID_CHUNK: usize = 900;
+
+/// `db_info.dpd_release_version`, cached after the first successful read.
+/// Process-wide is sound because a new `dpd.sqlite3` takes effect only after a
+/// restart: the re-download in `DownloadAppdataWindow` ends by asking the user
+/// to quit and start the app again.
+static DPD_RELEASE_VERSION: OnceLock<String> = OnceLock::new();
+static DPD_RELEASE_VERSION_FAILURE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// The `lookup` row whose primary key is exactly `key`. An equality match:
+/// never `LIKE`, never a "starts with" guess.
+fn lookup_row_exact(db_conn: &mut SqliteConnection, key: &str) -> Result<Option<Lookup>> {
+    use crate::db::dpd_schema::lookup::dsl as lk;
+    lk::lookup
+        .filter(lk::lookup_key.eq(key))
+        .first::<Lookup>(db_conn)
+        .optional()
+        .with_context(|| format!("lookup_row_exact({}) failed", key))
+}
+
+/// Whether DPD's `lookup` row for exactly `key` has headwords or splits. A row
+/// with neither carries only other data, such as the English-to-Pāli entry of
+/// `kin`.
+fn lookup_row_has_word(db_conn: &mut SqliteConnection, key: &str) -> Result<bool> {
+    Ok(lookup_row_exact(db_conn, key)?
+        .is_some_and(|row| !row.headwords.is_empty() || !row.deconstructor.is_empty()))
+}
+
+/// Request-scoped cache of exact `lookup` rows. Split components repeat
+/// heavily across a batch (`iti`, `ca`, `pi`, …), so every row read of
+/// `lookup_forms_exact()` goes through one of these.
+struct LookupRowCache {
+    rows: HashMap<String, Option<Lookup>>,
+}
+
+impl LookupRowCache {
+    fn new() -> Self {
+        Self { rows: HashMap::new() }
+    }
+
+    fn get(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Option<&Lookup>> {
+        if !self.rows.contains_key(key) {
+            let row = lookup_row_exact(db_conn, key)?;
+            self.rows.insert(key.to_string(), row);
+        }
+        Ok(self.rows.get(key).and_then(|r| r.as_ref()))
+    }
+
+    /// The headword ids of the exact row for `key`, in the row's order. Empty
+    /// when there is no row or it has no headwords.
+    fn headword_ids(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<i32>> {
+        Ok(self.get(db_conn, key)?.map(lookup_row_headword_ids).unwrap_or_default())
+    }
+
+    /// The grammar triples of the exact row for `key`, in the row's order.
+    /// Empty when there is no row or it has no grammar.
+    fn grammar(&mut self, db_conn: &mut SqliteConnection, key: &str) -> Result<Vec<GrammarTriple>> {
+        Ok(self.get(db_conn, key)?.map(|row| row.grammar_unpack()).unwrap_or_default())
+    }
+
+    /// The component for `word`: its exact row's headword uids and grammar.
+    fn component(&mut self, db_conn: &mut SqliteConnection, word: String) -> Result<FormComponent> {
+        let uids = dpd_uids(&self.headword_ids(db_conn, &word)?);
+        let form_grammar_raw = self.grammar(db_conn, &word)?;
+        Ok(FormComponent { word, uids, form_grammar_raw })
+    }
+}
+
+fn lookup_row_headword_ids(row: &Lookup) -> Vec<i32> {
+    if row.headwords.is_empty() {
+        Vec::new()
+    } else {
+        row.headwords_unpack()
+    }
+}
+
+/// The row's splits as `(DPD's string verbatim, its components)`, in order.
+fn lookup_row_splits(row: &Lookup) -> Vec<(String, Vec<String>)> {
+    if row.deconstructor.is_empty() {
+        return Vec::new();
+    }
+    let splits = row.deconstructor_unpack();
+    let nested = row.deconstructor_nested();
+    debug_assert_eq!(splits.len(), nested.len());
+    splits.into_iter().zip(nested).collect()
+}
+
+fn dpd_uids(ids: &[i32]) -> Vec<String> {
+    ids.iter().map(|i| format!("{}/dpd", i)).collect()
+}
+
+/// One input form, resolved to a key, headword ids and splits, before the
+/// headword rows are fetched in one batch.
+struct PendingForm {
+    input: String,
+    lookup_key: String,
+    invalid_note: Option<&'static str>,
+    headword_ids: Vec<i32>,
+    deconstructions: Vec<FormDeconstruction>,
+    /// The grammar of the row that supplied `headword_ids`.
+    form_grammar_raw: Vec<GrammarTriple>,
+}
+
+impl PendingForm {
+    /// `summaries` is `None` when the installed DB has no
+    /// `construction_summary` column.
+    fn finish(self, headwords: &HashMap<i32, DpdHeadword>, summaries: Option<&HashMap<i32, String>>) -> FormLookupResult {
+        if let Some(note) = self.invalid_note {
+            return FormLookupResult {
+                input: self.input,
+                lookup_key: self.lookup_key,
+                status: FormLookupStatus::Invalid,
+                note: Some(note.to_string()),
+                headwords: Vec::new(),
+                deconstructions: Vec::new(),
+                form_grammar_raw: Vec::new(),
+            };
+        }
+
+        let mut form_headwords = Vec::with_capacity(self.headword_ids.len());
+        for id in &self.headword_ids {
+            match headwords.get(id) {
+                Some(hw) => {
+                    let mut fh = FormHeadword::from_headword(hw, &self.lookup_key, &self.form_grammar_raw);
+                    fh.construction_summary = summaries.and_then(|m| m.get(id).cloned());
+                    form_headwords.push(fh);
+                }
+                None => error(&format!(
+                    "lookup_forms_exact(): lookup row '{}' names headword id {}, which has no dpd_headwords row",
+                    self.lookup_key, id
+                )),
+            }
+        }
+
+        let status = if !form_headwords.is_empty() {
+            FormLookupStatus::Found
+        } else if !self.deconstructions.is_empty() {
+            FormLookupStatus::Deconstructed
+        } else {
+            FormLookupStatus::NotFound
+        };
+
+        FormLookupResult {
+            input: self.input,
+            lookup_key: self.lookup_key,
+            status,
+            note: None,
+            headwords: form_headwords,
+            deconstructions: self.deconstructions,
+            form_grammar_raw: self.form_grammar_raw,
+        }
+    }
+}
+
+impl DpdDbHandle {
+    /// Exact DPD lookup of a batch of word forms: one result per input, in
+    /// input order, duplicates kept. Each form is normalised with
+    /// `normalize_dpd_query_text()` and matched by equality on
+    /// `lookup.lookup_key`. Every headword and split of the row is returned in
+    /// DPD's order. Nothing is ranked, filtered, deduplicated or chosen, and no
+    /// word-selection cache is consulted.
+    ///
+    /// See docs/simsapa-cli-and-localhost-api.md (`POST /lookup_forms`).
+    pub fn lookup_forms_exact(&self, forms: &[String]) -> Result<Vec<FormLookupResult>> {
+        let mut pooled_conn = self.get_conn().context("lookup_forms_exact(): no db connection")?;
+        let db_conn: &mut SqliteConnection = &mut pooled_conn;
+        let mut cache = LookupRowCache::new();
+
+        let mut pending: Vec<PendingForm> = Vec::with_capacity(forms.len());
+        for form in forms {
+            pending.push(resolve_form_exact(db_conn, &mut cache, form)?);
+        }
+
+        let mut seen: HashSet<i32> = HashSet::new();
+        let ids: Vec<i32> = pending
+            .iter()
+            .flat_map(|p| p.headword_ids.iter().copied())
+            .filter(|i| seen.insert(*i))
+            .collect();
+        let headwords = headwords_by_ids(db_conn, &ids)?;
+        let summaries = construction_summaries_by_ids(db_conn, &ids)?;
+
+        Ok(pending.into_iter().map(|p| p.finish(&headwords, summaries.as_ref())).collect())
+    }
+
+    /// DPD's own release (`db_info.dpd_release_version`, e.g.
+    /// `v0.4.20260501`), the cache key for DPD-derived answers. `None` when the
+    /// row is missing, empty or cannot be read; logged once.
+    pub fn dpd_release_version(&self) -> Option<String> {
+        if let Some(v) = DPD_RELEASE_VERSION.get() {
+            return Some(v.clone());
+        }
+
+        use crate::db::dpd_schema::db_info::dsl::*;
+        let res = self.do_read(|db_conn| {
+            db_info
+                .filter(key.eq("dpd_release_version"))
+                .select(value)
+                .first::<String>(db_conn)
+                .optional()
+        });
+
+        let failure = match res {
+            Ok(Some(v)) if !v.trim().is_empty() => {
+                let v = v.trim().to_string();
+                let _ = DPD_RELEASE_VERSION.set(v.clone());
+                return Some(v);
+            }
+            Ok(_) => "no dpd_release_version row in db_info".to_string(),
+            Err(e) => format!("{}", e),
+        };
+        if !DPD_RELEASE_VERSION_FAILURE_LOGGED.swap(true, Ordering::Relaxed) {
+            error(&format!("dpd_release_version(): {}", failure));
+        }
+        None
+    }
+}
+
+/// Resolve one input form of `lookup_forms_exact()` against exact rows.
+fn resolve_form_exact(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    form: &str,
+) -> Result<PendingForm> {
+    let (key, iti_base) = normalize_dpd_query_text(form);
+
+    // `normalize_dpd_query_text()` passes a `uid:` query through untouched,
+    // for the search routes; here it is not a word form.
+    let invalid_note = if key.is_empty() {
+        Some("empty after normalisation")
+    } else if key.starts_with("uid:") {
+        Some("a uid query, not a word form")
+    } else if key.contains(char::is_whitespace) {
+        Some("more than one word")
+    } else {
+        None
+    };
+    if invalid_note.is_some() {
+        return Ok(PendingForm {
+            input: form.to_string(),
+            lookup_key: key,
+            invalid_note,
+            headword_ids: Vec::new(),
+            deconstructions: Vec::new(),
+            form_grammar_raw: Vec::new(),
+        });
+    }
+
+    let (headword_ids, splits, has_iti_breakdown, form_grammar_raw) = match cache.get(db_conn, &key)? {
+        Some(row) => (
+            lookup_row_headword_ids(row),
+            lookup_row_splits(row),
+            row_has_iti_breakdown(row),
+            row.grammar_unpack(),
+        ),
+        None => (Vec::new(), Vec::new(), false, Vec::new()),
+    };
+
+    if let Some(base) = iti_base
+        && !has_iti_breakdown
+    {
+        return iti_rule_form(db_conn, cache, form, &key, &base);
+    }
+
+    let deconstructions = dpd_splits(db_conn, cache, splits)?;
+
+    Ok(PendingForm {
+        input: form.to_string(),
+        lookup_key: key,
+        invalid_note: None,
+        headword_ids,
+        deconstructions,
+        form_grammar_raw,
+    })
+}
+
+/// An iti-sandhi form whose joined key DPD does not analyse as `… + iti`,
+/// resolved as `<base> + iti` over exact rows. This is the rule of
+/// `dpd_lookup_grouped_iti_split()` (docs/search-snippet-highlight-pipeline.md
+/// §9d), except that the base is read by equality, never through a "starts
+/// with" guess. A test keeps the two from drifting apart.
+///
+/// The base is the first of `iti_base_candidates()` with an exact row that has
+/// headwords or splits, else the first candidate. There are no headwords; the
+/// splits are `<base> + iti` (when the base has headwords, or has neither
+/// headwords nor splits), then each of the base's own splits with ` + iti`.
+fn iti_rule_form(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    form: &str,
+    joined: &str,
+    base: &str,
+) -> Result<PendingForm> {
+    let candidates = iti_base_candidates(joined, base);
+    let mut chosen = &candidates[0];
+    for candidate in &candidates {
+        let known = cache
+            .get(db_conn, candidate)?
+            .is_some_and(|row| !row.headwords.is_empty() || !row.deconstructor.is_empty());
+        if known {
+            chosen = candidate;
+            break;
+        }
+    }
+    let base = chosen.as_str();
+
+    let (base_ids, base_splits) = match cache.get(db_conn, base)? {
+        Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row)),
+        None => (Vec::new(), Vec::new()),
+    };
+    let iti = cache.component(db_conn, "iti".to_string())?;
+
+    let mut deconstructions = Vec::with_capacity(base_splits.len() + 1);
+    if !base_ids.is_empty() || base_splits.is_empty() {
+        deconstructions.push(FormDeconstruction {
+            split: format!("{} + iti", base),
+            kind: FormSplitKind::ItiSandhi,
+            source: FormSplitSource::ItiRule,
+            components: vec![cache.component(db_conn, base.to_string())?, iti.clone()],
+        });
+    }
+    for d in dpd_splits(db_conn, cache, base_splits)? {
+        let mut components = d.components;
+        components.push(iti.clone());
+        deconstructions.push(FormDeconstruction {
+            split: format!("{} + iti", d.split),
+            kind: FormSplitKind::ItiSandhi,
+            source: FormSplitSource::ItiRule,
+            components,
+        });
+    }
+
+    Ok(PendingForm {
+        input: form.to_string(),
+        lookup_key: base.to_string(),
+        invalid_note: None,
+        headword_ids: Vec::new(),
+        deconstructions,
+        // The joined row's grammar is the analysis the iti rule rejected, and
+        // the base's is on its component.
+        form_grammar_raw: Vec::new(),
+    })
+}
+
+/// The `dpd`-source splits of a row, with each component's exact headword uids.
+fn dpd_splits(
+    db_conn: &mut SqliteConnection,
+    cache: &mut LookupRowCache,
+    splits: Vec<(String, Vec<String>)>,
+) -> Result<Vec<FormDeconstruction>> {
+    let mut res = Vec::with_capacity(splits.len());
+    for (split, words) in splits {
+        let kind = if words.last().is_some_and(|w| w == "iti") {
+            FormSplitKind::ItiSandhi
+        } else {
+            FormSplitKind::Sandhi
+        };
+        let mut components = Vec::with_capacity(words.len());
+        for word in words {
+            components.push(cache.component(db_conn, word)?);
+        }
+        res.push(FormDeconstruction { split, kind, source: FormSplitSource::Dpd, components });
+    }
+    Ok(res)
+}
+
+/// Whether the installed `dpd_headwords` has the bootstrap column
+/// `construction_summary`, cached for the process on the first answer. A DB
+/// that gains the column while the app runs is seen after a restart.
+static HAS_CONSTRUCTION_SUMMARY_COLUMN: OnceLock<bool> = OnceLock::new();
+
+#[derive(QueryableByName)]
+struct ConstructionSummaryRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    construction_summary: String,
+}
+
+/// Whether `dpd_headwords` has the `construction_summary` column, from
+/// `PRAGMA table_info`. Uncached; `construction_summaries_by_ids()` caches it.
+pub fn has_construction_summary_column(db_conn: &mut SqliteConnection) -> Result<bool> {
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(dpd_headwords)")
+        .load(db_conn)
+        .context("PRAGMA table_info(dpd_headwords) failed")?;
+    Ok(cols.iter().any(|c| c.name == "construction_summary"))
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, in chunked `IN (…)`
+/// queries. Assumes the column exists; ids without a row are absent.
+pub fn read_construction_summaries(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashMap<i32, String>> {
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let mut query = sql_query(format!(
+            "SELECT id, construction_summary FROM dpd_headwords WHERE id IN ({})",
+            placeholders
+        ))
+        .into_boxed();
+        for id in chunk {
+            query = query.bind::<Integer, _>(*id);
+        }
+        let rows: Vec<ConstructionSummaryRow> = query
+            .load(db_conn)
+            .context("read_construction_summaries failed")?;
+        for row in rows {
+            res.insert(row.id, row.construction_summary);
+        }
+    }
+    Ok(res)
+}
+
+/// `dpd_headwords.construction_summary` for `ids`, or `None` when the
+/// installed `dpd.sqlite3` predates the column (it is added at bootstrap and
+/// is not in the Diesel model). The column check runs once per process and an
+/// absent column is logged once.
+pub fn construction_summaries_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<Option<HashMap<i32, String>>> {
+    let present = match HAS_CONSTRUCTION_SUMMARY_COLUMN.get() {
+        Some(p) => *p,
+        None => {
+            let p = has_construction_summary_column(db_conn)?;
+            if HAS_CONSTRUCTION_SUMMARY_COLUMN.set(p).is_ok() && !p {
+                warn("dpd_headwords has no construction_summary column (dpd.sqlite3 predates it); construction_summary is null");
+            }
+            p
+        }
+    };
+    if !present {
+        return Ok(None);
+    }
+    read_construction_summaries(db_conn, ids).map(Some)
+}
+
+/// The `dpd_headwords` rows for `ids`, read in chunked `IN (…)` queries.
+fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashMap<i32, DpdHeadword>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let rows: Vec<DpdHeadword> = hd::dpd_headwords
+            .filter(hd::id.eq_any(chunk))
+            .load(db_conn)
+            .context("headwords_by_ids failed")?;
+        for hw in rows {
+            res.insert(hw.id, hw);
+        }
+    }
+    Ok(res)
+}
+
 pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf>, limit: Option<i32>) -> Result<(), String> {
     // Migrate the db at the provided input path.
     let migrate_db_path = dpd_input_path.to_path_buf();
@@ -1774,6 +2313,11 @@ pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf
     // bold_definitions.uid, which depends on population having run.
     populate_bold_definitions_derived_columns(&output_path, limit)
         .map_err(|e| format!("{}", e))?;
+
+    // The DPD StarDict pages are already in dictionaries.sqlite3.
+    populate_dpd_construction_summaries(&output_path)
+        .map_err(|e| format!("{}", e))?
+        .log();
 
     create_dpd_indexes(&output_path).map_err(|e| format!("{}", e))?;
 
@@ -2090,8 +2634,9 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// One row of `PRAGMA table_info(<table>)`, only the column name.
 #[derive(QueryableByName)]
-struct BoldDefColInfo {
+struct TableColumnInfo {
     #[diesel(sql_type = Text)]
     name: String,
 }
@@ -2130,7 +2675,7 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
         .with_context(|| format!("Failed to connect to {}", database_url))?;
 
     // Pre-check column existence (SQLite ADD COLUMN has no IF NOT EXISTS).
-    let cols: Vec<BoldDefColInfo> = sql_query("PRAGMA table_info(bold_definitions)")
+    let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(bold_definitions)")
         .load(&mut conn)
         .context("PRAGMA table_info(bold_definitions) failed")?;
     let has_uid = cols.iter().any(|c| c.name == "uid");
@@ -2221,6 +2766,173 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
 
     info(&format!("Updated {} bold_definitions rows", updates.len()));
     Ok(())
+}
+
+/// How many items of each `ConstructionSummaryReport` list are logged.
+const CONSTRUCTION_SUMMARY_REPORT_SAMPLE: usize = 20;
+
+/// The outcome of `populate_dpd_construction_summaries()`.
+#[derive(Debug, Clone, Default)]
+pub struct ConstructionSummaryReport {
+    /// Headwords written (every headword, so a re-run is complete).
+    pub updated: usize,
+    pub with_summary: usize,
+    pub without_summary: usize,
+    /// `(lemma_1, summary line)` of the headwords whose summary line did not
+    /// have the shape the extraction relies on.
+    pub malformed: Vec<(String, String)>,
+    /// `lemma_1` of the headwords with both a `meaning_1` and a
+    /// `construction` that got no summary.
+    pub meaning_and_construction_but_none: Vec<String>,
+}
+
+impl ConstructionSummaryReport {
+    /// Log the counts, then each list's total and its first few items. The
+    /// lists are logged as warnings but never fail the caller: the source data
+    /// is reported, never repaired.
+    pub fn log(&self) {
+        info(&format!(
+            "construction_summary: {} headwords updated, {} with a summary, {} without, {} malformed summary lines",
+            self.updated, self.with_summary, self.without_summary, self.malformed.len(),
+        ));
+
+        if !self.malformed.is_empty() {
+            warn(&format!(
+                "construction_summary: {} malformed summary lines (first {} shown)",
+                self.malformed.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for (lemma_1, line) in self.malformed.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: malformed: {}: {}", lemma_1, line));
+            }
+        }
+
+        if !self.meaning_and_construction_but_none.is_empty() {
+            warn(&format!(
+                "construction_summary: {} headwords with meaning_1 and construction but no summary (first {} shown)",
+                self.meaning_and_construction_but_none.len(), CONSTRUCTION_SUMMARY_REPORT_SAMPLE,
+            ));
+            for lemma_1 in self.meaning_and_construction_but_none.iter().take(CONSTRUCTION_SUMMARY_REPORT_SAMPLE) {
+                warn(&format!("construction_summary: no summary: {}", lemma_1));
+            }
+        }
+    }
+}
+
+#[derive(QueryableByName)]
+struct DpdSummaryLineRow {
+    #[diesel(sql_type = Text)]
+    word: String,
+    #[diesel(sql_type = Text)]
+    summary_line: String,
+}
+
+#[derive(QueryableByName)]
+struct HeadwordSummaryInputRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    lemma_1: String,
+    #[diesel(sql_type = Integer)]
+    has_meaning_and_construction: i32,
+}
+
+/// Add `dpd_headwords.construction_summary` if it is missing, and fill it for
+/// every headword from the summary line of its rendered DPD page in
+/// `dictionaries.sqlite3` (`dict_words.word` = `lemma_1`, `dict_label =
+/// 'dpd'`). A headword with no page or no well-formed bracket gets `""`.
+///
+/// Reads the dictionaries DB through `get_app_data()`, so the DPD StarDict
+/// must already be imported there. Writes only the DPD DB at `dpd_db_path`.
+///
+/// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
+/// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
+/// the `table!`. See docs/simsapa-cli-and-localhost-api.md §19.1.
+pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<ConstructionSummaryReport> {
+    info("populate_dpd_construction_summaries()");
+
+    let abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
+    let database_url = abs
+        .to_str()
+        .context("dpd.sqlite3 path is not valid UTF-8")?
+        .to_string();
+
+    let mut conn = SqliteConnection::establish(&database_url)
+        .with_context(|| format!("Failed to connect to {}", database_url))?;
+
+    // SQLite ADD COLUMN has no IF NOT EXISTS.
+    if !has_construction_summary_column(&mut conn)? {
+        sql_query("ALTER TABLE dpd_headwords ADD COLUMN construction_summary VARCHAR NOT NULL DEFAULT ''")
+            .execute(&mut conn)
+            .context("Failed to ADD COLUMN construction_summary")?;
+    }
+
+    // Cut the summary line out in SQL: the DPD pages hold hundreds of MB of
+    // definition_html, and sql_query loads the whole result.
+    let lines: Vec<DpdSummaryLineRow> = get_app_data().dbm.dictionaries.do_read(|db_conn| {
+        sql_query(
+            "SELECT word, \
+                    substr(definition_html, instr(definition_html, '<div class=dpd><p>'), \
+                           instr(substr(definition_html, instr(definition_html, '<div class=dpd><p>')), '</div>') + 5) \
+                    AS summary_line \
+             FROM dict_words \
+             WHERE dict_label = 'dpd' AND instr(definition_html, '<div class=dpd><p>') > 0",
+        )
+        .load(db_conn)
+    }).context("Failed to read the DPD summary lines from dict_words")?;
+
+    let lines: HashMap<String, String> = lines.into_iter()
+        .map(|r| (r.word, r.summary_line))
+        .collect();
+
+    let headwords: Vec<HeadwordSummaryInputRow> = sql_query(
+        "SELECT id, lemma_1, \
+                (COALESCE(meaning_1, '') <> '' AND COALESCE(construction, '') <> '') AS has_meaning_and_construction \
+         FROM dpd_headwords ORDER BY id",
+    )
+    .load(&mut conn)
+    .context("Failed to load dpd_headwords rows")?;
+
+    let mut report = ConstructionSummaryReport::default();
+    let mut updates: Vec<(i32, String)> = Vec::with_capacity(headwords.len());
+
+    for hw in &headwords {
+        let line = lines.get(&hw.lemma_1);
+        let summary = match line.map(|l| extract_dpd_construction_summary(l)) {
+            Some(SummaryExtract::Found(s)) => Some(s),
+            Some(SummaryExtract::Malformed) => {
+                report.malformed.push((hw.lemma_1.clone(), line.cloned().unwrap_or_default()));
+                None
+            }
+            Some(SummaryExtract::NoBracket) | None => None,
+        };
+
+        match summary {
+            Some(s) => {
+                report.with_summary += 1;
+                updates.push((hw.id, s));
+            }
+            None => {
+                report.without_summary += 1;
+                if hw.has_meaning_and_construction != 0 {
+                    report.meaning_and_construction_but_none.push(hw.lemma_1.clone());
+                }
+                updates.push((hw.id, String::new()));
+            }
+        }
+    }
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        for (id, summary) in &updates {
+            sql_query("UPDATE dpd_headwords SET construction_summary = ? WHERE id = ?")
+                .bind::<Text, _>(summary)
+                .bind::<Integer, _>(*id)
+                .execute(conn)?;
+        }
+        Ok(())
+    })?;
+
+    report.updated = updates.len();
+    Ok(report)
 }
 
 /// Save cf_set and sandhi_contractions
@@ -2478,7 +3190,7 @@ pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<(), diesel::result::Erro
     // Execute DPD FTS5 indexes SQL script using sqlite3 CLI
     // FIXME: This is OK during the boostrap procedure but we can't rely on sqlite3 when the user migrates a newly downloaded DPD db.
     info("Executing DPD FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to cli/ module folder
+    // Path is relative to bootstrap_cli/ module folder
     let fts5_script_path = std::path::PathBuf::from("../scripts/dpd-fts5-indexes.sql");
 
     if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &fts5_script_path) {
@@ -2492,7 +3204,7 @@ pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<(), diesel::result::Erro
 
     // Execute DPD bold_definitions FTS5 indexes SQL script using sqlite3 CLI
     info("Executing DPD bold_definitions FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to cli/ module folder
+    // Path is relative to bootstrap_cli/ module folder
     let bold_defs_fts5_script_path = std::path::PathBuf::from("../scripts/dpd-bold-definitions-fts5-indexes.sql");
 
     if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &bold_defs_fts5_script_path) {

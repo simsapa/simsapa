@@ -5,6 +5,7 @@ pub mod types;
 pub mod helpers;
 pub mod highlight;
 pub mod asset_helpers;
+pub mod cli_support;
 pub mod query_task;
 pub mod fulltext_status;
 pub mod html_content;
@@ -24,6 +25,9 @@ pub mod app_settings;
 pub mod ai_error;
 pub mod ai_fallback;
 pub mod lookup;
+pub mod lookup_forms;
+pub mod dpd_form_grammar;
+pub mod sutta_json;
 pub mod lookup_cancel;
 pub mod html_format;
 pub mod prompt_utils;
@@ -48,7 +52,9 @@ pub mod cips_parse;
 pub mod cips_update;
 pub mod snowball;
 pub mod search;
+#[cfg(feature = "audio")]
 pub mod waveform;
+#[cfg(feature = "audio")]
 pub mod audio;
 pub mod global_hotkeys;
 pub mod storage_probe;
@@ -64,7 +70,7 @@ use std::fs::{self, File, create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::net::{TcpListener, SocketAddr};
 
 use app_dirs::{get_app_root, AppDataType, AppInfo};
@@ -537,7 +543,7 @@ pub fn searcher_open_failures() -> Vec<(String, String)> {
 
 /// Whether a `FulltextMatch` / `Combined` query will actually return real
 /// results. Lets a headless caller learn this via `/health` without running a
-/// throwaway query. See docs/simsapa-localhost-api-search-endpoints.md.
+/// throwaway query. See docs/simsapa-cli-and-localhost-api.md.
 ///
 /// **This answers "is at least one index open", not "is the global `Some`".**
 /// It used to answer the latter, which made it report `true` for a searcher
@@ -594,6 +600,18 @@ pub extern "C" fn reconcile_dict_indexes_blocking_c() {
     // After the dict index has been mutated, drop the in-process searcher
     // so it gets re-opened and picks up the new segments.
     reinit_fulltext_searcher();
+}
+
+/// Whether `AppGlobals::new()` writes `api-port.txt`. On by default, which is
+/// what the GUI needs. The `simsapa` CLI turns it off, because a query command
+/// would otherwise overwrite a running GUI's port with one nobody listens on,
+/// and turns it back on only for `simsapa serve`.
+/// See docs/backend-cli-and-npm-package.md.
+static WRITE_API_PORT_FILE: AtomicBool = AtomicBool::new(true);
+
+/// Set before the first `AppGlobals::new()` (i.e. before `init_app_globals()`).
+pub fn set_write_api_port_file(write: bool) {
+    WRITE_API_PORT_FILE.store(write, Ordering::SeqCst);
 }
 
 #[derive(Debug)]
@@ -660,7 +678,9 @@ impl AppGlobals {
 
         let api_url = format!("http://localhost:{}", api_port);
 
-        save_to_file(format!("{}", api_port).as_bytes(), paths.simsapa_api_port_path.to_str().expect("Path error"));
+        if WRITE_API_PORT_FILE.load(Ordering::SeqCst) {
+            save_to_file(format!("{}", api_port).as_bytes(), paths.simsapa_api_port_path.to_str().expect("Path error"));
+        }
 
         let save_stats = Self::determine_save_stats();
 
@@ -1291,27 +1311,19 @@ pub fn storage_path_state() -> (StorageState, Option<PathBuf>) {
 }
 
 pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
-    // NOTE: this function is also called in Logger::new(), so we use println!()
+    // NOTE: this function is also called in Logger::new(), so it prints to stdout
     // when the logger is not yet available.
     let logger_initialized = LOGGER.get().is_some();
 
     // When the logger is not yet available, determine whether to print info
     // level log messages using the env variable.
-    cfg_if! {
-        if #[cfg(target_os = "android")] {
-            let enable_print_log = true;
-        } else {
-            let enable_print_log = std::env::var("ENABLE_PRINT_LOG")
-                .map(|v| v.to_lowercase() == "true")
-                .unwrap_or(false);
-        }
-    }
+    let enable_print_log = crate::logger::pre_logger_print_enabled();
 
     let msg = "get_create_simsapa_dir()";
     if logger_initialized {
         info(msg);
     } else if enable_print_log {
-        println!("{}", msg);
+        crate::logger::write_stdout(format_args!("{}\n", msg));
     }
 
     match env::var("SIMSAPA_DIR") {
@@ -1365,7 +1377,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         info(&msg);
                     } else if enable_print_log {
-                        println!("{}", msg);
+                        crate::logger::write_stdout(format_args!("{}\n", msg));
                     }
                     file
                 },
@@ -1376,7 +1388,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         warn(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                     return Ok(internal_app_root);
                 },
@@ -1390,7 +1402,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                     if logger_initialized {
                         error(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                     return Ok(internal_app_root);
                 },
@@ -1400,7 +1412,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
             if logger_initialized {
                 info(&msg);
             } else if enable_print_log {
-                println!("{}", msg);
+                crate::logger::write_stdout(format_args!("{}\n", msg));
             }
 
             // Trim: a file written by hand, by a script or by `adb` carries a
@@ -1413,7 +1425,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 if logger_initialized {
                     warn(&msg);
                 } else {
-                    eprintln!("{}", msg);
+                    crate::errln!("{}", msg);
                 }
                 return Ok(internal_app_root);
             }
@@ -1438,7 +1450,7 @@ pub fn get_create_simsapa_dir() -> Result<PathBuf, Box<dyn Error>> {
                 if logger_initialized {
                     warn(&msg);
                 } else {
-                    eprintln!("{}", msg);
+                    crate::errln!("{}", msg);
                 }
                 return Ok(internal_app_root);
             }
@@ -1461,7 +1473,7 @@ pub fn get_create_simsapa_app_assets_path() -> PathBuf {
                     if logger_initialized {
                         error(&msg);
                     } else {
-                        eprintln!("{}", msg);
+                        crate::errln!("{}", msg);
                     }
                 },
             };
@@ -1471,7 +1483,7 @@ pub fn get_create_simsapa_app_assets_path() -> PathBuf {
             if logger_initialized {
                 error(&msg);
             } else {
-                eprintln!("{}", msg);
+                crate::errln!("{}", msg);
             }
         },
     }
@@ -1551,18 +1563,68 @@ pub extern "C" fn ensure_no_empty_db_files(sweep: bool) {
                     Ok(metadata) if metadata.len() == 0 => {
                         // Recorded as missing whether or not it is deleted.
                         if sweep && let Err(e) = fs::remove_file(&p) {
-                            eprintln!("Failed to remove file {:?}: {}", p, e);
+                            crate::errln!("Failed to remove file {:?}: {}", p, e);
                             present = true;
                         }
                     }
                     Ok(_) => present = true, // File exists but is not empty
-                    Err(e) => eprintln!("Failed to get metadata for {:?}: {}", p, e),
+                    Err(e) => crate::errln!("Failed to get metadata for {:?}: {}", p, e),
                 }
             }
             Ok(false) => {}, // File doesn't exist
-            Err(e) => eprintln!("Failed to check if file exists {:?}: {}", p, e),
+            Err(e) => crate::errln!("Failed to check if file exists {:?}: {}", p, e),
         }
         crate::db::record_db_presence(kind, present);
+    }
+}
+
+/// Write the two marker files that trigger the upgrade flow on next app start.
+///
+/// Used by the GUI's `prepare_for_database_upgrade` (happy path) and
+/// `force_database_upgrade` (after the user confirms an export failure), and by
+/// `simsapa setup` when it upgrades an incompatible database.
+///
+/// Returns `Err(Vec<(category, message)>)` if either marker write fails.
+/// A silently-missing marker file would produce a silently-failed upgrade
+/// on the next start (the old DB is not deleted and the new download is
+/// not auto-started), so marker-write failures must surface to the UI.
+/// See PRD §11.3.
+pub fn write_upgrade_marker_files() -> std::result::Result<(), Vec<(String, String)>> {
+    let globals = get_app_globals();
+    let mut errors: Vec<(String, String)> = Vec::new();
+
+    let delete_marker_path = &globals.paths.delete_files_for_upgrade_marker;
+    match std::fs::write(delete_marker_path, "") {
+        Ok(()) => {
+            info(&format!("Created marker file: {}", delete_marker_path.display()));
+        }
+        Err(e) => {
+            error(&format!("Failed to create delete_files_for_upgrade.txt: {}", e));
+            errors.push((
+                "marker_delete_files".to_string(),
+                format!("{}: {}", delete_marker_path.display(), e),
+            ));
+        }
+    }
+
+    let auto_download_path = &globals.paths.auto_start_download_marker;
+    match std::fs::write(auto_download_path, "") {
+        Ok(()) => {
+            info(&format!("Created marker file: {}", auto_download_path.display()));
+        }
+        Err(e) => {
+            error(&format!("Failed to create auto_start_download.txt: {}", e));
+            errors.push((
+                "marker_auto_start_download".to_string(),
+                format!("{}: {}", auto_download_path.display(), e),
+            ));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
 }
 
@@ -1948,9 +2010,10 @@ pub fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
                 return Ok(port);
             }
             // If the specified port is not available, we'll fall back to the default logic
-            println!("Warning: API_PORT {} is not available, falling back to default", port);
+            // stderr: `simsapa serve`'s stdout carries only its listening line.
+            crate::errln!("Warning: API_PORT {} is not available, falling back to default", port);
         } else {
-            println!("Warning: API_PORT value '{}' is not a valid port number", port_str);
+            crate::errln!("Warning: API_PORT value '{}' is not a valid port number", port_str);
         }
     }
 

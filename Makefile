@@ -78,7 +78,7 @@ sass-watch:
 	sass --no-source-map --watch './assets/sass/:./assets/css/'
 
 parse-cips:
-	cd cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
+	cd bootstrap_cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
 
 count-code:
 	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
@@ -91,11 +91,12 @@ simsapa.min.js:
 
 test: rust-test qml-test js-test
 
-# NOTE: Running 'cargo test' in 'bridges/' doesn't compile, but there are no tests there anyway.
+# NOTE: Running 'cargo test' in 'bridges/' doesn't compile.
 # error: linking with `cc` failed
+# The API route tests are in 'api/' (simsapa_api), which builds without Qt.
 
 rust-test:
-	cd backend && cargo test && cd ../cli && cargo test
+	cd backend && cargo test && cd ../bootstrap_cli && cargo test && cd ../api && cargo test && cd ../backend_cli && cargo test
 
 js-test:
 	npm test
@@ -122,12 +123,50 @@ project-tree:
 	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I dpd-res/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt
 
 bootstrap:
-	cd cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv
+	cd bootstrap_cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv
 
 # First 'cargo clean' on each module, then build.
 cargo-clean-build:
-	cd backend && cargo clean && cd ../bridges && cargo clean && cd ../cli && cargo clean && cd .. && \
-	cd backend && cargo build && cd ../bridges && cargo build && cd ../cli && cargo build && cd ..
+	cd backend && cargo clean && cd ../backend_cli && cargo clean && cd ../api && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
+	cd backend && cargo build && cd ../backend_cli && cargo build && cd ../api && cargo build && cd ../bridges && cargo build && cd ../bootstrap_cli && cargo build && cd ..
+
+# The `simsapa` CLI (backend_cli/). Release binaries are copied to
+# dist/cli/<npm-platform>/, where scripts/npm-pack.sh picks them up. The Linux
+# targets are static musl builds through cargo-zigbuild (`cargo install
+# cargo-zigbuild`, zig on PATH, `rustup target add <triple>`). The macOS and
+# Windows targets must run on that OS. See docs/backend-cli-and-npm-package.md.
+CLI_DIST := dist/cli
+
+cli:
+	cd backend_cli && cargo build
+
+cli-release:
+	cd backend_cli && cargo build --release
+
+cli-linux-x64:
+	cd backend_cli && cargo zigbuild --release --target x86_64-unknown-linux-musl
+	mkdir -p $(CLI_DIST)/linux-x64
+	cp backend_cli/target/x86_64-unknown-linux-musl/release/simsapa $(CLI_DIST)/linux-x64/simsapa
+
+cli-linux-arm64:
+	cd backend_cli && cargo zigbuild --release --target aarch64-unknown-linux-musl
+	mkdir -p $(CLI_DIST)/linux-arm64
+	cp backend_cli/target/aarch64-unknown-linux-musl/release/simsapa $(CLI_DIST)/linux-arm64/simsapa
+
+# On an Apple Silicon Mac.
+cli-darwin-arm64:
+	cd backend_cli && cargo build --release --target aarch64-apple-darwin
+	mkdir -p $(CLI_DIST)/darwin-arm64
+	cp backend_cli/target/aarch64-apple-darwin/release/simsapa $(CLI_DIST)/darwin-arm64/simsapa
+
+# On Windows, with the MSVC build tools (as for build-windows.ps1).
+cli-win32-x64:
+	cd backend_cli && cargo build --release --target x86_64-pc-windows-msvc
+	powershell -Command "New-Item -ItemType Directory -Force -Path '$(CLI_DIST)/win32-x64' | Out-Null; Copy-Item -Force 'backend_cli/target/x86_64-pc-windows-msvc/release/simsapa.exe' '$(CLI_DIST)/win32-x64/simsapa.exe'"
+
+# Packs dist/cli/<platform>/ binaries into dist/npm/*.tgz. Publishes nothing.
+npm-packages:
+	./scripts/npm-pack.sh
 
 appimage: build
 	./build-appimage.sh

@@ -11,7 +11,7 @@ first implementation (PRD §11 in
 
 Related docs:
 
-- [Localhost API search endpoints](./simsapa-localhost-api-search-endpoints.md)
+- [Localhost API search endpoints](./simsapa-cli-and-localhost-api.md)
   §14.5 — request/response details of the display routes.
 
 ## 1. Layouts and settings
@@ -238,10 +238,10 @@ untouched.
   no-op in block mode (page can't scroll); per-column scroll resets to the top
   as the passages are re-fetched fresh.
 
-## 4. Route surface (`bridges/src/api.rs`)
+## 4. Route surface (`api/src/routes/suttas.rs`)
 
 Details and JSON shapes in
-[simsapa-localhost-api-search-endpoints.md](./simsapa-localhost-api-search-endpoints.md) §14.5.
+[simsapa-cli-and-localhost-api.md](./simsapa-cli-and-localhost-api.md) §14.5.
 
 - `GET /sutta_content_block?uid=…&layout=…&columns=<enc-uid>|<enc-uid>&show_references=…&repeat_pali=…`
   → the wrapper div only (no page chrome; no `window_id` — the block
@@ -552,7 +552,7 @@ hit. Run `make sass`; never hand-edit `assets/css/`.
 
 The paragraph locations come from the CIPS index, and two things are
 pre-computed by the parser in `backend/src/cips_parse.rs` (moved there from
-`cli/src/bootstrap/parse_cips_index.rs`, which now only writes the JSON file
+`bootstrap_cli/src/bootstrap/parse_cips_index.rs`, which now only writes the JSON file
 and prints the diagnostics) so runtime does no extra work:
 
 - **Disambiguation suffixes.** When two refs in one sub-topic entry produce the

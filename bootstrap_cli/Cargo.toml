@@ -1,0 +1,39 @@
+[package]
+name = "simsapa_bootstrap_cli"
+version = "0.1.0"
+edition = "2024"
+authors = ["Gambhiro Bhikkhu <profound.labs@gmail.com>"]
+license = "Apache-2.0"
+
+[[bin]]
+name = "simsapa_bootstrap_cli"
+path = "src/main.rs"
+
+[dependencies]
+simsapa_backend = { path = "../backend" }
+tipitaka_xml_parser = { path = "../../tipitaka-xml-parser" }
+clap = { version = "4.5.37", features = ["derive", "env"] }
+dotenvy = "0.15.7"
+anyhow = "1.0"
+thiserror = "2.0"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+diesel = { version = "2.3.9", features = ["sqlite"] }
+diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
+arangors = "0.6.0"
+scraper = "0.21.0"
+reqwest = { version = "0.12", features = ["blocking"] }
+indicatif = "0.17"
+regex = "1.11"
+lazy_static = "1.5"
+tokio = { version = "1.0", features = ["rt", "rt-multi-thread"] }
+quick-xml = "0.31"
+html-escape = "0.2"
+urlencoding = "2.1"
+toml = "1.1.6"
+# NOTE: The utils::render_markdown() was removed after mdbook v0.4
+mdbook = "0.4"
+
+[dev-dependencies]
+tempfile = "3.8"

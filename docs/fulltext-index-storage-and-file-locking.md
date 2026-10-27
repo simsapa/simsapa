@@ -271,7 +271,7 @@ Where the verdict surfaces:
 - **`/health`** — `fulltext_searcher_ready` is now false when zero indexes are
   open, plus the per-area counts, `failed`, `state` and `message`, built through
   the same helpers the app's own UI reads so the two cannot drift. See
-  `docs/simsapa-localhost-api-search-endpoints.md`.
+  `docs/simsapa-cli-and-localhost-api.md`.
 - **The log** — `reinit_fulltext_searcher()` logs the counts, at **ERROR** when
   it completes with zero indexes open. A log alone tells the story.
 - **`storage_probe.rs`** — the tier-2 probe now runs the `flock` probe and logs

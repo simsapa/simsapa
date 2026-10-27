@@ -6,7 +6,7 @@
 // (run_search_with_uid_fallback in bridges/src/api.rs). The bridges crate can't
 // be unit-tested (cxx-qt linking), so this backend test pins the *premise* the
 // fallback relies on against the live DB: for "dhamma 1.01" the auto UidMatch
-// misses while DpdLookup hits. See docs/simsapa-localhost-api-search-endpoints.md.
+// misses while DpdLookup hits. See docs/simsapa-cli-and-localhost-api.md.
 
 mod helpers;
 use helpers as h;

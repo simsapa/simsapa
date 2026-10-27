@@ -165,8 +165,9 @@ fn errno_is_unsupported(_errno: i32) -> bool {
     false
 }
 
-/// Classify an `io::Error` from a locking call.
-fn classify_lock_error(e: &io::Error) -> FlockSupport {
+/// Classify an `io::Error` from a locking call. Also used by the `simsapa`
+/// CLI's `cli-write.lock`, so both decide "this volume cannot lock" the same way.
+pub fn classify_lock_error(e: &io::Error) -> FlockSupport {
     let errno = e.raw_os_error().unwrap_or(0);
     if errno_is_unsupported(errno) {
         FlockSupport::Unsupported {

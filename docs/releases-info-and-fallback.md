@@ -116,25 +116,25 @@ able to download the asset**, which is handled and shown separately (below).
 
 `get_compatible_asset_version_tag()` / `get_compatible_asset_github_repo()` do
 **not** rely on `check_for_updates()` having run. They go through the shared
-helper `compatible_assets_release()` (in `bridges/src/sutta_bridge.rs`), which
-prefers `try_get_releases_info()` (the live global) and **falls back to
+helper `update_checker::compatible_assets_release()` (Qt-free, in
+`backend/src/update_checker.rs`), which prefers `try_get_releases_info()` (the live global) and **falls back to
 `get_fallback_releases_info()`** — both when the global is empty **and when the
 live info yields no compatible assets release**:
 
 ```rust
-fn compatible_assets_release() -> Option<update_checker::ReleaseEntry> {
-    let app_version = update_checker::to_version(&update_checker::get_app_version()).ok()?;
+pub fn compatible_assets_release() -> Option<ReleaseEntry> {
+    let app_version = to_version(&get_app_version()).ok()?;
 
-    if let Some(releases_info) = simsapa_backend::try_get_releases_info()
+    if let Some(releases_info) = crate::try_get_releases_info()
         && let Some(release) =
-            update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version)
+            get_latest_app_compatible_assets_release(&releases_info, &app_version)
     {
         return Some(release.clone());
     }
 
-    let fallback_info = update_checker::get_fallback_releases_info()?;
+    let fallback_info = get_fallback_releases_info()?;
     // … log + return the fallback's compatible release, if any
-    update_checker::get_latest_app_compatible_assets_release(&fallback_info, &app_version).cloned()
+    get_latest_app_compatible_assets_release(&fallback_info, &app_version).cloned()
 }
 ```
 
@@ -199,13 +199,13 @@ command after updating the server data:
 
 ```sh
 # defaults: --channel main, output → the source-tree assets/ folder
-cargo run --manifest-path cli/Cargo.toml -- update-releases-fallback
-# equivalently, from inside cli/:
+cargo run --manifest-path bootstrap_cli/Cargo.toml -- update-releases-fallback
+# equivalently, from inside bootstrap_cli/:
 cargo run -- update-releases-fallback
 ```
 
-Implementation: `cli/src/update_releases_fallback.rs`, wired into
-`cli/src/main.rs` as the `UpdateReleasesFallback { channel, output }` command
+Implementation: `bootstrap_cli/src/update_releases_fallback.rs`, wired into
+`bootstrap_cli/src/main.rs` as the `UpdateReleasesFallback { channel, output }` command
 (in the skip-`init_app_data` list, like `UpdateProviderModels`). It does a
 `GET {RELEASES_API_URL}?channel=<channel>&no_stats=true`, validates the response
 parses as `ReleasesInfo` before overwriting the file (so a bad response can't
@@ -214,7 +214,7 @@ break the build), and writes the raw JSON.
 The `--output` default is `DEFAULT_RELEASES_FALLBACK_PATH`, resolved at compile
 time via `concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/releases-fallback.json")`
 — so it always targets the workspace `assets/` folder regardless of the current
-working directory (running from `cli/` works). Errors from this command are
+working directory (running from `bootstrap_cli/` works). Errors from this command are
 printed with the full anyhow context chain (`{:#}`) so path/IO causes are
 visible.
 

@@ -626,6 +626,31 @@ pub fn verse_sutta_ref_to_uid(sutta_ref: &str) -> Option<String> {
     }
 }
 
+/// Convert verse references to actual sutta UIDs.
+/// E.g., "thag179/pli/ms" -> "thag2.30/pli/ms", "dhp34/pli/ms" -> "dhp33-43/pli/ms"
+/// Returns the original UID if no conversion is needed.
+pub fn convert_verse_ref_to_sutta_uid(uid_str: &str) -> String {
+    // Extract the sutta code without language/author (before first '/')
+    let code = uid_str.split('/').next().unwrap_or(uid_str);
+
+    // Try to convert verse reference to sutta UID (e.g., "thag179" -> "thag2.30")
+    if let Some(converted_uid) = verse_sutta_ref_to_uid(code) {
+        // Preserve the language/author part if present (e.g., keep "/pli/ms")
+        if uid_str.contains('/') {
+            let parts: Vec<&str> = uid_str.splitn(2, '/').collect();
+            if parts.len() == 2 {
+                format!("{}/{}", converted_uid, parts[1])
+            } else {
+                format!("{}/pli/ms", converted_uid)
+            }
+        } else {
+            format!("{}/pli/ms", converted_uid)
+        }
+    } else {
+        uid_str.to_string()
+    }
+}
+
 pub fn dhammatalks_org_ref_notation_convert(ref_str: &str) -> String {
     let mut ref_str = ref_str.replace('_', ".").to_lowercase();
     ref_str = ref_str.replace(".html", "");
@@ -1578,10 +1603,8 @@ fn detect_sandhi_unit(original_chars: &[char], search_word: &str, match_start: u
     let ends_with_niggahita = search_chars.last() == Some(&'ṁ') || search_chars.last() == Some(&'ṃ');
 
     if ends_with_niggahita && match_end < len {
-        let quote_chars = ['"', '\u{201C}', '\u{201D}', '\'', '\u{2018}', '\u{2019}'];
-
-        if quote_chars.contains(&original_chars[match_end]) {
-            let mut end = match_end + 1;
+        if is_quote_char(original_chars[match_end]) {
+            let mut end = skip_quote_chars(original_chars, match_end, len);
 
             if end < len && (original_chars[end] == 'n' || original_chars[end] == 'N') {
                 end += 1;
@@ -1605,11 +1628,11 @@ fn detect_sandhi_unit(original_chars: &[char], search_word: &str, match_start: u
         return None;
     }
 
-    let quote_chars = ['"', '\u{201C}', '\u{201D}', '\'', '\u{2018}', '\u{2019}'];
-
-    if quote_chars.contains(&original_chars[end]) {
-        let quote_pos = end;
-        end += 1;
+    // A run of quote marks, as in `parāyaṇo’”ti` (a quote closing inside a
+    // quote).
+    if is_quote_char(original_chars[end]) {
+        end = skip_quote_chars(original_chars, end, len);
+        let after_quotes = end;
 
         if end < len && (original_chars[end] == 'n' || original_chars[end] == 'N') {
             end += 1;
@@ -1622,7 +1645,7 @@ fn detect_sandhi_unit(original_chars: &[char], search_word: &str, match_start: u
             }
         }
 
-        end = quote_pos + 1;
+        end = after_quotes;
         if end < len && original_chars[end] == 't' {
             end += 1;
             if end < len && original_chars[end] == 'i' {
@@ -1635,12 +1658,15 @@ fn detect_sandhi_unit(original_chars: &[char], search_word: &str, match_start: u
     None
 }
 
+/// Match a clean word ending in a short vowel that the text writes joined to
+/// `ti`: quoted (`dhārayāmī’ti`), or unquoted (`viharāmīti`) when `iti_follows`.
 fn try_match_with_vowel_ti_expansion(
     original_chars: &[char],
     original_lower_chars: &[char],
     search_chars: &[char],
     char_pos: usize,
     text_len: usize,
+    iti_follows: bool,
 ) -> Option<(usize, usize, String)> {
     if search_chars.is_empty() || char_pos >= text_len {
         return None;
@@ -1675,8 +1701,9 @@ fn try_match_with_vowel_ti_expansion(
 
     let mut pos = after_match;
 
-    // Check for quote(s) + ti pattern (e.g., dhārayāmī'ti, dhārayāmī'"ti)
-    if is_quote_char(original_chars[pos]) {
+    // Check for quote(s) + ti pattern (e.g., dhārayāmī'ti, dhārayāmī'"ti),
+    // or a bare ti (viharāmīti) when the preprocessing split one off.
+    if is_quote_char(original_chars[pos]) || iti_follows {
         pos = skip_quote_chars(original_chars, pos, text_len);
 
         if pos < text_len && original_chars[pos] == 't' {
@@ -1706,12 +1733,16 @@ fn skip_quote_chars(original_chars: &[char], mut pos: usize, text_len: usize) ->
     pos
 }
 
+/// Match a clean word ending in `ṁ` that the text writes as `n` joined to
+/// `ti`: quoted (`gantun’ti`, `vilapi”nti`), or unquoted (`abhinandunti`) when
+/// `iti_follows`.
 fn try_match_with_niggahita_expansion(
     original_chars: &[char],
     original_lower_chars: &[char],
     search_chars: &[char],
     char_pos: usize,
     text_len: usize,
+    iti_follows: bool,
 ) -> Option<(usize, usize, String)> {
     if search_chars.is_empty() {
         return None;
@@ -1756,7 +1787,8 @@ fn try_match_with_niggahita_expansion(
         // Skip one or more consecutive quote characters
         let after_quotes = skip_quote_chars(original_chars, pos, text_len);
 
-        if after_quotes > pos {  // Found at least one quote
+        // At least one quote, or a bare ti when the preprocessing split one off
+        if after_quotes > pos || iti_follows {
             pos = after_quotes;
             if pos < text_len && original_chars[pos] == 't' {
                 pos += 1;
@@ -1815,9 +1847,10 @@ fn try_match_with_niggahita_expansion(
 
 /// Match `search_chars` at `start` in the original text, skipping quote marks
 /// between two letters of the word (`manopubbaṅ’gamā` for the clean word
-/// `manopubbaṅgamā`, `cā”tipi` for `cātipi`, see `join_mid_word_apostrophes`).
-/// Returns the end position, and only when a quote mark was skipped: a plain
-/// match is the caller's ordinary path.
+/// `manopubbaṅgamā`, `cā”tipi` for `cātipi`, see `join_mid_word_apostrophes`)
+/// and hyphens (`Todeyya-kappā` for `todeyyakappā`, see
+/// `remove_inter_word_hyphens`). Returns the end position, and only when a
+/// mark was skipped: a plain match is the caller's ordinary path.
 fn match_with_inner_apostrophes(
     original_lower_chars: &[char],
     search_chars: &[char],
@@ -1830,7 +1863,9 @@ fn match_with_inner_apostrophes(
         if k > 0 && pos < text_len && is_word_char(original_lower_chars[pos - 1]) {
             let mut after = pos;
             while after < text_len
-                && (is_quote_char(original_lower_chars[after]) || original_lower_chars[after] == 'ʼ')
+                && (is_quote_char(original_lower_chars[after])
+                    || original_lower_chars[after] == 'ʼ'
+                    || original_lower_chars[after] == '-')
             {
                 after += 1;
             }
@@ -1852,6 +1887,24 @@ pub fn find_word_position_char_based(
     original_lower_chars: &[char],
     search_word: &str,
     current_search_pos: usize,
+) -> Option<WordPosition> {
+    find_word_position(original_chars, original_lower_chars, search_word, current_search_pos, false)
+}
+
+/// Find `search_word` in the text at or after `current_search_pos`.
+///
+/// `iti_follows`: the next clean word is a `ti` that the preprocessing split
+/// off an unquoted iti sandhi (`viharāmīti` → `viharāmi ti`,
+/// `abhinandunti` → `abhinanduṁ ti`). The word is then also matched joined to
+/// that `ti` without a quote mark. Without it the search would skip this
+/// occurrence and match a later one, and every word in between would be lost.
+/// Only with the flag: otherwise `pi` would match inside `pīti`.
+fn find_word_position(
+    original_chars: &[char],
+    original_lower_chars: &[char],
+    search_word: &str,
+    current_search_pos: usize,
+    iti_follows: bool,
 ) -> Option<WordPosition> {
     let search_word_lower = search_word.to_lowercase();
     let search_chars: Vec<char> = search_word_lower.chars().collect();
@@ -1875,6 +1928,7 @@ pub fn find_word_position_char_based(
             &search_chars,
             char_pos,
             text_len,
+            iti_follows,
         ) {
             let is_word_boundary_start = char_pos == 0 || !is_word_char(original_chars[char_pos - 1]);
             if is_word_boundary_start {
@@ -1893,6 +1947,7 @@ pub fn find_word_position_char_based(
             &search_chars,
             char_pos,
             text_len,
+            iti_follows,
         ) {
             let is_word_boundary_start = char_pos == 0 || !is_word_char(original_chars[char_pos - 1]);
             if is_word_boundary_start {
@@ -1925,6 +1980,9 @@ pub fn find_word_position_char_based(
             let is_word_boundary_start = char_pos == 0 || !is_word_char(original_chars[char_pos - 1]);
             let is_word_boundary_end = end >= text_len || !is_word_char(original_chars[end]);
             if is_word_boundary_start && is_word_boundary_end {
+                // Followed by a quoted iti: `maraṇā’tipī”ti`.
+                let end = detect_sandhi_unit(original_chars, search_word, char_pos, end)
+                    .map_or(end, |(_, sandhi_end)| sandhi_end);
                 return Some(WordPosition {
                     clean_word: search_word.to_string(),
                     char_start: char_pos,
@@ -2165,19 +2223,22 @@ pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
     let mut current_search_pos = 0;
     let mut skip_next_ti = false;
 
-    for clean_word in clean_words {
+    for (word_idx, clean_word) in clean_words.iter().enumerate() {
+        let clean_word = clean_word.clone();
         if skip_next_ti && clean_word == "ti" {
             skip_next_ti = false;
             continue;
         }
 
         skip_next_ti = false;
+        let iti_follows = clean_words.get(word_idx + 1).is_some_and(|w| w == "ti");
 
-        if let Some(word_position) = find_word_position_char_based(
+        if let Some(word_position) = find_word_position(
             &original_chars,
             &original_lower_chars,
             &clean_word,
             current_search_pos,
+            iti_follows,
         ) {
             let boundaries = calculate_context_boundaries(
                 &word_position,
@@ -2202,8 +2263,12 @@ pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
                 || orig_lower.ends_with("\"nti")
                 || orig_lower.ends_with("\u{2019}nti")
                 || orig_lower.ends_with("\u{201D}nti");
+            // An unquoted iti sandhi matched whole (`viharāmīti`).
+            let has_bare_ti = iti_follows
+                && orig_lower.ends_with("ti")
+                && orig_lower.chars().count() > clean_word.chars().count();
 
-            if has_quote_ti {
+            if has_quote_ti || has_bare_ti {
                 skip_next_ti = true;
             }
 
@@ -2311,7 +2376,7 @@ pub fn word_uid_sanitize(word: &str) -> String {
 ///
 /// Pure and side-effect free so it can be unit-tested in isolation; the actual
 /// DB lookups live in `AppData::resolve_word_uid`. See
-/// `docs/simsapa-localhost-api-search-endpoints.md`.
+/// `docs/simsapa-cli-and-localhost-api.md`.
 pub fn normalize_human_word_uid(input: &str) -> String {
     let trimmed = input.trim().trim_end_matches(".json").trim();
     if trimmed.is_empty() {
@@ -4756,6 +4821,62 @@ pub fn process_all_paragraphs(
         paragraphs: paragraph_results,
         global_unrecognized_words,
         updated_global_stems: global_stems,
+    })
+}
+
+/// `/gloss_text` exact mode: every token of `extract_words_with_context()`, in
+/// order, with the exact DPD form lookup of its `original_word` (which keeps a
+/// quoted `'ti`, so `bhavissan'ti` stays whole). Nothing is deduplicated,
+/// skipped or chosen: no `process_word_for_glossing()`, no common-word list,
+/// no word-selection cache. A DB error fails the whole request.
+///
+/// See docs/simsapa-cli-and-localhost-api.md §16.1.
+pub fn process_all_paragraphs_exact(
+    paragraphs: &[String],
+    dpd: &crate::db::dpd::DpdDbHandle,
+) -> Result<crate::types::ExactGlossResult, String> {
+    let tokenized: Vec<Vec<GlossWordContext>> = paragraphs
+        .iter()
+        .map(|p| extract_words_with_context(p))
+        .collect();
+
+    let forms: Vec<String> = tokenized
+        .iter()
+        .flatten()
+        .map(|w| w.original_word.clone())
+        .collect();
+
+    let mut lookups = dpd
+        .lookup_forms_exact(&forms)
+        .map_err(|e| format!("Exact lookup error: {}", e))?
+        .into_iter();
+
+    let mut paragraph_results = Vec::with_capacity(tokenized.len());
+    for (paragraph_index, words) in tokenized.into_iter().enumerate() {
+        let mut tokens = Vec::with_capacity(words.len());
+        for (token_index, w) in words.into_iter().enumerate() {
+            let lookup = lookups
+                .next()
+                .ok_or_else(|| "Exact lookup returned fewer results than tokens".to_string())?;
+            tokens.push(crate::types::ExactGlossToken {
+                token_index,
+                original_word: w.original_word,
+                clean_word: w.clean_word,
+                context: w.context_snippet,
+                lookup,
+            });
+        }
+        paragraph_results.push(crate::types::ExactGlossParagraph {
+            paragraph_index,
+            tokens,
+        });
+    }
+
+    Ok(crate::types::ExactGlossResult {
+        success: true,
+        exact: true,
+        dpd_version: dpd.dpd_release_version(),
+        paragraphs: paragraph_results,
     })
 }
 

@@ -9,6 +9,7 @@ use thiserror::Error;
 
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
+use crate::dpd_form_grammar::assign_form_grammar;
 use crate::db::dpd_models::{DpdHeadword, DpdRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -424,6 +425,174 @@ impl GroupedDpdLookup {
             .cloned()
             .collect()
     }
+}
+
+/// How an exact DPD form lookup went. See `DpdDbHandle::lookup_forms_exact()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormLookupStatus {
+    /// At least one headword. Splits may be present too (`cittanti`).
+    Found,
+    /// No headwords, at least one split.
+    Deconstructed,
+    /// DPD's `lookup` table has no row for the key, or a row with neither
+    /// headwords nor splits.
+    NotFound,
+    /// The form is empty after normalisation, is more than one word, or is a
+    /// `uid:` query.
+    Invalid,
+}
+
+/// Whether the lookup key is the headword's citation form. A plain comparison
+/// with `lemma_clean`, not a ranking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormMatchedAs {
+    Lemma,
+    Inflection,
+}
+
+/// Informational label of a split: `iti_sandhi` when its last component is
+/// `iti`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormSplitKind {
+    ItiSandhi,
+    Sandhi,
+}
+
+/// Where a split came from: DPD's `deconstructor` column, or the app's
+/// `<base> + iti` rule (docs/search-snippet-highlight-pipeline.md §9d).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormSplitSource {
+    Dpd,
+    ItiRule,
+}
+
+/// One entry of DPD's `lookup.grammar` column: `[lemma, class, parse]`, e.g.
+/// `["bhagavant", "noun", "masc acc sg"]`. Serialised as a JSON array.
+pub type GrammarTriple = [String; 3];
+
+/// One DPD headword of an exact form lookup, with the fields a caller compares
+/// inline. `uid` is the numeric `<id>/dpd` form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormHeadword {
+    pub uid: String,
+    pub lemma_1: String,
+    pub pos: String,
+    pub grammar: String,
+    pub construction: Vec<String>,
+    pub root_key: String,
+    pub meaning_1: String,
+    pub matched_as: FormMatchedAs,
+    pub root_base: String,
+    pub root_sign: String,
+    /// DPD's display summary of the construction (`√car + a + ti`), from the
+    /// bootstrap column. `""` when DPD shows none; `None` when the installed
+    /// `dpd.sqlite3` has no such column.
+    pub construction_summary: Option<String>,
+    /// The parses of the result's `form_grammar_raw` entries that match this
+    /// headword's `lemma_clean` and `pos` class (`dpd_form_grammar`).
+    pub form_grammar: Vec<String>,
+}
+
+impl FormHeadword {
+    /// `construction` is the column split on newlines, with empty lines
+    /// dropped (`bhagavant 1` has two). `form_grammar` is assigned from `raw`,
+    /// the grammar of the lookup row that listed this headword.
+    /// `construction_summary` is left `None` for the caller to fill.
+    pub fn from_headword(hw: &DpdHeadword, lookup_key: &str, raw: &[GrammarTriple]) -> Self {
+        FormHeadword {
+            uid: format!("{}/dpd", hw.id),
+            lemma_1: hw.lemma_1.clone(),
+            pos: hw.pos.clone(),
+            grammar: hw.grammar.clone(),
+            construction: hw
+                .construction
+                .split('\n')
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .map(|line| line.to_string())
+                .collect(),
+            root_key: hw.root_key.clone(),
+            meaning_1: hw.meaning_1.clone(),
+            matched_as: if hw.lemma_clean == lookup_key {
+                FormMatchedAs::Lemma
+            } else {
+                FormMatchedAs::Inflection
+            },
+            root_base: hw.root_base.clone(),
+            root_sign: hw.root_sign.clone(),
+            construction_summary: None,
+            form_grammar: assign_form_grammar(&hw.lemma_clean, &hw.pos, raw),
+        }
+    }
+}
+
+/// One component of a split, with the headword uids and the grammar of its
+/// **exact** lookup row. A component DPD does not know has neither.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormComponent {
+    pub word: String,
+    pub uids: Vec<String>,
+    pub form_grammar_raw: Vec<GrammarTriple>,
+}
+
+/// One split of an exact form lookup. `split` is DPD's string verbatim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormDeconstruction {
+    pub split: String,
+    pub kind: FormSplitKind,
+    pub source: FormSplitSource,
+    pub components: Vec<FormComponent>,
+}
+
+/// The answer for one input form of `DpdDbHandle::lookup_forms_exact()`:
+/// every headword and split of the exact lookup row, in DPD's order, with
+/// nothing ranked or chosen.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormLookupResult {
+    /// The form exactly as sent.
+    pub input: String,
+    /// The key actually looked up after normalisation.
+    pub lookup_key: String,
+    pub status: FormLookupStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    pub headwords: Vec<FormHeadword>,
+    pub deconstructions: Vec<FormDeconstruction>,
+    /// The grammar of the lookup row that supplied `headwords`, verbatim and
+    /// in DPD's order. Empty for `iti_rule` results (the base's grammar is on
+    /// its component), `invalid`, and forms with no row.
+    pub form_grammar_raw: Vec<GrammarTriple>,
+}
+
+/// `/gloss_text` exact mode: one token per word of each paragraph, in order,
+/// each with its exact form lookup. See `helpers::process_all_paragraphs_exact()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossResult {
+    pub success: bool,
+    pub exact: bool,
+    pub dpd_version: Option<String>,
+    pub paragraphs: Vec<ExactGlossParagraph>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossParagraph {
+    pub paragraph_index: usize,
+    pub tokens: Vec<ExactGlossToken>,
+}
+
+/// One word of the paragraph. `token_index` starts at 0 in each paragraph and
+/// has no gaps; every token appears, whatever its lookup status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExactGlossToken {
+    pub token_index: usize,
+    pub original_word: String,
+    pub clean_word: String,
+    pub context: String,
+    pub lookup: FormLookupResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

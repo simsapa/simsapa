@@ -84,7 +84,7 @@ pub enum ResolvedWordKind {
 /// **structured** row the JSON route returns; `dict_word` is the correlated
 /// **rendered-HTML** `dict_words` row the HTML route renders (absent for a bold
 /// definition, which renders via its own path). See
-/// `docs/simsapa-localhost-api-search-endpoints.md`.
+/// `docs/simsapa-cli-and-localhost-api.md`.
 #[derive(Debug, Clone)]
 pub struct ResolvedWord {
     canonical_uid: String,
@@ -168,16 +168,24 @@ pub struct AppData {
 
 impl AppData {
     pub fn new() -> Self {
+        Self::try_new().expect("Can't create DbManager")
+    }
+
+    /// `new()` without the panic. An `AppData` built here and not handed to
+    /// `init_app_data()` closes its databases when dropped, which is what lets
+    /// `simsapa setup` export user data from an incompatible database and then
+    /// delete that database in the same process.
+    pub fn try_new() -> anyhow::Result<Self> {
         init_app_globals();
-        let dbm = DbManager::new().expect("Can't create DbManager");
+        let dbm = DbManager::new()?;
         let app_settings_cache = RwLock::new(dbm.appdata.get_app_settings().clone());
         let g = get_app_globals();
 
-        AppData {
+        Ok(AppData {
             dbm,
             app_settings_cache,
             api_url: g.api_url.clone(),
-        }
+        })
     }
 
     /// Recompute the cached shipped + commentary-definitions source-uid lists
@@ -885,7 +893,7 @@ impl AppData {
         // the matching renderer. Bold definitions use their dedicated renderer;
         // every other kind renders its correlated dict_words HTML row (DPD
         // headword/root forms reach that row via lemma_1 / root sanitize). See
-        // resolve_word_uid and docs/simsapa-localhost-api-search-endpoints.md.
+        // resolve_word_uid and docs/simsapa-cli-and-localhost-api.md.
         let resolved = match self.resolve_word_uid(word_uid) {
             Some(r) => r,
             None => return blank_page_html,
@@ -1741,7 +1749,7 @@ impl AppData {
     /// `dhamma-1-01/dpd`) resolve to the **dict_words** row `dhamma-1-01/dpd`.
     /// The dpd -> dict_words correlation is via `lemma_1` / root sanitize, not a
     /// uid string-equality join (there is no `dict_words` row with the numeric
-    /// uid). See `docs/simsapa-localhost-api-search-endpoints.md`.
+    /// uid). See `docs/simsapa-cli-and-localhost-api.md`.
     pub fn resolve_word_uid(&self, input_uid: &str) -> Option<ResolvedWord> {
         let input = input_uid.trim().trim_end_matches(".json").trim();
         if input.is_empty() {
@@ -1855,6 +1863,34 @@ impl AppData {
         }
 
         None
+    }
+
+    /// The `/word.json` body for a resolved word: `rw.as_json()`, plus
+    /// `construction_summary` (a string, or `null` when the installed
+    /// `dpd.sqlite3` predates the column) on the `dpd_headwords` lane. Every
+    /// other lane is returned unchanged.
+    ///
+    /// Kept out of `resolve_word_uid()`, which the word-page renderer also
+    /// calls, so the extra query runs only for `/word.json`.
+    pub fn word_json_with_extras(&self, rw: &ResolvedWord) -> Result<serde_json::Value> {
+        let mut value = rw.as_json().clone();
+        if rw.kind() != ResolvedWordKind::DpdHeadword {
+            return Ok(value);
+        }
+
+        let headword_id: i32 = value.get("id")
+            .and_then(|v| v.as_i64())
+            .and_then(|n| i32::try_from(n).ok())
+            .ok_or_else(|| anyhow!("word_json_with_extras(): the headword row has no integer id: {}", rw.canonical_uid()))?;
+
+        let mut conn = self.dbm.dpd.get_conn().context("word_json_with_extras(): no dpd db connection")?;
+        let summary = crate::db::dpd::construction_summaries_by_ids(&mut conn, &[headword_id])?
+            .and_then(|m| m.get(&headword_id).cloned());
+
+        let obj = value.as_object_mut()
+            .ok_or_else(|| anyhow!("word_json_with_extras(): the headword row is not a JSON object: {}", rw.canonical_uid()))?;
+        obj.insert("construction_summary".to_string(), serde_json::json!(summary));
+        Ok(value)
     }
 
     /// Wrap a found `dict_words` row as a `ResolvedWord` (structured value =

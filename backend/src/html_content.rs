@@ -209,7 +209,7 @@ pub fn render_bold_definition(
 /// Render a DPPN dictionary entry as a complete HTML page.
 ///
 /// The `definition_html` is already wrapped in `<div class="dppn">…</div>`
-/// at bootstrap time (see `cli/src/bootstrap/dppn.rs::transform_dppn_definition_html`),
+/// at bootstrap time (see `bootstrap_cli/src/bootstrap/dppn.rs::transform_dppn_definition_html`),
 /// so this routes through `sutta_html_page` with `DICTIONARY_CSS` for the
 /// `.dppn` styling, plus `WINDOW_ID` injection so the click handlers in
 /// suttas.js can reach the owning window for the `ssp://dppn_lookup/` callback.

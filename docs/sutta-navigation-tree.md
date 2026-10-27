@@ -62,7 +62,7 @@ scope allowlist leaves every one of those levels holding a single member, and
 the level stops distinguishing anything. `Suttapiṭaka › Dīgha › Dīghanikāya`
 asks the reader to walk two levels that say the same thing.
 
-`collapse_redundant_groups()` in `cli/src/bootstrap/navigation_tree/sc_spine.rs`
+`collapse_redundant_groups()` in `bootstrap_cli/src/bootstrap/navigation_tree/sc_spine.rs`
 elides them, so the tree reads:
 
 ```
@@ -212,7 +212,7 @@ The spines are built and written **independently** — either can be rebuilt on
 its own — and each numbers its own roots from zero. Written as-is the root level
 interleaves them (`sutta(0) atthakatha(0) vinaya(1) tika(1) …`), with the tie
 broken only by whichever spine was inserted last. `root_sort_base()` in
-`cli/src/bootstrap/navigation_tree/mod.rs` offsets the CST roots to 100, so the
+`bootstrap_cli/src/bootstrap/navigation_tree/mod.rs` offsets the CST roots to 100, so the
 top level is the two whole groups in order:
 
 ```
@@ -267,7 +267,7 @@ N in tree order, rather than the first N alphabetically.
 > all written by the CLI. A stale one fails **silently** — edit
 > `normalize_for_search` without rebuilding and the query is folded one way
 > while the column is folded another, so matches simply stop appearing with
-> nothing logged anywhere. Re-run `simsapa_cli build-navigation-tree` after
+> nothing logged anywhere. Re-run `simsapa_bootstrap_cli build-navigation-tree` after
 > touching any of them.
 
 ### Which edition an SC leaf opens
@@ -858,7 +858,7 @@ is involved.
 **A bad key is reported by the tree build**, not by the app. Every SC or CST
 spine build (the full bootstrap and `build-navigation-tree`, §6) checks the keys
 of the two hand-written files against the tree it has just built —
-`validate_node_text_keys()` in `cli/src/bootstrap/navigation_tree/mod.rs` — and
+`validate_node_text_keys()` in `bootstrap_cli/src/bootstrap/navigation_tree/mod.rs` — and
 records in the spine's defect summary:
 
 | Defect | Meaning |
@@ -877,7 +877,7 @@ rebuild the CLI after an edit before relying on its report.
 
 ### The generated file
 
-`cli/src/bootstrap/navigation_tree/blurb_export.rs` rewrites
+`bootstrap_cli/src/bootstrap/navigation_tree/blurb_export.rs` rewrites
 `navigation-blurb-suttacentral.toml` on every SC spine build. It holds **one
 entry per tree node that has a blurb, keyed by that node's `node_uid`, and
 nothing else** — in tree order, each entry preceded by a comment with the
@@ -1234,7 +1234,7 @@ Code that treats "not a dictionary or book type" as a sutta must know the value:
 ## 3. CST records: two independent questions
 
 Which records a CST source file gets is decided by two questions that must not
-be conflated. `cli/src/bootstrap/cst_coverage.rs` holds both.
+be conflated. `bootstrap_cli/src/bootstrap/cst_coverage.rs` holds both.
 
 ### 3.1 Is the parse trustworthy? — `VERIFIED_CST_FILES`
 
@@ -1427,7 +1427,7 @@ containments.
 
 ## 5. The coverage report
 
-`cli/src/bootstrap/navigation_tree/coverage_report.rs`, filled in two stages
+`bootstrap_cli/src/bootstrap/navigation_tree/coverage_report.rs`, filled in two stages
 because the halves are measured at different points: the **import** records each
 file's class, the records produced, the files it could not split and the
 `romn/` ↔ toc pairing in both directions; the **spine** records how many toc
@@ -1444,11 +1444,11 @@ Three commands, and **they must be run together** — the second reads what the
 first wrote, and the third is not optional:
 
 ``` sh
-simsapa_cli import-cst --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
+simsapa_bootstrap_cli import-cst --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
     --fragments-db-path <fragments.sqlite3>
-simsapa_cli build-navigation-tree --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
+simsapa_bootstrap_cli build-navigation-tree --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
     --fragments-db-path <fragments.sqlite3>
-simsapa_cli index rebuild --area suttas --lang pli --simsapa-dir <SIMSAPA_DIR>
+simsapa_bootstrap_cli index rebuild --area suttas --lang pli --simsapa-dir <SIMSAPA_DIR>
 ```
 
 `import-cst` deletes the existing `%/pli/cst` rows first: the importer skips a
@@ -1467,7 +1467,7 @@ SC spine needs it for titles). Each spine build ends with an `ANALYZE` — see
 **An SC spine build also rewrites `assets/navigation-blurb-suttacentral.toml`**
 (§2f), in the full bootstrap and in `build-navigation-tree` alike, with no extra
 flag. The folder is `../assets` from the working directory — right when the CLI
-is run from `cli/` — or the one given with `--assets-dir`. When the file
+is run from `bootstrap_cli/` — or the one given with `--assets-dir`. When the file
 changed, **rebuild the app**: the summaries are embedded in it. Both spine
 builds also check the keys of the two hand-written texts files and report a
 bad one in their defect summary.

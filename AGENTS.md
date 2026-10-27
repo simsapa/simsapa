@@ -361,9 +361,21 @@ Notable feature docs:
   with a re-bootstrap**. In the dictionary and the Gloss tab a word written
   with quote marks inside it is joined (`manopubbaṅ’gamā`, `so’pi`, `cā”tipi`)
   by `join_mid_word_apostrophes`, after the iti split has taken its quotes.
-- [Localhost API search endpoints](./docs/simsapa-localhost-api-search-endpoints.md) —
-  the **whole Rocket route surface** in `bridges/src/api.rs` (search, word/sutta
-  retrieval, GUI-navigation, assets), plus the **agent quick-start** (§0: search →
+- [The `simsapa` CLI and the localhost API](./docs/simsapa-cli-and-localhost-api.md) —
+  **compiled into the `simsapa` binary** (`simsapa docs` prints it, `--output`
+  saves it) and read by agents outside this repo, so it must stay
+  **self-contained**: no links to other docs, no source paths, no `CLAUDE.md`
+  (`test_bundled_doc_has_no_repo_references` in `backend_cli/src/commands/docs.rs`
+  enforces it). Implementation notes — where each route's code lives, the shared
+  helpers, the lazy searcher init — go in
+  [localhost-api-implementation.md](./docs/localhost-api-implementation.md).
+  Part A is the CLI for users and agents: commands, clean text output vs.
+  `--json` (an agent wanting another shape writes its own formatter over the
+  JSON; there is no formatter script), exit codes. Part B is
+  the **whole Rocket route surface** (search, word/sutta retrieval,
+  GUI-navigation, assets) — the shared data routes in `api/src/` (`simsapa_api`,
+  also served by `simsapa serve`, with npm install instructions), the GUI-only,
+  AI and asset routes in `bridges/src/api.rs` — plus the **agent quick-start** (§0: search →
   copy `uid` → fetch full HTML/JSON). The four search routes: general `POST /search`
   (area-specific default mode, exact `SearchMode`/`SearchArea` serde names,
   HTTP 400 on unknown mode/area), `POST /suttas_fulltext_search` (FulltextMatch),
@@ -389,7 +401,11 @@ Notable feature docs:
   / `run_search_with_uid_fallback`: a 0-hit auto-`UidMatch` re-runs as normalized
   `UidMatch` → `DpdLookup` for dict, or the route's fallback mode for suttas — no
   silent 0-hit); and the **`GET /health`** readiness snapshot (version, port,
-  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources). **Gloss
+  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources, and
+  **`dpd_version`** — DPD's own release, the cache key for DPD-derived answers,
+  never `app_version`; and **`sc_data_version`** `{date, commit}` — the
+  `sc-data` checkout the bootstrap imported, `null` on an older database).
+  **Gloss
   pipeline routes (§16):** `POST /gloss_text` (synchronous multi-paragraph
   glossing → `AllParagraphsProcessingResult`, full `ProcessedWord` incl. the
   grouped deconstruction fields; stateless per call) and `GET /word_selection_ws`
@@ -403,12 +419,72 @@ Notable feature docs:
   configures a provider first; a self-contained **`scripts/gloss_demo.html`**
   (textarea → Gloss → vocab list, Gemini key field, AI-selection checkbox
   disabled while the key is empty) demonstrates all three routes end-to-end
-  (§16.4). **Reference conversion (§17):** `POST /reference_search` is the
+  (§16.4). **Iti sandhi (§18):** which route resolves `vuttan'ti`,
+  `satipaṭṭhānāti` and spaced `vuttan ti` — send the whole form, `ti`
+  included, to `/dict_combined_search` and read `deconstructor`; a default
+  gloss entry never shows the iti split (an exact one does). A final `n` with no exact match is looked up as
+  its `ṁ` spelling before any guess (`vuttan` → `vuttaṁ`, never `vuttanaya`;
+  search-snippet doc §9f). **Tiers of exactness (§19):** exact
+  `/lookup_forms` and `/gloss_text` `"exact": true` (a `not_found` is
+  trustworthy) → `/dict_combined_search` and default `/gloss_text` (adds the
+  `ṁ` respelling, stem match and "starts with" guesses; nothing says which step
+  answered) → `/search` Dictionary `Headword Match` / `Contains Match`
+  (candidates only); widen only the forms the narrower tier could not answer.
+  **Exact DPD form lookup (§19.1–§19.2, §18.3):** `POST /lookup_forms` takes up
+  to 5,000 forms and returns one result per form **in input order** — an
+  equality match on DPD's `lookup` key after `normalize_dpd_query_text()`,
+  every headword and split of the row with nothing ranked or chosen, statuses
+  `found` / `deconstructed` / `not_found` / `invalid`, numeric `<id>/dpd` uids;
+  an iti form is the joined row when DPD splits it `… + iti`, else an exact
+  `<base> + iti` (`source: "iti_rule"`). Each result also carries
+  `form_grammar_raw` (the lookup row's `[lemma, class, parse]` triples,
+  verbatim; `[]` for an `iti_rule` result, whose base component carries them),
+  each split component its own row's `form_grammar_raw`, and each headword
+  `root_base`, `root_sign`, `construction_summary` (DPD's displayed
+  construction; `null` on a `dpd.sqlite3` without the column) and
+  `form_grammar` (the triples matching its `lemma_clean`, its `pos` class and,
+  for nouns, its gender; every matching homonym gets one). `/gloss_text` with `"exact": true`
+  gives one such lookup per token, in order, on the whole `original_word`
+  (rejecting `skip_common` & co. with a JSON `400`); its default output is
+  unchanged because the route returns an untagged enum, **never a
+  `serde_json::Value`** (key order). The Rocket `string` body limit is 2 MiB;
+  over it is Rocket's own non-JSON `400`.
+  **Sutta Bilara JSON (§13.4):** `GET /sutta.json?uid=` returns the
+  `content_json` column (SuttaCentral segment id → text) **verbatim**. **Never
+  re-sort `content_json`**: its key order is the paragraph order of the text,
+  and sorted segment ids scramble it (`mn1:10.1` lands after `mn1:1.6`), so
+  never pass it through `serde_json::Value` (no `preserve_order`), with the resolved
+  uid in `X-Simsapa-Sutta-Uid`; its uid resolution (`backend/src/sutta_json.rs`)
+  never falls back from a translation to the Pāli, unlike the HTML routes, and
+  an HTML-only sutta is a `404` with `reason: "no_content_json"`.
+  **`GET /sutta_bilara.json?uid=` (§13.5)** returns the same text with its
+  HTML template, variant readings, comments and glosses in one object, each
+  segment object embedded verbatim as a `RawValue`; for a translation the
+  variant readings are the `<ref>/pli/ms` text's, named by `variants.uid`.
+  **Reference conversion (§17):** `POST /reference_search` is the
   Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
   back) over the bundled reference table; the sutta routes' reference
   auto-detect does **not** understand PTS references. Pairs with
   [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md)
   and [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
+- [DPD `construction_summary`](./docs/dpd-construction-summary.md) — the
+  `dpd_headwords` column behind `/lookup_forms`' and `/word.json`'s
+  `construction_summary` (`√car + a + ti` where `construction` is
+  `cara + ti`). It is **cut out of DPD's own rendered entry** (the bracket at
+  the end of the summary line of the `dict_words` page, `word = lemma_1`), not
+  computed with a port of DPD's Python rule, so it is what DPD shows its
+  readers for that release. `populate_dpd_construction_summaries()` runs in
+  `import_migrate_dpd()` (and alone as `populate-dpd-construction-summary
+  <dpd.sqlite3>`, app closed, `SIMSAPA_DIR` naming the matching
+  `dictionaries.sqlite3`); it cuts the line out **in SQL** (never loads the
+  840 MB of HTML), writes every headword, and logs a report whose malformed
+  count is the signal that DPD changed its template — report, never repair.
+  **Never add the column to `dpd_schema.rs` or `DpdHeadword`**: Diesel selects
+  every `table!` column, so every headword query would fail on an installed
+  `dpd.sqlite3` without it. The runtime read checks presence once per process
+  (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
+  when absent; `/word.json` adds it in `word_json_with_extras()`, never in
+  `resolve_word_uid()` (the word-page renderer calls that).
 - [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live
@@ -426,7 +502,7 @@ Notable feature docs:
   fallback covers it; the real user-facing failure is the **asset download**,
   surfaced by `AssetManager`'s retry loop + `cleanup_on_failure` and
   `DownloadAppdataWindow.run_download()`'s `error_dialog`), and the manual
-  refresh CLI command `update-releases-fallback` (`cli/src/update_releases_fallback.rs`;
+  refresh CLI command `update-releases-fallback` (`bootstrap_cli/src/update_releases_fallback.rs`;
   `GET …?channel=…&no_stats=true`, validates before writing, rebuild needed to
   re-embed). The channel comes from `get_release_channel()`
   (`RELEASE_CHANNEL` env → `AppSettings` → default `main`).
@@ -938,6 +1014,35 @@ Notable feature docs:
   degraded binary — with no `qmltypes` at all `qmlcachegen` silently drops
   **38% of singleton lookups and 30% of object-property lookups** to interpreted
   bindings, measured tree-wide, and a clean tree's only build is its first one.
+- [The `simsapa` CLI and the `@simsapa/cli` npm package](./docs/backend-cli-and-npm-package.md) —
+  the Qt-free command-line program (`backend_cli/`, binary `simsapa`) and the
+  crates around it: **`simsapa_api` (`api/`) holds the shared data routes** that
+  both the GUI and `simsapa serve` mount via `build_rocket()`; the GUI-driving,
+  **AI** (`/word_selection_ws` & co., with `rig-core`) and static-asset routes
+  stay in `bridges`; `bootstrap_cli/` is the maintainer's tool. The backend's
+  default-on **`audio` feature** is off in `api` and `backend_cli`.
+  **`simsapa setup` is a second implementation of the GUI's first-run download**
+  (`DownloadAppdataWindow.qml` + `asset_manager.rs`) — change both together;
+  the doc lists every step and what the CLI does differently on purpose (no
+  Retry button, failures are fatal, upgrade markers consumed only after
+  success). It is also the second implementation of the GUI's **upgrade of an
+  incompatible database** (`is_local_db_obsolete()` →
+  `prepare_for_database_upgrade()`): the same export and markers, then the
+  deletion and download in the same run. Its version check reads `db_version`
+  through one plain connection (`read_appdata_db_version()`), **never the full
+  `DbManager`**, whose pool retries a damaged file until its timeout; the
+  other commands warn (read-only, `serve`) or refuse (`import`, `index`). The
+  setup integration tests use temporary folders only: an upgrade deletes the
+  databases it replaces. The **startup preamble** (`backend_cli/src/startup.rs`) mirrors
+  `gui.cpp`'s startup and has a **read-only mode** for when the folder is in
+  use; **in-use detection** (`api-port.txt` + `/health`) plus the
+  `cli-write.lock` protect the single-process invariant of the Tantivy lock
+  fallback; only `serve` writes `api-port.txt`. Also: commands, exit codes,
+  `--json`, the stdout/stderr rules, musl builds via cargo-zigbuild (musl is
+  slower to *start*, not to search), binary and package sizes, the npm
+  optional-dependency layout, `make npm-packages`, the dry run and the
+  **publish checklist** (`--tag latest` while versions are prereleases;
+  platform packages first).
 
 ## Qt version per platform — never invoke a bare `qmake6`
 
@@ -1463,6 +1568,52 @@ Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
 in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
 touching that code for another reason.
 
+### No `println!` / `eprintln!` in code the `simsapa` CLI runs
+
+**In `backend_cli/`, `api/` and `backend/`, never write `print!`, `println!`,
+`eprint!` or `eprintln!` outside test code.** These macros **panic** when the
+write fails, and for the CLI that is routine, not exotic: an agent pipes
+output into `head` (stdout closed), or runs the command with stderr closed.
+The result is `thread 'main' panicked … Broken pipe` and exit code 101, in
+place of the command's documented exit code.
+
+Use instead:
+
+| Where | stdout | stderr |
+|---|---|---|
+| `backend_cli/src/` | `outln!` / `out!` (`crate::output`) | `errln!` (`use simsapa_backend::errln;`) |
+| `backend/src/`, `api/src/` | `crate::logger::write_stdout(format_args!(…))` | `crate::errln!` |
+
+Prefer the logger (`info()` / `warn()` / `tracing`) over either in the
+backend; these are for the few messages printed before the logger exists.
+
+The rule is **enforced by a test**:
+`backend_cli/src/output.rs` `test_no_print_macros_in_sources` scans all three
+crates (skipping comment lines and `#[cfg(test)] mod … { … }` blocks) and fails
+on any of the four macros, naming the file and line. Run it with
+`cd backend_cli && cargo test --bin simsapa test_no_print_macros`. **Do not
+silence it with an allow-list**: fix the call site. `bridges/` is GUI-only and
+not scanned.
+
+Two traps:
+
+- **Never "fix" a broken pipe by restoring the default `SIGPIPE` action.**
+  It applies to the whole process: it would also cover `serve`'s sockets and
+  the HTTP client in `setup`, and it would kill an `import`, `index` or `setup`
+  mid-write when its stdout closed. The CLI drops further output and finishes
+  the work instead.
+- **A new crate that writes to stderr can reintroduce the panic without any
+  macro in our code.** tracing-subscriber's own failed-write report is an
+  `eprintln!`, which is why `startup::init_logging()` sets
+  `.log_internal_errors(false)`. When adding a dependency that prints
+  (progress bars, prompts, a logger), check what it does on a write error.
+
+The behaviour is covered by `backend_cli/tests/read_only_commands.rs`
+(`test_closed_stdout_is_not_a_panic`, `test_closed_stderr_is_not_a_panic`,
+`test_failed_stdout_write_exits_1`). See
+[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md),
+"Output on stdout and stderr".
+
 ### New functions on Rust bridge QML components
 
 When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml
@@ -1525,6 +1676,14 @@ its temp folders. And **`is_destroyed()` is not the fix**; cxx-qt documents it
 as racy (the object can be destroyed between the check and the `queue`).
 
 ### New Rust bridges
+
+**A new localhost API data route is not bridge code.** Put it in `simsapa_api`
+(`api/src/routes/`, registered in `shared_routes()` in `api/src/lib.rs`, whose
+route-count test and inventory comment must be updated), so the GUI and
+`simsapa serve` both get it. It goes in `bridges/src/api.rs` only if it needs Qt
+(window callbacks, clipboard, `open_external_url`, the internal storage path),
+an AI provider, or the embedded `assets/` folder. See
+[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md).
 
 When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, the
 Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
@@ -1591,7 +1750,7 @@ generate <name>`.)
 
 The runtime **never fabricates** a missing `dictionaries.sqlite3` — the CLI
 bootstrap creates it explicitly (`init_dictionaries_db()` in
-`cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
+`bootstrap_cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
 ever remove a database's runtime auto-creation, check the bootstrap for a hidden
 dependency on it.
 
@@ -1638,7 +1797,7 @@ The fulltext search tables are FTS5 virtual tables created by the SQL scripts in
 `dpd-bold-definitions-fts5-indexes.sql`). There is **no Diesel migration** for
 these — the scripts drop and recreate the FTS table + sync triggers, so any
 schema change requires a **manual re-bootstrap** of the affected DB (run the
-script again). The scripts are run from the bootstrap code in `cli/src/`.
+script again). The scripts are run from the bootstrap code in `bootstrap_cli/src/`.
 
 **IMPORTANT — store the source row id as the FTS5 `rowid`, never as an
 `UNINDEXED` column.** FTS5 has no secondary indexes, so a lookup like
@@ -1725,6 +1884,37 @@ as `√path 1`).
 > bump; the headword join is clean (`word = lemma_1`) but the root join needs care
 > (disambiguation). See the API-tolerance task list for the trade-off analysis.
 
+### Versions — set them with `scripts/set-version.py`, never by hand
+
+Four versions are each stored in more than one place, some with a `v` prefix
+and some without. `scripts/set-version.py` knows every place and its form:
+
+| Option | Places | Form |
+|---|---|---|
+| `--app` | `cpp/gui.cpp` `setApplicationVersion` | `v1.1.0-alpha.3` |
+| | `[package] version` of `backend/`, `bridges/`, `api/`, `backend_cli/` `Cargo.toml`; the `simsapa_*` entries of the five `Cargo.lock`s; the five `npm/*/package.json` `version`s and the main package's four `optionalDependencies` pins | `1.1.0-alpha.3` |
+| `--db` | `bootstrap_cli/src/bootstrap/appdata.rs` `DB_VERSION` | `1.1.0-alpha.3` |
+| `--android-code` | `android/version.txt` | an integer, or `next` |
+| `--dpd-fallback` | `backend/src/dictionary_catalog.rs` `FALLBACK_TAG` | `v1.0.8` |
+
+``` sh
+scripts/set-version.py                          # show every place; exit 1 if a kind disagrees
+scripts/set-version.py --app 1.1.0-alpha.4      # "v1.1.0-alpha.4" works too
+scripts/set-version.py --android-code next --dry-run
+```
+
+The app version is also the `simsapa` CLI's and the npm packages'. The binary
+reports **`backend/Cargo.toml`'s** (`get_app_version()` is the backend crate's
+`CARGO_PKG_VERSION`), and `bridges/Cargo.toml`'s becomes the Android versionName
+and the AppImage / macOS bundle version, so they must never drift apart.
+
+The script refuses, and writes nothing, when a value is not semver, when
+`--android-code` does not increase (Play requires it), when `--dpd-fallback`
+is outside `PINNED_SERIES`, or when a place no longer matches its pattern.
+**If you add a place that stores one of these versions, add it to `PLACES` in
+the script.** Version changes are the maintainer's: an agent runs the script
+only when asked to set a version, and may always run the show mode.
+
 ## Testing with the Database
 
 **SIMSAPA_DIR** (the runtime data directory) is at:
@@ -1770,6 +1960,14 @@ are rebuilt by the bootstrap, not versioned.
 - **Sass:** `make sass` or `sass --no-source-map './assets/sass/:./assets/css/'`
 
 ### Distribution Packages
+- **`simsapa` CLI and npm packages:** `make cli` (debug) / `make cli-release`
+  (host target) build in `backend_cli/target/`. Release binaries per npm
+  platform: `make cli-linux-x64`, `make cli-linux-arm64` (static musl through
+  cargo-zigbuild, on Linux), `make cli-darwin-arm64` (on the Mac),
+  `make cli-win32-x64` (on Windows), each into `dist/cli/<platform>/`.
+  `make npm-packages` packs `dist/npm/*.tgz`; it **never publishes** — that is
+  the maintainer's manual step (checklist in
+  [docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md)).
 - **Linux AppImage:** `make appimage -B` (creates Simsapa-*.AppImage)
   - Clean rebuild: `make appimage-rebuild`
   - Clean only: `make appimage-clean`
@@ -1778,9 +1976,10 @@ are rebuilt by the bootstrap, not versioned.
   - Clean only: `make macos-clean`
   - Clean rebuild: `make macos-rebuild`
 - **Android App Bundle (Google Play):** `make android-aab` — **no version
-  arguments.** To make a release: bump the integer in `android/version.txt`
-  (Play requires a strictly increasing versionCode), then run it. The
-  versionName comes from the `[package]` version in `bridges/Cargo.toml`.
+  arguments.** To make a release: `scripts/set-version.py --android-code next`
+  (Play requires a strictly increasing versionCode; the integer is in
+  `android/version.txt`), then run it. The versionName comes from the
+  `[package]` version in `bridges/Cargo.toml` (`--app`, see "Versions").
   - Signed APK for sideloading: `make android-apk`
   - Unsigned debug APK: `make android-apk-debug` — note the debug variant now
     carries the **beta** package id (`io.github.simsapa.app.beta`), so this is
@@ -1834,7 +2033,11 @@ are rebuilt by the bootstrap, not versioned.
   `qmllint`, not the system Qt's, and it does **not** fail the target (qmllint
   exits 0 on warnings): there is a pre-existing warning baseline, so what
   matters is a *new* warning naming a file you touched.
-- **Rust Tests:** `cd backend && cargo test` (runs all backend tests)
+- **Rust Tests:** `cd backend && cargo test` (runs all backend tests).
+  The API routes' tests are in `cd api && cargo test` (builds without Qt;
+  `bridges/` cannot link `cargo test`), the CLI's in `cd backend_cli && cargo
+  test`. `make rust-test` runs `backend`, `bootstrap_cli`, `api` and
+  `backend_cli`.
 - **Single Test:** `cd backend && cargo test test_name` (replace test_name with specific test function)
 - **All Tests:** `make test` (runs Rust, QML, and JavaScript tests)
 
@@ -1855,7 +2058,7 @@ Use lowercase snake_case for new functions, variables and id names, E.g:
 - `id: next_message, id: message_item, property bool is_collapsed`
 - `function export_dialog_accepted()`
 
-- **Rust:** snake_case, standard rustfmt, use `anyhow::Result` for error handling, prefer `tracing` over `println!`
+- **Rust:** snake_case, standard rustfmt, use `anyhow::Result` for error handling, prefer `tracing` over `println!` (and never `println!` / `eprintln!` in `backend/`, `api/` or `backend_cli/` — see "No `println!` / `eprintln!` in code the `simsapa` CLI runs")
 
 - **TypeScript:** 2-space indents, import * as alias style, use webpack for bundling
 

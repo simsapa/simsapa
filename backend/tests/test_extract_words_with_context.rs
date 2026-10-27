@@ -408,3 +408,73 @@ fn test_nti_sandhi_cases() {
             i, word.clean_word, word.original_word, expected_bold);
     }
 }
+
+/// (original_word, clean_word) of every token, asserting each one was placed
+/// in the text: a token the search could not place has no `<b>` in its
+/// context.
+fn placed_tokens(text: &str) -> Vec<(String, String)> {
+    helpers::extract_words_with_context(text)
+        .into_iter()
+        .map(|w| {
+            assert!(
+                w.context_snippet.contains("<b>"),
+                "'{}' was not placed in the text, context: {:?}",
+                w.clean_word,
+                w.context_snippet
+            );
+            (w.original_word, w.clean_word)
+        })
+        .collect()
+}
+
+fn originals(text: &str) -> Vec<String> {
+    placed_tokens(text).into_iter().map(|(o, _)| o).collect()
+}
+
+#[test]
+fn test_unquoted_iti_does_not_skip_ahead() {
+    // The preprocessing splits the unquoted `viharāmīti` into `viharāmi ti`.
+    // If `viharāmi` is not matched here, the search finds the later quoted
+    // `viharāmī’ti` and every word in between fails to be placed (mn26).
+    let text = "Ahampi imaṁ dhammaṁ sayaṁ abhiññā sacchikatvā upasampajja viharāmīti pavedeti; addhā āḷāro kālāmo imaṁ dhammaṁ jānaṁ passaṁ viharatī’ti. Atha kho ahaṁ viharāmī’ti.";
+    assert_eq!(
+        originals(text),
+        vec![
+            "Ahampi", "imaṁ", "dhammaṁ", "sayaṁ", "abhiññā", "sacchikatvā", "upasampajja",
+            "viharāmīti", "pavedeti", "addhā", "āḷāro", "kālāmo", "imaṁ", "dhammaṁ", "jānaṁ",
+            "passaṁ", "viharatī’ti", "Atha", "kho", "ahaṁ", "viharāmī’ti",
+        ]
+    );
+}
+
+#[test]
+fn test_unquoted_niggahita_iti_is_one_token() {
+    let tokens = placed_tokens("Attamanā te bhikkhū bhagavato bhāsitaṁ abhinandunti. Pāsarāsisuttaṁ niṭṭhitaṁ.");
+    assert!(tokens.contains(&("abhinandunti".to_string(), "abhinanduṁ".to_string())));
+    assert!(!tokens.iter().any(|(_, c)| c == "ti"), "{:?}", tokens);
+    assert_eq!(tokens.last().unwrap().0, "niṭṭhitaṁ");
+}
+
+#[test]
+fn test_quote_run_before_ti_is_one_token() {
+    let tokens = placed_tokens("Sotāpannohamasmi avinipātadhammo niyato sambodhiparāyaṇo’”ti. Atha kho.");
+    assert!(tokens.iter().any(|(o, _)| o == "sambodhiparāyaṇo’”ti"), "{:?}", tokens);
+    assert!(!tokens.iter().any(|(_, c)| c == "ti"), "{:?}", tokens);
+}
+
+#[test]
+fn test_inner_apostrophe_word_with_quoted_iti_is_one_token() {
+    let tokens = placed_tokens("‘neva hoti na na hoti tathāgato paraṁ maraṇā’tipī”ti? Atha kho.");
+    assert!(tokens.iter().any(|(o, _)| o == "maraṇā’tipī”ti"), "{:?}", tokens);
+    assert!(!tokens.iter().any(|(_, c)| c == "ti"), "{:?}", tokens);
+}
+
+#[test]
+fn test_hyphenated_compound_is_placed() {
+    let tokens = placed_tokens("Nando ca atha hemako; Todeyya-kappā dubhayo, Jatukaṇṇī ca paṇḍito.");
+    assert!(
+        tokens.contains(&("Todeyya-kappā".to_string(), "todeyyakappā".to_string())),
+        "{:?}",
+        tokens
+    );
+}

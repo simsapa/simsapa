@@ -5,8 +5,9 @@
 #
 # Google Play refuses an upload whose versionCode is not strictly greater than
 # every previous upload of this package. Bump this by one for each Play
-# release; nothing else needs editing. The versionName comes from the package
-# version in bridges/Cargo.toml.
+# release with `scripts/set-version.py --android-code next`, which refuses a
+# value that does not increase; nothing else needs editing. The versionName
+# comes from the package version in bridges/Cargo.toml (--app).
 #
 # Blank lines and #-comments are ignored; the first remaining line is the value.
 11

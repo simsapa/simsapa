@@ -72,6 +72,8 @@ ApplicationWindow {
         return [
             `App version: ${root.app_version}`,
             `Qt Version: ${root.qt_version}`,
+            `DPD version: ${SuttaBridge.dpd_version()}`,
+            `SuttaCentral data: ${SuttaBridge.sc_data_version()}`,
             `Current platform: ${root.current_platform}`,
             `App data folder: ${SuttaBridge.app_data_folder_path()}`,
             `App data folder is writable: ${SuttaBridge.is_app_data_folder_writable()}`,

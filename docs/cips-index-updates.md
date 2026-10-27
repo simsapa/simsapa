@@ -28,7 +28,7 @@ is a *prerequisite* for this feature, not a coincidence),
 
 | Where | What |
 |---|---|
-| `backend/src/cips_parse.rs` | The parser, **moved** from `cli/src/bootstrap/parse_cips_index.rs`. Pure: no file access, no printing |
+| `backend/src/cips_parse.rs` | The parser, **moved** from `bootstrap_cli/src/bootstrap/parse_cips_index.rs`. Pure: no file access, no printing |
 | `backend/src/topic_index.rs` | The four data structs (declared **once**), the swappable cache, source resolution, store and reset |
 | `backend/src/cips_update.rs` | Fetch → gate → parse → validate → store, the two process-globals, the log block |
 | `backend/migrations/appdata/2026-08-13-000000_topic_index_data/` | The single-row `topic_index_data` table |
@@ -37,7 +37,7 @@ is a *prerequisite* for this feature, not a coincidence),
 | `bridges/src/sutta_bridge.rs` | `update_topic_index()`, `reset_topic_index()`, `topic_index_source_info()`, `is_topic_index_update_running()`, `cancel_topic_index_update()`, and the three signals |
 | `bridges/assets/qml/TopicIndexWindow.qml` | Header buttons, the two confirm dialogs, the refresh handler |
 | `bridges/assets/qml/TopicIndexUpdateWindow.qml` | The progress / results window |
-| `cli/src/bootstrap/parse_cips_index.rs` | Reduced to `parse_cips_to_json()` — the only part that writes files and prints |
+| `bootstrap_cli/src/bootstrap/parse_cips_index.rs` | Reduced to `parse_cips_to_json()` — the only part that writes files and prints |
 
 ### 1.1 Why the window lifecycle work came first
 

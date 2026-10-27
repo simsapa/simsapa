@@ -286,101 +286,11 @@ fn on_import_raw_pick_finished(
 /// Fetch, highlight, and cache a single page of search results.
 /// Returns (results, total_hits, page_len) on success.
 /// If the cache key has changed (new search started), returns None to signal abort.
-/// Write the two marker files that trigger the upgrade flow on next app start.
-///
-/// Used by both `prepare_for_database_upgrade` (happy path) and
-/// `force_database_upgrade` (after user confirms export failure).
-///
-/// Returns `Err(Vec<(category, message)>)` if either marker write fails.
-/// A silently-missing marker file would produce a silently-failed upgrade
-/// on the next start (the old DB is not deleted and the new download is
-/// not auto-started), so marker-write failures must surface to the UI.
-/// See PRD §11.3.
-fn write_upgrade_marker_files() -> std::result::Result<(), Vec<(String, String)>> {
-    let globals = get_app_globals();
-    let mut errors: Vec<(String, String)> = Vec::new();
-
-    let delete_marker_path = &globals.paths.delete_files_for_upgrade_marker;
-    match std::fs::write(delete_marker_path, "") {
-        Ok(()) => {
-            info(&format!("Created marker file: {}", delete_marker_path.display()));
-        }
-        Err(e) => {
-            error(&format!("Failed to create delete_files_for_upgrade.txt: {}", e));
-            errors.push((
-                "marker_delete_files".to_string(),
-                format!("{}: {}", delete_marker_path.display(), e),
-            ));
-        }
-    }
-
-    let auto_download_path = &globals.paths.auto_start_download_marker;
-    match std::fs::write(auto_download_path, "") {
-        Ok(()) => {
-            info(&format!("Created marker file: {}", auto_download_path.display()));
-        }
-        Err(e) => {
-            error(&format!("Failed to create auto_start_download.txt: {}", e));
-            errors.push((
-                "marker_auto_start_download".to_string(),
-                format!("{}: {}", auto_download_path.display(), e),
-            ));
-        }
-    }
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
-}
-
 fn format_category_errors(errs: &[(String, String)]) -> String {
     errs.iter()
         .map(|(cat, msg)| format!("{}: {}", cat, msg))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// Resolve the highest assets release that is compatible with the running app
-/// version, used to build the GitHub asset download URLs (appdata / dictionaries
-/// / DPD / index / per-language archives).
-///
-/// Prefers the live releases info stored in the process-global (populated by a
-/// successful `check_for_updates()`), and falls back to the embedded snapshot
-/// (`assets/releases-fallback.json`) when the global is empty — e.g. the server
-/// was unreachable, or no update check ran this session because update
-/// notifications are disabled. This is why language downloads from
-/// `SuttaLanguagesWindow` keep working offline without an explicit update check.
-///
-/// The fallback is **also** consulted when the live info was fetched fine but
-/// contains no assets release compatible with the running app version. That
-/// happens when the app is published on one release channel (e.g. `main`) while
-/// the matching assets are still only announced on another (e.g.
-/// `development`), and the embedded snapshot carries the newer entry. Without
-/// this second attempt the download windows would report "Unable to retrieve
-/// download information" despite having usable URLs bundled.
-fn compatible_assets_release() -> Option<update_checker::ReleaseEntry> {
-    let app_version = update_checker::to_version(&update_checker::get_app_version()).ok()?;
-
-    if let Some(releases_info) = simsapa_backend::try_get_releases_info()
-        && let Some(release) =
-            update_checker::get_latest_app_compatible_assets_release(&releases_info, &app_version)
-    {
-        return Some(release.clone());
-    }
-
-    let fallback_info = update_checker::get_fallback_releases_info()?;
-    match update_checker::get_latest_app_compatible_assets_release(&fallback_info, &app_version) {
-        Some(release) => {
-            info(&format!(
-                "compatible_assets_release(): no compatible assets release in the live releases info, using embedded fallback: {}",
-                release.version_tag
-            ));
-            Some(release.clone())
-        }
-        None => None,
-    }
 }
 
 fn fetch_and_cache_page(
@@ -1230,6 +1140,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn qt_version(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn dpd_version(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn sc_data_version(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
         fn app_data_folder_path(self: &SuttaBridge) -> QString;
@@ -3122,6 +3038,19 @@ impl qobject::SuttaBridge {
 
     pub fn qt_version(&self) -> QString {
         qobject::get_qt_version()
+    }
+
+    /// DPD's own release (`db_info.dpd_release_version`), or "unknown".
+    pub fn dpd_version(&self) -> QString {
+        let v = try_get_app_data().and_then(|app_data| app_data.dbm.dpd.dpd_release_version());
+        QString::from(v.as_deref().unwrap_or("unknown"))
+    }
+
+    /// The SuttaCentral data the suttas were imported from, as
+    /// `2026-10-17 (2d9ca8da8)`, or "unknown".
+    pub fn sc_data_version(&self) -> QString {
+        let v = try_get_app_data().and_then(|app_data| app_data.dbm.appdata.sc_data_version());
+        QString::from(v.map(|v| v.display()).unwrap_or_else(|| "unknown".to_string()))
     }
 
     pub fn app_data_folder_path(&self) -> QString {
@@ -5683,6 +5612,11 @@ impl qobject::SuttaBridge {
     ///
     /// The user should quit the app after calling this function and restart it
     /// to begin the database download process.
+    ///
+    /// `backend_cli/src/setup.rs` (`simsapa setup`,
+    /// `replace_incompatible_databases()`) re-implements this upgrade, with the
+    /// same export and markers; change both together. See
+    /// docs/backend-cli-and-npm-package.md.
     pub fn prepare_for_database_upgrade(self: Pin<&mut Self>) {
         // Run the export on a background thread so the UI thread is free to
         // repaint button-state/label bindings (e.g. "Exporting user data…")
@@ -5699,7 +5633,7 @@ impl qobject::SuttaBridge {
                     // files are also on disk (see PRD §11.3 — a silent marker
                     // failure would otherwise produce a no-op upgrade on
                     // restart).
-                    match write_upgrade_marker_files() {
+                    match simsapa_backend::write_upgrade_marker_files() {
                         Ok(()) => {
                             if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                                 *guard = None;
@@ -5774,7 +5708,7 @@ impl qobject::SuttaBridge {
             }
             info("force_database_upgrade(): writing upgrade marker files after user opted to continue past export failure");
 
-            match write_upgrade_marker_files() {
+            match simsapa_backend::write_upgrade_marker_files() {
                 Ok(()) => {
                     if let Ok(mut guard) = LAST_EXPORT_FAILURE.lock() {
                         *guard = None;
@@ -5812,7 +5746,7 @@ impl qobject::SuttaBridge {
     /// Get the version_tag of the highest compatible assets release.
     /// Returns empty string if no compatible release can be determined.
     pub fn get_compatible_asset_version_tag(&self) -> QString {
-        match compatible_assets_release() {
+        match update_checker::compatible_assets_release() {
             Some(release) => QString::from(&release.version_tag),
             None => QString::from(""),
         }
@@ -5821,7 +5755,7 @@ impl qobject::SuttaBridge {
     /// Get the github_repo of the highest compatible assets release.
     /// Returns empty string if no compatible release can be determined.
     pub fn get_compatible_asset_github_repo(&self) -> QString {
-        match compatible_assets_release() {
+        match update_checker::compatible_assets_release() {
             Some(release) => QString::from(&release.github_repo),
             None => QString::from(""),
         }

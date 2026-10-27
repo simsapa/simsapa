@@ -276,24 +276,29 @@ pub fn get_app_version() -> String {
 /// 1. `DB_VERSION` environment variable (for testing update flows)
 /// 2. The `db_version` key in the `app_settings` table.
 ///
-/// # Arguments
-///
-/// * `dbm` - Reference to the database manager
-///
 /// # Returns
 ///
 /// * `Some(String)` - The database version if found
 /// * `None` - If the database doesn't exist or version not found
 pub fn get_db_version() -> Option<String> {
-    use crate::try_get_app_data;
+    db_version_of(crate::try_get_app_data()?)
+}
 
+/// [`get_db_version`] for a given `AppData`, which need not be the global one.
+pub fn db_version_of(app_data: &crate::app_data::AppData) -> Option<String> {
+    resolve_db_version(app_data.get_db_version())
+}
+
+/// The database version from its stored `db_version` value, as
+/// [`get_db_version`] reports it: the `DB_VERSION` override, then the stored
+/// value, with the legacy `"1"` mapped to `v0.1.7`.
+pub fn resolve_db_version(stored: Option<String>) -> Option<String> {
     if let Ok(version) = std::env::var("DB_VERSION")
         && !version.is_empty() {
             return Some(version);
         }
 
-    let app_data = try_get_app_data()?;
-    let version = app_data.get_db_version()?;
+    let version = stored?;
 
     // Handle legacy database version "1" from pre-semver releases (app v0.1.7)
     if version == "1" {
@@ -694,6 +699,47 @@ pub fn get_latest_app_compatible_assets_release<'a>(
             }
     }
     None
+}
+
+/// Resolve the highest assets release that is compatible with the running app
+/// version, used to build the GitHub asset download URLs (appdata / dictionaries
+/// / DPD / index / per-language archives).
+///
+/// Prefers the live releases info stored in the process-global (populated by a
+/// successful `check_for_updates()`), and falls back to the embedded snapshot
+/// (`assets/releases-fallback.json`) when the global is empty — e.g. the server
+/// was unreachable, or no update check ran this session because update
+/// notifications are disabled. This is why language downloads from
+/// `SuttaLanguagesWindow` keep working offline without an explicit update check.
+///
+/// The fallback is **also** consulted when the live info was fetched fine but
+/// contains no assets release compatible with the running app version. That
+/// happens when the app is published on one release channel (e.g. `main`) while
+/// the matching assets are still only announced on another (e.g.
+/// `development`), and the embedded snapshot carries the newer entry. Without
+/// this second attempt the download windows would report "Unable to retrieve
+/// download information" despite having usable URLs bundled.
+pub fn compatible_assets_release() -> Option<ReleaseEntry> {
+    let app_version = to_version(&get_app_version()).ok()?;
+
+    if let Some(releases_info) = crate::try_get_releases_info()
+        && let Some(release) =
+            get_latest_app_compatible_assets_release(&releases_info, &app_version)
+    {
+        return Some(release.clone());
+    }
+
+    let fallback_info = get_fallback_releases_info()?;
+    match get_latest_app_compatible_assets_release(&fallback_info, &app_version) {
+        Some(release) => {
+            info(&format!(
+                "compatible_assets_release(): no compatible assets release in the live releases info, using embedded fallback: {}",
+                release.version_tag
+            ));
+            Some(release.clone())
+        }
+        None => None,
+    }
 }
 
 /// Check if there's a database update available.

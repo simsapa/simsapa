@@ -21,6 +21,21 @@ static GLOSS_PHRASE_SELECTIONS_JSON: &str = include_str!("../../../assets/gloss-
 /// Precedence rank of a `gloss_word_context_cache.origin` value:
 /// user-selected > built-in-human-checked > built-in-agent-checked >
 /// ai-selected. Unknown origins rank lowest.
+/// A recording file's duration in milliseconds, 0 when unknown. Without the
+/// `audio` feature nothing can probe the file, so it is always unknown, which
+/// every caller already handles (the listing backfills it later).
+fn recording_duration_ms(abs_path: &std::path::Path) -> i32 {
+    #[cfg(feature = "audio")]
+    {
+        crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy())
+    }
+    #[cfg(not(feature = "audio"))]
+    {
+        let _ = abs_path;
+        0
+    }
+}
+
 pub fn gloss_cache_origin_rank(origin: &str) -> u8 {
     match origin {
         "user-selected" => 4,
@@ -42,7 +57,58 @@ pub fn gloss_cache_origin_is_built_in(origin: &str) -> bool {
 
 pub type AppdataDbHandle = DatabaseHandle;
 
+/// `app_settings` key of the short commit hash of the SuttaCentral `sc-data`
+/// checkout the bootstrap imported from.
+pub const SC_DATA_COMMIT_KEY: &str = "sc_data_commit";
+/// `app_settings` key of that commit's author date, `YYYY-MM-DD` in UTC.
+pub const SC_DATA_DATE_KEY: &str = "sc_data_date";
+
+/// The SuttaCentral data release the suttas were imported from, written by the
+/// bootstrap from the `sc-data` checkout's `HEAD`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScDataVersion {
+    /// `YYYY-MM-DD`, the commit's author date in UTC.
+    pub date: String,
+    /// Short commit hash, e.g. `2d9ca8da8`.
+    pub commit: String,
+}
+
+impl ScDataVersion {
+    /// `2026-10-17 (2d9ca8da8)`
+    pub fn display(&self) -> String {
+        format!("{} ({})", self.date, self.commit)
+    }
+}
+
 impl AppdataDbHandle {
+    /// The SuttaCentral data version recorded at bootstrap. `None` when either
+    /// row is missing (a database built before it was recorded) or unreadable.
+    pub fn sc_data_version(&self) -> Option<ScDataVersion> {
+        use crate::db::appdata_schema::app_settings::dsl::*;
+
+        let read = |k: &str| -> Option<String> {
+            let res = self.do_read(|db_conn| {
+                app_settings
+                    .filter(key.eq(k))
+                    .select(value)
+                    .first::<Option<String>>(db_conn)
+                    .optional()
+            });
+            match res {
+                Ok(v) => v.flatten().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+                Err(e) => {
+                    error(&format!("sc_data_version(): {}", e));
+                    None
+                }
+            }
+        };
+
+        Some(ScDataVersion {
+            date: read(SC_DATA_DATE_KEY)?,
+            commit: read(SC_DATA_COMMIT_KEY)?,
+        })
+    }
+
     /// Count `suttas` rows (for `/health`). A 0 here means the DB is not
     /// loaded / not installed.
     pub fn count_suttas(&self) -> Result<i64> {
@@ -1213,7 +1279,7 @@ impl AppdataDbHandle {
             } else {
                 recordings_dir.join(&data.file_name)
             };
-            crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy())
+            recording_duration_ms(&abs_path)
         };
 
         let new = NewChantingRecording {
@@ -1331,7 +1397,7 @@ impl AppdataDbHandle {
             }
         }
 
-        let new_duration_ms = crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy());
+        let new_duration_ms = recording_duration_ms(&abs_path);
 
         let updated = self.do_write(|db_conn| {
             diesel::update(chanting_recordings.filter(uid.eq(recording_uid_param)))
@@ -1523,7 +1589,7 @@ impl AppdataDbHandle {
             } else {
                 recordings_dir.join(&rec.file_name)
             };
-            let ms = crate::waveform::get_audio_duration_ms(&abs_path.to_string_lossy());
+            let ms = recording_duration_ms(&abs_path);
             if ms > 0 {
                 if let Err(e) = self.update_recording_duration(&rec.uid, ms) {
                     crate::logger::warn(&format!(
@@ -1584,6 +1650,21 @@ pub fn delete_sutta() {
     info(&format!("Deleted {} suttas", num_deleted));
 }
 
+/// Whether `sort_suttas()` places a record with the commentaries: an `.att`
+/// or `.tik` reference (`mn1.att/pli/cst`), or an XML-sourced CST record whose
+/// file kind is `att`, `tik` or `nrf` (`s0510a.att0.xml/pli/cst`,
+/// `abh06t.nrf28.xml/pli/cst`). `split_sutta_ref_kind()` reads the XML records
+/// as mūla, because their kind is not a suffix.
+fn sorts_as_commentary(uid: &str) -> bool {
+    let (base, kind) = split_sutta_ref_kind(uid);
+    if kind != SuttaRefKind::Mula {
+        return true;
+    }
+    base.strip_suffix(".xml")
+        .and_then(|stem| stem.split_once('.'))
+        .is_some_and(|(_, file_kind)| ["att", "tik", "nrf"].iter().any(|k| file_kind.starts_with(k)))
+}
+
 pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     // Sort Pali ms first as the results.
     // Then add Pali other sources,
@@ -1609,8 +1690,8 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     }
 
     // Sort pli_others so mūla (e.g. mn1/pli/cst) comes before
-    // commentary (e.g. mn1.att/pli/cst, mn1.tik/pli/cst).
-    // Commentary UIDs contain .att or .tik before the first '/'.
+    // commentary (e.g. mn1.att/pli/cst, mn1.tik/pli/cst,
+    // s0101a.att.xml/pli/cst); see `sorts_as_commentary()`.
     //
     // Within each bucket the order is by sutta number before uid: a list that
     // spans several suttas (the mūla records beside `an5.91-100.tik`) would
@@ -1619,11 +1700,15 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
         let (base, _) = split_sutta_ref_kind(&s.uid);
         comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0)
     };
+    // Among the other Pāli sources, a reference with no comparable number (the
+    // CST XML records, `s0101m.mul.xml`) sorts after the numbered ones.
+    let numbered_first = |s: &Sutta| {
+        let (base, _) = split_sutta_ref_kind(&s.uid);
+        let start = comparable_sutta_range(base).and_then(|r| r.start);
+        (start.is_none(), start)
+    };
     results.sort_by_cached_key(|s| (range_start(s), s.uid.clone()));
-    pli_others.sort_by_cached_key(|s| {
-        let (_, kind) = split_sutta_ref_kind(&s.uid);
-        (kind != SuttaRefKind::Mula, range_start(s), s.uid.clone())
-    });
+    pli_others.sort_by_cached_key(|s| (sorts_as_commentary(&s.uid), numbered_first(s), s.uid.clone()));
     // Sort non-pli by language, then by sutta number and uid within the same language
     remaining.sort_by_cached_key(|s| (s.language.clone(), range_start(s), s.uid.clone()));
     // Assemble final list

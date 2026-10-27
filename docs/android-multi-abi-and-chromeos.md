@@ -498,9 +498,11 @@ bridges/Cargo.toml        │   ANDROID_VERSION_CODE / _NAME      │
                                               androiddeployqt ──> AndroidManifest.xml
 ```
 
-**To make a release: edit `android/version.txt`, then `make android-aab`.**
+**To make a release: `scripts/set-version.py --android-code next`, then
+`make android-aab`.** The script refuses a versionCode that does not increase.
 The versionName comes from the `[package]` version in `bridges/Cargo.toml`,
-which is bumped every release anyway. A **non-empty** `ANDROID_VERSION_CODE` /
+which `scripts/set-version.py --app` sets every release (AGENTS.md,
+"Versions"). A **non-empty** `ANDROID_VERSION_CODE` /
 `ANDROID_VERSION_NAME` in the environment still overrides both.
 
 Two things are load-bearing here:

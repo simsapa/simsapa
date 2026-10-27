@@ -6,8 +6,8 @@ tipitaka_xml_parser_log.txt
 suttas.sqlite3
 fragments.sqlite3
 
-cli/*.xml
-cli/*.xml
+bootstrap_cli/*.xml
+bootstrap_cli/*.xml
 
 # build folders
 build/
@@ -15,13 +15,17 @@ build/
 !assets/pdf-viewer/build/
 dist/
 target/
-cli/target
+bootstrap_cli/target
 backend/target
 bridges/target
 .cache/
 compile_commands.json
 .qmlls.ini
 node_modules/
+# npm packages: scripts/npm-pack.sh stages and packs under dist/npm/; these
+# catch a binary or tarball made by hand in npm/. npm/cli/bin/ is tracked.
+npm/cli-*/bin/
+npm/**/*.tgz
 project_tree.txt
 Simsapa-*.AppImage
 Simsapa-*.AppImage.sha256.txt

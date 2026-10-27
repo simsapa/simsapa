@@ -21,7 +21,7 @@ time. Don't rely on that — make sure stats are present.
 There are two paths that produce `sqlite_stat1` / `sqlite_stat4`:
 
 1. **Bootstrap (the primary source).** Every shipped DB is `ANALYZE`d in
-   `cli/src/bootstrap/mod.rs` right before its `.tar.bz2` archive is created.
+   `bootstrap_cli/src/bootstrap/mod.rs` right before its `.tar.bz2` archive is created.
    This means a fresh install of the app gets correct stats on first launch
    with zero runtime work. The helper is
    `simsapa_backend::helpers::analyze_sqlite_db_via_cli` (uses the `sqlite3`
@@ -54,7 +54,22 @@ table**.
 | HTML book import            | `AppData::import_html_to_db` → `html_import::import_html_to_db`       | `appdata`        | wrapper in `app_data.rs` after the inner call returns `Ok`                    |
 | Book delete                 | `SuttaBridge::remove_book` → `appdata::delete_book_by_uid`            | `appdata`        | success arm of `remove_book` in `bridges/src/sutta_bridge.rs`                 |
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
-| Navigation-tree build       | `cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+| Navigation-tree build       | `bootstrap_cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+
+The `simsapa` CLI (`backend_cli/src/commands/import.rs`, `backend_cli/src/setup.rs`) calls the same entry
+points as the GUI, so the `ANALYZE` sites are the same and it adds none of its
+own:
+
+| CLI command                    | Entry point                                          |
+|--------------------------------|------------------------------------------------------|
+| `simsapa import stardict-zip`  | `dictionary_manager_core::import_user_zip_member`    |
+| `simsapa import stardict`      | `dictionary_manager_core::import_user_dir`           |
+| `simsapa import epub`          | `AppData::import_epub_to_db`                         |
+| `simsapa import html`          | `AppData::import_html_to_db`                         |
+| `simsapa setup --languages`    | `asset_helpers::import_suttas_lang_to_appdata`       |
+
+A stopped StarDict import with no entries kept removes its empty row through
+`delete_user_dictionary`, as the GUI does, which `ANALYZE`s too.
 
 ### Pattern for adding a new import
 
@@ -126,6 +141,6 @@ Notes:
 
 - `backend/src/db/mod.rs::DatabaseHandle::analyze` — the runtime hook.
 - `backend/src/helpers.rs::analyze_sqlite_db_via_cli` — the bootstrap hook.
-- `cli/src/bootstrap/mod.rs` — call sites just before each
+- `bootstrap_cli/src/bootstrap/mod.rs` — call sites just before each
   `create_database_archive` / `create_appdata_archive`.
 - `tasks/prd-fixing-headword-match-slow-query.md` — the original investigation.

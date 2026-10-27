@@ -11,6 +11,32 @@ use chrono::{DateTime, Local};
 
 use crate::get_create_simsapa_dir;
 
+/// Write to stderr, ignoring a failed write. `eprintln!` panics when stderr is
+/// closed (`simsapa … 2>&-`), and these messages are diagnostics with nowhere
+/// else to go, so a failure is dropped. Use it through [`errln!`](crate::errln),
+/// never `eprintln!`, in code the `simsapa` CLI reaches. See
+/// docs/backend-cli-and-npm-package.md, "Output on stdout and stderr".
+pub fn write_stderr(args: std::fmt::Arguments) {
+    let mut err = std::io::stderr().lock();
+    let _ = err.write_fmt(args).and_then(|_| err.flush());
+}
+
+/// Write to stdout, ignoring a failed write: the `println!` that never panics,
+/// for the backend's few stdout messages (the pre-logger messages in
+/// `get_create_simsapa_dir()`). The CLI's own stdout goes through its
+/// `output::write_stdout`, which also tracks failures for the exit code.
+pub fn write_stdout(args: std::fmt::Arguments) {
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_fmt(args).and_then(|_| out.flush());
+}
+
+/// `eprintln!` through [`write_stderr`]: never panics.
+#[macro_export]
+macro_rules! errln {
+    () => { $crate::logger::write_stderr(format_args!("\n")) };
+    ($($arg:tt)*) => { $crate::logger::write_stderr(format_args!("{}\n", format_args!($($arg)*))) };
+}
+
 cfg_if! {
     if #[cfg(target_os = "android")] {
         use std::io::Result as IoResult;
@@ -325,12 +351,54 @@ fn rotate_log_files(log_file: &PathBuf) -> Result<(), Box<dyn std::error::Error>
         for file in &log_files[0..log_files.len() - 5] {
             // Try to remove but don't fail if we can't (Android permissions)
             if let Err(e) = std::fs::remove_file(file) {
-                eprintln!("Failed to remove old log file {:?}: {}", file, e);
+                crate::errln!("Failed to remove old log file {:?}: {}", file, e);
             }
         }
     }
 
     Ok(())
+}
+
+/// How a host process other than the GUI wants the logger to behave. The GUI
+/// never sets these, so its behaviour is the defaults below.
+#[derive(Debug, Clone, Copy)]
+pub struct LoggerHostOptions {
+    /// Rotate `log.txt` when the logger starts (the default). The GUI rotates
+    /// once per launch. A CLI invocation must not: only five rotated logs are
+    /// kept, so a handful of commands would push a running GUI's log out.
+    pub rotate_on_init: bool,
+    /// Emit every message as a `tracing` event, for a subscriber the host has
+    /// installed itself. This replaces `ENABLE_PRINT_LOG`, and the messages
+    /// written before the logger exists are then not `println!`ed, because the
+    /// host owns stdout (the CLI's `--json` output goes there).
+    pub emit_tracing: bool,
+}
+
+static HOST_OPTIONS: OnceLock<LoggerHostOptions> = OnceLock::new();
+
+/// Set once, before the first log call. Returns false if options were already
+/// set or the logger has already started (and so did not see them).
+pub fn set_host_options(options: LoggerHostOptions) -> bool {
+    if LOGGER.get().is_some() {
+        return false;
+    }
+    HOST_OPTIONS.set(options).is_ok()
+}
+
+/// Whether a message logged before the logger exists is `println!`ed.
+pub(crate) fn pre_logger_print_enabled() -> bool {
+    if HOST_OPTIONS.get().is_some() {
+        return false;
+    }
+    cfg_if! {
+        if #[cfg(target_os = "android")] {
+            true
+        } else {
+            std::env::var("ENABLE_PRINT_LOG")
+                .map(|v| v.to_lowercase() == "true")
+                .unwrap_or(false)
+        }
+    }
 }
 
 pub struct Logger {
@@ -349,10 +417,13 @@ impl Logger {
         std::fs::create_dir_all(&data_dir)?;
         let log_file = data_dir.join("log.txt");
 
+        let host_options = HOST_OPTIONS.get().copied();
+
         // Rotate existing log file before creating a new one
-        if let Err(e) = rotate_log_files(&log_file) {
-            eprintln!("Failed to rotate log files: {}", e);
-        }
+        if host_options.is_none_or(|o| o.rotate_on_init)
+            && let Err(e) = rotate_log_files(&log_file) {
+                crate::errln!("Failed to rotate log files: {}", e);
+            }
 
         // Read environment variables
         let disable_log = std::env::var("DISABLE_LOG")
@@ -364,9 +435,12 @@ impl Logger {
             if #[cfg(target_os = "android")] {
                 let enable_print_log = true;
             } else {
-                let enable_print_log = std::env::var("ENABLE_PRINT_LOG")
-                    .map(|v| v.to_lowercase() == "true")
-                    .unwrap_or(false);
+                let enable_print_log = match host_options {
+                    Some(o) => o.emit_tracing,
+                    None => std::env::var("ENABLE_PRINT_LOG")
+                        .map(|v| v.to_lowercase() == "true")
+                        .unwrap_or(false),
+                };
             }
         }
 
@@ -398,6 +472,12 @@ impl Logger {
     }
 
     pub fn init_tracing() -> Result<(), Box<dyn std::error::Error>> {
+        // A host that installed its own subscriber (the CLI's stderr layer)
+        // keeps it.
+        if tracing::dispatcher::has_been_set() {
+            return Ok(());
+        }
+
         platform_setup();
 
         let env_filter = EnvFilter::try_from_default_env()
@@ -459,7 +539,7 @@ impl Logger {
         }
 
         if let Err(e) = self.write_to_file(&formatted_msg, start_new) {
-            eprintln!("Failed to write to log file: {}", e);
+            crate::errln!("Failed to write to log file: {}", e);
         }
     }
 
@@ -479,7 +559,7 @@ impl Logger {
         }
 
         if let Err(e) = self.write_to_file(&formatted_msg, start_new) {
-            eprintln!("Failed to write to log file: {}", e);
+            crate::errln!("Failed to write to log file: {}", e);
         }
     }
 
@@ -499,7 +579,7 @@ impl Logger {
         }
 
         if let Err(e) = self.write_to_file(&formatted_msg, start_new) {
-            eprintln!("Failed to write to log file: {}", e);
+            crate::errln!("Failed to write to log file: {}", e);
         }
     }
 
@@ -519,7 +599,7 @@ impl Logger {
         }
 
         if let Err(e) = self.write_to_file(&formatted_msg, start_new) {
-            eprintln!("Failed to write to log file: {}", e);
+            crate::errln!("Failed to write to log file: {}", e);
         }
     }
 
@@ -527,7 +607,7 @@ impl Logger {
         if let Some(time_log) = &self.time_log
             && let Ok(tl) = time_log.lock()
             && let Err(e) = tl.log(msg) {
-                eprintln!("Failed to write to profile log: {}", e);
+                crate::errln!("Failed to write to profile log: {}", e);
             }
 
         let elapsed = std::time::SystemTime::now()
@@ -541,7 +621,7 @@ impl Logger {
         }
 
         if let Err(e) = self.write_to_file(&profile_msg, start_new) {
-            eprintln!("Failed to write to log file: {}", e);
+            crate::errln!("Failed to write to log file: {}", e);
         }
     }
 
@@ -585,7 +665,7 @@ where
     // Initialize tracing once, globally
     TRACING_INITIALIZED.get_or_init(|| {
         if let Err(e) = Logger::init_tracing() {
-            eprintln!("Failed to initialize tracing: {}", e);
+            crate::errln!("Failed to initialize tracing: {}", e);
         }
     });
     
@@ -594,7 +674,7 @@ where
         match Logger::new() {
             Ok(logger) => logger,
             Err(e) => {
-                eprintln!("Failed to create logger: {}", e);
+                crate::errln!("Failed to create logger: {}", e);
                 // Return a disabled logger that will silently do nothing
                 Logger {
                     log_file: std::path::PathBuf::new(),

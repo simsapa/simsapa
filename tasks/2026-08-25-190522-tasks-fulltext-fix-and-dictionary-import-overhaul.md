@@ -677,7 +677,7 @@ and the app called itself "initialized" throughout.
   when zero indexes are open (FR-20). **This changes `/health`'s
   `fulltext_searcher_ready`** — deliberately, and it is why phase 1 deferred it
   (diagnostics FR-31b). Update
-  `docs/simsapa-localhost-api-search-endpoints.md` in the same commit, and add
+  `docs/simsapa-cli-and-localhost-api.md` in the same commit, and add
   the per-area counts to `/health` while there.
 - [x] 2.5 Add a **"Fulltext index"** row to `DatabaseValidationDialog.qml`,
   driven by the existing `database_validation_result` signal — no new signal
@@ -1883,7 +1883,7 @@ the 8.7 covering message alongside "a bundle is N rows".
   Written as §1–§7, in front of the framing and benchmark that task 3.7 already
   put there (now §8–§9). All four cross-links are in;
   `docs/storage-diagnostics.md` and
-  `docs/simsapa-localhost-api-search-endpoints.md` already carried theirs.
+  `docs/simsapa-cli-and-localhost-api.md` already carried theirs.
 
   **Two things the doc says that are not in the PRD, and are the reason to read
   it rather than the PRD.** First, the general lesson behind §1: *a probe proves
@@ -1923,14 +1923,14 @@ the 8.7 covering message alongside "a bundle is N rows".
   wrote down.
 - [x] 8.4 Update `docs/file-selection-test.md` (§5.3 already records the returned
   report) with whatever task 6.0 changes, and
-  `docs/simsapa-localhost-api-search-endpoints.md` for the `/health` change from
+  `docs/simsapa-cli-and-localhost-api.md` for the `/health` change from
   2.4. Update `PROJECT_MAP.md` and `CLAUDE.md` per the standing rule.
 
   `file-selection-test.md`: §3.1's "keep it confined to the diagnostic" term is
   **struck**, with the reason and the unchanged blast radius; a new §5.4 records
   the three ways phase 1b changed the feature (two callers of one report
   pipeline, the `filter_config` line, and `outcome_line()` taking the result);
-  §9 gains the cross-link. `simsapa-localhost-api-search-endpoints.md` was
+  §9 gains the cross-link. `simsapa-cli-and-localhost-api.md` was
   already updated by 2.4 and 6.8.12 and needed nothing.
 
   `PROJECT_MAP.md`: two entries were **stale in a way that would have misled** —

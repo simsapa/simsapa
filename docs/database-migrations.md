@@ -7,7 +7,7 @@ Both migrated databases use **one** mechanism at runtime: Diesel
 |---|---|---|
 | `appdata.sqlite3` | `backend/migrations/appdata/` | `run_appdata_migrations()` → `run_pending_migrations(APPDATA_MIGRATIONS)` |
 | `dictionaries.sqlite3` | `backend/migrations/dictionaries/` | `run_dictionaries_migrations()` → `run_pending_migrations(DICTIONARIES_MIGRATIONS)` |
-| `dpd.sqlite3` | — | nothing. Imported wholesale from upstream DPD; it has no migration folder and never runs migrations. |
+| `dpd.sqlite3` | — | nothing. Imported wholesale from upstream DPD; it has no migration folder and never runs migrations. The bootstrap adds and fills one column, `dpd_headwords.construction_summary`; the app tolerates its absence instead of migrating it ([dpd-construction-summary.md](./dpd-construction-summary.md)). |
 
 Both runners live in `backend/src/db/mod.rs` and are called from
 `DbManager::new()`. Adding a schema change means creating **one** dated folder
@@ -278,8 +278,8 @@ step `appdata.sqlite3` already has:
 | Shipped DB | Created during bootstrap by |
 |---|---|
 | `appdata.sqlite3` | `AppdataBootstrap::run()` → `run_migrations()` (`APPDATA_MIGRATIONS`) |
-| `dictionaries.sqlite3` | `init_dictionaries_db()` in `cli/src/bootstrap/mod.rs` (`DICTIONARIES_MIGRATIONS`) |
-| `dpd.sqlite3` | `import_migrate_dpd()` — copied wholesale from upstream DPD, no migrations |
+| `dictionaries.sqlite3` | `init_dictionaries_db()` in `bootstrap_cli/src/bootstrap/mod.rs` (`DICTIONARIES_MIGRATIONS`) |
+| `dpd.sqlite3` | `import_migrate_dpd()` — copied wholesale from upstream DPD, no migrations; it adds and fills `dpd_headwords.construction_summary`, which the app tolerates being absent ([dpd-construction-summary.md](./dpd-construction-summary.md)) |
 | `user_dictionaries.sqlite3` (export snapshot) | `export_user_dictionaries()` runs `run_dictionaries_migrations()` on the new file |
 
 `init_dictionaries_db()` runs **immediately after `clean_and_create_folders()`**,

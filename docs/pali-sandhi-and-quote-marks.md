@@ -214,6 +214,14 @@ the word summary passing the raw word. Never pass on:
 - the rejoined form: `magganti` normalized again is a plain word, the verb, not
   maggaṁ + iti.
 
+### A final `n` written for `ṁ`
+
+A spaced `vuttan ti` is two words, and the first reaches the lookup as `vuttan`,
+which DPD does not have. When a word ending in a vowel and `n` has no exact
+match, the DPD lookups try its `ṁ` spelling (`vuttaṁ`) before their fallback
+guesses. See
+[search-snippet-highlight-pipeline.md §9f](./search-snippet-highlight-pipeline.md).
+
 ### The joined form is used only when DPD calls it iti sandhi
 
 A joined key can be an unrelated word. `magga’’nti` is *maggaṁ* + *iti*, but
@@ -271,11 +279,26 @@ joined iti form:
   `is_quote_char`), so the word as written is the whole `dhārayāmī’ti`. A joined
   word is found by `match_with_inner_apostrophes`, which skips quote marks
   between two letters of the original (`Manopubbaṅ’gamā` for `manopubbaṅgamā`).
+  The same matcher skips the hyphen of a compound that
+  `remove_inter_word_hyphens` joined (`Todeyya-kappā` for `todeyyakappā`), and a
+  joined word followed by a quoted iti is the whole `maraṇā’tipī”ti`.
   It then **skips the standalone `ti`** after a word that ended in quote(s) +
   `ti`/`nti`: that `ti` is the *iti* of the sandhi, already part of the previous
   word.
+- §3 splits an **unquoted** iti too (`viharāmīti` → `viharāmi ti`,
+  `abhinandunti.` → `abhinanduṁ ti`). When the next clean word is that `ti`,
+  `find_word_position` also matches the word joined to a bare `ti`, and the
+  `ti` is skipped as above. Only with that `ti` next: otherwise `pi` would match
+  inside `pīti`. **Trap:** a clean word the search cannot place at its spot is
+  found at its *next* occurrence further on, and every word in between then
+  fails to be placed (no `<b>` in its context, `original_word` = the clean
+  word), to the end of the paragraph. One unmatched spelling therefore costs a
+  whole paragraph, not one word. `test_extract_words_with_context.rs` asserts
+  that every token of a real passage is placed.
 - Each word is looked up with `dpd_lookup_grouped(word)`, so `magga’’nti` glosses
-  as *maggaṁ* → *magga*, consistent with §4. When the clean word finds nothing
+  as *maggaṁ* → *magga*, consistent with §4. A spaced `vuttan ti` is two words;
+  `vuttan` glosses as *vuttaṁ* by the `ṁ` spelling of §4, and the `ti` is its
+  own word. When the clean word finds nothing
   and the text writes its final vowel long before the quote run,
   `gloss_lookup_words` retries the long form (`anaññatā’ti`: *anaññata* is not
   in DPD, *anaññatā* is). `WordInfo.original_word` carries the word as written
