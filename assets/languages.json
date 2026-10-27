@@ -27,7 +27,7 @@
   {
     "code": "de",
     "name": "Deutsch",
-    "sutta_count": 9043
+    "sutta_count": 9280
   },
   {
     "code": "es",
@@ -37,7 +37,7 @@
   {
     "code": "et",
     "name": "Eesti keel",
-    "sutta_count": 26
+    "sutta_count": 27
   },
   {
     "code": "fa",
@@ -52,7 +52,7 @@
   {
     "code": "fr",
     "name": "Français",
-    "sutta_count": 1768
+    "sutta_count": 1798
   },
   {
     "code": "gsw",
@@ -105,6 +105,11 @@
     "sutta_count": 5461
   },
   {
+    "code": "ka",
+    "name": "ka",
+    "sutta_count": 18
+  },
+  {
     "code": "kan",
     "name": "ಕನ್ನಡ",
     "sutta_count": 134
@@ -132,7 +137,7 @@
   {
     "code": "lzh",
     "name": "Chinese",
-    "sutta_count": 3038
+    "sutta_count": 3339
   },
   {
     "code": "mr",
@@ -162,7 +167,7 @@
   {
     "code": "pl",
     "name": "Polski",
-    "sutta_count": 135
+    "sutta_count": 139
   },
   {
     "code": "pra",
@@ -182,7 +187,7 @@
   {
     "code": "ru",
     "name": "Русский",
-    "sutta_count": 4210
+    "sutta_count": 4758
   },
   {
     "code": "si",
@@ -207,7 +212,7 @@
   {
     "code": "sr",
     "name": "Srpski",
-    "sutta_count": 605
+    "sutta_count": 1191
   },
   {
     "code": "sv",
@@ -217,22 +222,22 @@
   {
     "code": "ta",
     "name": "தமிழ்",
-    "sutta_count": 112
+    "sutta_count": 116
   },
   {
     "code": "th",
     "name": "ไทย",
-    "sutta_count": 3238
+    "sutta_count": 3239
   },
   {
     "code": "tr",
     "name": "Türkçe",
-    "sutta_count": 128
+    "sutta_count": 208
   },
   {
     "code": "vi",
     "name": "Tiếng Việt",
-    "sutta_count": 6665
+    "sutta_count": 6659
   },
   {
     "code": "xct",
@@ -242,6 +247,6 @@
   {
     "code": "zh",
     "name": "汉语",
-    "sutta_count": 3464
+    "sutta_count": 3469
   }
 ]
