@@ -50,16 +50,10 @@ pub fn run(json: bool, no_update_check: bool) -> CliResult {
     let mut info = health_info(&get_app_data().dbm);
     info.updates = match (disabled, check) {
         (Some(reason), _) => UpdateStatus::disabled(reason, &get_app_version(), true),
-        (None, Some(handle)) => handle.join().unwrap_or_else(|_| {
-            // The check panicked: report it as not made rather than fail `health`.
-            let mut s = UpdateStatus::checking(&get_app_version(), true);
-            s.state = UpdateCheckState::Checked;
-            s.cli.status = CliUpdateStatus::Unknown;
-            s.cli.error = Some("the update check failed".to_string());
-            s.database.status = DatabaseUpdateStatus::Unknown;
-            s.database.error = Some("the update check failed".to_string());
-            s
-        }),
+        // A panicked check is reported as not made rather than failing `health`.
+        (None, Some(handle)) => handle
+            .join()
+            .unwrap_or_else(|_| UpdateStatus::failed(&get_app_version(), true, "the update check failed")),
         (None, None) => unreachable!("a check is started whenever it is not disabled"),
     };
     if json {

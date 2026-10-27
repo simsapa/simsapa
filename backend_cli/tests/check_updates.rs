@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::sync::mpsc;
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -17,6 +18,16 @@ enum Answer {
 
 /// Serve `answer` to every request on 127.0.0.1. Returns the URL.
 fn listen(answer: Answer) -> String {
+    listen_with(answer, None)
+}
+
+/// [`listen`], also sending each request body to the returned receiver.
+fn listen_recording(answer: Answer) -> (String, mpsc::Receiver<String>) {
+    let (tx, rx) = mpsc::channel();
+    (listen_with(answer, Some(tx)), rx)
+}
+
+fn listen_with(answer: Answer, bodies: Option<mpsc::Sender<String>>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -33,6 +44,9 @@ fn listen(answer: Answer) -> String {
             }
             let mut body = vec![0u8; length];
             let _ = std::io::Read::read_exact(&mut reader, &mut body);
+            if let Some(tx) = &bodies {
+                let _ = tx.send(String::from_utf8_lossy(&body).into_owned());
+            }
             let _ = match &answer {
                 Answer::Ok(body) => write!(
                     stream,
@@ -74,6 +88,7 @@ fn check_updates(dir: &Path, npm: &str, releases: &str, json: bool) -> Output {
     }
     c.env_remove("API_PORT")
         .env_remove("DB_VERSION")
+        .env_remove("RELEASE_CHANNEL")
         // An explicit request: the opt-out of the implicit checks does not apply.
         .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .env("SIMSAPA_NPM_DIST_TAGS_URL", npm)
@@ -98,15 +113,24 @@ fn stdout_json(out: &Output) -> serde_json::Value {
 
 /// An `appdata.sqlite3` holding only `app_settings` with this `db_version`.
 fn minimal_appdata(dir: &Path, db_version: &str) {
+    minimal_appdata_with_settings(dir, db_version, None);
+}
+
+/// [`minimal_appdata`], plus the stored settings JSON when given.
+fn minimal_appdata_with_settings(dir: &Path, db_version: &str, settings_json: Option<&str>) {
     let app_assets = dir.join("app-assets");
     std::fs::create_dir_all(&app_assets).unwrap();
+    let mut sql = format!(
+        "CREATE TABLE app_settings (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT);\
+         INSERT INTO app_settings (key, value) VALUES ('db_version', '{}');",
+        db_version
+    );
+    if let Some(json) = settings_json {
+        sql.push_str(&format!("INSERT INTO app_settings (key, value) VALUES ('app_settings', '{}');", json));
+    }
     let status = Command::new("sqlite3")
         .arg(app_assets.join("appdata.sqlite3"))
-        .arg(format!(
-            "CREATE TABLE app_settings (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT);\
-             INSERT INTO app_settings (key, value) VALUES ('db_version', '{}');",
-            db_version
-        ))
+        .arg(sql)
         .status()
         .expect("sqlite3 is needed for this test");
     assert!(status.success());
@@ -136,6 +160,47 @@ fn test_no_databases_is_not_installed() {
     assert!(text.contains(&format!("simsapa     {} → 999.0.0 available", APP_VERSION)), "{text}");
     assert!(text.contains("            npm install -g @simsapa/cli@latest"), "{text}");
     assert!(text.contains("Database    not installed\n            simsapa setup"), "{text}");
+}
+
+/// A zero-byte `appdata.sqlite3` is not a database: `not_installed`, as
+/// `simsapa setup` treats it, not an unreadable version.
+#[test]
+fn test_zero_byte_database_is_not_installed() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("app-assets")).unwrap();
+    std::fs::write(dir.path().join("app-assets/appdata.sqlite3"), b"").unwrap();
+    let npm = listen(Answer::Ok(format!(r#"{{"latest":"{}"}}"#, APP_VERSION)));
+    let releases = listen(Answer::Ok(releases_json(&format!("v{}", same_minor(9)), "notes")));
+
+    let out = check_updates(dir.path(), &npm, &releases, true);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["database"]["status"], "not_installed");
+    assert_eq!(doc["database"]["command"], "simsapa setup");
+}
+
+/// Without the full preamble the app's `release_channel` setting is read
+/// from the stored settings, so `check-updates` asks the same channel as
+/// `simsapa health` and the app.
+#[test]
+fn test_release_channel_setting_is_sent() {
+    let npm = listen(Answer::Ok(format!(r#"{{"latest":"{}"}}"#, APP_VERSION)));
+    let tag = format!("v{}", same_minor(9));
+
+    let channel_sent = |settings: Option<&str>| -> String {
+        let dir = tempfile::tempdir().unwrap();
+        minimal_appdata_with_settings(dir.path(), &same_minor(9), settings);
+        let (releases, bodies) = listen_recording(Answer::Ok(releases_json(&tag, "notes")));
+        let out = check_updates(dir.path(), &npm, &releases, true);
+        assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+        let body: serde_json::Value = serde_json::from_str(&bodies.recv().unwrap()).unwrap();
+        assert_eq!(body["no_stats"], true, "{body}");
+        body["channel"].as_str().unwrap().to_string()
+    };
+
+    assert_eq!(channel_sent(Some(r#"{"release_channel":"development","unknown_key":1}"#)), "development");
+    assert_eq!(channel_sent(Some(r#"{"release_channel":null}"#)), "main");
+    assert_eq!(channel_sent(None), "main");
 }
 
 #[test]

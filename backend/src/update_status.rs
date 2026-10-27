@@ -15,12 +15,12 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
-use crate::db::read_appdata_db_version;
+use crate::db::{read_appdata_db_version, read_appdata_settings_json};
 use crate::logger::warn;
 use crate::update_checker::{
-    RELEASES_API_URL, ReleasesInfo, SaveStatsBehaviour, compare_versions, fetch_releases_info_from,
-    get_latest_app_compatible_assets_release, has_db_update, is_app_version_compatible_with_db_version,
-    is_local_db_obsolete, resolve_db_version, to_version,
+    RELEASES_API_URL, ReleasesInfo, ReleasesRequestParams, compare_versions, get_latest_app_compatible_assets_release,
+    get_release_channel, has_db_update, is_app_version_compatible_with_db_version, is_local_db_obsolete,
+    post_releases_request, release_channel_from, resolve_db_version, to_version,
 };
 
 /// The `latest` dist-tag of the npm package.
@@ -108,6 +108,8 @@ pub struct DatabaseUpdate {
     pub status: DatabaseUpdateStatus,
     pub current: Option<String>,
     pub latest: Option<String>,
+    /// The `simsapa` command that acts on the status; `null` in the GUI's
+    /// server, whose folder the GUI holds (it offers its own update dialog).
     pub command: Option<String>,
     /// The release's description (markdown), verbatim, when an update is available.
     pub release_notes: Option<String>,
@@ -235,21 +237,42 @@ impl UpdateStatus {
         }
     }
 
-    /// The database part from releases info someone else fetched (the GUI's
-    /// own update check), with the CLI part `not_applicable`. `Err` is the
-    /// failed live fetch: the database part is then `unknown`, even when the
-    /// caller goes on with the embedded snapshot.
+    /// The database part from releases info the GUI's own update check
+    /// fetched, with the CLI part `not_applicable` and no `command`: while the
+    /// GUI runs it holds the folder, so `simsapa db-upgrade` and `simsapa
+    /// setup` would refuse to run. `Err` is the failed live fetch: the
+    /// database part is then `unknown`, even when the caller goes on with the
+    /// embedded snapshot.
     pub fn from_releases(
         app_version: &str,
         installed: &InstalledDb,
         releases: Result<&ReleasesInfo, String>,
     ) -> Self {
+        let mut database = database_update_from(app_version, installed, releases);
+        database.command = None;
         UpdateStatus {
             state: UpdateCheckState::Checked,
             disabled_reason: None,
             checked_at: Some(now_utc()),
             cli: CliUpdate::with_status(CliUpdateStatus::NotApplicable, app_version),
-            database: database_update_from(app_version, installed, releases),
+            database,
+        }
+    }
+
+    /// A check that could not be made at all (e.g. its thread panicked):
+    /// both parts `unknown` with `error`.
+    pub fn failed(current_app_version: &str, check_cli: bool, error: &str) -> Self {
+        let cli = if check_cli {
+            CliUpdate::unknown(current_app_version, None, error.to_string())
+        } else {
+            CliUpdate::with_status(CliUpdateStatus::NotApplicable, current_app_version)
+        };
+        UpdateStatus {
+            state: UpdateCheckState::Checked,
+            disabled_reason: None,
+            checked_at: Some(now_utc()),
+            cli,
+            database: DatabaseUpdate::unknown(None, error.to_string()),
         }
     }
 
@@ -358,12 +381,17 @@ pub fn database_update_from(
 }
 
 /// Read the installed database's version through one plain connection
-/// (never the full `DbManager`), honouring the `DB_VERSION` override.
+/// (never the full `DbManager`), honouring the `DB_VERSION` override. A
+/// zero-byte file is not a database: `simsapa setup` and the app's startup
+/// delete it and install the databases, so it is `NotInstalled`.
 pub fn installed_db_version(appdata_db_path: &Path, appdata_database_url: &str) -> InstalledDb {
     match appdata_db_path.try_exists() {
         Ok(true) => {}
         Ok(false) => return InstalledDb::NotInstalled,
         Err(e) => return InstalledDb::Unreadable(e.to_string()),
+    }
+    if std::fs::metadata(appdata_db_path).is_ok_and(|m| m.len() == 0) {
+        return InstalledDb::NotInstalled;
     }
     match read_appdata_db_version(appdata_database_url) {
         Ok(stored) => match resolve_db_version(stored) {
@@ -375,6 +403,38 @@ pub fn installed_db_version(appdata_db_path: &Path, appdata_database_url: &str) 
             InstalledDb::Unreadable(format!("{:#}", e))
         }
     }
+}
+
+/// The release channel to ask the releases server for, as
+/// `get_release_channel()` decides it. Without `AppData` (`simsapa
+/// check-updates` opens no databases) the `release_channel` setting is read
+/// from the installed database's stored settings.
+fn release_channel(installed: &InstalledDb, appdata_database_url: &str) -> String {
+    if crate::try_get_app_data().is_some() {
+        return get_release_channel();
+    }
+    let setting = match installed {
+        InstalledDb::Version(_) => stored_release_channel(appdata_database_url),
+        InstalledDb::NotInstalled | InstalledDb::Unreadable(_) => None,
+    };
+    release_channel_from(setting)
+}
+
+fn stored_release_channel(appdata_database_url: &str) -> Option<String> {
+    match read_appdata_settings_json(appdata_database_url) {
+        Ok(json) => release_channel_in_settings_json(json.as_deref()?),
+        Err(e) => {
+            warn(&format!("update check: could not read the release channel setting: {:#}", e));
+            None
+        }
+    }
+}
+
+/// The `release_channel` of a stored settings JSON. Only that key is read, so
+/// settings written by another version of the app still answer.
+fn release_channel_in_settings_json(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    value.get("release_channel")?.as_str().map(str::to_string)
 }
 
 #[derive(Deserialize)]
@@ -411,16 +471,16 @@ pub fn check_updates(config: &UpdateCheckConfig, appdata_db_path: &Path, appdata
         let timeout = config.timeout;
         std::thread::spawn(move || fetch_npm_latest(&url, timeout).map_err(|e| format!("{:#}", e)))
     });
+    // Local and quick; the releases request needs the channel setting.
+    let installed = installed_db_version(appdata_db_path, appdata_database_url);
+    let params = ReleasesRequestParams::without_stats(release_channel(&installed, appdata_database_url));
     let releases = {
         let url = config.releases_api_url.clone();
         let timeout = config.timeout;
         std::thread::spawn(move || {
-            fetch_releases_info_from(&url, timeout, None, SaveStatsBehaviour::Disabled)
-                .map_err(|e| format!("could not reach {}: {:#}", host_of(&url), e))
+            post_releases_request(&url, timeout, &params).map_err(|e| format!("could not reach {}: {:#}", host_of(&url), e))
         })
     };
-
-    let installed = installed_db_version(appdata_db_path, appdata_database_url);
 
     let releases = releases.join().unwrap_or_else(|_| Err("the releases check failed".to_string()));
     let cli = match npm {
@@ -596,6 +656,40 @@ mod tests {
         assert_eq!(s.state, UpdateCheckState::Checked);
         assert_eq!(s.cli.status, CliUpdateStatus::NotApplicable);
         assert_eq!(s.database.status, DatabaseUpdateStatus::UpdateAvailable);
+        // The GUI holds the folder: no `simsapa` command to run.
+        assert!(s.database.command.is_none());
+        let s = UpdateStatus::from_releases("1.1.0", &installed("1.0.4"), Err("not checked".into()));
+        assert_eq!(s.database.status, DatabaseUpdateStatus::Incompatible);
+        assert!(s.database.command.is_none());
+    }
+
+    #[test]
+    fn test_failed_is_unknown_in_both_parts() {
+        let s = UpdateStatus::failed("1.1.0", true, "the update check failed");
+        assert_eq!(s.state, UpdateCheckState::Checked);
+        assert_eq!(s.cli.status, CliUpdateStatus::Unknown);
+        assert_eq!(s.cli.error.as_deref(), Some("the update check failed"));
+        assert_eq!(s.database.status, DatabaseUpdateStatus::Unknown);
+        assert!(s.has_unknown());
+        assert_eq!(UpdateStatus::failed("1.1.0", false, "x").cli.status, CliUpdateStatus::NotApplicable);
+    }
+
+    #[test]
+    fn test_zero_byte_database_is_not_installed() {
+        let (_dir, path, db_url) = no_db();
+        std::fs::write(&path, b"").unwrap();
+        assert_eq!(installed_db_version(&path, &db_url), InstalledDb::NotInstalled);
+    }
+
+    #[test]
+    fn test_release_channel_in_settings_json() {
+        assert_eq!(
+            release_channel_in_settings_json(r#"{"release_channel":"development","other":[1]}"#).as_deref(),
+            Some("development")
+        );
+        assert_eq!(release_channel_in_settings_json(r#"{"release_channel":null}"#), None);
+        assert_eq!(release_channel_in_settings_json(r#"{}"#), None);
+        assert_eq!(release_channel_in_settings_json("not json"), None);
     }
 
     // --- Opt-out -----------------------------------------------------------
