@@ -10,6 +10,29 @@ Android:
 
 ![Contains Match Search on Android](docs/contains-match-dpd-lookup-android.png)
 
+## Command-line tool: `@simsapa/cli`
+
+`simsapa` is the command-line version of the app's data engine: search the
+suttas and the Pāli dictionaries from the terminal, gloss Pāli text, import
+dictionaries and books, and serve the Simsapa localhost HTTP API, without the
+desktop app. Every command prints plain text, or one JSON document with
+`--json`, so it suits agents as well as people.
+
+Install it from npm (Node.js 18 or later) and download the databases:
+
+```sh
+npm install -g @simsapa/cli
+simsapa setup
+```
+
+Supported platforms: Linux x64 and arm64, macOS on Apple Silicon, and Windows
+x64. The databases take about 4.8 GB on disk. The CLI uses the same data folder
+as the desktop app, so if the app is already set up, there is no need to run
+`simsapa setup`.
+
+`simsapa --help` lists the commands, and `simsapa docs` prints the full CLI and
+localhost API reference. See [npm/cli/README.md](npm/cli/README.md) for more.
+
 ## Building
 
 ### Prerequisites
