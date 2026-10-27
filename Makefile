@@ -130,6 +130,40 @@ cargo-clean-build:
 	cd backend && cargo clean && cd ../backend_cli && cargo clean && cd ../api && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
 	cd backend && cargo build && cd ../backend_cli && cargo build && cd ../api && cargo build && cd ../bridges && cargo build && cd ../bootstrap_cli && cargo build && cd ..
 
+# The `simsapa` CLI (backend_cli/). Release binaries are copied to
+# dist/cli/<npm-platform>/, where scripts/npm-pack.sh picks them up. The Linux
+# targets are static musl builds through cargo-zigbuild (`cargo install
+# cargo-zigbuild`, zig on PATH, `rustup target add <triple>`). The macOS and
+# Windows targets must run on that OS. See docs/backend-cli-and-npm-package.md.
+CLI_DIST := dist/cli
+
+cli:
+	cd backend_cli && cargo build
+
+cli-release:
+	cd backend_cli && cargo build --release
+
+cli-linux-x64:
+	cd backend_cli && cargo zigbuild --release --target x86_64-unknown-linux-musl
+	mkdir -p $(CLI_DIST)/linux-x64
+	cp backend_cli/target/x86_64-unknown-linux-musl/release/simsapa $(CLI_DIST)/linux-x64/simsapa
+
+cli-linux-arm64:
+	cd backend_cli && cargo zigbuild --release --target aarch64-unknown-linux-musl
+	mkdir -p $(CLI_DIST)/linux-arm64
+	cp backend_cli/target/aarch64-unknown-linux-musl/release/simsapa $(CLI_DIST)/linux-arm64/simsapa
+
+# On an Apple Silicon Mac.
+cli-darwin-arm64:
+	cd backend_cli && cargo build --release --target aarch64-apple-darwin
+	mkdir -p $(CLI_DIST)/darwin-arm64
+	cp backend_cli/target/aarch64-apple-darwin/release/simsapa $(CLI_DIST)/darwin-arm64/simsapa
+
+# On Windows, with the MSVC build tools (as for build-windows.ps1).
+cli-win32-x64:
+	cd backend_cli && cargo build --release --target x86_64-pc-windows-msvc
+	powershell -Command "New-Item -ItemType Directory -Force -Path '$(CLI_DIST)/win32-x64' | Out-Null; Copy-Item -Force 'backend_cli/target/x86_64-pc-windows-msvc/release/simsapa.exe' '$(CLI_DIST)/win32-x64/simsapa.exe'"
+
 appimage: build
 	./build-appimage.sh
 

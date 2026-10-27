@@ -25,6 +25,12 @@ use crate::exit::{CliError, CliResult, EXIT_CODES_HELP, finish, json_error_docum
 use crate::in_use::{InUse, WriteLock, WriteLockOutcome, check_in_use, in_use_error, lock_held_error, try_acquire_write_lock};
 use crate::startup::{PreambleMode, data_folder};
 
+// musl's allocator made fulltext searches ~70% slower than the glibc build; see
+// docs/backend-cli-and-npm-package.md for the measurements.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "simsapa",

@@ -20,7 +20,7 @@
 - `api/src/routes/misc.rs` - `/`, `/shutdown`, `/logger`, `/health`.
 
 ### New crate `backend_cli/` (`simsapa_backend_cli`, binary `simsapa`)
-- `backend_cli/Cargo.toml` - Binary crate `simsapa`; backend without `audio`, `simsapa_api`, clap (`derive`, `env`, `string` — the version is set at runtime from `get_app_version()`), indicatif, tokio, ctrlc, dialoguer, reqwest (blocking, rustls), tar, bzip2, fs4, html-escape, tracing(-subscriber); dev: tempfile, zip (the EPUB fixture). CLI-only `[profile.release]` comes in 10.1.
+- `backend_cli/Cargo.toml` - Binary crate `simsapa`; backend without `audio`, `simsapa_api`, clap (`derive`, `env`, `string` — the version is set at runtime from `get_app_version()`), indicatif, tokio, ctrlc, dialoguer, reqwest (blocking, rustls), tar, bzip2, fs4, html-escape, tracing(-subscriber); dev: tempfile, zip (the EPUB fixture). CLI-only `[profile.release]` (`strip`, thin LTO, `codegen-units = 1`); `mimalloc` under `[target.'cfg(target_env = "musl")'.dependencies]`.
 - `backend_cli/Cargo.lock` - Seeded from `api/Cargo.lock`.
 - `backend_cli/src/main.rs` - Synchronous `main`; clap `Cli` / `Commands` (`paths`, `health`, `search`, `query`, `fulltext-search`, `word`, `sutta`, `gloss`, `lookup`, `stats`, `import`, `index`; each command's args are a `clap::Args` struct in its module), global `--simsapa-dir` / `--json` / `-v`, runtime `--version`; a clap usage error exits 1 (clap's own 2 means "databases missing") and is `{"error"}` under `--json`. The mode decision: `read_only_preamble()` (in use, lock held, or the lock file cannot be opened → `ReadOnly`, else `Full` under the lock, released before the query), `write_preamble()` → `acquire_for_writing()` (in use or lock held → exit 3) + `Full`, returning the lock to hold for the whole command.
 - `backend_cli/src/exit.rs` - Exit-code constants, `EXIT_CODES_HELP` (shown after `--help`), `CliError` / `CliResult`, `From<anyhow/io/serde_json>`, `json_error_document()`, `finish()`.
@@ -49,6 +49,7 @@
 - `backend_cli/tests/serve.rs` - `serve` on the dist DB (serialised): listening line, `api-port.txt`, `/health`, GUI/AI routes 404, a writer exits 3, `/shutdown` → exit 0; `--host 0.0.0.0 --json`: warning, `/shutdown` 404, SIGINT → exit 0; a busy port exits 1 with `api-port.txt` unchanged. Restores `api-port.txt`.
 - `backend_cli/src/setup.rs` - `simsapa setup`: `SetupArgs`, pure helpers (`parse_language_input`, `available_languages`, `invalid_codes`, `setup_urls`, `decide_mode`, `archive_file_name`), `list_languages()`, `run()` (the PRD FR 15 order), `download_and_install()` (download → extract → language import → move, `RetryPolicy` and the language import injectable for tests), `import_language_archive()` (judges the import by the folder: `import_suttas_lang_to_appdata` logs a failed database import and returns `Ok`, so the archive must hold a `suttas_lang_*.sqlite3` and none may be left afterwards), `cleanup_after_failure()`. Unit tests run the loop against a local `TcpListener` with generated `.tar.bz2` fixtures (success, dropped connection, no `Content-Length`, 404, corrupt archive, failed import, a database left after an `Ok` import, an archive with no language database, cancel).
 - `backend_cli/src/main.rs` - `Setup` command: `--list-languages` before any lock; otherwise `acquire_for_writing()` then `setup::run()`.
+- `backend_cli/src/main.rs` - `mimalloc` as the global allocator on musl targets only.
 - `backend_cli/src/exit.rs` - Unused `CliError::interrupted()` removed.
 - `backend_cli/tests/setup.rs` - `--list-languages` (text / JSON), already set up, an unknown code exits 1 and keeps `download_languages.txt`, non-TTY without `--yes` exits 1. No network.
 - `backend_cli/tests/write_commands.rs` - `setup --yes` exits 3 while a server uses the folder or another command holds the lock.
@@ -80,13 +81,13 @@
 - `bridges/assets/qml/DownloadAppdataWindow.qml` - Parity comment only (in `run_download()`).
 
 ### Build, packaging, docs
-- `Makefile` - `bootstrap`, `rust-test` (now also runs `api/` and `backend_cli/` tests), `cargo-clean-build` paths; new `cli`, `cli-release`, `cli-<target>`, `npm-packages` targets.
+- `Makefile` - `bootstrap`, `rust-test` (now also runs `api/` and `backend_cli/` tests), `cargo-clean-build` paths; `cli`, `cli-release`, `cli-linux-x64`, `cli-linux-arm64` (cargo-zigbuild, musl), `cli-darwin-arm64`, `cli-win32-x64` → `dist/cli/<npm-platform>/`; `npm-packages` to come.
 - `.gitignore` - `cli/` entries renamed; `npm/**/bin/` binaries and `*.tgz` ignored.
 - `npm/cli/package.json`, `npm/cli/bin/simsapa.js`, `npm/cli/README.md` - Main package and launcher.
 - `npm/cli-linux-x64/`, `npm/cli-linux-arm64/`, `npm/cli-darwin-arm64/`, `npm/cli-win32-x64/` - `package.json` with `os`/`cpu`; binary copied in at pack time.
 - `scripts/npm-pack.sh` - Copies binaries, writes versions, runs `npm pack`.
 - `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
-- `docs/backend-cli-and-npm-package.md` (new) - Crate layout, parity rule, preamble, in-use detection, packaging, release checklist.
+- `docs/backend-cli-and-npm-package.md` (new) - Release builds per target (toolchain, mimalloc on musl, the musl start-up trap, sizes, the embedded-assets/fonts checks) so far; crate layout, parity rule, preamble, in-use detection, packaging, release checklist to come (12.2).
 - `docs/startup-sequence-and-caches.md` - CLI preamble section (12.4).
 - `docs/user-data-and-sqlite-analyze.md` - A table of the `simsapa import` commands and the entry points they call (same `ANALYZE` sites); the navigation-tree row's module path says `bootstrap_cli`.
 - `tasks/2026-10-23-103039-prd---simsapa-backend-cli-npm-package.md` - FR 26 records the `import-stardict-zip` deletion and why the other bootstrap imports stay.
@@ -361,7 +362,7 @@ Update the file after completing each sub-task, not just after completing an ent
       - 9.14's fixture test is a unit test in `src/setup.rs` that hands `download_and_install()` local URLs directly, so the binary has no base-URL override hook. A live run (initial setup, SIGINT during `appdata.tar.bz2`) resolved `v1.1.0-alpha.2` from `simsapa/simsapa-assets`, exited 130 and left no `temp-download/` or `app-assets/`.
   - [x] 9.15 Manual end-to-end check by the user, in a throwaway folder: `simsapa --simsapa-dir /tmp/x setup --languages de --yes`, then open the same folder in the GUI (`SIMSAPA_DIR=/tmp/x`). The GUI shows neither the download window nor reconciliation.
 
-- [ ] 10.0 Release builds per target (FR 33)
+- [x] 10.0 Release builds per target (FR 33)
 
   > **Specs:** targets `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
   > `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. The release profile lives
@@ -369,13 +370,20 @@ Update the file after completing each sub-task, not just after completing an ent
   > root, so it cannot affect the GUI): `strip = true`, `lto = "thin"`,
   > `codegen-units = 1`. **Depends on:** 8.0, 9.0 (functionally complete binary).
 
-  - [ ] 10.1 Add the `[profile.release]` to `backend_cli/Cargo.toml`.
-  - [ ] 10.2 Pick the musl toolchain: try `cargo zigbuild --target x86_64-unknown-linux-musl` first (bundled SQLite and `bzip2-sys` need a C cross-compiler). Record what was installed and why in the new doc.
-  - [ ] 10.3 Build both Linux musl targets; check `file target/<t>/release/simsapa` says "statically linked"; run the x64 one against the dist DB (`search`, `word`, `serve`).
-  - [ ] 10.4 Benchmark `fulltext-search` and `search suttas` on musl vs a glibc build of the same commit (5 runs each, same queries). If musl is >20% slower, add `mimalloc` as the global allocator in `backend_cli/src/main.rs` under `#[cfg(target_env = "musl")]` and re-measure. Record the numbers in the new doc (PRD open question 3).
-  - [ ] 10.5 `Makefile`: `cli` (debug), `cli-release` (host), `cli-linux-x64`, `cli-linux-arm64`, `cli-darwin-arm64` (run on the Mac), `cli-win32-x64` (run on Windows; mirror the `build-windows.ps1` approach if needed). Each writes to `dist/cli/<npm-platform>/simsapa[.exe]`.
-  - [ ] 10.6 Record the stripped binary size per target in the new doc. Confirm the 48 MB `assets/` folder is **not** embedded: e.g. `strings target/<t>/release/simsapa | grep -c pdf.worker` should be 0. Likewise confirm the DOCX-export fonts were dropped as dead code (`docx_export` is only called from `bridges`): `grep -c 'Crimson Pro' target/<t>/release/simsapa` and `grep -c 'Abhaya Libre' …` should be 0. (The font names are also stored in UTF-16 in the TTF name table, so if these print 0 but the binary is unexpectedly large, compare against a build with `docx_export` referenced once.)
-  - [ ] 10.7 Windows check (user, on the Windows machine): with the GUI open and indexing (e.g. after a dictionary import in the GUI), run `simsapa search suttas anicca` in a loop for a minute; afterwards confirm the GUI's index folder has no growing pile of orphaned segment files and the GUI log shows only retried (not failed) deletes. Record the outcome in the new doc (PRD §7, Windows and memory-mapped indexes).
+  - [x] 10.1 Add the `[profile.release]` to `backend_cli/Cargo.toml`.
+  - [x] 10.2 Pick the musl toolchain: try `cargo zigbuild --target x86_64-unknown-linux-musl` first (bundled SQLite and `bzip2-sys` need a C cross-compiler). Record what was installed and why in the new doc.
+  - [x] 10.3 Build both Linux musl targets; check `file target/<t>/release/simsapa` says "statically linked"; run the x64 one against the dist DB (`search`, `word`, `serve`).
+  - [x] 10.4 Benchmark `fulltext-search` and `search suttas` on musl vs a glibc build of the same commit (5 runs each, same queries). If musl is >20% slower, add `mimalloc` as the global allocator in `backend_cli/src/main.rs` under `#[cfg(target_env = "musl")]` and re-measure. Record the numbers in the new doc (PRD open question 3).
+  - [x] 10.5 `Makefile`: `cli` (debug), `cli-release` (host), `cli-linux-x64`, `cli-linux-arm64`, `cli-darwin-arm64` (run on the Mac), `cli-win32-x64` (run on Windows; mirror the `build-windows.ps1` approach if needed). Each writes to `dist/cli/<npm-platform>/simsapa[.exe]`.
+  - [x] 10.6 Record the stripped binary size per target in the new doc. Confirm the 48 MB `assets/` folder is **not** embedded: e.g. `strings target/<t>/release/simsapa | grep -c pdf.worker` should be 0. Likewise confirm the DOCX-export fonts were dropped as dead code (`docx_export` is only called from `bridges`): `grep -c 'Crimson Pro' target/<t>/release/simsapa` and `grep -c 'Abhaya Libre' …` should be 0. (The font names are also stored in UTF-16 in the TTF name table, so if these print 0 but the binary is unexpectedly large, compare against a build with `docx_export` referenced once.)
+  - [ ] 10.7 **Deferred by the user, together with running `cli-darwin-arm64` / `cli-win32-x64` and recording their sizes.** Windows check (user, on the Windows machine): with the GUI open and indexing (e.g. after a dictionary import in the GUI), run `simsapa search suttas anicca` in a loop for a minute; afterwards confirm the GUI's index folder has no growing pile of orphaned segment files and the GUI log shows only retried (not failed) deletes. Record the outcome in the new doc (PRD §7, Windows and memory-mapped indexes).
+    - **Done (10.1–10.6):**
+      - Toolchain: zig 0.16 + `cargo-zigbuild` 0.24 (`cargo install cargo-zigbuild --locked`), `rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl`. Only the bundled SQLite and `mimalloc` are C; `bzip2` resolves to the pure-Rust `libbz2-rs-sys`.
+      - Both musl binaries are "statically linked"; x64 ran `search`, `word`, `search --json`, `serve` (`/health`, `/search`, `/shutdown` → exit 0) against the dist DB; arm64 ran `search --json` and `word --json` under `qemu-aarch64-static`. The glibc host build links no `libasound`.
+      - Benchmark (wall ms, median of 5 after 1 warm-up, same commit, idle 16-core machine). One-shot commands: `fulltext-search anicca` glibc 142 / musl 240 / musl+mimalloc 244 / zig glibc-2.28 145; `fulltext-search 'four noble truths'` 135 / 235 / 233 / 139; `search suttas anicca` 153 / 251 / 252 / 153; `search suttas four noble truths` 144 / 248 / 248 / 146; `search suttas dukkha --all-snippets` 159 / 263 / 257 / 163. `word "dhamma 1.01"` 130 vs 223 (musl); `query words dhamma` 245 vs 403. `paths` and `--version` are equal (4 / 2–5 ms), so the gap opens with the databases; `-vv` timestamps put it after `import_user_data_from_assets()` (the first-start config / `reconcile_needed()` steps), not isolated further.
+      - Under `serve` (28 warm requests: 5 sutta queries × 4 + 2 dict queries × 4) the gap is gone: musl 374 ms, musl+mimalloc 332 ms, zig glibc-2.28 370 ms. So musl is ~70% slower to **start**, not to search; `mimalloc` was added for musl (~11% under `serve`) and kept, and the Linux builds stay musl (static, Alpine-compatible). A zig glibc-2.28 build is the documented fallback.
+      - Stripped sizes: linux-x64 26,577,608 B (25.3 MiB), linux-arm64 23,916,408 B (22.8 MiB); native glibc 28,982,568 B, zig glibc-2.28 28,241,120 B. `pdf.worker` count 0. The DOCX fonts are not embedded (a 64-byte slice from the middle of every `assets/fonts/*/*.ttf` is absent from the binary). The task's `grep -c 'Crimson Pro'` check is unusable: the name occurs as a CSS `font-family` in the inline reader CSS (7 and 10 hits), which the doc now warns about.
+      - `cli-darwin-arm64` and `cli-win32-x64` are written but not run (they must run on the Mac / Windows machine); their sizes are still to be recorded.
 
 - [ ] 11.0 npm packaging (FR 30–32, 34)
 
@@ -405,3 +413,7 @@ Update the file after completing each sub-task, not just after completing an ent
   - [ ] 12.5 `PROJECT_MAP.md`: the new crates, moved files, renamed `bootstrap_cli/`.
   - [ ] 12.6 `CLAUDE.md`: add the new doc to "Notable feature docs"; in "New Rust bridges" say data routes go in `simsapa_api` unless they need Qt or an AI provider; update the Build/Test section with `make cli*` / `make npm-packages` and `cd backend_cli && cargo test`; update `rust-test` in the `Makefile` to also run `api/` and `backend_cli/` tests (the `rust-test` part is done).
   - [ ] 12.7 Final check: `make test` passes; `make build -B` passes; `cd bootstrap_cli && cargo build`; `cd api && cargo test`; `cd backend_cli && cargo test`; the PRD's Success Metrics §8 items are each either verified or listed as a manual check for the user.
+
+- [ ] 13.0 Follow-ups found while building
+
+  - [ ] 13.1 A closed stdout panics: `simsapa search suttas anicca --json | head -c 150` prints `thread 'main' panicked … failed printing to stdout: Broken pipe (os error 32)` (exit 101). Agents pipe output into `head` routinely. Restore the default `SIGPIPE` action at the top of `main` on Unix (or make the output functions treat `BrokenPipe` as a quiet exit), and add a test that pipes into a reader that closes early.
