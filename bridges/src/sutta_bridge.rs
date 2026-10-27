@@ -5633,9 +5633,10 @@ impl qobject::SuttaBridge {
     /// The user should quit the app after calling this function and restart it
     /// to begin the database download process.
     ///
-    /// `backend_cli/src/setup.rs` (`simsapa setup`,
-    /// `replace_incompatible_databases()`) re-implements this upgrade, with the
-    /// same export and markers; change both together. See
+    /// The CLI re-implements this upgrade, with the same export and markers:
+    /// `backend_cli/src/setup.rs` (`simsapa setup`, `replace_databases()`) for
+    /// an incompatible database, `backend_cli/src/db_upgrade.rs` (`simsapa
+    /// db-upgrade`) for a newer compatible release. Change both together. See
     /// docs/backend-cli-and-npm-package.md.
     pub fn prepare_for_database_upgrade(self: Pin<&mut Self>) {
         // Run the export on a background thread so the UI thread is free to

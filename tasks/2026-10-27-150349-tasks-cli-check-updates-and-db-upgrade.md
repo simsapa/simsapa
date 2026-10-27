@@ -30,9 +30,13 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend_cli/tests/db_upgrade.rs` - **New.** Refusal and no-op paths in temporary folders against a local releases listener: no databases (2), lock held (3), incompatible (1, names `setup`), up to date (0, text and JSON), non-tty without `--yes` (1), releases unreachable (1, not "up to date"), server reached but no usable release (1, says so, not "could not reach"), unknown language (1).
 - `backend_cli/src/output.rs` - `test_no_print_macros_in_sources` (run, don't edit).
 - `bridges/src/api.rs` - `start_webserver()` stores the initial `checking` / `disabled(setting)` with `init_update_status()` (set only if unset, since the GUI's check may finish first); no request of its own.
-- `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()`.
-- `bridges/assets/qml/UpdateNotificationDialog.qml` - cross-reference comment in the database-update section.
-- `docs/backend-cli-and-npm-package.md`, `docs/simsapa-cli-and-localhost-api.md`, `docs/localhost-api-implementation.md`, `docs/releases-info-and-fallback.md`, `PROJECT_MAP.md` - documentation.
+- `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()` names both CLI copies (`setup.rs` `replace_databases()`, `db_upgrade.rs`).
+- `bridges/assets/qml/UpdateNotificationDialog.qml` - cross-reference comment in the database-update section, naming `db_upgrade.rs`.
+- `docs/simsapa-cli-and-localhost-api.md` - bundled doc: A.1 pointer, A.2 commands + network rule, A.5, new A.8 (check-updates, db-upgrade, opt-outs), `/health` `updates` field reference.
+- `docs/backend-cli-and-npm-package.md` - commands table, `--no-update-check`, the `check-updates` JSON exception, the `db-upgrade` section with the shared `setup.rs` functions, new "Update checks" section.
+- `docs/localhost-api-implementation.md` - "The `updates` field of `/health`": the cache, `serve`'s one check, the GUI feed, the release channel without `AppData`, test URL overrides.
+- `docs/releases-info-and-fallback.md` - `fetch_releases_info_from()` / `post_releases_request()`, "Update detection never uses the fallback" consumer table, `release_channel_from()`.
+- `PROJECT_MAP.md` - `update_status.rs`, `update_cache.rs`, `db_upgrade.rs`, `check_updates`, shared `setup.rs` functions, CLI note in Database Upgrade Flow.
 
 ### Notes
 
@@ -218,12 +222,12 @@ Order note: open the `AppData` only after the "up to date" decision, so a no-op 
 
 Depends on: 1.0–6.0. Docs describe current behaviour only (no history narration).
 
-- [ ] 7.0 Docs, cross-references, final run
-  - [ ] 7.1 `docs/simsapa-cli-and-localhost-api.md` (bundled): `check-updates` and `db-upgrade` in Part A with exit codes and examples; `updates` in the `/health` section with every status and what to do; the three opt-outs and their order (`--no-update-check`, `SIMSAPA_NO_UPDATE_CHECK`, the app's "Notify about Simsapa updates" setting) and `disabled_reason`; that the GUI's `/health` reflects the app's own check; the `--json` exception for `check-updates` exit 1; that in the GUI's `/health` `database.command` is always `null` (the GUI holds the folder, so `db-upgrade` / `setup` would refuse — use the app's update dialog); that a zero-byte `appdata.sqlite3` is `not_installed`; that the releases request uses the app's release channel setting. Self-contained (run `test_bundled_doc_has_no_repo_references`).
-  - [ ] 7.2 `docs/backend-cli-and-npm-package.md`: commands table; "two implementations of one procedure" covers the compatible-newer upgrade and the shared functions; the network rules (only `check-updates`, `health`, `serve`, `setup`, `db-upgrade` use the network; `reqwest::blocking` on `std::thread`).
-  - [ ] 7.3 `docs/localhost-api-implementation.md`: `api/src/update_cache.rs`, one check per server start, GUI scope (`UpdateStatus::from_releases()` drops `command`), how `check-updates` finds the release channel without `AppData` (`read_appdata_settings_json()` + `release_channel_from()`, only the `release_channel` key parsed), and the `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL` test overrides.
-  - [ ] 7.4 `docs/releases-info-and-fallback.md`: the new consumers; the fallback is never used for *detection*; `db-upgrade` uses it only for the download, and only if it names a newer release.
-  - [ ] 7.5 Comments: `prepare_for_database_upgrade()` in `bridges/src/sutta_bridge.rs` and the "Database Update Dialog" section of `UpdateNotificationDialog.qml` name `backend_cli/src/db_upgrade.rs` as the CLI copy ("change both together").
-  - [ ] 7.6 `PROJECT_MAP.md`: new files (`backend/src/update_status.rs`, `api/src/update_cache.rs`, `backend_cli/src/commands/check_updates.rs`, `backend_cli/src/db_upgrade.rs`).
-  - [ ] 7.7 Update the PRD's Open Questions with the decisions taken (OQ1: full object with per-part statuses; OQ3: `npm install -g @simsapa/cli@latest`).
-  - [ ] 7.8 `make rust-test` and `make build -B` green; `git status` shows no `*.sqlite3`.
+- [x] 7.0 Docs, cross-references, final run
+  - [x] 7.1 `docs/simsapa-cli-and-localhost-api.md` (bundled): `check-updates` and `db-upgrade` in Part A with exit codes and examples; `updates` in the `/health` section with every status and what to do; the three opt-outs and their order (`--no-update-check`, `SIMSAPA_NO_UPDATE_CHECK`, the app's "Notify about Simsapa updates" setting) and `disabled_reason`; that the GUI's `/health` reflects the app's own check; the `--json` exception for `check-updates` exit 1; that in the GUI's `/health` `database.command` is always `null` (the GUI holds the folder, so `db-upgrade` / `setup` would refuse — use the app's update dialog); that a zero-byte `appdata.sqlite3` is `not_installed`; that the releases request uses the app's release channel setting. Self-contained (run `test_bundled_doc_has_no_repo_references`).
+  - [x] 7.2 `docs/backend-cli-and-npm-package.md`: commands table; "two implementations of one procedure" covers the compatible-newer upgrade and the shared functions; the network rules (only `check-updates`, `health`, `serve`, `setup`, `db-upgrade` use the network; `reqwest::blocking` on `std::thread`).
+  - [x] 7.3 `docs/localhost-api-implementation.md`: `api/src/update_cache.rs`, one check per server start, GUI scope (`UpdateStatus::from_releases()` drops `command`), how `check-updates` finds the release channel without `AppData` (`read_appdata_settings_json()` + `release_channel_from()`, only the `release_channel` key parsed), and the `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL` test overrides.
+  - [x] 7.4 `docs/releases-info-and-fallback.md`: the new consumers; the fallback is never used for *detection*; `db-upgrade` uses it only for the download, and only if it names a newer release.
+  - [x] 7.5 Comments: `prepare_for_database_upgrade()` in `bridges/src/sutta_bridge.rs` and the "Database Update Dialog" section of `UpdateNotificationDialog.qml` name `backend_cli/src/db_upgrade.rs` as the CLI copy ("change both together").
+  - [x] 7.6 `PROJECT_MAP.md`: new files (`backend/src/update_status.rs`, `api/src/update_cache.rs`, `backend_cli/src/commands/check_updates.rs`, `backend_cli/src/db_upgrade.rs`).
+  - [x] 7.7 Update the PRD's Open Questions with the decisions taken (OQ1: full object with per-part statuses; OQ3: `npm install -g @simsapa/cli@latest`).
+  - [x] 7.8 `make rust-test` and `make build -B` green; `git status` shows no `*.sqlite3`.

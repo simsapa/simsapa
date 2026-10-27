@@ -54,6 +54,10 @@ databases, downloads your sutta languages again and imports the user data into
 the new databases. If part of the user data cannot be exported it asks whether
 to go on without it; `--ignore-export-errors` answers yes in a script.
 
+`simsapa check-updates` says whether a newer `simsapa` or a newer database
+release is available, and `simsapa db-upgrade` installs a newer database
+release that this version can read (A.8).
+
 ## A.2 Commands
 
 `simsapa --help` lists them and `simsapa <command> --help` gives every option.
@@ -68,14 +72,18 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa lookup <form…\|->` | Exact DPD form lookup, forms as arguments or one per line on stdin | `POST /lookup_forms` (§19.1) |
 | `simsapa query suttas\|words <text>` | Literal substring match, first page; `--titles`, `--count` | — |
 | `simsapa fulltext-search …` | The fulltext index directly | — |
-| `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status | `GET /health` (§10) |
+| `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status, available updates | `GET /health` (§10) |
+| `simsapa check-updates` | Whether a newer `simsapa` (npm) or a newer database release is available, and the command that installs each (A.8) | the `updates` object of `GET /health` (§10) |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
 | `simsapa docs` | This document | — |
 
-The commands that change the data folder: `simsapa setup`, `simsapa import
-stardict|stardict-zip|epub|html …` (a user dictionary or book, searchable in the
-GUI app too), `simsapa index build|rebuild|delete …`, and `simsapa serve`
-(§10.1).
+The commands that change the data folder: `simsapa setup`, `simsapa
+db-upgrade` (A.8), `simsapa import stardict|stardict-zip|epub|html …` (a user
+dictionary or book, searchable in the GUI app too), `simsapa index
+build|rebuild|delete …`, and `simsapa serve` (§10.1).
+
+Only `check-updates`, `health`, `serve`, `setup` and `db-upgrade` use the
+network; the others never do.
 
 Uids are the ones search results carry (`sn56.11/pli/ms`, `34626/dpd`,
 `dhamma-1-01/dpd`); `sutta` also takes a reference (`mn1`, `SN 56.11`,
@@ -171,8 +179,9 @@ partial match use `--mode "Contains Match"`.
 ## A.5 Alongside the GUI app
 
 The CLI and the GUI app share the data folder, the databases and the settings.
-While the app is running, the read-only commands work as usual, but `serve`,
-`setup`, `import` and `index` refuse with exit code 3 and name the app's own
+While the app is running, the read-only commands and `check-updates` work as
+usual, but `serve`, `setup`, `db-upgrade`, `import` and `index` refuse with
+exit code 3 and name the app's own
 server to use instead (§10.1). Close the app first to change the folder.
 
 ## A.6 One command per question, or `simsapa serve`
@@ -193,6 +202,106 @@ or `grep` to filter the output. With `simsapa serve` running, `curl` to the
 routes named in §10.1. Allow-listing these lets the agent run the whole
 search → copy `uid` → fetch-full-text loop without a prompt per call, while
 everything else stays gated.
+
+## A.8 Updates: `check-updates` and `db-upgrade`
+
+Two things can be newer than what is installed:
+
+- **`simsapa` itself**, the `latest` version of `@simsapa/cli` on npm. Update
+  it with `npm install -g @simsapa/cli@latest`; `simsapa` never runs `npm`
+  itself.
+- **The database release.** A release with the same major.minor version as
+  `simsapa` and a higher version than the installed databases is new content
+  this `simsapa` can read: `simsapa db-upgrade` installs it. A database of
+  another major.minor is not an update but an incompatible database, which
+  `simsapa setup` replaces (A.1).
+
+### `simsapa check-updates`
+
+Asks npm and the releases server (each with a 10 s timeout, at the same time)
+and prints one block for each:
+
+```
+$ simsapa check-updates
+simsapa     1.1.0-alpha.3 → 1.1.0-alpha.4 available
+            npm install -g @simsapa/cli@latest
+Database    1.1.0 → 1.1.1 available
+            simsapa db-upgrade
+
+Release notes:
+
+…the release's notes, as published (Markdown)…
+```
+
+Other forms of each line: `simsapa     1.1.0-alpha.4, up to date`,
+`Database    1.1.0, up to date`, `Database    not installed` (with `simsapa
+setup` under it), `Database    1.0.2, not compatible with simsapa 1.1.0-alpha.4
+(setup replaces the databases)`, and `…, could not check: <reason>`. When the
+newer `simsapa` reads another database major.minor than the installed one, its
+block adds: "After updating, run `simsapa setup` to replace the databases with
+ones the new version can read."
+
+It needs no databases, takes no lock and writes nothing, so it also works
+while the GUI app or a `simsapa serve` uses the folder. It asks for the release
+channel the app is set to (normally `main`).
+
+`--json` prints the `updates` object of `GET /health` (§10, the full field
+reference is there). **Exit code**: 0 when both parts were determined, whether
+or not anything is newer (`not_installed` and `incompatible` count as
+determined); 1 when either part is `unknown`. With `--json` the exit-1 output
+is still that one `updates` document, whose `error` fields say what failed,
+never an `{"error": …}` document.
+
+### `simsapa db-upgrade`
+
+Installs a newer database release that this `simsapa` can read, keeping the
+user data. It does what the GUI app's "Database Update Available → Yes" does,
+in one run:
+
+1. exports the user data (settings, bookmarks, imported books and
+   dictionaries, gloss and prompt history, chanting recordings);
+2. deletes the old databases;
+3. downloads and extracts the new release (about 4.8 GB on disk once
+   extracted), with the sutta languages the old databases had;
+4. imports the user data into the new databases.
+
+```sh
+simsapa db-upgrade                    # shows old → new version, the release notes and archives; asks
+simsapa db-upgrade --yes              # in a script
+simsapa db-upgrade --languages de,hu  # also add these sutta languages
+```
+
+| Situation | Result |
+|---|---|
+| A newer compatible release exists | asks, then upgrades: "Database upgrade complete: 1.1.0 → 1.1.1." (`--json`: `{"status": "ok", "upgraded_from": "1.1.0", "upgraded_to": "1.1.1", "languages": ["hu"]}`) |
+| No newer release | exit 0, "The databases are up to date (1.1.0)." (`--json`: `{"status": "up_to_date", "version": "1.1.0"}`) |
+| No databases | exit 2, "No databases in <folder>. Run `simsapa setup`." |
+| Databases of another major.minor | exit 1, names `simsapa setup`, which replaces them |
+| The GUI app or a `simsapa serve` uses the folder | exit 3 |
+| No terminal on stdin and no `--yes` | exit 1, nothing changed |
+| The releases server cannot be reached | exit 1, nothing changed — unless the release list bundled with `simsapa` names a release newer than the installed one; then it says so and installs that one |
+
+If part of the user data cannot be exported it asks whether to go on without
+it; without a terminal it stops, unless `--ignore-export-errors` is given
+(`--yes` does not imply it). An upgrade stopped after the old databases were
+deleted (a failed download, Ctrl-C) is finished by `simsapa setup`, which finds
+the exported user data and imports it; the message names that command.
+
+### Automatic checks, and turning them off
+
+`simsapa serve` checks once when it starts, in the background, and `simsapa
+health` checks inline with a 3 s timeout per request; both report the result
+as `updates` (§10). No other command checks, and nothing is ever printed
+unasked. These two checks are off when, in this order:
+
+1. the `--no-update-check` flag is given (it is accepted by every command, so
+   it can be added to any call);
+2. the environment variable `SIMSAPA_NO_UPDATE_CHECK` is `1` or `true`;
+3. the GUI app's setting "Notify about Simsapa updates" is off for this data
+   folder.
+
+`updates.disabled_reason` is then `flag`, `environment` or `setting`. `simsapa
+check-updates` is an explicit request and checks regardless of all three.
 
 ---
 
@@ -561,6 +670,27 @@ fulltext searcher has been initialized (§8):
   "sc_data_version": {                // SuttaCentral data; null when not recorded
     "date": "2026-10-17",
     "commit": "2d9ca8da8"
+  },
+  "updates": {                        // see `updates` below
+    "state": "checked",               // checked | checking | disabled
+    "disabled_reason": null,          // flag | environment | setting, when disabled
+    "checked_at": "2026-10-27T15:03:49Z",
+    "cli": {
+      "status": "update_available",
+      "current": "1.1.0-alpha.3",
+      "latest": "1.1.0-alpha.4",
+      "requires_new_database": false,
+      "command": "npm install -g @simsapa/cli@latest",
+      "error": null
+    },
+    "database": {
+      "status": "up_to_date",
+      "current": "1.1.0",
+      "latest": "1.1.0",
+      "command": null,
+      "release_notes": null,
+      "error": null
+    }
   }
 }
 ```
@@ -639,6 +769,44 @@ fulltext searcher has been initialized (§8):
   `appdata.sqlite3` when the database is built, so it changes when a new
   database is downloaded, not with the app version. `null` for a database built before it was recorded. The
   About window shows the same value, with `dpd_version`.
+- **`updates`** says whether a newer `simsapa` or a newer database release is
+  available (A.8). `/health` never waits on the network for it: the server
+  checks once when it starts, in the background, and `/health` returns the
+  last result. Nothing re-checks later; restart the server or run `simsapa
+  check-updates` for a fresh answer.
+
+  `state` is `checking` until that check has finished, `checked` after it, and
+  `disabled` when the check is turned off (A.8), with `disabled_reason` `flag`,
+  `environment` or `setting`. In the `checking` and `disabled` states both
+  parts carry that same status (except a `not_applicable` `cli`, below). The
+  fields, always all present:
+
+  | `cli.status` | Meaning |
+  |---|---|
+  | `update_available` | `latest` is newer than `current`; `command` installs it. When `requires_new_database` is `true`, the newer version reads another database major.minor, so after updating run `simsapa setup` to replace the databases. |
+  | `up_to_date` | `latest` is not newer. |
+  | `unknown` | npm could not be asked, or answered something unusable; `error` says which. |
+  | `not_applicable` | In the GUI app's server: the app is not the npm package. |
+
+  | `database.status` | Meaning |
+  |---|---|
+  | `update_available` | A newer release this version reads; `command` is `simsapa db-upgrade`, `release_notes` the release's notes (Markdown, as published). |
+  | `up_to_date` | `latest` is the newest release for this version. |
+  | `incompatible` | The installed databases are another major.minor; `command` is `simsapa setup`, which replaces them. Determined without the network. |
+  | `not_installed` | No `appdata.sqlite3` (or a zero-byte one, which setup replaces); `command` is `simsapa setup`. |
+  | `unknown` | The releases server could not be reached, or lists no database release for this version, or the installed version could not be read; `error` says which. Never a guess from an older list. |
+
+  Versions are written without a `v` prefix. The releases server is asked for
+  the release channel the app is set to (normally `main`).
+
+  **In the GUI app's server** the app's own update check fills `updates`; that
+  server makes no request of its own, and `cli` is `not_applicable`. The
+  database part is the result of the app's check at startup (made only when
+  "Notify about Simsapa updates" is on, otherwise `disabled` / `setting`) or of
+  its "Check for updates" menu action. There `database.command` is always
+  `null`: while the app runs it holds the folder, so `simsapa db-upgrade` and
+  `simsapa setup` would refuse (A.5). Suggest the app's own update dialog
+  instead.
 
 ### 10.1 `simsapa serve`: `--port` and `--host`
 

@@ -428,7 +428,10 @@ routes).
 0. ~~The GUI's server would check on every GUI start.~~ **Resolved:** the
    GUI makes no new request; its `/health` reuses its own check (FR-17), and
    the CLI follows the GUI's setting plus a `--no-update-check` flag (FR-11).
-1. **Exact JSON names/shape** for `updates` (FR-7, FR-11, FR-16): is
+1. ~~**Exact JSON names/shape** for `updates`.~~ **Resolved: always the full
+   object**, with a top-level `state` (`checked` | `checking` | `disabled`),
+   `disabled_reason`, `checked_at`, and per-part statuses that include
+   `checking` / `disabled`. Original question (FR-7, FR-11, FR-16): is
    `{"status": "checking"}` / `{"status": "disabled"}` at the top level, beside
    the per-part object, acceptable, or should the shape always be the full
    object with per-part statuses `checking` / `disabled`? (The latter is easier
@@ -436,7 +439,8 @@ routes).
 2. ~~Should the GUI server reuse the GUI's own fetch?~~ **Resolved: yes**
    (FR-17), fed from `check_for_updates()`, which knows whether its fetch was
    live.
-3. Should the npm command printed be `npm install -g @simsapa/cli@latest` or
+3. ~~npm command.~~ **Resolved: `npm install -g @simsapa/cli@latest`.**
+   Original question: should the npm command printed be `npm install -g @simsapa/cli@latest` or
    `npm update -g @simsapa/cli`? `update` respects semver ranges and may not
    cross prerelease versions; `install …@latest` always does. (Proposal:
    `install …@latest`.)
@@ -444,4 +448,6 @@ routes).
    (publishing checklist). If a `next`/`beta` dist-tag is ever introduced,
    should `check-updates` follow `get_release_channel()` to choose the tag?
 5. Should `db-upgrade` also accept a `--dry-run` that prints what it would
-   download and which languages, without exporting or deleting?
+   download and which languages, without exporting or deleting? (Not
+   implemented; the confirmation prompt already shows the archives and
+   languages before anything is changed.)

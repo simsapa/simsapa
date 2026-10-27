@@ -39,6 +39,13 @@ params for optional analytics) and returns `Err` on any network, HTTP-status, or
 parse failure. It does **not** fall back internally — keeping it pure means the
 caller can distinguish "server reachable" from "had to fall back".
 
+It is a thin layer over two lower-level functions, for callers that need
+another URL, timeout or parameters: `fetch_releases_info_from(url, timeout, …)`
+(the same system-info collection) and `post_releases_request(url, timeout,
+params)` (the `POST` alone, with the caller's `ReleasesRequestParams`). The CLI
+and the update check use the latter with
+`ReleasesRequestParams::without_stats(channel)`.
+
 #### The `no_stats` opt-out and `ReleasesRequestParams`
 
 `ReleasesRequestParams` (same file) always sends `channel` and `no_stats`. Every
@@ -104,6 +111,10 @@ Decision flow inside `check_for_updates()` when fetching releases info:
    ("Failed to fetch updates") and `releases_check_completed`. This is the only
    path that reports a releases-info failure to the user, and in practice means a
    broken build.
+
+At the obsolete-database return and in both fetch arms, `check_for_updates()`
+also stores the result for the `updates` field of the API server's `/health`
+(see "Update detection never uses the fallback" below).
 
 ### Why a pythonanywhere outage is not surfaced as an error
 
@@ -224,6 +235,32 @@ maintenance fetch, not a real user check.
 > The JSON is bundled at build time via `include_str!`, so after refreshing the
 > file you must **rebuild** the app for the new fallback to take effect.
 
+## Update detection never uses the fallback
+
+The snapshot is frozen at build time, so it may only ever stand in for the
+live info when the goal is to **download** something. Used to **detect** an
+update, it would report "up to date", or an old release as the newest, as if
+the server had said so. Every consumer that reports whether a newer database
+exists therefore treats a failed live fetch as *unknown*:
+
+| Consumer | Live fetch | On failure |
+| --- | --- | --- |
+| GUI `check_for_updates()` | `fetch_releases_info()` | uses the snapshot for its own flow (above), but stores database `unknown` for `/health`'s `updates` |
+| `simsapa check-updates`, `simsapa health`, `simsapa serve`'s background check (`backend/src/update_status.rs`) | `post_releases_request()`, no stats, 10 s / 3 s | database `unknown` with the error; `set_releases_info()` is never called |
+| `simsapa db-upgrade` (`backend_cli/src/db_upgrade.rs`) | `post_releases_request()`, no stats, 30 s; `set_releases_info()` on success, as `setup` does | `compatible_assets_release()`, the snapshot, but **only if it names a release newer than the installed databases**, and it says it is using the bundled list; otherwise exit 1 with the reason |
+| `simsapa setup` | live, then the snapshot silently | as the GUI's first-run download |
+
+For `db-upgrade` the snapshot can only start an upgrade, never end one with
+"up to date": a snapshot release that is not newer says nothing about what the
+server has.
+
+A live answer that lists **no** asset release compatible with the app's
+major.minor (e.g. a prerelease announced only on another channel) is also
+`unknown`, not "up to date": `has_db_update()` returns `None` for both, so
+`get_latest_app_compatible_assets_release()` is checked first. See
+[backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md), "Update
+checks".
+
 ## Release channel — `get_release_channel()`
 
 The channel sent to the server (and used for the fallback CLI default) comes from
@@ -232,3 +269,10 @@ The channel sent to the server (and used for the fallback CLI default) comes fro
 1. `RELEASE_CHANNEL` environment variable
 2. `release_channel` in `AppSettings`
 3. Default: `"main"`
+
+The order itself is `release_channel_from(setting)`, which a caller without
+`AppData` uses with a setting it read itself: `simsapa check-updates` opens no
+databases, so it reads `release_channel` from the stored settings JSON through
+one plain connection (`read_appdata_settings_json()`). See
+[localhost-api-implementation.md](./localhost-api-implementation.md), "The
+`updates` field of `/health`".
