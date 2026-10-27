@@ -22,6 +22,10 @@ bridges/target
 compile_commands.json
 .qmlls.ini
 node_modules/
+# npm packages: scripts/npm-pack.sh stages and packs under dist/npm/; these
+# catch a binary or tarball made by hand in npm/. npm/cli/bin/ is tracked.
+npm/cli-*/bin/
+npm/**/*.tgz
 project_tree.txt
 Simsapa-*.AppImage
 Simsapa-*.AppImage.sha256.txt

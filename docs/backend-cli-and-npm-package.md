@@ -138,3 +138,165 @@ adding an exception. The rule and its replacements are also in `AGENTS.md`,
 > would apply to every socket in the process as well, and it would kill an
 > `import`, `index` or `setup` mid-write when its stdout went away. Finishing
 > the work matters more than the output.
+
+## The npm packages
+
+`@simsapa/cli` uses the per-platform optional-dependency layout (as esbuild,
+biome and turbo do). Sources are in `npm/`, one folder per package:
+
+| Folder | Package | Contents |
+|---|---|---|
+| `npm/cli/` | `@simsapa/cli` | `bin/simsapa.js` (the launcher), `README.md` (the npmjs.com page) |
+| `npm/cli-linux-x64/` | `@simsapa/cli-linux-x64` | `bin/simsapa`, `os: ["linux"]`, `cpu: ["x64"]` |
+| `npm/cli-linux-arm64/` | `@simsapa/cli-linux-arm64` | `bin/simsapa`, `os: ["linux"]`, `cpu: ["arm64"]` |
+| `npm/cli-darwin-arm64/` | `@simsapa/cli-darwin-arm64` | `bin/simsapa`, `os: ["darwin"]`, `cpu: ["arm64"]` |
+| `npm/cli-win32-x64/` | `@simsapa/cli-win32-x64` | `bin/simsapa.exe`, `os: ["win32"]`, `cpu: ["x64", "arm64"]` |
+
+The main package's `optionalDependencies` pin all four at its own exact
+version, and npm installs only the one whose `os`/`cpu` match. There is no
+`postinstall` script and no download at install time. The Linux binaries are
+static musl builds, so the Linux packages carry no `libc` field and install on
+glibc and musl systems alike.
+
+`cli-win32-x64` lists `arm64` in `cpu` on purpose: on Windows on ARM, Node is
+usually the native arm64 build, so without it npm would skip the package. The
+x64 binary runs there under the system's x64 emulation, and the launcher maps
+`win32 arm64` to it.
+
+### The launcher
+
+`npm/cli/bin/simsapa.js` is dependency-free. It maps `process.platform` /
+`process.arch` to the platform package, `require.resolve`s
+`<package>/bin/simsapa[.exe]`, and runs it with `spawnSync(…, { stdio:
+"inherit" })`:
+
+- The binary's exit status is the launcher's exit status. A binary killed by a
+  signal has the launcher re-raise that signal on itself, so the caller sees
+  the same death (SIGKILL → shell status 137).
+- **The launcher installs a no-op `SIGINT` listener for the duration of the
+  run.** Ctrl-C signals the whole foreground process group, so the binary gets
+  it directly. Without a listener Node would exit at once and return the shell
+  prompt while the binary is still cleaning up (`setup` deletes its partial
+  download), and the shell would see Node's 130 instead of the binary's own
+  status. With it, a Ctrl-C'd `serve` shuts down and the launcher reports its
+  exit 0.
+- An unsupported platform prints the supported list. A supported platform
+  whose package is missing (installed with `--omit=optional`) also says to
+  reinstall without that flag.
+
+`npm/cli/bin/simsapa.test.js` tests the mapping and both messages; it runs in
+`make js-test` (`jest.config.js` has `npm/` as a root and matches `*.test.js`).
+The main package's `files` lists only `bin/simsapa.js`, so the test is never
+packed.
+
+### Packing: `make npm-packages`
+
+`scripts/npm-pack.sh` packs into `dist/npm/*.tgz` and publishes nothing:
+
+1. Reads the version from the `[package]` section of `backend_cli/Cargo.toml`
+   and **refuses to pack unless it equals `backend/Cargo.toml`'s**. The binary
+   reports the backend's version, not its own crate's: `--version` and the
+   database release lookup both call `get_app_version()`, which is
+   `env!("CARGO_PKG_VERSION")` evaluated in the backend crate. An npm version
+   taken from a drifted `backend_cli/Cargo.toml` would label a binary that says
+   otherwise.
+2. Writes that version into the tracked `npm/*/package.json` files, in
+   `version` and in the main package's `optionalDependencies` pins, if any of
+   them differs, and names each file it changed. After a version bump, the
+   first `make npm-packages` updates them; commit them with the bump. The files
+   are written in `JSON.stringify(…, null, 2)` form, so keep them in that form
+   or the script rewrites them.
+3. Copies each `npm/<package>/` to `dist/npm/stage/<package>/`, and packs from
+   there.
+4. Copies `dist/cli/<platform>/simsapa[.exe]` into each platform package's
+   `bin/` with mode 0755 (npm keeps the mode in the tarball, and the binary is
+   not a `bin` entry, so npm would not set it on install), plus `LICENSE.txt`.
+5. Runs `npm pack` in each staged folder.
+
+A platform whose binary is missing from `dist/cli/` is skipped with a warning,
+and the script ends by saying how many of the four it packed. The darwin and
+win32 binaries are built on their own machines (`make cli-darwin-arm64`,
+`make cli-win32-x64`); copy them into `dist/cli/darwin-arm64/` and
+`dist/cli/win32-x64/` on the Linux machine and pack all four there.
+
+> **Trap: don't add `npm/*/bin/` to `.gitignore`.** `npm/cli/bin/` holds the
+> tracked launcher. The ignore entries are `npm/cli-*/bin/` and `npm/**/*.tgz`;
+> `dist/` is ignored as a whole.
+
+Packed sizes for 1.1.0-alpha.3:
+
+| Tarball | Packed | Binary unpacked |
+|---|---|---|
+| `simsapa-cli-1.1.0-alpha.3.tgz` | 9,393 B | — |
+| `simsapa-cli-linux-x64-1.1.0-alpha.3.tgz` | 9,855,437 B (9.4 MiB) | 26,577,032 B |
+| `simsapa-cli-linux-arm64-1.1.0-alpha.3.tgz` | 9,414,547 B (9.0 MiB) | 23,913,464 B |
+| `simsapa-cli-darwin-arm64-…` | not yet measured | |
+| `simsapa-cli-win32-x64-…` | not yet measured | |
+
+No official per-package size limit for the public npm registry was found.
+
+### Dry run
+
+Install the tarballs into a throwaway prefix rather than the real global
+folder:
+
+```sh
+make npm-packages
+PREFIX=$(mktemp -d)
+npm install -g --prefix "$PREFIX" \
+  dist/npm/simsapa-cli-linux-x64-<version>.tgz dist/npm/simsapa-cli-<version>.tgz
+"$PREFIX/bin/simsapa" --version
+"$PREFIX/bin/simsapa" paths
+"$PREFIX/bin/simsapa" search suttas anicca --simsapa-dir <data folder>
+rm -rf "$PREFIX"
+```
+
+The platform packages not given on the command line are not on the registry
+yet; npm tolerates their 404 because they are optional. Installing the main
+tarball alone exercises the missing-package message.
+
+`serve` writes its port into the data folder's `api-port.txt`. A dry run of
+`serve` against a data folder the GUI also uses leaves that port behind; put
+the old value back afterwards.
+
+### Publishing checklist
+
+Publishing is manual and done by the maintainer. Nothing in the repository
+publishes.
+
+1. **Scope.** The `@simsapa` organisation must exist on npmjs.com and the
+   publishing account must be allowed to publish to it (`npm whoami`,
+   `npm org ls simsapa`). With two-factor authentication on the account, pass
+   `--otp <code>` to each `npm publish`, or use a granular access token.
+2. **Version.** The version is the app's: `backend_cli/Cargo.toml` and
+   `backend/Cargo.toml` must agree, and the maintainer bumps both. Commit the
+   `npm/*/package.json` files `make npm-packages` updates. An npm version can never be published twice (not even
+   after an unpublish), so a broken publish is fixed with a new version.
+3. **Build all four binaries** and collect them in `dist/cli/` (see "Release
+   builds per target").
+4. **`make npm-packages`** must report all four platform packages; never
+   publish an incomplete set.
+5. **Dry run** the Linux x64 tarballs as above.
+6. **Publish the four platform packages first, then the main one**, from the
+   tarballs that were dry-run:
+
+   ```sh
+   cd dist/npm
+   for p in linux-x64 linux-arm64 darwin-arm64 win32-x64; do
+     npm publish simsapa-cli-$p-<version>.tgz --access public --tag latest
+   done
+   npm publish simsapa-cli-<version>.tgz --access public --tag latest
+   ```
+
+   Platform packages go first because the main package names them at its exact
+   version. If the main package is published first, anyone installing in
+   between gets no binary: npm skips the missing optional dependency without an
+   error, and `simsapa` then reports a missing platform package.
+
+   **`--tag latest` is required while the version is a prerelease
+   (`-alpha.N`).** npm 11 refuses to publish a prerelease without `--tag`, and
+   a package whose only versions sit under another tag (such as `next`) has no
+   `latest`, so a plain `npm install -g @simsapa/cli` fails.
+7. **Check:** `npm view @simsapa/cli dist-tags` shows `latest: <version>`, and
+   `npm install -g @simsapa/cli` on a clean machine installs a working
+   `simsapa`.

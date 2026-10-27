@@ -164,6 +164,10 @@ cli-win32-x64:
 	cd backend_cli && cargo build --release --target x86_64-pc-windows-msvc
 	powershell -Command "New-Item -ItemType Directory -Force -Path '$(CLI_DIST)/win32-x64' | Out-Null; Copy-Item -Force 'backend_cli/target/x86_64-pc-windows-msvc/release/simsapa.exe' '$(CLI_DIST)/win32-x64/simsapa.exe'"
 
+# Packs dist/cli/<platform>/ binaries into dist/npm/*.tgz. Publishes nothing.
+npm-packages:
+	./scripts/npm-pack.sh
+
 appimage: build
 	./build-appimage.sh
 

@@ -1,0 +1,22 @@
+{
+  "name": "@simsapa/cli-darwin-arm64",
+  "version": "1.1.0-alpha.3",
+  "description": "The macOS arm64 binary of @simsapa/cli.",
+  "homepage": "https://github.com/simsapa/simsapa",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/simsapa/simsapa.git",
+    "directory": "npm/cli-darwin-arm64"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ],
+  "preferUnplugged": true
+}

@@ -82,13 +82,18 @@
 
 ### Build, packaging, docs
 - `Makefile` - `bootstrap`, `rust-test` (now also runs `api/` and `backend_cli/` tests), `cargo-clean-build` paths; `cli`, `cli-release`, `cli-linux-x64`, `cli-linux-arm64` (cargo-zigbuild, musl), `cli-darwin-arm64`, `cli-win32-x64` → `dist/cli/<npm-platform>/`; `npm-packages` to come.
-- `.gitignore` - `cli/` entries renamed; `npm/**/bin/` binaries and `*.tgz` ignored.
-- `npm/cli/package.json`, `npm/cli/bin/simsapa.js`, `npm/cli/README.md` - Main package and launcher.
-- `npm/cli-linux-x64/`, `npm/cli-linux-arm64/`, `npm/cli-darwin-arm64/`, `npm/cli-win32-x64/` - `package.json` with `os`/`cpu`; binary copied in at pack time.
-- `scripts/npm-pack.sh` - Copies binaries, writes versions, runs `npm pack`.
+- `.gitignore` - `cli/` entries renamed; `npm/cli-*/bin/` and `npm/**/*.tgz` ignored (not `npm/*/bin/`, which would ignore the tracked launcher; `dist/` covers `dist/npm/`).
+- `npm/cli/package.json` - `@simsapa/cli`: `bin`, `files: ["bin/simsapa.js"]`, `engines.node >= 18`, `optionalDependencies` on the four platform packages. Tracked with the real version (all five files), kept in sync by `scripts/npm-pack.sh`.
+- `npm/cli/bin/simsapa.js` - Dependency-free launcher: platform → package, `require.resolve`, `spawnSync`, exit status / signal forwarding, no-op `SIGINT` listener while the binary runs, missing/unsupported platform messages.
+- `npm/cli/bin/simsapa.test.js` - Jest tests for the platform mapping and both messages (not packed).
+- `npm/cli/README.md` - The npmjs.com page (FR 34 list).
+- `npm/cli-linux-x64/`, `npm/cli-linux-arm64/`, `npm/cli-darwin-arm64/`, `npm/cli-win32-x64/` - `package.json` with `os`/`cpu` (`win32-x64` also `arm64`, for Windows on ARM under x64 emulation), `files: ["bin/"]`, `preferUnplugged`; the binary is copied in at pack time.
+- `scripts/npm-pack.sh` - Reads the `backend_cli/Cargo.toml` version, refuses to pack if it differs from `backend/Cargo.toml`'s (the binary reports the backend's), writes it into the tracked `npm/*/package.json` files when they differ, stages `npm/*` under `dist/npm/stage/`, copies binaries (0755) and `LICENSE.txt`, runs `npm pack` into `dist/npm/`. Skips a platform with no binary and says so.
+- `jest.config.js` - `npm/` added as a root, `*.test.js` matched.
+- `Makefile` - `npm-packages` target.
 - `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
 - `AGENTS.md` - "No `println!` / `eprintln!` in code the `simsapa` CLI runs" section; Code Style Rust line points at it.
-- `docs/backend-cli-and-npm-package.md` (new) - Release builds per target (toolchain, mimalloc on musl, the musl start-up trap, sizes, the embedded-assets/fonts checks) so far; crate layout, parity rule, preamble, in-use detection, packaging, release checklist to come (12.2).
+- `docs/backend-cli-and-npm-package.md` (new) - Release builds per target (toolchain, mimalloc on musl, the musl start-up trap, sizes, the embedded-assets/fonts checks) and the npm packages (layout, launcher, packing, sizes, dry run, publish checklist) so far; crate layout, parity rule, preamble, in-use detection to come (12.2).
 - `docs/startup-sequence-and-caches.md` - CLI preamble section (12.4).
 - `docs/user-data-and-sqlite-analyze.md` - A table of the `simsapa import` commands and the entry points they call (same `ANALYZE` sites); the navigation-tree row's module path says `bootstrap_cli`.
 - `tasks/2026-10-23-103039-prd---simsapa-backend-cli-npm-package.md` - FR 26 records the `import-stardict-zip` deletion and why the other bootstrap imports stay.
@@ -386,7 +391,7 @@ Update the file after completing each sub-task, not just after completing an ent
       - Stripped sizes: linux-x64 26,577,608 B (25.3 MiB), linux-arm64 23,916,408 B (22.8 MiB); native glibc 28,982,568 B, zig glibc-2.28 28,241,120 B. `pdf.worker` count 0. The DOCX fonts are not embedded (a 64-byte slice from the middle of every `assets/fonts/*/*.ttf` is absent from the binary). The task's `grep -c 'Crimson Pro'` check is unusable: the name occurs as a CSS `font-family` in the inline reader CSS (7 and 10 hits), which the doc now warns about.
       - `cli-darwin-arm64` and `cli-win32-x64` are written but not run (they must run on the Mac / Windows machine); their sizes are still to be recorded.
 
-- [ ] 11.0 npm packaging (FR 30–32, 34)
+- [x] 11.0 npm packaging (FR 30–32, 34)
 
   > **Specs:** main `@simsapa/cli` with `bin: { "simsapa": "bin/simsapa.js" }`
   > and `optionalDependencies` pinned to the exact version of
@@ -394,13 +399,20 @@ Update the file after completing each sub-task, not just after completing an ent
   > package has `os`/`cpu` and contains `bin/simsapa[.exe]`. No `postinstall`.
   > Version = `backend/Cargo.toml` `version`. **Depends on:** 10.0.
 
-  - [ ] 11.1 Create `npm/cli/package.json` (name, description, license Apache-2.0, repository, `bin`, `files`, `engines.node >= 18`, `optionalDependencies`) and `npm/cli-<platform>/package.json` ×4 (`os: ["linux"|"darwin"|"win32"]`, `cpu: ["x64"|"arm64"]`, `files: ["bin/"]`, `preferUnplugged: true`).
-  - [ ] 11.2 `npm/cli/bin/simsapa.js`: map `process.platform`/`process.arch` to the package name; `require.resolve(`${pkg}/bin/simsapa${ext}`)`; `spawnSync(binary, process.argv.slice(2), { stdio: "inherit" })`; forward `status`, or re-raise `signal` with `process.kill(process.pid, signal)`. If the package is missing, print the supported platforms and "reinstall without --omit=optional". Keep it dependency-free.
-  - [ ] 11.3 A small jest test for the launcher's platform → package mapping and missing-package message (the repo already runs jest via `make js-test`).
-  - [ ] 11.4 `scripts/npm-pack.sh`: read the version from `backend/Cargo.toml`, write it into all five `package.json`s (including the `optionalDependencies` pins), copy `dist/cli/<platform>/simsapa*` into each platform's `bin/` (chmod +x), run `npm pack` in each folder into `dist/npm/`. Missing binaries for a platform → warning, skip. `make npm-packages` calls it.
-  - [ ] 11.5 Local dry run on Linux: `npm install -g dist/npm/simsapa-cli-linux-x64-*.tgz dist/npm/simsapa-cli-*.tgz`; `simsapa --version`, `simsapa paths`, `simsapa search suttas anicca --simsapa-dir <dist>`; then uninstall. Record each `.tgz` size in the new doc (no official npm size limit was found; PRD §7).
-  - [ ] 11.6 `npm/cli/README.md` covering the FR 34 list: install, the 4.8 GB setup and its location, sharing with the GUI, commands, `--json`, exit codes, `serve` + `--host` warning, the agent glossing workflow, "close the app first". Add `.gitignore` entries for `npm/*/bin/` and `dist/npm/`.
-  - [ ] 11.7 Write the manual publish checklist into the new doc: scope ownership; `npm publish --access public --tag latest` in each platform folder **first**, then the main package. `--tag latest` is required while versions are prereleases (`-alpha.N`): npm 11 rejects a prerelease publish without `--tag`, and without a `latest` tag a plain `npm install -g @simsapa/cli` fails (PRD FR 32). Do not publish.
+  - [x] 11.1 Create `npm/cli/package.json` (name, description, license Apache-2.0, repository, `bin`, `files`, `engines.node >= 18`, `optionalDependencies`) and `npm/cli-<platform>/package.json` ×4 (`os: ["linux"|"darwin"|"win32"]`, `cpu: ["x64"|"arm64"]`, `files: ["bin/"]`, `preferUnplugged: true`).
+  - [x] 11.2 `npm/cli/bin/simsapa.js`: map `process.platform`/`process.arch` to the package name; `require.resolve(`${pkg}/bin/simsapa${ext}`)`; `spawnSync(binary, process.argv.slice(2), { stdio: "inherit" })`; forward `status`, or re-raise `signal` with `process.kill(process.pid, signal)`. If the package is missing, print the supported platforms and "reinstall without --omit=optional". Keep it dependency-free.
+  - [x] 11.3 A small jest test for the launcher's platform → package mapping and missing-package message (the repo already runs jest via `make js-test`).
+  - [x] 11.4 `scripts/npm-pack.sh`: read the version from `backend/Cargo.toml`, write it into all five `package.json`s (including the `optionalDependencies` pins), copy `dist/cli/<platform>/simsapa*` into each platform's `bin/` (chmod +x), run `npm pack` in each folder into `dist/npm/`. Missing binaries for a platform → warning, skip. `make npm-packages` calls it.
+  - [x] 11.5 Local dry run on Linux: `npm install -g dist/npm/simsapa-cli-linux-x64-*.tgz dist/npm/simsapa-cli-*.tgz`; `simsapa --version`, `simsapa paths`, `simsapa search suttas anicca --simsapa-dir <dist>`; then uninstall. Record each `.tgz` size in the new doc (no official npm size limit was found; PRD §7).
+  - [x] 11.6 `npm/cli/README.md` covering the FR 34 list: install, the 4.8 GB setup and its location, sharing with the GUI, commands, `--json`, exit codes, `serve` + `--host` warning, the agent glossing workflow, "close the app first". Add `.gitignore` entries for `npm/*/bin/` and `dist/npm/`.
+  - [x] 11.7 Write the manual publish checklist into the new doc: scope ownership; `npm publish --access public --tag latest` in each platform folder **first**, then the main package. `--tag latest` is required while versions are prereleases (`-alpha.N`): npm 11 rejects a prerelease publish without `--tag`, and without a `latest` tag a plain `npm install -g @simsapa/cli` fails (PRD FR 32). Do not publish.
+
+    - **Done (11.1–11.7):**
+      - Linux binaries rebuilt from the current commit before packing (the earlier ones predated the broken-pipe fixes).
+      - Packed 1.1.0-alpha.3: main 9,393 B (with the README); linux-x64 9,855,437 B; linux-arm64 9,414,547 B. darwin/win32 not packed (no binaries yet), recorded as "not yet measured".
+      - Dry run into a scratch `--prefix`: `--version`, `paths`, `search suttas anicca` (text and `--json` piped into `head`), exit 4 (unknown word), exit 2 (empty folder). `serve` in its own process group + SIGINT to the group → Rocket shut down, launcher exit 0; SIGKILL to the binary → launcher exit 137. Main tarball alone → the missing-package message, exit 1. npm tolerated the unpublished optional packages' 404.
+      - `serve` overwrote the dist folder's `api-port.txt` (4848 → 4999); restored to 4848. The doc's dry-run section warns about this.
+      - Not done here: publishing (manual, by the maintainer).
 
 - [ ] 12.0 Documentation (FR 35–38)
 
