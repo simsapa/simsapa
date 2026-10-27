@@ -16,6 +16,7 @@ use simsapa_backend::logger::{info, error};
 use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::pts_reference_search::ReferenceSearchResult;
+use simsapa_backend::update_status::UpdateStatus;
 
 use crate::get_app_globals_api;
 
@@ -671,6 +672,9 @@ pub struct HealthInfo {
     /// (`{"date": "2026-10-17", "commit": "2d9ca8da8"}`), `null` when the
     /// database does not record it.
     pub sc_data_version: Option<ScDataVersion>,
+    /// Whether a newer `simsapa` CLI or a newer compatible database release
+    /// is available: the last check's result, never waited for.
+    pub updates: UpdateStatus,
 }
 
 /// Build the `/health` document. Requires `init_app_globals_api()` to have run.
@@ -707,6 +711,7 @@ pub fn health_info(dbm: &DbManager) -> HealthInfo {
         dict_sources: dbm.dictionaries.get_distinct_sources(),
         dpd_version: dbm.dpd.dpd_release_version(),
         sc_data_version: dbm.appdata.sc_data_version(),
+        updates: crate::update_cache::current_update_status(),
     }
 }
 

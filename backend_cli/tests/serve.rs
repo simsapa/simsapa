@@ -60,17 +60,29 @@ fn dist_available() -> bool {
 /// Start `serve` and wait for its first stdout line. `None` when it exited
 /// first; the guard then carries its exit status and stderr.
 fn start_serve(args: &[&str]) -> (ServeGuard, Option<String>) {
+    // No test reaches npm or the releases server.
+    start_serve_with_env(args, &[("SIMSAPA_NO_UPDATE_CHECK", "1")], &[])
+}
+
+/// [`start_serve`] with `set` added to the environment and `remove` taken out.
+fn start_serve_with_env(args: &[&str], set: &[(&str, &str)], remove: &[&str]) -> (ServeGuard, Option<String>) {
     let port_file = Path::new(DIST_SIMSAPA_DIR).join("api-port.txt");
     let port_file_before = fs::read(&port_file).ok();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_simsapa"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_simsapa"));
+    command
         .arg("--simsapa-dir")
         .arg(DIST_SIMSAPA_DIR)
         .arg("serve")
         .args(args)
-        .env_remove("API_PORT")
-        // No test reaches npm or the releases server.
-        .env("SIMSAPA_NO_UPDATE_CHECK", "1")
+        .env_remove("API_PORT");
+    for name in remove {
+        command.env_remove(name);
+    }
+    for (name, value) in set {
+        command.env(name, value);
+    }
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -217,4 +229,97 @@ fn test_serve_on_a_busy_port_keeps_the_port_file() {
 
     // Checked before the guard restores it: serve itself put it back.
     assert_eq!(fs::read(&guard.port_file).ok(), guard.port_file_before);
+}
+
+/// Accepts connections and never answers. Returns the URL.
+fn hanging_listener() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in listener.incoming().flatten() {
+            held.push(stream);
+        }
+    });
+    format!("http://127.0.0.1:{}/x", port)
+}
+
+/// Serve, read `/health`'s `updates` and the time it took, then shut down.
+/// `None` when the dist folder is unavailable or in use.
+fn health_updates(args: &[&str], set: &[(&str, &str)], remove: &[&str]) -> Option<(serde_json::Value, Duration)> {
+    if !dist_available() {
+        return None;
+    }
+    let port = free_port();
+    let mut all_args = vec!["--port".to_string(), port.to_string()];
+    all_args.extend(args.iter().map(|a| a.to_string()));
+    let all_args: Vec<&str> = all_args.iter().map(String::as_str).collect();
+    let (mut guard, line) = start_serve_with_env(&all_args, set, remove);
+    if line.is_none() {
+        let code = guard.child.wait().ok().and_then(|s| s.code());
+        let err = stderr_of(&mut guard);
+        if code == Some(3) {
+            eprintln!("skipped: the dist folder is in use: {err}");
+            return None;
+        }
+        panic!("serve exited with {code:?} before listening: {err}");
+    }
+    let base = format!("http://127.0.0.1:{port}");
+
+    let start = std::time::Instant::now();
+    let (status, body) = get(&format!("{base}/health"));
+    let elapsed = start.elapsed();
+    assert_eq!(status, 200, "{body}");
+    let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
+
+    let (status, _) = get(&format!("{base}/shutdown"));
+    assert_eq!(status, 200);
+    assert_eq!(wait_exit(&mut guard), Some(0));
+    Some((doc["updates"].clone(), elapsed))
+}
+
+/// The background check is blocked on a server that never answers:
+/// `/health` still answers at once, with `checking`.
+#[test]
+fn test_health_does_not_wait_for_the_update_check() {
+    let _serial = SERVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let url = hanging_listener();
+    let Some((updates, elapsed)) = health_updates(
+        &[],
+        &[("SIMSAPA_NPM_DIST_TAGS_URL", &url), ("SIMSAPA_RELEASES_API_URL", &url)],
+        &["SIMSAPA_NO_UPDATE_CHECK"],
+    ) else {
+        return;
+    };
+    if updates["disabled_reason"] == "setting" {
+        eprintln!("skipped: \"Notify about Simsapa updates\" is off in the dist database");
+        return;
+    }
+    assert_eq!(updates["state"], "checking", "{updates}");
+    assert_eq!(updates["cli"]["status"], "checking", "{updates}");
+    assert_eq!(updates["database"]["status"], "checking", "{updates}");
+    // The check's own timeout is 3 s per request.
+    assert!(elapsed < Duration::from_secs(2), "/health took {elapsed:?}");
+}
+
+#[test]
+fn test_no_update_check_flag_disables_the_check() {
+    let _serial = SERVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some((updates, _)) = health_updates(&["--no-update-check"], &[], &["SIMSAPA_NO_UPDATE_CHECK"]) else {
+        return;
+    };
+    assert_eq!(updates["state"], "disabled", "{updates}");
+    assert_eq!(updates["disabled_reason"], "flag", "{updates}");
+    assert_eq!(updates["cli"]["status"], "disabled", "{updates}");
+    assert_eq!(updates["database"]["status"], "disabled", "{updates}");
+}
+
+#[test]
+fn test_no_update_check_environment_disables_the_check() {
+    let _serial = SERVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some((updates, _)) = health_updates(&[], &[("SIMSAPA_NO_UPDATE_CHECK", "1")], &[]) else {
+        return;
+    };
+    assert_eq!(updates["state"], "disabled", "{updates}");
+    assert_eq!(updates["disabled_reason"], "environment", "{updates}");
 }

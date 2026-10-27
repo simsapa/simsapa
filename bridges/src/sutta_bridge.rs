@@ -5388,6 +5388,7 @@ impl qobject::SuttaBridge {
     /// * `save_stats_behaviour` - Controls stats saving: "enabled", "disabled", or "determine"
     pub fn check_for_updates(self: Pin<&mut Self>, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString) {
         use simsapa_backend::update_checker::{self, SaveStatsBehaviour};
+        use simsapa_backend::update_status::{InstalledDb, UpdateStatus};
 
         info("SuttaBridge::check_for_updates() start");
         let qt_thread = self.qt_thread();
@@ -5407,12 +5408,22 @@ impl qobject::SuttaBridge {
             // Get current app and db versions
             let app_version = update_checker::get_app_version();
             let db_version = update_checker::get_db_version();
+            // The `updates` field of the API server's `/health`, from this
+            // check's own results (see simsapa_api::update_cache).
+            let installed = InstalledDb::from_resolved(db_version.clone());
 
             // First check if local db is obsolete (incompatible with app)
             if let Some(obsolete_info) = update_checker::is_local_db_obsolete(
                 &app_version,
                 db_version.as_deref(),
             ) {
+                // The database part is judged before the releases info, so
+                // this is `incompatible` without any fetch.
+                simsapa_api::set_update_status(UpdateStatus::from_releases(
+                    &app_version,
+                    &installed,
+                    Err("not checked".to_string()),
+                ));
                 let json = serde_json::to_string(&obsolete_info).unwrap_or_default();
                 crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                     qo.as_mut().local_db_obsolete(QString::from(json));
@@ -5425,11 +5436,20 @@ impl qobject::SuttaBridge {
             // Try to fetch release information
             let releases_info = match update_checker::fetch_releases_info(screen_size_opt.as_deref(), stats_behaviour) {
                 Ok(info) => {
+                    simsapa_api::set_update_status(UpdateStatus::from_releases(&app_version, &installed, Ok(&info)));
                     // Save the successfully fetched releases info to the global
                     simsapa_backend::set_releases_info(info.clone());
                     info
                 },
                 Err(e) => {
+                    // `unknown`, even though the check goes on with the
+                    // embedded snapshot: the snapshot is never used to
+                    // detect updates.
+                    simsapa_api::set_update_status(UpdateStatus::from_releases(
+                        &app_version,
+                        &installed,
+                        Err(format!("could not reach the releases server: {}", e)),
+                    ));
                     // The live fetch from the releases server failed (e.g. no
                     // network). Fall back to the embedded snapshot so the app can
                     // still resolve compatible asset download URLs for setup /

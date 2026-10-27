@@ -86,8 +86,10 @@ use simsapa_backend::db::DbManager;
 
 pub mod helpers;
 pub mod routes;
+pub mod update_cache;
 
 pub use helpers::*;
+pub use update_cache::{current_update_status, init_update_status, set_update_status, spawn_background_update_check};
 
 pub static APP_GLOBALS_API: OnceLock<AppGlobals> = OnceLock::new();
 

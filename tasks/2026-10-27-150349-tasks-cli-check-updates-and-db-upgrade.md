@@ -6,19 +6,21 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend/src/update_checker.rs` - `fetch_releases_info()` gains a timeout + URL variant; reuse `to_version`, `compare_versions`, `is_local_db_obsolete`, `has_db_update`, `is_app_version_compatible_with_db_version`, `resolve_db_version`, `get_release_channel`.
 - `backend/src/lib.rs` - `pub mod update_status;`.
 - `backend/src/db/mod.rs` - `read_appdata_db_version()` (existing, reused).
-- `api/src/helpers.rs` - `HealthInfo` gains `updates`; `health_info()` reads the cache.
-- `api/src/update_cache.rs` - **New.** Process-global cache + `spawn_background_update_check(scope)`.
-- `api/src/lib.rs` - module registration, re-exports; route inventory comment unchanged (no new route).
+- `api/src/helpers.rs` - `HealthInfo` gains `updates`; `health_info()` reads the cache (a read lock and a clone).
+- `api/src/update_cache.rs` - **New.** `UpdateCache` (the process-global `/health` cache: `set`, `set_if_unset`, `current`, `spawn_check` once per process) and the free functions `set_update_status`, `init_update_status`, `current_update_status`, `spawn_background_update_check`; unit tests against a never-answering listener.
+- `api/Cargo.toml` - `tempfile` dev-dependency for the cache tests.
+- `api/src/lib.rs` - `pub mod update_cache;` and re-exports; route inventory unchanged (no new route).
 - `api/src/routes/misc.rs` - `GET /health` (no code change expected beyond the struct; test here).
 - `api/tests/` or inline tests - `/health` responds immediately while the check is blocked.
-- `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch.
+- `backend_cli/src/main.rs` - `CheckUpdates`, `DbUpgrade` subcommands and dispatch; global `--no-update-check` flag passed to `serve`.
 - `backend_cli/src/commands/check_updates.rs` - **New.** `simsapa check-updates`: runs the check (10 s), text/JSON output, exit 1 via `CliError::reported` when a part is `unknown`.
 - `backend_cli/src/exit.rs` - `CliError::reported(code)`: the command already printed its result; `finish()` prints nothing more.
 - `backend_cli/tests/check_updates.rs` - **New.** `check-updates` integration tests against a local listener, temp folders.
 - `backend_cli/src/commands/health.rs` - inline check, `Updates` line, `updates` in JSON.
-- `backend_cli/src/commands/serve.rs` - spawn the background check (honouring `--no-update-check`, the env var and the app setting).
+- `backend_cli/src/commands/serve.rs` - decides with `implicit_check_disabled()`; stores `disabled(reason)` or spawns the background check from the `on_liftoff` fairing.
+- `backend_cli/tests/serve.rs` - `start_serve_with_env()`; `/health` answers promptly with `checking` while the check hangs; `--no-update-check` → `flag`; `SIMSAPA_NO_UPDATE_CHECK=1` → `environment`.
 - `backend/src/app_data.rs` - `get_notify_about_simsapa_updates()` (existing, reused by the CLI).
-- `bridges/src/sutta_bridge.rs` - `check_for_updates()` writes the GUI's `/health` cache (no new request).
+- `bridges/src/sutta_bridge.rs` - `check_for_updates()` writes the GUI's `/health` cache at the obsolete return and both live-fetch arms (no new request).
 - `backend_cli/src/commands/mod.rs` - register new modules.
 - `backend_cli/src/setup.rs` - refactor the upgrade into shared functions; `SetupMode` / helpers reused by `db-upgrade`.
 - `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals).
@@ -26,7 +28,7 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend_cli/tests/setup.rs` - must stay green after the refactor.
 - `backend_cli/tests/db_upgrade.rs` - **New.** Refusal paths in temporary folders.
 - `backend_cli/src/output.rs` - `test_no_print_macros_in_sources` (run, don't edit).
-- `bridges/src/api.rs` - `start_webserver()` spawns the background check with the GUI scope.
+- `bridges/src/api.rs` - `start_webserver()` stores the initial `checking` / `disabled(setting)` with `init_update_status()` (set only if unset, since the GUI's check may finish first); no request of its own.
 - `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()`.
 - `bridges/assets/qml/UpdateNotificationDialog.qml` - cross-reference comment in the database-update section.
 - `docs/backend-cli-and-npm-package.md`, `docs/simsapa-cli-and-localhost-api.md`, `docs/localhost-api-implementation.md`, `docs/releases-info-and-fallback.md`, `PROJECT_MAP.md` - documentation.
@@ -142,15 +144,15 @@ pub fn spawn_background_update_check();           // `serve` only: std::thread, 
 - **`serve`**: `implicit_check_disabled(cli.no_update_check, get_app_data().get_notify_about_simsapa_updates())` → `Some(reason)` stores `disabled(reason)` and spawns nothing; `None` spawns the check.
 - **GUI** (FR-17): **no new request.** `start_webserver()` stores `disabled(Setting)` when the setting is off, else `checking`. `SuttaBridge::check_for_updates()` (bridges depends on `simsapa_api`) then stores: obsolete → database `incompatible`; live fetch OK → `UpdateStatus::from_releases(Ok(&info))`; live fetch failed → `from_releases(Err(e))` (database `unknown`, even though the GUI then uses the snapshot). `cli` is `not_applicable` throughout.
 
-- [ ] 3.0 `updates` field in `GET /health` + background check
-  - [ ] 3.1 Create `api/src/update_cache.rs` with the cache and functions above; register in `api/src/lib.rs` and re-export what `backend_cli` and `bridges` need.
-  - [ ] 3.2 `spawn_background_update_check()`: store `checking`, then `std::thread::spawn` → `check_updates(UpdateCheckConfig::from_env(3 s, check_cli: true), appdata_database_url)` → `set_update_status`. Log one `info` line with the outcome; never print. A second call in the same process is a no-op (`OnceLock`/`AtomicBool` guard).
-  - [ ] 3.3 Add `updates: UpdateStatus` to `HealthInfo` in `api/src/helpers.rs`, fill it in `health_info()`. Before any spawn (e.g. the `health` command, which sets it itself in 4.0) the default is `checking`; make sure nothing else that builds `HealthInfo` breaks (`grep -rn HealthInfo`).
-  - [ ] 3.4 Add the **global** `--no-update-check` flag to `Cli` in `backend_cli/src/main.rs` (`#[arg(long, global = true)]`, help: "Make no update check (health, serve); check-updates ignores it") and pass it to `serve::run` / `health::run`. In `serve()`: decide with `implicit_check_disabled(...)`; disabled → `set_update_status(disabled(reason))`; else call `spawn_background_update_check()` from the existing `on_liftoff` fairing (spawned there so it starts only after the bind; the fairing must not block).
-  - [ ] 3.5 GUI, **no new network request**: in `bridges/src/api.rs` `start_webserver()`, after `init_app_globals_api()`, `set_update_status(disabled(Setting))` when `get_app_data().get_notify_about_simsapa_updates()` is false, else `checking`. In `bridges/src/sutta_bridge.rs` `check_for_updates()`'s thread, call `set_update_status(...)` at the three points: the obsolete early return, the live-fetch `Ok` arm, the live-fetch `Err` arm (before falling back to the snapshot). Do not change any signal, dialog or request parameter. The manual menu check updates the cache too, which is correct (it is a live result).
-  - [ ] 3.6 Unit tests in `api/src/update_cache.rs` (no databases needed): `current_update_status()` returns `checking` immediately while a spawned check is blocked on a never-answering listener; the second-spawn no-op; serialisation shape of `updates`. The end-to-end `/health` promptness test goes in 3.7, because it needs the dist databases. (`HealthProbe` in `in_use.rs` reads only `db_paths`, so the extra field cannot break the in-use check.)
-  - [ ] 3.7 `backend_cli/tests/serve.rs`: with `SIMSAPA_RELEASES_API_URL` / `SIMSAPA_NPM_DIST_TAGS_URL` pointing at a listener that never answers, `/health` answers promptly and shows `updates.state == "checking"`; `serve --no-update-check` → `/health` `updates.state == "disabled"`, `disabled_reason == "flag"`; `SIMSAPA_NO_UPDATE_CHECK=1` → `"environment"`. (The `"setting"` path is covered by the unit test of `implicit_check_disabled`; don't toggle the setting in the shared dist database.) Check the route-parity test (`route_parity.rs`) still passes.
-  - [ ] 3.8 `make build -B` (bridges compiles; no QML change, so no qmltypes concern).
+- [x] 3.0 `updates` field in `GET /health` + background check
+  - [x] 3.1 Create `api/src/update_cache.rs` with the cache and functions above; register in `api/src/lib.rs` and re-export what `backend_cli` and `bridges` need.
+  - [x] 3.2 `spawn_background_update_check()`: store `checking`, then `std::thread::spawn` → `check_updates(UpdateCheckConfig::from_env(3 s, check_cli: true), appdata_database_url)` → `set_update_status`. Log one `info` line with the outcome; never print. A second call in the same process is a no-op (`OnceLock`/`AtomicBool` guard).
+  - [x] 3.3 Add `updates: UpdateStatus` to `HealthInfo` in `api/src/helpers.rs`, fill it in `health_info()`. Before any spawn (e.g. the `health` command, which sets it itself in 4.0) the default is `checking`; make sure nothing else that builds `HealthInfo` breaks (`grep -rn HealthInfo`).
+  - [x] 3.4 Add the **global** `--no-update-check` flag to `Cli` in `backend_cli/src/main.rs` (`#[arg(long, global = true)]`, help: "Make no update check (health, serve); check-updates ignores it") and pass it to `serve::run` / `health::run`. In `serve()`: decide with `implicit_check_disabled(...)`; disabled → `set_update_status(disabled(reason))`; else call `spawn_background_update_check()` from the existing `on_liftoff` fairing (spawned there so it starts only after the bind; the fairing must not block).
+  - [x] 3.5 GUI, **no new network request**: in `bridges/src/api.rs` `start_webserver()`, after `init_app_globals_api()`, `set_update_status(disabled(Setting))` when `get_app_data().get_notify_about_simsapa_updates()` is false, else `checking`. In `bridges/src/sutta_bridge.rs` `check_for_updates()`'s thread, call `set_update_status(...)` at the three points: the obsolete early return, the live-fetch `Ok` arm, the live-fetch `Err` arm (before falling back to the snapshot). Do not change any signal, dialog or request parameter. The manual menu check updates the cache too, which is correct (it is a live result).
+  - [x] 3.6 Unit tests in `api/src/update_cache.rs` (no databases needed): `current_update_status()` returns `checking` immediately while a spawned check is blocked on a never-answering listener; the second-spawn no-op; serialisation shape of `updates`. The end-to-end `/health` promptness test goes in 3.7, because it needs the dist databases. (`HealthProbe` in `in_use.rs` reads only `db_paths`, so the extra field cannot break the in-use check.)
+  - [x] 3.7 `backend_cli/tests/serve.rs`: with `SIMSAPA_RELEASES_API_URL` / `SIMSAPA_NPM_DIST_TAGS_URL` pointing at a listener that never answers, `/health` answers promptly and shows `updates.state == "checking"`; `serve --no-update-check` → `/health` `updates.state == "disabled"`, `disabled_reason == "flag"`; `SIMSAPA_NO_UPDATE_CHECK=1` → `"environment"`. (The `"setting"` path is covered by the unit test of `implicit_check_disabled`; don't toggle the setting in the shared dist database.) Check the route-parity test (`route_parity.rs`) still passes.
+  - [x] 3.8 `make build -B` (bridges compiles; no QML change, so no qmltypes concern).
 
 ### 4.0 — Specs and dependencies
 

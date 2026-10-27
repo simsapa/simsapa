@@ -16,9 +16,11 @@ use clap::Args;
 use rocket::fairing::AdHoc;
 use rocket::error::ErrorKind;
 
-use simsapa_api::{ApiConfig, build_rocket};
+use simsapa_api::{ApiConfig, build_rocket, set_update_status, spawn_background_update_check};
 use simsapa_backend::errln;
-use simsapa_backend::{dotenv_c, find_port_set_env, get_app_globals, logger};
+use simsapa_backend::update_checker::get_app_version;
+use simsapa_backend::update_status::{UpdateStatus, implicit_check_disabled};
+use simsapa_backend::{dotenv_c, find_port_set_env, get_app_data, get_app_globals, logger};
 
 use crate::exit::{CliError, CliResult};
 use crate::in_use::WriteLock;
@@ -120,18 +122,25 @@ fn non_loopback_warning(host: IpAddr, port: u16) -> String {
 
 /// Run the server until Ctrl-C or `GET /shutdown`. Requires the full preamble
 /// and `init_app_globals_api()`. `port_file` is restored when the server does
-/// not start. `_lock` is the CLI write lock, held while
+/// not start. `no_update_check` is `--no-update-check`: see
+/// `implicit_check_disabled()`. `_lock` is the CLI write lock, held while
 /// serving: the in-use check cannot see a server bound to a specific
 /// non-loopback address, and the lock still keeps other `simsapa` writers out.
-pub fn run(args: &ServeArgs, json: bool, _lock: Option<WriteLock>, port_file: PortFileBackup) -> CliResult {
-    let result = serve(args, json);
+pub fn run(
+    args: &ServeArgs,
+    json: bool,
+    no_update_check: bool,
+    _lock: Option<WriteLock>,
+    port_file: PortFileBackup,
+) -> CliResult {
+    let result = serve(args, json, no_update_check);
     if result.is_err() {
         port_file.restore();
     }
     result
 }
 
-fn serve(args: &ServeArgs, json: bool) -> CliResult {
+fn serve(args: &ServeArgs, json: bool, no_update_check: bool) -> CliResult {
     let port: u16 = std::env::var("API_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -153,12 +162,22 @@ fn serve(args: &ServeArgs, json: bool) -> CliResult {
     };
     let log_line = format!("simsapa serve: listening on {}", url);
 
+    // One update check per start, for the `updates` field of `/health`.
+    let disabled = implicit_check_disabled(no_update_check, get_app_data().get_notify_about_simsapa_updates());
+    if let Some(reason) = disabled {
+        set_update_status(UpdateStatus::disabled(reason, &get_app_version(), true));
+    }
+
     // Printed once Rocket has bound, so a bind failure is not preceded by a
-    // false "listening" line.
+    // false "listening" line. The update check starts there too, on a thread
+    // of its own (it must not block the runtime).
     let rocket = rocket.attach(AdHoc::on_liftoff("Listening line", move |_| {
         Box::pin(async move {
             outln!("{}", listening_line);
             logger::info(&log_line);
+            if disabled.is_none() {
+                spawn_background_update_check();
+            }
         })
     }));
 

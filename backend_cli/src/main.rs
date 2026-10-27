@@ -53,6 +53,11 @@ struct Cli {
     #[arg(short = 'v', long = "verbose", global = true, action = ArgAction::Count)]
     verbose: u8,
 
+    /// Make no update check (health, serve); check-updates ignores it.
+    /// SIMSAPA_NO_UPDATE_CHECK=1 does the same.
+    #[arg(long, global = true)]
+    no_update_check: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -242,7 +247,7 @@ fn run(cli: &Cli) -> CliResult {
             let port_file = commands::serve::PortFileBackup::read();
             simsapa_backend::set_write_api_port_file(true);
             simsapa_api::init_app_globals_api();
-            commands::serve::run(args, cli.json, lock, port_file)
+            commands::serve::run(args, cli.json, cli.no_update_check, lock, port_file)
         }
         Commands::Docs(_) => unreachable!("handled before the globals are initialised"),
         Commands::Setup(args) => {
