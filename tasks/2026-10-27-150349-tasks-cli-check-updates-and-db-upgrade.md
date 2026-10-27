@@ -27,7 +27,7 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals): `DbUpgradeArgs`, pure `decide_db_upgrade()` (unit-tested), live release lookup with the bundled list only for a newer release, then `setup`'s shared export → delete → download → import.
 - `backend_cli/tests/read_only_commands.rs` - `check-updates` / `health` integration tests (offline, overridden URLs).
 - `backend_cli/tests/setup.rs` - must stay green after the refactor.
-- `backend_cli/tests/db_upgrade.rs` - **New.** Refusal and no-op paths in temporary folders against a local releases listener: no databases (2), lock held (3), incompatible (1, names `setup`), up to date (0, text and JSON), non-tty without `--yes` (1), releases unreachable (1, not "up to date"), unknown language (1).
+- `backend_cli/tests/db_upgrade.rs` - **New.** Refusal and no-op paths in temporary folders against a local releases listener: no databases (2), lock held (3), incompatible (1, names `setup`), up to date (0, text and JSON), non-tty without `--yes` (1), releases unreachable (1, not "up to date"), server reached but no usable release (1, says so, not "could not reach"), unknown language (1).
 - `backend_cli/src/output.rs` - `test_no_print_macros_in_sources` (run, don't edit).
 - `bridges/src/api.rs` - `start_webserver()` stores the initial `checking` / `disabled(setting)` with `init_update_status()` (set only if unset, since the GUI's check may finish first); no request of its own.
 - `bridges/src/sutta_bridge.rs` - cross-reference comment on `prepare_for_database_upgrade()`.

@@ -204,11 +204,12 @@ pub fn run(args: &DbUpgradeArgs, json: bool) -> CliResult {
     errln!("Looking up the database release for Simsapa {}…", app_version);
     let releases_url = UpdateCheckConfig::from_env(RELEASES_TIMEOUT, false).releases_api_url;
     let params = releases_request_params(&installed, &paths.appdata_database_url);
-    let live_error = match post_releases_request(&releases_url, RELEASES_TIMEOUT, &params) {
+    let live_failure = match post_releases_request(&releases_url, RELEASES_TIMEOUT, &params) {
         Ok(info) => {
             let compatible = to_version(&app_version)
                 .ok()
-                .and_then(|app| get_latest_app_compatible_assets_release(&info, &app).cloned());
+                .and_then(|app| get_latest_app_compatible_assets_release(&info, &app).cloned())
+                .filter(is_downloadable);
             // A download follows, as in `setup`: compatible_assets_release()
             // and the language downloads read it.
             set_releases_info(info);
@@ -217,19 +218,33 @@ pub fn run(args: &DbUpgradeArgs, json: bool) -> CliResult {
                 None => format!("the releases server lists no database release for simsapa {}", app_version),
             }
         }
-        Err(e) => format!("{:#}", e),
+        Err(e) => format!("could not reach the releases server: {:#}", e),
     };
 
-    warn(&format!("db-upgrade: no live release ({}), trying the bundled release list", live_error));
-    let bundled = compatible_assets_release();
+    warn(&format!("db-upgrade: {}, trying the bundled release list", live_failure));
+    let bundled = compatible_assets_release().filter(is_downloadable);
     match decide_db_upgrade(Some(&installed_version), &app_version, bundled.as_ref(), false) {
         DbUpgradeDecision::Upgrade => {
-            errln!("Could not use the releases server ({}).", live_error);
+            errln!("No release from the releases server: {}.", live_failure);
             errln!("Using the release list bundled with simsapa.");
             let release = bundled.expect("Upgrade implies a release");
             upgrade_or_up_to_date(args, json, installed_version, release, false)
         }
-        _ => Err(CliError::error(format!("Could not reach the releases server: {}", live_error))),
+        _ => Err(CliError::error(capitalise(&live_failure))),
+    }
+}
+
+/// A release whose archive URLs can be built, as `setup` requires. Checked
+/// before anything is deleted: a bad URL would fail only after the deletion.
+fn is_downloadable(release: &ReleaseEntry) -> bool {
+    !release.github_repo.is_empty() && !release.version_tag.is_empty()
+}
+
+fn capitalise(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -314,7 +329,21 @@ fn upgrade(args: &DbUpgradeArgs, json: bool, installed_version: String, release:
     }
 
     let upgraded_from = replace_databases(old, args.ignore_export_errors, interactive, DB_UPGRADE_COMMAND)?;
-    install_release(&urls, true, "Upgrade")?;
+    // From here the old databases are gone, and running `db-upgrade` again
+    // finds none: `setup` completes the upgrade from the markers and
+    // import-me/, which a failed or stopped download keeps.
+    install_release(&urls, true, "Upgrade").map_err(|e| {
+        CliError::new(
+            e.code,
+            format!(
+                "{}\nThe old databases were removed and your user data was saved in {}. Run `{}` to finish the \
+                 upgrade.",
+                e.message,
+                paths.app_assets_dir.join("import-me").display(),
+                SETUP_COMMAND
+            ),
+        )
+    })?;
     finish_install()?;
 
     let upgraded_to = plain(&release.version_tag).to_string();

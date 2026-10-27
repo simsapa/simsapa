@@ -215,3 +215,30 @@ fn test_unknown_language_is_refused() {
     assert!(stderr(&out).contains("Not available for download: xx"), "{}", stderr(&out));
     assert_untouched(dir.path());
 }
+
+/// The releases server answers but lists nothing this version can install —
+/// a release of another major.minor, or one without a repository to download
+/// from — and the bundled list names nothing newer: an error that says so,
+/// not "could not reach".
+#[test]
+fn test_no_usable_live_release_is_not_unreachable() {
+    let dir = tempfile::tempdir().unwrap();
+    minimal_appdata(dir.path(), &same_minor(9999));
+
+    let no_repo = serde_json::json!({
+        "application": { "releases": [] },
+        "assets": { "releases": [{
+            "version_tag": format!("v{}", same_minor(10000)), "github_repo": "",
+            "suttas_lang": ["en"], "description": "New content.",
+        }] },
+    })
+    .to_string();
+    for body in [releases_json("v0.0.1"), no_repo] {
+        let out = db_upgrade(dir.path(), &listen(body), &["--yes"]);
+        assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+        let err = stderr(&out);
+        assert!(err.contains("The releases server lists no database release for simsapa"), "{err}");
+        assert!(!err.contains("Could not reach"), "{err}");
+        assert_untouched(dir.path());
+    }
+}
