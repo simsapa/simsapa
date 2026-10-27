@@ -1,8 +1,49 @@
 # Simsapa Localhost API search endpoints
 
-The app runs a local HTTP server (Rocket, `bridges/src/api.rs`, bound to
-`127.0.0.1:<api_port>`) used by the browser extension and other local clients.
-The default port is 4848.
+A local HTTP server (Rocket) used by the browser extension, agents and other
+local clients. The default port is 4848. Two programs provide it:
+
+- **The GUI app**, bound to `127.0.0.1:<api_port>` while it runs. It serves
+  every route in this document.
+- **`simsapa serve`**, the command-line program from the `@simsapa/cli` npm
+  package, for machines without the GUI (bound to `127.0.0.1` unless `--host`
+  says otherwise, §10). It serves the **shared** data routes only: search,
+  word and sutta retrieval, `/gloss_text`, `/lookup_forms`, `/health` and the
+  rest of §14.1 except the AI routes. The **GUI-only** routes (§14.2, which
+  drive the app's windows, plus the clipboard, external-URL and
+  `/app-assets-list` routes of §14.3), the **AI routes** (`/word_selection_ws`,
+  `/set_ai_provider_key`, `/ai_provider_key`) and the **static-asset routes**
+  (`/assets/…`, `/favicon.ico`, `/get_pdf_viewer/…`, `/book_resources/…`,
+  `/dict_resources/…`) are a plain `404` there.
+
+The shared routes live in the Qt-free `simsapa_api` crate (`api/src/`); the GUI
+mounts them and adds its own routes in `bridges/src/api.rs`. Paths, JSON and
+status codes are the same from both. HTML pages rendered by `simsapa serve` still
+link `{api_url}/assets/…` (fonts, scripts, icons), which 404 there: the reader
+CSS is inlined in the page, so the text an agent extracts is unaffected. See
+[backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md).
+
+**Installing `simsapa serve` without the GUI.** The `simsapa` program is on npm
+as `@simsapa/cli` (Node.js 18 or later; Linux x64 and arm64, macOS on Apple
+Silicon, Windows x64). The package carries a native binary and downloads
+nothing at install time; `simsapa setup` then downloads the databases (about
+4.8 GB on disk once extracted):
+
+```sh
+npm install -g @simsapa/cli
+simsapa setup              # asks before downloading; --yes for scripts
+simsapa serve              # Simsapa API listening on http://127.0.0.1:4848
+```
+
+`setup` uses the GUI app's own data folder (on Linux `~/.local/share/simsapa`),
+so on a machine where the app is already set up it reports so and downloads
+nothing; `--simsapa-dir <path>` (or `SIMSAPA_DIR`) chooses another folder.
+`simsapa setup --languages de,hu` adds sutta languages, `--list-languages`
+lists them. Every route below can also be answered without a server by a
+`simsapa` command (`search`, `word`, `sutta`, `gloss`, `lookup`, `health`, each
+with `--json` printing the route's JSON); `simsapa --help` lists them. While the
+GUI app is running, use its server: `serve`, `setup`, `import` and `index`
+refuse to run on a folder the app is using (exit code 3, §10.1).
 
 ```sh
 curl -s -X POST "localhost:4848/suttas_fulltext_search" \
@@ -362,7 +403,17 @@ index-open cost even for clients that never query fulltext. Concurrency is safe:
 searcher access is behind an `RwLock`; the API and QML threads are concurrent
 readers.
 
-## 9. Shared helpers (`bridges/src/api.rs`)
+`simsapa serve` has the same lazy init. It runs its startup preamble (including
+any dictionary-index reconciliation) to completion before it starts listening,
+so there are no concurrent index writes to avoid, but the cold index-open cost
+is still paid only by the first fulltext query.
+
+## 9. Shared helpers (`api/src/helpers.rs`, `simsapa_api`)
+
+These are `pub` in the `simsapa_api` crate, so the CLI's `search` command calls
+the same `run_search` as `POST /search`; the route bodies are in
+`api/src/routes/`.
+
 
 - `parse_search_mode` / `parse_search_area` — request string → enum (exact serde
   labels), `None` on unknown (→ 400 on `/search`).
@@ -392,7 +443,7 @@ readers.
 
 ## 10. The port (default 4848)
 
-The server binds to `127.0.0.1:<api_port>`. The port is resolved at startup
+The GUI binds to `127.0.0.1:<api_port>`. The port is resolved at startup
 (`backend/src/lib.rs`):
 
 - **Default `4848`.** If the `API_PORT` env var is set to a valid, free port,
@@ -527,6 +578,60 @@ fulltext searcher has been initialized (§8):
   stay the same but the shape does not, so also invalidate on an
   `app_version` change if the cache stores whole responses (§19.1). `null`
   (never `""`) when the row cannot be read.
+
+### 10.1 `simsapa serve`: `--port` and `--host`
+
+`simsapa serve` picks its port the way the GUI does: `--port <n>` if given,
+else `API_PORT`, else the first free port from 4848. It writes that port to
+`api-port.txt` and prints one line on stdout once it is listening
+(`Simsapa API listening on http://127.0.0.1:4848`; with `--json`,
+`{"url": …, "host": …, "port": …}`). It stops on Ctrl-C, or on `GET /shutdown`
+when bound to a loopback address.
+
+It refuses to start (exit code 3) while the GUI app or another `simsapa serve`
+is using the same data folder: point the client at that server instead. The
+check reads `api-port.txt` and asks `http://localhost:<port>/health` whether
+its `db_paths` are this folder's.
+
+**`--host <address>`** sets the address to bind, an IPv4 or IPv6 address (a
+hostname such as `localhost` is rejected, exit code 1). The default
+`127.0.0.1` is reachable only from the same machine. Bind `0.0.0.0` (or `::`)
+when the client is elsewhere, e.g. outside a Docker container or on another
+computer on the network:
+
+```sh
+# Inside a container: listen on every interface, publish the port.
+docker run -p 4848:4848 … simsapa serve --host 0.0.0.0 --port 4848
+curl -s localhost:4848/health | jq .counts     # from the host
+```
+
+- **The API has no authentication.** On any non-loopback address `serve`
+  prints a warning on stderr before listening:
+
+  ```
+  Warning: the Simsapa API is listening on 0.0.0.0:4848 without
+  authentication. Anyone who can reach this machine on that port can use it.
+  That includes changing this folder's display settings (POST /save_sutta_display_settings)
+  and writing to its log (POST /logger). GET /shutdown is not available; stop it with Ctrl-C.
+  ```
+
+- **`GET /shutdown` is not mounted** on a non-loopback bind (a `404`), so
+  another machine cannot stop the server. The writing routes,
+  `POST /save_sutta_display_settings` and `POST /logger`, stay mounted. The
+  display settings are stored in `appdata.sqlite3`, so a change made through
+  either server is the GUI app's setting too.
+- **In-use detection sees only servers reachable on `localhost`.**
+  `api-port.txt` holds only the port, and the check calls
+  `http://localhost:<port>/health`. That works for `127.0.0.1`, `0.0.0.0` and
+  `::`, but a server bound to one specific address (`--host 192.168.1.5`) is not
+  seen, and its folder looks free to other `simsapa` commands. Those that write
+  are still kept out by the CLI's own write lock, which `serve` holds while it
+  runs. The GUI app checks neither, so do not start it on a folder a
+  `simsapa serve` or a `simsapa import` is using.
+
+Every `simsapa` command opens the databases afresh (130–250 ms per call for a
+one-shot search with the release binaries), so an agent making many queries should start `simsapa serve`
+once and use the API rather than run one command per query.
 
 ## 11. Response fields (`SearchResult`)
 
@@ -1028,9 +1133,14 @@ To show the readings and notes inline the way the reader does, see
 
 ## 14. Complete route reference
 
-Every route mounted in `start_webserver()`'s `routes![...]` (`bridges/src/api.rs`).
-Routes detailed earlier are cross-referenced; the rest are listed here with their
-purpose. Many of the GUI-navigation routes are **side-effecting**: they fire a
+Every route of the GUI app's server. The shared routes are
+`simsapa_api::shared_routes()` (`api/src/lib.rs`, whose doc comment is the
+authoritative inventory); `bridges/src/api.rs` `start_webserver()` mounts them
+through `simsapa_api::build_rocket()` and adds its own. **`simsapa serve`
+serves §14.1 except the three rows marked *GUI only (AI)*, and of §14.3 only
+`/`, `/health`, `/logger` and `/shutdown`** (the last only on a loopback bind,
+§10.1). All of §14.2 is GUI only. Routes detailed earlier are cross-referenced;
+the rest are listed here with their purpose. Many of the GUI-navigation routes are **side-effecting**: they fire a
 `cxx-qt` `callback_*` into the running GUI (open a window/tab, navigate, toggle a
 mode) and return only an HTTP `Status` or a short plain-text message — they do
 **not** return content. They exist for the browser extension and in-app WebEngine
@@ -1059,16 +1169,16 @@ views, not for headless data retrieval.
 | `GET /word.json?uid=<uid>&[verbose=1]` | Full dictionary-word record as JSON (query form; uid encoding-agnostic). Default bare array, 404 + `[]` on miss; `verbose=1` → diagnostic envelope. A DPD headword (`<id>/dpd`) also carries `construction_summary` | §13.3 |
 | `POST /lookup_forms` | Exact DPD form lookup: up to 5,000 forms → one result per form, in input order, with every headword and split of the form's DPD `lookup` row and nothing chosen, DPD's parses of the form (`form_grammar_raw`, per headword `form_grammar`, per split component its own row's) and each headword's `root_base` / `root_sign` / `construction_summary`; `dpd_version`. 400 / 500 with JSON `{ "error" }` | §19.1 |
 | `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, incl. grouped deconstruction fields). With `options.exact: true`, every token in order with its exact lookup instead. 400 on bad body; empty text → 200 empty paragraphs | §16.1, §19.2 |
-| `GET /word_selection_ws` | WebSocket word-selection run over glossed paragraphs; streams `status` / `error` / final `result` messages; accepts `cancel` | §16.2 |
-| `POST /set_ai_provider_key` | Set a provider's API key + enable it (and optionally a model), so the WebSocket engine — which uses the app's **saved** settings — can reach it. Never echoes the key | §16.4 |
-| `GET /ai_provider_key?provider=Gemini` | Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
+| `GET /word_selection_ws` | *GUI only (AI).* WebSocket word-selection run over glossed paragraphs; streams `status` / `error` / final `result` messages; accepts `cancel` | §16.2 |
+| `POST /set_ai_provider_key` | *GUI only (AI).* Set a provider's API key + enable it (and optionally a model), so the WebSocket engine — which uses the app's **saved** settings — can reach it. Never echoes the key | §16.4 |
+| `GET /ai_provider_key?provider=Gemini` | *GUI only (AI).* Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
 | `GET /get_book_spine_item_html_by_uid/<window_id>/<spine_item_uid..>` | Full rendered Library-book chapter HTML, by spine-item uid | — |
 | `GET /book_pages/<book_uid>/<resource_path..>` | Rendered Library-book page HTML, by in-book resource path | — |
 | `GET /navigation_timeline?[window_id=<id>]` | The Timeline page of the Sutta Navigation window: every node with a context note on one time axis, as a full HTML page with the find bar. With no navigation tree in the database, the controls and "No timeline data" | [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md) |
 | `GET /sutta_titles_flat_completion_list` | Autocomplete list of sutta titles. **Placeholder — returns `[]`** (the extension uses a bundled list) | — |
 | `GET /dict_words_flat_completion_list` | Autocomplete list of dictionary words. **Placeholder — returns `[]`** | — |
 
-### 14.2 GUI navigation (side-effecting; open/navigate windows)
+### 14.2 GUI navigation (side-effecting; open/navigate windows; GUI only)
 
 | Method · Path | Purpose |
 |---|---|
@@ -1095,16 +1205,16 @@ views, not for headless data retrieval.
 |---|---|
 | `GET /` | Liveness — minimal HTML page (see §10). |
 | `GET /health` | JSON diagnostics snapshot: `app_version`, `api_port`, `db_paths`, `fulltext_searcher_ready`, `fulltext` (per-area index state), `counts`, `sutta_languages`, `dict_sources` (see §10). |
-| `GET /shutdown` | Shut the webserver down (`Shutdown::notify`). Used by `shutdown_webserver` / `shutdown_webserver_tcp`. |
-| `GET /app-assets-list` | Debug HTML listing of the SIMSAPA_DIR and internal-storage directory trees. |
-| `GET /assets/<path..>` | Serve a bundled static asset (CSS/JS/fonts/images/pdf-viewer) from the embedded `assets/` dir. |
-| `GET /favicon.ico` | Serve the app icon as the favicon. |
-| `GET /book_resources/<book_uid>/<path..>` | Serve a binary resource (image/css/font/pdf) imported with a Library book, from the DB. |
-| `GET /dict_resources/<dict_id>/<path..>` | Serve a binary resource imported with a StarDict dictionary, keyed by numeric `dict_id`. |
-| `GET /get_pdf_viewer/<book_uid>` | Redirect/loader HTML that opens the bundled PDF.js viewer pointed at a book's `document.pdf` (browser testing). |
+| `GET /shutdown` | Shut the webserver down (`Shutdown::notify`). Used by `shutdown_webserver` / `shutdown_webserver_tcp`. Not mounted when `simsapa serve` binds a non-loopback address (§10.1). |
+| `GET /app-assets-list` | *GUI only.* Debug HTML listing of the SIMSAPA_DIR and internal-storage directory trees. |
+| `GET /assets/<path..>` | *GUI only (static asset).* Serve a bundled static asset (CSS/JS/fonts/images/pdf-viewer) from the embedded `assets/` dir. |
+| `GET /favicon.ico` | *GUI only (static asset).* Serve the app icon as the favicon. |
+| `GET /book_resources/<book_uid>/<path..>` | *GUI only (static asset).* Serve a binary resource (image/css/font/pdf) imported with a Library book, from the DB. |
+| `GET /dict_resources/<dict_id>/<path..>` | *GUI only (static asset).* Serve a binary resource imported with a StarDict dictionary, keyed by numeric `dict_id`. |
+| `GET /get_pdf_viewer/<book_uid>` | *GUI only (static asset).* Redirect/loader HTML that opens the bundled PDF.js viewer pointed at a book's `document.pdf` (browser testing). |
 | `POST /logger` | Write a message to the app log. Body: `LoggerRequest` (§15). |
-| `POST /copy_to_clipboard` | Copy text to the system clipboard (`text/plain`). Body: `CopyToClipboardRequest` (§15). |
-| `POST /open_external_url` | Open a URL in the system browser. Body: `OpenExternalUrlRequest` (§15). |
+| `POST /copy_to_clipboard` | *GUI only.* Copy text to the system clipboard (`text/plain`). Body: `CopyToClipboardRequest` (§15). |
+| `POST /open_external_url` | *GUI only.* Open a URL in the system browser. Body: `OpenExternalUrlRequest` (§15). |
 
 ### 14.4 Shared uid handling (sutta routes)
 
@@ -1258,9 +1368,12 @@ build a vocabulary-table UI: **`POST /gloss_text`** turns Pāli text into a
 per-word structured result (senses + deconstructor break-downs), and the
 **`GET /word_selection_ws`** WebSocket runs the AI "Word Selection" over that
 result — picking each ambiguous word's sense and each compound's break-down —
-while streaming progress. Both live in `bridges/src/api.rs`; the glossing core
-is `helpers::process_all_paragraphs()` (shared with the in-app GlossTab), the
-engine is the shared fallback walk in `bridges/src/ai_engine.rs`. See
+while streaming progress. `/gloss_text` is a shared route (`api/src/routes/gloss.rs`,
+also served by `simsapa serve`); its glossing core is the backend's
+`helpers::process_all_paragraphs()` (shared with the in-app GlossTab and with
+`simsapa gloss`). The WebSocket is GUI-only (`bridges/src/api.rs`) and its
+engine is the shared fallback walk in `bridges/src/ai_engine.rs`. Without the
+GUI, the calling agent makes the selections itself (§16.5). See
 [gloss-ai-word-selection.md](./gloss-ai-word-selection.md) for the resolution
 chain, the item-id scheme (`p<pi>w<wi>` / `d` / `c<k>`) and cache semantics.
 
@@ -1943,6 +2056,94 @@ $("go").addEventListener("click", gloss);
 </body>
 </html>
 ```
+
+### 16.5 Agent-driven word selection (no AI provider)
+
+With `simsapa serve`, or with `simsapa gloss --json` (which prints the same
+document as `/gloss_text`), there is no `/word_selection_ws`: the calling agent
+is the language model, and it makes the choices the WebSocket would make. No
+provider key and no WebSocket are involved. Everything it needs is in the
+`/gloss_text` response:
+
+1. For each `paragraphs[].words_data[]` word, **`direct_uids` decides what to
+   choose.** Non-empty: choose one sense among `direct_uids` (cases (a)/(b) of
+   §16.1). Empty: the word is deconstructor-resolved; choose one of
+   `deconstructions[]` (when there is more than one), then one sense per
+   component of that break-down, from the component's `result_uids` (cases
+   (c)/(d)).
+2. **The meanings are in `results[]`**, keyed by `uid`: each has `word` (the
+   headword, e.g. `dhamma 1.03`) and `summary` (part of speech, meaning,
+   construction, as HTML). `direct_uids` and `result_uids` are uids into that
+   list. A uid not in it (e.g. one dropped by `no_duplicates_globally`) can be
+   fetched with `/word.json?uid=` (§13.3).
+3. **The context** is the passage itself; `example_sentence` carries the
+   ±50-character window around the word.
+4. The chosen `uid`s are ordinary word uids: render or export them with §13.
+   The numbers in `selected_index` and `selected_deconstruction_index` are the
+   pipeline's defaults (the first option), not a judgement.
+
+A jq program that reduces the response to the choices, with each option's
+meaning as plain text:
+
+```sh
+cat > choices.jq <<'EOF'
+.paragraphs[].words_data[]
+| (.results | map({key: .uid, value: (.word + ": " + (.summary | gsub("<[^>]*>"; "")))}) | from_entries) as $sense
+| if (.direct_uids | length) > 0 then
+    { word: .original_word, choose: "sense",
+      options: [.direct_uids[] | $sense[.]] }
+  else
+    { word: .original_word, choose: "break-down, then a sense per component",
+      breakdowns: [.deconstructions | to_entries[] |
+        { index: .key, words_joined: .value.words_joined,
+          components: [.value.components[] |
+            { word, options: [.result_uids[] | $sense[.]] }] }] }
+  end
+EOF
+
+curl -s -X POST "localhost:$PORT/gloss_text" -H 'Content-Type: application/json' \
+  -d '{"text":"pañcaggadāyakaṁ bhikkhave"}' | jq -f choices.jq
+# or, without a server:
+simsapa gloss "pañcaggadāyakaṁ bhikkhave" --json | jq -f choices.jq
+```
+
+Output (shortened):
+
+```jsonc
+{
+  "word": "pañcaggadāyakaṁ",
+  "choose": "break-down, then a sense per component",
+  "breakdowns": [
+    { "index": 0, "words_joined": "pañca + gadāya + kaṁ", "components": [ … ] },
+    { "index": 1, "words_joined": "pañca + gadā + yakaṁ", "components": [ … ] },
+    { "index": 2, "words_joined": "pañca + agga + dāyakaṁ",
+      "components": [
+        { "word": "pañca",   "options": ["pañca: (card) five (5)   card, x pl"] },
+        { "word": "agga",    "options": ["agga 1.1: (adj) highest; topmost; foremost; supreme; ultimate   adj",
+                                         "agga 1.3: (nt) tip; top; peak   nt", "…"] },
+        { "word": "dāyakaṁ", "options": ["dāyaka 1: (masc) giver; donor; sponsor (of)  [√dā + [y] + aka]  masc, agent, from dadāti",
+                                         "dāyaka 2: (adj) giving; offering; providing  [√dā + [y] + aka]  adj, in comps, from dadāti"] }
+      ] },
+    { "index": 3, "words_joined": "pañca + agga + adāyakaṁ", "components": [ … ] }
+  ]
+}
+{
+  "word": "bhikkhave",
+  "choose": "sense",
+  "options": [
+    "bhikkhave: (masc) monks  [√bhikkh + u + ave], [bhikkhu + ave]  masc, voc pl of bhikkhu",
+    "bhikkhu: (masc) monk; monastic; mendicant; fully ordained monk  [√bhikkh + u]  masc, from bhikkhati"
+  ]
+}
+```
+
+Here the agent picks break-down 2 (*pañca + agga + dāyakaṁ*, "giver of the five
+first-fruits"), `agga 1.4` for *agga* and `dāyaka 1` for *dāyakaṁ*, and the
+vocative `bhikkhave` for the second word. Break-downs 0 and 1 are the
+deconstructor's mechanical splits; judging them is exactly the agent's job.
+
+To check a form exactly rather than gloss a passage, `/lookup_forms` (or
+`simsapa lookup`) returns every headword and split with nothing chosen (§19.1).
 
 ## 17. Reference conversion: `POST /reference_search`
 

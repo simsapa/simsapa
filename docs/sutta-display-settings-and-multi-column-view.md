@@ -238,7 +238,7 @@ untouched.
   no-op in block mode (page can't scroll); per-column scroll resets to the top
   as the passages are re-fetched fresh.
 
-## 4. Route surface (`bridges/src/api.rs`)
+## 4. Route surface (`api/src/routes/suttas.rs`)
 
 Details and JSON shapes in
 [simsapa-localhost-api-search-endpoints.md](./simsapa-localhost-api-search-endpoints.md) §14.5.

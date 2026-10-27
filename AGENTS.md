@@ -362,8 +362,10 @@ Notable feature docs:
   with quote marks inside it is joined (`manopubbaṅ’gamā`, `so’pi`, `cā”tipi`)
   by `join_mid_word_apostrophes`, after the iti split has taken its quotes.
 - [Localhost API search endpoints](./docs/simsapa-localhost-api-search-endpoints.md) —
-  the **whole Rocket route surface** in `bridges/src/api.rs` (search, word/sutta
-  retrieval, GUI-navigation, assets), plus the **agent quick-start** (§0: search →
+  the **whole Rocket route surface** (search, word/sutta retrieval,
+  GUI-navigation, assets) — the shared data routes in `api/src/` (`simsapa_api`,
+  also served by `simsapa serve`, with npm install instructions), the GUI-only,
+  AI and asset routes in `bridges/src/api.rs` — plus the **agent quick-start** (§0: search →
   copy `uid` → fetch full HTML/JSON). The four search routes: general `POST /search`
   (area-specific default mode, exact `SearchMode`/`SearchArea` serde names,
   HTTP 400 on unknown mode/area), `POST /suttas_fulltext_search` (FulltextMatch),
@@ -1000,6 +1002,27 @@ Notable feature docs:
   degraded binary — with no `qmltypes` at all `qmlcachegen` silently drops
   **38% of singleton lookups and 30% of object-property lookups** to interpreted
   bindings, measured tree-wide, and a clean tree's only build is its first one.
+- [The `simsapa` CLI and the `@simsapa/cli` npm package](./docs/backend-cli-and-npm-package.md) —
+  the Qt-free command-line program (`backend_cli/`, binary `simsapa`) and the
+  crates around it: **`simsapa_api` (`api/`) holds the shared data routes** that
+  both the GUI and `simsapa serve` mount via `build_rocket()`; the GUI-driving,
+  **AI** (`/word_selection_ws` & co., with `rig-core`) and static-asset routes
+  stay in `bridges`; `bootstrap_cli/` is the maintainer's tool. The backend's
+  default-on **`audio` feature** is off in `api` and `backend_cli`.
+  **`simsapa setup` is a second implementation of the GUI's first-run download**
+  (`DownloadAppdataWindow.qml` + `asset_manager.rs`) — change both together;
+  the doc lists every step and what the CLI does differently on purpose (no
+  Retry button, failures are fatal, upgrade markers consumed only after
+  success). The **startup preamble** (`backend_cli/src/startup.rs`) mirrors
+  `gui.cpp`'s startup and has a **read-only mode** for when the folder is in
+  use; **in-use detection** (`api-port.txt` + `/health`) plus the
+  `cli-write.lock` protect the single-process invariant of the Tantivy lock
+  fallback; only `serve` writes `api-port.txt`. Also: commands, exit codes,
+  `--json`, the stdout/stderr rules, musl builds via cargo-zigbuild (musl is
+  slower to *start*, not to search), binary and package sizes, the npm
+  optional-dependency layout, `make npm-packages`, the dry run and the
+  **publish checklist** (`--tag latest` while versions are prereleases;
+  platform packages first).
 
 ## Qt version per platform — never invoke a bare `qmake6`
 
@@ -1634,6 +1657,14 @@ as racy (the object can be destroyed between the check and the `queue`).
 
 ### New Rust bridges
 
+**A new localhost API data route is not bridge code.** Put it in `simsapa_api`
+(`api/src/routes/`, registered in `shared_routes()` in `api/src/lib.rs`, whose
+route-count test and inventory comment must be updated), so the GUI and
+`simsapa serve` both get it. It goes in `bridges/src/api.rs` only if it needs Qt
+(window callbacks, clipboard, `open_external_url`, the internal storage path),
+an AI provider, or the embedded `assets/` folder. See
+[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md).
+
 When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, the
 Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
 `bridges/build.rs`:
@@ -1909,6 +1940,14 @@ are rebuilt by the bootstrap, not versioned.
 - **Sass:** `make sass` or `sass --no-source-map './assets/sass/:./assets/css/'`
 
 ### Distribution Packages
+- **`simsapa` CLI and npm packages:** `make cli` (debug) / `make cli-release`
+  (host target) build in `backend_cli/target/`. Release binaries per npm
+  platform: `make cli-linux-x64`, `make cli-linux-arm64` (static musl through
+  cargo-zigbuild, on Linux), `make cli-darwin-arm64` (on the Mac),
+  `make cli-win32-x64` (on Windows), each into `dist/cli/<platform>/`.
+  `make npm-packages` packs `dist/npm/*.tgz`; it **never publishes** — that is
+  the maintainer's manual step (checklist in
+  [docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md)).
 - **Linux AppImage:** `make appimage -B` (creates Simsapa-*.AppImage)
   - Clean rebuild: `make appimage-rebuild`
   - Clean only: `make appimage-clean`
@@ -1974,7 +2013,11 @@ are rebuilt by the bootstrap, not versioned.
   `qmllint`, not the system Qt's, and it does **not** fail the target (qmllint
   exits 0 on warnings): there is a pre-existing warning baseline, so what
   matters is a *new* warning naming a file you touched.
-- **Rust Tests:** `cd backend && cargo test` (runs all backend tests)
+- **Rust Tests:** `cd backend && cargo test` (runs all backend tests).
+  The API routes' tests are in `cd api && cargo test` (builds without Qt;
+  `bridges/` cannot link `cargo test`), the CLI's in `cd backend_cli && cargo
+  test`. `make rust-test` runs `backend`, `bootstrap_cli`, `api` and
+  `backend_cli`.
 - **Single Test:** `cd backend && cargo test test_name` (replace test_name with specific test function)
 - **All Tests:** `make test` (runs Rust, QML, and JavaScript tests)
 

@@ -332,7 +332,7 @@ plumbing. Prev/next navigation re-serves cached pages without recomputation.
 
 ## 8a. Reuse by the localhost API (deferred, but kept unblocked)
 
-The Rocket endpoints in `bridges/src/api.rs` (e.g. `POST /suttas_fulltext_search`)
+The Rocket endpoints in `api/src/routes/search.rs` (`simsapa_api`) (e.g. `POST /suttas_fulltext_search`)
 call the **same** `SearchQueryTask::results_page` the UI uses. As a result,
 everything in §3–§6 is produced **backend-side** and is already serialized into
 the `SearchResult` JSON those endpoints return: the producer-owned non-nested

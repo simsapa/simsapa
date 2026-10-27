@@ -1,5 +1,300 @@
 # The `simsapa` CLI (`backend_cli/`) and the `@simsapa/cli` npm package
 
+`simsapa` is a Qt-free command-line program over the same Rust backend as the
+GUI app: it downloads the databases (`setup`), searches and retrieves suttas and
+dictionary entries, glosses Pāli text, imports user dictionaries and books, and
+serves the localhost API (`serve`) for agents. It carries **no AI provider**:
+it is meant to run inside an agentic context, where the calling model does the
+reasoning (e.g. word selection, see the API doc §16.5). It is published to npm
+as `@simsapa/cli`.
+
+It shares the data folder with the GUI app: by default it resolves the folder
+exactly as the app does, so a folder set up by either works with the other.
+
+## Crate layout
+
+The crates are not a Cargo workspace; each has its own `Cargo.lock` and they
+depend on each other by `path`. Build or test one with
+`cd <crate> && cargo build` / `cargo test`.
+
+| Folder | Package | What it is | Why it is separate |
+|---|---|---|---|
+| `backend/` | `simsapa_backend` | The engine: databases, search, rendering, glossing | — |
+| `api/` | `simsapa_api` | The **shared** routes of the localhost API, `build_rocket()` | Rocket and tokio do not belong in `backend` (they would be built into the GUI's static library and every Android ABI); both `bridges` and `backend_cli` need it |
+| `backend_cli/` | `simsapa_backend_cli`, binary `simsapa` | The public CLI | A `[[bin]]` in `backend` would share its dependency list (`clap`, `indicatif`, `rocket`…); a crate of its own keeps the npm binary's dependencies obvious and lets profile and allocator choices apply to it alone |
+| `bootstrap_cli/` | `simsapa_bootstrap_cli` | The maintainer's tool: builds the shipped databases | Needs `tipitaka-xml-parser`, ArangoDB, `mdbook`, the repository's `scripts/`; nothing an end user installs |
+| `bridges/` | (cxx-qt) | The GUI's Qt bridges; mounts the shared routes and adds its own | Needs Qt |
+
+`simsapa_api` and `simsapa_backend_cli` build with no Qt installed and pull in
+no `cxx-qt`, `cpal` or `rig-core` (`cargo tree` in either folder shows it).
+
+Command cores used by both command-line crates live in
+`backend/src/cli_support.rs` and return values, never print: the `query`,
+`fulltext-search` and `stats` cores, and `index build|rebuild|delete`, which
+**both** crates have, because `docs/sutta-navigation-tree.md` names
+`index rebuild --area suttas --lang pli` as one of the three commands a
+maintainer runs together after `import-cst`.
+
+### The backend's `audio` feature
+
+`simsapa_backend` has one default feature, `audio`: the chanting-practice
+stack (`cpal`, `symphonia`, `flacenc`, `rubato`, the `audio` and `waveform`
+modules). `bridges` keeps the default; `api` and `backend_cli` depend on the
+backend with `default-features = false`, so the CLI links no
+ALSA/CoreAudio/WASAPI (`ldd` on a glibc build shows no `libasound`). A new
+default feature added to the backend must be re-enabled explicitly in those two
+`Cargo.toml`s.
+
+## The API routes: shared, GUI, AI, asset
+
+The authoritative inventory is the doc comment at the top of `api/src/lib.rs`;
+`simsapa_api::shared_routes()` is the list, with a test that counts it and one
+that keeps the GUI, AI and asset routes out of it.
+
+- **Shared** routes need neither Qt nor an AI provider. They live in
+  `api/src/routes/`, with the helpers they share (`parse_search_mode`,
+  `run_search`, the UID-fallback chain…) in `api/src/helpers.rs`.
+  `build_rocket(ApiConfig)` mounts them, sets the 2 MiB `string` limit and
+  manages the `Arc<DbManager>`. `ApiConfig` carries the bind address, the port
+  and whether to mount `/shutdown`. **A new data route goes here** unless it
+  needs Qt or an AI provider.
+- **GUI** routes call into Qt (window callbacks, the clipboard, opening a URL,
+  the internal storage path). They stay in `bridges/src/api.rs`, which mounts
+  them on top of `build_rocket(ApiConfig::loopback(port))`.
+- **AI** routes (`/word_selection_ws`, `/set_ai_provider_key`,
+  `/ai_provider_key`) stay in `bridges` with `ai_engine.rs` and `rig-core`. The
+  CLI has no provider keys; the agent calling it is the model. `/gloss_text`
+  must never depend on `ai_engine`: if a helper it needs sits next to the AI
+  code, move the helper into `api` or `backend`, not the route into `bridges`.
+- **Asset** routes (`/assets/…`, `/favicon.ico`, `/get_pdf_viewer/…`,
+  `/book_resources/…`, `/dict_resources/…`) stay in `bridges` with the
+  `include_dir!` of the 48 MB `assets/` folder. HTML from `simsapa serve` still
+  links `{api_url}/assets/…`, which 404s there; the reader CSS is inlined by
+  `html_content.rs`, and nobody is expected to browse those pages from it.
+
+`simsapa_api` has its own `AppGlobals` (`APP_GLOBALS_API`, read by `/health`),
+separate from the backend's; call `init_app_globals_api()` before
+`build_rocket()`.
+
+## `api-port.txt`: only a server writes it
+
+`AppGlobals::new()` writes the port into `<simsapa_dir>/api-port.txt` only while
+`simsapa_backend::set_write_api_port_file(true)` is in effect, which is the
+default, so the GUI is unchanged. The CLI turns it off at the start of `main`,
+because a `simsapa search` would otherwise overwrite a running GUI's port with
+one nobody listens on. Only `serve` turns it back on, after the in-use check,
+and only for `simsapa_api`'s globals. The port is resolved **before** any
+`AppGlobals` exists (`serve::prepare_port`), because both globals read
+`API_PORT` once and the backend's `api_url` is baked into every rendered page.
+A `serve` that fails to start puts the file's previous contents back.
+
+## The startup preamble mirrors `gui.cpp`
+
+`backend_cli/src/startup.rs` `run_headless_preamble()` is the CLI's copy of
+the startup block of `cpp/gui.cpp` `start()`: the same backend functions in the
+same order (`remove_download_temp_folder`, `ensure_no_empty_db_files`,
+`check_delete_files_for_upgrade`, `check_remove_lang_index_dirs`, the
+`appdata_db_exists()` gate, `init_app_data`, `import_user_data_after_upgrade`,
+`check_and_configure_for_first_start`, and the dictionary-index reconciliation
+with a spinner on stderr), minus the Qt windows and the mobile-only storage-path
+recovery. **Change the two together**; each step carries a `// gui.cpp:`
+comment naming its counterpart. See also
+[startup-sequence-and-caches.md](./startup-sequence-and-caches.md).
+
+It has two modes, because five of its steps write (the zero-byte sweep, the
+upgrade deletions, the user-data import, the first-start settings and the
+index reconciliation):
+
+- **Full**, under the CLI write lock, when nothing else uses the folder.
+- **Read-only** (`ensure_no_empty_db_files(false)` and `init_app_data()` only)
+  for a read-only command while a server is using the folder or another
+  `simsapa` command holds the lock. Otherwise a `simsapa search` fired while the
+  GUI is open could rebuild the dictionary index under the GUI's feet. When it
+  skips work that was pending, it says so in one stderr line.
+
+A read-only command takes the write lock only for the preamble and releases it
+before its own work.
+
+Without `appdata.sqlite3` (the GUI's own criterion) every command except
+`setup`, `paths`, `--help` and `--version` exits 2 with "The Simsapa databases
+are not set up in <path>. Run `simsapa setup` to download them."
+
+The data folder is resolved as the GUI resolves it (`.env`, `SIMSAPA_DIR`,
+`config.txt`, then `app_dirs2`, on Linux `~/.local/share/simsapa`).
+`--simsapa-dir` sets `SIMSAPA_DIR` for the one invocation, made absolute
+against the **current directory** (the backend resolves a relative
+`SIMSAPA_DIR` against the executable's directory, which is for portable
+installs, and an npm-installed executable lives in `node_modules`). For the
+same reason a Windows portable install's `config.txt` does not apply to the npm
+binary: point `--simsapa-dir` or `SIMSAPA_DIR` at the portable folder.
+
+## Coexisting with the GUI: in-use detection and the write lock
+
+Tantivy's lock fallback is a process-internal mutex (the **single-process
+invariant** in
+[fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md)),
+so two processes writing one index folder are not protected from each other.
+`backend_cli/src/in_use.rs` therefore runs two checks, because they see
+different things:
+
+- **A server using the folder.** Read `api-port.txt`, call
+  `http://localhost:<port>/health` with a 2 s timeout (its queries take a few
+  ms, so a timeout means nothing is serving), and compare its
+  `db_paths.appdata` with this folder's, lexically, never with
+  `canonicalize()`. The decision is the pure `decide()`, unit-tested.
+- **Another `simsapa` command writing.** An exclusive `fs4`
+  `try_lock_exclusive` on `<simsapa_dir>/cli-write.lock`, held by `import`,
+  `index`, `serve` and `setup` for their whole run. The file is never deleted
+  (deleting it races with the next process opening it). On a volume that cannot
+  lock at all, the command proceeds and logs one warning.
+
+While the folder is in use, `serve`, `setup`, `import` and `index` exit 3 with
+"The Simsapa app is running and using <path>. Close it first, or use its API
+directly at http://localhost:<port>." (or "Another simsapa command is changing
+<path>…"). The read-only commands run, with the read-only preamble.
+
+Known limitations:
+
+- **The GUI takes neither lock.** A GUI started during a `simsapa import` is
+  not detected.
+- **A server bound to one specific non-loopback address** (`--host
+  192.168.1.5`) does not answer on `localhost`, so it is not seen as using the
+  folder; the write lock still keeps other `simsapa` writers out.
+- **Windows and memory-mapped indexes** (not yet verified): a file mapped by
+  one process cannot be deleted by another, so a read-only command running
+  while the GUI merges segments may make the GUI's segment cleanup fail for that
+  moment. Tantivy retries deletes on its next GC. Until this is checked on
+  Windows, prefer the GUI's API to read-only commands while the GUI is indexing.
+
+## Commands
+
+| Command | What it does | Same as |
+|---|---|---|
+| `setup [--languages] [--list-languages] [--yes]` | Download the databases, or add sutta languages | the GUI's first-run download |
+| `serve [--port] [--host]` | Serve the shared routes until Ctrl-C | the GUI's server minus GUI/AI/asset routes |
+| `search <suttas\|dict\|library> <query> [--mode] [--lang] [--source] [--page] [--page-len] [--all-snippets] …` | Search | `POST /search` (`run_search`) |
+| `query <suttas\|words> <query>` | ContainsMatch, first page | — |
+| `fulltext-search <query>` | Search the Tantivy index directly | — |
+| `word <uid> [--html]` | A dictionary entry | `/word.json`, `/word_html` |
+| `sutta <uid> [--html\|--text\|--content-json\|--bilara]` | A sutta | `/sutta_html`, `/sutta.json`, `/sutta_bilara.json` |
+| `gloss <text\|-> [--exact]` | Gloss Pāli text | `POST /gloss_text` |
+| `lookup <form…\|->` | Exact DPD form lookup | `POST /lookup_forms` |
+| `import stardict\|stardict-zip\|epub\|html …` | Import a user dictionary or book | the GUI's import |
+| `index build\|rebuild\|delete …` | Fulltext indexes | `bootstrap_cli index` |
+| `stats` | Row and source counts of `appdata.sqlite3` | — |
+| `paths` | Data folder and database paths (works without databases) | — |
+| `health` | The `/health` document, computed in-process | `GET /health` |
+
+Every command takes `--json`, `--simsapa-dir` and `-v`/`-vv`. With `--json`,
+stdout holds exactly one JSON document, the route's JSON where there is a
+route; an error is `{"error": "<message>"}` on stdout with a non-zero exit.
+Progress bars, spinners and log lines go to stderr. The log also goes to the
+data folder's `log.txt`, appended and never rotated (the GUI may be writing
+it).
+
+Exit codes (also in `--help`): 0 success, 1 error (including a usage error:
+clap's own 2 would read as "databases missing"), 2 databases missing, 3 folder
+in use, 4 not found (unknown uid; a `not_found` form from `lookup` is a result,
+not exit 4), 130 interrupted.
+
+`main` stays synchronous: `reqwest::blocking` (setup, the in-use check, the
+releases lookup) panics when created or dropped inside an async runtime. Only
+`serve` gets a runtime, from `rocket::execute`, after its blocking steps.
+Rocket handles Ctrl-C for `serve`; `setup` and `import` install their own
+handler, which sets a cancel flag checked between chunks and entries.
+
+### Imports follow the GUI's paths
+
+`simsapa import` uses the code the GUI's import uses, so an import made by
+either is the same:
+
+- StarDict: `dictionary_manager_core::import_user_dir` /
+  `import_user_zip_member` (which `ANALYZE`), then
+  `dict_index_reconcile::reconcile_dict_indexes()`.
+- Books: `AppData::import_epub_to_db` / `import_html_to_db` with
+  `is_user_added = true` (which `ANALYZE`), then
+  `indexer::build_library_index` for the book's language.
+
+Not the bootstrap's `import-stardict-dictionary` / `import-epub` /
+`import-html`: those build the shipped databases (built-in dictionaries, a
+hard-coded `pli` index) and run the repository's `scripts/` SQL by relative
+path. No command calls `reinit_fulltext_searcher()` after an import: the process
+exits, and `serve` refuses to run beside a writer.
+
+## `simsapa setup`: two implementations of one procedure
+
+**`backend_cli/src/setup.rs` and the GUI's first-run download are two separate
+implementations of one procedure.** The GUI's is `DownloadAppdataWindow.qml`
+(`Component.onCompleted`, `validate_download()`, `run_download()`) and
+`bridges/src/asset_manager.rs` (`download_urls_and_extract`,
+`cleanup_on_failure`); both carry a comment pointing here. A change to either
+must be mirrored in the other, or a folder made by one stops opening cleanly in
+the other. Only `compatible_assets_release()` is shared code (in
+`backend/src/update_checker.rs`), so both pick the same database release.
+
+The procedure, in the CLI's order:
+
+1. Print the data folder. `remove_download_temp_folder()`,
+   `ensure_no_empty_db_files(true)`, `check_delete_files_for_upgrade()` — the
+   order of `gui.cpp`.
+2. Decide the mode: no `appdata.sqlite3` → **initial** (the four base archives
+   plus languages); databases present and `--languages` given →
+   **languages only**; otherwise "Simsapa is already set up in <path>." and
+   exit 0.
+3. **Peek** at the upgrade markers the app writes before a database upgrade
+   (`app-assets/auto_start_download.txt`, `download_languages.txt`) and merge
+   the marker's languages into `--languages`.
+4. Validate the language codes against the embedded `languages.json`
+   (commas/spaces, case-insensitive, `en`/`pli`/`san` skipped): "Not available
+   for download: …".
+5. Refuse without `--yes` when stdin is not a terminal (rather than hang).
+6. Fetch the releases info (live, else the embedded snapshot silently; no
+   stats) and pick the release with `compatible_assets_release()`; none →
+   the GUI's "Unable to retrieve download information…".
+7. Build the URLs as `run_download()` does: `https://github.com/<repo>/releases/download/<v-tag>/`
+   + `appdata`, `dictionaries`, `dpd`, `index` `.tar.bz2` (initial only), then
+   `suttas_lang_<code>.tar.bz2` per language. The CLI adds the `v` prefix in
+   both modes.
+8. List the archives and the destination, note the 4.8 GB, ask
+   `Continue? [y/N]`.
+9. Per archive: re-create `temp-download/temp-extract/`; download with a 30 s
+   connect timeout and no overall timeout, up to 5 attempts with 2/4/8/16 s
+   back-off; extract the `.tar.bz2` into `temp-extract/`; delete the archive;
+   for `suttas_lang_*` run `import_suttas_lang_to_appdata()`; then
+   `move_folder_contents(temp-extract, app-assets)`. A language archive brings
+   its own `index/suttas/<lang>/`, which the move merges in, so no sutta index
+   is built afterwards. One `indicatif` bar per archive on stderr,
+   `Downloading <file>` / `Extracting <file>`.
+10. Delete `temp-download/`, **then consume the markers**, then run the full
+    preamble (user-data import, first-start settings, index reconciliation) so
+    the first query does not pay for it. Print `Setup complete.`
+
+**Failure and Ctrl-C** run the same cleanup as `cleanup_on_failure`: remove
+`temp-download/`, and for an initial setup remove `app-assets/` so the next run
+starts again instead of opening half-installed databases. Ctrl-C exits 130.
+
+What the CLI does differently, on purpose:
+
+- **No storage chooser**: the default folder or `--simsapa-dir`.
+- **Languages from a flag**, plus the upgrade marker's list.
+- **No Retry button.** A missing `Content-Length`, an HTTP 429/5xx or a
+  connection lost mid-body is a failed attempt in the same five-attempt loop;
+  any other HTTP error status stops at once (the GUI does not check the status).
+- **A failed extraction, language import or move fails the setup** (non-zero
+  exit) rather than being reported and skipped: "Setup complete." over a
+  half-moved folder is worse than stopping. A language import is also checked
+  to have consumed its `suttas_lang_*.sqlite3`.
+- **The markers are consumed only after every download succeeded**, and the
+  initial-setup cleanup keeps `app-assets/import-me/` (the user data the app
+  exported before an upgrade) and both markers. The GUI consumes the markers on
+  opening the window and removes all of `app-assets/` on failure, so a failed
+  upgrade download there loses the language list. Validate first, consume last.
+- **No panics in the download path**: every I/O error becomes a reported
+  failure that goes through the cleanup.
+
+The download, extraction and cleanup are tested against a local HTTP listener
+serving a small `.tar.bz2`, never GitHub.
+
 ## Release builds per target
 
 One binary per npm platform package, each written by its `Makefile` target to

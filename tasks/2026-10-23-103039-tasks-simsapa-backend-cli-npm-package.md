@@ -81,7 +81,7 @@
 - `bridges/assets/qml/DownloadAppdataWindow.qml` - Parity comment only (in `run_download()`).
 
 ### Build, packaging, docs
-- `Makefile` - `bootstrap`, `rust-test` (now also runs `api/` and `backend_cli/` tests), `cargo-clean-build` paths; `cli`, `cli-release`, `cli-linux-x64`, `cli-linux-arm64` (cargo-zigbuild, musl), `cli-darwin-arm64`, `cli-win32-x64` → `dist/cli/<npm-platform>/`; `npm-packages` to come.
+- `Makefile` - `bootstrap`, `rust-test` (now also runs `api/` and `backend_cli/` tests), `cargo-clean-build` paths; `cli`, `cli-release`, `cli-linux-x64`, `cli-linux-arm64` (cargo-zigbuild, musl), `cli-darwin-arm64`, `cli-win32-x64` → `dist/cli/<npm-platform>/`; `npm-packages`.
 - `.gitignore` - `cli/` entries renamed; `npm/cli-*/bin/` and `npm/**/*.tgz` ignored (not `npm/*/bin/`, which would ignore the tracked launcher; `dist/` covers `dist/npm/`).
 - `npm/cli/package.json` - `@simsapa/cli`: `bin`, `files: ["bin/simsapa.js"]`, `engines.node >= 18`, `optionalDependencies` on the four platform packages. Tracked with the real version (all five files), kept in sync by `scripts/npm-pack.sh`.
 - `npm/cli/bin/simsapa.js` - Dependency-free launcher: platform → package, `require.resolve`, `spawnSync`, exit status / signal forwarding, no-op `SIGINT` listener while the binary runs, missing/unsupported platform messages.
@@ -91,14 +91,16 @@
 - `scripts/npm-pack.sh` - Reads the `backend_cli/Cargo.toml` version, refuses to pack if it differs from `backend/Cargo.toml`'s (the binary reports the backend's), writes it into the tracked `npm/*/package.json` files when they differ, stages `npm/*` under `dist/npm/stage/`, copies binaries (0755) and `LICENSE.txt`, runs `npm pack` into `dist/npm/`. Skips a platform with no binary and says so.
 - `jest.config.js` - `npm/` added as a root, `*.test.js` matched.
 - `Makefile` - `npm-packages` target.
-- `docs/simsapa-localhost-api-search-endpoints.md` - Shared vs GUI-only routes, `simsapa serve`, `--host`, agent-driven word selection.
+- `docs/simsapa-localhost-api-search-endpoints.md` - Intro: the two servers (GUI, `simsapa serve`), which routes each serves, the `/assets/` 404 note, npm install + `simsapa setup` instructions; §8 the lazy searcher under `serve`; §9 helpers in `api/src/helpers.rs`; new §10.1 `serve --port/--host` (Docker example, the warning, `/shutdown` not mounted on non-loopback, in-use limitation, per-invocation cost); §14 rows marked *GUI only* / *GUI only (AI)* / *GUI only (static asset)*; §16 intro corrected; new §16.5 agent-driven word selection with a jq worked example (run against `simsapa serve` and `simsapa gloss --json`, identical output).
 - `AGENTS.md` - "No `println!` / `eprintln!` in code the `simsapa` CLI runs" section; Code Style Rust line points at it.
-- `docs/backend-cli-and-npm-package.md` (new) - Release builds per target (toolchain, mimalloc on musl, the musl start-up trap, sizes, the embedded-assets/fonts checks) and the npm packages (layout, launcher, packing, sizes, dry run, publish checklist) so far; crate layout, parity rule, preamble, in-use detection to come (12.2).
-- `docs/startup-sequence-and-caches.md` - CLI preamble section (12.4).
+- `docs/backend-cli-and-npm-package.md` (new) - Overview, crate layout and reasons, the `audio` feature, the shared/GUI/AI/asset route split, the `api-port.txt` write rule, the preamble ↔ `gui.cpp` and its read-only mode, in-use detection + write lock + known limitations, commands / `--json` / exit codes, imports follow the GUI's paths, the setup parity rule with the step list and the deliberate differences; release builds per target (toolchain, mimalloc on musl, the musl start-up trap, sizes, the embedded-assets/fonts checks); stdout/stderr rules; the npm packages (layout, launcher, packing, sizes, dry run, publish checklist).
+- `docs/startup-sequence-and-caches.md` - §2a: the CLI's headless copy of the startup sequence and its read-only mode.
 - `docs/user-data-and-sqlite-analyze.md` - A table of the `simsapa import` commands and the entry points they call (same `ANALYZE` sites); the navigation-tree row's module path says `bootstrap_cli`.
 - `tasks/2026-10-23-103039-prd---simsapa-backend-cli-npm-package.md` - FR 26 records the `import-stardict-zip` deletion and why the other bootstrap imports stay.
 - `docs/releases-info-and-fallback.md` - `compatible_assets_release()` location updated to `backend/src/update_checker.rs`.
-- `PROJECT_MAP.md` - Entries for `backend/src/cli_support.rs` and `backend/src/update_checker.rs`.
+- `PROJECT_MAP.md` - Entries for `backend/src/cli_support.rs` and `backend/src/update_checker.rs`; new `/api/`, `/backend_cli/` and `/npm/` sections; `bridges/src/api.rs` described as GUI/AI/asset routes on top of `build_rocket()`; the moved routes' file references; CLI build/test commands.
+- `AGENTS.md` - Notable-docs entry for the new doc; the API-doc entry names both route crates; "New Rust bridges" says data routes go in `simsapa_api`; CLI and npm build commands; the API/CLI test commands and `make rust-test`.
+- `docs/search-snippet-highlight-pipeline.md`, `docs/sutta-display-settings-and-multi-column-view.md` - Route file references point at `api/src/routes/`.
 - `PROJECT_MAP.md`, `AGENTS.md` (`CLAUDE.md` is a tracked symlink to it — edit `AGENTS.md`; `sed -i CLAUDE.md` replaces the symlink with a file), `.claude/skills/gloss-agent-check/SKILL.md`, the 12 docs and the backend/bootstrap comments referencing `cli/` - Rename.
 
 ### Notes
@@ -414,18 +416,20 @@ Update the file after completing each sub-task, not just after completing an ent
       - `serve` overwrote the dist folder's `api-port.txt` (4848 → 4999); restored to 4848. The doc's dry-run section warns about this.
       - Not done here: publishing (manual, by the maintainer).
 
-- [ ] 12.0 Documentation (FR 35–38)
+- [x] 12.0 Documentation (FR 35–38)
 
   > **Depends on:** everything above (documents the final state). Follow the
   > "docs describe current behaviour" rule: no history narration; keep the traps.
 
-  - [ ] 12.1 `docs/simsapa-localhost-api-search-endpoints.md`: the intro says the server is the GUI or `simsapa serve`; mark the GUI-only, AI and static-asset routes (from the 4.1 inventory), and note that HTML from `simsapa serve` keeps `{api_url}/assets/...` links that 404 there (the reader CSS is inline); §9 points at `simsapa_api`; §10 adds `serve --port/--host`, the Docker example, the warning, `/shutdown` on non-loopback, and the in-use limitation; §16 adds the "agent-driven word selection" subsection with a worked `/gloss_text` example. Run each new example against `simsapa serve` before writing it down.
-  - [ ] 12.2 New `docs/backend-cli-and-npm-package.md`: crate layout and reasons; `audio` feature; route inventory and why AI routes stay in `bridges`; **the setup parity rule** (two implementations of one procedure; the §4.4 step list; what the CLI simplifies); preamble ↔ `gui.cpp`; `api-port.txt` write rule; in-use detection + the single-process invariant; command list; the import paths follow the GUI's; builds per target, toolchain, sizes, benchmark; npm layout, dry run, publish checklist.
+  - [x] 12.1 `docs/simsapa-localhost-api-search-endpoints.md`: the intro says the server is the GUI or `simsapa serve`; mark the GUI-only, AI and static-asset routes (from the 4.1 inventory), and note that HTML from `simsapa serve` keeps `{api_url}/assets/...` links that 404 there (the reader CSS is inline); §9 points at `simsapa_api`; §10 adds `serve --port/--host`, the Docker example, the warning, `/shutdown` on non-loopback, and the in-use limitation; §16 adds the "agent-driven word selection" subsection with a worked `/gloss_text` example. Run each new example against `simsapa serve` before writing it down.
+  - [x] 12.2 New `docs/backend-cli-and-npm-package.md`: crate layout and reasons; `audio` feature; route inventory and why AI routes stay in `bridges`; **the setup parity rule** (two implementations of one procedure; the §4.4 step list; what the CLI simplifies); preamble ↔ `gui.cpp`; `api-port.txt` write rule; in-use detection + the single-process invariant; command list; the import paths follow the GUI's; builds per target, toolchain, sizes, benchmark; npm layout, dry run, publish checklist.
   - [x] 12.3 Parity comments: at the top of `run_download()` in `DownloadAppdataWindow.qml` and of `download_urls_and_extract` in `bridges/src/asset_manager.rs`, add "`backend_cli/src/setup.rs` re-implements this procedure; change both together — see docs/backend-cli-and-npm-package.md". Use `//` comments in QML (no `console` changes). `make build -B` (QML touched).
-  - [ ] 12.4 `docs/startup-sequence-and-caches.md`: a short section on the CLI's headless preamble and that it mirrors `gui.cpp`'s order.
-  - [ ] 12.5 `PROJECT_MAP.md`: the new crates, moved files, renamed `bootstrap_cli/`.
-  - [ ] 12.6 `CLAUDE.md`: add the new doc to "Notable feature docs"; in "New Rust bridges" say data routes go in `simsapa_api` unless they need Qt or an AI provider; update the Build/Test section with `make cli*` / `make npm-packages` and `cd backend_cli && cargo test`; update `rust-test` in the `Makefile` to also run `api/` and `backend_cli/` tests (the `rust-test` part is done).
-  - [ ] 12.7 Final check: `make test` passes; `make build -B` passes; `cd bootstrap_cli && cargo build`; `cd api && cargo test`; `cd backend_cli && cargo test`; the PRD's Success Metrics §8 items are each either verified or listed as a manual check for the user.
+  - [x] 12.4 `docs/startup-sequence-and-caches.md`: a short section on the CLI's headless preamble and that it mirrors `gui.cpp`'s order.
+  - [x] 12.5 `PROJECT_MAP.md`: the new crates, moved files, renamed `bootstrap_cli/`.
+  - [x] 12.6 `CLAUDE.md`: add the new doc to "Notable feature docs"; in "New Rust bridges" say data routes go in `simsapa_api` unless they need Qt or an AI provider; update the Build/Test section with `make cli*` / `make npm-packages` and `cd backend_cli && cargo test`; update `rust-test` in the `Makefile` to also run `api/` and `backend_cli/` tests (the `rust-test` part is done).
+  - [x] 12.7 Final check: `make test` passes; `make build -B` passes; `cd bootstrap_cli && cargo build`; `cd api && cargo test`; `cd backend_cli && cargo test`; the PRD's Success Metrics §8 items are each either verified or listed as a manual check for the user.
+    - **Done:** `make test` exit 0 (Rust: 79 test binaries, 0 failed, including `api` and `backend_cli`; QML 178 passed; jest 194 passed); `make build -B` exit 0; `cd bootstrap_cli && cargo build` exit 0. The new API-doc examples were run against `simsapa serve --port 4999` on the dist folder (the §16.5 jq example; `simsapa gloss --json` output byte-identical to `/gloss_text`; `/assets/…` and `/word_selection_ws` 404; `--host 0.0.0.0` prints the warning and `/shutdown` is 404, SIGINT exits 0); `api-port.txt` restored to 4848.
+    - **Success Metrics (PRD §8):** 1 verified in 10.x (no Qt/cpal/rig-core in `cargo tree`, static musl), but not on a machine with no Qt installed. 2 verified on linux-x64 only (11.5 dry run); darwin-arm64 / win32-x64 / linux-arm64-native are for the user. 4: the CLI side is covered by `backend_cli/tests/route_parity.rs`; `simsapa serve` vs the GUI's server per curl example is a manual check. 5 verified (the §16.5 example ran as written). 3, 6 and `make bootstrap` (7) are manual checks for the user; 10.7 (Windows) stays deferred.
 
 - [x] 13.0 Follow-ups found while building
 
