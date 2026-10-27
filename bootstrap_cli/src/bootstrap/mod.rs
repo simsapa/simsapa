@@ -231,6 +231,7 @@ RELEASE_CHANNEL=development
                     let mut importer = SuttaCentralImporter::new(sc_data_dir.clone(), lang, limit);
                     importer.import(&mut conn)?;
                 }
+                appdata::record_sc_data_version(&mut conn, &sc_data_dir)?;
             } else {
                 logger::warn("SuttaCentral data directory not found, skipping");
             }

@@ -43,6 +43,7 @@ fn area_line(name: &str, a: &HealthFulltextArea) -> String {
 fn print_text(h: &HealthInfo) {
     outln!("Simsapa {}", h.app_version);
     outln!("DPD release      {}", h.dpd_version.as_deref().unwrap_or("unknown"));
+    outln!("SuttaCentral     {}", h.sc_data_version.as_ref().map(|v| v.display()).unwrap_or_else(|| "unknown".to_string()));
     outln!("appdata          {}", h.db_paths.appdata);
     outln!("dictionaries     {}", h.db_paths.dictionaries);
     outln!("dpd              {}", h.db_paths.dpd);

@@ -1191,6 +1191,12 @@ pub mod qobject {
         fn qt_version(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
+        fn dpd_version(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn sc_data_version(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
         fn app_data_folder_path(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -3081,6 +3087,19 @@ impl qobject::SuttaBridge {
 
     pub fn qt_version(&self) -> QString {
         qobject::get_qt_version()
+    }
+
+    /// DPD's own release (`db_info.dpd_release_version`), or "unknown".
+    pub fn dpd_version(&self) -> QString {
+        let v = try_get_app_data().and_then(|app_data| app_data.dbm.dpd.dpd_release_version());
+        QString::from(v.as_deref().unwrap_or("unknown"))
+    }
+
+    /// The SuttaCentral data the suttas were imported from, as
+    /// `2026-10-17 (2d9ca8da8)`, or "unknown".
+    pub fn sc_data_version(&self) -> QString {
+        let v = try_get_app_data().and_then(|app_data| app_data.dbm.appdata.sc_data_version());
+        QString::from(v.map(|v| v.display()).unwrap_or_else(|| "unknown".to_string()))
     }
 
     pub fn app_data_folder_path(&self) -> QString {

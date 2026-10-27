@@ -1,6 +1,6 @@
 //! Request/response types and helpers shared by the API routes, and by callers
 //! outside Rocket (the `simsapa` CLI runs the same searches in-process).
-//! See docs/simsapa-localhost-api-search-endpoints.md.
+//! See docs/simsapa-cli-and-localhost-api.md.
 
 use std::path::Path;
 
@@ -9,6 +9,7 @@ use rocket::serde::json::Json;
 use rocket::http::Status;
 
 use simsapa_backend::db::DbManager;
+use simsapa_backend::db::appdata::ScDataVersion;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::helpers::{query_text_to_uid_field_query, normalize_human_word_uid};
 use simsapa_backend::logger::{info, error};
@@ -37,7 +38,7 @@ pub struct ApiSearchResult {
 /// All fields beyond `query_text` are optional; serde deserializes missing
 /// `Option` fields to `None`, so existing clients that omit `mode`,
 /// `search_area`, `page_len`, `show_all_snippets`, or `snippet_exclude` keep
-/// working unchanged. See docs/simsapa-localhost-api-search-endpoints.md.
+/// working unchanged. See docs/simsapa-cli-and-localhost-api.md.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ApiSearchRequest {
     pub query_text: String,
@@ -220,7 +221,7 @@ pub fn json_error(status: Status, msg: &str) -> (Status, Json<serde_json::Value>
 /// defaults to 20 (the browser-extension default). `show_all_snippets` /
 /// `snippet_exclude` are read straight from the request (the backend only
 /// applies them for Suttas/Library). All other fields keep their defaults.
-/// See docs/simsapa-localhost-api-search-endpoints.md.
+/// See docs/simsapa-cli-and-localhost-api.md.
 pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &SearchArea) -> SearchParams {
     // "Languages"/"Language" (and empty) are the no-filter placeholders; same
     // for "Dictionaries"/"Dictionary" on the source filter.
@@ -281,7 +282,7 @@ pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &
 /// webserver shares the GUI's `FULLTEXT_SEARCHER`, and the query path returns
 /// silent-empty if it was never initialized (e.g. a curl request before QML
 /// `load_searcher` ran). Non-fulltext modes never touch the index.
-/// See docs/simsapa-localhost-api-search-endpoints.md.
+/// See docs/simsapa-cli-and-localhost-api.md.
 pub fn run_search(
     dbm: &DbManager,
     query_text: String,
@@ -321,7 +322,7 @@ pub fn run_search(
 /// (`was_uid_auto = false`) — is untouched. `run_search` consumes its
 /// `query_text`/`params` by value, so the original query and a freshly built
 /// params set are passed for the re-run. See
-/// docs/simsapa-localhost-api-search-endpoints.md.
+/// docs/simsapa-cli-and-localhost-api.md.
 #[allow(clippy::too_many_arguments)]
 pub fn run_search_with_uid_fallback(
     dbm: &DbManager,
@@ -362,7 +363,7 @@ pub fn run_search_with_uid_fallback(
 /// query that returns ≥1 hit, and any explicitly requested mode, is untouched.
 /// `run_search` consumes its args by value, so each attempt rebuilds params and
 /// passes a fresh query string. See
-/// docs/simsapa-localhost-api-search-endpoints.md.
+/// docs/simsapa-cli-and-localhost-api.md.
 #[allow(clippy::too_many_arguments)]
 pub fn run_dict_combined_with_fallback(
     dbm: &DbManager,
@@ -404,7 +405,7 @@ pub fn run_dict_combined_with_fallback(
 /// queries it uses `fallback_mode` (FulltextMatch for `/suttas_fulltext_search`,
 /// ContainsMatch for `/suttas_contains_search`). Builds params via
 /// `build_search_params` and executes via `run_search` (deconstructor `None`).
-/// See docs/simsapa-localhost-api-search-endpoints.md.
+/// See docs/simsapa-cli-and-localhost-api.md.
 pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &DbManager, fallback_mode: SearchMode) -> ApiSearchResult {
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
@@ -445,7 +446,7 @@ fn deconstructor_for(dbm: &DbManager, query_text: &str) -> Option<Vec<String>> {
 /// an unrecognized `mode` / `search_area` (the route's HTTP 400). Unlike the
 /// named convenience routes, this honors the requested mode strictly (no
 /// reference → UidMatch override). See
-/// docs/simsapa-localhost-api-search-endpoints.md.
+/// docs/simsapa-cli-and-localhost-api.md.
 pub fn run_api_search(request: &ApiSearchRequest, dbm: &DbManager) -> Result<ApiSearchResult, String> {
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
@@ -666,6 +667,10 @@ pub struct HealthInfo {
     /// DPD's own release (`db_info.dpd_release_version`), `null` when unreadable.
     /// The cache key for DPD-derived answers, not `app_version`.
     pub dpd_version: Option<String>,
+    /// The SuttaCentral `sc-data` commit the suttas were imported from
+    /// (`{"date": "2026-10-17", "commit": "2d9ca8da8"}`), `null` when the
+    /// database does not record it.
+    pub sc_data_version: Option<ScDataVersion>,
 }
 
 /// Build the `/health` document. Requires `init_app_globals_api()` to have run.
@@ -701,6 +706,7 @@ pub fn health_info(dbm: &DbManager) -> HealthInfo {
         sutta_languages: dbm.appdata.get_sutta_languages(),
         dict_sources: dbm.dictionaries.get_distinct_sources(),
         dpd_version: dbm.dpd.dpd_release_version(),
+        sc_data_version: dbm.appdata.sc_data_version(),
     }
 }
 

@@ -57,7 +57,58 @@ pub fn gloss_cache_origin_is_built_in(origin: &str) -> bool {
 
 pub type AppdataDbHandle = DatabaseHandle;
 
+/// `app_settings` key of the short commit hash of the SuttaCentral `sc-data`
+/// checkout the bootstrap imported from.
+pub const SC_DATA_COMMIT_KEY: &str = "sc_data_commit";
+/// `app_settings` key of that commit's author date, `YYYY-MM-DD` in UTC.
+pub const SC_DATA_DATE_KEY: &str = "sc_data_date";
+
+/// The SuttaCentral data release the suttas were imported from, written by the
+/// bootstrap from the `sc-data` checkout's `HEAD`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScDataVersion {
+    /// `YYYY-MM-DD`, the commit's author date in UTC.
+    pub date: String,
+    /// Short commit hash, e.g. `2d9ca8da8`.
+    pub commit: String,
+}
+
+impl ScDataVersion {
+    /// `2026-10-17 (2d9ca8da8)`
+    pub fn display(&self) -> String {
+        format!("{} ({})", self.date, self.commit)
+    }
+}
+
 impl AppdataDbHandle {
+    /// The SuttaCentral data version recorded at bootstrap. `None` when either
+    /// row is missing (a database built before it was recorded) or unreadable.
+    pub fn sc_data_version(&self) -> Option<ScDataVersion> {
+        use crate::db::appdata_schema::app_settings::dsl::*;
+
+        let read = |k: &str| -> Option<String> {
+            let res = self.do_read(|db_conn| {
+                app_settings
+                    .filter(key.eq(k))
+                    .select(value)
+                    .first::<Option<String>>(db_conn)
+                    .optional()
+            });
+            match res {
+                Ok(v) => v.flatten().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+                Err(e) => {
+                    error(&format!("sc_data_version(): {}", e));
+                    None
+                }
+            }
+        };
+
+        Some(ScDataVersion {
+            date: read(SC_DATA_DATE_KEY)?,
+            commit: read(SC_DATA_COMMIT_KEY)?,
+        })
+    }
+
     /// Count `suttas` rows (for `/health`). A 0 here means the DB is not
     /// loaded / not installed.
     pub fn count_suttas(&self) -> Result<i64> {

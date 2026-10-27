@@ -165,6 +165,20 @@ Item {
         return "6.9.3";
     }
 
+
+    function dpd_version(): string {
+
+        return 'v0.0.0';
+
+    }
+
+
+    function sc_data_version(): string {
+
+        return '2026-10-17 (2d9ca8da8)';
+
+    }
+
     function app_data_folder_path(): string {
         return "~/.local/share/simsapa";
     }

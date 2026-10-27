@@ -128,7 +128,7 @@ fn test_health_json_against_dist_databases() {
     assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
 
     let doc = stdout_json(&out);
-    for key in ["app_version", "api_port", "db_paths", "fulltext_searcher_ready", "fulltext", "counts", "sutta_languages", "dict_sources", "dpd_version"] {
+    for key in ["app_version", "api_port", "db_paths", "fulltext_searcher_ready", "fulltext", "counts", "sutta_languages", "dict_sources", "dpd_version", "sc_data_version"] {
         assert!(doc.get(key).is_some(), "missing {key}");
     }
     assert!(doc["counts"]["suttas"].as_i64().unwrap() > 0);
