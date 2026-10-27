@@ -23,7 +23,7 @@ PRD: [2026-10-27-150349-prd---cli-check-updates-and-db-upgrade.md](./2026-10-27-
 - `backend/src/app_data.rs` - `get_notify_about_simsapa_updates()` (existing, reused by the CLI).
 - `bridges/src/sutta_bridge.rs` - `check_for_updates()` writes the GUI's `/health` cache at the obsolete return and both live-fetch arms (no new request).
 - `backend_cli/src/commands/mod.rs` - register new modules.
-- `backend_cli/src/setup.rs` - refactor the upgrade into shared functions; `SetupMode` / helpers reused by `db-upgrade`.
+- `backend_cli/src/setup.rs` - the upgrade split into shared `pub(crate)` functions reused by `db-upgrade`: `OpenedDatabases`, `open_installed_databases()`, `installed_languages_for_download()`, `replace_databases(…, command)`, `install_release(urls, is_initial, action)`, `finish_install()`, `confirm(prompt, command)`.
 - `backend_cli/src/db_upgrade.rs` - **New.** `simsapa db-upgrade` (sibling of `setup.rs`, since it shares its internals).
 - `backend_cli/tests/read_only_commands.rs` - `check-updates` / `health` integration tests (offline, overridden URLs).
 - `backend_cli/tests/setup.rs` - must stay green after the refactor.
@@ -183,12 +183,12 @@ pub(crate) fn finish_install() -> CliResult;                             // cons
 
 `detect_incompatible_databases()` becomes "read version → `is_local_db_obsolete` → `open_installed_databases()`". The error text in `replace_databases` that names `simsapa setup --ignore-export-errors` takes the command name from `rerun_hint` so `db-upgrade` can name itself.
 
-- [ ] 5.0 Refactor `setup.rs` upgrade code into shared functions
-  - [ ] 5.1 Extract `OpenedDatabases` (rename of `IncompatibleDatabases`) and `open_installed_databases()`.
-  - [ ] 5.2 Generalise `replace_incompatible_databases()` → `replace_databases(…, rerun_hint)`; `setup` passes `"simsapa setup"`. The hint applies only to failures **before** the deletion (export errors, and `confirm()`'s "Run `… --yes`" message, which must take it too). After the markers are written, the retry is always `simsapa setup` (a second `db-upgrade` would find no databases and exit 2), so "could not be removed… run `simsapa setup` again" and the post-deletion download failures keep naming `setup`. Check whether `download_and_install()` already removes `temp-download/` (FR-29.5); add the step to `finish_install()` if it does not.
-  - [ ] 5.3 Extract the installed-languages merge (the `split_available` block) into `installed_languages_for_download()`.
-  - [ ] 5.4 Extract the Ctrl-C / `InstallFolders` / `import_lang` / `download_and_install` / error-mapping block into `install_release()`, and the marker-consume + full-preamble tail into `finish_install()`. The interrupted message takes the command name too ("Setup stopped." / "Upgrade stopped.").
-  - [ ] 5.5 `cd backend_cli && cargo test` — `tests/setup.rs` and the unit tests unchanged and green. Diff `setup`'s user-visible strings: none changed.
+- [x] 5.0 Refactor `setup.rs` upgrade code into shared functions
+  - [x] 5.1 Extract `OpenedDatabases` (rename of `IncompatibleDatabases`) and `open_installed_databases()`.
+  - [x] 5.2 Generalise `replace_incompatible_databases()` → `replace_databases(…, rerun_hint)`; `setup` passes `"simsapa setup"`. The hint applies only to failures **before** the deletion (export errors, and `confirm()`'s "Run `… --yes`" message, which must take it too). After the markers are written, the retry is always `simsapa setup` (a second `db-upgrade` would find no databases and exit 2), so "could not be removed… run `simsapa setup` again" and the post-deletion download failures keep naming `setup`. Check whether `download_and_install()` already removes `temp-download/` (FR-29.5); add the step to `finish_install()` if it does not.
+  - [x] 5.3 Extract the installed-languages merge (the `split_available` block) into `installed_languages_for_download()`.
+  - [x] 5.4 Extract the Ctrl-C / `InstallFolders` / `import_lang` / `download_and_install` / error-mapping block into `install_release()`, and the marker-consume + full-preamble tail into `finish_install()`. The interrupted message takes the command name too ("Setup stopped." / "Upgrade stopped.").
+  - [x] 5.5 `cd backend_cli && cargo test` — `tests/setup.rs` and the unit tests unchanged and green. Diff `setup`'s user-visible strings: none changed.
 
 ### 6.0 — Specs and dependencies
 

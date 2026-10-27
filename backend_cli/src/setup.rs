@@ -48,6 +48,7 @@ use simsapa_backend::cips_update::status_is_retryable;
 use simsapa_backend::errln;
 use simsapa_backend::logger::{error, info, warn};
 use simsapa_backend::db::read_appdata_db_version;
+use simsapa_backend::update_status::SETUP_COMMAND;
 use simsapa_backend::update_checker::{
     SaveStatsBehaviour, compatible_assets_release, fetch_releases_info, get_app_version, is_local_db_obsolete,
     resolve_db_version,
@@ -228,11 +229,23 @@ struct SetupOutput {
     upgraded_from: Option<String>,
 }
 
-/// Databases incompatible with this program, kept open until their user data
-/// is exported.
-struct IncompatibleDatabases {
-    app_data: AppData,
-    db_version: String,
+/// The installed databases that are about to be replaced, kept open until
+/// their user data is exported.
+pub(crate) struct OpenedDatabases {
+    pub app_data: AppData,
+    pub db_version: String,
+}
+
+/// Open the installed databases for the export. `db_version` is their version,
+/// already read by the caller through one plain connection.
+pub(crate) fn open_installed_databases(db_version: String) -> Option<OpenedDatabases> {
+    match AppData::try_new() {
+        Ok(app_data) => Some(OpenedDatabases { app_data, db_version }),
+        Err(e) => {
+            warn(&format!("could not open the installed databases for the export: {:#}", e));
+            None
+        }
+    }
 }
 
 /// Check the installed databases' version, as the GUI's `check_for_updates()`
@@ -241,7 +254,7 @@ struct IncompatibleDatabases {
 /// compatible folder is not migrated by `setup` and a damaged file fails at
 /// once. A folder whose version cannot be read is not treated as incompatible
 /// (the check cannot be made).
-fn detect_incompatible_databases() -> Option<IncompatibleDatabases> {
+fn detect_incompatible_databases() -> Option<OpenedDatabases> {
     if !appdata_db_exists() {
         return None;
     }
@@ -255,13 +268,19 @@ fn detect_incompatible_databases() -> Option<IncompatibleDatabases> {
     let db_version = resolve_db_version(stored)?;
     is_local_db_obsolete(&get_app_version(), Some(&db_version))?;
 
-    match AppData::try_new() {
-        Ok(app_data) => Some(IncompatibleDatabases { app_data, db_version }),
-        Err(e) => {
-            warn(&format!("setup: could not open the incompatible databases: {:#}", e));
-            None
-        }
-    }
+    open_installed_databases(db_version)
+}
+
+/// The sutta languages of the databases being replaced, split into those
+/// downloaded again (offered for download) and those left out, as the GUI's
+/// export writes them to download_languages.txt for the download window to
+/// preselect.
+pub(crate) fn installed_languages_for_download(
+    old: &OpenedDatabases,
+    available: &[LanguageInfo],
+) -> (Vec<String>, Vec<String>) {
+    let installed = parse_language_input(&old.app_data.dbm.appdata.get_sutta_languages().join(","));
+    split_available(&installed, available)
 }
 
 /// `simsapa setup --list-languages`. Needs no databases and no network.
@@ -342,11 +361,8 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
         return Err(CliError::error(format!("Not available for download: {}", invalid.join(", "))));
     }
 
-    // The languages the old databases have, as the GUI's export writes them to
-    // download_languages.txt for the download window to preselect.
     if let Some(old) = &incompatible {
-        let installed = parse_language_input(&old.app_data.dbm.appdata.get_sutta_languages().join(","));
-        let (kept, dropped) = split_available(&installed, &available);
+        let (kept, dropped) = installed_languages_for_download(old, &available);
         if !dropped.is_empty() {
             errln!("Not available for download, so not in the new databases: {}", dropped.join(", "));
         }
@@ -390,38 +406,17 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     } else {
         "Continue?"
     };
-    if !args.yes && !confirm(prompt)? {
+    if !args.yes && !confirm(prompt, SETUP_COMMAND)? {
         return Err(CliError::error("Setup cancelled."));
     }
 
     let upgraded_from = match incompatible {
-        Some(old) => Some(replace_incompatible_databases(old, args.ignore_export_errors, interactive)?),
+        Some(old) => Some(replace_databases(old, args.ignore_export_errors, interactive, SETUP_COMMAND)?),
         None => None,
     };
 
-    let cancel = install_ctrlc_handler()?;
-    let folders = InstallFolders {
-        download_temp: paths.download_temp_folder.clone(),
-        extract_temp: paths.extract_temp_folder.clone(),
-        app_assets: paths.app_assets_dir.clone(),
-    };
-    let appdata_url = paths.appdata_database_url.clone();
-    let import_lang = |dir: &Path| import_suttas_lang_to_appdata(dir, &appdata_url).map_err(|e| e.to_string());
-
-    match download_and_install(&urls, &folders, is_initial, &cancel, &RetryPolicy::default(), &import_lang) {
-        Ok(()) => {}
-        Err(InstallError::Interrupted) => {
-            return Err(CliError::interrupted_with("Setup stopped. Partly downloaded files were removed."));
-        }
-        Err(InstallError::Failed(msg)) => return Err(CliError::error(msg)),
-    }
-
-    consume_marker(&paths.auto_start_download_marker);
-    consume_marker(&paths.download_languages_marker);
-
-    // The user-data import, first-start configuration and dictionary-index
-    // update now, rather than on the first query.
-    run_headless_preamble(PreambleMode::Full)?;
+    install_release(&urls, is_initial, "Setup")?;
+    finish_install()?;
 
     if json {
         print_json(&SetupOutput {
@@ -442,10 +437,15 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
 /// delete them. Nothing is deleted unless the export (or the user's decision
 /// to go on without part of it) and both markers succeeded. Returns the old
 /// version.
-fn replace_incompatible_databases(
-    old: IncompatibleDatabases,
+///
+/// `command` (`simsapa setup` / `simsapa db-upgrade`) is named in the messages
+/// of a failure before the deletion. After it, the retry is always `simsapa
+/// setup`: the folder then has no databases, which `db-upgrade` refuses.
+pub(crate) fn replace_databases(
+    old: OpenedDatabases,
     ignore_export_errors: bool,
     interactive: bool,
+    command: &str,
 ) -> Result<String, CliError> {
     errln!("Exporting your user data…");
     if let Err(errors) = old.app_data.export_user_data_to_assets() {
@@ -456,15 +456,16 @@ fn replace_incompatible_databases(
         let go_on = if ignore_export_errors {
             true
         } else if interactive {
-            confirm("Install the new databases anyway? The data that was not exported will not be in them.")?
+            confirm("Install the new databases anyway? The data that was not exported will not be in them.", command)?
         } else {
             false
         };
         if !go_on {
-            return Err(CliError::error(
+            return Err(CliError::error(format!(
                 "The old databases were kept. To install the new ones without the data that could not be \
-                 exported, run `simsapa setup --ignore-export-errors`.",
-            ));
+                 exported, run `{} --ignore-export-errors`.",
+                command
+            )));
         }
     }
 
@@ -478,25 +479,62 @@ fn replace_incompatible_databases(
 
     // Close the old databases before deleting them: on Windows an open file
     // cannot be deleted.
-    let IncompatibleDatabases { app_data, db_version } = old;
+    let OpenedDatabases { app_data, db_version } = old;
     drop(app_data);
     check_delete_files_for_upgrade();
 
     if appdata_db_exists() {
         return Err(CliError::error(format!(
-            "The old databases could not be removed from {}. Close any program using them and run `simsapa setup` again.",
-            get_app_globals().paths.app_assets_dir.display()
+            "The old databases could not be removed from {}. Close any program using them and run `{}` again.",
+            get_app_globals().paths.app_assets_dir.display(),
+            SETUP_COMMAND
         )));
     }
     Ok(db_version)
 }
 
-fn confirm(prompt: &str) -> Result<bool, CliError> {
+/// Download, extract and install `urls` into the data folder, with Ctrl-C
+/// stopping it and cleaning up. `action` names the command in the
+/// interrupted message ("Setup" / "Upgrade").
+pub(crate) fn install_release(urls: &[String], is_initial: bool, action: &str) -> CliResult {
+    let paths = &get_app_globals().paths;
+    let cancel = install_ctrlc_handler()?;
+    let folders = InstallFolders {
+        download_temp: paths.download_temp_folder.clone(),
+        extract_temp: paths.extract_temp_folder.clone(),
+        app_assets: paths.app_assets_dir.clone(),
+    };
+    let appdata_url = paths.appdata_database_url.clone();
+    let import_lang = |dir: &Path| import_suttas_lang_to_appdata(dir, &appdata_url).map_err(|e| e.to_string());
+
+    match download_and_install(urls, &folders, is_initial, &cancel, &RetryPolicy::default(), &import_lang) {
+        Ok(()) => Ok(()),
+        Err(InstallError::Interrupted) => Err(CliError::interrupted_with(format!(
+            "{} stopped. Partly downloaded files were removed.",
+            action
+        ))),
+        Err(InstallError::Failed(msg)) => Err(CliError::error(msg)),
+    }
+}
+
+/// After every download succeeded: consume the upgrade markers, then run the
+/// user-data import, first-start configuration and dictionary-index update now,
+/// rather than on the first query. `temp-download/` is already removed by
+/// `download_and_install()`.
+pub(crate) fn finish_install() -> CliResult {
+    let paths = &get_app_globals().paths;
+    consume_marker(&paths.auto_start_download_marker);
+    consume_marker(&paths.download_languages_marker);
+    run_headless_preamble(PreambleMode::Full)
+}
+
+/// `command` is named in the message when there is no terminal to ask on.
+pub(crate) fn confirm(prompt: &str, command: &str) -> Result<bool, CliError> {
     dialoguer::Confirm::new()
         .with_prompt(prompt)
         .default(false)
         .interact()
-        .map_err(|e| CliError::error(format!("Cannot ask for confirmation ({}). Run `simsapa setup --yes`.", e)))
+        .map_err(|e| CliError::error(format!("Cannot ask for confirmation ({}). Run `{} --yes`.", e, command)))
 }
 
 /// The marker's contents, if it exists and can be read.
