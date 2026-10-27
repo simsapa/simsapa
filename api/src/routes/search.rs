@@ -1,4 +1,4 @@
-//! Search routes. See docs/simsapa-localhost-api-search-endpoints.md.
+//! Search routes. See docs/simsapa-cli-and-localhost-api.md.
 
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ pub fn get_search_options(dbm: &State<Arc<DbManager>>) -> Json<SearchOptions> {
 
 /// POST /suttas_fulltext_search
 /// Search suttas using FulltextMatch (tantivy), or UidMatch for reference-like
-/// queries. See docs/simsapa-localhost-api-search-endpoints.md.
+/// queries. See docs/simsapa-cli-and-localhost-api.md.
 #[post("/suttas_fulltext_search", data = "<request>")]
 pub fn suttas_fulltext_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Json<ApiSearchResult> {
     Json(run_suttas_search(&request, dbm.inner(), SearchMode::FulltextMatch))
@@ -42,7 +42,7 @@ pub fn suttas_fulltext_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<D
 
 /// POST /suttas_contains_search
 /// Search suttas using ContainsMatch (literal substring), or UidMatch for
-/// reference-like queries. See docs/simsapa-localhost-api-search-endpoints.md.
+/// reference-like queries. See docs/simsapa-cli-and-localhost-api.md.
 #[post("/suttas_contains_search", data = "<request>")]
 pub fn suttas_contains_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Json<ApiSearchResult> {
     Json(run_suttas_search(&request, dbm.inner(), SearchMode::ContainsMatch))
@@ -51,7 +51,7 @@ pub fn suttas_contains_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<D
 /// POST /search
 /// General search route: runs any `mode` in any `search_area`; the body is
 /// `run_api_search`. An unrecognized `mode` / `search_area` returns HTTP 400.
-/// See docs/simsapa-localhost-api-search-endpoints.md.
+/// See docs/simsapa-cli-and-localhost-api.md.
 #[post("/search", data = "<request>")]
 pub fn search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Result<Json<ApiSearchResult>, (Status, String)> {
     run_api_search(&request, dbm.inner())
@@ -72,7 +72,7 @@ pub fn dict_combined_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbM
 /// reference, Pāli title or SuttaCentral reference. Returns the matching rows
 /// of the reference table, so one call converts between reference styles. An
 /// unrecognized `field` returns HTTP 400.
-/// See docs/simsapa-localhost-api-search-endpoints.md.
+/// See docs/simsapa-cli-and-localhost-api.md.
 #[post("/reference_search", data = "<request>")]
 pub fn reference_search(request: Json<ReferenceSearchRequest>, dbm: &State<Arc<DbManager>>) -> Result<Json<ApiReferenceSearchResult>, (Status, String)> {
     let field = request.field.as_deref().unwrap_or("pts_reference");

@@ -184,6 +184,14 @@ Known limitations:
 | `stats` | Row and source counts of `appdata.sqlite3` | — |
 | `paths` | Data folder and database paths (works without databases) | — |
 | `health` | The `/health` document, computed in-process | `GET /health` |
+| `docs [--output <file>]` | Print or save `docs/simsapa-cli-and-localhost-api.md`, `include_str!`'d into the binary (`commands/docs.rs`); runs before the globals are initialised, so it needs no data folder | — |
+
+**The bundled doc is read outside this repository**, by agents that have only
+the binary. Keep it self-contained: no links to other docs, no source paths, no
+`CLAUDE.md`. `test_bundled_doc_has_no_repo_references` (in `commands/docs.rs`)
+fails on one. Implementation notes for the routes go in
+[localhost-api-implementation.md](./localhost-api-implementation.md). A doc
+edit needs a rebuild of the binary to reach `simsapa docs`.
 
 Every command takes `--json`, `--simsapa-dir` and `-v`/`-vv`. With `--json`,
 stdout holds exactly one JSON document, the route's JSON where there is a

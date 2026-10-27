@@ -361,7 +361,17 @@ Notable feature docs:
   with a re-bootstrap**. In the dictionary and the Gloss tab a word written
   with quote marks inside it is joined (`manopubbaṅ’gamā`, `so’pi`, `cā”tipi`)
   by `join_mid_word_apostrophes`, after the iti split has taken its quotes.
-- [Localhost API search endpoints](./docs/simsapa-localhost-api-search-endpoints.md) —
+- [The `simsapa` CLI and the localhost API](./docs/simsapa-cli-and-localhost-api.md) —
+  **compiled into the `simsapa` binary** (`simsapa docs` prints it, `--output`
+  saves it) and read by agents outside this repo, so it must stay
+  **self-contained**: no links to other docs, no source paths, no `CLAUDE.md`
+  (`test_bundled_doc_has_no_repo_references` in `backend_cli/src/commands/docs.rs`
+  enforces it). Implementation notes — where each route's code lives, the shared
+  helpers, the lazy searcher init — go in
+  [localhost-api-implementation.md](./docs/localhost-api-implementation.md).
+  Part A is the CLI for users and agents: commands, clean text output vs.
+  `--json` (an agent wanting another shape writes its own formatter over the
+  JSON; there is no formatter script), exit codes. Part B is
   the **whole Rocket route surface** (search, word/sutta retrieval,
   GUI-navigation, assets) — the shared data routes in `api/src/` (`simsapa_api`,
   also served by `simsapa serve`, with npm install instructions), the GUI-only,
@@ -393,7 +403,9 @@ Notable feature docs:
   silent 0-hit); and the **`GET /health`** readiness snapshot (version, port,
   db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources, and
   **`dpd_version`** — DPD's own release, the cache key for DPD-derived answers,
-  never `app_version`). **Gloss
+  never `app_version`; and **`sc_data_version`** `{date, commit}` — the
+  `sc-data` checkout the bootstrap imported, `null` on an older database).
+  **Gloss
   pipeline routes (§16):** `POST /gloss_text` (synchronous multi-paragraph
   glossing → `AllParagraphsProcessingResult`, full `ProcessedWord` incl. the
   grouped deconstruction fields; stateless per call) and `GET /word_selection_ws`

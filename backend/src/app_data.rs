@@ -84,7 +84,7 @@ pub enum ResolvedWordKind {
 /// **structured** row the JSON route returns; `dict_word` is the correlated
 /// **rendered-HTML** `dict_words` row the HTML route renders (absent for a bold
 /// definition, which renders via its own path). See
-/// `docs/simsapa-localhost-api-search-endpoints.md`.
+/// `docs/simsapa-cli-and-localhost-api.md`.
 #[derive(Debug, Clone)]
 pub struct ResolvedWord {
     canonical_uid: String,
@@ -885,7 +885,7 @@ impl AppData {
         // the matching renderer. Bold definitions use their dedicated renderer;
         // every other kind renders its correlated dict_words HTML row (DPD
         // headword/root forms reach that row via lemma_1 / root sanitize). See
-        // resolve_word_uid and docs/simsapa-localhost-api-search-endpoints.md.
+        // resolve_word_uid and docs/simsapa-cli-and-localhost-api.md.
         let resolved = match self.resolve_word_uid(word_uid) {
             Some(r) => r,
             None => return blank_page_html,
@@ -1741,7 +1741,7 @@ impl AppData {
     /// `dhamma-1-01/dpd`) resolve to the **dict_words** row `dhamma-1-01/dpd`.
     /// The dpd -> dict_words correlation is via `lemma_1` / root sanitize, not a
     /// uid string-equality join (there is no `dict_words` row with the numeric
-    /// uid). See `docs/simsapa-localhost-api-search-endpoints.md`.
+    /// uid). See `docs/simsapa-cli-and-localhost-api.md`.
     pub fn resolve_word_uid(&self, input_uid: &str) -> Option<ResolvedWord> {
         let input = input_uid.trim().trim_end_matches(".json").trim();
         if input.is_empty() {

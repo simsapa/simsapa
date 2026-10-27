@@ -1,7 +1,7 @@
 //! Gloss pipeline and exact DPD form lookup routes: `POST /gloss_text` and
 //! `POST /lookup_forms`. Neither uses an AI provider; the AI word-selection
 //! WebSocket stays in `bridges`.
-//! See docs/simsapa-localhost-api-search-endpoints.md §16 and §19.
+//! See docs/simsapa-cli-and-localhost-api.md §16 and §19.
 
 use std::sync::Arc;
 
@@ -164,7 +164,7 @@ pub struct LookupFormsResponse {
 /// every headword and split of the form's `lookup` row and nothing chosen.
 /// 400 with `{ "error" }` for an unparseable body or a validation failure,
 /// 500 with `{ "error" }` on a DB error. See
-/// docs/simsapa-localhost-api-search-endpoints.md.
+/// docs/simsapa-cli-and-localhost-api.md.
 #[post("/lookup_forms", data = "<body>")]
 pub fn lookup_forms(body: String, dbm: &State<Arc<DbManager>>) -> Result<Json<LookupFormsResponse>, (Status, Json<serde_json::Value>)> {
     let req: LookupFormsRequest = serde_json::from_str(&body).map_err(|e| {

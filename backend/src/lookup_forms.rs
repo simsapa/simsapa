@@ -2,7 +2,7 @@
 //! for `/gloss_text`'s exact mode. Kept Qt-free and outside the route so it can
 //! be unit-tested: `cargo test` does not compile in `bridges/`.
 //!
-//! See docs/simsapa-localhost-api-search-endpoints.md (`POST /lookup_forms`,
+//! See docs/simsapa-cli-and-localhost-api.md (`POST /lookup_forms`,
 //! §16.1).
 
 /// The most forms one `/lookup_forms` request may carry.

@@ -1,6 +1,6 @@
 // Integration tests for the shared, tolerant word-uid resolver
 // (AppData::resolve_word_uid) used by both the JSON and HTML word routes of the
-// localhost API. See docs/simsapa-localhost-api-search-endpoints.md.
+// localhost API. See docs/simsapa-cli-and-localhost-api.md.
 //
 // These run against the live appdata/dictionaries/dpd DBs (see CLAUDE.md), like
 // the other backend integration tests — not gated behind #[ignore].

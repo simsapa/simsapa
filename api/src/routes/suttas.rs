@@ -1,6 +1,6 @@
 //! Sutta, book page and navigation timeline routes: rendered HTML, the Bilara
 //! JSON, and the in-page content-block / display-settings routes.
-//! See docs/simsapa-localhost-api-search-endpoints.md and
+//! See docs/simsapa-cli-and-localhost-api.md and
 //! docs/sutta-display-settings-and-multi-column-view.md.
 
 use std::path::PathBuf;
@@ -118,7 +118,7 @@ pub enum SuttaJsonResponse {
 /// segment ids alphabetically and scramble the text order. The uid resolves
 /// strictly (`sutta_json::resolve_sutta_strict`): a missing translation is a
 /// `404`, never the Pāli. A sutta stored as HTML is a `404` with
-/// `reason: "no_content_json"`. See docs/simsapa-localhost-api-search-endpoints.md.
+/// `reason: "no_content_json"`. See docs/simsapa-cli-and-localhost-api.md.
 #[get("/sutta.json?<uid>")]
 pub fn get_sutta_json_q(uid: &str, dbm: &State<Arc<DbManager>>) -> SuttaJsonResponse {
     use simsapa_backend::sutta_json::{get_sutta_content_json, SuttaContentJson};

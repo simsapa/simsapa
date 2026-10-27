@@ -2,7 +2,7 @@
 //! (window callbacks, the clipboard), the AI routes, and the static page-asset
 //! routes. The shared data routes live in the `simsapa_api` crate;
 //! `start_webserver()` mounts these on top of them.
-//! See docs/simsapa-localhost-api-search-endpoints.md and
+//! See docs/simsapa-cli-and-localhost-api.md and
 //! docs/backend-cli-and-npm-package.md.
 
 use std::path::PathBuf;

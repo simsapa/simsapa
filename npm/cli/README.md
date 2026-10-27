@@ -86,7 +86,8 @@ import` is running.
 | `simsapa index build\|rebuild\|delete` | Manage the fulltext search indexes |
 | `simsapa stats` | Row and content-source counts of `appdata.sqlite3` |
 | `simsapa paths` | The data folder and database paths |
-| `simsapa health` | What `GET /health` returns |
+| `simsapa health` | What `GET /health` returns, including the DPD and SuttaCentral data versions |
+| `simsapa docs` | The full CLI and API reference (Markdown); `--output <file>` saves it |
 | `simsapa serve` | Serve the localhost API |
 
 `simsapa <command> --help` lists each command's options. `-v` and `-vv` show
@@ -129,7 +130,7 @@ simsapa serve --port 4850
 It serves the desktop app's data routes (search, words, suttas, glossing, exact
 lookups, `/health`) with the same requests and responses. The routes are
 documented in
-[the API reference](https://github.com/simsapa/simsapa/blob/main/docs/simsapa-localhost-api-search-endpoints.md).
+[the API reference](https://github.com/simsapa/simsapa/blob/main/docs/simsapa-cli-and-localhost-api.md).
 Routes that drive the desktop app's windows, and its AI word-selection routes,
 are not served. HTML pages are returned without their images, scripts and
 fonts; the text and the reader CSS are in the page.

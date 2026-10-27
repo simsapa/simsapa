@@ -543,7 +543,7 @@ pub fn searcher_open_failures() -> Vec<(String, String)> {
 
 /// Whether a `FulltextMatch` / `Combined` query will actually return real
 /// results. Lets a headless caller learn this via `/health` without running a
-/// throwaway query. See docs/simsapa-localhost-api-search-endpoints.md.
+/// throwaway query. See docs/simsapa-cli-and-localhost-api.md.
 ///
 /// **This answers "is at least one index open", not "is the global `Some`".**
 /// It used to answer the latter, which made it report `true` for a searcher

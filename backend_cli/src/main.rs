@@ -114,6 +114,10 @@ enum Commands {
     /// Download the Simsapa databases (about 4.8 GB on disk), or add sutta
     /// languages to an existing setup
     Setup(setup::SetupArgs),
+
+    /// Print the reference for these commands and the localhost API
+    /// (Markdown), or save it with --output
+    Docs(commands::docs::DocsArgs),
 }
 
 fn parse_cli() -> Cli {
@@ -161,6 +165,10 @@ fn main() {
 }
 
 fn run(cli: &Cli) -> CliResult {
+    // Needs neither the data folder nor the databases.
+    if let Commands::Docs(args) = &cli.command {
+        return commands::docs::run(args, cli.json);
+    }
     // Before any `AppGlobals` exists: it reads API_PORT once.
     if let Commands::Serve(args) = &cli.command {
         commands::serve::prepare_port(args)?;
@@ -228,6 +236,7 @@ fn run(cli: &Cli) -> CliResult {
             simsapa_api::init_app_globals_api();
             commands::serve::run(args, cli.json, lock, port_file)
         }
+        Commands::Docs(_) => unreachable!("handled before the globals are initialised"),
         Commands::Setup(args) => {
             if args.list_languages {
                 return setup::list_languages(cli.json);

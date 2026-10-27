@@ -1000,5 +1000,5 @@ progress). The WebSocket uses the app's **saved** provider keys, so
 demo — textarea → **Gloss** button → vocabulary list, with a Gemini key field
 and an AI-word-selection checkbox that renders the same sense dropdowns and
 compound component sub-rows as the QML tab. Full protocol + the demo source:
-[simsapa-localhost-api-search-endpoints.md](./simsapa-localhost-api-search-endpoints.md)
+[simsapa-cli-and-localhost-api.md](./simsapa-cli-and-localhost-api.md)
 §16.

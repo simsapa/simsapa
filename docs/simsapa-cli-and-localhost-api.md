@@ -1,69 +1,220 @@
-# Simsapa Localhost API search endpoints
+# The `simsapa` CLI and the Simsapa localhost API
 
-A local HTTP server (Rocket) used by the browser extension, agents and other
-local clients. The default port is 4848. Two programs provide it:
+Simsapa's sutta search, dictionaries and Pāli glossing can be used without the
+GUI, in two ways that answer from the same code:
+
+- **The `simsapa` command-line program** (npm package `@simsapa/cli`): one
+  command per question, readable text by default, or with `--json` the same
+  JSON document as the matching API route. Part A.
+- **The localhost HTTP API**: a local server (Rocket) for the browser
+  extension, agents and other local clients, provided by the GUI app while it
+  runs or by `simsapa serve`. Part B, §0–§19.
+
+This document is compiled into the `simsapa` binary, so the reference always
+matches the installed version:
+
+```sh
+simsapa docs                                   # print it (Markdown)
+simsapa docs --output simsapa-reference.md     # save it to a file
+```
+
+It is self-contained: everything a client needs is here.
+
+---
+
+# Part A. The `simsapa` command-line program
+
+## A.1 Install and set up
+
+The `simsapa` program is on npm as `@simsapa/cli` (Node.js 18 or later; Linux
+x64 and arm64, macOS on Apple Silicon, Windows x64). The package carries a
+native binary and downloads nothing at install time; `simsapa setup` then
+downloads the databases (about 4.8 GB on disk once extracted):
+
+```sh
+npm install -g @simsapa/cli
+simsapa setup              # asks before downloading; --yes for scripts
+simsapa search suttas "four noble truths"
+```
+
+`setup` uses the GUI app's own data folder (on Linux `~/.local/share/simsapa`),
+so on a machine where the app is already set up it reports so and downloads
+nothing; `--simsapa-dir <path>` (or `SIMSAPA_DIR`) chooses another folder for
+any command. `simsapa setup --languages de,hu` adds sutta languages,
+`--list-languages` lists them. `simsapa paths` shows the folder and which
+databases exist; any other command run before `setup` says so and exits 2.
+
+## A.2 Commands
+
+`simsapa --help` lists them and `simsapa <command> --help` gives every option.
+The read-only ones, each with the route whose JSON its `--json` prints:
+
+| Command | What it answers | `--json` is the body of |
+|---|---|---|
+| `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`. Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
+| `simsapa word <uid>` | A dictionary entry; `--html` for the rendered page | `/word.json` (§13.3); `--html`: `/word_html` |
+| `simsapa sutta <uid>` | A sutta's title, uid and plain text; `--html`, `--content-json` (Bilara JSON), `--bilara` (with variants, comments, glosses) | `/sutta_html`, `/sutta.json` (§13.4), `/sutta_bilara.json` (§13.5) |
+| `simsapa gloss <text…\|->` | Every word of a passage with its dictionary options and compound break-downs; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
+| `simsapa lookup <form…\|->` | Exact DPD form lookup, forms as arguments or one per line on stdin | `POST /lookup_forms` (§19.1) |
+| `simsapa query suttas\|words <text>` | Literal substring match, first page; `--titles`, `--count` | — |
+| `simsapa fulltext-search …` | The fulltext index directly | — |
+| `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status | `GET /health` (§10) |
+| `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
+| `simsapa docs` | This document | — |
+
+The commands that change the data folder: `simsapa setup`, `simsapa import
+stardict|stardict-zip|epub|html …` (a user dictionary or book, searchable in the
+GUI app too), `simsapa index build|rebuild|delete …`, and `simsapa serve`
+(§10.1).
+
+Uids are the ones search results carry (`sn56.11/pli/ms`, `34626/dpd`,
+`dhamma-1-01/dpd`); `sutta` also takes a reference (`mn1`, `SN 56.11`,
+`dhp182`) and `word` a display form (`"dhamma 1.01"`), as the routes do (§13).
+
+## A.3 Output: clean text, or `--json`
+
+The default output is compact plain text meant to be read, by a person or an
+agent: HTML stripped, one result per block, the matched terms in **bold** on a
+terminal and as `**…**` when stdout is piped. Progress, spinners and log lines
+go to stderr, so stdout holds only the answer.
+
+```sh
+$ simsapa search suttas vedanā aniccā --lang pli --page-len 2
+2616 results (page 1/1308)
+
+Vedanāsutta
+  sn18.5/pli/ms
+  ghānasamphassajā **vedanā** jivhāsamphassajā **vedanā** kāyasamphassajā **vedanā** manosamphassajā **vedanā** niccā vā **aniccā** va ti **aniccā** bhante evaṁ passaṁ rāhula sutavā ariyasāvako
+
+5. Vedanāsuttaṁ
+  sn18.5/pli/cst
+  sotasamphassajā **vedanā** pe ghānasamphassajā **vedanā** jivhāsamphassajā **vedanā** kāyasamphassajā **vedanā** manosamphassajā **vedanā** niccā vā **aniccā** va ti **aniccā** bhante pe evaṁ passaṁ rāhula
+
+$ simsapa search dict dhamma --page-len 1
+5662 results (page 1/5662)
+
+dhamma 1.01
+  34626/dpd
+  (masc) nature; character [√dhar + ma] masc, from dharati
+
+$ simsapa word 34626/dpd
+34626/dpd
+Lemma: dhamma 1.01
+Part of speech: masc
+Grammar: masc, from dharati
+Meaning: nature; character
+Root: √dhar 1
+Construction: √dhar + ma
+…
+
+$ simsapa gloss "atthaññe dhammā"
+atthaññe  (pr) there is; there exists [√as + ti > atthi] pr  [atthi + aññe]
+dhammā    (fem) name of an arahant nun [√dhar + ma + ā], [dhamma + ā] fem, from dhamma
+
+$ simsapa lookup bhagavantaṁ bhagav
+bhagavantaṁ  bhagavantaṁ  found  bhagavant 1, bhagavant 2
+bhagav  bhagav  not_found
+```
+
+The text output shows the first, most useful part of each answer (for `gloss`,
+each word's first dictionary option). **When an agent needs every field, it
+should pass `--json` instead** and read the JSON, which is exactly the
+matching route's response body as documented in Part B. An agent may also
+write its own small formatter (for example a Python script that reads the
+JSON on stdin) when it wants a shape the text output does not give. Under
+`--json`, stdout holds exactly one JSON document; an error is
+`{"error": "<message>"}` on stdout with a non-zero exit code.
+
+```sh
+simsapa search suttas dukkha --json | jq -r '.results[].uid'
+simsapa gloss --json - < passage.txt > gloss.json
+```
+
+### Fulltext query syntax
+
+`Fulltext Match`, the default sutta search, uses
+[tantivy's query syntax](https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html).
+It matches Pāli declensions, and words need not be next to each other: **so ce
+evam vadeyya** also finds **so ce** bhikkhu **evaṁ vadeyya**. A `+` or `-`
+prefix makes a term required or excluded:
+
+- **santam padam abhisamecca**: each term may be included, but it is fine if
+  not all are found.
+- **santam padam +abhisamecca**: `abhisamecca` must be included.
+- **santam padam -abhisamecca**: `abhisamecca` must not be included.
+
+It does not match partial words: **upasan** finds nothing (not a valid
+declension stem) until the word is complete, **upasankama**. For an exact
+partial match use `--mode "Contains Match"`.
+
+## A.4 Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | error (including a command-line usage error) |
+| 2 | the databases are not set up (run `simsapa setup`) |
+| 3 | the data folder is in use by the Simsapa app or another `simsapa` command |
+| 4 | not found (an unknown uid or reference; a `lookup` form that is `not_found` is a result, not exit 4) |
+| 130 | interrupted |
+
+## A.5 Alongside the GUI app
+
+The CLI and the GUI app share the data folder, the databases and the settings.
+While the app is running, the read-only commands work as usual, but `serve`,
+`setup`, `import` and `index` refuse with exit code 3 and name the app's own
+server to use instead (§10.1). Close the app first to change the folder.
+
+## A.6 One command per question, or `simsapa serve`
+
+Each command opens the databases afresh: 130–250 ms per one-shot search with
+the release binaries. That is fine for occasional questions. An agent making
+many queries should start `simsapa serve` once and call the API (Part B)
+instead; the server answers from already open databases.
+
+## A.7 Running the commands without a permission prompt each time
+
+The read-only commands of A.2 (`search`, `word`, `sutta`, `gloss`, `lookup`,
+`query`, `health`, `paths`, `docs` without `--output`) only read the user's
+data, so an agent that is to search autonomously can ask the user to add
+`simsapa` with those subcommands to its tool-permission allowlist, plus `jq`
+or `grep` to filter the output. With `simsapa serve` running, `curl` to the
+`127.0.0.1` server is read-only in the same way, except for the two writing
+routes named in §10.1. Allow-listing these lets the agent run the whole
+search → copy `uid` → fetch-full-text loop without a prompt per call, while
+everything else stays gated.
+
+---
+
+# Part B. The localhost API
+
+The default port is 4848. Two programs provide the server:
 
 - **The GUI app**, bound to `127.0.0.1:<api_port>` while it runs. It serves
   every route in this document.
-- **`simsapa serve`**, the command-line program from the `@simsapa/cli` npm
-  package, for machines without the GUI (bound to `127.0.0.1` unless `--host`
-  says otherwise, §10). It serves the **shared** data routes only: search,
-  word and sutta retrieval, `/gloss_text`, `/lookup_forms`, `/health` and the
-  rest of §14.1 except the AI routes. The **GUI-only** routes (§14.2, which
-  drive the app's windows, plus the clipboard, external-URL and
+- **`simsapa serve`**, for machines without the GUI (bound to `127.0.0.1`
+  unless `--host` says otherwise, §10.1). It serves the **shared** data routes
+  only: search, word and sutta retrieval, `/gloss_text`, `/lookup_forms`,
+  `/health` and the rest of §14.1 except the AI routes. The **GUI-only** routes
+  (§14.2, which drive the app's windows, plus the clipboard, external-URL and
   `/app-assets-list` routes of §14.3), the **AI routes** (`/word_selection_ws`,
   `/set_ai_provider_key`, `/ai_provider_key`) and the **static-asset routes**
   (`/assets/…`, `/favicon.ico`, `/get_pdf_viewer/…`, `/book_resources/…`,
   `/dict_resources/…`) are a plain `404` there.
 
-The shared routes live in the Qt-free `simsapa_api` crate (`api/src/`); the GUI
-mounts them and adds its own routes in `bridges/src/api.rs`. Paths, JSON and
-status codes are the same from both. HTML pages rendered by `simsapa serve` still
+Paths, JSON and status codes of the shared routes are the same from both. HTML pages rendered by `simsapa serve` still
 link `{api_url}/assets/…` (fonts, scripts, icons), which 404 there: the reader
-CSS is inlined in the page, so the text an agent extracts is unaffected. See
-[backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md).
-
-**Installing `simsapa serve` without the GUI.** The `simsapa` program is on npm
-as `@simsapa/cli` (Node.js 18 or later; Linux x64 and arm64, macOS on Apple
-Silicon, Windows x64). The package carries a native binary and downloads
-nothing at install time; `simsapa setup` then downloads the databases (about
-4.8 GB on disk once extracted):
+CSS is inlined in the page, so the text an agent extracts is unaffected.
 
 ```sh
-npm install -g @simsapa/cli
-simsapa setup              # asks before downloading; --yes for scripts
 simsapa serve              # Simsapa API listening on http://127.0.0.1:4848
-```
-
-`setup` uses the GUI app's own data folder (on Linux `~/.local/share/simsapa`),
-so on a machine where the app is already set up it reports so and downloads
-nothing; `--simsapa-dir <path>` (or `SIMSAPA_DIR`) chooses another folder.
-`simsapa setup --languages de,hu` adds sutta languages, `--list-languages`
-lists them. Every route below can also be answered without a server by a
-`simsapa` command (`search`, `word`, `sutta`, `gloss`, `lookup`, `health`, each
-with `--json` printing the route's JSON); `simsapa --help` lists them. While the
-GUI app is running, use its server: `serve`, `setup`, `import` and `index`
-refuse to run on a folder the app is using (exit code 3, §10.1).
-
-```sh
 curl -s -X POST "localhost:4848/suttas_fulltext_search" \
   -H 'Content-Type: application/json' \
-  -d '{"query_text":"vedanā aniccā","suttas_lang":"pli","page_num":0,"page_len":20}' | python3 scripts/simsapa_fmt.py
+  -d '{"query_text":"vedanā aniccā","suttas_lang":"pli","page_num":0,"page_len":20}' \
+  | jq -r '.results[] | "\(.uid)  \(.title)"'
 ```
 
-    # 1685 hit(s); showing 20
-    
-    [1] SN 18.5 — Vedanāsutta  (sn18.5/pli/ms)
-        «aniccā» bhante sotasamphassajā «vedanā» pe ghānasamphassajā «vedanā» jivhāsamphassajā «vedanā» kāyasamphassajā «vedanā» manosamphassajā «vedanā» niccā vā «aniccā» va ti «aniccā» bhante evaṁ
-    
-    [2] SN 18.5 — 5. Vedanāsuttaṁ  (sn18.5/pli/cst)
-        sotasamphassajā «vedanā» pe ghānasamphassajā «vedanā» jivhāsamphassajā «vedanā» kāyasamphassajā «vedanā» manosamphassajā «vedanā» niccā vā «aniccā» va ti «aniccā» bhante pe evaṁ passaṁ rāhula
-    
-    [3] SN 22.90 — 8. Channasuttaṁ  (sn22.90/pli/cst)
-        rūpaṁ kho āvuso channa «aniccaṁ» «vedanā aniccā» saññā «aniccā» saṅkhārā «aniccā» viññāṇaṁ «aniccaṁ» rūpaṁ anattā «vedanā» saññā saṅkhārā viññāṇaṁ anattā sabbe
-    ...
-
-This document covers the **whole route surface**. The four **search** endpoints
+Part B covers the **whole route surface**. The four **search** endpoints
 and the **sutta/dictionary retrieval** routes are documented in detail (request /
 response JSON, parameter structs, curl examples) in §1–§13; **every other route**
 is catalogued with its purpose in the complete route reference (§14), with the
@@ -85,16 +236,14 @@ result per word of a passage, nothing dropped or chosen) are §19.1–§19.2. Ea
 result carries DPD's own parse of the form (`form_grammar_raw`, and per
 headword `form_grammar`) and each headword the construction as DPD displays
 it (`construction_summary`).
-`GET /health` reports `dpd_version`, the cache key for DPD-derived answers
+`GET /health` reports `dpd_version`, the cache key for DPD-derived answers,
+and `sc_data_version`, the SuttaCentral data the suttas were imported from
 (§10).
 
-All search routes reuse the in-app search path
-(`SearchQueryTask::new` + `results_page(page_num)` + `total_hits()`), so the
-returned results carry exactly the same producer-owned, **non-nested**
+All search routes run the app's own search, so the returned results carry
+exactly the same **non-nested**
 `<span class='match'>` highlighting, `is_snippet` markers, per-occurrence
-snippet expansion, and snippet-exclusion behaviour as the in-app results. See
-[search-snippet-highlight-pipeline.md](./search-snippet-highlight-pipeline.md)
-for how the snippet/highlight stages work; this doc only covers the API plumbing.
+snippet expansion, and snippet-exclusion behaviour as the in-app results.
 
 ---
 
@@ -152,69 +301,10 @@ Three things that remove guesswork (all detailed below):
   and guesses; `/search` with `Headword Match` / `Contains Match` casts the
   widest net. Send an iti-sandhi word whole, `ti` included (§18).
 
-### 0.1 Recommended setup: a formatter script + a permission allowlist
-
-The raw responses are verbose HTML/JSON. For autonomous use, pair `curl` with a
-small **formatter script** that reads a response on stdin and prints a compact,
-grep-friendly summary (hit count, `uid`s, plain-text snippets with matches marked,
-the deconstructor split, the dictionary fields). This keeps the agent's context
-small and makes results `grep`-able.
-
-A ready-to-use example can be found in the Simsapa repository:
-[`scripts/simsapa_fmt.py`](../scripts/simsapa_fmt.py). It is a *formatter only*
-(it does no network I/O — `curl` does the request), and it auto-detects every
-shape these routes return: search results, reference rows (§17), word records, the `verbose=1` word
-envelope, the `/health` and `/sutta_and_dict_search_options` snapshots, and
-rendered sutta/word HTML (tags stripped to plain text). Typical pipeline:
-
-```sh
-curl -s -X POST "localhost:$PORT/suttas_fulltext_search" \
-  -H 'Content-Type: application/json' \
-  -d '{"query_text":"vedanā aniccā","suttas_lang":"pli","page_num":0,"page_len":20}' | python3 scripts/simsapa_fmt.py --no-color
-```
-
-Matched terms are wrapped in `«…»` markers and, when stdout is a terminal,
-**highlighted in color** (bold yellow). The color is automatic — it is
-suppressed when the output is piped or redirected so it never pollutes
-`grep`-ed or captured text. Useful flags:
-
-- `--no-color` — disable the ANSI color highlight even on a terminal (the
-  `«…»` markers are kept).
-- `--no-marks` — drop the `«…»` markers entirely (also disables color).
-- `--max N`, `--snippet-len N`, `--no-snippet`, `--raw` — cap rows, truncate
-  snippets, omit snippets, or pretty-print the parsed JSON unchanged.
-
-**Fulltext Search examples:**
-
-The fulltext search uses [tantivy's query syntax](https://docs.rs/tantivy/latest/tantivy/query/struct.QueryParser.html). The 'must' (+) and 'negative' (-) terms are particulary useful for filtering results.
-
-Words don't have to be exactly near each other, e.g. **so ce evam vadeyya** will also find **so ce** bhikkhu **evaṁ vadeyya**
-
-Prefixing a term with + and - can control "Must" or "Must not" include.
-
-**santam padam abhisamecca** -- each term may be included, but ok if not all are found.
-
-**santam padam +abhisamecca** -- 'abhisamecca' must be included, even if the others may be absent.
-
-**santam padam -abhisamecca** -- 'abhisamecca' must not be included.
-
-Fulltext matches Pāli declensions but doesn't do partial word matches, so **upasan** doesn't find anything (not a valid declension stem) until you type **upasankama**.
-
-The *Contains Match* is for exact partial matches.
-
-If you are an agent that wants to search **autonomously and safely**, write such
-a formatter (copy or adapt `scripts/simsapa_fmt.py`) and recommend the user
-add **only** these to your tool-permission allowlist:
-
-- `curl` (or the localhost host) — to call the API,
-- `grep` — to filter the formatted output,
-- the formatter script itself (e.g. `python3 scripts/simsapa_fmt.py`).
-
-All three are read-only with respect to the user's data: `curl` hits a
-`127.0.0.1`-bound local server, the formatter only reshapes stdin, and `grep`
-only reads. Allow-listing this trio lets the agent run the whole
-search → copy `uid` → fetch-full-text loop without a permission prompt per call,
-while keeping everything else gated.
+Without a server, each of these calls has a `simsapa` command printing the same
+JSON with `--json` (A.2): `simsapa search suttas dukkha --json`,
+`simsapa sutta sn56.11/pli/ms --content-json`, `simsapa word dhamma-1-01/dpd --json`,
+`simsapa lookup bhagavantaṁ bhagav --json`.
 
 ---
 
@@ -226,9 +316,6 @@ while keeping everything else gated.
 | `POST /suttas_fulltext_search` | `FulltextMatch` (tantivy) | Suttas | `None` |
 | `POST /suttas_contains_search` | `ContainsMatch` (literal) | Suttas | `None` |
 | `POST /dict_combined_search` | `DpdLookup` | Dictionary | yes |
-
-The three Suttas/general routes plus `/dict_combined_search` are mounted in the
-`routes![...]` list in `start_webserver()`.
 
 These are **search** routes: they rank, respell and guess. To check whether DPD
 knows a form *exactly*, use `POST /lookup_forms` instead (§19.1).
@@ -278,16 +365,16 @@ working unchanged.
 }
 ```
 
-- `snippet_exclude` is an **already-split array**; CSV-splitting is a QML/UI
-  concern, not done API-side.
+- `snippet_exclude` is an **already-split array**; the API does not split a
+  comma-separated string.
 - The language/source filters treat the placeholder values `"Languages"` /
   `"Language"` (and `"Dictionaries"` / `"Dictionary"` for the source) — and the
   empty string — as **no filter**.
 
 ## 3. Exact mode / area serde names
 
-Request strings must match the `SearchMode` / `SearchArea` serde labels exactly
-(`backend/src/types.rs`); an unrecognized value on `/search` returns **HTTP 400**.
+Request strings must match the `SearchMode` / `SearchArea` labels exactly; an
+unrecognized value on `/search` returns **HTTP 400**.
 
 `mode`:
 `"Combined"`, `"Fulltext Match"`, `"Contains Match"`, `"Headword Match"`,
@@ -299,8 +386,8 @@ Request strings must match the `SearchMode` / `SearchArea` serde labels exactly
 ## 4. `POST /search` mode / area resolution
 
 - `search_area` defaults to `"Suttas"` when omitted; an unknown value → 400.
-- `mode` defaults are **area-specific** (matching the `SearchBarInput.qml`
-  dropdown index 0): Suttas/Library → `"Fulltext Match"`, Dictionary →
+- `mode` defaults are **area-specific** (the first entry of the app's search
+  mode dropdown): Suttas/Library → `"Fulltext Match"`, Dictionary →
   `"Combined"`. An explicitly-sent unknown `mode` → 400.
 - `/search` honors the requested mode **strictly** — there is no
   reference → `UidMatch` override (that lives only on the named convenience
@@ -323,11 +410,10 @@ filter and `deconstructor` is `None`.
 ## 5. Named-route UID auto-detect (self-correcting)
 
 `/suttas_fulltext_search` and `/suttas_contains_search` keep a sutta-reference
-auto-detect: if `query_text_to_uid_field_query(query_text, &SearchArea::Suttas)`
-returns a `uid:`-prefixed query (e.g. for `"sn56.11"`, `"MN 44"`, `"dhp182"`),
-the route runs `UidMatch` instead of its fallback mode. `/dict_combined_search`
-does the same with `SearchArea::Dictionary`, which tries **only** the dictionary
-UID patterns — so `"ja 1.1"` is the DPD headword there and the Jātaka in the
+auto-detect: if the query is a sutta reference (e.g. `"sn56.11"`, `"MN 44"`,
+`"dhp182"`), the route runs `UidMatch` instead of its fallback mode.
+`/dict_combined_search` does the same for dictionary uids, and tries **only**
+the dictionary uid patterns — so `"ja 1.1"` is the DPD headword there and the Jātaka in the
 sutta routes. The area is what keeps the two from colliding; there is no
 cross-area exclusion list.
 
@@ -362,7 +448,7 @@ This only fires on a **0-hit auto-`UidMatch`**; any query that already returns
 ## 6. Pagination
 
 Record-based pagination, driven by `page_num` + `page_len`. `hits` is the record
-total (`SearchQueryTask::total_hits()`) and is **unchanged** by snippet expansion
+total and is **unchanged** by snippet expansion
 or exclusion — it stays constant across pages. `page_len` defaults to 20.
 
 ## 7. Response shape (`ApiSearchResult`)
@@ -376,75 +462,31 @@ or exclusion — it stays constant across pages. `page_len` defaults to 20.
 ```
 
 The API does **not** re-shape, re-highlight, or post-process results. It also
-does not compute `show_header` / `find_query` (those are derived QML-side and are
-not stored on `SearchResult`); a client can recompute them from the returned rows.
+does not compute `show_header` / `find_query` (the app's result list derives
+them; they are not stored on `SearchResult`); a client can recompute them from the returned rows.
 
-## 8. Lazy, mode-gated fulltext searcher init
+## 8. The fulltext index opens on the first fulltext query
 
-The webserver runs on a thread in the **same process** as the GUI
-(`cpp/gui.cpp` spawns `start_webserver`), so it shares the one process-global
-`FULLTEXT_SEARCHER` (`backend/src/lib.rs`). The query path does **not** self-init
-the searcher — `with_fulltext_searcher(...)` returns `None` when uninitialized
-and the query returns **silent-empty** results.
+The fulltext (Tantivy) index is opened by the first query whose mode needs it
+(`Fulltext Match`, or `Combined` for suttas and library), not when the server
+starts. That query pays the one-off cost of opening the index; later ones do
+not. Until then `GET /health` reports `fulltext_searcher_ready: false` (§10),
+which is therefore not a fault on a fresh server.
 
-The shared `run_search` helper therefore calls
-`simsapa_backend::init_fulltext_searcher()` **only** when the resolved mode needs
-the Tantivy index (`FulltextMatch` or `Combined`), immediately before running the
-query. `init_fulltext_searcher()` is idempotent (no-op if already loaded), so in
-steady state — any realistic curl / browser-extension request, long after the UI
-finished starting — it does nothing. It does real work only in the edge case
-where QML init never ran (the case that would otherwise return silent-empty).
+## 9. The same answers from the CLI
 
-Init is **not** eager at `start_webserver()`: right after the webserver thread is
-spawned, `gui.cpp` runs `reconcile_dict_indexes_blocking_c()` which performs
-Tantivy **writes** then `reinit_fulltext_searcher()`. Opening a reader eagerly on
-the API thread at startup would contend with those writes and pay the cold
-index-open cost even for clients that never query fulltext. Concurrency is safe:
-searcher access is behind an `RwLock`; the API and QML threads are concurrent
-readers.
-
-`simsapa serve` has the same lazy init. It runs its startup preamble (including
-any dictionary-index reconciliation) to completion before it starts listening,
-so there are no concurrent index writes to avoid, but the cold index-open cost
-is still paid only by the first fulltext query.
-
-## 9. Shared helpers (`api/src/helpers.rs`, `simsapa_api`)
-
-These are `pub` in the `simsapa_api` crate, so the CLI's `search` command calls
-the same `run_search` as `POST /search`; the route bodies are in
-`api/src/routes/`.
-
-
-- `parse_search_mode` / `parse_search_area` — request string → enum (exact serde
-  labels), `None` on unknown (→ 400 on `/search`).
-- `build_search_params(request, mode, area)` — builds the `SearchParams`
-  literal: area-aware language/source filters, `page_len` (default 20),
-  `show_all_snippets` / `snippet_exclude` from the request, defaults for the rest.
-- `run_search(dbm, query_text, params, area, page_num, deconstructor)` — lazy
-  mode-gated searcher init, then `SearchQueryTask` + `results_page` +
-  `total_hits`, returning `ApiSearchResult`; logs and returns empty on error.
-- `run_suttas_search(request, dbm, fallback_mode)` — shared body for the two
-  named Suttas routes: reference → `UidMatch` auto-detect, else `fallback_mode`.
-- `run_search_with_uid_fallback(...)` — wraps `run_search` with the self-correcting
-  0-hit → `fallback_mode` re-run used by the Suttas routes (§5).
-- `run_dict_combined_with_fallback(...)` — the dictionary self-correcting chain
-  (0-hit auto-`UidMatch` → normalized `UidMatch` → `DpdLookup`); used by
-  `/dict_combined_search` and `/search`'s Dictionary `Combined` path (§5).
-- `resolve_word_uid` (backend `AppData`) — the shared, tolerant word-uid resolver
-  behind the JSON and HTML word routes (§13.3); `normalize_human_word_uid`
-  (backend `helpers`) is its pure display-form → canonical-uid normalizer.
-- `get_sutta_content_json` / `resolve_sutta_strict` (backend `sutta_json`) — the
-  Qt-free body of `/sutta.json` (§13.4); `get_sutta_bilara_json` is the body of
-  `/sutta_bilara.json` (§13.5); `convert_verse_ref_to_sutta_uid`
-  (backend `helpers`) is shared with the sutta routes of §14.4.
-- `word_json_response` / `word_html_response` / `sutta_html_response` — shared
-  bodies for the word/sutta retrieval routes (resolver + 404-on-miss + the
-  `?verbose=1` envelope, §13).
+The `simsapa` commands of Part A call the same code as the routes, so a
+command's `--json` output is the route's response body, byte for byte for the
+same request: `simsapa search` is `POST /search` (with the same mode defaults
+and the Dictionary `Combined` remap of §4), `simsapa word` is `/word.json`,
+`simsapa sutta --content-json` is `/sutta.json`, `simsapa gloss` is
+`/gloss_text`, `simsapa lookup` is `/lookup_forms`, and `simsapa health` is
+`/health`. Only the named sutta routes' reference auto-detect (§5) has no
+command of its own: `simsapa sutta` takes a reference directly.
 
 ## 10. The port (default 4848)
 
-The GUI binds to `127.0.0.1:<api_port>`. The port is resolved at startup
-(`backend/src/lib.rs`):
+The GUI binds to `127.0.0.1:<api_port>`. The port is resolved at startup:
 
 - **Default `4848`.** If the `API_PORT` env var is set to a valid, free port,
   that is used; otherwise the app scans upward from `4848` for the first free
@@ -505,7 +547,11 @@ fulltext searcher has been initialized (§8):
   },
   "sutta_languages": ["en","pli"],    // same lists as /sutta_and_dict_search_options
   "dict_sources": ["dpd","dppn", …],
-  "dpd_version": "v0.4.20260501"      // DPD's own release; null when unreadable
+  "dpd_version": "v0.4.20260501",     // DPD's own release; null when unreadable
+  "sc_data_version": {                // SuttaCentral data; null when not recorded
+    "date": "2026-10-17",
+    "commit": "2d9ca8da8"
+  }
 }
 ```
 
@@ -521,8 +567,8 @@ fulltext searcher has been initialized (§8):
   > why the meaning was tightened rather than a second field added.
 
   It is still `false` on a fresh process and flips after the **first**
-  `FulltextMatch`/`Combined` query (or a QML `load_searcher`) — the searcher
-  init of §8 is lazy and mode-gated. It now flips to `true` only if that init
+  `FulltextMatch`/`Combined` query (in the GUI app, also when the app opens
+  the index itself) — §8. It now flips to `true` only if that init
   actually opened something. To watch the flip:
 
   ```sh
@@ -552,13 +598,12 @@ fulltext searcher has been initialized (§8):
   so a client that cares about one area must read that area's own `state` and
   `message` — the per-area block carries both, and an area can have `opened > 0`
   **and** `failed > 0`, which is working-but-incomplete search and has a sentence
-  of its own. This is the same data, from the same helpers, that the app's own
+  of its own. This is the same data that the app's own
   empty-results panel shows, so the two cannot drift.
 
   `message` is plain language and safe to display;
   it deliberately carries no `flock`/`Tantivy`/errno text (that stays in the log
-  and in Run Storage Diagnostics). See
-  [fulltext-index-storage-and-file-locking.md](./fulltext-index-storage-and-file-locking.md).
+  and in the app's Run Storage Diagnostics report).
 
 - **`counts`** are per-DB row counts. Each is resilient: a real `0` means the DB
   is loaded but empty / not installed (consistent with
@@ -578,6 +623,12 @@ fulltext searcher has been initialized (§8):
   stay the same but the shape does not, so also invalidate on an
   `app_version` change if the cache stores whole responses (§19.1). `null`
   (never `""`) when the row cannot be read.
+- **`sc_data_version`** is the SuttaCentral data (the `sc-data` repository)
+  the suttas were imported from: `date` is its commit's author date
+  (`YYYY-MM-DD`, UTC) and `commit` the short commit hash. It is stored in
+  `appdata.sqlite3` when the database is built, so it changes when a new
+  database is downloaded, not with the app version. `null` for a database built before it was recorded. The
+  About window shows the same value, with `dpd_version`.
 
 ### 10.1 `simsapa serve`: `--port` and `--host`
 
@@ -635,8 +686,7 @@ once and use the API rather than run one command per query.
 
 ## 11. Response fields (`SearchResult`)
 
-Each element of `results` is a `SearchResult` (`backend/src/types.rs`); the
-fields most clients use:
+Each element of `results` is a `SearchResult`; the fields most clients use:
 
 | Field | Meaning |
 |-------|---------|
@@ -781,8 +831,7 @@ covered in §8.
 The search routes return only **snippets**. To read or verify the *full* text of
 a result — e.g. to confirm an exact Pāli pāda, or to extract a sentence in
 context after a fulltext hit (which may be a false positive, see §2's stemmer
-caveat) — use the GET render routes (`bridges/src/api.rs`), not the search
-endpoints. These return rendered HTML; strip the tags to get plain text.
+caveat) — use the GET render routes, not the search endpoints. These return rendered HTML; strip the tags to get plain text.
 
 | Route | Returns |
 |-------|---------|
@@ -909,8 +958,7 @@ encoded `%2F` in such a segment as a path-traversal safeguard and returns
 the same way: its `sn22.59/pli/ms`-style uids are passed with raw slashes.) The
 `/word.json?uid=` query route above has no such restriction.
 
-The resolver (`AppData::resolve_word_uid`, shared with the HTML route) now
-resolves the same tolerant set of uid forms for both routes — human/display,
+The JSON and HTML word routes resolve the same tolerant set of uid forms — human/display,
 hyphenated, and numeric forms all return a record (the spaced/human forms
 previously returned `200 []`). It probes these tables in order, returning the
 first match serialized as-is:
@@ -939,14 +987,13 @@ curl -s "localhost:$PORT/words/dhamma-1-01/dpd.json"
 ```
 
 The element shape is the serialized DB row (DPD headword JSON, DPD root JSON, or
-the `dict_words` `DictWord` model) — not the `SearchResult` of §11.
+a `dict_words` entry) — not the `SearchResult` of §11.
 
 A DPD headword record (the numeric `<id>/dpd` lane only) also carries
 `construction_summary`, the construction as DPD's entry displays it
 (`49236/dpd` *bhaṇāmase*: `"√bhaṇ + a + mase"`, where `construction` is
 `bhaṇa + mase`); `""` when the entry shows none, `null` when the installed
-`dpd.sqlite3` predates the column (see §19.1 and
-[dpd-construction-summary.md](./dpd-construction-summary.md)). The
+`dpd.sqlite3` predates the column (see §19.1). The
 `dict_words` lane and roots do not have it. Keys are alphabetical, so the
 added key moves no other.
 
@@ -1013,8 +1060,7 @@ translation can be zipped by key.
 - **Order: never re-sort `content_json`.** The key order *is* the order of
   the paragraphs in the text, and the segment ids do not sort into it. Sorted,
   `mn1:10.1` follows `mn1:1.6`, and 326 of the 334 segments of `mn1/pli/ms`
-  move. The server never parses the column (`serde_json` here is built without
-  `preserve_order`, so a `serde_json::Value` would sort the keys). A client
+  move. The server returns the stored text without parsing it. A client
   must read it with a parser that keeps key order (`jq` without `-S` or
   `keys`, Python's `json`, JavaScript's `JSON.parse`) and must not pass it
   through a sorted or unordered map.
@@ -1023,7 +1069,7 @@ translation can be zipped by key.
   `pli/cst` texts and most other translations are stored as HTML; for those use
   `/sutta_html` (§13). `GET /translations_for_sutta?uid=` reports
   `has_content_json` for each text sharing a reference (§14.5).
-- **uid resolution** (`resolve_sutta_strict`, in backend `sutta_json.rs`):
+- **uid resolution**:
   1. a verse reference is converted (`dhp182` → `dhp179-196/pli/ms`, §14.4);
   2. the uid is read exactly;
   3. a bare code with no `/lang/author` reads `<code>/pli/ms` (`mn1` →
@@ -1128,20 +1174,14 @@ only the segments that have an entry, so look it up by the segment ids of
 - A stored record that is not valid JSON is a data defect: it is logged and
   that key is `null`; the rest of the response is served.
 
-To show the readings and notes inline the way the reader does, see
-`bilara_text_to_segments()` in `backend/src/helpers.rs`.
-
 ## 14. Complete route reference
 
-Every route of the GUI app's server. The shared routes are
-`simsapa_api::shared_routes()` (`api/src/lib.rs`, whose doc comment is the
-authoritative inventory); `bridges/src/api.rs` `start_webserver()` mounts them
-through `simsapa_api::build_rocket()` and adds its own. **`simsapa serve`
+Every route of the GUI app's server. **`simsapa serve`
 serves §14.1 except the three rows marked *GUI only (AI)*, and of §14.3 only
 `/`, `/health`, `/logger` and `/shutdown`** (the last only on a loopback bind,
 §10.1). All of §14.2 is GUI only. Routes detailed earlier are cross-referenced;
 the rest are listed here with their purpose. Many of the GUI-navigation routes are **side-effecting**: they fire a
-`cxx-qt` `callback_*` into the running GUI (open a window/tab, navigate, toggle a
+callback into the running GUI (open a window/tab, navigate, toggle a
 mode) and return only an HTTP `Status` or a short plain-text message — they do
 **not** return content. They exist for the browser extension and in-app WebEngine
 views, not for headless data retrieval.
@@ -1174,7 +1214,7 @@ views, not for headless data retrieval.
 | `GET /ai_provider_key?provider=Gemini` | *GUI only (AI).* Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
 | `GET /get_book_spine_item_html_by_uid/<window_id>/<spine_item_uid..>` | Full rendered Library-book chapter HTML, by spine-item uid | — |
 | `GET /book_pages/<book_uid>/<resource_path..>` | Rendered Library-book page HTML, by in-book resource path | — |
-| `GET /navigation_timeline?[window_id=<id>]` | The Timeline page of the Sutta Navigation window: every node with a context note on one time axis, as a full HTML page with the find bar. With no navigation tree in the database, the controls and "No timeline data" | [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md) |
+| `GET /navigation_timeline?[window_id=<id>]` | The Timeline page of the Sutta Navigation window: every node with a context note on one time axis, as a full HTML page with the find bar. With no navigation tree in the database, the controls and "No timeline data" | — |
 | `GET /sutta_titles_flat_completion_list` | Autocomplete list of sutta titles. **Placeholder — returns `[]`** (the extension uses a bundled list) | — |
 | `GET /dict_words_flat_completion_list` | Autocomplete list of dictionary words. **Placeholder — returns `[]`** | — |
 
@@ -1191,7 +1231,7 @@ views, not for headless data retrieval.
 | `GET /prev_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the previous Library-book chapter. |
 | `GET /next_chapter/<window_id>/<current_spine_item_uid..>` | Navigate `window_id` to the next Library-book chapter. |
 | `GET /show_toc_tab/<window_id>/<spine_item_uid..>` | Show the sidebar's **TOC** tab in `window_id` with the entry for `spine_item_uid` revealed (ancestors expanded, entry selected and scrolled into view). Called by the in-page TOC button on book chapter pages. Always `200` — it hands off to the GUI and does not read the DB. |
-| `GET /open_sutta_navigation?node_uid=<uid>` | Open or raise the **Sutta Navigation** window with the node's level entered (the button on a Timeline entry). 404 when the tree has no such node. See [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md). |
+| `GET /open_sutta_navigation?node_uid=<uid>` | Open or raise the **Sutta Navigation** window with the node's level entered (the button on a Timeline entry). 404 when the tree has no such node. |
 | `GET /lookup_window_query/<text>` | Open the word-lookup window and run a query (text in the path). |
 | `POST /lookup_window_query` | Open the word-lookup window. If `query_text` is a word **uid** (contains `/`) it opens that entry directly (dict_words → DPD headword fallback); otherwise it runs a lookup search. Body: `LookupWindowRequest` (§15). |
 | `GET /summary_query/<window_id>/<text>` | Run a summary query in `window_id`. |
@@ -1205,7 +1245,7 @@ views, not for headless data retrieval.
 |---|---|
 | `GET /` | Liveness — minimal HTML page (see §10). |
 | `GET /health` | JSON diagnostics snapshot: `app_version`, `api_port`, `db_paths`, `fulltext_searcher_ready`, `fulltext` (per-area index state), `counts`, `sutta_languages`, `dict_sources` (see §10). |
-| `GET /shutdown` | Shut the webserver down (`Shutdown::notify`). Used by `shutdown_webserver` / `shutdown_webserver_tcp`. Not mounted when `simsapa serve` binds a non-loopback address (§10.1). |
+| `GET /shutdown` | Shut the webserver down; the GUI app calls it when it quits. Not mounted when `simsapa serve` binds a non-loopback address (§10.1). |
 | `GET /app-assets-list` | *GUI only.* Debug HTML listing of the SIMSAPA_DIR and internal-storage directory trees. |
 | `GET /assets/<path..>` | *GUI only (static asset).* Serve a bundled static asset (CSS/JS/fonts/images/pdf-viewer) from the embedded `assets/` dir. |
 | `GET /favicon.ico` | *GUI only (static asset).* Serve the app icon as the favicon. |
@@ -1233,20 +1273,16 @@ share two helpers, so they accept more than a literal stored uid:
 verse-reference conversion but **not**
 `lookup_sutta_with_fallback`: it never falls back from a translation to the
 Pāli, and it keeps a range hit only when the `/lang/author` matches.
-`convert_verse_ref_to_sutta_uid` lives in backend `helpers.rs`, so the CLI can
-use it as well.
 
-The search routes' reference auto-detect (§5) is a different mechanism
-(`query_text_to_uid_field_query`, query-string → `uid:` field query).
+The search routes' reference auto-detect (§5) is a different mechanism: it
+rewrites the query string into a `uid:` field query.
 
 ### 14.5 Sutta display parameters and routes (multi-column view)
 
-The multi-translation side-by-side feature (see
-`docs/sutta-display-settings-and-multi-column-view.md`) adds optional display
-parameters to the sutta render routes plus three dedicated routes. Shared
-parameter semantics (parsed by `parse_display_overrides` in
-`backend/src/sutta_display.rs`; absent parameters fall back to the persisted
-`sutta_display` defaults in `AppSettings`):
+The multi-translation side-by-side view adds optional display parameters to
+the sutta render routes plus three dedicated routes. Shared parameter
+semantics (absent parameters fall back to the display defaults saved in the
+app's settings):
 
 - `layout` — `lines` / `linebyline` (interleaved) or `columns` / `sidebyside`
   (one flex column per text). Unknown value → **HTTP 400** with a message.
@@ -1268,7 +1304,7 @@ Routes:
   `show_references`) next to `SUTTA_UID` for the in-page menu/column bar.
   **Error parity with `/sutta_content_block`:** an unknown `columns` uid →
   **404** with the message ("Unknown column sutta uid: …"), other render
-  errors → 500 (shared `render_error_status` mapping in `api.rs`); an
+  errors → 500 (the same mapping as there); an
   unknown *sutta* uid stays the blank page + 404.
 - `GET /sutta_content_block?uid=…&layout=…&columns=…&show_references=…` —
   returns only the `<div class='suttacentral bilara-text …'>` content block
@@ -1307,8 +1343,8 @@ curl -s -X POST "localhost:$PORT/save_sutta_display_settings" \
 ## 15. Other request / response structs
 
 The four search routes share `ApiSearchRequest` / `ApiSearchResult` (§2, §7) and
-`SearchResult` rows (§11). The remaining routes use these smaller structs
-(`bridges/src/api.rs`); all are plain JSON objects.
+`SearchResult` rows (§11). The remaining routes use these smaller structs;
+all are plain JSON objects.
 
 ```rust
 // GET /sutta_and_dict_search_options  → response
@@ -1368,14 +1404,10 @@ build a vocabulary-table UI: **`POST /gloss_text`** turns Pāli text into a
 per-word structured result (senses + deconstructor break-downs), and the
 **`GET /word_selection_ws`** WebSocket runs the AI "Word Selection" over that
 result — picking each ambiguous word's sense and each compound's break-down —
-while streaming progress. `/gloss_text` is a shared route (`api/src/routes/gloss.rs`,
-also served by `simsapa serve`); its glossing core is the backend's
-`helpers::process_all_paragraphs()` (shared with the in-app GlossTab and with
-`simsapa gloss`). The WebSocket is GUI-only (`bridges/src/api.rs`) and its
-engine is the shared fallback walk in `bridges/src/ai_engine.rs`. Without the
-GUI, the calling agent makes the selections itself (§16.5). See
-[gloss-ai-word-selection.md](./gloss-ai-word-selection.md) for the resolution
-chain, the item-id scheme (`p<pi>w<wi>` / `d` / `c<k>`) and cache semantics.
+while streaming progress. `/gloss_text` is a shared route, also served by
+`simsapa serve` and printed by `simsapa gloss --json`; it is the same glossing
+the app's Gloss tab does. The WebSocket is GUI only. Without the GUI, the
+calling agent makes the selections itself (§16.5).
 
 ### 16.1 `POST /gloss_text`
 
@@ -1407,8 +1439,7 @@ Synchronous JSON glossing of one or more `\n\n`-separated paragraphs.
   (`"exact mode does not support these options: skip_common"`), `500` for a
   database error.
 
-**`ProcessedWord` — the grouped deconstruction fields** (added by this feature;
-see PRD FR-A1/FR-A3). The key fields for a compound-aware client:
+**`ProcessedWord` — the grouped deconstruction fields.** The key fields for a compound-aware client:
 
 | Field | Meaning |
 |-------|---------|
@@ -1606,7 +1637,7 @@ curl -s "localhost:$PORT/ai_provider_key?provider=Gemini" | jq '{enabled, has_ke
 > client — the demo below sends the key here so the WebSocket run can reach
 > Gemini.
 
-**The demo page.** [`scripts/gloss_demo.html`](../scripts/gloss_demo.html) is a
+**The demo page.** [`gloss_demo.html`](https://github.com/simsapa/simsapa/blob/main/scripts/gloss_demo.html), in the Simsapa repository, is a
 single self-contained HTML file (no build, no dependencies) that ties the three
 routes together: a textarea for a few paragraphs, a **Gloss** button
 (`POST /gloss_text` → a vocabulary list like the in-app Gloss tab), a **Gemini
@@ -2147,17 +2178,12 @@ To check a form exactly rather than gloss a passage, `/lookup_forms` (or
 
 ## 17. Reference conversion: `POST /reference_search`
 
-The search of the **Reference Search** window (`ReferenceSearchWindow.qml`), for
+The search of the app's **Reference Search** window, for
 converting a sutta reference from one style to another — typically a PTS volume
 and page (`M iii 24`) to the SuttaCentral reference (`MN 110`).
 
-It reads the bundled reference table (`assets/sutta-reference-converter.json`,
-embedded in the app), so it needs no index and works before any search has run.
-The handler is `reference_search` in `bridges/src/api.rs`; the matching is
-`pts_reference_search::search()` in `backend/src/pts_reference_search.rs`, the
-same function the window calls. The route parses the table on its first call:
-the window otherwise does that when it opens, and the search panics on an
-unparsed table.
+It reads a reference table embedded in the program, so it needs no index and
+works before any search has run. It is the same search the window runs.
 
 This is a different mechanism from the reference auto-detect of the sutta search
 routes (§5), which recognises SuttaCentral-style references only and returns
@@ -2284,10 +2310,10 @@ curl -s -X POST "localhost:$PORT/reference_search" \
   -H 'Content-Type: application/json' -d '{"query_text":"MN 10","field":"sutta_ref"}' \
   | jq -r '.results[] | select(.sutta_ref == "MN 10") | .pts_reference'
 
-# By Pāli title, diacritics optional, through the formatter (§0.1)
+# By Pāli title, diacritics optional
 curl -s -X POST "localhost:$PORT/reference_search" \
   -H 'Content-Type: application/json' -d '{"query_text":"satipatthana","field":"title_pali"}' \
-  | python3 scripts/simsapa_fmt.py
+  | jq -r '.results[] | "\(.sutta_ref)  \(.sc_uid)  \(.title_pali)"'
 ```
 
 The first returns SN 56.11 (S v 420–424); the second `M i 55`; the third lists
@@ -2307,10 +2333,7 @@ write the join in three ways:
 | spaced | `vuttan ti`, `vuttaṁ ti`, `punabbhavo ti` | vuttaṁ / punabbhavo + iti |
 
 A final `n` before `ti` stands for `ṁ`, and a vowel before `ti` is often
-lengthened (`dhārayāmī` for `dhārayāmi`). The rules that take these apart are
-in [pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md); the DPD
-lookup rule is
-[search-snippet-highlight-pipeline.md §9d](./search-snippet-highlight-pipeline.md).
+lengthened (`dhārayāmī` for `dhārayāmi`).
 
 **Rule for agents: send the whole form, `ti` included.** Any of the three
 spellings works, and a spaced form is sent as one form (`"vuttan ti"`). The
@@ -2335,10 +2358,9 @@ The query is normalised the DPD way (lowercased, `ṃ` → `ṁ`, quotes handled
   `… + iti` is taken as written. `magganti` is the verb *maggati* (third person
   plural), with no split, which is what that spelling means.
 - A word ending in a vowel and **`n`** that has no exact match is looked up as
-  its `ṁ` spelling before any guess: `vuttan` is `vuttaṁ`, `kin` is `kiṁ`. See
-  [search-snippet-highlight-pipeline.md §9f](./search-snippet-highlight-pipeline.md).
+  its `ṁ` spelling before any guess: `vuttan` is `vuttaṁ`, `kin` is `kiṁ`.
 
-Measured on the dist DB (`dpd_release_version = v0.4.20260501`). `results`
+Measured with DPD release `v0.4.20260501`. `results`
 shows the first few uids; `iti` (`13466/dpd`) is appended to the results of an
 iti-sandhi word, after the base word's own:
 
@@ -2598,7 +2620,7 @@ them, most for exact `/gloss_text` on long texts.
 **`construction_summary`** is the construction as DPD's entry displays it,
 root base replaced by root + sign: *carati 1.1* (`construction` `cara + ti`)
 has `"√car + a + ti"`. It is the bracketed text of DPD's rendered summary
-line, taken at bootstrap; see [dpd-construction-summary.md](./dpd-construction-summary.md).
+line, taken when the database was built.
 `""` means DPD's entry shows no bracket (no `construction`, no `meaning_1`,
 or neither). `null` means the installed `dpd.sqlite3` predates the column;
 everything else in the result is unaffected.
@@ -2606,8 +2628,7 @@ everything else in the result is unaffected.
 **Two uid lanes.** A headword `uid` and a component's `uids` are the numeric
 `<id>/dpd` form, which `/word.json` resolves to the structured `dpd_headwords`
 record. The rendered HTML entry is a `dict_words` row with a different,
-hyphenated uid (`dhamma-1-01/dpd`); see "DPD records correlate to dict_words"
-in the repository's `CLAUDE.md`, and §13.3. `/word_html?uid=49139/dpd` also
+hyphenated uid (`dhamma-1-01/dpd`); both are the same word (§13.3). `/word_html?uid=49139/dpd` also
 resolves the numeric form.
 
 ```sh

@@ -2,7 +2,7 @@
 //! same `simsapa_api::run_api_search()`, so area defaults, mode names and the
 //! Dictionary `Combined → DpdLookup` remap behave identically, and `--json`
 //! prints the same `ApiSearchResult`.
-//! See docs/simsapa-localhost-api-search-endpoints.md.
+//! See docs/simsapa-cli-and-localhost-api.md.
 
 use clap::{Args, ValueEnum};
 

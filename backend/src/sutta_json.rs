@@ -9,7 +9,7 @@
 //! `serde_json::Value` (built without `preserve_order`, it sorts the keys) or any
 //! other unordered map.
 //!
-//! See docs/simsapa-localhost-api-search-endpoints.md (`GET /sutta.json`).
+//! See docs/simsapa-cli-and-localhost-api.md (`GET /sutta.json`).
 
 use crate::db::appdata::AppdataDbHandle;
 use crate::db::appdata_models::Sutta;

@@ -11,7 +11,7 @@ first implementation (PRD §11 in
 
 Related docs:
 
-- [Localhost API search endpoints](./simsapa-localhost-api-search-endpoints.md)
+- [Localhost API search endpoints](./simsapa-cli-and-localhost-api.md)
   §14.5 — request/response details of the display routes.
 
 ## 1. Layouts and settings
@@ -241,7 +241,7 @@ untouched.
 ## 4. Route surface (`api/src/routes/suttas.rs`)
 
 Details and JSON shapes in
-[simsapa-localhost-api-search-endpoints.md](./simsapa-localhost-api-search-endpoints.md) §14.5.
+[simsapa-cli-and-localhost-api.md](./simsapa-cli-and-localhost-api.md) §14.5.
 
 - `GET /sutta_content_block?uid=…&layout=…&columns=<enc-uid>|<enc-uid>&show_references=…&repeat_pali=…`
   → the wrapper div only (no page chrome; no `window_id` — the block

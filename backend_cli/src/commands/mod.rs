@@ -1,5 +1,6 @@
 //! One module per command.
 
+pub mod docs;
 pub mod gloss;
 pub mod health;
 pub mod import;

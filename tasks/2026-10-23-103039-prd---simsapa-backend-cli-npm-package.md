@@ -11,7 +11,7 @@ Simsapa's search, dictionary and sutta-retrieval engine lives in the Rust
   checkout, ArangoDB (`arangors`), `mdbook`, and other things no end user needs.
 
 The localhost HTTP API that agents and the browser extension use
-(`docs/simsapa-localhost-api-search-endpoints.md`) only runs **inside the GUI
+(`docs/simsapa-cli-and-localhost-api.md`) only runs **inside the GUI
 app**, because its routes live in `bridges/src/api.rs`, a cxx-qt crate that
 cannot be built without Qt.
 
@@ -587,7 +587,7 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
 
 ### 4.10 Documentation
 
-35. Update `docs/simsapa-localhost-api-search-endpoints.md`:
+35. Update `docs/simsapa-cli-and-localhost-api.md`:
     - The server is now provided by **either** the GUI app **or**
       `simsapa serve`. Mark the GUI-only routes (FR 9) and the **GUI-only AI
       routes** (`/word_selection_ws`, `/set_ai_provider_key`, `/ai_provider_key`)
@@ -769,7 +769,7 @@ Every command accepts `--json` (FR 27) and the global `--simsapa-dir`.
    download window or the dictionary-index reconciliation; and a folder made by
    the GUI works with the CLI with no extra steps. The same holds for
    `simsapa setup --languages de` against a GUI install.
-4. Every curl example in `docs/simsapa-localhost-api-search-endpoints.md` that
+4. Every curl example in `docs/simsapa-cli-and-localhost-api.md` that
    uses a shared route (i.e. not a GUI, AI, or static-asset route) returns the same response from `simsapa serve` as from the
    GUI.
 5. An agent can gloss a passage and choose senses and break-downs using only

@@ -61,7 +61,7 @@ pub fn logger_route(req: Json<LoggerRequest>) -> Status {
 /// Environment / readiness snapshot so a headless caller can learn version,
 /// live port, DB paths, fulltext-searcher readiness, row counts, languages and
 /// dictionary sources in one call (instead of probing several endpoints).
-/// `GET /` stays the landing page. See docs/simsapa-localhost-api-search-endpoints.md.
+/// `GET /` stays the landing page. See docs/simsapa-cli-and-localhost-api.md.
 #[get("/health")]
 pub fn health(dbm: &State<Arc<DbManager>>) -> Json<HealthInfo> {
     Json(health_info(dbm))

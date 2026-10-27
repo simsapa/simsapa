@@ -1984,7 +1984,7 @@ impl DpdDbHandle {
     /// DPD's order. Nothing is ranked, filtered, deduplicated or chosen, and no
     /// word-selection cache is consulted.
     ///
-    /// See docs/simsapa-localhost-api-search-endpoints.md (`POST /lookup_forms`).
+    /// See docs/simsapa-cli-and-localhost-api.md (`POST /lookup_forms`).
     pub fn lookup_forms_exact(&self, forms: &[String]) -> Result<Vec<FormLookupResult>> {
         let mut pooled_conn = self.get_conn().context("lookup_forms_exact(): no db connection")?;
         let db_conn: &mut SqliteConnection = &mut pooled_conn;
@@ -2846,7 +2846,7 @@ struct HeadwordSummaryInputRow {
 ///
 /// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
 /// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
-/// the `table!`. See docs/simsapa-localhost-api-search-endpoints.md §19.1.
+/// the `table!`. See docs/simsapa-cli-and-localhost-api.md §19.1.
 pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<ConstructionSummaryReport> {
     info("populate_dpd_construction_summaries()");
 

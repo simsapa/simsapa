@@ -1,5 +1,5 @@
 //! Dictionary word retrieval routes (JSON and rendered HTML).
-//! See docs/simsapa-localhost-api-search-endpoints.md.
+//! See docs/simsapa-cli-and-localhost-api.md.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use crate::helpers::{
 /// empty array `[]` on miss, so a body-reading client (e.g. an installed
 /// browser extension) only needs the body. The status also signals it: `200`
 /// on hit, `404` on miss (the `[]` body is still present). `?verbose=1` is a
-/// separate opt-in shape. See docs/simsapa-localhost-api-search-endpoints.md.
+/// separate opt-in shape. See docs/simsapa-cli-and-localhost-api.md.
 pub fn word_json_response(uid: &str, verbose: Option<&str>) -> (Status, Json<serde_json::Value>) {
     let resolved = get_app_data().resolve_word_uid(uid);
     let verbose = is_verbose_flag(verbose);
@@ -90,7 +90,7 @@ pub fn get_word_json(uid_with_ext: PathBuf, verbose: Option<&str>) -> (Status, J
 /// strings fully (including `%2F` / `%20`), unlike the `<uid..>` path segments,
 /// so a caller can pass the uid exactly as it appears in a `SearchResult.uid`,
 /// with or without percent-encoding. Delegates to the same resolver as the path
-/// route. See docs/simsapa-localhost-api-search-endpoints.md.
+/// route. See docs/simsapa-cli-and-localhost-api.md.
 #[get("/word.json?<uid>&<verbose>")]
 pub fn get_word_json_q(uid: &str, verbose: Option<&str>) -> (Status, Json<serde_json::Value>) {
     let uid = uid.trim_end_matches(".json");

@@ -3,7 +3,7 @@
 `dpd_headwords.construction_summary` holds the construction **as DPD displays
 it**: `√car + a + ti` for *carati 1.1*, whose stored `construction` column is
 `cara + ti`. `POST /lookup_forms`, exact `/gloss_text` and `/word.json` return
-it (see [the API doc §19.1](./simsapa-localhost-api-search-endpoints.md#191-tier-1-post-lookup_forms)).
+it (see [the API doc §19.1](./simsapa-cli-and-localhost-api.md#191-tier-1-post-lookup_forms)).
 Nothing in the GUI reads it.
 
 ## 1. Where the value comes from

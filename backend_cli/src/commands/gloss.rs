@@ -1,7 +1,7 @@
 //! `simsapa gloss` and `simsapa lookup`: the glossing pipeline of
 //! `POST /gloss_text` and the exact DPD form lookup of `POST /lookup_forms`,
 //! in-process, with the same request handling and the same `--json` output.
-//! See docs/simsapa-localhost-api-search-endpoints.md §16 and §19.
+//! See docs/simsapa-cli-and-localhost-api.md §16 and §19.
 
 use std::io::Read;
 

@@ -3,7 +3,7 @@
 //! construction summary as DPD displays it, cut out of DPD's rendered entry.
 //! Pure and DB-free so it can be unit-tested.
 //!
-//! See docs/simsapa-localhost-api-search-endpoints.md §19.1.
+//! See docs/simsapa-cli-and-localhost-api.md §19.1.
 
 use crate::types::GrammarTriple;
 
