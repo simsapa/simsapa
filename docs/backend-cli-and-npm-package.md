@@ -116,8 +116,9 @@ A read-only command takes the write lock only for the preamble and releases it
 before its own work.
 
 Without `appdata.sqlite3` (the GUI's own criterion) every command except
-`setup`, `paths`, `--help` and `--version` exits 2 with "The Simsapa databases
-are not set up in <path>. Run `simsapa setup` to download them."
+`setup`, `paths`, `app-assets`, `check-updates`, `docs`, `--help` and
+`--version` exits 2 with "The Simsapa databases are not set up in <path>. Run
+`simsapa setup` to download them."
 
 The data folder is resolved as the GUI resolves it (`.env`, `SIMSAPA_DIR`,
 `config.txt`, then `app_dirs2`, on Linux `~/.local/share/simsapa`).
@@ -197,6 +198,7 @@ Known limitations:
 | `index build\|rebuild\|delete …` | Fulltext indexes | `bootstrap_cli index` |
 | `stats` | Row and source counts of `appdata.sqlite3` | — |
 | `paths` | Data folder and database paths (works without databases) | — |
+| `app-assets [--remove [--yes]]` | The app-assets folder's entries and sizes (works without databases); `--remove` deletes it and `temp-download/` under the write lock, with no preamble (it would open the databases being deleted), after a `dialoguer` confirmation that names the user data lost (and a pending `import-me/` by name). It deletes `appdata.sqlite3` first, so a removal that stops part-way reads as not set up rather than set up with databases missing; it refuses a symlinked folder (removing the link would free nothing) and a relative path (the data folder's `.` fallback). The data folder (`log.txt`, `cli-write.lock`) is kept | — |
 | `health` | The `/health` document, computed in-process, with an inline update check | `GET /health` |
 | `docs [--output <file>]` | Print or save `docs/simsapa-cli-and-localhost-api.md`, `include_str!`'d into the binary (`commands/docs.rs`); runs before the globals are initialised, so it needs no data folder | — |
 

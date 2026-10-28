@@ -68,6 +68,11 @@ enum Commands {
     /// Show the data folder, the database paths and whether each exists
     Paths,
 
+    /// Show where the databases, indexes and other app assets are stored and
+    /// their sizes; --remove deletes them, user data included, after
+    /// confirmation
+    AppAssets(commands::app_assets::AppAssetsArgs),
+
     /// Show the version, database paths, counts and fulltext index status,
     /// as `GET /health` returns them
     Health,
@@ -196,6 +201,11 @@ fn run(cli: &Cli) -> CliResult {
 
     match &cli.command {
         Commands::Paths => commands::paths::run(cli.json),
+        Commands::AppAssets(args) => {
+            // No preamble: it would open the databases --remove deletes.
+            let _lock = if args.remove { acquire_for_writing()? } else { None };
+            commands::app_assets::run(args, cli.json)
+        }
         // No preamble, no lock: reads one version from appdata.sqlite3 and
         // asks the network, so it works without databases and while the
         // folder is in use.

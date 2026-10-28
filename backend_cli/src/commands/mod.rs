@@ -1,5 +1,6 @@
 //! One module per command.
 
+pub mod app_assets;
 pub mod check_updates;
 pub mod docs;
 pub mod gloss;

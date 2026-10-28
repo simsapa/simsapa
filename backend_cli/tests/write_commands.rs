@@ -92,6 +92,11 @@ fn test_write_command_refused_while_a_server_uses_the_folder() {
     let out = simsapa(dir.path(), &["setup", "--yes"]);
     assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
 
+    fs::create_dir_all(dir.path().join("app-assets")).unwrap();
+    let out = simsapa(dir.path(), &["app-assets", "--remove", "--yes"]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    assert!(dir.path().join("app-assets").try_exists().unwrap());
+
     // The CLI never writes api-port.txt outside `serve`.
     assert_eq!(fs::read_to_string(dir.path().join("api-port.txt")).unwrap(), port.to_string());
 }
@@ -145,6 +150,11 @@ fn test_write_command_refused_while_another_command_holds_the_lock() {
 
     let out = simsapa(dir.path(), &["setup", "--yes"]);
     assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+
+    fs::create_dir_all(dir.path().join("app-assets")).unwrap();
+    let out = simsapa(dir.path(), &["app-assets", "--remove", "--yes"]);
+    assert_eq!(out.status.code(), Some(3), "stderr: {}", stderr(&out));
+    assert!(dir.path().join("app-assets").try_exists().unwrap());
 
     // A read-only command falls back to the read-only preamble instead.
     let out = simsapa(dir.path(), &["health"]);

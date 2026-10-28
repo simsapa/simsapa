@@ -44,6 +44,17 @@ any command. `simsapa setup --languages de,hu` adds sutta languages,
 `--list-languages` lists them. `simsapa paths` shows the folder and which
 databases exist; any other command run before `setup` says so and exits 2.
 
+`simsapa app-assets` shows where the databases, fulltext indexes and other app
+assets are stored (the `app-assets` folder inside the data folder) and the size
+of each. `simsapa app-assets --remove` deletes that folder, and any partial
+download a stopped `setup` left, after asking; `--yes` skips the question in a
+script. **It deletes your user data too** (settings, bookmarks, imported books
+and dictionaries, gloss and prompt history, chanting recordings), and the GUI
+app shares the folder, so it is gone there as well. The data folder itself and
+its `log.txt` are kept; `simsapa setup` downloads the databases again. If
+`app-assets` is a symbolic link it refuses: delete the folder it points to
+yourself.
+
 **After an app update, the databases may be incompatible** (another major or
 minor version than the program's). Then the read-only commands and `serve`
 print a warning on stderr and still answer, though results may be missing or
@@ -75,12 +86,14 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status, available updates | `GET /health` (§10) |
 | `simsapa check-updates` | Whether a newer `simsapa` (npm) or a newer database release is available, and the command that installs each (A.8) | the `updates` object of `GET /health` (§10) |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
+| `simsapa app-assets` | Where the app assets are stored and their sizes (A.1) | — |
 | `simsapa docs` | This document | — |
 
 The commands that change the data folder: `simsapa setup`, `simsapa
-db-upgrade` (A.8), `simsapa import stardict|stardict-zip|epub|html …` (a user
-dictionary or book, searchable in the GUI app too), `simsapa index
-build|rebuild|delete …`, and `simsapa serve` (§10.1).
+db-upgrade` (A.8), `simsapa app-assets --remove` (A.1), `simsapa import
+stardict|stardict-zip|epub|html …` (a user dictionary or book, searchable in
+the GUI app too), `simsapa index build|rebuild|delete …`, and `simsapa serve`
+(§10.1).
 
 Only `check-updates`, `health`, `serve`, `setup` and `db-upgrade` use the
 network; the others never do.
@@ -180,7 +193,8 @@ partial match use `--mode "Contains Match"`.
 
 The CLI and the GUI app share the data folder, the databases and the settings.
 While the app is running, the read-only commands and `check-updates` work as
-usual, but `serve`, `setup`, `db-upgrade`, `import` and `index` refuse with
+usual, but `serve`, `setup`, `db-upgrade`, `import`, `index` and
+`app-assets --remove` refuse with
 exit code 3 and name the app's own
 server to use instead (§10.1). Close the app first to change the folder.
 
