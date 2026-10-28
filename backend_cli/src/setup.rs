@@ -48,10 +48,11 @@ use simsapa_backend::cips_update::status_is_retryable;
 use simsapa_backend::errln;
 use simsapa_backend::logger::{error, info, warn};
 use simsapa_backend::db::read_appdata_db_version;
-use simsapa_backend::update_status::SETUP_COMMAND;
+use simsapa_backend::update_status::{SETUP_COMMAND, UpdateCheckConfig, command_with_channel};
 use simsapa_backend::update_checker::{
-    SaveStatsBehaviour, compatible_assets_release, fetch_releases_info, get_app_version, is_local_db_obsolete,
-    resolve_db_version,
+    ReleaseEntry, SaveStatsBehaviour, collect_system_info, compatible_assets_release, get_app_version,
+    get_latest_app_compatible_assets_release, is_local_db_obsolete, post_releases_request, resolve_db_version,
+    to_version,
 };
 use simsapa_backend::{
     appdata_db_exists, check_delete_files_for_upgrade, ensure_no_empty_db_files, get_app_globals,
@@ -59,6 +60,7 @@ use simsapa_backend::{
 };
 
 use crate::cancel::install_ctrlc_handler;
+use crate::commands::check_updates::ReleaseChannelArg;
 use crate::exit::{CliError, CliResult};
 use crate::output::{outln, print_json};
 use crate::startup::{PreambleMode, incompatible_db_sentence, run_headless_preamble};
@@ -71,6 +73,9 @@ const BASE_ARCHIVES: [&str; 4] = ["appdata.tar.bz2", "dictionaries.tar.bz2", "dp
 
 /// Kept by the failure cleanup of an initial setup (see the module comment).
 const KEPT_ON_CLEANUP: [&str; 3] = ["import-me", "download_languages.txt", "auto_start_download.txt"];
+
+/// As the GUI's releases lookup.
+const RELEASES_TIMEOUT: Duration = Duration::from_secs(30);
 
 const DOWNLOAD_INFO_ERROR: &str =
     "Unable to retrieve download information.\nPlease check your internet connection and try again.";
@@ -95,6 +100,22 @@ pub struct SetupArgs {
     /// data could not be exported (that data is not in the new databases)
     #[arg(long)]
     pub ignore_export_errors: bool,
+
+    /// The release channel to install from. Defaults to RELEASE_CHANNEL, else
+    /// the app's setting, else main
+    #[arg(long, value_enum, value_name = "CHANNEL")]
+    pub channel: Option<ReleaseChannelArg>,
+}
+
+impl SetupArgs {
+    fn channel(&self) -> Option<&'static str> {
+        self.channel.map(ReleaseChannelArg::api_label)
+    }
+
+    /// This command as the user would run it again, `--channel` included.
+    fn command(&self) -> String {
+        command_with_channel(SETUP_COMMAND, self.channel())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -376,18 +397,11 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     // Before the network: refuse early rather than after the releases lookup.
     let interactive = io::stdin().is_terminal();
     if !args.yes && !interactive {
-        return Err(CliError::error("Run `simsapa setup --yes` to confirm non-interactively."));
+        return Err(CliError::error(format!("Run `{} --yes` to confirm non-interactively.", args.command())));
     }
 
     errln!("Looking up the database release for Simsapa {}…", get_app_version());
-    match fetch_releases_info(None, SaveStatsBehaviour::Disabled) {
-        Ok(releases) => set_releases_info(releases),
-        // compatible_assets_release() falls back to the embedded snapshot.
-        Err(e) => warn(&format!("setup: fetching releases info failed, using the embedded snapshot: {}", e)),
-    }
-    let release = compatible_assets_release()
-        .filter(|r| !r.github_repo.is_empty() && !r.version_tag.is_empty())
-        .ok_or_else(|| CliError::error(DOWNLOAD_INFO_ERROR))?;
+    let release = lookup_release(args.channel())?;
 
     let urls = setup_urls(&release.github_repo, &release.version_tag, is_initial, &langs);
     let file_names: Vec<String> = urls.iter().filter_map(|u| archive_file_name(u)).collect();
@@ -406,12 +420,12 @@ pub fn run(args: &SetupArgs, json: bool) -> CliResult {
     } else {
         "Continue?"
     };
-    if !args.yes && !confirm(prompt, SETUP_COMMAND)? {
+    if !args.yes && !confirm(prompt, &args.command())? {
         return Err(CliError::error("Setup cancelled."));
     }
 
     let upgraded_from = match incompatible {
-        Some(old) => Some(replace_databases(old, args.ignore_export_errors, interactive, SETUP_COMMAND)?),
+        Some(old) => Some(replace_databases(old, args.ignore_export_errors, interactive, &args.command())?),
         None => None,
     };
 
@@ -491,6 +505,48 @@ pub(crate) fn replace_databases(
         )));
     }
     Ok(db_version)
+}
+
+/// The database release to install. Without `channel` the releases server is
+/// asked for the app's channel, and a failed or unusable answer falls back to
+/// the embedded snapshot, as the GUI's download does. A channel named with
+/// `--channel` is answered only by the releases server: the snapshot holds one
+/// channel's releases, not necessarily that one.
+fn lookup_release(channel: Option<&str>) -> Result<ReleaseEntry, CliError> {
+    let mut params = collect_system_info(None, SaveStatsBehaviour::Disabled);
+    if let Some(c) = channel {
+        params.channel = c.to_string();
+    }
+    let url = UpdateCheckConfig::from_env(RELEASES_TIMEOUT, false).releases_api_url;
+    let usable = |r: &ReleaseEntry| !r.github_repo.is_empty() && !r.version_tag.is_empty();
+
+    match post_releases_request(&url, RELEASES_TIMEOUT, &params) {
+        Ok(info) => {
+            let live = to_version(&get_app_version())
+                .ok()
+                .and_then(|app| get_latest_app_compatible_assets_release(&info, &app).cloned())
+                .filter(usable);
+            // The language downloads read it.
+            set_releases_info(info);
+            if let Some(c) = channel {
+                return live.ok_or_else(|| {
+                    CliError::error(format!(
+                        "The releases server lists no database release for simsapa {} (channel {}).",
+                        get_app_version(),
+                        c
+                    ))
+                });
+            }
+        }
+        Err(e) => {
+            if let Some(c) = channel {
+                return Err(CliError::error(format!("Could not reach the releases server: {:#} (channel {}).", e, c)));
+            }
+            // compatible_assets_release() falls back to the embedded snapshot.
+            warn(&format!("setup: fetching releases info failed, using the embedded snapshot: {}", e));
+        }
+    }
+    compatible_assets_release().filter(usable).ok_or_else(|| CliError::error(DOWNLOAD_INFO_ERROR))
 }
 
 /// Download, extract and install `urls` into the data folder, with Ctrl-C

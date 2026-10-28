@@ -1,11 +1,15 @@
 //! `simsapa setup` through the built binary, in temporary folders (never the
 //! dist databases: an upgrade deletes the databases it replaces). None of
-//! these reach the network: each stops before the releases lookup. The
-//! download loop itself is tested against a local server in `src/setup.rs`.
+//! these reach the network: each stops before the releases lookup, or at it
+//! against a local listener (`SIMSAPA_RELEASES_API_URL`). The download loop
+//! itself is tested against a local server in `src/setup.rs`.
 
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::sync::mpsc;
 
 fn simsapa(simsapa_dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_simsapa"))
@@ -82,6 +86,86 @@ fn test_unknown_language_is_refused_and_the_marker_kept() {
     assert_eq!(stdout_json(&out)["error"], "Not available for download: xx");
     assert!(stderr(&out).contains("database upgrade prepared by the Simsapa app"), "{}", stderr(&out));
     assert_eq!(fs::read_to_string(&marker).unwrap(), "hu, pt");
+}
+
+/// Serve `body` as JSON to every request on 127.0.0.1, sending each request
+/// body to the returned receiver.
+fn listen_recording(body: String) -> (String, mpsc::Receiver<String>) {
+    let (tx, rx) = mpsc::channel();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0usize;
+            let mut line = String::new();
+            while reader.read_line(&mut line).map(|n| n > 2).unwrap_or(false) {
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = v.trim().parse().unwrap_or(0);
+                }
+                line.clear();
+            }
+            let mut request_body = vec![0u8; length];
+            let _ = std::io::Read::read_exact(&mut reader, &mut request_body);
+            let _ = tx.send(String::from_utf8_lossy(&request_body).into_owned());
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+        }
+    });
+    (format!("http://127.0.0.1:{}/releases", port), rx)
+}
+
+/// A `--channel` the releases server lists nothing for is an error naming
+/// the channel, never the bundled release list (which would start a
+/// download from another channel).
+#[test]
+fn test_channel_is_never_answered_from_the_bundled_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = serde_json::json!({
+        "application": { "releases": [] },
+        "assets": { "releases": [{
+            "version_tag": "v0.0.1", "github_repo": "simsapa/simsapa-assets",
+            "suttas_lang": ["en"], "description": "",
+        }] },
+    })
+    .to_string();
+    let (url, requests) = listen_recording(body);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_simsapa"))
+        .arg("--simsapa-dir")
+        .arg(dir.path())
+        .args(["setup", "--yes", "--channel", "development"])
+        .env_remove("API_PORT")
+        .env("RELEASE_CHANNEL", "main")
+        .env("SIMSAPA_RELEASES_API_URL", &url)
+        .output()
+        .expect("failed to run simsapa");
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("The releases server lists no database release for simsapa"), "{err}");
+    assert!(err.contains("(channel development)."), "{err}");
+    assert!(!dir.path().join("temp-download").exists());
+
+    let request: serde_json::Value = serde_json::from_str(&requests.recv().unwrap()).unwrap();
+    assert_eq!(request["channel"], "development");
+}
+
+#[test]
+fn test_non_interactive_needs_yes_keeps_channel() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let out = simsapa(dir.path(), &["setup", "--channel", "development"]);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("Run `simsapa setup --channel development --yes` to confirm non-interactively."),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]

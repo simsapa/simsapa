@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::{Command, Output};
+use std::sync::mpsc;
 
 use fs4::fs_std::FileExt;
 
@@ -16,6 +17,16 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Serve `body` as JSON to every request on 127.0.0.1. Returns the URL.
 fn listen(body: String) -> String {
+    listen_with(body, None)
+}
+
+/// [`listen`], also sending each request body to the returned receiver.
+fn listen_recording(body: String) -> (String, mpsc::Receiver<String>) {
+    let (tx, rx) = mpsc::channel();
+    (listen_with(body, Some(tx)), rx)
+}
+
+fn listen_with(body: String, requests: Option<mpsc::Sender<String>>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     std::thread::spawn(move || {
@@ -32,6 +43,9 @@ fn listen(body: String) -> String {
             }
             let mut request_body = vec![0u8; length];
             let _ = std::io::Read::read_exact(&mut reader, &mut request_body);
+            if let Some(tx) = &requests {
+                let _ = tx.send(String::from_utf8_lossy(&request_body).into_owned());
+            }
             let _ = write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -67,14 +81,22 @@ fn same_minor(patch: u32) -> String {
 }
 
 fn db_upgrade(dir: &Path, releases_url: &str, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_simsapa"))
-        .arg("--simsapa-dir")
+    db_upgrade_with_env(dir, releases_url, args, None)
+}
+
+/// [`db_upgrade`] with a `RELEASE_CHANNEL` value.
+fn db_upgrade_with_env(dir: &Path, releases_url: &str, args: &[&str], release_channel_env: Option<&str>) -> Output {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_simsapa"));
+    match release_channel_env {
+        Some(v) => c.env("RELEASE_CHANNEL", v),
+        None => c.env_remove("RELEASE_CHANNEL"),
+    };
+    c.arg("--simsapa-dir")
         .arg(dir)
         .arg("db-upgrade")
         .args(args)
         .env_remove("API_PORT")
         .env_remove("DB_VERSION")
-        .env_remove("RELEASE_CHANNEL")
         .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .env("SIMSAPA_RELEASES_API_URL", releases_url)
         // Never npm: db-upgrade does not ask it, and a test must not either.
@@ -188,6 +210,81 @@ fn test_non_interactive_needs_yes() {
     let err = stderr(&out);
     assert!(err.contains(&format!("{} → {}", same_minor(0), same_minor(99))), "{err}");
     assert!(err.contains("Run `simsapa db-upgrade --yes`"), "{err}");
+    assert_untouched(dir.path());
+}
+
+/// The channel asked for is `--channel`, else `RELEASE_CHANNEL`, else
+/// `main` (these databases store no setting).
+#[test]
+fn test_release_channel_flag_and_env() {
+    let installed = same_minor(5);
+    let channel_sent = |args: &[&str], env: Option<&str>| -> String {
+        let dir = tempfile::tempdir().unwrap();
+        minimal_appdata(dir.path(), &installed);
+        let (url, requests) = listen_recording(releases_json(&format!("v{}", installed)));
+        let out = db_upgrade_with_env(dir.path(), &url, args, env);
+        assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+        assert_untouched(dir.path());
+        let body: serde_json::Value = serde_json::from_str(&requests.recv().unwrap()).unwrap();
+        body["channel"].as_str().unwrap().to_string()
+    };
+
+    assert_eq!(channel_sent(&[], None), "main");
+    assert_eq!(channel_sent(&[], Some("development")), "development");
+    assert_eq!(channel_sent(&["--channel", "development"], None), "development");
+    assert_eq!(channel_sent(&["--channel", "main"], Some("development")), "main");
+}
+
+/// A `--channel` the releases server lists nothing for is an error naming
+/// the channel, never the bundled release list.
+#[test]
+fn test_channel_is_never_answered_from_the_bundled_list() {
+    let dir = tempfile::tempdir().unwrap();
+    minimal_appdata(dir.path(), &same_minor(0));
+
+    let out = db_upgrade(dir.path(), &listen(releases_json("v0.0.1")), &["--yes", "--channel", "development"]);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("The releases server lists no database release for simsapa"), "{err}");
+    assert!(err.contains("(channel development)."), "{err}");
+    assert!(!err.contains("bundled"), "{err}");
+    assert_untouched(dir.path());
+
+    let out = db_upgrade(dir.path(), &refusing_url(), &["--yes", "--channel", "main"]);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("Could not reach the releases server"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("(channel main)."), "{}", stderr(&out));
+    assert_untouched(dir.path());
+}
+
+#[test]
+fn test_setup_hints_keep_channel() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = db_upgrade(dir.path(), &refusing_url(), &["--channel", "development"]);
+    assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("Run `simsapa setup --channel development`."), "{}", stderr(&out));
+
+    minimal_appdata(dir.path(), "0.9.0");
+    let out = db_upgrade(dir.path(), &refusing_url(), &["--channel", "development"]);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("Run `simsapa setup --channel development`, which replaces them."),
+        "{}",
+        stderr(&out)
+    );
+}
+
+/// The command it names to run again keeps `--channel`.
+#[test]
+fn test_non_interactive_needs_yes_keeps_channel() {
+    let dir = tempfile::tempdir().unwrap();
+    minimal_appdata(dir.path(), &same_minor(0));
+
+    let url = listen(releases_json(&format!("v{}", same_minor(99))));
+    let out = db_upgrade(dir.path(), &url, &["--channel", "development"]);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("Run `simsapa db-upgrade --channel development --yes`"), "{err}");
     assert_untouched(dir.path());
 }
 

@@ -142,7 +142,8 @@ so `simsapa db-upgrade` and `simsapa setup` would refuse.
 
 **The release channel without `AppData`.** The releases request names the
 channel the app would use (`RELEASE_CHANNEL` env → the `release_channel`
-setting → `main`). `get_release_channel()` reads the setting through
+setting → `main`), unless `UpdateCheckConfig::channel` names one (`simsapa
+check-updates --channel`). `get_release_channel()` reads the setting through
 `AppData`, which `serve`, `health` and the GUI have, but `check-updates` opens
 no databases. For it, `releases_request_params()` reads the stored settings
 JSON through one plain connection (`read_appdata_settings_json()` in

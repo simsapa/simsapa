@@ -318,7 +318,11 @@ The procedure, in the CLI's order:
 6. Refuse without `--yes` when stdin is not a terminal (rather than hang).
 7. Fetch the releases info (live, else the embedded snapshot silently; no
    stats) and pick the release with `compatible_assets_release()`; none →
-   the GUI's "Unable to retrieve download information…".
+   the GUI's "Unable to retrieve download information…". The releases URL
+   honours `SIMSAPA_RELEASES_API_URL`, as `check-updates` and `db-upgrade` do.
+   With `--channel` (`lookup_release()`) the live answer is the only answer:
+   a failed fetch or no compatible release is an error naming the channel,
+   never the snapshot, which holds one channel's releases.
 8. Build the URLs as `run_download()` does: `https://github.com/<repo>/releases/download/<v-tag>/`
    + `appdata`, `dictionaries`, `dpd`, `index` `.tar.bz2` (initial only), then
    `suttas_lang_<code>.tar.bz2` per language. The CLI adds the `v` prefix in
@@ -410,13 +414,14 @@ What differs from `setup`:
    naming `setup`, an unreadable version → exit 1. The pure
    `decide_db_upgrade()` holds the decision and is unit-tested per arm.
 2. The releases info is fetched **live** (`post_releases_request()`, 30 s, no
-   stats, the release channel of `releases_request_params()`), and the release
-   is the newest compatible one in it. Only that live answer can say "up to
+   stats, `--channel` else the release channel of `releases_request_params()`),
+   and the release is the newest compatible one in it. Only that live answer can say "up to
    date" (exit 0). When the fetch fails, or the server lists no usable
    release, the embedded snapshot (`compatible_assets_release()`) is used
    **only if it names a release newer than the installed one**, and the output
    says so; otherwise exit 1 with the reason. A snapshot that is not newer
-   says nothing about what the server has.
+   says nothing about what the server has. With `--channel` the snapshot is
+   never used, as in `setup`.
 3. `AppData` is opened only after that decision, so a no-op run neither
    migrates nor holds the databases.
 4. The release must have a `github_repo` and `version_tag` before anything is

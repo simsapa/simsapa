@@ -155,6 +155,7 @@ mod tests {
             releases_api_url: url.to_string(),
             timeout,
             check_cli: true,
+            channel: None,
         }
     }
 

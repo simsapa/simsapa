@@ -81,14 +81,29 @@ fn same_minor(patch: u32) -> String {
 }
 
 fn check_updates(dir: &Path, npm: &str, releases: &str, json: bool) -> Output {
+    check_updates_with(dir, npm, releases, json, &[], None)
+}
+
+/// [`check_updates`] with extra arguments and a `RELEASE_CHANNEL` value.
+fn check_updates_with(
+    dir: &Path,
+    npm: &str,
+    releases: &str,
+    json: bool,
+    extra_args: &[&str],
+    release_channel_env: Option<&str>,
+) -> Output {
     let mut c = Command::new(env!("CARGO_BIN_EXE_simsapa"));
-    c.arg("--simsapa-dir").arg(dir).arg("check-updates");
+    c.arg("--simsapa-dir").arg(dir).arg("check-updates").args(extra_args);
     if json {
         c.arg("--json");
     }
+    match release_channel_env {
+        Some(v) => c.env("RELEASE_CHANNEL", v),
+        None => c.env_remove("RELEASE_CHANNEL"),
+    };
     c.env_remove("API_PORT")
         .env_remove("DB_VERSION")
-        .env_remove("RELEASE_CHANNEL")
         // An explicit request: the opt-out of the implicit checks does not apply.
         .env("SIMSAPA_NO_UPDATE_CHECK", "1")
         .env("SIMSAPA_NPM_DIST_TAGS_URL", npm)
@@ -201,6 +216,85 @@ fn test_release_channel_setting_is_sent() {
     assert_eq!(channel_sent(Some(r#"{"release_channel":"development","unknown_key":1}"#)), "development");
     assert_eq!(channel_sent(Some(r#"{"release_channel":null}"#)), "main");
     assert_eq!(channel_sent(None), "main");
+}
+
+/// The channel sent is `--channel`, else `RELEASE_CHANNEL`, else the stored
+/// setting, else `main`.
+#[test]
+fn test_release_channel_flag_and_env() {
+    let npm = listen(Answer::Ok(format!(r#"{{"latest":"{}"}}"#, APP_VERSION)));
+    let tag = format!("v{}", same_minor(9));
+
+    let channel_sent = |settings: Option<&str>, args: &[&str], env: Option<&str>| -> String {
+        let dir = tempfile::tempdir().unwrap();
+        minimal_appdata_with_settings(dir.path(), &same_minor(9), settings);
+        let (releases, bodies) = listen_recording(Answer::Ok(releases_json(&tag, "notes")));
+        let out = check_updates_with(dir.path(), &npm, &releases, true, args, env);
+        assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+        let body: serde_json::Value = serde_json::from_str(&bodies.recv().unwrap()).unwrap();
+        body["channel"].as_str().unwrap().to_string()
+    };
+    let main_setting = Some(r#"{"release_channel":"main"}"#);
+    let dev_setting = Some(r#"{"release_channel":"development"}"#);
+
+    assert_eq!(channel_sent(main_setting, &[], Some("development")), "development");
+    assert_eq!(channel_sent(dev_setting, &[], Some("main")), "main");
+    // An empty variable is unset.
+    assert_eq!(channel_sent(dev_setting, &[], Some("")), "development");
+
+    assert_eq!(channel_sent(None, &["--channel", "development"], None), "development");
+    assert_eq!(channel_sent(dev_setting, &["--channel", "main"], None), "main");
+    assert_eq!(channel_sent(main_setting, &["--channel", "main"], Some("development")), "main");
+    assert_eq!(channel_sent(main_setting, &["--channel", "development"], Some("main")), "development");
+}
+
+/// A database update found on a named channel is installed from it.
+#[test]
+fn test_db_upgrade_command_keeps_channel() {
+    let npm = listen(Answer::Ok(format!(r#"{{"latest":"{}"}}"#, APP_VERSION)));
+    let releases = listen(Answer::Ok(releases_json(&format!("v{}", same_minor(99)), "notes")));
+    let dir = tempfile::tempdir().unwrap();
+    minimal_appdata(dir.path(), &same_minor(0));
+
+    let out = check_updates_with(dir.path(), &npm, &releases, true, &["--channel", "development"], None);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["database"]["status"], "update_available");
+    assert_eq!(doc["database"]["command"], "simsapa db-upgrade --channel development");
+
+    // Without the flag the channel is the variable's or the setting's, which
+    // `db-upgrade` reads the same way.
+    let out = check_updates_with(dir.path(), &npm, &releases, true, &[], Some("development"));
+    assert_eq!(stdout_json(&out)["database"]["command"], "simsapa db-upgrade");
+}
+
+/// `setup`, suggested for missing databases, keeps `--channel` too; the text
+/// names a channel other than `main`, wherever it came from.
+#[test]
+fn test_setup_command_keeps_channel_and_text_names_it() {
+    let npm = listen(Answer::Ok(format!(r#"{{"latest":"{}"}}"#, APP_VERSION)));
+    let releases = listen(Answer::Ok(releases_json(&format!("v{}", same_minor(9)), "notes")));
+    let dir = tempfile::tempdir().unwrap();
+
+    let out = check_updates_with(dir.path(), &npm, &releases, true, &["--channel", "development"], None);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    assert_eq!(stdout_json(&out)["database"]["command"], "simsapa setup --channel development");
+
+    let out = check_updates_with(dir.path(), &npm, &releases, false, &[], Some("development"));
+    let text = stdout(&out);
+    assert!(text.starts_with("Channel     development\n"), "{text}");
+    assert!(text.contains("Database    not installed\n            simsapa setup\n"), "{text}");
+
+    let out = check_updates_with(dir.path(), &npm, &releases, false, &[], None);
+    assert!(!stdout(&out).contains("Channel"), "{}", stdout(&out));
+}
+
+#[test]
+fn test_unknown_channel_is_a_usage_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = check_updates_with(dir.path(), "http://127.0.0.1:1/x", "http://127.0.0.1:1/x", false, &["--channel", "beta"], None);
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("beta"), "{}", stderr(&out));
 }
 
 #[test]

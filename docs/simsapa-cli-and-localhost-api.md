@@ -41,7 +41,8 @@ simsapa search suttas "four noble truths"
 so on a machine where the app is already set up it reports so and downloads
 nothing; `--simsapa-dir <path>` (or `SIMSAPA_DIR`) chooses another folder for
 any command. `simsapa setup --languages de,hu` adds sutta languages,
-`--list-languages` lists them. `simsapa paths` shows the folder and which
+`--list-languages` lists them, and `--channel main|development` chooses the
+release channel to install from, as for `db-upgrade` (A.8). `simsapa paths` shows the folder and which
 databases exist; any other command run before `setup` says so and exits 2.
 
 `simsapa app-assets` shows where the databases, fulltext indexes and other app
@@ -256,8 +257,23 @@ block adds: "After updating, run `simsapa setup` to replace the databases with
 ones the new version can read."
 
 It needs no databases, takes no lock and writes nothing, so it also works
-while the GUI app or a `simsapa serve` uses the folder. It asks for the release
-channel the app is set to (normally `main`).
+while the GUI app or a `simsapa serve` uses the folder.
+
+`--channel main|development` chooses the release channel the releases server
+is asked for. Without it the channel is the `RELEASE_CHANNEL` environment
+variable, else the channel the app is set to, else `main`:
+
+```
+$ simsapa check-updates --channel development
+$ RELEASE_CHANNEL=development simsapa check-updates
+```
+
+When the channel is not `main`, a first line names it: `Channel
+development`. `simsapa db-upgrade` and `simsapa setup` choose the channel the
+same way. When `--channel` named the channel, the commands the output
+suggests carry it too (`simsapa db-upgrade --channel development`, `simsapa
+setup --channel development`), so they install from the channel that was
+checked.
 
 `--json` prints the `updates` object of `GET /health` (§10, the full field
 reference is there). **Exit code**: 0 when both parts were determined, whether
@@ -283,7 +299,16 @@ in one run:
 simsapa db-upgrade                    # shows old → new version, the release notes and archives; asks
 simsapa db-upgrade --yes              # in a script
 simsapa db-upgrade --languages de,hu  # also add these sutta languages
+simsapa db-upgrade --channel development  # install from the development channel
 ```
+
+`--channel main|development` is the release channel to install from; without
+it, the `RELEASE_CHANNEL` environment variable, else the channel the app is
+set to, else `main`. `setup` takes the same option. When the releases server
+cannot be reached, `db-upgrade` and `setup` can fall back to a release list
+bundled with `simsapa`, but never with `--channel`: that list belongs to one
+channel only, so a channel named on the command line that the server does not
+answer for is an error that names the channel.
 
 | Situation | Result |
 |---|---|

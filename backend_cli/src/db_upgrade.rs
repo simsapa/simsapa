@@ -12,6 +12,11 @@
 //!
 //! Incompatible databases (another major.minor) are `simsapa setup`'s job,
 //! never this command's.
+//!
+//! The release channel is `--channel`, else `RELEASE_CHANNEL`, else the app's
+//! setting, else `main`, as for `simsapa check-updates`. A channel named with
+//! `--channel` is never answered from the bundled release list, which holds
+//! one channel's releases, not necessarily that one.
 
 use std::cmp::Ordering;
 use std::io::{self, IsTerminal};
@@ -28,13 +33,15 @@ use simsapa_backend::update_checker::{
     to_version,
 };
 use simsapa_backend::update_status::{
-    DB_UPGRADE_COMMAND, InstalledDb, SETUP_COMMAND, UpdateCheckConfig, installed_db_version, releases_request_params,
+    DB_UPGRADE_COMMAND, InstalledDb, SETUP_COMMAND, UpdateCheckConfig, command_with_channel, installed_db_version,
+    releases_request_params,
 };
 use simsapa_backend::{
     check_delete_files_for_upgrade, ensure_no_empty_db_files, get_app_globals, remove_download_temp_folder,
     set_releases_info,
 };
 
+use crate::commands::check_updates::ReleaseChannelArg;
 use crate::exit::{CliError, CliResult, DATABASES_MISSING};
 use crate::output::{outln, print_json};
 use crate::setup::{
@@ -60,6 +67,27 @@ pub struct DbUpgradeArgs {
     /// e.g. "hu,pt,de" (commas and/or spaces)
     #[arg(long, value_name = "CODES")]
     pub languages: Option<String>,
+
+    /// The release channel to install from. Defaults to RELEASE_CHANNEL, else
+    /// the app's setting, else main
+    #[arg(long, value_enum, value_name = "CHANNEL")]
+    pub channel: Option<ReleaseChannelArg>,
+}
+
+impl DbUpgradeArgs {
+    fn channel(&self) -> Option<&'static str> {
+        self.channel.map(ReleaseChannelArg::api_label)
+    }
+
+    /// This command as the user would run it again, `--channel` included.
+    fn command(&self) -> String {
+        command_with_channel(DB_UPGRADE_COMMAND, self.channel())
+    }
+
+    /// `simsapa setup`, with this run's `--channel`.
+    fn setup_command(&self) -> String {
+        command_with_channel(SETUP_COMMAND, self.channel())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,12 +170,12 @@ fn plain(v: &str) -> &str {
     v.strip_prefix('v').unwrap_or(v)
 }
 
-fn incompatible_error(db_version: &str) -> CliError {
+fn incompatible_error(db_version: &str, setup_command: &str) -> CliError {
     CliError::error(format!(
         "The databases ({}) are not compatible with simsapa {}. Run `{}`, which replaces them.",
         db_version,
         get_app_version(),
-        SETUP_COMMAND
+        setup_command
     ))
 }
 
@@ -177,11 +205,11 @@ pub fn run(args: &DbUpgradeArgs, json: bool) -> CliResult {
         Some(DbUpgradeDecision::NotInstalled) => {
             return Err(CliError::new(
                 DATABASES_MISSING,
-                format!("No databases in {}. Run `{}`.", data_folder.display(), SETUP_COMMAND),
+                format!("No databases in {}. Run `{}`.", data_folder.display(), args.setup_command()),
             ));
         }
         Some(DbUpgradeDecision::Incompatible) => {
-            return Err(incompatible_error(installed_version.as_deref().unwrap_or("")));
+            return Err(incompatible_error(installed_version.as_deref().unwrap_or(""), &args.setup_command()));
         }
         Some(_) => {
             return Err(CliError::error(format!(
@@ -203,7 +231,7 @@ pub fn run(args: &DbUpgradeArgs, json: bool) -> CliResult {
 
     errln!("Looking up the database release for Simsapa {}…", app_version);
     let releases_url = UpdateCheckConfig::from_env(RELEASES_TIMEOUT, false).releases_api_url;
-    let params = releases_request_params(&installed, &paths.appdata_database_url);
+    let params = releases_request_params(&installed, &paths.appdata_database_url, args.channel());
     let live_failure = match post_releases_request(&releases_url, RELEASES_TIMEOUT, &params) {
         Ok(info) => {
             let compatible = to_version(&app_version)
@@ -220,6 +248,10 @@ pub fn run(args: &DbUpgradeArgs, json: bool) -> CliResult {
         }
         Err(e) => format!("could not reach the releases server: {:#}", e),
     };
+
+    if let Some(channel) = args.channel() {
+        return Err(CliError::error(format!("{} (channel {}).", capitalise(&live_failure), channel)));
+    }
 
     warn(&format!("db-upgrade: {}, trying the bundled release list", live_failure));
     let bundled = compatible_assets_release().filter(is_downloadable);
@@ -266,7 +298,7 @@ fn upgrade_or_up_to_date(
                 Ok(())
             }
         }
-        DbUpgradeDecision::Incompatible => Err(incompatible_error(&installed_version)),
+        DbUpgradeDecision::Incompatible => Err(incompatible_error(&installed_version, &args.setup_command())),
         other => Err(CliError::error(format!("Cannot upgrade the databases: {:?}", other))),
     }
 }
@@ -281,7 +313,7 @@ fn upgrade(args: &DbUpgradeArgs, json: bool, installed_version: String, release:
             "A newer database release is available ({} → {}). Run `{} --yes` to install it non-interactively.",
             plain(&installed_version),
             plain(&release.version_tag),
-            DB_UPGRADE_COMMAND
+            args.command()
         )));
     }
 
@@ -324,11 +356,11 @@ fn upgrade(args: &DbUpgradeArgs, json: bool, installed_version: String, release:
         "Your user data (settings, bookmarks, imported books and dictionaries, gloss and prompt history, chanting \
          recordings) is exported first and imported into the new databases."
     );
-    if !args.yes && !confirm("Install the new databases and migrate your user data now?", DB_UPGRADE_COMMAND)? {
+    if !args.yes && !confirm("Install the new databases and migrate your user data now?", &args.command())? {
         return Err(CliError::error("Upgrade cancelled."));
     }
 
-    let upgraded_from = replace_databases(old, args.ignore_export_errors, interactive, DB_UPGRADE_COMMAND)?;
+    let upgraded_from = replace_databases(old, args.ignore_export_errors, interactive, &args.command())?;
     // From here the old databases are gone, and running `db-upgrade` again
     // finds none: `setup` completes the upgrade from the markers and
     // import-me/, which a failed or stopped download keeps.
@@ -340,7 +372,7 @@ fn upgrade(args: &DbUpgradeArgs, json: bool, installed_version: String, release:
                  upgrade.",
                 e.message,
                 paths.app_assets_dir.join("import-me").display(),
-                SETUP_COMMAND
+                args.setup_command()
             ),
         )
     })?;

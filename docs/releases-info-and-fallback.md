@@ -270,6 +270,16 @@ The channel sent to the server (and used for the fallback CLI default) comes fro
 2. `release_channel` in `AppSettings`
 3. Default: `"main"`
 
+`--channel <main|development>` on `simsapa check-updates`, `simsapa
+db-upgrade` and `simsapa setup` comes ahead of all three for that run
+(`UpdateCheckConfig::channel`, `DbUpgradeArgs::channel`, `SetupArgs::channel`);
+every other caller passes `None`. Every command those three suggest carries
+the flag on (`command_with_channel()`). **A channel named with `--channel` is
+never answered from the embedded snapshot**: the snapshot is whichever
+channel `update-releases-fallback` fetched, so `setup` and `db-upgrade` stop
+with an error naming the channel instead of installing another channel's
+release. Without the flag the snapshot fallback is as described above.
+
 The order itself is `release_channel_from(setting)`, which a caller without
 `AppData` uses with a setting it read itself: `simsapa check-updates` opens no
 databases, so it reads `release_channel` from the stored settings JSON through

@@ -29,6 +29,16 @@ pub const NPM_INSTALL_COMMAND: &str = "npm install -g @simsapa/cli@latest";
 pub const DB_UPGRADE_COMMAND: &str = "simsapa db-upgrade";
 pub const SETUP_COMMAND: &str = "simsapa setup";
 
+/// `command` ([`DB_UPGRADE_COMMAND`], [`SETUP_COMMAND`]) with `--channel` when
+/// one was named on the command line, so the command it suggests installs
+/// from the channel that was asked.
+pub fn command_with_channel(command: &str, channel: Option<&str>) -> String {
+    match channel {
+        Some(c) if !c.is_empty() => format!("{} --channel {}", command, c),
+        _ => command.to_string(),
+    }
+}
+
 /// `1` or `true` turns off the implicit checks (`simsapa serve`, `simsapa health`).
 pub const NO_UPDATE_CHECK_ENV: &str = "SIMSAPA_NO_UPDATE_CHECK";
 /// Test hooks: replace the npm and releases server URLs.
@@ -150,6 +160,10 @@ pub struct UpdateCheckConfig {
     /// `false` in the GUI's server: the CLI part is `not_applicable` and npm is
     /// not asked.
     pub check_cli: bool,
+    /// The release channel to ask for, ahead of `RELEASE_CHANNEL` and the
+    /// app's setting (`simsapa check-updates --channel`). `None` asks for the
+    /// channel the app would use.
+    pub channel: Option<String>,
 }
 
 impl UpdateCheckConfig {
@@ -165,6 +179,7 @@ impl UpdateCheckConfig {
             releases_api_url: env_or(RELEASES_API_URL_ENV, RELEASES_API_URL),
             timeout,
             check_cli,
+            channel: None,
         }
     }
 }
@@ -405,10 +420,24 @@ pub fn installed_db_version(appdata_db_path: &Path, appdata_database_url: &str) 
     }
 }
 
-/// The releases request of an update check: no stats, and the release channel
-/// of the installed databases' settings (see [`release_channel`]).
-pub fn releases_request_params(installed: &InstalledDb, appdata_database_url: &str) -> ReleasesRequestParams {
-    ReleasesRequestParams::without_stats(release_channel(installed, appdata_database_url))
+/// The releases request of an update check: no stats, and `channel` when
+/// given, else the release channel of the installed databases' settings (see
+/// [`release_channel`]).
+pub fn releases_request_params(
+    installed: &InstalledDb,
+    appdata_database_url: &str,
+    channel: Option<&str>,
+) -> ReleasesRequestParams {
+    ReleasesRequestParams::without_stats(resolve_release_channel(installed, appdata_database_url, channel))
+}
+
+/// The channel [`releases_request_params`] asks for: `channel` when given,
+/// else [`release_channel`].
+pub fn resolve_release_channel(installed: &InstalledDb, appdata_database_url: &str, channel: Option<&str>) -> String {
+    match channel {
+        Some(c) if !c.is_empty() => c.to_string(),
+        _ => release_channel(installed, appdata_database_url),
+    }
 }
 
 /// The release channel to ask the releases server for, as
@@ -479,7 +508,7 @@ pub fn check_updates(config: &UpdateCheckConfig, appdata_db_path: &Path, appdata
     });
     // Local and quick; the releases request needs the channel setting.
     let installed = installed_db_version(appdata_db_path, appdata_database_url);
-    let params = releases_request_params(&installed, appdata_database_url);
+    let params = releases_request_params(&installed, appdata_database_url, config.channel.as_deref());
     let releases = {
         let url = config.releases_api_url.clone();
         let timeout = config.timeout;
@@ -496,7 +525,10 @@ pub fn check_updates(config: &UpdateCheckConfig, appdata_db_path: &Path, appdata
         }
         None => CliUpdate::with_status(CliUpdateStatus::NotApplicable, &app_version),
     };
-    let database = database_update_from(&app_version, &installed, releases.as_ref().map_err(|e| e.clone()));
+    let mut database = database_update_from(&app_version, &installed, releases.as_ref().map_err(|e| e.clone()));
+    if let Some(command) = &database.command {
+        database.command = Some(command_with_channel(command, config.channel.as_deref()));
+    }
 
     UpdateStatus {
         state: UpdateCheckState::Checked,
@@ -688,6 +720,13 @@ mod tests {
     }
 
     #[test]
+    fn test_command_with_channel() {
+        assert_eq!(command_with_channel(DB_UPGRADE_COMMAND, None), "simsapa db-upgrade");
+        assert_eq!(command_with_channel(DB_UPGRADE_COMMAND, Some("")), "simsapa db-upgrade");
+        assert_eq!(command_with_channel(SETUP_COMMAND, Some("development")), "simsapa setup --channel development");
+    }
+
+    #[test]
     fn test_release_channel_in_settings_json() {
         assert_eq!(
             release_channel_in_settings_json(r#"{"release_channel":"development","other":[1]}"#).as_deref(),
@@ -782,7 +821,7 @@ mod tests {
     }
 
     fn config(npm: String, releases: String, timeout: Duration) -> UpdateCheckConfig {
-        UpdateCheckConfig { npm_dist_tags_url: npm, releases_api_url: releases, timeout, check_cli: true }
+        UpdateCheckConfig { npm_dist_tags_url: npm, releases_api_url: releases, timeout, check_cli: true, channel: None }
     }
 
     /// A folder with no databases.

@@ -121,7 +121,7 @@ enum Commands {
 
     /// Check npm and the releases server for a newer simsapa and a newer
     /// compatible database release, and show the command that installs each
-    CheckUpdates,
+    CheckUpdates(commands::check_updates::CheckUpdatesArgs),
 
     /// Serve the localhost API (the GUI app's data routes) until Ctrl-C
     Serve(commands::serve::ServeArgs),
@@ -209,7 +209,7 @@ fn run(cli: &Cli) -> CliResult {
         // No preamble, no lock: reads one version from appdata.sqlite3 and
         // asks the network, so it works without databases and while the
         // folder is in use.
-        Commands::CheckUpdates => commands::check_updates::run(cli.json),
+        Commands::CheckUpdates(args) => commands::check_updates::run(args, cli.json),
         Commands::Health => {
             read_only_preamble()?;
             commands::health::run(cli.json, cli.no_update_check)
