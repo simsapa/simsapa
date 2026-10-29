@@ -66,9 +66,15 @@ keys**, all sources are public.
 | SambaNova | native `https://api.sambanova.ai/v1/models` (absent from models.dev; keyless) |
 | HuggingFace | never auto-updated |
 
-**Filtering** (`is_chat_model`): models.dev entries must have `"text"` in both
-`modalities.input` and `modalities.output`, and every source is run through the
-denylist (embedding / rerank / guard / whisper / tts / image / ocr / moderation /
+**Filtering** (`is_chat_model`): where a source publishes modalities, the input
+must contain `"text"` and the output must be **text only** — a model that also
+outputs audio or images is a music, live-audio or image-generation model
+(Lyria, `*-live-*`, `*-image`, `gpt-realtime-*`), and "contains text" let them
+through. models.dev entries whose `type` names a non-chat kind (`image`,
+`embedding`, `speech`, `realtime`, …) are dropped; models.dev sets `type` only
+on such models, and an unknown value is let through so a future `"chat"`
+cannot empty every list. Every source is also run through the id denylist
+(embedding / rerank / guard / whisper / tts / image / ocr / moderation /
 classifier …).
 
 **Merge** (`merge_provider_models`, FR-A6):
@@ -83,10 +89,26 @@ classifier …).
 
 **Default-enable heuristic** (`pick_default_model`, `apply_defaults: bool` — CLI
 `true`, in-app `false`): prefer a zero-cost model (`cost.input == 0 &&
-cost.output == 0`, or a `:free` id), newest `release_date` / `last_updated` then
-larger `limit.context` as tie-breakers; else the newest budget-family model
-(`flash|lite|mini|small`); else none. Alias ids (`-latest`) beat versioned ids.
-It enables exactly one model per provider and never disables anything.
+cost.output == 0`, or a `:free` id); else the newest budget-family model
+(`flash|lite|mini|small`, larger `limit.context` breaking ties); else none.
+Alias ids (`-latest`) beat versioned ids.
+
+Zero-cost lists (OpenRouter `:free`, NvidiaNim) hold dozens of models and the
+newest is often a small or specialist one — "newest" once picked a 2.5B-active
+model. They are ranked by `zero_cost_rank()` on the id, the only signal the
+sources give: general-purpose before specialist (`code`, `coder`, `math`,
+`prover`, `codestral`, `devstral`, `leanstral`), full-size before small-tier
+(`nano`, `tiny`, `mini`, `small`, `lite`, `lightning`, `xs`, or a stated size
+under 20B), the larger stated size (`70b`, the `550b` of `550b-a55b`; a stated
+size beats none), then newest and longest context. The id is matched by
+**word** (split on `-` `_` `/` `:`), so `mini` does not match inside
+`gemini`.
+A models.dev `status: "deprecated"` model stays in the list but is never the
+pick. The heuristic runs **only for a provider with no enabled model** after
+the merge — typically because the previous default was removed upstream — and
+it never disables anything. Without that check every regen enabled the newest
+pick next to the previous one, so the bundled list gained an enabled model per
+provider per run.
 
 **Callers.**
 

@@ -23,6 +23,7 @@ fn fetched(id: &str) -> FetchedModel {
         release: None,
         context: None,
         reasoning: None,
+        deprecated: false,
     }
 }
 
@@ -59,8 +60,19 @@ fn chat_filter_denylist_and_modalities() {
     assert!(!is_chat_model("gemini-embedding-001", Some(&text), Some(&text)));
     assert!(!is_chat_model("Whisper-Large-v3", None, None));
     assert!(!is_chat_model("llama-guard-4", None, None));
+    assert!(!is_chat_model("gemini-2.5-computer-use-preview-10-2025", Some(&text), Some(&text)));
+    assert!(!is_chat_model("sonar-deep-research", Some(&text), Some(&text)));
+    assert!(!is_chat_model("google/google-paligemma", Some(&text), Some(&text)));
     // Non-text output is rejected when modalities are published.
     assert!(!is_chat_model("veo-3.1", Some(&text), Some(&image)));
+    // Output must be text only: text + audio is a music / live-audio model,
+    // text + image an image generator.
+    let text_audio = vec!["text".to_string(), "audio".to_string()];
+    let text_image = vec!["text".to_string(), "image".to_string()];
+    assert!(!is_chat_model("lyria-3-clip-preview", Some(&text), Some(&text_audio)));
+    assert!(!is_chat_model("gemini-3-pro-preview-gen", Some(&text), Some(&text_image)));
+    // Image input is fine.
+    assert!(is_chat_model("gemini-3-flash-preview", Some(&text_image), Some(&text)));
     // Without modality data only the denylist applies.
     assert!(is_chat_model("Meta-Llama-3.3-70B-Instruct", None, None));
 }
@@ -225,10 +237,73 @@ fn fetch_failure_keeps_list_unchanged() {
 // ---- default free-model heuristic (FR-A8) -----------------------------------
 
 #[test]
-fn heuristic_openrouter_picks_newest_free_model() {
+fn heuristic_openrouter_prefers_general_model_over_newer_specialist() {
     let models = parse_openrouter_json(OPENROUTER_FIXTURE).unwrap();
-    // Both survivors are zero-cost `:free`; qwen3-coder has the newer release.
-    assert_eq!(pick_default_model(&models).as_deref(), Some("qwen/qwen3-coder:free"));
+    // Both survivors are zero-cost `:free`; qwen3-coder is newer but a coding
+    // specialist, llama-3.3-70b a general 70B model.
+    assert_eq!(
+        pick_default_model(&models).as_deref(),
+        Some("meta-llama/llama-3.3-70b-instruct:free")
+    );
+}
+
+fn free(id: &str, release: &str) -> FetchedModel {
+    FetchedModel {
+        release: Some(release.into()),
+        cost_in: Some(0.0),
+        cost_out: Some(0.0),
+        ..fetched(id)
+    }
+}
+
+#[test]
+fn heuristic_zero_cost_ranks_size_over_recency() {
+    // The OpenRouter `:free` list of October 2026, abridged: "newest" picked
+    // the 2.5B-active flint.
+    let candidates = vec![
+        free("recursive/flint-v1.0:free", "2026-10-20"),
+        free("xingchen-agi/xing4.0-29b-a4b:free", "2026-10-15"),
+        free("liquid/lfm-2.5-2.6b:free", "2026-08-11"),
+        free("nvidia/nemotron-3.5-lightning:free", "2026-08-11"),
+        free("poolside/laguna-xs-2.1:free", "2026-06-30"),
+        free("cohere/north-mini-code:free", "2026-06-17"),
+        free("nvidia/nemotron-3-ultra-550b-a55b:free", "2026-06-01"),
+        free("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "2026-04-28"),
+        free("google/gemma-4-31b-it:free", "2026-04-02"),
+    ];
+    assert_eq!(
+        pick_default_model(&candidates).as_deref(),
+        Some("nvidia/nemotron-3-ultra-550b-a55b:free")
+    );
+
+    // Without the large model, the next stated size wins over newer models
+    // that state none.
+    let without_ultra: Vec<FetchedModel> = candidates
+        .into_iter()
+        .filter(|m| !m.id.contains("ultra"))
+        .collect();
+    assert_eq!(
+        pick_default_model(&without_ultra).as_deref(),
+        Some("google/gemma-4-31b-it:free")
+    );
+}
+
+#[test]
+fn heuristic_zero_cost_small_and_specialist_only_when_nothing_else() {
+    // `mini` inside `gemini` is not a small-tier word.
+    let candidates = vec![
+        free("acme/tiny-chat:free", "2026-10-01"),
+        free("acme/big-coder-480b:free", "2026-10-01"),
+        free("acme/gemini-clone:free", "2025-01-01"),
+    ];
+    assert_eq!(pick_default_model(&candidates).as_deref(), Some("acme/gemini-clone:free"));
+
+    let small_or_specialist = vec![
+        free("acme/tiny-chat:free", "2026-10-01"),
+        free("acme/big-coder-480b:free", "2026-10-01"),
+    ];
+    // A small general model beats a large specialist.
+    assert_eq!(pick_default_model(&small_or_specialist).as_deref(), Some("acme/tiny-chat:free"));
 }
 
 #[test]
@@ -258,6 +333,7 @@ fn heuristic_zero_cost_from_models_dev_costs() {
             release: Some("2026-01-01".into()),
             context: Some(100_000),
             reasoning: None,
+            deprecated: false,
         },
         FetchedModel {
             id: "gratis-model".into(),
@@ -266,6 +342,7 @@ fn heuristic_zero_cost_from_models_dev_costs() {
             release: Some("2025-01-01".into()),
             context: Some(8_192),
             reasoning: None,
+            deprecated: false,
         },
     ];
     // Zero-cost beats budget-family/newer paid models.
@@ -282,6 +359,7 @@ fn heuristic_context_breaks_release_ties() {
             release: Some("2026-01-01".into()),
             context: Some(32_000),
             reasoning: None,
+            deprecated: false,
         },
         FetchedModel {
             id: "b:free".into(),
@@ -290,6 +368,7 @@ fn heuristic_context_breaks_release_ties() {
             release: Some("2026-01-01".into()),
             context: Some(128_000),
             reasoning: None,
+            deprecated: false,
         },
     ];
     assert_eq!(pick_default_model(&candidates).as_deref(), Some("b:free"));
@@ -304,14 +383,17 @@ fn apply_defaults_enables_exactly_the_picked_model() {
 
     let report = apply_provider_update(&mut provider, Ok(upstream), true);
 
-    assert_eq!(report.default_enabled.as_deref(), Some("qwen/qwen3-coder:free"));
+    assert_eq!(
+        report.default_enabled.as_deref(),
+        Some("meta-llama/llama-3.3-70b-instruct:free")
+    );
     let enabled: Vec<&str> = provider
         .models
         .iter()
         .filter(|m| m.enabled)
         .map(|m| m.model_name.as_str())
         .collect();
-    assert_eq!(enabled, vec!["qwen/qwen3-coder:free"]);
+    assert_eq!(enabled, vec!["meta-llama/llama-3.3-70b-instruct:free"]);
 }
 
 #[test]
@@ -347,4 +429,77 @@ fn apply_defaults_never_disables_user_enabled_models() {
         .find(|m| m.model_name == "meta-llama/llama-3.3-70b-instruct:free")
         .unwrap();
     assert!(llama.enabled, "user-enabled model must stay enabled");
+}
+
+// ---- models.dev type / status, and default accumulation --------------------
+
+#[test]
+fn models_dev_type_and_deprecated_status() {
+    let json = r#"{"google": {"models": {
+        "lyria-3-clip-preview": {"id": "lyria-3-clip-preview",
+            "modalities": {"input": ["text", "image"], "output": ["text", "audio"]},
+            "cost": {"input": 0, "output": 0}, "release_date": "2026-03-25"},
+        "gemini-x-tts": {"id": "gemini-x-speak", "type": "speech",
+            "modalities": {"input": ["text"], "output": ["text"]}},
+        "gemini-chat-new": {"id": "gemini-chat-new", "status": "deprecated",
+            "modalities": {"input": ["text"], "output": ["text"]},
+            "cost": {"input": 0, "output": 0}, "release_date": "2026-06-30"},
+        "gemini-chat-old": {"id": "gemini-chat-old",
+            "modalities": {"input": ["text"], "output": ["text"]},
+            "cost": {"input": 0, "output": 0}, "release_date": "2025-01-01"},
+        "gemini-chat-future-type": {"id": "gemini-chat-future-type", "type": "chat",
+            "modalities": {"input": ["text"], "output": ["text"]}}
+    }}}"#;
+    let data = ModelsDevData::parse(json).unwrap();
+    let models = data.provider_models("google").unwrap();
+    let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+    // The music model and the typed speech model are filtered out; an unknown
+    // `type` value is let through.
+    assert_eq!(ids, ["gemini-chat-future-type", "gemini-chat-new", "gemini-chat-old"]);
+    // The deprecated model stays in the list but is never the default, even
+    // though it is the newest zero-cost model.
+    assert!(models.iter().find(|m| m.id == "gemini-chat-new").unwrap().deprecated);
+    assert_eq!(pick_default_model(&models).as_deref(), Some("gemini-chat-old"));
+}
+
+#[test]
+fn apply_defaults_adds_nothing_while_a_model_is_enabled() {
+    let mut provider = test_provider(
+        ProviderName::OpenRouter,
+        vec![entry(
+            "meta-llama/llama-3.3-70b-instruct:free",
+            true,
+            ModelOrigin::Fetched,
+            false,
+        )],
+    );
+    let upstream = parse_openrouter_json(OPENROUTER_FIXTURE).unwrap();
+
+    let report = apply_provider_update(&mut provider, Ok(upstream), true);
+
+    assert!(report.default_enabled.is_none());
+    let enabled: Vec<&str> = provider
+        .models
+        .iter()
+        .filter(|m| m.enabled)
+        .map(|m| m.model_name.as_str())
+        .collect();
+    assert_eq!(enabled, ["meta-llama/llama-3.3-70b-instruct:free"]);
+}
+
+#[test]
+fn apply_defaults_replaces_an_enabled_model_that_was_removed_upstream() {
+    let mut provider = test_provider(
+        ProviderName::OpenRouter,
+        vec![entry("gone/model:free", true, ModelOrigin::Fetched, false)],
+    );
+    let upstream = parse_openrouter_json(OPENROUTER_FIXTURE).unwrap();
+
+    let report = apply_provider_update(&mut provider, Ok(upstream), true);
+
+    assert_eq!(report.removed, 1);
+    assert_eq!(
+        report.default_enabled.as_deref(),
+        Some("meta-llama/llama-3.3-70b-instruct:free")
+    );
 }

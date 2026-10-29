@@ -42,13 +42,6 @@
         "reasoning": true
       },
       {
-        "model_name": "gemini-3-pro-preview",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "gemini-2.5-pro",
         "enabled": false,
         "origin": "fetched",
@@ -63,13 +56,6 @@
         "reasoning": true
       },
       {
-        "model_name": "gemini-2.0-flash",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "gemini-2.5-flash-lite",
         "enabled": false,
         "origin": "fetched",
@@ -82,13 +68,6 @@
         "origin": "fetched",
         "stale": false,
         "reasoning": true
-      },
-      {
-        "model_name": "gemini-2.0-flash-lite",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
       },
       {
         "model_name": "gemini-3.1-flash-lite",
@@ -124,6 +103,41 @@
         "origin": "fetched",
         "stale": false,
         "reasoning": true
+      },
+      {
+        "model_name": "gemini-3.5-flash-lite",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gemini-3.7-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gemini-3.8-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gemini-4-argon",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gemini-pro-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
       }
     ]
   },
@@ -134,48 +148,6 @@
     "api_key_env_var_name": "OPENROUTER_API_KEY",
     "api_key_value": null,
     "models": [
-      {
-        "model_name": "openai/gpt-oss-120b:free",
-        "enabled": true,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "nousresearch/hermes-3-llama-3.1-405b:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/nemotron-3-super-120b-a12b:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "qwen/qwen3-next-80b-a3b-instruct:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta-llama/llama-3.3-70b-instruct:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
       {
         "model_name": "cohere/north-mini-code:free",
         "enabled": false,
@@ -198,20 +170,6 @@
         "reasoning": true
       },
       {
-        "model_name": "meta-llama/llama-3.2-3b-instruct:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/nemotron-3-nano-30b-a3b:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         "enabled": false,
         "origin": "fetched",
@@ -220,35 +178,7 @@
       },
       {
         "model_name": "nvidia/nemotron-3-ultra-550b-a55b:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "nvidia/nemotron-nano-12b-v2-vl:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "nvidia/nemotron-nano-9b-v2:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "openai/gpt-oss-20b:free",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "poolside/laguna-m.1:free",
-        "enabled": false,
+        "enabled": true,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
@@ -261,15 +191,64 @@
         "reasoning": true
       },
       {
-        "model_name": "qwen/qwen3-coder:free",
+        "model_name": "dots-studio/dots-3-note-preview:free",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
-        "reasoning": false
+        "reasoning": true
       },
       {
-        "model_name": "tencent/hy3:free",
-        "enabled": true,
+        "model_name": "liquid/lfm-2.5-2.6b:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "nvidia/nemotron-3.5-lightning:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "nvidia/nemotron-3.5-super-vl:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "poolside/laguna-s-2.1:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "recursive/flint-v1.0:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "thinkingmachines/inkling-small:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "thinkingmachines/inkling:free",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "xingchen-agi/xing4.0-29b-a4b:free",
+        "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
@@ -347,13 +326,6 @@
         "reasoning": false
       },
       {
-        "model_name": "devstral-medium-2507",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "devstral-medium-latest",
         "enabled": false,
         "origin": "fetched",
@@ -361,42 +333,14 @@
         "reasoning": false
       },
       {
-        "model_name": "devstral-small-2505",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "devstral-small-2507",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "labs-devstral-small-2512",
-        "enabled": true,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "magistral-small",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
-        "reasoning": true
+        "reasoning": false
       },
       {
         "model_name": "ministral-3b-latest",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "mistral-large-2411",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -431,13 +375,6 @@
         "reasoning": true
       },
       {
-        "model_name": "mistral-nemo",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "mistral-small-2506",
         "enabled": false,
         "origin": "fetched",
@@ -452,27 +389,6 @@
         "reasoning": true
       },
       {
-        "model_name": "open-mistral-7b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "open-mixtral-8x22b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "open-mixtral-8x7b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "pixtral-12b",
         "enabled": false,
         "origin": "fetched",
@@ -480,11 +396,95 @@
         "reasoning": false
       },
       {
-        "model_name": "pixtral-large-latest",
+        "model_name": "codestral-2508",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": false
+      },
+      {
+        "model_name": "deepseek-v4-1-flash-1017",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "glm-5-2",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "labs-leanstral-1-5-1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "ministral-14b-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "ministral-3b-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "ministral-8b-2512",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "mistral-large-4",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "voxtral-small-2507",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "voxtral-small-latest",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "zai-glm-5-2",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "zai-glm-5-3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "zai-glm-5-3-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
       }
     ]
   },
@@ -514,12 +514,6 @@
         "stale": false
       },
       {
-        "model_name": "MiniMax-M2.7",
-        "enabled": true,
-        "origin": "fetched",
-        "stale": false
-      },
-      {
         "model_name": "gemma-4-31B-it",
         "enabled": false,
         "origin": "fetched",
@@ -528,6 +522,12 @@
       {
         "model_name": "gpt-oss-120b",
         "enabled": false,
+        "origin": "fetched",
+        "stale": false
+      },
+      {
+        "model_name": "MiniMax-M3.1-Flash",
+        "enabled": true,
         "origin": "fetched",
         "stale": false
       }
@@ -541,161 +541,7 @@
     "api_key_value": null,
     "models": [
       {
-        "model_name": "meta/llama-3.3-70b-instruct",
-        "enabled": true,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "qwen/qwen3-next-80b-a3b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "abacusai/dracarys-llama-3_1-70b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "baai/bge-m3",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "bytedance/seed-oss-36b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "deepseek-ai/deepseek-v4-flash",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "deepseek-ai/deepseek-v4-pro",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "google/gemma-2-2b-it",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "google/gemma-3n-e2b-it",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "google/gemma-3n-e4b-it",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "google/gemma-4-31b-it",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "google/google-paligemma",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/esm2-650m",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/esmfold",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/llama-3.1-70b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/llama-3.1-8b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/llama-3.2-1b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/llama-3.2-3b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "meta/llama-4-maverick-17b-128e-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "microsoft/phi-4-mini-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "microsoft/phi-4-multimodal-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "minimaxai/minimax-m2.7",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "minimaxai/minimax-m3",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -709,56 +555,7 @@
         "reasoning": false
       },
       {
-        "model_name": "mistralai/mistral-7b-instruct-v03",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "mistralai/mistral-large-3-675b-instruct-2512",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "mistralai/mistral-medium-3-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "mistralai/mistral-nemotron",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "mistralai/mistral-small-4-119b-2603",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "mistralai/mixtral-8x22b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "mistralai/mixtral-8x7b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "moonshotai/kimi-k2-instruct-0905",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -772,20 +569,6 @@
         "reasoning": true
       },
       {
-        "model_name": "nvidia/gliner-pii",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/nemotron-3-nano-30b-a3b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         "enabled": false,
         "origin": "fetched",
@@ -793,71 +576,8 @@
         "reasoning": true
       },
       {
-        "model_name": "nvidia/nemotron-3-super-120b-a12b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "nvidia/nemotron-3-ultra-550b-a55b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "nvidia/nemotron-mini-4b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/nemotron-voicechat",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/nvidia-nemotron-nano-9b-v2",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "nvidia/riva-translate-4b-instruct-v1_1",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/studiovoice",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/usdcode",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "nvidia/usdvalidate",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "openai/gpt-oss-120b",
-        "enabled": false,
+        "enabled": true,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
@@ -870,64 +590,106 @@
         "reasoning": true
       },
       {
-        "model_name": "qwen/qwen2.5-coder-32b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "qwen/qwen3-coder-480b-a35b-instruct",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
-        "model_name": "qwen/qwen3.5-122b-a10b",
+        "model_name": "deepseek-ai/deepseek-v4.1-flash",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
       },
       {
-        "model_name": "qwen/qwen3.5-397b-a17b",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "sarvamai/sarvam-m",
+        "model_name": "google/gemma-3-12b-it",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": false
       },
       {
-        "model_name": "stepfun-ai/step-3.5-flash",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "stepfun-ai/step-3.7-flash",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "upstage/solar-10_7b-instruct",
+        "model_name": "google/gemma-3-4b-it",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": false
       },
       {
-        "model_name": "z-ai/glm-5.2",
-        "enabled": true,
+        "model_name": "meta/muse-glimmer-30b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "minimaxai/minimax-m3.1-flash",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "mistralai/mistral-7b-instruct-v0.3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "moonshotai/kimi-k3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "nvidia/llama-3.1-nemotron-70b-instruct",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "nvidia/riva-translate-4b-instruct-v1.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": false
+      },
+      {
+        "model_name": "poolside/laguna-xs-2.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "stepfun-ai/step-5-preview",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "z-ai/glm-5.3",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "z-ai/glm-5.3-flash",
+        "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
@@ -963,13 +725,6 @@
         "reasoning": true
       },
       {
-        "model_name": "claude-opus-4-1-20250805",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "claude-sonnet-4-5-20250929",
         "enabled": false,
         "origin": "fetched",
@@ -992,13 +747,6 @@
       },
       {
         "model_name": "claude-haiku-4-5",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "claude-opus-4-1",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -1038,6 +786,41 @@
         "origin": "fetched",
         "stale": false,
         "reasoning": true
+      },
+      {
+        "model_name": "claude-fable-5-1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "claude-haiku-5-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "claude-opus-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "claude-opus-5-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "claude-sonnet-5-5",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
       }
     ]
   },
@@ -1050,7 +833,7 @@
     "models": [
       {
         "model_name": "gpt-4o",
-        "enabled": true,
+        "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": false
@@ -1133,20 +916,6 @@
         "reasoning": true
       },
       {
-        "model_name": "gpt-5-chat-latest",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5-codex",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "gpt-5-mini",
         "enabled": false,
         "origin": "fetched",
@@ -1175,49 +944,7 @@
         "reasoning": true
       },
       {
-        "model_name": "gpt-5.1-chat-latest",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.1-codex",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.1-codex-max",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.1-codex-mini",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "gpt-5.2",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.2-chat-latest",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.2-codex",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -1229,13 +956,6 @@
         "origin": "fetched",
         "stale": false,
         "reasoning": true
-      },
-      {
-        "model_name": "gpt-5.3-chat-latest",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
       },
       {
         "model_name": "gpt-5.3-codex",
@@ -1302,7 +1022,7 @@
       },
       {
         "model_name": "gpt-5.6-luna",
-        "enabled": false,
+        "enabled": true,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
@@ -1343,13 +1063,6 @@
         "reasoning": true
       },
       {
-        "model_name": "o3-deep-research",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "o3-mini",
         "enabled": false,
         "origin": "fetched",
@@ -1371,7 +1084,35 @@
         "reasoning": true
       },
       {
-        "model_name": "o4-mini-deep-research",
+        "model_name": "gpt-6-astra",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gpt-6-luna",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gpt-6-sol",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gpt-6.1-sol",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "gpt-6.1-terra",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -1387,20 +1128,6 @@
     "api_key_value": null,
     "models": [
       {
-        "model_name": "deepseek-reasoner",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
-        "model_name": "deepseek-chat",
-        "enabled": true,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": false
-      },
-      {
         "model_name": "deepseek-v4-flash",
         "enabled": true,
         "origin": "fetched",
@@ -1409,6 +1136,13 @@
       },
       {
         "model_name": "deepseek-v4-pro",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "deepseek-flash",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -1438,13 +1172,6 @@
         "reasoning": true
       },
       {
-        "model_name": "grok-4.20-multi-agent-0309",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
-      {
         "model_name": "grok-4.3",
         "enabled": false,
         "origin": "fetched",
@@ -1460,6 +1187,20 @@
       },
       {
         "model_name": "grok-build-0.1",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "grok-4.6",
+        "enabled": false,
+        "origin": "fetched",
+        "stale": false,
+        "reasoning": true
+      },
+      {
+        "model_name": "grok-4.7",
         "enabled": false,
         "origin": "fetched",
         "stale": false,
@@ -1489,13 +1230,6 @@
     "api_key_env_var_name": "PERPLEXITY_API_KEY",
     "api_key_value": null,
     "models": [
-      {
-        "model_name": "sonar-deep-research",
-        "enabled": false,
-        "origin": "fetched",
-        "stale": false,
-        "reasoning": true
-      },
       {
         "model_name": "sonar-reasoning-pro",
         "enabled": false,

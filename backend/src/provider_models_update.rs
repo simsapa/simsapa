@@ -59,6 +59,18 @@ const MODEL_ID_DENYLIST: &[&str] = &[
     "vision",
     "-vl-",
     "vlm",
+    "paligemma",
+    "voicechat",
+    "cosmos",
+    "usdcode",
+    "usdvalidate",
+    // Agents that need their own API or tools, not a plain chat request.
+    "computer-use",
+    "multi-agent",
+    // Research runs take minutes, past the 180 s request timeout.
+    "deep-research",
+    // Cybersecurity-specialised models.
+    "daybreak",
 ];
 
 /// Which source updates a provider's model list.
@@ -106,11 +118,20 @@ pub struct FetchedModel {
     /// Whether the source marks this as a reasoning/thinking model.
     /// `None` when the source doesn't say (SambaNova).
     pub reasoning: Option<bool>,
+    /// models.dev `status: "deprecated"`. Kept in the list (it still answers)
+    /// but never chosen as the default.
+    #[serde(default)]
+    pub deprecated: bool,
 }
 
 /// The chat-model filter: modality check (when the source publishes
-/// modalities, input and output must both contain `"text"`) plus the id
-/// denylist.
+/// modalities, input must contain `"text"` and output must be text only)
+/// plus the id denylist.
+///
+/// Output must be text *only*: a model that also outputs audio or images is
+/// a music, speech, live-audio or image-generation model (Lyria, `*-live-*`,
+/// `*-image`, `gpt-realtime-*`), not one that answers a text prompt through
+/// the plain chat endpoints the app uses.
 pub fn is_chat_model(
     id: &str,
     modalities_in: Option<&[String]>,
@@ -126,11 +147,30 @@ pub fn is_chat_model(
         }
     }
     if let Some(mo) = modalities_out {
-        if !mo.iter().any(|m| m == "text") {
+        if mo.is_empty() || mo.iter().any(|m| m != "text") {
             return false;
         }
     }
     true
+}
+
+/// models.dev `type` values that mark a non-chat model. models.dev leaves
+/// `type` unset on chat models; an unknown value is let through, so a
+/// future `"chat"` cannot empty every list.
+const NON_CHAT_MODEL_TYPES: &[&str] = &[
+    "image",
+    "video",
+    "embedding",
+    "reranking",
+    "speech",
+    "transcription",
+    "realtime",
+    "audio",
+    "moderation",
+];
+
+fn is_non_chat_type(model_type: Option<&str>) -> bool {
+    model_type.is_some_and(|t| NON_CHAT_MODEL_TYPES.contains(&t.to_lowercase().as_str()))
 }
 
 fn http_client() -> Result<reqwest::blocking::Client> {
@@ -156,6 +196,10 @@ struct ModelsDevModel {
     last_updated: Option<String>,
     #[serde(default)]
     reasoning: Option<bool>,
+    #[serde(default, rename = "type")]
+    model_type: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,7 +264,7 @@ impl ModelsDevData {
                 Some(md) => (Some(md.input.as_slice()), Some(md.output.as_slice())),
                 None => (None, None),
             };
-            if !is_chat_model(&m.id, mi, mo) {
+            if !is_chat_model(&m.id, mi, mo) || is_non_chat_type(m.model_type.as_deref()) {
                 continue;
             }
             out.push(FetchedModel {
@@ -230,6 +274,7 @@ impl ModelsDevData {
                 release: m.release_date.or(m.last_updated),
                 context: m.limit.as_ref().and_then(|l| l.context),
                 reasoning: m.reasoning,
+                deprecated: m.status.as_deref() == Some("deprecated"),
             });
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -315,6 +360,7 @@ pub fn parse_openrouter_json(json: &str) -> Result<Vec<FetchedModel>> {
             release,
             context: m.context_length,
             reasoning,
+            deprecated: false,
         });
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -359,6 +405,7 @@ pub fn parse_sambanova_json(json: &str) -> Result<Vec<FetchedModel>> {
             release: None,
             context: None,
             reasoning: None,
+            deprecated: false,
         })
         .collect();
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -455,44 +502,104 @@ fn is_alias_id(id: &str) -> bool {
 
 const BUDGET_FAMILIES: &[&str] = &["flash", "lite", "mini", "small"];
 
+/// Id words of a specialist model: good at one task, a poor default for
+/// translating and glossing Pāli.
+const SPECIALIST_WORDS: &[&str] = &[
+    "code", "coder", "codestral", "devstral", "math", "prover", "leanstral",
+];
+
+/// Id words of a small-tier model.
+const SMALL_TIER_WORDS: &[&str] = &["nano", "tiny", "mini", "small", "lite", "lightning", "xs"];
+
+/// Below this many parameters (billions) a model counts as small-tier.
+const SMALL_MODEL_PARAMS_B: f64 = 20.0;
+
+/// The id split into lowercase words (`meta-llama/llama-3.3-70b-instruct:free`
+/// → `meta`, `llama`, `llama`, `3.3`, `70b`, `instruct`, `free`). Splitting
+/// keeps `mini` from matching inside `gemini`.
+fn id_words(id: &str) -> Vec<String> {
+    id.to_lowercase()
+        .split(|c: char| matches!(c, '-' | '_' | '/' | ':'))
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The total parameter count in billions, when the id states it as a word of
+/// its own: `70b`, `2.6b`, the `550b` of `550b-a55b` (the `a55b` active count
+/// is not a size word). `None` when the id does not say.
+fn id_param_count_b(id: &str) -> Option<f64> {
+    id_words(id).iter().find_map(|w| w.strip_suffix('b')?.parse::<f64>().ok())
+}
+
+/// How good a default a zero-cost model is likely to be, larger is better.
+/// Free lists (OpenRouter `:free`, NvidiaNim) hold dozens of models, and the
+/// newest is often a small or specialist one, so recency alone picks badly.
+/// The id is the only signal the sources give: in order, not a specialist,
+/// not small-tier (by name, or under `SMALL_MODEL_PARAMS_B`), the larger
+/// stated size (a stated size beats none), then newer and longer context.
+fn zero_cost_rank(m: &FetchedModel) -> (bool, bool, Option<u64>, Option<String>, Option<u64>) {
+    let words = id_words(&m.id);
+    let has = |list: &[&str]| words.iter().any(|w| list.contains(&w.as_str()));
+    let size = id_param_count_b(&m.id);
+    let specialist = has(SPECIALIST_WORDS);
+    let small = has(SMALL_TIER_WORDS) || size.is_some_and(|b| b < SMALL_MODEL_PARAMS_B);
+    (
+        !specialist,
+        !small,
+        // Whole-billion resolution is enough to order by size, and keeps the
+        // key `Ord`.
+        size.map(|b| b.round() as u64),
+        m.release.clone(),
+        m.context,
+    )
+}
+
 /// Pick the "best available free model" from a fetched list, or None:
 ///
-/// 1. zero-cost candidates (`cost == 0/0` or a `:free` id), newest release
-///    first, larger context as tie-breaker;
-/// 2. else budget-family ids (`flash`/`lite`/`mini`/`small`), newest first —
-///    covers providers whose free tier is rate-limit-based (Gemini);
+/// 1. zero-cost candidates (`cost == 0/0` or a `:free` id), ranked by
+///    `zero_cost_rank()`: general-purpose before specialist, full-size before
+///    small-tier, larger before smaller, then newest and longest context;
+/// 2. else budget-family ids (`flash`/`lite`/`mini`/`small`), newest first,
+///    larger context as tie-breaker — covers providers whose free tier is
+///    rate-limit-based (Gemini);
 /// 3. else None (paid-only providers: Anthropic, OpenAI).
+///
+/// Deprecated models are never candidates.
 ///
 /// When both an alias id (e.g. `gemini-flash-latest`) and versioned ids
 /// qualify, the alias is preferred — it survives provider model rotations.
 pub fn pick_default_model(fetched: &[FetchedModel]) -> Option<String> {
+    let fetched: Vec<&FetchedModel> = fetched.iter().filter(|m| !m.deprecated).collect();
     let zero_cost: Vec<&FetchedModel> = fetched
         .iter()
+        .copied()
         .filter(|m| {
             m.id.ends_with(":free")
                 || (m.cost_in == Some(0.0) && m.cost_out == Some(0.0))
         })
         .collect();
 
-    let candidates = if !zero_cost.is_empty() {
+    let is_zero_cost = !zero_cost.is_empty();
+    let candidates = if is_zero_cost {
         zero_cost
     } else {
         let l_matches = |m: &&FetchedModel| {
             let l = m.id.to_lowercase();
             BUDGET_FAMILIES.iter().any(|f| l.contains(f))
         };
-        let budget: Vec<&FetchedModel> = fetched.iter().filter(l_matches).collect();
+        let budget: Vec<&FetchedModel> = fetched.iter().copied().filter(l_matches).collect();
         if budget.is_empty() {
             return None;
         }
         budget
     };
 
-    let pool: Vec<&&FetchedModel> = {
-        let aliases: Vec<&&FetchedModel> =
-            candidates.iter().filter(|m| is_alias_id(&m.id)).collect();
+    let pool: Vec<&FetchedModel> = {
+        let aliases: Vec<&FetchedModel> =
+            candidates.iter().copied().filter(|m| is_alias_id(&m.id)).collect();
         if aliases.is_empty() {
-            candidates.iter().collect()
+            candidates
         } else {
             aliases
         }
@@ -500,11 +607,13 @@ pub fn pick_default_model(fetched: &[FetchedModel]) -> Option<String> {
 
     pool.into_iter()
         .max_by(|a, b| {
-            a.release
-                .cmp(&b.release)
-                .then(a.context.cmp(&b.context))
-                // Stable, deterministic pick among full ties.
-                .then(b.id.cmp(&a.id))
+            let order = if is_zero_cost {
+                zero_cost_rank(a).cmp(&zero_cost_rank(b))
+            } else {
+                a.release.cmp(&b.release).then(a.context.cmp(&b.context))
+            };
+            // Stable, deterministic pick among full ties.
+            order.then(b.id.cmp(&a.id))
         })
         .map(|m| m.id.clone())
 }
@@ -593,7 +702,11 @@ pub fn apply_provider_update(
     report.removed = stats.removed;
     report.staled = stats.staled;
 
-    if apply_defaults {
+    // One working model per provider is the goal, so a provider that still
+    // has an enabled model gets no new default. Without this check every run
+    // enabled the newest pick next to the previous one, and the bundled list
+    // gained an enabled model per provider per regen.
+    if apply_defaults && !provider.models.iter().any(|m| m.enabled) {
         if let Some(id) = pick_default_model(&fetched) {
             if let Some(m) = provider.models.iter_mut().find(|m| m.model_name == id) {
                 if !m.enabled {
