@@ -484,7 +484,7 @@ sources is known only from tradition.
 """
 
 # Saṁyuttanikāya (aṭṭhakathā)
-["cst:atthakatha/suttapiṭaka-aṭṭhakathā/saṃyuttanikāya-aṭṭhakathā"]
+["cst:atthakatha/suttapiṭaka-aṭṭhakathā/saṁyuttanikāya-aṭṭhakathā"]
 from = 400
 to = 430
 circa = true
@@ -609,7 +609,7 @@ Origin: See Dīghanikāya (ṭīkā).
 """
 
 # Saṁyuttanikāya (ṭīkā)
-["cst:tika/suttapiṭaka-ṭīkā/saṃyuttanikāya-ṭīkā"]
+["cst:tika/suttapiṭaka-ṭīkā/saṁyuttanikāya-ṭīkā"]
 from = 450
 to = 700
 circa = true

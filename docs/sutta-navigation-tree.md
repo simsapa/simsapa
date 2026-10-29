@@ -199,7 +199,7 @@ enumeration counter.
 | SC grouping level | qualified by its ancestors: `sutta`, `sutta/minor/kn` (kept even when §1.2 elides the ancestor from the tree) |
 | SC collection or text | its bare SuttaCentral uid: `sn`, `sn56`, `sn56.11` |
 | CST root | fixed: `cst:atthakatha`, `cst:tika`, `cst:anna` |
-| CST grouping node | parent uid + a slug of its title |
+| CST grouping node | parent uid + a slug of its title (lowercased, niggahita folded to `ṁ`) |
 | CST `src=` branch | its toc file's stem: `cst:s0101a.att` |
 | CST division | its division file name: `cst:s0305m.mul0.xml` |
 | CST fragment row | `cst:frag:` + the sutta uid: `cst:frag:mn11.att/pli/cst` |

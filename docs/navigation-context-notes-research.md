@@ -311,7 +311,7 @@ Cariyāpiṭaka.
 ### The four Nikāya commentaries
 
 **Keys:** `cst:atthakatha/suttapiṭaka-aṭṭhakathā/dīgha-nikāya-aṭṭhakathā`,
-`…/majjhimanikāya-aṭṭhakathā`, `…/saṃyuttanikāya-aṭṭhakathā`,
+`…/majjhimanikāya-aṭṭhakathā`, `…/saṁyuttanikāya-aṭṭhakathā`,
 `…/aṅguttaranikāya-aṭṭhakathā`
 
 - Sumaṅgalavilāsinī, Papañcasūdanī, Sāratthappakāsinī, Manorathapūraṇī: "Only
@@ -386,7 +386,7 @@ The same note on all three volumes.
 ### Nikāya sub-commentaries
 
 **Keys:** `cst:tika/suttapiṭaka-ṭīkā/dīghanikāya-ṭīkā`,
-`…/majjhimanikāya-ṭīkā`, `…/saṃyuttanikāya-ṭīkā`, `…/aṅguttaranikāya-ṭīkā`
+`…/majjhimanikāya-ṭīkā`, `…/saṁyuttanikāya-ṭīkā`, `…/aṅguttaranikāya-ṭīkā`
 
 - Dīgha, Majjhima, Saṁyutta: the Līnatthappakāsinī, the "old" ṭīkā, by a writer
   "probably also called Dhammapāla". Scholars do not accept the 12th-century

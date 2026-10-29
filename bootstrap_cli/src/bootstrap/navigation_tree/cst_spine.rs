@@ -837,12 +837,14 @@ fn file_name_of(value: &str) -> String {
 /// A title reduced to a node-uid segment: lowercased, whitespace joined with
 /// `-`, and anything that is neither alphanumeric nor `-` dropped. Pāli
 /// diacritics are alphanumeric, so they survive and the segment stays
-/// recognisable.
+/// recognisable. The niggahita is folded to `ṁ`, as in the titles: the toc
+/// text writes `ṃ`, and a uid spelt differently from its title is a uid the
+/// context-note and override keys have to copy the wrong spelling into.
 fn slug(title: &str) -> String {
     let mut out = String::new();
     let mut pending_dash = false;
 
-    for ch in title.trim().to_lowercase().chars() {
+    for ch in consistent_niggahita(Some(title.trim().to_lowercase())).chars() {
         if ch.is_alphanumeric() {
             if pending_dash && !out.is_empty() {
                 out.push('-');
@@ -1064,6 +1066,8 @@ mod tests {
     fn slugs_keep_pali_diacritics_and_drop_punctuation() {
         assert_eq!(slug("Vinayapiṭaka (aṭṭhakathā)"), "vinayapiṭaka-aṭṭhakathā");
         assert_eq!(slug("Dīgha nikāya (aṭṭhakathā)"), "dīgha-nikāya-aṭṭhakathā");
+        assert_eq!(slug("Saṃyuttanikāya (ṭīkā)"), "saṁyuttanikāya-ṭīkā");
+        assert_eq!(slug("Vaṃsa-gantha-saṅgaho"), "vaṁsa-gantha-saṅgaho");
     }
 
     /// The level list is what FR-5 asks to be reused, and the depths it is
