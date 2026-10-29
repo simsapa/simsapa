@@ -15,8 +15,8 @@
 //! - With `auto_fallback` off only the *first* enabled entry is used.
 //! - A retryable error (`is_retryable()`) moves to the next model; an
 //!   `auth`/`quota_exceeded` error skips every remaining model of that
-//!   provider for the whole run; `model_not_found` skips that model for the
-//!   whole run; any other non-retryable error fails the run immediately.
+//!   provider for the whole run; `model_not_found` and `refused` skip that
+//!   model for the whole run; any other non-retryable error fails the run immediately.
 //! - When a round exhausts the sequence without success and `auto_retry` is
 //!   on, the walk sleeps and re-runs: up to [`MAX_RETRY_ROUNDS`] retry rounds
 //!   with [`RETRY_DELAYS_SECS`] backoff.
@@ -107,7 +107,7 @@ pub fn run_fallback_walk(
     }
 
     // Skips persist across retry rounds: an invalid key or an exhausted hard
-    // quota (skips_provider) and a 404 model (model_not_found) would repeat.
+    // quota (skips_provider), a 404 model or a refusal (skips_model) would repeat.
     let mut skipped_providers: HashSet<String> = HashSet::new();
     let mut skipped_models: HashSet<(String, String)> = HashSet::new();
     let mut last_error: Option<AiRequestError> = None;
@@ -164,7 +164,7 @@ pub fn run_fallback_walk(
                 Err(err) => {
                     if err.skips_provider() {
                         skipped_providers.insert(entry.provider.clone());
-                    } else if err.kind == AiErrorKind::ModelNotFound {
+                    } else if err.skips_model() {
                         skipped_models
                             .insert((entry.provider.clone(), entry.model_name.clone()));
                     } else if !err.is_retryable() {
@@ -358,6 +358,24 @@ mod tests {
         let outcome = s.run(&entries, true, true);
         assert!(matches!(outcome, WalkOutcome::Success { ref model, .. } if model == "g2"));
         assert_eq!(attempted_models(&s), ["g1", "g2"]);
+    }
+
+    #[test]
+    fn refusal_skips_that_model_for_the_run() {
+        let entries = [
+            entry("Anthropic", "a1", true),
+            entry("Gemini", "g1", true),
+        ];
+        let mut s = Script::new(vec![
+            Err(err(AiErrorKind::Refused, "Anthropic", "a1")),
+            Err(err(AiErrorKind::Overloaded, "Gemini", "g1")),
+            Ok("answer".into()),
+        ]);
+        let outcome = s.run(&entries, true, true);
+        assert!(matches!(outcome, WalkOutcome::Success { ref model, .. } if model == "g1"));
+        // The retry round goes straight to g1: a1 is not asked again.
+        assert_eq!(attempted_models(&s), ["a1", "g1", "g1"]);
+        assert_eq!(s.sleeps, [10]);
     }
 
     #[test]

@@ -18,7 +18,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, providers::gemini, providers::xai, providers::openrouter, providers::anthropic, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
+use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, providers::gemini, providers::xai, providers::openrouter, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
 use rig::providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig};
 use tokio::runtime::Runtime;
 
@@ -30,6 +30,7 @@ use simsapa_backend::app_settings::{ModelUsageEntry, ProviderName};
 use simsapa_backend::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
 use simsapa_backend::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
 use simsapa_backend::prompt_utils::clean_prompt;
+use simsapa_backend::anthropic_messages::{self, ChatTurn};
 
 /// Single batched request when the substituted prompt is under this length,
 /// otherwise sequential per-paragraph requests. Single source of truth for
@@ -226,6 +227,7 @@ fn attempt_failed_text(error: &AiRequestError) -> String {
         AiErrorKind::Auth => format!("Invalid API key for {} — skipping its models.", error.provider),
         AiErrorKind::QuotaExceeded => format!("Quota exceeded for {} — skipping its models.", error.provider),
         AiErrorKind::ModelNotFound => format!("Model {} not found on {} — skipping.", error.model, error.provider),
+        AiErrorKind::Refused => format!("{} ({}) declined this request — skipping.", error.provider, error.model),
         AiErrorKind::InvalidResponse => format!("Incomplete response from {} ({}).", error.provider, error.model),
         _ => error.message.clone(),
     }
@@ -534,37 +536,52 @@ async fn handle_anthropic_request(
     api_key: &str,
     http_client: reqwest::Client,
 ) -> Result<String, AiRequestError> {
-    let client = anthropic::Client::<reqwest::Client>::builder()
-        .http_client(http_client)
-        .api_key(api_key)
-        .build()
-        .map_err(|e| request_setup_error(provider, model, format!("Failed to build Anthropic client: {}", e)))?;
+    // Sent with plain reqwest, not rig-core: the reply's stop_reason decides
+    // whether it is usable (refusal, cut-off), and rig 0.30 hides it. See
+    // `simsapa_backend::anthropic_messages`.
 
-    let system_prompt = extract_system_prompt(messages);
-
-    // Anthropic requires max_tokens, and rig only infers it for model names
-    // in its own prefix table (claude-opus-4, claude-sonnet-4, claude-3-*),
-    // so any other model fails before the request is sent. Same headroom as
-    // the Gemini handler, for thinking + a long structured answer.
-    const MAX_TOKENS: u64 = 16384;
-
-    let agent = match system_prompt {
-        Some(system_prompt) => {
-            client.agent(model)
-                  .preamble(&system_prompt)
-                  .temperature(0.7)
-                  .max_tokens(MAX_TOKENS)
-                  .build()
-        }
-        None => {
-            client.agent(model)
-                  .temperature(0.7)
-                  .max_tokens(MAX_TOKENS)
-                  .build()
-        }
+    // Same message convention as `get_response!`: a lone message is the user
+    // prompt (any system prompt is already prepended to it); otherwise the
+    // first system message is the system prompt and the rest are the turns.
+    let (system_prompt, turns): (Option<String>, Vec<ChatTurn>) = if messages.len() == 1 {
+        (None, vec![ChatTurn { role: "user", content: &messages[0].content }])
+    } else {
+        let turns = messages
+            .iter()
+            .filter(|msg| msg.role.as_str() != "system")
+            .map(|msg| ChatTurn {
+                role: if msg.role.as_str() == "assistant" { "assistant" } else { "user" },
+                content: &msg.content,
+            })
+            .collect();
+        (extract_system_prompt(messages), turns)
     };
+    if turns.is_empty() {
+        return Err(request_setup_error(provider, model, "No messages provided"));
+    }
 
-    Ok(get_response!(agent, messages, model, provider))
+    let body = anthropic_messages::request_body(model, system_prompt.as_deref(), &turns);
+
+    let response = http_client
+        .post(anthropic_messages::MESSAGES_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", anthropic_messages::API_VERSION)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(classify_provider_error(provider, model, Some(status.as_u16()), &text));
+    }
+
+    anthropic_messages::interpret_reply(provider, model, &text).map(|reply| clean_prompt(&reply))
 }
 
 async fn handle_openai_request(

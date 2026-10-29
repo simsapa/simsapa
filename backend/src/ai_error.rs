@@ -26,7 +26,7 @@
 //!
 //! This module is deliberately free of any `rig` types so it can be unit-tested
 //! against recorded provider error bodies; the `rig`-shaped adapter lives in
-//! `bridges/src/prompt_manager.rs`.
+//! `bridges/src/ai_engine.rs`.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,11 @@ pub enum AiErrorKind {
     /// truncation). Retryable: another attempt or model may answer completely.
     InvalidResponse,
     ModelNotFound,
+    /// The model declined the request (Anthropic `stop_reason: "refusal"`, an
+    /// HTTP 200 with empty or partial content). The same request would be
+    /// declined again by this model, so the walk skips it for the run and
+    /// moves on to the next model.
+    Refused,
     Network,
     Timeout,
     Unknown,
@@ -67,6 +72,12 @@ impl AiErrorKind {
     /// billing quota), so the sequence walk skips the provider's remaining models.
     pub fn skips_provider(&self) -> bool {
         matches!(self, AiErrorKind::Auth | AiErrorKind::QuotaExceeded)
+    }
+
+    /// The error will repeat for this model only (a 404 model, a refusal), so
+    /// the sequence walk skips that model for the rest of the run.
+    pub fn skips_model(&self) -> bool {
+        matches!(self, AiErrorKind::ModelNotFound | AiErrorKind::Refused)
     }
 }
 
@@ -104,6 +115,10 @@ impl AiRequestError {
 
     pub fn skips_provider(&self) -> bool {
         self.kind.skips_provider()
+    }
+
+    pub fn skips_model(&self) -> bool {
+        self.kind.skips_model()
     }
 
     /// The wire format carried to QML through the existing response signals: a

@@ -24,6 +24,7 @@ pub mod theme_colors;
 pub mod app_settings;
 pub mod ai_error;
 pub mod ai_fallback;
+pub mod anthropic_messages;
 pub mod lookup;
 pub mod lookup_forms;
 pub mod dpd_form_grammar;

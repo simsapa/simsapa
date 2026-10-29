@@ -55,6 +55,8 @@ Item {
             return `Invalid request to ${where}: ${detail}`;
         case "model_not_found":
             return `Model not found on ${provider}: ${model}`;
+        case "refused":
+            return `${where} declined this request. ${detail}`;
         case "invalid_response":
             return `Incomplete or invalid response from ${where}: ${detail}`;
         case "network":

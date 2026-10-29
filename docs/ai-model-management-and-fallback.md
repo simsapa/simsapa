@@ -147,17 +147,19 @@ message, raw}`, serde lowercase kinds.
 | `quota_exceeded` | no | the whole **provider** | hard-quota 429 / exhausted billing |
 | `auth` | no | the whole **provider** | 401 / 403, bad key |
 | `model_not_found` | no | that **model** | 404 |
+| `refused` | no | that **model** | Anthropic 200 OK with `stop_reason: "refusal"` |
 | `invalid_request` | no | — | 400 |
 | `unknown` | no | — | anything else; the raw body is shown |
 
 **rig drops the HTTP status.** rig-core 0.30 collapses every non-2xx provider
 response to `CompletionError::ProviderError(body_text)`, so the status is
 recovered by *parsing the body* (Gemini/OpenRouter carry a numeric `error.code`;
-Anthropic/OpenAI a symbolic `error.type`/`error.code`). Transport errors keep
+Anthropic/OpenAI a symbolic `error.type`/`error.code`). Anthropic is the
+exception: it is not sent through rig (§5), so its status is kept. Transport errors keep
 their detail — the `reqwest::Error` survives inside `http_client::Error::Instance`
 and still answers `is_timeout()`. The classifier core is rig-free and unit-tested
 against recorded provider bodies; the rig-shaped adapter `classify_rig_error()`
-lives in `bridges/src/prompt_manager.rs` (it hooks the `get_response!` macro's
+lives in `bridges/src/ai_engine.rs` (it hooks the `get_response!` macro's
 `map_err`, i.e. it classifies the `CompletionError` *value*, not a formatted
 string).
 
@@ -186,8 +188,8 @@ Walk semantics:
 - With **auto-fallback off** (`ai_auto_fallback`) only the *first* enabled entry
   is used.
 - A retryable error → next model. `auth` / `quota_exceeded` → skip every
-  remaining model of that provider for the rest of the run. `model_not_found` →
-  skip that model. Any other non-retryable error fails the run immediately.
+  remaining model of that provider for the rest of the run. `model_not_found` /
+  `refused` → skip that model. Any other non-retryable error fails the run immediately.
 - Sequence exhausted with **auto-retry on** (`ai_models_auto_retry`) → sleep and
   re-run: up to `MAX_RETRY_ROUNDS` = 5 rounds with `RETRY_DELAYS_SECS` =
   10/20/30/40/50 s.
@@ -200,12 +202,28 @@ Walk semantics:
   a parse error in QML, unretried. (Root cause of the truncation: on Gemini
   thinking models the thinking tokens count against `max_output_tokens`; the cap
   in `handle_gemini_request` was raised to 16384.)
-- `handle_anthropic_request` sets `max_tokens(16384)` explicitly. The Anthropic
-  API requires it, and rig-core 0.30 infers it only for model names in its own
-  prefix table (`claude-opus-4`, `claude-sonnet-4`, `claude-3-*`); any other
-  model (`claude-haiku-4-5`, the 5.x family) fails locally with
-  ``RequestError: `max_tokens` must be set for Anthropic`` before a request is
-  sent. Never rely on the inferred value.
+- **Anthropic requests do not go through rig-core.** `handle_anthropic_request`
+  posts to the Messages API with plain `reqwest`; the body and the reply
+  interpretation are in `backend/src/anthropic_messages.rs` (unit-tested). The
+  reply is usable only if its `stop_reason` says so, and rig 0.30 hides it:
+  - `refusal` is an HTTP 200 whose `content` is empty (rig reports the empty
+    array as an opaque "Response contained no message" error) or partial →
+    `refused`, which skips that model and moves on.
+  - `max_tokens` means the text is cut off. Thinking is always on for current
+    Claude models and counts toward `max_tokens` though its text is not
+    returned, so the reply can be truncated or contain no text at all; rig
+    returned either as a success. → retryable `invalid_response`, as is a
+    reply with no text.
+  - Content blocks other than `text` (`thinking`, and any type added later)
+    are skipped; rig's content enum has no catch-all, so a new type failed
+    the whole parse.
+- The Anthropic request sends **no `temperature`** (nor `top_p` / `top_k`):
+  current models reject sampling parameters, and API version `2026-10-21`,
+  which the request sends, removes them for every model. It sends no
+  `thinking` or `effort` either: `effort` is rejected by older models still in
+  the list (Sonnet 4.5, Haiku 4.5), and each model's default suits these
+  requests. `max_tokens` is 16384; the 180 s timeout caps a non-streaming
+  reply at about that length anyway.
 - Provider API keys are trimmed on save and on read (`get_provider_api_key`):
   a pasted key with a trailing newline is not a valid HTTP header value, and
   the provider client reports it only as "Header value outside of legal range".
