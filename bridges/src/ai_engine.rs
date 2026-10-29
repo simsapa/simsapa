@@ -542,16 +542,24 @@ async fn handle_anthropic_request(
 
     let system_prompt = extract_system_prompt(messages);
 
+    // Anthropic requires max_tokens, and rig only infers it for model names
+    // in its own prefix table (claude-opus-4, claude-sonnet-4, claude-3-*),
+    // so any other model fails before the request is sent. Same headroom as
+    // the Gemini handler, for thinking + a long structured answer.
+    const MAX_TOKENS: u64 = 16384;
+
     let agent = match system_prompt {
         Some(system_prompt) => {
             client.agent(model)
                   .preamble(&system_prompt)
                   .temperature(0.7)
+                  .max_tokens(MAX_TOKENS)
                   .build()
         }
         None => {
             client.agent(model)
                   .temperature(0.7)
+                  .max_tokens(MAX_TOKENS)
                   .build()
         }
     };

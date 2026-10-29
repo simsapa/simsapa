@@ -1551,16 +1551,19 @@ impl AppData {
         let Some(provider) = app_settings.providers.iter().find(|p| p.name.as_str() == provider_name) else {
             return String::new();
         };
+        // Trimmed: a pasted key with a trailing newline is an invalid HTTP
+        // header value, which the provider client reports only opaquely.
         if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-            return env_key;
+            return env_key.trim().to_string();
         }
-        provider.api_key_value.clone().unwrap_or_default()
+        provider.api_key_value.as_deref().unwrap_or_default().trim().to_string()
     }
 
     pub fn set_provider_api_key(&self, provider_name: &str, api_key: &str) {
         self.mutate_providers(|providers| {
             match providers.iter_mut().find(|p| p.name.as_str() == provider_name) {
                 Some(provider) => {
+                    let api_key = api_key.trim();
                     provider.api_key_value = if api_key.is_empty() { None } else { Some(api_key.to_string()) };
                     true
                 }

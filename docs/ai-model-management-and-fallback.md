@@ -200,6 +200,15 @@ Walk semantics:
   a parse error in QML, unretried. (Root cause of the truncation: on Gemini
   thinking models the thinking tokens count against `max_output_tokens`; the cap
   in `handle_gemini_request` was raised to 16384.)
+- `handle_anthropic_request` sets `max_tokens(16384)` explicitly. The Anthropic
+  API requires it, and rig-core 0.30 infers it only for model names in its own
+  prefix table (`claude-opus-4`, `claude-sonnet-4`, `claude-3-*`); any other
+  model (`claude-haiku-4-5`, the 5.x family) fails locally with
+  ``RequestError: `max_tokens` must be set for Anthropic`` before a request is
+  sent. Never rely on the inferred value.
+- Provider API keys are trimmed on save and on read (`get_provider_api_key`):
+  a pasted key with a trailing newline is not a valid HTTP header value, and
+  the provider client reports it only as "Header value outside of legal range".
 
 **Cancellation (FR-D8).** Worst case a walk runs 5 rounds × (N models × 180 s)
 plus 150 s of sleeps, so an orphaned run must be stoppable: a per-PromptManager
