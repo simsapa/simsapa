@@ -157,6 +157,9 @@ gate above:
 
 - `book_spine_items_contains_match_fts5` — `AND f.language = ?` in the SQL.
 - `fulltext_library` — via `SearchFilters.lang`.
+- `uid_book_spine_item_all` (UidMatch) — `.filter(language.eq(&self.lang))` on
+  `book_spine_items`, for a spine-item uid and a book uid alike. A book whose
+  spine items have no language is excluded by any language filter.
 
 ### Dictionary
 
@@ -168,6 +171,9 @@ All dictionary modes honor the filter:
   `dict_words` row; Phase 3 (unified `dict_words_fts` retrieval) appends
   `AND d.language = ?` to the raw SQL.
 - **FulltextMatch** — `fulltext_dict` via `SearchFilters.lang`.
+- **UidMatch** — `uid_word_all` filters the exact and partial-uid `dict_words`
+  queries on `dict_words.language`; a numeric DPD uid (`34626/dpd`) goes to the
+  DPD lookup and is gated by `dpd_excluded_by_lang()`.
 - **HeadwordMatch** — `lemma_1_dpd_headword_match_fts5_full` resolves to
   `dict_words` on both paths, so the same `dict_words.language` filter applies:
   Path A (DPD, `dict_label = "dpd"`) is excluded under a non-Pāli filter, while

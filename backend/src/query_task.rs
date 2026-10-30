@@ -853,14 +853,44 @@ impl<'a> SearchQueryTask<'a> {
         // DPD headword UIDs are numeric IDs, optionally with /dpd suffix
         let ref_str = query_uid.replace("/dpd", "");
         if query_uid.ends_with("/dpd") && ref_str.chars().all(char::is_numeric) {
+            // DPD headwords are Pāli: a non-Pāli language filter excludes them.
+            if self.dpd_excluded_by_lang() {
+                return Ok(Vec::new());
+            }
             // Use dpd_lookup which handles numeric UIDs
-            return Ok(app_data.dbm.dpd.dpd_lookup(&query_uid, false, true, None, None)?);
+            return Ok(app_data.dbm.dpd.dpd_lookup(
+                &query_uid,
+                false,
+                true,
+                self.uid_prefix.as_deref(),
+                self.uid_suffix.as_deref(),
+            )?);
         }
 
         let db_conn = &mut app_data.dbm.dictionaries.get_conn()?;
 
+        // The language and uid prefix / suffix filters, as the other
+        // Dictionary modes apply them. `'%'` is the no-op pattern when unset.
+        let apply_lang_filter = !self.lang.is_empty() && self.lang != "Language";
+        let uid_prefix_pat = Self::normalized_filter(&self.uid_prefix)
+            .map(|p| format!("{}%", p))
+            .unwrap_or_else(|| "%".to_string());
+        let uid_suffix_pat = Self::normalized_filter(&self.uid_suffix)
+            .map(|s| format!("%{}", s))
+            .unwrap_or_else(|| "%".to_string());
+        let filtered = || {
+            let mut query = dict_words
+                .filter(uid.like(uid_prefix_pat.clone()))
+                .filter(uid.like(uid_suffix_pat.clone()))
+                .into_boxed();
+            if apply_lang_filter {
+                query = query.filter(language.eq(self.lang.clone()));
+            }
+            query
+        };
+
         // First try exact UID match for dict_words
-        let res = dict_words
+        let res = filtered()
             .filter(uid.eq(&query_uid))
             .select(DictWord::as_select())
             .first(db_conn);
@@ -883,8 +913,8 @@ impl<'a> SearchQueryTask<'a> {
             let base_uid = query_uid.trim_end_matches("/dpd");
             let like_pattern = format!("{}%", base_uid);
 
-            let res: Vec<DictWord> = dict_words
-                .filter(uid.like(&like_pattern))
+            let res: Vec<DictWord> = filtered()
+                .filter(uid.like(like_pattern))
                 .order(uid.asc())
                 .select(DictWord::as_select())
                 .load(db_conn)?;
@@ -903,11 +933,32 @@ impl<'a> SearchQueryTask<'a> {
 
         let query_uid = self.query_text.to_lowercase().replace("uid:", "");
 
+        // The language and uid prefix / suffix filters, as the other Library
+        // modes apply them to spine items. `'%'` is the no-op pattern when
+        // unset.
+        let apply_lang_filter = !self.lang.is_empty() && self.lang != "Language";
+        let uid_prefix_pat = Self::normalized_filter(&self.uid_prefix)
+            .map(|p| format!("{}%", p))
+            .unwrap_or_else(|| "%".to_string());
+        let uid_suffix_pat = Self::normalized_filter(&self.uid_suffix)
+            .map(|s| format!("%{}", s))
+            .unwrap_or_else(|| "%".to_string());
+        let filtered = || {
+            let mut query = book_spine_items
+                .filter(spine_item_uid.like(uid_prefix_pat.clone()))
+                .filter(spine_item_uid.like(uid_suffix_pat.clone()))
+                .into_boxed();
+            if apply_lang_filter {
+                query = query.filter(language.eq(self.lang.clone()));
+            }
+            query
+        };
+
         // If query_uid contains a dot (e.g., "bmc.0"), it's a spine_item_uid
         // If it doesn't contain a dot (e.g., "bmc"), it's a book_uid
         if query_uid.contains('.') {
             // Search for specific spine item
-            let res = book_spine_items
+            let res = filtered()
                 .filter(spine_item_uid.eq(query_uid))
                 .select(BookSpineItem::as_select())
                 .first(db_conn);
@@ -922,7 +973,7 @@ impl<'a> SearchQueryTask<'a> {
             }
         } else {
             // Search for all spine items with this book_uid
-            let res = book_spine_items
+            let res = filtered()
                 .filter(book_uid.eq(query_uid))
                 .select(BookSpineItem::as_select())
                 .order(spine_index.asc())

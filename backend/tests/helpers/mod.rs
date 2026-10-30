@@ -172,30 +172,11 @@ pub fn get_uid_params_with_lang(lang: Option<String>) -> SearchParams {
     }
 }
 
+/// UidMatch params with no language filter: the uid tests name records in
+/// several languages (a `pli` DPD row, test books with no language).
 #[allow(dead_code)]
 pub fn get_uid_params() -> SearchParams {
-    SearchParams {
-        mode: SearchMode::UidMatch,
-        page_len: None,
-        lang: Some("en".to_string()),
-        lang_include: true,
-        source: None,
-        source_include: true,
-        enable_regex: false,
-        fuzzy_distance: 0,
-        include_cst_mula: true,
-        include_cst_commentary: true,
-        nikaya_prefix: None,
-        uid_prefix: None,
-        uid_suffix: None,
-        include_ms_mula: true,
-        include_comm_bold_definitions: true,
-        dict_source_uids: None,
-        show_all_snippets: false,
-        snippet_exclude: None,
-        deconstruction_selected_index: None,
-        deconstruction_locked: false,
-    }
+    get_uid_params_with_lang(None)
 }
 
 #[allow(dead_code)]
