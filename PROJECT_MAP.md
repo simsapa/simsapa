@@ -262,6 +262,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── cips_update.rs
 │   │   ├── topic_index.rs
 │   │   ├── dir_list.rs
+│   │   ├── cst_files.rs
 │   │   ├── docx_export.rs
 │   │   ├── dpd_form_grammar.rs
 │   │   ├── export_types.rs
@@ -313,6 +314,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/db/` - Database models, connections, and queries (Diesel ORM + SQLite)
   - `src/app_data.rs` - Central data management and caching
   - `src/lookup.rs` - Dictionary and word lookup functionality
+  - `src/cst_files.rs` - The 217 CST source file names (`romn/*.xml`) as a static list, so a Suttas-area query that is part of one (`vin02`, `e01`, `vin02m4.mul.xml`, with a letter and a digit) is detected as a uid by `query_text_to_uid_field_query` and UidMatch returns that file's records — the whole-file `<name>.xml/pli/cst` or its toc divisions `<name><n>.xml/pli/cst`, in division order. Files imported as mapped fragments (`mn11.att/pli/cst`) have no records under their file name
   - `src/query_task.rs` - Search query processing and filtering; `results_page` dispatch, FTS5 helpers with uid prefix/suffix push-down + parallel `SELECT COUNT(*)`, and the boundary-aware `split_page_across_streams` orchestrator for regular ⊕ bold pagination
   - `src/search/` - Tantivy schema, indexer, searcher, and tokenizer for the unified dict (incl. bold-definitions), sutta, and library indexes; also `lenient_directory.rs` — the `Directory` wrapper that tolerates volumes without working `flock(2)`, wired into **every** real search and index path (see `docs/fulltext-index-storage-and-file-locking.md`)
   - `src/fulltext_status.rs` - The single place that turns per-area index-open counts + recorded failures into one verdict (`FulltextState`) and one plain-language sentence, consumed by the search UI, Database Validation and `/health` alike. **Every user-facing string this feature can emit is written here**, which is what lets one test enforce the no-jargon rule. See `docs/fulltext-index-storage-and-file-locking.md` §6

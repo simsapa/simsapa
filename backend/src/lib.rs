@@ -7,6 +7,7 @@ pub mod highlight;
 pub mod asset_helpers;
 pub mod cli_support;
 pub mod query_task;
+pub mod cst_files;
 pub mod fulltext_status;
 pub mod html_content;
 pub mod dir_list;

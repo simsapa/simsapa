@@ -148,6 +148,11 @@ pub fn query_text_to_uid_field_query(query_text: &str, area: &SearchArea) -> Str
                 return format!("uid:{}", query_text);
             }
 
+            // CST source file names, whole or in part: vin02, e01, vin02m4.mul
+            if *area == SearchArea::Suttas && crate::cst_files::cst_file_query(&query_text).is_some() {
+                return format!("uid:{}", query_text);
+            }
+
             // Detect book UIDs (e.g. bmc, bmc.0)
             // This should be checked after sutta patterns to avoid false matches
             // Only match if it doesn't start with a sutta abbreviation
@@ -7037,6 +7042,23 @@ mod tests {
         assert_eq!(query_text_to_uid_field_query("ne 1", &suttas), "uid:ne1");
         assert_eq!(query_text_to_uid_field_query("Pp 12", &suttas), "uid:pp12");
         assert_eq!(query_text_to_uid_field_query("patthana 1", &suttas), "uid:patthana1");
+    }
+
+    #[test]
+    fn test_query_text_to_uid_cst_file_names() {
+        let suttas = SearchArea::Suttas;
+        assert_eq!(query_text_to_uid_field_query("vin02", &suttas), "uid:vin02");
+        assert_eq!(query_text_to_uid_field_query("e01", &suttas), "uid:e01");
+        assert_eq!(query_text_to_uid_field_query("vin02m4.mul", &suttas), "uid:vin02m4.mul");
+        assert_eq!(query_text_to_uid_field_query("vin02m4.mul.xml", &suttas), "uid:vin02m4.mul.xml");
+        assert_eq!(query_text_to_uid_field_query("vin02m4.mul0", &suttas), "uid:vin02m4.mul0");
+        // Words and numbers stay text queries.
+        assert_eq!(query_text_to_uid_field_query("vinaya", &suttas), "vinaya");
+        assert_eq!(query_text_to_uid_field_query("mul", &suttas), "mul");
+        assert_eq!(query_text_to_uid_field_query("101", &suttas), "101");
+        // Only in the Suttas area.
+        assert_eq!(query_text_to_uid_field_query("vin02", &SearchArea::Dictionary), "vin02");
+        assert_eq!(query_text_to_uid_field_query("vin02", &SearchArea::Library), "vin02");
     }
 
     #[test]

@@ -10,6 +10,7 @@ use diesel::sql_types::{Text, BigInt};
 
 use crate::helpers::{normalize_dpd_query_split, normalize_fulltext_query, normalize_plain_text, normalize_query_text, pali_to_ascii, strip_html, sutta_range_from_ref};
 use crate::highlight::{literal_ranges, wrap_ranges};
+use crate::cst_files::{cst_file_query, uid_is_record_of_file, CstFileQuery};
 use crate::{get_app_data, get_app_globals};
 use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
 use crate::db::appdata_models::{Sutta, BookSpineItem};
@@ -667,6 +668,84 @@ impl<'a> SearchQueryTask<'a> {
                 Ok(Vec::new())
             }
         }
+    }
+
+    /// One page of the records of the CST source files a query names (see
+    /// `crate::cst_files`), with their total, in file order and, within a
+    /// file, division order (`mul2` before `mul10`).
+    ///
+    /// The matching uids are found, filtered and sorted from the uid index
+    /// alone, and only the page is loaded in full: a short query names many
+    /// files (`s05` has 515 records, 37 MB of HTML), and loading every record
+    /// to show twenty was the whole cost of the search.
+    fn uid_sutta_cst_files_page(
+        &mut self,
+        cst_query: &CstFileQuery,
+        page_num: usize,
+    ) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
+        use crate::db::appdata_schema::suttas::dsl::*;
+
+        let app_data = get_app_data();
+        let db_conn = &mut app_data.dbm.appdata.get_conn()?;
+
+        let files: Vec<&str> = match cst_query {
+            CstFileQuery::Division(division_uid) => {
+                let (file, _) = division_uid.split_once(".xml/").unwrap_or((division_uid, ""));
+                vec![file.trim_end_matches(|c: char| c.is_ascii_digit())]
+            }
+            CstFileQuery::Files(files) => files.clone(),
+        };
+
+        let mut query = suttas.into_boxed();
+        query = match cst_query {
+            CstFileQuery::Division(division_uid) => query.filter(uid.eq(division_uid.clone())),
+            CstFileQuery::Files(_) => query.filter(uid.like("%.xml/pli/cst")),
+        };
+        if !self.lang.is_empty() && self.lang != "Language" {
+            query = query.filter(language.eq(&self.lang));
+        }
+        query = self.filter_suttas_query(query);
+
+        let mut record_uids: Vec<String> = query
+            .select(uid)
+            .load::<String>(db_conn)?
+            .into_iter()
+            .filter(|record_uid| files.iter().any(|file| uid_is_record_of_file(record_uid, file)))
+            .collect();
+
+        // (file position, division number); a whole-file record sorts first.
+        let sort_key = |record_uid: &str| -> (usize, i64) {
+            files
+                .iter()
+                .position(|file| uid_is_record_of_file(record_uid, file))
+                .map(|pos| {
+                    let number = record_uid[files[pos].len()..]
+                        .trim_end_matches(".xml/pli/cst")
+                        .parse::<i64>()
+                        .unwrap_or(-1);
+                    (pos, number)
+                })
+                .unwrap_or((usize::MAX, 0))
+        };
+        record_uids.sort_by_key(|record_uid| sort_key(record_uid));
+
+        let total = record_uids.len();
+        let page_uids: Vec<String> = record_uids
+            .into_iter()
+            .skip(page_num.saturating_mul(self.page_len))
+            .take(self.page_len)
+            .collect();
+        if page_uids.is_empty() {
+            return Ok((Vec::new(), total));
+        }
+
+        let mut rows = suttas
+            .filter(uid.eq_any(&page_uids))
+            .select(Sutta::as_select())
+            .load::<Sutta>(db_conn)?;
+        rows.sort_by_key(|sutta| sort_key(&sutta.uid));
+
+        Ok((rows.iter().map(|s| self.db_sutta_to_result(s)).collect(), total))
     }
 
     fn uid_sutta_range_all(
@@ -2508,6 +2587,20 @@ impl<'a> SearchQueryTask<'a> {
     /// small bounded result sets (single exact-match or a uid-prefix-LIKE
     /// hit set), so we slice in Rust.
     fn uid_match(&mut self, page_num: usize) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
+        // A CST source file name, whole or in part (vin02, vin02m4.mul), is
+        // paged in SQL. If it names no records -- a file imported as mapped
+        // fragments has none under its name -- the query is searched as any
+        // other uid.
+        if self.search_area == SearchArea::Suttas {
+            let query_uid = self.query_text.to_lowercase().replace("uid:", "").replace(' ', "");
+            if let Some(cst_query) = cst_file_query(&query_uid) {
+                let (page, total) = self.uid_sutta_cst_files_page(&cst_query, page_num)?;
+                if total > 0 {
+                    return Ok((page, total));
+                }
+            }
+        }
+
         let all = match self.search_area {
             SearchArea::Suttas => self.uid_sutta_all()?,
             SearchArea::Dictionary => self.uid_word_all()?,

@@ -599,6 +599,18 @@ the dictionary uid patterns — so `"ja 1.1"` is the DPD headword there and the 
 sutta routes. The area is what keeps the two from colliding; there is no
 cross-area exclusion list.
 
+The sutta routes also recognise a **CST source file name**, whole or in part,
+as a uid: any query with a letter and a digit that is part of one of the 217
+file names of the VRI Chaṭṭha Saṅgāyana edition (`vin02`, `e01`,
+`vin02m4.mul`, `vin02m4.mul.xml`). The result is the records imported under
+that file's name: the whole file as `<name>.xml/pli/cst`, or the divisions of
+its table of contents as `<name><n>.xml/pli/cst` (`vin02m4.mul0.xml/pli/cst`
+… `vin02m4.mul17.xml/pli/cst`), in division order. A division name
+(`vin02m4.mul1`) gives that division alone. A file whose text is imported as
+sutta-sized pieces (`mn11.att/pli/cst`) has no records under its file name,
+so its name finds nothing as a uid and falls back to the route's own mode
+like any other uid that matches nothing.
+
 Only a query that is **entirely** a reference is rewritten (`SN 56:11`,
 `Dhp 1-20` and `DN 1.` all are). A reference inside a longer query stays text:
 the result is searched in the route's own mode, where an embedded `uid:mn118`
