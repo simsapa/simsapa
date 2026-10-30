@@ -47,7 +47,9 @@
     &.title
       font-size: 1.4em
 
-  .subhead, .subsubhead, .chapter
+  // Must not match <div class="chapter" id="vin5_1">, which wraps the content
+  // of a division just as <div class="book"> does.
+  .subhead, .subsubhead, .chapter:not(div)
     font-size: 1.2em
     text-align: left
     text-decoration: underline

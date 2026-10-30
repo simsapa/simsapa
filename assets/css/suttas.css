@@ -248,7 +248,7 @@ div.btn a, span.btn a {
   background-color: #FEF8E8;
 }
 #window-title-bar.dark {
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
 }
 #window-title-bar .flex-container {
   display: flex;
@@ -404,11 +404,11 @@ div.btn a, span.btn a {
   margin-right: 4px;
   border: 1px solid var(--reference-chip-border, #ccc);
   border-radius: 4px;
-  background-color: var(--reference-chip-bg, rgb(253.1097560976, 245.5487804878, 225.8902439024));
+  background-color: var(--reference-chip-bg, rgb(99.2587278814%, 96.293639407%, 88.5844093735%));
   vertical-align: middle;
 }
 .suttacentral span.reference a.sc:hover {
-  background-color: var(--reference-chip-hover-bg, rgb(246.8902439024, 214.4512195122, 130.1097560976));
+  background-color: var(--reference-chip-hover-bg, rgb(96.8197034912%, 84.0985174558%, 51.0234337637%));
   border-color: var(--reference-chip-hover-border, #999);
 }
 .suttacentral footer {
@@ -758,7 +758,7 @@ body.dark .suttacentral.sbs-blocks .sbs-col {
 .cst h1.title, .cst h2.title, .cst h3.title, .cst h4.title, .cst h5.title, .cst h6.title {
   font-size: 1.4em;
 }
-.cst .subhead, .cst .subsubhead, .cst .chapter {
+.cst .subhead, .cst .subsubhead, .cst .chapter:not(div) {
   font-size: 1.2em;
   text-align: left;
   text-decoration: underline;
@@ -938,7 +938,7 @@ h4 {
   display: inline-block;
   padding: 0.25em 0.7em;
   margin: 0 auto 0.25em auto;
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   border-radius: 7px;
 }
 
@@ -1195,7 +1195,7 @@ body.dark {
 
 :root {
   --modal-overlay-bg: rgba(0, 0, 0, 0.5);
-  --modal-bg: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  --modal-bg: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   --modal-border: #d0d0d0;
   --modal-header-bg: #FAE6B2;
   --modal-text: #1a1a1a;
@@ -1414,7 +1414,7 @@ body.dark {
 }
 :root {
   --footnote-modal-overlay-bg: rgba(0, 0, 0, 0.5);
-  --footnote-modal-bg: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  --footnote-modal-bg: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   --footnote-modal-border: #d0d0d0;
   --footnote-modal-header-bg: #FAE6B2;
   --footnote-modal-text: #1a1a1a;
@@ -1577,7 +1577,7 @@ body.dark {
   }
 }
 :root {
-  --footnote-bar-bg: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  --footnote-bar-bg: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   --footnote-bar-border: #d0d0d0;
   --footnote-bar-text: #1a1a1a;
   --footnote-bar-number-text: #333333;
@@ -2326,7 +2326,7 @@ body:has(.suttacentral.sbs-blocks) #ssp_main {
 
 :root {
   --invalid-link-modal-overlay-bg: rgba(0, 0, 0, 0.5);
-  --invalid-link-modal-bg: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  --invalid-link-modal-bg: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   --invalid-link-modal-border: #d0d0d0;
   --invalid-link-modal-header-bg: #FAE6B2;
   --invalid-link-modal-text: #1a1a1a;

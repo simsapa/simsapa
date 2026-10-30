@@ -72,10 +72,10 @@ run: build
 	$(RUN_CMD)
 
 sass:
-	sass --no-source-map './assets/sass/:./assets/css/'
+	npx sass --no-source-map './assets/sass/:./assets/css/'
 
 sass-watch:
-	sass --no-source-map --watch './assets/sass/:./assets/css/'
+	npx sass --no-source-map --watch './assets/sass/:./assets/css/'
 
 parse-cips:
 	cd bootstrap_cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify

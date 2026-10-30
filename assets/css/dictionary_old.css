@@ -247,7 +247,7 @@ div.btn a, span.btn a {
   background-color: #FEF8E8;
 }
 #window-title-bar.dark {
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
 }
 #window-title-bar .flex-container {
   display: flex;
@@ -310,7 +310,7 @@ div.btn a, span.btn a {
   transition: box-shadow 0.2s ease-in-out;
 }
 .ssp-button.primary {
-  background-color: rgb(246.8902439024, 214.4512195122, 130.1097560976);
+  background-color: rgb(96.8197034912%, 84.0985174558%, 51.0234337637%);
 }
 .ssp-button svg.ssp-icon-button__icon + span.ssp-button-text {
   margin-left: 0.5rem;
@@ -796,7 +796,7 @@ div.btn a, span.btn a {
   background-color: #FEF8E8;
 }
 .pali-word #window-title-bar.dark {
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
 }
 .pali-word #window-title-bar .flex-container {
   display: flex;
@@ -1181,7 +1181,7 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #FAE6B2;
 }
 .word-block:nth-child(2n) {
-  background-color: rgb(248.4451219512, 222.2256097561, 154.0548780488);
+  background-color: rgb(97.4294595887%, 87.1472979436%, 60.4136776662%);
 }
 
 .flex-container {
@@ -1238,7 +1238,7 @@ h1, h2, h3, h4, h5, h6 {
   display: inline-block;
   padding: 0.25em 0.7em;
   margin: 0 auto 0.25em auto;
-  background-color: rgb(253.1097560976, 245.5487804878, 225.8902439024);
+  background-color: rgb(99.2587278814%, 96.293639407%, 88.5844093735%);
   border-radius: 7px;
   box-shadow: inset 1px 1px 1px rgba(255, 255, 255, 0.4), inset 1.2px 1.2px 2px rgba(255, 255, 255, 0.2), inset -1px -1px 1px rgba(0, 0, 0, 0.4), inset -1.2px -1.2px 2px rgba(0, 0, 0, 0.2), inset 1.2px -10px 20px rgba(0, 0, 0, 0.1), 1.5px 4px 4px rgba(0, 0, 0, 0.15);
 }
