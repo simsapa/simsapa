@@ -45,6 +45,12 @@ identical keys in identical order. Key order is reading order, so **never re-sor
 The bootstrap copy, `bootstrap-assets-resources/tipitaka-xml-data/fragments.sqlite3`, has
 these tables filled (import report `reports/2026-10-31-203806-opentipitaka-import.md`).
 
+### Related PRDs
+
+- [Search: Pāli edition preference](./2026-10-31-215150-prd---search-pali-edition-preference.md) and
+  [FTS: external-content space saving](./2026-10-31-215151-prd---fts-external-content-space-saving.md) were split off from this PRD.
+  They ship with the same new database version, and this PRD does not depend on either.
+
 ## 2. Goals
 
 1. Import segmented Pāli for all CST records in place of today's HTML.
@@ -55,10 +61,6 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
 5. Never align two texts whose segment keys do not refer to the same passage.
 6. Show a translation beside a Pāli text in the multi-column layouts, so that no reader
    concludes the text has none.
-7. Stop a text that exists in both Pāli editions from appearing twice in search results,
-   while keeping every text findable.
-8. Remove the duplicate text stored by the large FTS tables, without slowing search, on a
-   slow phone as well as on a desktop.
 
 ## 3. User Stories
 
@@ -73,8 +75,6 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
   know that an English text was produced by AI.
 - As a reader opening a Pāli text in Lines or Columns, I want an English beside it without
   having to look for one.
-- As a user searching in Pāli, I want to choose which edition I see of a text that is in
-  both, and I want the texts that are in only one edition to appear whatever I choose.
 - As the maintainer, I want the bootstrap to stop if the data is missing, not to build a
   release without it.
 
@@ -89,9 +89,9 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
 2. There must be **no fallback** to importing Pāli from the XML. One code path is kept on
    purpose: a fallback could silently build a release with no English.
 3. The behaviour when `fragments.sqlite3` is absent, or the `romn/` directory is absent,
-   must be reviewed and made consistent with requirement 1. `load_coverage` treats an
-   absent database as "all unmapped" today, which must now be an error too, unless the
-   whole CST import is being skipped.
+   must be an error too, always. `load_coverage` treats an absent database as "all unmapped"
+   today, and that must change. `--skip-appdata` already skips the whole CST import, so no
+   new skip mode is needed.
 
 ### Records from mapped fragments
 
@@ -119,6 +119,9 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
    - Rows before the first marker are the head. If the toc has as many leaves as markers,
      prepend the head to the first division. If it has one more, the head is a division of
      its own. Any other count is a `SplitError`, as today, and the file is imported whole.
+
+   `split_into_divisions` then has no caller, because only `import_divisions` calls it. It
+   is removed with its helpers, and its tests move to the row-cutting function.
 9. The whole-file fallback (`import_whole_file`) must use all of the file's rows the same
    way. `abh05t.nrf.xml` takes this path today.
 10. The `code` passed to `build_bilara_text` is the record's uid base without `.xml`:
@@ -181,6 +184,7 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
       `s0305m.mul.xml`);
     - divisions: the English of the division's first chapter row, or the toc's Pāli title
       if it has none (a leading head division);
+    - a whole file: the Pāli title, which is the file name stem;
     - `title_pali` is the Pāli title in both cases.
 22. The header of requirement 13 must be added to the English template too, with the
     English title in the `<h1>`.
@@ -193,7 +197,7 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
 25. These records go in the **main appdata**. Decided: English already lives there, and
     this needs no new download path. The data ships with a new app version and a new
     database version, because `appdata.sqlite3` is kept across app updates. Measure the
-    cost (requirement 44).
+    cost (see Size in section 9).
 
 ### Attribution
 
@@ -208,7 +212,11 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
     `OT_SOURCE_URL`. CC BY-NC-SA 4.0 §3(a)(1) requires the link to the licence and a
     statement that the material was modified. This is required. The `license` column is
     not displayed anywhere in Simsapa today, so the column alone does not show it.
-27. Put the footer markup in one function, so requirement 33 can reuse it.
+27. Put the footer markup in one function, so requirement 33 can reuse it. It cannot live in
+    the parser: `backend` does not link `tipitaka_xml_parser`, and it should not, because
+    only `bootstrap_cli` does. The reader needs the footer too, so the constants and markup
+    go in `backend/src/opentipitaka.rs`, and a `bootstrap_cli` test asserts they equal the
+    parser's.
 28. `bridges/assets/qml/DhammaTextSourcesDialog.qml` must list
     `https://www.opentipitaka.org/` with a line saying the English is AI-translated.
 
@@ -219,11 +227,17 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
     in `mn1/pli/ms` or `mn1/en/sujato`. `bilara_multi_column_html` matches columns on the key
     alone, so without a guard, these columns would show different passages side by side,
     with no error, and blank cells where only one side has the key.
-30. Add one function, for example `columns_can_align(uids) -> bool`, returning true only if:
+30. Add one function, `columns_can_align(opened_uid, column_uids) -> bool`, returning true
+    only if, counting the opened uid:
     - no uid is in the CST family, which is today's case; or
     - all uids are in the CST family, and all have the same base.
 
-    The CST family is a uid ending in `/pli/cst` or `/en/opentipitaka`.
+    The CST family is a uid ending in `/pli/cst` or `/en/opentipitaka`. The opened uid must
+    count, because the aligned view uses the *opened* text's template
+    (`app_data.rs:620`). The column bar can remove the opened text from the columns or
+    replace it (`column_bar.ts:233`, `:295`), and `SuttaDisplayOptions::resolve` does not
+    put it back. Opening `mn1/en/sujato` and showing `mn1/pli/cst` + `mn1/en/opentipitaka`
+    would otherwise pass, and render the CST text on Sujato's template.
 31. Every place that treats "has `content_json`" as "can be aligned" must also use this
     function, and non-alignable texts must then take the path that non-segmented texts take
     today:
@@ -250,10 +264,12 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
     filter.
 36. The **existing** CST commentary filter must also cover the English. `query_task.rs`
     tests `'%.att%/cst'` and `'%.tik%/cst'`, which do not match
-    `mn1.att/en/opentipitaka`, and the Tantivy filter requires `source_uid` `cst`, so with
-    "include commentary" off, English commentary would still appear. Extend both to
-    `opentipitaka`, and check the matching filter in `related_sutta_uids`, which goes by
-    reference kind and should already work.
+    `mn1.att/en/opentipitaka`, and the Tantivy filter
+    (`backend/src/search/searcher.rs:824`) requires `source_uid` `cst`, so with "include
+    commentary" off, English commentary would still appear. Extend both to `opentipitaka`,
+    and check the matching filter in `related_sutta_uids`, which goes by reference kind and
+    should already work. `is_commentary` itself is already right for these uids, as
+    `indexer.rs:106` reads it from the uid, so no index rebuild is needed for this fix.
 37. The CST mūla filter stays Pāli-only. Decided: `mn1/en/opentipitaka` is an English
     translation of a mūla text, and is listed like other English.
 38. The file-name search (`CstFileQuery`) keeps matching `%.xml/pli/cst`.
@@ -268,111 +284,49 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
     (`query_task.rs:494`, `:518`, `:572`) still gets text, and that any other reader of
     `content_html` handles `None` on CST records.
 
+41. `/sutta_bilara.json` must not return another family's variants. `sutta_json.rs:202` falls
+    back to `<ref>/pli/ms` variants. For `mn1/en/opentipitaka` those belong to another text
+    family, so it must read `<ref>/pli/cst`.
+42. `translation_counts_conn` will count `/en/opentipitaka`, so nearly every navigation node
+    gains one translation. This is correct for "translations installed", but it needs a test
+    and a doc line.
+
+### Re-running the import
+
+43. `import-cst` must re-run cleanly. `main.rs` deletes only `%/pli/cst` rows before
+    importing, and the importer skips a uid that exists, so the English rows must be cleared
+    too, and the variants with them. The documented rebuild must also run
+    `index rebuild --area suttas --lang en`, not only `--lang pli`.
+
 ### Display: the default English column
 
-45. When a Pāli text is opened with no `columns` requested, the default column set must be
+44. When a Pāli text is opened with no `columns` requested, the default column set must be
     the opened text and an English, in every layout. Solo still renders the opened text
     alone, and keeps the English as page state, so that switching to Lines or Columns
     shows it. This mirrors opening a translation, which already pairs it with a Pāli.
-46. The English is chosen in `resolve_sutta_display_options`:
+45. The English is chosen in `resolve_sutta_display_options`:
     - for a `/pli/cst` text, `<base>/en/opentipitaka`;
     - for any other Pāli text, the first segmented English of the same base, then the first
       non-segmented one, in `sort_suttas` order, leaving out `opentipitaka`. A non-segmented
       English is dropped in Lines by the existing rule, and shown as a block in Columns.
     - If there is none, the Pāli text is shown alone.
-47. Requested `columns` always win. Removing the English column must keep it removed while
+46. Requested `columns` always win. Removing the English column must keep it removed while
     the page is open, and the API's `columns` parameter must behave as today.
-48. The column options must always include the same-base partner of a CST-family text,
+47. The column options must always include the same-base partner of a CST-family text,
     whatever `include_cst_mula_in_translations` says. Otherwise, with the default settings,
     a reader who removes `mn1/pli/cst` beside `mn1/en/opentipitaka` cannot get it back.
-49. The tooltip of a disabled option in Lines must not say "No segmented text", which is
+48. The tooltip of a disabled option in Lines must not say "No segmented text", which is
     false for a CST text. It must cover both cases: not segmented, or from a different
     text family.
 
-### Search: Pāli edition preference
-
-50. `include_cst_mula_in_search_results` must default to true, so that CST-only texts are
-    found. Existing users must get this too, through the `AppSettings` deserialize hook,
-    because a stored `false` is the old default and not a choice. A choice made after the
-    migration is kept.
-51. Add the setting `pali_edition_preference`, with the values `ms`, `cst` and `both`. The
-    default is `ms`, which keeps today's results for texts in both editions.
-52. A record is **in both editions** when it is an MS Pāli record or a mapped CST mūla record
-    and `sutta_refs_are_related` holds between it and a record of the other edition. So
-    `an5.303/pli/ms` and `an5.303-1152/pli/cst` both count. CST `.xml` records and
-    commentaries never count, because they have no comparable reference.
-53. Preference `ms` hides the CST records that are in both editions, and preference `cst`
-    hides the MS records that are in both. `both` hides nothing. A record in only one edition
-    is never hidden, so Vinaya divisions stay findable under `ms`, and the Theragāthā
-    records stay findable under `cst`.
-54. The preference applies only when both editions are included. The existing "MS Mūla in
-    Search" and "CST Mūla in Search" checkboxes keep their meaning, and exclude a whole
-    edition.
-55. The records in both editions must be computed once, at CST import, and stored in a new
-    appdata table, `pali_edition_twins`, holding their uids. A table keeps `Sutta` unchanged,
-    so a failed migration, which is non-fatal, cannot break every sutta read. The SQL
-    filters read it, and the Tantivy indexer writes it into a new `has_other_edition` field,
-    so there is one definition.
-56. The filter must apply in ContainsMatch, FulltextMatch and every query that goes through
-    `filter_suttas_query`, as the existing edition filters do.
-57. The search API and the CLI keep `both`, so their results do not depend on a GUI setting.
-58. The advanced search options must offer the preference beside the two checkboxes, enabled
-    only when both are checked.
-
 ### Uid resolution with the new English records
 
-59. `get_full_sutta_uid` must try `<code>/pli/cst` before its `LIKE`. The `LIKE` reads the uid
+49. `get_full_sutta_uid` must try `<code>/pli/cst` before its `LIKE`. The `LIKE` reads the uid
     index, where `/en/opentipitaka` sorts before `/pli/cst`, so a bare `mn1.att` would resolve
     to the AI English.
-60. `get_sutta_by_range` must prefer a mūla record among those matching the suffix, because
+50. `get_sutta_by_range` must prefer a mūla record among those matching the suffix, because
     `.att` sorts before `/`. When none matches the suffix, it must prefer a Pāli mūla record
     over `results.first()`, which would otherwise be an AI commentary.
-
-### Search: external-content FTS tables
-
-61. These FTS tables must become external-content tables, which store no copy of the text,
-    keeping their columns, `tokenize='trigram'` and `detail='none'`:
-
-    | Table | Content table | Saves today |
-    |---|---|---|
-    | `suttas_fts` | `suttas` | 191 MiB, about 335 MiB with the English |
-    | `dict_words_fts` | `dict_words` | 166 MiB |
-    | `bold_definitions_fts` | `bold_definitions` | 115 MiB |
-    | `bold_definitions_bold_fts` | `bold_definitions` | 14 MiB |
-
-    `book_spine_items_fts` (15 MiB) and `dpd_headwords_fts` (2 MiB) stay as they are. Each
-    table is decided on its own by requirement 64. This adds no database file and no
-    migration: the tables are created by the `scripts/` SQL and ship with the new database
-    version. The query code does not change, so the app works with either form of a table.
-62. The delete and update triggers must use FTS5's `'delete'` command with the old values,
-    under the same condition as the table's insert trigger, because a row that condition
-    excludes was never indexed. The update trigger must be `AFTER UPDATE OF` the indexed
-    columns only. `UNINDEXED` columns are now read from the content table, so renaming a
-    dictionary, which updates `dict_label`, no longer re-tokenizes its rows.
-63. An index must stay exactly in step with its content table, because FTS5 reports no error
-    when it does not, and only returns wrong results. So the bootstrap must run
-    `integrity-check` with rank 1 on each of these tables after the last import, and
-    `import-cst` on `suttas_fts`, and an error must stop them.
-64. **A table may change only if measurements show no slowdown**, on a desktop and on a slow
-    phone. This is the gate for each table on its own:
-    - `EXPLAIN QUERY PLAN` shows the virtual table's index in use. The FTS5 documentation does
-      not say how an indexed `LIKE` behaves on an external-content table.
-    - Every benchmark case returns the same result count as before.
-    - For every case, cold and warm, the median after the change is at most the larger of
-      110% of the median before and the median before + 20 ms.
-    - Deleting a dictionary of about 2,000 entries meets the same limit, because `'delete'`
-      has to read and tokenize the old text.
-
-    A table that fails keeps its stored copy, and the others go ahead. The phone must be the
-    slowest real arm64 device available, with internal storage, and on a card too if one is
-    available. An emulator does not count, because it runs on the desktop's CPU and disk.
-65. `Total rows in suttas_fts` in `cli_support.rs` must count `suttas_fts_docsize`. A
-    `SELECT COUNT(*)` on an external-content table is answered from the content table, so
-    it would include rows that are not indexed. Any other count of a changed table must do
-    the same.
-66. The benchmark must run the app's own query code on the app's own SQLite, so that it cannot
-    measure a different statement or a different SQLite from the one users have. The
-    `sqlite3` CLI is not a substitute: it is a different build.
 
 ## 5. Non-Goals (Out of Scope)
 
@@ -382,9 +336,8 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
 - Correcting the English, including the wrong paragraph numbers in it.
 - Any new search filter or author setting for `opentipitaka`.
 - A separate optional download for this English.
-- External-content tables for `book_spine_items_fts` and `dpd_headwords_fts`. They would
-  save 15 MiB and 2 MiB, and the first reads through `content_html` to reach its text.
 - Making the English findable through the file-name search.
+- The Pāli edition preference and the FTS space saving, which have their own PRDs.
 
 ## 6. Design Considerations
 
@@ -435,26 +388,9 @@ Columns as they are.
   (`cst_segments` 385 MB, `cst_texts` 85 MB). This is bootstrap input and is not shipped.
 - The dist appdata of 2026-10-30 is 864 MB, and the English and Pāli sutta indexes are 56 MB
   and 168 MB. Estimated from column totals, the English adds about 320 MB to `suttas` and
-  160 MB to `suttas_fts`, and the Pāli about 10 MB, so appdata would reach about 1.35 GB
-  with the FTS table as it is. The external-content table of requirement 61 removes
-  `suttas_fts_content`, 191 MiB today and about 335 MiB with the English, so appdata reaches
-  about 1.0 GB. The English index gains about 160 MB.
-- Requirement 61 also takes about 166 MiB from `dictionaries.sqlite3` (1,334 MiB, 12%) and
-  129 MiB from `dpd.sqlite3` (2,443 MiB, 5%). These are uncompressed sizes.
-- Where the text sits in the content table affects requirement 64. A search may read the row
-  of each candidate, and SQLite reads a row's columns in order. In `suttas` and `dict_words`
-  the text comes before the HTML. In `bold_definitions`, `commentary_plain` and `bold_ascii`
-  come after `commentary`, so that table is the likeliest to fail.
-- `create_fts5_indexes()` runs on the empty database, before the imports, so `suttas_fts` is
-  filled by its insert trigger in a full bootstrap, and a full bootstrap needs no `rebuild`.
-  `create_dictionaries_fts5_indexes()` runs before `import_migrate_dpd`, whose updates to
-  `dict_words` then go through the triggers. The `bold_definitions` script runs after that
-  table is filled.
-- The runtime writes to these content tables all go through the triggers: language downloads
-  (`asset_helpers.rs`), and dictionary import, rename and delete. `bold_definitions` is
-  written only at bootstrap.
-- The `pali_edition_twins` table needs one new appdata migration. The other columns and
-  tables already exist. The new Tantivy field needs an `INDEX_VERSION` change.
+  160 MB to `suttas_fts`, and the Pāli about 10 MB, so appdata would reach about 1.35 GB. The
+  English index gains about 160 MB. The FTS PRD could bring appdata down to about 1.0 GB.
+- This feature needs no migration: the columns and tables already exist.
 - `suttas.css` is generated from Sass. Change the source and rebuild it.
 - Unit test the `columns_can_align` function and the row-cutting function with no database.
   Use a small fixture for the import.
@@ -468,7 +404,7 @@ Columns as they are.
    changes in the published database: `sn35.32-62.att` is replaced by `sn35.32.att`,
    `sn35.33-42.att`, `sn35.43-52.att` and `sn35.53-62.att`, and `sn24.19-96.att` and
    `sn24.19-96.tik` are added. `CstCoverageReport` differs by the same records.
-4. Search finds, in a built database, with the edition preference on `both`: a phrase from
+4. Search finds, in a built database, with CST mūla included in the search: a phrase from
    each of a mūla, an `.att`, a `.tik` and an unmapped division, in Pāli and English; a
    variant reading; and the Dhammapada summary of requirement 17.
 5. With "include commentary" off, no `.att` or `.tik` record is returned, in either language.
@@ -476,26 +412,21 @@ Columns as they are.
 7. The AI footer and licence are visible in Solo, Columns and Lines, whichever text is
    opened first, when the English is shown.
 8. `cargo test`, the TypeScript tests and a full bootstrap pass.
-9. Requirement 44's measurements are recorded, and the maintainer accepts them.
+9. The size measurements of section 9 are recorded, and the maintainer accepts them.
 10. Opening `mn1/pli/cst` or `mn1/pli/ms` in Lines or Columns shows an English with it.
-11. With the default settings, a phrase in `mn1` returns the `pli/ms` record and not the
-    `pli/cst` one, and a phrase in a Vinaya division returns its `pli/cst` record.
-12. An existing user's stored `include_cst_mula_in_search_results: false` becomes true once.
-13. For each table that passed requirement 64, its `_content` table no longer exists and
-    `integrity-check` with rank 1 passes. The before and after figures, with the phone's
-    model and Android version, are recorded for every table, including any that failed.
 
-## 9. Open Questions
+## 9. Decisions
 
-41. **Requirement 3.** Should an absent `fragments.sqlite3` during a partial or development
-    bootstrap also be an error, or is there a mode that skips CST altogether?
-42. **Header `<h3>` for English records.** It reuses the Pāli `{nikaya} {number}`. Confirm
-    this reads well above an English title.
-43. **`has_content_json` naming.** Once it means "can be aligned with the opened text",
-    renaming it may read better, but it touches the TypeScript side.
-44. **Size.** Before release, measure the appdata database, the English and Pāli fulltext
-    indexes, and the compressed release download, against the previous build. The
-    maintainer decides whether that is acceptable. Shipping in the main appdata is decided,
-    but the increase has not been measured. The external-content tables of requirement 61
-    are already part of this feature. If the size is still too large, `content_plain` and
-    `content_json` hold the English twice. The templates are only about 4% of the growth.
+- **Absent fragments or `romn/`:** an error, always (requirement 3).
+- **Header `<h3>` on English records:** keep it, as requirement 22 says. It reuses the Pāli
+  `{nikaya} {number}`. Check by eye that it reads well above an English title (task 12.8).
+- **`has_content_json` name:** keep it. Once it means "can be aligned with the opened text",
+  renaming it may read better, but it is part of the documented `/translations_for_sutta`
+  response, renaming touches the TypeScript side, and it brings no behaviour change.
+- **Size:** still open. Before release, measure the appdata database, the English and Pāli
+  fulltext indexes, and the compressed release download, against the previous build (tasks
+  5.14 and 12.7). The measurement must report `suttas_fts` separately, because the English
+  goes into its trigram index too. The maintainer decides whether that is acceptable.
+  Shipping in the main appdata is decided, but the increase has not been measured. If it is
+  too large, the FTS PRD is the first step. After that, `content_plain` and `content_json`
+  hold the English twice. The templates are only about 4% of the growth.
