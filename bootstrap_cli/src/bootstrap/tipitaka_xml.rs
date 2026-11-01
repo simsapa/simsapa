@@ -1,4 +1,10 @@
-//! Imports the Chaṭṭha Saṅgāyana XML corpus into the `suttas` table.
+//! Imports the Chaṭṭha Saṅgāyana corpus into the `suttas` table.
+//!
+//! The text is the OpenTipitaka export in `fragments.sqlite3`: `cst_texts` for
+//! mapped fragments and `cst_segments` for everything else, stored as Bilara
+//! `content_json`. The `romn/` XML only supplies the file list and the nikāya.
+//! Segment keys are in reading order, so this JSON is never sorted, and never
+//! passed through `serde_json::Value`.
 //!
 //! Each of the 217 `romn/` source files is imported at the **finest
 //! granularity available for it**, and a coarser record is kept only where the
@@ -21,24 +27,28 @@ use anyhow::{bail, Context, Result};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sqlite::SqliteConnection;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::bootstrap::cst_coverage::{
-    self, coverage_of, CoverageClass, FileCoverage, SplitError, MOVED_REVIEW,
+    self, coverage_of, CoverageClass, SplitError, MOVED_REVIEW,
 };
 use crate::bootstrap::helpers::uid_to_ref;
 use crate::bootstrap::navigation_tree::coverage_report::CstCoverageReport;
 use crate::bootstrap::navigation_tree::cst_spine::read_toc_leaves;
-use simsapa_backend::helpers::{consistent_niggahita, sutta_html_to_plain_text, sutta_range_from_ref, pali_to_ascii};
+use simsapa_backend::helpers::{
+    bilara_text_to_html, compact_plain_text, consistent_niggahita, pali_to_ascii,
+    sutta_html_to_plain_text, sutta_range_from_ref,
+};
 use simsapa_backend::logger;
 use html_escape;
 
 use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::detect_nikaya_structure;
-use tipitaka_xml_parser::sutta_builder::xml_to_html;
-use tipitaka_xml_parser::fragments_schema::{cst_segments, xml_fragments};
-use tipitaka_xml_parser::fragments_models::XmlFragmentRecord;
+use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts, xml_fragments};
+use tipitaka_xml_parser::fragments_models::{CstSegmentRecord, CstTextRecord, XmlFragmentRecord};
+use tipitaka_xml_parser::opentipitaka::{build_bilara_text, cst_text_code, BilaraText, SegmentRow};
 use tipitaka_xml_parser::types::{GroupLevel, GroupType};
 
 /// Sutta record matching appdata schema
@@ -74,10 +84,6 @@ pub struct TipitakaXmlImporter {
     toc_dir: PathBuf,
 }
 
-/// The uid a mapped fragment is imported under, e.g. `mn11.att/pli/cst`.
-///
-/// Shared so the navigation spine can name the same row the import wrote,
-/// rather than rebuilding the convention beside it and drifting from it.
 /// The title a fragment record is stored and listed under.
 ///
 /// `cst_sutta` where the fragment has one. A fragment that stands for a whole
@@ -103,15 +109,125 @@ pub fn fragment_title(cst_sutta: Option<&str>, group_levels_json: &str) -> Strin
         .to_string()
 }
 
+/// The uid a mapped fragment is imported under, e.g. `mn11.att/pli/cst`.
+///
+/// Shared so the navigation spine can name the same row the import wrote,
+/// rather than rebuilding the convention beside it and drifting from it.
 pub fn fragment_uid(cst_file: &str, sc_code: &str) -> String {
-    let uid_code = if cst_file.ends_with(".att.xml") {
-        format!("{}.att", sc_code)
-    } else if cst_file.ends_with(".tik.xml") {
-        format!("{}.tik", sc_code)
-    } else {
-        sc_code.to_string()
+    format!("{}/pli/cst", cst_text_code(cst_file, sc_code))
+}
+
+/// Escape a title for the header. The template's only `{}` must stay the
+/// segment value, and `bilara_multi_column_html` replaces every `{}` it finds.
+fn escape_title(title: &str) -> String {
+    html_escape::encode_text(title).replace('{', "&#123;").replace('}', "&#125;")
+}
+
+/// Add the header straight after the `<article …>` that opens the first key's
+/// template. The JSON is read into an `IndexMap` to keep the key order.
+fn add_header_to_template(tmpl_json: &str, header_html: &str) -> Result<String> {
+    let mut tmpl: IndexMap<String, String> =
+        serde_json::from_str(tmpl_json).context("Failed to parse the template JSON")?;
+
+    let Some((key, first)) = tmpl.first_mut() else {
+        bail!("The template JSON has no keys");
     };
-    format!("{}/pli/cst", uid_code)
+    if !first.starts_with("<article") {
+        bail!("The template of {} does not open an <article>: {}", key, first);
+    }
+    let Some(tag_end) = first.find('>') else {
+        bail!("The template of {} has an unclosed <article>: {}", key, first);
+    };
+    first.insert_str(tag_end + 1, header_html);
+
+    serde_json::to_string(&tmpl).context("Failed to serialize the template JSON")
+}
+
+/// The `content_plain` of a text, derived as for Bilara texts, then with the
+/// variant readings appended so that search keeps finding them:
+/// `sutta_variants` is not indexed.
+///
+/// Call it with the template before the header is added, because
+/// `sutta_html_to_plain_text` keeps a header's `<h1>`, and CST `content_plain`
+/// has no title. Variants are compacted because queries have their punctuation
+/// removed, so a raw reading would not match.
+fn plain_text_of(json: &str, tmpl: &str, variant_json: Option<&str>) -> Result<String> {
+    let html = bilara_text_to_html(json, tmpl, None, None, None, false, false, false)
+        .context("Failed to render the text")?;
+    let mut parts = vec![sutta_html_to_plain_text(&html)];
+
+    if let Some(variant_json) = variant_json {
+        let variants: IndexMap<String, String> =
+            serde_json::from_str(variant_json).context("Failed to parse the variant JSON")?;
+        parts.extend(variants.values().map(|reading| compact_plain_text(reading)));
+    }
+
+    parts.retain(|part| !part.is_empty());
+    Ok(parts.join(" "))
+}
+
+/// The Pāli of one text as exported, from `cst_texts` or built from rows.
+struct CstTextParts {
+    pali_json: String,
+    pali_tmpl: String,
+    variant_json: Option<String>,
+}
+
+impl From<CstTextRecord> for CstTextParts {
+    fn from(text: CstTextRecord) -> Self {
+        Self {
+            pali_json: text.pali_content_json,
+            pali_tmpl: text.pali_content_json_tmpl,
+            variant_json: text.pali_variant_json,
+        }
+    }
+}
+
+impl From<BilaraText> for CstTextParts {
+    fn from(text: BilaraText) -> Self {
+        Self {
+            pali_json: text.pali_content_json,
+            pali_tmpl: text.pali_content_json_tmpl,
+            variant_json: text.pali_variant_json,
+        }
+    }
+}
+
+/// The content columns of a Pāli record.
+struct PaliContent {
+    content_plain: String,
+    content_json: String,
+    content_json_tmpl: String,
+    variant_json: Option<String>,
+}
+
+fn with_niggahita(text: &str) -> String {
+    consistent_niggahita(Some(text.to_string()))
+}
+
+/// Simsapa stores only `ṁ`, and the OT text uses `ṃ`.
+fn pali_content(parts: &CstTextParts, header_html: &str) -> Result<PaliContent> {
+    let content_json = with_niggahita(&parts.pali_json);
+    let tmpl = with_niggahita(&parts.pali_tmpl);
+    let variant_json = parts.variant_json.as_deref().map(with_niggahita);
+
+    Ok(PaliContent {
+        content_plain: plain_text_of(&content_json, &tmpl, variant_json.as_deref())?,
+        content_json_tmpl: add_header_to_template(&tmpl, header_html)?,
+        content_json,
+        variant_json,
+    })
+}
+
+fn division_header(title: &str) -> String {
+    format!("<header><h1>{}</h1></header>", escape_title(title))
+}
+
+/// The JSON of a text that has no `cst_texts` row. `code` is the record's uid
+/// base without `.xml`, which also prefixes the segment keys.
+fn text_from_rows(code: &str, rows: &[CstSegmentRecord]) -> Result<CstTextParts> {
+    let rows: Vec<SegmentRow> = rows.iter().map(SegmentRow::from).collect();
+    Ok(build_bilara_text(code, &rows)?.into())
 }
 
 /// The toc file that belongs to a `romn/` source file: `s0305m.mul.xml` →
@@ -148,18 +264,30 @@ impl TipitakaXmlImporter {
             let rows: Vec<XmlFragmentRecord> = xml_fragments::table
                 .filter(xml_fragments::cst_file.eq(filename))
                 .filter(xml_fragments::frag_type.eq("Sutta"))
-                .order(xml_fragments::start_line.asc())
+                .order((xml_fragments::start_line.asc(), xml_fragments::start_char.asc()))
                 .load::<XmlFragmentRecord>(frag_conn)
                 .with_context(|| format!("Failed to query fragments for {}", filename))?;
 
+            let mut texts: HashMap<String, CstTextRecord> = cst_texts::table
+                .filter(cst_texts::cst_file.eq(filename))
+                .select(CstTextRecord::as_select())
+                .load(frag_conn)
+                .with_context(|| format!("Failed to query cst_texts for {}", filename))?
+                .into_iter()
+                .map(|text| (text.frag_idx_code.clone(), text))
+                .collect();
+
             for (idx, row) in rows.iter().enumerate() {
+                // An empty record whose text and uid a neighbour carries:
+                // expected, and not worth a warning that would bury a fragment
+                // which really is missing its mapping.
+                if row.frag_review.as_deref() == Some(MOVED_REVIEW) {
+                    continue;
+                }
+
                 // Skip fragments without sc_code
                 let sc_code = match &row.sc_code {
                     Some(code) => code.clone(),
-                    // An empty record whose text and uid a neighbour carries:
-                    // expected, and not worth a warning that would bury a
-                    // fragment which really is missing its mapping.
-                    None if row.frag_review.as_deref() == Some(MOVED_REVIEW) => continue,
                     None => {
                         logger::warn(&format!(
                             "Fragment in {} has no sc_code (cst_sutta: {:?}), skipping",
@@ -168,6 +296,20 @@ impl TipitakaXmlImporter {
                         continue;
                     }
                 };
+
+                let Some(text) = texts.remove(&row.frag_idx_code) else {
+                    bail!(
+                        "Fragment {} of {} ({}) has no cst_texts row",
+                        row.frag_idx_code, filename, sc_code
+                    );
+                };
+                let code = cst_text_code(filename, &sc_code);
+                if text.code != code {
+                    bail!(
+                        "Fragment {} of {} has the code {} in cst_texts, expected {}",
+                        row.frag_idx_code, filename, text.code, code
+                    );
+                }
 
                 let uid = fragment_uid(filename, &sc_code);
 
@@ -181,10 +323,6 @@ impl TipitakaXmlImporter {
                 let title = fragment_title(row.cst_sutta.as_deref(), &row.group_levels);
                 let normalized_title = consistent_niggahita(Some(title.clone()));
                 let normalized_title_ascii = pali_to_ascii(Some(&title));
-
-                // Convert content_xml to HTML
-                let content_html = xml_to_html(&row.content_xml)
-                    .with_context(|| format!("Failed to convert XML to HTML for UID {}", uid))?;
 
                 // Build group path from group_levels JSON
                 let group_levels: Vec<GroupLevel> = serde_json::from_str(&row.group_levels)
@@ -211,16 +349,15 @@ impl TipitakaXmlImporter {
                     .skip_while(|c| c.is_alphabetic())
                     .collect::<String>();
 
-                // Wrap in div with header
-                let full_html = consistent_niggahita(Some(format!(
-                    "<div class=\"cst\">\n<header>\n<h3>{} {}</h3>\n<h1>{}</h1>\n</header>\n{}</div>",
-                    nikaya_name,
-                    sutta_number,
-                    html_escape::encode_text(&normalized_title),
-                    content_html
-                )));
+                let header_html = format!(
+                    "<header><h3>{} {}</h3><h1>{}</h1></header>",
+                    escape_title(&with_niggahita(&nikaya_name)),
+                    escape_title(&sutta_number),
+                    escape_title(&normalized_title),
+                );
+                let content = pali_content(&text.into(), &header_html)
+                    .with_context(|| format!("Failed to build the text of {}", uid))?;
 
-                let content_plain = sutta_html_to_plain_text(&content_html);
                 let sutta_ref = uid_to_ref(&sc_code);
 
                 suttas.push(SuttaRecord {
@@ -234,14 +371,14 @@ impl TipitakaXmlImporter {
                     title: Some(normalized_title.clone()),
                     title_ascii: Some(normalized_title_ascii),
                     title_pali: Some(normalized_title),
-                    content_plain: Some(content_plain),
-                    content_html: Some(full_html),
-                    content_json: None,
-                    content_json_tmpl: None,
+                    content_plain: Some(content.content_plain),
+                    content_html: None,
+                    content_json: Some(content.content_json),
+                    content_json_tmpl: Some(content.content_json_tmpl),
                     source_uid: Some("cst".to_string()),
                     source_language: Some("pli".to_string()),
                     license: None,
-                    variant_json: None,
+                    variant_json: content.variant_json,
                 });
             }
         }
@@ -250,12 +387,16 @@ impl TipitakaXmlImporter {
         Ok(suttas)
     }
 
-    /// Cut one source file into the divisions its toc names, and build a
-    /// record for each.
+    /// Cut one source file's rows into the divisions its toc names, and build
+    /// a record for each.
     ///
     /// The division records **replace** that file's whole-file record: they
     /// partition the same text, so keeping both would store it twice.
-    fn import_divisions(&self, filename: &str) -> Result<Vec<SuttaRecord>, DivisionError> {
+    fn import_divisions(
+        &self,
+        filename: &str,
+        rows: &[CstSegmentRecord],
+    ) -> Result<Vec<SuttaRecord>, DivisionError> {
         let toc_path = self.toc_dir.join(toc_name_for(filename));
         let leaves = read_toc_leaves(&toc_path).map_err(|e| DivisionError(format!("{:#}", e)))?;
         if leaves.is_empty() {
@@ -271,39 +412,34 @@ impl TipitakaXmlImporter {
             Err(_) => "unknown".to_string(),
         };
 
-        let divisions = cst_coverage::split_into_divisions(&xml_content, &leaves)
+        let divisions = cst_coverage::split_rows_into_divisions(rows, &leaves)
             .map_err(|e: SplitError| DivisionError(e.to_string()))?;
 
         let mut records = Vec::with_capacity(divisions.len());
         for (idx, division) in divisions.iter().enumerate() {
-            let content_html = match xml_to_html(&division.xml) {
-                Ok(html) => consistent_niggahita(Some(html)),
-                Err(e) => {
-                    return Err(DivisionError(format!(
-                        "division {} ({}) would not convert to HTML: {}",
-                        idx, division.division_file, e
-                    )))
-                }
-            };
+            let code = division.division_file.trim_end_matches(".xml");
 
             // The toc leaf's own title, which is what the navigation row shows.
             // A leaf with no text= falls back to the division file name rather
             // than to an invented title.
             let title = if division.title.is_empty() {
-                division.division_file.trim_end_matches(".xml").to_string()
+                code.to_string()
             } else {
-                consistent_niggahita(Some(division.title.clone()))
+                with_niggahita(&division.title)
             };
 
-            let full_html = format!(
-                "<div class=\"cst\">\n<header>\n<h1>{}</h1>\n</header>\n{}</div>",
-                html_escape::encode_text(&title),
-                content_html
-            );
+            let content = text_from_rows(code, division.rows)
+                .and_then(|parts| pali_content(&parts, &division_header(&title)))
+                .map_err(|e| {
+                    DivisionError(format!(
+                        "division {} ({}) would not build: {:#}",
+                        idx, division.division_file, e
+                    ))
+                })?;
 
             records.push(SuttaRecord {
                 uid: format!("{}/pli/cst", division.division_file),
-                sutta_ref: uid_to_ref(division.division_file.trim_end_matches(".xml")),
+                sutta_ref: uid_to_ref(code),
                 nikaya: nikaya.clone(),
                 language: "pli".to_string(),
                 group_path: None,
@@ -312,14 +448,14 @@ impl TipitakaXmlImporter {
                 title: Some(title.clone()),
                 title_ascii: Some(pali_to_ascii(Some(&title))),
                 title_pali: Some(title),
-                content_plain: Some(sutta_html_to_plain_text(&content_html)),
-                content_html: Some(full_html),
-                content_json: None,
-                content_json_tmpl: None,
+                content_plain: Some(content.content_plain),
+                content_html: None,
+                content_json: Some(content.content_json),
+                content_json_tmpl: Some(content.content_json_tmpl),
                 source_uid: Some("cst".to_string()),
                 source_language: Some("pli".to_string()),
                 license: None,
-                variant_json: None,
+                variant_json: content.variant_json,
             });
         }
 
@@ -330,7 +466,7 @@ impl TipitakaXmlImporter {
     /// imported under the existing `<name>.xml/pli/cst` uid, so its text is
     /// never lost. The report flags it as unsplit; the import is never blocked
     /// on it.
-    fn import_whole_file(&self, filename: &str) -> Result<SuttaRecord> {
+    fn import_whole_file(&self, filename: &str, rows: &[CstSegmentRecord]) -> Result<SuttaRecord> {
         let xml_path = self.romn_dir.join(filename);
         let xml_content = read_xml_file(&xml_path)
             .with_context(|| format!("Failed to read {}", filename))?;
@@ -340,17 +476,11 @@ impl TipitakaXmlImporter {
             Err(_) => "unknown".to_string(),
         };
 
-        let content_html = xml_to_html(&xml_content)
-            .map(|html| consistent_niggahita(Some(html)))
-            .with_context(|| format!("Failed to convert {} to HTML", filename))?;
-
         let title = filename.trim_end_matches(".xml").to_string();
 
-        let full_html = format!(
-            "<div class=\"cst\">\n<header>\n<h1>{}</h1>\n</header>\n{}</div>",
-            html_escape::encode_text(&title),
-            content_html
-        );
+        let content = text_from_rows(&title, rows)
+            .and_then(|parts| pali_content(&parts, &division_header(&title)))
+            .with_context(|| format!("Failed to build the text of {}", filename))?;
 
         Ok(SuttaRecord {
             uid: format!("{}/pli/cst", filename),
@@ -363,15 +493,29 @@ impl TipitakaXmlImporter {
             title: Some(title.clone()),
             title_ascii: Some(pali_to_ascii(Some(&title))),
             title_pali: Some(title),
-            content_plain: Some(sutta_html_to_plain_text(&content_html)),
-            content_html: Some(full_html),
-            content_json: None,
-            content_json_tmpl: None,
+            content_plain: Some(content.content_plain),
+            content_html: None,
+            content_json: Some(content.content_json),
+            content_json_tmpl: Some(content.content_json_tmpl),
             source_uid: Some("cst".to_string()),
             source_language: Some("pli".to_string()),
             license: None,
-            variant_json: None,
+            variant_json: content.variant_json,
         })
+    }
+
+    /// A file's rows, in text order. Read per file, so memory stays bounded.
+    fn load_rows(
+        &self,
+        frag_conn: &mut SqliteConnection,
+        filename: &str,
+    ) -> Result<Vec<CstSegmentRecord>> {
+        cst_segments::table
+            .filter(cst_segments::cst_file.eq(filename))
+            .order(cst_segments::ot_id.asc())
+            .select(CstSegmentRecord::as_select())
+            .load(frag_conn)
+            .with_context(|| format!("Failed to query cst_segments for {}", filename))
     }
 
     /// The `romn/` source files, sorted, so the import order is deterministic.
@@ -556,7 +700,8 @@ impl TipitakaXmlImporter {
         let sources = self.source_files()?;
         self.check_fragments_input(&sources)?;
 
-        let coverage = self.load_coverage()?;
+        let mut frag_conn = self.open_fragments_db()?;
+        let coverage = cst_coverage::compute_coverage(&mut frag_conn)?;
         self.check_toc_pairing(&sources, &mut report);
 
         // Partition the files by class before importing anything, so the two
@@ -580,8 +725,8 @@ impl TipitakaXmlImporter {
                     fragment_files.push(name.clone());
                     division_files.push(name.clone());
                 }
-                // An unverified file is imported as divisions of its source
-                // XML, which do not depend on the parser's sutta splitting.
+                // An unverified file is imported as divisions of its rows, which
+                // do not depend on the parser's sutta splitting.
                 // Unsplittable is never assigned here -- only by a failed split.
                 CoverageClass::Unmapped
                 | CoverageClass::Unverified
@@ -592,7 +737,6 @@ impl TipitakaXmlImporter {
         // Fragments.
         let mut records: Vec<SuttaRecord> = Vec::new();
         if !fragment_files.is_empty() {
-            let mut frag_conn = self.open_fragments_db()?;
             let fragments = self.import_from_fragments(&mut frag_conn, &fragment_files)?;
             report.fragment_records = fragments.len();
             records.extend(fragments);
@@ -601,7 +745,8 @@ impl TipitakaXmlImporter {
         // Divisions, with the whole-file fallback for a file that would not
         // split. No text is ever lost: one of the two always runs.
         for name in &division_files {
-            match self.import_divisions(name) {
+            let rows = self.load_rows(&mut frag_conn, name)?;
+            match self.import_divisions(name, &rows) {
                 Ok(divisions) => {
                     report.division_records += divisions.len();
                     records.extend(divisions);
@@ -613,7 +758,7 @@ impl TipitakaXmlImporter {
                     ));
                     report.unsplittable.push((name.clone(), reason));
                     classes.insert(name.clone(), CoverageClass::Unsplittable);
-                    records.push(self.import_whole_file(name)?);
+                    records.push(self.import_whole_file(name, &rows)?);
                     report.whole_file_records += 1;
                 }
             }
@@ -639,13 +784,6 @@ impl TipitakaXmlImporter {
         let db_url = format!("file:{}?mode=ro", self.fragments_db_path.display());
         SqliteConnection::establish(&db_url)
             .with_context(|| format!("Failed to open fragments DB: {:?}", self.fragments_db_path))
-    }
-
-    /// The coverage classification. An absent `fragments.sqlite3` is an error,
-    /// which [`Self::check_fragments_input`] reports first.
-    fn load_coverage(&self) -> Result<HashMap<String, FileCoverage>> {
-        let mut frag_conn = self.open_fragments_db()?;
-        cst_coverage::compute_coverage(&mut frag_conn)
     }
 
     /// The `romn/` ↔ `cscd/*.toc.xml` pairing, in both directions. Measured 1:1
@@ -1207,6 +1345,260 @@ mod tests {
 
         let count: i64 = sutta_variants::table.count().get_result(&mut fixture.appdata).unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn imported() -> fixture::CstFixture {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        fixture.importer().import(&mut fixture.appdata).unwrap();
+        fixture
+    }
+
+    fn stored(fixture: &mut fixture::CstFixture, uid: &str) -> simsapa_backend::db::appdata_models::Sutta {
+        use simsapa_backend::db::appdata_models::Sutta;
+        use simsapa_backend::db::appdata_schema::suttas;
+
+        suttas::table
+            .filter(suttas::uid.eq(uid))
+            .select(Sutta::as_select())
+            .first(&mut fixture.appdata)
+            .unwrap_or_else(|e| panic!("{}: {}", uid, e))
+    }
+
+    fn all_stored(fixture: &mut fixture::CstFixture) -> Vec<simsapa_backend::db::appdata_models::Sutta> {
+        use simsapa_backend::db::appdata_models::Sutta;
+        use simsapa_backend::db::appdata_schema::suttas;
+
+        suttas::table.select(Sutta::as_select()).load(&mut fixture.appdata).unwrap()
+    }
+
+    fn keys_of(json: &str) -> Vec<String> {
+        let map: IndexMap<String, String> = serde_json::from_str(json).unwrap();
+        map.into_keys().collect()
+    }
+
+    fn first_value(json: &str) -> String {
+        let map: IndexMap<String, String> = serde_json::from_str(json).unwrap();
+        map.into_values().next().unwrap()
+    }
+
+    #[test]
+    fn a_title_cannot_add_a_template_slot_or_markup() {
+        assert_eq!(escape_title("a {} <b> & c"), "a &#123;&#125; &lt;b&gt; &amp; c");
+    }
+
+    #[test]
+    fn the_header_goes_after_the_article_tag_and_keeps_the_key_order() {
+        let tmpl = r#"{"mn1:10.1":"<article id='mn1' class='cst'><p>{}</p>","mn1:2.1":"<p>{}</p></article>"}"#;
+        let with_header = add_header_to_template(tmpl, "<header>H</header>").unwrap();
+        assert_eq!(
+            with_header,
+            r#"{"mn1:10.1":"<article id='mn1' class='cst'><header>H</header><p>{}</p>","mn1:2.1":"<p>{}</p></article>"}"#
+        );
+    }
+
+    #[test]
+    fn a_template_that_does_not_open_an_article_is_an_error() {
+        assert!(add_header_to_template(r#"{"mn1:1.1":"<p>{}</p>"}"#, "H").is_err());
+        assert!(add_header_to_template("{}", "H").is_err());
+    }
+
+    #[test]
+    fn plain_text_takes_compacted_variants_on_one_line() {
+        let json = r#"{"mn1:1.1":"Evaṁ me sutaṁ"}"#;
+        let tmpl = r#"{"mn1:1.1":"<article id='mn1' class='cst'><p>{}</p></article>"}"#;
+        let variants = r#"{"mn1:1.1":"sutaṁ: suttaṁ (sī. pī.), other"}"#;
+
+        let plain = plain_text_of(json, tmpl, Some(variants)).unwrap();
+        assert!(plain.starts_with("evaṁ me sutaṁ "), "{}", plain);
+        assert!(plain.contains("suttaṁ"), "{}", plain);
+        assert!(!plain.contains('\n') && !plain.contains('.') && !plain.contains(','), "{}", plain);
+
+        assert_eq!(plain_text_of(json, tmpl, None).unwrap(), "evaṁ me sutaṁ");
+    }
+
+    #[test]
+    fn every_path_stores_segmented_pali_and_no_html() {
+        let mut fixture = imported();
+        let records = all_stored(&mut fixture);
+
+        let mut uids: Vec<&str> = records.iter().map(|r| r.uid.as_str()).collect();
+        uids.sort();
+        assert_eq!(
+            uids,
+            [
+                "abh05t.nrf.xml/pli/cst",
+                "mn1/pli/cst",
+                "mn2/pli/cst",
+                "mn3/pli/cst",
+                "s0502m.mul0.xml/pli/cst",
+                "s0502m.mul1.xml/pli/cst",
+                "s0502m.mul2.xml/pli/cst",
+            ]
+        );
+
+        for record in &records {
+            let uid = &record.uid;
+            assert!(record.content_html.is_none(), "{}", uid);
+            assert!(record.license.is_none(), "{}", uid);
+            assert_eq!(record.source_uid.as_deref(), Some("cst"), "{}", uid);
+            assert_eq!(record.source_language.as_deref(), Some("pli"), "{}", uid);
+
+            let json = record.content_json.as_deref().unwrap();
+            let tmpl = record.content_json_tmpl.as_deref().unwrap();
+            assert_eq!(keys_of(json), keys_of(tmpl), "{}", uid);
+            for text in [json, tmpl, record.title.as_deref().unwrap(), record.content_plain.as_deref().unwrap()] {
+                assert!(!text.contains('ṃ'), "{}: {}", uid, text);
+            }
+        }
+    }
+
+    #[test]
+    fn the_header_is_in_the_first_template_of_each_path() {
+        let mut fixture = imported();
+
+        let first = |fixture: &mut fixture::CstFixture, uid: &str| {
+            first_value(stored(fixture, uid).content_json_tmpl.as_deref().unwrap())
+        };
+
+        assert!(first(&mut fixture, "mn1/pli/cst").starts_with(
+            "<article id='mn1' class='cst'><header><h3>Majjhimanikāyo 1</h3>\
+             <h1>1. Mūlapariyāyasuttaṁ</h1></header><p class='centered'>"
+        ));
+        assert!(first(&mut fixture, "s0502m.mul1.xml/pli/cst").starts_with(
+            "<article id='s0502m.mul1' class='cst'><header><h1>1. Yamakavaggo</h1></header><h2 class='chapter'>"
+        ));
+        assert!(first(&mut fixture, "abh05t.nrf.xml/pli/cst").starts_with(
+            "<article id='abh05t.nrf' class='cst'><header><h1>abh05t.nrf</h1></header>"
+        ));
+    }
+
+    #[test]
+    fn the_division_records_partition_the_rows_with_the_head_as_its_own_division() {
+        let mut fixture = imported();
+
+        let head = stored(&mut fixture, "s0502m.mul0.xml/pli/cst");
+        assert_eq!(head.title.as_deref(), Some("Ganthārambhakathā"));
+        let json = head.content_json.unwrap();
+        assert!(json.contains("Dhammapadapāḷi") && json.contains("Namo tassa"), "{}", json);
+        assert!(!json.contains("Yamakavaggo"), "{}", json);
+
+        let second = stored(&mut fixture, "s0502m.mul2.xml/pli/cst").content_json.unwrap();
+        assert!(second.contains("Appamādavaggo") && !second.contains("Yamakavaggo"), "{}", second);
+        assert_eq!(stored(&mut fixture, "s0502m.mul2.xml/pli/cst").group_index, Some(2));
+    }
+
+    #[test]
+    fn a_file_that_will_not_split_is_one_record_of_all_its_rows() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        let report = fixture.importer().import(&mut fixture.appdata).unwrap();
+        assert_eq!(report.whole_file_records, 1);
+
+        let record = stored(&mut fixture, "abh05t.nrf.xml/pli/cst");
+        let json = record.content_json.unwrap();
+        assert!(json.contains("Paṭhamaṁ vacanaṁ") && json.contains("Dutiyaṁ vacanaṁ"), "{}", json);
+        assert!(json.contains("\"abh05t.nrf:"), "{}", json);
+    }
+
+    #[test]
+    fn fragments_are_read_in_span_order_and_a_moved_one_is_skipped() {
+        let mut fixture = imported();
+
+        let second = stored(&mut fixture, "mn2/pli/cst").group_index.unwrap();
+        let third = stored(&mut fixture, "mn3/pli/cst").group_index.unwrap();
+        assert!(second < third);
+
+        let records = all_stored(&mut fixture);
+        assert!(!records.iter().any(|r| r.uid.starts_with("mn99")));
+    }
+
+    #[test]
+    fn a_sutta_fragment_without_its_cst_texts_row_stops_the_import() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        edit_fragments(&fixture, "DELETE FROM cst_texts WHERE code = 'mn2'");
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains("no cst_texts row"), "{}", error);
+        assert!(error.contains(fixture::MAPPED_FILE) && error.contains("mn2"), "{}", error);
+    }
+
+    #[test]
+    fn a_cst_texts_code_that_disagrees_with_the_fragment_stops_the_import() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        edit_fragments(&fixture, "UPDATE cst_texts SET code = 'mn2x' WHERE code = 'mn2'");
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains("mn2x"), "{}", error);
+    }
+
+    #[test]
+    fn variants_are_stored_by_segment_with_the_sutta_id() {
+        use simsapa_backend::db::appdata_models::SuttaVariant;
+        use simsapa_backend::db::appdata_schema::sutta_variants;
+
+        let mut fixture = imported();
+        let variants: Vec<SuttaVariant> = sutta_variants::table
+            .select(SuttaVariant::as_select())
+            .load(&mut fixture.appdata)
+            .unwrap();
+
+        let mut uids: Vec<&str> = variants.iter().map(|v| v.sutta_uid.as_str()).collect();
+        uids.sort();
+        assert_eq!(uids, ["mn1/pli/cst", "s0502m.mul1.xml/pli/cst", "s0502m.mul2.xml/pli/cst"]);
+
+        for variant in &variants {
+            assert_eq!(variant.language.as_deref(), Some("pli"));
+            assert_eq!(variant.source_uid.as_deref(), Some("cst"));
+            let json = variant.content_json.as_deref().unwrap();
+            assert!(!json.contains('ṃ'), "{}", json);
+
+            let sutta = stored(&mut fixture, &variant.sutta_uid);
+            assert_eq!(variant.sutta_id, sutta.id);
+            let keys = keys_of(sutta.content_json.as_deref().unwrap());
+            assert!(keys_of(json).iter().all(|key| keys.contains(key)), "{}", json);
+        }
+    }
+
+    #[test]
+    fn variant_text_is_searchable_and_the_title_is_not_in_the_plain_text() {
+        use simsapa_backend::helpers::normalize_query_text;
+
+        let mut fixture = imported();
+
+        let mapped = stored(&mut fixture, "mn1/pli/cst").content_plain.unwrap();
+        assert!(mapped.contains("suttaṁ (sī pī"), "{}", mapped);
+        assert!(!mapped.contains("mūlapariyāyasuttaṁ"), "{}", mapped);
+        assert!(!mapped.contains('\n'), "{}", mapped);
+
+        let whole = stored(&mut fixture, "abh05t.nrf.xml/pli/cst").content_plain.unwrap();
+        assert!(!whole.contains("abh05t"), "{}", whole);
+
+        // The row whose Pāli is nothing but a note, and a phrase that crosses
+        // the comma in it.
+        let note_only = stored(&mut fixture, "s0502m.mul2.xml/pli/cst").content_plain.unwrap();
+        let query = normalize_query_text(Some("appamādo ca, cittaṃ pupphañca".to_string()));
+        assert!(note_only.contains(&query), "{:?} in {}", query, note_only);
+        assert!(!query.contains(','), "{}", query);
+    }
+
+    #[test]
+    fn the_stored_json_is_the_exported_json_with_no_key_moved() {
+        let mut fixture = imported();
+        let text: CstTextRecord = cst_texts::table
+            .filter(cst_texts::code.eq("mn1"))
+            .select(CstTextRecord::as_select())
+            .first(&mut fixture.importer().open_fragments_db().unwrap())
+            .unwrap();
+
+        let record = stored(&mut fixture, "mn1/pli/cst");
+        let json = record.content_json.unwrap();
+        assert_eq!(json, with_niggahita(&text.pali_content_json));
+
+        let tmpl = record.content_json_tmpl.unwrap();
+        assert_eq!(keys_of(&tmpl), keys_of(&text.pali_content_json_tmpl));
+
+        let ninth = json.find("mn1:9.").unwrap();
+        let tenth = json.find("mn1:10.").unwrap();
+        assert!(ninth < tenth, "{}", json);
     }
 
     #[test]

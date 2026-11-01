@@ -193,23 +193,23 @@ Header, inserted straight after the `<article id='…' class='cst'>` in the firs
 
 `bilara_multi_column_html` and `bilara_text_to_segments` replace every `{}` in a template, so a title must not add one.
 
-- [ ] 4.0 Import Pāli records as segmented text from all three paths
-  - [ ] 4.1 Add `indexmap` to `bootstrap_cli/Cargo.toml`, the same version as `backend`, with the `serde` feature.
-  - [ ] 4.2 Change `fragment_uid` to use `cst_text_code`, then `format!("{}/pli/cst", code)`. Run the `cst_spine` tests.
-  - [ ] 4.3 Add `escape_title(&str) -> String`: `html_escape::encode_text`, plus `{` to `&#123;` and `}` to `&#125;`.
-  - [ ] 4.4 Add `add_header_to_template(tmpl_json: &str, header_html: &str) -> Result<String>`. Parse into `IndexMap<String, String>`, take the first entry, error if it does not start with `<article`, insert after that tag's first `>`, and serialize. Test that key order is kept on keys that sort differently (`mn1:10.1` before `mn1:2.1` in the input).
-  - [ ] 4.5 Add `plain_text_of(json: &str, tmpl: &str, variant_json: Option<&str>) -> Result<String>`, to be called with the template before the header is added. Call `bilara_text_to_html` with no variants, comments or glosses, and all flags false, then `sutta_html_to_plain_text`. Then append each variant value, in key order, passed through `compact_plain_text` and joined by a space. Test that the result has no newline, and no `.` or `,` from a variant.
-  - [ ] 4.6 In `import_from_fragments`, order by `start_line`, then `start_char`.
-  - [ ] 4.7 Load the file's `cst_texts` rows into a `HashMap` keyed by `frag_idx_code`, once per file. Skip a fragment with `frag_review = 'moved'` first, whatever its `sc_code`. A `Sutta` fragment with an `sc_code` and no `cst_texts` row is an error naming the file and code. Also error if `CstTextRecord.code` differs from `cst_text_code`.
-  - [ ] 4.8 Replace `xml_to_html` in `import_from_fragments` with the `cst_texts` JSON. Set `content_html: None`. Apply `consistent_niggahita` to the JSON, the template, the variant JSON and the title. Call `plain_text_of`, then add the fragment header.
-  - [ ] 4.9 In `import_divisions`, read the file's rows `ORDER BY ot_id` once per file, and call `split_rows_into_divisions`. Keep `read_toc_leaves` for the leaves and `read_xml_file` + `detect_nikaya_structure` for the nikāya. A `SplitError` or a `build_bilara_text` error stays a `DivisionError`.
-  - [ ] 4.10 For each division, the `code` passed to `build_bilara_text` is `division_file` without `.xml`. Convert rows with `SegmentRow::from(&record)`. Keep the title rule, uid, `sutta_ref` and indexes. Call `plain_text_of`, then add the division header.
-  - [ ] 4.11 In `import_whole_file`, do the same with all the file's rows. The code is `filename` without `.xml`, for example `abh05t.nrf`.
-  - [ ] 4.12 Remove `split_into_divisions`, `split_body_at_chapters`, `Division` and every helper that is then unused, with their tests. Remove the `xml_to_html` import. Update `Division` mentions in comments and the module doc table.
-  - [ ] 4.13 Test on the fixture, checking the stored rows: `content_json` and `content_json_tmpl` set; `content_html` None; `license` None; uid and `source_uid` unchanged; no `ṃ` in the JSON, variants or title; the header in the first template; a variant row with `sutta_id`, keyed by segment; a `moved` fragment absent; and a missing `cst_texts` row is an error.
-  - [ ] 4.14 Test FR-16 and FR-17: the variant text is in `content_plain`, the empty `pali_html` row's variant text is too, a phrase crossing a comma in it matches after query normalization, and the title is not in the Pāli `content_plain`.
-  - [ ] 4.15 Test that the key order in the stored JSON equals the order in the source, comparing strings without sorting.
-  - [ ] 4.16 Run `import-cst` with the published fragments database on a **copy** of the dist `appdata.sqlite3`. Compare the Pāli uid list with the copy's list before the run: the only differences must be those under "Measured on the published database". `report.fragment_records` must be 7,076.
+- [x] 4.0 Import Pāli records as segmented text from all three paths
+  - [x] 4.1 Add `indexmap` to `bootstrap_cli/Cargo.toml`, the same version as `backend`, with the `serde` feature.
+  - [x] 4.2 Change `fragment_uid` to use `cst_text_code`, then `format!("{}/pli/cst", code)`. Run the `cst_spine` tests.
+  - [x] 4.3 Add `escape_title(&str) -> String`: `html_escape::encode_text`, plus `{` to `&#123;` and `}` to `&#125;`.
+  - [x] 4.4 Add `add_header_to_template(tmpl_json: &str, header_html: &str) -> Result<String>`. Parse into `IndexMap<String, String>`, take the first entry, error if it does not start with `<article`, insert after that tag's first `>`, and serialize. Test that key order is kept on keys that sort differently (`mn1:10.1` before `mn1:2.1` in the input).
+  - [x] 4.5 Add `plain_text_of(json: &str, tmpl: &str, variant_json: Option<&str>) -> Result<String>`, to be called with the template before the header is added. Call `bilara_text_to_html` with no variants, comments or glosses, and all flags false, then `sutta_html_to_plain_text`. Then append each variant value, in key order, passed through `compact_plain_text` and joined by a space. Test that the result has no newline, and no `.` or `,` from a variant.
+  - [x] 4.6 In `import_from_fragments`, order by `start_line`, then `start_char`.
+  - [x] 4.7 Load the file's `cst_texts` rows into a `HashMap` keyed by `frag_idx_code`, once per file. Skip a fragment with `frag_review = 'moved'` first, whatever its `sc_code`. A `Sutta` fragment with an `sc_code` and no `cst_texts` row is an error naming the file and code. Also error if `CstTextRecord.code` differs from `cst_text_code`.
+  - [x] 4.8 Replace `xml_to_html` in `import_from_fragments` with the `cst_texts` JSON. Set `content_html: None`. Apply `consistent_niggahita` to the JSON, the template, the variant JSON and the title. Call `plain_text_of`, then add the fragment header.
+  - [x] 4.9 In `import_divisions`, read the file's rows `ORDER BY ot_id` once per file, and call `split_rows_into_divisions`. Keep `read_toc_leaves` for the leaves and `read_xml_file` + `detect_nikaya_structure` for the nikāya. A `SplitError` or a `build_bilara_text` error stays a `DivisionError`.
+  - [x] 4.10 For each division, the `code` passed to `build_bilara_text` is `division_file` without `.xml`. Convert rows with `SegmentRow::from(&record)`. Keep the title rule, uid, `sutta_ref` and indexes. Call `plain_text_of`, then add the division header.
+  - [x] 4.11 In `import_whole_file`, do the same with all the file's rows. The code is `filename` without `.xml`, for example `abh05t.nrf`.
+  - [x] 4.12 Remove `split_into_divisions`, `split_body_at_chapters`, `Division` and every helper that is then unused, with their tests. Remove the `xml_to_html` import. Update `Division` mentions in comments and the module doc table.
+  - [x] 4.13 Test on the fixture, checking the stored rows: `content_json` and `content_json_tmpl` set; `content_html` None; `license` None; uid and `source_uid` unchanged; no `ṃ` in the JSON, variants or title; the header in the first template; a variant row with `sutta_id`, keyed by segment; a `moved` fragment absent; and a missing `cst_texts` row is an error.
+  - [x] 4.14 Test FR-16 and FR-17: the variant text is in `content_plain`, the empty `pali_html` row's variant text is too, a phrase crossing a comma in it matches after query normalization, and the title is not in the Pāli `content_plain`.
+  - [x] 4.15 Test that the key order in the stored JSON equals the order in the source, comparing strings without sorting.
+  - [x] 4.16 Run `import-cst` with the published fragments database on a **copy** of the dist `appdata.sqlite3`. Compare the Pāli uid list with the copy's list before the run: the only differences must be those under "Measured on the published database". `report.fragment_records` must be 7,076.
 
 ### Specs for 5.0
 

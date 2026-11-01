@@ -320,26 +320,13 @@ pub fn coverage_of(coverage: &HashMap<String, FileCoverage>, file: &str) -> File
     })
 }
 
-/// One division of a source file: the XML that belongs to a single toc leaf.
-#[derive(Debug, Clone)]
-pub struct Division {
-    /// The division file name the toc leaf names, e.g. `s0305m.mul0.xml`.
-    pub division_file: String,
-    /// The toc leaf's `text=`, which is the division's displayed title.
-    pub title: String,
-    /// The division's XML — the body content, not a whole document.
-    /// `xml_to_html` is event-driven and needs no document root.
-    pub xml: String,
-}
-
 #[derive(Debug)]
 pub enum SplitError {
     /// The toc leaf count and the chapter-marker count disagree by more than
     /// the one leading division, so which text belongs to which leaf cannot be
     /// decided. Reported, never guessed.
     CountMismatch { leaves: usize, chapters: usize },
-    /// The file has no `<body>`, or the split produced nothing, or a division
-    /// would have no rows.
+    /// The split produced nothing, or a division would have no rows.
     NoBody,
 }
 
@@ -351,7 +338,7 @@ impl std::fmt::Display for SplitError {
                 "{} toc leaves but {} chapter markers (+/-1 expected)",
                 leaves, chapters
             ),
-            SplitError::NoBody => write!(f, "no <body> element, or the split produced nothing"),
+            SplitError::NoBody => write!(f, "the split produced nothing, or a division has no rows"),
         }
     }
 }
@@ -379,11 +366,24 @@ pub fn is_division_row(row: &CstSegmentRecord) -> bool {
 
 /// Cut a file's rows, in text order, into the divisions its toc names.
 ///
-/// The rule is the one [`split_into_divisions`] documents for the XML: the
-/// chapter rows give the boundaries, and the toc leaf count decides what the
-/// rows before the first chapter row are. With as many leaves as chapter rows
-/// they are prepended to the first division. With one more leaf they are a
-/// division of their own. Any other count is a [`SplitError`].
+/// **The chapter rows give the boundaries; the toc leaf count decides whether
+/// the head before the first chapter row is a division of its own.** Measured
+/// across all 217 files: 169 have exactly as many leaves as chapter rows, 47
+/// have one more, and one (`abh05t.nrf.xml`, 5 leaves against 6 chapter rows)
+/// has one fewer. The 47 open with a titled division the chapter rows do not
+/// open: `abh01a.att.xml` begins with `Ganthārambhakathā`, which is precisely
+/// its first toc leaf.
+///
+/// Reading the leading division out of the rows alone does **not** work, and
+/// this is why the leaf count decides it: eleven of the 169 have real body text
+/// before their first chapter row (preamble gāthās in `s0508m.mul.xml`,
+/// `e0201n.nrf.xml` and others), which the toc folds into the first division
+/// rather than listing separately. So when the counts are equal that head is
+/// **prepended to the first division**, never dropped and never made a division
+/// the toc has no leaf for.
+///
+/// A file whose counts differ by anything else is a [`SplitError`], reported
+/// and imported whole instead.
 pub fn split_rows_into_divisions<'a>(
     rows: &'a [CstSegmentRecord],
     leaves: &[crate::bootstrap::navigation_tree::cst_spine::TocLeaf],
@@ -432,243 +432,6 @@ pub fn split_rows_into_divisions<'a>(
     Ok(divisions)
 }
 
-/// Cut one `romn/` source file into the divisions its toc names.
-///
-/// **The chapter markup gives the boundaries; the toc leaf count decides
-/// whether the head before the first marker is a division of its own.**
-/// Measured across all 217 files: 169 have exactly as many leaves as
-/// `rend="chapter"` markers, 47 have one more, and one (`abh05t.nrf.xml`, 5
-/// leaves against 6 markers) has one fewer. The 47 open with a titled division
-/// the chapter markers do not open — `abh01a.att.xml` begins with
-/// `Ganthārambhakathā`, which is precisely its first toc leaf.
-///
-/// Reading the leading division out of the markup alone does **not** work, and
-/// this is why the leaf count decides it: eleven of the 169 have real body text
-/// before their first chapter marker — preamble gāthās in `s0508m.mul.xml`,
-/// `e0201n.nrf.xml` and others — which the toc folds into the first division
-/// rather than listing separately. So when the counts are equal that head is
-/// **prepended to the first division**, never dropped and never made a division
-/// the toc has no leaf for.
-///
-/// A file whose counts differ by anything else is a [`SplitError`], reported
-/// and imported whole instead.
-pub fn split_into_divisions(
-    xml: &str,
-    leaves: &[crate::bootstrap::navigation_tree::cst_spine::TocLeaf],
-) -> Result<Vec<Division>, SplitError> {
-    let pieces = split_body_at_chapters(xml)?;
-    let (head, chapters) = pieces;
-
-    let head_is_own_division = match leaves.len().checked_sub(chapters.len()) {
-        Some(0) => false,
-        Some(1) => true,
-        _ => {
-            return Err(SplitError::CountMismatch {
-                leaves: leaves.len(),
-                chapters: chapters.len(),
-            })
-        }
-    };
-
-    let mut parts: Vec<String> = Vec::with_capacity(leaves.len());
-    if head_is_own_division {
-        parts.push(head);
-        parts.extend(chapters);
-    } else {
-        let mut chapters = chapters;
-        if let Some(first) = chapters.first_mut() {
-            *first = format!("{}{}", head, first);
-        } else {
-            return Err(SplitError::NoBody);
-        }
-        parts.extend(chapters);
-    }
-
-    if parts.len() != leaves.len() {
-        return Err(SplitError::CountMismatch {
-            leaves: leaves.len(),
-            chapters: parts.len(),
-        });
-    }
-
-    Ok(leaves
-        .iter()
-        .zip(parts)
-        .map(|(leaf, xml)| Division {
-            division_file: leaf.division_file.clone(),
-            title: leaf.title.clone(),
-            xml,
-        })
-        .collect())
-}
-
-/// Split a document's `<body>` at every `rend="chapter"` element, returning the
-/// head (everything before the first marker) and one piece per marker.
-///
-/// Each piece is **re-balanced**: any element still open at a boundary is
-/// closed at the end of the outgoing piece and re-opened at the start of the
-/// incoming one, so every piece is well-formed on its own. A `<div>` that was
-/// opened immediately before the marker with nothing but whitespace in between
-/// is trimmed off the outgoing piece instead of being closed as an empty
-/// element — that is the common shape (`<div type="samyutta">` wrapping a
-/// `<head rend="chapter">`) and leaving it in would end each division with an
-/// empty div belonging to the next one.
-fn split_body_at_chapters(xml: &str) -> Result<(String, Vec<String>), SplitError> {
-    let body_open = find_body_open(xml).ok_or(SplitError::NoBody)?;
-    let body_end = xml[body_open..]
-        .find("</body>")
-        .map(|i| body_open + i)
-        .unwrap_or(xml.len());
-    let body = &xml[body_open..body_end];
-
-    // Each entry is one open element: where its start tag begins and ends in
-    // the current piece, and the tag itself for re-opening.
-    struct Open {
-        tag: String,
-        begins: usize,
-        ends: usize,
-    }
-
-    let mut stack: Vec<Open> = Vec::new();
-    let mut current = String::new();
-    let mut head: Option<String> = None;
-    let mut chapters: Vec<String> = Vec::new();
-    let mut cursor = 0usize;
-
-    for tag in iter_tags(body) {
-        // Everything between the previous tag and this one is content.
-        current.push_str(&body[cursor..tag.start]);
-        cursor = tag.end;
-
-        if tag.kind == TagKind::Start && is_chapter_tag(&body[tag.start..tag.end]) {
-            // Close the piece: drop the elements that were opened with nothing
-            // but whitespace since, and close the rest.
-            let mut keep_open = stack.len();
-            while keep_open > 0 {
-                let open = &stack[keep_open - 1];
-                if current[open.ends..].trim().is_empty() {
-                    current.truncate(open.begins);
-                    keep_open -= 1;
-                } else {
-                    break;
-                }
-            }
-            for open in stack[..keep_open].iter().rev() {
-                current.push_str(&format!("</{}>", element_name(&open.tag)));
-            }
-
-            let finished = std::mem::take(&mut current);
-            match head {
-                None => head = Some(finished),
-                Some(_) => chapters.push(finished),
-            }
-
-            // Re-open the ancestors in the new piece.
-            for open in stack.iter_mut() {
-                open.begins = current.len();
-                current.push_str(&open.tag);
-                open.ends = current.len();
-            }
-        }
-
-        let raw = &body[tag.start..tag.end];
-        match tag.kind {
-            TagKind::Start => {
-                let begins = current.len();
-                current.push_str(raw);
-                stack.push(Open { tag: raw.to_string(), begins, ends: current.len() });
-            }
-            TagKind::End => {
-                current.push_str(raw);
-                stack.pop();
-            }
-            TagKind::Other => current.push_str(raw),
-        }
-    }
-
-    current.push_str(&body[cursor..]);
-    for open in stack.iter().rev() {
-        current.push_str(&format!("</{}>", element_name(&open.tag)));
-    }
-
-    match head {
-        None => Err(SplitError::NoBody),
-        Some(head) => {
-            chapters.push(current);
-            Ok((head, chapters))
-        }
-    }
-}
-
-/// The offset just past the `<body …>` start tag.
-fn find_body_open(xml: &str) -> Option<usize> {
-    let start = xml.find("<body")?;
-    let close = xml[start..].find('>')? + start;
-    Some(close + 1)
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum TagKind {
-    Start,
-    End,
-    /// Self-closing, a comment, or a processing instruction — anything that
-    /// does not change the open-element stack.
-    Other,
-}
-
-struct Tag {
-    start: usize,
-    end: usize,
-    kind: TagKind,
-}
-
-/// Walk a fragment's `<…>` tags. This is a scanner and not an XML parser
-/// because the pieces are re-emitted **verbatim**: entities, `xml:space`
-/// content and the CST's own whitespace all have to survive the split
-/// byte-for-byte, and a parse-then-serialize round trip does not guarantee
-/// that. Nothing here interprets the markup beyond opening and closing.
-fn iter_tags(text: &str) -> Vec<Tag> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        let Some(rel) = text[i..].find('<') else { break };
-        let start = i + rel;
-        let Some(rel_end) = text[start..].find('>') else { break };
-        let end = start + rel_end + 1;
-
-        let inner = &text[start..end];
-        let kind = if inner.starts_with("</") {
-            TagKind::End
-        } else if inner.starts_with("<!") || inner.starts_with("<?") || inner.ends_with("/>") {
-            TagKind::Other
-        } else {
-            TagKind::Start
-        };
-
-        out.push(Tag { start, end, kind });
-        i = end;
-    }
-
-    out
-}
-
-fn element_name(tag: &str) -> &str {
-    let rest = tag.trim_start_matches('<');
-    let end = rest
-        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
-        .unwrap_or(rest.len());
-    &rest[..end]
-}
-
-/// A chapter marker is written as `<p rend="chapter">` in most files and as
-/// `<head rend="chapter">` in the `<div>`-structured ones; both are boundaries.
-fn is_chapter_tag(tag: &str) -> bool {
-    let name = element_name(tag);
-    (name == "p" || name == "head") && tag.contains("rend=\"chapter\"")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,22 +440,6 @@ mod tests {
     fn leaf(file: &str, title: &str) -> TocLeaf {
         TocLeaf { title: title.to_string(), division_file: file.to_string() }
     }
-
-    const DIV_STRUCTURED: &str = r#"<TEI.2><text><body xml:space="preserve">
-<p rend="centre">Namo tassa</p>
-<p rend="nikaya">Saṃyuttanikāyo</p>
-<div id="sn5" type="book">
-<head rend="book">Mahāvaggo</head>
-<div id="sn5_1" type="samyutta">
-<head rend="chapter">1. Maggasaṃyuttaṃ</head>
-<p rend="bodytext">one</p>
-</div>
-<div id="sn5_2" type="samyutta">
-<head rend="chapter">2. Bojjhaṅgasaṃyuttaṃ</head>
-<p rend="bodytext">two</p>
-</div>
-</div>
-</body></text></TEI.2>"#;
 
     fn span(mapped: bool, start_line: i32, end_line: i32) -> FragmentSpan {
         FragmentSpan { mapped, start_line, end_line }
@@ -724,84 +471,6 @@ mod tests {
         assert!(!is_moved_fragment(Some("moved"), false));
         assert!(!is_moved_fragment(Some("checked"), true));
         assert!(!is_moved_fragment(None, true));
-    }
-
-    #[test]
-    fn splits_at_chapter_markers_and_rebalances_each_piece() {
-        let (head, chapters) = split_body_at_chapters(DIV_STRUCTURED).unwrap();
-        assert_eq!(chapters.len(), 2);
-
-        // The head keeps the front matter and closes nothing it did not open.
-        assert!(head.contains("Namo tassa"));
-        assert!(head.contains("Mahāvaggo"));
-        // The samyutta div opened immediately before the marker is trimmed off
-        // rather than left behind as an empty element.
-        assert!(!head.contains("sn5_1"), "empty wrapper div left in the head: {}", head);
-        // The book div was open, so it is closed here and re-opened below.
-        assert!(head.trim_end().ends_with("</div>"));
-
-        assert!(chapters[0].contains("sn5_1"));
-        assert!(chapters[0].contains("1. Maggasaṃyuttaṃ"));
-        assert!(chapters[0].contains("one"));
-        assert!(!chapters[0].contains("two"));
-        assert!(chapters[0].starts_with("<div id=\"sn5\""), "ancestors not re-opened");
-
-        assert!(chapters[1].contains("2. Bojjhaṅgasaṃyuttaṃ"));
-        assert!(chapters[1].contains("two"));
-    }
-
-    /// 169 of the 217 files have as many leaves as chapter markers, so their
-    /// front matter belongs to the first division rather than to one of its own.
-    #[test]
-    fn head_is_prepended_when_the_toc_has_no_leaf_for_it() {
-        let leaves = vec![leaf("x0.xml", "1. Maggasaṃyuttaṃ"), leaf("x1.xml", "2. Bojjhaṅgasaṃyuttaṃ")];
-        let divisions = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap();
-
-        assert_eq!(divisions.len(), 2);
-        assert_eq!(divisions[0].division_file, "x0.xml");
-        assert!(divisions[0].xml.contains("Namo tassa"), "head was dropped");
-        assert!(divisions[0].xml.contains("1. Maggasaṃyuttaṃ"));
-        assert!(!divisions[1].xml.contains("Namo tassa"));
-    }
-
-    /// The 47 files whose toc does list the front matter get it as division 0.
-    #[test]
-    fn head_is_its_own_division_when_the_toc_lists_it() {
-        let leaves = vec![
-            leaf("x0.xml", "Ganthārambhakathā"),
-            leaf("x1.xml", "1. Maggasaṃyuttaṃ"),
-            leaf("x2.xml", "2. Bojjhaṅgasaṃyuttaṃ"),
-        ];
-        let divisions = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap();
-
-        assert_eq!(divisions.len(), 3);
-        assert_eq!(divisions[0].title, "Ganthārambhakathā");
-        assert!(divisions[0].xml.contains("Namo tassa"));
-        assert!(divisions[1].xml.contains("1. Maggasaṃyuttaṃ"));
-    }
-
-    #[test]
-    fn a_count_that_differs_by_more_than_one_is_an_error_not_a_guess() {
-        let leaves = vec![leaf("x0.xml", "only one")];
-        let err = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap_err();
-        assert!(matches!(err, SplitError::CountMismatch { leaves: 1, chapters: 2 }));
-    }
-
-    #[test]
-    fn splits_flat_paragraph_files() {
-        let xml = r#"<body xml:space="preserve">
-<p rend="centre">Namo</p>
-<p rend="book">Visuddhimaggo</p>
-<p rend="chapter">12. Iddhividhaniddeso</p>
-<p rend="bodytext">FIRST</p>
-<p rend="chapter">13. Abhiññāniddeso</p>
-<p rend="bodytext">SECOND</p>
-</body>"#;
-        let (head, chapters) = split_body_at_chapters(xml).unwrap();
-        assert!(head.contains("Visuddhimaggo"));
-        assert_eq!(chapters.len(), 2);
-        assert!(chapters[0].contains("FIRST") && !chapters[0].contains("SECOND"));
-        assert!(chapters[1].contains("SECOND") && !chapters[1].contains("FIRST"));
     }
 
     fn cst_row(ot_id: i32, wrapper: &str) -> CstSegmentRecord {
@@ -922,10 +591,5 @@ mod tests {
 
         assert_eq!(divisions.len(), 1);
         assert_eq!(ot_ids(&divisions[0]), [0, 1, 2, 3]);
-    }
-
-    #[test]
-    fn a_file_with_no_body_is_reported() {
-        assert!(matches!(split_body_at_chapters("<TEI.2></TEI.2>"), Err(SplitError::NoBody)));
     }
 }

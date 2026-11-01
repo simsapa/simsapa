@@ -4527,6 +4527,7 @@ dependencies = [
  "diesel_migrations",
  "dotenvy",
  "html-escape",
+ "indexmap",
  "indicatif",
  "lazy_static",
  "mdbook",
