@@ -92,6 +92,7 @@ use anyhow::{Context, Result};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
+use tipitaka_xml_parser::fragments_models::CstSegmentRecord;
 use tipitaka_xml_parser::fragments_schema::xml_fragments;
 
 /// CST source files whose parse has been verified -- see this module's header
@@ -337,7 +338,8 @@ pub enum SplitError {
     /// the one leading division, so which text belongs to which leaf cannot be
     /// decided. Reported, never guessed.
     CountMismatch { leaves: usize, chapters: usize },
-    /// The file has no `<body>`, or the split produced nothing.
+    /// The file has no `<body>`, or the split produced nothing, or a division
+    /// would have no rows.
     NoBody,
 }
 
@@ -352,6 +354,82 @@ impl std::fmt::Display for SplitError {
             SplitError::NoBody => write!(f, "no <body> element, or the split produced nothing"),
         }
     }
+}
+
+/// One division of a source file: the `cst_segments` rows of a single toc leaf.
+#[derive(Debug)]
+pub struct RowDivision<'a> {
+    /// The division file name the toc leaf names, e.g. `s0305m.mul0.xml`.
+    pub division_file: String,
+    /// The toc leaf's `text=`, which is the division's displayed title.
+    pub title: String,
+    /// Never empty, in text order.
+    pub rows: &'a [CstSegmentRecord],
+}
+
+/// Whether a row opens a division.
+///
+/// The wrapper decides, not the `rend` column, which is NULL on such rows in
+/// `e0606n` and `e0607n`. A chapter row at `ot_id` 0 is an extra title that
+/// repeats the marker in `e0606n.nrf.xml` and `e0607n.nrf.xml`, so it is not a
+/// cut.
+pub fn is_division_row(row: &CstSegmentRecord) -> bool {
+    row.ot_id != 0 && row.pali_wrapper.contains("class='chapter'")
+}
+
+/// Cut a file's rows, in text order, into the divisions its toc names.
+///
+/// The rule is the one [`split_into_divisions`] documents for the XML: the
+/// chapter rows give the boundaries, and the toc leaf count decides what the
+/// rows before the first chapter row are. With as many leaves as chapter rows
+/// they are prepended to the first division. With one more leaf they are a
+/// division of their own. Any other count is a [`SplitError`].
+pub fn split_rows_into_divisions<'a>(
+    rows: &'a [CstSegmentRecord],
+    leaves: &[crate::bootstrap::navigation_tree::cst_spine::TocLeaf],
+) -> Result<Vec<RowDivision<'a>>, SplitError> {
+    let markers: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| is_division_row(row))
+        .map(|(index, _)| index)
+        .collect();
+
+    let mut starts = match leaves.len().checked_sub(markers.len()) {
+        Some(0) => markers.clone(),
+        Some(1) => {
+            let mut starts = vec![0];
+            starts.extend(&markers);
+            starts
+        }
+        _ => {
+            return Err(SplitError::CountMismatch {
+                leaves: leaves.len(),
+                chapters: markers.len(),
+            })
+        }
+    };
+
+    // A prepended head is simply the first division starting at row 0.
+    match starts.first_mut() {
+        Some(first) => *first = 0,
+        None => return Err(SplitError::NoBody),
+    }
+
+    let mut divisions = Vec::with_capacity(leaves.len());
+    for (index, leaf) in leaves.iter().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(rows.len());
+        let division_rows = &rows[starts[index]..end];
+        if division_rows.is_empty() {
+            return Err(SplitError::NoBody);
+        }
+        divisions.push(RowDivision {
+            division_file: leaf.division_file.clone(),
+            title: leaf.title.clone(),
+            rows: division_rows,
+        });
+    }
+    Ok(divisions)
 }
 
 /// Cut one `romn/` source file into the divisions its toc names.
@@ -724,6 +802,126 @@ mod tests {
         assert_eq!(chapters.len(), 2);
         assert!(chapters[0].contains("FIRST") && !chapters[0].contains("SECOND"));
         assert!(chapters[1].contains("SECOND") && !chapters[1].contains("FIRST"));
+    }
+
+    fn cst_row(ot_id: i32, wrapper: &str) -> CstSegmentRecord {
+        CstSegmentRecord {
+            cst_file: "x.xml".to_string(),
+            ot_id,
+            frag_idx_code: None,
+            rend: None,
+            paranum: None,
+            pali_html: format!("row {}", ot_id),
+            pali_wrapper: wrapper.to_string(),
+            variant: None,
+            english: String::new(),
+        }
+    }
+
+    const CHAPTER_ROW: &str = "<h2 class='chapter'>{}</h2>";
+    const BODY_ROW: &str = "<p class='bodytext'>{}</p>";
+
+    fn ot_ids(division: &RowDivision) -> Vec<i32> {
+        division.rows.iter().map(|row| row.ot_id).collect()
+    }
+
+    fn head_and_two_chapters() -> Vec<CstSegmentRecord> {
+        vec![
+            cst_row(1, BODY_ROW),
+            cst_row(2, CHAPTER_ROW),
+            cst_row(3, BODY_ROW),
+            cst_row(4, CHAPTER_ROW),
+            cst_row(5, BODY_ROW),
+        ]
+    }
+
+    #[test]
+    fn a_division_row_is_a_chapter_wrapper_with_an_ot_id() {
+        assert!(is_division_row(&cst_row(4, CHAPTER_ROW)));
+        assert!(!is_division_row(&cst_row(4, BODY_ROW)));
+        assert!(!is_division_row(&cst_row(0, CHAPTER_ROW)));
+    }
+
+    #[test]
+    fn rows_before_the_first_chapter_join_it_when_the_counts_are_equal() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "one"), leaf("x1.xml", "two")];
+        let divisions = split_rows_into_divisions(&rows, &leaves).unwrap();
+
+        assert_eq!(divisions.len(), 2);
+        assert_eq!(divisions[0].division_file, "x0.xml");
+        assert_eq!(divisions[0].title, "one");
+        assert_eq!(ot_ids(&divisions[0]), [1, 2, 3]);
+        assert_eq!(ot_ids(&divisions[1]), [4, 5]);
+    }
+
+    #[test]
+    fn equal_counts_with_no_head_start_at_the_first_chapter() {
+        let rows = head_and_two_chapters();
+        let rows = &rows[1..];
+        let leaves = vec![leaf("x0.xml", "one"), leaf("x1.xml", "two")];
+        let divisions = split_rows_into_divisions(rows, &leaves).unwrap();
+
+        assert_eq!(ot_ids(&divisions[0]), [2, 3]);
+        assert_eq!(ot_ids(&divisions[1]), [4, 5]);
+    }
+
+    #[test]
+    fn rows_before_the_first_chapter_are_a_division_when_the_toc_lists_it() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "head"), leaf("x1.xml", "one"), leaf("x2.xml", "two")];
+        let divisions = split_rows_into_divisions(&rows, &leaves).unwrap();
+
+        assert_eq!(divisions.len(), 3);
+        assert_eq!(ot_ids(&divisions[0]), [1]);
+        assert_eq!(ot_ids(&divisions[1]), [2, 3]);
+        assert_eq!(ot_ids(&divisions[2]), [4, 5]);
+    }
+
+    #[test]
+    fn a_row_count_that_does_not_fit_the_toc_is_an_error() {
+        let rows = head_and_two_chapters();
+        let too_few = vec![leaf("x0.xml", "only one")];
+        assert!(matches!(
+            split_rows_into_divisions(&rows, &too_few),
+            Err(SplitError::CountMismatch { leaves: 1, chapters: 2 })
+        ));
+
+        let too_many: Vec<_> = (0..4).map(|n| leaf(&format!("x{}.xml", n), "")).collect();
+        assert!(matches!(
+            split_rows_into_divisions(&rows, &too_many),
+            Err(SplitError::CountMismatch { leaves: 4, chapters: 2 })
+        ));
+    }
+
+    #[test]
+    fn a_head_division_with_no_rows_is_an_error() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "head"), leaf("x1.xml", "one"), leaf("x2.xml", "two")];
+        assert!(matches!(split_rows_into_divisions(&rows[1..], &leaves), Err(SplitError::NoBody)));
+    }
+
+    #[test]
+    fn no_rows_at_all_is_an_error() {
+        assert!(matches!(
+            split_rows_into_divisions(&[], &[leaf("x0.xml", "only")]),
+            Err(SplitError::NoBody)
+        ));
+        assert!(matches!(split_rows_into_divisions(&[], &[]), Err(SplitError::NoBody)));
+    }
+
+    #[test]
+    fn a_chapter_row_at_ot_id_0_does_not_cut() {
+        let rows = vec![
+            cst_row(0, CHAPTER_ROW),
+            cst_row(1, BODY_ROW),
+            cst_row(2, CHAPTER_ROW),
+            cst_row(3, BODY_ROW),
+        ];
+        let divisions = split_rows_into_divisions(&rows, &[leaf("x0.xml", "one")]).unwrap();
+
+        assert_eq!(divisions.len(), 1);
+        assert_eq!(ot_ids(&divisions[0]), [0, 1, 2, 3]);
     }
 
     #[test]

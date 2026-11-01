@@ -143,12 +143,12 @@ pub fn split_rows_into_divisions<'a>(
 
 A slice works in both cases: a prepended head is simply the first division starting at row 0.
 
-- [ ] 2.0 Add the row-cutting function to `cst_coverage.rs`
-  - [ ] 2.1 Add `is_division_row(row: &CstSegmentRecord) -> bool`: true when `pali_wrapper` contains `class='chapter'` and `ot_id != 0`. Comment why: the `rend` column is NULL on these rows in `e0606n` and `e0607n`, and `ot_id` 0 is an extra title that repeats the marker in `e0606n.nrf.xml` and `e0607n.nrf.xml`.
-  - [ ] 2.2 Add `split_rows_into_divisions`. Rows before the first marker are the head. Equal counts: prepend the head to the first division. One more leaf: the head is its own division. Anything else: `SplitError::CountMismatch`.
-  - [ ] 2.3 Return `SplitError::NoBody` when a division would have no rows, for example a head division with an empty head, so `build_bilara_text` never gets an empty slice.
-  - [ ] 2.4 Unit test: equal counts with a head, equal counts with no head, one more leaf, a mismatch, an empty head where the head should be a division, and a chapter row at `ot_id` 0 that does not cut.
-  - [ ] 2.5 Run `cd bootstrap_cli && cargo test cst_coverage`.
+- [x] 2.0 Add the row-cutting function to `cst_coverage.rs`
+  - [x] 2.1 Add `is_division_row(row: &CstSegmentRecord) -> bool`: true when `pali_wrapper` contains `class='chapter'` and `ot_id != 0`. Comment why: the `rend` column is NULL on these rows in `e0606n` and `e0607n`, and `ot_id` 0 is an extra title that repeats the marker in `e0606n.nrf.xml` and `e0607n.nrf.xml`.
+  - [x] 2.2 Add `split_rows_into_divisions`. Rows before the first marker are the head. Equal counts: prepend the head to the first division. One more leaf: the head is its own division. Anything else: `SplitError::CountMismatch`.
+  - [x] 2.3 Return `SplitError::NoBody` when a division would have no rows, for example a head division with an empty head, so `build_bilara_text` never gets an empty slice.
+  - [x] 2.4 Unit test: equal counts with a head, equal counts with no head, one more leaf, a mismatch, an empty head where the head should be a division, and a chapter row at `ot_id` 0 that does not cut.
+  - [x] 2.5 Run `cd bootstrap_cli && cargo test cst_coverage`.
 
 ### Specs for 3.0
 
