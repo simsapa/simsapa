@@ -111,7 +111,9 @@ a re-jump and the wrapper's own scroll path read.
   disables such entries in the bar) behave identically. A non-segmented
   *opened* sutta reduces to a single column. On a content-block fetch the
   client learns of the drop from `X-SSP-Columns` and shows a transient
-  notice (§6).
+  notice (§6). **A single column renders that column, not the opened text**,
+  because the bar can replace or remove the opened text; only Solo always
+  renders the opened text.
 
 **Settings-cache guard scoping (locking rule).** `app_settings_cache` is a
 `std::sync::RwLock` and the settings panel POSTs writes while renders read:

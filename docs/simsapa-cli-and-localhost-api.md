@@ -1325,14 +1325,18 @@ translation can be zipped by key.
 - **uid resolution**:
   1. a verse reference is converted (`dhp182` → `dhp179-196/pli/ms`, §14.4);
   2. the uid is read exactly;
-  3. a bare code with no `/lang/author` reads `<code>/pli/ms` (`mn1` →
-     `mn1/pli/ms`);
+  3. a bare code with no `/lang/author` reads `<code>/pli/ms`, then
+     `<code>/pli/cst` (`mn1` → `mn1/pli/ms`). A commentary has only a CST
+     record, so a bare commentary code reads `<code>/pli/cst` (`mn1.att` →
+     `mn1.att/pli/cst`);
   4. a single reference inside a stored range reads the range, with the same
-     `/lang/author` (`sn45.92/en/sujato` → `sn45.92-95/en/sujato`).
+     `/lang/author` and the same kind of text (`sn45.92/en/sujato` →
+     `sn45.92-95/en/sujato`, `sn30.10.att` → `sn30.1-46.att/pli/cst`).
 
   **It never substitutes a different text.** The HTML routes fall back from a
   missing translation to the Pāli (§14.4); this route does not, so
-  `mn1/en/nosuchauthor` is a `404`, not the Pāli.
+  `mn1/en/nosuchauthor` is a `404`, not the Pāli, and `mn1.att/pli/ms` is a
+  `404`, not the sutta.
 - **Errors**, both `404` with a JSON body (`reason` is stable; the `error`
   text is for people):
 

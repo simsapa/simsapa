@@ -325,8 +325,9 @@ these tables filled (import report `reports/2026-10-31-203806-opentipitaka-impor
     index, where `/en/opentipitaka` sorts before `/pli/cst`, so a bare `mn1.att` would resolve
     to the AI English.
 50. `get_sutta_by_range` must prefer a mūla record among those matching the suffix, because
-    `.att` sorts before `/`. When none matches the suffix, it must prefer a Pāli mūla record
-    over `results.first()`, which would otherwise be an AI commentary.
+    `.att` sorts before `/`. When there is no suffix, or none matches, `/pli/ms` is the first
+    pick, then any other Pāli record, over `results.first()`, which would otherwise be an AI
+    commentary.
 
 ## 5. Non-Goals (Out of Scope)
 

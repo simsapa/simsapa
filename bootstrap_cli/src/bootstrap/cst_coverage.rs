@@ -99,8 +99,8 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// for what "verified" means and why it cannot be computed.
 ///
 /// **This is a quality gate, not a coverage predicate.** Only files listed here
-/// contribute fragment records; everything else is imported as divisions of the
-/// source XML, which never depends on the parser's sutta splitting.
+/// contribute fragment records; everything else is imported as divisions of its
+/// `cst_segments` rows, which never depends on the parser's sutta splitting.
 ///
 /// Adding an entry is a deliberate act: run `tipitaka-xml-parser`'s validations
 /// over the file, review the result, then add it here and re-run the CST import
@@ -179,8 +179,8 @@ pub enum CoverageClass {
     PartiallyMapped,
     Unmapped,
     /// The parse has not been verified, so no fragment record is imported from
-    /// it whatever its mapping looks like. Divisions of the source XML are
-    /// imported instead, which do not depend on the parser's sutta splitting.
+    /// it whatever its mapping looks like. Divisions of its `cst_segments` rows
+    /// are imported instead, which do not depend on the parser's sutta splitting.
     Unverified,
     /// Not derivable from the fragments: assigned by the import when the
     /// division split failed its per-file cross-check.

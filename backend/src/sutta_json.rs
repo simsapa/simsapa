@@ -13,7 +13,7 @@
 
 use crate::db::appdata::AppdataDbHandle;
 use crate::db::appdata_models::Sutta;
-use crate::helpers::convert_verse_ref_to_sutta_uid;
+use crate::helpers::{convert_verse_ref_to_sutta_uid, split_sutta_ref_kind, SuttaRefKind};
 
 /// The outcome of looking up a sutta's `content_json`.
 #[derive(Debug, Clone, PartialEq)]
@@ -22,8 +22,8 @@ pub enum SuttaContentJson {
     /// (`mn1` → `mn1/pli/ms`, `dhp182` → `dhp179-196/pli/ms`).
     /// `content_json` is the stored column, unchanged.
     Found { uid: String, content_json: String },
-    /// The sutta exists but is stored as HTML (e.g. `pli/cst` texts and most
-    /// non-SuttaCentral translations).
+    /// The sutta exists but is stored as HTML (most non-SuttaCentral
+    /// translations).
     NoContentJson { uid: String },
     NotFound,
 }
@@ -31,9 +31,11 @@ pub enum SuttaContentJson {
 /// Resolve `uid` to a sutta record without substituting a different text.
 ///
 /// In order: verse references (`dhp182`, `thag179/pli/ms`) are converted, the
-/// uid is read exactly, a bare code (`mn1`) is read as `<code>/pli/ms`, and a
-/// single reference inside a stored range (`sn45.92/pli/ms` →
-/// `sn45.92-95/pli/ms`) is read with the same `/lang/author`.
+/// uid is read exactly, a bare code (`mn1`) is read as `<code>/pli/ms`, then
+/// `<code>/pli/cst`, and a single reference inside a stored range
+/// (`sn45.92/pli/ms` → `sn45.92-95/pli/ms`) is read with the same `/lang/author`
+/// and the same kind of text. A commentary has only a CST record, so a bare
+/// commentary code (`mn1.att`, `sn30.10.att`) is read as `<code>/pli/cst`.
 ///
 /// Unlike the GUI routes' `lookup_sutta_with_fallback`, a uid that names a
 /// translation (`mn1/en/nosuch`) never falls back to the Pāli: a data caller
@@ -46,20 +48,24 @@ pub fn resolve_sutta_strict(appdata: &AppdataDbHandle, uid: &str) -> Option<Sutt
     if let Some(sutta) = appdata.get_sutta(&uid) {
         return Some(sutta);
     }
+    let (_, kind) = split_sutta_ref_kind(&uid);
     let uid = if uid.contains('/') {
         uid
     } else {
-        let pli_uid = format!("{}/pli/ms", uid);
-        if let Some(sutta) = appdata.get_sutta(&pli_uid) {
-            return Some(sutta);
+        let editions: &[&str] = if kind == SuttaRefKind::Mula { &["ms", "cst"] } else { &["cst"] };
+        for edition in editions {
+            if let Some(sutta) = appdata.get_sutta(&format!("{}/pli/{}", uid, edition)) {
+                return Some(sutta);
+            }
         }
-        pli_uid
+        format!("{}/pli/{}", uid, editions[0])
     };
-    // `get_sutta_by_range()` returns *some* record in the range when none has
-    // the requested `/lang/author` (`mn1/en/nosuch` → `mn1.att/pli/cst`), so
-    // keep its answer only when the suffix matches.
+    // `get_sutta_by_range()` returns *some* record in the range when none is the
+    // requested text (`mn1/en/nosuch` → `mn1/pli/ms`, `mn1.att/pli/ms` →
+    // `mn1/pli/ms`), so keep its answer only when the suffix and the kind match.
     let suffix = &uid[uid.find('/').unwrap_or(0)..];
-    appdata.get_sutta_by_range(&uid).filter(|s| s.uid.ends_with(suffix))
+    appdata.get_sutta_by_range(&uid)
+        .filter(|s| s.uid.ends_with(suffix) && split_sutta_ref_kind(&s.uid).1 == kind)
 }
 
 /// Look up the Bilara JSON (`suttas.content_json`) for `uid`, resolved with

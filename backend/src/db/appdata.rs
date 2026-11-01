@@ -3,6 +3,7 @@ use crate::helpers::{
     comparable_sutta_range, related_sutta_uids, related_sutta_uids_like_pattern, split_sutta_ref_kind,
     SuttaRefKind,
 };
+use crate::opentipitaka::is_ot_english_uid;
 use crate::sutta_display::columns_can_align;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
@@ -182,9 +183,14 @@ impl AppdataDbHandle {
     /// `sn45.92-95/pli/ms` covers that number. This mirrors the range lookup
     /// performed for the search input box (see `QueryTask::uid_sutta_range_all`).
     ///
-    /// When the queried uid carries a `/lang/author` suffix, only suttas with
-    /// the same suffix are considered, so the link resolves to the matching
-    /// translation rather than an arbitrary one.
+    /// When the queried uid carries a `/lang/author` suffix, a sutta with the
+    /// same suffix is preferred, so the link resolves to the matching
+    /// translation rather than an arbitrary one. Among those, the same kind of
+    /// text as the query is preferred, because `.att` and `.tik` records sort
+    /// before the mūla record they share a range with. With no suffix, or none
+    /// that matches, `/pli/ms` is the first pick, then any other Pāli record,
+    /// each of the query's kind before a mūla record, so that a commentary or an
+    /// AI translation is the last resort.
     pub fn get_sutta_by_range(&self, sutta_uid: &str) -> Option<Sutta> {
         use crate::db::appdata_schema::suttas::dsl::*;
         use crate::helpers::sutta_range_from_ref;
@@ -221,15 +227,24 @@ impl AppdataDbHandle {
             }
         };
 
-        match &suffix {
-            // Prefer the sutta matching the requested language/author suffix.
-            Some(s) => results
-                .iter()
-                .find(|x| x.uid.ends_with(s.as_str()))
-                .or_else(|| results.first())
-                .cloned(),
-            None => results.into_iter().next(),
-        }
+        let (_, query_kind) = split_sutta_ref_kind(sutta_uid);
+        let has_kind = |x: &&Sutta, kind: SuttaRefKind| split_sutta_ref_kind(&x.uid).1 == kind;
+        let is_pali_ms = |x: &&Sutta| x.uid.ends_with("/pli/ms");
+        let is_pali = |x: &&Sutta| x.language == "pli";
+
+        let requested = suffix.as_ref().and_then(|s| {
+            let has_suffix = |x: &&Sutta| x.uid.ends_with(s.as_str());
+            results.iter().find(|x| has_suffix(x) && has_kind(x, query_kind))
+                .or_else(|| results.iter().find(has_suffix))
+        });
+
+        requested
+            .or_else(|| results.iter().find(|x| is_pali_ms(x) && has_kind(x, query_kind)))
+            .or_else(|| results.iter().find(|x| is_pali(x) && has_kind(x, query_kind)))
+            .or_else(|| results.iter().find(|x| is_pali_ms(x) && has_kind(x, SuttaRefKind::Mula)))
+            .or_else(|| results.iter().find(|x| is_pali(x) && has_kind(x, SuttaRefKind::Mula)))
+            .or_else(|| results.first())
+            .cloned()
     }
 
     /// Find a related sutta (commentary, sub-commentary, or root text) for the given sutta UID.
@@ -717,7 +732,7 @@ impl AppdataDbHandle {
 
         if prev_end < 1 {
             // We're at the first sutta in this group, check for previous numbered group
-            return self.get_last_sutta_in_prev_group(&range_group, &current_sutta.language, &current_sutta.source_uid);
+            return self.get_last_sutta_in_prev_group(&range_group, &current_sutta);
         }
 
         // Query for all suttas in same group with range_end <= prev_end
@@ -733,12 +748,7 @@ impl AppdataDbHandle {
                 .load(db_conn)
         })?;
 
-        // Prioritize: same source_uid > same language > "en" > "pli"
-        Ok(self.prioritize_sutta_by_language_and_source(
-            candidates,
-            &current_sutta.language,
-            &current_sutta.source_uid,
-        ))
+        Ok(self.prioritize_sutta_by_language_and_source(candidates, &current_sutta))
     }
 
     pub fn get_next_sutta(&self, sutta_uid_param: &str) -> Result<Option<Sutta>> {
@@ -772,30 +782,35 @@ impl AppdataDbHandle {
                 .load(db_conn)
         })?;
 
-        // Prioritize: same source_uid > same language > "en" > "pli"
-        let next_in_group = self.prioritize_sutta_by_language_and_source(
-            candidates,
-            &current_sutta.language,
-            &current_sutta.source_uid,
-        );
+        let next_in_group = self.prioritize_sutta_by_language_and_source(candidates, &current_sutta);
 
         if next_in_group.is_some() {
             return Ok(next_in_group);
         }
 
         // No next sutta in current group, check for next numbered group
-        self.get_first_sutta_in_next_group(&range_group, &current_sutta.language, &current_sutta.source_uid)
+        self.get_first_sutta_in_next_group(&range_group, &current_sutta)
     }
 
+    /// Choose the sutta to move to from `current`. The same kind of text comes
+    /// first, so that reading a sutta does not lead into a commentary sharing
+    /// the next range, then: same source_uid > same language > "en" > "pli".
     fn prioritize_sutta_by_language_and_source(
         &self,
         candidates: Vec<Sutta>,
-        current_language: &str,
-        current_source: &Option<String>,
+        current: &Sutta,
     ) -> Option<Sutta> {
         if candidates.is_empty() {
             return None;
         }
+
+        let current_language = current.language.as_str();
+        let current_source = &current.source_uid;
+        let (_, current_kind) = split_sutta_ref_kind(&current.uid);
+        let (same_kind, other_kinds): (Vec<Sutta>, Vec<Sutta>) = candidates
+            .into_iter()
+            .partition(|s| split_sutta_ref_kind(&s.uid).1 == current_kind);
+        let candidates = if same_kind.is_empty() { other_kinds } else { same_kind };
 
         // Group candidates by their range (to handle multiple translations of same sutta)
         // We want to find the first available sutta number, then choose best translation
@@ -835,8 +850,7 @@ impl AppdataDbHandle {
     fn get_last_sutta_in_prev_group(
         &self,
         current_group: &str,
-        current_language: &str,
-        current_source: &Option<String>,
+        current: &Sutta,
     ) -> Result<Option<Sutta>> {
         use crate::db::appdata_schema::suttas::dsl::*;
 
@@ -860,18 +874,13 @@ impl AppdataDbHandle {
                 .load(db_conn)
         })?;
 
-        Ok(self.prioritize_sutta_by_language_and_source(
-            candidates,
-            current_language,
-            current_source,
-        ))
+        Ok(self.prioritize_sutta_by_language_and_source(candidates, current))
     }
 
     fn get_first_sutta_in_next_group(
         &self,
         current_group: &str,
-        current_language: &str,
-        current_source: &Option<String>,
+        current: &Sutta,
     ) -> Result<Option<Sutta>> {
         use crate::db::appdata_schema::suttas::dsl::*;
 
@@ -895,11 +904,7 @@ impl AppdataDbHandle {
                 .load(db_conn)
         })?;
 
-        Ok(self.prioritize_sutta_by_language_and_source(
-            candidates,
-            current_language,
-            current_source,
-        ))
+        Ok(self.prioritize_sutta_by_language_and_source(candidates, current))
     }
 
     fn extract_group_number(&self, group: &str) -> Option<(String, i32)> {
@@ -1715,8 +1720,11 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     };
     results.sort_by_cached_key(|s| (range_start(s), s.uid.clone()));
     pli_others.sort_by_cached_key(|s| (sorts_as_commentary(&s.uid), numbered_first(s), s.uid.clone()));
-    // Sort non-pli by language, then by sutta number and uid within the same language
-    remaining.sort_by_cached_key(|s| (s.language.clone(), range_start(s), s.uid.clone()));
+    // Sort non-pli by language, with the AI English after the human translations
+    // and its commentaries after its mūla records, then by sutta number and uid.
+    remaining.sort_by_cached_key(|s| {
+        (s.language.clone(), is_ot_english_uid(&s.uid), sorts_as_commentary(&s.uid), range_start(s), s.uid.clone())
+    });
     // Assemble final list
     results.extend(pli_others);
     results.extend(remaining);

@@ -13,6 +13,7 @@ use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::cst_files::{cst_file_query, uid_is_record_of_file, CstFileQuery};
 use crate::{get_app_data, get_app_globals};
 use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
+use crate::db::appdata::sort_suttas;
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
 use crate::db::DbManager;
@@ -798,8 +799,9 @@ impl<'a> SearchQueryTask<'a> {
             ));
         }
 
-        // Map to SearchResult
-        Ok(results.iter().map(|s| self.db_sutta_to_result(s)).collect())
+        // The uid order above bounds the query. Read in `sort_suttas` order, so
+        // that a commentary or the AI English does not come first.
+        Ok(sort_suttas(results).iter().map(|s| self.db_sutta_to_result(s)).collect())
     }
 
     fn uid_sutta_like_all(
@@ -838,6 +840,7 @@ impl<'a> SearchQueryTask<'a> {
                 SAFETY_LIMIT_SQL, query_uid
             ));
         }
+        let results = sort_suttas(results);
 
         // Map to SearchResult
         Ok(results.iter().map(|s| self.db_sutta_to_result(s)).collect())

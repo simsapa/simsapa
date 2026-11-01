@@ -100,6 +100,10 @@ Expected differences from the dist build, none of them a defect:
 - **Text:** `sn24.11-18.att` and `.tik` are about 730 letters shorter each, because that
   text is now in the `sn24.19-96` records.
 - **Text:** `e0605n`, `e0606n` and `e0607n` gain about 11 letters: the title row at `ot_id` 0.
+- **Grouping:** `group_path` differs on 3 records (`sn24.19-35/pli/cst` and two others), and
+  `group_index` and `order_index` on 162, from the published fragments.
+- **`content_plain`:** dist has about 105,000 more words, mostly doubled paragraph numbers
+  (`1 1` is now `1`). Notes moved to the end of the text (FR-16). No Pāli word is lost or split.
 
 Also noted:
 
@@ -293,7 +297,7 @@ pub fn pali_uid_for_translation(uid: &str) -> String;
 Depends on: nothing beyond a compiling tree.
 
 - [ ] 7.0 Update ordering and search
-  - [ ] 7.1 In `sort_suttas`, change the `remaining` key to `(language, is_ot_english_uid(&uid), range_start, uid)`. Add a test with `en/sujato`, `en/brahmali`, `en/opentipitaka` and a `hu` text. Other languages keep their order.
+  - [x] 7.1 In `sort_suttas`, change the `remaining` key to `(language, is_ot_english_uid(&uid), sorts_as_commentary(&uid), range_start, uid)`, so that the AI commentaries follow the AI mūla records. Add a test. Other languages keep their order.
   - [ ] 7.2 In `filter_suttas_query`, extend the commentary condition with `uid.like("%.att%/opentipitaka")` and `uid.like("%.tik%/opentipitaka")`. Leave the mūla condition unchanged (FR-37).
   - [ ] 7.3 Make the same change in the `extra_where` SQL in `suttas_contains_match_fts5`, and update its comment.
   - [ ] 7.4 In `searcher.rs`, make the commentary exclusion match `source_uid` `cst` **or** `opentipitaka`: two `MustNot` clauses, or one `Should` pair inside a `Must`. Leave the mūla exclusion unchanged, and update the comment.
@@ -301,6 +305,8 @@ Depends on: nothing beyond a compiling tree.
   - [ ] 7.6 Add `related_sutta_uids` tests for `mn1.att/en/opentipitaka`: with commentary off, opening `mn1/pli/cst` does not list it; opening `mn1.att/pli/cst` does. Confirm `include_cst_mula` leaves `mn1/en/opentipitaka` listed in `get_translations_data_json_for_sutta_uid`, since `ends_with("/cst")` does not match it.
   - [ ] 7.7 Confirm by reading that `uid_sutta_cst_files_page` keeps `%.xml/pli/cst`, so FR-38 needs no change.
   - [ ] 7.8 Run `cd backend && cargo test`.
+  - [x] 7.9 `uid_sutta_range_all` and `uid_sutta_like_all` return results in `sort_suttas` order, so that `sn30.10` in English starts with `sn30.7-16/en/sujato`, not `sn30.1-46.att/en/opentipitaka`.
+  - [x] 7.10 `get_next_sutta` and `get_prev_sutta` prefer the same reference kind as the current text, so that `mn1/en/opentipitaka` leads to `mn2/en/opentipitaka`, not `mn2.att/en/opentipitaka`. Test on `dummy-` records.
 
 ### Specs for 8.0
 
@@ -314,8 +320,10 @@ Depends on: 6.0 for `pali_uid_for_translation`.
   - [ ] 8.5 Check `app_data.rs` `render_sutta_standard_body`, `asset_helpers.rs:153` and `cli_support.rs:419` handle `None`.
   - [ ] 8.6 Add `navigation_tree/tests.rs` cases: `mn1/en/opentipitaka` counts as a translation of `mn1/pli/cst`, and `mn1.att/en/opentipitaka` does not count for `mn1/pli/cst`, as `a_commentary_is_not_counted_as_a_translation_of_the_text` does for other authors.
   - [ ] 8.7 In `get_full_sutta_uid`, after the `/pli/ms` lookup, try `<code>/pli/cst` before the `LIKE` (FR-49). Test on a bare `mn1.att`-shaped code with only `/en/opentipitaka` and `/pli/cst` rows.
-  - [ ] 8.8 In `get_sutta_by_range`, among suffix matches take a mūla record first, using `split_sutta_ref_kind`. With no suffix match, take a Pāli mūla record, then `results.first()` (FR-50). Update the `sutta_json.rs` comment at line 59, whose example changes, and keep `resolve_sutta_strict`'s suffix check.
+  - [x] 8.8 In `get_sutta_by_range`, among suffix matches take the same kind as the query first, using `split_sutta_ref_kind`, which is a mūla record for a mūla query. With no suffix, or no suffix match, take `/pli/ms`, then any other Pāli record, each of the query's kind before a mūla record, then `results.first()` (FR-50). Update the `sutta_json.rs` comment at line 59, whose example changes, and keep `resolve_sutta_strict`'s suffix check.
   - [ ] 8.9 Run `cd backend && cargo test` and `cd api && cargo test`.
+  - [x] 8.10 `resolve_sutta_strict` reads a bare code as `/pli/ms`, then `/pli/cst`, and a bare commentary code as `/pli/cst`. Its range step keeps the query's kind, so that `mn1.att` is `mn1.att/pli/cst`, `sn30.10.att` is `sn30.1-46.att/pli/cst`, and `mn1.att/pli/ms` is not found. `test_sutta_json.rs` uses `mn1/en/bodhi` as its HTML-only record.
+  - [x] 8.11 A single column renders that column, not the opened text (`render_content_block_for_columns`). Solo still renders the opened text.
 
 ### Specs for 9.0
 

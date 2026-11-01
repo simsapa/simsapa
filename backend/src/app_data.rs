@@ -585,7 +585,9 @@ impl AppData {
     /// The content-block branching for already-resolved column suttas:
     /// aligned multi-column when every column is segmented and all of them can
     /// be aligned on the opened text's template, unaligned block columns
-    /// otherwise, standard whole-document path for a single column.
+    /// otherwise, standard whole-document path for a single column. That column
+    /// is rendered, not the opened text: the column bar can replace or remove
+    /// the opened text.
     fn render_content_block_for_columns(
         &self,
         sutta: &Sutta,
@@ -650,7 +652,7 @@ impl AppData {
             multi_column_html_blocks(&cols)
 
         } else {
-            self.render_sutta_standard_body(sutta, show_references)?
+            self.render_sutta_standard_body(column_suttas.first().unwrap_or(sutta), show_references)?
         };
 
         Ok(content_html_body)

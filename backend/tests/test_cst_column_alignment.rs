@@ -8,6 +8,7 @@ use diesel::prelude::*;
 use serial_test::serial;
 
 use simsapa_backend::app_settings::{RepeatPali, SuttaLayout};
+use simsapa_backend::db::appdata::sort_suttas;
 use simsapa_backend::db::appdata_models::{NewSutta, Sutta};
 use simsapa_backend::db::appdata_schema::suttas;
 use simsapa_backend::get_app_data;
@@ -26,7 +27,14 @@ const ENGLISH_HTML_ONLY: &str = "dummy-mn1/en/bodhi";
 const DIVISION_PALI_CST: &str = "dummy-vin02m4.mul0.xml/pli/cst";
 const DIVISION_ENGLISH_OT: &str = "dummy-vin02m4.mul0.xml/en/opentipitaka";
 
-const ALL_UIDS: [&str; 8] = [
+// Inserted in this order, because `.att` files import before `.mul` files, and a
+// range holds its rows in insertion order.
+const NAV_FIRST_COMMENTARY: &str = "dummy-nav1.att/en/opentipitaka";
+const NAV_FIRST_MULA: &str = "dummy-nav1/en/opentipitaka";
+const NAV_SECOND_COMMENTARY: &str = "dummy-nav2.att/en/opentipitaka";
+const NAV_SECOND_MULA: &str = "dummy-nav2/en/opentipitaka";
+
+const ALL_UIDS: [&str; 12] = [
     PALI_CST,
     ENGLISH_OT,
     COMMENTARY_ENGLISH_OT,
@@ -35,6 +43,10 @@ const ALL_UIDS: [&str; 8] = [
     ENGLISH_HTML_ONLY,
     DIVISION_PALI_CST,
     DIVISION_ENGLISH_OT,
+    NAV_FIRST_COMMENTARY,
+    NAV_FIRST_MULA,
+    NAV_SECOND_COMMENTARY,
+    NAV_SECOND_MULA,
 ];
 
 fn delete_fixture() {
@@ -120,6 +132,24 @@ fn set_up() -> Fixture {
     insert_text(ENGLISH_HTML_ONLY, "en", "bodhi", None, None, Some("<p>bodhi</p>"));
     insert_text(DIVISION_PALI_CST, "pli", "cst", Some(&segmented_json(["div-one", "div-two"])), Some(&plain_tmpl), None);
     insert_text(DIVISION_ENGLISH_OT, "en", "opentipitaka", Some(&segmented_json(["divot-one", "divot-two"])), Some(&english_tmpl), None);
+
+    for (uid, position) in [
+        (NAV_FIRST_COMMENTARY, 1),
+        (NAV_FIRST_MULA, 1),
+        (NAV_SECOND_COMMENTARY, 2),
+        (NAV_SECOND_MULA, 2),
+    ] {
+        insert_text(uid, "en", "opentipitaka", Some(&segmented_json(["nav-one", "nav-two"])), Some(&english_tmpl), None);
+        let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
+        diesel::update(suttas::table.filter(suttas::uid.eq(uid)))
+            .set((
+                suttas::sutta_range_group.eq("dummy-nav"),
+                suttas::sutta_range_start.eq(position),
+                suttas::sutta_range_end.eq(position),
+            ))
+            .execute(db_conn)
+            .unwrap();
+    }
 
     Fixture
 }
@@ -367,4 +397,59 @@ fn the_pali_partner_is_listed_whatever_the_mula_setting_says() {
 
     let entries = translations_of(ENGLISH_SUJATO, false);
     assert!(entry(&entries, PALI_CST).is_none(), "{:?}", entries);
+}
+
+#[test]
+#[serial]
+fn a_single_column_renders_that_column_and_not_the_opened_text() {
+    let _fixture = set_up();
+
+    for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+        let html = render(PALI_CST, layout, &[ENGLISH_OT]);
+        assert!(html.contains("ot-one"), "{html}");
+        assert!(!html.contains("cst-one"), "{html}");
+        assert_eq!(footer_count(&html), 1, "{html}");
+
+        let html = render(ENGLISH_OT, layout, &[PALI_CST]);
+        assert!(html.contains("cst-one"), "{html}");
+        assert!(!html.contains("ot-one"), "{html}");
+        assert_eq!(footer_count(&html), 0, "{html}");
+    }
+}
+
+#[test]
+#[serial]
+fn solo_renders_the_opened_text_whatever_the_columns() {
+    let _fixture = set_up();
+
+    let html = render(PALI_CST, SuttaLayout::Solo, &[ENGLISH_OT]);
+    assert!(html.contains("cst-one"), "{html}");
+    assert!(!html.contains("ot-one"), "{html}");
+}
+
+#[test]
+#[serial]
+fn the_ai_english_sorts_after_human_translations_with_its_commentaries_last() {
+    let _fixture = set_up();
+
+    let unsorted = [COMMENTARY_ENGLISH_OT, ENGLISH_OT, ENGLISH_SUJATO, ENGLISH_HTML_ONLY, PALI_CST, PALI_MS]
+        .map(sutta)
+        .to_vec();
+    let sorted: Vec<String> = sort_suttas(unsorted).into_iter().map(|s| s.uid).collect();
+
+    assert_eq!(sorted, [PALI_MS, PALI_CST, ENGLISH_HTML_ONLY, ENGLISH_SUJATO, ENGLISH_OT, COMMENTARY_ENGLISH_OT]);
+}
+
+#[test]
+#[serial]
+fn next_and_prev_stay_on_the_same_kind_of_text() {
+    let _fixture = set_up();
+    let appdata = &get_app_data().dbm.appdata;
+    let next = |uid: &str| appdata.get_next_sutta(uid).unwrap().map(|s| s.uid);
+    let prev = |uid: &str| appdata.get_prev_sutta(uid).unwrap().map(|s| s.uid);
+
+    assert_eq!(next(NAV_FIRST_MULA).as_deref(), Some(NAV_SECOND_MULA));
+    assert_eq!(next(NAV_FIRST_COMMENTARY).as_deref(), Some(NAV_SECOND_COMMENTARY));
+    assert_eq!(prev(NAV_SECOND_MULA).as_deref(), Some(NAV_FIRST_MULA));
+    assert_eq!(prev(NAV_SECOND_COMMENTARY).as_deref(), Some(NAV_FIRST_COMMENTARY));
 }
