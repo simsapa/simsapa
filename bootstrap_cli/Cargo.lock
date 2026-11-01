@@ -5252,6 +5252,7 @@ dependencies = [
  "dotenvy",
  "encoding_rs",
  "html-escape",
+ "indexmap",
  "quick-xml",
  "regex",
  "rocket",

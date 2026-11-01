@@ -118,12 +118,12 @@ Depends on: nothing.
 
 - The published data is in `../bootstrap-assets-resources/tipitaka-xml-data/fragments.sqlite3`. Only read it, as the importer does.
 
-- [ ] 1.0 Prepare the test fixture
-  - [ ] 1.1 Read `../tipitaka-xml-parser/docs/opentipitaka-export.md` from the top through "Measured on the real data".
+- [x] 1.0 Prepare the test fixture
+  - [x] 1.1 Read `../tipitaka-xml-parser/docs/opentipitaka-export.md` from the top through "Measured on the real data".
   - [x] 1.2 The maintainer rebuilt the fragments database in the bootstrap assets folder.
   - [x] 1.3 Confirmed: 421,922 rows in 217 files in `cst_segments`, and 7,076 rows in `cst_texts`.
-  - [ ] 1.4 Add a `#[cfg(test)]` fixture helper to `tipitaka_xml.rs`. In a `tempfile` folder, it creates a fragments database, a `romn/` folder, a toc folder and an appdata database (through `bootstrap::run_migrations`). Create the fragments tables with the parser's own `migrations/` SQL, so the schema cannot drift.
-  - [ ] 1.5 Give the fixture one fully mapped file with a `moved` fragment, one unmapped file with a head and two chapters, and one file whose toc does not match, which takes the whole-file path. Include a row with a variant, and a row with empty `pali_html` and a variant. Do not use this fixture in any `make` target.
+  - [x] 1.4 Add a `#[cfg(test)]` fixture helper to `tipitaka_xml.rs`. In a `tempfile` folder, it creates a fragments database, a `romn/` folder, a toc folder and an appdata database (through `bootstrap::run_migrations`). Create the fragments tables with the parser's own `migrations/` SQL, so the schema cannot drift.
+  - [x] 1.5 Give the fixture one fully mapped file with a `moved` fragment, one unmapped file with a head and two chapters, and one file whose toc does not match, which takes the whole-file path. Include a row with a variant, and a row with empty `pali_html` and a variant. Do not use this fixture in any `make` target.
 
 ### Specs for 2.0
 

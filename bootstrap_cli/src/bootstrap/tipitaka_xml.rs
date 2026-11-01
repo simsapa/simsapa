@@ -604,6 +604,364 @@ impl TipitakaXmlImporter {
 struct DivisionError(String);
 
 
+/// A small CST corpus on disk, in the shapes the import has to handle. It lives
+/// in a temporary folder, so no test touches the published fragments database.
+#[cfg(test)]
+pub(crate) mod fixture {
+    use std::path::Path;
+
+    use diesel_migrations::MigrationHarness;
+    use tempfile::TempDir;
+    use tipitaka_xml_parser::fragment_exporter::FRAGMENTS_MIGRATIONS;
+    use tipitaka_xml_parser::fragments_models::{
+        NewCstSegment, NewCstText, NewNikayaStructure, NewXmlFragment,
+    };
+    use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts, nikaya_structures};
+    use tipitaka_xml_parser::opentipitaka::{build_bilara_text, cst_text_code, SegmentRow};
+
+    use super::*;
+
+    /// On `VERIFIED_CST_FILES`, and every text-carrying fragment is mapped.
+    pub const MAPPED_FILE: &str = "s0201m.mul.xml";
+    /// Not on the list, with a head and two chapters, and a toc leaf for each.
+    pub const DIVIDED_FILE: &str = "s0502m.mul.xml";
+    /// One toc leaf against two chapter markers, so it takes the whole-file path.
+    pub const WHOLE_FILE: &str = "abh05t.nrf.xml";
+
+    const BODY: &str = "<p class='bodytext'>{}</p>";
+    const CENTRED: &str = "<p class='centered'>{}</p>";
+    const CHAPTER: &str = "<h2 class='chapter'>{}</h2>";
+
+    /// The only row whose Pāli is nothing but a note, as in `s0502m.mul.xml` row
+    /// 905. The comma is there so a test phrase can cross it.
+    pub const NOTE_ONLY_VARIANT: &str = "Yamakañca appamādo ca, cittaṃ pupphañca bālakaṃ";
+    /// A reading on an ordinary row of the mapped file.
+    pub const MAPPED_VARIANT: &str = "sutaṃ: suttaṃ (sī. pī.)";
+
+    /// Holds the `cst_segments` columns. `rend` is always NULL here, because
+    /// it is NULL on the real chapter rows of `e0606n` and `e0607n`: nothing may
+    /// read a division from it.
+    struct Row {
+        ot_id: i32,
+        fragment: Option<&'static str>,
+        paranum: Option<String>,
+        pali: String,
+        wrapper: &'static str,
+        variant: Option<&'static str>,
+        english: String,
+    }
+
+    fn row(ot_id: i32, wrapper: &'static str, pali: &str, english: &str) -> Row {
+        Row {
+            ot_id,
+            fragment: None,
+            paranum: None,
+            pali: pali.to_string(),
+            wrapper,
+            variant: None,
+            english: english.to_string(),
+        }
+    }
+
+    impl Row {
+        fn in_fragment(mut self, fragment: &'static str) -> Self {
+            self.fragment = Some(fragment);
+            self
+        }
+
+        fn numbered(mut self, paranum: i32) -> Self {
+            self.paranum = Some(paranum.to_string());
+            self
+        }
+
+        fn with_variant(mut self, variant: &'static str) -> Self {
+            self.variant = Some(variant);
+            self
+        }
+
+        fn to_segment_row(&self) -> SegmentRow {
+            SegmentRow {
+                paranum: self.paranum.clone(),
+                pali_html: self.pali.clone(),
+                pali_wrapper: self.wrapper.to_string(),
+                variant: self.variant.map(str::to_string),
+                english: self.english.clone(),
+            }
+        }
+    }
+
+    /// One `xml_fragments` row.
+    struct Fragment {
+        idx: &'static str,
+        frag_type: &'static str,
+        frag_review: Option<&'static str>,
+        sc_code: Option<&'static str>,
+        title: Option<&'static str>,
+        /// `(start_line, start_char, end_line, end_char)`
+        span: (i32, i32, i32, i32),
+    }
+
+    /// `mn1` has eleven numbered rows, so its keys are not in sorted order
+    /// (`mn1:10.1` follows `mn1:9.1`). Its first three titles cover the English
+    /// title rules: one with `ṃ`, and one empty for the Pāli title to stand in.
+    fn mapped_rows() -> Vec<Row> {
+        let mut rows = vec![row(1, CENTRED, " Namo tassa", "Homage to him").in_fragment("1.0")];
+        for number in 1..=11 {
+            let pali = format!(
+                "<span class=\"paranum\">{number}</span><span class=\"dot\">.</span> Evaṃ me sutaṃ {number}"
+            );
+            let english = format!("{number}. Thus have I heard {number}");
+            let numbered = row(number + 1, BODY, &pali, &english).in_fragment("1.0").numbered(number);
+            rows.push(if number == 3 { numbered.with_variant(MAPPED_VARIANT) } else { numbered });
+        }
+        rows.push(row(13, BODY, "Dutiyaṃ suttaṃ", "The second discourse").in_fragment("10.0"));
+        rows.push(row(14, BODY, "Tatiyaṃ suttaṃ", "The third discourse").in_fragment("3.0"));
+        rows
+    }
+
+    /// Fragments are inserted out of source order, and `3.0` and `10.0` start on
+    /// one line, so that sorting on the index text or on `start_line` alone gives
+    /// the wrong sequence. A moved fragment is skipped with or without an
+    /// `sc_code`, and has no `cst_texts` row.
+    fn mapped_fragments() -> Vec<Fragment> {
+        let sutta = |idx, sc_code, title, span| Fragment {
+            idx,
+            frag_type: "Sutta",
+            frag_review: None,
+            sc_code: Some(sc_code),
+            title,
+            span,
+        };
+        let moved = |idx, sc_code| Fragment {
+            idx,
+            frag_type: "Sutta",
+            frag_review: Some(MOVED_REVIEW),
+            sc_code,
+            title: None,
+            span: (4, 0, 4, 0),
+        };
+        vec![
+            Fragment {
+                idx: "0.0",
+                frag_type: "Header",
+                frag_review: None,
+                sc_code: None,
+                title: None,
+                span: (1, 0, 2, 0),
+            },
+            sutta("1.0", "mn1", Some("1. Mūlapariyāyasuttaṃ"), (2, 0, 4, 0)),
+            moved("2.0", None),
+            moved("2.1", Some("mn99")),
+            sutta("3.0", "mn3", None, (4, 50, 5, 0)),
+            sutta("10.0", "mn2", Some("2. Sabbāsavasuttaṃ"), (4, 0, 4, 50)),
+        ]
+    }
+
+    /// The English title of a mapped fragment.
+    fn en_title(sc_code: &str) -> &'static str {
+        match sc_code {
+            "mn1" => "1. The Root Exposition of Dhammaṃ",
+            "mn2" => "",
+            _ => "3. Heirs in Dhamma",
+        }
+    }
+
+    /// Opens with a title row at `ot_id` 0 that repeats a chapter marker, as in
+    /// `e0606n.nrf.xml`, which must not cut. The head is a division of its own,
+    /// and has no chapter row to take an English title from.
+    fn divided_rows() -> Vec<Row> {
+        vec![
+            row(0, CHAPTER, "Dhammapadapāḷi", "The Dhammapada"),
+            row(1, CENTRED, " Namo tassa", "Homage to him"),
+            row(2, CHAPTER, "1. Yamakavaggo", "1. The Pairs"),
+            row(3, BODY, "Manopubbaṅgamā dhammā", "Mind precedes things").numbered(1),
+            row(4, BODY, "Saccaṃ bhaṇe", "Speak the truth").with_variant("bhaṇe: bhaṇaṃ (ka.)"),
+            row(5, CHAPTER, "2. Appamādavaggo", "2. Heedfulness"),
+            row(6, BODY, "Appamādo amatapadaṃ", "Heedfulness is the deathless").numbered(2),
+            row(7, BODY, "", "The Pairs, Heedfulness, the Mind, the Flowers, the Fool")
+                .with_variant(NOTE_ONLY_VARIANT),
+        ]
+    }
+
+    fn whole_file_rows() -> Vec<Row> {
+        vec![
+            row(1, CHAPTER, "1. Paṭhamo", "1. The first"),
+            row(2, BODY, "Paṭhamaṃ vacanaṃ", "The first saying"),
+            row(3, CHAPTER, "2. Dutiyo", "2. The second"),
+            row(4, BODY, "Dutiyaṃ vacanaṃ", "The second saying"),
+        ]
+    }
+
+    fn toc(leaves: &[(&str, &str)]) -> String {
+        let trees: String = leaves
+            .iter()
+            .map(|(file, title)| format!("<tree text=\"{title}\" action=\"cscd/{file}\" />"))
+            .collect();
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><tree>{trees}</tree>")
+    }
+
+    /// A source file holding only the nikāya marker, which is all that
+    /// `detect_nikaya_structure` reads. The text comes from `cst_segments`.
+    fn source_xml(nikaya: &str) -> String {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><TEI.2><text><body xml:space=\"preserve\">\
+             <p rend=\"nikaya\">{nikaya}</p></body></text></TEI.2>"
+        )
+    }
+
+    fn insert_rows(conn: &mut SqliteConnection, cst_file: &str, rows: &[Row]) -> Result<()> {
+        for row in rows {
+            diesel::insert_into(cst_segments::table)
+                .values(NewCstSegment {
+                    cst_file,
+                    ot_id: row.ot_id,
+                    frag_idx_code: row.fragment,
+                    rend: None,
+                    paranum: row.paranum.as_deref(),
+                    pali_html: &row.pali,
+                    pali_wrapper: row.wrapper,
+                    variant: row.variant,
+                    english: &row.english,
+                })
+                .execute(conn)?;
+        }
+        Ok(())
+    }
+
+    fn insert_mapped_file(conn: &mut SqliteConnection, nikaya: &str) -> Result<()> {
+        let rows = mapped_rows();
+        insert_rows(conn, MAPPED_FILE, &rows)?;
+
+        let levels = serde_json::to_string(&serde_json::json!([
+            {"group_type": "Nikaya", "group_number": null, "title": "Majjhimanikāyo", "id": null},
+            {"group_type": "Vagga", "group_number": null, "title": "1. Mūlapariyāyavaggo", "id": "mn1_1"},
+        ]))?;
+
+        for fragment in mapped_fragments() {
+            let (start_line, start_char, end_line, end_char) = fragment.span;
+            diesel::insert_into(xml_fragments::table)
+                .values(NewXmlFragment {
+                    cst_file: MAPPED_FILE,
+                    frag_idx_code: fragment.idx,
+                    frag_type: fragment.frag_type,
+                    frag_review: fragment.frag_review,
+                    nikaya,
+                    cst_code: None,
+                    sc_code: fragment.sc_code,
+                    content_xml: "<p rend=\"bodytext\">Evaṃ me sutaṃ</p>",
+                    content_html: None,
+                    cst_vagga: None,
+                    cst_sutta: fragment.title,
+                    cst_paranum: None,
+                    sc_sutta: None,
+                    start_line,
+                    start_char,
+                    end_line,
+                    end_char,
+                    group_levels: &levels,
+                })
+                .execute(conn)?;
+
+            let Some(sc_code) = fragment.sc_code.filter(|_| fragment.frag_review.is_none()) else {
+                continue;
+            };
+            let segment_rows: Vec<SegmentRow> = rows
+                .iter()
+                .filter(|row| row.fragment == Some(fragment.idx))
+                .map(Row::to_segment_row)
+                .collect();
+            let code = cst_text_code(MAPPED_FILE, sc_code);
+            let text = build_bilara_text(&code, &segment_rows)?;
+            diesel::insert_into(cst_texts::table)
+                .values(NewCstText {
+                    cst_file: MAPPED_FILE,
+                    frag_idx_code: fragment.idx,
+                    code: &code,
+                    pali_content_json: &text.pali_content_json,
+                    pali_content_json_tmpl: &text.pali_content_json_tmpl,
+                    pali_variant_json: text.pali_variant_json.as_deref(),
+                    en_title: en_title(sc_code),
+                    en_content_json: &text.en_content_json,
+                    en_content_json_tmpl: &text.en_content_json_tmpl,
+                })
+                .execute(conn)?;
+        }
+        Ok(())
+    }
+
+    fn create_fragments_db(path: &Path) -> Result<()> {
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy())?;
+        conn.run_pending_migrations(FRAGMENTS_MIGRATIONS)
+            .map_err(|e| anyhow::anyhow!("Failed to migrate the fragments fixture: {}", e))?;
+
+        let nikaya = "majjhima";
+        diesel::insert_into(nikaya_structures::table)
+            .values(NewNikayaStructure { nikaya, levels: "[]" })
+            .execute(&mut conn)?;
+
+        insert_mapped_file(&mut conn, nikaya)?;
+        insert_rows(&mut conn, DIVIDED_FILE, &divided_rows())?;
+        insert_rows(&mut conn, WHOLE_FILE, &whole_file_rows())?;
+        Ok(())
+    }
+
+    /// The inputs of a CST import and an empty appdata database, in one folder
+    /// that is removed when this value is dropped.
+    pub struct CstFixture {
+        pub fragments_db: PathBuf,
+        pub romn_dir: PathBuf,
+        pub toc_dir: PathBuf,
+        pub appdata: SqliteConnection,
+        // Last, so the database is closed before its folder is removed.
+        _dir: TempDir,
+    }
+
+    impl CstFixture {
+        pub fn new() -> Result<Self> {
+            let dir = tempfile::tempdir()?;
+            let fragments_db = dir.path().join("fragments.sqlite3");
+            let romn_dir = dir.path().join("romn");
+            let toc_dir = dir.path().join("cscd");
+            std::fs::create_dir(&romn_dir)?;
+            std::fs::create_dir(&toc_dir)?;
+
+            create_fragments_db(&fragments_db)?;
+
+            let sources = [
+                (MAPPED_FILE, "Majjhimanikāyo", vec![("s0201m.mul0.xml", "Mūlapaṇṇāsapāḷi")]),
+                (
+                    DIVIDED_FILE,
+                    "Khuddakanikāye",
+                    vec![
+                        ("s0502m.mul0.xml", "Ganthārambhakathā"),
+                        ("s0502m.mul1.xml", "1. Yamakavaggo"),
+                        ("s0502m.mul2.xml", "2. Appamādavaggo"),
+                    ],
+                ),
+                (WHOLE_FILE, "Abhidhammapiṭake", vec![("abh05t.nrf0.xml", "Paṭhamo")]),
+            ];
+            for (file, nikaya, leaves) in &sources {
+                std::fs::write(romn_dir.join(file), source_xml(nikaya))?;
+                std::fs::write(toc_dir.join(toc_name_for(file)), toc(leaves))?;
+            }
+
+            let mut appdata =
+                crate::bootstrap::create_database_connection(&dir.path().join("appdata.sqlite3"))?;
+            crate::bootstrap::run_migrations(&mut appdata)?;
+
+            Ok(Self { fragments_db, romn_dir, toc_dir, appdata, _dir: dir })
+        }
+
+        pub fn importer(&self) -> TipitakaXmlImporter {
+            TipitakaXmlImporter::new(
+                self.fragments_db.clone(),
+                self.romn_dir.clone(),
+                self.toc_dir.clone(),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -632,5 +990,36 @@ mod tests {
             r#"[{"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null}]"#;
         assert_eq!(fragment_title(None, nikaya_only), "");
         assert_eq!(fragment_title(None, "not json"), "");
+    }
+
+    #[test]
+    fn the_fixture_has_each_file_shape_the_import_handles() {
+        use tipitaka_xml_parser::fragments_models::{CstSegmentRecord, CstTextRecord};
+        use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts};
+
+        let fixture = fixture::CstFixture::new().unwrap();
+        let mut conn = fixture.importer().open_fragments_db().unwrap();
+
+        let coverage = cst_coverage::compute_coverage(&mut conn).unwrap();
+        assert_eq!(coverage_of(&coverage, fixture::MAPPED_FILE).class, CoverageClass::FullyMapped);
+        assert_eq!(coverage_of(&coverage, fixture::DIVIDED_FILE).class, CoverageClass::Unverified);
+
+        let texts: Vec<CstTextRecord> =
+            cst_texts::table.select(CstTextRecord::as_select()).load(&mut conn).unwrap();
+        assert_eq!(texts.len(), 3);
+        assert!(texts.iter().any(|t| t.pali_variant_json.as_deref().is_some_and(|v| v.contains(fixture::MAPPED_VARIANT))));
+
+        let rows: Vec<CstSegmentRecord> =
+            cst_segments::table.select(CstSegmentRecord::as_select()).load(&mut conn).unwrap();
+        assert!(rows.iter().any(|r| r.pali_html.is_empty() && r.variant.is_some()));
+
+        for (file, leaves) in [(fixture::DIVIDED_FILE, 3), (fixture::WHOLE_FILE, 1)] {
+            let path = fixture.toc_dir.join(toc_name_for(file));
+            assert_eq!(read_toc_leaves(&path).unwrap().len(), leaves, "{}", file);
+        }
+
+        // The migrated appdata takes an import end to end.
+        let mut fixture = fixture;
+        fixture.importer().import(&mut fixture.appdata).unwrap();
     }
 }
