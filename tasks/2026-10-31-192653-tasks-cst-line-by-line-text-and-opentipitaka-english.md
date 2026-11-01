@@ -10,7 +10,7 @@ Bootstrap:
 - `bootstrap_cli/src/bootstrap/cst_coverage.rs` - Gains the row-cutting function. The XML splitter is removed.
 - `bootstrap_cli/src/bootstrap/navigation_tree/cst_spine.rs` - Keeps calling `fragment_uid`, and supplies `TocLeaf` and `read_toc_leaves`.
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - Reference only: `bilara_text_to_sutta` and `import_sutta_variants` show the pattern to follow.
-- `bootstrap_cli/src/main.rs` - `import_cst()` must clear the English and variant rows too.
+- `bootstrap_cli/src/main.rs` - `import_cst()` calls `TipitakaXmlImporter::reimport()`, which clears the English and variant rows too.
 - `bootstrap_cli/Cargo.toml` - Needs `indexmap`, to parse JSON without losing key order.
 Backend:
 
@@ -236,21 +236,21 @@ pub fn ot_footer_html() -> String;
 pub fn is_ot_english_uid(uid: &str) -> bool;
 ```
 
-- [ ] 5.0 Create the `en/opentipitaka` records and make `import-cst` re-runnable
-  - [ ] 5.1 Create `backend/src/opentipitaka.rs` as in the specs, and register it in `backend/src/lib.rs`. Unit test the footers.
-  - [ ] 5.2 Add a `bootstrap_cli` test asserting that `OT_AUTHOR_UID`, `OT_ENGLISH_FOOTER`, `OT_LICENSE` and `OT_SOURCE_URL` equal the parser's. `OT_LICENSE_URL` is the backend's own.
-  - [ ] 5.3 Add `add_license_to_template(tmpl_json) -> Result<String>`, which appends `ot_license_footer_html()` to the last key's template, keeping key order.
-  - [ ] 5.4 Add `english_record(pali: &SuttaRecord, parts: &CstTextParts, title: &str) -> Result<SuttaRecord>`. Clone the Pāli record, then set: uid `<base>/en/opentipitaka`, where `<base>` is the Pāli uid's first path component; `language` `en`; `source_uid` `opentipitaka`; `source_language` `pli`; `license` `OT_LICENSE`; `content_html` None; `variant_json` None; `title_pali` the Pāli title; `title_ascii` from the English title.
-  - [ ] 5.5 Build the English JSON with `consistent_niggahita`, and derive `content_plain` with `plain_text_of`, no variants. Then build the template: the same header with the English title in the `<h1>`, then the licence.
-  - [ ] 5.6 English title for a fragment: `en_title`, or the Pāli title when empty. Apply `consistent_niggahita` to it, on all three paths.
-  - [ ] 5.7 English title for a division: the `english` of the first row where `is_division_row` is true; otherwise, or if that text is empty, the toc's Pāli title. Chapter rows hold no markup or entities, so use the text as it is.
-  - [ ] 5.8 English title for a whole file: the Pāli title.
-  - [ ] 5.9 Push one English record after each Pāli record on all three paths. A duplicate Pāli uid already skips before this point, so it makes no English record. Keep `report.fragment_records` and `report.division_records` counting Pāli records only, so `CstCoverageReport` keeps its counts. Log the English count separately.
-  - [ ] 5.10 Check that the range columns match: `sutta_range_from_ref` on `mn1.att/en/opentipitaka` and `vin02m4.mul0.xml/en/opentipitaka` must equal the Pāli uid's. If not, compute them from the Pāli uid.
-  - [ ] 5.11 In `import_cst()` in `main.rs`, delete `sutta_variants` where `source_uid = 'cst'`, then `suttas` where `uid` is like `%/pli/cst` or `%/en/opentipitaka`. Update its doc comment. Log both counts. Run the deletes and the import in one transaction, so that a failed input check leaves the database as it was: the importer now stops with an error, and the deletes come first.
-  - [ ] 5.12 Test on the fixture: every Pāli record has one English record with identical keys in identical order; every field of FR-19 and FR-20; the Pāli record's `license` is None; the title fallbacks; no `ṃ` in the English title; the English `content_plain` has no "produced by AI" text and no title; and the template's last key holds both footers, with links to the licence and the source.
-  - [ ] 5.13 Run `import-cst` twice on the appdata copy, and check that the second run gives the same row counts for suttas and variants.
-  - [ ] 5.14 Measure now, while the design can still change: `VACUUM` the copy, then give the maintainer its size and each `suttas` and `suttas_fts_*` size from `dbstat`, against the estimates in PRD §7.
+- [x] 5.0 Create the `en/opentipitaka` records and make `import-cst` re-runnable
+  - [x] 5.1 Create `backend/src/opentipitaka.rs` as in the specs, and register it in `backend/src/lib.rs`. Unit test the footers.
+  - [x] 5.2 Add a `bootstrap_cli` test asserting that `OT_AUTHOR_UID`, `OT_ENGLISH_FOOTER`, `OT_LICENSE` and `OT_SOURCE_URL` equal the parser's. `OT_LICENSE_URL` is the backend's own.
+  - [x] 5.3 Add `add_license_to_template(tmpl_json) -> Result<String>`, which appends `ot_license_footer_html()` to the last key's template, keeping key order.
+  - [x] 5.4 Add `english_record(pali: &SuttaRecord, parts: &CstTextParts, title: &str) -> Result<SuttaRecord>`. Clone the Pāli record, then set: uid `<base>/en/opentipitaka`, where `<base>` is the Pāli uid's first path component; `language` `en`; `source_uid` `opentipitaka`; `source_language` `pli`; `license` `OT_LICENSE`; `content_html` None; `variant_json` None; `title_pali` the Pāli title; `title_ascii` from the English title.
+  - [x] 5.5 Build the English JSON with `consistent_niggahita`, and derive `content_plain` with `plain_text_of`, no variants. Then build the template: the same header with the English title in the `<h1>`, then the licence.
+  - [x] 5.6 English title for a fragment: `en_title`, or the Pāli title when empty. Apply `consistent_niggahita` to it, on all three paths.
+  - [x] 5.7 English title for a division: the `english` of the first row where `is_division_row` is true; otherwise, or if that text is empty, the toc's Pāli title. Chapter rows hold no markup or entities, so use the text as it is.
+  - [x] 5.8 English title for a whole file: the Pāli title.
+  - [x] 5.9 Push one English record after each Pāli record on all three paths. A duplicate Pāli uid already skips before this point, so it makes no English record. Keep `report.fragment_records` and `report.division_records` counting Pāli records only, so `CstCoverageReport` keeps its counts. Log the English count separately.
+  - [x] 5.10 Check that the range columns match: `sutta_range_from_ref` on `mn1.att/en/opentipitaka` and `vin02m4.mul0.xml/en/opentipitaka` must equal the Pāli uid's. If not, compute them from the Pāli uid.
+  - [x] 5.11 In `import_cst()` in `main.rs`, delete `sutta_variants` where `source_uid = 'cst'`, then `suttas` where `uid` is like `%/pli/cst` or `%/en/opentipitaka`. Update its doc comment. Log both counts. Run the deletes and the import in one transaction, so that a failed input check leaves the database as it was: the importer now stops with an error, and the deletes come first.
+  - [x] 5.12 Test on the fixture: every Pāli record has one English record with identical keys in identical order; every field of FR-19 and FR-20; the Pāli record's `license` is None; the title fallbacks; no `ṃ` in the English title; the English `content_plain` has no "produced by AI" text and no title; and the template's last key holds both footers, with links to the licence and the source.
+  - [x] 5.13 Run `import-cst` twice on the appdata copy, and check that the second run gives the same row counts for suttas and variants.
+  - [x] 5.14 Measure now, while the design can still change: `VACUUM` the copy, then give the maintainer its size and each `suttas` and `suttas_fts_*` size from `dbstat`, against the estimates in PRD §7.
 
 ### Specs for 6.0
 

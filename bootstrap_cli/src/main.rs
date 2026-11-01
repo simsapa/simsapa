@@ -15,7 +15,7 @@ use anyhow::Result;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
-use simsapa_backend::{cli_support, db, init_app_data, get_app_data, get_create_simsapa_dir, logger, normalize_path_for_sqlite};
+use simsapa_backend::{cli_support, db, init_app_data, get_app_data, get_create_simsapa_dir, normalize_path_for_sqlite};
 use simsapa_backend::stardict_parse::import_stardict_as_new;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::asset_helpers::import_suttas_from_db;
@@ -377,25 +377,13 @@ fn import_chanting_practice_command(
 }
 
 /// Re-run the CST import on an existing appdata database.
-///
-/// The existing CST rows are deleted first: the importer skips a uid that is
-/// already there, so without this a re-run would report every record as
-/// "already exists" and change nothing.
 fn import_cst(
     db_path: &Path,
     cst_xml_dir: &Path,
     fragments_db_path: &Path,
 ) -> Result<(), String> {
-    use diesel::prelude::*;
-    use simsapa_backend::db::appdata_schema::suttas;
-
     let mut db_conn = bootstrap::create_database_connection(db_path)
         .map_err(|e| format!("Failed to open {}: {}", db_path.display(), e))?;
-
-    let deleted = diesel::delete(suttas::table.filter(suttas::uid.like("%/pli/cst")))
-        .execute(&mut db_conn)
-        .map_err(|e| format!("Failed to clear the existing CST rows: {}", e))?;
-    logger::info(&format!("import_cst: removed {} existing CST rows", deleted));
 
     let mut importer = bootstrap::TipitakaXmlImporter::new(
         fragments_db_path.to_path_buf(),
@@ -403,7 +391,7 @@ fn import_cst(
         cst_xml_dir.join("tipitaka.org/romn/cscd/"),
     );
     let report = importer
-        .import(&mut db_conn)
+        .reimport(&mut db_conn)
         .map_err(|e| format!("CST import failed: {:#}", e))?;
     report.log_summary();
 
@@ -899,11 +887,13 @@ enum Commands {
 
     /// Re-run the CST (tipitaka.org) import on an existing appdata database.
     ///
-    /// Replaces every `.../pli/cst` sutta row with the records the current
-    /// coverage classification produces, so a batch of new CST-to-SuttaCentral
-    /// mappings can be picked up without re-running the whole bootstrap. Pair
-    /// it with `build-navigation-tree --cst-xml-dir` to rebuild the spine over
-    /// the new records.
+    /// Replaces every `.../pli/cst` and `.../en/opentipitaka` sutta row, and the
+    /// CST variants, with the records the current coverage classification
+    /// produces, so a batch of new CST-to-SuttaCentral mappings can be picked up
+    /// without re-running the whole bootstrap. Pair it with
+    /// `build-navigation-tree --cst-xml-dir` to rebuild the spine over the new
+    /// records, and with `index rebuild --area suttas` for `--lang pli` and
+    /// `--lang en`.
     #[command(arg_required_else_help = true)]
     ImportCst {
         /// Path to the appdata database to import into
