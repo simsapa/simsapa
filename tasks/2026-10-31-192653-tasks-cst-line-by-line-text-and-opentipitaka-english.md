@@ -25,9 +25,11 @@ Backend:
 - `backend/src/cst_files.rs` - Review only.
 - `backend/src/helpers.rs` - `related_sutta_uids`, `bilara_multi_column_html` and `bilara_text_to_html`: tests, and no change expected.
 - `backend/src/navigation_tree.rs`, `backend/src/navigation_tree/tests.rs` - Translation counts.
+- `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer and column-option tests, on `dummy-` records of their own.
 Front end:
 
 - `src-ts/column_bar.ts`, `src-ts/column_bar.test.ts` - Reads the relative `has_content_json`, and the disabled-option tooltip.
+- `assets/js/simsapa.min.js` - The rebuilt bundle.
 - `assets/sass/_cst.sass` - The `.cst .centre` rule.
 - `assets/sass/_suttacentral.sass` - The Lines-mode `.hangnum` margin.
 - `bridges/assets/qml/DhammaTextSourcesDialog.qml` - Lists OpenTipitaka.
@@ -272,19 +274,19 @@ pub fn columns_can_align(opened_uid: &str, column_uids: &[&str]) -> bool;
 pub fn pali_uid_for_translation(uid: &str) -> String;
 ```
 
-- [ ] 6.0 Guard alignment in the reader
-  - [ ] 6.1 Add the three functions, with `is_cst_family_uid` and `columns_can_align` true only when: no uid, opened included, is in the CST family; or all are, with one base.
-  - [ ] 6.2 Unit test `columns_can_align`: `mn1/pli/ms` + `mn1/en/sujato` true; `mn1/pli/cst` + `mn1/en/opentipitaka` true; `mn1/pli/cst` + `mn1/pli/ms` false; `mn1/pli/cst` + `mn1.att/en/opentipitaka` false; opened `mn1/en/sujato` with columns `mn1/pli/cst` + `mn1/en/opentipitaka` false; and the `.xml` division uids true.
-  - [ ] 6.3 Change `get_pali_for_translated` to query `pali_uid_for_translation(&sutta.uid)`, and correct its comment.
-  - [ ] 6.4 In `resolve_sutta_display_options`, Lines-mode drop: keep a column only if it is segmented **and** `columns_can_align(&sutta.uid, &[col_uid])`. The existing "unknown uid is kept" arm stays. An emptied list already falls back to the opened sutta in `resolve_column_suttas`. Test that case.
-  - [ ] 6.5 In `render_content_block_for_columns`, require `columns_can_align` as well as `all_segmented` for the aligned branch. Non-alignable columns then reach the existing block-columns branch.
-  - [ ] 6.6 Change the `has_content_json` value in `get_translations_data_json_for_sutta_uid`: segmented **and** `columns_can_align(sutta_uid, &[&s.uid])`. Update its doc comment, and the `api/src/routes/suttas.rs` comment.
-  - [ ] 6.7 In the aligned branch, if any column satisfies `is_ot_english_uid` and the opened sutta does not, append `ot_footer_html()` to the returned HTML. Do not touch the unaligned or Solo paths, where the English's own template carries the footer.
-  - [ ] 6.8 Test, with fixture `Sutta` values and no dist data: the footer appears once in Lines and Columns with the Pāli opened; once with the English opened; in Solo on the English; and not when no OT column is present. Check the block-columns path too.
-  - [ ] 6.9 Test that a CST header in the first template renders in the aligned view, and that a template with a `<footer>` after `</article>` keeps it. These are `bilara_multi_column_html` tests in `helpers.rs`.
-  - [ ] 6.10 Read `column_bar.ts`, including `ensure_current_columns_present` (`has_content_json: true` at line 97) and line 136. No logic change is expected, since the server's answer is relative. Change `LINES_DISABLED_TITLE` to `Cannot be shown line by line with this text — available in the Columns layout`, which is true of both cases (FR-48). Add `column_bar.test.ts` cases for a CST opened text: another-family option is disabled in Lines and enabled in Columns; and the same-base option stays enabled.
-  - [ ] 6.11 In `get_translations_data_json_for_sutta_uid`, keep a CST record in the `include_cst_mula` filter when `columns_can_align(sutta_uid, &[&s.uid])` holds and the opened text is in the CST family (FR-47). Test with `include_cst_mula` false: opened `mn1/en/opentipitaka` lists `mn1/pli/cst`; opened `vin02m4.mul0.xml/en/opentipitaka` lists its Pāli; opened `mn1/en/sujato` does not list `mn1/pli/cst`.
-  - [ ] 6.12 Run `cd backend && cargo test`, `cd api && cargo test`, and `npx jest`.
+- [x] 6.0 Guard alignment in the reader
+  - [x] 6.1 Add the three functions, with `is_cst_family_uid` and `columns_can_align` true only when: no uid, opened included, is in the CST family; or all are, with one base.
+  - [x] 6.2 Unit test `columns_can_align`: `mn1/pli/ms` + `mn1/en/sujato` true; `mn1/pli/cst` + `mn1/en/opentipitaka` true; `mn1/pli/cst` + `mn1/pli/ms` false; `mn1/pli/cst` + `mn1.att/en/opentipitaka` false; opened `mn1/en/sujato` with columns `mn1/pli/cst` + `mn1/en/opentipitaka` false; and the `.xml` division uids true.
+  - [x] 6.3 Change `get_pali_for_translated` to query `pali_uid_for_translation(&sutta.uid)`, and correct its comment.
+  - [x] 6.4 In `resolve_sutta_display_options`, Lines-mode drop: keep a column only if it is segmented **and** `columns_can_align(&sutta.uid, &[col_uid])`. The existing "unknown uid is kept" arm stays. An emptied list already falls back to the opened sutta in `resolve_column_suttas`. Test that case.
+  - [x] 6.5 In `render_content_block_for_columns`, require `columns_can_align` as well as `all_segmented` for the aligned branch. Non-alignable columns then reach the existing block-columns branch.
+  - [x] 6.6 Change the `has_content_json` value in `get_translations_data_json_for_sutta_uid`: segmented **and** `columns_can_align(sutta_uid, &[&s.uid])`. Update its doc comment, and the `api/src/routes/suttas.rs` comment.
+  - [x] 6.7 In the aligned branch, if any column satisfies `is_ot_english_uid` and the opened sutta does not, append `ot_footer_html()` to the last key of the template in use, which keeps it inside the wrapper that the `.suttacentral footer` styles apply to. Do not touch the unaligned or Solo paths, where the English's own template carries the footer.
+  - [x] 6.8 Test, with fixture `Sutta` values and no dist data: the footer appears once in Lines and Columns with the Pāli opened; once with the English opened; in Solo on the English; and not when no OT column is present. Check the block-columns path too.
+  - [x] 6.9 Test that a CST header in the first template renders in the aligned view, and that a template with a `<footer>` after `</article>` keeps it. These are `bilara_multi_column_html` tests in `helpers.rs`.
+  - [x] 6.10 Read `column_bar.ts`, including `ensure_current_columns_present` (`has_content_json: true` at line 97) and line 136. No logic change is expected, since the server's answer is relative. Change `LINES_DISABLED_TITLE` to `Cannot be shown line by line with this text — available in the Columns layout`, which is true of both cases (FR-48). Add `column_bar.test.ts` cases for a CST opened text: another-family option is disabled in Lines and enabled in Columns; and the same-base option stays enabled.
+  - [x] 6.11 In `get_translations_data_json_for_sutta_uid`, keep a CST record in the `include_cst_mula` filter when `columns_can_align(sutta_uid, &[&s.uid])` holds and the opened text is in the CST family (FR-47). Test with `include_cst_mula` false: opened `mn1/en/opentipitaka` lists `mn1/pli/cst`; opened `vin02m4.mul0.xml/en/opentipitaka` lists its Pāli; opened `mn1/en/sujato` does not list `mn1/pli/cst`.
+  - [x] 6.12 Run `cd backend && cargo test`, `cd api && cargo test`, and `npx jest`.
 
 ### Specs for 7.0
 

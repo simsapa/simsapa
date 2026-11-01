@@ -258,8 +258,8 @@ pub fn get_sutta_content_block(uid: &str, layout: Option<&str>, columns: Option<
 /// GET /translations_for_sutta?<uid>
 /// JSON array of the other texts available for the sutta's reference (for
 /// the bottom column-bar dropdowns): `item_uid`, `sutta_title`, `sutta_ref`,
-/// `language`, `author`, and `has_content_json` (false → not available in the
-/// Lines layout). Reuses `get_translations_data_json_for_sutta_uid` with the
+/// `language`, `author`, and `has_content_json` (false → not segmented, or from
+/// another text family than `uid`, so not available in the Lines layout). Reuses `get_translations_data_json_for_sutta_uid` with the
 /// same include-commentary app settings as the QML tabs path.
 #[get("/translations_for_sutta?<uid>")]
 pub fn get_translations_for_sutta(uid: &str) -> (Status, Json<serde_json::Value>) {

@@ -377,8 +377,8 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
 - Rules: minimum one column (last "×" disabled); "+" suggests the Pāli
   first, then the next unshown translation; options displayed in another
   column are disabled; in Lines mode `has_content_json == false` entries are
-  disabled with the notice title ("No segmented text — available in the
-  Columns layout"). **`next_unshown` is layout-aware**: it reuses
+  disabled with the notice title ("Cannot be shown line by line with this
+  text — available in the Columns layout"). **`next_unshown` is layout-aware**: it reuses
   `option_disabled_reason` with the shown set, so the "+" suggestion can
   never propose an entry the dropdowns would disable (non-segmented in Lines
   mode); "+" is disabled when no *selectable* option remains — not merely

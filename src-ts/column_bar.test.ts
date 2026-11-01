@@ -134,6 +134,40 @@ describe("column_bar helpers", () => {
   });
 });
 
+describe("column_bar options of an opened CST text", () => {
+  // /translations_for_sutta entries for the opened sutta mn1/pli/cst. The
+  // server answers has_content_json relative to the opened text: mn1/pli/ms
+  // and mn1/en/sujato are segmented, but from another text family.
+  const CST_TRANSLATIONS = [
+    { item_uid: "mn1/en/opentipitaka", table_name: "suttas", sutta_title: "The Root",
+      sutta_ref: "MN 1", language: "en", author: "opentipitaka", has_content_json: true },
+    { item_uid: "mn1/pli/ms", table_name: "suttas", sutta_title: "Mūlapariyāyasutta",
+      sutta_ref: "MN 1", language: "pli", author: "ms", has_content_json: false },
+    { item_uid: "mn1/en/sujato", table_name: "suttas", sutta_title: "The Root of All Things",
+      sutta_ref: "MN 1", language: "en", author: "sujato", has_content_json: false },
+  ];
+  const [opentipitaka, pali_ms, sujato] = CST_TRANSLATIONS.map(cb.to_option);
+  const shown = ["mn1/pli/cst"];
+
+  test("another family's text is disabled in Lines and enabled in Columns", () => {
+    for (const opt of [pali_ms, sujato]) {
+      expect(cb.option_disabled_reason(opt, "linebyline", shown, "mn1/pli/cst")).toBe(cb.LINES_DISABLED_TITLE);
+      expect(cb.option_disabled_reason(opt, "sidebyside", shown, "mn1/pli/cst")).toBeNull();
+    }
+  });
+
+  test("the same-base text stays enabled in both layouts", () => {
+    expect(cb.option_disabled_reason(opentipitaka, "linebyline", shown, "mn1/pli/cst")).toBeNull();
+    expect(cb.option_disabled_reason(opentipitaka, "sidebyside", shown, "mn1/pli/cst")).toBeNull();
+  });
+
+  test("next_unshown in Lines passes over the other family", () => {
+    const options = [pali_ms, sujato, opentipitaka];
+    expect(cb.next_unshown(options, shown, "linebyline")!.uid).toBe("mn1/en/opentipitaka");
+    expect(cb.next_unshown(options, [...shown, "mn1/en/opentipitaka"], "linebyline")).toBeNull();
+  });
+});
+
 describe("column bar rendering", () => {
   beforeEach(() => {
     cb.reset_module_state_for_tests();

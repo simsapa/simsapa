@@ -17,8 +17,9 @@ export interface TranslationOption {
   author: string;
   language: string;
   is_pali: boolean;
-  // false → no segmented (Bilara) content: cannot be interleaved in the
-  // Lines layout, so the dropdowns disable it there.
+  // false → no segmented (Bilara) content, or from another text family than
+  // the opened text: cannot be interleaved in the Lines layout, so the
+  // dropdowns disable it there.
   has_content_json: boolean;
   // Hover title: "MN 1 The Root of All Things".
   title: string;
@@ -105,8 +106,8 @@ export function ensure_current_columns_present(): void {
  * The "+" button's suggestion: the Pāli text if not shown, else the first
  * unshown translation in list order. Only options the dropdowns would allow
  * are suggested (option_disabled_reason is the shared rule): in the Lines
- * layout non-segmented texts are skipped — the server would silently drop
- * them (PRD FR 8). Null when nothing selectable remains (the button is
+ * layout texts that cannot be aligned are skipped — the server would silently
+ * drop them (PRD FR 8). Null when nothing selectable remains (the button is
  * disabled then, FR 23).
  */
 export function next_unshown(opts: TranslationOption[], shown_uids: string[], layout: string): TranslationOption | null {
@@ -119,12 +120,13 @@ export function next_unshown(opts: TranslationOption[], shown_uids: string[], la
   return opts.find((opt) => !opt.is_pali && selectable(opt)) || null;
 }
 
-export const LINES_DISABLED_TITLE = "No segmented text — available in the Columns layout";
+export const LINES_DISABLED_TITLE = "Cannot be shown line by line with this text — available in the Columns layout";
 
 /**
  * Whether a dropdown option is selectable: texts shown in another column
- * are disabled (a column set has no duplicates), and in Lines mode
- * non-segmented texts are disabled with an explanatory title.
+ * are disabled (a column set has no duplicates), and in Lines mode texts that
+ * cannot be aligned with the opened text are disabled with an explanatory
+ * title.
  * Returns null when selectable, else the reason for the title attribute.
  */
 export function option_disabled_reason(

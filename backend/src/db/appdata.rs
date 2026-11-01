@@ -3,6 +3,7 @@ use crate::helpers::{
     comparable_sutta_range, related_sutta_uids, related_sutta_uids_like_pattern, split_sutta_ref_kind,
     SuttaRefKind,
 };
+use crate::sutta_display::columns_can_align;
 use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
@@ -421,14 +422,17 @@ impl AppdataDbHandle {
             }
         }
 
-        // Filter out CST mūla records if not included
+        // Filter out CST mūla records if not included. The Pāli partner of an
+        // opened CST text stays whatever the setting says: without it, a reader
+        // who removes that column cannot get it back.
         if !include_cst_mula {
             res.retain(|s| {
                 // Keep the record unless it's a CST mūla (ends with /cst and is not commentary)
                 // Note: .mul.xml/pli/cst records are mūla and should be excluded
-                !(s.uid.ends_with("/cst")
+                let is_cst_mula = s.uid.ends_with("/cst")
                     && !s.uid.contains(".att")
-                    && !s.uid.contains(".tik"))
+                    && !s.uid.contains(".tik");
+                !is_cst_mula || columns_can_align(sutta_uid, &[s.uid.as_str()])
             });
         }
 
@@ -440,9 +444,10 @@ impl AppdataDbHandle {
             sutta_ref: String,
             language: String,
             author: String,
-            /// Whether the text has segmented (Bilara) content — a
-            /// non-segmented text cannot be interleaved in the Lines layout,
-            /// so the column-bar dropdowns disable it there.
+            /// Whether the text can be aligned with the opened text: it has
+            /// segmented (Bilara) content, from the same text family. Any
+            /// other text cannot be interleaved in the Lines layout, so the
+            /// column-bar dropdowns disable it there.
             has_content_json: bool,
         }
 
@@ -451,7 +456,8 @@ impl AppdataDbHandle {
                 // uid format: "mn1/en/sujato" — the third part is the author.
                 let author = s.uid.split('/').nth(2).unwrap_or("").to_string();
                 TranslationData {
-                    has_content_json: s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false),
+                    has_content_json: s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false)
+                        && columns_can_align(sutta_uid, &[s.uid.as_str()]),
                     language: s.language.clone(),
                     author,
                     item_uid: s.uid,
