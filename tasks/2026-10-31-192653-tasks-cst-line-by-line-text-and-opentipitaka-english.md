@@ -154,16 +154,16 @@ A slice works in both cases: a prepended head is simply the first division start
 
 Depends on: 1.0 for the fixture.
 
-- [ ] 3.0 Add the input check and carry the new fields through `SuttaRecord`
-  - [ ] 3.1 Add `check_fragments_input(&self, sources: &[String]) -> Result<()>`. It errors if the database is absent, if `cst_segments` or `cst_texts` is missing (read `sqlite_master`), or if any source file has no rows in `cst_segments`. Name the missing files in the error, and say to run `import-opentipitaka --fragments-db <path>` in `tipitaka-xml-parser`.
-  - [ ] 3.2 Call it at the top of `import()`, before anything is imported.
-  - [ ] 3.3 Change `load_coverage`: an absent database is now an error. Update its doc comment, which calls an absent database "the correct outcome". Leave `load_fragments` in `cst_spine.rs` as it is: `build-navigation-tree` is a separate command.
-  - [ ] 3.4 Change `source_files`: an absent `romn/` directory is now an error, as is a directory with no `.xml` files. Remove the `sources.is_empty()` early return in `import()`.
-  - [ ] 3.5 Add `content_json`, `content_json_tmpl`, `license`, `source_language` and `variant_json` to `SuttaRecord`, all `Option<String>`. Set `source_language` to `Some("pli")` at the three existing call sites for now.
-  - [ ] 3.6 Make `insert_suttas` read those fields from the record, in place of the hard-coded values.
-  - [ ] 3.7 After each sutta insert, if `variant_json` is set, insert a `NewSuttaVariant` with the new `sutta_id`, `sutta_uid`, `language` `pli`, `source_uid` `cst`, in the same transaction. Read the id with `RETURNING`, or a uid lookup as `import_sutta_variants` does. A uid that was skipped as existing gets no variant row.
-  - [ ] 3.8 Test: each error of 3.1 and 3.3 stops the import with nothing inserted, and the message names the command.
-  - [ ] 3.9 Run `cd bootstrap_cli && cargo test`.
+- [x] 3.0 Add the input check and carry the new fields through `SuttaRecord`
+  - [x] 3.1 Add `check_fragments_input(&self, sources: &[String]) -> Result<()>`. It errors if the database is absent, if `cst_segments` or `cst_texts` is missing (read `sqlite_master`), or if any source file has no rows in `cst_segments`. Name the missing files in the error, and say to run `import-opentipitaka --fragments-db <path>` in `tipitaka-xml-parser`.
+  - [x] 3.2 Call it at the top of `import()`, before anything is imported.
+  - [x] 3.3 Change `load_coverage`: an absent database is now an error. Update its doc comment, which calls an absent database "the correct outcome". Leave `load_fragments` in `cst_spine.rs` as it is: `build-navigation-tree` is a separate command.
+  - [x] 3.4 Change `source_files`: an absent `romn/` directory is now an error, as is a directory with no `.xml` files. Remove the `sources.is_empty()` early return in `import()`.
+  - [x] 3.5 Add `content_json`, `content_json_tmpl`, `license`, `source_language` and `variant_json` to `SuttaRecord`, all `Option<String>`. Set `source_language` to `Some("pli")` at the three existing call sites for now.
+  - [x] 3.6 Make `insert_suttas` read those fields from the record, in place of the hard-coded values.
+  - [x] 3.7 After each sutta insert, if `variant_json` is set, insert a `NewSuttaVariant` with the new `sutta_id`, `sutta_uid`, `language` `pli`, `source_uid` `cst`, in the same transaction. Read the id with `RETURNING`, or a uid lookup as `import_sutta_variants` does. A uid that was skipped as existing gets no variant row.
+  - [x] 3.8 Test: each error of 3.1 and 3.3 stops the import with nothing inserted, and the message names the command.
+  - [x] 3.9 Run `cd bootstrap_cli && cargo test`.
 
 ### Specs for 4.0
 
@@ -247,7 +247,7 @@ pub fn is_ot_english_uid(uid: &str) -> bool;
   - [ ] 5.8 English title for a whole file: the Pāli title.
   - [ ] 5.9 Push one English record after each Pāli record on all three paths. A duplicate Pāli uid already skips before this point, so it makes no English record. Keep `report.fragment_records` and `report.division_records` counting Pāli records only, so `CstCoverageReport` keeps its counts. Log the English count separately.
   - [ ] 5.10 Check that the range columns match: `sutta_range_from_ref` on `mn1.att/en/opentipitaka` and `vin02m4.mul0.xml/en/opentipitaka` must equal the Pāli uid's. If not, compute them from the Pāli uid.
-  - [ ] 5.11 In `import_cst()` in `main.rs`, delete `sutta_variants` where `source_uid = 'cst'`, then `suttas` where `uid` is like `%/pli/cst` or `%/en/opentipitaka`. Update its doc comment. Log both counts.
+  - [ ] 5.11 In `import_cst()` in `main.rs`, delete `sutta_variants` where `source_uid = 'cst'`, then `suttas` where `uid` is like `%/pli/cst` or `%/en/opentipitaka`. Update its doc comment. Log both counts. Run the deletes and the import in one transaction, so that a failed input check leaves the database as it was: the importer now stops with an error, and the deletes come first.
   - [ ] 5.12 Test on the fixture: every Pāli record has one English record with identical keys in identical order; every field of FR-19 and FR-20; the Pāli record's `license` is None; the title fallbacks; no `ṃ` in the English title; the English `content_plain` has no "produced by AI" text and no title; and the template's last key holds both footers, with links to the licence and the source.
   - [ ] 5.13 Run `import-cst` twice on the appdata copy, and check that the second run gives the same row counts for suttas and variants.
   - [ ] 5.14 Measure now, while the design can still change: `VACUUM` the copy, then give the maintainer its size and each `suttas` and `suttas_fts_*` size from `dbstat`, against the estimates in PRD §7.

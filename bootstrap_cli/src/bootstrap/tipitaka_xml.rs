@@ -17,8 +17,9 @@
 //! adding CST-to-SuttaCentral mappings and re-running the bootstrap moves a
 //! file between classes on its own, with no code change.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use diesel::prelude::*;
+use diesel::sql_query;
 use diesel::sqlite::SqliteConnection;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -36,7 +37,7 @@ use html_escape;
 use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::detect_nikaya_structure;
 use tipitaka_xml_parser::sutta_builder::xml_to_html;
-use tipitaka_xml_parser::fragments_schema::xml_fragments;
+use tipitaka_xml_parser::fragments_schema::{cst_segments, xml_fragments};
 use tipitaka_xml_parser::fragments_models::XmlFragmentRecord;
 use tipitaka_xml_parser::types::{GroupLevel, GroupType};
 
@@ -55,7 +56,13 @@ pub struct SuttaRecord {
     pub title_pali: Option<String>,
     pub content_plain: Option<String>,
     pub content_html: Option<String>,
+    pub content_json: Option<String>,
+    pub content_json_tmpl: Option<String>,
     pub source_uid: Option<String>,
+    pub source_language: Option<String>,
+    pub license: Option<String>,
+    /// Stored in `sutta_variants`, keyed by segment, for the same uid.
+    pub variant_json: Option<String>,
 }
 
 pub struct TipitakaXmlImporter {
@@ -229,7 +236,12 @@ impl TipitakaXmlImporter {
                     title_pali: Some(normalized_title),
                     content_plain: Some(content_plain),
                     content_html: Some(full_html),
+                    content_json: None,
+                    content_json_tmpl: None,
                     source_uid: Some("cst".to_string()),
+                    source_language: Some("pli".to_string()),
+                    license: None,
+                    variant_json: None,
                 });
             }
         }
@@ -302,7 +314,12 @@ impl TipitakaXmlImporter {
                 title_pali: Some(title),
                 content_plain: Some(sutta_html_to_plain_text(&content_html)),
                 content_html: Some(full_html),
+                content_json: None,
+                content_json_tmpl: None,
                 source_uid: Some("cst".to_string()),
+                source_language: Some("pli".to_string()),
+                license: None,
+                variant_json: None,
             });
         }
 
@@ -348,21 +365,25 @@ impl TipitakaXmlImporter {
             title_pali: Some(title),
             content_plain: Some(sutta_html_to_plain_text(&content_html)),
             content_html: Some(full_html),
+            content_json: None,
+            content_json_tmpl: None,
             source_uid: Some("cst".to_string()),
+            source_language: Some("pli".to_string()),
+            license: None,
+            variant_json: None,
         })
     }
 
     /// The `romn/` source files, sorted, so the import order is deterministic.
+    ///
+    /// No source files is an error: a release built without them would have no
+    /// CST text at all, and `--skip-appdata` is the way to skip this import.
     fn source_files(&self) -> Result<Vec<String>> {
-        match self.romn_dir.try_exists() {
-            Ok(true) => {}
-            _ => {
-                logger::warn(&format!(
-                    "romn directory not found: {:?} - skipping the CST import",
-                    self.romn_dir
-                ));
-                return Ok(Vec::new());
-            }
+        let found = self.romn_dir.try_exists().with_context(|| {
+            format!("Failed to check the romn directory: {:?}", self.romn_dir)
+        })?;
+        if !found {
+            bail!("romn directory not found: {:?}", self.romn_dir);
         }
 
         let mut names: Vec<String> = std::fs::read_dir(&self.romn_dir)
@@ -372,15 +393,77 @@ impl TipitakaXmlImporter {
             .filter(|name| name.ends_with(".xml"))
             .collect();
 
+        if names.is_empty() {
+            bail!("romn directory has no .xml files: {:?}", self.romn_dir);
+        }
+
         names.sort();
         Ok(names)
     }
 
+    /// Stop before anything is imported unless the fragments database holds the
+    /// OpenTipitaka export for every source file.
+    ///
+    /// There is no fallback to importing the Pāli from the XML: it could
+    /// silently build a release with no English.
+    fn check_fragments_input(&self, sources: &[String]) -> Result<()> {
+        let hint = format!(
+            "run `import-opentipitaka --fragments-db {}` in tipitaka-xml-parser",
+            self.fragments_db_path.display()
+        );
+
+        let found = self.fragments_db_path.try_exists().with_context(|| {
+            format!("Failed to check the fragments DB: {:?}", self.fragments_db_path)
+        })?;
+        if !found {
+            bail!("fragments DB not found: {:?}: {}", self.fragments_db_path, hint);
+        }
+
+        let mut conn = self.open_fragments_db()?;
+
+        let tables: Vec<String> = sql_query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' \
+             AND name IN ('cst_segments', 'cst_texts')",
+        )
+        .load::<TableName>(&mut conn)
+        .context("Failed to read the fragments DB tables")?
+        .into_iter()
+        .map(|table| table.name)
+        .collect();
+        for table in ["cst_segments", "cst_texts"] {
+            if !tables.iter().any(|name| name == table) {
+                bail!("fragments DB has no {} table: {}", table, hint);
+            }
+        }
+
+        let with_rows: HashSet<String> = cst_segments::table
+            .select(cst_segments::cst_file)
+            .distinct()
+            .load::<String>(&mut conn)
+            .context("Failed to read the cst_segments files")?
+            .into_iter()
+            .collect();
+        let missing: Vec<&str> = sources
+            .iter()
+            .map(String::as_str)
+            .filter(|name| !with_rows.contains(*name))
+            .collect();
+        if !missing.is_empty() {
+            bail!(
+                "{} source files have no rows in cst_segments ({}): {}",
+                missing.len(),
+                missing.join(", "),
+                hint
+            );
+        }
+
+        Ok(())
+    }
 
     /// Insert sutta records into the appdata database
     fn insert_suttas(&self, sutta_records: Vec<SuttaRecord>, conn: &mut SqliteConnection) -> Result<usize> {
-        use simsapa_backend::db::appdata_schema::suttas;
-        use simsapa_backend::db::appdata_models::NewSutta;
+        use simsapa_backend::db::appdata_schema::{sutta_variants, suttas};
+        use simsapa_backend::db::appdata_models::{NewSutta, NewSuttaVariant};
 
         let mut inserted_count = 0;
 
@@ -412,14 +495,14 @@ impl TipitakaXmlImporter {
                     description: None,
                     content_plain: record.content_plain.as_deref(),
                     content_html: record.content_html.as_deref(),
-                    content_json: None,
-                    content_json_tmpl: None,
+                    content_json: record.content_json.as_deref(),
+                    content_json_tmpl: record.content_json_tmpl.as_deref(),
                     source_uid: record.source_uid.as_deref(),
                     source_info: None,
-                    source_language: Some("pli"),
+                    source_language: record.source_language.as_deref(),
                     message: None,
                     copyright: None,
-                    license: None,
+                    license: record.license.as_deref(),
                 };
 
                 // Check if UID already exists
@@ -435,10 +518,24 @@ impl TipitakaXmlImporter {
                     continue;
                 }
 
-                diesel::insert_into(suttas::table)
+                let sutta_id: i32 = diesel::insert_into(suttas::table)
                     .values(&new_sutta)
-                    .execute(conn)
+                    .returning(suttas::id)
+                    .get_result(conn)
                     .with_context(|| format!("Failed to insert sutta: {}", record.uid))?;
+
+                if let Some(variant_json) = &record.variant_json {
+                    diesel::insert_into(sutta_variants::table)
+                        .values(NewSuttaVariant {
+                            sutta_id,
+                            sutta_uid: &record.uid,
+                            language: Some("pli"),
+                            source_uid: Some("cst"),
+                            content_json: Some(variant_json),
+                        })
+                        .execute(conn)
+                        .with_context(|| format!("Failed to insert variants of: {}", record.uid))?;
+                }
 
                 inserted_count += 1;
             }
@@ -457,9 +554,7 @@ impl TipitakaXmlImporter {
         let mut report = CstCoverageReport::default();
 
         let sources = self.source_files()?;
-        if sources.is_empty() {
-            return Ok(report);
-        }
+        self.check_fragments_input(&sources)?;
 
         let coverage = self.load_coverage()?;
         self.check_toc_pairing(&sources, &mut report);
@@ -546,21 +641,9 @@ impl TipitakaXmlImporter {
             .with_context(|| format!("Failed to open fragments DB: {:?}", self.fragments_db_path))
     }
 
-    /// The coverage classification, or an all-unmapped one when
-    /// `fragments.sqlite3` is absent — in which case every file is imported as
-    /// divisions, which is the correct outcome rather than an error.
+    /// The coverage classification. An absent `fragments.sqlite3` is an error,
+    /// which [`Self::check_fragments_input`] reports first.
     fn load_coverage(&self) -> Result<HashMap<String, FileCoverage>> {
-        match self.fragments_db_path.try_exists() {
-            Ok(true) => {}
-            _ => {
-                logger::warn(&format!(
-                    "fragments.sqlite3 not found: {:?} - every file will be imported as divisions",
-                    self.fragments_db_path
-                ));
-                return Ok(HashMap::new());
-            }
-        }
-
         let mut frag_conn = self.open_fragments_db()?;
         cst_coverage::compute_coverage(&mut frag_conn)
     }
@@ -595,6 +678,12 @@ impl TipitakaXmlImporter {
         report.sources_without_toc.sort();
         report.tocs_without_source.sort();
     }
+}
+
+#[derive(QueryableByName)]
+struct TableName {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    name: String,
 }
 
 /// A file that could not be cut into its toc's divisions, with the reason.
@@ -972,6 +1061,153 @@ mod tests {
         {"group_type":"Pannasaka","group_number":null,"title":"2. Dutiyapaṇṇāsakaṃ","id":"an2_2"},
         {"group_type":"Vagga","group_number":null,"title":"(6) 1. Puggalavaggavaṇṇanā","id":"an2_2_1"}
     ]"#;
+
+    /// Runs the import, asserts that it failed with nothing inserted, and returns
+    /// the error text.
+    fn import_error(fixture: &mut fixture::CstFixture) -> String {
+        use simsapa_backend::db::appdata_schema::suttas;
+
+        let error = fixture.importer().import(&mut fixture.appdata).unwrap_err();
+        let count: i64 = suttas::table.count().get_result(&mut fixture.appdata).unwrap();
+        assert_eq!(count, 0);
+        format!("{:#}", error)
+    }
+
+    fn edit_fragments(fixture: &fixture::CstFixture, sql: &str) {
+        let path = fixture.fragments_db.to_string_lossy();
+        let mut conn = SqliteConnection::establish(&path).unwrap();
+        sql_query(sql).execute(&mut conn).unwrap();
+    }
+
+    fn record(uid: &str) -> SuttaRecord {
+        SuttaRecord {
+            uid: uid.to_string(),
+            sutta_ref: "mn 1".to_string(),
+            nikaya: "mn".to_string(),
+            language: "pli".to_string(),
+            group_path: None,
+            group_index: None,
+            order_index: None,
+            title: Some("Title".to_string()),
+            title_ascii: Some("Title".to_string()),
+            title_pali: Some("Title".to_string()),
+            content_plain: Some("text".to_string()),
+            content_html: None,
+            content_json: Some(r#"{"mn1:1.1":"text"}"#.to_string()),
+            content_json_tmpl: Some(r#"{"mn1:1.1":"<p>{}</p>"}"#.to_string()),
+            source_uid: Some("cst".to_string()),
+            source_language: Some("en".to_string()),
+            license: Some("A licence".to_string()),
+            variant_json: Some(r#"{"mn1:1.1":"a: b"}"#.to_string()),
+        }
+    }
+
+    #[test]
+    fn an_absent_fragments_database_stops_the_import() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        std::fs::remove_file(&fixture.fragments_db).unwrap();
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains("fragments DB not found"), "{}", error);
+        assert!(error.contains("import-opentipitaka --fragments-db"), "{}", error);
+    }
+
+    #[test]
+    fn a_fragments_database_without_the_export_tables_stops_the_import() {
+        for table in ["cst_segments", "cst_texts"] {
+            let mut fixture = fixture::CstFixture::new().unwrap();
+            edit_fragments(&fixture, &format!("DROP TABLE {}", table));
+
+            let error = import_error(&mut fixture);
+            assert!(error.contains(&format!("no {} table", table)), "{}", error);
+            assert!(error.contains("import-opentipitaka --fragments-db"), "{}", error);
+        }
+    }
+
+    #[test]
+    fn a_source_file_with_no_rows_stops_the_import_and_is_named() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        edit_fragments(
+            &fixture,
+            &format!("DELETE FROM cst_segments WHERE cst_file = '{}'", fixture::WHOLE_FILE),
+        );
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains(fixture::WHOLE_FILE), "{}", error);
+        assert!(!error.contains(fixture::DIVIDED_FILE), "{}", error);
+        assert!(error.contains("import-opentipitaka --fragments-db"), "{}", error);
+    }
+
+    #[test]
+    fn an_absent_romn_directory_stops_the_import() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        std::fs::remove_dir_all(&fixture.romn_dir).unwrap();
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains("romn directory not found"), "{}", error);
+    }
+
+    #[test]
+    fn a_romn_directory_with_no_xml_files_stops_the_import() {
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        std::fs::remove_dir_all(&fixture.romn_dir).unwrap();
+        std::fs::create_dir(&fixture.romn_dir).unwrap();
+
+        let error = import_error(&mut fixture);
+        assert!(error.contains("no .xml files"), "{}", error);
+    }
+
+    #[test]
+    fn insert_suttas_stores_the_record_fields_and_its_variants() {
+        use simsapa_backend::db::appdata_models::{Sutta, SuttaVariant};
+        use simsapa_backend::db::appdata_schema::{sutta_variants, suttas};
+
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        let importer = fixture.importer();
+
+        let without_variants = SuttaRecord { variant_json: None, ..record("mn2/pli/cst") };
+        importer
+            .insert_suttas(vec![record("mn1/pli/cst"), without_variants], &mut fixture.appdata)
+            .unwrap();
+
+        let sutta: Sutta = suttas::table
+            .filter(suttas::uid.eq("mn1/pli/cst"))
+            .select(Sutta::as_select())
+            .first(&mut fixture.appdata)
+            .unwrap();
+        assert_eq!(sutta.content_json.as_deref(), Some(r#"{"mn1:1.1":"text"}"#));
+        assert_eq!(sutta.content_json_tmpl.as_deref(), Some(r#"{"mn1:1.1":"<p>{}</p>"}"#));
+        assert_eq!(sutta.source_language.as_deref(), Some("en"));
+        assert_eq!(sutta.license.as_deref(), Some("A licence"));
+
+        let variants: Vec<SuttaVariant> = sutta_variants::table
+            .select(SuttaVariant::as_select())
+            .load(&mut fixture.appdata)
+            .unwrap();
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].sutta_id, sutta.id);
+        assert_eq!(variants[0].sutta_uid, "mn1/pli/cst");
+        assert_eq!(variants[0].language.as_deref(), Some("pli"));
+        assert_eq!(variants[0].source_uid.as_deref(), Some("cst"));
+        assert_eq!(variants[0].content_json.as_deref(), Some(r#"{"mn1:1.1":"a: b"}"#));
+    }
+
+    #[test]
+    fn a_uid_skipped_as_existing_gets_no_variant_row() {
+        use simsapa_backend::db::appdata_schema::sutta_variants;
+
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        let importer = fixture.importer();
+
+        let existing = SuttaRecord { variant_json: None, ..record("mn1/pli/cst") };
+        importer.insert_suttas(vec![existing], &mut fixture.appdata).unwrap();
+
+        let inserted = importer.insert_suttas(vec![record("mn1/pli/cst")], &mut fixture.appdata).unwrap();
+        assert_eq!(inserted, 0);
+
+        let count: i64 = sutta_variants::table.count().get_result(&mut fixture.appdata).unwrap();
+        assert_eq!(count, 0);
+    }
 
     #[test]
     fn a_fragment_keeps_its_own_sutta_title() {
