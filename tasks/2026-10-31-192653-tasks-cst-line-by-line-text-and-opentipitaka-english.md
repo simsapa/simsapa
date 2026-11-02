@@ -16,7 +16,7 @@ Backend:
 
 - `backend/src/opentipitaka.rs` (new) - OT constants and the footer markup, shared by the import and the reader.
 - `backend/src/lib.rs` - Registers the new module.
-- `backend/src/sutta_display.rs` - Gains `columns_can_align` and `pali_uid_for_translation`, with unit tests.
+- `backend/src/sutta_display.rs` - Gains `columns_can_align` and `pali_uid_for_translation`, with unit tests. `uid_base` is public, and `resolve` takes the paired uid.
 - `backend/src/app_data.rs` - `get_pali_for_translated`, the default English column, the Lines-mode drop, `render_content_block_for_columns`.
 - `backend/src/db/appdata.rs` - `TranslationData.has_content_json`, the column options, `sort_suttas`, `get_full_sutta_uid`, `get_sutta_by_range`.
 - `backend/src/query_task.rs` - The two SQL commentary filters.
@@ -27,9 +27,11 @@ Backend:
 - `backend/src/navigation_tree.rs`, `backend/src/navigation_tree/tests.rs` - Translation counts.
 - `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer, column-option SQL commentary-filter, snippet, variants-family and bare-code tests, on `dummy-` records of their own.
 - `backend/tests/test_related_sutta_uids.rs` - The OpenTipitaka commentary in the translation tabs.
+- `backend/tests/test_render_sutta_content.rs` - A Pāli text opens with an English; the one-column case uses a text with no English.
 Front end:
 
 - `src-ts/column_bar.ts`, `src-ts/column_bar.test.ts` - Reads the relative `has_content_json`, and the disabled-option tooltip.
+- `src-ts/content_reload.test.ts` - A removed English stays removed when the layout changes.
 - `assets/js/simsapa.min.js` - The rebuilt bundle.
 - `assets/css/suttas.css` - Generated from the Sass.
 - `assets/sass/_cst.sass` - The `.cst .centre` rule.
@@ -353,13 +355,13 @@ fn default_english_for_pali(&self, sutta: &Sutta) -> Result<Option<String>>;
 
 In `resolve_sutta_display_options`, the variable `pali_uid` becomes the paired uid: the Pāli for a translation, as today, and `default_english_for_pali` for a Pāli text. It is still read only when `overrides.columns` is `None`, so requested columns win. `SuttaDisplayOptions::resolve` needs no logic change. Its parameter and doc comment are renamed.
 
-- [ ] 10.0 Show an English beside an opened Pāli text
-  - [ ] 10.1 Add `default_english_for_pali`. A `/pli/cst` text gives `<base>/en/opentipitaka` if it exists, and nothing else. Any other Pāli text gives the first segmented English, then the first non-segmented one, leaving out `opentipitaka`.
-  - [ ] 10.2 Use it in `resolve_sutta_display_options`, as in the specs. Do not read `/pli/ms` from it, and keep `get_pali_for_translated` for translations only.
-  - [ ] 10.3 Test: `mn1/pli/cst` gives columns `mn1/pli/cst` + `mn1/en/opentipitaka`, aligned, with one footer; `mn1.att/pli/cst` and a `.xml` record do the same; `mn1/pli/ms` gives `mn1/en/sujato`; a Pāli text whose English is not segmented is alone in Lines and a block in Columns; a text with no English is alone; Solo renders the Pāli alone and keeps both columns in `SUTTA_DISPLAY`.
-  - [ ] 10.4 Test that `columns=mn1/pli/cst` stays one column. Read `fetch_content_block` in `content_reload.ts`, and confirm that removing the English and switching layout sends the column list, so that the English does not come back while the page is open.
-  - [ ] 10.5 Update any test that expects one column for an opened Pāli text, in `backend`, `api` and `backend_cli` (`commands/sutta.rs` uses the same options).
-  - [ ] 10.6 Run `cd backend && cargo test`, `cd api && cargo test`, `cd backend_cli && cargo test` and `npx jest`.
+- [x] 10.0 Show an English beside an opened Pāli text
+  - [x] 10.1 Add `default_english_for_pali`. A `/pli/cst` text gives `<base>/en/opentipitaka` if it exists, and nothing else. Any other Pāli text gives the first segmented English, then the first non-segmented one, leaving out `opentipitaka`.
+  - [x] 10.2 Use it in `resolve_sutta_display_options`, as in the specs. Do not read `/pli/ms` from it, and keep `get_pali_for_translated` for translations only.
+  - [x] 10.3 Test: `mn1/pli/cst` gives columns `mn1/pli/cst` + `mn1/en/opentipitaka`, aligned, with one footer; `mn1.att/pli/cst` and a `.xml` record do the same; `mn1/pli/ms` gives `mn1/en/sujato`; a Pāli text whose English is not segmented is alone in Lines and a block in Columns; a text with no English is alone; Solo renders the Pāli alone and keeps both columns in `SUTTA_DISPLAY`.
+  - [x] 10.4 Test that `columns=mn1/pli/cst` stays one column. Read `fetch_content_block` in `content_reload.ts`, and confirm that removing the English and switching layout sends the column list, so that the English does not come back while the page is open.
+  - [x] 10.5 Update any test that expects one column for an opened Pāli text, in `backend`, `api` and `backend_cli` (`commands/sutta.rs` uses the same options).
+  - [x] 10.6 Run `cd backend && cargo test`, `cd api && cargo test`, `cd backend_cli && cargo test` and `npx jest`.
 
 ### Specs for 11.0
 

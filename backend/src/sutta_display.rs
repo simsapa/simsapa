@@ -12,7 +12,7 @@ use crate::app_settings::{AppSettings, RepeatPali, SuttaLayout};
 use crate::opentipitaka::is_ot_english_uid;
 
 /// The first path component of a uid: `mn1` of `mn1/pli/cst`.
-fn uid_base(uid: &str) -> &str {
+pub fn uid_base(uid: &str) -> &str {
     uid.split('/').next().unwrap_or(uid)
 }
 
@@ -66,7 +66,8 @@ pub struct SuttaDisplayOverrides {
 pub struct SuttaDisplayOptions {
     pub layout: SuttaLayout,
     /// Ordered column source sutta uids. The default set is the opened sutta
-    /// plus its Pāli counterpart (when one exists); the final Pāli placement
+    /// plus the text paired with it (when one exists), which is the Pāli of a
+    /// translation and an English of a Pāli text; the final Pāli placement
     /// (first column, alternating, repeated at the end) is applied by
     /// `AppData::resolve_sutta_display_options` per `repeat_pali`.
     pub columns: Vec<String>,
@@ -77,13 +78,14 @@ pub struct SuttaDisplayOptions {
 
 impl SuttaDisplayOptions {
     /// Resolve the effective options: persisted defaults from `app_settings`,
-    /// overridden by any explicit request parameters. `pali_uid` is the
-    /// opened sutta's Pāli counterpart uid (from
-    /// `AppData::get_pali_for_translated`), used for the default column set.
+    /// overridden by any explicit request parameters. `paired_uid` is the uid
+    /// of the text paired with the opened sutta (from
+    /// `AppData::resolve_sutta_display_options`), used for the default column
+    /// set.
     pub fn resolve(
         app_settings: &AppSettings,
         sutta_uid: &str,
-        pali_uid: Option<&str>,
+        paired_uid: Option<&str>,
         overrides: &SuttaDisplayOverrides,
     ) -> Self {
         let layout = overrides.layout.unwrap_or(app_settings.sutta_display.layout);
@@ -95,9 +97,9 @@ impl SuttaDisplayOptions {
             Some(cols) if !cols.is_empty() => cols.clone(),
             _ => {
                 let mut cols = vec![sutta_uid.to_string()];
-                if let Some(pali) = pali_uid {
-                    if pali != sutta_uid {
-                        cols.push(pali.to_string());
+                if let Some(paired) = paired_uid {
+                    if paired != sutta_uid {
+                        cols.push(paired.to_string());
                     }
                 }
                 cols

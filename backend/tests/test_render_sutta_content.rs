@@ -588,14 +588,28 @@ fn test_resolve_default_columns_for_translated() {
 
 #[test]
 #[serial]
-fn test_resolve_single_column_pali_only() {
+fn test_resolve_default_columns_for_pali() {
     h::app_data_setup();
     let app_data = get_app_data();
     let sutta = app_data.dbm.appdata.get_sutta("sn56.11/pli/ms").expect("Can't get sutta from db");
 
+    // bodhi sorts first, but sujato is the segmented one.
     let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None, show_references: None };
     let options = app_data.resolve_sutta_display_options(&sutta, &overrides);
-    assert_eq!(options.columns, vec!["sn56.11/pli/ms".to_string()]);
+    assert_eq!(options.columns, vec!["sn56.11/pli/ms".to_string(), "sn56.11/en/sujato".to_string()]);
+}
+
+#[test]
+#[serial]
+fn test_resolve_single_column_pali_only() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    // bv1/pli/ms has no English.
+    let sutta = app_data.dbm.appdata.get_sutta("bv1/pli/ms").expect("Can't get sutta from db");
+
+    let overrides = SuttaDisplayOverrides { layout: Some(SuttaLayout::SideBySide), columns: None, repeat_pali: None, show_references: None };
+    let options = app_data.resolve_sutta_display_options(&sutta, &overrides);
+    assert_eq!(options.columns, vec!["bv1/pli/ms".to_string()]);
 
     // Single column renders full-width via the standard path: the plain
     // wrapper, no layout-/cols- classes on it.

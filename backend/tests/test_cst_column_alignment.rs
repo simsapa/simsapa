@@ -41,7 +41,15 @@ const NAV_FIRST_MULA: &str = "dummy-nav1/en/opentipitaka";
 const NAV_SECOND_COMMENTARY: &str = "dummy-nav2.att/en/opentipitaka";
 const NAV_SECOND_MULA: &str = "dummy-nav2/en/opentipitaka";
 
-const ALL_UIDS: [&str; 13] = [
+// A Pāli text whose only English is not segmented, one with no English at all,
+// and one with only the AI English, which is never its default.
+const PALI_MS_HTML_ENGLISH: &str = "dummy-mn2/pli/ms";
+const HTML_ENGLISH_ONLY: &str = "dummy-mn2/en/bodhi";
+const PALI_MS_NO_ENGLISH: &str = "dummy-mn3/pli/ms";
+const PALI_MS_AI_ENGLISH: &str = "dummy-mn4/pli/ms";
+const AI_ENGLISH_ONLY: &str = "dummy-mn4/en/opentipitaka";
+
+const ALL_UIDS: [&str; 18] = [
     PALI_CST,
     ENGLISH_OT,
     COMMENTARY_ENGLISH_OT,
@@ -55,6 +63,11 @@ const ALL_UIDS: [&str; 13] = [
     NAV_FIRST_MULA,
     NAV_SECOND_COMMENTARY,
     NAV_SECOND_MULA,
+    PALI_MS_HTML_ENGLISH,
+    HTML_ENGLISH_ONLY,
+    PALI_MS_NO_ENGLISH,
+    PALI_MS_AI_ENGLISH,
+    AI_ENGLISH_ONLY,
 ];
 
 fn delete_fixture() {
@@ -145,6 +158,12 @@ fn set_up() -> Fixture {
     insert_text(DIVISION_PALI_CST, "pli", "cst", Some(&segmented_json(["div-one", "div-two"])), Some(&plain_tmpl), None);
     insert_text(DIVISION_ENGLISH_OT, "en", "opentipitaka", Some(&segmented_json(["divot-one", "divot-two"])), Some(&english_tmpl), None);
 
+    insert_text(PALI_MS_HTML_ENGLISH, "pli", "ms", Some(&segmented_json(["ms-one", "ms-two"])), Some(sc_tmpl), None);
+    insert_text(HTML_ENGLISH_ONLY, "en", "bodhi", None, None, Some("<p>bodhi</p>"));
+    insert_text(PALI_MS_NO_ENGLISH, "pli", "ms", Some(&segmented_json(["ms-one", "ms-two"])), Some(sc_tmpl), None);
+    insert_text(PALI_MS_AI_ENGLISH, "pli", "ms", Some(&segmented_json(["ms-one", "ms-two"])), Some(sc_tmpl), None);
+    insert_text(AI_ENGLISH_ONLY, "en", "opentipitaka", Some(&segmented_json(["ot-one", "ot-two"])), Some(&english_tmpl), None);
+
     for (uid, position) in [
         (NAV_FIRST_COMMENTARY, 1),
         (NAV_FIRST_MULA, 1),
@@ -186,6 +205,29 @@ fn requested_overrides(layout: SuttaLayout, columns: &[&str]) -> SuttaDisplayOve
         repeat_pali: Some(RepeatPali::Off),
         show_references: Some(false),
     }
+}
+
+fn default_overrides(layout: SuttaLayout) -> SuttaDisplayOverrides {
+    SuttaDisplayOverrides {
+        layout: Some(layout),
+        columns: None,
+        repeat_pali: Some(RepeatPali::Off),
+        show_references: Some(false),
+    }
+}
+
+fn default_columns(opened: &str, layout: SuttaLayout) -> Vec<String> {
+    get_app_data()
+        .resolve_sutta_display_options(&sutta(opened), &default_overrides(layout))
+        .columns
+}
+
+/// Renders with no columns requested, as a newly opened page does.
+fn render_default(opened: &str, layout: SuttaLayout) -> String {
+    let app_data = get_app_data();
+    let opened = sutta(opened);
+    let options = app_data.resolve_sutta_display_options(&opened, &default_overrides(layout));
+    app_data.render_sutta_content_block(&opened, &options).expect("render")
 }
 
 fn render(opened: &str, layout: SuttaLayout, columns: &[&str]) -> String {
@@ -464,6 +506,113 @@ fn next_and_prev_stay_on_the_same_kind_of_text() {
     assert_eq!(next(NAV_FIRST_COMMENTARY).as_deref(), Some(NAV_SECOND_COMMENTARY));
     assert_eq!(prev(NAV_SECOND_MULA).as_deref(), Some(NAV_FIRST_MULA));
     assert_eq!(prev(NAV_SECOND_COMMENTARY).as_deref(), Some(NAV_FIRST_COMMENTARY));
+}
+
+#[test]
+#[serial]
+fn a_cst_text_opens_aligned_with_its_english() {
+    let _fixture = set_up();
+    insert_text(COMMENTARY_PALI_CST, "pli", "cst", Some(&segmented_json(["a", "b"])), Some(&cst_template("")), None);
+
+    for (pali, english) in [
+        (PALI_CST, ENGLISH_OT),
+        (COMMENTARY_PALI_CST, COMMENTARY_ENGLISH_OT),
+        (DIVISION_PALI_CST, DIVISION_ENGLISH_OT),
+    ] {
+        for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+            assert_eq!(default_columns(pali, layout), [pali, english]);
+            let html = render_default(pali, layout);
+            assert!(is_aligned(&html), "{html}");
+            assert_eq!(footer_count(&html), 1, "{html}");
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn a_pali_text_opens_with_the_first_segmented_english() {
+    let _fixture = set_up();
+
+    // bodhi sorts first, and has no segments.
+    for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+        assert_eq!(default_columns(PALI_MS, layout), [PALI_MS, ENGLISH_SUJATO]);
+        assert!(is_aligned(&render_default(PALI_MS, layout)));
+    }
+}
+
+#[test]
+#[serial]
+fn an_english_with_no_segments_is_a_block_in_columns_and_dropped_in_lines() {
+    let _fixture = set_up();
+
+    assert_eq!(default_columns(PALI_MS_HTML_ENGLISH, SuttaLayout::SideBySide), [PALI_MS_HTML_ENGLISH, HTML_ENGLISH_ONLY]);
+    assert!(render_default(PALI_MS_HTML_ENGLISH, SuttaLayout::SideBySide).contains("sbs-blocks"));
+
+    assert_eq!(default_columns(PALI_MS_HTML_ENGLISH, SuttaLayout::LineByLine), [PALI_MS_HTML_ENGLISH]);
+}
+
+#[test]
+#[serial]
+fn a_pali_text_with_no_english_opens_alone() {
+    let _fixture = set_up();
+
+    for layout in [SuttaLayout::Solo, SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+        assert_eq!(default_columns(PALI_MS_NO_ENGLISH, layout), [PALI_MS_NO_ENGLISH]);
+    }
+}
+
+#[test]
+#[serial]
+fn the_ai_english_is_never_the_default_of_another_family() {
+    let _fixture = set_up();
+
+    assert_eq!(default_columns(PALI_MS_AI_ENGLISH, SuttaLayout::SideBySide), [PALI_MS_AI_ENGLISH]);
+
+    // And a human English is never the default of a CST text.
+    {
+        let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
+        diesel::delete(suttas::table.filter(suttas::uid.eq(ENGLISH_OT))).execute(db_conn).unwrap();
+    }
+    assert_eq!(default_columns(PALI_CST, SuttaLayout::SideBySide), [PALI_CST]);
+}
+
+#[test]
+#[serial]
+fn solo_renders_the_pali_alone_and_keeps_the_english_as_page_state() {
+    let _fixture = set_up();
+
+    assert_eq!(default_columns(PALI_CST, SuttaLayout::Solo), [PALI_CST, ENGLISH_OT]);
+
+    let app_data = get_app_data();
+    let opened = sutta(PALI_CST);
+    let options = app_data.resolve_sutta_display_options(&opened, &default_overrides(SuttaLayout::Solo));
+    let (html, columns) = app_data.render_sutta_content_block_with_columns(&opened, &options).unwrap();
+
+    assert!(html.contains("cst-one"), "{html}");
+    assert!(!html.contains("ot-one"), "{html}");
+    assert_eq!(columns[0]["uid"], PALI_CST);
+    assert_eq!(columns[1]["uid"], ENGLISH_OT);
+}
+
+#[test]
+#[serial]
+fn requested_columns_win_over_the_default_english() {
+    let _fixture = set_up();
+    let app_data = get_app_data();
+
+    for layout in [SuttaLayout::Solo, SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+        let options = app_data.resolve_sutta_display_options(&sutta(PALI_CST), &requested_overrides(layout, &[PALI_CST]));
+        assert_eq!(options.columns, [PALI_CST]);
+    }
+}
+
+#[test]
+#[serial]
+fn a_translation_keeps_its_pali_as_the_default() {
+    let _fixture = set_up();
+
+    assert_eq!(default_columns(ENGLISH_SUJATO, SuttaLayout::SideBySide), [PALI_MS, ENGLISH_SUJATO]);
+    assert_eq!(default_columns(ENGLISH_OT, SuttaLayout::SideBySide), [PALI_CST, ENGLISH_OT]);
 }
 
 /// The uids a search returns, with commentaries left out of the search.

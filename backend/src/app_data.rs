@@ -15,7 +15,7 @@ use crate::db::appdata_schema::suttas::dsl::*;
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
 use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
-use crate::sutta_display::{columns_can_align, pali_uid_for_translation, SuttaDisplayOptions, SuttaDisplayOverrides};
+use crate::sutta_display::{columns_can_align, pali_uid_for_translation, uid_base, SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::opentipitaka::{is_ot_english_uid, ot_footer_html};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
@@ -317,6 +317,43 @@ impl AppData {
         Ok(res)
     }
 
+    /// The English shown beside a Pāli text when no columns are requested: the
+    /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
+    /// aligned with, and for any other Pāli text the first segmented English, or
+    /// failing that the first other one, leaving out the AI English. A column
+    /// that cannot be shown is handled like a requested one: dropped in Lines, a
+    /// block in Columns.
+    ///
+    /// Reads uids over an indexed range, never the full rows. All of these have
+    /// one base and one language, so uid order is `sort_suttas()` order.
+    fn default_english_for_pali(&self, sutta: &Sutta) -> Result<Option<String>> {
+        if sutta.language != "pli" {
+            return Ok(None);
+        }
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
+
+        let base = uid_base(&sutta.uid);
+        let english: Vec<(String, Option<bool>)> = suttas
+            .filter(uid.ge(format!("{}/en/", base)))
+            .filter(uid.lt(format!("{}/en0", base)))
+            .select((uid, content_json.ne("")))
+            .order(uid.asc())
+            .load(db_conn)
+            .context("Database query failed for the default English")?;
+
+        let (ai_english, human_english): (Vec<_>, Vec<_>) = english
+            .into_iter()
+            .partition(|(english_uid, _)| is_ot_english_uid(english_uid));
+
+        if sutta.uid.ends_with("/pli/cst") {
+            return Ok(ai_english.into_iter().next().map(|(english_uid, _)| english_uid));
+        }
+
+        let segmented = human_english.iter().find(|(_, is_segmented)| *is_segmented == Some(true));
+        Ok(segmented.or(human_english.first()).map(|(english_uid, _)| english_uid.clone()))
+    }
+
     /// Converts sutta data into an IndexMap of segments, potentially including variants, comments, glosses.
     /// Returns IndexMap to preserve JSON insertion order.
     pub fn sutta_to_segments_json(
@@ -384,16 +421,21 @@ impl AppData {
 
     /// Resolve the effective display options for a sutta render: persisted
     /// defaults from the settings cache, overridden by explicit request
-    /// parameters, with the default column set (opened sutta + Pāli
-    /// counterpart) filled in.
+    /// parameters, with the default column set filled in: the opened sutta
+    /// with its Pāli text, or with an English when the opened sutta is Pāli.
     pub fn resolve_sutta_display_options(
         &self,
         sutta: &Sutta,
         overrides: &SuttaDisplayOverrides,
     ) -> SuttaDisplayOptions {
-        let pali_uid = if overrides.columns.is_none() {
-            match self.get_pali_for_translated(sutta) {
-                Ok(pali) => pali.map(|p| p.uid),
+        let paired_uid = if overrides.columns.is_none() {
+            let paired = if sutta.language == "pli" {
+                self.default_english_for_pali(sutta)
+            } else {
+                self.get_pali_for_translated(sutta).map(|pali| pali.map(|p| p.uid))
+            };
+            match paired {
+                Ok(paired) => paired,
                 Err(e) => {
                     error(&format!("resolve_sutta_display_options: {:#}", e));
                     None
@@ -404,7 +446,7 @@ impl AppData {
         };
         let mut options = {
             let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), overrides)
+            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, paired_uid.as_deref(), overrides)
         };
 
         // The Pāli placement (first column; repeated per repeat_pali) is
