@@ -11,6 +11,7 @@ use epub::doc::EpubDoc;
 use crate::db::appdata_models::{NavPointJson, NewBook, NewBookResource, NewBookSpineItem};
 use crate::db::appdata_schema::{book_resources, book_spine_items, books};
 use crate::helpers::{compact_rich_text, strip_html, dhammatalk_org_convert_link_href_in_html};
+use crate::sutta_uid_renames::load_sutta_uid_renames;
 
 /// Extract title from HTML content
 /// Returns the title from <title> tag, taking only the part before the first '|' separator
@@ -213,6 +214,10 @@ pub fn import_epub_to_db(
         spine_info.push((idx, resource_path, title));
     }
 
+    // dhammatalks.org links are converted to the SuttaCentral numbering the
+    // Ṭhānissaro records use. See docs/suttas-core-import.md.
+    let sutta_uid_renames = load_sutta_uid_renames(db_conn);
+
     for (spine_index, resource_path, title) in spine_info {
         tracing::debug!("Processing spine item {}/{}: {}", spine_index + 1, spine_len, resource_path);
 
@@ -232,7 +237,7 @@ pub fn import_epub_to_db(
 
         // Convert dhammatalks.org style links to ssp://
         let link_selector = Selector::parse("a").unwrap();
-        let content_html = dhammatalk_org_convert_link_href_in_html(&link_selector, &content_html);
+        let content_html = dhammatalk_org_convert_link_href_in_html(&link_selector, &content_html, &sutta_uid_renames);
 
         // Rewrite resource links to use API endpoint
         let content_html = rewrite_resource_links(&content_html, book_uid, base_dir);

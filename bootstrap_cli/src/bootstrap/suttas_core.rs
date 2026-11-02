@@ -24,6 +24,7 @@ use simsapa_backend::helpers::{consistent_niggahita, pali_to_ascii, sutta_html_t
 use simsapa_backend::logger;
 use simsapa_backend::sutta_uid_renames::rename_ssp_sutta_href;
 
+use crate::bootstrap::footnote_sutta_links::{link_sutta_refs, SuttaRefResolver};
 use crate::bootstrap::helpers::{uid_to_nikaya, uid_to_ref, SuttaData};
 use crate::bootstrap::suttacentral::bilara_html_and_plain_text;
 use crate::bootstrap::thanissaro_intro::extract_introduction;
@@ -720,6 +721,14 @@ pub fn build_thanissaro_map(db: &mut SuttasCoreDb, conn: &mut SqliteConnection) 
     })
 }
 
+/// The `…/pli/ms` uids in appdata, which footnote references link to.
+pub fn pli_ms_uids(conn: &mut SqliteConnection) -> Result<Vec<String>> {
+    Ok(suttas::table
+        .filter(suttas::uid.like("%/pli/ms"))
+        .select(suttas::uid)
+        .load(conn)?)
+}
+
 /// Rewrites the `ssp://suttas/…` hrefs of `html` through `renames`, and
 /// counts the rewritten links.
 pub fn rewrite_ssp_links(html: &str, renames: &HashMap<String, String>) -> (String, usize) {
@@ -1104,9 +1113,14 @@ impl SuttasCoreImporter {
 
     /// Runs the replacement step for every label except Ṭhānissaro's, one
     /// transaction per label.
-    fn replace_html_records(&self, db: &mut SuttasCoreDb, conn: &mut SqliteConnection) -> Result<Vec<(String, ReplacementReport)>> {
+    fn replace_html_records(
+        &self,
+        db: &mut SuttasCoreDb,
+        conn: &mut SqliteConnection,
+        resolver: &SuttaRefResolver,
+    ) -> Result<Vec<(String, ReplacementReport)>> {
         let limit = self.limit.and_then(|l| usize::try_from(l).ok());
-        let link_fn = |s: &str| s.to_string();
+        let link_fn = |s: &str| link_sutta_refs(s, &|r| resolver.resolve_pli(r));
         let mut reports = Vec::new();
 
         for label in db.translators()? {
@@ -1123,9 +1137,16 @@ impl SuttasCoreImporter {
         Ok(reports)
     }
 
-    fn import_thanissaro(&self, db: &mut SuttasCoreDb, conn: &mut SqliteConnection, map: &ThanissaroMap) -> Result<ThanissaroReport> {
+    fn import_thanissaro(
+        &self,
+        db: &mut SuttasCoreDb,
+        conn: &mut SqliteConnection,
+        map: &ThanissaroMap,
+        resolver: &SuttaRefResolver,
+    ) -> Result<ThanissaroReport> {
         let limit = self.limit.and_then(|l| usize::try_from(l).ok());
-        let link_fn = |s: &str| s.to_string();
+        // His references are in his own numbering.
+        let link_fn = |s: &str| link_sutta_refs(s, &|r| resolver.resolve_thanissaro(r));
         db.log_empty_texts(THANISSARO_LABEL)?;
         let report = import_thanissaro(db, conn, map, limit, &link_fn)?;
         log_thanissaro_report(map, &report);
@@ -1142,8 +1163,11 @@ impl SuttaImporter for SuttasCoreImporter {
         // The Ṭhānissaro map is built before anything changes the records it
         // reads.
         let than_map = build_thanissaro_map(&mut db, conn)?;
-        self.replace_html_records(&mut db, conn)?;
-        self.import_thanissaro(&mut db, conn, &than_map)?;
+        // Footnote references are resolved against the map, so both steps
+        // get the same one.
+        let resolver = SuttaRefResolver::new(&pli_ms_uids(conn)?, &than_map.mappings);
+        self.replace_html_records(&mut db, conn, &resolver)?;
+        self.import_thanissaro(&mut db, conn, &than_map, &resolver)?;
         Ok(())
     }
 }
@@ -1496,7 +1520,7 @@ mod tests {
 
         let importer = SuttasCoreImporter::new(PathBuf::new(), None);
         let reports: HashMap<String, ReplacementReport> =
-            importer.replace_html_records(&mut db, &mut app).unwrap().into_iter().collect();
+            importer.replace_html_records(&mut db, &mut app, &SuttaRefResolver::default()).unwrap().into_iter().collect();
 
         // Ṭhānissaro is not part of the replacement step.
         assert!(!reports.contains_key("than"));
@@ -1535,7 +1559,7 @@ mod tests {
 
         // Re-running is idempotent: the records are now segmented.
         let again: HashMap<String, ReplacementReport> =
-            importer.replace_html_records(&mut db, &mut app).unwrap().into_iter().collect();
+            importer.replace_html_records(&mut db, &mut app, &SuttaRefResolver::default()).unwrap().into_iter().collect();
         assert!(again["bodhi"].replaced.is_empty());
         assert_eq!(again["bodhi"].skipped_segmented, ["mn1/en/bodhi"]);
         assert_eq!(comment_count(&mut app, "mn1/en/bodhi"), 1);
@@ -1548,7 +1572,7 @@ mod tests {
         let mut db = core_db();
 
         let importer = SuttasCoreImporter::new(PathBuf::new(), Some(0));
-        let reports = importer.replace_html_records(&mut db, &mut app).unwrap();
+        let reports = importer.replace_html_records(&mut db, &mut app, &SuttaRefResolver::default()).unwrap();
         assert!(reports.iter().all(|(_, r)| r.replaced.is_empty()));
         assert!(row(&mut app, "mn1/en/bodhi").0.is_none());
     }
@@ -1865,8 +1889,9 @@ mod tests {
         let mut app = SqliteConnection::establish(&scratch).unwrap();
 
         let than_map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let resolver = SuttaRefResolver::new(&pli_ms_uids(&mut app).unwrap(), &than_map.mappings);
         let importer = SuttasCoreImporter::new(PathBuf::new(), None);
-        for (label, r) in importer.replace_html_records(&mut db, &mut app).unwrap() {
+        for (label, r) in importer.replace_html_records(&mut db, &mut app, &resolver).unwrap() {
             let mut by_source: std::collections::BTreeMap<&str, usize> = Default::default();
             for uid in &r.replaced {
                 *by_source.entry(uid.rsplit('/').next().unwrap()).or_default() += 1;
@@ -1876,13 +1901,75 @@ mod tests {
                 label, r.replaced.len(), by_source, r.skipped_segmented.len(), r.skipped_missing.len(), r.failed,
             ));
         }
-        let than = importer.import_thanissaro(&mut db, &mut app, &than_map);
+        let than = importer.import_thanissaro(&mut db, &mut app, &than_map, &resolver);
         let than = than.unwrap();
         simsapa_backend::logger::write_stdout(format_args!(
             "than: imported {}, skipped segmented {}, deleted {}, kept unmapped {:?}, kept not imported {}, conflicts {:?}, failed {:?}, title fallbacks {}, links rewritten {}, rules {:?}, introductions {}, already present {:?}\n",
             than.imported.len(), than.skipped_segmented.len(), than.deleted.len(), than.kept_unmapped,
             than.kept_not_imported.len(), than.conflicts, than.failed, than.title_fallbacks.len(),
             than.links_rewritten, than.rule_counts, than.introductions.len(), than.intros_already_present,
+        ));
+    }
+
+    /// Links the references in every Bodhi, PTS, Walshe and Ṭhānissaro note of
+    /// the real data, both databases opened read-only, and reports how many
+    /// were linked and a sample of the references left as text.
+    /// `cargo test real_data_footnote_links -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn test_real_data_footnote_links() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
+        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+            .unwrap()
+            .expect("suttas-core database");
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+        let than_map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let resolver = SuttaRefResolver::new(&pli_ms_uids(&mut app).unwrap(), &than_map.mappings);
+
+        #[derive(QueryableByName)]
+        struct Note {
+            #[diesel(sql_type = Text)]
+            translator: String,
+            #[diesel(sql_type = Text)]
+            content: String,
+        }
+        let notes: Vec<Note> = sql_query(
+            "SELECT translator, content FROM segment_footnotes WHERE translator IN ('bodhi', 'pts', 'walshe', 'than')",
+        )
+        .load(&mut db.conn)
+        .unwrap();
+
+        let re_ref = Regex::new(r"\b(DN|MN|SN|AN|Dhp|Snp|Sn|Iti|Ud|Khp|Thag|Thig)[ \u{a0}]\d+(?:[:.]\d+)?").unwrap();
+        let mut linked: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut unlinked: BTreeMap<String, usize> = BTreeMap::new();
+        let mut samples = Vec::new();
+        let mut linked_samples = Vec::new();
+        for n in &notes {
+            let out = if n.translator == THANISSARO_LABEL {
+                link_sutta_refs(&n.content, &|r| resolver.resolve_thanissaro(r))
+            } else {
+                link_sutta_refs(&n.content, &|r| resolver.resolve_pli(r))
+            };
+            for m in Regex::new(r"<a href='ssp://suttas/([^']*)'>([^<]*)</a>").unwrap().captures_iter(&out) {
+                let count = linked.entry(n.translator.as_str()).or_default();
+                *count += 1;
+                if *count % 40 == 1 {
+                    linked_samples.push(format!("{}: {} -> {}", n.translator, &m[2], &m[1]));
+                }
+            }
+            // References still outside a link.
+            let bare = Regex::new(r"<a [^>]*>.*?</a>").unwrap().replace_all(&out, "");
+            for m in re_ref.find_iter(&bare) {
+                *unlinked.entry(n.translator.clone()).or_default() += 1;
+                if samples.len() < 60 {
+                    samples.push(format!("{}: {}", n.translator, m.as_str()));
+                }
+            }
+        }
+        simsapa_backend::logger::write_stdout(format_args!(
+            "notes {}, linked {:?}, unlinked {:?}\nlinked samples: {:#?}\nunlinked samples: {:#?}\n",
+            notes.len(), linked, unlinked, linked_samples, samples,
         ));
     }
 

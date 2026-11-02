@@ -703,7 +703,18 @@ pub fn dhammatalks_org_href_sutta_html_to_ssp(href: &str) -> String {
     format!("ssp://suttas/{}/en/thanissaro{}", ref_str, anchor)
 }
 
-pub fn dhammatalk_org_convert_link_href_in_html(link_selector: &Selector, html_text: &str) -> String {
+/// Converts dhammatalks.org sutta links to `ssp://suttas/<ref>/en/thanissaro`.
+///
+/// The file names follow Ṭhānissaro's own numbering, so each converted uid is
+/// looked up in `renames` (the `sutta_uid_renames` map, see
+/// `crate::sutta_uid_renames`) and replaced by the SuttaCentral-numbered uid
+/// that now carries the text. Pass an empty map to keep the old numbering.
+/// See docs/suttas-core-import.md.
+pub fn dhammatalk_org_convert_link_href_in_html(
+    link_selector: &Selector,
+    html_text: &str,
+    renames: &HashMap<String, String>,
+) -> String {
     let document = Html::parse_document(html_text);
     let mut replacements: Vec<(String, String)> = Vec::new();
 
@@ -712,6 +723,8 @@ pub fn dhammatalk_org_convert_link_href_in_html(link_selector: &Selector, html_t
             // Check if this href matches sutta HTML name pattern
             if RE_DHAMMATALKS_ORG_SUTTA_HTML_NAME.is_match(href) {
                 let ssp_href = dhammatalks_org_href_sutta_html_to_ssp(href);
+                let ssp_href = crate::sutta_uid_renames::rename_ssp_sutta_href(&ssp_href, renames)
+                    .unwrap_or(ssp_href);
                 replacements.push((href.to_string(), ssp_href));
             }
         }
@@ -5674,6 +5687,28 @@ mod tests {
         assert_eq!(dhammatalks_org_ref_notation_convert("MN_02"), "mn.2");
         assert_eq!(dhammatalks_org_ref_notation_convert("stnp1_1"), "snp1.1");
         assert_eq!(dhammatalks_org_ref_notation_convert("khp1"), "kp1");
+    }
+
+    #[test]
+    fn test_dhammatalk_org_convert_link_href_in_html_without_renames() {
+        let selector = Selector::parse("a").unwrap();
+        let html = r#"<p><a href="../AN/AN10_165.html#note1">AN 10:165</a> <a href='https://example.org/'>x</a></p>"#;
+        let out = dhammatalk_org_convert_link_href_in_html(&selector, html, &HashMap::new());
+        assert!(out.contains(r#"href="ssp://suttas/an10.165/en/thanissaro#note1""#), "{out}");
+        assert!(out.contains("href='https://example.org/'"), "{out}");
+    }
+
+    #[test]
+    fn test_dhammatalk_org_convert_link_href_in_html_with_rename() {
+        let selector = Selector::parse("a").unwrap();
+        let mut renames = HashMap::new();
+        renames.insert("an10.165/en/thanissaro".to_string(), "an10.176/en/thanissaro".to_string());
+        let html = r#"<p><a href="../AN/AN10_165.html#note1">AN 10:165</a> <a href="../AN/AN10_166.html">AN 10:166</a></p>"#;
+        let out = dhammatalk_org_convert_link_href_in_html(&selector, html, &renames);
+        // Renamed, anchor kept.
+        assert!(out.contains(r#"href="ssp://suttas/an10.176/en/thanissaro#note1""#), "{out}");
+        // Not in the map: the converted old uid.
+        assert!(out.contains(r#"href="ssp://suttas/an10.166/en/thanissaro""#), "{out}");
     }
 
     #[test]

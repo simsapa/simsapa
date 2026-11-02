@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use diesel::prelude::*;
 use scraper::{Html, Selector};
 use simsapa_backend::db::appdata_schema::suttas;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs;
 use regex::Regex;
@@ -33,7 +34,9 @@ impl DhammatalksSuttaImporter {
 
         // Find all <a> links inside #sutta and collect replacements
         let link_selector = Selector::parse("#sutta a").unwrap();
-        let modified_html = dhammatalk_org_convert_link_href_in_html(&link_selector, html_text);
+        // Old numbering on purpose: the suttas-core step rewrites the links in
+        // the records it keeps. See docs/suttas-core-import.md.
+        let modified_html = dhammatalk_org_convert_link_href_in_html(&link_selector, html_text, &HashMap::new());
 
         // Re-parse and extract #sutta content
         let modified_document = Html::parse_document(&modified_html);

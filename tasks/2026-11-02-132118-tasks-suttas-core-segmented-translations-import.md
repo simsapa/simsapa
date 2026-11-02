@@ -31,6 +31,8 @@ PRD: [2026-11-02-132118-prd---suttas-core-segmented-translations-import.md](./20
 - `bootstrap_cli/src/bootstrap/dhammatalks_org.rs` - Reference: the uids the old importer writes.
 - `bootstrap_cli/src/survey_suttas_core.rs` (new) - The `survey-suttas-core` command.
 - `bootstrap_cli/src/main.rs` - Register the subcommand.
+- `bootstrap_cli/src/bootstrap/footnote_sutta_links.rs` (new) - `link_sutta_refs()` (case-sensitive references in note HTML → `ssp://suttas/…` links, never inside tags or an existing `<a>`) and `SuttaRefResolver` (Pāli record or containing range; Ṭhānissaro through the old→new map, then kept records, then Pāli).
+- `bootstrap_cli/src/bootstrap/dhammatalks_org.rs` also: passes an empty rename map to the link conversion (old numbering on purpose).
 - `bootstrap_cli/src/bootstrap/thanissaro_intro.rs` (new) - Cuts Ṭhānissaro's introduction out of a dhammatalks.org record, by suttas-core's own rule.
 - `bootstrap_cli/Cargo.toml` - `ego-tree` (already in the tree through scraper) for sibling walks.
 - `backend/src/helpers.rs` also: `introduction_html()`, `insert_introduction()`, `ColumnSource.introduction`.
@@ -204,13 +206,13 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 
 **Depends on:** 1.0, 3.0, 5.0.
 
-- [ ] 6.0 Rename-table consumers: EPUB/HTML book link conversion and sutta-reference links inside footnotes (FR 27, 37)
-  - [ ] 6.1 Add the `renames` parameter to `dhammatalk_org_convert_link_href_in_html()`; update `epub_import.rs` (load the map from `db_conn`) and `dhammatalks_org.rs` (empty map). Update its existing tests and add one with a rename hit.
-  - [ ] 6.2 Confirm the bootstrap's library imports run after the suttas-core step in `bootstrap()`, so the shipped books get new uids.
-  - [ ] 6.3 Write the footnote reference linker as a pure function `link_sutta_refs(note_html, resolve: impl Fn(&str) -> Option<String>) -> String` with a case-sensitive pattern (`DN|MN|SN|AN|Dhp|Sn|Snp|Iti|Ud|Khp|Thag|Thig` + number, `:` read as `.`), and that never edits inside an existing `<a>` or inside tags.
-  - [ ] 6.4 Unit tests: `SN 36:11` → `sn36.11`; `Sn 4:11` → `snp4.11`; `AN 10:165` in a Ṭhānissaro note → `an10.176/en/thanissaro`; a list `SN 36:11, AN 9:31, and AN 10:72` links all three; `MN 118, note 3` links `MN 118` only; an existing link untouched.
-  - [ ] 6.5 Pass the linker as `link_fn` in 3.6, with the resolver built from the appdata uid set and (for `than`) the old→new map from 5.2. Compute the Ṭhānissaro map **once at the start of `SuttasCoreImporter::import()`**, before the replacement step, and hand it to both steps.
-  - [ ] 6.6 `cd backend && cargo test`, `cd bootstrap_cli && cargo test` pass.
+- [x] 6.0 Rename-table consumers: EPUB/HTML book link conversion and sutta-reference links inside footnotes (FR 27, 37)
+  - [x] 6.1 Add the `renames` parameter to `dhammatalk_org_convert_link_href_in_html()`; update `epub_import.rs` (load the map from `db_conn`) and `dhammatalks_org.rs` (empty map). Update its existing tests and add one with a rename hit.
+  - [x] 6.2 Confirm the bootstrap's library imports run after the suttas-core step in `bootstrap()`, so the shipped books get new uids.
+  - [x] 6.3 Write the footnote reference linker as a pure function `link_sutta_refs(note_html, resolve: impl Fn(&str) -> Option<String>) -> String` with a case-sensitive pattern (`DN|MN|SN|AN|Dhp|Sn|Snp|Iti|Ud|Khp|Thag|Thig` + number, `:` read as `.`), and that never edits inside an existing `<a>` or inside tags.
+  - [x] 6.4 Unit tests: `SN 36:11` → `sn36.11`; `Sn 4:11` → `snp4.11`; `AN 10:165` in a Ṭhānissaro note → `an10.176/en/thanissaro`; a list `SN 36:11, AN 9:31, and AN 10:72` links all three; `MN 118, note 3` links `MN 118` only; an existing link untouched.
+  - [x] 6.5 Pass the linker as `link_fn` in 3.6, with the resolver built from the appdata uid set and (for `than`) the old→new map from 5.2. Compute the Ṭhānissaro map **once at the start of `SuttasCoreImporter::import()`**, before the replacement step, and hand it to both steps.
+  - [x] 6.6 `cd backend && cargo test`, `cd bootstrap_cli && cargo test` pass.
 
 ### 7.0 `survey-suttas-core` command
 
