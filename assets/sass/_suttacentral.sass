@@ -437,3 +437,20 @@ body.dark .suttacentral
 body.dark .suttacentral.sbs-blocks .sbs-col
   --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35)
   --sbs-scrollbar-track: rgba(255, 255, 255, 0.08)
+
+// A record's introduction (suttas.description: Ajahn Ṭhānissaro's, carried over
+// from dhammatalks.org), above the text, after its title. In the multi-column
+// view, one per column that has one, above the grid, with the column label.
+.suttacentral .ssp-intro
+  margin: 1em 0 2em 0
+  padding-bottom: 1em
+  border-bottom: 1px solid var(--footnote-bar-border, rgba(128, 128, 128, 0.4))
+
+  h2.intro
+    font-size: 1.1em
+    padding-top: 0
+
+  .ssp-intro-label
+    font-size: 0.85em
+    font-weight: bold
+    margin-bottom: 0.5em

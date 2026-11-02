@@ -19,7 +19,7 @@ use crate::sutta_display::{columns_can_align, pali_uid_for_translation, uid_base
 use crate::opentipitaka::{is_ot_english_uid, ot_footer_html};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::footnotes::{definitions_html, footnote_id_prefix};
-use crate::helpers::{bilara_text_to_segments, bilara_content_json_to_html_full, BilaraSegments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
+use crate::helpers::{bilara_text_to_segments, bilara_content_json_to_html_full, BilaraSegments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, introduction_html, insert_introduction, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
 use crate::db::dictionaries_models::DictWord;
 use crate::html_content::{blank_html_page, sutta_html_page};
 use crate::{get_app_globals, init_app_globals};
@@ -583,12 +583,13 @@ impl AppData {
                 };
                 let rendered = self.sutta_to_segments_json(sutta, true, show_references, &prefix)
                                             .context("Failed to generate segments for standard view")?;
-                bilara_content_json_to_html_full(
+                let html = bilara_content_json_to_html_full(
                     &rendered.segments,
                     "",
                     "",
                     &definitions_html(&rendered.footnotes, &prefix, None),
-                )?
+                )?;
+                insert_introduction(&html, &introduction_html(sutta.description.as_deref(), None))
             } else {
                 "<div class='suttacentral bilara-text'></div>".to_string()
             }
@@ -694,6 +695,7 @@ impl AppData {
                     segments: rendered.segments,
                     footnotes: rendered.footnotes,
                     footnote_id_prefix: prefix,
+                    introduction: col.description.clone(),
                 });
             }
 

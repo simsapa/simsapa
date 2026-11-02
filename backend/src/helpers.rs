@@ -2886,6 +2886,44 @@ pub struct ColumnSource {
     pub footnotes: Vec<Footnote>,
     /// The footnote id prefix used for this column's references.
     pub footnote_id_prefix: String,
+    /// The text's introduction (`suttas.description`), shown above the grid.
+    pub introduction: Option<String>,
+}
+
+/// A record's introduction (`suttas.description`: Ajahn Ṭhānissaro's, carried
+/// over from dhammatalks.org because suttas-core drops it), as a section of
+/// the page. Empty when there is none. `column_label`: in the multi-column
+/// view, the column it belongs to. See docs/suttas-core-import.md.
+pub fn introduction_html(introduction: Option<&str>, column_label: Option<&str>) -> String {
+    let Some(intro) = introduction.map(str::trim).filter(|s| !s.is_empty()) else {
+        return String::new();
+    };
+    match column_label {
+        Some(label) => format!(
+            "<section class='ssp-intro' data-label='{}'><div class='ssp-intro-label'>{}</div>{}</section>",
+            label.replace('\'', "&#39;"), label, intro,
+        ),
+        None => format!("<section class='ssp-intro'>{}</section>", intro),
+    }
+}
+
+/// Places a single text's introduction after its title: after the first
+/// `</header>` of the rendered text, or at the start of the content wrapper
+/// when the template has no header.
+pub fn insert_introduction(content_html: &str, introduction_html: &str) -> String {
+    if introduction_html.is_empty() {
+        return content_html.to_string();
+    }
+    if let Some(i) = content_html.find("</header>") {
+        let at = i + "</header>".len();
+        return format!("{}{}{}", &content_html[..at], introduction_html, &content_html[at..]);
+    }
+    match content_html.find('>') {
+        Some(i) if content_html.starts_with("<div") => {
+            format!("{}{}{}", &content_html[..=i], introduction_html, &content_html[i + 1..])
+        }
+        _ => format!("{}{}", introduction_html, content_html),
+    }
 }
 
 /// Creates the multi-column sutta view combining the segments of N column
@@ -2997,7 +3035,18 @@ pub fn bilara_multi_column_html(
         .map(|col| definitions_html(&col.footnotes, &col.footnote_id_prefix, Some(&col.label)))
         .collect();
 
-    bilara_content_json_to_html_full(&content_json, &wrapper_extra_classes, &header_html, &notes_html)
+    // The introductions go above the grid: their text is not segmented.
+    let intros_html: String = columns
+        .iter()
+        .map(|col| introduction_html(col.introduction.as_deref(), Some(&col.label)))
+        .collect();
+
+    bilara_content_json_to_html_full(
+        &content_json,
+        &wrapper_extra_classes,
+        &format!("{}{}", intros_html, header_html),
+        &notes_html,
+    )
 }
 
 /// Unaligned block-columns fallback for column sets that include a
@@ -5535,6 +5584,32 @@ mod tests {
         assert_eq!(once, twice, "second pass is a no-op");
     }
 
+    #[test]
+    fn test_introduction_html() {
+        assert_eq!(introduction_html(None, None), "");
+        assert_eq!(introduction_html(Some("  "), None), "");
+        assert_eq!(introduction_html(Some("<p><em>Intro.</em></p>"), None), "<section class='ssp-intro'><p><em>Intro.</em></p></section>");
+        assert_eq!(
+            introduction_html(Some("<p>I</p>"), Some("Ṭhānissaro")),
+            "<section class='ssp-intro' data-label='Ṭhānissaro'><div class='ssp-intro-label'>Ṭhānissaro</div><p>I</p></section>",
+        );
+    }
+
+    #[test]
+    fn test_insert_introduction_after_the_title() {
+        let intro = "<section class='ssp-intro'>I</section>";
+        assert_eq!(
+            insert_introduction("<div class='x'><article><header><h1>T</h1></header><p>B</p></article></div>", intro),
+            "<div class='x'><article><header><h1>T</h1></header><section class='ssp-intro'>I</section><p>B</p></article></div>",
+        );
+        // No header: at the start of the wrapper.
+        assert_eq!(
+            insert_introduction("<div class='x'><p>B</p></div>", intro),
+            "<div class='x'><section class='ssp-intro'>I</section><p>B</p></div>",
+        );
+        assert_eq!(insert_introduction("<p>B</p>", ""), "<p>B</p>");
+    }
+
     fn cst_column(uid: &str, is_pali: bool, words: [&str; 2]) -> ColumnSource {
         ColumnSource {
             uid: uid.to_string(),
@@ -5546,6 +5621,7 @@ mod tests {
             ]),
             footnotes: Vec::new(),
             footnote_id_prefix: String::new(),
+            introduction: None,
         }
     }
 

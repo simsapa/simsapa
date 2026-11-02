@@ -134,3 +134,34 @@ were legitimate joins (end of a verse line, after an em dash).
 **Question:** is the trimming deliberate, and is it applied only where a
 segment ends a block, so that joining a block's segments with no separator
 is always correct?
+
+## 4. Ṭhānissaro's introductions are removed
+
+The `than` parser removes the introduction of every page
+(`src/sources/than/page.ts`, `bodyStart()`: the `h2.intro` section, or the
+run of mostly-`<em>` paragraphs after the `h1`), and skips `sn44`, whose page
+is only the saṁyutta's introduction. With the 2026-10-31 data that is the
+introduction of 141 texts, about 25,000 words, among them `dn1`, `dn2`,
+`dn15`, `dn16`, `dn33`, `mn9`, `mn22`, `mn49`, `mn60`, `mn101`, `mn122`,
+`sn1.20` and `thig10`.
+
+These are part of Ajahn Ṭhānissaro's translations as he publishes them.
+Simsapa cuts them out of its dhammatalks.org records by the same rule and
+keeps them with the segmented records, and keeps `sn44` as an HTML record.
+
+**Question:** could suttas-core keep the introductions, e.g. as a separate
+layer keyed by `sutta_id` (HTML or Markdown, with the note cites they
+contain), so that its output carries everything on the page?
+
+## 5. Two Ṭhānissaro texts have only empty segments
+
+`thag3.8` and `thag3.9` have 17 `sutta_segments` rows each, every one with
+`content = ''`, while their `raw_translations` rows hold the poems (375
+characters for `thag3.8`). The segmentation seems to have failed without an
+error.
+
+Simsapa does not import a text whose segments are all empty, and keeps its
+dhammatalks.org record of `thag3.8` (it has none of `thag3.9`).
+
+**Question:** can the build fail, or report, when a text's segments are all
+empty?

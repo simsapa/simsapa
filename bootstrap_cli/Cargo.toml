@@ -23,6 +23,7 @@ diesel = { version = "2.3.9", features = ["sqlite"] }
 diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
 arangors = "0.6.0"
 scraper = "0.21.0"
+ego-tree = "0.9"
 reqwest = { version = "0.12", features = ["blocking"] }
 indicatif = "0.17"
 regex = "1.11"

@@ -710,6 +710,21 @@ body.dark .suttacentral.sbs-blocks .sbs-col {
   --sbs-scrollbar-track: rgba(255, 255, 255, 0.08);
 }
 
+.suttacentral .ssp-intro {
+  margin: 1em 0 2em 0;
+  padding-bottom: 1em;
+  border-bottom: 1px solid var(--footnote-bar-border, rgba(128, 128, 128, 0.4));
+}
+.suttacentral .ssp-intro h2.intro {
+  font-size: 1.1em;
+  padding-top: 0;
+}
+.suttacentral .ssp-intro .ssp-intro-label {
+  font-size: 0.85em;
+  font-weight: bold;
+  margin-bottom: 0.5em;
+}
+
 .cst .note {
   color: blue;
 }

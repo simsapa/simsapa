@@ -1,0 +1,19 @@
+# Ajahn Ṭhānissaro: old-to-new uid overrides.
+#
+# The bootstrap maps each dhammatalks.org reference (his own numbering, e.g.
+# `an10.165`) to the SuttaCentral id of the suttas-core text that now carries
+# it (`an10.176`) by rules: raw match, range containment, single-poem chapter,
+# split page. See docs/suttas-core-import.md.
+#
+# This file is curated data for anything those rules get wrong or cannot
+# resolve. An entry here wins over the rules. `old` is the dhammatalks.org
+# reference, `new` a suttas-core `sutta_id` with Ṭhānissaro segments, both
+# without the `/en/thanissaro` suffix. An entry whose `new` is not such a text
+# is reported by the bootstrap and not applied.
+#
+# The file is embedded in the bootstrap binary: rebuild it after an edit.
+#
+# [[override]]
+# old = "an1.50"
+# new = "an1.51-60"
+# why = "…"

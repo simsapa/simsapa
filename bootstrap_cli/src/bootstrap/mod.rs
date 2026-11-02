@@ -3,6 +3,8 @@ pub mod appdata;
 pub mod suttacentral;
 pub mod dhammatalks_org;
 pub mod suttas_core;
+pub mod thanissaro_uid_map;
+pub mod thanissaro_intro;
 pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
 pub mod nyanadipa;

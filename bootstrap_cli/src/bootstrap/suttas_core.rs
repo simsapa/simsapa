@@ -6,7 +6,7 @@
 //! `content_plain`, copyright, title and the footnotes in the stored form of
 //! `simsapa_backend::footnotes`. See docs/suttas-core-import.md.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,13 +17,19 @@ use diesel::sql_types::{Integer, Nullable, Text};
 use indexmap::IndexMap;
 use regex::Regex;
 
-use simsapa_backend::db::appdata_models::NewSuttaComment;
-use simsapa_backend::db::appdata_schema::{sutta_comments, suttas};
+use simsapa_backend::db::appdata_models::{NewSutta, NewSuttaComment, NewSuttaUidRename};
+use simsapa_backend::db::appdata_schema::{sutta_comments, sutta_uid_renames, suttas};
 use simsapa_backend::footnotes::{encode_footnotes, Footnote};
-use simsapa_backend::helpers::consistent_niggahita;
+use simsapa_backend::helpers::{consistent_niggahita, pali_to_ascii, sutta_html_to_plain_text};
 use simsapa_backend::logger;
+use simsapa_backend::sutta_uid_renames::rename_ssp_sutta_href;
 
+use crate::bootstrap::helpers::{uid_to_nikaya, uid_to_ref, SuttaData};
 use crate::bootstrap::suttacentral::bilara_html_and_plain_text;
+use crate::bootstrap::thanissaro_intro::extract_introduction;
+use crate::bootstrap::thanissaro_uid_map::{
+    invalid_overrides, map_old_uids, parse_overrides, MapRule, Mapping, RawEntry, ThanIndex, OVERRIDES_TOML,
+};
 use crate::bootstrap::SuttaImporter;
 
 /// The `source_info` prefix of every record written from suttas-core.
@@ -226,15 +232,70 @@ impl SuttasCoreDb {
     }
 
     /// The `(sutta_id, language)` pairs that `translator` has segments for, in
-    /// `sutta_id` order.
+    /// `sutta_id` order. A text whose segments are all empty is left out: it
+    /// would replace a text with nothing (see [`Self::empty_texts`]).
     pub fn segmented_texts(&mut self, translator: &str) -> Result<Vec<(String, String)>> {
-        let rows: Vec<TextPair> = sql_query(
-            "SELECT DISTINCT sutta_id AS a, language AS b FROM sutta_segments \
-             WHERE translator = ? ORDER BY sutta_id, language",
-        )
+        self.texts_where(translator, "SUM(content <> '') > 0")
+    }
+
+    /// The texts of `translator` whose segments are all empty: a failed
+    /// segmentation upstream (`thag3.8` and `thag3.9` in the 2026-10-31 data).
+    pub fn empty_texts(&mut self, translator: &str) -> Result<Vec<(String, String)>> {
+        self.texts_where(translator, "SUM(content <> '') = 0")
+    }
+
+    fn texts_where(&mut self, translator: &str, having: &str) -> Result<Vec<(String, String)>> {
+        let rows: Vec<TextPair> = sql_query(format!(
+            "SELECT sutta_id AS a, language AS b FROM sutta_segments \
+             WHERE translator = ? GROUP BY sutta_id, language HAVING {} ORDER BY sutta_id, language",
+            having,
+        ))
         .bind::<Text, _>(translator)
         .load(&mut self.conn)?;
         Ok(rows.into_iter().map(|r| (r.a, r.b)).collect())
+    }
+
+    /// Logs the texts of `translator` that are skipped because all their
+    /// segments are empty. A defect to report upstream, not to repair here.
+    pub fn log_empty_texts(&mut self, translator: &str) -> Result<()> {
+        let empty = self.empty_texts(translator)?;
+        if !empty.is_empty() {
+            let ids: Vec<&str> = empty.iter().map(|(id, _)| id.as_str()).collect();
+            logger::warn(&format!(
+                "suttas-core {}: {} texts have only empty segments, not imported: {}",
+                translator, ids.len(), ids.join(" "),
+            ));
+        }
+        Ok(())
+    }
+
+    /// What the Ṭhānissaro uid map needs: his raws and his segmented texts.
+    pub fn than_index(&mut self) -> Result<ThanIndex> {
+        #[derive(QueryableByName)]
+        struct RawRow {
+            #[diesel(sql_type = Text)]
+            raw_sutta_id: String,
+            #[diesel(sql_type = Nullable<Text>)]
+            sutta_id: Option<String>,
+        }
+        let raws: Vec<RawRow> = sql_query(
+            "SELECT raw_sutta_id, sutta_id FROM raw_translations \
+             WHERE translator = ? ORDER BY raw_sutta_id",
+        )
+        .bind::<Text, _>(THANISSARO_LABEL)
+        .load(&mut self.conn)?;
+        let segmented = self
+            .segmented_texts(THANISSARO_LABEL)?
+            .into_iter()
+            .map(|(sutta_id, _)| sutta_id)
+            .collect();
+        Ok(ThanIndex {
+            raws: raws
+                .into_iter()
+                .map(|r| RawEntry { raw_sutta_id: r.raw_sutta_id, sutta_id: r.sutta_id })
+                .collect(),
+            segmented,
+        })
     }
 
     /// The `segment_structure` template of a text, in `ord` order.
@@ -605,6 +666,429 @@ fn log_replacement_report(label: &str, report: &ReplacementReport) {
     logger::debug(&format!("suttas-core {}: not in Simsapa: {}", label, report.skipped_missing.join(" ")));
 }
 
+/// Simsapa's `source_uid` for Ajahn Ṭhānissaro.
+pub const THANISSARO_SOURCE_UID: &str = "thanissaro";
+
+fn thanissaro_uid(reference: &str) -> String {
+    format!("{}/en/{}", reference, THANISSARO_SOURCE_UID)
+}
+
+/// The references of the records the dhammatalks.org import wrote: his
+/// English records with no `content_json`, e.g. `an10.165`.
+pub fn dhammatalks_old_refs(conn: &mut SqliteConnection) -> Result<Vec<String>> {
+    let uids: Vec<String> = suttas::table
+        .filter(suttas::source_uid.eq(THANISSARO_SOURCE_UID))
+        .filter(suttas::language.eq("en"))
+        .filter(suttas::content_json.is_null().or(suttas::content_json.eq("")))
+        .select(suttas::uid)
+        .order(suttas::uid.asc())
+        .load(conn)?;
+    let suffix = format!("/en/{}", THANISSARO_SOURCE_UID);
+    Ok(uids
+        .into_iter()
+        .filter_map(|u| u.strip_suffix(&suffix).map(|r| r.to_string()))
+        .collect())
+}
+
+/// The old-to-new map of the dhammatalks.org records, with the override
+/// entries that could not be applied.
+#[derive(Debug, Clone, Default)]
+pub struct ThanissaroMap {
+    pub mappings: Vec<Mapping>,
+    pub invalid_overrides: Vec<String>,
+}
+
+impl ThanissaroMap {
+    /// Full uid to full uid, for the mappings whose new text is in `handled`.
+    pub fn renames_for(&self, handled: &HashSet<String>) -> HashMap<String, String> {
+        self.mappings
+            .iter()
+            .filter_map(|m| m.new.as_ref().filter(|n| handled.contains(*n)).map(|n| (thanissaro_uid(&m.old), thanissaro_uid(n))))
+            .collect()
+    }
+}
+
+/// Builds the map from the dhammatalks.org records in `conn`, suttas-core's
+/// raws and the override file.
+pub fn build_thanissaro_map(db: &mut SuttasCoreDb, conn: &mut SqliteConnection) -> Result<ThanissaroMap> {
+    let index = db.than_index()?;
+    let overrides = parse_overrides(OVERRIDES_TOML)?;
+    let old_refs = dhammatalks_old_refs(conn)?;
+    Ok(ThanissaroMap {
+        mappings: map_old_uids(&old_refs, &index, &overrides),
+        invalid_overrides: invalid_overrides(&overrides, &index),
+    })
+}
+
+/// Rewrites the `ssp://suttas/…` hrefs of `html` through `renames`, and
+/// counts the rewritten links.
+pub fn rewrite_ssp_links(html: &str, renames: &HashMap<String, String>) -> (String, usize) {
+    lazy_static::lazy_static! {
+        static ref RE_HREF: Regex = Regex::new(r#"href=("ssp://suttas/[^"]*"|'ssp://suttas/[^']*')"#).unwrap();
+    }
+    let mut count = 0;
+    let out = RE_HREF.replace_all(html, |caps: &regex::Captures| {
+        let quoted = &caps[1];
+        let quote = &quoted[..1];
+        let href = &quoted[1..quoted.len() - 1];
+        match rename_ssp_sutta_href(href, renames) {
+            Some(new_href) => {
+                count += 1;
+                format!("href={}{}{}", quote, new_href, quote)
+            }
+            None => caps[0].to_string(),
+        }
+    });
+    (out.into_owned(), count)
+}
+
+/// Whether most of `text` is already in `haystack` (both plain text): of
+/// up to five 8-word windows spread over `text`, more than half are found.
+fn text_is_in(text: &str, haystack: &str) -> bool {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let hay = haystack.split_whitespace().collect::<Vec<_>>().join(" ");
+    const W: usize = 8;
+    if words.len() < W {
+        return hay.contains(&words.join(" "));
+    }
+    let last = words.len() - W;
+    let samples: Vec<usize> = (0..5).map(|k| last * k / 4).collect::<HashSet<_>>().into_iter().collect();
+    let found = samples.iter().filter(|&&i| hay.contains(&words[i..i + W].join(" "))).count();
+    found * 2 > samples.len()
+}
+
+/// The outcome of the Ṭhānissaro step.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ThanissaroReport {
+    /// New segmented records, by uid.
+    pub imported: Vec<String>,
+    /// suttas-core texts whose uid already has `content_json`: kept.
+    pub skipped_segmented: Vec<String>,
+    /// dhammatalks.org records deleted, their text now in a segmented record.
+    pub deleted: Vec<String>,
+    /// dhammatalks.org records kept because no rule mapped them.
+    pub kept_unmapped: Vec<String>,
+    /// dhammatalks.org records kept because their new text was not imported
+    /// in this run (`--limit`, or a failed build).
+    pub kept_not_imported: Vec<String>,
+    /// Texts not inserted because an unmapped record holds their uid.
+    pub conflicts: Vec<String>,
+    pub failed: Vec<String>,
+    /// Texts with no suttas-core title, and the title used instead.
+    pub title_fallbacks: Vec<String>,
+    /// New records that carry an introduction from the old record, in
+    /// `description`.
+    pub introductions: Vec<String>,
+    /// Old records whose introduction is already in the suttas-core text.
+    pub intros_already_present: Vec<String>,
+    pub links_rewritten: usize,
+    /// Mapped dhammatalks.org records per mapping rule.
+    pub rule_counts: BTreeMap<&'static str, usize>,
+}
+
+/// Imports every segmented Ṭhānissaro text under its SuttaCentral uid and
+/// retires the dhammatalks.org records they replace. Builds first, then in
+/// one transaction: deletes the mapped old records (before any insert: the
+/// numberings collide), inserts the new ones, writes `sutta_uid_renames` and
+/// rewrites old-numbered links in the records kept.
+pub fn import_thanissaro(
+    db: &mut SuttasCoreDb,
+    conn: &mut SqliteConnection,
+    map: &ThanissaroMap,
+    limit: Option<usize>,
+    link_fn: &dyn Fn(&str) -> String,
+) -> Result<ThanissaroReport> {
+    let mut report = ThanissaroReport::default();
+    for m in &map.mappings {
+        if let Some(rule) = m.rule {
+            *report.rule_counts.entry(rule.as_str()).or_default() += 1;
+        }
+    }
+
+    let mut texts = db.segmented_texts(THANISSARO_LABEL)?;
+    if let Some(limit) = limit {
+        texts.truncate(limit);
+    }
+
+    // Build first, so only texts that were really imported retire an old record.
+    let mut built: Vec<(String, CoreRecord)> = Vec::new();
+    let mut handled: HashSet<String> = HashSet::new();
+    for (sutta_id, language) in texts {
+        let uid = thanissaro_uid(&sutta_id);
+        let existing: Option<Option<String>> = suttas::table
+            .filter(suttas::uid.eq(&uid))
+            .select(suttas::content_json)
+            .first(conn)
+            .optional()?;
+        if existing.as_ref().is_some_and(has_content_json) {
+            report.skipped_segmented.push(uid);
+            handled.insert(sutta_id);
+            continue;
+        }
+        match db.build_record(&sutta_id, THANISSARO_LABEL, &language, conn, link_fn) {
+            Ok(rec) => {
+                handled.insert(sutta_id.clone());
+                built.push((sutta_id, rec));
+            }
+            Err(e) => {
+                logger::error(&format!("suttas-core than {}: {:#}", sutta_id, e));
+                report.failed.push(format!("{}: {:#}", sutta_id, e));
+            }
+        }
+    }
+
+    // A new text whose uid is held by an old record that stays (unmapped, or
+    // its own new text not imported: with --limit, old an3.100 stays when SC
+    // an3.99 is not imported) cannot be inserted. Leave it out, which keeps
+    // the old record it would have retired, and repeat until nothing changes.
+    let old_uids: HashSet<String> = dhammatalks_old_refs(conn)?.iter().map(|r| thanissaro_uid(r)).collect();
+    let mut renames = map.renames_for(&handled);
+    loop {
+        let blocked: Vec<String> = built
+            .iter()
+            .map(|(id, _)| id)
+            .filter(|id| handled.contains(*id))
+            .filter(|id| {
+                let uid = thanissaro_uid(id);
+                old_uids.contains(&uid) && !renames.contains_key(&uid)
+            })
+            .cloned()
+            .collect();
+        if blocked.is_empty() {
+            break;
+        }
+        for id in blocked {
+            let uid = thanissaro_uid(&id);
+            logger::error(&format!(
+                "suttas-core than: {} is held by a dhammatalks.org record that stays; not imported",
+                uid,
+            ));
+            report.conflicts.push(uid);
+            handled.remove(&id);
+        }
+        renames = map.renames_for(&handled);
+    }
+    built.retain(|(id, _)| handled.contains(id));
+
+    for m in &map.mappings {
+        match &m.new {
+            None => report.kept_unmapped.push(thanissaro_uid(&m.old)),
+            Some(new) if !handled.contains(new) => report.kept_not_imported.push(thanissaro_uid(&m.old)),
+            Some(_) => {}
+        }
+    }
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        // From the old records, before they are deleted: their titles, for
+        // texts suttas-core has no title for (not a split page's: its title
+        // names the whole page, sn43 is the saṁyutta), and the introductions
+        // suttas-core removes from every page.
+        let built_plain: HashMap<&str, &str> =
+            built.iter().map(|(id, rec)| (id.as_str(), rec.content_plain.as_str())).collect();
+        let mut old_titles: HashMap<String, String> = HashMap::new();
+        let mut intros: HashMap<String, Vec<String>> = HashMap::new();
+        let mut to_delete: Vec<&String> = renames.keys().collect();
+        to_delete.sort();
+        for m in &map.mappings {
+            let old_uid = thanissaro_uid(&m.old);
+            let (Some(new), true) = (&m.new, renames.contains_key(&old_uid)) else {
+                continue;
+            };
+            let old: Option<(Option<String>, Option<String>)> = suttas::table
+                .filter(suttas::uid.eq(&old_uid))
+                .select((suttas::title, suttas::content_html))
+                .first(conn)
+                .optional()?;
+            let Some((title, html)) = old else { continue };
+
+            if m.rule != Some(MapRule::SplitPage) && !old_titles.contains_key(new) {
+                if let Some(title) = title.filter(|t| !t.trim().is_empty()) {
+                    old_titles.insert(new.clone(), title);
+                }
+            }
+
+            let Some(intro) = html.as_deref().and_then(extract_introduction) else { continue };
+            let (intro, _) = rewrite_ssp_links(&intro, &renames);
+            if built_plain.get(new.as_str()).is_some_and(|plain| text_is_in(&sutta_html_to_plain_text(&intro), plain)) {
+                report.intros_already_present.push(old_uid);
+                continue;
+            }
+            intros.entry(new.clone()).or_default().push(intro);
+        }
+
+        // Delete every mapped old record before inserting: an old uid can be
+        // a new one too (old an3.100 is SC an3.99, SC an3.100 is old an3.101).
+        // Through Diesel, so the FTS triggers and the comment cascade run.
+        let deleted = diesel::delete(
+            suttas::table
+                .filter(suttas::uid.eq_any(&to_delete))
+                .filter(suttas::content_json.is_null().or(suttas::content_json.eq(""))),
+        )
+        .execute(conn)?;
+        if deleted != to_delete.len() {
+            logger::warn(&format!(
+                "suttas-core than: {} mapped dhammatalks.org records, {} deleted",
+                to_delete.len(), deleted,
+            ));
+        }
+        report.deleted = to_delete.iter().map(|u| u.to_string()).collect();
+
+        for (sutta_id, rec) in &built {
+            let uid = thanissaro_uid(sutta_id);
+            let still_there: Option<i32> = suttas::table
+                .filter(suttas::uid.eq(&uid))
+                .select(suttas::id)
+                .first(conn)
+                .optional()?;
+            if still_there.is_some() {
+                // Ruled out above; a record here means the map and the
+                // database disagree, and the transaction must not go on.
+                return Err(anyhow!("suttas-core than: {} still exists after the old records were deleted", uid));
+            }
+
+            let title_pali: Option<String> = suttas::table
+                .filter(suttas::uid.eq(format!("{}/pli/ms", sutta_id)))
+                .select(suttas::title)
+                .first::<Option<String>>(conn)
+                .optional()?
+                .flatten();
+
+            let title = match rec.title.clone() {
+                Some(t) => t,
+                None => {
+                    let fallback = old_titles
+                        .get(sutta_id)
+                        .cloned()
+                        .or_else(|| title_pali.clone())
+                        .unwrap_or_else(|| uid_to_ref(sutta_id));
+                    logger::info(&format!("suttas-core than {}: no title, using \"{}\"", sutta_id, fallback));
+                    report.title_fallbacks.push(format!("{}: {}", sutta_id, fallback));
+                    fallback
+                }
+            };
+            let title_ascii = pali_to_ascii(Some(&title));
+            // In the dhammatalks.org wrapper, whose styles its verses use.
+            let introduction = intros
+                .get(sutta_id)
+                .map(|blocks| format!("<div class=\"dhammatalks_org\">{}</div>", blocks.join("\n")));
+            // The introduction is searchable, as it was in the old record.
+            let content_plain = match &introduction {
+                Some(intro) => format!("{}\n\n{}", sutta_html_to_plain_text(intro), rec.content_plain),
+                None => rec.content_plain.clone(),
+            };
+            if introduction.is_some() {
+                report.introductions.push(uid.clone());
+            }
+            let sutta_ref = uid_to_ref(sutta_id);
+            let nikaya = uid_to_nikaya(sutta_id);
+            let (range_group, range_start, range_end) = SuttaData::parse_range_from_uid(&uid);
+
+            diesel::insert_into(suttas::table)
+                .values(NewSutta {
+                    uid: &uid,
+                    sutta_ref: &sutta_ref,
+                    nikaya: &nikaya,
+                    language: "en",
+                    group_path: None,
+                    group_index: None,
+                    order_index: None,
+                    sutta_range_group: range_group.as_deref(),
+                    sutta_range_start: range_start,
+                    sutta_range_end: range_end,
+                    title: Some(&title),
+                    title_ascii: Some(&title_ascii),
+                    title_pali: title_pali.as_deref(),
+                    title_trans: None,
+                    description: introduction.as_deref(),
+                    content_plain: Some(&content_plain),
+                    content_html: None,
+                    content_json: Some(&rec.content_json),
+                    content_json_tmpl: Some(&rec.content_json_tmpl),
+                    source_uid: Some(THANISSARO_SOURCE_UID),
+                    source_info: Some(&rec.source_info),
+                    source_language: None,
+                    message: None,
+                    copyright: rec.copyright.as_deref(),
+                    license: rec.license.as_deref(),
+                })
+                .execute(conn)
+                .with_context(|| format!("Inserting {}", uid))?;
+            let id: i32 = suttas::table.filter(suttas::uid.eq(&uid)).select(suttas::id).first(conn)?;
+            write_comments(conn, id, &uid, "en", THANISSARO_SOURCE_UID, rec.footnotes_value.as_deref())?;
+            report.imported.push(uid);
+        }
+
+        let mut renamed: Vec<(&String, &String)> = renames.iter().collect();
+        renamed.sort();
+        for (old_uid, new_uid) in renamed {
+            let old_ref = old_uid.strip_suffix(&format!("/en/{}", THANISSARO_SOURCE_UID)).unwrap_or(old_uid);
+            let rule = map
+                .mappings
+                .iter()
+                .find(|m| m.old == old_ref)
+                .and_then(|m| m.rule)
+                .map(|r| r.as_str())
+                .unwrap_or("");
+            diesel::replace_into(sutta_uid_renames::table)
+                .values(NewSuttaUidRename { old_uid, new_uid, reason: rule })
+                .execute(conn)?;
+        }
+
+        // Links in the records kept still use the old numbering.
+        let kept: Vec<(i32, Option<String>)> = suttas::table
+            .filter(suttas::source_uid.eq(THANISSARO_SOURCE_UID))
+            .filter(suttas::content_json.is_null().or(suttas::content_json.eq("")))
+            .select((suttas::id, suttas::content_html))
+            .load(conn)?;
+        for (id, html) in kept {
+            let Some(html) = html else { continue };
+            let (new_html, count) = rewrite_ssp_links(&html, &renames);
+            if count > 0 {
+                diesel::update(suttas::table.filter(suttas::id.eq(id)))
+                    .set(suttas::content_html.eq(new_html))
+                    .execute(conn)?;
+                report.links_rewritten += count;
+            }
+        }
+        Ok(())
+    })?;
+
+    Ok(report)
+}
+
+fn log_thanissaro_report(map: &ThanissaroMap, report: &ThanissaroReport) {
+    for line in &map.invalid_overrides {
+        logger::error(&format!("suttas-core than: {}", line));
+    }
+    logger::info(&format!(
+        "suttas-core than: imported {}, skipped (already segmented) {}, old records deleted {}, \
+         kept (unmapped) {}, kept (new text not imported) {}, conflicts {}, failed {}, \
+         title fallbacks {}, links rewritten {}, introductions carried over {}, \
+         introductions already in the text {}",
+        report.imported.len(),
+        report.skipped_segmented.len(),
+        report.deleted.len(),
+        report.kept_unmapped.len(),
+        report.kept_not_imported.len(),
+        report.conflicts.len(),
+        report.failed.len(),
+        report.title_fallbacks.len(),
+        report.links_rewritten,
+        report.introductions.len(),
+        report.intros_already_present.len(),
+    ));
+    let rules: Vec<String> = report.rule_counts.iter().map(|(r, n)| format!("{} {}", r, n)).collect();
+    logger::info(&format!("suttas-core than: mapping rules: {}", rules.join(", ")));
+    for uid in &report.kept_unmapped {
+        logger::info(&format!("suttas-core than: unmapped, kept: {}", uid));
+    }
+    logger::debug(&format!("suttas-core than: imported: {}", report.imported.join(" ")));
+    logger::debug(&format!("suttas-core than: introductions carried over: {}", report.introductions.join(" ")));
+    logger::debug(&format!("suttas-core than: introductions already in the text: {}", report.intros_already_present.join(" ")));
+    logger::debug(&format!("suttas-core than: deleted: {}", report.deleted.join(" ")));
+    logger::debug(&format!("suttas-core than: kept (not imported): {}", report.kept_not_imported.join(" ")));
+}
+
 /// Imports segmented translations from suttas-core. See
 /// docs/suttas-core-import.md.
 pub struct SuttasCoreImporter {
@@ -629,6 +1113,7 @@ impl SuttasCoreImporter {
             if label == THANISSARO_LABEL {
                 continue;
             }
+            db.log_empty_texts(&label)?;
             let report = conn.transaction::<_, anyhow::Error, _>(|conn| {
                 replace_label(db, conn, &label, limit, &link_fn)
             })?;
@@ -636,6 +1121,15 @@ impl SuttasCoreImporter {
             reports.push((label, report));
         }
         Ok(reports)
+    }
+
+    fn import_thanissaro(&self, db: &mut SuttasCoreDb, conn: &mut SqliteConnection, map: &ThanissaroMap) -> Result<ThanissaroReport> {
+        let limit = self.limit.and_then(|l| usize::try_from(l).ok());
+        let link_fn = |s: &str| s.to_string();
+        db.log_empty_texts(THANISSARO_LABEL)?;
+        let report = import_thanissaro(db, conn, map, limit, &link_fn)?;
+        log_thanissaro_report(map, &report);
+        Ok(report)
     }
 }
 
@@ -645,7 +1139,11 @@ impl SuttaImporter for SuttasCoreImporter {
             logger::warn(&format!("suttas-core database not found, skipping: {}", self.db_path.display()));
             return Ok(());
         };
+        // The Ṭhānissaro map is built before anything changes the records it
+        // reads.
+        let than_map = build_thanissaro_map(&mut db, conn)?;
         self.replace_html_records(&mut db, conn)?;
+        self.import_thanissaro(&mut db, conn, &than_map)?;
         Ok(())
     }
 }
@@ -654,6 +1152,7 @@ impl SuttaImporter for SuttasCoreImporter {
 mod tests {
     use super::*;
     use diesel::connection::SimpleConnection;
+    use simsapa_backend::db::appdata_models::Sutta;
     use simsapa_backend::footnotes::{parse_comment_value, CommentValue};
 
     const CORE_SCHEMA: &str = "
@@ -1063,9 +1562,290 @@ mod tests {
         assert!(row(&mut app, "mn1/en/bodhi").0.is_none());
     }
 
-    /// Runs the replacement step of the real suttas-core data on a **copy** of
-    /// an appdata, named by `SUTTAS_CORE_SCRATCH_APPDATA`, and prints the
-    /// counts per label. Never point it at the dist database: it writes.
+    /// Adds a Ṭhānissaro text to the fixture under `sutta_id`, with the `mn1`
+    /// template keys (only key membership matters to the builder), one note,
+    /// and a raw `raw_sutta_id` → `sutta_id`.
+    fn add_than_text(db: &mut SuttasCoreDb, raw_sutta_id: &str, sutta_id: &str, title: Option<&str>) {
+        for (i, (k, v)) in mn1_template().iter().enumerate() {
+            sql_query("INSERT INTO segment_structure (sutta_id, segment_id, ord, template, parents, starts_block, ends_block) VALUES (?, ?, ?, ?, '[]', 0, 0)")
+                .bind::<Text, _>(sutta_id).bind::<Text, _>(k).bind::<Integer, _>(i as i32).bind::<Text, _>(v)
+                .execute(&mut db.conn).unwrap();
+            sql_query("INSERT INTO sutta_segments (sutta_id, segment_id, language, translator, ord, content) VALUES (?, ?, 'en', 'than', ?, ?)")
+                .bind::<Text, _>(sutta_id).bind::<Text, _>(k).bind::<Integer, _>(i as i32)
+                .bind::<Text, _>(format!("{} text {}. ", sutta_id, i))
+                .execute(&mut db.conn).unwrap();
+        }
+        sql_query("INSERT INTO segment_footnotes VALUES (?, 'than', 'en', 'mn1:1.1', 1, NULL, 0, 'A note.', 0)")
+            .bind::<Text, _>(sutta_id)
+            .execute(&mut db.conn).unwrap();
+        sql_query("INSERT INTO raw_translations VALUES (?, ?, ?, 'than', 'en', 'x', ?, '', '', 0)")
+            .bind::<Text, _>(format!("{}:than:en", raw_sutta_id)).bind::<Text, _>(raw_sutta_id)
+            .bind::<Text, _>(sutta_id).bind::<Nullable<Text>, _>(title)
+            .execute(&mut db.conn).unwrap();
+    }
+
+    fn insert_old_than(conn: &mut SqliteConnection, reference: &str, title: &str, html: &str) {
+        sql_query("INSERT INTO suttas (uid, sutta_ref, nikaya, language, title, content_html, source_uid) VALUES (?, 'x', 'x', 'en', ?, ?, 'thanissaro')")
+            .bind::<Text, _>(thanissaro_uid(reference)).bind::<Text, _>(title).bind::<Text, _>(html)
+            .execute(conn).unwrap();
+    }
+
+    /// Old an3.100 is SC an3.99, old an3.101 is SC an3.100; sn43 was split
+    /// into sn43.1; an3.99 and sn43.1 have no suttas-core title; kp1 is
+    /// unmapped and links to the two colliding old uids.
+    fn than_fixture() -> (tempfile::TempDir, SqliteConnection, SuttasCoreDb) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = scratch_appdata(&dir);
+        let mut db = core_db();
+        add_than_text(&mut db, "an3.100", "an3.99", None);
+        add_than_text(&mut db, "an3.101", "an3.100", Some("Title 100"));
+        add_than_text(&mut db, "sn43:sn43.1", "sn43.1", None);
+        insert_old_than(&mut app, "an3.100", "Old 100", "<p>old an3.100</p>");
+        insert_old_than(&mut app, "an3.101", "Old 101", concat!(
+            "<div class=\"dhammatalks_org\"><h1>The Salt Crystal</h1>",
+            "<p><em>An introduction, see <a href=\"ssp://suttas/an3.100/en/thanissaro\">AN 3:100</a> again.</em></p>",
+            "<p class=\"stars\">* * *</p><p>old an3.101</p></div>",
+        ));
+        insert_old_than(&mut app, "sn43", "Old sn43", "<p>old sn43</p>");
+        insert_old_than(&mut app, "kp1", "Old kp1", concat!(
+            "<p><a href=\"ssp://suttas/an3.100/en/thanissaro\">A</a> ",
+            "<a href='ssp://suttas/an3.101/en/thanissaro#x'>B</a> ",
+            "<a href=\"ssp://suttas/mn1/pli/ms\">C</a></p>",
+        ));
+        (dir, app, db)
+    }
+
+    fn than_uids(conn: &mut SqliteConnection) -> Vec<(String, bool)> {
+        let rows: Vec<(String, Option<String>)> = suttas::table
+            .filter(suttas::source_uid.eq(THANISSARO_SOURCE_UID))
+            .select((suttas::uid, suttas::content_json))
+            .order(suttas::uid.asc())
+            .load(conn)
+            .unwrap();
+        rows.into_iter().map(|(u, j)| (u, has_content_json(&j))).collect()
+    }
+
+    fn renames_rows(conn: &mut SqliteConnection) -> Vec<(String, String, String)> {
+        sutta_uid_renames::table
+            .select((sutta_uid_renames::old_uid, sutta_uid_renames::new_uid, sutta_uid_renames::reason))
+            .order(sutta_uid_renames::old_uid.asc())
+            .load(conn)
+            .unwrap()
+    }
+
+    fn kp1_html(conn: &mut SqliteConnection) -> String {
+        suttas::table
+            .filter(suttas::uid.eq("kp1/en/thanissaro"))
+            .select(suttas::content_html)
+            .first::<Option<String>>(conn)
+            .unwrap()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_thanissaro_import_on_scratch_appdata() {
+        let (_dir, mut app, mut db) = than_fixture();
+        let map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let report = import_thanissaro(&mut db, &mut app, &map, None, &identity).unwrap();
+
+        assert_eq!(
+            than_uids(&mut app),
+            [
+                ("an3.100/en/thanissaro".to_string(), true),
+                ("an3.99/en/thanissaro".to_string(), true),
+                ("kp1/en/thanissaro".to_string(), false),
+                ("sn43.1/en/thanissaro".to_string(), true),
+            ],
+        );
+        assert_eq!(report.imported.len(), 3);
+        assert_eq!(report.deleted.len(), 3);
+        assert_eq!(report.kept_unmapped, ["kp1/en/thanissaro"]);
+        assert!(report.conflicts.is_empty() && report.failed.is_empty());
+
+        // The collision resolved: the record at an3.100 is SC an3.100, the old an3.101.
+        let (json, _, title, _, _, info) = row(&mut app, "an3.100/en/thanissaro");
+        assert!(json.unwrap().contains("an3.100 text 1."));
+        assert_eq!(title.as_deref(), Some("Title 100"));
+        assert_eq!(info.as_deref(), Some("suttas-core 2026-10-31"));
+        assert_eq!(comment_count(&mut app, "an3.100/en/thanissaro"), 1);
+
+        // No suttas-core title, and the old record is the whole split page,
+        // whose title is not this sutta's: the Pāli title, here the reference.
+        assert_eq!(row(&mut app, "sn43.1/en/thanissaro").2.as_deref(), Some("SN 43.1"));
+        // No suttas-core title for an3.99: the old record that carried its text.
+        assert_eq!(row(&mut app, "an3.99/en/thanissaro").2.as_deref(), Some("Old 100"));
+        assert_eq!(report.title_fallbacks, ["an3.99: Old 100", "sn43.1: SN 43.1"]);
+
+        let full: Sutta = suttas::table
+            .filter(suttas::uid.eq("an3.99/en/thanissaro"))
+            .select(Sutta::as_select())
+            .first(&mut app)
+            .unwrap();
+        assert_eq!(full.sutta_ref, "AN 3.99");
+        assert_eq!(full.nikaya, "an");
+        assert_eq!(full.language, "en");
+        assert_eq!((full.sutta_range_group.as_deref(), full.sutta_range_start, full.sutta_range_end), (Some("an3"), Some(99), Some(99)));
+        assert_eq!(full.title_ascii.as_deref(), Some("Old 100"));
+        assert_eq!(full.content_html, None);
+
+        assert_eq!(
+            renames_rows(&mut app),
+            [
+                ("an3.100/en/thanissaro".to_string(), "an3.99/en/thanissaro".to_string(), "raw_match".to_string()),
+                ("an3.101/en/thanissaro".to_string(), "an3.100/en/thanissaro".to_string(), "raw_match".to_string()),
+                ("sn43/en/thanissaro".to_string(), "sn43.1/en/thanissaro".to_string(), "split_page".to_string()),
+            ],
+        );
+
+        // The introduction suttas-core dropped, carried over from old an3.101,
+        // its link rewritten, and searchable.
+        assert_eq!(report.introductions, ["an3.100/en/thanissaro"]);
+        let (intro, plain): (Option<String>, Option<String>) = suttas::table
+            .filter(suttas::uid.eq("an3.100/en/thanissaro"))
+            .select((suttas::description, suttas::content_plain))
+            .first(&mut app)
+            .unwrap();
+        assert_eq!(
+            intro.as_deref(),
+            Some("<div class=\"dhammatalks_org\"><p><em>An introduction, see <a href=\"ssp://suttas/an3.99/en/thanissaro\">AN 3:100</a> again.</em></p></div>"),
+        );
+        let plain = plain.unwrap();
+        assert!(plain.starts_with("an introduction see an 3 100 again"), "{}", plain);
+        assert!(plain.contains("an3 100 text 1"), "{}", plain);
+        assert!(row(&mut app, "an3.99/en/thanissaro").0.is_some());
+
+        // The kept record's old-numbered links, rewritten once each.
+        let html = kp1_html(&mut app);
+        assert!(html.contains("href=\"ssp://suttas/an3.99/en/thanissaro\""), "{}", html);
+        assert!(html.contains("href='ssp://suttas/an3.100/en/thanissaro#x'"), "{}", html);
+        assert!(html.contains("href=\"ssp://suttas/mn1/pli/ms\""), "{}", html);
+        assert_eq!(report.links_rewritten, 2);
+        assert_eq!(report.rule_counts.get("raw_match"), Some(&2));
+        assert_eq!(report.rule_counts.get("split_page"), Some(&1));
+    }
+
+    #[test]
+    fn test_thanissaro_limit_never_deletes_unreplaced_text() {
+        let (_dir, mut app, mut db) = than_fixture();
+        let map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        // The first text in order is an3.100, whose uid is held by the old
+        // an3.100 (SC an3.99, not imported in this run): nothing can be done.
+        let report = import_thanissaro(&mut db, &mut app, &map, Some(1), &identity).unwrap();
+
+        assert!(report.imported.is_empty());
+        assert!(report.deleted.is_empty());
+        assert_eq!(report.conflicts, ["an3.100/en/thanissaro"]);
+        assert_eq!(than_uids(&mut app).iter().filter(|(_, segmented)| !segmented).count(), 4);
+        assert!(renames_rows(&mut app).is_empty());
+
+        // Two texts: an3.100 and an3.99, so both colliding old records go.
+        let (_dir, mut app, mut db) = than_fixture();
+        let report = import_thanissaro(&mut db, &mut app, &map, Some(2), &identity).unwrap();
+        assert_eq!(report.imported.len(), 2);
+        assert_eq!(report.kept_not_imported, ["sn43/en/thanissaro"]);
+        assert!(than_uids(&mut app).contains(&("sn43/en/thanissaro".to_string(), false)));
+        assert_eq!(renames_rows(&mut app).len(), 2);
+        // Links to sn43 are left alone: it still exists under its old uid.
+        assert!(kp1_html(&mut app).contains("an3.99/en/thanissaro"));
+    }
+
+    #[test]
+    fn test_thanissaro_keeps_an_already_segmented_record() {
+        let (_dir, mut app, mut db) = than_fixture();
+        sql_query("INSERT INTO suttas (uid, sutta_ref, nikaya, language, content_json, source_uid) VALUES ('an3.99/en/thanissaro', 'x', 'x', 'en', '{\"k\":\"SC\"}', 'thanissaro')")
+            .execute(&mut app).unwrap();
+        let map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let report = import_thanissaro(&mut db, &mut app, &map, None, &identity).unwrap();
+
+        assert_eq!(report.skipped_segmented, ["an3.99/en/thanissaro"]);
+        assert_eq!(row(&mut app, "an3.99/en/thanissaro").0.as_deref(), Some("{\"k\":\"SC\"}"));
+        // The old record that maps to it is still retired.
+        assert!(report.deleted.contains(&"an3.100/en/thanissaro".to_string()));
+        assert!(!than_uids(&mut app).iter().any(|(u, s)| u == "an3.100/en/thanissaro" && !s));
+    }
+
+    #[test]
+    fn test_empty_text_is_not_segmented() {
+        let (_dir, mut app, mut db) = than_fixture();
+        // suttas-core's an3.99 has only empty segments: old an3.100 must stay.
+        sql_query("UPDATE sutta_segments SET content = '' WHERE sutta_id = 'an3.99'").execute(&mut db.conn).unwrap();
+        assert_eq!(db.empty_texts("than").unwrap(), vec![("an3.99".to_string(), "en".to_string())]);
+        assert!(!db.segmented_texts("than").unwrap().iter().any(|(id, _)| id == "an3.99"));
+
+        let map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let report = import_thanissaro(&mut db, &mut app, &map, None, &identity).unwrap();
+        assert!(report.kept_unmapped.contains(&"an3.100/en/thanissaro".to_string()));
+        // Old an3.100 holds the uid of SC an3.100 (old an3.101), which therefore
+        // cannot be imported either, and old an3.101 stays.
+        assert_eq!(report.conflicts, ["an3.100/en/thanissaro"]);
+        assert_eq!(report.imported, ["sn43.1/en/thanissaro"]);
+        let uids = than_uids(&mut app);
+        assert!(uids.contains(&("an3.100/en/thanissaro".to_string(), false)));
+        assert!(uids.contains(&("an3.101/en/thanissaro".to_string(), false)));
+        assert!(!uids.iter().any(|(u, _)| u == "an3.99/en/thanissaro"));
+    }
+
+    #[test]
+    fn test_rewrite_ssp_links() {
+        let mut renames = HashMap::new();
+        renames.insert("a/en/thanissaro".to_string(), "b/en/thanissaro".to_string());
+        renames.insert("b/en/thanissaro".to_string(), "c/en/thanissaro".to_string());
+        let (out, n) = rewrite_ssp_links(
+            "<a href=\"ssp://suttas/a/en/thanissaro\">x</a><a href='ssp://suttas/b/en/thanissaro#p'>y</a><a href=\"https://x\">z</a>",
+            &renames,
+        );
+        // One pass: a becomes b, not c.
+        assert_eq!(out, "<a href=\"ssp://suttas/b/en/thanissaro\">x</a><a href='ssp://suttas/c/en/thanissaro#p'>y</a><a href=\"https://x\">z</a>");
+        assert_eq!(n, 2);
+    }
+
+    /// The Ṭhānissaro map of the real data: the dist appdata's dhammatalks.org
+    /// records against suttas-core, both read-only. Prints the rule counts and
+    /// the unmapped references.
+    /// `cargo test real_data_thanissaro_map -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn test_real_data_thanissaro_map() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
+        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+            .unwrap()
+            .expect("suttas-core database");
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+
+        let map = build_thanissaro_map(&mut db, &mut app).unwrap();
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut unmapped = Vec::new();
+        let mut targets: HashMap<&str, Vec<&str>> = HashMap::new();
+        for m in &map.mappings {
+            match (&m.new, m.rule) {
+                (Some(new), Some(rule)) => {
+                    *counts.entry(rule.as_str()).or_default() += 1;
+                    targets.entry(new).or_default().push(&m.old);
+                    if rule != crate::bootstrap::thanissaro_uid_map::MapRule::RawMatch {
+                        simsapa_backend::logger::write_stdout(format_args!("  {} -> {} ({})\n", m.old, new, rule.as_str()));
+                    }
+                }
+                _ => unmapped.push(m.old.clone()),
+            }
+        }
+        let mut shared: Vec<_> = targets.iter().filter(|(_, olds)| olds.len() > 1).collect();
+        shared.sort();
+        simsapa_backend::logger::write_stdout(format_args!(
+            "old {}, rules {:?}\nunmapped {:?}\ninvalid overrides {:?}\nnew ids with several old records: {:?}\n",
+            map.mappings.len(), counts, unmapped, map.invalid_overrides, shared,
+        ));
+        // kp1-kp9 (not in suttas-core); sn44, Ṭhānissaro's introduction to
+        // the Abyākata Saṁyutta, a page suttas-core has no raw of; thag3.8,
+        // whose suttas-core segments are all empty.
+        let mut expected: Vec<String> = (1..=9).map(|n| format!("kp{}", n)).collect();
+        expected.extend(["sn44", "thag3.8"].map(String::from));
+        assert_eq!(unmapped, expected);
+    }
+
+    /// Runs the replacement and Ṭhānissaro steps of the real suttas-core data,
+    /// in the bootstrap's order, on a **copy** of an appdata named by
+    /// `SUTTAS_CORE_SCRATCH_APPDATA`, and prints the counts. Never point it at the dist database: it writes.
     /// `SUTTAS_CORE_SCRATCH_APPDATA=/path/copy.sqlite3 cargo test real_data_replacement -- --ignored --nocapture`
     #[test]
     #[ignore]
@@ -1078,6 +1858,7 @@ mod tests {
             .expect("suttas-core database");
         let mut app = SqliteConnection::establish(&scratch).unwrap();
 
+        let than_map = build_thanissaro_map(&mut db, &mut app).unwrap();
         let importer = SuttasCoreImporter::new(PathBuf::new(), None);
         for (label, r) in importer.replace_html_records(&mut db, &mut app).unwrap() {
             let mut by_source: std::collections::BTreeMap<&str, usize> = Default::default();
@@ -1089,6 +1870,14 @@ mod tests {
                 label, r.replaced.len(), by_source, r.skipped_segmented.len(), r.skipped_missing.len(), r.failed,
             ));
         }
+        let than = importer.import_thanissaro(&mut db, &mut app, &than_map);
+        let than = than.unwrap();
+        simsapa_backend::logger::write_stdout(format_args!(
+            "than: imported {}, skipped segmented {}, deleted {}, kept unmapped {:?}, kept not imported {}, conflicts {:?}, failed {:?}, title fallbacks {}, links rewritten {}, rules {:?}, introductions {}, already present {:?}\n",
+            than.imported.len(), than.skipped_segmented.len(), than.deleted.len(), than.kept_unmapped,
+            than.kept_not_imported.len(), than.conflicts, than.failed, than.title_fallbacks.len(),
+            than.links_rewritten, than.rule_counts, than.introductions.len(), than.intros_already_present,
+        ));
     }
 
     /// Builds every non-`ms` record of the real suttas-core data against the

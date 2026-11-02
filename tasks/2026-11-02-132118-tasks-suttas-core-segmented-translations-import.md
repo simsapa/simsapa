@@ -24,20 +24,25 @@ PRD: [2026-11-02-132118-prd---suttas-core-segmented-translations-import.md](./20
 - `assets/sass/_footnote_bottom_bar.scss` - Bar item styles; column label.
 - `src-ts/footnote_bottom_bar.test.ts` (new) - Jest tests for the new markup.
 - `assets/js/simsapa.min.js` - Rebuilt by `npx webpack`.
-- `bootstrap_cli/src/bootstrap/suttas_core.rs` (new) - The importer: reader, record builder, replacement step, Ṭhānissaro step, uid map.
+- `bootstrap_cli/src/bootstrap/suttas_core.rs` (new) - The importer: reader, record builder, replacement step, Ṭhānissaro step (map built once, build-then-transaction, `--limit` collision guard, rename rows, kept-page link rewrite).
+- `bootstrap_cli/src/bootstrap/thanissaro_uid_map.rs` (new) - The old-to-new uid map: override file (embedded), raw match, range containment, single-poem chapter, split page; pure, with unit tests.
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - `bilara_html_and_plain_text()`, the shared Bilara → HTML / `content_plain` helper used by both importers.
 - `bootstrap_cli/src/bootstrap/mod.rs` - Register the module; call the step after the dhammatalks.org import (~line 268).
 - `bootstrap_cli/src/bootstrap/dhammatalks_org.rs` - Reference: the uids the old importer writes.
 - `bootstrap_cli/src/survey_suttas_core.rs` (new) - The `survey-suttas-core` command.
 - `bootstrap_cli/src/main.rs` - Register the subcommand.
-- `assets/thanissaro-uid-overrides.toml` (new) - Hand-maintained override table (FR 20.5).
+- `bootstrap_cli/src/bootstrap/thanissaro_intro.rs` (new) - Cuts Ṭhānissaro's introduction out of a dhammatalks.org record, by suttas-core's own rule.
+- `bootstrap_cli/Cargo.toml` - `ego-tree` (already in the tree through scraper) for sibling walks.
+- `backend/src/helpers.rs` also: `introduction_html()`, `insert_introduction()`, `ColumnSource.introduction`.
+- `assets/sass/_suttacentral.sass` also: `.ssp-intro` styles.
+- `assets/thanissaro-uid-overrides.toml` (new) - Hand-maintained override table (FR 20.5); embedded in the bootstrap with `include_str!`, wins over the rules. Empty.
 - `backend/tests/test_default_english.rs` (new) - The default English beside a Pāli text is not displaced by a suttas-core one (`dummy-` records).
 - `backend/tests/test_footnote_rendering.rs` (new) - Rendering tests with `dummy-` records.
 - `backend/tests/test_sutta_uid_renames.rs` (new) - Rename map against the dist DB, with `dummy-` rows.
 - `backend/tests/data/*_rendered.html`, `backend/tests/data/sn1.61_en_sujato.article.html` - Rendered fixtures of the texts with comments, regenerated with comments as footnotes.
 - `backend/tests/test_render_sutta_content.rs` - Comment describing how comments render, updated.
 - `docs/suttas-core-import.md` (new) - Feature doc (FR 44).
-- `docs/suttas-core-questions-for-upstream.md` - Upstream questions; add any new findings.
+- `docs/suttas-core-questions-for-upstream.md` - Upstream questions; §4 introductions removed, §5 empty texts.
 - `docs/simsapa-cli-and-localhost-api.md` - Footnote form in `/sutta_bilara.json`; Bodhi/PTS/Ṭhānissaro now segmented (FR 45).
 - `docs/sutta-display-settings-and-multi-column-view.md` - Footnotes in the multi-column view.
 - `PROJECT_MAP.md`, `CLAUDE.md` - Notable-docs entry and file map (FR 45).
@@ -177,17 +182,19 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 
 **Depends on:** 1.0, 3.0, 4.0.
 
-- [ ] 5.0 Ṭhānissaro import: old-to-new uid map with its override table, delete-before-insert, new segmented records, rename table populated (FR 18–25)
-  - [ ] 5.1 Create `assets/thanissaro-uid-overrides.toml` (empty list with a header comment explaining the rules and that it is curated data) and its loader.
-  - [ ] 5.2 Implement the mapping as a pure function `map_old_uids(old_refs, core_index, overrides) -> Vec<Mapping { old, new: Option<String>, rule }>`, where `core_index` holds `raw_translations` (`raw_sutta_id` → `sutta_id`) and the set of segmented `than` ids, loaded once.
-  - [ ] 5.3 Unit tests with fixture data for each rule: `an10.165 → an10.176` (raw match); the collision `an3.100 → an3.99` while `an3.101 → an3.100`; `an1.45 → an1.41-50` and `sn22.127 → sn22.126` (containment); `thag9 → thag9.1`; `sn43 → sn43.1`; an override; `kp1` unmapped; an override naming a missing text is reported.
-  - [ ] 5.4 Run the mapping against the real data in an `#[ignore]` test that reads the dist DB and suttas-core read-only, and prints the rule counts and the unmapped list. Expect only `kp1`–`kp9` unmapped; any other result goes into the override table or back to the user.
-  - [ ] 5.5 Implement steps (2)–(5) of the order spec. With `--limit`, delete only the dhammatalks.org records whose new text is actually imported in this run (PRD FR 22a). New records: uid `<sutta_id>/en/thanissaro`, `source_uid = "thanissaro"`, `language = "en"`, title from 3.7, `title_pali` from the `<sutta_id>/pli/ms` record, `title_ascii` via `pali_to_ascii`, `sutta_ref` / `nikaya` / range fields via `uid_to_ref`, `uid_to_nikaya`, `parse_range_from_uid`. Insert the comments row when the text has notes.
-  - [ ] 5.5a Title fallback: 15 `than` texts have no `raw_translations.title` (the split `sn43.1`–`sn43.44`). `build_record()` returns `title: None` for them; use the mapped dhammatalks.org record's title, else `title_pali`, and log it.
-  - [ ] 5.6 Logging (FR 24): imported, deleted, kept (unmapped, each uid listed), skipped (already segmented), and per-rule counts.
-  - [ ] 5.7 Call the Ṭhānissaro step from `SuttasCoreImporter::import()` after the replacement step.
-  - [ ] 5.8 Scratch-DB test (as 4.7): two `dummy` dhammatalks.org records whose numbers collide, one kept record with an old-numbered `ssp://` link; assert no duplicate, the collision resolved, the rename rows written, and the kept record's link rewritten.
-  - [ ] 5.9 `cd bootstrap_cli && cargo test` passes.
+- [x] 5.0 Ṭhānissaro import: old-to-new uid map with its override table, delete-before-insert, new segmented records, rename table populated (FR 18–25)
+  - [x] 5.1 Create `assets/thanissaro-uid-overrides.toml` (empty list with a header comment explaining the rules and that it is curated data) and its loader.
+  - [x] 5.2 Implement the mapping as a pure function `map_old_uids(old_refs, core_index, overrides) -> Vec<Mapping { old, new: Option<String>, rule }>`, where `core_index` holds `raw_translations` (`raw_sutta_id` → `sutta_id`) and the set of segmented `than` ids, loaded once.
+  - [x] 5.3 Unit tests with fixture data for each rule: `an10.165 → an10.176` (raw match); the collision `an3.100 → an3.99` while `an3.101 → an3.100`; `an1.45 → an1.41-50` and `sn22.127 → sn22.126` (containment); `thag9 → thag9.1`; `sn43 → sn43.1`; an override; `kp1` unmapped; an override naming a missing text is reported.
+  - [x] 5.4 Run the mapping against the real data in an `#[ignore]` test that reads the dist DB and suttas-core read-only, and prints the rule counts and the unmapped list. Expect only `kp1`–`kp9` unmapped; any other result goes into the override table or back to the user.
+  - [x] 5.5 Implement steps (2)–(5) of the order spec. With `--limit`, delete only the dhammatalks.org records whose new text is actually imported in this run (PRD FR 22a). New records: uid `<sutta_id>/en/thanissaro`, `source_uid = "thanissaro"`, `language = "en"`, title from 3.7, `title_pali` from the `<sutta_id>/pli/ms` record, `title_ascii` via `pali_to_ascii`, `sutta_ref` / `nikaya` / range fields via `uid_to_ref`, `uid_to_nikaya`, `parse_range_from_uid`. Insert the comments row when the text has notes.
+  - [x] 5.5a Title fallback: 15 `than` texts have no `raw_translations.title` (the split `sn43.1`–`sn43.44`). `build_record()` returns `title: None` for them; use the mapped dhammatalks.org record's title, else `title_pali`, and log it.
+  - [x] 5.6 Logging (FR 24): imported, deleted, kept (unmapped, each uid listed), skipped (already segmented), and per-rule counts.
+  - [x] 5.7 Call the Ṭhānissaro step from `SuttasCoreImporter::import()` after the replacement step.
+  - [x] 5.8 Scratch-DB test (as 4.7): two `dummy` dhammatalks.org records whose numbers collide, one kept record with an old-numbered `ssp://` link; assert no duplicate, the collision resolved, the rename rows written, and the kept record's link rewritten.
+  - [x] 5.5b Keep Ajahn Ṭhānissaro's introductions, which suttas-core removes from every page (141 texts, ~25,000 words): `thanissaro_intro.rs` cuts them out of the dhammatalks.org record by suttas-core's own rule (`page.ts` `bodyStart()`), the import stores them in the new record's `suttas.description` (wrapped in `div.dhammatalks_org`, links rewritten, skipped when already in the text) and prepends their text to `content_plain`; the renderer shows them after the title (single text) or above the grid, labelled (multi-column). The split-page rule applies only to pages suttas-core split, so `sn44` (an introduction page) stays as HTML.
+  - [x] 5.5c A suttas-core text whose segments are all empty (`thag3.8`, `thag3.9`) is not segmented: never imported, logged; a raw naming such a text leaves its old reference unmapped (no other rule may guess), so the old record stays.
+  - [x] 5.9 `cd bootstrap_cli && cargo test` passes.
 
 ### 6.0 Rename-table consumers
 

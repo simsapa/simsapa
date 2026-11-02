@@ -180,3 +180,33 @@ fn test_same_text_in_two_columns_has_unique_ids() {
     assert!(html.contains(&marker("dummy-fnr1-en-dummyplain-c0", 1)));
     assert!(html.contains(&marker("dummy-fnr1-en-dummyplain-c1", 1)));
 }
+
+/// An introduction (`suttas.description`) renders above the text: at the start
+/// of a single text (this template has no header to place it after), and
+/// above the grid, labelled, in the multi-column view. It is not part of the
+/// segments, so the alignment is untouched.
+#[test]
+#[serial]
+fn test_introduction_renders_above_the_text() {
+    let _fixture = setup();
+    {
+        let app_data = get_app_data();
+        let db_conn = &mut app_data.dbm.appdata.get_conn().unwrap();
+        diesel::update(suttas::table.filter(suttas::uid.eq(NEW_FORM_UID)))
+            .set(suttas::description.eq("<p><em>An introduction.</em></p>"))
+            .execute(db_conn)
+            .unwrap();
+    }
+
+    let html = render(NEW_FORM_UID, &[NEW_FORM_UID], SuttaLayout::Solo);
+    let intro = "<section class='ssp-intro'><p><em>An introduction.</em></p></section>";
+    let at = html.find(intro).unwrap_or_else(|| panic!("{}", html));
+    assert!(at < html.find("Thus have I heard.").unwrap());
+
+    let html = render(PLAIN_UID, &[PLAIN_UID, NEW_FORM_UID], SuttaLayout::SideBySide);
+    let labelled = "<section class='ssp-intro' data-label='dummynew'><div class='ssp-intro-label'>dummynew</div><p><em>An introduction.</em></p></section>";
+    let at = html.find(labelled).unwrap_or_else(|| panic!("{}", html));
+    assert!(at < html.find("<div class='column-headers'>").unwrap());
+    // Only the column that has one.
+    assert_eq!(html.matches("class='ssp-intro'").count(), 1);
+}
