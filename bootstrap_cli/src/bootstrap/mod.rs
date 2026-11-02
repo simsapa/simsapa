@@ -2,6 +2,7 @@ pub mod helpers;
 pub mod appdata;
 pub mod suttacentral;
 pub mod dhammatalks_org;
+pub mod suttas_core;
 pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
 pub mod nyanadipa;

@@ -25,6 +25,7 @@ PRD: [2026-11-02-132118-prd---suttas-core-segmented-translations-import.md](./20
 - `src-ts/footnote_bottom_bar.test.ts` (new) - Jest tests for the new markup.
 - `assets/js/simsapa.min.js` - Rebuilt by `npx webpack`.
 - `bootstrap_cli/src/bootstrap/suttas_core.rs` (new) - The importer: reader, record builder, replacement step, Ṭhānissaro step, uid map.
+- `bootstrap_cli/src/bootstrap/suttacentral.rs` - `bilara_html_and_plain_text()`, the shared Bilara → HTML / `content_plain` helper used by both importers.
 - `bootstrap_cli/src/bootstrap/mod.rs` - Register the module; call the step after the dhammatalks.org import (~line 268).
 - `bootstrap_cli/src/bootstrap/dhammatalks_org.rs` - Reference: the uids the old importer writes.
 - `bootstrap_cli/src/survey_suttas_core.rs` (new) - The `survey-suttas-core` command.
@@ -139,16 +140,16 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 
 **Depends on:** 2.1 (footnote encoding).
 
-- [ ] 3.0 suttas-core reader and record builder in `bootstrap_cli/src/bootstrap/suttas_core.rs`: open the database read-only, build `content_json` / template / `content_plain` / copyright and the footnote comment rows for one suttas-core text (FR 1–4, 8–11, 30, 31)
-  - [ ] 3.1 Create the module, register it in `bootstrap/mod.rs`, and add `SuttasCoreDb::open()` per the spec. A missing file returns `Ok(None)` so the caller can warn and skip (FR 2).
-  - [ ] 3.2 `content_json`: walk the **template's keys in template order** (3.3 first) and take each value from `sutta_segments`, or `""` when the translation has no such segment (14 Ṭhānissaro texts lack 964 segments, most with markup; PRD FR 8). Apply `consistent_niggahita()` to each value, keep empty segments, serialise with `serde_json::to_string` (never through `serde_json::Value`, which would sort the keys). A translation segment id that is not in the template is an error to log and skip (none exist in the 2026-10-31 data).
-  - [ ] 3.3 `content_json_tmpl`: copy from the appdata `<sutta_id>/pli/ms` record. When absent, build it from `segment_structure.template` ordered by `ord`, and log that.
-  - [ ] 3.4 `content_plain`: render with `bilara_text_to_html(json, tmpl, None, None, None, false, false, false)` → `bilara_html_post_process` → `sutta_html_to_plain_text`, exactly as `bilara_text_to_sutta()` does in `suttacentral.rs`. Extract a shared helper from `suttacentral.rs` rather than copying the lines.
-  - [ ] 3.5 `copyright` / `license` from `sutta_copyrights` (`copyright_holder`, `copyright_type`); `source_info` = `suttas-core <dated folder>` (PRD FR 11a).
-  - [ ] 3.6 Footnotes: read `segment_footnotes` for the text ordered by `number`, apply `link_fn` and `consistent_niggahita()` to each note, group by `segment_id`, and encode each group with `encode_footnotes()` into one `content_json` map (segment id → value, in segment order). `None` when the text has no notes.
-  - [ ] 3.7 `title`: `raw_translations.title` for the raw whose `sutta_id` is this text (several raws for a merged text: the one whose `raw_sutta_id` equals the `sutta_id`, else the first by `raw_sutta_id`).
-  - [ ] 3.8 Unit tests against a small in-memory suttas-core fixture (create the needed tables with the schemas from the PRD investigation): key order follows the template, not key sort (`mn1:10.1` after `mn1:1.6`); a segment missing from the translation becomes `""` and keeps its template markup in the rendered HTML; `ṃ` normalised; fallback template built; footnote grouping and encoding.
-  - [ ] 3.9 `cd bootstrap_cli && cargo test` passes.
+- [x] 3.0 suttas-core reader and record builder in `bootstrap_cli/src/bootstrap/suttas_core.rs`: open the database read-only, build `content_json` / template / `content_plain` / copyright and the footnote comment rows for one suttas-core text (FR 1–4, 8–11, 30, 31)
+  - [x] 3.1 Create the module, register it in `bootstrap/mod.rs`, and add `SuttasCoreDb::open()` per the spec. A missing file returns `Ok(None)` so the caller can warn and skip (FR 2).
+  - [x] 3.2 `content_json`: walk the **template's keys in template order** (3.3 first) and take each value from `sutta_segments`, or `""` when the translation has no such segment (14 Ṭhānissaro texts lack 964 segments, most with markup; PRD FR 8). Apply `consistent_niggahita()` to each value, keep empty segments, serialise with `serde_json::to_string` (never through `serde_json::Value`, which would sort the keys). A translation segment id that is not in the template is an error to log and skip (none exist in the 2026-10-31 data).
+  - [x] 3.3 `content_json_tmpl`: copy from the appdata `<sutta_id>/pli/ms` record. When absent, build it from `segment_structure.template` ordered by `ord`, and log that.
+  - [x] 3.4 `content_plain`: render with `bilara_text_to_html(json, tmpl, None, None, None, false, false, false)` → `bilara_html_post_process` → `sutta_html_to_plain_text`, exactly as `bilara_text_to_sutta()` does in `suttacentral.rs`. Extract a shared helper from `suttacentral.rs` rather than copying the lines.
+  - [x] 3.5 `copyright` / `license` from `sutta_copyrights` (`copyright_holder`, `copyright_type`); `source_info` = `suttas-core <dated folder>` (PRD FR 11a).
+  - [x] 3.6 Footnotes: read `segment_footnotes` for the text ordered by `number`, apply `link_fn` and `consistent_niggahita()` to each note, group by `segment_id`, and encode each group with `encode_footnotes()` into one `content_json` map (segment id → value, in segment order). `None` when the text has no notes.
+  - [x] 3.7 `title`: `raw_translations.title` for the raw whose `sutta_id` is this text (several raws for a merged text: the one whose `raw_sutta_id` equals the `sutta_id`, else the first by `raw_sutta_id`).
+  - [x] 3.8 Unit tests against a small in-memory suttas-core fixture (create the needed tables with the schemas from the PRD investigation): key order follows the template, not key sort (`mn1:10.1` after `mn1:1.6`); a segment missing from the translation becomes `""` and keeps its template markup in the rendered HTML; `ṃ` normalised; fallback template built; footnote grouping and encoding.
+  - [x] 3.9 `cd bootstrap_cli && cargo test` passes.
 
 ### 4.0 Replacing HTML-only records
 
@@ -181,6 +182,7 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
   - [ ] 5.3 Unit tests with fixture data for each rule: `an10.165 → an10.176` (raw match); the collision `an3.100 → an3.99` while `an3.101 → an3.100`; `an1.45 → an1.41-50` and `sn22.127 → sn22.126` (containment); `thag9 → thag9.1`; `sn43 → sn43.1`; an override; `kp1` unmapped; an override naming a missing text is reported.
   - [ ] 5.4 Run the mapping against the real data in an `#[ignore]` test that reads the dist DB and suttas-core read-only, and prints the rule counts and the unmapped list. Expect only `kp1`–`kp9` unmapped; any other result goes into the override table or back to the user.
   - [ ] 5.5 Implement steps (2)–(5) of the order spec. With `--limit`, delete only the dhammatalks.org records whose new text is actually imported in this run (PRD FR 22a). New records: uid `<sutta_id>/en/thanissaro`, `source_uid = "thanissaro"`, `language = "en"`, title from 3.7, `title_pali` from the `<sutta_id>/pli/ms` record, `title_ascii` via `pali_to_ascii`, `sutta_ref` / `nikaya` / range fields via `uid_to_ref`, `uid_to_nikaya`, `parse_range_from_uid`. Insert the comments row when the text has notes.
+  - [ ] 5.5a Title fallback: 15 `than` texts have no `raw_translations.title` (the split `sn43.1`–`sn43.44`). `build_record()` returns `title: None` for them; use the mapped dhammatalks.org record's title, else `title_pali`, and log it.
   - [ ] 5.6 Logging (FR 24): imported, deleted, kept (unmapped, each uid listed), skipped (already segmented), and per-rule counts.
   - [ ] 5.7 Call the Ṭhānissaro step from `SuttasCoreImporter::import()` after the replacement step.
   - [ ] 5.8 Scratch-DB test (as 4.7): two `dummy` dhammatalks.org records whose numbers collide, one kept record with an old-numbered `ssp://` link; assert no duplicate, the collision resolved, the rename rows written, and the kept record's link rewritten.
