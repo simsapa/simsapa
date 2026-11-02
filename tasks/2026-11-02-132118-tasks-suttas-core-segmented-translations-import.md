@@ -31,6 +31,7 @@ PRD: [2026-11-02-132118-prd---suttas-core-segmented-translations-import.md](./20
 - `bootstrap_cli/src/survey_suttas_core.rs` (new) - The `survey-suttas-core` command.
 - `bootstrap_cli/src/main.rs` - Register the subcommand.
 - `assets/thanissaro-uid-overrides.toml` (new) - Hand-maintained override table (FR 20.5).
+- `backend/tests/test_default_english.rs` (new) - The default English beside a Pāli text is not displaced by a suttas-core one (`dummy-` records).
 - `backend/tests/test_footnote_rendering.rs` (new) - Rendering tests with `dummy-` records.
 - `backend/tests/test_sutta_uid_renames.rs` (new) - Rename map against the dist DB, with `dummy-` rows.
 - `backend/tests/data/*_rendered.html`, `backend/tests/data/sn1.61_en_sujato.article.html` - Rendered fixtures of the texts with comments, regenerated with comments as footnotes.
@@ -157,16 +158,16 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 
 **Depends on:** 3.0.
 
-- [ ] 4.0 Data-driven replacement of HTML-only records (every label except `than`), wired into `bootstrap()` after the dhammatalks.org import (FR 5–7, 12–17)
-  - [ ] 4.1 Add the label map constant and `appdata_source_uids(label) -> Vec<String>`; unit-test the identity fallback and the `pts` fan-out.
-  - [ ] 4.2 Implement the decision per record as a pure function over `(Option<existing has content_json>)` → `Replace | SkipSegmented | SkipMissing`, and unit-test it.
-  - [ ] 4.3 Implement the in-place update: set `content_json`, `content_json_tmpl`, `content_plain`, `content_html = NULL`, `copyright`, `license`; keep every other column. Then insert the `sutta_comments` row (`sutta_id`, `sutta_uid`, `language`, `source_uid`) when the text has notes, after deleting any existing comment row for that sutta (an HTML record has none, but keep the step idempotent).
-  - [ ] 4.4 Implement `SuttasCoreImporter` with `SuttaImporter::import()`, honouring `--limit` like the other importers (limit the texts processed per label).
-  - [ ] 4.5 Logging (FR 17): per label, counts of replaced / skipped-segmented / skipped-missing at `info`, uid lists at `debug`.
-  - [ ] 4.6 Wire it into `bootstrap()` in `bootstrap/mod.rs` directly after the dhammatalks.org block (before Dhammapada / Nyanadipa / Munindo and the navigation-tree builds), with the missing-file warning (FR 2) and the resolved-path log line (FR 3).
-  - [ ] 4.7 Test on a scratch copy, never the dist DB: in a test (or an `#[ignore]` test), import into a temporary appdata built with migrations + a few HTML records (`dummy-` Bodhi HTML, a `dummy-` record with `content_json`) against a small suttas-core fixture, and assert replace / skip / missing.
-  - [ ] 4.8 Keep the default English unchanged (PRD FR 16a): in `default_english_for_pali()` (`backend/src/app_data.rs`), select `source_info` with the uid and prefer a segmented English whose `source_info` does not start with `suttas-core`, then a suttas-core one, then any other — still reading uids over the indexed range, never full rows. Add a `dummy-` test with a segmented `…/en/bodhi`-style record (suttas-core `source_info`) sorting before a segmented `…/en/sujato`-style one, asserting the latter is chosen.
-  - [ ] 4.9 `cd bootstrap_cli && cargo test` and `cd backend && cargo test` pass.
+- [x] 4.0 Data-driven replacement of HTML-only records (every label except `than`), wired into `bootstrap()` after the dhammatalks.org import (FR 5–7, 12–17)
+  - [x] 4.1 Add the label map constant and `appdata_source_uids(label) -> Vec<String>`; unit-test the identity fallback and the `pts` fan-out.
+  - [x] 4.2 Implement the decision per record as a pure function over `(Option<existing has content_json>)` → `Replace | SkipSegmented | SkipMissing`, and unit-test it.
+  - [x] 4.3 Implement the in-place update: set `content_json`, `content_json_tmpl`, `content_plain`, `content_html = NULL`, `copyright`, `license`; keep every other column. Then insert the `sutta_comments` row (`sutta_id`, `sutta_uid`, `language`, `source_uid`) when the text has notes, after deleting any existing comment row for that sutta (an HTML record has none, but keep the step idempotent).
+  - [x] 4.4 Implement `SuttasCoreImporter` with `SuttaImporter::import()`, honouring `--limit` like the other importers (limit the texts processed per label).
+  - [x] 4.5 Logging (FR 17): per label, counts of replaced / skipped-segmented / skipped-missing at `info`, uid lists at `debug`.
+  - [x] 4.6 Wire it into `bootstrap()` in `bootstrap/mod.rs` directly after the dhammatalks.org block (before Dhammapada / Nyanadipa / Munindo and the navigation-tree builds), with the missing-file warning (FR 2) and the resolved-path log line (FR 3).
+  - [x] 4.7 Test on a scratch copy, never the dist DB: in a test (or an `#[ignore]` test), import into a temporary appdata built with migrations + a few HTML records (`dummy-` Bodhi HTML, a `dummy-` record with `content_json`) against a small suttas-core fixture, and assert replace / skip / missing.
+  - [x] 4.8 Keep the default English unchanged (PRD FR 16a): in `default_english_for_pali()` (`backend/src/app_data.rs`), select `source_info` with the uid and prefer a segmented English whose `source_info` does not start with `suttas-core`, then a suttas-core one, then any other — still reading uids over the indexed range, never full rows. Add a `dummy-` test with a segmented `…/en/bodhi`-style record (suttas-core `source_info`) sorting before a segmented `…/en/sujato`-style one, asserting the latter is chosen.
+  - [x] 4.9 `cd bootstrap_cli && cargo test` and `cd backend && cargo test` pass.
 
 ### 5.0 Ṭhānissaro import
 

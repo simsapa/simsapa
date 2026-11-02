@@ -321,7 +321,10 @@ impl AppData {
     /// The English shown beside a Pāli text when no columns are requested: the
     /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
     /// aligned with, and for any other Pāli text the first segmented English, or
-    /// failing that the first other one, leaving out the AI English. A column
+    /// failing that the first other one, leaving out the AI English. A
+    /// segmented English imported from suttas-core (`source_info` starting with
+    /// `suttas-core`) comes after the other segmented ones, so Bodhi's or a PTS
+    /// translator's, which sort first by uid, do not displace Sujato's. A column
     /// that cannot be shown is handled like a requested one: dropped in Lines, a
     /// block in Columns.
     ///
@@ -335,24 +338,33 @@ impl AppData {
         let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
 
         let base = uid_base(&sutta.uid);
-        let english: Vec<(String, Option<bool>)> = suttas
+        let english: Vec<(String, Option<bool>, Option<String>)> = suttas
             .filter(uid.ge(format!("{}/en/", base)))
             .filter(uid.lt(format!("{}/en0", base)))
-            .select((uid, content_json.ne("")))
+            .select((uid, content_json.ne(""), source_info))
             .order(uid.asc())
             .load(db_conn)
             .context("Database query failed for the default English")?;
 
         let (ai_english, human_english): (Vec<_>, Vec<_>) = english
             .into_iter()
-            .partition(|(english_uid, _)| is_ot_english_uid(english_uid));
+            .partition(|(english_uid, _, _)| is_ot_english_uid(english_uid));
 
         if sutta.uid.ends_with("/pli/cst") {
-            return Ok(ai_english.into_iter().next().map(|(english_uid, _)| english_uid));
+            return Ok(ai_english.into_iter().next().map(|(english_uid, _, _)| english_uid));
         }
 
-        let segmented = human_english.iter().find(|(_, is_segmented)| *is_segmented == Some(true));
-        Ok(segmented.or(human_english.first()).map(|(english_uid, _)| english_uid.clone()))
+        let is_segmented = |row: &&(String, Option<bool>, Option<String>)| row.1 == Some(true);
+        let is_suttas_core = |row: &&(String, Option<bool>, Option<String>)| {
+            row.2.as_deref().is_some_and(|info| info.starts_with("suttas-core"))
+        };
+        let chosen = human_english
+            .iter()
+            .filter(is_segmented)
+            .find(|row| !is_suttas_core(row))
+            .or_else(|| human_english.iter().find(is_segmented))
+            .or(human_english.first());
+        Ok(chosen.map(|(english_uid, _, _)| english_uid.clone()))
     }
 
     /// Converts sutta data into an IndexMap of segments, potentially including variants, comments, glosses.

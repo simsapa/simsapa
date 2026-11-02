@@ -36,6 +36,7 @@ use simsapa_backend::stardict_parse::StardictImportProgress;
 pub use helpers::SuttaData;
 pub use appdata::{AppdataBootstrap, DB_VERSION};
 pub use dhammatalks_org::DhammatalksSuttaImporter;
+pub use suttas_core::SuttasCoreImporter;
 pub use dhammapada_munindo::DhammapadaMunindoImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
 pub use nyanadipa::NyanadipaImporter;
@@ -265,6 +266,17 @@ RELEASE_CHANNEL=development
             } else {
                 logger::warn("Dhammatalks.org resource path not found, skipping");
             }
+        }
+
+        // Segmented translations from suttas-core. They replace HTML-only
+        // records written above (SuttaCentral, dhammatalks.org), so this runs
+        // after those imports, and before the navigation-tree builds, which
+        // resolve each leaf against the final uids. See docs/suttas-core-import.md.
+        {
+            let suttas_core_path = bootstrap_assets_dir.join("suttas-core-db/current/suttas.sqlite");
+            logger::info("Importing segmented translations from suttas-core");
+            let mut importer = SuttasCoreImporter::new(suttas_core_path, limit);
+            importer.import(&mut conn)?;
         }
 
         // Import Dhammapada from Tipitaka.net (Daw Mya Tin translation)
