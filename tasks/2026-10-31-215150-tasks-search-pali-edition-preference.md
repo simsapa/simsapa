@@ -152,15 +152,15 @@ Depends on: 3.0.
 
 Depends on: 1.0 to 5.0, so the docs state what was built.
 
-- [ ] 6.0 Update the docs
-  - [ ] 6.1 `docs/text-processing-for-contains-match-and-fulltext-match-search.md`: add the edition preference, `pali_edition_twins` and the rule of FR-3, and say that the two filters must use that table.
-  - [ ] 6.2 `docs/fulltext-index-storage-and-file-locking.md`, or wherever `INDEX_VERSION` is described: the `has_other_edition` field.
-  - [ ] 6.3 `docs/simsapa-cli-and-localhost-api.md`: the `pali_edition` request field in §2 and the HTTP 400, `--pali-edition` in the CLI commands, the default `ms` and what it hides (FR-4), that Uid Match is never filtered, and that the GUI setting is not read. Keep this doc self-contained: no source paths and no links to other docs. Run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
+- [x] 6.0 Update the docs
+  - [x] 6.1 `docs/text-processing-for-contains-match-and-fulltext-match-search.md`: add the edition preference, `pali_edition_twins` and the rule of FR-3, and say that the two filters must use that table.
+  - [x] 6.2 `docs/fulltext-index-storage-and-file-locking.md`, or wherever `INDEX_VERSION` is described: the `has_other_edition` field.
+  - [x] 6.3 `docs/simsapa-cli-and-localhost-api.md`: the `pali_edition` request field in §2 and the HTTP 400, `--pali-edition` in the CLI commands, the default `ms` and what it hides (FR-4), that Uid Match is never filtered, and that the GUI setting is not read. Keep this doc self-contained: no source paths and no links to other docs. Run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
 
 ### Specs for 7.0
 
 Depends on: all tasks above, and the full bootstrap of task 12.3 of the OpenTipitaka task list.
 
 - [ ] 7.0 Verify on real data
-  - [ ] 7.1 Search the built database with `simsapa search` and `POST /search`, and check success metrics 1, 3 and 4.
+  - [x] 7.1 Search the built database with `simsapa search` and `POST /search`, and check success metrics 1, 3 and 4.
   - [ ] 7.2 List for the maintainer to check by hand in the app: the edition `ComboBox` on desktop and on a phone.

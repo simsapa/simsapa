@@ -337,6 +337,12 @@ between a schema change and a silently wrong index: **if you change any schema
 in `backend/src/search/schema.rs`, bump `INDEX_VERSION` in the same commit.**
 The type system will not remind you, and neither will Tantivy any more.
 
+The `has_other_edition` field (`INDEXED | STORED`, written for `pli` records
+from the `pali_edition_twins` table) is such a schema change; it came with
+`INDEX_VERSION` `1.1`. A searcher that finds an index without the field skips
+the Pāli edition filter and logs it once, instead of failing the query. See
+[text-processing-for-contains-match-and-fulltext-match-search.md](./text-processing-for-contains-match-and-fulltext-match-search.md).
+
 ## 9. Benchmark — the wrapper costs nothing on a normal filesystem
 
 `backend/tests/test_lenient_directory_benchmark.rs`.

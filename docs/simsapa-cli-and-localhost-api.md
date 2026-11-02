@@ -77,13 +77,13 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 
 | Command | What it answers | `--json` is the body of |
 |---|---|---|
-| `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`. Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
+| `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`, `--pali-edition ms|cst|both` (A.2.1). Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
 | `simsapa word <uid>` | A dictionary entry; `--html` for the rendered page | `/word.json` (§13.3); `--html`: `/word_html` |
 | `simsapa sutta <uid>` | A sutta's title, uid and plain text; `--html`, `--content-json` (Bilara JSON), `--bilara` (with variants, comments, glosses) | `/sutta_html`, `/sutta.json` (§13.4), `/sutta_bilara.json` (§13.5) |
 | `simsapa gloss <text…\|->` | Every word of a passage with its dictionary options and compound break-downs; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
 | `simsapa lookup <form…\|->` | Exact DPD form lookup, forms as arguments or one per line on stdin | `POST /lookup_forms` (§19.1) |
 | `simsapa query suttas\|words <text>` | Literal substring match, first page; `--titles`, `--count` | — |
-| `simsapa fulltext-search …` | The fulltext index directly | — |
+| `simsapa fulltext-search …` | The fulltext index directly; takes `--pali-edition` too | — |
 | `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status, available updates | `GET /health` (§10) |
 | `simsapa check-updates` | Whether a newer `simsapa` (npm) or a newer database release is available, and the command that installs each (A.8) | the `updates` object of `GET /health` (§10) |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
@@ -102,6 +102,18 @@ network; the others never do.
 Uids are the ones search results carry (`sn56.11/pli/ms`, `34626/dpd`,
 `dhamma-1-01/dpd`); `sutta` also takes a reference (`mn1`, `SN 56.11`,
 `dhp182`) and `word` a display form (`"dhamma 1.01"`), as the routes do (§13).
+
+### A.2.1 One edition of a Pāli text: `--pali-edition`
+
+Many Pāli texts are stored in two editions, Mahāsaṅgīti (`…/pli/ms`) and CST
+(`…/pli/cst`). `simsapa search suttas` and `simsapa fulltext-search` show one
+result per text by default, `--pali-edition ms`: the CST record of a text that
+is also in Mahāsaṅgīti is left out. `--pali-edition cst` leaves out the
+Mahāsaṅgīti record instead, and `both` leaves out nothing. A text that is in
+only one edition is always shown, so CST-only texts such as the Vinaya
+divisions appear under every value. Searching by uid (`Uid Match`) is never
+filtered: `mn1/pli/cst` is found under every value. The option does not read
+the GUI app's setting, so the same command always gives the same answer.
 
 ## A.3 Output: clean text, or `--json`
 
@@ -538,6 +550,7 @@ working unchanged.
   "suttas_lang_include": true,
   "show_all_snippets": true,        // default false; per-occurrence expansion
   "snippet_exclude": ["upādiyati"], // JSON array (NOT a CSV string)
+  "pali_edition": "ms",             // "ms" (default), "cst" or "both"; see below
 
   // Dictionary area:
   "dict_lang": "en",
@@ -549,6 +562,16 @@ working unchanged.
 
 - `snippet_exclude` is an **already-split array**; the API does not split a
   comma-separated string.
+- `pali_edition` chooses which edition to show of a Pāli text that is in both
+  Mahāsaṅgīti (`…/pli/ms`) and CST (`…/pli/cst`). The default `ms` leaves out
+  the `pli/cst` record of such a text, so a search no longer returns it
+  unless you send `"cst"` (leaves out the `pli/ms` record) or `"both"`. A text
+  in only one edition is always returned. It applies to every route that
+  searches suttas, in the Suttas and Library areas, and not to `Uid Match`
+  (a search for `mn1/pli/cst` finds it under any value). A bare reference such
+  as `mn1` names a text, so the value applies to it. An unknown value is HTTP
+  400, and the Dictionary area ignores the field. The GUI app's own setting is
+  never read.
 - The language/source filters treat the placeholder values `"Languages"` /
   `"Language"` (and `"Dictionaries"` / `"Dictionary"` for the source) — and the
   empty string — as **no filter**.
@@ -1068,7 +1091,7 @@ curl -s "localhost:$PORT/words/dhamma-1-01/dpd.json"
 ### 12.3 Error handling
 
 ```sh
-# Unknown mode (or unknown search_area) on /search → HTTP 400.
+# Unknown mode, search_area or pali_edition on /search → HTTP 400.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST "localhost:$PORT/search" \
   -H 'Content-Type: application/json' \
   -d '{"query_text":"x","mode":"Nope"}'   # → 400
