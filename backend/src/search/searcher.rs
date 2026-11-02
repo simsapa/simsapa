@@ -12,6 +12,7 @@ use crate::logger::{info, warn};
 use crate::types::SearchResult;
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::helpers::normalize_plain_text;
+use crate::opentipitaka::OT_AUTHOR_UID;
 use crate::query_task::SearchQueryTask;
 use crate::AppGlobalPaths;
 
@@ -821,15 +822,20 @@ impl FulltextSearcher {
             subqueries.push((Occur::MustNot, Box::new(ms_mula_query)));
         }
 
+        // A commentary is CST, or the OpenTipitaka English of a CST commentary.
+        // The mūla exclusion above stays CST only: `mn1/en/opentipitaka` is listed
+        // like any other English translation.
         if !filters.include_cst_commentary {
             let is_commentary_field = schema.get_field("is_commentary")?;
             let source_field = schema.get_field("source_uid")?;
-            // Build: is_commentary=true AND source_uid="cst"
-            let cst_commentary_query = BooleanQuery::new(vec![
-                (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, "cst"), IndexRecordOption::Basic))),
-            ]);
-            subqueries.push((Occur::MustNot, Box::new(cst_commentary_query)));
+            for source in ["cst", OT_AUTHOR_UID] {
+                // Build: is_commentary=true AND source_uid=<source>
+                let commentary_query = BooleanQuery::new(vec![
+                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, source), IndexRecordOption::Basic))),
+                ]);
+                subqueries.push((Occur::MustNot, Box::new(commentary_query)));
+            }
         }
 
         Ok(())
@@ -1799,5 +1805,100 @@ mod tests {
 
         let count = reader.searcher().search(&query, &Count).unwrap();
         assert_eq!(count, 1, "prefix 'an' must not match 'san1.1/...'");
+    }
+
+    /// The uids left by `add_sutta_filters` on an index holding one doc per
+    /// `(uid, source_uid)`, with `is_commentary` read from the uid as the
+    /// indexer reads it.
+    fn uids_after_sutta_filters(docs: &[(&str, &str)], filters: &SearchFilters) -> Vec<String> {
+        let schema = build_sutta_schema("en");
+        let index = Index::create_in_ram(schema.clone());
+        register_tokenizers(&index, "en");
+
+        let mut writer = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        let uid_field = schema.get_field("uid").unwrap();
+        let source_uid_field = schema.get_field("source_uid").unwrap();
+        let is_mula_field = schema.get_field("is_mula").unwrap();
+        let is_commentary_field = schema.get_field("is_commentary").unwrap();
+
+        for (uid, source_uid) in docs {
+            let before_first_slash = uid.split('/').next().unwrap();
+            let is_commentary = before_first_slash.contains(".att") || before_first_slash.contains(".tik");
+            writer
+                .add_document(doc!(
+                    uid_field => *uid,
+                    source_uid_field => *source_uid,
+                    is_mula_field => !is_commentary,
+                    is_commentary_field => is_commentary,
+                ))
+                .unwrap();
+        }
+        writer.commit().unwrap();
+
+        let mut subqueries: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+        subqueries.push((Occur::Must, Box::new(tantivy::query::AllQuery)));
+        FulltextSearcher::add_sutta_filters(&mut subqueries, filters, &schema).unwrap();
+        let query = BooleanQuery::new(subqueries);
+
+        let searcher = index.reader().unwrap().searcher();
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(docs.len())).unwrap();
+        let mut uids: Vec<String> = top_docs
+            .into_iter()
+            .map(|(_score, address)| {
+                let stored: tantivy::TantivyDocument = searcher.doc(address).unwrap();
+                stored.get_first(uid_field).and_then(|v| v.as_str()).unwrap().to_string()
+            })
+            .collect();
+        uids.sort();
+        uids
+    }
+
+    fn cst_filters(include_cst_mula: bool, include_cst_commentary: bool) -> SearchFilters {
+        SearchFilters {
+            lang: None,
+            lang_include: false,
+            source_uid: None,
+            source_include: false,
+            nikaya_prefix: None,
+            uid_prefix: None,
+            uid_suffix: None,
+            sutta_ref: None,
+            include_cst_mula,
+            include_cst_commentary,
+            include_ms_mula: true,
+            include_bold_definitions: true,
+            dict_source_uids: None,
+            show_all_snippets: false,
+        }
+    }
+
+    const CST_FILTER_DOCS: [(&str, &str); 6] = [
+        ("mn1.att/en/opentipitaka", "opentipitaka"),
+        ("mn1.att/pli/cst", "cst"),
+        ("mn1.tik/en/opentipitaka", "opentipitaka"),
+        ("mn1/en/opentipitaka", "opentipitaka"),
+        ("mn1/en/sujato", "sujato"),
+        ("mn1/pli/cst", "cst"),
+    ];
+
+    #[test]
+    fn test_commentary_filter_covers_the_opentipitaka_english() {
+        let uids = uids_after_sutta_filters(&CST_FILTER_DOCS, &cst_filters(true, false));
+        assert_eq!(uids, ["mn1/en/opentipitaka", "mn1/en/sujato", "mn1/pli/cst"]);
+    }
+
+    #[test]
+    fn test_mula_filter_leaves_the_opentipitaka_english() {
+        let uids = uids_after_sutta_filters(&CST_FILTER_DOCS, &cst_filters(false, true));
+        assert_eq!(
+            uids,
+            [
+                "mn1.att/en/opentipitaka",
+                "mn1.att/pli/cst",
+                "mn1.tik/en/opentipitaka",
+                "mn1/en/opentipitaka",
+                "mn1/en/sujato",
+            ]
+        );
     }
 }

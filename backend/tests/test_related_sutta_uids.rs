@@ -126,3 +126,27 @@ fn the_lookup_relates_a_sutta_and_the_span_that_covers_it() {
     let position = |uid: &str| from_commentary.iter().position(|u| u == uid);
     assert!(position("an5.91/pli/ms") < position("an5.100/pli/ms"));
 }
+
+#[test]
+fn the_opentipitaka_commentary_follows_the_commentary_setting() {
+    let candidates = uids(&[
+        "mn1/pli/cst",
+        "mn1/en/opentipitaka",
+        "mn1.att/pli/cst",
+        "mn1.att/en/opentipitaka",
+    ]);
+
+    let without = related_sutta_uids("mn1/pli/cst", &candidates, false);
+    assert_eq!(without, uids(&["mn1/en/opentipitaka"]));
+
+    let with = related_sutta_uids("mn1/pli/cst", &candidates, true);
+    assert_eq!(with, uids(&["mn1/en/opentipitaka", "mn1.att/pli/cst", "mn1.att/en/opentipitaka"]));
+}
+
+#[test]
+fn an_opened_commentary_lists_its_opentipitaka_english() {
+    let candidates = uids(&["mn1/pli/cst", "mn1.att/pli/cst", "mn1.att/en/opentipitaka"]);
+
+    let without = related_sutta_uids("mn1.att/pli/cst", &candidates, false);
+    assert_eq!(without, uids(&["mn1/pli/cst", "mn1.att/en/opentipitaka"]));
+}

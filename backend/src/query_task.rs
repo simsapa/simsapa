@@ -602,6 +602,8 @@ impl<'a> SearchQueryTask<'a> {
                 diesel::dsl::not(
                     uid.like("%.att%/cst")
                     .or(uid.like("%.tik%/cst"))
+                    .or(uid.like("%.att%/opentipitaka"))
+                    .or(uid.like("%.tik%/opentipitaka"))
                 )
             );
         }
@@ -1025,9 +1027,11 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         if !self.include_cst_commentary {
-            // There are %.att/pli/cst and %.att.xml/pli/cst, but .att and .tik commentaries are CST so they always end in /cst
+            // There are %.att/pli/cst and %.att.xml/pli/cst. The .att and .tik commentaries
+            // are CST or their OpenTipitaka English, so they end in /cst or /opentipitaka.
             extra_where.push_str(
-                " AND NOT (s.uid LIKE '%.att%/cst' OR s.uid LIKE '%.tik%/cst')"
+                " AND NOT (s.uid LIKE '%.att%/cst' OR s.uid LIKE '%.tik%/cst' \
+                 OR s.uid LIKE '%.att%/opentipitaka' OR s.uid LIKE '%.tik%/opentipitaka')"
             );
         }
 

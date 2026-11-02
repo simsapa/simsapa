@@ -12,8 +12,11 @@ use simsapa_backend::db::appdata::sort_suttas;
 use simsapa_backend::db::appdata_models::{NewSutta, Sutta};
 use simsapa_backend::db::appdata_schema::suttas;
 use simsapa_backend::get_app_data;
+use simsapa_backend::helpers::query_text_to_uid_field_query;
 use simsapa_backend::opentipitaka::OT_ENGLISH_FOOTER;
+use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
+use simsapa_backend::types::{SearchArea, SearchParams};
 
 mod helpers;
 use helpers as h;
@@ -452,4 +455,60 @@ fn next_and_prev_stay_on_the_same_kind_of_text() {
     assert_eq!(next(NAV_FIRST_COMMENTARY).as_deref(), Some(NAV_SECOND_COMMENTARY));
     assert_eq!(prev(NAV_SECOND_MULA).as_deref(), Some(NAV_FIRST_MULA));
     assert_eq!(prev(NAV_SECOND_COMMENTARY).as_deref(), Some(NAV_FIRST_COMMENTARY));
+}
+
+/// The uids a search returns, with commentaries left out of the search.
+fn found_without_commentary(query_text: String, mut params: SearchParams) -> Vec<String> {
+    let app_data = get_app_data();
+    params.page_len = Some(1000);
+    params.include_cst_mula = true;
+    params.include_cst_commentary = false;
+    let mut query_task = SearchQueryTask::new(&app_data.dbm, query_text, params, SearchArea::Suttas);
+    query_task
+        .results_page(0)
+        .unwrap_or_else(|e| panic!("{}", e))
+        .into_iter()
+        .map(|r| r.uid)
+        .collect()
+}
+
+#[test]
+#[serial]
+fn the_commentary_filter_covers_the_english_in_a_contains_search() {
+    let _fixture = set_up();
+    {
+        let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
+        diesel::update(suttas::table.filter(suttas::uid.eq_any([ENGLISH_OT, COMMENTARY_ENGLISH_OT])))
+            .set(suttas::content_plain.eq("dummyzqxfindme"))
+            .execute(db_conn)
+            .unwrap();
+    }
+
+    let found = found_without_commentary("dummyzqxfindme".to_string(), h::get_contains_params_with_lang(None));
+    assert_eq!(found, [ENGLISH_OT]);
+}
+
+#[test]
+#[serial]
+fn the_commentary_filter_covers_the_english_in_a_uid_search() {
+    let _fixture = set_up();
+
+    let query_text = query_text_to_uid_field_query(COMMENTARY_ENGLISH_OT, &SearchArea::Suttas);
+    assert!(query_text.starts_with("uid:"));
+    let found = found_without_commentary(query_text, h::get_uid_params_with_lang(None));
+    assert!(found.is_empty(), "{:?}", found);
+
+    let query_text = query_text_to_uid_field_query(ENGLISH_OT, &SearchArea::Suttas);
+    let found = found_without_commentary(query_text, h::get_uid_params_with_lang(None));
+    assert_eq!(found, [ENGLISH_OT]);
+}
+
+#[test]
+#[serial]
+fn the_mula_setting_leaves_the_opentipitaka_english_listed() {
+    let _fixture = set_up();
+
+    let entries = translations_of(PALI_MS, false);
+    assert!(entry(&entries, ENGLISH_OT).is_some());
+    assert!(entry(&entries, PALI_CST).is_none());
 }

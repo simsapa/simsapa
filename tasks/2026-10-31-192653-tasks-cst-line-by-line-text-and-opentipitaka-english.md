@@ -25,7 +25,8 @@ Backend:
 - `backend/src/cst_files.rs` - Review only.
 - `backend/src/helpers.rs` - `related_sutta_uids`, `bilara_multi_column_html` and `bilara_text_to_html`: tests, and no change expected.
 - `backend/src/navigation_tree.rs`, `backend/src/navigation_tree/tests.rs` - Translation counts.
-- `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer and column-option tests, on `dummy-` records of their own.
+- `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer, column-option and SQL commentary-filter tests, on `dummy-` records of their own.
+- `backend/tests/test_related_sutta_uids.rs` - The OpenTipitaka commentary in the translation tabs.
 Front end:
 
 - `src-ts/column_bar.ts`, `src-ts/column_bar.test.ts` - Reads the relative `has_content_json`, and the disabled-option tooltip.
@@ -296,15 +297,15 @@ pub fn pali_uid_for_translation(uid: &str) -> String;
 
 Depends on: nothing beyond a compiling tree.
 
-- [ ] 7.0 Update ordering and search
+- [x] 7.0 Update ordering and search
   - [x] 7.1 In `sort_suttas`, change the `remaining` key to `(language, is_ot_english_uid(&uid), sorts_as_commentary(&uid), range_start, uid)`, so that the AI commentaries follow the AI mūla records. Add a test. Other languages keep their order.
-  - [ ] 7.2 In `filter_suttas_query`, extend the commentary condition with `uid.like("%.att%/opentipitaka")` and `uid.like("%.tik%/opentipitaka")`. Leave the mūla condition unchanged (FR-37).
-  - [ ] 7.3 Make the same change in the `extra_where` SQL in `suttas_contains_match_fts5`, and update its comment.
-  - [ ] 7.4 In `searcher.rs`, make the commentary exclusion match `source_uid` `cst` **or** `opentipitaka`: two `MustNot` clauses, or one `Should` pair inside a `Must`. Leave the mūla exclusion unchanged, and update the comment.
-  - [ ] 7.5 Test the Tantivy filter on a small temporary index, in the style of the tests already in `searcher.rs`: with `include_cst_commentary` false, `mn1.att/en/opentipitaka` is gone, and `mn1/en/opentipitaka` and `mn1/en/sujato` remain.
-  - [ ] 7.6 Add `related_sutta_uids` tests for `mn1.att/en/opentipitaka`: with commentary off, opening `mn1/pli/cst` does not list it; opening `mn1.att/pli/cst` does. Confirm `include_cst_mula` leaves `mn1/en/opentipitaka` listed in `get_translations_data_json_for_sutta_uid`, since `ends_with("/cst")` does not match it.
-  - [ ] 7.7 Confirm by reading that `uid_sutta_cst_files_page` keeps `%.xml/pli/cst`, so FR-38 needs no change.
-  - [ ] 7.8 Run `cd backend && cargo test`.
+  - [x] 7.2 In `filter_suttas_query`, extend the commentary condition with `uid.like("%.att%/opentipitaka")` and `uid.like("%.tik%/opentipitaka")`. Leave the mūla condition unchanged (FR-37).
+  - [x] 7.3 Make the same change in the `extra_where` SQL in `suttas_contains_match_fts5`, and update its comment.
+  - [x] 7.4 In `searcher.rs`, make the commentary exclusion match `source_uid` `cst` **or** `opentipitaka`: two `MustNot` clauses, or one `Should` pair inside a `Must`. Leave the mūla exclusion unchanged, and update the comment.
+  - [x] 7.5 Test the Tantivy filter on a small temporary index, in the style of the tests already in `searcher.rs`: with `include_cst_commentary` false, `mn1.att/en/opentipitaka` is gone, and `mn1/en/opentipitaka` and `mn1/en/sujato` remain.
+  - [x] 7.6 Add `related_sutta_uids` tests for `mn1.att/en/opentipitaka`: with commentary off, opening `mn1/pli/cst` does not list it; opening `mn1.att/pli/cst` does. Confirm `include_cst_mula` leaves `mn1/en/opentipitaka` listed in `get_translations_data_json_for_sutta_uid`, since `ends_with("/cst")` does not match it.
+  - [x] 7.7 Confirm by reading that `uid_sutta_cst_files_page` keeps `%.xml/pli/cst`, so FR-38 needs no change.
+  - [x] 7.8 Run `cd backend && cargo test`.
   - [x] 7.9 `uid_sutta_range_all` and `uid_sutta_like_all` return results in `sort_suttas` order, so that `sn30.10` in English starts with `sn30.7-16/en/sujato`, not `sn30.1-46.att/en/opentipitaka`.
   - [x] 7.10 `get_next_sutta` and `get_prev_sutta` prefer the same reference kind as the current text, so that `mn1/en/opentipitaka` leads to `mn2/en/opentipitaka`, not `mn2.att/en/opentipitaka`. Test on `dummy-` records.
 
