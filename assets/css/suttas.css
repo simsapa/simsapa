@@ -525,6 +525,10 @@ div.btn a, span.btn a {
   background-color: var(--col-11-bg, transparent);
 }
 
+.suttacentral.layout-lines .cst .hangnum {
+  margin-bottom: 0;
+}
+
 body:has(.suttacentral.layout-columns) {
   max-width: 100vw;
 }
@@ -729,7 +733,7 @@ body.dark .suttacentral.sbs-blocks .sbs-col {
   margin-bottom: -18pt;
   text-indent: 2em;
 }
-.cst .centered {
+.cst .centered, .cst .centre {
   font-size: 1em;
   text-align: center;
 }

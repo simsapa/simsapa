@@ -31,6 +31,7 @@ Front end:
 
 - `src-ts/column_bar.ts`, `src-ts/column_bar.test.ts` - Reads the relative `has_content_json`, and the disabled-option tooltip.
 - `assets/js/simsapa.min.js` - The rebuilt bundle.
+- `assets/css/suttas.css` - Generated from the Sass.
 - `assets/sass/_cst.sass` - The `.cst .centre` rule.
 - `assets/sass/_suttacentral.sass` - The Lines-mode `.hangnum` margin.
 - `bridges/assets/qml/DhammaTextSourcesDialog.qml` - Lists OpenTipitaka.
@@ -330,12 +331,12 @@ Depends on: 6.0 for `pali_uid_for_translation`.
 
 Depends on: nothing.
 
-- [ ] 9.0 Add the display and attribution touches
-  - [ ] 9.1 In `assets/sass/_cst.sass`, add `.centre` beside `.centered`, with the same rules. Run `make sass`.
-  - [ ] 9.2 In `_suttacentral.sass`, set `.cst .hangnum` to `margin-bottom: 0` under `.suttacentral.layout-lines`. Solo and Columns keep `-18pt`.
-  - [ ] 9.3 Read the rest of `_cst.sass` against the exported markup: `<article class='cst'>`, `<p class='bodytext'>`, `<p class='gathalast'>`, and `<br>` in a verse row. Report anything unstyled to the maintainer. Do not restyle it.
-  - [ ] 9.4 In `DhammaTextSourcesDialog.qml`, add `<li><a href="https://www.opentipitaka.org/">opentipitaka.org</a> English translation of the CST texts, produced by AI</li>` under the tipitaka.org entry. The link is opened by the existing `onLinkActivated`.
-  - [ ] 9.5 Run `make build -B` and `make qml-lint`, and check for no new warning in that file.
+- [x] 9.0 Add the display and attribution touches
+  - [x] 9.1 In `assets/sass/_cst.sass`, add `.centre` beside `.centered`, with the same rules. Run `make sass`.
+  - [x] 9.2 In `_suttacentral.sass`, set `.cst .hangnum` to `margin-bottom: 0` under `.suttacentral.layout-lines`. Solo and Columns keep `-18pt`.
+  - [x] 9.3 Read the rest of `_cst.sass` against the exported markup: `<article class='cst'>`, `<p class='bodytext'>`, `<p class='gathalast'>`, and `<br>` in a verse row. Report anything unstyled to the maintainer. Do not restyle it.
+  - [x] 9.4 In `DhammaTextSourcesDialog.qml`, add `<li><a href="https://www.opentipitaka.org/">opentipitaka.org</a> English translation of the CST texts, produced by AI</li>` under the tipitaka.org entry. The link is opened by the existing `onLinkActivated`.
+  - [x] 9.5 Run `make build -B` and `make qml-lint`, and check for no new warning in that file.
 
 ### Specs for 10.0
 

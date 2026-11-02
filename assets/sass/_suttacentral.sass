@@ -267,6 +267,12 @@ $evam_font_scale: 1.15
       color: var(--col-#{$n}-ink, inherit)
       background-color: var(--col-#{$n}-bg, transparent)
 
+// A CST paragraph number hangs: the negative margin draws the next row up
+// beside it. In Lines a row is two lines tall, so the next row would cover the
+// English number.
+.suttacentral.layout-lines .cst .hangnum
+  margin-bottom: 0
+
 // Columns mode uses the full page width — the single-text reading measure
 // (body { max-width: 75ex } in suttas.sass plus the sutta_max_width
 // css_extra) fits one text only. body:has() out-specifies the inline
