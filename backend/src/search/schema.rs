@@ -48,6 +48,9 @@ pub fn build_sutta_schema(lang: &str) -> Schema {
     builder.add_text_field("content_exact", lang_normalize_opts);
     builder.add_bool_field("is_mula", INDEXED | STORED);
     builder.add_bool_field("is_commentary", INDEXED | STORED);
+    // A Pāli record whose text is also in the other Pāli edition (a uid in
+    // `pali_edition_twins`). The edition preference hides one of the two.
+    builder.add_bool_field("has_other_edition", INDEXED | STORED);
 
     builder.build()
 }

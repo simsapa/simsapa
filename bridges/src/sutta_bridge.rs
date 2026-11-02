@@ -11,7 +11,7 @@ use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use cxx_qt::{CxxQtType, Threading};
 
-use simsapa_backend::app_settings::AiRequestMode;
+use simsapa_backend::app_settings::{AiRequestMode, PaliEditionPreference};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
@@ -2197,6 +2197,8 @@ impl qobject::SuttaBridge {
                     uid_prefix: None,
                     uid_suffix: None,
                     include_ms_mula: true,
+                    // Database Validation exercises the whole index.
+                    pali_edition: PaliEditionPreference::Both,
                     include_comm_bold_definitions: true,
                     dict_source_uids: None,
                     show_all_snippets: false,
@@ -2871,6 +2873,7 @@ impl qobject::SuttaBridge {
                 include_cst_mula: true,
                 include_cst_commentary: true,
                 include_ms_mula: params.include_ms_mula,
+                pali_edition: params.pali_edition,
                 include_bold_definitions: params.include_comm_bold_definitions,
                 dict_source_uids: params.dict_source_uids.clone(),
                 show_all_snippets: false,

@@ -51,6 +51,7 @@ fn make_params(
         uid_prefix: uid_prefix.map(str::to_string),
         uid_suffix: uid_suffix.map(str::to_string),
         include_ms_mula: true,
+        pali_edition: Default::default(),
         include_comm_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: false,

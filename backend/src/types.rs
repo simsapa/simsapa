@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
 use crate::dpd_form_grammar::assign_form_grammar;
+use crate::app_settings::PaliEditionPreference;
 use crate::db::dpd_models::{DpdHeadword, DpdRoot};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +101,11 @@ pub struct SearchParams {
     pub uid_prefix: Option<String>,
     pub uid_suffix: Option<String>,
     pub include_ms_mula: bool,
+    /// Which edition to show of a text that is in both Pāli editions. Applies
+    /// only when both MS and CST mūla are included. See
+    /// docs/text-processing-for-contains-match-and-fulltext-match-search.md.
+    #[serde(default)]
+    pub pali_edition: PaliEditionPreference,
     pub include_comm_bold_definitions: bool,
     /// Dictionary search inclusion set. Restricts dict_words rows to those
     /// whose `dict_label` (a.k.a. `source_uid` in the dict index) is in
@@ -149,6 +155,7 @@ impl Default for SearchParams {
             uid_prefix: None,
             uid_suffix: None,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_comm_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,

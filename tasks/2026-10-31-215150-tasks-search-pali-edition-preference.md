@@ -13,16 +13,22 @@ Backend:
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/` (new) - The table of FR-6.
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/up.sql`, `down.sql` - Create and drop the table.
 - `backend/src/db/appdata_schema.rs` - The new table, and its entry in `allow_tables_to_appear_in_same_query!`.
-- `backend/src/app_settings.rs` - `PaliEditionPreference` (with `as_str()` / `parse()`), the `pali_edition_preference` and `cst_mula_in_search_default_applied` fields, the new default, and `migrate_cst_mula_in_search_default()` in the deserialize hook, with tests.
-- `backend/src/query_task.rs` - The edition filter.
-- `backend/src/search/searcher.rs` - The Tantivy edition filter.
+- `backend/src/app_settings.rs` - `PaliEditionPreference` (with `as_str()` / `parse()` / `hidden_edition()`, the shared condition of when the filter applies), the `pali_edition_preference` and `cst_mula_in_search_default_applied` fields, the new default, and `migrate_cst_mula_in_search_default()` in the deserialize hook, with tests.
+- `backend/src/pali_edition.rs` (new) - The table presence check (cached once per process), `load_twins()`, and `hide_twins_sql()`, the one SQL condition.
+- `backend/src/lib.rs` - Registers `pali_edition`.
+- `backend/src/query_task.rs` - `pali_edition` on `SearchQueryTask`, `hidden_pali_edition()` and `filter_pali_edition()`, used by Title Match and Contains Match, with their tests (`pali_edition_tests`).
+- `backend/tests/test_pali_edition_uid_match.rs` (new) - Uid Match finds either edition under every preference.
+- `backend/tests/*.rs` (struct literals) - `pali_edition: Default::default()` added to every `SearchParams` / `SearchFilters` literal.
+- `backend/src/search/searcher.rs` - The Tantivy edition filter in `add_sutta_filters`, skipped (logged once) on an index without the field, with tests.
 - `backend/src/search/schema.rs`, `backend/src/search/indexer.rs`, `backend/src/search/types.rs` - The `has_other_edition` field, `INDEX_VERSION`, and `SearchFilters`.
 - `backend/src/types.rs` - `SearchParams`.
+- `backend/src/cli_support.rs` - `Both` for the English-only `query` command.
+- `api/src/helpers.rs` - `pali_edition` in `build_search_params` (default for now; task 5.2 sets it from the request).
 
 Front end:
 
 - `bridges/assets/qml/SuttaSearchWindow.qml` - The edition preference in the advanced options.
-- `bridges/src/sutta_bridge.rs`, `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - The preference's getter and setter, and the `qmllint` stub.
+- `bridges/src/sutta_bridge.rs`, `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - The preference's getter and setter, and the `qmllint` stub. `Both` for the Database Validation search check, `params.pali_edition` for the debug query.
 - `api/src/helpers.rs`, `api/src/routes/search.rs` - The `pali_edition` request field, and its validation.
 - `backend_cli/src/commands/search.rs`, `backend_cli/src/commands/query.rs`, `backend/src/cli_support.rs` - The `--pali-edition` option.
 - `backend_cli/tests/read_only_commands.rs` - Mentions `pli/cst`.
@@ -106,16 +112,18 @@ Depends on: 1.0 for the table, 2.0 for the enum.
 The filter, where `<other>` is `cst` for preference `ms`, and `ms` for preference `cst`:
 
 ``` sql
-AND NOT (s.source_uid = '<other>' AND s.uid IN (SELECT uid FROM pali_edition_twins))
+AND NOT (s.uid LIKE '%/pli/<other>' AND s.uid IN (SELECT uid FROM pali_edition_twins))
 ```
 
-- [ ] 3.0 Filter the search results
-  - [ ] 3.1 Add `pali_edition: PaliEditionPreference` with `#[serde(default)]` to `SearchParams`, `SearchFilters` and `SearchQueryTask`, and carry it at `query_task.rs:185` and `:2394`. Set it at the Rust call sites that build these structs: `Both` in the Database Validation check at `bridges/src/sutta_bridge.rs:2194`, which should exercise the whole index; `params.pali_edition` at `:2871`; `Both` at `backend/src/cli_support.rs:32`, whose query is English-only; and `api/src/helpers.rs:259` from the request (task 5.2). Existing tests use the default unless they test the filter.
-  - [ ] 3.2 Add `filter_pali_edition()`, separate from `filter_suttas_query`, using `diesel::dsl::sql`. Call it in `suttas_title_match` (`query_task.rs:2039`), and add the same condition to the `extra_where` of `suttas_contains_match_fts5`. Do **not** call it in the uid paths at `:645`, `:707`, `:785` and `:826` (FR-7). Apply it only when `include_ms_mula` and `include_cst_mula` are both true, and the preference is not `Both`. Check once per process, with a `OnceLock` and `sqlite_master`, that the table exists, as the `construction_summary` read does for its column. If it does not, skip the filter and log once (FR-10).
-  - [ ] 3.3 Add `has_other_edition` to `backend/src/search/schema.rs`, as `INDEXED | STORED`, like `is_mula`. In the indexer, for `pli`, load the table once and set the field. If the table cannot be read, log an error and index false. Change `INDEX_VERSION` to `1.1`, as its comment requires.
-  - [ ] 3.4 In `searcher.rs`, add a `MustNot` of `has_other_edition = true AND source_uid = <other>`, under the same condition as 3.2. If `schema.get_field("has_other_edition")` fails, the index predates the field: skip the clause and log once, and never return the error (FR-10). The backend tests depend on this, because the dist index has no such field until a new bootstrap.
-  - [ ] 3.5 Test: SQL and Tantivy each return only the `ms` record under `ms`, only the `cst` record under `cst`, and both under `both`; a record in only one edition is returned under all three; with the CST checkbox off the preference changes nothing; a Uid Match for `mn1/pli/cst` returns it under `ms`; and with the table missing, or an index without the field, search still returns results. Use small temporary databases and indexes.
-  - [ ] 3.6 Run `cd backend && cargo test` and `cd api && cargo test`.
+The SQL reads the edition from the uid suffix, not from `s.source_uid` as first specified: `source_uid` is stored after the content columns, and reading it doubled a broad Contains Match (350 ms → 650 ms on `dhamma`) and Title Match. Every uid in the table ends in `/pli/ms` or `/pli/cst`, so the two are equivalent. The Tantivy clause keeps `source_uid`, which costs nothing there.
+
+- [x] 3.0 Filter the search results
+  - [x] 3.1 Add `pali_edition: PaliEditionPreference` with `#[serde(default)]` to `SearchParams`, `SearchFilters` and `SearchQueryTask`, and carry it at `query_task.rs:185` and `:2394`. Set it at the Rust call sites that build these structs: `Both` in the Database Validation check at `bridges/src/sutta_bridge.rs:2194`, which should exercise the whole index; `params.pali_edition` at `:2871`; `Both` at `backend/src/cli_support.rs:32`, whose query is English-only; and `api/src/helpers.rs:259` from the request (task 5.2). Existing tests use the default unless they test the filter.
+  - [x] 3.2 Add `filter_pali_edition()`, separate from `filter_suttas_query`, using `diesel::dsl::sql`. Call it in `suttas_title_match` (`query_task.rs:2039`), and add the same condition to the `extra_where` of `suttas_contains_match_fts5`. Do **not** call it in the uid paths at `:645`, `:707`, `:785` and `:826` (FR-7). Apply it only when `include_ms_mula` and `include_cst_mula` are both true, and the preference is not `Both`. Check once per process, with a `OnceLock` and `sqlite_master`, that the table exists, as the `construction_summary` read does for its column. If it does not, skip the filter and log once (FR-10).
+  - [x] 3.3 Add `has_other_edition` to `backend/src/search/schema.rs`, as `INDEXED | STORED`, like `is_mula`. In the indexer, for `pli`, load the table once and set the field. If the table cannot be read, log an error and index false. Change `INDEX_VERSION` to `1.1`, as its comment requires.
+  - [x] 3.4 In `searcher.rs`, add a `MustNot` of `has_other_edition = true AND source_uid = <other>`, under the same condition as 3.2. If `schema.get_field("has_other_edition")` fails, the index predates the field: skip the clause and log once, and never return the error (FR-10). The backend tests depend on this, because the dist index has no such field until a new bootstrap.
+  - [x] 3.5 Test: SQL and Tantivy each return only the `ms` record under `ms`, only the `cst` record under `cst`, and both under `both`; a record in only one edition is returned under all three; with the CST checkbox off the preference changes nothing; a Uid Match for `mn1/pli/cst` returns it under `ms`; and with the table missing, or an index without the field, search still returns results. Use small temporary databases and indexes.
+  - [x] 3.6 Run `cd backend && cargo test` and `cd api && cargo test`.
 
 ### Specs for 4.0
 

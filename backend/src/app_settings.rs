@@ -728,6 +728,21 @@ impl PaliEditionPreference {
         }
     }
 
+    /// The `source_uid` of the edition whose records in both editions search
+    /// hides: `cst` for `Ms`, `ms` for `Cst`. `None` for `Both`, and when
+    /// either mūla edition is excluded as a whole, since the exclusion already
+    /// decides which edition is shown.
+    pub fn hidden_edition(&self, include_ms_mula: bool, include_cst_mula: bool) -> Option<&'static str> {
+        if !include_ms_mula || !include_cst_mula {
+            return None;
+        }
+        match self {
+            PaliEditionPreference::Ms => Some("cst"),
+            PaliEditionPreference::Cst => Some("ms"),
+            PaliEditionPreference::Both => None,
+        }
+    }
+
     /// Parse the string form. `None` for anything but `ms`, `cst` or `both`.
     pub fn parse(value: &str) -> Option<Self> {
         match value {

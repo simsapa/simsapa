@@ -9,6 +9,7 @@ pub mod cli_support;
 pub mod query_task;
 pub mod cst_files;
 pub mod opentipitaka;
+pub mod pali_edition;
 pub mod fulltext_status;
 pub mod html_content;
 pub mod dir_list;

@@ -262,6 +262,7 @@ pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &
         uid_prefix: None,
         uid_suffix: None,
         include_ms_mula: true,
+        pali_edition: Default::default(),
         include_comm_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: request.show_all_snippets.unwrap_or(false),
