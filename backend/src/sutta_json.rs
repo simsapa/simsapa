@@ -14,6 +14,7 @@
 use crate::db::appdata::AppdataDbHandle;
 use crate::db::appdata_models::Sutta;
 use crate::helpers::{convert_verse_ref_to_sutta_uid, split_sutta_ref_kind, SuttaRefKind};
+use crate::sutta_display::pali_uid_for_translation;
 
 /// The outcome of looking up a sutta's `content_json`.
 #[derive(Debug, Clone, PartialEq)]
@@ -135,9 +136,11 @@ fn raw_json(column: Option<String>, what: &str, uid: &str) -> Option<Box<serde_j
 /// template, variant readings, comments and glosses.
 ///
 /// The variant readings belong to the Pāli root text, so for a translation
-/// they are read from `<reference>/pli/ms` when the translation has none of
-/// its own; the record's `uid` says which text it belongs to. The segment ids
-/// are shared, so they key into the translation all the same.
+/// they are read from the Pāli text of its family when the translation has
+/// none of its own: `<reference>/pli/cst` for an OpenTipitaka English, because
+/// segment ids compare only within one family, otherwise `<reference>/pli/ms`.
+/// The record's `uid` says which text it belongs to. The segment ids are
+/// shared, so they key into the translation all the same.
 pub fn get_sutta_bilara_json(appdata: &AppdataDbHandle, uid: &str) -> SuttaBilaraJson {
     use crate::db::appdata_models::{SuttaComment, SuttaGloss, SuttaVariant};
     use crate::db::appdata_schema::{sutta_comments, sutta_glosses, sutta_variants};
@@ -204,8 +207,7 @@ pub fn get_sutta_bilara_json(appdata: &AppdataDbHandle, uid: &str) -> SuttaBilar
         if sutta.language == "pli" {
             return None;
         }
-        let reference = sutta.uid.split('/').next().unwrap_or_default();
-        let root = appdata.get_sutta(&format!("{}/pli/ms", reference))?;
+        let root = appdata.get_sutta(&pali_uid_for_translation(&sutta.uid))?;
         read_variant(root.id)
     });
 

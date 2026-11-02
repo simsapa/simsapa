@@ -5,7 +5,8 @@
 //! the divisions its toc names, `<name><n>.xml/pli/cst` (`vin02m4.mul0.xml`
 //! … `vin02m4.mul17.xml`). Such a name fits none of the sutta reference
 //! patterns, so a typed `vin02` or `e01` was searched as text and found
-//! nothing.
+//! nothing. Only these Pāli records are found: the `/en/opentipitaka` record of
+//! a file is not.
 //!
 //! The source file names are a fixed list, the `romn/` folder of the
 //! tipitaka.org CST edition, so the query is matched against that list rather

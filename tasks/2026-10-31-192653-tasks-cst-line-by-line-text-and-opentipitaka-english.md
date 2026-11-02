@@ -21,11 +21,11 @@ Backend:
 - `backend/src/db/appdata.rs` - `TranslationData.has_content_json`, the column options, `sort_suttas`, `get_full_sutta_uid`, `get_sutta_by_range`.
 - `backend/src/query_task.rs` - The two SQL commentary filters.
 - `backend/src/search/searcher.rs` - The Tantivy commentary filter.
-- `backend/src/sutta_json.rs` - The `/pli/ms` variants fallback.
-- `backend/src/cst_files.rs` - Review only.
+- `backend/src/sutta_json.rs` - The variants fallback reads the Pāli text of the translation's family.
+- `backend/src/cst_files.rs` - Reviewed; the module comment says only Pāli records are found by file name.
 - `backend/src/helpers.rs` - `related_sutta_uids`, `bilara_multi_column_html` and `bilara_text_to_html`: tests, and no change expected.
 - `backend/src/navigation_tree.rs`, `backend/src/navigation_tree/tests.rs` - Translation counts.
-- `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer, column-option and SQL commentary-filter tests, on `dummy-` records of their own.
+- `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer, column-option SQL commentary-filter, snippet, variants-family and bare-code tests, on `dummy-` records of their own.
 - `backend/tests/test_related_sutta_uids.rs` - The OpenTipitaka commentary in the translation tabs.
 Front end:
 
@@ -313,16 +313,16 @@ Depends on: nothing beyond a compiling tree.
 
 Depends on: 6.0 for `pali_uid_for_translation`.
 
-- [ ] 8.0 Update the code that assumes `pli/cst` is not segmented
-  - [ ] 8.1 In `sutta_json.rs`, replace the `format!("{}/pli/ms", reference)` in the variants fallback with `pali_uid_for_translation(&sutta.uid)`. Add a test.
-  - [ ] 8.2 Correct the `sutta_json.rs` comment that names `pli/cst` as HTML-only, and the one at line 59 if it no longer holds. `get_sutta_content_json` needs no code change: it returns `Found` when `content_json` is set. Check the "bare code resolves to `/pli/ms`" rule stays.
-  - [ ] 8.3 Check `cst_files.rs` and `query_task.rs` for that assumption, and update any comments. `grep -rn "content_json" ` and `"pli/cst"` in `backend/src`, `api/src`, `bridges/src` and read each hit.
-  - [ ] 8.4 Check the four `content_html` fallbacks in `query_task.rs` (lines 443, 494, 518, 572) still get text: `content_plain` is set on every CST record, and a test with `content_html` None and a filled `content_plain` gives a snippet. Lines 518 and 572 read book spine items, so they are unaffected.
-  - [ ] 8.5 Check `app_data.rs` `render_sutta_standard_body`, `asset_helpers.rs:153` and `cli_support.rs:419` handle `None`.
-  - [ ] 8.6 Add `navigation_tree/tests.rs` cases: `mn1/en/opentipitaka` counts as a translation of `mn1/pli/cst`, and `mn1.att/en/opentipitaka` does not count for `mn1/pli/cst`, as `a_commentary_is_not_counted_as_a_translation_of_the_text` does for other authors.
-  - [ ] 8.7 In `get_full_sutta_uid`, after the `/pli/ms` lookup, try `<code>/pli/cst` before the `LIKE` (FR-49). Test on a bare `mn1.att`-shaped code with only `/en/opentipitaka` and `/pli/cst` rows.
+- [x] 8.0 Update the code that assumes `pli/cst` is not segmented
+  - [x] 8.1 In `sutta_json.rs`, replace the `format!("{}/pli/ms", reference)` in the variants fallback with `pali_uid_for_translation(&sutta.uid)`. Add a test.
+  - [x] 8.2 Correct the `sutta_json.rs` comment that names `pli/cst` as HTML-only, and the one at line 59 if it no longer holds. `get_sutta_content_json` needs no code change: it returns `Found` when `content_json` is set. Check the "bare code resolves to `/pli/ms`" rule stays.
+  - [x] 8.3 Check `cst_files.rs` and `query_task.rs` for that assumption, and update any comments. `grep -rn "content_json" ` and `"pli/cst"` in `backend/src`, `api/src`, `bridges/src` and read each hit.
+  - [x] 8.4 Check the four `content_html` fallbacks in `query_task.rs` (lines 443, 494, 518, 572) still get text: `content_plain` is set on every CST record, and a test with `content_html` None and a filled `content_plain` gives a snippet. Lines 518 and 572 read book spine items, so they are unaffected.
+  - [x] 8.5 Check `app_data.rs` `render_sutta_standard_body`, `asset_helpers.rs:153` and `cli_support.rs:419` handle `None`.
+  - [x] 8.6 Add `navigation_tree/tests.rs` cases: `mn1/en/opentipitaka` counts as a translation of `mn1/pli/cst`, and `mn1.att/en/opentipitaka` does not count for `mn1/pli/cst`, as `a_commentary_is_not_counted_as_a_translation_of_the_text` does for other authors.
+  - [x] 8.7 In `get_full_sutta_uid`, after the `/pli/ms` lookup, try `<code>/pli/cst` before the `LIKE` (FR-49). Test on a bare `mn1.att`-shaped code with only `/en/opentipitaka` and `/pli/cst` rows.
   - [x] 8.8 In `get_sutta_by_range`, among suffix matches take the same kind as the query first, using `split_sutta_ref_kind`, which is a mūla record for a mūla query. With no suffix, or no suffix match, take `/pli/ms`, then any other Pāli record, each of the query's kind before a mūla record, then `results.first()` (FR-50). Update the `sutta_json.rs` comment at line 59, whose example changes, and keep `resolve_sutta_strict`'s suffix check.
-  - [ ] 8.9 Run `cd backend && cargo test` and `cd api && cargo test`.
+  - [x] 8.9 Run `cd backend && cargo test` and `cd api && cargo test`.
   - [x] 8.10 `resolve_sutta_strict` reads a bare code as `/pli/ms`, then `/pli/cst`, and a bare commentary code as `/pli/cst`. Its range step keeps the query's kind, so that `mn1.att` is `mn1.att/pli/cst`, `sn30.10.att` is `sn30.1-46.att/pli/cst`, and `mn1.att/pli/ms` is not found. `test_sutta_json.rs` uses `mn1/en/bodhi` as its HTML-only record.
   - [x] 8.11 A single column renders that column, not the opened text (`render_content_block_for_columns`). Solo still renders the opened text.
 

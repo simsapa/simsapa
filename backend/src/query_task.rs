@@ -679,8 +679,8 @@ impl<'a> SearchQueryTask<'a> {
     ///
     /// The matching uids are found, filtered and sorted from the uid index
     /// alone, and only the page is loaded in full: a short query names many
-    /// files (`s05` has 515 records, 37 MB of HTML), and loading every record
-    /// to show twenty was the whole cost of the search.
+    /// files (`s05` has 515 records), and loading every record to show twenty
+    /// was the whole cost of the search.
     fn uid_sutta_cst_files_page(
         &mut self,
         cst_query: &CstFileQuery,

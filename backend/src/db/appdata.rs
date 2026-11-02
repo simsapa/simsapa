@@ -362,27 +362,29 @@ impl AppdataDbHandle {
             };
         }
 
-        // First, try to find the Pali Mahasangiti version "{partial_uid}/pli/ms"
-        let pli_ms_uid = format!("{}/pli/ms", partial_uid);
-        let pli_result = self.do_read(|db_conn| {
-            suttas
-                .filter(uid.eq(&pli_ms_uid))
-                .select(uid)
-                .first::<String>(db_conn)
-                .optional()
-        });
+        // The Pāli editions first. Every CST text has an `/en/opentipitaka` record, which
+        // the `LIKE` below would find first: it reads the uid index, where `en` sorts
+        // before `pli`.
+        for edition in ["ms", "cst"] {
+            let pali_uid = format!("{}/pli/{}", partial_uid, edition);
+            let pli_result = self.do_read(|db_conn| {
+                suttas
+                    .filter(uid.eq(&pali_uid))
+                    .select(uid)
+                    .first::<String>(db_conn)
+                    .optional()
+            });
 
-        match pli_result {
-            Ok(Some(found_uid)) => return Some(found_uid),
-            Ok(None) => {
-                // Pali MS not found, try LIKE query for any translation
-            },
-            Err(e) => {
-                error(&format!("Error checking Pali MS UID '{}': {}", pli_ms_uid, e));
+            match pli_result {
+                Ok(Some(found_uid)) => return Some(found_uid),
+                Ok(None) => {}
+                Err(e) => {
+                    error(&format!("Error checking Pali UID '{}': {}", pali_uid, e));
+                }
             }
         }
 
-        // If Pali MS not found, find the first matching UID with LIKE
+        // No Pāli edition: find the first matching UID with LIKE
         let pattern = format!("{}/%", partial_uid);
         let result = self.do_read(|db_conn| {
             suttas

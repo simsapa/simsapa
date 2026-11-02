@@ -934,6 +934,24 @@ fn a_commentary_is_not_counted_as_a_translation_of_the_text() {
 }
 
 #[test]
+fn the_opentipitaka_english_counts_as_a_translation_of_its_own_text() {
+    let mut db_conn = suttas_db(&[
+        ("mn1/pli/cst", "pli"),
+        ("mn1/en/opentipitaka", "en"),
+        ("mn1.att/pli/cst", "pli"),
+        ("mn1.att/en/opentipitaka", "en"),
+    ]);
+    let uids = vec!["mn1/pli/cst".to_string(), "mn1.att/pli/cst".to_string()];
+    let langs = vec!["en".to_string()];
+
+    let counts = translation_counts_conn(&mut db_conn, &uids, &langs).unwrap();
+
+    // The commentary's English counts for the commentary and not for the mūla.
+    assert_eq!(counts.get("mn1/pli/cst"), Some(&1));
+    assert_eq!(counts.get("mn1.att/pli/cst"), Some(&1));
+}
+
+#[test]
 fn the_bare_key_is_the_uid_up_to_the_first_slash() {
     assert_eq!(bare_sutta_key("sn56.11/pli/ms"), "sn56.11");
     assert_eq!(bare_sutta_key("s0305m.mul11.xml/pli/cst"), "s0305m.mul11.xml");

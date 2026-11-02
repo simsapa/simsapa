@@ -9,13 +9,16 @@ use serial_test::serial;
 
 use simsapa_backend::app_settings::{RepeatPali, SuttaLayout};
 use simsapa_backend::db::appdata::sort_suttas;
-use simsapa_backend::db::appdata_models::{NewSutta, Sutta};
-use simsapa_backend::db::appdata_schema::suttas;
+use simsapa_backend::db::appdata_models::{NewSutta, NewSuttaVariant, Sutta};
+use simsapa_backend::db::appdata_schema::{sutta_variants, suttas};
 use simsapa_backend::get_app_data;
 use simsapa_backend::helpers::query_text_to_uid_field_query;
 use simsapa_backend::opentipitaka::OT_ENGLISH_FOOTER;
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
+use simsapa_backend::sutta_json::{
+    get_sutta_bilara_json, get_sutta_content_json, SuttaBilaraJson, SuttaContentJson,
+};
 use simsapa_backend::types::{SearchArea, SearchParams};
 
 mod helpers;
@@ -24,6 +27,7 @@ use helpers as h;
 const PALI_CST: &str = "dummy-mn1/pli/cst";
 const ENGLISH_OT: &str = "dummy-mn1/en/opentipitaka";
 const COMMENTARY_ENGLISH_OT: &str = "dummy-mn1.att/en/opentipitaka";
+const COMMENTARY_PALI_CST: &str = "dummy-mn1.att/pli/cst";
 const PALI_MS: &str = "dummy-mn1/pli/ms";
 const ENGLISH_SUJATO: &str = "dummy-mn1/en/sujato";
 const ENGLISH_HTML_ONLY: &str = "dummy-mn1/en/bodhi";
@@ -37,10 +41,11 @@ const NAV_FIRST_MULA: &str = "dummy-nav1/en/opentipitaka";
 const NAV_SECOND_COMMENTARY: &str = "dummy-nav2.att/en/opentipitaka";
 const NAV_SECOND_MULA: &str = "dummy-nav2/en/opentipitaka";
 
-const ALL_UIDS: [&str; 12] = [
+const ALL_UIDS: [&str; 13] = [
     PALI_CST,
     ENGLISH_OT,
     COMMENTARY_ENGLISH_OT,
+    COMMENTARY_PALI_CST,
     PALI_MS,
     ENGLISH_SUJATO,
     ENGLISH_HTML_ONLY,
@@ -55,6 +60,10 @@ const ALL_UIDS: [&str; 12] = [
 fn delete_fixture() {
     let app_data = get_app_data();
     let db_conn = &mut app_data.dbm.appdata.get_conn().unwrap();
+    diesel::delete(sutta_variants::table)
+        .filter(sutta_variants::sutta_uid.eq_any(ALL_UIDS))
+        .execute(db_conn)
+        .unwrap();
     diesel::delete(suttas::table)
         .filter(suttas::uid.eq_any(ALL_UIDS))
         .execute(db_conn)
@@ -472,17 +481,19 @@ fn found_without_commentary(query_text: String, mut params: SearchParams) -> Vec
         .collect()
 }
 
+fn set_plain_text(uids: &[&str], text: &str) {
+    let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
+    diesel::update(suttas::table.filter(suttas::uid.eq_any(uids)))
+        .set(suttas::content_plain.eq(text))
+        .execute(db_conn)
+        .unwrap();
+}
+
 #[test]
 #[serial]
 fn the_commentary_filter_covers_the_english_in_a_contains_search() {
     let _fixture = set_up();
-    {
-        let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
-        diesel::update(suttas::table.filter(suttas::uid.eq_any([ENGLISH_OT, COMMENTARY_ENGLISH_OT])))
-            .set(suttas::content_plain.eq("dummyzqxfindme"))
-            .execute(db_conn)
-            .unwrap();
-    }
+    set_plain_text(&[ENGLISH_OT, COMMENTARY_ENGLISH_OT], "dummyzqxfindme");
 
     let found = found_without_commentary("dummyzqxfindme".to_string(), h::get_contains_params_with_lang(None));
     assert_eq!(found, [ENGLISH_OT]);
@@ -511,4 +522,89 @@ fn the_mula_setting_leaves_the_opentipitaka_english_listed() {
     let entries = translations_of(PALI_MS, false);
     assert!(entry(&entries, ENGLISH_OT).is_some());
     assert!(entry(&entries, PALI_CST).is_none());
+}
+
+#[test]
+#[serial]
+fn a_text_with_no_html_gives_a_snippet_from_its_plain_text() {
+    let _fixture = set_up();
+    set_plain_text(&[ENGLISH_OT], "before dummyzqxfindme after");
+    assert!(sutta(ENGLISH_OT).content_html.is_none());
+
+    let app_data = get_app_data();
+    let mut params = h::get_contains_params_with_lang(None);
+    params.include_cst_mula = true;
+    let mut query_task =
+        SearchQueryTask::new(&app_data.dbm, "dummyzqxfindme".to_string(), params, SearchArea::Suttas);
+    let results = query_task.results_page(0).unwrap_or_else(|e| panic!("{}", e));
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].snippet.contains("dummyzqxfindme"), "{}", results[0].snippet);
+}
+
+fn insert_variant(uid: &str, source_uid: &str, json: &str) {
+    let id = sutta(uid).id;
+    let db_conn = &mut get_app_data().dbm.appdata.get_conn().unwrap();
+    diesel::insert_into(sutta_variants::table)
+        .values(NewSuttaVariant {
+            sutta_id: id,
+            sutta_uid: uid,
+            language: Some("pli"),
+            source_uid: Some(source_uid),
+            content_json: Some(json),
+        })
+        .execute(db_conn)
+        .unwrap();
+}
+
+/// The uid of the variants record that `/sutta_bilara.json` returns for `uid`.
+fn bilara_variants_uid(uid: &str) -> Option<String> {
+    match get_sutta_bilara_json(&get_app_data().dbm.appdata, uid) {
+        SuttaBilaraJson::Found { json, .. } => {
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            value["variants"]["uid"].as_str().map(str::to_string)
+        }
+        other => panic!("{}: {:?}", uid, other),
+    }
+}
+
+#[test]
+#[serial]
+fn bilara_json_reads_the_variants_of_the_family_of_the_text() {
+    let _fixture = set_up();
+    insert_variant(PALI_CST, "cst", r#"{"k:1.1": "cst note"}"#);
+    insert_variant(PALI_MS, "ms", r#"{"k:1.1": "ms note"}"#);
+
+    assert_eq!(bilara_variants_uid(ENGLISH_OT).as_deref(), Some(PALI_CST));
+    assert_eq!(bilara_variants_uid(ENGLISH_SUJATO).as_deref(), Some(PALI_MS));
+    assert_eq!(bilara_variants_uid(PALI_CST).as_deref(), Some(PALI_CST));
+}
+
+#[test]
+#[serial]
+fn sutta_json_finds_a_cst_text() {
+    let _fixture = set_up();
+
+    let stored = sutta(PALI_CST).content_json;
+    let found = get_sutta_content_json(&get_app_data().dbm.appdata, PALI_CST);
+    assert_eq!(
+        found,
+        SuttaContentJson::Found { uid: PALI_CST.to_string(), content_json: stored.unwrap() }
+    );
+}
+
+#[test]
+#[serial]
+fn a_bare_code_is_the_pali_and_not_the_ai_english() {
+    let _fixture = set_up();
+    let appdata = &get_app_data().dbm.appdata;
+
+    // The Mahāsaṅgīti text stays first.
+    assert_eq!(appdata.get_full_sutta_uid("dummy-mn1").as_deref(), Some(PALI_MS));
+
+    // With no Pāli record the English is all there is.
+    assert_eq!(appdata.get_full_sutta_uid("dummy-mn1.att").as_deref(), Some(COMMENTARY_ENGLISH_OT));
+
+    insert_text(COMMENTARY_PALI_CST, "pli", "cst", Some(&segmented_json(["a", "b"])), Some(&cst_template("")), None);
+    assert_eq!(appdata.get_full_sutta_uid("dummy-mn1.att").as_deref(), Some(COMMENTARY_PALI_CST));
 }
