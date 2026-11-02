@@ -2870,8 +2870,10 @@ impl qobject::SuttaBridge {
                 uid_prefix: params.uid_prefix.clone(),
                 uid_suffix: params.uid_suffix.clone(),
                 sutta_ref: None,
-                include_cst_mula: true,
-                include_cst_commentary: true,
+                // The same edition filters as `fulltext_suttas()`, so the
+                // debug output describes the search the user runs.
+                include_cst_mula: params.include_cst_mula,
+                include_cst_commentary: params.include_cst_commentary,
                 include_ms_mula: params.include_ms_mula,
                 pali_edition: params.pali_edition,
                 include_bold_definitions: params.include_comm_bold_definitions,

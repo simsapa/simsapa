@@ -82,7 +82,10 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
     // leaves every record without one: search then shows both editions.
     let twins: HashSet<String> = if lang == "pli" {
         match appdata_db.get_conn().and_then(|mut db_conn| crate::pali_edition::load_twins(&mut db_conn)) {
-            Ok(twins) => twins,
+            Ok(twins) => {
+                info(&format!("build_sutta_index(): {} records in both Pāli editions", twins.len()));
+                twins
+            }
             Err(e) => {
                 error(&format!("build_sutta_index(): pali_edition_twins could not be read, has_other_edition is false for every record: {}", e));
                 HashSet::new()
@@ -91,7 +94,6 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
     } else {
         HashSet::new()
     };
-    info(&format!("{} records in both Pāli editions for language {}", twins.len(), lang));
 
     let lang_clone = lang.to_string();
     let sutta_list: Vec<Sutta> = appdata_db.do_read(|db_conn| {

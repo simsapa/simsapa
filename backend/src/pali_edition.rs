@@ -15,6 +15,7 @@ use diesel::sql_query;
 use diesel::sql_types::BigInt;
 use diesel::sqlite::SqliteConnection;
 
+use crate::app_settings::PaliEditionPreference;
 use crate::logger::{error, warn};
 
 static TWINS_TABLE_PRESENT: OnceLock<bool> = OnceLock::new();
@@ -41,7 +42,13 @@ pub fn has_twins_table(db_conn: &mut SqliteConnection) -> Result<bool> {
 /// skipped so that search shows both editions. Checked once per process, and
 /// an absent table is logged once.
 pub fn twins_table_present(db_conn: &mut SqliteConnection) -> bool {
-    *TWINS_TABLE_PRESENT.get_or_init(|| match has_twins_table(db_conn) {
+    twins_table_present_in(&TWINS_TABLE_PRESENT, db_conn)
+}
+
+/// `twins_table_present()` with the cache passed in, so that a test can use a
+/// fresh one.
+pub fn twins_table_present_in(cache: &OnceLock<bool>, db_conn: &mut SqliteConnection) -> bool {
+    *cache.get_or_init(|| match has_twins_table(db_conn) {
         Ok(true) => true,
         Ok(false) => {
             warn("pali_edition_twins table is missing; search shows both Pāli editions");
@@ -52,6 +59,22 @@ pub fn twins_table_present(db_conn: &mut SqliteConnection) -> bool {
             false
         }
     })
+}
+
+/// The edition (`ms` or `cst`) whose records in both editions a search hides,
+/// or `None` when nothing is hidden: the preference is `both`, a mūla edition
+/// is excluded as a whole, or `pali_edition_twins` is missing. The SQL filter
+/// names the table, so without it the query would fail; skipping it shows
+/// both editions instead (FR-10). `table_present` is asked only when the
+/// filter would otherwise apply.
+pub fn edition_to_hide(
+    preference: PaliEditionPreference,
+    include_ms_mula: bool,
+    include_cst_mula: bool,
+    table_present: impl FnOnce() -> bool,
+) -> Option<&'static str> {
+    let hidden = preference.hidden_edition(include_ms_mula, include_cst_mula)?;
+    if table_present() { Some(hidden) } else { None }
 }
 
 /// The uids in `pali_edition_twins`.

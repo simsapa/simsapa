@@ -275,6 +275,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── lookup_cancel.rs
 │   │   ├── lookup_forms.rs
 │   │   ├── opentipitaka.rs
+│   │   ├── pali_edition.rs
 │   │   ├── pali_sort.rs
 │   │   ├── pali_stemmer.rs
 │   │   ├── query_task.rs
@@ -340,6 +341,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - `src/app_settings.rs` - Application settings and configuration (incl. `SuttaLayout` / `SuttaDisplayDefaults`)
   - `src/sutta_display.rs` - per-request `SuttaDisplayOptions` + display GET-param parsing (multi-column sutta view), and `columns_can_align`, which keeps texts of different families out of the aligned view. See [docs/sutta-display-settings-and-multi-column-view.md §9](./docs/sutta-display-settings-and-multi-column-view.md)
   - `src/opentipitaka.rs` - The OpenTipitaka constants and footer markup (AI notice, licence), shared by the CST import and the reader, because `backend` does not link `tipitaka_xml_parser`
+  - `src/pali_edition.rs` - The search filter that shows one Pāli edition (MS or CST) of a text that is in both, as the `pali_edition` preference says: `edition_to_hide()` (when the filter applies), the once-per-process check that the `pali_edition_twins` appdata table exists (skipped, so both editions show, when it does not), `hide_twins_sql()` (the one SQL condition, for Contains and Title Match), and `load_twins()` (read by the indexer for the `has_other_edition` field). The table is filled at CST import by `store_pali_edition_twins()` in `bootstrap_cli/src/bootstrap/tipitaka_xml.rs`. Uid Match is never filtered
   - `src/helpers.rs` - Utility functions including Linux desktop launcher creation; also the Gloss word-processing pipeline (`extract_words_with_context`, `process_word_for_glossing`) and the AI word-selection layer on top of it (`normalize_gloss_context` / `gloss_context_hash` / `gloss_cache_word_key`, `strip_gloss_annotations`, `resolve_gloss_word_selection`, the shared word-selection request builder `build_word_selection_items` / `build_word_selection_payload`, `parse_word_selection_response` (lenient/strict modes), `build_gloss_session_export_json` / `parse_gloss_session_export`)
   - `src/docx_export.rs` - Gloss and Prompts DOCX export: `gloss_export_data()` / `chat_export_data()` JSON → `word/document.xml` inside a fully code-generated OOXML package (content types, rels, `styles.xml`, `settings.xml`, `fontTable.xml`, and obfuscated `.odttf` embedded font parts — no binary template) (`generate_gloss_docx` / `generate_chat_docx`); AI-translation / assistant response text is rendered through `markdown_convert::markdown_to_docx_body`
   - `src/markdown_convert.rs` - Shared Markdown → export conversion: `parse_response()` (GFM mdast parse with `unwrap_fenced_tables` pre-processing), `inline_runs()` styled-run flattening, `node_plain_text()` fallback, and the two emitters `markdown_to_orgmode()` (Org-Mode) and `markdown_to_docx_body()` (OOXML fragments), used by `text_export.rs` and `docx_export.rs`

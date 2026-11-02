@@ -635,12 +635,12 @@ impl<'a> SearchQueryTask<'a> {
     /// Kept apart from `filter_suttas_query`, which the Uid Match paths also
     /// call: a uid names one record, and finds it under every preference.
     fn hidden_pali_edition(&self, db_conn: &mut SqliteConnection) -> Option<&'static str> {
-        let hidden = self.pali_edition.hidden_edition(self.include_ms_mula, self.include_cst_mula)?;
-        if crate::pali_edition::twins_table_present(db_conn) {
-            Some(hidden)
-        } else {
-            None
-        }
+        crate::pali_edition::edition_to_hide(
+            self.pali_edition,
+            self.include_ms_mula,
+            self.include_cst_mula,
+            || crate::pali_edition::twins_table_present(db_conn),
+        )
     }
 
     /// Hide the records of the other edition that are in both Pāli editions,
@@ -2954,7 +2954,7 @@ mod pali_edition_tests {
 
     use super::SearchQueryTask;
     use crate::app_settings::PaliEditionPreference;
-    use crate::pali_edition::{has_twins_table, hide_twins_sql};
+    use crate::pali_edition::{edition_to_hide, has_twins_table, hide_twins_sql, twins_table_present_in};
 
     /// `(uid, source_uid)`: two texts in both editions, one in MS only, one in
     /// CST only, and an English translation.
@@ -3064,6 +3064,46 @@ mod pali_edition_tests {
     fn missing_twins_table_is_detected() {
         assert!(has_twins_table(&mut fixture(true)).unwrap());
         assert!(!has_twins_table(&mut fixture(false)).unwrap());
+    }
+
+    /// The presence check runs once per cache: a later database does not
+    /// change its answer.
+    #[test]
+    fn twins_table_presence_is_checked_once() {
+        let cache = std::sync::OnceLock::new();
+        assert!(!twins_table_present_in(&cache, &mut fixture(false)));
+        assert!(!twins_table_present_in(&cache, &mut fixture(true)));
+    }
+
+    /// With `pali_edition_twins` missing (a failed migration), the filter is
+    /// skipped and search returns every record. Applying it anyway would fail
+    /// the query, which is why it must be skipped.
+    #[test]
+    fn missing_twins_table_skips_the_filter_and_search_still_returns_results() {
+        let cache = std::sync::OnceLock::new();
+        let mut conn = fixture(false);
+        let hidden = edition_to_hide(PaliEditionPreference::Ms, true, true, || {
+            twins_table_present_in(&cache, &mut conn)
+        });
+        assert_eq!(hidden, None);
+        assert_eq!(title_match_uids(&mut conn, hidden).len(), SUTTAS.len());
+        assert_eq!(contains_match_uids(&mut conn, hidden).len(), SUTTAS.len());
+
+        use crate::db::appdata_schema::suttas::dsl::*;
+        let forced: Result<Vec<String>, _> = SearchQueryTask::filter_pali_edition(suttas.into_boxed(), Some("cst"))
+            .select(uid)
+            .load(&mut conn);
+        assert!(forced.is_err(), "the filter must need the table");
+    }
+
+    /// The presence check is not run when the filter would not apply anyway.
+    #[test]
+    fn presence_is_not_checked_when_nothing_is_hidden() {
+        let not_asked = || -> bool { panic!("table presence asked") };
+        assert_eq!(edition_to_hide(PaliEditionPreference::Both, true, true, not_asked), None);
+        assert_eq!(edition_to_hide(PaliEditionPreference::Cst, true, false, not_asked), None);
+        assert_eq!(edition_to_hide(PaliEditionPreference::Ms, true, true, || true), Some("cst"));
+        assert_eq!(edition_to_hide(PaliEditionPreference::Cst, true, true, || true), Some("ms"));
     }
 }
 

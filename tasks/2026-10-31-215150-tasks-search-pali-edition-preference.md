@@ -14,10 +14,11 @@ Backend:
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/up.sql`, `down.sql` - Create and drop the table.
 - `backend/src/db/appdata_schema.rs` - The new table, and its entry in `allow_tables_to_appear_in_same_query!`.
 - `backend/src/app_settings.rs` - `PaliEditionPreference` (with `as_str()` / `parse()` / `hidden_edition()`, the shared condition of when the filter applies), the `pali_edition_preference` and `cst_mula_in_search_default_applied` fields, the new default, and `migrate_cst_mula_in_search_default()` in the deserialize hook, with tests.
-- `backend/src/pali_edition.rs` (new) - The table presence check (cached once per process), `load_twins()`, and `hide_twins_sql()`, the one SQL condition.
+- `backend/src/pali_edition.rs` (new) - `edition_to_hide()` (when the filter applies), the table presence check (cached once per process), `load_twins()`, and `hide_twins_sql()`, the one SQL condition.
 - `backend/src/lib.rs` - Registers `pali_edition`.
 - `backend/src/query_task.rs` - `pali_edition` on `SearchQueryTask`, `hidden_pali_edition()` and `filter_pali_edition()`, used by Title Match and Contains Match, with their tests (`pali_edition_tests`).
 - `backend/tests/test_pali_edition_uid_match.rs` (new) - Uid Match finds either edition under every preference.
+- `backend/tests/test_pali_edition_filter.rs` (new) - Contains Match and Title Match apply the preference, through the queries the app runs, on `dummy-` records.
 - `backend/tests/*.rs` (struct literals) - `pali_edition: Default::default()` added to every `SearchParams` / `SearchFilters` literal.
 - `backend/src/search/searcher.rs` - The Tantivy edition filter in `add_sutta_filters`, skipped (logged once) on an index without the field, with tests.
 - `backend/src/search/schema.rs`, `backend/src/search/indexer.rs`, `backend/src/search/types.rs` - The `has_other_edition` field, `INDEX_VERSION`, and `SearchFilters`.
