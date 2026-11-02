@@ -13,6 +13,7 @@ use simsapa_backend::db::appdata::ScDataVersion;
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::helpers::{query_text_to_uid_field_query, normalize_human_word_uid};
 use simsapa_backend::logger::{info, error};
+use simsapa_backend::app_settings::PaliEditionPreference;
 use simsapa_backend::types::{SearchResult, SearchParams, SearchMode, SearchArea};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::pts_reference_search::ReferenceSearchResult;
@@ -61,6 +62,10 @@ pub struct ApiSearchRequest {
     /// Already-split list of exclusion strings (the API client sends an array,
     /// not a CSV string; CSV-splitting is a QML/UI concern).
     pub snippet_exclude: Option<Vec<String>>,
+    /// Which edition to show of a Pāli text that is in both: "ms", "cst" or
+    /// "both". Absent means "ms". Suttas and Library only. Parsed via
+    /// `parse_pali_edition`; never read from the GUI setting.
+    pub pali_edition: Option<String>,
 }
 
 /// Response structure for /sutta_and_dict_search_options endpoint
@@ -125,6 +130,16 @@ pub fn parse_search_mode(s: &str) -> Option<SearchMode> {
         "Uid Match" => Some(SearchMode::UidMatch),
         "RegEx Match" => Some(SearchMode::RegExMatch),
         _ => None,
+    }
+}
+
+/// The edition preference a request asks for: `ms` when absent. `Err` carries
+/// the message of an unrecognized value (the route's HTTP 400).
+pub fn parse_pali_edition(request: &ApiSearchRequest) -> Result<PaliEditionPreference, String> {
+    match &request.pali_edition {
+        None => Ok(PaliEditionPreference::Ms),
+        Some(s) => PaliEditionPreference::parse(s)
+            .ok_or_else(|| format!("Unknown pali_edition: '{}' (expected ms, cst or both)", s)),
     }
 }
 
@@ -262,6 +277,8 @@ pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &
         uid_prefix: None,
         uid_suffix: None,
         include_ms_mula: true,
+        // Validated by the routes before this runs; an unparsed value is Ms.
+        pali_edition: parse_pali_edition(request).unwrap_or_default(),
         include_comm_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: request.show_all_snippets.unwrap_or(false),
@@ -407,7 +424,8 @@ pub fn run_dict_combined_with_fallback(
 /// ContainsMatch for `/suttas_contains_search`). Builds params via
 /// `build_search_params` and executes via `run_search` (deconstructor `None`).
 /// See docs/simsapa-cli-and-localhost-api.md.
-pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &DbManager, fallback_mode: SearchMode) -> ApiSearchResult {
+pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &DbManager, fallback_mode: SearchMode) -> Result<ApiSearchResult, String> {
+    parse_pali_edition(request)?;
     let query_text_orig = request.query_text.clone();
     let page_num = request.page_num.unwrap_or(0) as usize;
 
@@ -425,10 +443,10 @@ pub fn run_suttas_search(request: &ApiSearchRequest, dbm: &DbManager, fallback_m
 
     info(&format!("run_suttas_search(): query='{}', page={}, mode={:?}", query_text, page_num, mode));
 
-    run_search_with_uid_fallback(
+    Ok(run_search_with_uid_fallback(
         dbm, request, SearchArea::Suttas, page_num,
         was_uid_auto, query_text, mode, query_text_orig, fallback_mode, None,
-    )
+    ))
 }
 
 /// The deconstructor list for a dictionary query, `None` when DPD has none.
@@ -457,6 +475,12 @@ pub fn run_api_search(request: &ApiSearchRequest, dbm: &DbManager) -> Result<Api
         Some(s) => parse_search_area(s).ok_or_else(|| format!("Unknown search_area: '{}'", s))?,
         None => SearchArea::Suttas,
     };
+
+    // The Dictionary area ignores the edition preference, so only the other
+    // areas reject an unknown value.
+    if area != SearchArea::Dictionary {
+        parse_pali_edition(request)?;
+    }
 
     // Resolve mode: parse if present (unknown → 400), else area-specific default
     // (Suttas/Library → FulltextMatch, Dictionary → Combined).
@@ -727,6 +751,26 @@ mod tests {
         assert_eq!(parse_search_mode("DPD Lookup"), Some(SearchMode::DpdLookup));
         assert_eq!(parse_search_mode("Uid Match"), Some(SearchMode::UidMatch));
         assert_eq!(parse_search_mode("nonsense"), None);
+    }
+
+    #[test]
+    fn test_parse_pali_edition() {
+        let req = |v: Option<&str>| ApiSearchRequest { pali_edition: v.map(String::from), ..Default::default() };
+        assert_eq!(parse_pali_edition(&req(None)), Ok(PaliEditionPreference::Ms));
+        assert_eq!(parse_pali_edition(&req(Some("ms"))), Ok(PaliEditionPreference::Ms));
+        assert_eq!(parse_pali_edition(&req(Some("cst"))), Ok(PaliEditionPreference::Cst));
+        assert_eq!(parse_pali_edition(&req(Some("both"))), Ok(PaliEditionPreference::Both));
+        assert!(parse_pali_edition(&req(Some("MS"))).is_err());
+        assert!(parse_pali_edition(&req(Some("nonsense"))).is_err());
+    }
+
+    #[test]
+    fn test_build_search_params_pali_edition() {
+        let req = |v: Option<&str>| ApiSearchRequest { pali_edition: v.map(String::from), ..Default::default() };
+        let p = |v| build_search_params(&req(v), SearchMode::ContainsMatch, &SearchArea::Suttas).pali_edition;
+        assert_eq!(p(None), PaliEditionPreference::Ms);
+        assert_eq!(p(Some("cst")), PaliEditionPreference::Cst);
+        assert_eq!(p(Some("both")), PaliEditionPreference::Both);
     }
 
     #[test]

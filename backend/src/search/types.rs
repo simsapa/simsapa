@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use crate::app_settings::PaliEditionPreference;
 use crate::types::{SearchArea, SearchMode};
 
 /// Filters that can be applied to fulltext search.
@@ -16,6 +17,10 @@ pub struct SearchFilters {
     pub include_cst_mula: bool,
     pub include_cst_commentary: bool,
     pub include_ms_mula: bool,
+    /// Which edition to show of a text that is in both Pāli editions. Only
+    /// consulted by the sutta path, and only when both mūla flags are true.
+    #[serde(default)]
+    pub pali_edition: PaliEditionPreference,
     /// When `false`, the dict-index search excludes documents with
     /// `is_bold_definition = true` via `Occur::MustNot`. Default `true`
     /// means bold-definition rows participate alongside dict_words in the
@@ -52,6 +57,7 @@ impl Default for SearchFilters {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,

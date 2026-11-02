@@ -9,6 +9,41 @@
 /// tasks/2026-07-01-192905-prd---side-by-side-translation-view.md.
 
 use crate::app_settings::{AppSettings, RepeatPali, SuttaLayout};
+use crate::opentipitaka::is_ot_english_uid;
+
+/// The first path component of a uid: `mn1` of `mn1/pli/cst`.
+pub fn uid_base(uid: &str) -> &str {
+    uid.split('/').next().unwrap_or(uid)
+}
+
+/// The CST family: `/pli/cst` or `/en/opentipitaka`.
+pub fn is_cst_family_uid(uid: &str) -> bool {
+    uid.ends_with("/pli/cst") || is_ot_english_uid(uid)
+}
+
+/// Whether these columns can be aligned on the template of `opened_uid`.
+/// Segment keys compare only within one text family: `mn1:1.1` in `mn1/pli/cst`
+/// is not the passage `mn1:1.1` in `mn1/pli/ms`, and matching on it would show
+/// different passages side by side with no error. The aligned view uses the
+/// opened text's template, and the column bar can take the opened text out of
+/// the columns, so the opened uid counts as a column.
+pub fn columns_can_align(opened_uid: &str, column_uids: &[&str]) -> bool {
+    let is_opened_cst = is_cst_family_uid(opened_uid);
+    if !is_opened_cst {
+        return !column_uids.iter().any(|col_uid| is_cst_family_uid(col_uid));
+    }
+    let opened_base = uid_base(opened_uid);
+    column_uids
+        .iter()
+        .all(|col_uid| is_cst_family_uid(col_uid) && uid_base(col_uid) == opened_base)
+}
+
+/// The Pāli text a translation is read beside. `mn1/en/opentipitaka` gives
+/// `mn1/pli/cst`, and every other author gives `<base>/pli/ms`.
+pub fn pali_uid_for_translation(uid: &str) -> String {
+    let edition = if is_ot_english_uid(uid) { "cst" } else { "ms" };
+    format!("{}/pli/{}", uid_base(uid), edition)
+}
 
 /// Explicit per-request overrides of the persisted display defaults
 /// (e.g. from `?layout=` / `?columns=` / `?repeat_pali=` GET parameters).
@@ -31,7 +66,8 @@ pub struct SuttaDisplayOverrides {
 pub struct SuttaDisplayOptions {
     pub layout: SuttaLayout,
     /// Ordered column source sutta uids. The default set is the opened sutta
-    /// plus its Pāli counterpart (when one exists); the final Pāli placement
+    /// plus the text paired with it (when one exists), which is the Pāli of a
+    /// translation and an English of a Pāli text; the final Pāli placement
     /// (first column, alternating, repeated at the end) is applied by
     /// `AppData::resolve_sutta_display_options` per `repeat_pali`.
     pub columns: Vec<String>,
@@ -42,13 +78,14 @@ pub struct SuttaDisplayOptions {
 
 impl SuttaDisplayOptions {
     /// Resolve the effective options: persisted defaults from `app_settings`,
-    /// overridden by any explicit request parameters. `pali_uid` is the
-    /// opened sutta's Pāli counterpart uid (from
-    /// `AppData::get_pali_for_translated`), used for the default column set.
+    /// overridden by any explicit request parameters. `paired_uid` is the uid
+    /// of the text paired with the opened sutta (from
+    /// `AppData::resolve_sutta_display_options`), used for the default column
+    /// set.
     pub fn resolve(
         app_settings: &AppSettings,
         sutta_uid: &str,
-        pali_uid: Option<&str>,
+        paired_uid: Option<&str>,
         overrides: &SuttaDisplayOverrides,
     ) -> Self {
         let layout = overrides.layout.unwrap_or(app_settings.sutta_display.layout);
@@ -60,9 +97,9 @@ impl SuttaDisplayOptions {
             Some(cols) if !cols.is_empty() => cols.clone(),
             _ => {
                 let mut cols = vec![sutta_uid.to_string()];
-                if let Some(pali) = pali_uid {
-                    if pali != sutta_uid {
-                        cols.push(pali.to_string());
+                if let Some(paired) = paired_uid {
+                    if paired != sutta_uid {
+                        cols.push(paired.to_string());
                     }
                 }
                 cols
@@ -140,6 +177,51 @@ pub fn parse_display_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texts_outside_the_cst_family_align_as_before() {
+        assert!(columns_can_align("mn1/pli/ms", &["mn1/pli/ms", "mn1/en/sujato"]));
+        assert!(columns_can_align("mn1/en/sujato", &["mn1/pli/ms", "mn1/en/bodhi"]));
+    }
+
+    #[test]
+    fn the_two_texts_of_one_cst_record_align() {
+        assert!(columns_can_align("mn1/pli/cst", &["mn1/pli/cst", "mn1/en/opentipitaka"]));
+        assert!(columns_can_align("mn1/en/opentipitaka", &["mn1/pli/cst"]));
+        assert!(columns_can_align("mn1.att/pli/cst", &["mn1.att/en/opentipitaka"]));
+        assert!(columns_can_align(
+            "vin02m4.mul0.xml/pli/cst",
+            &["vin02m4.mul0.xml/pli/cst", "vin02m4.mul0.xml/en/opentipitaka"],
+        ));
+    }
+
+    #[test]
+    fn cst_keys_are_not_compared_with_another_family_or_another_text() {
+        assert!(!columns_can_align("mn1/pli/cst", &["mn1/pli/cst", "mn1/pli/ms"]));
+        assert!(!columns_can_align("mn1/en/opentipitaka", &["mn1/en/sujato"]));
+        assert!(!columns_can_align("mn1/pli/cst", &["mn1/pli/cst", "mn1.att/en/opentipitaka"]));
+        assert!(!columns_can_align("vin02m4.mul0.xml/pli/cst", &["vin02m4.mul1.xml/en/opentipitaka"]));
+    }
+
+    #[test]
+    fn the_opened_text_counts_as_a_column() {
+        // Its template is the one used, so CST columns must not be aligned on it.
+        assert!(!columns_can_align("mn1/en/sujato", &["mn1/pli/cst", "mn1/en/opentipitaka"]));
+        assert!(!columns_can_align("mn1/pli/ms", &["mn1/en/opentipitaka"]));
+        assert!(!columns_can_align("mn1/pli/cst", &["mn1/pli/ms", "mn1/en/sujato"]));
+    }
+
+    #[test]
+    fn a_translation_is_read_beside_the_pali_of_its_family() {
+        assert_eq!(pali_uid_for_translation("mn1/en/opentipitaka"), "mn1/pli/cst");
+        assert_eq!(pali_uid_for_translation("mn1.att/en/opentipitaka"), "mn1.att/pli/cst");
+        assert_eq!(
+            pali_uid_for_translation("vin02m4.mul0.xml/en/opentipitaka"),
+            "vin02m4.mul0.xml/pli/cst",
+        );
+        assert_eq!(pali_uid_for_translation("mn1/en/sujato"), "mn1/pli/ms");
+        assert_eq!(pali_uid_for_translation("mn1/hu/gambhiro"), "mn1/pli/ms");
+    }
 
     #[test]
     fn test_parse_layout_spellings() {

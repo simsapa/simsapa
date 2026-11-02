@@ -150,6 +150,18 @@ describe("fetch_content_block", () => {
     expect(url).toContain("repeat_pali=off");
   });
 
+  test("refetch_with_params keeps a one-column list, so a removed English stays removed", async () => {
+    // With no columns in the request, the server would add the default English
+    // back to an opened Pāli text.
+    (globalThis as any).SUTTA_DISPLAY.columns = [{ uid: "mn1/pli/cst", label: "cst", author: "cst" }];
+    const ok = await cr.refetch_with_params("linebyline", "off");
+    expect(ok).toBe(true);
+
+    const url = String(fetch_mock.mock.calls.find((c) =>
+      String(c[0]).includes("sutta_content_block"))![0]);
+    expect(url).toContain("&columns=mn1%2Fpli%2Fcst&");
+  });
+
   test("refetch_with_params sends an explicit show_references over the page state", async () => {
     // The page was rendered with references on (an anchor navigation); the
     // reader has just switched them off. The re-fetch must carry the new

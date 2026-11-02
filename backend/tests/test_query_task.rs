@@ -69,19 +69,27 @@ fn test_sutta_search_contains_match() {
         SearchArea::Suttas,
     );
 
-    let results = match query_task.results_page(0) {
-        Ok(x) => x,
-        Err(s) => {
-            panic!("{}", s);
+    // Collect every page. Where a text lands in the results depends on the
+    // whole corpus (Contains Match lists by row id), so a check that reads only
+    // the first page breaks whenever the bootstrap adds texts. The assertions
+    // below are about which texts are found and how, never about their order.
+    let mut results = Vec::new();
+    for page_num in 0.. {
+        let page = match query_task.results_page(page_num) {
+            Ok(x) => x,
+            Err(s) => panic!("{}", s),
+        };
+        if page.is_empty() {
+            break;
         }
-    };
-
-    // println!("{:#?}", results);
+        results.extend(page);
+        assert!(page_num < 1000, "Paging did not end for query '{}'", query);
+    }
 
     assert!(!results.is_empty());
+    assert_eq!(results.len() as i64, query_task.total_hits(),
+               "The pages together should hold every hit");
 
-    // Results are ordered by row id, which shifts whenever the DB bootstrap
-    // changes. Locate the expected entry by uid instead of a fixed index.
     let expected_uid = "mn10/en/thanissaro";
     let result = results.iter()
         .find(|r| r.uid == expected_uid)

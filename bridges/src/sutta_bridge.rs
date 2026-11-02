@@ -11,7 +11,7 @@ use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use cxx_qt::{CxxQtType, Threading};
 
-use simsapa_backend::app_settings::AiRequestMode;
+use simsapa_backend::app_settings::{AiRequestMode, PaliEditionPreference};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::lookup_cancel::{LookupCancel, is_lookup_cancelled};
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams, SearchResultPage};
@@ -1556,6 +1556,12 @@ pub mod qobject {
         fn set_include_cst_commentary_in_translations(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         #[qinvokable]
+        fn get_pali_edition_preference(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_pali_edition_preference(self: Pin<&mut SuttaBridge>, value: &QString);
+
+        #[qinvokable]
         fn get_include_cst_mula_in_search_results(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
@@ -2197,6 +2203,8 @@ impl qobject::SuttaBridge {
                     uid_prefix: None,
                     uid_suffix: None,
                     include_ms_mula: true,
+                    // Database Validation exercises the whole index.
+                    pali_edition: PaliEditionPreference::Both,
                     include_comm_bold_definitions: true,
                     dict_source_uids: None,
                     show_all_snippets: false,
@@ -2868,9 +2876,12 @@ impl qobject::SuttaBridge {
                 uid_prefix: params.uid_prefix.clone(),
                 uid_suffix: params.uid_suffix.clone(),
                 sutta_ref: None,
-                include_cst_mula: true,
-                include_cst_commentary: true,
+                // The same edition filters as `fulltext_suttas()`, so the
+                // debug output describes the search the user runs.
+                include_cst_mula: params.include_cst_mula,
+                include_cst_commentary: params.include_cst_commentary,
                 include_ms_mula: params.include_ms_mula,
+                pali_edition: params.pali_edition,
                 include_bold_definitions: params.include_comm_bold_definitions,
                 dict_source_uids: params.dict_source_uids.clone(),
                 show_all_snippets: false,
@@ -5142,6 +5153,16 @@ impl qobject::SuttaBridge {
     pub fn set_include_cst_commentary_in_translations(self: Pin<&mut Self>, enabled: bool) {
         let app_data = get_app_data();
         app_data.set_include_cst_commentary_in_translations(enabled);
+    }
+
+    pub fn get_pali_edition_preference(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_pali_edition_preference())
+    }
+
+    pub fn set_pali_edition_preference(self: Pin<&mut Self>, value: &QString) {
+        let app_data = get_app_data();
+        app_data.set_pali_edition_preference(&value.to_string());
     }
 
     pub fn get_include_cst_mula_in_search_results(&self) -> bool {

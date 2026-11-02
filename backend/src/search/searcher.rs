@@ -12,6 +12,7 @@ use crate::logger::{info, warn};
 use crate::types::SearchResult;
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::helpers::normalize_plain_text;
+use crate::opentipitaka::OT_AUTHOR_UID;
 use crate::query_task::SearchQueryTask;
 use crate::AppGlobalPaths;
 
@@ -821,15 +822,42 @@ impl FulltextSearcher {
             subqueries.push((Occur::MustNot, Box::new(ms_mula_query)));
         }
 
+        // Edition preference: hide the other edition's records that are in both
+        // Pāli editions. An index built before `has_other_edition` existed has
+        // no such field; search then shows both editions, and never fails.
+        if let Some(hidden) = filters.pali_edition.hidden_edition(filters.include_ms_mula, filters.include_cst_mula) {
+            match schema.get_field("has_other_edition") {
+                Ok(has_other_edition_field) => {
+                    let source_field = schema.get_field("source_uid")?;
+                    let twin_query = BooleanQuery::new(vec![
+                        (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(has_other_edition_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                        (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, hidden), IndexRecordOption::Basic))),
+                    ]);
+                    subqueries.push((Occur::MustNot, Box::new(twin_query)));
+                }
+                Err(_) => {
+                    static LOGGED: std::sync::Once = std::sync::Once::new();
+                    LOGGED.call_once(|| {
+                        warn("Sutta index has no has_other_edition field (built by an older version); search shows both Pāli editions");
+                    });
+                }
+            }
+        }
+
+        // A commentary is CST, or the OpenTipitaka English of a CST commentary.
+        // The mūla exclusion above stays CST only: `mn1/en/opentipitaka` is listed
+        // like any other English translation.
         if !filters.include_cst_commentary {
             let is_commentary_field = schema.get_field("is_commentary")?;
             let source_field = schema.get_field("source_uid")?;
-            // Build: is_commentary=true AND source_uid="cst"
-            let cst_commentary_query = BooleanQuery::new(vec![
-                (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, "cst"), IndexRecordOption::Basic))),
-            ]);
-            subqueries.push((Occur::MustNot, Box::new(cst_commentary_query)));
+            for source in ["cst", OT_AUTHOR_UID] {
+                // Build: is_commentary=true AND source_uid=<source>
+                let commentary_query = BooleanQuery::new(vec![
+                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
+                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, source), IndexRecordOption::Basic))),
+                ]);
+                subqueries.push((Occur::MustNot, Box::new(commentary_query)));
+            }
         }
 
         Ok(())
@@ -1149,6 +1177,7 @@ pub fn dict_index_dir(paths: &AppGlobalPaths) -> &PathBuf {
 mod tests {
     use super::*;
     use super::super::schema::build_sutta_schema;
+    use crate::app_settings::PaliEditionPreference;
     use super::super::tokenizer::register_tokenizers;
     use tantivy::doc;
 
@@ -1379,6 +1408,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1423,6 +1453,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1466,6 +1497,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1505,6 +1537,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1548,6 +1581,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1619,6 +1653,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1653,6 +1688,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1734,6 +1770,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1786,6 +1823,7 @@ mod tests {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: false,
@@ -1799,5 +1837,186 @@ mod tests {
 
         let count = reader.searcher().search(&query, &Count).unwrap();
         assert_eq!(count, 1, "prefix 'an' must not match 'san1.1/...'");
+    }
+
+    /// The uids left by `add_sutta_filters` on an index holding one doc per
+    /// `(uid, source_uid)`, with `is_commentary` read from the uid as the
+    /// indexer reads it.
+    fn uids_after_sutta_filters(docs: &[(&str, &str)], filters: &SearchFilters) -> Vec<String> {
+        uids_after_sutta_filters_with_twins(docs, &[], filters)
+    }
+
+    /// As `uids_after_sutta_filters`, with `has_other_edition` true for the
+    /// uids in `twins`.
+    fn uids_after_sutta_filters_with_twins(docs: &[(&str, &str)], twins: &[&str], filters: &SearchFilters) -> Vec<String> {
+        let schema = build_sutta_schema("en");
+        let index = Index::create_in_ram(schema.clone());
+        register_tokenizers(&index, "en");
+
+        let mut writer = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        let uid_field = schema.get_field("uid").unwrap();
+        let source_uid_field = schema.get_field("source_uid").unwrap();
+        let is_mula_field = schema.get_field("is_mula").unwrap();
+        let is_commentary_field = schema.get_field("is_commentary").unwrap();
+        let has_other_edition_field = schema.get_field("has_other_edition").unwrap();
+
+        for (uid, source_uid) in docs {
+            let before_first_slash = uid.split('/').next().unwrap();
+            let is_commentary = before_first_slash.contains(".att") || before_first_slash.contains(".tik");
+            writer
+                .add_document(doc!(
+                    uid_field => *uid,
+                    source_uid_field => *source_uid,
+                    is_mula_field => !is_commentary,
+                    is_commentary_field => is_commentary,
+                    has_other_edition_field => twins.contains(uid),
+                ))
+                .unwrap();
+        }
+        writer.commit().unwrap();
+
+        let mut subqueries: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+        subqueries.push((Occur::Must, Box::new(tantivy::query::AllQuery)));
+        FulltextSearcher::add_sutta_filters(&mut subqueries, filters, &schema).unwrap();
+        let query = BooleanQuery::new(subqueries);
+
+        let searcher = index.reader().unwrap().searcher();
+        let top_docs = searcher.search(&query, &TopDocs::with_limit(docs.len())).unwrap();
+        let mut uids: Vec<String> = top_docs
+            .into_iter()
+            .map(|(_score, address)| {
+                let stored: tantivy::TantivyDocument = searcher.doc(address).unwrap();
+                stored.get_first(uid_field).and_then(|v| v.as_str()).unwrap().to_string()
+            })
+            .collect();
+        uids.sort();
+        uids
+    }
+
+    fn cst_filters(include_cst_mula: bool, include_cst_commentary: bool) -> SearchFilters {
+        SearchFilters {
+            lang: None,
+            lang_include: false,
+            source_uid: None,
+            source_include: false,
+            nikaya_prefix: None,
+            uid_prefix: None,
+            uid_suffix: None,
+            sutta_ref: None,
+            include_cst_mula,
+            include_cst_commentary,
+            include_ms_mula: true,
+            pali_edition: Default::default(),
+            include_bold_definitions: true,
+            dict_source_uids: None,
+            show_all_snippets: false,
+        }
+    }
+
+    const CST_FILTER_DOCS: [(&str, &str); 6] = [
+        ("mn1.att/en/opentipitaka", "opentipitaka"),
+        ("mn1.att/pli/cst", "cst"),
+        ("mn1.tik/en/opentipitaka", "opentipitaka"),
+        ("mn1/en/opentipitaka", "opentipitaka"),
+        ("mn1/en/sujato", "sujato"),
+        ("mn1/pli/cst", "cst"),
+    ];
+
+    /// Two texts in both editions, one in MS only, one in CST only, and an
+    /// English translation.
+    const EDITION_DOCS: [(&str, &str); 7] = [
+        ("an5.303-1152/pli/cst", "cst"),
+        ("an5.303/pli/ms", "ms"),
+        ("mn1/en/sujato", "sujato"),
+        ("mn1/pli/cst", "cst"),
+        ("mn1/pli/ms", "ms"),
+        ("thag1.1/pli/ms", "ms"),
+        ("vin01m.mul0.xml/pli/cst", "cst"),
+    ];
+    const EDITION_TWINS: [&str; 4] = ["an5.303-1152/pli/cst", "an5.303/pli/ms", "mn1/pli/cst", "mn1/pli/ms"];
+
+    fn edition_filters(pali_edition: PaliEditionPreference, include_cst_mula: bool) -> SearchFilters {
+        SearchFilters { pali_edition, ..cst_filters(include_cst_mula, true) }
+    }
+
+    #[test]
+    fn test_ms_preference_hides_the_cst_twins() {
+        let uids = uids_after_sutta_filters_with_twins(&EDITION_DOCS, &EDITION_TWINS, &edition_filters(PaliEditionPreference::Ms, true));
+        assert_eq!(uids, ["an5.303/pli/ms", "mn1/en/sujato", "mn1/pli/ms", "thag1.1/pli/ms", "vin01m.mul0.xml/pli/cst"]);
+    }
+
+    #[test]
+    fn test_cst_preference_hides_the_ms_twins() {
+        let uids = uids_after_sutta_filters_with_twins(&EDITION_DOCS, &EDITION_TWINS, &edition_filters(PaliEditionPreference::Cst, true));
+        assert_eq!(uids, ["an5.303-1152/pli/cst", "mn1/en/sujato", "mn1/pli/cst", "thag1.1/pli/ms", "vin01m.mul0.xml/pli/cst"]);
+    }
+
+    #[test]
+    fn test_both_preference_hides_nothing() {
+        let uids = uids_after_sutta_filters_with_twins(&EDITION_DOCS, &EDITION_TWINS, &edition_filters(PaliEditionPreference::Both, true));
+        assert_eq!(uids.len(), EDITION_DOCS.len());
+    }
+
+    /// With CST mūla excluded, the `cst` preference does not hide the MS twins:
+    /// the exclusion alone decides.
+    #[test]
+    fn test_preference_is_inert_when_cst_mula_is_excluded() {
+        let uids = uids_after_sutta_filters_with_twins(&EDITION_DOCS, &EDITION_TWINS, &edition_filters(PaliEditionPreference::Cst, false));
+        assert_eq!(uids, ["an5.303/pli/ms", "mn1/en/sujato", "mn1/pli/ms", "thag1.1/pli/ms"]);
+    }
+
+    /// An index built before `has_other_edition` existed: the clause is
+    /// skipped, both editions are returned, and the filters do not fail.
+    #[test]
+    fn test_index_without_has_other_edition_shows_both_editions() {
+        let mut builder = tantivy::schema::Schema::builder();
+        let raw = tantivy::schema::STRING | tantivy::schema::STORED;
+        let uid_field = builder.add_text_field("uid", raw.clone());
+        builder.add_text_field("uid_rev", raw.clone());
+        let source_uid_field = builder.add_text_field("source_uid", raw);
+        let is_mula_field = builder.add_bool_field("is_mula", tantivy::schema::INDEXED | tantivy::schema::STORED);
+        let is_commentary_field = builder.add_bool_field("is_commentary", tantivy::schema::INDEXED | tantivy::schema::STORED);
+        let schema = builder.build();
+
+        let index = Index::create_in_ram(schema.clone());
+        let mut writer = index.writer_with_num_threads(1, 15_000_000).unwrap();
+        for (uid, source_uid) in EDITION_DOCS {
+            writer
+                .add_document(doc!(
+                    uid_field => uid,
+                    source_uid_field => source_uid,
+                    is_mula_field => true,
+                    is_commentary_field => false,
+                ))
+                .unwrap();
+        }
+        writer.commit().unwrap();
+
+        let mut subqueries: Vec<(Occur, Box<dyn tantivy::query::Query>)> = Vec::new();
+        subqueries.push((Occur::Must, Box::new(tantivy::query::AllQuery)));
+        FulltextSearcher::add_sutta_filters(&mut subqueries, &edition_filters(PaliEditionPreference::Ms, true), &schema).unwrap();
+        let count = index.reader().unwrap().searcher().search(&BooleanQuery::new(subqueries), &Count).unwrap();
+        assert_eq!(count, EDITION_DOCS.len());
+    }
+
+    #[test]
+    fn test_commentary_filter_covers_the_opentipitaka_english() {
+        let uids = uids_after_sutta_filters(&CST_FILTER_DOCS, &cst_filters(true, false));
+        assert_eq!(uids, ["mn1/en/opentipitaka", "mn1/en/sujato", "mn1/pli/cst"]);
+    }
+
+    #[test]
+    fn test_mula_filter_leaves_the_opentipitaka_english() {
+        let uids = uids_after_sutta_filters(&CST_FILTER_DOCS, &cst_filters(false, true));
+        assert_eq!(
+            uids,
+            [
+                "mn1.att/en/opentipitaka",
+                "mn1.att/pli/cst",
+                "mn1.tik/en/opentipitaka",
+                "mn1/en/opentipitaka",
+                "mn1/en/sujato",
+            ]
+        );
     }
 }

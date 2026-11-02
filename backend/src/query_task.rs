@@ -12,7 +12,9 @@ use crate::helpers::{normalize_dpd_query_split, normalize_fulltext_query, normal
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::cst_files::{cst_file_query, uid_is_record_of_file, CstFileQuery};
 use crate::{get_app_data, get_app_globals};
+use crate::app_settings::PaliEditionPreference;
 use crate::types::{SearchArea, SearchMode, SearchParams, SearchResult};
+use crate::db::appdata::sort_suttas;
 use crate::db::appdata_models::{Sutta, BookSpineItem};
 use crate::db::dictionaries_models::DictWord;
 use crate::db::DbManager;
@@ -108,6 +110,7 @@ pub struct SearchQueryTask<'a> {
     pub uid_prefix: Option<String>,
     pub uid_suffix: Option<String>,
     pub include_ms_mula: bool,
+    pub pali_edition: PaliEditionPreference,
     pub include_comm_bold_definitions: bool,
     pub dict_source_uids: Option<Vec<String>>,
     pub show_all_snippets: bool,
@@ -188,6 +191,7 @@ impl<'a> SearchQueryTask<'a> {
             uid_prefix: params.uid_prefix,
             uid_suffix: params.uid_suffix,
             include_ms_mula: params.include_ms_mula,
+            pali_edition: params.pali_edition,
             include_comm_bold_definitions: params.include_comm_bold_definitions,
             dict_source_uids: params.dict_source_uids.clone(),
             show_all_snippets: params.show_all_snippets,
@@ -601,6 +605,8 @@ impl<'a> SearchQueryTask<'a> {
                 diesel::dsl::not(
                     uid.like("%.att%/cst")
                     .or(uid.like("%.tik%/cst"))
+                    .or(uid.like("%.att%/opentipitaka"))
+                    .or(uid.like("%.tik%/opentipitaka"))
                 )
             );
         }
@@ -621,6 +627,50 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         query
+    }
+
+    /// The edition of the records in both Pāli editions that search hides,
+    /// when the edition filter applies and `pali_edition_twins` exists.
+    ///
+    /// Kept apart from `filter_suttas_query`, which the Uid Match paths also
+    /// call: a uid names one record, and finds it under every preference.
+    fn hidden_pali_edition(&self, db_conn: &mut SqliteConnection) -> Option<&'static str> {
+        crate::pali_edition::edition_to_hide(
+            self.pali_edition,
+            self.include_ms_mula,
+            self.include_cst_mula,
+            || crate::pali_edition::twins_table_present(db_conn),
+        )
+    }
+
+    /// Hide the records of the other edition that are in both Pāli editions,
+    /// as the preference says. A `suttas` query; see `hidden_pali_edition()`.
+    fn filter_pali_edition<'q>(
+        query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
+        hidden: Option<&'static str>,
+    ) -> crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite> {
+        match hidden {
+            Some(edition) => query.filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
+                &crate::pali_edition::hide_twins_sql("suttas", edition),
+            )),
+            None => query,
+        }
+    }
+
+    /// A reference that names no edition (`mn1`, no `/`) names a text, not a
+    /// record, so the edition preference picks which edition of it is shown.
+    /// A uid that carries an edition (`mn1/pli/cst`) names one record and is
+    /// never filtered.
+    fn filter_bare_reference<'q>(
+        &self,
+        query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
+        query_uid: &str,
+        db_conn: &mut SqliteConnection,
+    ) -> crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite> {
+        if query_uid.contains('/') {
+            return query;
+        }
+        Self::filter_pali_edition(query, self.hidden_pali_edition(db_conn))
     }
 
     fn uid_sutta_all(&mut self) -> Result<Vec<SearchResult>, Box<dyn Error>> {
@@ -676,8 +726,8 @@ impl<'a> SearchQueryTask<'a> {
     ///
     /// The matching uids are found, filtered and sorted from the uid index
     /// alone, and only the page is loaded in full: a short query names many
-    /// files (`s05` has 515 records, 37 MB of HTML), and loading every record
-    /// to show twenty was the whole cost of the search.
+    /// files (`s05` has 515 records), and loading every record to show twenty
+    /// was the whole cost of the search.
     fn uid_sutta_cst_files_page(
         &mut self,
         cst_query: &CstFileQuery,
@@ -783,6 +833,7 @@ impl<'a> SearchQueryTask<'a> {
             query = query.filter(language.eq(&self.lang));
         }
         query = self.filter_suttas_query(query);
+        query = self.filter_bare_reference(query, query_uid, db_conn);
 
         // Execute query
         let results = query
@@ -798,8 +849,9 @@ impl<'a> SearchQueryTask<'a> {
             ));
         }
 
-        // Map to SearchResult
-        Ok(results.iter().map(|s| self.db_sutta_to_result(s)).collect())
+        // The uid order above bounds the query. Read in `sort_suttas` order, so
+        // that a commentary or the AI English does not come first.
+        Ok(sort_suttas(results).iter().map(|s| self.db_sutta_to_result(s)).collect())
     }
 
     fn uid_sutta_like_all(
@@ -824,6 +876,7 @@ impl<'a> SearchQueryTask<'a> {
             query = query.filter(language.eq(&self.lang));
         }
         query = self.filter_suttas_query(query);
+        query = self.filter_bare_reference(query, query_uid, db_conn);
 
         // Execute query
         let results = query
@@ -838,6 +891,7 @@ impl<'a> SearchQueryTask<'a> {
                 SAFETY_LIMIT_SQL, query_uid
             ));
         }
+        let results = sort_suttas(results);
 
         // Map to SearchResult
         Ok(results.iter().map(|s| self.db_sutta_to_result(s)).collect())
@@ -1022,9 +1076,11 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         if !self.include_cst_commentary {
-            // There are %.att/pli/cst and %.att.xml/pli/cst, but .att and .tik commentaries are CST so they always end in /cst
+            // There are %.att/pli/cst and %.att.xml/pli/cst. The .att and .tik commentaries
+            // are CST or their OpenTipitaka English, so they end in /cst or /opentipitaka.
             extra_where.push_str(
-                " AND NOT (s.uid LIKE '%.att%/cst' OR s.uid LIKE '%.tik%/cst')"
+                " AND NOT (s.uid LIKE '%.att%/cst' OR s.uid LIKE '%.tik%/cst' \
+                 OR s.uid LIKE '%.att%/opentipitaka' OR s.uid LIKE '%.tik%/opentipitaka')"
             );
         }
 
@@ -1034,6 +1090,11 @@ impl<'a> SearchQueryTask<'a> {
 
         if !self.include_ms_mula {
             extra_where.push_str(" AND NOT (f.source_uid = 'ms')");
+        }
+
+        if let Some(hidden) = self.hidden_pali_edition(db_conn) {
+            extra_where.push_str(" AND ");
+            extra_where.push_str(&crate::pali_edition::hide_twins_sql("s", hidden));
         }
 
         // Push uid_prefix and uid_suffix down as parameter-bound LIKE clauses
@@ -2021,6 +2082,7 @@ impl<'a> SearchQueryTask<'a> {
         let db_conn = &mut app_data.dbm.appdata.get_conn()?;
 
         let like_pattern = format!("%{}%", self.query_text);
+        let hidden_edition = self.hidden_pali_edition(db_conn);
 
         // Build the predicate twice (once for COUNT, once for the page fetch);
         // diesel's boxed queries are not cloneable, and the predicate is not
@@ -2036,7 +2098,7 @@ impl<'a> SearchQueryTask<'a> {
                 query = query.filter(language.eq(&self.lang));
             }
 
-            self.filter_suttas_query(query)
+            Self::filter_pali_edition(self.filter_suttas_query(query), hidden_edition)
         };
 
         let total: i64 = build_query()
@@ -2394,6 +2456,7 @@ impl<'a> SearchQueryTask<'a> {
             include_cst_mula: self.include_cst_mula,
             include_cst_commentary: self.include_cst_commentary,
             include_ms_mula: self.include_ms_mula,
+            pali_edition: self.pali_edition,
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: self.show_all_snippets,
@@ -2446,6 +2509,7 @@ impl<'a> SearchQueryTask<'a> {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: self.include_comm_bold_definitions,
             dict_source_uids: self.dict_source_uids.clone(),
             show_all_snippets: false,
@@ -2491,6 +2555,7 @@ impl<'a> SearchQueryTask<'a> {
             include_cst_mula: true,
             include_cst_commentary: true,
             include_ms_mula: true,
+            pali_edition: Default::default(),
             include_bold_definitions: true,
             dict_source_uids: None,
             show_all_snippets: self.show_all_snippets,
@@ -2896,6 +2961,167 @@ impl<'a> SearchQueryTask<'a> {
     /// Returns the total number of hits found in the last database query.
     pub fn total_hits(&self) -> i64 {
         self.db_query_hits_count
+    }
+}
+
+#[cfg(test)]
+mod pali_edition_tests {
+    use diesel::prelude::*;
+    use diesel::sql_query;
+    use diesel::sqlite::SqliteConnection;
+
+    use super::SearchQueryTask;
+    use crate::app_settings::PaliEditionPreference;
+    use crate::pali_edition::{edition_to_hide, has_twins_table, hide_twins_sql, twins_table_present_in};
+
+    /// `(uid, source_uid)`: two texts in both editions, one in MS only, one in
+    /// CST only, and an English translation.
+    const SUTTAS: [(&str, &str); 7] = [
+        ("an5.303-1152/pli/cst", "cst"),
+        ("an5.303/pli/ms", "ms"),
+        ("mn1/en/sujato", "sujato"),
+        ("mn1/pli/cst", "cst"),
+        ("mn1/pli/ms", "ms"),
+        ("thag1.1/pli/ms", "ms"),
+        ("vin01m.mul0.xml/pli/cst", "cst"),
+    ];
+    const TWINS: [&str; 4] = ["an5.303-1152/pli/cst", "an5.303/pli/ms", "mn1/pli/cst", "mn1/pli/ms"];
+
+    /// An in-memory database with the `suttas` columns the filters read, and
+    /// `pali_edition_twins` when `with_twins_table`.
+    fn fixture(with_twins_table: bool) -> SqliteConnection {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        sql_query("CREATE TABLE suttas (id INTEGER PRIMARY KEY, uid TEXT NOT NULL, source_uid TEXT)")
+            .execute(&mut conn)
+            .unwrap();
+        for (uid, source) in SUTTAS {
+            sql_query(format!("INSERT INTO suttas (uid, source_uid) VALUES ('{}', '{}')", uid, source))
+                .execute(&mut conn)
+                .unwrap();
+        }
+        if with_twins_table {
+            sql_query("CREATE TABLE pali_edition_twins (uid TEXT NOT NULL PRIMARY KEY)")
+                .execute(&mut conn)
+                .unwrap();
+            for uid in TWINS {
+                sql_query(format!("INSERT INTO pali_edition_twins (uid) VALUES ('{}')", uid))
+                    .execute(&mut conn)
+                    .unwrap();
+            }
+        }
+        conn
+    }
+
+    /// The uids Title Match keeps (the Diesel filter).
+    fn title_match_uids(conn: &mut SqliteConnection, hidden: Option<&'static str>) -> Vec<String> {
+        use crate::db::appdata_schema::suttas::dsl::*;
+        SearchQueryTask::filter_pali_edition(suttas.into_boxed(), hidden)
+            .select(uid)
+            .order(uid.asc())
+            .load(conn)
+            .unwrap()
+    }
+
+    #[derive(QueryableByName)]
+    struct UidRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        uid: String,
+    }
+
+    /// The uids Contains Match keeps (the condition in its `extra_where`).
+    fn contains_match_uids(conn: &mut SqliteConnection, hidden: Option<&'static str>) -> Vec<String> {
+        let condition = hidden
+            .map(|h| format!(" AND {}", hide_twins_sql("s", h)))
+            .unwrap_or_default();
+        let rows: Vec<UidRow> = sql_query(format!("SELECT s.uid FROM suttas s WHERE 1{} ORDER BY s.uid", condition))
+            .load(conn)
+            .unwrap();
+        rows.into_iter().map(|r| r.uid).collect()
+    }
+
+    fn both_paths(pref: PaliEditionPreference, include_ms_mula: bool, include_cst_mula: bool) -> Vec<String> {
+        let hidden = pref.hidden_edition(include_ms_mula, include_cst_mula);
+        let mut conn = fixture(true);
+        let title = title_match_uids(&mut conn, hidden);
+        let contains = contains_match_uids(&mut conn, hidden);
+        assert_eq!(title, contains, "Title Match and Contains Match disagree");
+        title
+    }
+
+    #[test]
+    fn ms_preference_hides_the_cst_twins() {
+        assert_eq!(
+            both_paths(PaliEditionPreference::Ms, true, true),
+            ["an5.303/pli/ms", "mn1/en/sujato", "mn1/pli/ms", "thag1.1/pli/ms", "vin01m.mul0.xml/pli/cst"]
+        );
+    }
+
+    #[test]
+    fn cst_preference_hides_the_ms_twins() {
+        assert_eq!(
+            both_paths(PaliEditionPreference::Cst, true, true),
+            ["an5.303-1152/pli/cst", "mn1/en/sujato", "mn1/pli/cst", "thag1.1/pli/ms", "vin01m.mul0.xml/pli/cst"]
+        );
+    }
+
+    #[test]
+    fn both_preference_hides_nothing() {
+        assert_eq!(both_paths(PaliEditionPreference::Both, true, true).len(), SUTTAS.len());
+    }
+
+    #[test]
+    fn preference_is_inert_when_an_edition_is_excluded() {
+        for pref in [PaliEditionPreference::Ms, PaliEditionPreference::Cst] {
+            assert_eq!(pref.hidden_edition(true, false), None);
+            assert_eq!(pref.hidden_edition(false, true), None);
+            assert_eq!(both_paths(pref, true, false).len(), SUTTAS.len());
+        }
+    }
+
+    #[test]
+    fn missing_twins_table_is_detected() {
+        assert!(has_twins_table(&mut fixture(true)).unwrap());
+        assert!(!has_twins_table(&mut fixture(false)).unwrap());
+    }
+
+    /// The presence check runs once per cache: a later database does not
+    /// change its answer.
+    #[test]
+    fn twins_table_presence_is_checked_once() {
+        let cache = std::sync::OnceLock::new();
+        assert!(!twins_table_present_in(&cache, &mut fixture(false)));
+        assert!(!twins_table_present_in(&cache, &mut fixture(true)));
+    }
+
+    /// With `pali_edition_twins` missing (a failed migration), the filter is
+    /// skipped and search returns every record. Applying it anyway would fail
+    /// the query, which is why it must be skipped.
+    #[test]
+    fn missing_twins_table_skips_the_filter_and_search_still_returns_results() {
+        let cache = std::sync::OnceLock::new();
+        let mut conn = fixture(false);
+        let hidden = edition_to_hide(PaliEditionPreference::Ms, true, true, || {
+            twins_table_present_in(&cache, &mut conn)
+        });
+        assert_eq!(hidden, None);
+        assert_eq!(title_match_uids(&mut conn, hidden).len(), SUTTAS.len());
+        assert_eq!(contains_match_uids(&mut conn, hidden).len(), SUTTAS.len());
+
+        use crate::db::appdata_schema::suttas::dsl::*;
+        let forced: Result<Vec<String>, _> = SearchQueryTask::filter_pali_edition(suttas.into_boxed(), Some("cst"))
+            .select(uid)
+            .load(&mut conn);
+        assert!(forced.is_err(), "the filter must need the table");
+    }
+
+    /// The presence check is not run when the filter would not apply anyway.
+    #[test]
+    fn presence_is_not_checked_when_nothing_is_hidden() {
+        let not_asked = || -> bool { panic!("table presence asked") };
+        assert_eq!(edition_to_hide(PaliEditionPreference::Both, true, true, not_asked), None);
+        assert_eq!(edition_to_hide(PaliEditionPreference::Cst, true, false, not_asked), None);
+        assert_eq!(edition_to_hide(PaliEditionPreference::Ms, true, true, || true), Some("cst"));
+        assert_eq!(edition_to_hide(PaliEditionPreference::Cst, true, true, || true), Some("ms"));
     }
 }
 

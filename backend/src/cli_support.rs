@@ -15,6 +15,7 @@ use diesel::sqlite::SqliteConnection;
 use indexmap::IndexMap;
 use serde::Serialize;
 
+use crate::app_settings::PaliEditionPreference;
 use crate::db::DbManager;
 use crate::query_task::SearchQueryTask;
 use crate::search::indexer;
@@ -44,6 +45,8 @@ pub fn get_query_results(query: &str, area: SearchArea) -> Result<Vec<SearchResu
         uid_prefix: None,
         uid_suffix: None,
         include_ms_mula: true,
+        // The query is English-only, so no Pāli edition is hidden.
+        pali_edition: PaliEditionPreference::Both,
         include_comm_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: false,
@@ -109,6 +112,7 @@ pub fn fulltext_search(
     limit: usize,
     lang: Option<&str>,
     source: Option<&str>,
+    pali_edition: PaliEditionPreference,
 ) -> Result<(usize, Vec<SearchResult>)> {
     let searcher = FulltextSearcher::open(paths)
         .map_err(|e| anyhow!("Failed to open fulltext indexes: {}", e))?;
@@ -125,6 +129,7 @@ pub fn fulltext_search(
         include_cst_mula: true,
         include_cst_commentary: true,
         include_ms_mula: true,
+        pali_edition,
         include_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: false,

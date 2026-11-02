@@ -211,12 +211,16 @@ Notable feature docs:
   `mil5.2.1` have no comparable span and match as strings only), and the
   window's own quiet-failure
   rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
-  in the window, uncached per-level translation counts). On the CST side:
-  **`VERIFIED_CST_FILES` is a verification gate that cannot be replaced by a
-  computed predicate**, the coverage classes applied within it, the toc-driven
-  division split, and the three rebuild commands that must be run together
-  (`import-cst`, `build-navigation-tree`, `index rebuild --area suttas --lang
-  pli` — the Tantivy index does not heal itself). **§2f: the summaries and
+  in the window, uncached per-level translation counts, which include
+  OpenTipitaka). On the CST side: **`VERIFIED_CST_FILES` is a verification gate
+  that cannot be replaced by a computed predicate**, the coverage classes
+  applied within it, **§3.5, what a CST record holds** (segmented text from the
+  OpenTipitaka export in `fragments.sqlite3`, an `/en/opentipitaka` record for
+  every Pāli record, and missing input an error with no fallback to the XML),
+  the toc-driven division split on `cst_segments` rows, and the four rebuild
+  commands that must be run together (`import-cst`, `build-navigation-tree`,
+  `index rebuild --area suttas --lang pli` and `--lang en` — the Tantivy index
+  does not heal itself). **§2f: the summaries and
   context notes are not in the table** — they are three TOML files in `assets/`
   embedded in the app (`backend/src/navigation_texts.rs`, parsed on
   the window's first query and never at startup), so a text fix ships with an
@@ -460,7 +464,8 @@ Notable feature docs:
   **`GET /sutta_bilara.json?uid=` (§13.5)** returns the same text with its
   HTML template, variant readings, comments and glosses in one object, each
   segment object embedded verbatim as a `RawValue`; for a translation the
-  variant readings are the `<ref>/pli/ms` text's, named by `variants.uid`.
+  variant readings are those of the Pāli of its family (`<ref>/pli/ms`, or
+  `<ref>/pli/cst` for `/en/opentipitaka`), named by `variants.uid`.
   **Reference conversion (§17):** `POST /reference_search` is the
   Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
   back) over the bundled reference table; the sutta routes' reference
@@ -704,6 +709,12 @@ Notable feature docs:
   reference anchor goes **inside the `col-0` cell** and the notice goes
   **outside `span.segment`** — that span is the flex container in the
   multi-column layouts, so any extra direct child becomes a phantom grid item.
+  **§9 CST texts and text families:** segment keys compare only within one
+  family, so `columns_can_align()`, with the opened uid as a member because its
+  template is the one used, decides every alignment and makes `has_content_json`
+  relative to the opened text. With no `columns`, a Pāli text opens with an
+  English: `/en/opentipitaka` for a `/pli/cst` text, otherwise the first segmented
+  English.
 - [Android file saving via SAF](./docs/android-file-saving-saf.md) — how
   `SuttaBridge.save_file` writes user-chosen files. On Android `FolderDialog`
   returns a **Storage Access Framework `content://` tree URI** (not a path) and

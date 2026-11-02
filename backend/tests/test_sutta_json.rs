@@ -7,10 +7,10 @@
 //!
 //! ```sh
 //! sqlite3 appdata.sqlite3 "SELECT uid, length(content_json) FROM suttas WHERE uid IN
-//!   ('mn1/pli/ms','dhp179-196/pli/ms','sn45.92-95/pli/ms','sn45.92-95/en/sujato','dn1/pli/cst');"
+//!   ('mn1/pli/ms','dhp179-196/pli/ms','sn45.92-95/pli/ms','sn45.92-95/en/sujato','mn1/en/bodhi');"
 //! ```
 //!
-//! `dn1/pli/cst` has a NULL `content_json`; the others have one.
+//! `mn1/en/bodhi` has a NULL `content_json`; the others have one.
 //!
 //! ```sh
 //! sqlite3 appdata.sqlite3 "SELECT sutta_uid FROM sutta_variants WHERE sutta_uid LIKE 'mn1/%';
@@ -21,7 +21,7 @@
 
 use serial_test::serial;
 use simsapa_backend::get_app_data;
-use simsapa_backend::sutta_json::{get_sutta_bilara_json, get_sutta_content_json, SuttaBilaraJson, SuttaContentJson};
+use simsapa_backend::sutta_json::{get_sutta_bilara_json, get_sutta_content_json, resolve_sutta_strict, SuttaBilaraJson, SuttaContentJson};
 
 mod helpers;
 use helpers as h;
@@ -89,7 +89,56 @@ fn test_reference_inside_a_range_keeps_lang_and_author() {
 #[test]
 #[serial]
 fn test_html_only_sutta_has_no_content_json() {
-    assert_eq!(content("dn1/pli/cst"), SuttaContentJson::NoContentJson { uid: "dn1/pli/cst".to_string() });
+    assert_eq!(content("mn1/en/bodhi"), SuttaContentJson::NoContentJson { uid: "mn1/en/bodhi".to_string() });
+}
+
+/// The record that answered, whether or not it is segmented yet: CST records are
+/// HTML in a database bootstrapped before they were segmented.
+fn resolved_uid(uid: &str) -> Option<String> {
+    h::app_data_setup();
+    resolve_sutta_strict(&get_app_data().dbm.appdata, uid).map(|sutta| sutta.uid)
+}
+
+#[test]
+#[serial]
+fn test_bare_commentary_code_reads_the_commentary() {
+    assert_eq!(resolved_uid("mn1.att").as_deref(), Some("mn1.att/pli/cst"));
+    assert_eq!(resolved_uid("mn1.tik").as_deref(), Some("mn1.tik/pli/cst"));
+}
+
+#[test]
+#[serial]
+fn test_reference_inside_a_commentary_range_stays_a_commentary() {
+    assert_eq!(resolved_uid("sn30.10.att").as_deref(), Some("sn30.1-46.att/pli/cst"));
+}
+
+#[test]
+#[serial]
+fn test_reference_inside_a_range_is_not_a_commentary_of_the_same_edition() {
+    assert_eq!(resolved_uid("sn30.10/pli/cst").as_deref(), Some("sn30.7-16/pli/cst"));
+}
+
+#[test]
+#[serial]
+fn test_range_lookup_prefers_pli_ms_when_the_uid_names_no_stored_text() {
+    h::app_data_setup();
+    let appdata = &get_app_data().dbm.appdata;
+    let by_range = |uid: &str| appdata.get_sutta_by_range(uid).map(|sutta| sutta.uid);
+
+    assert_eq!(by_range("sn30.10").as_deref(), Some("sn30.7-16/pli/ms"));
+    assert_eq!(by_range("sn30.10/en/nosuchauthor").as_deref(), Some("sn30.7-16/pli/ms"));
+    // A commentary has no `/pli/ms` record of its own kind.
+    assert_eq!(by_range("sn30.10.att").as_deref(), Some("sn30.1-46.att/pli/cst"));
+    // A named text still wins.
+    assert_eq!(by_range("sn30.10/en/sujato").as_deref(), Some("sn30.7-16/en/sujato"));
+    assert_eq!(by_range("sn30.10/pli/cst").as_deref(), Some("sn30.7-16/pli/cst"));
+}
+
+#[test]
+#[serial]
+fn test_a_commentary_uid_does_not_fall_back_to_the_mula() {
+    assert_eq!(resolved_uid("mn1.att/pli/ms"), None);
+    assert_eq!(resolved_uid("sn30.10.att/en/sujato"), None);
 }
 
 #[test]
@@ -157,7 +206,7 @@ fn test_bilara_translation_has_comments_and_the_root_variants() {
 fn test_bilara_errors_match_sutta_json() {
     h::app_data_setup();
     let appdata = &get_app_data().dbm.appdata;
-    assert!(matches!(get_sutta_bilara_json(appdata, "dn1/pli/cst"),
-                     SuttaBilaraJson::NoContentJson { uid } if uid == "dn1/pli/cst"));
+    assert!(matches!(get_sutta_bilara_json(appdata, "mn1/en/bodhi"),
+                     SuttaBilaraJson::NoContentJson { uid } if uid == "mn1/en/bodhi"));
     assert!(matches!(get_sutta_bilara_json(appdata, "mn1/en/nosuchauthor"), SuttaBilaraJson::NotFound));
 }

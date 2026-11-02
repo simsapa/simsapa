@@ -30,6 +30,7 @@ lazy_static = "1.5"
 tokio = { version = "1.0", features = ["rt", "rt-multi-thread"] }
 quick-xml = "0.31"
 html-escape = "0.2"
+indexmap = { version = "2.0", features = ["serde"] }
 urlencoding = "2.1"
 toml = "1.1.6"
 # NOTE: The utils::render_markdown() was removed after mdbook v0.4

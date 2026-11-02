@@ -10,7 +10,7 @@ use crate::db::DatabaseHandle;
 use crate::db::appdata_models::Sutta;
 use crate::db::dictionaries_models::DictWord;
 use crate::db::dpd_models::BoldDefinition;
-use crate::logger::{info, warn};
+use crate::logger::{error, info, warn};
 use crate::AppGlobalPaths;
 
 use super::lenient_directory::LenientLockMmapDirectory;
@@ -76,6 +76,24 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
     let content_exact_field = schema.get_field("content_exact").unwrap();
     let is_mula_field = schema.get_field("is_mula").unwrap();
     let is_commentary_field = schema.get_field("is_commentary").unwrap();
+    let has_other_edition_field = schema.get_field("has_other_edition").unwrap();
+
+    // Only Pāli records have another edition. A table that cannot be read
+    // leaves every record without one: search then shows both editions.
+    let twins: HashSet<String> = if lang == "pli" {
+        match appdata_db.get_conn().and_then(|mut db_conn| crate::pali_edition::load_twins(&mut db_conn)) {
+            Ok(twins) => {
+                info(&format!("build_sutta_index(): {} records in both Pāli editions", twins.len()));
+                twins
+            }
+            Err(e) => {
+                error(&format!("build_sutta_index(): pali_edition_twins could not be read, has_other_edition is false for every record: {}", e));
+                HashSet::new()
+            }
+        }
+    } else {
+        HashSet::new()
+    };
 
     let lang_clone = lang.to_string();
     let sutta_list: Vec<Sutta> = appdata_db.do_read(|db_conn| {
@@ -120,6 +138,7 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
             content_exact_field => content_text.as_str(),
             is_mula_field => is_mula,
             is_commentary_field => is_commentary,
+            has_other_edition_field => twins.contains(&sutta.uid),
         ))?;
 
         indexed_count += 1;
@@ -624,7 +643,7 @@ pub fn build_all_indexes(
 /// per query against fields that are not in it. `is_index_current()` reads this
 /// against the `VERSION` file and the app offers a rebuild. See
 /// `docs/fulltext-index-storage-and-file-locking.md`.
-pub const INDEX_VERSION: &str = "1.0";
+pub const INDEX_VERSION: &str = "1.1";
 
 /// Write a VERSION file to the index directory.
 pub fn write_version_file(index_dir: &Path) -> Result<()> {

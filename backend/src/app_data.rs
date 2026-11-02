@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 
 use diesel::prelude::*;
 use serde::{Serialize, Deserialize};
-use regex::Regex;
 use lazy_static::lazy_static;
 use anyhow::{anyhow, Context, Result};
 
@@ -16,7 +15,8 @@ use crate::db::appdata_schema::suttas::dsl::*;
 use crate::logger::{warn, error, info, debug};
 use crate::types::SuttaQuote;
 use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, ModelUsageEntry, Provider, ProviderName, RepeatPali, SuttaDisplayDefaults, SuttaLayout};
-use crate::sutta_display::{SuttaDisplayOptions, SuttaDisplayOverrides};
+use crate::sutta_display::{columns_can_align, pali_uid_for_translation, uid_base, SuttaDisplayOptions, SuttaDisplayOverrides};
+use crate::opentipitaka::{is_ot_english_uid, ot_footer_html};
 use crate::global_hotkeys::GlobalHotkeysConfig;
 use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
 use crate::db::dictionaries_models::DictWord;
@@ -303,22 +303,55 @@ impl AppData {
             return Ok(None);
         }
 
-        // Use regex to extract the base UID part (e.g., "mn1" from "mn1/en/bodhi")
-        let re = Regex::new("^([^/]+)/.*").expect("Invalid regex");
-        let uid_ref = re.replace(&sutta.uid, "$1").to_string();
-
         let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
 
-        // Only pli/ms suttas have bilara-format content_json needed for line-by-line rendering.
-        // pli/cst suttas never have content_json.
+        // Segment keys compare only within one text family, so the counterpart
+        // is the Pāli of the translation's own family.
         let res = suttas
             .select(Sutta::as_select())
-            .filter(uid.eq(format!("{}/pli/ms", uid_ref)))
+            .filter(uid.eq(pali_uid_for_translation(&sutta.uid)))
             .first(db_conn)
             .optional() // Makes it return Result<Option<Sutta>> instead of erroring if not found
             .context("Database query failed for Pali sutta")?;
 
         Ok(res)
+    }
+
+    /// The English shown beside a Pāli text when no columns are requested: the
+    /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
+    /// aligned with, and for any other Pāli text the first segmented English, or
+    /// failing that the first other one, leaving out the AI English. A column
+    /// that cannot be shown is handled like a requested one: dropped in Lines, a
+    /// block in Columns.
+    ///
+    /// Reads uids over an indexed range, never the full rows. All of these have
+    /// one base and one language, so uid order is `sort_suttas()` order.
+    fn default_english_for_pali(&self, sutta: &Sutta) -> Result<Option<String>> {
+        if sutta.language != "pli" {
+            return Ok(None);
+        }
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
+
+        let base = uid_base(&sutta.uid);
+        let english: Vec<(String, Option<bool>)> = suttas
+            .filter(uid.ge(format!("{}/en/", base)))
+            .filter(uid.lt(format!("{}/en0", base)))
+            .select((uid, content_json.ne("")))
+            .order(uid.asc())
+            .load(db_conn)
+            .context("Database query failed for the default English")?;
+
+        let (ai_english, human_english): (Vec<_>, Vec<_>) = english
+            .into_iter()
+            .partition(|(english_uid, _)| is_ot_english_uid(english_uid));
+
+        if sutta.uid.ends_with("/pli/cst") {
+            return Ok(ai_english.into_iter().next().map(|(english_uid, _)| english_uid));
+        }
+
+        let segmented = human_english.iter().find(|(_, is_segmented)| *is_segmented == Some(true));
+        Ok(segmented.or(human_english.first()).map(|(english_uid, _)| english_uid.clone()))
     }
 
     /// Converts sutta data into an IndexMap of segments, potentially including variants, comments, glosses.
@@ -388,16 +421,21 @@ impl AppData {
 
     /// Resolve the effective display options for a sutta render: persisted
     /// defaults from the settings cache, overridden by explicit request
-    /// parameters, with the default column set (opened sutta + Pāli
-    /// counterpart) filled in.
+    /// parameters, with the default column set filled in: the opened sutta
+    /// with its Pāli text, or with an English when the opened sutta is Pāli.
     pub fn resolve_sutta_display_options(
         &self,
         sutta: &Sutta,
         overrides: &SuttaDisplayOverrides,
     ) -> SuttaDisplayOptions {
-        let pali_uid = if overrides.columns.is_none() {
-            match self.get_pali_for_translated(sutta) {
-                Ok(pali) => pali.map(|p| p.uid),
+        let paired_uid = if overrides.columns.is_none() {
+            let paired = if sutta.language == "pli" {
+                self.default_english_for_pali(sutta)
+            } else {
+                self.get_pali_for_translated(sutta).map(|pali| pali.map(|p| p.uid))
+            };
+            match paired {
+                Ok(paired) => paired,
                 Err(e) => {
                     error(&format!("resolve_sutta_display_options: {:#}", e));
                     None
@@ -408,7 +446,7 @@ impl AppData {
         };
         let mut options = {
             let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
-            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, pali_uid.as_deref(), overrides)
+            SuttaDisplayOptions::resolve(&app_settings, &sutta.uid, paired_uid.as_deref(), overrides)
         };
 
         // The Pāli placement (first column; repeated per repeat_pali) is
@@ -420,13 +458,14 @@ impl AppData {
             options.columns = self.arrange_repeat_pali(sutta, &options.columns, options.repeat_pali);
         }
 
-        // Lines mode cannot interleave non-segmented texts, so they are
-        // excluded here, at options resolution — the renderer never sees them
-        // (PRD FR 8). The UI disables such entries in the bottom-bar dropdowns
-        // while in Lines mode; an API request that includes one simply drops
-        // that column (no error), so UI and API behave identically. When the
-        // opened sutta itself is non-segmented, it renders alone via the
-        // standard whole-document path.
+        // Lines mode cannot interleave non-segmented texts, or texts whose
+        // segment keys do not refer to the same passages as the opened text's,
+        // so they are excluded here, at options resolution — the renderer
+        // never sees them. The UI disables such entries in the bottom-bar
+        // dropdowns while in Lines mode; an API request that includes one
+        // simply drops that column (no error), so UI and API behave
+        // identically. When the opened sutta itself is non-segmented, it
+        // renders alone via the standard whole-document path.
         if options.layout == SuttaLayout::LineByLine {
             let opened_is_segmented = sutta.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false);
             if opened_is_segmented {
@@ -435,7 +474,10 @@ impl AppData {
                         return true;
                     }
                     match self.dbm.appdata.get_sutta(col_uid) {
-                        Some(s) => s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false),
+                        Some(s) => {
+                            s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false)
+                                && columns_can_align(&sutta.uid, &[col_uid.as_str()])
+                        }
                         None => true, // unknown uids are reported by the renderer, not dropped
                     }
                 });
@@ -583,8 +625,11 @@ impl AppData {
     }
 
     /// The content-block branching for already-resolved column suttas:
-    /// aligned multi-column when every column is segmented, unaligned block
-    /// columns otherwise, standard whole-document path for a single column.
+    /// aligned multi-column when every column is segmented and all of them can
+    /// be aligned on the opened text's template, unaligned block columns
+    /// otherwise, standard whole-document path for a single column. That column
+    /// is rendered, not the opened text: the column bar can replace or remove
+    /// the opened text.
     fn render_content_block_for_columns(
         &self,
         sutta: &Sutta,
@@ -595,6 +640,7 @@ impl AppData {
 
         let all_segmented = column_suttas.iter()
             .all(|s| s.content_json.as_deref().map(|c| !c.is_empty()).unwrap_or(false));
+        let column_uids: Vec<&str> = column_suttas.iter().map(|s| s.uid.as_str()).collect();
 
         let content_html_body = if options.layout == SuttaLayout::Solo {
             // Solo: only the opened translation, via the standard
@@ -602,7 +648,7 @@ impl AppData {
             // switching back to Columns/Lines, not render input.
             self.render_sutta_standard_body(sutta, show_references)?
 
-        } else if column_suttas.len() >= 2 && all_segmented {
+        } else if column_suttas.len() >= 2 && all_segmented && columns_can_align(&sutta.uid, &column_uids) {
             // Per-segment aligned multi-column view: each column's segments
             // carry that text's own variants/comments/glosses.
             let mut columns: Vec<ColumnSource> = Vec::new();
@@ -619,15 +665,26 @@ impl AppData {
 
             let tmpl_str = sutta.content_json_tmpl.as_deref()
                 .ok_or_else(|| anyhow!("Sutta {} requires content_json_tmpl for the multi-column view", sutta.uid))?;
-            let tmpl_json: IndexMap<String, String> = serde_json::from_str(tmpl_str)
+            let mut tmpl_json: IndexMap<String, String> = serde_json::from_str(tmpl_str)
                 .with_context(|| format!("Failed to parse template JSON into IndexMap for the multi-column view (Sutta: {})", sutta.uid))?;
+
+            // The template in use is the opened text's, so the English's own
+            // footer is missing when another text was opened. On the template,
+            // so that it is inside the wrapper the footer styles apply to.
+            let ot_footer_is_missing = !is_ot_english_uid(&sutta.uid)
+                && column_uids.iter().any(|col_uid| is_ot_english_uid(col_uid));
+            if ot_footer_is_missing {
+                if let Some((_, last_tmpl)) = tmpl_json.last_mut() {
+                    last_tmpl.push_str(&ot_footer_html());
+                }
+            }
 
             bilara_multi_column_html(&columns, &tmpl_json, show_references, options.layout)?
 
         } else if column_suttas.len() >= 2 {
-            // A selected text lacks content_json: unaligned block-columns
-            // fallback — each text's standard whole-document rendering in one
-            // flex column.
+            // A selected text lacks content_json, or its segment keys cannot be
+            // compared with the others': unaligned block-columns fallback —
+            // each text's standard whole-document rendering in one flex column.
             let mut cols: Vec<(String, String, bool, String)> = Vec::new();
             for col in column_suttas {
                 let html = self.render_sutta_standard_body(col, show_references)
@@ -637,7 +694,7 @@ impl AppData {
             multi_column_html_blocks(&cols)
 
         } else {
-            self.render_sutta_standard_body(sutta, show_references)?
+            self.render_sutta_standard_body(column_suttas.first().unwrap_or(sutta), show_references)?
         };
 
         Ok(content_html_body)
@@ -2197,6 +2254,39 @@ impl AppData {
 
         let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
         app_settings.include_cst_commentary_in_translations = enabled;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => (),
+            Err(e) => error(&format!("Failed to update app settings: {}", e)),
+        }
+    }
+
+    /// The Pāli edition preference as `ms`, `cst` or `both`.
+    pub fn get_pali_edition_preference(&self) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.pali_edition_preference.as_str().to_string()
+    }
+
+    /// Store the preference. An unknown value is logged and ignored.
+    pub fn set_pali_edition_preference(&self, value: &str) {
+        use crate::db::appdata_schema::app_settings;
+
+        let Some(preference) = crate::app_settings::PaliEditionPreference::parse(value) else {
+            error(&format!("set_pali_edition_preference(): unknown value '{}'", value));
+            return;
+        };
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.pali_edition_preference = preference;
 
         let a = app_settings.clone();
         let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");

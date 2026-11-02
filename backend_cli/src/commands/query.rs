@@ -10,7 +10,10 @@ use simsapa_api::ApiSearchResult;
 use simsapa_backend::cli_support::{self, FulltextJsonOutput};
 use simsapa_backend::errln;
 use simsapa_backend::get_app_globals;
+use simsapa_backend::app_settings::PaliEditionPreference;
 use simsapa_backend::types::SearchArea;
+
+use crate::commands::search::PaliEditionArg;
 
 use crate::exit::{CliError, CliResult};
 use crate::output::{outln, print_json};
@@ -111,6 +114,21 @@ pub struct FulltextSearchArgs {
     /// Write the output to this file instead of stdout
     #[arg(long, value_name = "FILENAME")]
     pub output: Option<PathBuf>,
+
+    /// Suttas: which edition to show of a Pāli text that is in both
+    /// Mahāsaṅgīti and CST
+    #[arg(long, value_enum, default_value_t = PaliEditionArg::Ms)]
+    pub pali_edition: PaliEditionArg,
+}
+
+impl From<PaliEditionArg> for PaliEditionPreference {
+    fn from(arg: PaliEditionArg) -> Self {
+        match arg {
+            PaliEditionArg::Ms => PaliEditionPreference::Ms,
+            PaliEditionArg::Cst => PaliEditionPreference::Cst,
+            PaliEditionArg::Both => PaliEditionPreference::Both,
+        }
+    }
 }
 
 /// Requires the preamble to have run.
@@ -123,6 +141,7 @@ pub fn run_fulltext_search(args: &FulltextSearchArgs, json: bool) -> CliResult {
         args.limit,
         args.lang.as_deref(),
         args.source.as_deref(),
+        args.pali_edition.into(),
     )?;
 
     let text = if json || args.format == OutputFormat::Json {

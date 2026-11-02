@@ -36,16 +36,20 @@ pub fn get_search_options(dbm: &State<Arc<DbManager>>) -> Json<SearchOptions> {
 /// Search suttas using FulltextMatch (tantivy), or UidMatch for reference-like
 /// queries. See docs/simsapa-cli-and-localhost-api.md.
 #[post("/suttas_fulltext_search", data = "<request>")]
-pub fn suttas_fulltext_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Json<ApiSearchResult> {
-    Json(run_suttas_search(&request, dbm.inner(), SearchMode::FulltextMatch))
+pub fn suttas_fulltext_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Result<Json<ApiSearchResult>, (Status, String)> {
+    run_suttas_search(&request, dbm.inner(), SearchMode::FulltextMatch)
+        .map(Json)
+        .map_err(|msg| (Status::BadRequest, msg))
 }
 
 /// POST /suttas_contains_search
 /// Search suttas using ContainsMatch (literal substring), or UidMatch for
 /// reference-like queries. See docs/simsapa-cli-and-localhost-api.md.
 #[post("/suttas_contains_search", data = "<request>")]
-pub fn suttas_contains_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Json<ApiSearchResult> {
-    Json(run_suttas_search(&request, dbm.inner(), SearchMode::ContainsMatch))
+pub fn suttas_contains_search(request: Json<ApiSearchRequest>, dbm: &State<Arc<DbManager>>) -> Result<Json<ApiSearchResult>, (Status, String)> {
+    run_suttas_search(&request, dbm.inner(), SearchMode::ContainsMatch)
+        .map(Json)
+        .map_err(|msg| (Status::BadRequest, msg))
 }
 
 /// POST /search

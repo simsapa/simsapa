@@ -321,6 +321,14 @@ diesel::joinable!(book_spine_items -> books (book_id));
 diesel::joinable!(book_resources -> books (book_id));
 diesel::joinable!(bookmark_items -> bookmark_folders (folder_id));
 
+diesel::table! {
+    /// The Pāli records whose text is also in the other edition (MS or CST
+    /// mūla). Filled at CST import; read by the Pāli edition search filter.
+    pali_edition_twins (uid) {
+        uid -> Text,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     app_settings,
     suttas,
@@ -341,4 +349,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     gloss_phrase_selections,
     topic_index_data,
     navigation_nodes,
+    pali_edition_twins,
 );

@@ -5485,6 +5485,61 @@ mod tests {
         assert_eq!(once, twice, "second pass is a no-op");
     }
 
+    fn cst_column(uid: &str, is_pali: bool, words: [&str; 2]) -> ColumnSource {
+        ColumnSource {
+            uid: uid.to_string(),
+            label: uid.to_string(),
+            is_pali,
+            segments: IndexMap::from([
+                ("mn1:1.1".to_string(), words[0].to_string()),
+                ("mn1:1.2".to_string(), words[1].to_string()),
+            ]),
+        }
+    }
+
+    fn cst_template(footer: &str) -> IndexMap<String, String> {
+        IndexMap::from([
+            (
+                "mn1:1.1".to_string(),
+                "<article id='mn1' class='cst'><header><h3>Majjhima 1</h3><h1>Title</h1></header><p class='bodytext'>{}</p>".to_string(),
+            ),
+            (
+                "mn1:1.2".to_string(),
+                format!("<p class='bodytext'>{{}}</p></article>{footer}"),
+            ),
+        ])
+    }
+
+    #[test]
+    fn test_multi_column_html_renders_a_cst_header() {
+        let columns = [
+            cst_column("mn1/pli/cst", true, ["evaṁ", "me"]),
+            cst_column("mn1/en/opentipitaka", false, ["thus", "have"]),
+        ];
+
+        for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+            let html = bilara_multi_column_html(&columns, &cst_template(""), false, layout).unwrap();
+            assert!(
+                html.contains("<article id='mn1' class='cst'><header><h3>Majjhima 1</h3><h1>Title</h1></header>"),
+                "{html}"
+            );
+            assert_eq!(html.matches("<header>").count(), 1, "{html}");
+        }
+    }
+
+    #[test]
+    fn test_multi_column_html_keeps_a_footer_after_the_article() {
+        let columns = [
+            cst_column("mn1/pli/cst", true, ["evaṁ", "me"]),
+            cst_column("mn1/en/opentipitaka", false, ["thus", "have"]),
+        ];
+        let footer = "<footer class='noindex'>Produced by AI</footer>";
+
+        let html = bilara_multi_column_html(&columns, &cst_template(footer), false, SuttaLayout::LineByLine).unwrap();
+
+        assert!(html.contains(&format!("</article>{footer}")), "{html}");
+    }
+
     #[test]
     fn test_dhammatalks_org_ref_notation_convert() {
         assert_eq!(dhammatalks_org_ref_notation_convert("DN01"), "dn1");

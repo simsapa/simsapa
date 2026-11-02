@@ -92,14 +92,15 @@ use anyhow::{Context, Result};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 
+use tipitaka_xml_parser::fragments_models::CstSegmentRecord;
 use tipitaka_xml_parser::fragments_schema::xml_fragments;
 
 /// CST source files whose parse has been verified -- see this module's header
 /// for what "verified" means and why it cannot be computed.
 ///
 /// **This is a quality gate, not a coverage predicate.** Only files listed here
-/// contribute fragment records; everything else is imported as divisions of the
-/// source XML, which never depends on the parser's sutta splitting.
+/// contribute fragment records; everything else is imported as divisions of its
+/// `cst_segments` rows, which never depends on the parser's sutta splitting.
 ///
 /// Adding an entry is a deliberate act: run `tipitaka-xml-parser`'s validations
 /// over the file, review the result, then add it here and re-run the CST import
@@ -178,8 +179,8 @@ pub enum CoverageClass {
     PartiallyMapped,
     Unmapped,
     /// The parse has not been verified, so no fragment record is imported from
-    /// it whatever its mapping looks like. Divisions of the source XML are
-    /// imported instead, which do not depend on the parser's sutta splitting.
+    /// it whatever its mapping looks like. Divisions of its `cst_segments` rows
+    /// are imported instead, which do not depend on the parser's sutta splitting.
     Unverified,
     /// Not derivable from the fragments: assigned by the import when the
     /// division split failed its per-file cross-check.
@@ -319,25 +320,13 @@ pub fn coverage_of(coverage: &HashMap<String, FileCoverage>, file: &str) -> File
     })
 }
 
-/// One division of a source file: the XML that belongs to a single toc leaf.
-#[derive(Debug, Clone)]
-pub struct Division {
-    /// The division file name the toc leaf names, e.g. `s0305m.mul0.xml`.
-    pub division_file: String,
-    /// The toc leaf's `text=`, which is the division's displayed title.
-    pub title: String,
-    /// The division's XML — the body content, not a whole document.
-    /// `xml_to_html` is event-driven and needs no document root.
-    pub xml: String,
-}
-
 #[derive(Debug)]
 pub enum SplitError {
     /// The toc leaf count and the chapter-marker count disagree by more than
     /// the one leading division, so which text belongs to which leaf cannot be
     /// decided. Reported, never guessed.
     CountMismatch { leaves: usize, chapters: usize },
-    /// The file has no `<body>`, or the split produced nothing.
+    /// The split produced nothing, or a division would have no rows.
     NoBody,
 }
 
@@ -349,246 +338,98 @@ impl std::fmt::Display for SplitError {
                 "{} toc leaves but {} chapter markers (+/-1 expected)",
                 leaves, chapters
             ),
-            SplitError::NoBody => write!(f, "no <body> element, or the split produced nothing"),
+            SplitError::NoBody => write!(f, "the split produced nothing, or a division has no rows"),
         }
     }
 }
 
-/// Cut one `romn/` source file into the divisions its toc names.
+/// One division of a source file: the `cst_segments` rows of a single toc leaf.
+#[derive(Debug)]
+pub struct RowDivision<'a> {
+    /// The division file name the toc leaf names, e.g. `s0305m.mul0.xml`.
+    pub division_file: String,
+    /// The toc leaf's `text=`, which is the division's displayed title.
+    pub title: String,
+    /// Never empty, in text order.
+    pub rows: &'a [CstSegmentRecord],
+}
+
+/// Whether a row opens a division.
 ///
-/// **The chapter markup gives the boundaries; the toc leaf count decides
-/// whether the head before the first marker is a division of its own.**
-/// Measured across all 217 files: 169 have exactly as many leaves as
-/// `rend="chapter"` markers, 47 have one more, and one (`abh05t.nrf.xml`, 5
-/// leaves against 6 markers) has one fewer. The 47 open with a titled division
-/// the chapter markers do not open — `abh01a.att.xml` begins with
-/// `Ganthārambhakathā`, which is precisely its first toc leaf.
+/// The wrapper decides, not the `rend` column, which is NULL on such rows in
+/// `e0606n` and `e0607n`. A chapter row at `ot_id` 0 is an extra title that
+/// repeats the marker in `e0606n.nrf.xml` and `e0607n.nrf.xml`, so it is not a
+/// cut.
+pub fn is_division_row(row: &CstSegmentRecord) -> bool {
+    row.ot_id != 0 && row.pali_wrapper.contains("class='chapter'")
+}
+
+/// Cut a file's rows, in text order, into the divisions its toc names.
 ///
-/// Reading the leading division out of the markup alone does **not** work, and
+/// **The chapter rows give the boundaries; the toc leaf count decides whether
+/// the head before the first chapter row is a division of its own.** Measured
+/// across all 217 files: 169 have exactly as many leaves as chapter rows, 47
+/// have one more, and one (`abh05t.nrf.xml`, 5 leaves against 6 chapter rows)
+/// has one fewer. The 47 open with a titled division the chapter rows do not
+/// open: `abh01a.att.xml` begins with `Ganthārambhakathā`, which is precisely
+/// its first toc leaf.
+///
+/// Reading the leading division out of the rows alone does **not** work, and
 /// this is why the leaf count decides it: eleven of the 169 have real body text
-/// before their first chapter marker — preamble gāthās in `s0508m.mul.xml`,
-/// `e0201n.nrf.xml` and others — which the toc folds into the first division
+/// before their first chapter row (preamble gāthās in `s0508m.mul.xml`,
+/// `e0201n.nrf.xml` and others), which the toc folds into the first division
 /// rather than listing separately. So when the counts are equal that head is
 /// **prepended to the first division**, never dropped and never made a division
 /// the toc has no leaf for.
 ///
 /// A file whose counts differ by anything else is a [`SplitError`], reported
 /// and imported whole instead.
-pub fn split_into_divisions(
-    xml: &str,
+pub fn split_rows_into_divisions<'a>(
+    rows: &'a [CstSegmentRecord],
     leaves: &[crate::bootstrap::navigation_tree::cst_spine::TocLeaf],
-) -> Result<Vec<Division>, SplitError> {
-    let pieces = split_body_at_chapters(xml)?;
-    let (head, chapters) = pieces;
+) -> Result<Vec<RowDivision<'a>>, SplitError> {
+    let markers: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| is_division_row(row))
+        .map(|(index, _)| index)
+        .collect();
 
-    let head_is_own_division = match leaves.len().checked_sub(chapters.len()) {
-        Some(0) => false,
-        Some(1) => true,
+    let mut starts = match leaves.len().checked_sub(markers.len()) {
+        Some(0) => markers.clone(),
+        Some(1) => {
+            let mut starts = vec![0];
+            starts.extend(&markers);
+            starts
+        }
         _ => {
             return Err(SplitError::CountMismatch {
                 leaves: leaves.len(),
-                chapters: chapters.len(),
+                chapters: markers.len(),
             })
         }
     };
 
-    let mut parts: Vec<String> = Vec::with_capacity(leaves.len());
-    if head_is_own_division {
-        parts.push(head);
-        parts.extend(chapters);
-    } else {
-        let mut chapters = chapters;
-        if let Some(first) = chapters.first_mut() {
-            *first = format!("{}{}", head, first);
-        } else {
+    // A prepended head is simply the first division starting at row 0.
+    match starts.first_mut() {
+        Some(first) => *first = 0,
+        None => return Err(SplitError::NoBody),
+    }
+
+    let mut divisions = Vec::with_capacity(leaves.len());
+    for (index, leaf) in leaves.iter().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(rows.len());
+        let division_rows = &rows[starts[index]..end];
+        if division_rows.is_empty() {
             return Err(SplitError::NoBody);
         }
-        parts.extend(chapters);
-    }
-
-    if parts.len() != leaves.len() {
-        return Err(SplitError::CountMismatch {
-            leaves: leaves.len(),
-            chapters: parts.len(),
-        });
-    }
-
-    Ok(leaves
-        .iter()
-        .zip(parts)
-        .map(|(leaf, xml)| Division {
+        divisions.push(RowDivision {
             division_file: leaf.division_file.clone(),
             title: leaf.title.clone(),
-            xml,
-        })
-        .collect())
-}
-
-/// Split a document's `<body>` at every `rend="chapter"` element, returning the
-/// head (everything before the first marker) and one piece per marker.
-///
-/// Each piece is **re-balanced**: any element still open at a boundary is
-/// closed at the end of the outgoing piece and re-opened at the start of the
-/// incoming one, so every piece is well-formed on its own. A `<div>` that was
-/// opened immediately before the marker with nothing but whitespace in between
-/// is trimmed off the outgoing piece instead of being closed as an empty
-/// element — that is the common shape (`<div type="samyutta">` wrapping a
-/// `<head rend="chapter">`) and leaving it in would end each division with an
-/// empty div belonging to the next one.
-fn split_body_at_chapters(xml: &str) -> Result<(String, Vec<String>), SplitError> {
-    let body_open = find_body_open(xml).ok_or(SplitError::NoBody)?;
-    let body_end = xml[body_open..]
-        .find("</body>")
-        .map(|i| body_open + i)
-        .unwrap_or(xml.len());
-    let body = &xml[body_open..body_end];
-
-    // Each entry is one open element: where its start tag begins and ends in
-    // the current piece, and the tag itself for re-opening.
-    struct Open {
-        tag: String,
-        begins: usize,
-        ends: usize,
+            rows: division_rows,
+        });
     }
-
-    let mut stack: Vec<Open> = Vec::new();
-    let mut current = String::new();
-    let mut head: Option<String> = None;
-    let mut chapters: Vec<String> = Vec::new();
-    let mut cursor = 0usize;
-
-    for tag in iter_tags(body) {
-        // Everything between the previous tag and this one is content.
-        current.push_str(&body[cursor..tag.start]);
-        cursor = tag.end;
-
-        if tag.kind == TagKind::Start && is_chapter_tag(&body[tag.start..tag.end]) {
-            // Close the piece: drop the elements that were opened with nothing
-            // but whitespace since, and close the rest.
-            let mut keep_open = stack.len();
-            while keep_open > 0 {
-                let open = &stack[keep_open - 1];
-                if current[open.ends..].trim().is_empty() {
-                    current.truncate(open.begins);
-                    keep_open -= 1;
-                } else {
-                    break;
-                }
-            }
-            for open in stack[..keep_open].iter().rev() {
-                current.push_str(&format!("</{}>", element_name(&open.tag)));
-            }
-
-            let finished = std::mem::take(&mut current);
-            match head {
-                None => head = Some(finished),
-                Some(_) => chapters.push(finished),
-            }
-
-            // Re-open the ancestors in the new piece.
-            for open in stack.iter_mut() {
-                open.begins = current.len();
-                current.push_str(&open.tag);
-                open.ends = current.len();
-            }
-        }
-
-        let raw = &body[tag.start..tag.end];
-        match tag.kind {
-            TagKind::Start => {
-                let begins = current.len();
-                current.push_str(raw);
-                stack.push(Open { tag: raw.to_string(), begins, ends: current.len() });
-            }
-            TagKind::End => {
-                current.push_str(raw);
-                stack.pop();
-            }
-            TagKind::Other => current.push_str(raw),
-        }
-    }
-
-    current.push_str(&body[cursor..]);
-    for open in stack.iter().rev() {
-        current.push_str(&format!("</{}>", element_name(&open.tag)));
-    }
-
-    match head {
-        None => Err(SplitError::NoBody),
-        Some(head) => {
-            chapters.push(current);
-            Ok((head, chapters))
-        }
-    }
-}
-
-/// The offset just past the `<body …>` start tag.
-fn find_body_open(xml: &str) -> Option<usize> {
-    let start = xml.find("<body")?;
-    let close = xml[start..].find('>')? + start;
-    Some(close + 1)
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum TagKind {
-    Start,
-    End,
-    /// Self-closing, a comment, or a processing instruction — anything that
-    /// does not change the open-element stack.
-    Other,
-}
-
-struct Tag {
-    start: usize,
-    end: usize,
-    kind: TagKind,
-}
-
-/// Walk a fragment's `<…>` tags. This is a scanner and not an XML parser
-/// because the pieces are re-emitted **verbatim**: entities, `xml:space`
-/// content and the CST's own whitespace all have to survive the split
-/// byte-for-byte, and a parse-then-serialize round trip does not guarantee
-/// that. Nothing here interprets the markup beyond opening and closing.
-fn iter_tags(text: &str) -> Vec<Tag> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        let Some(rel) = text[i..].find('<') else { break };
-        let start = i + rel;
-        let Some(rel_end) = text[start..].find('>') else { break };
-        let end = start + rel_end + 1;
-
-        let inner = &text[start..end];
-        let kind = if inner.starts_with("</") {
-            TagKind::End
-        } else if inner.starts_with("<!") || inner.starts_with("<?") || inner.ends_with("/>") {
-            TagKind::Other
-        } else {
-            TagKind::Start
-        };
-
-        out.push(Tag { start, end, kind });
-        i = end;
-    }
-
-    out
-}
-
-fn element_name(tag: &str) -> &str {
-    let rest = tag.trim_start_matches('<');
-    let end = rest
-        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
-        .unwrap_or(rest.len());
-    &rest[..end]
-}
-
-/// A chapter marker is written as `<p rend="chapter">` in most files and as
-/// `<head rend="chapter">` in the `<div>`-structured ones; both are boundaries.
-fn is_chapter_tag(tag: &str) -> bool {
-    let name = element_name(tag);
-    (name == "p" || name == "head") && tag.contains("rend=\"chapter\"")
+    Ok(divisions)
 }
 
 #[cfg(test)]
@@ -599,22 +440,6 @@ mod tests {
     fn leaf(file: &str, title: &str) -> TocLeaf {
         TocLeaf { title: title.to_string(), division_file: file.to_string() }
     }
-
-    const DIV_STRUCTURED: &str = r#"<TEI.2><text><body xml:space="preserve">
-<p rend="centre">Namo tassa</p>
-<p rend="nikaya">Saṃyuttanikāyo</p>
-<div id="sn5" type="book">
-<head rend="book">Mahāvaggo</head>
-<div id="sn5_1" type="samyutta">
-<head rend="chapter">1. Maggasaṃyuttaṃ</head>
-<p rend="bodytext">one</p>
-</div>
-<div id="sn5_2" type="samyutta">
-<head rend="chapter">2. Bojjhaṅgasaṃyuttaṃ</head>
-<p rend="bodytext">two</p>
-</div>
-</div>
-</body></text></TEI.2>"#;
 
     fn span(mapped: bool, start_line: i32, end_line: i32) -> FragmentSpan {
         FragmentSpan { mapped, start_line, end_line }
@@ -648,86 +473,123 @@ mod tests {
         assert!(!is_moved_fragment(None, true));
     }
 
-    #[test]
-    fn splits_at_chapter_markers_and_rebalances_each_piece() {
-        let (head, chapters) = split_body_at_chapters(DIV_STRUCTURED).unwrap();
-        assert_eq!(chapters.len(), 2);
-
-        // The head keeps the front matter and closes nothing it did not open.
-        assert!(head.contains("Namo tassa"));
-        assert!(head.contains("Mahāvaggo"));
-        // The samyutta div opened immediately before the marker is trimmed off
-        // rather than left behind as an empty element.
-        assert!(!head.contains("sn5_1"), "empty wrapper div left in the head: {}", head);
-        // The book div was open, so it is closed here and re-opened below.
-        assert!(head.trim_end().ends_with("</div>"));
-
-        assert!(chapters[0].contains("sn5_1"));
-        assert!(chapters[0].contains("1. Maggasaṃyuttaṃ"));
-        assert!(chapters[0].contains("one"));
-        assert!(!chapters[0].contains("two"));
-        assert!(chapters[0].starts_with("<div id=\"sn5\""), "ancestors not re-opened");
-
-        assert!(chapters[1].contains("2. Bojjhaṅgasaṃyuttaṃ"));
-        assert!(chapters[1].contains("two"));
+    fn cst_row(ot_id: i32, wrapper: &str) -> CstSegmentRecord {
+        CstSegmentRecord {
+            cst_file: "x.xml".to_string(),
+            ot_id,
+            frag_idx_code: None,
+            rend: None,
+            paranum: None,
+            pali_html: format!("row {}", ot_id),
+            pali_wrapper: wrapper.to_string(),
+            variant: None,
+            english: String::new(),
+        }
     }
 
-    /// 169 of the 217 files have as many leaves as chapter markers, so their
-    /// front matter belongs to the first division rather than to one of its own.
+    const CHAPTER_ROW: &str = "<h2 class='chapter'>{}</h2>";
+    const BODY_ROW: &str = "<p class='bodytext'>{}</p>";
+
+    fn ot_ids(division: &RowDivision) -> Vec<i32> {
+        division.rows.iter().map(|row| row.ot_id).collect()
+    }
+
+    fn head_and_two_chapters() -> Vec<CstSegmentRecord> {
+        vec![
+            cst_row(1, BODY_ROW),
+            cst_row(2, CHAPTER_ROW),
+            cst_row(3, BODY_ROW),
+            cst_row(4, CHAPTER_ROW),
+            cst_row(5, BODY_ROW),
+        ]
+    }
+
     #[test]
-    fn head_is_prepended_when_the_toc_has_no_leaf_for_it() {
-        let leaves = vec![leaf("x0.xml", "1. Maggasaṃyuttaṃ"), leaf("x1.xml", "2. Bojjhaṅgasaṃyuttaṃ")];
-        let divisions = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap();
+    fn a_division_row_is_a_chapter_wrapper_with_an_ot_id() {
+        assert!(is_division_row(&cst_row(4, CHAPTER_ROW)));
+        assert!(!is_division_row(&cst_row(4, BODY_ROW)));
+        assert!(!is_division_row(&cst_row(0, CHAPTER_ROW)));
+    }
+
+    #[test]
+    fn rows_before_the_first_chapter_join_it_when_the_counts_are_equal() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "one"), leaf("x1.xml", "two")];
+        let divisions = split_rows_into_divisions(&rows, &leaves).unwrap();
 
         assert_eq!(divisions.len(), 2);
         assert_eq!(divisions[0].division_file, "x0.xml");
-        assert!(divisions[0].xml.contains("Namo tassa"), "head was dropped");
-        assert!(divisions[0].xml.contains("1. Maggasaṃyuttaṃ"));
-        assert!(!divisions[1].xml.contains("Namo tassa"));
+        assert_eq!(divisions[0].title, "one");
+        assert_eq!(ot_ids(&divisions[0]), [1, 2, 3]);
+        assert_eq!(ot_ids(&divisions[1]), [4, 5]);
     }
 
-    /// The 47 files whose toc does list the front matter get it as division 0.
     #[test]
-    fn head_is_its_own_division_when_the_toc_lists_it() {
-        let leaves = vec![
-            leaf("x0.xml", "Ganthārambhakathā"),
-            leaf("x1.xml", "1. Maggasaṃyuttaṃ"),
-            leaf("x2.xml", "2. Bojjhaṅgasaṃyuttaṃ"),
-        ];
-        let divisions = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap();
+    fn equal_counts_with_no_head_start_at_the_first_chapter() {
+        let rows = head_and_two_chapters();
+        let rows = &rows[1..];
+        let leaves = vec![leaf("x0.xml", "one"), leaf("x1.xml", "two")];
+        let divisions = split_rows_into_divisions(rows, &leaves).unwrap();
+
+        assert_eq!(ot_ids(&divisions[0]), [2, 3]);
+        assert_eq!(ot_ids(&divisions[1]), [4, 5]);
+    }
+
+    #[test]
+    fn rows_before_the_first_chapter_are_a_division_when_the_toc_lists_it() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "head"), leaf("x1.xml", "one"), leaf("x2.xml", "two")];
+        let divisions = split_rows_into_divisions(&rows, &leaves).unwrap();
 
         assert_eq!(divisions.len(), 3);
-        assert_eq!(divisions[0].title, "Ganthārambhakathā");
-        assert!(divisions[0].xml.contains("Namo tassa"));
-        assert!(divisions[1].xml.contains("1. Maggasaṃyuttaṃ"));
+        assert_eq!(ot_ids(&divisions[0]), [1]);
+        assert_eq!(ot_ids(&divisions[1]), [2, 3]);
+        assert_eq!(ot_ids(&divisions[2]), [4, 5]);
     }
 
     #[test]
-    fn a_count_that_differs_by_more_than_one_is_an_error_not_a_guess() {
-        let leaves = vec![leaf("x0.xml", "only one")];
-        let err = split_into_divisions(DIV_STRUCTURED, &leaves).unwrap_err();
-        assert!(matches!(err, SplitError::CountMismatch { leaves: 1, chapters: 2 }));
+    fn a_row_count_that_does_not_fit_the_toc_is_an_error() {
+        let rows = head_and_two_chapters();
+        let too_few = vec![leaf("x0.xml", "only one")];
+        assert!(matches!(
+            split_rows_into_divisions(&rows, &too_few),
+            Err(SplitError::CountMismatch { leaves: 1, chapters: 2 })
+        ));
+
+        let too_many: Vec<_> = (0..4).map(|n| leaf(&format!("x{}.xml", n), "")).collect();
+        assert!(matches!(
+            split_rows_into_divisions(&rows, &too_many),
+            Err(SplitError::CountMismatch { leaves: 4, chapters: 2 })
+        ));
     }
 
     #[test]
-    fn splits_flat_paragraph_files() {
-        let xml = r#"<body xml:space="preserve">
-<p rend="centre">Namo</p>
-<p rend="book">Visuddhimaggo</p>
-<p rend="chapter">12. Iddhividhaniddeso</p>
-<p rend="bodytext">FIRST</p>
-<p rend="chapter">13. Abhiññāniddeso</p>
-<p rend="bodytext">SECOND</p>
-</body>"#;
-        let (head, chapters) = split_body_at_chapters(xml).unwrap();
-        assert!(head.contains("Visuddhimaggo"));
-        assert_eq!(chapters.len(), 2);
-        assert!(chapters[0].contains("FIRST") && !chapters[0].contains("SECOND"));
-        assert!(chapters[1].contains("SECOND") && !chapters[1].contains("FIRST"));
+    fn a_head_division_with_no_rows_is_an_error() {
+        let rows = head_and_two_chapters();
+        let leaves = vec![leaf("x0.xml", "head"), leaf("x1.xml", "one"), leaf("x2.xml", "two")];
+        assert!(matches!(split_rows_into_divisions(&rows[1..], &leaves), Err(SplitError::NoBody)));
     }
 
     #[test]
-    fn a_file_with_no_body_is_reported() {
-        assert!(matches!(split_body_at_chapters("<TEI.2></TEI.2>"), Err(SplitError::NoBody)));
+    fn no_rows_at_all_is_an_error() {
+        assert!(matches!(
+            split_rows_into_divisions(&[], &[leaf("x0.xml", "only")]),
+            Err(SplitError::NoBody)
+        ));
+        assert!(matches!(split_rows_into_divisions(&[], &[]), Err(SplitError::NoBody)));
+    }
+
+    #[test]
+    fn a_chapter_row_at_ot_id_0_does_not_cut() {
+        let rows = vec![
+            cst_row(0, CHAPTER_ROW),
+            cst_row(1, BODY_ROW),
+            cst_row(2, CHAPTER_ROW),
+            cst_row(3, BODY_ROW),
+        ];
+        let divisions = split_rows_into_divisions(&rows, &[leaf("x0.xml", "one")]).unwrap();
+
+        assert_eq!(divisions.len(), 1);
+        assert_eq!(ot_ids(&divisions[0]), [0, 1, 2, 3]);
     }
 }

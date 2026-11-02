@@ -808,6 +808,14 @@ Item {
         console.log("set_include_cst_commentary_in_translations():", enabled);
     }
 
+    function get_pali_edition_preference(): string {
+        return 'ms';
+    }
+
+    function set_pali_edition_preference(value: string) {
+        console.log("set_pali_edition_preference():", value);
+    }
+
     function get_include_cst_mula_in_search_results(): bool {
         return false;
     }

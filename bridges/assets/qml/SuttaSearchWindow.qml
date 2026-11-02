@@ -897,6 +897,7 @@ ApplicationWindow {
             enable_regex: false,
             fuzzy_distance: 0,
             include_cst_mula: SuttaBridge.get_include_cst_mula_in_search_results(),
+            pali_edition: SuttaBridge.get_pali_edition_preference(),
             include_cst_commentary: SuttaBridge.get_include_cst_commentary_in_search_results(),
             nikaya_prefix: nikaya_prefix.length > 0 ? nikaya_prefix : null,
             uid_prefix: uid_prefix.length > 0 ? uid_prefix : null,
@@ -3271,6 +3272,45 @@ ${query_text}`;
                     onClicked: {
                         info_dialog.title = "CST Mūla in Search";
                         info_dialog.message = "Include the CST (Chaṭṭha Saṅgāyana Tipiṭaka 4) Mūla Pāli texts in the search results. The CST text versions are almost identical to the MS texts from SuttaCentral, but they can be useful to examine variant spellings and other differences.";
+                        info_dialog.open();
+                    }
+                }
+            }
+
+            RowLayout {
+                spacing: 2
+                visible: search_bar_input.search_area === "Suttas"
+
+                Label {
+                    text: "Text in both editions"
+                    font.pointSize: root.is_mobile ? 12 : 10
+                    enabled: pali_edition_combo.enabled
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                ComboBox {
+                    id: pali_edition_combo
+                    font.pointSize: root.is_mobile ? 12 : 10
+                    model: ["MS", "CST", "Both"]
+                    enabled: include_ms_mula_checkbox.checked && include_cst_mula_checkbox.checked
+                    currentIndex: {
+                        const v = SuttaBridge.get_pali_edition_preference();
+                        return v === "cst" ? 1 : (v === "both" ? 2 : 0);
+                    }
+                    onActivated: function(index) {
+                        SuttaBridge.set_pali_edition_preference(["ms", "cst", "both"][index]);
+                        root.advanced_options_changed();
+                    }
+                }
+
+                Button {
+                    icon.source: "icons/32x32/fa_circle-info-solid.png"
+                    flat: true
+                    implicitWidth: root.icon_size
+                    implicitHeight: root.icon_size
+                    onClicked: {
+                        info_dialog.title = "Text in both editions";
+                        info_dialog.message = "Some Pāli texts are in both the MS and the CST editions. This chooses which edition appears in the search results, so that a text is not listed twice. A text that is in only one edition always appears. Applies when both \"MS Mūla in Search\" and \"CST Mūla in Search\" are checked.";
                         info_dialog.open();
                     }
                 }

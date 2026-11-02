@@ -62,11 +62,12 @@ ApplicationWindow {
 <h2>Dhamma Texts Sources</h2>
 <h3>Suttas</h3>
 <ul>
-    <li><a href="https://suttacentral.net/">suttacentral.net</a><ul>
-    <li><code>pli</code> and <code>en</code> languages by default</li>
-    <li>other languages as optional downloads via <code>Windows &gt; Sutta Languages...</code> menu</li>
-</ul>
-</li>
+    <li><a href="https://suttacentral.net/">suttacentral.net</a>
+        <ul>
+            <li><code>pli</code> and <code>en</code> languages by default</li>
+            <li>other languages as optional downloads via <code>Windows &gt; Sutta Languages...</code> menu</li>
+        </ul>
+    </li>
     <li><a href="https://tipitaka.org/cst4">tipitaka.org</a> Chaṭṭha Saṅgāyana Tipiṭaka 4</li>
     <li><a href="https://www.dhammatalks.org/">dhammatalks.org</a> Translations by Aj Thanissaro</li>
     <li><a href="https://www.tipitaka.net/tipitaka/dhp/">tipitaka.net</a> The Dhammapada: Verses and Stories Translated by Daw Mya Tin, M.A.</li>
@@ -74,6 +75,7 @@ ApplicationWindow {
     <li><a href="https://a-buddha-ujja.hu/">a-buddha-ujja.hu</a> Hungarian sutta translations</li>
     <li><a href="https://archive.org/details/VenDenmarkNyanadipa">The Silent Sages of Old</a> Translations by Bhante Nyanadipa</li>
     <li><a href="https://index.readingfaithfully.org/">index.readingfaithfully.org</a> Sutta Index of Topics</li>
+    <li><a href="https://www.opentipitaka.org/">opentipitaka.org</a> English translation of the CST texts, produced by AI</li>
 </ul>
 <h3>Dictionaries</h3>
 <ul>

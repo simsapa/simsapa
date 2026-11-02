@@ -151,9 +151,9 @@ struct FragmentInfo {
     /// The `suttas.uid` the import wrote, e.g. `mn11.att/pli/cst`.
     uid: String,
     title: String,
-    /// The fragment's own title plus its group levels' titles, normalized --
-    /// the set a toc leaf's title is matched against.
-    match_titles: HashSet<String>,
+    /// The titles a toc leaf's title is matched against, normalized, most
+    /// specific first. See [`fragment_match_titles`].
+    match_titles: Vec<String>,
 }
 
 impl CstSpineBuilder {
@@ -494,7 +494,7 @@ impl CstSpineBuilder {
 
         let mut current: Option<usize> = None;
         for fragment in fragments {
-            let matched = fragment.match_titles.iter().find_map(|t| titles.get(t).copied());
+            let matched = first_matching_leaf(&fragment.match_titles, &titles);
             match matched.or(current) {
                 Some(index) => {
                     current = Some(index);
@@ -901,6 +901,45 @@ fn adjacent_record(assigned: &[Vec<FragmentInfo>], index: usize) -> Option<Strin
         .map(|fragment| fragment.uid.clone())
 }
 
+/// The titles a fragment is matched to a toc leaf by, normalized, most specific
+/// first: the fragment's own title, then its group levels from the deepest up.
+///
+/// The group levels carry the vagga / saṃyutta the fragment sits in, which is
+/// what a toc leaf usually names. The fragment's own title is matched too: two
+/// Dīgha suttas have an empty group-level title and would otherwise match
+/// nothing.
+///
+/// The order decides the leaf when two titles name one each:
+/// `an1.575-615.att` sits in the paṇṇāsaka "16. Ekadhammapāḷi" and the vagga
+/// "19. Kāyagatāsativaggavaṇṇanā", and the toc has a leaf for both. The vagga
+/// is the right one. It must be an order, never a set: a set's iteration order
+/// changes from run to run, and so did the tree.
+fn fragment_match_titles(title: &str, group_levels: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |t: &str| {
+        let t = normalize_title(t);
+        if !t.is_empty() && !out.contains(&t) {
+            out.push(t);
+        }
+    };
+
+    push(title);
+    if let Ok(levels) = serde_json::from_str::<Vec<serde_json::Value>>(group_levels) {
+        for level in levels.iter().rev() {
+            if let Some(t) = level.get("title").and_then(|v| v.as_str()) {
+                push(t);
+            }
+        }
+    }
+    out
+}
+
+/// The index of the toc leaf named by the first of `match_titles` that names
+/// any, given the leaves' normalized titles.
+fn first_matching_leaf(match_titles: &[String], leaf_titles: &HashMap<String, usize>) -> Option<usize> {
+    match_titles.iter().find_map(|t| leaf_titles.get(t).copied())
+}
+
 /// Normalized for the toc-leaf join: trimmed, and with the two niggahita
 /// spellings folded together, because the toc and the fragments do not always
 /// agree on which one they use.
@@ -963,23 +1002,7 @@ fn load_fragments(
         }
         let title = fragment_title(cst_sutta.as_deref(), &group_levels);
 
-        let mut match_titles: HashSet<String> = HashSet::new();
-        if !title.is_empty() {
-            match_titles.insert(normalize_title(&title));
-        }
-        // The group levels carry the vagga / saṃyutta the fragment sits in,
-        // which is what a toc leaf usually names. The fragment's own title is
-        // matched too: two Dīgha suttas have an empty group-level title and
-        // would otherwise match nothing.
-        if let Ok(levels) = serde_json::from_str::<Vec<serde_json::Value>>(&group_levels) {
-            for level in levels {
-                if let Some(t) = level.get("title").and_then(|v| v.as_str()) {
-                    if !t.trim().is_empty() {
-                        match_titles.insert(normalize_title(t));
-                    }
-                }
-            }
-        }
+        let match_titles = fragment_match_titles(&title, &group_levels);
 
         fragments.entry(cst_file.clone()).or_default().push(FragmentInfo {
             uid,
@@ -1029,6 +1052,47 @@ mod tests {
         assert!(!titles_are_equivalent("   ", "anything"));
     }
     use super::*;
+
+    #[test]
+    fn a_fragment_matches_its_most_specific_toc_leaf() {
+        let group_levels = r#"[{"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null},{"group_type":"Book","group_number":null,"title":"Ekakanipāta-aṭṭhakathā","id":"an1"},{"group_type":"Pannasaka","group_number":null,"title":"16. Ekadhammapāḷi","id":null},{"group_type":"Vagga","group_number":null,"title":"19. Kāyagatāsativaggavaṇṇanā","id":"an1_19"}]"#;
+
+        // Own title first, then the levels from the deepest up, once each.
+        let titles = fragment_match_titles("19. Kāyagatāsativaggavaṇṇanā", group_levels);
+        assert_eq!(
+            titles,
+            vec![
+                "19. Kāyagatāsativaggavaṇṇanā",
+                "16. Ekadhammapāḷi",
+                "Ekakanipāta-aṭṭhakathā",
+                "Aṅguttaranikāye",
+            ]
+        );
+
+        let leaves: HashMap<String, usize> = [
+            "16. Ekadhammapāḷi",
+            "17. Pasādakaradhammavaggavaṇṇanā",
+            "18. Aparaaccharāsaṅghātavaggavaṇṇanā",
+            "19. Kāyagatāsativaggavaṇṇanā",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (normalize_title(t), i))
+        .collect();
+
+        // The vagga, not the paṇṇāsaka, and the same on every call.
+        for _ in 0..50 {
+            assert_eq!(first_matching_leaf(&titles, &leaves), Some(3));
+        }
+
+        // With no own title, the deepest group level still wins.
+        let titles = fragment_match_titles("", group_levels);
+        assert_eq!(first_matching_leaf(&titles, &leaves), Some(3));
+
+        // A fragment whose vagga has no leaf falls to the paṇṇāsaka.
+        let titles = fragment_match_titles("20. Amatavaggavaṇṇanā", &group_levels.replace("19. Kāyagatāsativaggavaṇṇanā", "20. Amatavaggavaṇṇanā"));
+        assert_eq!(first_matching_leaf(&titles, &leaves), Some(0));
+    }
 
     #[test]
     fn parses_nested_branches_and_leaves() {
