@@ -8,6 +8,8 @@ use indexmap::IndexMap;
 use regex::Regex;
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
+
+use crate::footnotes::{definitions_html, insert_markers, parse_comment_value, CommentValue, Footnote};
 use html_escape::decode_html_entities;
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
@@ -2666,7 +2668,21 @@ fn generate_reference_anchor(segment_key: &str) -> String {
     }
 }
 
+/// The processed segments of a Bilara text, and the footnotes whose
+/// references were placed in them, in reading order.
+#[derive(Debug, Clone, Default)]
+pub struct BilaraSegments {
+    pub segments: IndexMap<String, String>,
+    pub footnotes: Vec<Footnote>,
+}
+
 /// Converts Bilara text JSON data into an IndexMap of processed HTML segments, preserving insertion order.
+///
+/// Comments become numbered footnotes (see `crate::footnotes`): a reference is
+/// placed in the segment text, with ids prefixed by `footnote_id_prefix`, and
+/// the note is returned in `footnotes` for the caller to list after the text.
+/// A plain SuttaCentral comment is numbered 1, 2, 3… in segment order and
+/// placed at the end of its segment.
 #[allow(clippy::too_many_arguments)]
 pub fn bilara_text_to_segments(
     content_json_str: &str,
@@ -2677,7 +2693,8 @@ pub fn bilara_text_to_segments(
     show_variant_readings: bool,
     show_glosses: bool,
     show_references: bool,
-) -> Result<IndexMap<String, String>> {
+    footnote_id_prefix: &str,
+) -> Result<BilaraSegments> {
     // Parse the JSON strings into IndexMaps to preserve insertion order
     let mut content_json: IndexMap<String, String> = serde_json::from_str(content_json_str)
         .with_context(|| format!("Failed to parse content JSON: '{}'", content_json_str))?;
@@ -2709,11 +2726,30 @@ pub fn bilara_text_to_segments(
     // However, collecting keys is safer if logic becomes more complex.
     let keys: Vec<String> = content_json.keys().cloned().collect();
 
+    let mut footnotes: Vec<Footnote> = Vec::new();
+    let mut plain_comment_number: u32 = 0;
+
     for i in keys {
         // Get the original content, update it, and put it back.
         // Need to handle the case where the key might have been removed, though unlikely here.
-        if let Some(original_content) = content_json.get(&i).cloned() {
+        if let Some(mut original_content) = content_json.get(&i).cloned() {
             let mut segment_additions = String::new();
+
+            // Footnote references go into the segment text itself (after a
+            // word, or at the segment's end), before the variant and gloss
+            // marks are appended.
+            if let Some(ref comments) = comment_json
+                && let Some(value) = comments.get(&i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    let notes = match parse_comment_value(value) {
+                        CommentValue::Footnotes(notes) => notes,
+                        CommentValue::Plain(text) => {
+                            plain_comment_number += 1;
+                            vec![Footnote { number: plain_comment_number, word_index: None, editor: false, html: text }]
+                        }
+                    };
+                    original_content = insert_markers(&original_content, &notes, footnote_id_prefix);
+                    footnotes.extend(notes);
+                }
 
             // Append Variant HTML
             if let Some(ref variants) = variant_json
@@ -2726,14 +2762,6 @@ pub fn bilara_text_to_segments(
                                         <span class='{}'>({})</span>
                                     </span>"#,
                                     classes.join(" "), txt);
-                    segment_additions.push_str(&s);
-                }
-
-            // Append Comment HTML
-            if let Some(ref comments) = comment_json
-                && let Some(txt) = comments.get(&i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                    let s = format!(r#"<span class='comment-wrap'><span class='mark'>✱</span><span class='comment hide'>({})</span></span>"#,
-                                    txt);
                     segment_additions.push_str(&s);
                 }
 
@@ -2795,8 +2823,7 @@ pub fn bilara_text_to_segments(
         }
     }
 
-    // Return the modified IndexMap
-    Ok(content_json)
+    Ok(BilaraSegments { segments: content_json, footnotes })
 }
 
 /// Converts an IndexMap of processed HTML segments into a single HTML string, preserving insertion order.
@@ -2812,6 +2839,17 @@ pub fn bilara_content_json_to_html_with_class(
     content_json: &IndexMap<String, String>,
     wrapper_extra_classes: &str,
     pre_content_html: &str,
+) -> Result<String> {
+    bilara_content_json_to_html_full(content_json, wrapper_extra_classes, pre_content_html, "")
+}
+
+/// Like `bilara_content_json_to_html_with_class`, with HTML emitted inside the
+/// wrapper after the article content (the footnote definitions).
+pub fn bilara_content_json_to_html_full(
+    content_json: &IndexMap<String, String>,
+    wrapper_extra_classes: &str,
+    pre_content_html: &str,
+    post_content_html: &str,
 ) -> Result<String> {
     // IndexMap preserves insertion order from JSON, so no custom sorting needed
     let page: String = content_json
@@ -2829,7 +2867,7 @@ pub fn bilara_content_json_to_html_with_class(
         format!("suttacentral bilara-text {}", wrapper_extra_classes)
     };
 
-    let content_html = format!("<div class='{}'>{}{}</div>", wrapper_classes, pre_content_html, processed_body);
+    let content_html = format!("<div class='{}'>{}{}{}</div>", wrapper_classes, pre_content_html, processed_body, post_content_html);
 
     Ok(content_html)
 }
@@ -2844,6 +2882,10 @@ pub struct ColumnSource {
     pub label: String,
     pub is_pali: bool,
     pub segments: IndexMap<String, String>,
+    /// The notes whose references are in `segments`, listed after the grid.
+    pub footnotes: Vec<Footnote>,
+    /// The footnote id prefix used for this column's references.
+    pub footnote_id_prefix: String,
 }
 
 /// Creates the multi-column sutta view combining the segments of N column
@@ -2948,7 +2990,14 @@ pub fn bilara_multi_column_html(
         String::new()
     };
 
-    bilara_content_json_to_html_with_class(&content_json, &wrapper_extra_classes, &header_html)
+    // One notes list per column that has notes, after the grid, headed by the
+    // column label: each column numbers its own notes.
+    let notes_html: String = columns
+        .iter()
+        .map(|col| definitions_html(&col.footnotes, &col.footnote_id_prefix, Some(&col.label)))
+        .collect();
+
+    bilara_content_json_to_html_full(&content_json, &wrapper_extra_classes, &header_html, &notes_html)
 }
 
 /// Unaligned block-columns fallback for column sets that include a
@@ -2985,7 +3034,7 @@ pub fn bilara_text_to_html(
     show_glosses: bool,
     show_references: bool,
 ) -> Result<String> {
-    let content_json = bilara_text_to_segments(
+    let rendered = bilara_text_to_segments(
         content_json_str,
         Some(tmpl_json_str),
         variant_json_str,
@@ -2994,9 +3043,10 @@ pub fn bilara_text_to_html(
         show_variant_readings,
         show_glosses,
         show_references,
+        "",
     )?;
 
-    bilara_content_json_to_html(&content_json)
+    bilara_content_json_to_html_full(&rendered.segments, "", "", &definitions_html(&rendered.footnotes, "", None))
 }
 
 /// Remove duplicates based on title and uid
@@ -5494,6 +5544,8 @@ mod tests {
                 ("mn1:1.1".to_string(), words[0].to_string()),
                 ("mn1:1.2".to_string(), words[1].to_string()),
             ]),
+            footnotes: Vec::new(),
+            footnote_id_prefix: String::new(),
         }
     }
 
@@ -7646,5 +7698,28 @@ mod tests {
         let html = r#"<a href="https://example.com/test.html">test</a>"#;
         let result = thebuddhaswords_net_convert_links_in_html(html);
         assert_eq!(html, result);
+    }
+
+    /// Footnote text never reaches `content_plain`: the bootstrap renders the
+    /// plain text with no comments, and with comments the note text is only in
+    /// the notes list after the article, never in the article itself.
+    #[test]
+    fn test_footnote_text_stays_out_of_article_text() {
+        let json = r#"{"dummy1:1.1": "So I have heard. ", "dummy1:1.2": "At one time."}"#;
+        let tmpl = r#"{"dummy1:1.1": "<article id='dummy1'><p>{}", "dummy1:1.2": "{}</p></article>"}"#;
+        let comments = r#"{"dummy1:1.1": "A plain comment NOTEPLAIN.", "dummy1:1.2": "<span class='ssp-fn' data-n='4' data-w='1'>A new-form note NOTENEW.</span>"}"#;
+
+        let plain = sutta_html_to_plain_text(&bilara_text_to_html(json, tmpl, None, None, None, false, false, false).unwrap());
+        assert!(plain.contains("heard"));
+        assert!(!plain.contains("NOTE"));
+
+        let html = bilara_text_to_html(json, tmpl, None, Some(comments), None, false, false, false).unwrap();
+        let (article, notes) = html.split_once("<section class='ssp-footnotes'>").expect("notes list after the article");
+        assert!(!sutta_html_to_plain_text(article).contains("NOTE"));
+        assert!(notes.contains("NOTEPLAIN") && notes.contains("NOTENEW"));
+        // The plain comment is note 1 at its segment's end; the new-form note
+        // keeps its number and follows word 1.
+        assert!(article.contains("So I have heard.<span class='footnote-reference'><a href='#fn-1' id='fr-1'>1</a></span> "));
+        assert!(article.contains("At one<span class='footnote-reference'><a href='#fn-4' id='fr-4'>4</a></span> time."));
     }
 }

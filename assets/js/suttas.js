@@ -274,13 +274,6 @@ function toggle_variant (event) {
     })
 }
 
-function toggle_comment (event) {
-    let el = event.target;
-    el.parentNode.querySelectorAll(".comment").forEach((i) => {
-        i.classList.toggle("hide");
-    })
-}
-
 class ReadingModeController {
     constructor() {
         this.readingModeButton = document.getElementById('readingModeButton');
@@ -816,9 +809,6 @@ document.addEventListener("DOMContentLoaded", function(_event) {
 function ssp_rebind_content_handlers() {
     document.querySelectorAll(".variant-wrap .mark").forEach((i) => {
         i.addEventListener("click", toggle_variant);
-    });
-    document.querySelectorAll(".comment-wrap .mark").forEach((i) => {
-        i.addEventListener("click", toggle_comment);
     });
 }
 window.ssp_rebind_content_handlers = ssp_rebind_content_handlers;

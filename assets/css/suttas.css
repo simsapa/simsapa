@@ -423,23 +423,23 @@ div.btn a, span.btn a {
 .suttacentral footer span.publication-date {
   font-style: italic;
 }
-.suttacentral .variant-wrap, .suttacentral .comment-wrap {
+.suttacentral .variant-wrap {
   text-transform: none;
   font-variant: normal;
   font-size: 1rem;
   letter-spacing: normal;
   word-spacing: normal;
 }
-.suttacentral .variant-wrap .mark, .suttacentral .comment-wrap .mark {
+.suttacentral .variant-wrap .mark {
   font-size: 0.6em;
   position: relative;
   top: -0.1em;
   padding: 3px;
 }
-.suttacentral .variant-wrap .mark:hover, .suttacentral .comment-wrap .mark:hover {
+.suttacentral .variant-wrap .mark:hover {
   border-bottom: 2px solid black;
 }
-.suttacentral .variant, .suttacentral .comment {
+.suttacentral .variant {
   font-size: 0.8rem;
 }
 
@@ -1724,6 +1724,63 @@ body.dark {
     font-size: 0.7rem;
   }
 }
+.footnote-column-label {
+  margin-right: 0.3em;
+  font-weight: normal;
+  opacity: 0.8;
+}
+
+.footnote-number {
+  white-space: nowrap;
+}
+
+.footnote-item.ssp-fn-editor .footnote-content,
+.ssp-footnotes li.ssp-fn-editor {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.footnote-reference a[data-n],
+.fn a[data-n] {
+  text-decoration: none;
+}
+
+.footnote-reference a[data-n]::after,
+.fn a[data-n]::after {
+  content: "[" attr(data-n) "]";
+}
+
+span.footnote-reference a[data-n] {
+  line-height: 0;
+}
+
+span.footnote-reference a[data-n]::after {
+  font-size: 0.65em;
+  vertical-align: super;
+}
+
+.ssp-footnotes {
+  margin-top: 2em;
+  padding-top: 0.5em;
+  border-top: 1px solid var(--footnote-bar-border);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.ssp-footnotes h2 {
+  font-size: 1em;
+  font-weight: bold;
+  padding-top: 0;
+}
+
+.ssp-footnotes ol {
+  padding-left: 2em;
+}
+
+.ssp-footnotes li {
+  margin-bottom: 0.5em;
+}
+
 #ssp_content {
   transition: padding-bottom 0.3s ease;
 }

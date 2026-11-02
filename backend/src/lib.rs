@@ -11,6 +11,7 @@ pub mod cst_files;
 pub mod opentipitaka;
 pub mod pali_edition;
 pub mod sutta_uid_renames;
+pub mod footnotes;
 pub mod fulltext_status;
 pub mod html_content;
 pub mod dir_list;

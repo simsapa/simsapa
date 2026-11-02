@@ -1,7 +1,7 @@
 import * as h from "./helpers";
 import { findManager } from "./find";
 import "./confirm_modal";
-import "./footnote_modal";
+import { normalise_footnote_markers } from "./footnote_modal";
 import "./invalid_link_modal";
 import { footnote_bottom_bar } from "./footnote_bottom_bar";
 import * as display_settings from "./display_settings";
@@ -170,6 +170,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // after the page loads to scroll to a cited paragraph. Registered on every
     // page; it simply misses on one with no matching segment id.
     anchor_jump.init_anchor_jump();
+
+    // Footnote numbers move into data-n before the bar observes the links
+    // (the bar and the pop-up read the number from there).
+    normalise_footnote_markers(document);
 
     // Initialize footnote bottom bar for sutta pages if enabled
     const sspContent = document.getElementById('ssp_content');

@@ -120,13 +120,47 @@ class FootnoteModal {
 // Export singleton instance
 export const footnote_modal = new FootnoteModal();
 
+/** The footnote reference links of every markup source on a page. */
+export const FOOTNOTE_LINK_SELECTOR = '.footnote-reference a[href^="#"], .fn a[href^="#"]';
+
 /**
- * Extract footnote number from link text
- * Handles formats like "9", "[2]", etc.
+ * The number of a footnote reference: its `data-n` attribute (set by
+ * `normalise_footnote_markers()`), else its text with brackets removed
+ * ("9", "[2]").
  */
-export function extract_footnote_number(link_text: string): string {
-    // Remove brackets if present
-    return link_text.replace(/[\[\]]/g, '').trim();
+export function extract_footnote_number(anchor: HTMLAnchorElement): string {
+    const n = anchor.getAttribute('data-n');
+    if (n !== null && n !== '') {
+        return n;
+    }
+    return (anchor.textContent || '').replace(/[\[\]]/g, '').trim();
+}
+
+/**
+ * Moves each footnote reference's number from its text into `data-n`, and
+ * empties the text; CSS draws it (`::after { content: "[" attr(data-n) "]" }`).
+ * With the numbers out of the text nodes, the find bar matches across a marker
+ * (`disappeared:` in `disappeared²:`) and copied sutta text has no numbers.
+ *
+ * Covers every markup source: `span.fn` (dhammatalks.org pages),
+ * `sup.footnote-reference` (Nyanadipa, library books) and
+ * `span.footnote-reference` (segmented texts). Idempotent: a link that already
+ * has `data-n` is left alone. Run it before the footnote bar observes the
+ * links, on page load and after every content swap.
+ */
+export function normalise_footnote_markers(root: ParentNode = document): void {
+    root.querySelectorAll(FOOTNOTE_LINK_SELECTOR).forEach(link => {
+        const anchor = link as HTMLAnchorElement;
+        if (anchor.hasAttribute('data-n') || !is_footnote_link(anchor)) {
+            return;
+        }
+        const n = (anchor.textContent || '').replace(/[\[\]]/g, '').trim();
+        if (n === '') {
+            return;
+        }
+        anchor.setAttribute('data-n', n);
+        anchor.textContent = '';
+    });
 }
 
 /**
@@ -222,8 +256,7 @@ export function show_footnote(anchor: HTMLAnchorElement): boolean {
         return false;
     }
 
-    const link_text = anchor.textContent || '';
-    const footnote_number = extract_footnote_number(link_text);
+    const footnote_number = extract_footnote_number(anchor);
 
     footnote_modal.show(footnote_number, footnote_content);
     return true;

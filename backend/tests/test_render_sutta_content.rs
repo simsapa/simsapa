@@ -204,9 +204,9 @@ fn test_sn56_11_html_format_validation() {
 // Suttas with comments in the database (comments are part of the data but may not be visible in rendered HTML depending on view mode):
 // - mn1/en/sujato, dn22/en/sujato, dhp290-305/en/sujato, snp1.8/en/sujato, pli-tv-bu-vb-pj4/en/brahmali
 //
-// Note: Comments are rendered with class 'comment hide' and are toggled via JavaScript.
-// The presence of comment-wrap elements (in CSS/JS) indicates the comment infrastructure is present.
-// Actual comment content rendering depends on the view mode (line-by-line vs standard) and user settings.
+// Comments are rendered as numbered footnotes: a `span.footnote-reference` at the
+// end of the segment, and a `section.ssp-footnotes` notes list after the text
+// (see backend/src/footnotes.rs).
 
 /// Helper function to render sutta and extract ssp_content div
 fn render_and_extract_article(sutta_uid: &str) -> String {

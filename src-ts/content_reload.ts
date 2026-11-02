@@ -8,6 +8,7 @@
 
 import * as h from "./helpers";
 import { footnote_bottom_bar } from "./footnote_bottom_bar";
+import { normalise_footnote_markers } from "./footnote_modal";
 import * as ds from "./display_settings";
 
 export function build_content_block_url(
@@ -31,9 +32,10 @@ export function build_content_block_url(
  * Re-run whatever is bound to content nodes on page load, after an
  * #ssp_content innerHTML swap:
  * - link handlers (webpack bundle);
- * - the footnote bottom bar's IntersectionObserver;
+ * - the footnote markers (numbers into data-n) and the footnote bottom
+ *   bar's IntersectionObserver;
  * - find-bar highlight state (the old highlight spans were replaced);
- * - the inlined suttas.js per-node bindings (variant/comment marks), via
+ * - the inlined suttas.js per-node bindings (variant marks), via
  *   its window.ssp_rebind_content_handlers() entry point;
  * - the display-settings CSS custom properties (per-column color vars follow
  *   the current column list).
@@ -46,6 +48,12 @@ export function reinit_sutta_content(): void {
   }
 
   try {
+    // The swapped content's footnote numbers move into data-n before the
+    // bar observes it.
+    const content = document.getElementById("ssp_content");
+    if (content) {
+      normalise_footnote_markers(content);
+    }
     if (ssp && ssp.show_bottom_footnotes) {
       footnote_bottom_bar.refresh();
     }
