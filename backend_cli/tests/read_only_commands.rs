@@ -470,3 +470,10 @@ fn test_incompatible_databases_write_command_refuses() {
     assert!(err.contains("not compatible"), "stderr: {err}");
     assert!(err.contains("Run `simsapa setup` to install the new databases first"), "stderr: {err}");
 }
+
+#[test]
+fn test_search_unknown_pali_edition_is_a_usage_error() {
+    let out = simsapa(&["search", "suttas", "anicca", "--pali-edition", "nonsense"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("possible values: ms, cst, both"));
+}

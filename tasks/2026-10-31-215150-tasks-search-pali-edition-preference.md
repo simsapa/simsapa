@@ -24,15 +24,15 @@ Backend:
 - `backend/src/search/schema.rs`, `backend/src/search/indexer.rs`, `backend/src/search/types.rs` - The `has_other_edition` field, `INDEX_VERSION`, and `SearchFilters`.
 - `backend/src/types.rs` - `SearchParams`.
 - `backend/src/cli_support.rs` - `Both` for the English-only `query` command.
-- `api/src/helpers.rs` - `pali_edition` in `build_search_params` (default for now; task 5.2 sets it from the request).
+- `api/src/helpers.rs` - `parse_pali_edition()`, `pali_edition` in `build_search_params`, validation in `run_suttas_search` / `run_api_search`, with tests.
 
 Front end:
 
 - `bridges/assets/qml/SuttaSearchWindow.qml` - The edition preference in the advanced options.
 - `bridges/src/sutta_bridge.rs`, `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - The preference's getter and setter, and the `qmllint` stub. `Both` for the Database Validation search check, `params.pali_edition` for the debug query.
-- `api/src/helpers.rs`, `api/src/routes/search.rs` - The `pali_edition` request field, and its validation.
+- `api/src/routes/search.rs` - The named sutta routes answer HTTP 400 to an unknown `pali_edition`.
 - `backend_cli/src/commands/search.rs`, `backend_cli/src/commands/query.rs`, `backend/src/cli_support.rs` - The `--pali-edition` option.
-- `backend_cli/tests/read_only_commands.rs` - Mentions `pli/cst`.
+- `backend_cli/tests/read_only_commands.rs` - An unknown `--pali-edition` is rejected.
 
 Docs:
 
@@ -140,13 +140,13 @@ Depends on: 2.0, 3.0.
 
 Depends on: 3.0.
 
-- [ ] 5.0 Add the option to the API and the CLI
-  - [ ] 5.1 Add `pali_edition: Option<String>` to `ApiSearchRequest`, and `parse_pali_edition()` beside `parse_search_mode()` in `api/src/helpers.rs`, accepting `ms`, `cst` and `both`. Validate it where the mode and area are validated (`helpers.rs:457`, `:464`), and in the named sutta routes, so that an unknown value is HTTP 400 on all of them. The Dictionary area ignores it.
-  - [ ] 5.2 In `build_search_params`, set `pali_edition` from the request, with `ms` when absent. Do not read `AppSettings` (FR-8).
-  - [ ] 5.3 Add `--pali-edition <ms|cst|both>` to `SearchArgs` in `backend_cli/src/commands/search.rs`, as a clap `ValueEnum`, and pass it in `api_request()`.
-  - [ ] 5.4 Add the same option to `FulltextSearchArgs` in `commands/query.rs`, and pass it through `cli_support::fulltext_search`, default `ms`.
-  - [ ] 5.5 Test: the default gives `ms`, each value gives its result, and an unknown value is a 400 on `POST /search` and a named route. Add a `backend_cli` test for the flag. Check `backend_cli/tests/read_only_commands.rs`, which mentions `pli/cst`, and any other test that expects a CST mūla record from a default search.
-  - [ ] 5.6 Run `cd api && cargo test` and `cd backend_cli && cargo test`.
+- [x] 5.0 Add the option to the API and the CLI
+  - [x] 5.1 Add `pali_edition: Option<String>` to `ApiSearchRequest`, and `parse_pali_edition()` beside `parse_search_mode()` in `api/src/helpers.rs`, accepting `ms`, `cst` and `both`. Validate it where the mode and area are validated (`helpers.rs:457`, `:464`), and in the named sutta routes, so that an unknown value is HTTP 400 on all of them. The Dictionary area ignores it.
+  - [x] 5.2 In `build_search_params`, set `pali_edition` from the request, with `ms` when absent. Do not read `AppSettings` (FR-8).
+  - [x] 5.3 Add `--pali-edition <ms|cst|both>` to `SearchArgs` in `backend_cli/src/commands/search.rs`, as a clap `ValueEnum`, and pass it in `api_request()`.
+  - [x] 5.4 Add the same option to `FulltextSearchArgs` in `commands/query.rs`, and pass it through `cli_support::fulltext_search`, default `ms`.
+  - [x] 5.5 Test: the default gives `ms`, each value gives its result, and an unknown value is a 400 on `POST /search` and a named route. Add a `backend_cli` test for the flag. Check `backend_cli/tests/read_only_commands.rs`, which mentions `pli/cst`, and any other test that expects a CST mūla record from a default search.
+  - [x] 5.6 Run `cd api && cargo test` and `cd backend_cli && cargo test`.
 
 ### Specs for 6.0
 

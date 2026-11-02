@@ -30,6 +30,27 @@ impl SearchAreaArg {
     }
 }
 
+/// The edition to show of a Pāli text that is in both. Shared with
+/// `simsapa fulltext-search`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PaliEditionArg {
+    #[default]
+    Ms,
+    Cst,
+    Both,
+}
+
+impl PaliEditionArg {
+    /// The `pali_edition` value `POST /search` takes.
+    pub fn api_label(self) -> &'static str {
+        match self {
+            PaliEditionArg::Ms => "ms",
+            PaliEditionArg::Cst => "cst",
+            PaliEditionArg::Both => "both",
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 pub struct SearchArgs {
     /// Where to search
@@ -78,6 +99,11 @@ pub struct SearchArgs {
     /// Suttas and library: leave out snippets containing this text (repeatable)
     #[arg(long, value_name = "TEXT")]
     pub snippet_exclude: Vec<String>,
+
+    /// Suttas and library: which edition to show of a Pāli text that is in
+    /// both Mahāsaṅgīti and CST
+    #[arg(long, value_enum, default_value_t = PaliEditionArg::Ms)]
+    pub pali_edition: PaliEditionArg,
 }
 
 /// The `POST /search` body these arguments stand for. `page` is 1-based here
@@ -93,6 +119,7 @@ pub fn api_request(args: &SearchArgs) -> ApiSearchRequest {
         search_area: Some(args.area.api_label().to_string()),
         page_len: Some(args.page_len as i32),
         show_all_snippets: Some(args.all_snippets),
+        pali_edition: Some(args.pali_edition.api_label().to_string()),
         snippet_exclude: if args.snippet_exclude.is_empty() { None } else { Some(args.snippet_exclude.clone()) },
         ..Default::default()
     };
@@ -197,6 +224,16 @@ mod tests {
     fn test_snippet_excludes_repeat() {
         let req = api_request(&parse(&["suttas", "x", "--snippet-exclude", "a", "--snippet-exclude", "b c"]));
         assert_eq!(req.snippet_exclude, Some(vec!["a".to_string(), "b c".to_string()]));
+    }
+
+    #[test]
+    fn test_pali_edition_defaults_to_ms_and_takes_each_value() {
+        assert_eq!(api_request(&parse(&["suttas", "x"])).pali_edition.as_deref(), Some("ms"));
+        for v in ["ms", "cst", "both"] {
+            let req = api_request(&parse(&["suttas", "x", "--pali-edition", v]));
+            assert_eq!(req.pali_edition.as_deref(), Some(v));
+        }
+        assert!(T::try_parse_from(["t", "suttas", "x", "--pali-edition", "nonsense"]).is_err());
     }
 
     #[test]

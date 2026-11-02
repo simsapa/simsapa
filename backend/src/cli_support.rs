@@ -112,6 +112,7 @@ pub fn fulltext_search(
     limit: usize,
     lang: Option<&str>,
     source: Option<&str>,
+    pali_edition: PaliEditionPreference,
 ) -> Result<(usize, Vec<SearchResult>)> {
     let searcher = FulltextSearcher::open(paths)
         .map_err(|e| anyhow!("Failed to open fulltext indexes: {}", e))?;
@@ -128,7 +129,7 @@ pub fn fulltext_search(
         include_cst_mula: true,
         include_cst_commentary: true,
         include_ms_mula: true,
-        pali_edition: Default::default(),
+        pali_edition,
         include_bold_definitions: true,
         dict_source_uids: None,
         show_all_snippets: false,
