@@ -17,7 +17,7 @@ Backend:
 - `backend/src/pali_edition.rs` (new) - `edition_to_hide()` (when the filter applies), the table presence check (cached once per process), `load_twins()`, and `hide_twins_sql()`, the one SQL condition.
 - `backend/src/lib.rs` - Registers `pali_edition`.
 - `backend/src/query_task.rs` - `pali_edition` on `SearchQueryTask`, `hidden_pali_edition()` and `filter_pali_edition()`, used by Title Match and Contains Match, with their tests (`pali_edition_tests`).
-- `backend/tests/test_pali_edition_uid_match.rs` (new) - Uid Match finds either edition under every preference.
+- `backend/tests/test_pali_edition_uid_match.rs` (new) - An explicit uid finds either edition under every preference; a bare reference follows it.
 - `backend/tests/test_pali_edition_filter.rs` (new) - Contains Match and Title Match apply the preference, through the queries the app runs, on `dummy-` records.
 - `backend/tests/*.rs` (struct literals) - `pali_edition: Default::default()` added to every `SearchParams` / `SearchFilters` literal.
 - `backend/src/search/searcher.rs` - The Tantivy edition filter in `add_sutta_filters`, skipped (logged once) on an index without the field, with tests.
@@ -130,11 +130,11 @@ The SQL reads the edition from the uid suffix, not from `s.source_uid` as first 
 
 Depends on: 2.0, 3.0.
 
-- [ ] 4.0 Add the preference to the GUI
-  - [ ] 4.1 Add `get_pali_edition_preference()` and `set_pali_edition_preference()` to `AppData` and `SuttaBridge`, passing `ms`, `cst` or `both` as a string, with the `qmllint` stub in `SuttaBridge.qml`.
-  - [ ] 4.2 In `SuttaSearchWindow.qml`, pass `pali_edition` in the params at line 899. In the advanced options, after the CST checkbox, add a `ComboBox` labelled `Text in both editions`, with `MS`, `CST` and `Both`, and an info button like its neighbours. Use `onActivated`, call `advanced_options_changed()`, and set `enabled: include_ms_mula_checkbox.checked && include_cst_mula_checkbox.checked`.
-  - [ ] 4.3 Update the CST checkbox's info text if it mentions duplicates.
-  - [ ] 4.4 Run `make build -B` and `make qml-lint`.
+- [x] 4.0 Add the preference to the GUI
+  - [x] 4.1 Add `get_pali_edition_preference()` and `set_pali_edition_preference()` to `AppData` and `SuttaBridge`, passing `ms`, `cst` or `both` as a string, with the `qmllint` stub in `SuttaBridge.qml`.
+  - [x] 4.2 In `SuttaSearchWindow.qml`, pass `pali_edition` in the params at line 899. In the advanced options, after the CST checkbox, add a `ComboBox` labelled `Text in both editions`, with `MS`, `CST` and `Both`, and an info button like its neighbours. Use `onActivated`, call `advanced_options_changed()`, and set `enabled: include_ms_mula_checkbox.checked && include_cst_mula_checkbox.checked`.
+  - [x] 4.3 Update the CST checkbox's info text if it mentions duplicates.
+  - [x] 4.4 Run `make build -B` and `make qml-lint`.
 
 ### Specs for 5.0
 

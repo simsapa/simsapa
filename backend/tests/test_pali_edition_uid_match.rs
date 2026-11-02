@@ -1,4 +1,5 @@
-//! Uid Match names one record, so the Pāli edition preference never hides it.
+//! A uid that names an edition names one record, so the Pāli edition preference
+//! never hides it. A bare reference (`mn1`) names a text, and follows the preference.
 //!
 //! Runs against the shipped database, whose `mn1/pli/cst` and `mn1/pli/ms` are
 //! the same text in the two editions.
@@ -35,4 +36,22 @@ fn test_uid_match_finds_either_edition_under_every_preference() {
         assert_eq!(uid_search("uid:mn1/pli/cst", pref), ["mn1/pli/cst"], "preference {:?}", pref);
         assert_eq!(uid_search("uid:mn1/pli/ms", pref), ["mn1/pli/ms"], "preference {:?}", pref);
     }
+}
+
+/// A bare reference names a text, not a record, so the preference picks the
+/// edition of it that is shown. Needs `pali_edition_twins` filled, which the
+/// CST import does.
+#[test]
+#[serial]
+fn test_bare_reference_follows_the_preference() {
+    h::app_data_setup();
+
+    let mn1 = |pref| -> Vec<String> {
+        uid_search("mn1", pref).into_iter().filter(|u| u.starts_with("mn1/pli/")).collect()
+    };
+    assert_eq!(mn1(PaliEditionPreference::Ms), ["mn1/pli/ms"]);
+    assert_eq!(mn1(PaliEditionPreference::Cst), ["mn1/pli/cst"]);
+    let mut both = mn1(PaliEditionPreference::Both);
+    both.sort();
+    assert_eq!(both, ["mn1/pli/cst", "mn1/pli/ms"]);
 }

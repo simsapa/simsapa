@@ -1556,6 +1556,12 @@ pub mod qobject {
         fn set_include_cst_commentary_in_translations(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         #[qinvokable]
+        fn get_pali_edition_preference(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_pali_edition_preference(self: Pin<&mut SuttaBridge>, value: &QString);
+
+        #[qinvokable]
         fn get_include_cst_mula_in_search_results(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
@@ -5147,6 +5153,16 @@ impl qobject::SuttaBridge {
     pub fn set_include_cst_commentary_in_translations(self: Pin<&mut Self>, enabled: bool) {
         let app_data = get_app_data();
         app_data.set_include_cst_commentary_in_translations(enabled);
+    }
+
+    pub fn get_pali_edition_preference(&self) -> QString {
+        let app_data = get_app_data();
+        QString::from(app_data.get_pali_edition_preference())
+    }
+
+    pub fn set_pali_edition_preference(self: Pin<&mut Self>, value: &QString) {
+        let app_data = get_app_data();
+        app_data.set_pali_edition_preference(&value.to_string());
     }
 
     pub fn get_include_cst_mula_in_search_results(&self) -> bool {

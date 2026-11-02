@@ -2270,6 +2270,39 @@ impl AppData {
         }
     }
 
+    /// The Pāli edition preference as `ms`, `cst` or `both`.
+    pub fn get_pali_edition_preference(&self) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.pali_edition_preference.as_str().to_string()
+    }
+
+    /// Store the preference. An unknown value is logged and ignored.
+    pub fn set_pali_edition_preference(&self, value: &str) {
+        use crate::db::appdata_schema::app_settings;
+
+        let Some(preference) = crate::app_settings::PaliEditionPreference::parse(value) else {
+            error(&format!("set_pali_edition_preference(): unknown value '{}'", value));
+            return;
+        };
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        app_settings.pali_edition_preference = preference;
+
+        let a = app_settings.clone();
+        let settings_json = serde_json::to_string(&a).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+
+        match diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            Ok(_) => (),
+            Err(e) => error(&format!("Failed to update app settings: {}", e)),
+        }
+    }
+
     pub fn get_include_cst_mula_in_search_results(&self) -> bool {
         let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
         app_settings.include_cst_mula_in_search_results

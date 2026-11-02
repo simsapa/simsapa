@@ -657,6 +657,22 @@ impl<'a> SearchQueryTask<'a> {
         }
     }
 
+    /// A reference that names no edition (`mn1`, no `/`) names a text, not a
+    /// record, so the edition preference picks which edition of it is shown.
+    /// A uid that carries an edition (`mn1/pli/cst`) names one record and is
+    /// never filtered.
+    fn filter_bare_reference<'q>(
+        &self,
+        query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
+        query_uid: &str,
+        db_conn: &mut SqliteConnection,
+    ) -> crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite> {
+        if query_uid.contains('/') {
+            return query;
+        }
+        Self::filter_pali_edition(query, self.hidden_pali_edition(db_conn))
+    }
+
     fn uid_sutta_all(&mut self) -> Result<Vec<SearchResult>, Box<dyn Error>> {
         use crate::db::appdata_schema::suttas::dsl::*;
         use diesel::result::Error as DieselError;
@@ -817,6 +833,7 @@ impl<'a> SearchQueryTask<'a> {
             query = query.filter(language.eq(&self.lang));
         }
         query = self.filter_suttas_query(query);
+        query = self.filter_bare_reference(query, query_uid, db_conn);
 
         // Execute query
         let results = query
@@ -859,6 +876,7 @@ impl<'a> SearchQueryTask<'a> {
             query = query.filter(language.eq(&self.lang));
         }
         query = self.filter_suttas_query(query);
+        query = self.filter_bare_reference(query, query_uid, db_conn);
 
         // Execute query
         let results = query

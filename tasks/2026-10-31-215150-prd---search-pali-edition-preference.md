@@ -48,7 +48,8 @@ database version.
     so there is one definition.
 7. The filter must apply in ContainsMatch, FulltextMatch, Title Match and Combined, in the GUI,
    the API and the CLI. It must **not** apply to Uid Match, which names a record: a search for
-   `mn1/pli/cst` or `mn1` must find what it names under any preference. All four uid paths
+   `mn1/pli/cst` must find what it names under any preference. A bare reference, such as
+   `mn1`, names a text and not a record, so the preference applies to it. All four uid paths
    call `filter_suttas_query`, so the edition filter must be separate from that function.
 8. The search API and the CLI must default to `ms`, like the GUI, with an option to select
    `cst` or `both`:
