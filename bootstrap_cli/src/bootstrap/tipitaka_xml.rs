@@ -40,8 +40,9 @@ use crate::bootstrap::helpers::uid_to_ref;
 use crate::bootstrap::navigation_tree::coverage_report::CstCoverageReport;
 use crate::bootstrap::navigation_tree::cst_spine::read_toc_leaves;
 use simsapa_backend::helpers::{
-    bilara_text_to_html, compact_plain_text, consistent_niggahita, pali_to_ascii,
-    sutta_html_to_plain_text, sutta_range_from_ref,
+    bilara_text_to_html, comparable_sutta_range, compact_plain_text, consistent_niggahita,
+    pali_to_ascii, split_sutta_ref_kind, sutta_html_to_plain_text, sutta_range_from_ref,
+    sutta_refs_are_related, SuttaRefKind,
 };
 use simsapa_backend::logger;
 use simsapa_backend::opentipitaka::{ot_license_footer_html, OT_AUTHOR_UID, OT_LICENSE};
@@ -76,6 +77,122 @@ pub struct SuttaRecord {
     pub license: Option<String>,
     /// Stored in `sutta_variants`, keyed by segment, for the same uid.
     pub variant_json: Option<String>,
+}
+
+/// The base reference of a uid, when the uid is a Pāli record that can have a
+/// twin in the other edition: an MS record, or a CST mūla record that is
+/// mapped to a SuttaCentral reference. A CST `.xml` record and a commentary
+/// have no comparable reference, and are never twins.
+fn twin_candidate_base(uid: &str) -> Option<&str> {
+    let (base, kind) = split_sutta_ref_kind(uid);
+    if kind != SuttaRefKind::Mula || base.ends_with(".xml") || base.is_empty() {
+        return None;
+    }
+    Some(base)
+}
+
+/// The records of `ms_uids` and `cst_uids` that are in both editions: those
+/// for which [`sutta_refs_are_related`] holds with a record of the other
+/// edition. So `an5.303/pli/ms` and `an5.303-1152/pli/cst` are both twins.
+///
+/// References are compared only within one [`comparable_sutta_range`] group,
+/// the only place two spans can overlap, so this is not a full cross product. A reference
+/// with no comparable range (`mil3.1.1`) is a twin only of the same reference.
+///
+/// Sorted and without duplicates.
+pub fn pali_edition_twins(ms_uids: &[String], cst_uids: &[String]) -> Vec<String> {
+    #[derive(Default)]
+    struct Edition<'a> {
+        by_base: HashMap<&'a str, Vec<&'a str>>,
+        by_group: HashMap<String, Vec<(&'a str, &'a str)>>,
+    }
+
+    fn index(uids: &[String]) -> Edition<'_> {
+        let mut edition = Edition::default();
+        for uid in uids {
+            let Some(base) = twin_candidate_base(uid) else { continue };
+            edition.by_base.entry(base).or_default().push(uid);
+            if let Some(range) = comparable_sutta_range(base) {
+                edition.by_group.entry(range.group).or_default().push((base, uid));
+            }
+        }
+        edition
+    }
+
+    let ms = index(ms_uids);
+    let cst = index(cst_uids);
+    let mut twins: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+
+    for (base, ms_records) in &ms.by_base {
+        if let Some(cst_records) = cst.by_base.get(base) {
+            twins.extend(ms_records.iter().copied());
+            twins.extend(cst_records.iter().copied());
+        }
+    }
+
+    for (group, ms_spans) in &ms.by_group {
+        let Some(cst_spans) = cst.by_group.get(group) else { continue };
+        for &(ms_base, ms_uid) in ms_spans {
+            for &(cst_base, cst_uid) in cst_spans {
+                if sutta_refs_are_related(ms_base, cst_base) {
+                    twins.insert(ms_uid);
+                    twins.insert(cst_uid);
+                }
+            }
+        }
+    }
+
+    twins.into_iter().map(str::to_string).collect()
+}
+
+/// Replace the contents of `pali_edition_twins` with the records of the
+/// database that are in both Pāli editions, by [`pali_edition_twins`].
+///
+/// Run at the end of the CST import, after the MS records are in, so a
+/// re-run of the import recomputes it.
+pub fn store_pali_edition_twins(conn: &mut SqliteConnection) -> Result<()> {
+    use simsapa_backend::db::appdata_schema::{pali_edition_twins, suttas};
+
+    let ms_uids: Vec<String> = suttas::table
+        .select(suttas::uid)
+        .filter(suttas::uid.like("%/pli/ms"))
+        .load(conn)
+        .context("Failed to read the MS Pāli uids")?;
+    let cst_uids: Vec<String> = suttas::table
+        .select(suttas::uid)
+        .filter(suttas::uid.like("%/pli/cst"))
+        .load(conn)
+        .context("Failed to read the CST Pāli uids")?;
+
+    let twins = pali_edition_twins(&ms_uids, &cst_uids);
+    let ms_twins = twins.iter().filter(|uid| uid.ends_with("/pli/ms")).count();
+
+    conn.transaction(|conn| {
+        diesel::delete(pali_edition_twins::table)
+            .execute(conn)
+            .context("Failed to clear pali_edition_twins")?;
+        for chunk in twins.chunks(500) {
+            let rows: Vec<_> = chunk
+                .iter()
+                .map(|uid| pali_edition_twins::uid.eq(uid))
+                .collect();
+            diesel::insert_into(pali_edition_twins::table)
+                .values(&rows)
+                .execute(conn)
+                .context("Failed to insert into pali_edition_twins")?;
+        }
+        Ok::<(), anyhow::Error>(())
+    })?;
+
+    logger::info(&format!(
+        "pali_edition_twins: {} MS and {} CST records are in both editions (of {} MS and {} CST Pāli records)",
+        ms_twins,
+        twins.len() - ms_twins,
+        ms_uids.len(),
+        cst_uids.len()
+    ));
+
+    Ok(())
 }
 
 pub struct TipitakaXmlImporter {
@@ -901,6 +1018,8 @@ impl TipitakaXmlImporter {
             inserted,
             total - inserted
         ));
+
+        store_pali_edition_twins(conn)?;
 
         Ok(report)
     }
@@ -2092,5 +2211,81 @@ mod tests {
         let variants: i64 = sutta_variants::table.count().get_result(&mut fixture.appdata).unwrap();
         assert_eq!(rows, 14);
         assert!(variants > 0);
+    }
+
+    fn uids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|uid| uid.to_string()).collect()
+    }
+
+    #[test]
+    fn a_text_with_the_same_reference_in_both_editions_is_a_twin_in_both() {
+        let twins = pali_edition_twins(&uids(&["mn1/pli/ms", "mn2/pli/ms"]), &uids(&["mn1/pli/cst"]));
+        assert_eq!(twins, uids(&["mn1/pli/cst", "mn1/pli/ms"]));
+    }
+
+    #[test]
+    fn a_range_record_is_a_twin_of_every_record_it_overlaps() {
+        let twins = pali_edition_twins(
+            &uids(&["an5.303/pli/ms", "an5.1153/pli/ms", "an5.302/pli/ms"]),
+            &uids(&["an5.303-1152/pli/cst"]),
+        );
+        assert_eq!(twins, uids(&["an5.303-1152/pli/cst", "an5.303/pli/ms"]));
+    }
+
+    #[test]
+    fn xml_records_and_commentaries_are_never_twins() {
+        let twins = pali_edition_twins(
+            &uids(&["mn1/pli/ms", "vin01m.mul0.xml/pli/ms"]),
+            &uids(&["mn1.att/pli/cst", "mn1.tik/pli/cst", "vin01m.mul0.xml/pli/cst"]),
+        );
+        assert!(twins.is_empty(), "{:?}", twins);
+    }
+
+    #[test]
+    fn a_reference_with_no_comparable_range_matches_only_itself() {
+        let twins = pali_edition_twins(
+            &uids(&["mil3.1.1/pli/ms", "mil3.1.2/pli/ms", "mil3.1/pli/ms"]),
+            &uids(&["mil3.1.1/pli/cst"]),
+        );
+        assert_eq!(twins, uids(&["mil3.1.1/pli/cst", "mil3.1.1/pli/ms"]));
+    }
+
+    #[test]
+    fn spans_of_different_groups_are_not_twins() {
+        let twins = pali_edition_twins(&uids(&["an4.1/pli/ms"]), &uids(&["an5.1/pli/cst"]));
+        assert!(twins.is_empty(), "{:?}", twins);
+    }
+
+    #[test]
+    fn the_import_stores_the_twins_and_a_reimport_replaces_them() {
+        use simsapa_backend::db::appdata_schema::pali_edition_twins;
+
+        let mut fixture = fixture::CstFixture::new().unwrap();
+        for uid in ["mn1/pli/ms", "mn200/pli/ms"] {
+            diesel::sql_query(format!(
+                "INSERT INTO suttas (uid, sutta_ref, nikaya, language) VALUES ('{}', '{}', 'mn', 'pli')",
+                uid,
+                uid_base_of(uid)
+            ))
+            .execute(&mut fixture.appdata)
+            .unwrap();
+        }
+        fixture.importer().import(&mut fixture.appdata).unwrap();
+
+        let stored = |fixture: &mut fixture::CstFixture| -> Vec<String> {
+            pali_edition_twins::table
+                .select(pali_edition_twins::uid)
+                .order(pali_edition_twins::uid)
+                .load(&mut fixture.appdata)
+                .unwrap()
+        };
+        assert_eq!(stored(&mut fixture), uids(&["mn1/pli/cst", "mn1/pli/ms"]));
+
+        fixture.importer().reimport(&mut fixture.appdata).unwrap();
+        assert_eq!(stored(&mut fixture), uids(&["mn1/pli/cst", "mn1/pli/ms"]));
+    }
+
+    fn uid_base_of(uid: &str) -> &str {
+        uid.split('/').next().unwrap()
     }
 }

@@ -6,12 +6,13 @@ PRD: [2026-10-31-215150-prd---search-pali-edition-preference.md](./2026-10-31-21
 
 Bootstrap:
 
-- `bootstrap_cli/src/bootstrap/tipitaka_xml.rs` - Computes and stores the records in both editions, at the end of the CST import.
+- `bootstrap_cli/src/bootstrap/tipitaka_xml.rs` - Computes and stores the records in both editions, at the end of the CST import (`pali_edition_twins()`, `store_pali_edition_twins()`), with their tests.
 
 Backend:
 
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/` (new) - The table of FR-6.
-- `backend/src/db/appdata_schema.rs` - The new table.
+- `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/up.sql`, `down.sql` - Create and drop the table.
+- `backend/src/db/appdata_schema.rs` - The new table, and its entry in `allow_tables_to_appear_in_same_query!`.
 - `backend/src/app_settings.rs` - `PaliEditionPreference`, the new default and its migration in the deserialize hook.
 - `backend/src/query_task.rs` - The edition filter.
 - `backend/src/search/searcher.rs` - The Tantivy edition filter.
@@ -69,11 +70,11 @@ Depends on: task 4.0 of the OpenTipitaka task list, because the table is filled 
 CREATE TABLE pali_edition_twins (uid TEXT NOT NULL PRIMARY KEY);
 ```
 
-- [ ] 1.0 Store the records that are in both editions
-  - [ ] 1.1 Add the migration and its `down.sql`, the table to `appdata_schema.rs`, and the table to `allow_tables_to_appear_in_same_query!`.
-  - [ ] 1.2 Add a pure `pali_edition_twins(ms_uids, cst_uids) -> Vec<String>` to `tipitaka_xml.rs`, using `sutta_refs_are_related` on the uid bases, grouped by `comparable_sutta_range` group so that it is not a full cross product. Exact bases match too. Unit test: `mn1` in both; `an5.303` with `an5.303-1152`; `.xml` and `.att` uids never match; `mil3.1.1` matches only itself.
-  - [ ] 1.3 At the end of `TipitakaXmlImporter::import()`, clear the table and fill it from `%/pli/ms` and the CST mūla uids. Log the count of each edition. Check them against "Editions" under "Measured on the published database", allowing for the changed `sn24` and `sn35` records.
-  - [ ] 1.4 Run `cd bootstrap_cli && cargo test`.
+- [x] 1.0 Store the records that are in both editions
+  - [x] 1.1 Add the migration and its `down.sql`, the table to `appdata_schema.rs`, and the table to `allow_tables_to_appear_in_same_query!`.
+  - [x] 1.2 Add a pure `pali_edition_twins(ms_uids, cst_uids) -> Vec<String>` to `tipitaka_xml.rs`, using `sutta_refs_are_related` on the uid bases, grouped by `comparable_sutta_range` group so that it is not a full cross product. Exact bases match too. Unit test: `mn1` in both; `an5.303` with `an5.303-1152`; `.xml` and `.att` uids never match; `mil3.1.1` matches only itself.
+  - [x] 1.3 At the end of `TipitakaXmlImporter::import()`, clear the table and fill it from `%/pli/ms` and the CST mūla uids. Log the count of each edition. Check them against "Editions" under "Measured on the published database", allowing for the changed `sn24` and `sn35` records.
+  - [x] 1.4 Run `cd bootstrap_cli && cargo test`.
 
 ### Specs for 2.0
 
