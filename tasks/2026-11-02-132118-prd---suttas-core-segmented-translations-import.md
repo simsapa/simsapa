@@ -54,12 +54,14 @@ carry, and without losing footnotes.
    counterpart in suttas-core, and no `content_json` of its own, is replaced
    by it (about 1,165 Bodhi and 144 PTS
    records with the 2026-10-31 data; see §8).
-2. Every Ṭhānissaro text segmented in suttas-core (1,443 with the 2026-10-31
-   data) is in Simsapa as a segmented record under its SuttaCentral uid.
+2. Every Ṭhānissaro text segmented in suttas-core (1,441 with the 2026-10-31
+   data: 1,443 texts, of which `thag3.8` and `thag3.9` have only empty
+   segments) is in Simsapa as a segmented record under its SuttaCentral uid.
 3. No Ṭhānissaro sutta appears twice (once under the old dhammatalks.org
    numbering and once under the SuttaCentral numbering).
-4. Ṭhānissaro texts with no segmented version (the Khuddakapāṭha, `kp1`–`kp9`)
-   keep their dhammatalks.org HTML record.
+4. Ṭhānissaro pages with no segmented version keep their dhammatalks.org
+   HTML record: the Khuddakapāṭha (`kp1`–`kp9`), the `sn44` saṁyutta
+   introduction page, and `thag3.8` (empty in suttas-core).
 5. Footnotes of the imported records, SuttaCentral's comments, and the HTML
    pages and library books that already have footnotes are shown in the
    reader's bottom bar while their marker is in view; the note text there can
@@ -242,8 +244,9 @@ excluded. A translator suttas-core adds later is handled by the same rule.
     `parse_range_from_uid`).
 20. **Old-to-new uid map.** The importer must build a map from each
     dhammatalks.org-derived uid (the uids the dhammatalks.org importer
-    wrote) to the SuttaCentral uid that now carries that text. The rules,
-    applied in order, are:
+    wrote) to the SuttaCentral uid that now carries that text. An entry of
+    the override table (rule 5) wins over every other rule, since it exists
+    to correct them; the other rules are tried in order:
     1. **Raw match:** a `raw_translations` row with `translator = 'than'`
        and `raw_sutta_id = <old ref>` whose `sutta_id` has `than` segments →
        that `sutta_id`. (This covers the 161 renumberings, e.g.
@@ -258,6 +261,7 @@ excluded. A translator suttas-core adds later is handled by the same rule.
        (`sn43` → `sn43.1`, …) maps to its first sutta.
     5. **Override table:** a small hand-maintained table checked into the
        repository, for anything the rules above get wrong or cannot resolve.
+       Checked first, before rule 1.
        It is curated data: an entry that names a uid that does not exist must
        be reported, not silently ignored.
     6. Otherwise the old uid is **unmapped**.
@@ -266,7 +270,10 @@ excluded. A translator suttas-core adds later is handled by the same rule.
     Diesel so the FTS triggers and the `sutta_comments` cascade run.
 22. Unmapped dhammatalks.org records must be **kept** as HTML records. With
     the 2026-10-31 data these are `kp1`–`kp9` (Khuddakapāṭha, not carried by
-    suttas-core). The step must log every unmapped uid.
+    suttas-core), `sn44` (the introduction page of the saṁyutta: no
+    suttas-core text contains it) and `thag3.8` (its raw names a text whose
+    segments are all empty; no other rule may guess a target for it). The
+    step must log every unmapped uid.
 22a. With `--limit`, only the dhammatalks.org records whose new text was
     actually imported may be deleted; otherwise a limited run would delete
     texts it never replaced.
@@ -540,7 +547,8 @@ sutta text is a further benefit (FR 32a), not the goal.
   of the Pāli `ms` text of the same sutta, and every such sutta has a
   `segment_structure` template. Alignment with the Pāli is therefore by
   key, like Sujato's.
-- Translator counts with segments: `bodhi` 3,452 suttas, `than` 1,443,
+- Translator counts with segments: `bodhi` 3,452 suttas, `than` 1,443
+  (1,441 with any non-empty segment),
   `pts` 3,246, `walshe` 34.
 - Many segments were segmented by an LLM (`sutta_segments.source = 'llm'`)
   and are listed as unaudited in `build.log`. This is accepted; quality
@@ -605,8 +613,8 @@ With the 2026-10-31 suttas-core build:
   `content_json` after it (check by comparing the two databases).
 - SuttaCentral comments (e.g. `mn10/en/sujato`) show in the bottom footnote
   bar; variant readings still show as `⧫` marks.
-- Ṭhānissaro: 1,443 segmented records; the only HTML records left are
-  `kp1`–`kp9`; no SuttaCentral sutta has two Ṭhānissaro records.
+- Ṭhānissaro: 1,441 segmented records; the only HTML records left are
+  `kp1`–`kp9`, `sn44` and `thag3.8`; no SuttaCentral sutta has two Ṭhānissaro records.
 - Comparing the databases before and after the step: the only uids added
   are Ṭhānissaro's, and the only uids removed are mapped dhammatalks.org
   Ṭhānissaro records.

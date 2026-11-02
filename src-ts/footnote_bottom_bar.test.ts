@@ -204,4 +204,18 @@ describe("footnote bottom bar", () => {
     const numbers = Array.from(bar().querySelectorAll(".footnote-number")).map(n => n.textContent);
     expect(numbers).toEqual(["Bodhi[1]", "Sujato[1]"]);
   });
+
+  test("orders items by column position, not by label", () => {
+    setup_page(`
+      <div id="ssp_content"><div class="suttacentral bilara-text">
+        <span class='footnote-reference'><a href='#fn-a-c0-2'>2</a></span>
+        <span class='footnote-reference'><a href='#fn-b-c1-1'>1</a></span>
+        <section class='ssp-footnotes' data-label='Sujato'><h2>Notes: Sujato</h2><ol><li id='fn-a-c0-2' value='2'>A</li></ol></section>
+        <section class='ssp-footnotes' data-label='Bodhi'><h2>Notes: Bodhi</h2><ol><li id='fn-b-c1-1'>B</li></ol></section>
+      </div></div>`);
+    const [a, b] = current_observer().observed;
+    current_observer().fire([[b, true], [a, true]]);
+    const numbers = Array.from(bar().querySelectorAll(".footnote-number")).map(n => n.textContent);
+    expect(numbers).toEqual(["Sujato[2]", "Bodhi[1]"]);
+  });
 });

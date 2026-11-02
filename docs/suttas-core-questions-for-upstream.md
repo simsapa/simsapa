@@ -165,3 +165,22 @@ dhammatalks.org record of `thag3.8` (it has none of `thag3.9`).
 
 **Question:** can the build fail, or report, when a text's segments are all
 empty?
+
+## 6. Three Bodhi titles end with a number in angle brackets
+
+Three Bodhi title segments end with a number in angle brackets:
+
+| `segment_id` | `content` |
+|---|---|
+| `sn1.34:0.3` | `There Are No <47>` |
+| `sn1.52:0.3` | `Undecaying <80>` |
+| `sn1.75:0.3` | `Afraid <96>` |
+
+No other Bodhi, PTS, Ṭhānissaro or Walshe segment has one. They look like
+leftover marks from the source, possibly verse or note numbers. A browser
+shows them as literal text, so the reader sees `Afraid <96>` as the title.
+
+Simsapa imports them as they are.
+
+**Question:** are these numbers meant to be in the title, or should they be
+removed or moved into their own layer?

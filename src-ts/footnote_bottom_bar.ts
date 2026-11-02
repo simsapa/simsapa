@@ -17,6 +17,8 @@ interface VisibleFootnote {
     number: string;
     /** The column label, for pages where several columns have notes. */
     label: string;
+    /** The column's position on the page (0 on a single-text page). */
+    column: number;
     element: HTMLElement;
 }
 
@@ -38,6 +40,31 @@ function column_label_of(footnote_id: string): string {
     return header?.textContent?.trim() || '';
 }
 
+/**
+ * The position of the column a note belongs to, in page order: its notes
+ * list among the page's notes lists (aligned multi-column view, one list per
+ * column in column order), or its block column among the block columns
+ * (unaligned fallback). 0 on a single-text page.
+ */
+function column_index_of(footnote_id: string): number {
+    const definition = document.getElementById(footnote_id);
+    if (!definition) {
+        return 0;
+    }
+    const section = definition.closest('section.ssp-footnotes');
+    if (section) {
+        const index = Array.from(document.querySelectorAll('section.ssp-footnotes')).indexOf(section);
+        if (index >= 0) {
+            return index;
+        }
+    }
+    const col = definition.closest('.sbs-col');
+    if (col) {
+        return Math.max(0, Array.from(document.querySelectorAll('.sbs-col')).indexOf(col));
+    }
+    return 0;
+}
+
 /** Whether notes come from more than one column, so items need the label. */
 function several_columns_have_notes(): boolean {
     const labels = new Set<string>();
@@ -52,10 +79,10 @@ function several_columns_have_notes(): boolean {
     return labels.size > 1;
 }
 
+/** Column order first (each column numbers its own notes), then number. */
 function numeric_order(a: VisibleFootnote, b: VisibleFootnote): number {
-    const label_order = a.label.localeCompare(b.label);
-    if (label_order !== 0) {
-        return label_order;
+    if (a.column !== b.column) {
+        return a.column - b.column;
     }
     const num_a = parseInt(a.number, 10);
     const num_b = parseInt(b.number, 10);
@@ -175,6 +202,7 @@ class FootnoteBottomBar {
             id: footnote_id,
             number: extract_footnote_number(anchor),
             label: column_label_of(footnote_id),
+            column: column_index_of(footnote_id),
         };
         const footnote: VisibleFootnote = { ...info, element: this.build_item(info, content) };
 

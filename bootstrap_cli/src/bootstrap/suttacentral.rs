@@ -578,10 +578,6 @@ fn html_text_to_sutta(doc: &Value, title: &str) -> Result<SuttaCentralData> {
     })
 }
 
-/// Convert bilara_text document to SuttaCentralData
-///
-/// Processes Bilara JSON format suttas from the sc_bilara_texts collection.
-/// Uses HTML templates to convert JSON segments to HTML when available.
 /// The HTML and the `content_plain` of a Bilara text, rendered without
 /// variants, comments or glosses so that only the text itself reaches search.
 /// Shared by every importer that writes a segmented record.
@@ -603,6 +599,10 @@ pub fn bilara_html_and_plain_text(json_text: &str, template: &str) -> Result<(St
     Ok((html_wrapped, plain))
 }
 
+/// Convert bilara_text document to SuttaCentralData
+///
+/// Processes Bilara JSON format suttas from the sc_bilara_texts collection.
+/// Uses HTML templates to convert JSON segments to HTML when available.
 fn bilara_text_to_sutta(
     doc: &Value,
     title: &str,

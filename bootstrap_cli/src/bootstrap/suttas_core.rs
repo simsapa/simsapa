@@ -1850,7 +1850,13 @@ mod tests {
     #[test]
     #[ignore]
     fn test_real_data_replacement() {
-        let scratch = std::env::var("SUTTAS_CORE_SCRATCH_APPDATA").expect("SUTTAS_CORE_SCRATCH_APPDATA");
+        // It writes, so it runs only on a copy the caller names.
+        let Ok(scratch) = std::env::var("SUTTAS_CORE_SCRATCH_APPDATA") else {
+            simsapa_backend::logger::write_stdout(format_args!(
+                "skipped: set SUTTAS_CORE_SCRATCH_APPDATA to a scratch copy of appdata.sqlite3\n",
+            ));
+            return;
+        };
         assert!(!scratch.contains("/dist/"), "use a copy, not the dist database");
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
         let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
