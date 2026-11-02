@@ -158,7 +158,7 @@ struct FootnoteRow {
 
 /// A `file:` URI for SQLite, with the characters that would end the path
 /// percent-encoded.
-fn sqlite_readonly_uri(path: &Path) -> Result<String> {
+pub(crate) fn sqlite_readonly_uri(path: &Path) -> Result<String> {
     let p = path.to_str().ok_or_else(|| anyhow!("Path is not valid UTF-8: {}", path.display()))?;
     let mut encoded = String::with_capacity(p.len());
     for c in p.chars() {

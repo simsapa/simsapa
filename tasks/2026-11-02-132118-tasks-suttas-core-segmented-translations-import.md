@@ -220,12 +220,12 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 
 **Depends on:** 3.0, 5.2.
 
-- [ ] 7.0 `survey-suttas-core` bootstrap subcommand and its report (FR 39–43, 42a)
-  - [ ] 7.1 Add the subcommand to `bootstrap_cli/src/main.rs` and create `bootstrap_cli/src/survey_suttas_core.rs`. Default `--suttas-core` is the `current` path; default `--output` is `<bootstrap dist>/suttas-core-survey.json`.
-  - [ ] 7.2 Ṭhānissaro section (FR 41): every old uid with its new uid and rule; unmapped old uids; suttas-core texts with no dhammatalks.org record; per mapped text the title pair, a normalised-plain-text similarity (whitespace and punctuation collapsed) with a short excerpt of the first difference, and the footnote counts on each side (dhammatalks `span.fn` / footnote list vs. `segment_footnotes`).
-  - [ ] 7.3 Section per other label (FR 42, 42a): HTML-only records with no suttas-core counterpart; suttas-core texts skipped as not in Simsapa; records skipped as already segmented, as counts with uid lists.
-  - [ ] 7.4 Unit-test the similarity / first-difference helper.
-  - [ ] 7.5 Run it against the current dist DB (which has no suttas-core step yet) and suttas-core `current`; check the counts against PRD FR 16 and keep the report out of git.
+- [x] 7.0 `survey-suttas-core` bootstrap subcommand and its report (FR 39–43, 42a)
+  - [x] 7.1 Add the subcommand to `bootstrap_cli/src/main.rs` and create `bootstrap_cli/src/survey_suttas_core.rs`. Default `--suttas-core` is the `current` path; default `--output` is `<bootstrap dist>/suttas-core-survey.json`.
+  - [x] 7.2 Ṭhānissaro section (FR 41): every old uid with its new uid and rule; unmapped old uids; suttas-core texts with no dhammatalks.org record; per mapped text the title pair, a normalised-plain-text similarity (whitespace and punctuation collapsed) with a short excerpt of the first difference, and the footnote counts on each side (dhammatalks `span.fn` / footnote list vs. `segment_footnotes`).
+  - [x] 7.3 Section per other label (FR 42, 42a): HTML-only records with no suttas-core counterpart; suttas-core texts skipped as not in Simsapa; records skipped as already segmented, as counts with uid lists.
+  - [x] 7.4 Unit-test the similarity / first-difference helper.
+  - [x] 7.5 Run it against the current dist DB (which has no suttas-core step yet) and suttas-core `current`; check the counts against PRD FR 16 and keep the report out of git.
 
 ### 8.0 Documentation, bootstrap run and verification
 

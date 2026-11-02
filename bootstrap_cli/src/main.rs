@@ -3,6 +3,7 @@ pub mod gloss_agent_check;
 pub mod gloss_corpus_explore;
 pub mod gloss_ngrams;
 pub mod import_gloss_data;
+pub mod survey_suttas_core;
 pub mod update_provider_models;
 pub mod update_releases_fallback;
 
@@ -995,6 +996,27 @@ enum Commands {
         #[arg(long, value_name = "OUTPUT_PATH", default_value = DEFAULT_RELEASES_FALLBACK_PATH)]
         output: PathBuf,
     },
+
+    /// Compare the dhammatalks.org and SuttaCentral records with suttas-core
+    /// and write a JSON report of the differences, for porting fixes back to
+    /// suttas-core. Reads both databases read-only. The appdata database must
+    /// be one built WITHOUT the suttas-core step; the command refuses one that
+    /// has it.
+    SurveySuttasCore {
+        /// Baseline appdata.sqlite3, built without the suttas-core step
+        #[arg(long, value_name = "APPDATA_DB_PATH")]
+        appdata: PathBuf,
+
+        /// suttas-core database (default: suttas-core-db/current/suttas.sqlite
+        /// in bootstrap-assets-resources)
+        #[arg(long, value_name = "SUTTAS_CORE_DB_PATH")]
+        suttas_core: Option<PathBuf>,
+
+        /// Where to write the JSON report (default: suttas-core-survey.json in
+        /// the bootstrap dist folder)
+        #[arg(long, value_name = "OUTPUT_PATH")]
+        output: Option<PathBuf>,
+    },
 }
 
 /// Default output path for `update-releases-fallback`, resolved at compile time
@@ -1048,7 +1070,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::ImportChantingPractice { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1187,6 +1209,13 @@ fn main() {
         Commands::UpdateProviderModels { input, output } => {
             update_provider_models::update_provider_models(&input, &output)
                 .map_err(|e| e.to_string())
+        }
+
+        Commands::SurveySuttasCore { appdata, suttas_core, output } => {
+            let suttas_core = suttas_core.unwrap_or_else(survey_suttas_core::default_suttas_core_path);
+            let output = output.unwrap_or_else(survey_suttas_core::default_output_path);
+            survey_suttas_core::survey_suttas_core(&appdata, &suttas_core, &output)
+                .map_err(|e| format!("{:#}", e))
         }
 
         Commands::UpdateReleasesFallback { channel, output } => {
