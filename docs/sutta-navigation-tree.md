@@ -1415,6 +1415,14 @@ its own `cst_sutta` or any of its group levels' titles, niggahita-folded.
 Matching group levels alone is not enough — two Dīgha suttas have an empty
 sutta-level group title.
 
+**When two of a fragment's titles each name a leaf, the most specific wins**:
+its own title, then its group levels from the deepest up
+(`fragment_match_titles`). `an1.575-615.att` sits in the paṇṇāsaka
+"16. Ekadhammapāḷi" and the vagga "19. Kāyagatāsativaggavaṇṇanā", and
+`s0401a.att.xml`'s toc has a leaf for each; it belongs under the vagga. Keep the
+titles an ordered list. Held in a `HashSet`, they were tried in an order that
+changed from run to run, and so did which leaf a fragment landed under.
+
 **A toc leaf with no fragments of its own opens the adjacent record.**
 SuttaCentral has no uid for a preamble or postamble section, so the corpus
 merges such a section into the first or last sutta record of the file — by

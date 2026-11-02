@@ -8,7 +8,7 @@ Bootstrap:
 
 - `bootstrap_cli/src/bootstrap/tipitaka_xml.rs` - The CST importer. Most of tasks 3, 4 and 5 are here, with its tests.
 - `bootstrap_cli/src/bootstrap/cst_coverage.rs` - Gains the row-cutting function. The XML splitter is removed.
-- `bootstrap_cli/src/bootstrap/navigation_tree/cst_spine.rs` - Keeps calling `fragment_uid`, and supplies `TocLeaf` and `read_toc_leaves`.
+- `bootstrap_cli/src/bootstrap/navigation_tree/cst_spine.rs` - Keeps calling `fragment_uid`, and supplies `TocLeaf` and `read_toc_leaves`. A fragment matches its most specific toc leaf (`fragment_match_titles`, `first_matching_leaf`).
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - Reference only: `bilara_text_to_sutta` and `import_sutta_variants` show the pattern to follow.
 - `bootstrap_cli/src/main.rs` - `import_cst()` calls `TipitakaXmlImporter::reimport()`, which clears the English and variant rows too.
 - `bootstrap_cli/Cargo.toml` - Needs `indexmap`, to parse JSON without losing key order.
@@ -436,7 +436,21 @@ title. In the alpha.4 build the leaves "19." and "20." opened them. In this buil
 under "16." and the leaves "18."–"20." open `an1.378-393.att`. The coverage report's merged
 count went from 15 to 16 for this reason alone.
 
-- [ ] 13.0 Make the toc-leaf match deterministic in the CST spine
-  - [ ] 13.1 Hold `match_titles` as a `Vec`, most specific first: the fragment's own title, then the group levels deepest first, without duplicates. Take the first that names a leaf.
-  - [ ] 13.2 Test: a fragment carrying both a paṇṇāsaka and a vagga title is assigned to the vagga leaf, on every run.
-  - [ ] 13.3 Run `build-navigation-tree` on a copy of the dist appdata, and confirm that `cst:s0401a.att18.xml` opens `an1.575-615.att/pli/cst` and `cst:s0401a.att19.xml` opens `an1.616-627.att/pli/cst`. Diff the CST spine's `(node_uid, sutta_uid)` against the alpha.4 build, and report every difference.
+- [x] 13.0 Make the toc-leaf match deterministic in the CST spine
+  - [x] 13.1 Hold `match_titles` as a `Vec`, most specific first: the fragment's own title, then the group levels deepest first, without duplicates. Take the first that names a leaf.
+  - [x] 13.2 Test: a fragment carrying both a paṇṇāsaka and a vagga title is assigned to the vagga leaf, on every run.
+  - [x] 13.3 Run `build-navigation-tree` on a copy of the dist appdata, and confirm that `cst:s0401a.att18.xml` opens `an1.575-615.att/pli/cst` and `cst:s0401a.att19.xml` opens `an1.616-627.att/pli/cst`. Diff the CST spine's `(node_uid, sutta_uid)` against the alpha.4 build, and report every difference.
+
+Result of 13.3, on a copy of the dist appdata, CST spine only: two runs give identical
+`(node_uid, sutta_uid)` lists, and merged leaves drop from 16 to 10. Against the dist build,
+every difference is in AN 1 (`s0401a.att.xml`, `s0401t.tik.xml`): the `.att` leaves "18."-"20."
+open `an1.394-574.att`, `an1.575-615.att` and `an1.616-627.att`; the `.tik` leaves "19." and
+"20." open `an1.575-615.tik` and `an1.616-627.tik`; those five fragments are no longer filed
+under the paṇṇāsaka leaf; and "15. Aṭṭhānapāḷi (paṭhamavagga)" is a branch over its own
+`an1.268-277.tik`, as "(dutiyavagga)" already was, in place of opening the next record. Against
+alpha.4, the only other differences are the expected `sn35` and `sn24.19-96` fragments and
+three `saṁ`/`vaṁ` slugs that the dist build already has.
+
+The dist database still holds the old tree: rebuild it with `build-navigation-tree`, or with
+the next bootstrap.
+
