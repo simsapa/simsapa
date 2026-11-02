@@ -13,7 +13,7 @@ Backend:
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/` (new) - The table of FR-6.
 - `backend/migrations/appdata/2026-11-01-000000_pali_edition_twins/up.sql`, `down.sql` - Create and drop the table.
 - `backend/src/db/appdata_schema.rs` - The new table, and its entry in `allow_tables_to_appear_in_same_query!`.
-- `backend/src/app_settings.rs` - `PaliEditionPreference`, the new default and its migration in the deserialize hook.
+- `backend/src/app_settings.rs` - `PaliEditionPreference` (with `as_str()` / `parse()`), the `pali_edition_preference` and `cst_mula_in_search_default_applied` fields, the new default, and `migrate_cst_mula_in_search_default()` in the deserialize hook, with tests.
 - `backend/src/query_task.rs` - The edition filter.
 - `backend/src/search/searcher.rs` - The Tantivy edition filter.
 - `backend/src/search/schema.rs`, `backend/src/search/indexer.rs`, `backend/src/search/types.rs` - The `has_other_edition` field, `INDEX_VERSION`, and `SearchFilters`.
@@ -94,10 +94,10 @@ pub cst_mula_in_search_default_applied: bool,         // AppSettings::default():
 
 The enum's default is `Ms`, for `AppSettings`, `SearchParams` and `SearchFilters` alike, so the GUI, the API and the CLI all start from the same place.
 
-- [ ] 2.0 Add the setting, and the new default
-  - [ ] 2.1 Add `PaliEditionPreference` and the two `AppSettings` fields as in the specs. Set `include_cst_mula_in_search_results` to true in `AppSettings::default()`.
-  - [ ] 2.2 In the `Deserialize` hook of `AppSettings`, beside `migrate_mobile_top_bar_margin`, add a migration: if `cst_mula_in_search_default_applied` is false, set `include_cst_mula_in_search_results` to true and the marker to true. Test: stored `false` with no marker becomes true; stored `false` with the marker stays false; `app_settings.json` import goes through the same path.
-  - [ ] 2.3 Run `cd backend && cargo test`.
+- [x] 2.0 Add the setting, and the new default
+  - [x] 2.1 Add `PaliEditionPreference` and the two `AppSettings` fields as in the specs. Set `include_cst_mula_in_search_results` to true in `AppSettings::default()`.
+  - [x] 2.2 In the `Deserialize` hook of `AppSettings`, beside `migrate_mobile_top_bar_margin`, add a migration: if `cst_mula_in_search_default_applied` is false, set `include_cst_mula_in_search_results` to true and the marker to true. Test: stored `false` with no marker becomes true; stored `false` with the marker stays false; `app_settings.json` import goes through the same path.
+  - [x] 2.3 Run `cd backend && cargo test`.
 
 ### Specs for 3.0
 
