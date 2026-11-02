@@ -28,6 +28,9 @@ Backend:
 - `backend/tests/test_cst_column_alignment.rs` (new) - Alignment, Lines-mode drop, footer, column-option SQL commentary-filter, snippet, variants-family and bare-code tests, on `dummy-` records of their own.
 - `backend/tests/test_related_sutta_uids.rs` - The OpenTipitaka commentary in the translation tabs.
 - `backend/tests/test_render_sutta_content.rs` - A Pāli text opens with an English; the one-column case uses a text with no English.
+- `backend/tests/data/fulltext_search_so_ce_evam_vadeyya.json` - Regenerated after the re-bootstrap; only the scores changed.
+- `backend/tests/test_query_task.rs` - The Contains Match test reads every page, so its checks do not depend on where a text lands.
+- `backend_cli/tests/read_only_commands.rs` - `mn1/en/bodhi` is the HTML-only record; a CST text and its English are found as Bilara JSON.
 Front end:
 
 - `src-ts/column_bar.ts`, `src-ts/column_bar.test.ts` - Reads the relative `has_content_json`, and the disabled-option tooltip.
@@ -381,13 +384,59 @@ Depends on: 2.0 to 10.0, so the docs state what was built.
 Depends on: all tasks above.
 
 - [ ] 12.0 Verify on real data, and measure
-  - [ ] 12.1 On the appdata copy from 5.13, write the checks as one SQL script in the scratch folder: every `pli/cst` row has `content_json`, `content_json_tmpl` and no `content_html`; every one has exactly one `en/opentipitaka` row; and a small Rust or `jq --stream` check confirms identical keys in identical order on a sample of each path. Do not use a check that sorts keys.
-  - [ ] 12.2 Run `cd bootstrap_cli && cargo test`, `make rust-test`, `npx jest` and `make qml-test`.
-  - [ ] 12.3 Ask the maintainer to run the full bootstrap, or for the go-ahead to run it.
-  - [ ] 12.4 Compare with the previous build: the Pāli CST uid set and `CstCoverageReport` differ only as listed under "Measured on the published database". The working database moved on after the PRD was measured, so the set is not "unchanged".
-  - [ ] 12.5 Search the built database through `simsapa` CLI or the API for the phrases in success metric 4, with `--pali-edition both` (`"pali_edition": "both"`) if the edition preference is already in: mūla, `.att`, `.tik` and an unmapped division, in Pāli and English; a variant reading; and the Dhammapada summary at `s0502m.mul.xml` row 905.
-  - [ ] 12.6 With commentary off, in Contains and Fulltext modes, confirm no `.att` or `.tik` record is returned in either language.
-  - [ ] 12.7 Measure against the previous build, and put the figures in this file: appdata size, `suttas_fts` size (`dbstat`), the `en` and `pli` Tantivy index sizes, the compressed release size, peak memory of the import, and peak memory of `index rebuild --area suttas --lang en`. `records` holds the whole corpus until `insert_suttas`, so if the import's peak is a problem, insert per file instead. The indexer loads every full row of a language, so a high figure for it matters on a phone, where the index can be rebuilt in-app.
-  - [ ] 12.8 List these for the maintainer to check by hand in the app, with a built database: `mn1/en/opentipitaka` in Solo, Columns and Lines; `mn1/pli/cst` beside `mn1/en/sujato` never aligned; the `<h3>` over an English title (section 9 of the PRD); the AI footer and licence, and both of their links, in each layout with either text opened first; the Translation tab order; a verse, a `.centre` line and a `.hangnum` row in Lines; a ⧫ mark opening a note, and the Dhammapada summary row; and `mn1/pli/cst` and `mn1/pli/ms` opened in Lines, Columns and Solo, with the English removed and the layout then changed.
-  - [ ] 12.9 Give the maintainer the size figures for the size decision in section 9 of the PRD.
+  - [x] 12.1 On the appdata copy from 5.13, write the checks as one SQL script in the scratch folder: every `pli/cst` row has `content_json`, `content_json_tmpl` and no `content_html`; every one has exactly one `en/opentipitaka` row; and a small Rust or `jq --stream` check confirms identical keys in identical order on a sample of each path. Do not use a check that sorts keys.
+  - [x] 12.2 Run `cd bootstrap_cli && cargo test`, `make rust-test`, `npx jest` and `make qml-test`.
+  - [x] 12.3 Ask the maintainer to run the full bootstrap, or for the go-ahead to run it.
+  - [x] 12.4 Compare with the previous build: the Pāli CST uid set and `CstCoverageReport` differ only as listed under "Measured on the published database". The working database moved on after the PRD was measured, so the set is not "unchanged".
+  - [x] 12.5 Search the built database through `simsapa` CLI or the API for the phrases in success metric 4, with `--pali-edition both` (`"pali_edition": "both"`) if the edition preference is already in: mūla, `.att`, `.tik` and an unmapped division, in Pāli and English; a variant reading; and the Dhammapada summary at `s0502m.mul.xml` row 905.
+  - [x] 12.6 With commentary off, in Contains and Fulltext modes, confirm no `.att` or `.tik` record is returned in either language.
+  - [x] 12.7 Measure against the previous build, and put the figures in this file: appdata size, `suttas_fts` size (`dbstat`), the `en` and `pli` Tantivy index sizes, the compressed release size, peak memory of the import, and peak memory of `index rebuild --area suttas --lang en`. `records` holds the whole corpus until `insert_suttas`, so if the import's peak is a problem, insert per file instead. The indexer loads every full row of a language, so a high figure for it matters on a phone, where the index can be rebuilt in-app.
+  - [x] 12.8 List these for the maintainer to check by hand in the app, with a built database: `mn1/en/opentipitaka` in Solo, Columns and Lines; `mn1/pli/cst` beside `mn1/en/sujato` never aligned; the `<h3>` over an English title (section 9 of the PRD); the AI footer and licence, and both of their links, in each layout with either text opened first; the Translation tab order; a verse, a `.centre` line and a `.hangnum` row in Lines; a ⧫ mark opening a note, and the Dhammapada summary row; and `mn1/pli/cst` and `mn1/pli/ms` opened in Lines, Columns and Solo, with the English removed and the layout then changed.
+  - [x] 12.9 Give the maintainer the size figures for the size decision in section 9 of the PRD.
   - [ ] 12.10 The maintainer sets the new app and database versions and builds the release, with the language databases and the indexes rebuilt from the new bootstrap. The other two PRDs ship in the same database version, as far as they are finished.
+
+## Measured on the built database (12.0)
+
+The 2026-11-02 bootstrap against the alpha.4 build (the installed `appdata.sqlite3` and the
+`releases/2026-10-27-v1.1.0-alpha.4` packages).
+
+| Measure | alpha.4 | This build | Change |
+|---|---|---|---|
+| `appdata.sqlite3` | 852 MB | 1,364 MB (10 MB of it free pages) | +512 MB |
+| `suttas` table (`dbstat`) | 491.6 MB | 816.5 MB | +325 MB |
+| `suttas_fts` tables (`dbstat`) | 209.4 MB | 354.3 MB | +145 MB |
+| `sutta_variants` | 10.5 MB | 12.1 MB | +1.6 MB |
+| `en` sutta index | 56 MB | 233 MB | +177 MB |
+| `pli` sutta index | 168 MB | 174 MB | +6 MB |
+| `appdata.tar.bz2` | 148 MB | 237 MB | +89 MB |
+| `index.tar.bz2` | 442 MB | 594 MB | +152 MB |
+| `import-cst` peak RSS | - | 657 MB, 55 s | |
+| `index rebuild --area suttas --lang en` peak RSS | 378 MB, 2 s | 1,004 MB, 7 s | 2.7x |
+
+The estimates in PRD §7 were +320 MB `suttas`, +160 MB FTS and +160 MB English index.
+
+Checks on the built database, none failing: 8,952 `/pli/cst` records, each with
+`content_json` and a template, no `content_html` and no licence, and each with exactly one
+`/en/opentipitaka` record whose FR-19/FR-20 fields match. Keys are identical and in
+identical order in all four JSON values of all 8,952 pairs, compared without sorting;
+fragment texts match `cst_texts` key order; the stored keys count 358,986 for divisions and
+62,936 for fragments, the row counts of the unmapped and mapped files. No `ṃ`, no newline in
+`content_plain`, no AI notice in English `content_plain`, 1,923 variant rows all on mūla
+records. The Pāli uid set differs from alpha.4 exactly as listed above.
+
+### Found during 12.0
+
+Depends on: nothing. Not part of this PRD: the navigation spine is unchanged on this branch.
+
+`assign_fragments` in `cst_spine.rs` matches a fragment to a toc leaf with
+`match_titles.iter().find_map(…)`, and `match_titles` is a `HashSet`, so when a fragment's
+titles match two leaves, the leaf is chosen at random per process. Seen on `s0401a.att.xml`:
+`an1.575-615.att` and `an1.616-627.att` carry both "16. Ekadhammapāḷi" and their own vagga
+title. In the alpha.4 build the leaves "19." and "20." opened them. In this build they fall
+under "16." and the leaves "18."–"20." open `an1.378-393.att`. The coverage report's merged
+count went from 15 to 16 for this reason alone.
+
+- [ ] 13.0 Make the toc-leaf match deterministic in the CST spine
+  - [ ] 13.1 Hold `match_titles` as a `Vec`, most specific first: the fragment's own title, then the group levels deepest first, without duplicates. Take the first that names a leaf.
+  - [ ] 13.2 Test: a fragment carrying both a paṇṇāsaka and a vagga title is assigned to the vagga leaf, on every run.
+  - [ ] 13.3 Run `build-navigation-tree` on a copy of the dist appdata, and confirm that `cst:s0401a.att18.xml` opens `an1.575-615.att/pli/cst` and `cst:s0401a.att19.xml` opens `an1.616-627.att/pli/cst`. Diff the CST spine's `(node_uid, sutta_uid)` against the alpha.4 build, and report every difference.

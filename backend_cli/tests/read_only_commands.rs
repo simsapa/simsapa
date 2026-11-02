@@ -206,9 +206,13 @@ fn test_sutta_content_json_is_the_stored_column() {
 #[test]
 fn test_sutta_content_json_misses_exit_4() {
     if !have_dist() { return; }
-    let out = simsapa(&["sutta", "dn1/pli/cst", "--content-json"]);
+    let out = simsapa(&["sutta", "mn1/en/bodhi", "--content-json"]);
     assert_eq!(out.status.code(), Some(4));
-    assert!(stderr(&out).contains("dn1/pli/cst has no SuttaCentral JSON content"));
+    assert!(stderr(&out).contains("mn1/en/bodhi has no SuttaCentral JSON content"));
+
+    // A CST text is segmented.
+    let out = simsapa(&["sutta", "dn1/pli/cst", "--content-json"]);
+    assert_ok(&out);
 
     // A missing translation never falls back to the Pāli.
     let out = simsapa(&["--json", "sutta", "mn1/en/nosuchauthor", "--content-json"]);
@@ -228,8 +232,14 @@ fn test_sutta_bilara() {
     // `content` is the stored column, byte for byte.
     assert!(stdout.contains(&stored_column("mn1/en/sujato", "content_json")));
 
-    let out = simsapa(&["sutta", "dn1/pli/cst", "--bilara"]);
+    let out = simsapa(&["sutta", "mn1/en/bodhi", "--bilara"]);
     assert_eq!(out.status.code(), Some(4));
+
+    // A CST translation reads the variants of its own text family.
+    let out = simsapa(&["sutta", "dn1/en/opentipitaka", "--bilara"]);
+    assert_ok(&out);
+    let doc = stdout_json(&out);
+    assert_eq!(doc["variants"]["uid"], "dn1/pli/cst");
 }
 
 #[test]
