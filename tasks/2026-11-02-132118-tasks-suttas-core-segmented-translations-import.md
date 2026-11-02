@@ -67,14 +67,14 @@ Update the file after completing each sub-task, not just after completing an ent
 
 **Depends on:** nothing.
 
-- [ ] 1.0 Rename table: migration, schema and a lookup that tolerates the table being absent (FR 26, 29)
-  - [ ] 1.1 Create `backend/migrations/appdata/2026-11-02-000000_sutta_uid_renames/` with `up.sql` (the `CREATE TABLE`) and `down.sql` (`DROP TABLE`). The folder date must sort after `2026-11-01-000000_pali_edition_twins`.
-  - [ ] 1.2 Add the `table!` to `backend/src/db/appdata_schema.rs` and to its `allow_tables_to_appear_in_same_query!` list.
-  - [ ] 1.3 Add `SuttaUidRename` (Queryable) and `NewSuttaUidRename<'a>` (Insertable) to `backend/src/db/appdata_models.rs`.
-  - [ ] 1.4 Create `backend/src/sutta_uid_renames.rs` with `load_sutta_uid_renames(conn)` per the spec, and a pure helper `rename_ssp_sutta_href(href, renames) -> Option<String>` that rewrites `ssp://suttas/<uid>[#anchor]` when `<uid>` is a key, keeping the anchor. Register it in `backend/src/lib.rs`.
-  - [ ] 1.5 Unit-test `rename_ssp_sutta_href` (hit, miss, anchor kept, non-ssp href untouched).
-  - [ ] 1.6 `backend/tests/test_sutta_uid_renames.rs`: insert two `dummy-…` rename rows into the dist DB, load the map, assert both are present, delete them in a `Drop` guard. A second test opens an in-memory SQLite connection with no such table and asserts an empty map without an error.
-  - [ ] 1.7 `cd backend && cargo test` passes; the app starts and the migration is applied (`run_appdata_migrations()` logs no failure).
+- [x] 1.0 Rename table: migration, schema and a lookup that tolerates the table being absent (FR 26, 29)
+  - [x] 1.1 Create `backend/migrations/appdata/2026-11-02-000000_sutta_uid_renames/` with `up.sql` (the `CREATE TABLE`) and `down.sql` (`DROP TABLE`). The folder date must sort after `2026-11-01-000000_pali_edition_twins`.
+  - [x] 1.2 Add the `table!` to `backend/src/db/appdata_schema.rs` and to its `allow_tables_to_appear_in_same_query!` list.
+  - [x] 1.3 Add `SuttaUidRename` (Queryable) and `NewSuttaUidRename<'a>` (Insertable) to `backend/src/db/appdata_models.rs`.
+  - [x] 1.4 Create `backend/src/sutta_uid_renames.rs` with `load_sutta_uid_renames(conn)` per the spec, and a pure helper `rename_ssp_sutta_href(href, renames) -> Option<String>` that rewrites `ssp://suttas/<uid>[#anchor]` when `<uid>` is a key, keeping the anchor. Register it in `backend/src/lib.rs`.
+  - [x] 1.5 Unit-test `rename_ssp_sutta_href` (hit, miss, anchor kept, non-ssp href untouched).
+  - [x] 1.6 `backend/tests/test_sutta_uid_renames.rs`: insert two `dummy-…` rename rows into the dist DB, load the map, assert both are present, delete them in a `Drop` guard. A second test opens an in-memory SQLite connection with no such table and asserts an empty map without an error.
+  - [x] 1.7 `cd backend && cargo test` passes; the app starts and the migration is applied (`run_appdata_migrations()` logs no failure).
 
 ### 2.0 Footnote rendering and the footnote bar
 
