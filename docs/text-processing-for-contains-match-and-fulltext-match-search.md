@@ -37,8 +37,7 @@ dhammapada_munindo).
 - **Header rule:** remove the whole `<header>…</header>` region **but preserve the
   inner `<h1>…</h1>`** — the sutta title, *including any leading reference number*
   (e.g. keep `239. Harita-Mata Jātaka`). Drops the nikāya / vagga / division /
-  subdivision markup (SuttaCentral `<ul><li class='division'>…`, CST `<h3>` nikāya
-  line). Multi-line safe (`(?s)` DOTALL — the previous non-DOTALL
+  subdivision markup (SuttaCentral `<ul><li class='division'>…`). Multi-line safe (`(?s)` DOTALL — the previous non-DOTALL
   `<header(.*?)</header>` silently stripped *nothing* from multi-line headers). If
   a header has no `<h1>`, the whole header is removed. One HTML rule covers both
   sutta paths: the Bilara JSON path renders segments to HTML with an
@@ -54,6 +53,25 @@ dhammapada_munindo).
 *Out of scope:* CST bodies embed nikāya/vagga heading names as **body** text (e.g.
 `dn1.att/pli/cst` → `…dīghanikāye…`); the header rule does not touch body text.
 Flagged as a possible follow-up, not part of this rule.
+
+### CST records — `plain_text_of()` (`bootstrap_cli/src/bootstrap/tipitaka_xml.rs`)
+
+CST records are segmented, so `content_plain` is derived as for Bilara texts:
+`bilara_text_to_html()` with no variants, comments or glosses, then
+`sutta_html_to_plain_text()`. Two things differ, in Pāli and English alike
+except where noted:
+
+- **The title is left out.** `content_plain` is derived from the exported
+  template, *before* the import adds the header, because
+  `sutta_html_to_plain_text()` keeps a header's `<h1>`. The English AI notice and
+  licence are in a `<footer>`, so the footer rule removes them and they are not
+  indexed.
+- **Pāli only: the variant text is appended.** Each note is passed through
+  `compact_plain_text()` and joined by a space, in key order, so `content_plain`
+  gains no newline. `sutta_variants` is not indexed, and a note must stay
+  findable. Raw note text would not match, because queries have their punctuation
+  removed. This also covers the three rows whose Pāli is nothing but a note, such
+  as the Dhammapada vagga summary.
 
 ### DPD dictionary — `dpd_strip_footer()` (`backend/src/helpers.rs`)
 

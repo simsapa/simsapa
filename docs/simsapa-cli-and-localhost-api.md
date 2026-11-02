@@ -606,7 +606,8 @@ file names of the VRI Chaṭṭha Saṅgāyana edition (`vin02`, `e01`,
 that file's name: the whole file as `<name>.xml/pli/cst`, or the divisions of
 its table of contents as `<name><n>.xml/pli/cst` (`vin02m4.mul0.xml/pli/cst`
 … `vin02m4.mul17.xml/pli/cst`), in division order. A division name
-(`vin02m4.mul1`) gives that division alone. A file whose text is imported as
+(`vin02m4.mul1`) gives that division alone. Only the Pāli records are found
+this way, not their `/en/opentipitaka` English. A file whose text is imported as
 sutta-sized pieces (`mn11.att/pli/cst`) has no records under its file name,
 so its name finds nothing as a uid and falls back to the route's own mode
 like any other uid that matches nothing.
@@ -1318,10 +1319,12 @@ translation can be zipped by key.
   `keys`, Python's `json`, JavaScript's `JSON.parse`) and must not pass it
   through a sorted or unordered map.
 - **Which texts have it.** Only segmented texts: the SuttaCentral Pāli
-  (`/pli/ms`) and the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`).
-  `pli/cst` texts and most other translations are stored as HTML; for those use
-  `/sutta_html` (§13). `GET /translations_for_sutta?uid=` reports
-  `has_content_json` for each text sharing a reference (§14.5).
+  (`/pli/ms`), the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`), and
+  the CST Pāli with its OpenTipitaka English (`/pli/cst`, `/en/opentipitaka`).
+  Most other translations are stored as HTML; for those use `/sutta_html` (§13).
+  The segment ids of a CST text are not SuttaCentral's: `mn1:1.1` in
+  `mn1/pli/cst` is not the passage `mn1:1.1` in `mn1/pli/ms`, so never match
+  them across the two.
 - **uid resolution**:
   1. a verse reference is converted (`dhp182` → `dhp179-196/pli/ms`, §14.4);
   2. the uid is read exactly;
@@ -1354,7 +1357,7 @@ curl -s -D - -o /dev/null -G "localhost:$PORT/sutta.json" --data-urlencode "uid=
 # x-simsapa-sutta-uid: dhp179-196/pli/ms
 
 # A text stored as HTML:
-curl -s -G "localhost:$PORT/sutta.json" --data-urlencode "uid=dn1/pli/cst" | jq .reason
+curl -s -G "localhost:$PORT/sutta.json" --data-urlencode "uid=dn1/en/bodhi" | jq .reason
 # "no_content_json"
 ```
 
@@ -1410,10 +1413,11 @@ only the segments that have an entry, so look it up by the segment ids of
 `content`, never iterate it as if it were the text.
 
 - **Variant readings belong to the Pāli.** SuttaCentral publishes them for the
-  root text (`<ref>/pli/ms`), as `reading → alternative (editions)`. For a
-  translation the route returns the variant readings of the Pāli text with the
-  same reference, and `variants.uid` names it (`mn1/pli/ms` for
-  `mn1/en/sujato`). The segment ids are the same, so they apply to the
+  root text (`<ref>/pli/ms`), as `reading → alternative (editions)`, and the CST
+  texts have their notes (`<ref>/pli/cst`). For a translation the route returns
+  the variant readings of the Pāli text it was made from, and `variants.uid`
+  names it: `mn1/pli/ms` for `mn1/en/sujato`, `mn1/pli/cst` for
+  `mn1/en/opentipitaka`. The segment ids are the same, so they apply to the
   translation's segments all the same.
 - **Comments belong to the translation.** They are the translator's notes
   (Bhante Sujato's, Bhante Brahmali's), so a Pāli text has `comments: null`.
@@ -1544,11 +1548,18 @@ app's settings):
 - `layout` — `lines` / `linebyline` (interleaved) or `columns` / `sidebyside`
   (one flex column per text). Unknown value → **HTTP 400** with a message.
 - `columns` — `|`-separated ordered column sutta uids (percent-encode each uid
-  if needed; the query value is decoded once). Default when absent: the opened
-  sutta + its Pāli counterpart. In Lines mode, non-segmented columns (no
-  `content_json`) are **silently dropped** at options resolution; in Columns
-  mode a non-segmented column switches the render to the unaligned
-  block-columns fallback.
+  if needed; the query value is decoded once). Default when absent: a
+  translation with its Pāli (`mn1/en/sujato` with `mn1/pli/ms`,
+  `mn1/en/opentipitaka` with `mn1/pli/cst`); a Pāli text with an English, so a
+  Pāli page has two columns in Lines and Columns (`mn1/pli/cst` with
+  `mn1/en/opentipitaka`, `mn1/pli/ms` with its first segmented English, or
+  failing that its first other English, never `opentipitaka`). A text with
+  no partner is alone. To get a Pāli text alone, send its uid as the only
+  column, or use `layout=solo`. In Lines mode, columns that cannot be aligned
+  (no `content_json`, or a different text family, as a `/pli/cst` text is from
+  `mn1/pli/ms`) are **silently dropped** at options resolution; in Columns
+  mode such a column switches the render to the unaligned block-columns
+  fallback.
 - `show_references` — `true`/`false`, render per-segment reference anchors
   (`sutta_content_block` only; the full-page routes derive it from `anchor`).
 
@@ -1575,8 +1586,11 @@ Routes:
   decode with `decodeURIComponent`. The client adopts it after the swap.
 - `GET /translations_for_sutta?uid=…` — JSON array of the other texts sharing
   the sutta's reference, each entry `{item_uid, table_name, sutta_title,
-  sutta_ref, language, author, has_content_json}`. `has_content_json: false`
-  means the text is only available in the Columns layout.
+  sutta_ref, language, author, has_content_json}`. `has_content_json` is
+  relative to the requested text: `true` means the entry is segmented and can
+  be aligned with it, and `false` means it is available only in the Columns
+  layout. So `mn1/pli/ms` has `true` beside `mn1/en/sujato` and `false` beside
+  `mn1/pli/cst`.
 - `POST /save_sutta_display_settings` — body is a `SuttaDisplayDefaults` JSON
   object (`layout`, `pali_font`, `translation_font`, `author_ink_colors`,
   `author_bg_colors`); persists through `AppData` and refreshes the settings

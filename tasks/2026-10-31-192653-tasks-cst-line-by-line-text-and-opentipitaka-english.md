@@ -42,7 +42,7 @@ Front end:
 Docs:
 
 - `PROJECT_MAP.md`, `CLAUDE.md`
-- `docs/sutta-navigation-tree.md`, `docs/sutta-display-settings-and-multi-column-view.md`, `docs/simsapa-cli-and-localhost-api.md`, `docs/text-processing-for-contains-match-and-fulltext-match-search.md`
+- `docs/sutta-navigation-tree.md` (§3.5 is new), `docs/sutta-display-settings-and-multi-column-view.md` (§9 is new), `docs/simsapa-cli-and-localhost-api.md`, `docs/text-processing-for-contains-match-and-fulltext-match-search.md`, `docs/backend-cli-and-npm-package.md`
 
 Read only (the parser, which must not change):
 
@@ -367,14 +367,14 @@ In `resolve_sutta_display_options`, the variable `pali_uid` becomes the paired u
 
 Depends on: 2.0 to 10.0, so the docs state what was built.
 
-- [ ] 11.0 Update the docs
-  - [ ] 11.1 `PROJECT_MAP.md`: add `backend/src/opentipitaka.rs`, and change the CST import description.
-  - [ ] 11.2 `docs/sutta-navigation-tree.md`: CST records are segmented and have an English record; the rebuild commands now include `index rebuild --area suttas --lang en`; and the translation counts include OpenTipitaka. Change the matching summary in `CLAUDE.md`.
-  - [ ] 11.3 `docs/sutta-display-settings-and-multi-column-view.md`: the text-family rule, `columns_can_align` with the opened uid as a member and why, `has_content_json` being relative to the opened text, the same-base option that `include_cst_mula` does not remove, the footer rule, and the default English column for a Pāli text.
-  - [ ] 11.4 `docs/simsapa-cli-and-localhost-api.md`: `/sutta.json` and `/sutta_bilara.json` now find CST texts; `has_content_json`'s meaning; the variants rule; and a Pāli page with no `columns` having an English column in Lines and Columns. Keep this doc self-contained: no source paths and no links to other docs. Run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
-  - [ ] 11.5 `docs/text-processing-for-contains-match-and-fulltext-match-search.md`: compacted variants are appended to `content_plain` for CST records, and why, and that the title is left out.
-  - [ ] 11.6 `docs/sutta-display-settings-and-multi-column-view.md`: notes as ⧫ marks on CST records.
-  - [ ] 11.7 `docs/user-data-and-sqlite-analyze.md` needs no change, since this is bootstrap data. Confirm that, and check any `pli/cst` mention left in `docs/` is still true.
+- [x] 11.0 Update the docs
+  - [x] 11.1 `PROJECT_MAP.md`: add `backend/src/opentipitaka.rs`, and change the CST import description.
+  - [x] 11.2 `docs/sutta-navigation-tree.md`: CST records are segmented and have an English record; the rebuild commands now include `index rebuild --area suttas --lang en`; and the translation counts include OpenTipitaka. Change the matching summary in `CLAUDE.md`.
+  - [x] 11.3 `docs/sutta-display-settings-and-multi-column-view.md`: the text-family rule, `columns_can_align` with the opened uid as a member and why, `has_content_json` being relative to the opened text, the same-base option that `include_cst_mula` does not remove, the footer rule, and the default English column for a Pāli text.
+  - [x] 11.4 `docs/simsapa-cli-and-localhost-api.md`: `/sutta.json` and `/sutta_bilara.json` now find CST texts; `has_content_json`'s meaning; the variants rule; and a Pāli page with no `columns` having an English column in Lines and Columns. Keep this doc self-contained: no source paths and no links to other docs. Run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
+  - [x] 11.5 `docs/text-processing-for-contains-match-and-fulltext-match-search.md`: compacted variants are appended to `content_plain` for CST records, and why, and that the title is left out.
+  - [x] 11.6 `docs/sutta-display-settings-and-multi-column-view.md`: notes as ⧫ marks on CST records.
+  - [x] 11.7 `docs/user-data-and-sqlite-analyze.md` needs no change, since this is bootstrap data. Confirm that, and check any `pli/cst` mention left in `docs/` is still true.
 
 ### Specs for 12.0
 

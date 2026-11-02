@@ -93,9 +93,10 @@ a re-jump and the wrapper's own scroll path read.
 
 `AppData::resolve_sutta_display_options` (`backend/src/app_data.rs`) then:
 
-- fills the **default column set** when no explicit columns were given: the
-  opened sutta + its Pāli counterpart via `get_pali_for_translated` (which
-  only ever resolves `<ref>/pli/ms`);
+- fills the **default column set** when no explicit columns were given, in
+  every layout: a translation with its Pāli (`get_pali_for_translated`, which
+  reads `pali_uid_for_translation`), and a Pāli text with an English
+  (`default_english_for_pali`, §9);
 - applies the **Repeat Pāli arrangement** (`arrange_repeat_pali`): the first
   Pāli column anchors first, translations keep their order; `alternate` =
   Pāli before each translation, `atend` = Pāli first and once more last.
@@ -106,8 +107,9 @@ a re-jump and the wrapper's own scroll path read.
   (`arrange_display_columns(columns, "off")` in `display_settings.ts`).
   Solo skips the arrangement (the column state is retained for switching
   back);
-- in **Lines mode drops non-segmented columns** (no `content_json`) at
-  resolution — the renderer never sees them, so the API and the UI (which
+- in **Lines mode drops columns it cannot align**: non-segmented texts (no
+  `content_json`) and texts of another family (§9). This happens at
+  resolution, so the renderer never sees them, and the API and the UI (which
   disables such entries in the bar) behave identically. A non-segmented
   *opened* sutta reduces to a single column. On a content-block fetch the
   client learns of the drop from `X-SSP-Columns` and shows a transient
@@ -133,7 +135,8 @@ per-row containers. Both layouts emit the **same markup**; only CSS differs.
 
 `render_sutta_content_block` (`app_data.rs`) branches:
 
-- **All columns segmented** → `bilara_multi_column_html`
+- **All columns segmented, and `columns_can_align` (§9)** →
+  `bilara_multi_column_html`
   (`backend/src/helpers.rs`): per segment,
   `<span class='segment' id='<key>'><span class='colcell col-0 pali' data-uid='…'>[reference]…</span><span class='colcell col-1 translated' data-uid='…'>…</span>…</span>`
   wrapped in `<div class='suttacentral bilara-text layout-columns cols-N'>`
@@ -141,7 +144,7 @@ per-row containers. Both layouts emit the **same markup**; only CSS differs.
   (one labelled `span.colcell` per column: "Pāli" / author, from
   `sutta_column_label`). Per-column variants/comments come from
   `sutta_to_segments_json(col, false, …)`.
-- **Any column non-segmented** (and ≥ 2 columns) → the **block fallback**
+- **Any other set of ≥ 2 columns** → the **block fallback**
   `multi_column_html_blocks`: each text's standard whole-document rendering
   in one flex column —
   `<div class='sbs-col col-N pali|translated' data-uid='…'>` inside
@@ -271,7 +274,8 @@ Details and JSON shapes in
 - `GET /translations_for_sutta?uid=…` → JSON array (`item_uid`,
   `sutta_title`, `sutta_ref`, `language`, `author`, `has_content_json`).
   **Excludes the opened sutta itself**; the column bar synthesizes its
-  entry from the injected state.
+  entry from the injected state. `has_content_json` is relative to the opened
+  text (§9).
 - `POST /save_sutta_display_settings` (body = `SuttaDisplayDefaults` JSON) →
   writes through `AppData::save_sutta_display_defaults` (cache write +
   `persist_app_settings`), 200/malformed → 422.
@@ -378,8 +382,9 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   with the settings panel; a failed fetch reverts it.
 - Rules: minimum one column (last "×" disabled); "+" suggests the Pāli
   first, then the next unshown translation; options displayed in another
-  column are disabled; in Lines mode `has_content_json == false` entries are
-  disabled with the notice title ("Cannot be shown line by line with this
+  column are disabled; in Lines mode `has_content_json == false` entries,
+  which are non-segmented or of another text family (§9), are disabled with
+  the notice title ("Cannot be shown line by line with this
   text — available in the Columns layout"). **`next_unshown` is layout-aware**: it reuses
   `option_disabled_reason` with the shown set, so the "+" suggestion can
   never propose an entry the dropdowns would disable (non-segmented in Lines
@@ -574,3 +579,69 @@ warning lines quote the offending value verbatim, typos included, so the index
 author can find the row. A silent in-parser correction would make the CSV and
 the shipped index disagree, and would be invisible in the diff of the
 generated JSON.
+
+## 9. CST texts and text families
+
+**Segment keys compare only within one text family, and two families can hold
+the same key for different passages.** `mn1:1.1` in `mn1/pli/cst` is not the
+passage `mn1:1.1` in `mn1/pli/ms` or `mn1/en/sujato`. `bilara_multi_column_html`
+matches columns on the key alone, so aligning them would show different passages
+side by side with no error, and blank cells where only one side has the key.
+
+The CST family is a uid ending in `/pli/cst` or `/en/opentipitaka`
+(`is_cst_family_uid`). `columns_can_align(opened_uid, column_uids)` in
+`backend/src/sutta_display.rs` is true only if, counting the opened uid, no uid
+is in the family, or all are, with one base (`mn1.att/en/opentipitaka` does not
+align with `mn1/pli/cst`).
+
+> **Trap: the opened uid is a member even when it is not a column.** The aligned
+> view uses the *opened* text's template, and the column bar can remove or
+> replace the opened text. Opening `mn1/en/sujato` and showing `mn1/pli/cst` +
+> `mn1/en/opentipitaka` would otherwise pass, and render the CST text on Sujato's
+> template.
+
+"Has `content_json`" no longer means "can be aligned", so every place that asks
+uses this function too:
+
+- `render_content_block_for_columns`: a set that cannot align takes the block
+  fallback (§3);
+- the Lines-mode drop in `resolve_sutta_display_options` (§2);
+- `has_content_json` in `/translations_for_sutta`, which therefore answers
+  "can be aligned with **the opened text**", not "is segmented". The name is
+  kept because it is part of the documented response.
+
+**The default English of a Pāli text.** With no `columns` requested,
+`default_english_for_pali` picks the column:
+
+- a `/pli/cst` text takes `<base>/en/opentipitaka`, and nothing else;
+- any other Pāli text takes its first segmented English, then its first
+  non-segmented one, in `sort_suttas` order, leaving out `opentipitaka`. A
+  non-segmented English is dropped in Lines and a block in Columns, like a
+  requested one;
+- otherwise the Pāli is shown alone.
+
+Solo renders the opened text alone and keeps the English as page state, so
+switching layout shows it. Requested `columns` always win, and every
+content-block fetch sends the page's column list, which is never empty, so an
+English the reader removed stays removed while the page is open.
+
+**The same-base partner is always offered.** `/translations_for_sutta` lists the
+partner of an opened CST-family text whatever `include_cst_mula_in_translations`
+says. Otherwise, with the default settings, a reader who removes `mn1/pli/cst`
+beside `mn1/en/opentipitaka` cannot get it back.
+
+**The AI footer.** The English template ends with the AI notice and the licence
+(see [sutta-navigation-tree.md §3.5](./sutta-navigation-tree.md)), but the aligned
+view uses the opened text's template. So when a column is `/en/opentipitaka` and
+the opened text is not, the aligned branch adds `ot_footer_html()` to the last key
+of that template, which keeps it inside the wrapper the footer styles apply to.
+The block fallback, Solo and a single column render the English's own template,
+so they need nothing added, and the notice shows once in every layout.
+
+**Notes on CST records are ⧫ marks.** They are `sutta_variants` rows keyed by
+segment, displayed as any Bilara variant is: the mark at the end of the row,
+hidden until opened unless `show_all_variant_readings` is on. The export has no
+position inside the row. Three rows have nothing but a note in the Pāli
+(`s0502m.mul.xml` row 905, the Dhammapada vagga summary, and two others), so they
+show only the mark. The notes stay searchable through `content_plain`; see
+[text-processing-for-contains-match-and-fulltext-match-search.md](./text-processing-for-contains-match-and-fulltext-match-search.md).

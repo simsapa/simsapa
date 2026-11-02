@@ -32,7 +32,7 @@ Command cores used by both command-line crates live in
 `backend/src/cli_support.rs` and return values, never print: the `query`,
 `fulltext-search` and `stats` cores, and `index build|rebuild|delete`, which
 **both** crates have, because `docs/sutta-navigation-tree.md` names
-`index rebuild --area suttas --lang pli` as one of the three commands a
+`index rebuild --area suttas --lang pli` and `--lang en` among the commands a
 maintainer runs together after `import-cst`.
 
 ### The backend's `audio` feature

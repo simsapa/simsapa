@@ -989,6 +989,9 @@ The rules below are the ones that break quietly.
   never `LIKE 'sn56.11%'`, which would fold `sn56.110` in), excluding the root
   language. The window re-reads them in `onVisibleChanged`, because it is
   hidden rather than destroyed and a language can arrive while it is away.
+  `/en/opentipitaka` counts like any other translation, so nearly every node
+  shows at least one. `mn1.att/en/opentipitaka` is a translation of the
+  commentary, and does not count for `mn1/pli/cst`.
   Only level rows are counted; a uid with no translation is absent from the
   map and draws no indicator.
 - **Two reads are posted with `Qt.callLater`**: the first level query, so the
@@ -1240,7 +1243,7 @@ be conflated. `bootstrap_cli/src/bootstrap/cst_coverage.rs` holds both.
 
 A hand-maintained list of 52 source file names. **Only a listed file
 contributes fragment records.** Everything else is imported as divisions of the
-source XML, which do not depend on the parser's sutta splitting at all.
+file, which do not depend on the parser's sutta splitting at all.
 
 `tipitaka-xml-parser` is a work in progress. It produces **wrong splits and
 wrong uid assignments** on files whose structure it does not yet handle, so a
@@ -1273,8 +1276,7 @@ The list was previously called `CHECKED_XML_WHITELIST` and lived in
 "checked" collided with `frag_review = 'checked'`, which means something else.
 
 **To add a file:** run the parser's validations over it, review the output, add
-it to the list, then re-run `import-cst`, `build-navigation-tree` and
-`index rebuild --area suttas --lang pli` (see §6).
+it to the list, then run the rebuild commands (see §6).
 
 ### 3.2 How completely do the fragments cover it? — the coverage class
 
@@ -1333,16 +1335,63 @@ row, and not nested inside it. Both are independently openable. Every fragment
 row carries `cst_file`, so the window can mark it as a portion of that file and
 it is not mistaken for a duplicate of the division above it.
 
+### 3.5 What a CST record holds
+
+Every CST record is segmented, and every Pāli record has an English record.
+
+**The text is the OpenTipitaka export in `fragments.sqlite3`**, written by
+`import-opentipitaka` in `tipitaka-xml-parser`: `cst_texts` for a mapped
+fragment, `cst_segments` for a division or a whole file. The `romn/` XML supplies
+only the file list and the nikāya. The import stops with an error if the
+database or `romn/` is absent, if either table is missing, or if a source file
+has no rows. There is deliberately no fallback to the XML, which could build a
+release with no English.
+
+| | Pāli | English |
+|---|---|---|
+| uid | `mn1/pli/cst` | `mn1/en/opentipitaka`, `vin02m4.mul0.xml/en/opentipitaka` |
+| `source_uid` | `cst` | `opentipitaka` |
+| `content_json`, `content_json_tmpl` | yes | yes, with the same keys in the same order |
+| `content_html` | none | none |
+| `license` | none: the Pāli is credited to the Vipassana Research Institute | `CC-BY-NC-SA 4.0` |
+| `title` | the Pāli title | `en_title`, or for a division the English of its first chapter row; the Pāli title when there is none, and always for a whole file |
+| `sutta_variants` | the notes, keyed by segment | none |
+
+The English keeps the Pāli record's `sutta_ref`, `nikaya`, `group_path`,
+`group_index`, `order_index` and range columns.
+
+The key order is the reading order, so this JSON is never sorted and never
+passed through `serde_json::Value`. The header (`<h3>` nikāya and number,
+`<h1>` title) is added to the first key's template, and on the English the
+licence footer to the last key's, after the exported AI footer. The notice and
+licence are required text, because the `license` column is not displayed
+anywhere. `backend/src/opentipitaka.rs` holds that markup, since the reader
+needs it too, and a `bootstrap_cli` test asserts its constants equal the
+parser's.
+
+CST keys and SuttaCentral keys do not refer to the same passages. See
+[sutta-display-settings-and-multi-column-view.md §9](./sutta-display-settings-and-multi-column-view.md).
+
 ## 4. Splitting a source file into the toc's divisions
 
-For every file that is not fully mapped, the bootstrap cuts `romn/<name>.xml`
-into one record per leaf of `tipitaka.org/romn/cscd/<name>.toc.xml`, named to
-line up with the leaf (`s0305m.mul11.xml/pli/cst`).
+For every file that is not fully mapped, the bootstrap cuts the file's
+`cst_segments` rows into one record per leaf of
+`tipitaka.org/romn/cscd/<name>.toc.xml`, named to line up with the leaf
+(`s0305m.mul11.xml/pli/cst`). `split_rows_into_divisions()` in `cst_coverage.rs`
+does this, and `read_xml_file` is used only to find the nikāya.
 
-**The chapter markup gives the boundaries; the toc leaf count decides whether
-the head before the first marker is a division of its own.** Measured across all
-217 files: 169 have exactly as many leaves as `rend="chapter"` markers, 47 have
-one more, and one has one fewer.
+**The chapter rows give the boundaries; the toc leaf count decides whether the
+head before the first marker is a division of its own.** Measured across all
+217 files: 169 have exactly as many leaves as chapter markers, 47 have one more,
+and one has one fewer.
+
+A row opens a division when its `pali_wrapper` contains `class='chapter'`, with
+two traps:
+
+- The `rend` column cannot be used, because it is NULL on such rows in `e0606n`
+  and `e0607n`.
+- A chapter row with `ot_id` 0 is not a cut. `e0606n.nrf.xml` and
+  `e0607n.nrf.xml` have an extra title there that repeats the marker.
 
 > **Trap: the leading division cannot be read from the markup alone.** Deciding
 > it by "body text precedes the first chapter marker" matches only 205 of 217
@@ -1354,13 +1403,6 @@ one more, and one has one fewer.
 A file whose counts differ by anything else is reported and imported whole
 instead (§5), so no text is ever lost. On today's data that is one file,
 `abh05t.nrf.xml`.
-
-Each piece is **re-balanced**: any element still open at a boundary is closed at
-the end of the outgoing piece and re-opened in the incoming one, so every
-division is well-formed on its own. A `<div>` opened immediately before the
-marker with only whitespace in between is trimmed off rather than closed as an
-empty element — that is the common shape, and leaving it in ends each division
-with an empty div belonging to the next one.
 
 ### 4.1 Toc leaves of a fully mapped file become branches
 
@@ -1440,8 +1482,8 @@ It is a report, never a repair: a non-zero unassigned count is a mapping to fix.
 
 ## 6. Rebuilding without a full bootstrap
 
-Three commands, and **they must be run together** — the second reads what the
-first wrote, and the third is not optional:
+Four commands, and **they must be run together** — the second reads what the
+first wrote, and the last two are not optional:
 
 ``` sh
 simsapa_bootstrap_cli import-cst --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
@@ -1449,10 +1491,13 @@ simsapa_bootstrap_cli import-cst --db-path <appdata> --cst-xml-dir <tipitaka-xml
 simsapa_bootstrap_cli build-navigation-tree --db-path <appdata> --cst-xml-dir <tipitaka-xml> \
     --fragments-db-path <fragments.sqlite3>
 simsapa_bootstrap_cli index rebuild --area suttas --lang pli --simsapa-dir <SIMSAPA_DIR>
+simsapa_bootstrap_cli index rebuild --area suttas --lang en --simsapa-dir <SIMSAPA_DIR>
 ```
 
-`import-cst` deletes the existing `%/pli/cst` rows first: the importer skips a
-uid that already exists, so without that a re-run would change nothing.
+`import-cst` first deletes the existing `%/pli/cst` and `%/en/opentipitaka` rows
+and the `cst` variants: the importer skips a uid that already exists, so without
+that a re-run would change nothing. The deletes and the import are one
+transaction, so a failed input check leaves the database as it was.
 
 > **Trap: replacing the CST records invalidates two indexes and only one heals
 > itself.** `suttas_fts` is kept in sync by its triggers. The **Tantivy index is
