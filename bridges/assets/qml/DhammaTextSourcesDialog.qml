@@ -76,6 +76,7 @@ ApplicationWindow {
     <li><a href="https://archive.org/details/VenDenmarkNyanadipa">The Silent Sages of Old</a> Translations by Bhante Nyanadipa</li>
     <li><a href="https://index.readingfaithfully.org/">index.readingfaithfully.org</a> Sutta Index of Topics</li>
     <li><a href="https://www.opentipitaka.org/">opentipitaka.org</a> English translation of the CST texts, produced by AI</li>
+    <li><a href="https://patimokkha.jhana.info/">patimokkha.jhana.info</a>Bhikkhu Pāṭimokkha in Pāli-English, Ṭhānissaro Bhikkhu, 2008</li>
 </ul>
 <h3>Dictionaries</h3>
 <ul>
