@@ -100,7 +100,7 @@ fn test_sutta_search_contains_match() {
     assert!(result.snippet.contains("<span class='match'>satipaṭṭhāna</span>"),
             "Snippet for '{}' is not highlighted: {}", expected_uid, result.snippet);
 
-    assert!(result.snippet.starts_with("... establishing of mindfulness discourse <span class='match'>satipaṭṭhāna</span> sutta\u{a0}\u{a0}(mn\u{a0}10) introduction <span class='match'>satipaṭṭhāna</span> the establishing (upaṭṭhāna) of mindfulness (sati) is a meditative technique for training the mind"));
+    assert!(result.snippet.starts_with("introduction <span class='match'>satipaṭṭhāna</span> the establishing (upaṭṭhāna) of mindfulness (sati) is a meditative technique for training the mind"));
 
     // Verify all results are English
     for result in &results {

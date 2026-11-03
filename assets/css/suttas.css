@@ -2164,7 +2164,7 @@ body.footnote-bar-visible #ssp_content {
   background: var(--menu-bg-start);
   border-top: 1px solid var(--menu-border);
   box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.15);
-  z-index: 998;
+  z-index: 1001;
   font-family: sans-serif;
   font-size: 13px;
   color: var(--text-primary);
@@ -2290,7 +2290,7 @@ body.footnote-bar-visible #ssp_content {
   border: 1px solid var(--menu-border);
   border-radius: 8px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
-  z-index: 1001;
+  z-index: 1;
 }
 
 .column-bar-menu.show {

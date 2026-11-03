@@ -398,9 +398,10 @@ $column_bar_height: 40px;
     background: var(--menu-bg-start);
     border-top: 1px solid var(--menu-border);
     box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.15);
-    // Below the footnote bar (1000): footnotes slide over their own strip,
-    // not over the column bar (it gets a bottom offset below).
-    z-index: 998;
+    // Above the footnote bar (1000). The bar is a stacking context, so this
+    // is what lifts its dropdown menus over the footnotes; the footnote bar
+    // has a bottom offset and never sits under the column bar itself.
+    z-index: 1001;
     font-family: sans-serif;
     font-size: $font_size;
     color: var(--text-primary);
@@ -492,8 +493,8 @@ $column_bar_height: 40px;
     border: 1px solid var(--menu-border);
     border-radius: $card_radius;
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
-    // Above the footnote bottom bar (1000).
-    z-index: 1001;
+    // Within the column bar's stacking context.
+    z-index: 1;
 
     &.show {
         display: block;

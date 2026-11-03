@@ -43,10 +43,11 @@ PRD: [2026-11-02-132118-prd---suttas-core-segmented-translations-import.md](./20
 - `backend/tests/test_sutta_uid_renames.rs` (new) - Rename map against the dist DB, with `dummy-` rows.
 - `backend/tests/data/*_rendered.html`, `backend/tests/data/sn1.61_en_sujato.article.html` - Rendered fixtures of the texts with comments, regenerated with comments as footnotes.
 - `backend/tests/test_render_sutta_content.rs` - Comment describing how comments render, updated.
+- `backend/tests/test_query_task.rs`, `test_render_sutta_content.rs`, `test_sutta_json.rs`, `backend_cli/tests/read_only_commands.rs`, `backend/tests/data/kp5_en_thanissaro.main.html` (new, replaces `dn22_en_thanissaro.main.html`) - Fixtures that named records now segmented (`dn22`/`mn10` Ṭhānissaro, `mn1/en/bodhi`) moved to records that stay HTML (`kp5`, `dn1/en/bodhi`) or to the new snippet.
 - `docs/suttas-core-import.md` (new) - Feature doc (FR 44).
 - `docs/suttas-core-questions-for-upstream.md` - Upstream questions; §4 introductions removed, §5 empty texts.
 - `docs/simsapa-cli-and-localhost-api.md` - Footnote form in `/sutta_bilara.json`; Bodhi/PTS/Ṭhānissaro now segmented (FR 45).
-- `docs/sutta-display-settings-and-multi-column-view.md` - Footnotes in the multi-column view.
+- `docs/sutta-display-settings-and-multi-column-view.md` - Footnotes in the multi-column view (§10) and the re-init table.
 - `PROJECT_MAP.md`, `CLAUDE.md` - Notable-docs entry and file map (FR 45).
 
 ### Notes
@@ -232,12 +233,12 @@ Find-bar matching and clean copied sutta text (numbers out of the text nodes) ar
 **Depends on:** 1.0–7.0.
 
 - [ ] 8.0 Documentation, a bootstrap run and verification against the success metrics (FR 44, 45; PRD §8)
-  - [ ] 8.1 Write `docs/suttas-core-import.md` (FR 44): rules per label and the `content_json` decision, the insertion point and why, the uid map and its rules, the override file, the rename table and its readers, the stored footnote form and its rendering, the survey command, and how to point `current` at a new build. Describe current behaviour only.
-  - [ ] 8.2 Update `docs/simsapa-cli-and-localhost-api.md` (footnote form in `/sutta_bilara.json` `comments`; Bodhi, PTS and Ṭhānissaro records are segmented; Ṭhānissaro uses SuttaCentral numbering). Keep it self-contained: no repo paths (`test_bundled_doc_has_no_repo_references`).
-  - [ ] 8.3 Update `docs/sutta-display-settings-and-multi-column-view.md` for footnotes in the multi-column view, `PROJECT_MAP.md`, and the notable-docs list in `CLAUDE.md`.
-  - [ ] 8.4 Ask the user to run the bootstrap (it rebuilds the dist databases; it is long and the user's call), or to approve running it.
-  - [ ] 8.5 Verify the PRD §8 metrics on the result with SQL: Bodhi 1,165 segmented / 3 HTML; PTS 144 replaced; Ṭhānissaro 1,441 segmented and only `kp1`–`kp9`, `sn44` and `thag3.8` HTML; no SuttaCentral sutta with two Ṭhānissaro records; no pre-existing `content_json` changed and the only added/removed uids are Ṭhānissaro's (compare against a baseline built without the step, the same one the survey uses); no new missing navigation leaves in the bootstrap log; no run-together words (search `content_plain` for `[a-z][.!?][A-Z]` in imported records, compared with the baseline rate).
-  - [ ] 8.6 `make test` passes (Rust, QML, JS).
+  - [x] 8.1 Write `docs/suttas-core-import.md` (FR 44): rules per label and the `content_json` decision, the insertion point and why, the uid map and its rules, the override file, the rename table and its readers, the stored footnote form and its rendering, the survey command, and how to point `current` at a new build. Describe current behaviour only.
+  - [x] 8.2 Update `docs/simsapa-cli-and-localhost-api.md` (footnote form in `/sutta_bilara.json` `comments`; Bodhi, PTS and Ṭhānissaro records are segmented; Ṭhānissaro uses SuttaCentral numbering). Keep it self-contained: no repo paths (`test_bundled_doc_has_no_repo_references`).
+  - [x] 8.3 Update `docs/sutta-display-settings-and-multi-column-view.md` for footnotes in the multi-column view, `PROJECT_MAP.md`, and the notable-docs list in `CLAUDE.md`.
+  - [x] 8.4 Ask the user to run the bootstrap (it rebuilds the dist databases; it is long and the user's call), or to approve running it.
+  - [x] 8.5 Verify the PRD §8 metrics on the result with SQL: Bodhi 1,165 segmented / 3 HTML; PTS 144 replaced; Ṭhānissaro 1,441 segmented and only `kp1`–`kp9`, `sn44` and `thag3.8` HTML; no SuttaCentral sutta with two Ṭhānissaro records; no pre-existing `content_json` changed and the only added/removed uids are Ṭhānissaro's (compare against a baseline built without the step, the same one the survey uses); no new missing navigation leaves in the bootstrap log; no run-together words (search `content_plain` for `[a-z][.!?][A-Z]` in imported records, compared with the baseline rate).
+  - [x] 8.6 `make test` passes (Rust, QML, JS).
   - [ ] 8.6a Ask the user to check the find bar on a text with markers (`snp4.11/en/thanissaro`: search `disappeared:`) and that opening `mn10/pli/ms` with no columns still shows Sujato beside it.
   - [ ] 8.7 Ask the user to check in the app, on the now-segmented `snp4.11/en/thanissaro`, `an10.176/en/thanissaro` and `mn10/en/bodhi`, and on `kp5/en/thanissaro` (still HTML): notes appear in the bottom bar while their number is in view; a note's text can be selected and copied; Ṭhānissaro's note references (e.g. "SN 36:11", "Sn 4:11", an AN reference in his numbering) open the right suttas; with "show footnotes bar" off the bar stays hidden and the number opens the pop-up; the texts line up with the Pāli in the Columns layout, also with two annotated columns (bar items show the column label). Also: an EPUB with dhammatalks.org links opens the renumbered suttas.
   - [ ] 8.8 Remind the user that an appdata DB version bump is needed before release (they do it).

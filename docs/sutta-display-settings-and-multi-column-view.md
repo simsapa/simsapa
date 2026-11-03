@@ -361,9 +361,9 @@ after a swap (page chrome lives outside `#ssp_content` and survives):
 | Binding | Survives swap? | Re-init |
 |---|---|---|
 | document-level delegated handlers in the inlined `assets/js/suttas.js` (click / selectionchange / dblclick) | yes | — |
-| variant/comment mark toggles (per-node, suttas.js) | no | `window.ssp_rebind_content_handlers()` |
+| variant mark toggles (per-node, suttas.js) | no | `window.ssp_rebind_content_handlers()` |
 | link handlers (webpack) | no | `document.SSP.attach_link_handlers()` |
-| footnote bottom bar IntersectionObserver | no | `footnote_bottom_bar.refresh()` |
+| footnote markers (numbers moved into `data-n`) and the footnote bottom bar IntersectionObserver | no | `normalise_footnote_markers(root)`, then `footnote_bottom_bar.refresh()` |
 | find-bar highlights (spans replaced; recover closure holds detached nodes) | no | `find.hide()` clears state |
 | per-column color vars / panel color rows | column list may change | `ds.refresh_columns()` |
 
@@ -645,3 +645,17 @@ position inside the row. Three rows have nothing but a note in the Pāli
 (`s0502m.mul.xml` row 905, the Dhammapada vagga summary, and two others), so they
 show only the mark. The notes stay searchable through `content_plain`; see
 [text-processing-for-contains-match-and-fulltext-match-search.md](./text-processing-for-contains-match-and-fulltext-match-search.md).
+
+## 10. Footnotes in the multi-column view
+
+Translator notes and SuttaCentral comments render as numbered footnotes, not a
+`✱` mark. Each column numbers its own notes, so footnote ids carry a per-record
+prefix (`fn-<uid sanitised>-<n>`) and stay unique when several texts are on one
+page. The definitions are emitted after the column grid, one list per annotated
+column headed by the column label; in the block-columns fallback they sit inside
+each column. When more than one column has notes, a footnote bottom bar item
+shows its column's label with the number. After a content swap the new markers
+must be normalised (`normalise_footnote_markers()`) **before** the bar
+re-observes them, which is why both are in the re-init table above. Storage,
+rendering rules and the reader code are in
+[suttas-core-import.md](./suttas-core-import.md) §5.
