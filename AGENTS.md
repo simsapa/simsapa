@@ -1857,22 +1857,68 @@ became N full scans of the entire FTS table — deleting a 2000-entry dictionary
 took ~3 minutes (measured 168 s) against a 198k-row FTS, and ~8 minutes in-app.
 
 The fix (applied to all FTS scripts) is to carry the source `id` as the FTS5
-`rowid`, which makes the trigger lookups O(log n):
+`rowid`, which makes the trigger lookups O(log n).
 
-```sql
--- ✅ GOOD: id is the FTS5 rowid (no UNINDEXED id column)
-CREATE VIRTUAL TABLE dict_words_fts USING fts5(
-    language UNINDEXED, dict_label UNINDEXED, word, definition_plain,
+**The large tables are narrow external-content tables.** `suttas_fts`,
+`dict_words_fts`, `dict_words_word_fts`, `bold_definitions_fts` and
+`bold_definitions_bold_fts` store no copy of the text (`content='<table>',
+content_rowid='id'`, `tokenize='trigram'`, `detail='none'`); FTS5 reads it from
+the source table. Rules that come with it:
+
+- **Declare only the columns the table searches.** For every candidate row FTS5
+  reads *each declared column* from the content table, `UNINDEXED` ones
+  included, and the core rechecks a trigram `LIKE`. So there are no `UNINDEXED`
+  filter columns: queries filter on the joined content row (`+s.language`,
+  `s.nikaya`, `s.source_uid`; the unary plus keeps `idx_suttas_language` from
+  driving the query for a language the statistics do not describe).
+- **A search of one column needs a table over that column alone.** With
+  `detail='none'` an index records no column, so `f.word LIKE ?` on
+  `dict_words_fts(word, definition_plain)` gets as candidates every row with the
+  trigrams in *either* column and reads each from `dict_words` (cold `kamma`:
+  27,159 candidates for 710 results, 1.9 s against 0.06 s). Headword Match
+  therefore uses `dict_words_word_fts(word)`.
+- **Every row is indexed, with no `WHEN` condition**, because `integrity-check`
+  expects an index entry for every row of the content table. A NULL or empty
+  column gives no tokens, only a `_docsize` row.
+- **Every write to an indexed column must go through the triggers, and the index
+  does not report being out of step**: it returns wrong results. The update
+  trigger is `AFTER UPDATE OF <indexed columns>` only (renaming a dictionary
+  re-tokenizes nothing), and uses the `'delete'` command with the old values,
+  which must be exactly what was indexed:
+
+``` sql
+CREATE VIRTUAL TABLE dict_words_word_fts USING fts5(
+    word, content='dict_words', content_rowid='id',
     tokenize='trigram', detail='none'
 );
-INSERT INTO dict_words_fts (rowid, language, dict_label, word, definition_plain)
-SELECT id, language, dict_label, word, definition_plain FROM dict_words ...;
 
-CREATE TRIGGER dict_words_fts_delete AFTER DELETE ON dict_words
+CREATE TRIGGER dict_words_word_fts_delete AFTER DELETE ON dict_words
 BEGIN
-    DELETE FROM dict_words_fts WHERE rowid = OLD.id;  -- O(log n), not a full scan
+    INSERT INTO dict_words_word_fts (dict_words_word_fts, rowid, word)
+    VALUES ('delete', OLD.id, OLD.word);   -- O(log n), no full scan
 END;
 ```
+
+- **Order page queries by `f.rowid`**, not the content table's id: FTS5 delivers
+  rows in rowid order, so SQLite does not sort every match before `LIMIT`. See
+  [docs/dict-words-fts5-implementation.md](./docs/dict-words-fts5-implementation.md).
+- **Count with `<table>_docsize`**: `SELECT COUNT(*)` on an external-content
+  table is answered from the content table.
+- **The bootstrap runs `integrity-check` with rank 1** (`db::fts5_integrity_check()`)
+  on each of these tables after the last import, and `import-cst` on
+  `suttas_fts`; an error stops it.
+- **Column order of the source tables matters.** SQLite reads a row's columns in
+  order and follows the overflow chain of a large row from its start, so the
+  baseline declares small, often-read columns first, then `content_plain` /
+  `definition_plain`, then the large columns, `content_html` last (`suttas`,
+  `dict_words`, `book_spine_items`). Diesel's `table!` and the `Queryable`
+  structs follow the database's order, since `Queryable` maps by position.
+- **A new table of this kind needs measurements** before it ships: plans with
+  real values (`fts_bench --explain`), equal counts and uid hashes, and the
+  gate of cold and warm medians at most max(110%, +20 ms) of before, on a slow
+  phone as well as the desktop. Run `fts_bench` (`backend/examples/fts_bench.rs`,
+  `make fts-bench-arm64` for the phone): `fts_bench --dir <SIMSAPA_DIR copy>
+  --label x --runs 5 > x.tsv`, never on a dist database.
 
 Consequences for query code (`backend/src/query_task.rs`): join on the rowid
 (`JOIN dict_words_fts f ON f.rowid = dict_words.id`) and project it with an
@@ -1901,8 +1947,8 @@ bootstrap we import `dpd.sqlite3` (headword + root **structured** data, no HTML)
 then separately import the **rendered HTML pages from a DPD StarDict export** to
 build `dict_words`. The StarDict export is **keyed by `lemma_1`**, so
 `dict_words.word` mirrors `dpd_headwords.lemma_1` one-to-one (a load-bearing
-invariant — `SearchQueryTask::lemma_1_dpd_headword_match_fts5_full` scans
-`dict_words_fts.word` because of it). If `dict_words` used the `<row_id>/dpd` uid
+invariant — `SearchQueryTask::lemma_1_dpd_headword_match_ids` scans
+`dict_words_word_fts.word` because of it). If `dict_words` used the `<row_id>/dpd` uid
 format, **headword ids and root ids would collide** in the shared `dict_words`
 table — so `dict_words.uid` is instead built from the sanitized lemma/root word
 (`word_uid_sanitize(word) + "/dpd"`), which maps back **unambiguously** to the
