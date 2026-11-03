@@ -153,6 +153,14 @@ cli-linux-arm64:
 	mkdir -p $(CLI_DIST)/linux-arm64
 	cp backend_cli/target/aarch64-unknown-linux-musl/release/simsapa $(CLI_DIST)/linux-arm64/simsapa
 
+# The FTS benchmark (backend/examples/fts_bench.rs) as a static aarch64 binary,
+# which runs on a phone under `adb shell`. Built as cli-linux-arm64 is, without
+# the audio feature.
+fts-bench-arm64:
+	cd backend && cargo zigbuild --release --no-default-features --example fts_bench --target aarch64-unknown-linux-musl
+	mkdir -p dist/fts-bench
+	cp backend/target/aarch64-unknown-linux-musl/release/examples/fts_bench dist/fts-bench/fts_bench
+
 # On an Apple Silicon Mac.
 cli-darwin-arm64:
 	cd backend_cli && cargo build --release --target aarch64-apple-darwin
