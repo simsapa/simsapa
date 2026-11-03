@@ -1,81 +1,80 @@
--- Standalone script to add FTS5 index and performance indexes to existing dictionaries database
--- Run with: sqlite3 <path_to_dictionaries.sqlite3> < scripts/add-dict-words-fts5.sql
+-- FTS5 trigram index over dict_words.word and dict_words.definition_plain,
+-- for Dictionary Contains Match and Headword Match.
 --
--- NOTE: Modifying this script (e.g. adding/removing indexed columns on dict_words_fts)
--- requires a manual re-bootstrap of the dictionaries DB. There is no Diesel migration —
--- the FTS table and triggers are recreated by re-running this script.
+-- Modifying this script requires a re-bootstrap of the dictionaries DB. There
+-- is no Diesel migration: the FTS table and triggers are recreated by this
+-- script. See docs/dict-words-fts5-implementation.md.
 
--- Drop existing FTS table and triggers if they exist
--- This ensures we start fresh with the new schema
 DROP TRIGGER IF EXISTS dict_words_fts_insert;
 DROP TRIGGER IF EXISTS dict_words_fts_update;
 DROP TRIGGER IF EXISTS dict_words_fts_delete;
 DROP TABLE IF EXISTS dict_words_fts;
 
--- Create the FTS5 virtual table with trigram tokenizer for dictionary headwords + definitions.
--- The trigram tokenizer enables efficient substring matching like LIKE '%query%'
--- Both `word` and `definition_plain` are indexed with the trigram tokenizer can serve
--- substring searches against either column.
--- detail='none' reduces index size by not storing term positions
+-- An external-content table: the text is read from `dict_words` and not stored
+-- a second time; only the index is stored. The trigram tokenizer serves
+-- `LIKE '%query%'` on either column, and detail='none' stores no term
+-- positions.
 --
--- PERFORMANCE: the source row id (dict_words.id) is stored as the FTS5 `rowid`,
--- NOT as a separate UNINDEXED column. FTS5 has no secondary indexes, so a
--- `WHERE dict_word_id = ?` lookup against an UNINDEXED column is a FULL TABLE
--- SCAN. The per-row delete/update triggers below run such a lookup once per
--- affected `dict_words` row, so a cascade delete of an N-row dictionary became
--- N full scans of the whole FTS table (e.g. ~3 min for 2000 rows against a
--- 198k-row FTS). Using the rowid makes those lookups O(log n). Queries join
--- `f.rowid = dict_words.id` instead of the old `f.dict_word_id`.
+-- It declares only the columns it searches: for every candidate row FTS5 reads
+-- each declared column from `dict_words`. The filters (language, dict_label,
+-- uid) are read from the joined `dict_words` row. `dict_words` keeps
+-- `definition_plain` before its large and optional columns (the dictionaries
+-- baseline migration).
+--
+-- The source row id (dict_words.id) is the FTS5 `rowid`, which makes the
+-- trigger lookups O(log n): deleting a dictionary deletes its rows one by one.
+-- Queries join `f.rowid = d.id` and order by `f.rowid`.
 CREATE VIRTUAL TABLE dict_words_fts USING fts5(
-    language UNINDEXED,      -- Store language for filtering, but don't index for search
-    dict_label UNINDEXED,    -- Store dict_label for filtering, but don't index for search
-    word,                    -- Headword: indexed for substring search
-    definition_plain,        -- Definition body: indexed for substring search
-    tokenize='trigram',      -- Use trigram tokenizer for substring search
-    detail='none'            -- Reduce index size
+    word,
+    definition_plain,
+    content='dict_words', content_rowid='id',
+    tokenize='trigram',
+    detail='none'
 );
 
--- Populate the FTS table with existing data.
--- Include any row where at least one of `word` / `definition_plain` is non-null.
--- `rowid` is set to dict_words.id so deletes/updates can use the fast rowid path.
-INSERT INTO dict_words_fts (rowid, language, dict_label, word, definition_plain)
-SELECT id, language, dict_label, word, definition_plain
-FROM dict_words
-WHERE word IS NOT NULL OR definition_plain IS NOT NULL;
+-- Index the existing rows. A full bootstrap runs this before the DPD import,
+-- whose writes then go through the triggers.
+--
+-- Every row is indexed, a NULL `definition_plain` included (it gives no
+-- tokens). FTS5's integrity check of an external-content table expects an
+-- index entry for every row of the content table, and fails if a row is left
+-- out.
+INSERT INTO dict_words_fts (rowid, word, definition_plain)
+SELECT id, word, definition_plain
+FROM dict_words;
 
--- Create triggers to keep FTS table in sync with main table
+-- Every write to `dict_words.word` or `dict_words.definition_plain` must go
+-- through these triggers. FTS5 reports no error when the index is out of step
+-- with `dict_words`; it returns wrong results. The `'delete'` command removes
+-- the index entries of the values it is given, so it must be given exactly
+-- what was indexed: the old values.
 
--- Trigger for INSERT operations
 CREATE TRIGGER dict_words_fts_insert
 AFTER INSERT ON dict_words
-WHEN NEW.word IS NOT NULL OR NEW.definition_plain IS NOT NULL
 BEGIN
-    INSERT INTO dict_words_fts (rowid, language, dict_label, word, definition_plain)
-    VALUES (NEW.id, NEW.language, NEW.dict_label, NEW.word, NEW.definition_plain);
+    INSERT INTO dict_words_fts (rowid, word, definition_plain)
+    VALUES (NEW.id, NEW.word, NEW.definition_plain);
 END;
 
--- Trigger for UPDATE operations
+-- Only an update of an indexed column re-tokenizes the row, so renaming a
+-- dictionary (dict_label) or marking it indexed (indexed_at) does not.
 CREATE TRIGGER dict_words_fts_update
-AFTER UPDATE ON dict_words
+AFTER UPDATE OF word, definition_plain ON dict_words
 BEGIN
-    -- Delete old entry if it exists (fast rowid lookup)
-    DELETE FROM dict_words_fts WHERE rowid = OLD.id;
+    INSERT INTO dict_words_fts (dict_words_fts, rowid, word, definition_plain)
+    VALUES ('delete', OLD.id, OLD.word, OLD.definition_plain);
 
-    -- Insert new entry if at least one indexed column is non-null
-    INSERT INTO dict_words_fts (rowid, language, dict_label, word, definition_plain)
-    SELECT NEW.id, NEW.language, NEW.dict_label, NEW.word, NEW.definition_plain
-    WHERE NEW.word IS NOT NULL OR NEW.definition_plain IS NOT NULL;
+    INSERT INTO dict_words_fts (rowid, word, definition_plain)
+    VALUES (NEW.id, NEW.word, NEW.definition_plain);
 END;
 
--- Trigger for DELETE operations (fast rowid lookup)
 CREATE TRIGGER dict_words_fts_delete
 AFTER DELETE ON dict_words
 BEGIN
-    DELETE FROM dict_words_fts WHERE rowid = OLD.id;
+    INSERT INTO dict_words_fts (dict_words_fts, rowid, word, definition_plain)
+    VALUES ('delete', OLD.id, OLD.word, OLD.definition_plain);
 END;
 
--- Optimize the FTS index
 INSERT INTO dict_words_fts(dict_words_fts) VALUES('optimize');
 
--- Vacuum to reclaim space and optimize database
 VACUUM;

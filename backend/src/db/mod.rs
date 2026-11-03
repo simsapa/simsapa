@@ -532,8 +532,40 @@ pub fn run_dictionaries_migrations(db_conn: &mut SqliteConnection) -> Result<()>
     }
 }
 
+/// The external-content FTS5 tables of each database, which store only an
+/// index of their content table's text. See
+/// docs/dict-words-fts5-implementation.md.
+pub const APPDATA_FTS_TABLES: [&str; 1] = ["suttas_fts"];
+pub const DICTIONARIES_FTS_TABLES: [&str; 1] = ["dict_words_fts"];
+pub const DPD_FTS_TABLES: [&str; 2] = ["bold_definitions_fts", "bold_definitions_bold_fts"];
+
+/// Check that an FTS5 table's index agrees with its content: FTS5's
+/// `integrity-check` with rank 1, which for an external-content table reads
+/// every row of the content table and compares its tokens with the index.
+///
+/// An external-content index that is out of step with its content table
+/// raises no error when queried; it returns wrong results. So this runs after
+/// every bulk write in the bootstrap, and an error must stop it.
+pub fn fts5_integrity_check(db_conn: &mut SqliteConnection, table: &str) -> Result<()> {
+    if table.is_empty() || !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(anyhow::anyhow!("Not an FTS5 table name: {:?}", table));
+    }
+    info(&format!("fts5_integrity_check(): {}", table));
+    db_conn
+        .batch_execute(&format!("INSERT INTO {t}({t}, rank) VALUES('integrity-check', 1);", t = table))
+        .with_context(|| format!("FTS5 integrity-check failed on {}: its index is out of step with its content table", table))
+}
+
+/// `fts5_integrity_check()` on each of `tables`, stopping at the first error.
+pub fn fts5_integrity_check_all(db_conn: &mut SqliteConnection, tables: &[&str]) -> Result<()> {
+    for table in tables {
+        fts5_integrity_check(db_conn, table)?;
+    }
+    Ok(())
+}
+
 /// Returns connections as a tuple to appdata.sqlite3, dictionaries.sqlite3, dpd.sqlite3
-pub fn establish_connection() -> (SqliteConnection, SqliteConnection, SqliteConnection) {
+pub fn establish_connection()-> (SqliteConnection, SqliteConnection, SqliteConnection) {
     info("establish_connection()");
     dotenv().ok();
 
@@ -573,6 +605,9 @@ pub fn establish_connection() -> (SqliteConnection, SqliteConnection, SqliteConn
     (appdata_conn, dict_conn, dpd_conn)
 }
 
+
+#[cfg(test)]
+mod fts_trigger_tests;
 
 #[cfg(test)]
 mod baseline_migration_tests {

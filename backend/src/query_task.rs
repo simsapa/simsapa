@@ -1083,11 +1083,11 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         if let Some(prefix) = sanitize_uid_like_prefix(self.nikaya_prefix.as_deref()) {
-            extra_where.push_str(&format!(" AND f.nikaya LIKE '{}%'", prefix));
+            extra_where.push_str(&format!(" AND s.nikaya LIKE '{}%'", prefix));
         }
 
         if !self.include_ms_mula {
-            extra_where.push_str(" AND NOT (f.source_uid = 'ms')");
+            extra_where.push_str(" AND NOT (s.source_uid = 'ms')");
         }
 
         if let Some(hidden) = self.hidden_pali_edition(db_conn) {
@@ -1110,7 +1110,7 @@ impl<'a> SearchQueryTask<'a> {
 
         let where_clause = if apply_lang_filter {
             format!(
-                "WHERE f.content_plain LIKE ? AND f.language = ?{} AND s.uid LIKE ? AND s.uid LIKE ?",
+                "WHERE f.content_plain LIKE ? AND s.language = ?{} AND s.uid LIKE ? AND s.uid LIKE ?",
                 extra_where
             )
         } else {
@@ -1148,8 +1148,12 @@ impl<'a> SearchQueryTask<'a> {
         };
 
         // --- Page fetch ---
+        // Ordered by the FTS rowid (= s.id), which FTS5 returns in order, so
+        // SQLite reads full `suttas` rows only for the page and does not sort
+        // every match first, as `ORDER BY s.id` would make it.
+        // See docs/dict-words-fts5-implementation.md.
         let select_sql = format!(
-            "SELECT s.* FROM suttas_fts f JOIN suttas s ON f.rowid = s.id {} ORDER BY s.id LIMIT ? OFFSET ?",
+            "SELECT s.* FROM suttas_fts f JOIN suttas s ON f.rowid = s.id {} ORDER BY f.rowid LIMIT ? OFFSET ?",
             where_clause
         );
         let offset = (page_num as i64).saturating_mul(page_len as i64);
@@ -1483,7 +1487,7 @@ impl<'a> SearchQueryTask<'a> {
                     sql.push_str(" AND d.language = ?");
                 }
 
-                sql.push_str(" AND d.uid LIKE ? AND d.uid LIKE ? ORDER BY d.id LIMIT ?");
+                sql.push_str(" AND d.uid LIKE ? AND d.uid LIKE ? ORDER BY f.rowid LIMIT ?");
 
                 let mut q = sql_query(&sql)
                     .into_boxed::<diesel::sqlite::Sqlite>()
@@ -1569,7 +1573,7 @@ impl<'a> SearchQueryTask<'a> {
 
                     let fts_query = String::from(
                         r#"
-                        SELECT id
+                        SELECT id AS headword_id
                         FROM dpd_headwords
                         WHERE word_ascii LIKE ?
                         ORDER BY id
@@ -1772,7 +1776,7 @@ impl<'a> SearchQueryTask<'a> {
     /// Substring match on `bold_definitions.bold` / `bold_ascii` via the
     /// FTS5 trigram index. Returns `(total_count, slice)` where the slice
     /// covers `[offset .. offset+limit)` of the deterministic
-    /// `ORDER BY bd.id` stream. `limit = 0` runs only the COUNT and skips
+    /// `ORDER BY f.rowid` (= `bd.id`) stream. `limit = 0` runs only the COUNT and skips
     /// the row fetch — useful when the caller only needs the boundary
     /// total to compute its slice ranges.
     fn query_bold_definitions_bold_fts5(
@@ -1844,7 +1848,7 @@ impl<'a> SearchQueryTask<'a> {
             WHERE (f.bold LIKE ? OR f.bold_ascii LIKE ?)
               AND bd.uid LIKE ?
               AND bd.uid LIKE ?
-            ORDER BY bd.id
+            ORDER BY f.rowid
             LIMIT ? OFFSET ?
         "#;
 
@@ -1871,7 +1875,7 @@ impl<'a> SearchQueryTask<'a> {
     /// Substring match on `bold_definitions.commentary_plain` via the
     /// trigram FTS5 index. Used by Contains Match + Dictionary. Returns
     /// `(total_count, slice)` where the slice covers `[offset .. offset+limit)`
-    /// of the deterministic `ORDER BY bd.id` stream. `limit = 0` runs
+    /// of the deterministic `ORDER BY f.rowid` (= `bd.id`) stream. `limit = 0` runs
     /// only the COUNT.
     fn query_bold_definitions_commentary_fts5(
         &self,
@@ -1936,7 +1940,7 @@ impl<'a> SearchQueryTask<'a> {
             WHERE f.commentary_plain LIKE ?
               AND bd.uid LIKE ?
               AND bd.uid LIKE ?
-            ORDER BY bd.id
+            ORDER BY f.rowid
             LIMIT ? OFFSET ?
         "#;
 
@@ -2374,7 +2378,7 @@ impl<'a> SearchQueryTask<'a> {
             sql.push_str(" AND dw.language = ?");
         }
 
-        sql.push_str(" AND dw.uid LIKE ? AND dw.uid LIKE ? ORDER BY dw.id LIMIT ?");
+        sql.push_str(" AND dw.uid LIKE ? AND dw.uid LIKE ? ORDER BY f.rowid LIMIT ?");
 
         let mut q = sql_query(&sql)
             .into_boxed::<diesel::sqlite::Sqlite>()

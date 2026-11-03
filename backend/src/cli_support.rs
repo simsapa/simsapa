@@ -392,7 +392,10 @@ pub fn collect_appdata_stats(db_path: &Path) -> Result<AppdataStats> {
         stats.insert(format!("Total rows in {}", table), count.to_string());
     }
 
-    let fts_count = get_row_count(&mut conn, "suttas_fts")?;
+    // The indexed rows are counted in the `_docsize` shadow table: a COUNT(*)
+    // on the external-content `suttas_fts` is answered from `suttas`, so it
+    // would include the rows the index leaves out.
+    let fts_count = get_row_count(&mut conn, "suttas_fts_docsize")?;
     stats.insert("Total rows in suttas_fts".to_string(), fts_count.to_string());
 
     if table_exists(&mut conn, "suttas") {

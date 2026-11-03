@@ -8,11 +8,14 @@
 //!
 //! Each output line is tab-separated:
 //!
-//!     label  case  cold|warm  median_ms  worst_ms  result_count
+//!     label  case  cold|warm  median_ms  worst_ms  result_count  uids_hash
 //!
-//! A case name is `<fts tables read>|<area.mode>|lang=<filter>|<page>|<query>`.
-//! `result_count` is the query's total hit count (for the delete case, the
-//! number of `dict_words` rows deleted).
+//! A case name is `<fts tables read>|<area.mode>|lang=<filters>|<page>|<query>`,
+//! where `<filters>` is the language filter, then `no_ms` when the `ms` texts
+//! are excluded and `nikaya=<prefix>`. `result_count` is the query's total hit
+//! count (for the delete case, the number of `dict_words` rows deleted), and
+//! `uids_hash` a hash of the result page's uids in order, so that two runs can
+//! be shown to return the same results and not only the same number.
 //!
 //! A cold run first releases SQLite's page caches on every pooled connection
 //! (`PRAGMA shrink_memory`) and drops the three database files from the OS
@@ -38,6 +41,8 @@
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+use sha2::{Digest, Sha256};
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -132,8 +137,17 @@ struct QueryCase {
     mode: SearchMode,
     bold: bool,
     lang: Option<String>,
+    exclude_ms: bool,
+    nikaya: Option<String>,
     page: Page,
     query: String,
+}
+
+/// The Suttas filters other than the language.
+#[derive(Clone, Copy, Default)]
+struct SuttaFilters {
+    exclude_ms: bool,
+    nikaya: Option<&'static str>,
 }
 
 /// The FTS tables a search path reads, for the case name.
@@ -163,7 +177,14 @@ const TYPING: [&str; 4] = ["dha", "dham", "dhamm", "dhamma"];
 fn build_cases() -> Vec<QueryCase> {
     let mut cases = Vec::new();
 
-    let mut push = |area: SearchArea, mode: SearchMode, bold: bool, lang: Option<&str>, page: Page, query: &str| {
+    let mut push = |area: SearchArea, mode: SearchMode, bold: bool, lang: Option<&str>, sf: SuttaFilters, page: Page, query: &str| {
+        let mut filters = lang.unwrap_or("-").to_string();
+        if sf.exclude_ms {
+            filters.push_str(",no_ms");
+        }
+        if let Some(n) = sf.nikaya {
+            filters.push_str(&format!(",nikaya={}", n));
+        }
         let area_name = match area {
             SearchArea::Suttas => "suttas",
             SearchArea::Dictionary => "dict",
@@ -175,7 +196,7 @@ fn build_cases() -> Vec<QueryCase> {
             area_name,
             mode_name(&mode),
             if bold && area == SearchArea::Dictionary { "+bold" } else { "" },
-            lang.unwrap_or("-"),
+            filters,
             if page == Page::First { "p0" } else { "plast" },
             query
         );
@@ -189,6 +210,8 @@ fn build_cases() -> Vec<QueryCase> {
             mode,
             bold,
             lang: lang.map(|s| s.to_string()),
+            exclude_ms: sf.exclude_ms,
+            nikaya: sf.nikaya.map(|s| s.to_string()),
             page,
             query: query.to_string(),
         });
@@ -211,26 +234,35 @@ fn build_cases() -> Vec<QueryCase> {
     for (q, lang) in sutta_words {
         for filter in [None, Some(lang)] {
             for page in [Page::First, Page::Last] {
-                push(SearchArea::Suttas, SearchMode::ContainsMatch, false, filter, page, q);
+                push(SearchArea::Suttas, SearchMode::ContainsMatch, false, filter, SuttaFilters::default(), page, q);
             }
         }
     }
     for q in TYPING {
         for filter in [None, Some("pli"), Some("en")] {
-            push(SearchArea::Suttas, SearchMode::ContainsMatch, false, filter, Page::First, q);
+            push(SearchArea::Suttas, SearchMode::ContainsMatch, false, filter, SuttaFilters::default(), Page::First, q);
+        }
+    }
+    // The filters read from `suttas`: the `ms` texts excluded (`source_uid`)
+    // and a nikāya prefix.
+    let filtered_words: [(&str, &str); 3] = [("bhikkhave", "pli"), ("ssa", "pli"), ("mindfulness", "en")];
+    for (q, lang) in filtered_words {
+        for sf in [
+            SuttaFilters { exclude_ms: true, nikaya: None },
+            SuttaFilters { exclude_ms: false, nikaya: Some("sn") },
+        ] {
+            for page in [Page::First, Page::Last] {
+                push(SearchArea::Suttas, SearchMode::ContainsMatch, false, Some(lang), sf, page, q);
+            }
         }
     }
 
     // Dictionary: Contains Match and Headword Match without the bold
     // definitions (dict_words_fts alone), with them (adding a bold table), and
-    // DPD Lookup with them (the bold table is its only FTS read).
-    //
-    // No language filter here: the Dictionary paths filter on
-    // `dict_words.language`, a content-table column in either form of the FTS
-    // table, so it measures nothing this benchmark compares. It also costs
-    // minutes per run: with the value bound, the per-headword
-    // `dict_words` lookup of Contains Match plans on `dict_words_language_idx`
-    // and scans every Pāli row once per matching headword.
+    // DPD Lookup with them (the bold table is its only FTS read). Each with no
+    // language filter, and the first page also with `pli` and `en`, which the
+    // Dictionary paths read from `dict_words.language`. DPD Lookup does not
+    // filter by language in SQL, so it has no language cases.
     let dict_words: [&str; 5] = [
         "ubhatodaṇḍaka", // rare
         "kamma",         // common
@@ -248,11 +280,16 @@ fn build_cases() -> Vec<QueryCase> {
     for (mode, bold) in dict_modes.iter() {
         for q in dict_words {
             for page in [Page::First, Page::Last] {
-                push(SearchArea::Dictionary, mode.clone(), *bold, None, page, q);
+                push(SearchArea::Dictionary, mode.clone(), *bold, None, SuttaFilters::default(), page, q);
+            }
+            if *mode != SearchMode::DpdLookup {
+                for lang in ["pli", "en"] {
+                    push(SearchArea::Dictionary, mode.clone(), *bold, Some(lang), SuttaFilters::default(), Page::First, q);
+                }
             }
         }
         for q in TYPING {
-            push(SearchArea::Dictionary, mode.clone(), *bold, None, Page::First, q);
+            push(SearchArea::Dictionary, mode.clone(), *bold, None, SuttaFilters::default(), Page::First, q);
         }
     }
 
@@ -271,10 +308,10 @@ fn search_params(case: &QueryCase) -> SearchParams {
         fuzzy_distance: 0,
         include_cst_mula: true,
         include_cst_commentary: true,
-        nikaya_prefix: None,
+        nikaya_prefix: case.nikaya.clone(),
         uid_prefix: None,
         uid_suffix: None,
-        include_ms_mula: true,
+        include_ms_mula: !case.exclude_ms,
         // Both editions, so that before and after search the same records.
         pali_edition: PaliEditionPreference::Both,
         include_comm_bold_definitions: case.bold,
@@ -286,14 +323,35 @@ fn search_params(case: &QueryCase) -> SearchParams {
     }
 }
 
-/// Run one page of a case. Returns the elapsed time and the total hit count.
-fn run_query(case: &QueryCase, page_num: usize) -> Result<(Duration, i64), String> {
+/// The result of one page of a case: the time it took, the total hit count,
+/// and a hash of the page's uids in order.
+struct PageRun {
+    elapsed: Duration,
+    total: i64,
+    uids_hash: String,
+}
+
+fn uids_hash<'a>(uids: impl Iterator<Item = &'a str>) -> String {
+    let mut hasher = Sha256::new();
+    for uid in uids {
+        hasher.update(uid.as_bytes());
+        hasher.update(b"\n");
+    }
+    hasher.finalize().iter().take(8).map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Run one page of a case. Only the search is timed, not the hash.
+fn run_query(case: &QueryCase, page_num: usize) -> Result<PageRun, String> {
     let app_data = get_app_data();
     let started = Instant::now();
     let mut task = SearchQueryTask::new(&app_data.dbm, case.query.clone(), search_params(case), case.area.clone());
-    task.results_page(page_num).map_err(|e| format!("{}: {}", case.name, e))?;
+    let page = task.results_page(page_num).map_err(|e| format!("{}: {}", case.name, e))?;
     let elapsed = started.elapsed();
-    Ok((elapsed, task.total_hits()))
+    Ok(PageRun {
+        elapsed,
+        total: task.total_hits(),
+        uids_hash: uids_hash(page.iter().map(|r| r.uid.as_str())),
+    })
 }
 
 /// The DPD Lookup keeps its last result in a one-slot memo. A lookup of
@@ -305,6 +363,8 @@ fn flush_dpd_lookup_memo() {
         mode: SearchMode::DpdLookup,
         bold: false,
         lang: None,
+        exclude_ms: false,
+        nikaya: None,
         page: Page::First,
         query: "fts bench memo flush".to_string(),
     };
@@ -378,8 +438,8 @@ fn worst_ms(v: &[Duration]) -> f64 {
     v.iter().map(|d| d.as_secs_f64() * 1000.0).fold(0.0, f64::max)
 }
 
-fn emit(label: &str, case: &str, kind: &str, times: &[Duration], count: i64) {
-    out!("{}\t{}\t{}\t{:.1}\t{:.1}\t{}", label, case, kind, median_ms(times), worst_ms(times), count);
+fn emit(label: &str, case: &str, kind: &str, times: &[Duration], count: i64, hash: &str) {
+    out!("{}\t{}\t{}\t{:.1}\t{:.1}\t{}\t{}", label, case, kind, median_ms(times), worst_ms(times), count, hash);
 }
 
 // ===== Running =====
@@ -389,7 +449,7 @@ fn run_query_case(args: &Args, case: &QueryCase) -> Result<(), String> {
         Page::First => 0,
         Page::Last => {
             // The last page needs the total first. This run is not timed.
-            let (_, total) = run_query(case, 0)?;
+            let total = run_query(case, 0)?.total;
             let page_len = get_app_globals().page_len.max(1) as i64;
             if total > 0 { ((total - 1) / page_len) as usize } else { 0 }
         }
@@ -398,31 +458,38 @@ fn run_query_case(args: &Args, case: &QueryCase) -> Result<(), String> {
     let mut cold = Vec::with_capacity(args.runs);
     let mut warm = Vec::with_capacity(args.runs);
     let mut counts = Vec::with_capacity(args.runs * 2);
+    let mut hashes = Vec::with_capacity(args.runs * 2);
 
     for _ in 0..args.runs {
         if case.mode == SearchMode::DpdLookup {
             flush_dpd_lookup_memo();
         }
         make_cold();
-        let (t, c) = run_query(case, page_num)?;
-        cold.push(t);
-        counts.push(c);
+        let r = run_query(case, page_num)?;
+        cold.push(r.elapsed);
+        counts.push(r.total);
+        hashes.push(r.uids_hash);
 
         // Warm: the files are in the OS page cache, the SQLite caches are
         // empty. Which pooled connection serves a query is not controlled, so
         // a warm SQLite cache is hit in one process and missed in the next.
         release_sqlite_caches();
-        let (t, c) = run_query(case, page_num)?;
-        warm.push(t);
-        counts.push(c);
+        let r = run_query(case, page_num)?;
+        warm.push(r.elapsed);
+        counts.push(r.total);
+        hashes.push(r.uids_hash);
     }
 
     let count = counts[0];
     if counts.iter().any(|c| *c != count) {
         errln!("Warning: {}: the result count differs between runs: {:?}", case.name, counts);
     }
-    emit(&args.label, &case.name, "cold", &cold, count);
-    emit(&args.label, &case.name, "warm", &warm, count);
+    let hash = hashes[0].clone();
+    if hashes.iter().any(|h| *h != hash) {
+        errln!("Warning: {}: the result uids differ between runs: {:?}", case.name, hashes);
+    }
+    emit(&args.label, &case.name, "cold", &cold, count, &hash);
+    emit(&args.label, &case.name, "warm", &warm, count, &hash);
     Ok(())
 }
 
@@ -490,8 +557,8 @@ fn run_delete_case(args: &Args) -> Result<(), String> {
         let (t, _) = time_delete(&args.delete_dict)?;
         warm.push(t);
     }
-    emit(&args.label, &name, "cold", &cold, count);
-    emit(&args.label, &name, "warm", &warm, count);
+    emit(&args.label, &name, "cold", &cold, count, "-");
+    emit(&args.label, &name, "warm", &warm, count, "-");
     Ok(())
 }
 

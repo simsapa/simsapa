@@ -396,6 +396,9 @@ fn import_cst(
         .map_err(|e| format!("CST import failed: {:#}", e))?;
     report.log_summary();
 
+    simsapa_backend::db::fts5_integrity_check_all(&mut db_conn, &simsapa_backend::db::APPDATA_FTS_TABLES)
+        .map_err(|e| format!("{:#}", e))?;
+
     Ok(())
 }
 
