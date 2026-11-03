@@ -1129,6 +1129,19 @@ See [docs/qt-kit-selection.md](./docs/qt-kit-selection.md).
 
 ## Specific coding procedures
 
+### Shell redirection: `>|` and `>>|` (zsh `noclobber`)
+
+Agent shells here are zsh with `noclobber`: `> file` will not overwrite an
+existing file, and `>> file` will not create a missing one. Both fail with a
+message the rest of the command buries, and the command exits 1. This bites
+most often in long test and benchmark runs (`cargo test … >| log`,
+`fts_bench … >| results/x.tsv`, a per-crate summary appended in a loop), where
+the exit status then looks like a test failure. Write `>|` and `>>|`, and when
+such a command exits non-zero, look for `file exists:` or `no such file or
+directory:` before reading it as a failed run. (Global rule in
+`~/.claude/CLAUDE.md`; repeated here because this project's runs are long.)
+
+
 ### Android compatibility: File existence checks
 
 **IMPORTANT:** Always use `try_exists()` instead of `.exists()` when checking if files or directories exist. The `.exists()` method can cause permission crashes on Android.
