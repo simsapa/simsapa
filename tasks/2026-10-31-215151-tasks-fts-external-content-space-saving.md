@@ -78,7 +78,235 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ## Measurements
 
-To be filled in by task 2.7.
+### Desktop, rebuilt databases (task 8.1 and 8.2) — accepted by the maintainer
+
+**Status when written (2026-11-03):** 1.0 to 7.0 are done and committed (7.0's commit `ce06a93f`); 8.1 and 8.2 are done; **the maintainer has accepted the desktop results below, including the two tables outside the gate**. Remaining: 8.3 to 8.6, the phone runs and the final decision. Whether the two tables outside the gate go through the phone run was not decided: the PRD says a failing table is left out (FR-4), the maintainer called the desktop results acceptable. Ask before assuming either; the recommendation was to run all tables on the phone, since the phone is what the gate is for.
+
+**Setup.** `before` = `fts-bench-scratch/before` (previous dist databases: stored-copy FTS tables, old column order, plus the 2,000-row delete fixture). `after` = `fts-bench-scratch/after` = a copy of the new dist databases (appdata, dictionaries, dpd of DB version `1.2.0-alpha.1`) plus the same fixture, added with `fts_bench --prepare-delete-fixture`. The release example is `simsapa/backend/target/release/examples/fts_bench` (the app's own query code on the app's SQLite 3.51.1). Run by `fts-bench-scratch/run-8.2.sh`: `before`, `after`, `before`, `after`, one at a time, `--runs 5`, 171 cases (342 cold/warm lines), about 70 min per run. Results: `fts-bench-scratch/results/8.2-{b1,a1,b2,a2}.tsv` (+ `.err`), the table below as `8.2-table.md`; sizes `dbstat-8.1.txt`; plans `plans-8.1-after.txt`, `plans-8.1-resolve.txt`. Compare with `python3 compare.py before.tsv after.tsv` (add `--both-ways` last for a noise check). The scratch folder is not in git; **keep `before/` until 8.0 is decided**.
+
+**Kept in git** (`tasks/data/fts-external-content-space-saving/`): the four raw result files `8.2-{b1,a1,b2,a2}.tsv` (columns: label, case, cold or warm, median ms, worst ms, result count, uid hash), `8.2-table.md`, `compare.py` and `run-8.2.sh`. To re-compare: `python3 compare.py 8.2-b1.tsv 8.2-a1.tsv`. The databases cannot be kept: `after` is the dist database of DB version `1.2.0-alpha.1` rebuilt by the bootstrap, and `before` is the previous dist database (appdata of the OpenTipitaka task 5.14, stored-copy FTS tables) which is only in the scratch folder (databases are never in git), so if that folder is lost a new `before` can only be made by building the code from before this feature and bootstrapping with it.
+
+**Machine and build.** AMD Ryzen 7 5800H (8 cores, 16 threads), 32 GB RAM, Samsung 990 PRO NVMe, ext4, Linux 7.1.11-arch1-1, CPU governor `powersave` (read after the runs; temperature not recorded). The benchmark was built in release mode from the working tree at commit `ce06a93f` (code identical to the preceding commit `eba2205c`, since `ce06a93f` changes only the task list), with the app's SQLite 3.51.1. Cold runs call `posix_fadvise(POSIX_FADV_DONTNEED)` on the database files, so they depend on the NVMe and not on a RAM disk; a warm run releases SQLite's caches and leaves the files in the OS page cache.
+
+**Sizes (8.1).** From the files, MB:
+
+| Database | Before | After | Saved |
+|---|---|---|---|
+| appdata | 1,383.3 | 1,028.8 | 354.5 |
+| dictionaries (no fixture) | 1,405.0 | 1,234.1 | 170.9 |
+| dpd | 2,562.0 | 2,426.9 | 135.1 |
+
+`_content` tables remain only for `book_spine_items_fts` and `dpd_headwords_fts`. New: `dict_words_word_fts` (data 3.4 MB + docsize 1.9 MB). **Plans (8.1):** the same as 5.7 apart from FTS column numbers; the FTS index first everywhere; `dict_words_word_idx` in the per-headword resolve statements; `TEMP B-TREE` only in the two-column `OR` cases (Dictionary Contains phase 3, the commentary page).
+
+**Integrity (7.2).** `integrity-check` with rank 1 passes on `suttas_fts`, `dict_words_fts`, `dict_words_word_fts`, `bold_definitions_fts`, `bold_definitions_bold_fts`; `suttas_fts_docsize` = `suttas` = 36,021 rows; `dict_words_word_idx` exists; `suttas` in the baseline column order; both ledgers hold only `20260723000000`.
+
+**Gate (FR-4), per table.** Noise: `b1` against `b2`, 0 of 342 lines outside, no count or uid difference. `b1`→`a1` and `b2`→`a2` give the same 8 lines outside the gate both times:
+
+| FTS table | Lines outside | Detail |
+|---|---|---|
+| `suttas_fts` | 0 of 120 | cold 0.8× to 0.93×, warm 0.87× to 0.92× on the headline cases |
+| `bold_definitions_fts` (`dict_words_fts+bold_definitions_fts` cases) | 1 of 48 | cold Contains+bold `kamma`, `lang=en`: 1,757 → 2,049 ms (+17%) — the same cost as the next row |
+| `dict_words_fts` | 4 of 98 (5 lines with the one above) | **all cold Dictionary Contains Match `kamma`**: 1,775 → 2,059 ms (+16%), warm 1.02×. Phase 3 reads `word` and `definition_plain` of every candidate from the 1.2 GB `dict_words`; with `detail='none'` the index has no column information. It is the Phase 3 cost measured in 5.8 (`kamma` 1,622 → 2,011 ms). Cold `ssa` is 0.50× and `ana` 0.80× in the same mode. **Headword Match is not affected**: it reads `dict_words_word_fts` and is 0.10× to 0.5×. |
+| `bold_definitions_bold_fts` | 3 of 28 | warm `dpd_lookup+bold`: `ana` 331 → 373 ms, `ssa` 157 → 189 ms, `ssa` last page 284 → 314 ms; the cold lines of the same cases are 0.40× to 0.67× |
+| delete of the 2,000-row fixture (three trigger sets) | within | cold 87 → 72 ms, warm 62 → 65 ms |
+
+Success metric 2 (the Contains cases with the most matches faster, cold and warm, same results) is met in part: cold `ssa` 5,664 → 2,837 ms, `ana` 4,129 → 3,300 ms, `kamma` 1,775 → 2,059 ms (slower); warm 1.04×, 0.98×, 1.02×. Headword Match `kamma` cold 268 → 59 ms, `ssa` warm 107 → 14 ms. The only way to remove the `kamma` cold cost is a stored copy of `dict_words_fts` (gives back about 175 MB); a split of Phase 3 into a `word` and a `definition_plain` table was measured in 5.8 and made `ssa` worse.
+
+**Timing summary by search mode.** After ÷ before (below 1 is faster), over all cases of the mode, mean of the two runs; median, best and worst case. Desktop, 8.2.
+
+| Search mode | Cases | cold median | cold best | cold worst | warm median | warm best | warm worst |
+|---|---|---|---|---|---|---|---|
+| `suttas.contains` | 60 | 0.83 | 0.39 | 0.94 | 0.93 | 0.50 | 1.06 |
+| `dict.contains` | 24 | 0.76 | 0.50 | 1.17 | 0.99 | 0.77 | 1.07 |
+| `dict.contains+bold` | 24 | 0.74 | 0.49 | 1.16 | 0.95 | 0.78 | 1.06 |
+| `dict.headword` | 24 | 0.23 | 0.12 | 0.51 | 0.22 | 0.06 | 0.36 |
+| `dict.headword+bold` | 24 | 0.43 | 0.12 | 0.68 | 0.55 | 0.07 | 0.97 |
+| `dict.dpd_lookup+bold` | 14 | 0.60 | 0.40 | 1.12 | 1.08 | 0.82 | 1.21 |
+| `dict.delete` (2,000 rows) | 1 | 0.82 | | | 1.04 | | |
+
+In short: Suttas Contains and Dictionary Contains are faster cold (about 0.75 to 0.83×) and level warm; Headword Match is 2 to 4× faster; the only modes slower than before are Dictionary Contains `kamma` cold (worst 1.17×) and the warm bold lookups of DPD Lookup (worst 1.21×, median 1.08×).
+
+**Result counts and uids differ from `before`, from the data and not the schema.** `suttas` has the same uid set and text lengths as before (same md5 over `uid, length(content_plain)`), but the bootstrap numbered the rows differently (`id` 1 was `ja458/en/rouse`, now `kv13.3/en/aung-rhysdavids`), so the same page of `ORDER BY id` holds different suttas: 76 Suttas uid lines, no Suttas count difference. `dict_words` has the same uids and the same total `definition_plain` length with the `dpd` ids permuted: 70 Dictionary uid lines, and Contains `ssa` totals 51,078 against 51,089 (250,069 against 250,080 with the bold definitions); 12 count lines, all `ssa`. Likely cause, **not proved**: Phases 1, 2 and 4 take the lowest-id row of a headword, 1,433 words occur more than once, and which row that is changed, so its overlap with Phase 3 changed. The within-database equality of the new code on the old and the new schema was shown in 5.7 (0 count and 0 uid differences). For a future run, compare against a `before` built from the same bootstrap, or regenerate `tests/data/search_results_pin.tsv` (`SIMSAPA_PIN_WRITE=1`) after checking the differences are only id-order.
+
+**Every case**, mean of the two runs, cold and warm, ms (`lang=-` is no filter, `p0` first page, `plast` a later page):
+
+| Case (table\|mode\|filter\|page\|query) | cold before → after (ms) | × | warm before → after (ms) | × |
+|---|---|---|---|---|
+| suttas_fts\|suttas.contains\|lang=-\|p0\|ubhatodaṇḍakena cepi bhikkhave kakacena | 227 → 211 | 0.93 | 90 → 82 | 0.91 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|ubhatodaṇḍakena cepi bhikkhave kakacena | 225 → 209 | 0.93 | 89 → 82 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|ubhatodaṇḍakena cepi bhikkhave kakacena | 227 → 211 | 0.93 | 94 → 83 | 0.89 |
+| suttas_fts\|suttas.contains\|lang=pli\|plast\|ubhatodaṇḍakena cepi bhikkhave kakacena | 225 → 212 | 0.94 | 90 → 83 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|bhikkhave | 1,742 → 1,511 | 0.87 | 125 → 114 | 0.91 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|bhikkhave | 1,859 → 1,634 | 0.88 | 249 → 230 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|bhikkhave | 1,706 → 1,516 | 0.89 | 124 → 114 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=pli\|plast\|bhikkhave | 1,878 → 1,638 | 0.87 | 245 → 234 | 0.96 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|saṅkhārā | 1,220 → 1,003 | 0.82 | 150 → 160 | 1.06 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|saṅkhārā | 1,387 → 1,242 | 0.90 | 306 → 304 | 0.99 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|saṅkhārā | 1,219 → 1,075 | 0.88 | 151 → 145 | 0.96 |
+| suttas_fts\|suttas.contains\|lang=pli\|plast\|saṅkhārā | 1,389 → 1,249 | 0.90 | 312 → 308 | 0.99 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|ssa | 2,570 → 2,063 | 0.80 | 141 → 123 | 0.87 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|ssa | 2,715 → 2,188 | 0.81 | 263 → 238 | 0.91 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|ssa | 2,602 → 2,080 | 0.80 | 146 → 136 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=pli\|plast\|ssa | 2,725 → 2,184 | 0.80 | 265 → 245 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|ana | 2,462 → 2,068 | 0.84 | 138 → 125 | 0.91 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|ana | 2,599 → 2,199 | 0.85 | 264 → 244 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|ana | 2,485 → 2,087 | 0.84 | 148 → 138 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=pli\|plast\|ana | 2,607 → 2,206 | 0.85 | 278 → 262 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|simile of the saw | 453 → 380 | 0.84 | 104 → 109 | 1.04 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|simile of the saw | 536 → 467 | 0.87 | 185 → 181 | 0.98 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|simile of the saw | 452 → 388 | 0.86 | 104 → 100 | 0.97 |
+| suttas_fts\|suttas.contains\|lang=en\|plast\|simile of the saw | 520 → 467 | 0.90 | 189 → 180 | 0.95 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|mindfulness | 1,047 → 770 | 0.74 | 62 → 56 | 0.90 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|mindfulness | 1,133 → 830 | 0.73 | 113 → 105 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|mindfulness | 1,076 → 773 | 0.72 | 61 → 57 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=en\|plast\|mindfulness | 1,136 → 829 | 0.73 | 112 → 103 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|sāriputta | 1,073 → 946 | 0.88 | 116 → 111 | 0.95 |
+| suttas_fts\|suttas.contains\|lang=-\|plast\|sāriputta | 1,191 → 1,060 | 0.89 | 222 → 214 | 0.97 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|sāriputta | 1,091 → 949 | 0.87 | 112 → 111 | 0.99 |
+| suttas_fts\|suttas.contains\|lang=en\|plast\|sāriputta | 1,199 → 1,058 | 0.88 | 219 → 214 | 0.98 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|ssa | 2,582 → 1,998 | 0.77 | 133 → 125 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=en\|plast\|ssa | 2,712 → 2,183 | 0.81 | 254 → 244 | 0.96 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|ana | 2,462 → 2,071 | 0.84 | 134 → 125 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=en\|plast\|ana | 2,593 → 2,193 | 0.85 | 274 → 241 | 0.88 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|dha | 2,665 → 2,208 | 0.83 | 135 → 124 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|dha | 2,692 → 2,176 | 0.81 | 154 → 142 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|dha | 2,680 → 2,204 | 0.82 | 134 → 124 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|dham | 2,487 → 2,029 | 0.82 | 128 → 120 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|dham | 2,499 → 2,044 | 0.82 | 141 → 129 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|dham | 2,474 → 2,035 | 0.82 | 130 → 120 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|dhamm | 2,474 → 1,965 | 0.79 | 125 → 118 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|dhamm | 2,484 → 1,984 | 0.80 | 133 → 122 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|dhamm | 2,472 → 1,971 | 0.80 | 125 → 115 | 0.92 |
+| suttas_fts\|suttas.contains\|lang=-\|p0\|dhamma | 2,389 → 1,990 | 0.83 | 124 → 115 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=pli\|p0\|dhamma | 2,424 → 2,004 | 0.83 | 130 → 122 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=en\|p0\|dhamma | 2,415 → 1,992 | 0.82 | 123 → 116 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=pli,no_ms\|p0\|bhikkhave | 2,283 → 1,473 | 0.65 | 203 → 155 | 0.76 |
+| suttas_fts\|suttas.contains\|lang=pli,no_ms\|plast\|bhikkhave | 2,419 → 1,646 | 0.68 | 342 → 247 | 0.72 |
+| suttas_fts\|suttas.contains\|lang=pli,nikaya=sn\|p0\|bhikkhave | 1,707 → 1,514 | 0.89 | 124 → 114 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=pli,nikaya=sn\|plast\|bhikkhave | 1,855 → 1,625 | 0.88 | 229 → 219 | 0.96 |
+| suttas_fts\|suttas.contains\|lang=pli,no_ms\|p0\|ssa | 2,973 → 2,113 | 0.71 | 258 → 161 | 0.62 |
+| suttas_fts\|suttas.contains\|lang=pli,no_ms\|plast\|ssa | 3,120 → 2,209 | 0.71 | 407 → 248 | 0.61 |
+| suttas_fts\|suttas.contains\|lang=pli,nikaya=sn\|p0\|ssa | 2,575 → 2,030 | 0.79 | 147 → 138 | 0.94 |
+| suttas_fts\|suttas.contains\|lang=pli,nikaya=sn\|plast\|ssa | 2,717 → 2,187 | 0.81 | 256 → 238 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=en,no_ms\|p0\|mindfulness | 2,004 → 773 | 0.39 | 111 → 57 | 0.51 |
+| suttas_fts\|suttas.contains\|lang=en,no_ms\|plast\|mindfulness | 2,108 → 831 | 0.39 | 210 → 106 | 0.50 |
+| suttas_fts\|suttas.contains\|lang=en,nikaya=sn\|p0\|mindfulness | 1,074 → 774 | 0.72 | 60 → 56 | 0.93 |
+| suttas_fts\|suttas.contains\|lang=en,nikaya=sn\|plast\|mindfulness | 1,132 → 829 | 0.73 | 112 → 105 | 0.94 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|ubhatodaṇḍaka | 19 → 14 | 0.75 | 5 → 5 | 1.01 |
+| dict_words_fts\|dict.contains\|lang=-\|plast\|ubhatodaṇḍaka | 19 → 14 | 0.71 | 5 → 5 | 0.93 |
+| dict_words_fts\|dict.contains\|lang=pli\|p0\|ubhatodaṇḍaka | 19 → 14 | 0.74 | 5 → 5 | 0.93 |
+| dict_words_fts\|dict.contains\|lang=en\|p0\|ubhatodaṇḍaka | 1,309 → 983 | 0.75 | 312 → 301 | 0.96 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|kamma | 1,775 → 2,059 | 1.16 | 163 → 167 | 1.02 |
+| dict_words_fts\|dict.contains\|lang=-\|plast\|kamma | 1,777 → 2,030 | 1.14 | 159 → 170 | 1.07 |
+| dict_words_fts\|dict.contains\|lang=pli\|p0\|kamma | 1,781 → 2,061 | 1.16 | 164 → 167 | 1.02 |
+| dict_words_fts\|dict.contains\|lang=en\|p0\|kamma | 1,756 → 2,049 | 1.17 | 153 → 155 | 1.01 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|saṅkhāra | 218 → 132 | 0.60 | 17 → 13 | 0.77 |
+| dict_words_fts\|dict.contains\|lang=-\|plast\|saṅkhāra | 212 → 129 | 0.61 | 16 → 13 | 0.79 |
+| dict_words_fts\|dict.contains\|lang=pli\|p0\|saṅkhāra | 218 → 132 | 0.60 | 17 → 13 | 0.78 |
+| dict_words_fts\|dict.contains\|lang=en\|p0\|saṅkhāra | 214 → 129 | 0.60 | 16 → 13 | 0.78 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|ssa | 5,664 → 2,837 | 0.50 | 442 → 458 | 1.04 |
+| dict_words_fts\|dict.contains\|lang=-\|plast\|ssa | 5,666 → 2,805 | 0.50 | 440 → 461 | 1.05 |
+| dict_words_fts\|dict.contains\|lang=pli\|p0\|ssa | 5,669 → 2,833 | 0.50 | 445 → 464 | 1.04 |
+| dict_words_fts\|dict.contains\|lang=en\|p0\|ssa | 5,613 → 2,787 | 0.50 | 416 → 431 | 1.04 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|ana | 4,129 → 3,300 | 0.80 | 305 → 298 | 0.98 |
+| dict_words_fts\|dict.contains\|lang=-\|plast\|ana | 4,133 → 3,288 | 0.80 | 300 → 296 | 0.99 |
+| dict_words_fts\|dict.contains\|lang=pli\|p0\|ana | 4,144 → 3,336 | 0.81 | 300 → 296 | 0.99 |
+| dict_words_fts\|dict.contains\|lang=en\|p0\|ana | 4,079 → 3,298 | 0.81 | 277 → 263 | 0.95 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|dha | 4,171 → 3,192 | 0.77 | 286 → 287 | 1.00 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|dham | 2,903 → 2,355 | 0.81 | 204 → 198 | 0.97 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|dhamm | 2,757 → 2,300 | 0.83 | 208 → 200 | 0.96 |
+| dict_words_fts\|dict.contains\|lang=-\|p0\|dhamma | 2,495 → 2,271 | 0.91 | 198 → 204 | 1.03 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|ubhatodaṇḍaka | 32 → 26 | 0.80 | 12 → 12 | 1.00 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|plast\|ubhatodaṇḍaka | 31 → 26 | 0.83 | 12 → 12 | 1.06 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=pli\|p0\|ubhatodaṇḍaka | 32 → 25 | 0.80 | 12 → 12 | 1.06 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=en\|p0\|ubhatodaṇḍaka | 1,320 → 983 | 0.74 | 305 → 299 | 0.98 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|kamma | 2,899 → 2,477 | 0.85 | 230 → 227 | 0.99 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|plast\|kamma | 2,955 → 2,551 | 0.86 | 294 → 273 | 0.93 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=pli\|p0\|kamma | 2,902 → 2,495 | 0.86 | 232 → 226 | 0.97 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=en\|p0\|kamma | 1,754 → 2,042 | 1.16 | 152 → 158 | 1.03 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|saṅkhāra | 703 → 438 | 0.62 | 42 → 39 | 0.93 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|plast\|saṅkhāra | 727 → 459 | 0.63 | 61 → 57 | 0.94 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=pli\|p0\|saṅkhāra | 704 → 439 | 0.62 | 42 → 39 | 0.93 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=en\|p0\|saṅkhāra | 215 → 129 | 0.60 | 16 → 13 | 0.78 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|ssa | 6,333 → 3,147 | 0.50 | 695 → 673 | 0.97 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|plast\|ssa | 6,576 → 3,376 | 0.51 | 944 → 897 | 0.95 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=pli\|p0\|ssa | 6,332 → 3,173 | 0.50 | 701 → 676 | 0.96 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=en\|p0\|ssa | 5,598 → 2,765 | 0.49 | 414 → 434 | 1.05 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|ana | 4,836 → 3,683 | 0.76 | 590 → 539 | 0.91 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|plast\|ana | 5,116 → 3,917 | 0.77 | 875 → 780 | 0.89 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=pli\|p0\|ana | 4,839 → 3,670 | 0.76 | 590 → 541 | 0.92 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=en\|p0\|ana | 4,091 → 3,276 | 0.80 | 275 → 263 | 0.96 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|dha | 4,855 → 3,492 | 0.72 | 484 → 440 | 0.91 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|dham | 3,855 → 2,670 | 0.69 | 330 → 306 | 0.93 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|dhamm | 3,778 → 2,649 | 0.70 | 317 → 288 | 0.91 |
+| dict_words_fts+bold_definitions_fts\|dict.contains+bold\|lang=-\|p0\|dhamma | 3,579 → 2,647 | 0.74 | 282 → 267 | 0.95 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|ubhatodaṇḍaka | 14 → 2 | 0.16 | 3 → 1 | 0.31 |
+| dict_words_fts\|dict.headword\|lang=-\|plast\|ubhatodaṇḍaka | 14 → 2 | 0.16 | 3 → 1 | 0.33 |
+| dict_words_fts\|dict.headword\|lang=pli\|p0\|ubhatodaṇḍaka | 14 → 2 | 0.16 | 3 → 1 | 0.30 |
+| dict_words_fts\|dict.headword\|lang=en\|p0\|ubhatodaṇḍaka | 13 → 2 | 0.14 | 3 → 1 | 0.25 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|kamma | 268 → 59 | 0.22 | 52 → 5 | 0.10 |
+| dict_words_fts\|dict.headword\|lang=-\|plast\|kamma | 263 → 56 | 0.21 | 52 → 4 | 0.08 |
+| dict_words_fts\|dict.headword\|lang=pli\|p0\|kamma | 268 → 60 | 0.22 | 53 → 5 | 0.09 |
+| dict_words_fts\|dict.headword\|lang=en\|p0\|kamma | 261 → 55 | 0.21 | 52 → 3 | 0.06 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|saṅkhāra | 136 → 20 | 0.15 | 8 → 3 | 0.36 |
+| dict_words_fts\|dict.headword\|lang=-\|plast\|saṅkhāra | 130 → 17 | 0.13 | 7 → 2 | 0.27 |
+| dict_words_fts\|dict.headword\|lang=pli\|p0\|saṅkhāra | 136 → 21 | 0.15 | 8 → 3 | 0.36 |
+| dict_words_fts\|dict.headword\|lang=en\|p0\|saṅkhāra | 129 → 16 | 0.12 | 7 → 2 | 0.24 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|ssa | 627 → 239 | 0.38 | 107 → 14 | 0.13 |
+| dict_words_fts\|dict.headword\|lang=-\|plast\|ssa | 623 → 236 | 0.38 | 105 → 14 | 0.13 |
+| dict_words_fts\|dict.headword\|lang=pli\|p0\|ssa | 630 → 239 | 0.38 | 106 → 14 | 0.13 |
+| dict_words_fts\|dict.headword\|lang=en\|p0\|ssa | 621 → 232 | 0.37 | 104 → 12 | 0.11 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|ana | 884 → 433 | 0.49 | 82 → 23 | 0.28 |
+| dict_words_fts\|dict.headword\|lang=-\|plast\|ana | 879 → 428 | 0.49 | 81 → 22 | 0.27 |
+| dict_words_fts\|dict.headword\|lang=pli\|p0\|ana | 883 → 428 | 0.48 | 81 → 23 | 0.28 |
+| dict_words_fts\|dict.headword\|lang=en\|p0\|ana | 827 → 420 | 0.51 | 79 → 18 | 0.23 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|dha | 755 → 328 | 0.43 | 82 → 18 | 0.21 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|dham | 419 → 114 | 0.27 | 58 → 7 | 0.12 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|dhamm | 396 → 103 | 0.26 | 60 → 7 | 0.11 |
+| dict_words_fts\|dict.headword\|lang=-\|p0\|dhamma | 384 → 93 | 0.24 | 60 → 6 | 0.11 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|ubhatodaṇḍaka | 20 → 8 | 0.38 | 6 → 5 | 0.84 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|plast\|ubhatodaṇḍaka | 20 → 7 | 0.36 | 6 → 5 | 0.83 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=pli\|p0\|ubhatodaṇḍaka | 20 → 14 | 0.68 | 6 → 5 | 0.86 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=en\|p0\|ubhatodaṇḍaka | 13 → 7 | 0.51 | 3 → 1 | 0.30 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|kamma | 559 → 252 | 0.45 | 68 → 21 | 0.30 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|plast\|kamma | 589 → 278 | 0.47 | 92 → 47 | 0.51 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=pli\|p0\|kamma | 560 → 258 | 0.46 | 68 → 20 | 0.29 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=en\|p0\|kamma | 263 → 55 | 0.21 | 51 → 3 | 0.07 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|saṅkhāra | 209 → 56 | 0.27 | 13 → 7 | 0.57 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|plast\|saṅkhāra | 208 → 55 | 0.26 | 14 → 9 | 0.67 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=pli\|p0\|saṅkhāra | 209 → 55 | 0.26 | 13 → 7 | 0.57 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=en\|p0\|saṅkhāra | 129 → 16 | 0.12 | 7 → 2 | 0.24 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|ssa | 1,673 → 692 | 0.41 | 188 → 103 | 0.55 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|plast\|ssa | 1,879 → 906 | 0.48 | 395 → 322 | 0.82 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=pli\|p0\|ssa | 1,670 → 690 | 0.41 | 188 → 103 | 0.54 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=en\|p0\|ssa | 585 → 233 | 0.40 | 106 → 12 | 0.12 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|ana | 2,219 → 835 | 0.38 | 243 → 203 | 0.84 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|plast\|ana | 2,663 → 1,304 | 0.49 | 694 → 672 | 0.97 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=pli\|p0\|ana | 2,212 → 836 | 0.38 | 243 → 204 | 0.84 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=en\|p0\|ana | 870 → 423 | 0.49 | 77 → 18 | 0.24 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|dha | 1,870 → 835 | 0.45 | 158 → 103 | 0.65 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|dham | 1,078 → 575 | 0.53 | 95 → 46 | 0.49 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|dhamm | 958 → 492 | 0.51 | 86 → 38 | 0.44 |
+| dict_words_fts+bold_definitions_bold_fts\|dict.headword+bold\|lang=-\|p0\|dhamma | 831 → 386 | 0.46 | 85 → 35 | 0.41 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|ubhatodaṇḍaka | 6 → 6 | 1.12 | 4 → 4 | 1.08 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|plast\|ubhatodaṇḍaka | 6 → 6 | 1.06 | 4 → 4 | 1.09 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|kamma | 309 → 208 | 0.67 | 30 → 33 | 1.11 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|plast\|kamma | 325 → 224 | 0.69 | 43 → 50 | 1.15 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|saṅkhāra | 82 → 41 | 0.49 | 9 → 8 | 0.82 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|plast\|saṅkhāra | 84 → 42 | 0.50 | 9 → 9 | 0.92 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|ssa | 1,126 → 543 | 0.48 | 156 → 189 | 1.21 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|plast\|ssa | 1,253 → 674 | 0.54 | 289 → 320 | 1.11 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|ana | 1,498 → 593 | 0.40 | 331 → 373 | 1.13 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|plast\|ana | 1,782 → 885 | 0.50 | 614 → 662 | 1.08 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|dha | 1,166 → 587 | 0.50 | 163 → 170 | 1.04 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|dham | 698 → 492 | 0.71 | 67 → 72 | 1.08 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|dhamm | 571 → 395 | 0.69 | 29 → 31 | 1.07 |
+| bold_definitions_bold_fts\|dict.dpd_lookup+bold\|lang=-\|p0\|dhamma | 451 → 302 | 0.67 | 27 → 23 | 0.84 |
+| dict_words_fts\|dict.delete\|lang=-\|-\|fts-bench-fixture | 87 → 72 | 0.82 | 62 → 65 | 1.04 |
+
+### Phone (8.3 to 8.6)
+
+Not started. Needs the maintainer to attach the slowest real arm64 device and confirm free space (8.3). Then `make fts-bench-arm64`, push the binary and copies of the `before` and `after` databases (the `after` copy of `fts-bench-scratch/after` already has the fixture) to `/data/local/tmp`, and run the same alternating sequence one database pair at a time (8.4). Put the table and the device model and Android version here (8.5), then the figures, the per-table pass or fail, the bytes saved and the by-hand checklist for the maintainer (8.6).
 
 ## Settled: cold Headword Match on the narrow `dict_words_fts` (5.8)
 
@@ -373,8 +601,14 @@ Depends on: 6.0. **Version bumps are the maintainer's.**
 Depends on: 7.0. `before` is `fts-bench-scratch/before` (the previous dist databases, stored-copy FTS tables, the old column order), measured in 2.4 (`b1`) without uid hashes, so it is measured again here. `after` is a copy of the new dist databases, with the delete fixture added by `--prepare-delete-fixture`. A new bootstrap may change the data itself: where a result count differs, compare the result uids and explain the difference by the source data before judging the timings.
 
 - [ ] 8.0 Measure the rebuilt databases, and decide
-  - [ ] 8.1 Sizes from `dbstat`, against 2.2. Plans with `--explain`, against 2.3 and 4.7.
-  - [ ] 8.2 Desktop: alternate `before`, `after`, `before`, `after`, `--runs 5`, and apply the gate of FR-4 to each table, uid hashes included. The Dictionary cases are judged as a whole too: the success metric is that the cases with the most matches are faster. A table that fails here is left out of the phone run.
+  - [x] 8.1 Sizes from `dbstat`, against 2.2. Plans with `--explain`, against 2.3 and 4.7.
+    - `fts-bench-scratch/after` is a copy of the new dist databases plus the delete fixture. Files: appdata 1,028.8 MB (1,383.3 before), dictionaries 1,234.1 MB without the fixture (1,405.0), dpd 2,426.9 MB (2,562.0). `_content` remains only for `book_spine_items_fts` and `dpd_headwords_fts`. `results/dbstat-8.1.txt`.
+    - Plans (`results/plans-8.1-after.txt`, `plans-8.1-resolve.txt`) equal those of 5.7 but for FTS column numbers: the FTS index first everywhere, `dict_words_word_idx` in the resolve statements, `TEMP B-TREE` only in the two-column `OR` cases of 4.7.
+  - [x] 8.2 Desktop: alternate `before`, `after`, `before`, `after`, `--runs 5`, and apply the gate of FR-4 to each table, uid hashes included. The Dictionary cases are judged as a whole too: the success metric is that the cases with the most matches are faster. A table that fails here is left out of the phone run.
+    - `results/8.2-{b1,a1,b2,a2}.tsv`, 171 cases, `--runs 5`, alternating. `b1` against `b2` (noise): 0 of 342 lines outside the gate, no count or uid difference. `b1`→`a1` and `b2`→`a2` agree: 8 lines outside the gate, the same 8 both times.
+    - **Out of the gate**: `dict_words_fts`, 5 lines, all cold Dictionary Contains `kamma` (1,775 → 2,059 ms, +16%; warm 1.02×). This is the known Phase 3 cost of 5.8 (`kamma` 1,622 → 2,011 ms). `bold_definitions_bold_fts`, 3 lines, all warm `dpd_lookup+bold`: `ana` 331 → 373 ms, `ssa` 157 → 189 ms, `ssa` last page 284 → 314 ms (the cold lines of the same cases are 0.40× to 0.67×). `suttas_fts` and `bold_definitions_fts`: 0 lines outside.
+    - **Counts and uids differ, from the data and not the schema**: `suttas` has the same uid set and text lengths as before (same md5 over `uid, length(content_plain)`), but the bootstrap numbered the rows differently (`id` 1 was `ja458/en/rouse`, now `kv13.3/en/aung-rhysdavids`), so the same page of `ORDER BY id` holds different suttas: 76 Suttas uid lines. `dict_words` likewise has the same uids and the same total `definition_plain` length, with the `dpd` ids permuted: 70 Dictionary uid lines, and Contains `ssa` totals 51,078 against 51,089 (250,069 against 250,080 with the bold definitions). Likely cause, not proved: Phases 1, 2 and 4 take the lowest-id row of a headword, 1,433 words occur more than once, and which row that is changed, so its overlap with Phase 3 changed.
+    - **Faster**: Headword Match 0.10× to 0.5× (`kamma` cold 268 → 59 ms, `ssa` warm 107 → 14 ms); Contains `ssa` cold 5,664 → 2,837 ms (warm 1.04×), `ana` cold 4,129 → 3,300 ms; Suttas `ana` / `ssa` 0.80× to 0.91×.
   - [ ] 8.3 Ask the maintainer to attach the slowest real arm64 device available, and to confirm its free space: the copies of one table's database need twice that file's size. Agents may use `adb push` and `adb shell`, which do not touch the display. Do not use an emulator.
   - [ ] 8.4 Build with `make fts-bench-arm64`, push the binary and the copies to `/data/local/tmp`, and run the same alternating sequence, one database pair at a time, with a pause between runs so that the phone cools. Keep the phone on charge, with the app closed. Repeat on a card if there is one.
   - [ ] 8.5 Apply the gate to each table. Put a table of every case, before and after, cold and warm, with the device model and Android version, in this file under "Measurements". Remove the copies from the phone.
