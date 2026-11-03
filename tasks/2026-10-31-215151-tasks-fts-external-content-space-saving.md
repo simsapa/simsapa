@@ -46,7 +46,6 @@ Docs:
 `/home/gambhiro/prods/apps/simsapa-ng-project/fts-bench-scratch/`, beside the repository, on ext4 (not tmpfs, so cold runs read the disk). Not in git.
 
 - `before/app-assets/` - Copies of the previous dist `appdata`, `dictionaries` and `dpd` databases, with the 2,000-row delete fixture `fts-bench-fixture`. **Keep until 8.0 is decided**: it is the reference every later measurement compares against.
-- `after/`, `vacuum-tmp/` - The five-column external-content variant of 2.1 and `VACUUM`'s temporary folder. No longer needed; delete them to free about 4.7 GB.
 - `candidates/` - The SQL of 2.1. `plans/plans.txt` - The statements of 2.3, for `--explain`. `dbstat.sql` - The size query of 2.2.
 - `results/` - `noise-rep{1..4}.tsv` (1.5), `dbstat-*.txt` (2.2), `plans-*.txt` (2.3), `desk-b1.tsv` and the partial `desk-a1.tsv` (2.4).
 - `compare.py` - The gate: `python3 compare.py before.tsv after.tsv`, per line `after ≤ max(1.10 × before, before + 20 ms)`, count differences and missing lines, per FTS table; `--both-ways` for a noise check of two runs of one copy.
