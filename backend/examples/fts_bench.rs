@@ -31,6 +31,9 @@
 //!
 //!     make fts-bench-arm64   # static aarch64 musl binary, for `adb shell`
 //!
+//! `--explain <file>` prints `EXPLAIN QUERY PLAN` of the statements in a file
+//! instead, on the same SQLite (see `explain_file()`).
+//!
 //! See docs/dict-words-fts5-implementation.md.
 
 use std::path::{Path, PathBuf};
@@ -65,12 +68,14 @@ struct Args {
     delete_dict: String,
     prepare_fixture: bool,
     fixture_size: i64,
+    explain: Option<PathBuf>,
 }
 
 fn usage() -> String {
     "Usage: fts_bench --dir <SIMSAPA_DIR> [--label <name>] [--runs <n>] [--filter <substring>] [--list]\n\
      \x20                [--delete-dict <label>]\n\
-     \x20      fts_bench --dir <SIMSAPA_DIR> --prepare-delete-fixture [--delete-dict <label>] [--fixture-size <n>]"
+     \x20      fts_bench --dir <SIMSAPA_DIR> --prepare-delete-fixture [--delete-dict <label>] [--fixture-size <n>]\n\
+     \x20      fts_bench --dir <SIMSAPA_DIR> --explain <file>"
         .to_string()
 }
 
@@ -83,6 +88,7 @@ fn parse_args() -> Result<Args, String> {
     let mut delete_dict = DEFAULT_FIXTURE_LABEL.to_string();
     let mut prepare_fixture = false;
     let mut fixture_size = DEFAULT_FIXTURE_SIZE;
+    let mut explain = None;
 
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -98,6 +104,7 @@ fn parse_args() -> Result<Args, String> {
             "--fixture-size" => {
                 fixture_size = value("--fixture-size")?.parse().map_err(|_| "--fixture-size must be a number".to_string())?
             }
+            "--explain" => explain = Some(PathBuf::from(value("--explain")?)),
             "-h" | "--help" => return Err(usage()),
             other => return Err(format!("Unknown argument: {}\n{}", other, usage())),
         }
@@ -107,7 +114,7 @@ fn parse_args() -> Result<Args, String> {
     if runs == 0 {
         return Err("--runs must be at least 1".to_string());
     }
-    Ok(Args { dir, label, runs, filter, list, delete_dict, prepare_fixture, fixture_size })
+    Ok(Args { dir, label, runs, filter, list, delete_dict, prepare_fixture, fixture_size, explain })
 }
 
 // ===== Cases =====
@@ -570,6 +577,56 @@ fn wait_for_cache_warm() {
     std::thread::sleep(Duration::from_secs(1));
 }
 
+// ===== Query plans =====
+
+#[derive(QueryableByName)]
+struct PlanRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Integer)]
+    parent: i32,
+    #[diesel(sql_type = Text)]
+    detail: String,
+}
+
+/// Print `EXPLAIN QUERY PLAN` of each statement in `file`, on the app's own
+/// SQLite and connections. One statement per line, with literal values: STAT4
+/// plans per bound value, so a `?` does not give the running plan. A line
+/// `@appdata`, `@dictionaries` or `@dpd` picks the database for the lines
+/// after it; a line starting with `--` is printed as a heading.
+fn explain_file(file: &Path) -> Result<(), String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {}", file.display(), e))?;
+    let dbm = &get_app_data().dbm;
+    let mut handle = &dbm.appdata;
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if let Some(db) = line.strip_prefix('@') {
+            handle = match db {
+                "appdata" => &dbm.appdata,
+                "dictionaries" => &dbm.dictionaries,
+                "dpd" => &dbm.dpd,
+                other => return Err(format!("Unknown database: @{}", other)),
+            };
+            continue;
+        }
+        if line.starts_with("--") {
+            out!("{}", line);
+            continue;
+        }
+        let mut conn = handle.get_conn().map_err(|e| e.to_string())?;
+        let rows: Vec<PlanRow> = sql_query(format!("EXPLAIN QUERY PLAN {}", line.trim_end_matches(';')))
+            .load(&mut conn)
+            .map_err(|e| format!("{}: {}", line, e))?;
+        // Indent each row under its parent.
+        let mut depth: Vec<(i32, usize)> = Vec::new();
+        for r in rows {
+            let d = depth.iter().find(|(id, _)| *id == r.parent).map(|(_, d)| d + 1).unwrap_or(0);
+            depth.push((r.id, d));
+            out!("{}{}", "  ".repeat(d + 1), r.detail);
+        }
+    }
+    Ok(())
+}
+
 fn init(dir: &Path) {
     // SAFETY: called from main before any other thread exists.
     unsafe { std::env::set_var("SIMSAPA_DIR", dir) };
@@ -626,6 +683,14 @@ fn main() {
     };
 
     init(&dir);
+
+    if let Some(file) = &args.explain {
+        if let Err(e) = explain_file(file) {
+            errln!("{}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
 
     if args.prepare_fixture {
         if let Err(e) = prepare_delete_fixture(&args.delete_dict, args.fixture_size) {
