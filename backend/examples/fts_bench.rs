@@ -150,7 +150,10 @@ struct SuttaFilters {
     nikaya: Option<&'static str>,
 }
 
-/// The FTS tables a search path reads, for the case name.
+/// The FTS tables a search path reads, for the case name. Headword Match reads
+/// `dict_words_word_fts` where it exists and `dict_words_fts` on an older
+/// database; its cases keep the one name so that the two compare line by line,
+/// and are judged with `dict_words_fts`, whose script creates both.
 fn tables_read(area: &SearchArea, mode: &SearchMode, bold: bool) -> &'static str {
     match (area, mode, bold) {
         (SearchArea::Suttas, _, _) => "suttas_fts",

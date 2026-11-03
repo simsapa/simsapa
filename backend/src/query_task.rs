@@ -106,12 +106,9 @@ struct DictWordIdWord {
     word: String,
 }
 
-/// A `dpd_headwords` row's id and `lemma_1`.
+/// A `dpd_headwords` row's `lemma_1`.
 #[derive(QueryableByName)]
 struct HeadwordLemma {
-    #[allow(dead_code)]
-    #[diesel(sql_type = Integer)]
-    id: i32,
     #[diesel(sql_type = Text)]
     lemma_1: String,
 }
@@ -1155,9 +1152,15 @@ impl<'a> SearchQueryTask<'a> {
 
         info(&format!("extra_where: {}", extra_where));
 
+        // `+s.language`: the unary plus keeps `idx_suttas_language*` from
+        // serving the filter. Without it, for a language the statistics do not
+        // describe (a download before its ANALYZE, a language of a few rows),
+        // SQLite drives the query from that index and probes `suttas_fts` once
+        // per row, which took seconds where the FTS-driven plan takes tens of
+        // milliseconds. See docs/dict-words-fts5-implementation.md.
         let where_clause = if apply_lang_filter {
             format!(
-                "WHERE f.content_plain LIKE ? AND s.language = ?{} AND s.uid LIKE ? AND s.uid LIKE ?",
+                "WHERE f.content_plain LIKE ? AND +s.language = ?{} AND s.uid LIKE ? AND s.uid LIKE ?",
                 extra_where
             )
         } else {
@@ -1483,7 +1486,7 @@ impl<'a> SearchQueryTask<'a> {
             let like_pattern = format!("%{}%", term);
 
             let mut headwords: Vec<HeadwordLemma> = sql_query(
-                "SELECT h.id AS id, h.lemma_1 AS lemma_1 \
+                "SELECT h.lemma_1 AS lemma_1 \
                  FROM dpd_headwords_fts f \
                  JOIN dpd_headwords h ON h.id = f.rowid \
                  WHERE f.lemma_1 LIKE ? \
@@ -1588,7 +1591,7 @@ impl<'a> SearchQueryTask<'a> {
                     let like_pattern = format!("%{}%", term);
 
                     let mut headwords: Vec<HeadwordLemma> = sql_query(
-                        "SELECT id, lemma_1 \
+                        "SELECT lemma_1 \
                          FROM dpd_headwords \
                          WHERE word_ascii LIKE ? \
                          ORDER BY id \
@@ -2222,10 +2225,31 @@ impl<'a> SearchQueryTask<'a> {
         Ok((page, total))
     }
 
-    /// Headword match — single FTS5 substring scan against `dict_words_fts.word`
-    /// covering both DPD headwords (whose `dict_words.word` is the same as
-    /// `dpd_headwords.lemma_1` for `dict_label="dpd"`) and user-imported
-    /// StarDict headwords. Returns the matching `dict_words` ids in result order.
+    /// The FTS table Headword Match searches: `dict_words_word_fts`, a trigram
+    /// index over `word` alone, or on a database built before it existed,
+    /// `dict_words_fts`, whose `word` column gives the same results.
+    ///
+    /// Not `dict_words_fts` when both exist: it also indexes
+    /// `definition_plain`, and with detail='none' its index records no column,
+    /// so `f.word LIKE ?` gets as candidates every row with the query's
+    /// trigrams in either column, many times the rows that match, and FTS5
+    /// reads each candidate's row from `dict_words` to check it.
+    fn headword_fts_table(db_conn: &mut SqliteConnection) -> Result<&'static str, Box<dyn Error>> {
+        #[derive(QueryableByName)]
+        struct Found {
+            #[diesel(sql_type = BigInt)]
+            n: i64,
+        }
+        let found: Found = sql_query(
+            "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'dict_words_word_fts'"
+        ).get_result(db_conn)?;
+        Ok(if found.n > 0 { "dict_words_word_fts" } else { "dict_words_fts" })
+    }
+
+    /// Headword match — single FTS5 substring scan against
+    /// `dict_words_word_fts.word` covering both DPD headwords (whose
+    /// `dict_words.word` is the same as `dpd_headwords.lemma_1` for
+    /// `dict_label="dpd"`) and user-imported StarDict headwords. Returns the matching `dict_words` ids in result order.
     ///
     /// **Load-bearing invariant:** for every row in `dict_words` with
     /// `dict_label = "dpd"`, `dict_words.word` equals the corresponding
@@ -2234,9 +2258,11 @@ impl<'a> SearchQueryTask<'a> {
     /// keys are the `lemma_1` values (see `bootstrap_cli/src/bootstrap/dpd.rs`).
     /// `dpd_headwords_fts` is used by DPD Lookup mode and Contains Match.
     ///
-    /// `dict_words_fts.word` is trigram-tokenized, so `f.word LIKE '%term%'`
-    /// is index-served. The source, `dict_label IN (...)`, language and uid
-    /// filters are on the joined `dict_words` row. Only `id`, `word` and
+    /// `dict_words_word_fts` is a trigram index over `word` alone, so
+    /// `f.word LIKE '%term%'` is index-served and its candidates are about the
+    /// rows that match (see `headword_fts_table`). The source,
+    /// `dict_label IN (...)`, language and uid filters are on the joined
+    /// `dict_words` row. Only `id`, `word` and
     /// `dict_label` are selected, which is what the sort needs.
     ///
     /// Sort tiers: exact `word == query_text` first, then starts-with
@@ -2276,11 +2302,12 @@ impl<'a> SearchQueryTask<'a> {
             .map(|s| format!("%{}", s))
             .unwrap_or_else(|| "%".to_string());
 
-        let mut sql = String::from(
+        let mut sql = format!(
             "SELECT dw.id AS id, dw.word AS word, dw.dict_label AS dict_label \
              FROM dict_words dw \
-             JOIN dict_words_fts f ON f.rowid = dw.id \
-             WHERE f.word LIKE ?"
+             JOIN {} f ON f.rowid = dw.id \
+             WHERE f.word LIKE ?",
+            Self::headword_fts_table(dict_conn)?
         );
 
         if self.source.is_some() {

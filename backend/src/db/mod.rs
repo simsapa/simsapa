@@ -536,7 +536,7 @@ pub fn run_dictionaries_migrations(db_conn: &mut SqliteConnection) -> Result<()>
 /// index of their content table's text. See
 /// docs/dict-words-fts5-implementation.md.
 pub const APPDATA_FTS_TABLES: [&str; 1] = ["suttas_fts"];
-pub const DICTIONARIES_FTS_TABLES: [&str; 1] = ["dict_words_fts"];
+pub const DICTIONARIES_FTS_TABLES: [&str; 2] = ["dict_words_fts", "dict_words_word_fts"];
 pub const DPD_FTS_TABLES: [&str; 2] = ["bold_definitions_fts", "bold_definitions_bold_fts"];
 
 /// Check that an FTS5 table's index agrees with its content: FTS5's
@@ -565,7 +565,7 @@ pub fn fts5_integrity_check_all(db_conn: &mut SqliteConnection, tables: &[&str])
 }
 
 /// Returns connections as a tuple to appdata.sqlite3, dictionaries.sqlite3, dpd.sqlite3
-pub fn establish_connection()-> (SqliteConnection, SqliteConnection, SqliteConnection) {
+pub fn establish_connection() -> (SqliteConnection, SqliteConnection, SqliteConnection) {
     info("establish_connection()");
     dotenv().ok();
 

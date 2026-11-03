@@ -162,6 +162,7 @@ fn runtime_writes_keep_the_fts_indexes_in_step() {
     }
     check(&appdata_path, "suttas_fts", "setup");
     check(&dict_path, "dict_words_fts", "setup");
+    check(&dict_path, "dict_words_word_fts", "setup");
 
     // --- A language download: delete each sutta by uid, insert the new one.
     let lang_path = tmp.path().join("suttas_lang_en.sqlite3");
@@ -202,11 +203,14 @@ fn runtime_writes_keep_the_fts_indexes_in_step() {
     let outcome = import_user_dir(&stardict_dir, "ftstest", "en", &|_| {}, &cancel).expect("StarDict import");
     assert_eq!(outcome.inserted, 3);
     check(&dict_path, "dict_words_fts", "StarDict import");
+    check(&dict_path, "dict_words_word_fts", "StarDict import");
     {
         let mut conn = open(&dict_path);
         assert_eq!(docsize_rows(&mut conn, "dict_words_fts"), rows_before + 3);
         assert_eq!(match_ids(&mut conn, "dict_words_fts", "quokkaword").len(), 2);
         assert_eq!(match_ids(&mut conn, "dict_words_fts", "foxtrotword").len(), 1);
+        assert_eq!(match_ids(&mut conn, "dict_words_word_fts", "quokkaword").len(), 2);
+        assert_eq!(match_ids(&mut conn, "dict_words_word_fts", "foxtrotword"), Vec::<i64>::new());
     }
     assert_eq!(headword_uids("quokka", "ftstest"), vec!["quokkaword-two/ftstest", "quokkaword/ftstest"]);
 
@@ -215,15 +219,18 @@ fn runtime_writes_keep_the_fts_indexes_in_step() {
 
     rename_user_dictionary(dict_id, "ftsrenamed").expect("rename");
     check(&dict_path, "dict_words_fts", "rename");
+    check(&dict_path, "dict_words_word_fts", "rename");
     assert_eq!(headword_uids("quokka", "ftstest"), Vec::<String>::new(), "the old label still finds the words");
     assert_eq!(headword_uids("quokka", "ftsrenamed"), vec!["quokkaword-two/ftsrenamed", "quokkaword/ftsrenamed"]);
 
     delete_user_dictionary(dict_id).expect("delete");
     check(&dict_path, "dict_words_fts", "delete");
+    check(&dict_path, "dict_words_word_fts", "delete");
     {
         let mut conn = open(&dict_path);
         assert_eq!(docsize_rows(&mut conn, "dict_words_fts"), rows_before);
         assert_eq!(match_ids(&mut conn, "dict_words_fts", "quokkaword"), Vec::<i64>::new());
+        assert_eq!(match_ids(&mut conn, "dict_words_word_fts", "quokkaword"), Vec::<i64>::new());
     }
     assert_eq!(headword_uids("quokka", "ftsrenamed"), Vec::<String>::new());
 }

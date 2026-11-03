@@ -57,16 +57,24 @@ user downloads in full:
     | `bold_definitions_fts` | `bold_definitions` | `commentary_plain` | 120.0 MB |
     | `bold_definitions_bold_fts` | `bold_definitions` | `bold, bold_ascii` | 15.0 MB |
 
+    Headword Match searches `word` alone, through a further narrow external-content table,
+    `dict_words_word_fts(word)` (about 5 MB). With `detail='none'` an index records no
+    column, so `dict_words_fts.word LIKE ?` would get as candidates every row with the
+    query's trigrams in either column, and read each from `dict_words`.
+
     The `UNINDEXED` columns go: an external-content table fetches every declared column of
     each candidate from the content table (`fts5ConfigMakeExprlist`, and the core rechecks a
     trigram `LIKE` because FTS5 leaves `omit` at 0). The Suttas query filters on
-    `s.language`, `s.nikaya` and `s.source_uid` instead. `dict_words_fts`' `language` and
-    `dict_label` are read by no query. `book_spine_items_fts` (18.5 MB) and
-    `dpd_headwords_fts` (2 MB) stay as they are. Each table is decided on its own by
-    requirement 4.
-2. The delete and update triggers must use FTS5's `'delete'` command with the old values,
-    under the same condition as the table's insert trigger, because a row that condition
-    excludes was never indexed. The update trigger must be `AFTER UPDATE OF` the indexed
+    `+s.language`, `s.nikaya` and `s.source_uid` instead (the unary plus keeps the language
+    index from driving the query for a language the statistics do not describe).
+    `dict_words_fts`' `language` and `dict_label` are read by no query.
+    `book_spine_items_fts` (18.5 MB) and `dpd_headwords_fts` (2 MB) stay as they are. Each
+    table is decided on its own by requirement 4.
+2. Every row of the content table must be indexed, with no condition: FTS5's
+    `integrity-check` of an external-content table expects an index entry for every row and
+    fails on a row left out. A NULL or empty column gives no tokens, only a `_docsize` row.
+    The delete and update triggers must use FTS5's `'delete'` command with the old values,
+    and have no condition either. The update trigger must be `AFTER UPDATE OF` the indexed
     columns only, so renaming a dictionary, which updates `dict_label`, re-tokenizes nothing.
 3. An index must stay exactly in step with its content table, because FTS5 reports no error
     when it does not, and only returns wrong results. So the bootstrap must run
@@ -91,8 +99,8 @@ user downloads in full:
     desktop's CPU and disk.
 5. `Total rows in suttas_fts` in `cli_support.rs` must count `suttas_fts_docsize`. A
     `SELECT COUNT(*)` on an external-content table is answered from the content table, so
-    it would include rows that are not indexed. Any other count of a changed table must do
-    the same.
+    it would report rows even for an index that is empty or out of step. Any other count of
+    a changed table must do the same.
 6. The benchmark must run the app's own query code on the app's own SQLite, so that it cannot
     measure a different statement or a different SQLite from the one users have. The
     `sqlite3` CLI is not a substitute: it is a different build.
@@ -155,6 +163,10 @@ searches.
 - The query code that filters on content-table columns also works on databases built before
   this change, and Diesel reads columns by name, so the code and the backend tests do not
   depend on the column order of the database they run on.
+- A search of one column of a several-column `detail='none'` table gets the candidates of
+  all its columns: for Headword Match `kamma`, 27,159 candidates for 710 results, each read
+  from the content table. From the stored copy (175 MB) that took 0.27 s cold, from
+  `dict_words` (1.2 GB, scattered rows) 1.9 s. A table over `word` alone takes 0.06 s.
 - A filter on a content-table column can draw the planner to drive the query from that
   table's index (`idx_suttas_language`) and probe the FTS table per row. Unary `+`
   (`+s.language = ?`) keeps an index from serving a term.

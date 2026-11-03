@@ -11,14 +11,14 @@ Schema:
 - `backend/migrations/dictionaries/2026-07-23-000000_initial_schema/` - The dictionaries baseline, with `dict_words_word_idx` and `dict_words` reordered.
 - `backend/src/db/dictionaries_schema.rs`, `backend/src/db/dictionaries_models.rs` - `dict_words` in `table!` and `DictWord`, in the new column order.
 - `backend/src/db/mod.rs` - `appdata_schema_test_db()`, the in-memory appdata test database built by the embedded migrations; `baseline_migration_tests`; `fts5_integrity_check()` / `fts5_integrity_check_all()` and the `*_FTS_TABLES` lists of each database's external-content FTS tables.
-- `backend/src/db/fts_trigger_tests.rs` (new) - The scripts' FTS tables and triggers on in-memory databases: insert, update of an indexed and of another column, rows with no text, delete, with the integrity check after each.
+- `backend/src/db/fts_trigger_tests.rs` (new) - The scripts' FTS tables and triggers on in-memory databases: insert, update of an indexed and of another column, rows with no text, delete, with the integrity check after each. `dict_words_word_fts` with `dict_words_fts`.
 - `backend/src/navigation_timeline.rs`, `backend/src/navigation_tree/tests.rs` - Build their test databases with `appdata_schema_test_db()`.
-- `backend/src/query_task.rs` - `suttas_contains_match_fts5()` filters on `s.` columns; the page queries order by `f.rowid`; Dictionary Contains (`dict_words_contains_match_ids()`, `resolve_lemmas_to_dict_word_ids()`) and Headword Match (`lemma_1_dpd_headword_match_ids()`) collect ids, and `dict_word_results_for_ids()` loads rows and builds results for the page only.
+- `backend/src/query_task.rs` - `suttas_contains_match_fts5()` filters on `s.` columns; the page queries order by `f.rowid`; Dictionary Contains (`dict_words_contains_match_ids()`, `resolve_lemmas_to_dict_word_ids()`) and Headword Match (`lemma_1_dpd_headword_match_ids()`) collect ids, and `dict_word_results_for_ids()` loads rows and builds results for the page only. Headword Match searches `headword_fts_table()`: `dict_words_word_fts`, or `dict_words_fts` on a database built before it.
 
 Bootstrap:
 
 - `bootstrap_cli/src/bootstrap/mod.rs` - `check_fts_tables()`: the FTS integrity checks after the last import of each database, before its `ANALYZE`.
-- `scripts/appdata-fts5-indexes.sql`, `scripts/dictionaries-fts5-indexes.sql`, `scripts/dpd-bold-definitions-fts5-indexes.sql` - Narrow external-content tables that index every row, with `'delete'` triggers, for the tables that pass FR-4.
+- `scripts/appdata-fts5-indexes.sql`, `scripts/dictionaries-fts5-indexes.sql`, `scripts/dpd-bold-definitions-fts5-indexes.sql` - Narrow external-content tables that index every row, with `'delete'` triggers, for the tables that pass FR-4. The dictionaries script also creates `dict_words_word_fts`, over `word` alone, for Headword Match (5.8).
 - `bootstrap_cli/src/main.rs` - `import_cst()` runs the integrity check.
 
 Backend:
@@ -34,7 +34,7 @@ Backend:
 
 Docs:
 
-- `PROJECT_MAP.md`, `CLAUDE.md`, `docs/dict-words-fts5-implementation.md`, `docs/database-migrations.md`, `docs/language-filter-query-logic.md`, and the docs that named the folded migrations (3.1): `docs/cips-index-updates.md`, `docs/window-lifecycle-and-reuse.md`, `docs/sutta-navigation-tree.md`, `docs/suttas-core-import.md`
+- `PROJECT_MAP.md`, `CLAUDE.md` (a symlink to `AGENTS.md`), `docs/dict-words-fts5-implementation.md`, `docs/database-migrations.md`, `docs/language-filter-query-logic.md`, and the docs that named the folded migrations (3.1): `docs/cips-index-updates.md`, `docs/window-lifecycle-and-reuse.md`, `docs/sutta-navigation-tree.md`, `docs/suttas-core-import.md`
 
 ### Notes
 
@@ -80,38 +80,27 @@ Update the file after completing each sub-task, not just after completing an ent
 
 To be filled in by task 2.7.
 
-## Open issue: cold Headword Match on the narrow `dict_words_fts`
+## Settled: cold Headword Match on the narrow `dict_words_fts` (5.8)
 
-Found in 5.7, not yet investigated. To be settled in 8.1a, before the desktop and phone runs of 8.0, because it may decide whether `dict_words_fts` passes FR-4.
+Found in 5.7, settled in 5.8 on the desktop, before the bootstrap, so that the phone run of 8.0 measures the layout that will ship.
 
-**Observation.** `fts_bench --runs 1`, new code on both copies, desktop: `fts-bench-scratch/before` (stored-copy FTS tables, old column order) against `fts-bench-scratch/new` (5.7: narrow external-content tables, reordered `dict_words`, `dict_words_word_idx`, `ANALYZE`d and `VACUUM`ed). Results identical. Raw lines in `fts-bench-scratch/results/check57-before.tsv` and `check57-new.tsv`. First page, no filter, no bold definitions, ms:
+**Cause (measured).** Headword Match is `f.word LIKE '%q%'`. With `detail='none'` an FTS5 index records no column, so on `dict_words_fts(word, definition_plain)` the candidates are every row with the query's trigrams in *either* column: for `kamma`, 27,159 candidates (`MATCH 'kam AND amm AND mma'`, index only, 6 ms) for 710 results. FTS5 reads each candidate's row from the content table to check it. From the stored copy that was the 175 MB `_content` table, read nearly in order (`rowid` only, `word LIKE`: 187 ms cold, 170 MB read). From `dict_words` (1.2 GB, a row per 4 KB page or more) it is thousands of scattered reads: 1,895 ms cold, 255 MB read. Reading only `word` of those 27,159 rows from `dict_words` costs 1,470 ms cold by itself, so the cost is in touching the rows, not in `definition_plain`'s overflow pages. The plan is the same on both copies. Measured with a Python harness (SQLite 3.53.4, cold by `posix_fadvise`, bytes read from `/proc/self/io`), then confirmed with `fts_bench`.
 
-| Query | Headword cold | Headword warm | Contains cold | Contains warm | Headword total | `dict_words` rows with the query in `definition_plain` |
-|---|---|---|---|---|---|---|
-| `kamma` | 279 → 1,906 | 52 → 64 | 1,780 → 2,147 | 159 → 166 | 710 | 17,178 |
-| `dham` | 427 → 2,025 | 59 → 72 | 2,907 → 2,234 | 205 → 210 | 1,850 | 30,681 |
-| `dhamma` | 387 → 2,015 | 60 → 74 | 2,419 → 2,296 | 204 → 193 | 1,429 | |
-| `dha` | 761 → 1,927 | 81 → 93 | 4,176 → 3,039 | 277 → 294 | 5,943 | |
-| `ana` | 890 → 2,021 | 80 → 92 | 4,134 → 3,232 | 292 → 292 | 7,523 | |
-| `ssa` | 628 → 1,033 | 105 → 141 | 5,664 → 3,039 | 439 → 459 | 4,088 | |
-| `saṅkhāra` | 141 → 107 | 8 → 8 | 216 → 135 | 15 → 13 | 124 | |
-| `ubhatodaṇḍaka` | 17 → 12 | 2 → 2 | 26 → 15 | 5 → 4 | 1 | |
+**Affected modes.** Only the two paths that read `dict_words_fts`: Dictionary **Headword Match** (with and without the bold definitions) — the slowdown above — and Dictionary **Contains Match** Phase 3 (with and without), barely: its candidates are mostly real matches and both layouts read their `dict_words` row for the uid filters anyway (Phase 3 alone, cold: `kamma` 1,622 → 2,011 ms, `ssa` 5,434 → 1,240 ms, `saṅkhāra` 197 → 111 ms). Not affected: DPD Lookup (DPD tables), Fulltext Match (Tantivy), Title and Uid Match, Suttas and Library.
 
-The `+bold` and language-filtered Headword cases move the same way (`results/check57-*.tsv`). So Headword Match is up to 7× slower cold, and 15–35% slower warm. Contains Match is mostly faster cold. Suttas and the bold tables are within the gate. One run per copy, so the warm figures are near the noise; the cold Headword ones are not (seven of seven words above 100 ms move by over 1 s).
+**Candidates measured** (Headword Match SQL, `kamma` cold / warm ms; index size):
 
-**Hypothesis (not measured).** Headword Match is `f.word LIKE '%q%'` on `dict_words_fts(word, definition_plain)`, `tokenize='trigram', detail='none'`. With `detail='none'` the index stores no column information, so the trigram lookup yields every row that has the query's trigrams in *either* column, and FTS5 then reads both declared columns of each candidate from the content table to recheck `word` (`fts5ConfigMakeExprlist`; the core rechecks `LIKE` too). For `kamma` that is about 17,900 candidates for 710 results. With the stored copy, those reads came from `dict_words_fts_content` (175 MB, rows packed several to a page). Now they come from `dict_words` (1.2 GB, 186,009 rows, `definition_plain` averages 650 characters and `definition_html` 4,816), where each row is spread over its own page or more, so a cold run reads far more pages. Contains Match reads those rows anyway, which is why it did not slow down, and a word found in few definitions (`saṅkhāra`) got faster.
+| Layout | `kamma` | `dha` | Index |
+|---|---|---|---|
+| before: stored copy | 268 / 53 | 761 / 81 | 49 MB + 175 MB `_content` |
+| 5.7: narrow external `(word, definition_plain)` | 1,909 / 66 | 2,056 / 96 | 49 MB |
+| `detail='column'` on `dict_words_fts` | 68 / 9 | 384 / 20 | 144 MB |
+| **`dict_words_word_fts(word)`, external content** | **57 / 4** | **326 / 20** | **+5.2 MB** |
+| `dict_words_word_fts(word)`, stored copy | 59 / 4 | 331 / 20 | +9.7 MB |
 
-**How to check it.**
-1. That the cold time follows the number of definition matches rather than the headword total: time cold Headword for words with a similar headword total and very different definition counts. `SELECT count(*) FROM dict_words WHERE definition_plain LIKE '%<q>%'` on the `new` copy gives the second.
-2. Count the pages read: per-statement `SQLITE_STMTSTATUS_VM_STEP`, or the connection's `SQLITE_DBSTATUS_CACHE_MISS`, from `fts_bench` with the case run once cold, on both copies.
-3. Compare `fts_bench --explain` of the Headword statement on both copies: expected to be the same plan (it was in 5.7), which would show the cost is in the rows read and not in the plan.
+Splitting Contains Phase 3 into a `word` table and a `definition_plain` table did not help it (`ssa` cold 1,240 → 2,881 ms), so Phase 3 stays on `dict_words_fts`.
 
-**Candidates, each to be measured on a copy of `new`, with `fts_bench --filter 'dict.headword'` and the pin test.**
-- A second narrow external-content table over `word` alone (for example `dict_words_word_fts`), used by Headword Match and by Contains Phase 3's `f.word LIKE` half, as `bold_definitions` has two tables. Its candidates then have the trigrams in `word`, and it reads only `word`, which sits before `definition_plain`. Costs its index size and a fourth set of triggers on `dict_words` (`AFTER UPDATE OF word`). `docs/dict-words-fts5-implementation.md` and `CLAUDE.md`'s FTS5 section would describe it.
-- `detail='column'` on `dict_words_fts`, so that a column filter is answered from the index. Larger index; measure its size against the 177.5 MB saved, and check with `EXPLAIN` that FTS5 applies the column restriction for `LIKE`.
-- FR-4's fallback: `dict_words_fts` keeps a stored copy, still narrow (`word, definition_plain`), and the queries keep filtering on `dict_words`. Gives up the 177.5 MB.
-
-Whichever is chosen goes into `scripts/dictionaries-fts5-indexes.sql`, with `tests/test_search_results_pin.rs` passing unchanged and `db::fts_trigger_tests` / `tests/test_fts_runtime_writes.rs` extended to any new table.
+**Chosen:** `dict_words_word_fts`, a narrow external-content table over `word`, used by Headword Match only. `dict_words_fts` is unchanged. `dictionaries.sqlite3` on `new`: 1,236.9 MB (1,405.0 before; saves 168.1 MB).
 
 ## Tasks
 
@@ -353,14 +342,21 @@ The two `_full()` functions are also called by `dict_contains_with_bold()` and `
     - `fts-bench-scratch/new/`: a copy of `before` (delete fixture included) with `suttas`, `book_spine_items` and `dict_words` rebuilt in the baseline order with their indexes, by `candidates/5.7-appdata-reorder.sql` and `5.7-dictionaries-reorder.sql` (generated from the baselines), then the four FTS scripts of the repository, `integrity-check` with rank 1 on every FTS table (all pass), `ANALYZE` and `VACUUM`. Files: appdata 1,021.3 MB, dictionaries 1,231.7 MB, dpd 2,426.9 MB, as in 2.2. `_content` tables left: `book_spine_items_fts` and `dpd_headwords_fts`, which stay stored.
     - Plans (`results/plans-5.7*.txt`): the statements of `plans/plans.txt` plan the same on `before` and `new` but for the FTS column numbers (`L4` → `L0`, fewer declared columns); the resolve statements of `plans/plans-5.2.txt` use `dict_words_word_idx`.
     - `fts_bench --runs 1` on both, with the new code (`results/check57-{before,new}.tsv`): 342 lines, 0 count differences, 0 uid differences.
-    - See "Open issue: cold Headword Match on the narrow `dict_words_fts`" above. Not the measurement, but a signal for 8.0: one run each, cold Headword Match on `new` takes about 1.9 to 2.0 s whatever the word (`kamma` 0.28 → 1.91 s, `dham` 0.43 → 2.03 s), and cold Dictionary Contains `kamma` about +20%; warm Headword `ssa` +34%; Suttas all within the gate. Likely cause, not measured: `detail='none'` keeps no column information, so `f.word LIKE` gets as candidates every row with the trigrams in *either* declared column, and FTS5 now reads `word` and `definition_plain` of each from `dict_words` rows spread through 1.2 GB, where the stored copy held them in 175 MB.
+    - See "Settled: cold Headword Match on the narrow `dict_words_fts` (5.8)" above. Not the measurement, but a signal for 8.0: one run each, cold Headword Match on `new` takes about 1.9 to 2.0 s whatever the word (`kamma` 0.28 → 1.91 s, `dham` 0.43 → 2.03 s), and cold Dictionary Contains `kamma` about +20%; warm Headword `ssa` +34%; Suttas all within the gate. Likely cause, not measured: `detail='none'` keeps no column information, so `f.word LIKE` gets as candidates every row with the trigrams in *either* declared column, and FTS5 now reads `word` and `definition_plain` of each from `dict_words` rows spread through 1.2 GB, where the stored copy held them in 175 MB.
+  - [x] 5.8 Settle the cold Headword Match slowdown of 5.7 (the section above), before the bootstrap.
+    - `scripts/dictionaries-fts5-indexes.sql` creates `dict_words_word_fts(word)`, external content, with its insert, `AFTER UPDATE OF word` and delete triggers; `DICTIONARIES_FTS_TABLES` lists it, so the bootstrap checks it. Headword Match reads it through `headword_fts_table()`, which falls back to `dict_words_fts` on a database built before it (the dist database the backend tests use, until 7.2). `db::fts_trigger_tests` and `tests/test_fts_runtime_writes.rs` cover it (a definition update leaves its index byte-identical).
+    - Applied to `fts-bench-scratch/new` with the repository script, `integrity-check` on both tables, `ANALYZE`. `fts_bench --runs 3 --filter dict.headword`, `before` then `new` (`results/hw81a-{b,n}.tsv`): 96 lines, all within the gate, 0 count and 0 uid differences. First page, no filter, cold / warm ms, before → now: `kamma` 277 → 59 / 52 → 5, `dha` 759 → 326 / 81 → 18, `ana` 888 → 429 / 82 → 22, `ssa` 617 → 236 / 108 → 13; with the bold definitions `kamma` 566 → 257 / 68 → 20, `ana` 2,211 → 834 / 243 → 204.
+    - The delete of the 2,000-row fixture, now through three sets of triggers (`results/del81a-{b,n}.tsv`, `--runs 5`): cold 84 → 70 ms, warm 61 → 61 ms.
+  - [x] 5.9 Check the Suttas language filter's plan for a language the statistics do not describe (review of 4.7).
+    - The shipped `suttas` holds `pli` and `en` (and a few single rows); other languages arrive by download, appended with the highest ids, and `ANALYZE` runs after the import (`asset_helpers.rs`). With `s.language = ?` and a value the statistics lack (`hu`) or a rare one (`lzh`, 2 rows), the plan starts from `idx_suttas_language_uid` and probes `suttas_fts` per row, with a temp B-tree for the order. Simulated on scratch copies of `before` and `new` (the 3,000 highest-id rows relabelled `hu`, statistics not refreshed), page / count, cold / warm ms: `mindfulness` page before (`f.language`) 472 / 39, `s.language` 5,040 / 4,905, `+s.language` 422 / 40; `kakacena` page 644 / 81, 2,379 / 2,079, 521 / 82; `dhamma` count 1,713 / 117, 2,037 / 1,511, 1,308 / 114. After `ANALYZE` the plan starts from the FTS index again, so the flip needs statistics that do not describe the value.
+    - `suttas_contains_match_fts5()` now writes `+s.language = ?`, as the specs for 4.0 provide; `--explain` on the app's SQLite: `SCAN f VIRTUAL TABLE` first for `pli`, `en`, `hu` and `lzh`, page and count. `s.nikaya LIKE` and `NOT (s.source_uid = 'ms')` cannot use an index and need nothing. The Dictionary queries filtered on the joined `dict_words` row before this change too, so they are unchanged.
 
 ### Specs for 6.0
 
 Depends on: 3.0, 4.0 and 5.0, so the docs state what was built.
 
 - [ ] 6.0 Update the docs
-  - [ ] 6.1 `CLAUDE.md`, "FTS5 fulltext search tables": the FTS tables are narrow external-content tables, filters read the content table, the `'delete'` trigger form replacing that section's `dict_words_fts` example, the rule that any write to an indexed column must go through the triggers because the index does not report being out of step, the column order of `suttas` and why, and that a new table of this kind needs the FR-4 measurements, with how to run `fts_bench`. `docs/dict-words-fts5-implementation.md`, `docs/database-migrations.md` and `PROJECT_MAP.md`: the same facts, where they describe these scripts. Where a doc describes the Dictionary Contains phases or Headword Match (`grep -rln "Phase 3\|materialise" docs/`, `docs/language-filter-query-logic.md`), state the id-first, page-only shape of 5.0 and `dict_words_word_idx`.
+  - [ ] 6.1 `CLAUDE.md`, "FTS5 fulltext search tables": the FTS tables are narrow external-content tables, filters read the content table, the `'delete'` trigger form replacing that section's `dict_words_fts` example, the rule that any write to an indexed column must go through the triggers because the index does not report being out of step, the column order of `suttas` and why, and that a new table of this kind needs the FR-4 measurements, with how to run `fts_bench`. `docs/dict-words-fts5-implementation.md`, `docs/database-migrations.md` and `PROJECT_MAP.md`: the same facts, where they describe these scripts. Where a doc describes the Dictionary Contains phases or Headword Match (`grep -rln "Phase 3\|materialise" docs/`, `docs/language-filter-query-logic.md`), state the id-first, page-only shape of 5.0 and `dict_words_word_idx`. Also the trap of 5.8: with `detail='none'` an index records no column, so a search of one column of a several-column external-content table gets the candidates of all of them, and reads each from the content table; a search of one column needs a table over that column alone (`dict_words_word_fts`). Correct the stale lines found in review: `docs/dict-words-fts5-implementation.md:18,21`, `docs/language-filter-query-logic.md:152,168,177`, `PROJECT_MAP.md:572`, `AGENTS.md:1865,1904`. `query_task.rs` already points to `docs/dict-words-fts5-implementation.md` for the `ORDER BY f.rowid` reason, so that doc must give it. Note in the Dictionary Contains description that Phases 1, 2 and 4 take the lowest-id `dict_words` row of a headword: where a DPD headword is also a word in a user dictionary, the DPD row comes in the DPD phase and the other row in Phase 3.
 
 ### Specs for 7.0
 
@@ -368,7 +364,7 @@ Depends on: 6.0. **Version bumps are the maintainer's.**
 
 - [ ] 7.0 Bump the versions and re-bootstrap
   - [ ] 7.1 The maintainer bumps the app and DB versions with `scripts/set-version.py`. The DB version must change its major or minor part (3.0), e.g. to 1.2.0.
-  - [ ] 7.2 Full bootstrap (the maintainer, or an agent when the maintainer says so). Afterwards: the integrity checks of 4.2 pass, `dict_words_word_idx` exists, `suttas` has the new order (`PRAGMA table_info`), the ledger lists only the baseline, and `git status` shows no `*.sqlite3`.
+  - [ ] 7.2 Full bootstrap (the maintainer, or an agent when the maintainer says so). Afterwards: the integrity checks of 4.2 pass (`dict_words_word_fts` included), `dict_words_word_idx` exists, `suttas` has the new order (`PRAGMA table_info`), the ledger lists only the baseline, and `git status` shows no `*.sqlite3`.
 
 ### Specs for 8.0
 
@@ -376,7 +372,6 @@ Depends on: 7.0. `before` is `fts-bench-scratch/before` (the previous dist datab
 
 - [ ] 8.0 Measure the rebuilt databases, and decide
   - [ ] 8.1 Sizes from `dbstat`, against 2.2. Plans with `--explain`, against 2.3 and 4.7.
-  - [ ] 8.1a Settle "Open issue: cold Headword Match on the narrow `dict_words_fts`" (above) on the desktop, so that the phone run measures the layout that will ship.
   - [ ] 8.2 Desktop: alternate `before`, `after`, `before`, `after`, `--runs 5`, and apply the gate of FR-4 to each table, uid hashes included. The Dictionary cases are judged as a whole too: the success metric is that the cases with the most matches are faster. A table that fails here is left out of the phone run.
   - [ ] 8.3 Ask the maintainer to attach the slowest real arm64 device available, and to confirm its free space: the copies of one table's database need twice that file's size. Agents may use `adb push` and `adb shell`, which do not touch the display. Do not use an emulator.
   - [ ] 8.4 Build with `make fts-bench-arm64`, push the binary and the copies to `/data/local/tmp`, and run the same alternating sequence, one database pair at a time, with a pause between runs so that the phone cools. Keep the phone on charge, with the app closed. Repeat on a card if there is one.

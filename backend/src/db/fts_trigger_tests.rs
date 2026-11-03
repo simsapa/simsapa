@@ -147,7 +147,9 @@ fn dict_words_fts_follows_dict_words() {
     conn.run_pending_migrations(DICTIONARIES_MIGRATIONS).expect("dictionaries migrations");
     exec(&mut conn, DICTIONARIES_FTS_SQL);
     let fts = "dict_words_fts";
+    let wfts = "dict_words_word_fts";
     assert_no_content_copy(&mut conn, fts);
+    assert_no_content_copy(&mut conn, wfts);
 
     exec(&mut conn, "INSERT INTO dictionaries (id, label, title, dict_type, is_user_imported, language) \
                      VALUES (1, 'test', 'Test', 'stardict', 1, 'en')");
@@ -164,35 +166,57 @@ fn dict_words_fts_follows_dict_words() {
     exec(&mut conn, &insert(1, "alphaword", "'bravo charlie'"));
     exec(&mut conn, &insert(2, "deltaword", "NULL"));
     check(&mut conn, fts, "insert");
+    check(&mut conn, wfts, "insert");
     assert_eq!(match_ids(&mut conn, fts, "bravo"), vec![1]);
     assert_eq!(match_ids(&mut conn, fts, "deltaword"), vec![2]);
+    // The word index holds the words only.
+    assert_eq!(match_ids(&mut conn, wfts, "alphaword"), vec![1]);
+    assert_eq!(match_ids(&mut conn, wfts, "bravo"), Vec::<i64>::new());
     assert_eq!(like(&mut conn, "bravo"), vec![1]);
     assert_eq!(like(&mut conn, "deltaw"), vec![2]);
 
     exec(&mut conn, "UPDATE dict_words SET definition_plain = 'echo foxtrot' WHERE id = 1");
     exec(&mut conn, "UPDATE dict_words SET word = 'golfword', word_ascii = 'golfword' WHERE id = 2");
     check(&mut conn, fts, "update indexed columns");
+    check(&mut conn, wfts, "update indexed columns");
+    assert_eq!(match_ids(&mut conn, wfts, "deltaword"), Vec::<i64>::new(), "the old word is still in the word index");
+    assert_eq!(match_ids(&mut conn, wfts, "golfword"), vec![2]);
     assert_eq!(match_ids(&mut conn, fts, "bravo"), Vec::<i64>::new(), "the old definition is still indexed");
     assert_eq!(match_ids(&mut conn, fts, "deltaword"), Vec::<i64>::new(), "the old word is still indexed");
     assert_eq!(match_ids(&mut conn, fts, "foxtrot"), vec![1]);
     assert_eq!(match_ids(&mut conn, fts, "golfword"), vec![2]);
 
+    // Updating only the definition leaves the word index as it is.
+    let word_index_before = index_state(&mut conn, wfts);
+    exec(&mut conn, "UPDATE dict_words SET definition_plain = 'hotel india' WHERE id = 1");
+    check(&mut conn, fts, "update definition");
+    check(&mut conn, wfts, "update definition");
+    assert_eq!(index_state(&mut conn, wfts), word_index_before, "updating a definition changed the word index");
+    assert_eq!(match_ids(&mut conn, fts, "india"), vec![1]);
+
     // Renaming a dictionary and marking it indexed re-tokenize nothing.
     let before = index_state(&mut conn, fts);
+    let word_before = index_state(&mut conn, wfts);
     exec(&mut conn, "UPDATE dict_words SET dict_label = 'renamed', uid = word || '/renamed', \
                      indexed_at = CURRENT_TIMESTAMP, language = 'pli'");
     check(&mut conn, fts, "update other columns");
+    check(&mut conn, wfts, "update other columns");
     assert_eq!(index_state(&mut conn, fts), before, "updating a column that is not indexed changed the index");
+    assert_eq!(index_state(&mut conn, wfts), word_before, "updating a column that is not indexed changed the word index");
 
     exec(&mut conn, "DELETE FROM dict_words WHERE id = 1");
     check(&mut conn, fts, "delete");
-    assert_eq!(match_ids(&mut conn, fts, "foxtrot"), Vec::<i64>::new());
+    check(&mut conn, wfts, "delete");
+    assert_eq!(match_ids(&mut conn, fts, "india"), Vec::<i64>::new());
+    assert_eq!(match_ids(&mut conn, wfts, "alphaword"), Vec::<i64>::new());
     assert_eq!(match_ids(&mut conn, fts, "golfword"), vec![2]);
 
     // Deleting the dictionary deletes its words through the cascade.
     exec(&mut conn, "PRAGMA foreign_keys = ON; DELETE FROM dictionaries WHERE id = 1");
     check(&mut conn, fts, "cascade delete");
+    check(&mut conn, wfts, "cascade delete");
     assert_eq!(index_state(&mut conn, fts).0, 0);
+    assert_eq!(index_state(&mut conn, wfts).0, 0);
 }
 
 #[test]

@@ -1,9 +1,14 @@
--- FTS5 trigram index over dict_words.word and dict_words.definition_plain,
--- for Dictionary Contains Match and Headword Match.
+-- FTS5 trigram indexes over dict_words:
+--   dict_words_fts      over word, definition_plain — Contains Match
+--   dict_words_word_fts over word                   — Headword Match
 --
 -- Modifying this script requires a re-bootstrap of the dictionaries DB. There
 -- is no Diesel migration: the FTS table and triggers are recreated by this
 -- script. See docs/dict-words-fts5-implementation.md.
+
+-- =====================================================================
+-- dict_words_fts (word, definition_plain)
+-- =====================================================================
 
 DROP TRIGGER IF EXISTS dict_words_fts_insert;
 DROP TRIGGER IF EXISTS dict_words_fts_update;
@@ -77,4 +82,59 @@ END;
 
 INSERT INTO dict_words_fts(dict_words_fts) VALUES('optimize');
 
+-- =====================================================================
+-- dict_words_word_fts (word)
+-- =====================================================================
+
+-- Headword Match searches `word` alone, and needs its own index for it. With
+-- detail='none' an index records no column, so `dict_words_fts.word LIKE ?`
+-- finds as candidates every row with the query's trigrams in *either* column
+-- (27,159 rows for `kamma`, of which 710 match), and FTS5 reads each
+-- candidate's row from `dict_words` to check it: thousands of scattered page
+-- reads, about 2 s on a cold cache. Over `word` alone the candidates are
+-- about the rows that match. The index is about 5 MB.
+
+DROP TRIGGER IF EXISTS dict_words_word_fts_insert;
+DROP TRIGGER IF EXISTS dict_words_word_fts_update;
+DROP TRIGGER IF EXISTS dict_words_word_fts_delete;
+DROP TABLE IF EXISTS dict_words_word_fts;
+
+CREATE VIRTUAL TABLE dict_words_word_fts USING fts5(
+    word,
+    content='dict_words', content_rowid='id',
+    tokenize='trigram',
+    detail='none'
+);
+
+INSERT INTO dict_words_word_fts (rowid, word)
+SELECT id, word
+FROM dict_words;
+
+CREATE TRIGGER dict_words_word_fts_insert
+AFTER INSERT ON dict_words
+BEGIN
+    INSERT INTO dict_words_word_fts (rowid, word)
+    VALUES (NEW.id, NEW.word);
+END;
+
+CREATE TRIGGER dict_words_word_fts_update
+AFTER UPDATE OF word ON dict_words
+BEGIN
+    INSERT INTO dict_words_word_fts (dict_words_word_fts, rowid, word)
+    VALUES ('delete', OLD.id, OLD.word);
+
+    INSERT INTO dict_words_word_fts (rowid, word)
+    VALUES (NEW.id, NEW.word);
+END;
+
+CREATE TRIGGER dict_words_word_fts_delete
+AFTER DELETE ON dict_words
+BEGIN
+    INSERT INTO dict_words_word_fts (dict_words_word_fts, rowid, word)
+    VALUES ('delete', OLD.id, OLD.word);
+END;
+
+INSERT INTO dict_words_word_fts(dict_words_word_fts) VALUES('optimize');
+
+-- Single VACUUM at the end of the script.
 VACUUM;
