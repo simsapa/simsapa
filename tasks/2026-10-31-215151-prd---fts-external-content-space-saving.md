@@ -97,9 +97,13 @@ user downloads in full:
     measure a different statement or a different SQLite from the one users have. The
     `sqlite3` CLI is not a substitute: it is a different build.
 7. `suttas` must be created with its small, often-read columns first, then `content_plain`,
-    then the large columns, `content_html` last. Diesel's `table!` and every `Queryable`
-    struct over `suttas` follow the same order, because `Queryable` maps fields by position
-    and `diesel print-schema` writes the database's order.
+    then the large columns, `content_html` last. `dict_words` and `book_spine_items` follow
+    the same rule (`definition_plain` / `content_plain` after the small fixed columns, the
+    optional and large columns after it, `definition_html` / `content_html` last), so the
+    order does not depend on which optional columns today's importers leave empty. Diesel's
+    `table!` and every `Queryable` struct over each table follow the database's order,
+    because `Queryable` maps fields by position and `diesel print-schema` writes the
+    database's order.
 8. The appdata migrations must be folded into the 1.0.0 baseline, which keeps its name, and
     the folders after it deleted. The dictionaries baseline also keeps its name. An installed
     database has the baseline recorded, so nothing runs on it before the download replaces
@@ -126,10 +130,10 @@ user downloads in full:
 ## 5. Non-Goals (Out of Scope)
 
 - External-content tables for `book_spine_items_fts` and `dpd_headwords_fts`. They would
-  save 18.5 MB and 2 MB, and the first reads through `content_html` to reach its text.
-- Reordering `dict_words` (its filter columns and `definition_plain` already come before
-  `definition_html`) and `bold_definitions`, which comes from DPD and whose rows mostly fit
-  in one page, unless the measurements show the bold tables failing.
+  save 18.5 MB and 2 MB. (`book_spine_items` is reordered by requirement 7, so the first
+  could follow later without another schema break.)
+- Reordering `bold_definitions`, which comes from DPD and whose rows mostly fit in one
+  page, unless the measurements show the bold tables failing.
 - Any migration of an installed database: every install downloads the new databases.
 - The DPD Lookup path, and the Suttas and Library Fulltext (Tantivy) searches.
 

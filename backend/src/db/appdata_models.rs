@@ -23,7 +23,8 @@ pub struct NewAppSetting<'a> {
     pub value: Option<&'a str>,
 }
 
-// Queryable struct for reading records
+// Queryable struct for reading records. `Queryable` maps the fields by
+// position, so they are in the order of `suttas` in appdata_schema.rs.
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable, Identifiable, PartialEq)]
 #[diesel(table_name = suttas)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
@@ -37,6 +38,9 @@ pub struct Sutta {
     pub nikaya: String,
     /// pli / en / etc.
     pub language: String,
+    /// ms, bodhi, thanissaro
+    pub source_uid: Option<String>,
+    pub source_language: Option<String>,
 
     /// /sutta-pitaka/digha-nikaya/silakkhandha-vagga
     pub group_path: Option<String>,
@@ -61,25 +65,22 @@ pub struct Sutta {
     pub title_pali: Option<String>,
     /// The Root of All Things
     pub title_trans: Option<String>,
-    pub description: Option<String>,
-    /// content in plain text for fulltext index
-    pub content_plain: Option<String>,
-    /// content in HTML when sutta is stored as html blob
-    pub content_html: Option<String>,
-    /// content in Bilara JSON when sutta is formatted as line-by-line JSON array
-    pub content_json: Option<String>,
-    /// HTML template to wrap around JSON, same line-by-line format
-    pub content_json_tmpl: Option<String>,
-    /// ms, bodhi, thanissaro
-    pub source_uid: Option<String>,
-    pub source_info: Option<String>,
-    pub source_language: Option<String>,
-    pub message: Option<String>,
-    pub copyright: Option<String>,
-    pub license: Option<String>,
     // pub created_at: NaiveDateTime,
     // pub updated_at: Option<NaiveDateTime>,
     // pub indexed_at: Option<NaiveDateTime>,
+    pub copyright: Option<String>,
+    pub license: Option<String>,
+    pub message: Option<String>,
+    pub source_info: Option<String>,
+    /// content in plain text for fulltext index
+    pub content_plain: Option<String>,
+    pub description: Option<String>,
+    /// HTML template to wrap around JSON, same line-by-line format
+    pub content_json_tmpl: Option<String>,
+    /// content in Bilara JSON when sutta is formatted as line-by-line JSON array
+    pub content_json: Option<String>,
+    /// content in HTML when sutta is stored as html blob
+    pub content_html: Option<String>,
 }
 
 // Insertable struct for creating new records
@@ -224,6 +225,8 @@ pub struct NewBook<'a> {
     pub is_user_added: bool,
 }
 
+// `Queryable` maps the fields by position: the order of `book_spine_items` in
+// appdata_schema.rs.
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable, Identifiable, PartialEq, Associations, Serialize, Deserialize)]
 #[diesel(belongs_to(Book, foreign_key = book_id))]
 #[diesel(table_name = book_spine_items)]
@@ -237,10 +240,10 @@ pub struct BookSpineItem {
     pub resource_path: String,
     pub title: Option<String>,
     pub language: Option<String>,
-    pub content_html: Option<String>,
-    pub content_plain: Option<String>,
     // pub created_at: NaiveDateTime,
     // pub updated_at: Option<NaiveDateTime>,
+    pub content_plain: Option<String>,
+    pub content_html: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -490,8 +493,8 @@ pub struct BookmarkFolder {
     pub is_last_session: bool,
     pub is_user_added: bool,
     /// Per-window session metadata. Only ever set on last-session folders,
-    /// where one folder is one Sutta Search window. See the
-    /// 2026-08-13-210000_session_window_metadata migration.
+    /// where one folder is one Sutta Search window. See the `bookmark_folders`
+    /// table in the appdata baseline migration.
     pub window_title: Option<String>,
     pub active_tab_group: Option<String>,
     pub active_tab_index: Option<i32>,

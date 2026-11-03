@@ -1,4 +1,8 @@
 -- Drop everything up.sql creates (indexes drop with their tables).
+DROP TABLE IF EXISTS sutta_uid_renames;
+DROP TABLE IF EXISTS pali_edition_twins;
+DROP TABLE IF EXISTS navigation_nodes;
+DROP TABLE IF EXISTS topic_index_data;
 DROP TABLE IF EXISTS gloss_phrase_selections;
 DROP TABLE IF EXISTS gloss_word_context_cache;
 DROP TABLE IF EXISTS gloss_prompts_history;

@@ -590,25 +590,22 @@ Two details that are easy to get backwards:
   `suttas.uid` (`pli-tv-bu-vb-ss5/pli/ms`) that `sutta_uid` holds. The row shows
   it to a person, and the edition suffix is noise there.
 
-The column arrived in its **own** migration,
-`2026-09-22-000000_navigation_node_redirect`, rather than as an edit to
-`2026-09-19-000000_navigation_tree`: that one is already stamped in the
-`__diesel_schema_migrations` ledger of every database built since, so an edit
-would never re-run. `backend/src/navigation_tree/tests.rs` applies **both**
-migration files, and a new one must be added to that list or the read-layer
-tests start passing against a schema no installed database has.
+The read-layer tests in `backend/src/navigation_tree/tests.rs` build their
+database with the app's own embedded migrations
+(`crate::db::appdata_schema_test_db()`), so a drift between the baseline's
+`navigation_nodes` and the diesel `table!` fails there.
 
-**Splitting the schema across two migrations made a new state reachable, and it
-had to be guarded.** A migration failure at startup is non-fatal by design, so
-"table present, `redirect_uid` missing" is a database a user can really have.
-`tree_is_available_conn()` used to answer with `COUNT(*)`, which **succeeds** on
-exactly that table — the window would be told the tree is available and then
-every level query would fail, giving an empty window with no explanation, which
-is the outcome FR-13 exists to prevent. It now selects a whole row, so it fails
-the same way the level queries will and the window shows its honest "navigation
-index not available" message. `a_table_missing_a_later_migrations_column_is_not_available`
-is the regression test, and the rule generalises: **anything that answers "is
-this table usable?" must touch the columns the real queries name.**
+**A table missing a column the queries name must read as unavailable.** An
+older database can have `navigation_nodes` without `redirect_uid` (a migration
+failure at startup is non-fatal by design), and a `COUNT(*)` **succeeds** on
+it — the window would be told the tree is available and then every level query
+would fail, giving an empty window with no explanation, which is the outcome
+FR-13 exists to prevent. `tree_is_available_conn()` therefore selects a whole
+row, so it fails the same way the level queries will and the window shows its
+honest "navigation index not available" message.
+`a_table_missing_a_later_migrations_column_is_not_available` is the regression
+test, and the rule generalises: **anything that answers "is this table usable?"
+must touch the columns the real queries name.**
 
 ## 2d. A leaf that stands for a span of rules becomes a branch over them
 
@@ -1531,9 +1528,8 @@ full re-bootstrap.
 
 ## 7. Related
 
-- [database-migrations.md](./database-migrations.md) — the migrations that
-  create `navigation_nodes` and add its later columns, and why a migration
-  failure is non-fatal.
+- [database-migrations.md](./database-migrations.md) — the baseline that
+  creates `navigation_nodes`, and why a migration failure is non-fatal.
 - [user-data-and-sqlite-analyze.md](./user-data-and-sqlite-analyze.md) — the
   `ANALYZE` that follows each spine write.
 - [window-lifecycle-and-reuse.md](./window-lifecycle-and-reuse.md) §5d — why

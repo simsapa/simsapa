@@ -257,8 +257,8 @@ Notable feature docs:
   *strictly* newer than `assets/general-index-date.txt`, which is why a
   downloaded index does not silently shadow every future shipped one — a plain
   string compare, so both stamps must stay fixed-width UTC ISO 8601 to the
-  second. Covers why the table is a **new, empty** table (so existing installs
-  get it from the migration alone, no DB version bump, no re-download) and why
+  second. Covers why the stored index is a **separate single-row** table, empty
+  until the user updates, and why
   every read must tolerate it being absent (a migration failure is non-fatal by
   design); the **minified-JSON** rule (`to_string`, never `to_string_pretty` —
   `appdata.sqlite3` is kept across app updates); the swappable
@@ -1798,8 +1798,15 @@ non-fatal-failure rule, and the missing-database recovery behaviour.
 
 Rules for migration `up.sql` files:
 
-- **Never edit a migration that has already shipped.** The 1.0.0 baselines are
-  frozen; add a new dated folder instead.
+- **Never edit a migration that has already shipped**; add a new dated folder
+  instead. The one exception is folding the later folders into the baseline,
+  which keeps its folder name, and that is done only together with a DB version
+  bump that changes the **major or minor** version, so every install downloads
+  new databases. See
+  [database-migrations.md §0](./docs/database-migrations.md), which also has
+  the trap that Diesel's `Queryable` maps fields by `table!` **position**: a
+  table's database column order, its `table!` and its `Queryable` structs must
+  agree.
 - Folder names must remain **date-ordered**.
 - Delete superseded folders outright — never move them to an `archive/`
   subdirectory under `backend/migrations/`, because `embed_migrations!` walks

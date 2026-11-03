@@ -1,6 +1,6 @@
 //! Read-layer tests against a temp SQLite database created from the real
-//! migration SQL, so a drift between `up.sql` and the diesel `table!`
-//! declaration fails here rather than at runtime.
+//! appdata migrations, so a drift between the baseline `up.sql` and the diesel
+//! `table!` declaration fails here rather than at runtime.
 
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -8,26 +8,12 @@ use diesel::prelude::*;
 use super::*;
 use crate::db::appdata_schema::navigation_nodes;
 
-/// Every appdata migration that touches `navigation_nodes`, in order.
-///
-/// **A new one must be added here.** The drift this module exists to catch is
-/// between the diesel `table!` and the migrations as a *set*: leaving one out
-/// makes the tests pass against a schema no installed database ever has.
-const UP_SQL: &[&str] = &[
-    include_str!("../../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
-    include_str!("../../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
-];
-
 fn empty_db() -> SqliteConnection {
     SqliteConnection::establish(":memory:").expect("in-memory db")
 }
 
 fn migrated_db() -> SqliteConnection {
-    let mut db_conn = empty_db();
-    for sql in UP_SQL {
-        db_conn.batch_execute(sql).expect("migration applies");
-    }
-    db_conn
+    crate::db::appdata_schema_test_db()
 }
 
 fn node(
@@ -268,18 +254,20 @@ fn node_by_uid_finds_one_and_misses_cleanly() {
     assert!(node_by_uid_conn(&mut db_conn, "nope").unwrap().is_none());
 }
 
-/// The table from the first migration only — the shape a database has when a
-/// later migration failed, which is non-fatal by design.
+/// The table without `redirect_uid` — the shape of an older database whose
+/// migration adding the column failed, which is non-fatal by design, and which
+/// stays in use until the upgrade replaces it.
 fn partially_migrated_db() -> SqliteConnection {
-    let mut db_conn = empty_db();
-    db_conn.batch_execute(UP_SQL[0]).expect("first migration applies");
+    let mut db_conn = migrated_db();
+    db_conn
+        .batch_execute("ALTER TABLE navigation_nodes DROP COLUMN redirect_uid;")
+        .expect("column drops");
     db_conn
 }
 
 #[test]
 fn a_table_missing_a_later_migrations_column_is_not_available() {
-    // The schema spans several migrations, so "table present, `redirect_uid`
-    // missing" is a real state. A `COUNT(*)` succeeds on it, which would tell
+    // An older database can have the table without `redirect_uid`. A `COUNT(*)` succeeds on it, which would tell
     // the window the tree is available and then fail every level query --
     // an empty window with no explanation, which is what FR-13 forbids.
     let mut db_conn = partially_migrated_db();
@@ -289,7 +277,7 @@ fn a_table_missing_a_later_migrations_column_is_not_available() {
          VALUES ('sutta', 0, 'root', 'sc', '', '', '|000000|')",
     )
     .execute(&mut db_conn)
-    .expect("the first migration's schema accepts the row");
+    .expect("the older schema accepts the row");
 
     // The row is there, so this is not the empty-table case.
     let count: i64 = navigation_nodes::table

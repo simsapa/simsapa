@@ -134,8 +134,8 @@ prepending its text to `content_plain`. The renderer shows it after the title
 
 ## 4. The rename table
 
-`sutta_uid_renames(old_uid PRIMARY KEY, new_uid, reason)` — created by a Diesel
-migration, filled by the Ṭhānissaro step; `reason` is the rule name.
+`sutta_uid_renames(old_uid PRIMARY KEY, new_uid, reason)` — created by the
+appdata baseline migration, filled by the Ṭhānissaro step; `reason` is the rule name.
 
 Readers: `load_sutta_uid_renames()` and `rename_ssp_sutta_href()`
 (`backend/src/sutta_uid_renames.rs`), used by

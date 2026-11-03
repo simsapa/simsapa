@@ -335,8 +335,6 @@ pub fn timeline_content_html() -> String {
 
 #[cfg(test)]
 mod tests {
-    use diesel::connection::SimpleConnection;
-
     use super::*;
     use crate::navigation_tree::{join_sort_path, NewNavigationNode};
 
@@ -497,11 +495,6 @@ mod tests {
         assert_eq!(undated, vec!["y", "z"]);
     }
 
-    const UP_SQL: &[&str] = &[
-        include_str!("../migrations/appdata/2026-09-19-000000_navigation_tree/up.sql"),
-        include_str!("../migrations/appdata/2026-09-22-000000_navigation_node_redirect/up.sql"),
-    ];
-
     fn tree_node(node_uid: &str, sort_index: i32, title_pali: &str, title_en: Option<&str>) -> NewNavigationNode {
         NewNavigationNode {
             node_uid: node_uid.to_string(),
@@ -524,10 +517,7 @@ mod tests {
     }
 
     fn tree_db(nodes: &[NewNavigationNode]) -> SqliteConnection {
-        let mut db_conn = SqliteConnection::establish(":memory:").expect("in-memory db");
-        for sql in UP_SQL {
-            db_conn.batch_execute(sql).expect("migration applies");
-        }
+        let mut db_conn = crate::db::appdata_schema_test_db();
         diesel::insert_into(navigation_nodes::table)
             .values(nodes)
             .execute(&mut db_conn)

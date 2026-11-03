@@ -10,6 +10,9 @@ diesel::table! {
     }
 }
 
+// In the order of the database's columns, which put the large text last (see
+// the baseline migration). `Sutta` maps its fields by position, so it follows
+// this order too.
 diesel::table! {
     suttas (id) {
         id -> Integer,
@@ -17,6 +20,8 @@ diesel::table! {
         sutta_ref -> Text,
         nikaya -> Text,
         language -> Text,
+        source_uid -> Nullable<Text>,
+        source_language -> Nullable<Text>,
         group_path -> Nullable<Text>,
         group_index -> Nullable<Integer>,
         order_index -> Nullable<Integer>,
@@ -27,20 +32,18 @@ diesel::table! {
         title_ascii -> Nullable<Text>,
         title_pali -> Nullable<Text>,
         title_trans -> Nullable<Text>,
-        description -> Nullable<Text>,
-        content_plain -> Nullable<Text>,
-        content_html -> Nullable<Text>,
-        content_json -> Nullable<Text>,
-        content_json_tmpl -> Nullable<Text>,
-        source_uid -> Nullable<Text>,
-        source_info -> Nullable<Text>,
-        source_language -> Nullable<Text>,
-        message -> Nullable<Text>,
-        copyright -> Nullable<Text>,
-        license -> Nullable<Text>,
         // created_at -> Nullable<Timestamp>,
         // updated_at -> Nullable<Timestamp>,
         // indexed_at -> Nullable<Timestamp>,
+        copyright -> Nullable<Text>,
+        license -> Nullable<Text>,
+        message -> Nullable<Text>,
+        source_info -> Nullable<Text>,
+        content_plain -> Nullable<Text>,
+        description -> Nullable<Text>,
+        content_json_tmpl -> Nullable<Text>,
+        content_json -> Nullable<Text>,
+        content_html -> Nullable<Text>,
     }
 }
 
@@ -101,6 +104,8 @@ diesel::table! {
     }
 }
 
+// In the order of the database's columns, the large text last. `BookSpineItem`
+// maps its fields by position, so it follows this order too.
 diesel::table! {
     book_spine_items (id) {
         id -> Integer,
@@ -111,10 +116,10 @@ diesel::table! {
         resource_path -> Text,
         title -> Nullable<Text>,
         language -> Nullable<Text>,
-        content_html -> Nullable<Text>,
-        content_plain -> Nullable<Text>,
         // created_at -> Nullable<Timestamp>,
         // updated_at -> Nullable<Timestamp>,
+        content_plain -> Nullable<Text>,
+        content_html -> Nullable<Text>,
     }
 }
 
