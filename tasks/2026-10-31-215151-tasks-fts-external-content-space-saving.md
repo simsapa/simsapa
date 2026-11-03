@@ -13,7 +13,7 @@ Schema:
 - `backend/src/db/mod.rs` - `appdata_schema_test_db()`, the in-memory appdata test database built by the embedded migrations; `baseline_migration_tests`; `fts5_integrity_check()` / `fts5_integrity_check_all()` and the `*_FTS_TABLES` lists of each database's external-content FTS tables.
 - `backend/src/db/fts_trigger_tests.rs` (new) - The scripts' FTS tables and triggers on in-memory databases: insert, update of an indexed and of another column, rows with no text, delete, with the integrity check after each.
 - `backend/src/navigation_timeline.rs`, `backend/src/navigation_tree/tests.rs` - Build their test databases with `appdata_schema_test_db()`.
-- `backend/src/query_task.rs` - `suttas_contains_match_fts5()` filters on `s.` columns; the page queries order by `f.rowid`; Dictionary Contains and Headword Match collect ids and load rows and results for the page only; Dictionary Contains Phase 4's `word_ascii` query selects `id AS headword_id`.
+- `backend/src/query_task.rs` - `suttas_contains_match_fts5()` filters on `s.` columns; the page queries order by `f.rowid`; Dictionary Contains (`dict_words_contains_match_ids()`, `resolve_lemmas_to_dict_word_ids()`) and Headword Match (`lemma_1_dpd_headword_match_ids()`) collect ids, and `dict_word_results_for_ids()` loads rows and builds results for the page only.
 
 Bootstrap:
 
@@ -79,6 +79,39 @@ Update the file after completing each sub-task, not just after completing an ent
 ## Measurements
 
 To be filled in by task 2.7.
+
+## Open issue: cold Headword Match on the narrow `dict_words_fts`
+
+Found in 5.7, not yet investigated. To be settled in 8.1a, before the desktop and phone runs of 8.0, because it may decide whether `dict_words_fts` passes FR-4.
+
+**Observation.** `fts_bench --runs 1`, new code on both copies, desktop: `fts-bench-scratch/before` (stored-copy FTS tables, old column order) against `fts-bench-scratch/new` (5.7: narrow external-content tables, reordered `dict_words`, `dict_words_word_idx`, `ANALYZE`d and `VACUUM`ed). Results identical. Raw lines in `fts-bench-scratch/results/check57-before.tsv` and `check57-new.tsv`. First page, no filter, no bold definitions, ms:
+
+| Query | Headword cold | Headword warm | Contains cold | Contains warm | Headword total | `dict_words` rows with the query in `definition_plain` |
+|---|---|---|---|---|---|---|
+| `kamma` | 279 → 1,906 | 52 → 64 | 1,780 → 2,147 | 159 → 166 | 710 | 17,178 |
+| `dham` | 427 → 2,025 | 59 → 72 | 2,907 → 2,234 | 205 → 210 | 1,850 | 30,681 |
+| `dhamma` | 387 → 2,015 | 60 → 74 | 2,419 → 2,296 | 204 → 193 | 1,429 | |
+| `dha` | 761 → 1,927 | 81 → 93 | 4,176 → 3,039 | 277 → 294 | 5,943 | |
+| `ana` | 890 → 2,021 | 80 → 92 | 4,134 → 3,232 | 292 → 292 | 7,523 | |
+| `ssa` | 628 → 1,033 | 105 → 141 | 5,664 → 3,039 | 439 → 459 | 4,088 | |
+| `saṅkhāra` | 141 → 107 | 8 → 8 | 216 → 135 | 15 → 13 | 124 | |
+| `ubhatodaṇḍaka` | 17 → 12 | 2 → 2 | 26 → 15 | 5 → 4 | 1 | |
+
+The `+bold` and language-filtered Headword cases move the same way (`results/check57-*.tsv`). So Headword Match is up to 7× slower cold, and 15–35% slower warm. Contains Match is mostly faster cold. Suttas and the bold tables are within the gate. One run per copy, so the warm figures are near the noise; the cold Headword ones are not (seven of seven words above 100 ms move by over 1 s).
+
+**Hypothesis (not measured).** Headword Match is `f.word LIKE '%q%'` on `dict_words_fts(word, definition_plain)`, `tokenize='trigram', detail='none'`. With `detail='none'` the index stores no column information, so the trigram lookup yields every row that has the query's trigrams in *either* column, and FTS5 then reads both declared columns of each candidate from the content table to recheck `word` (`fts5ConfigMakeExprlist`; the core rechecks `LIKE` too). For `kamma` that is about 17,900 candidates for 710 results. With the stored copy, those reads came from `dict_words_fts_content` (175 MB, rows packed several to a page). Now they come from `dict_words` (1.2 GB, 186,009 rows, `definition_plain` averages 650 characters and `definition_html` 4,816), where each row is spread over its own page or more, so a cold run reads far more pages. Contains Match reads those rows anyway, which is why it did not slow down, and a word found in few definitions (`saṅkhāra`) got faster.
+
+**How to check it.**
+1. That the cold time follows the number of definition matches rather than the headword total: time cold Headword for words with a similar headword total and very different definition counts. `SELECT count(*) FROM dict_words WHERE definition_plain LIKE '%<q>%'` on the `new` copy gives the second.
+2. Count the pages read: per-statement `SQLITE_STMTSTATUS_VM_STEP`, or the connection's `SQLITE_DBSTATUS_CACHE_MISS`, from `fts_bench` with the case run once cold, on both copies.
+3. Compare `fts_bench --explain` of the Headword statement on both copies: expected to be the same plan (it was in 5.7), which would show the cost is in the rows read and not in the plan.
+
+**Candidates, each to be measured on a copy of `new`, with `fts_bench --filter 'dict.headword'` and the pin test.**
+- A second narrow external-content table over `word` alone (for example `dict_words_word_fts`), used by Headword Match and by Contains Phase 3's `f.word LIKE` half, as `bold_definitions` has two tables. Its candidates then have the trigrams in `word`, and it reads only `word`, which sits before `definition_plain`. Costs its index size and a fourth set of triggers on `dict_words` (`AFTER UPDATE OF word`). `docs/dict-words-fts5-implementation.md` and `CLAUDE.md`'s FTS5 section would describe it.
+- `detail='column'` on `dict_words_fts`, so that a column filter is answered from the index. Larger index; measure its size against the 177.5 MB saved, and check with `EXPLAIN` that FTS5 applies the column restriction for `LIKE`.
+- FR-4's fallback: `dict_words_fts` keeps a stored copy, still narrow (`word, definition_plain`), and the queries keep filtering on `dict_words`. Gives up the 177.5 MB.
+
+Whichever is chosen goes into `scripts/dictionaries-fts5-indexes.sql`, with `tests/test_search_results_pin.rs` passing unchanged and `db::fts_trigger_tests` / `tests/test_fts_runtime_writes.rs` extended to any new table.
 
 ## Tasks
 
@@ -300,18 +333,27 @@ The shape for both: each phase yields ids, in the order it adds them now; the un
 
 The two `_full()` functions are also called by `dict_contains_with_bold()` and `headword_match_with_bold()`, which splice the bold stream by `split_page_across_streams()` on the regular total: they keep doing so on the id list. The dispatcher's `apply_dict_source_uids_filter` post-filter then runs on a page whose rows the SQL has already filtered, as now.
 
-- [ ] 5.0 Dictionary searches: page-sized work
+- [x] 5.0 Dictionary searches: page-sized work
   - [x] 5.1 Add a test that pins today's results before any change: for Contains Match and Headword Match, with and without the bold definitions, with and without a language filter, a `dict_source_uids` set and a uid prefix, the full uid list in order and the total, for "kamma", "ssa", "sutthu" (Phase 4) and a word only a user dictionary has. Write it before 4.7, which already changes the Dictionary SQL, and do the same for Suttas Contains (no filter, `pli`, `en`, the `ms` texts excluded, a nikāya prefix; first and last page) before 4.1. Both must pass on the code as it is now and after every later sub-task.
     - Done first, before 4.1. `tests/test_search_results_pin.rs` with the golden file `tests/data/search_results_pin.tsv`: per case the total, the number of rows, a hash of the uids in order, a hash of the uids, titles and snippets, and the first uids. Dictionary: Contains and Headword Match, with and without the bold definitions, for `kamma`, `ssa`, `sutthu` (Phase 4) and `ceylon` (in DPPN's definitions only; no user dictionary ships), each with no filter, `pli`, `en`, `dicts=dppn`, `dicts=dpd` and `uid_prefix=kamma`; the whole list read as one page, and its first and last pages at the normal page length checked to be its slices. Suttas: `saṅkhārā`, `mindfulness`, `kakacena` with no filter, `pli`, `en`, `no_ms`, `nikaya=sn`, and `pli` + `no_ms` + `nikaya=majjhima`; first and last page. The Dictionary set takes about 165 s. `SIMSAPA_PIN_WRITE=1` regenerates it after a bootstrap.
     - Found and fixed first: Dictionary Contains Phase 4's `word_ascii LIKE` fallback selected `id` and read `headword_id`, so every search that reached it failed with "Column `headword_id` was not present in query" (`sutthu` with `dicts=dppn`).
     - The language-filtered Dictionary searches take at most 8 s on the desktop (`ssa`, `pli`), not the minutes the comment in `fts_bench` assumed.
-  - [ ] 5.2 Phases 1, 2 and 4: resolve each phase's headwords in one `word IN (…)` query, returning ids, with the rows taken in headword order and the lowest id per headword. Check the plan with `--explain` uses `dict_words_word_idx`, with and without a language filter, with real values.
-  - [ ] 5.3 Phase 3 and Headword Match: select ids (and `word`, `dict_label` for Headword Match's sort), not whole rows.
-  - [ ] 5.4 Load the page's rows by id, in the union's order, and build `SearchResult`s for them only, in `dict_words_contains_match_fts5()`, `dict_contains_with_bold()`, `lemma_1_dpd_headword_match_fts5()` and `headword_match_with_bold()`. Keep the `SAFETY_LIMIT_SQL` warnings.
-  - [ ] 5.5 Remove the comment at the Dictionary cases of `fts_bench` that explains why the language filter is left out, since 4.8 re-adds those cases. Update the comments on the four functions, which describe the materialise-then-slice contract.
-    - The `fts_bench` comment was already replaced in 4.8, when the language cases came back.
-  - [ ] 5.6 Run the test of 5.1, `cd backend && cargo test` and `make rust-test`.
-  - [ ] 5.7 On a scratch copy of `before`, apply 3.0, 4.0 and 5.0 by hand (rebuild `suttas` in the new order, recreate its indexes, the narrow tables, `dict_words_word_idx`), and check the plans with `--explain` and that the result counts and uid hashes of every case equal `before`'s, with the new code. This is a check of correctness before the long bootstrap, not the measurement.
+  - [x] 5.2 Phases 1, 2 and 4: resolve each phase's headwords in one `word IN (…)` query, returning ids, with the rows taken in headword order and the lowest id per headword. Check the plan with `--explain` uses `dict_words_word_idx`, with and without a language filter, with real values.
+    - `resolve_lemmas_to_dict_word_ids()`: `word IN (SELECT value FROM json_each(?))`, the headwords as one JSON array, so a phase of thousands of headwords (Phase 2 for `ssa`: 3,027) is one statement within SQLite's bound-parameter limit. The DPD side selects `lemma_1` only (Phase 2 through a join of `dpd_headwords_fts` to `dpd_headwords`, which replaces its `eq_any` of up to 50,000 ids). Phase 4's exact pass still applies no language filter and its contains pass does, as before.
+    - Plans (`plans/plans-5.2.txt`, on `fts-bench-scratch/new`: a copy of `before` with `dict_words_word_idx` added and `ANALYZE`d), Phase 1 `kamma` and Phase 2 `ssa` with real lemmas: `SEARCH dict_words USING INDEX dict_words_word_idx (word=?)` with no filter, `pli`, `en`, and `!= dpd` + `pli`; `dict_words_idx (dict_label=? AND word=?)` with `dict_label IN ('dpd')`. The language filter no longer draws the plan to `dict_words_language_idx`. On a database without the index (the dist one the tests use) the plan is the skip-scan of `dict_words_idx` the per-headword lookups had.
+  - [x] 5.3 Phase 3 and Headword Match: select ids (and `word`, `dict_label` for Headword Match's sort), not whole rows.
+  - [x] 5.4 Load the page's rows by id, in the union's order, and build `SearchResult`s for them only, in `dict_words_contains_match_fts5()`, `dict_contains_with_bold()`, `lemma_1_dpd_headword_match_fts5()` and `headword_match_with_bold()`. Keep the `SAFETY_LIMIT_SQL` warnings.
+    - The `_full()` functions became `dict_words_contains_match_ids()` and `lemma_1_dpd_headword_match_ids()`; the four callers slice the ids and call `dict_word_results_for_ids()`, which loads the page's rows through `json_each` too (the pin test reads a whole list of 51,089 as one page) and puts them back in order.
+    - `ssa` with no filter, page of 20, debug build on the dist database: 22.4 s before, 1.5 s after (total 51,089 both). The whole list as one page: 19.5 s before, 18.5 to 26 s after, all of it the results and snippets of 51,089 rows.
+  - [x] 5.5 Remove the comment at the Dictionary cases of `fts_bench` that explains why the language filter is left out, since 4.8 re-adds those cases. Update the comments on the four functions, which describe the materialise-then-slice contract.
+    - The `fts_bench` comment was already replaced in 4.8, when the language cases came back. The four functions' comments now describe the id list and the page load.
+  - [x] 5.6 Run the test of 5.1, `cd backend && cargo test` and `make rust-test`.
+    - All pass: the pins unchanged (total, uids in order, titles and snippets of every case), and `make rust-test` 1,869 passed, 0 failed, 28 ignored. The Dictionary pin set takes about 10 min in a debug build, most of it the whole-list `ssa` cases with the bold definitions (about 250,000 results each, 93 s).
+  - [x] 5.7 On a scratch copy of `before`, apply 3.0, 4.0 and 5.0 by hand (rebuild `suttas` in the new order, recreate its indexes, the narrow tables, `dict_words_word_idx`), and check the plans with `--explain` and that the result counts and uid hashes of every case equal `before`'s, with the new code. This is a check of correctness before the long bootstrap, not the measurement.
+    - `fts-bench-scratch/new/`: a copy of `before` (delete fixture included) with `suttas`, `book_spine_items` and `dict_words` rebuilt in the baseline order with their indexes, by `candidates/5.7-appdata-reorder.sql` and `5.7-dictionaries-reorder.sql` (generated from the baselines), then the four FTS scripts of the repository, `integrity-check` with rank 1 on every FTS table (all pass), `ANALYZE` and `VACUUM`. Files: appdata 1,021.3 MB, dictionaries 1,231.7 MB, dpd 2,426.9 MB, as in 2.2. `_content` tables left: `book_spine_items_fts` and `dpd_headwords_fts`, which stay stored.
+    - Plans (`results/plans-5.7*.txt`): the statements of `plans/plans.txt` plan the same on `before` and `new` but for the FTS column numbers (`L4` → `L0`, fewer declared columns); the resolve statements of `plans/plans-5.2.txt` use `dict_words_word_idx`.
+    - `fts_bench --runs 1` on both, with the new code (`results/check57-{before,new}.tsv`): 342 lines, 0 count differences, 0 uid differences.
+    - See "Open issue: cold Headword Match on the narrow `dict_words_fts`" above. Not the measurement, but a signal for 8.0: one run each, cold Headword Match on `new` takes about 1.9 to 2.0 s whatever the word (`kamma` 0.28 → 1.91 s, `dham` 0.43 → 2.03 s), and cold Dictionary Contains `kamma` about +20%; warm Headword `ssa` +34%; Suttas all within the gate. Likely cause, not measured: `detail='none'` keeps no column information, so `f.word LIKE` gets as candidates every row with the trigrams in *either* declared column, and FTS5 now reads `word` and `definition_plain` of each from `dict_words` rows spread through 1.2 GB, where the stored copy held them in 175 MB.
 
 ### Specs for 6.0
 
@@ -334,6 +376,7 @@ Depends on: 7.0. `before` is `fts-bench-scratch/before` (the previous dist datab
 
 - [ ] 8.0 Measure the rebuilt databases, and decide
   - [ ] 8.1 Sizes from `dbstat`, against 2.2. Plans with `--explain`, against 2.3 and 4.7.
+  - [ ] 8.1a Settle "Open issue: cold Headword Match on the narrow `dict_words_fts`" (above) on the desktop, so that the phone run measures the layout that will ship.
   - [ ] 8.2 Desktop: alternate `before`, `after`, `before`, `after`, `--runs 5`, and apply the gate of FR-4 to each table, uid hashes included. The Dictionary cases are judged as a whole too: the success metric is that the cases with the most matches are faster. A table that fails here is left out of the phone run.
   - [ ] 8.3 Ask the maintainer to attach the slowest real arm64 device available, and to confirm its free space: the copies of one table's database need twice that file's size. Agents may use `adb push` and `adb shell`, which do not touch the display. Do not use an emulator.
   - [ ] 8.4 Build with `make fts-bench-arm64`, push the binary and the copies to `/data/local/tmp`, and run the same alternating sequence, one database pair at a time, with a pause between runs so that the phone cools. Keep the phone on charge, with the app closed. Repeat on a card if there is one.

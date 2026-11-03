@@ -1,12 +1,12 @@
 // use std::any::Any;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::time::Instant;
 
 use regex::Regex;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{Text, BigInt};
+use diesel::sql_types::{Text, BigInt, Integer};
 
 use crate::helpers::{normalize_dpd_query_split, normalize_fulltext_query, normalize_plain_text, normalize_query_text, pali_to_ascii, strip_html, sutta_range_from_ref};
 use crate::highlight::{literal_ranges, wrap_ranges};
@@ -88,6 +88,53 @@ fn snippet_is_excluded(snippet: &str, normalized_excludes: &[String]) -> bool {
     }
     let plain = normalize_for_exclude(&strip_html(snippet));
     normalized_excludes.iter().any(|ex| plain.contains(ex.as_str()))
+}
+
+/// One id of a query that selects `id` only.
+#[derive(QueryableByName)]
+struct RowId {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+}
+
+/// A `dict_words` row's id and headword, for resolving DPD lemmas.
+#[derive(QueryableByName)]
+struct DictWordIdWord {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    word: String,
+}
+
+/// A `dpd_headwords` row's id and `lemma_1`.
+#[derive(QueryableByName)]
+struct HeadwordLemma {
+    #[allow(dead_code)]
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    lemma_1: String,
+}
+
+/// The columns Headword Match sorts its results by.
+#[derive(QueryableByName)]
+struct DictWordSortKey {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    word: String,
+    #[diesel(sql_type = Text)]
+    dict_label: String,
+}
+
+/// The filters a Dictionary Contains phase applies when it resolves DPD
+/// headwords to `dict_words` rows. The source filter is read from the task.
+#[derive(Clone, Copy)]
+struct LemmaResolveFilters<'f> {
+    inclusion: Option<&'f [String]>,
+    apply_lang_filter: bool,
+    uid_prefix_pat: &'f str,
+    uid_suffix_pat: &'f str,
 }
 
 pub struct SearchQueryTask<'a> {
@@ -1194,76 +1241,165 @@ impl<'a> SearchQueryTask<'a> {
         Ok((search_results, total as usize))
     }
 
-    /// Per-page contains-match across DpdHeadword + DictWord. Pushes both
-    /// `uid_prefix` and `uid_suffix` down to SQL at every phase so the
-    /// per-phase fetch_limit_sql cap is spent on rows that survive the
-    /// filter. The multi-phase dedup union is materialised, its length is
-    /// the true post-filter total, and the requested page is then sliced.
-    /// (A single cheap `SELECT COUNT(*)` isn't feasible across the four
-    /// phases without restructuring; the union length is authoritative.)
-    /// Page-sized variant: builds the full filtered union via
-    /// `dict_words_contains_match_fts5_full` and slices for the requested
-    /// page. Used by the direct (non-bold) ContainsMatch+Dictionary path.
+    /// Dictionary Contains Match, one page. The phases yield ids only; the
+    /// rows are loaded and turned into `SearchResult`s for the page alone.
     fn dict_words_contains_match_fts5(
         &self,
         page_num: usize,
         page_len: usize,
     ) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
-        let (full, total) = self.dict_words_contains_match_fts5_full()?;
+        let ids = self.dict_words_contains_match_ids()?;
+        let total = ids.len();
         let offset = page_num.saturating_mul(page_len);
-        let page: Vec<SearchResult> = full.into_iter().skip(offset).take(page_len).collect();
+        let page_ids: Vec<i32> = ids.into_iter().skip(offset).take(page_len).collect();
+        let page = self.dict_word_results_for_ids(&page_ids)?;
         Ok((page, total))
     }
 
-    /// Multi-phase fallback search used by ContainsMatch + Dictionary.
+    /// Loads the `dict_words` rows of `ids` and returns their `SearchResult`s
+    /// in the order of `ids`. Called with one page of ids, so the DPD meaning
+    /// snippets of `db_word_to_result` are looked up for that page only.
+    fn dict_word_results_for_ids(&self, ids: &[i32]) -> Result<Vec<SearchResult>, Box<dyn Error>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let app_data = get_app_data();
+        let db_conn = &mut app_data.dbm.dictionaries.get_conn()?;
+
+        // One JSON array, not one bound parameter per id: a caller may ask
+        // for more ids than SQLite's bound-parameter limit.
+        let rows: Vec<DictWord> = sql_query(
+            "SELECT * FROM dict_words WHERE id IN (SELECT value FROM json_each(?))"
+        )
+            .bind::<Text, _>(serde_json::to_string(ids)?)
+            .load::<DictWord>(db_conn)?;
+        let mut by_id: HashMap<i32, DictWord> = rows.into_iter().map(|r| (r.id, r)).collect();
+
+        Ok(ids
+            .iter()
+            .filter_map(|id| by_id.remove(id))
+            .map(|dict_word| self.db_word_to_result(&dict_word))
+            .collect())
+    }
+
+    /// Resolves DPD headwords to `dict_words` ids by `word == lemma_1`, in one
+    /// query through `dict_words_word_idx`. Returns one id per headword that
+    /// has a row passing the filters, in the order of `lemmas`: the row with
+    /// the lowest id. Ids are not deduplicated here; the caller's phase union
+    /// does that.
+    ///
+    /// The headwords go in as one JSON array (`json_each`), so the number of
+    /// headwords is not limited by SQLite's bound-parameter limit.
+    fn resolve_lemmas_to_dict_word_ids(
+        &self,
+        db_conn: &mut SqliteConnection,
+        lemmas: &[String],
+        filters: &LemmaResolveFilters,
+    ) -> Result<Vec<i32>, Box<dyn Error>> {
+        if lemmas.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut sql = String::from(
+            "SELECT id, word FROM dict_words \
+             WHERE word IN (SELECT value FROM json_each(?))"
+        );
+
+        if self.source.is_some() {
+            if self.source_include {
+                sql.push_str(" AND dict_label = ?");
+            } else {
+                sql.push_str(" AND dict_label != ?");
+            }
+        }
+
+        let in_clause = filters.inclusion.and_then(Self::dict_label_in_clause);
+        if let Some((ph, _)) = &in_clause {
+            sql.push_str(" AND dict_label IN (");
+            sql.push_str(ph);
+            sql.push(')');
+        }
+
+        if filters.apply_lang_filter {
+            sql.push_str(" AND language = ?");
+        }
+
+        sql.push_str(" AND uid LIKE ? AND uid LIKE ? ORDER BY id");
+
+        let lemmas_json = serde_json::to_string(lemmas)?;
+        let mut q = sql_query(&sql)
+            .into_boxed::<diesel::sqlite::Sqlite>()
+            .bind::<Text, _>(lemmas_json);
+
+        if let Some(ref source_val) = self.source {
+            q = q.bind::<Text, _>(source_val.clone());
+        }
+
+        if let Some((_, binds)) = &in_clause {
+            for v in binds {
+                q = q.bind::<Text, _>(v.clone());
+            }
+        }
+
+        if filters.apply_lang_filter {
+            q = q.bind::<Text, _>(self.lang.clone());
+        }
+
+        q = q
+            .bind::<Text, _>(filters.uid_prefix_pat.to_string())
+            .bind::<Text, _>(filters.uid_suffix_pat.to_string());
+
+        let rows: Vec<DictWordIdWord> = q.load(db_conn)?;
+
+        // Rows come in id order, so the first one seen for a word is its lowest id.
+        let mut first_id_of_word: HashMap<String, i32> = HashMap::new();
+        for row in rows {
+            first_id_of_word.entry(row.word).or_insert(row.id);
+        }
+
+        Ok(lemmas
+            .iter()
+            .filter_map(|lemma| first_id_of_word.get(lemma).copied())
+            .collect())
+    }
+
+    /// Multi-phase fallback search used by ContainsMatch + Dictionary. Returns
+    /// the matching `dict_words` ids, deduplicated, in result order.
     ///
     /// Phases (in dedup order):
     ///   1. DpdHeadword exact `lemma_clean` match → resolved to `dict_words` by `word == lemma_1`.
-    ///   2. DpdHeadword contains `lemma_1` (via `dpd_headwords_fts`) → same resolution.
+    ///   2. DpdHeadword contains `lemma_1` (via `dpd_headwords_fts`), shorter
+    ///      lemmas first → same resolution.
     ///   3. **Unified `dict_words_fts` retrieval** covering both indexed columns:
-    ///      `(f.word LIKE ? OR f.definition_plain LIKE ?)`. This phase pushes the
-    ///      `dict_label IN (...)` inclusion set *into* SQL via a JOIN to `dict_words`
-    ///      so the trigram index serves the substring match while the existing btree
-    ///      index `dict_words_dict_label_idx` (and the composite `(dict_label, word)`
-    ///      index) serves the inclusion-set filter. This is what surfaces
-    ///      user-imported dictionaries whose headwords are not DPD lemmas.
+    ///      `(f.word LIKE ? OR f.definition_plain LIKE ?)`, with the
+    ///      `dict_label IN (...)` inclusion set in the same SQL through the JOIN
+    ///      to `dict_words`. This is what surfaces user-imported dictionaries
+    ///      whose headwords are not DPD lemmas, and it also covers a
+    ///      user-headword substring search, since `f.word LIKE ?` is one half
+    ///      of the OR.
     ///   4. ASCII fallback on `dpd_headwords.word_ascii`, used only when phases 1–3
-    ///      returned nothing — lets queries like `sutthu` find `suṭṭhu`.
-    ///   5. *(intentionally absent)* — what would be a "user-headword substring"
-    ///      pass against `dict_words_fts.word LIKE` is fully covered by the unified
-    ///      Phase 3 above (`f.word LIKE ?` is one half of the OR). Splitting it out
-    ///      would only re-fetch rows that Phase 3 already returns, so it is documented
-    ///      and skipped per `tasks-prd-integrate-stardict-filtering.md` task 1.4.
+    ///      returned nothing — lets queries like `sutthu` find `suṭṭhu`. Its
+    ///      exact pass applies no language filter; its contains pass does.
     ///
-    /// Each phase pushes `uid_prefix` / `uid_suffix` down to SQL. Cross-phase
-    /// deduplication is by `dict_words.id` — switched from `dict_words.word` so
-    /// distinct rows that happen to share a headword (common across user-imported
-    /// dictionaries) are not collapsed.
+    /// Each phase pushes `uid_prefix` / `uid_suffix`, the source and the
+    /// `dict_source_uids` inclusion set down to SQL, so the dispatcher's
+    /// `apply_dict_source_uids_filter` post-filter is a safety net that drops
+    /// no rows in normal operation. Phases 1, 2 and 4 resolve all of their
+    /// headwords in one query each (`resolve_lemmas_to_dict_word_ids`).
+    /// Cross-phase deduplication is by `dict_words.id`, so distinct rows that
+    /// share a headword are not collapsed.
     ///
-    /// Pagination contract: returns the dedup-union as `Vec<SearchResult>` along
-    /// with `total = full.len()`; callers slice it to produce a page (`total`
-    /// remains exact under materialise-then-slice). The unified Phase 3 pushes
-    /// `dict_label IN (...)` into SQL; Phases 1, 2, and 4 push the same
-    /// inclusion set into their per-headword `dict_words` lookups (otherwise
-    /// they over-retrieve rows whose `dict_label` is excluded — e.g. DPD's own
-    /// rows when DPD is disabled — leaving the post-filter to empty out early
-    /// pages while `total` reflects the unfiltered union). With every phase
-    /// pushing the inclusion set, the dispatcher's
-    /// `apply_dict_source_uids_filter` post-filter is a safety net that should
-    /// drop zero rows in normal operation.
-    fn dict_words_contains_match_fts5_full(
-        &self,
-    ) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
-        info(&format!("dict_words_contains_match_fts5_full(): query_text: {}", &self.query_text));
+    /// The length of the list is the total. No phase loads a whole row: the
+    /// callers load the rows of the page they show (`dict_word_results_for_ids`).
+    fn dict_words_contains_match_ids(&self) -> Result<Vec<i32>, Box<dyn Error>> {
+        info(&format!("dict_words_contains_match_ids(): query_text: {}", &self.query_text));
         let timer = Instant::now();
 
         let app_data = get_app_data();
         let db_conn = &mut app_data.dbm.dictionaries.get_conn()?;
         let dpd_conn = &mut app_data.dbm.dpd.get_conn()?;
 
-        use crate::db::dpd_models::DpdHeadword;
         use crate::db::dpd_schema::dpd_headwords::dsl as dpd_dsl;
-        use crate::db::dictionaries_schema::dict_words::dsl as dict_dsl;
 
         // --- Term Filtering ---
         let terms: Vec<&str> = if self.query_text.contains(" AND ") {
@@ -1272,13 +1408,15 @@ impl<'a> SearchQueryTask<'a> {
             vec![self.query_text.as_str()]
         };
 
-        // Three-phase search: DpdHeadword exact -> DpdHeadword contains -> DictWord definition
-
-        let mut all_results: Vec<DictWord> = Vec::new();
-        // Cross-phase deduplication is by `dict_words.id` so distinct rows
-        // sharing a headword (common across user-imported dictionaries) are
-        // not collapsed. (Previously dedup keyed on `dict_words.word`.)
-        let mut result_ids: HashSet<i32> = HashSet::new();
+        let mut result_ids: Vec<i32> = Vec::new();
+        let mut seen_ids: HashSet<i32> = HashSet::new();
+        let mut push_ids = |ids: Vec<i32>, result_ids: &mut Vec<i32>| {
+            for id in ids {
+                if seen_ids.insert(id) {
+                    result_ids.push(id);
+                }
+            }
+        };
 
         // Push uid_prefix and uid_suffix down to SQL at every phase. `'%'`
         // is the no-op pattern when the filter is unset, keeping the bind
@@ -1293,358 +1431,191 @@ impl<'a> SearchQueryTask<'a> {
         // Language filter (mirrors the sutta paths): only applied when a real
         // language is selected. The dropdown's no-selection sentinel is the
         // literal "Language", and an unset value is empty — in both cases the
-        // filter clause is omitted entirely, so an unfiltered dictionary search
-        // is no slower than before.
+        // filter clause is omitted entirely.
         let apply_lang_filter = !self.lang.is_empty() && self.lang != "Language";
 
         // Inclusion-set push-down for the DPD-driven phases (1, 2, 4).
         // These phases resolve a DPD lemma to a `dict_words` row by
         // `word == lemma_1`, which can match rows in *any* dictionary.
-        // Without this push-down they over-retrieve rows whose `dict_label`
+        // Without this push-down they would retrieve rows whose `dict_label`
         // is not in the inclusion set (e.g. DPD's own rows when the user
-        // disables DPD), inflating `total` and leaving the post-filter to
-        // empty out early pages — observable as "Page 1 of 53" with an
-        // empty page 1. Pushing `dict_label IN (set)` here keeps `total`
-        // consistent with the visible page contents (PRD §2.6).
+        // disables DPD), inflating the total and leaving the post-filter to
+        // empty out early pages.
         //
         // dict_source_uids contract:
         //   - None             → no constraint, every dictionary contributes.
         //   - Some(non-empty)  → restrict to that set.
-        //   - Some(empty)      → skip these phases entirely (would return zero anyway).
-        let skip_dpd_driven_phases =
+        //   - Some(empty)      → skip every phase (would return zero anyway).
+        let skip_all_phases =
             matches!(self.dict_source_uids.as_deref(), Some(s) if s.is_empty());
-        let dpd_driven_inclusion: Option<Vec<String>> = match self.dict_source_uids.as_deref() {
-            Some(set) if !set.is_empty() => Some(set.to_vec()),
+        let inclusion: Option<&[String]> = match self.dict_source_uids.as_deref() {
+            Some(set) if !set.is_empty() => Some(set),
             _ => None,
         };
+        let filters = LemmaResolveFilters {
+            inclusion,
+            apply_lang_filter,
+            uid_prefix_pat: &uid_prefix_pat,
+            uid_suffix_pat: &uid_suffix_pat,
+        };
+
+        if skip_all_phases {
+            return Ok(Vec::new());
+        }
 
         // Phase 1: Exact matches on DpdHeadword.lemma_clean
         // dpd.lemma_clean has a btree index; dpd.lemma_1 has none.
-        if !skip_dpd_driven_phases {
-            for term in &terms {
-                let exact_matches: Vec<DpdHeadword> = dpd_dsl::dpd_headwords
-                    .filter(dpd_dsl::lemma_clean.eq(term))
-                    .order(dpd_dsl::id)
-                    .limit(SAFETY_LIMIT_SQL)
-                    .load::<DpdHeadword>(dpd_conn)?;
+        for term in &terms {
+            let lemmas: Vec<String> = dpd_dsl::dpd_headwords
+                .select(dpd_dsl::lemma_1)
+                .filter(dpd_dsl::lemma_clean.eq(term))
+                .order(dpd_dsl::id)
+                .limit(SAFETY_LIMIT_SQL)
+                .load::<String>(dpd_conn)?;
 
-                // Convert DpdHeadword results to DictWord using their UIDs
-                for headword in exact_matches {
-                    // Find corresponding DictWord by matching the word field to headword.lemma_1
-                    let mut dict_query = dict_dsl::dict_words.into_boxed();
-
-                    // Apply source filtering
-                    // In the dictionaries.sqlite3, the equivalent of source_uid is dict_label.
-                    if let Some(ref source_val) = self.source {
-                        if self.source_include {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.eq(source_val));
-                        } else {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.ne(source_val));
-                        }
-                    }
-
-                    if let Some(ref set) = dpd_driven_inclusion {
-                        dict_query = dict_query.filter(dict_dsl::dict_label.eq_any(set.clone()));
-                    }
-
-                    if apply_lang_filter {
-                        dict_query = dict_query.filter(dict_dsl::language.eq(self.lang.clone()));
-                    }
-
-                    // Match DictWord.word with DpdHeadword.lemma_1
-                    let dict_word_result: Result<DictWord, _> = dict_query
-                        .filter(dict_dsl::word.eq(&headword.lemma_1))
-                        .filter(dict_dsl::uid.like(&uid_prefix_pat))
-                        .filter(dict_dsl::uid.like(&uid_suffix_pat))
-                        .first::<DictWord>(db_conn);
-
-                    if let Ok(dict_word) = dict_word_result
-                        && result_ids.insert(dict_word.id) {
-                            all_results.push(dict_word);
-                        }
-                }
-            }
+            let ids = self.resolve_lemmas_to_dict_word_ids(db_conn, &lemmas, &filters)?;
+            push_ids(ids, &mut result_ids);
         }
 
-        // Query the FTS table to get headword IDs efficiently
-        #[derive(QueryableByName)]
-        struct HeadwordId {
-            #[diesel(sql_type = diesel::sql_types::Integer)]
-            headword_id: i32,
-        }
+        // Phase 2: Contains matches on DpdHeadword.lemma_1, through
+        // dpd_headwords_fts (trigram), shorter lemmas first.
+        for term in &terms {
+            let like_pattern = format!("%{}%", term);
 
-        // Phase 2: Contains matches on DpdHeadword.lemma_1
-        // Use dpd_headwords_fts with trigram tokenizer for efficient substring matching
-        if !skip_dpd_driven_phases {
-            for term in &terms {
-                let like_pattern = format!("%{}%", term);
+            let mut headwords: Vec<HeadwordLemma> = sql_query(
+                "SELECT h.id AS id, h.lemma_1 AS lemma_1 \
+                 FROM dpd_headwords_fts f \
+                 JOIN dpd_headwords h ON h.id = f.rowid \
+                 WHERE f.lemma_1 LIKE ? \
+                 ORDER BY f.rowid \
+                 LIMIT ?"
+            )
+                .bind::<Text, _>(&like_pattern)
+                .bind::<BigInt, _>(SAFETY_LIMIT_SQL)
+                .load::<HeadwordLemma>(dpd_conn)?;
 
-                let fts_query = String::from(
-                    r#"
-                    SELECT rowid AS headword_id
-                    FROM dpd_headwords_fts
-                    WHERE lemma_1 LIKE ?
-                    ORDER BY rowid
-                    LIMIT ?
-                    "#
-                );
+            // Stable sort: equal lengths stay in id order.
+            headwords.sort_by_key(|h| h.lemma_1.len());
+            let lemmas: Vec<String> = headwords.into_iter().map(|h| h.lemma_1).collect();
 
-                let headword_ids: Vec<HeadwordId> = sql_query(&fts_query)
-                    .bind::<Text, _>(&like_pattern)
-                    .bind::<BigInt, _>(SAFETY_LIMIT_SQL)
-                    .load::<HeadwordId>(dpd_conn)?;
-
-                // Fetch full DpdHeadword records using the IDs
-                let ids: Vec<i32> = headword_ids.iter().map(|h| h.headword_id).collect();
-                let mut contains_matches: Vec<DpdHeadword> = dpd_dsl::dpd_headwords
-                    .filter(dpd_dsl::id.eq_any(&ids))
-                    .load::<DpdHeadword>(dpd_conn)?;
-
-                // Sort by lemma_1 length in ascending order (shorter lemmas first)
-                contains_matches.sort_by_key(|h| h.lemma_1.len());
-
-                // Convert DpdHeadword results to DictWord by matching lemma_1 to word
-                for headword in contains_matches {
-                    // Find corresponding DictWord by matching the word field to headword.lemma_1
-                    let mut dict_query = dict_dsl::dict_words.into_boxed();
-
-                    // Apply source filtering
-                    if let Some(ref source_val) = self.source {
-                        if self.source_include {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.eq(source_val));
-                        } else {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.ne(source_val));
-                        }
-                    }
-
-                    if let Some(ref set) = dpd_driven_inclusion {
-                        dict_query = dict_query.filter(dict_dsl::dict_label.eq_any(set.clone()));
-                    }
-
-                    if apply_lang_filter {
-                        dict_query = dict_query.filter(dict_dsl::language.eq(self.lang.clone()));
-                    }
-
-                    // Match DictWord.word with DpdHeadword.lemma_1
-                    let dict_word_result: Result<DictWord, _> = dict_query
-                        .filter(dict_dsl::word.eq(&headword.lemma_1))
-                        .filter(dict_dsl::uid.like(&uid_prefix_pat))
-                        .filter(dict_dsl::uid.like(&uid_suffix_pat))
-                        .first::<DictWord>(db_conn);
-
-                    if let Ok(dict_word) = dict_word_result
-                        && result_ids.insert(dict_word.id) {
-                            all_results.push(dict_word);
-                        }
-                }
-            }
+            let ids = self.resolve_lemmas_to_dict_word_ids(db_conn, &lemmas, &filters)?;
+            push_ids(ids, &mut result_ids);
         }
 
         // Phase 3: Unified `dict_words_fts`-driven retrieval covering both
-        // indexed columns — `f.word LIKE ? OR f.definition_plain LIKE ?`.
-        // Pushes the `dict_label IN (...)` inclusion set into SQL via the
-        // JOIN to `dict_words`, so the trigram index serves the substring
-        // match while `dict_words_dict_label_idx` (and the composite
-        // `(dict_label, word)` index) serves the inclusion-set filter.
-        // Surfaces user-imported dictionary entries whose `word` is not a
-        // DPD lemma — what was previously invisible to phases 1, 2, 4.
-        //
-        // dict_source_uids contract:
-        //   - None             → no inclusion-set constraint, search every dict.
-        //   - Some(non-empty)  → push `dict_label IN (...)` into SQL.
-        //   - Some(empty)      → skip Phase 3 entirely (inclusion set would drop everything).
-        let skip_phase3 = matches!(self.dict_source_uids.as_deref(), Some(s) if s.is_empty());
-        let phase3_in_clause: Option<(String, Vec<String>)> = match self.dict_source_uids.as_deref() {
-            Some(set) => Self::dict_label_in_clause(set),
-            None => None,
-        };
+        // indexed columns — `f.word LIKE ? OR f.definition_plain LIKE ?`,
+        // with the source, inclusion-set, language and uid filters on the
+        // joined `dict_words` row. Selects ids only.
+        let phase3_in_clause = inclusion.and_then(Self::dict_label_in_clause);
 
-        if !skip_phase3 {
-            for term in &terms {
-                let like_pattern = format!("%{}%", term);
+        for term in &terms {
+            let like_pattern = format!("%{}%", term);
 
-                let mut sql = String::from(
-                    "SELECT d.* FROM dict_words d \
-                     JOIN dict_words_fts f ON f.rowid = d.id \
-                     WHERE (f.word LIKE ? OR f.definition_plain LIKE ?)"
-                );
+            let mut sql = String::from(
+                "SELECT d.id AS id FROM dict_words d \
+                 JOIN dict_words_fts f ON f.rowid = d.id \
+                 WHERE (f.word LIKE ? OR f.definition_plain LIKE ?)"
+            );
 
-                if self.source.is_some() {
-                    if self.source_include {
-                        sql.push_str(" AND d.dict_label = ?");
-                    } else {
-                        sql.push_str(" AND d.dict_label != ?");
-                    }
-                }
-
-                if let Some((ph, _)) = &phase3_in_clause {
-                    sql.push_str(" AND d.dict_label IN (");
-                    sql.push_str(ph);
-                    sql.push(')');
-                }
-
-                if apply_lang_filter {
-                    sql.push_str(" AND d.language = ?");
-                }
-
-                sql.push_str(" AND d.uid LIKE ? AND d.uid LIKE ? ORDER BY f.rowid LIMIT ?");
-
-                let mut q = sql_query(&sql)
-                    .into_boxed::<diesel::sqlite::Sqlite>()
-                    .bind::<Text, _>(like_pattern.clone())
-                    .bind::<Text, _>(like_pattern.clone());
-
-                if let Some(ref source_val) = self.source {
-                    q = q.bind::<Text, _>(source_val.clone());
-                }
-
-                if let Some((_, binds)) = &phase3_in_clause {
-                    for v in binds {
-                        q = q.bind::<Text, _>(v.clone());
-                    }
-                }
-
-                if apply_lang_filter {
-                    q = q.bind::<Text, _>(self.lang.clone());
-                }
-
-                q = q
-                    .bind::<Text, _>(uid_prefix_pat.clone())
-                    .bind::<Text, _>(uid_suffix_pat.clone())
-                    .bind::<BigInt, _>(SAFETY_LIMIT_SQL);
-
-                let def_results: Vec<DictWord> = q.load(db_conn)?;
-
-                for result in def_results {
-                    if result_ids.insert(result.id) {
-                        all_results.push(result);
-                    }
+            if self.source.is_some() {
+                if self.source_include {
+                    sql.push_str(" AND d.dict_label = ?");
+                } else {
+                    sql.push_str(" AND d.dict_label != ?");
                 }
             }
-        }
 
-        // Phase 5 (intentionally absent): a dedicated user-headword
-        // substring pass against `dict_words_fts.word LIKE` would re-fetch
-        // exactly the rows the unified Phase 3 already returns, since
-        // `f.word LIKE ?` is one half of Phase 3's OR. Documented in
-        // tasks-prd-integrate-stardict-filtering.md task 1.4 and skipped.
+            if let Some((ph, _)) = &phase3_in_clause {
+                sql.push_str(" AND d.dict_label IN (");
+                sql.push_str(ph);
+                sql.push(')');
+            }
+
+            if apply_lang_filter {
+                sql.push_str(" AND d.language = ?");
+            }
+
+            sql.push_str(" AND d.uid LIKE ? AND d.uid LIKE ? ORDER BY f.rowid LIMIT ?");
+
+            let mut q = sql_query(&sql)
+                .into_boxed::<diesel::sqlite::Sqlite>()
+                .bind::<Text, _>(like_pattern.clone())
+                .bind::<Text, _>(like_pattern.clone());
+
+            if let Some(ref source_val) = self.source {
+                q = q.bind::<Text, _>(source_val.clone());
+            }
+
+            if let Some((_, binds)) = &phase3_in_clause {
+                for v in binds {
+                    q = q.bind::<Text, _>(v.clone());
+                }
+            }
+
+            if apply_lang_filter {
+                q = q.bind::<Text, _>(self.lang.clone());
+            }
+
+            q = q
+                .bind::<Text, _>(uid_prefix_pat.clone())
+                .bind::<Text, _>(uid_suffix_pat.clone())
+                .bind::<BigInt, _>(SAFETY_LIMIT_SQL);
+
+            let rows: Vec<RowId> = q.load(db_conn)?;
+            push_ids(rows.into_iter().map(|r| r.id).collect(), &mut result_ids);
+        }
 
         // Phase 4: Fallback to word_ascii matching if no results found
         // This allows queries like 'sutthu' to find 'suṭṭhu'
-        if all_results.is_empty() && !skip_dpd_driven_phases {
+        if result_ids.is_empty() {
+            // The exact pass applies no language filter.
+            let exact_filters = LemmaResolveFilters { apply_lang_filter: false, ..filters };
+
             for term in &terms {
                 // Try exact match on word_ascii
-                let ascii_matches: Vec<DpdHeadword> = dpd_dsl::dpd_headwords
+                let lemmas: Vec<String> = dpd_dsl::dpd_headwords
+                    .select(dpd_dsl::lemma_1)
                     .filter(dpd_dsl::word_ascii.eq(term))
                     .order(dpd_dsl::id)
                     .limit(SAFETY_LIMIT_SQL)
-                    .load::<DpdHeadword>(dpd_conn)?;
+                    .load::<String>(dpd_conn)?;
 
-                for headword in ascii_matches {
-                    let mut dict_query = dict_dsl::dict_words.into_boxed();
-
-                    if let Some(ref source_val) = self.source {
-                        if self.source_include {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.eq(source_val));
-                        } else {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.ne(source_val));
-                        }
-                    }
-
-                    if let Some(ref set) = dpd_driven_inclusion {
-                        dict_query = dict_query.filter(dict_dsl::dict_label.eq_any(set.clone()));
-                    }
-
-                    let dict_word_result: Result<DictWord, _> = dict_query
-                        .filter(dict_dsl::word.eq(&headword.lemma_1))
-                        .filter(dict_dsl::uid.like(&uid_prefix_pat))
-                        .filter(dict_dsl::uid.like(&uid_suffix_pat))
-                        .first::<DictWord>(db_conn);
-
-                    if let Ok(dict_word) = dict_word_result
-                        && result_ids.insert(dict_word.id) {
-                            all_results.push(dict_word);
-                        }
-                }
+                let ids = self.resolve_lemmas_to_dict_word_ids(db_conn, &lemmas, &exact_filters)?;
+                push_ids(ids, &mut result_ids);
 
                 // If still no results, try contains match on word_ascii
-                if all_results.is_empty() {
+                if result_ids.is_empty() {
                     let like_pattern = format!("%{}%", term);
 
-                    let fts_query = String::from(
-                        r#"
-                        SELECT id AS headword_id
-                        FROM dpd_headwords
-                        WHERE word_ascii LIKE ?
-                        ORDER BY id
-                        LIMIT ?
-                        "#
-                    );
-
-                    let headword_ids: Vec<HeadwordId> = sql_query(&fts_query)
+                    let mut headwords: Vec<HeadwordLemma> = sql_query(
+                        "SELECT id, lemma_1 \
+                         FROM dpd_headwords \
+                         WHERE word_ascii LIKE ? \
+                         ORDER BY id \
+                         LIMIT ?"
+                    )
                         .bind::<Text, _>(&like_pattern)
                         .bind::<BigInt, _>(SAFETY_LIMIT_SQL)
-                        .load::<HeadwordId>(dpd_conn)?;
+                        .load::<HeadwordLemma>(dpd_conn)?;
 
-                    let ids: Vec<i32> = headword_ids.iter().map(|h| h.headword_id).collect();
-                    let mut contains_matches: Vec<DpdHeadword> = dpd_dsl::dpd_headwords
-                        .filter(dpd_dsl::id.eq_any(&ids))
-                        .load::<DpdHeadword>(dpd_conn)?;
+                    headwords.sort_by_key(|h| h.lemma_1.len());
+                    let lemmas: Vec<String> = headwords.into_iter().map(|h| h.lemma_1).collect();
 
-                    contains_matches.sort_by_key(|h| h.lemma_1.len());
-
-                    for headword in contains_matches {
-                        let mut dict_query = dict_dsl::dict_words.into_boxed();
-
-                        if let Some(ref source_val) = self.source {
-                            if self.source_include {
-                                dict_query = dict_query.filter(dict_dsl::dict_label.eq(source_val));
-                            } else {
-                                dict_query = dict_query.filter(dict_dsl::dict_label.ne(source_val));
-                            }
-                        }
-
-                        if let Some(ref set) = dpd_driven_inclusion {
-                            dict_query = dict_query.filter(dict_dsl::dict_label.eq_any(set.clone()));
-                        }
-
-                        if apply_lang_filter {
-                            dict_query = dict_query.filter(dict_dsl::language.eq(self.lang.clone()));
-                        }
-
-                        let dict_word_result: Result<DictWord, _> = dict_query
-                            .filter(dict_dsl::word.eq(&headword.lemma_1))
-                            .filter(dict_dsl::uid.like(&uid_prefix_pat))
-                            .filter(dict_dsl::uid.like(&uid_suffix_pat))
-                            .first::<DictWord>(db_conn);
-
-                        if let Ok(dict_word) = dict_word_result
-                            && result_ids.insert(dict_word.id) {
-                                all_results.push(dict_word);
-                            }
-                    }
+                    let ids = self.resolve_lemmas_to_dict_word_ids(db_conn, &lemmas, &filters)?;
+                    push_ids(ids, &mut result_ids);
                 }
             }
         }
 
-        if (all_results.len() as i64) >= SAFETY_LIMIT_SQL {
+        if (result_ids.len() as i64) >= SAFETY_LIMIT_SQL {
             warn(&format!(
                 "dict_words_contains_match_fts5 hit SAFETY_LIMIT_SQL={} (query='{}')",
                 SAFETY_LIMIT_SQL, &self.query_text
             ));
         }
 
-        // The dedup-union length is the true post-filter total. Under-counts
-        // only when a per-phase safety cap is hit on very broad queries.
-        let total = all_results.len();
-
-        let search_results: Vec<SearchResult> = all_results
-            .iter()
-            .map(|dict_word| self.db_word_to_result(dict_word))
-            .collect();
-
         info(&format!("Query took: {:?}", timer.elapsed()));
-        Ok((search_results, total))
+        Ok(result_ids)
     }
 
     /// Per-page contains-match against book_spine_items_fts. Pushes uid_prefix
@@ -2234,115 +2205,66 @@ impl<'a> SearchQueryTask<'a> {
         Ok((page, total))
     }
 
-    /// Per-page Headword Match against `dpd_headwords_fts.lemma_1`. Pushes
-    /// uid_prefix and uid_suffix down to the per-headword DictWord lookup.
-    /// The materialised SearchResult union length is the authoritative total
-    /// (the raw FTS lemma_1 count would overstate by including headwords
-    /// that don't resolve to a DictWord); the requested page is then sliced.
-    /// Page-sized variant: builds the full filtered list via
-    /// `lemma_1_dpd_headword_match_fts5_full` and slices for the requested page.
+    /// Headword Match, one page. The match yields ids in result order; the
+    /// rows are loaded and turned into `SearchResult`s for the page alone,
+    /// so the DPD meaning snippets of `db_word_to_result` are looked up only
+    /// for the rows shown.
     fn lemma_1_dpd_headword_match_fts5(
         &self,
         page_num: usize,
         page_len: usize,
     ) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
-        let (full, total) = self.lemma_1_dpd_headword_match_fts5_full()?;
+        let ids = self.lemma_1_dpd_headword_match_ids()?;
+        let total = ids.len();
         let offset = page_num.saturating_mul(page_len);
-        // Snippet generation is deferred until after pagination.
-        //
-        // Why this is asymmetric with the other `_full()` paths (which return
-        // `Vec<SearchResult>` directly): for DPD rows, `db_word_to_result`
-        // calls `get_dpd_meaning_snippet`, which does a fresh `dpd_headwords`
-        // lookup per row to assemble pos/meaning/construction. Headword Match
-        // commonly returns mostly DPD rows (e.g. "gacchati" hits ~96 lemmas,
-        // nearly all DPD), so eagerly building snippets for the entire result
-        // adds ~one `dpd_headwords` lookup per row — measured at ~30–60 ms on
-        // top of the ~17 ms SQL load for "gacchati", a meaningful slice of the
-        // ~137 ms end-to-end budget. Materialising only the page slice avoids
-        // ~(total - page_len) of those lookups.
-        //
-        // Repeat page visits (next / prev within the same search) are
-        // separately served by the bridge-level `RESULTS_PAGE_CACHE` in
-        // `bridges/src/sutta_bridge.rs`, which memoises the rendered
-        // `Vec<SearchResult>` per page_num and is keyed by
-        // `query | search_area | params_json` — so any change to query text,
-        // mode, dict_source_uids, language filter, uid prefix/suffix, source,
-        // or the bold-definitions toggle invalidates the cache automatically.
-        // The two layers compose without overlap: this layer avoids snippet
-        // work for unseen rows within one call; the bridge layer avoids
-        // rerunning SQL when the user navigates to a page already fetched.
-        let page: Vec<SearchResult> = full
-            .iter()
-            .skip(offset)
-            .take(page_len)
-            .map(|dw| self.db_word_to_result(dw))
-            .collect();
+        let page_ids: Vec<i32> = ids.into_iter().skip(offset).take(page_len).collect();
+        let page = self.dict_word_results_for_ids(&page_ids)?;
         Ok((page, total))
     }
 
     /// Headword match — single FTS5 substring scan against `dict_words_fts.word`
     /// covering both DPD headwords (whose `dict_words.word` is the same as
     /// `dpd_headwords.lemma_1` for `dict_label="dpd"`) and user-imported
-    /// StarDict headwords. The previous design separated a DPD path
-    /// (`dpd_headwords_fts.lemma_1` → resolve each match to `dict_words` over
-    /// a second DB connection) from a user-dict path; the DPD resolve was an
-    /// N+1 over hundreds of inflected lemmas (e.g. "gacchati") and dominated
-    /// query time, so both paths are collapsed into one query against
-    /// `dict_words_fts.word`.
+    /// StarDict headwords. Returns the matching `dict_words` ids in result order.
     ///
     /// **Load-bearing invariant:** for every row in `dict_words` with
     /// `dict_label = "dpd"`, `dict_words.word` equals the corresponding
     /// `dpd_headwords.lemma_1`. This holds by construction — DPD is imported
     /// via `import_stardict_as_new` from the DPD StarDict export, whose entry
-    /// keys are the `lemma_1` values (see `bootstrap_cli/src/bootstrap/dpd.rs`). If a
-    /// future DPD import path breaks this invariant, headword-match results
-    /// for DPD will silently diverge from the old `dpd_headwords_fts.lemma_1`
-    /// retrieval. `dpd_headwords_fts` is retained for DPD Lookup mode.
+    /// keys are the `lemma_1` values (see `bootstrap_cli/src/bootstrap/dpd.rs`).
+    /// `dpd_headwords_fts` is used by DPD Lookup mode and Contains Match.
     ///
     /// `dict_words_fts.word` is trigram-tokenized, so `f.word LIKE '%term%'`
-    /// is index-served. The `dict_label IN (...)` push-down rides
-    /// `dict_words_dict_label_idx` via the JOIN to `dict_words`.
+    /// is index-served. The source, `dict_label IN (...)`, language and uid
+    /// filters are on the joined `dict_words` row. Only `id`, `word` and
+    /// `dict_label` are selected, which is what the sort needs.
     ///
-    /// Merge: rows arrive deduplicated by `dict_words.id` from the single
-    /// query. Sort tiers: exact `word == query_text` first, then
-    /// starts-with (`word.starts_with(query_text)`), then contains; tie-break
-    /// by `dict_label`, then `id` for stable ordering. The starts-with tier
+    /// Sort tiers: exact `word == query_text` first, then starts-with
+    /// (`word.starts_with(query_text)`), then contains; tie-break by
+    /// `dict_label`, then `id` for stable ordering. The starts-with tier
     /// matters for prefix queries like "gacch" — without it, alphabetic
-    /// inflections like `abhigacchati` outrank `gacchati` itself. The
-    /// materialised result length is the authoritative `total`
-    /// (materialise-then-slice; PRD §2.5 contract preserved).
+    /// inflections like `abhigacchati` outrank `gacchati` itself. The length
+    /// of the list is the total.
     ///
     /// `dict_source_uids` contract:
     ///   - None             → search every dict (DPD + user).
     ///   - Some(non-empty)  → restrict via `dict_label IN (set)`.
-    ///   - Some(empty)      → returns `(empty, 0)`.
-    fn lemma_1_dpd_headword_match_fts5_full(
-        &self,
-    ) -> Result<(Vec<DictWord>, usize), Box<dyn Error>> {
-        info(&format!("lemma_1_dpd_headword_match_fts5_full(): query_text: {}", &self.query_text));
+    ///   - Some(empty)      → returns no ids.
+    fn lemma_1_dpd_headword_match_ids(&self) -> Result<Vec<i32>, Box<dyn Error>> {
+        info(&format!("lemma_1_dpd_headword_match_ids(): query_text: {}", &self.query_text));
         let timer = Instant::now();
 
         let app_data = get_app_data();
         let dict_conn = &mut app_data.dbm.dictionaries.get_conn()?;
 
-        // Single FTS5 query against `dict_words_fts.word` covers both DPD
-        // headwords (dict_label="dpd", whose `word` mirrors
-        // `dpd_headwords.lemma_1`) and user-imported StarDict headwords. The
-        // previous two-path design did an N+1 resolve from `dpd_headwords` →
-        // `dict_words` over a separate DB connection — collapsed here into one
-        // FTS query.
         let like_pattern = format!("%{}%", self.query_text);
 
         let apply_lang_filter = !self.lang.is_empty() && self.lang != "Language";
 
-        // Inclusion-set contract:
-        //   None             → no IN clause (search every dict, DPD included).
-        //   Some(empty)      → drop everything.
-        //   Some(non-empty)  → restrict to that set (may or may not contain "dpd").
         let in_clause: Option<(String, Vec<String>)> = match self.dict_source_uids.as_deref() {
             None => None,
             Some(set) if set.is_empty() => {
-                return Ok((Vec::new(), 0));
+                return Ok(Vec::new());
             }
             Some(set) => Self::dict_label_in_clause(set),
         };
@@ -2355,7 +2277,8 @@ impl<'a> SearchQueryTask<'a> {
             .unwrap_or_else(|| "%".to_string());
 
         let mut sql = String::from(
-            "SELECT dw.* FROM dict_words dw \
+            "SELECT dw.id AS id, dw.word AS word, dw.dict_label AS dict_label \
+             FROM dict_words dw \
              JOIN dict_words_fts f ON f.rowid = dw.id \
              WHERE f.word LIKE ?"
         );
@@ -2403,33 +2326,27 @@ impl<'a> SearchQueryTask<'a> {
             .bind::<Text, _>(uid_suffix_pat.clone())
             .bind::<BigInt, _>(SAFETY_LIMIT_SQL);
 
-        let mut all_rows: Vec<DictWord> = q.load(dict_conn)?;
+        let mut rows: Vec<DictWordSortKey> = q.load(dict_conn)?;
 
-        if (all_rows.len() as i64) >= SAFETY_LIMIT_SQL {
+        if (rows.len() as i64) >= SAFETY_LIMIT_SQL {
             warn(&format!(
                 "lemma_1_dpd_headword_match_fts5 hit SAFETY_LIMIT_SQL={} (query='{}')",
                 SAFETY_LIMIT_SQL, &self.query_text
             ));
         }
 
-        // Merge ordering tiers: exact `word == query_text` first, then
-        // starts-with, then contains; tie-break by dict_label then id.
-        // The starts-with tier is what makes "gacch" surface `gacchati`,
-        // `gacchanti`, ... before inflected forms like `abhigacchati`.
         let qt = self.query_text.as_str();
         let tier = |w: &str| -> u8 {
             if w == qt { 3 } else if w.starts_with(qt) { 2 } else { 1 }
         };
-        all_rows.sort_by(|a, b| {
+        rows.sort_by(|a, b| {
             tier(&b.word).cmp(&tier(&a.word))
                 .then_with(|| a.dict_label.cmp(&b.dict_label))
                 .then_with(|| a.id.cmp(&b.id))
         });
 
-        let total = all_rows.len();
-
         info(&format!("Query took: {:?}", timer.elapsed()));
-        Ok((all_rows, total))
+        Ok(rows.into_iter().map(|r| r.id).collect())
     }
 
     // ===== Per-mode handlers (Stage 3 dispatch) =====
@@ -2647,25 +2564,18 @@ impl<'a> SearchQueryTask<'a> {
         Ok((page, total))
     }
 
-    /// Headword match + bold-definitions append. Regular side is the
-    /// multi-phase headword-FTS5 result, materialised then sliced; bold
-    /// side is a true paged SQL fetch.
+    /// Headword match + bold-definitions append. The regular side is the
+    /// Headword Match id list, whose rows are loaded for the page's slice
+    /// only; the bold side is a true paged SQL fetch.
     fn headword_match_with_bold(&self, page_num: usize) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
-        let (regular_full, regular_total) = self.lemma_1_dpd_headword_match_fts5_full()?;
+        let regular_ids = self.lemma_1_dpd_headword_match_ids()?;
+        let regular_total = regular_ids.len();
 
         let (reg_off, reg_lim, bold_off, bold_lim) =
             Self::split_page_across_streams(regular_total, page_num, self.page_len);
 
-        // Snippets deferred to the page slice — see the long comment on
-        // `lemma_1_dpd_headword_match_fts5` for the rationale and for how
-        // this layer composes with `RESULTS_PAGE_CACHE` (bridge-level
-        // per-page memoization keyed by query | area | params_json).
-        let reg_slice: Vec<SearchResult> = regular_full
-            .iter()
-            .skip(reg_off)
-            .take(reg_lim)
-            .map(|dw| self.db_word_to_result(dw))
-            .collect();
+        let reg_page_ids: Vec<i32> = regular_ids.into_iter().skip(reg_off).take(reg_lim).collect();
+        let reg_slice = self.dict_word_results_for_ids(&reg_page_ids)?;
 
         let (bold_total, bold_slice) =
             self.query_bold_definitions_bold_fts5(&self.query_text, bold_off, bold_lim)?;
@@ -2676,20 +2586,19 @@ impl<'a> SearchQueryTask<'a> {
         Ok((page, total))
     }
 
-    /// ContainsMatch + Dictionary + bold-definitions append. Same shape:
-    /// multi-phase regular set materialised, bold side fetched only for
-    /// the slice (or only counted) via `LIMIT/OFFSET`.
+    /// ContainsMatch + Dictionary + bold-definitions append. Same shape: the
+    /// Contains Match id list, its rows loaded for the page's slice only; the
+    /// bold side fetched only for the slice (or only counted) via
+    /// `LIMIT/OFFSET`.
     fn dict_contains_with_bold(&self, page_num: usize) -> Result<(Vec<SearchResult>, usize), Box<dyn Error>> {
-        let (regular_full, regular_total) = self.dict_words_contains_match_fts5_full()?;
+        let regular_ids = self.dict_words_contains_match_ids()?;
+        let regular_total = regular_ids.len();
 
         let (reg_off, reg_lim, bold_off, bold_lim) =
             Self::split_page_across_streams(regular_total, page_num, self.page_len);
 
-        let reg_slice: Vec<SearchResult> = regular_full
-            .into_iter()
-            .skip(reg_off)
-            .take(reg_lim)
-            .collect();
+        let reg_page_ids: Vec<i32> = regular_ids.into_iter().skip(reg_off).take(reg_lim).collect();
+        let reg_slice = self.dict_word_results_for_ids(&reg_page_ids)?;
 
         let normalized_q = normalize_plain_text(&self.query_text);
         let (bold_total, bold_slice) =
