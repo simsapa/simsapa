@@ -399,14 +399,21 @@ pub struct DpdHeadword {
     pub lemma_clean: String,
 }
 
+/// `lemma_clean` of a `lemma_1`: the lemma without its homonym number
+/// (`kamma 6` → `kamma`, `dhamma 1.01` → `dhamma`). `dpd_headwords.lemma_clean`
+/// is indexed and `lemma_1` is not, so a lookup by `lemma_1` goes through this.
+pub fn lemma_clean_of(lemma_1: &str) -> String {
+    lazy_static! {
+        static ref re_lemma_clean: Regex = Regex::new(r" \d.*$").unwrap();
+    }
+    re_lemma_clean.replace_all(lemma_1, "").to_string()
+}
+
 impl DpdHeadword {
     // === Methods from Python DPD model ===
 
     pub fn calc_lemma_clean(&self) -> String {
-        lazy_static! {
-            static ref re_lemma_clean: Regex = Regex::new(r" \d.*$").unwrap();
-        }
-        re_lemma_clean.replace_all(&self.lemma_1, "").to_string()
+        lemma_clean_of(&self.lemma_1)
     }
 
     // === Methods used in Simsapa ===

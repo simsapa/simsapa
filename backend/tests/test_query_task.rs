@@ -226,8 +226,9 @@ fn test_dict_word_search_contains_match() {
 
     let hit = results.iter().find(|r| r.uid == "bojjhaṅga-2/dpd")
         .expect("Expected bojjhaṅga-2/dpd in the results");
-    assert!(hit.snippet.contains("element of awakening factor of enlightenment"),
-        "Snippet should contain 'element of awakening', got: {}", hit.snippet);
+    // A DPD row's snippet is its headword's meaning, from `dpd_headwords`.
+    assert!(hit.snippet.starts_with("<i>(nt)</i> element of awakening; factor of enlightenment"),
+        "Snippet should be the DPD meaning, got: {}", hit.snippet);
 }
 
 /// Dictionary ContainsMatch must honor the language filter against the

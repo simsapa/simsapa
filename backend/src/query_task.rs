@@ -539,13 +539,11 @@ impl<'a> SearchQueryTask<'a> {
         // For DPD words (dict_label contains "dpd"), try to get meaning from DpdHeadword
         // This provides a more useful snippet with pos, meaning, construction, and grammar
         let snippet = if x.dict_label.to_lowercase().contains("dpd") {
-            // Extract lemma_1 from uid by removing the "/dpd" suffix
-            // e.g., "dhamma 1/dpd" -> "dhamma 1"
-            let lemma_1 = x.uid.trim_end_matches("/dpd");
-
-            // Try to get DPD meaning snippet using lemma_1
+            // A DPD row's `word` is its headword's `lemma_1` (`dhamma 1.01`).
+            // Its uid is the sanitized form (`dhamma-1-01/dpd`), which no
+            // `lemma_1` equals.
             let app_data = get_app_data();
-            app_data.dbm.dpd.get_dpd_meaning_snippet(lemma_1)
+            app_data.dbm.dpd.get_dpd_meaning_snippet(&x.word)
                 .unwrap_or_else(|| {
                     // Fallback to original content if DPD lookup fails
                     let content = x.summary.as_deref()
@@ -1317,7 +1315,7 @@ impl<'a> SearchQueryTask<'a> {
         };
 
         // Phase 1: Exact matches on DpdHeadword.lemma_clean
-        // dpd.lemma_clean has btree index and dpd.lemma_1 has unique constraint and so implicitly indexed.
+        // dpd.lemma_clean has a btree index; dpd.lemma_1 has none.
         if !skip_dpd_driven_phases {
             for term in &terms {
                 let exact_matches: Vec<DpdHeadword> = dpd_dsl::dpd_headwords
