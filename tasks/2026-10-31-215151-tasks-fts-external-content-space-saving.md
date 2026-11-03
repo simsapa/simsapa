@@ -362,9 +362,11 @@ Depends on: 3.0, 4.0 and 5.0, so the docs state what was built.
 
 Depends on: 6.0. **Version bumps are the maintainer's.**
 
-- [ ] 7.0 Bump the versions and re-bootstrap
-  - [ ] 7.1 The maintainer bumps the app and DB versions with `scripts/set-version.py`. The DB version must change its major or minor part (3.0), e.g. to 1.2.0.
-  - [ ] 7.2 Full bootstrap (the maintainer, or an agent when the maintainer says so). Afterwards: the integrity checks of 4.2 pass (`dict_words_word_fts` included), `dict_words_word_idx` exists, `suttas` has the new order (`PRAGMA table_info`), the ledger lists only the baseline, and `git status` shows no `*.sqlite3`.
+- [x] 7.0 Bump the versions and re-bootstrap
+  - [x] 7.1 The maintainer bumps the app and DB versions with `scripts/set-version.py`. The DB version must change its major or minor part (3.0), e.g. to 1.2.0.
+    - Done by the maintainer: `db_version` is `1.2.0-alpha.1`.
+  - [x] 7.2 Full bootstrap (the maintainer, or an agent when the maintainer says so). Afterwards: the integrity checks of 4.2 pass (`dict_words_word_fts` included), `dict_words_word_idx` exists, `suttas` has the new order (`PRAGMA table_info`), the ledger lists only the baseline, and `git status` shows no `*.sqlite3`.
+    - Bootstrapped by the maintainer; verified on copies in the scratch folder (deleted afterwards), the dist databases untouched. `integrity-check` with rank 1 passes on `suttas_fts`, `dict_words_fts`, `dict_words_word_fts`, `bold_definitions_fts` and `bold_definitions_bold_fts`; `suttas_fts_docsize` = `suttas` = 36,021 rows. `dict_words_word_idx` exists. `suttas` is in the baseline order (`content_plain` before `description`, `content_html` last). Both ledgers list only `20260723000000`. `_content` tables remain only for `book_spine_items_fts` and `dpd_headwords_fts`. `git status` is clean. Sizes: appdata 1,028.8 MB, dictionaries 1,234.1 MB, dpd 2,426.9 MB.
 
 ### Specs for 8.0
 
