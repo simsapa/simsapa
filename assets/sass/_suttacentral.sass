@@ -118,12 +118,12 @@ $evam_font_scale: 1.15
     // each element's own font-size — so the 1.15em above silently enlarges
     // the leading of the opening segment and of everything nested in it, by
     // the same 1.15x. That is barely visible on the one-line "So I have
-    // heard.", but footnotes/comments are appended *inside* the segment
+    // heard.", but variant readings are appended *inside* the segment
     // (helpers.rs substitutes the segment text plus its additions into the
-    // `<p><span class='evam'>{}</span>` template), so a multi-line comment on
+    // `<p><span class='evam'>{}</span>` template), so a multi-line reading on
     // the opening segment came out with visibly wider line spacing than the
-    // same comment anywhere else on the page. Resetting line-height on
-    // .comment-wrap/.variant-wrap cannot fix that: in Solo the line box is
+    // same reading anywhere else on the page. Resetting line-height on
+    // .variant-wrap cannot fix that: in Solo the line box is
     // sized by the enclosing .evam inline box (an inline box's leading applies
     // on *every* line it spans), and in the Lines/Columns layouts by the
     // colcell block, not by the nested span.
@@ -194,14 +194,14 @@ $evam_font_scale: 1.15
     span.publication-date
       font-style: italic
 
-  .variant-wrap, .comment-wrap
-    // Reset here, not just on .variant/.comment below: footnotes/comments are
+  .variant-wrap
+    // Reset here, not just on .variant below: variant readings are
     // appended inline into the segment text, which for the sutta's opening
     // line ("So I have heard...") is wrapped in .evam (small-caps, lowercase
     // transform, enlarged font-size, extra letter/word-spacing). font-size is
     // reset to 1rem (not just left alone) because .evam's own font-size is
-    // 1.15em — an em-based .comment/.variant font-size nested inside it would
-    // still come out larger than a plain .comment elsewhere in the page, even
+    // 1.15em — an em-based .variant font-size nested inside it would
+    // still come out larger than a plain .variant elsewhere in the page, even
     // with small-caps/transform reset. letter-spacing/word-spacing are fixed
     // units, so they only need a plain reset, not a counter-scale.
     text-transform: none
@@ -219,8 +219,8 @@ $evam_font_scale: 1.15
       &:hover
         border-bottom: 2px solid black
 
-  .variant, .comment
-    // This should apply whether the note is nested inside .evam or not.
+  .variant
+    // This should apply whether the reading is nested inside .evam or not.
     font-size: 0.8rem
 
 // --- Multi-column sutta view (Lines / Columns layouts) ---
@@ -437,3 +437,20 @@ body.dark .suttacentral
 body.dark .suttacentral.sbs-blocks .sbs-col
   --sbs-scrollbar-thumb: rgba(255, 255, 255, 0.35)
   --sbs-scrollbar-track: rgba(255, 255, 255, 0.08)
+
+// A record's introduction (suttas.description: Ajahn Ṭhānissaro's, carried over
+// from dhammatalks.org), above the text, after its title. In the multi-column
+// view, one per column that has one, above the grid, with the column label.
+.suttacentral .ssp-intro
+  margin: 1em 0 2em 0
+  padding-bottom: 1em
+  border-bottom: 1px solid var(--footnote-bar-border, rgba(128, 128, 128, 0.4))
+
+  h2.intro
+    font-size: 1.1em
+    padding-top: 0
+
+  .ssp-intro-label
+    font-size: 0.85em
+    font-weight: bold
+    margin-bottom: 0.5em

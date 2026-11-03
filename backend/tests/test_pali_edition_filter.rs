@@ -1,9 +1,8 @@
 //! Contains Match and Title Match apply the Pāli edition preference, through
 //! the queries the app runs.
 //!
-//! The dist database holds no `pali_edition_twins` rows until a new bootstrap,
-//! so these tests insert `dummy-` records and twin rows of their own, and
-//! remove them by uid.
+//! The tests insert `dummy-` records and twin rows of their own, and remove
+//! them by uid, so they do not depend on which twins the dist database holds.
 
 use diesel::prelude::*;
 use serial_test::serial;

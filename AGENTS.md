@@ -490,6 +490,24 @@ Notable feature docs:
   (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
   when absent; `/word.json` adds it in `word_json_with_extras()`, never in
   `resolve_word_uid()` (the word-page renderer calls that).
+- [Segmented translations from suttas-core](./docs/suttas-core-import.md) — the
+  bootstrap step that replaces HTML-only Bodhi / PTS records with suttas-core's
+  segmented text and imports **all** of Ṭhānissaro's under **SuttaCentral
+  numbering**. **The decision is made from the data, never from translator
+  names**: an HTML-only record is replaced in place, one with `content_json` is
+  skipped, a sutta Simsapa lacks is not added. Covers the insertion point (after
+  the dhammatalks.org import, before the navigation tree and library imports),
+  `content_json` keys in **template order, never sorted**, `source_info` and why
+  it keeps Sujato the default English beside a Pāli text, the Ṭhānissaro uid map
+  (override → raw match → range containment → single-poem chapter → split page),
+  **delete-before-insert** because the two numberings collide, the
+  `sutta_uid_renames` table applied at entry points only (book links, footnote
+  references) and never as a general fallback, his introductions carried over
+  from the old records, the **footnote stored form and rendering** (word-index
+  placement, SuttaCentral comments as numbered notes, markers drawn by CSS from
+  `data-n`, a bottom bar that updates incrementally so a selection survives), and
+  the `survey-suttas-core` report. A version bump of the appdata DB is needed
+  before release.
 - [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live

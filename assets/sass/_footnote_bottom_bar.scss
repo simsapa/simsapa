@@ -170,6 +170,76 @@ body.dark {
     }
 }
 
+// The column a note belongs to, shown before its number when several columns
+// of the multi-column view have notes (each column numbers its own).
+.footnote-column-label {
+    margin-right: 0.3em;
+    font-weight: normal;
+    opacity: 0.8;
+}
+
+.footnote-number {
+    white-space: nowrap;
+}
+
+// Editor's notes (their text starts with "[Editor's note]"), in the bar and in
+// the notes list after the text.
+.footnote-item.ssp-fn-editor .footnote-content,
+.ssp-footnotes li.ssp-fn-editor {
+    font-style: italic;
+    opacity: 0.85;
+}
+
+// Footnote reference markers. normalise_footnote_markers()
+// (src-ts/footnote_modal.ts) moves the number from the link text into data-n,
+// so the find bar matches across a marker and copied text has no numbers; the
+// number is drawn here, in brackets. The ::after content also gives an empty
+// link the box the bar's IntersectionObserver needs.
+.footnote-reference a[data-n],
+.fn a[data-n] {
+    text-decoration: none;
+
+    &::after {
+        content: "[" attr(data-n) "]";
+    }
+}
+
+// The segmented texts' markers are plain spans, so they are raised here;
+// `sup.footnote-reference` (books, Nyanadipa) and `span.fn` (dhammatalks.org
+// pages) are already raised by their element or their own rule.
+span.footnote-reference a[data-n] {
+    line-height: 0;
+
+    &::after {
+        font-size: 0.65em;
+        vertical-align: super;
+    }
+}
+
+// The notes list after a segmented text (one per column in the multi-column
+// view).
+.ssp-footnotes {
+    margin-top: 2em;
+    padding-top: 0.5em;
+    border-top: 1px solid var(--footnote-bar-border);
+    font-size: 0.85em;
+    line-height: 1.4;
+
+    h2 {
+        font-size: 1em;
+        font-weight: bold;
+        padding-top: 0;
+    }
+
+    ol {
+        padding-left: 2em;
+    }
+
+    li {
+        margin-bottom: 0.5em;
+    }
+}
+
 // Ensure page content has enough bottom padding to not be obscured by the bar
 // This should be added to the main content area when the bar is visible
 #ssp_content {

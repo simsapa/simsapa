@@ -79,15 +79,19 @@ fn test_html_en() {
     h::app_data_setup();
 
     let app_data = get_app_data();
-    let sutta = app_data.dbm.appdata.get_sutta("dn22/en/thanissaro").expect("Can't get sutta from db");
+    let sutta = app_data.dbm.appdata.get_sutta("kp5/en/thanissaro").expect("Can't get sutta from db");
 
     let html = app_data.render_sutta_content(&sutta, None, None, &lines_options(&sutta.uid)).expect("Can't render the html");
-    let main_html = extract_element_by_id_from_indented(&html_indent(&html), "DN22").unwrap_or("None".to_string());
+    let main_html = extract_element_by_id_from_indented(&html_indent(&html), "khp5").unwrap_or("None".to_string());
 
-    // fs::write(PathBuf::from("tests/data/dn22_en_thanissaro.main.html"), main_html.clone()).expect("Unable to write file!");
+    // fs::write(PathBuf::from("tests/data/kp5_en_thanissaro.main.html"), main_html.clone()).expect("Unable to write file!");
 
-    let expected_html = fs::read_to_string(PathBuf::from("tests/data/dn22_en_thanissaro.main.html"))
+    let expected_html = fs::read_to_string(PathBuf::from("tests/data/kp5_en_thanissaro.main.html"))
         .expect("Failed to read file");
+
+    // kp5 is one of the few Ṭhānissaro pages that stay HTML (suttas-core
+    // carries no Khuddakapāṭha).
+    assert!(html.contains("Many devas &amp; human beings"));
 
     // Normalize attribute order: the upstream HTML serializer can emit
     // attributes in a non-deterministic order (e.g. `class` before/after `id`),
@@ -204,9 +208,9 @@ fn test_sn56_11_html_format_validation() {
 // Suttas with comments in the database (comments are part of the data but may not be visible in rendered HTML depending on view mode):
 // - mn1/en/sujato, dn22/en/sujato, dhp290-305/en/sujato, snp1.8/en/sujato, pli-tv-bu-vb-pj4/en/brahmali
 //
-// Note: Comments are rendered with class 'comment hide' and are toggled via JavaScript.
-// The presence of comment-wrap elements (in CSS/JS) indicates the comment infrastructure is present.
-// Actual comment content rendering depends on the view mode (line-by-line vs standard) and user settings.
+// Comments are rendered as numbered footnotes: a `span.footnote-reference` at the
+// end of the segment, and a `section.ssp-footnotes` notes list after the text
+// (see backend/src/footnotes.rs).
 
 /// Helper function to render sutta and extract ssp_content div
 fn render_and_extract_article(sutta_uid: &str) -> String {
@@ -550,12 +554,12 @@ fn test_multi_column_reference_anchors() {
 fn test_block_fallback_with_non_segmented_column() {
     h::app_data_setup();
     let app_data = get_app_data();
-    let sutta = app_data.dbm.appdata.get_sutta("mn1/en/sujato").expect("Can't get sutta from db");
+    let sutta = app_data.dbm.appdata.get_sutta("dn1/en/sujato").expect("Can't get sutta from db");
 
-    // mn1/en/bodhi is content_html (non-segmented), so the whole view falls
+    // dn1/en/bodhi is content_html (non-segmented), so the whole view falls
     // back to unaligned block columns.
     let options = columns_options(
-        &["mn1/en/sujato", "mn1/pli/ms", "mn1/en/bodhi"],
+        &["dn1/en/sujato", "dn1/pli/ms", "dn1/en/bodhi"],
         SuttaLayout::SideBySide,
         false,
     );
@@ -563,9 +567,9 @@ fn test_block_fallback_with_non_segmented_column() {
 
     assert!(html.contains("<div class='suttacentral bilara-text layout-columns cols-3 sbs-blocks'>"));
     assert!(html.contains("<div class='sbs-row'>"));
-    assert!(html.contains("<div class='sbs-col col-0 translated' data-uid='mn1/en/sujato'>"));
-    assert!(html.contains("<div class='sbs-col col-1 pali' data-uid='mn1/pli/ms'>"));
-    assert!(html.contains("<div class='sbs-col col-2 translated' data-uid='mn1/en/bodhi'>"));
+    assert!(html.contains("<div class='sbs-col col-0 translated' data-uid='dn1/en/sujato'>"));
+    assert!(html.contains("<div class='sbs-col col-1 pali' data-uid='dn1/pli/ms'>"));
+    assert!(html.contains("<div class='sbs-col col-2 translated' data-uid='dn1/en/bodhi'>"));
     assert!(html.contains("<div class='sbs-col-header'>Pāli</div>"));
     assert!(html.contains("<div class='sbs-col-header'>bodhi</div>"));
 }
@@ -640,23 +644,23 @@ fn test_resolve_single_column_no_pali_counterpart() {
 fn test_resolve_lines_mode_drops_non_segmented_columns() {
     h::app_data_setup();
     let app_data = get_app_data();
-    let sutta = app_data.dbm.appdata.get_sutta("mn1/en/sujato").expect("Can't get sutta from db");
+    let sutta = app_data.dbm.appdata.get_sutta("dn1/en/sujato").expect("Can't get sutta from db");
 
     let overrides = SuttaDisplayOverrides {
         layout: Some(SuttaLayout::LineByLine),
         columns: Some(vec![
-            "mn1/en/sujato".to_string(),
-            "mn1/en/bodhi".to_string(),
-            "mn1/pli/ms".to_string(),
+            "dn1/en/sujato".to_string(),
+            "dn1/en/bodhi".to_string(),
+            "dn1/pli/ms".to_string(),
         ]),
         repeat_pali: None,
         show_references: None,
     };
     let options = app_data.resolve_sutta_display_options(&sutta, &overrides);
 
-    // mn1/en/bodhi has no content_json: silently dropped in Lines mode. The
+    // dn1/en/bodhi has no content_json: silently dropped in Lines mode. The
     // repeat_pali arrangement puts the Pali column first.
-    assert_eq!(options.columns, vec!["mn1/pli/ms".to_string(), "mn1/en/sujato".to_string()]);
+    assert_eq!(options.columns, vec!["dn1/pli/ms".to_string(), "dn1/en/sujato".to_string()]);
 }
 
 #[test]

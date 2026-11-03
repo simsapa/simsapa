@@ -1444,6 +1444,23 @@ only the segments that have an entry, so look it up by the segment ids of
   translation's segments all the same.
 - **Comments belong to the translation.** They are the translator's notes
   (Bhante Sujato's, Bhante Brahmali's), so a Pāli text has `comments: null`.
+  A segment's value is one of two forms, returned exactly as stored. A
+  SuttaCentral comment is a plain HTML string. A note imported with the
+  segmented Bodhi, PTS and Ṭhānissaro translations is one or more elements in
+  number order, `<span class='ssp-fn' data-n='2' data-w='6'>note HTML</span>`:
+  `data-n` is the note number, `data-w` the zero-based index of the word the
+  note follows (counted on the segment text split on whitespace, punctuation-only
+  tokens counted; absent for a whole-segment note), and an editor's note also has
+  class `ssp-fn-editor`. Sutta references in these notes are already
+  `ssp://suttas/…` links. Tell the two forms apart by the presence of `ssp-fn`.
+- **Bodhi, PTS and Ṭhānissaro are segmented.** Where the app carries them, the
+  Bhikkhu Bodhi and Pali Text Society translations (e.g. `mn10/en/bodhi`,
+  `mn1/en/horner`) and every Ṭhānissaro translation have `content_json`, so
+  `/sutta.json` and `/sutta_bilara.json` serve them. **Ṭhānissaro uses
+  SuttaCentral numbering**, e.g. `an10.176/en/thanissaro` is the Cunda sutta; the
+  numbers of his own site (`an10.165`) are not uids. His Khuddakapāṭha pages
+  (`kp1`–`kp9`), the `sn44` introduction page and `thag3.8` stay HTML and answer
+  `404` with `reason: "no_content_json"`.
 - **Glosses**: the `sutta_glosses` table is in the schema and the reader
   displays it, but no gloss records are in the shipped database today, so
   `glosses` is `null`.

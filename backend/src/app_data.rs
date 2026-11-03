@@ -18,7 +18,8 @@ use crate::app_settings::{AiRequestMode, AppSettings, ModelEntry, ModelOrigin, M
 use crate::sutta_display::{columns_can_align, pali_uid_for_translation, uid_base, SuttaDisplayOptions, SuttaDisplayOverrides};
 use crate::opentipitaka::{is_ot_english_uid, ot_footer_html};
 use crate::global_hotkeys::GlobalHotkeysConfig;
-use crate::helpers::{bilara_text_to_segments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, bilara_content_json_to_html, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
+use crate::footnotes::{definitions_html, footnote_id_prefix};
+use crate::helpers::{bilara_text_to_segments, bilara_content_json_to_html_full, BilaraSegments, bilara_multi_column_html, multi_column_html_blocks, ColumnSource, introduction_html, insert_introduction, thebuddhaswords_net_convert_links_in_html, word_uid_sanitize, normalize_human_word_uid, GlossWordCacheExportEntry};
 use crate::db::dictionaries_models::DictWord;
 use crate::html_content::{blank_html_page, sutta_html_page};
 use crate::{get_app_globals, init_app_globals};
@@ -320,7 +321,10 @@ impl AppData {
     /// The English shown beside a Pāli text when no columns are requested: the
     /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
     /// aligned with, and for any other Pāli text the first segmented English, or
-    /// failing that the first other one, leaving out the AI English. A column
+    /// failing that the first other one, leaving out the AI English. A
+    /// segmented English imported from suttas-core (`source_info` starting with
+    /// `suttas-core`) comes after the other segmented ones, so Bodhi's or a PTS
+    /// translator's, which sort first by uid, do not displace Sujato's. A column
     /// that cannot be shown is handled like a requested one: dropped in Lines, a
     /// block in Columns.
     ///
@@ -334,34 +338,46 @@ impl AppData {
         let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
 
         let base = uid_base(&sutta.uid);
-        let english: Vec<(String, Option<bool>)> = suttas
+        let english: Vec<(String, Option<bool>, Option<String>)> = suttas
             .filter(uid.ge(format!("{}/en/", base)))
             .filter(uid.lt(format!("{}/en0", base)))
-            .select((uid, content_json.ne("")))
+            .select((uid, content_json.ne(""), source_info))
             .order(uid.asc())
             .load(db_conn)
             .context("Database query failed for the default English")?;
 
         let (ai_english, human_english): (Vec<_>, Vec<_>) = english
             .into_iter()
-            .partition(|(english_uid, _)| is_ot_english_uid(english_uid));
+            .partition(|(english_uid, _, _)| is_ot_english_uid(english_uid));
 
         if sutta.uid.ends_with("/pli/cst") {
-            return Ok(ai_english.into_iter().next().map(|(english_uid, _)| english_uid));
+            return Ok(ai_english.into_iter().next().map(|(english_uid, _, _)| english_uid));
         }
 
-        let segmented = human_english.iter().find(|(_, is_segmented)| *is_segmented == Some(true));
-        Ok(segmented.or(human_english.first()).map(|(english_uid, _)| english_uid.clone()))
+        let is_segmented = |row: &&(String, Option<bool>, Option<String>)| row.1 == Some(true);
+        let is_suttas_core = |row: &&(String, Option<bool>, Option<String>)| {
+            row.2.as_deref().is_some_and(|info| info.starts_with("suttas-core"))
+        };
+        let chosen = human_english
+            .iter()
+            .filter(is_segmented)
+            .find(|row| !is_suttas_core(row))
+            .or_else(|| human_english.iter().find(is_segmented))
+            .or(human_english.first());
+        Ok(chosen.map(|(english_uid, _, _)| english_uid.clone()))
     }
 
     /// Converts sutta data into an IndexMap of segments, potentially including variants, comments, glosses.
-    /// Returns IndexMap to preserve JSON insertion order.
+    /// The segments keep JSON insertion order; comments become footnote
+    /// references with ids prefixed by `footnote_id_prefix`, and the notes are
+    /// returned for the caller to list after the text.
     pub fn sutta_to_segments_json(
         &self,
         sutta: &Sutta,
         use_template: bool,
         show_references: bool,
-    ) -> Result<IndexMap<String, String>> {
+        footnote_id_prefix: &str,
+    ) -> Result<BilaraSegments> {
         use crate::db::appdata_schema::{sutta_variants, sutta_comments, sutta_glosses};
 
         let db_conn = &mut self.dbm.appdata.get_conn().expect("No appdata conn");
@@ -416,6 +432,7 @@ impl AppData {
             show_all_variant_readings,
             show_glosses,
             show_references,
+            footnote_id_prefix,
         )
     }
 
@@ -553,13 +570,26 @@ impl AppData {
     /// texts via their own template, otherwise the stored HTML / plain text.
     /// Used for the single-column view and for each column of the unaligned
     /// block-columns fallback.
-    fn render_sutta_standard_body(&self, sutta: &Sutta, show_references: bool) -> Result<String> {
+    ///
+    /// `column`: the index of the block column the body is rendered into, if
+    /// any, which keeps footnote ids unique when one text fills two columns.
+    fn render_sutta_standard_body(&self, sutta: &Sutta, show_references: bool, column: Option<usize>) -> Result<String> {
         let body = if let Some(ref content_json_str) = sutta.content_json {
             if !content_json_str.is_empty() {
                 // Generate standard HTML view (using template within sutta_to_segments_json)
-                let segments_json = self.sutta_to_segments_json(sutta, true, show_references)
+                let prefix = match column {
+                    Some(n) => format!("{}-c{}", footnote_id_prefix(&sutta.uid), n),
+                    None => footnote_id_prefix(&sutta.uid),
+                };
+                let rendered = self.sutta_to_segments_json(sutta, true, show_references, &prefix)
                                             .context("Failed to generate segments for standard view")?;
-                bilara_content_json_to_html(&segments_json)?
+                let html = bilara_content_json_to_html_full(
+                    &rendered.segments,
+                    "",
+                    "",
+                    &definitions_html(&rendered.footnotes, &prefix, None),
+                )?;
+                insert_introduction(&html, &introduction_html(sutta.description.as_deref(), None))
             } else {
                 "<div class='suttacentral bilara-text'></div>".to_string()
             }
@@ -646,20 +676,26 @@ impl AppData {
             // Solo: only the opened translation, via the standard
             // whole-document path — the resolved columns are page state for
             // switching back to Columns/Lines, not render input.
-            self.render_sutta_standard_body(sutta, show_references)?
+            self.render_sutta_standard_body(sutta, show_references, None)?
 
         } else if column_suttas.len() >= 2 && all_segmented && columns_can_align(&sutta.uid, &column_uids) {
             // Per-segment aligned multi-column view: each column's segments
             // carry that text's own variants/comments/glosses.
             let mut columns: Vec<ColumnSource> = Vec::new();
-            for col in column_suttas {
-                let segments = self.sutta_to_segments_json(col, false, show_references)
+            for (n, col) in column_suttas.iter().enumerate() {
+                // The column index keeps ids unique when one text is shown in
+                // two columns (Repeat Pāli).
+                let prefix = format!("{}-c{}", footnote_id_prefix(&col.uid), n);
+                let rendered = self.sutta_to_segments_json(col, false, show_references, &prefix)
                     .with_context(|| format!("Failed to generate segments for column {}", col.uid))?;
                 columns.push(ColumnSource {
                     uid: col.uid.clone(),
                     label: sutta_column_label(col),
                     is_pali: col.language == "pli",
-                    segments,
+                    segments: rendered.segments,
+                    footnotes: rendered.footnotes,
+                    footnote_id_prefix: prefix,
+                    introduction: col.description.clone(),
                 });
             }
 
@@ -686,15 +722,15 @@ impl AppData {
             // compared with the others': unaligned block-columns fallback —
             // each text's standard whole-document rendering in one flex column.
             let mut cols: Vec<(String, String, bool, String)> = Vec::new();
-            for col in column_suttas {
-                let html = self.render_sutta_standard_body(col, show_references)
+            for (n, col) in column_suttas.iter().enumerate() {
+                let html = self.render_sutta_standard_body(col, show_references, Some(n))
                     .with_context(|| format!("Failed to render block column {}", col.uid))?;
                 cols.push((sutta_column_label(col), col.uid.clone(), col.language == "pli", html));
             }
             multi_column_html_blocks(&cols)
 
         } else {
-            self.render_sutta_standard_body(column_suttas.first().unwrap_or(sutta), show_references)?
+            self.render_sutta_standard_body(column_suttas.first().unwrap_or(sutta), show_references, None)?
         };
 
         Ok(content_html_body)

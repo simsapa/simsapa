@@ -695,6 +695,26 @@ pub struct NewTopicIndexData<'a> {
     pub updated_at: &'a str,
 }
 
+/// An old sutta uid and the uid that now carries its text.
+#[derive(Debug, Clone, Queryable, Selectable, PartialEq)]
+#[diesel(table_name = sutta_uid_renames)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct SuttaUidRename {
+    pub old_uid: String,
+    pub new_uid: String,
+    /// The mapping rule that produced the row: `raw_match`,
+    /// `range_containment`, `single_poem_chapter`, `split_page` or `override`.
+    pub reason: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = sutta_uid_renames)]
+pub struct NewSuttaUidRename<'a> {
+    pub old_uid: &'a str,
+    pub new_uid: &'a str,
+    pub reason: &'a str,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkItemUpdate {
     pub item_uid: Option<String>,

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use diesel::prelude::*;
 use serial_test::serial;
+use simsapa_backend::app_settings::PaliEditionPreference;
 use simsapa_backend::types::{SearchArea, SearchMode};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::get_app_data;
@@ -99,7 +100,7 @@ fn test_sutta_search_contains_match() {
     assert!(result.snippet.contains("<span class='match'>satipaṭṭhāna</span>"),
             "Snippet for '{}' is not highlighted: {}", expected_uid, result.snippet);
 
-    assert!(result.snippet.starts_with("... establishing of mindfulness discourse <span class='match'>satipaṭṭhāna</span> sutta\u{a0}\u{a0}(mn\u{a0}10) introduction <span class='match'>satipaṭṭhāna</span> the establishing (upaṭṭhāna) of mindfulness (sati) is a meditative technique for training the mind"));
+    assert!(result.snippet.starts_with("introduction <span class='match'>satipaṭṭhāna</span> the establishing (upaṭṭhāna) of mindfulness (sati) is a meditative technique for training the mind"));
 
     // Verify all results are English
     for result in &results {
@@ -160,10 +161,13 @@ fn test_sutta_search_contains_match_with_punctuation() {
 fn test_sutta_search_contains_match_exact_results() {
     h::app_data_setup();
     let app_data = get_app_data();
-    let params = h::get_contains_params_with_lang(Some("pli".to_string()));
+    let mut params = h::get_contains_params_with_lang(Some("pli".to_string()));
+    // Both editions, whatever pali_edition_twins holds: under the default
+    // preference the CST twin is hidden (tests/test_pali_edition_filter.rs).
+    params.pali_edition = PaliEditionPreference::Both;
 
     let mut queries: HashMap<&str, Vec<&str>> = HashMap::new();
-    // Note: Only one sutta contains this text in the current database
+    // Only one text contains this phrase, in its two Pāli editions.
     queries.insert("Anāsavañca vo, bhikkhave, desessāmi",
                    vec!["sn43.14-43/pli/ms", "sn43.14-43/pli/cst"]
     );
@@ -184,7 +188,7 @@ fn test_sutta_search_contains_match_exact_results() {
         };
 
         assert!(!results.is_empty());
-        assert_eq!(results.len(), expected_uids.len());
+        assert_eq!(results.len(), expected_uids.len(), "{:?}", results.iter().map(|r| r.uid.clone()).collect::<Vec<_>>());
         for (idx, expected_uid) in expected_uids.iter().enumerate() {
             assert_eq!(results[idx].uid, expected_uid.to_string());
         }

@@ -7,10 +7,10 @@
 //!
 //! ```sh
 //! sqlite3 appdata.sqlite3 "SELECT uid, length(content_json) FROM suttas WHERE uid IN
-//!   ('mn1/pli/ms','dhp179-196/pli/ms','sn45.92-95/pli/ms','sn45.92-95/en/sujato','mn1/en/bodhi');"
+//!   ('mn1/pli/ms','dhp179-196/pli/ms','sn45.92-95/pli/ms','sn45.92-95/en/sujato','dn1/en/bodhi');"
 //! ```
 //!
-//! `mn1/en/bodhi` has a NULL `content_json`; the others have one.
+//! `dn1/en/bodhi` has a NULL `content_json`; the others have one.
 //!
 //! ```sh
 //! sqlite3 appdata.sqlite3 "SELECT sutta_uid FROM sutta_variants WHERE sutta_uid LIKE 'mn1/%';
@@ -89,7 +89,7 @@ fn test_reference_inside_a_range_keeps_lang_and_author() {
 #[test]
 #[serial]
 fn test_html_only_sutta_has_no_content_json() {
-    assert_eq!(content("mn1/en/bodhi"), SuttaContentJson::NoContentJson { uid: "mn1/en/bodhi".to_string() });
+    assert_eq!(content("dn1/en/bodhi"), SuttaContentJson::NoContentJson { uid: "dn1/en/bodhi".to_string() });
 }
 
 /// The record that answered, whether or not it is segmented yet: CST records are
@@ -206,7 +206,7 @@ fn test_bilara_translation_has_comments_and_the_root_variants() {
 fn test_bilara_errors_match_sutta_json() {
     h::app_data_setup();
     let appdata = &get_app_data().dbm.appdata;
-    assert!(matches!(get_sutta_bilara_json(appdata, "mn1/en/bodhi"),
-                     SuttaBilaraJson::NoContentJson { uid } if uid == "mn1/en/bodhi"));
+    assert!(matches!(get_sutta_bilara_json(appdata, "dn1/en/bodhi"),
+                     SuttaBilaraJson::NoContentJson { uid } if uid == "dn1/en/bodhi"));
     assert!(matches!(get_sutta_bilara_json(appdata, "mn1/en/nosuchauthor"), SuttaBilaraJson::NotFound));
 }

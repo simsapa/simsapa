@@ -578,6 +578,27 @@ fn html_text_to_sutta(doc: &Value, title: &str) -> Result<SuttaCentralData> {
     })
 }
 
+/// The HTML and the `content_plain` of a Bilara text, rendered without
+/// variants, comments or glosses so that only the text itself reaches search.
+/// Shared by every importer that writes a segmented record.
+pub fn bilara_html_and_plain_text(json_text: &str, template: &str) -> Result<(String, String)> {
+    let html = bilara_text_to_html(
+        json_text,
+        template,
+        None,  // variant_json_str
+        None,  // comment_json_str
+        None,  // gloss_json_str
+        false, // show_variant_readings
+        false, // show_glosses
+        false, // show_references
+    ).context("Failed to convert Bilara JSON to HTML")?;
+    let html = bilara_html_post_process(&html);
+    let html = consistent_niggahita(Some(html));
+    let html_wrapped = format!(r#"<div class="suttacentral bilara-text">{}</div>"#, html);
+    let plain = sutta_html_to_plain_text(&html_wrapped);
+    Ok((html_wrapped, plain))
+}
+
 /// Convert bilara_text document to SuttaCentralData
 ///
 /// Processes Bilara JSON format suttas from the sc_bilara_texts collection.
@@ -604,22 +625,7 @@ fn bilara_text_to_sutta(
 
     // Generate HTML and plain text
     let (_content_html, content_plain) = if let Some(template) = tmpl_json {
-        // Use template to convert JSON → HTML (no variants/comments/glosses for now)
-        let html = bilara_text_to_html(
-            &json_text,
-            template,
-            None,  // variant_json_str
-            None,  // comment_json_str
-            None,  // gloss_json_str
-            false, // show_variant_readings
-            false, // show_glosses
-            false, // show_references
-        ).context("Failed to convert Bilara JSON to HTML")?;
-        let html = bilara_html_post_process(&html);
-        let html = consistent_niggahita(Some(html));
-        let html_wrapped = format!(r#"<div class="suttacentral bilara-text">{}</div>"#, html);
-        let plain = sutta_html_to_plain_text(&html_wrapped);
-        (html_wrapped, plain)
+        bilara_html_and_plain_text(&json_text, template)?
     } else {
         // No template available - parse JSON and join values
         logger::warn(&format!("No template available for {}, using plain text fallback", full_uid));

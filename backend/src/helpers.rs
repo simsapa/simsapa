@@ -8,6 +8,8 @@ use indexmap::IndexMap;
 use regex::Regex;
 use lazy_static::lazy_static;
 use scraper::{Html, Selector};
+
+use crate::footnotes::{definitions_html, insert_markers, parse_comment_value, CommentValue, Footnote};
 use html_escape::decode_html_entities;
 use anyhow::{Context, Result};
 use serde::{Serialize, Deserialize};
@@ -701,7 +703,18 @@ pub fn dhammatalks_org_href_sutta_html_to_ssp(href: &str) -> String {
     format!("ssp://suttas/{}/en/thanissaro{}", ref_str, anchor)
 }
 
-pub fn dhammatalk_org_convert_link_href_in_html(link_selector: &Selector, html_text: &str) -> String {
+/// Converts dhammatalks.org sutta links to `ssp://suttas/<ref>/en/thanissaro`.
+///
+/// The file names follow Ṭhānissaro's own numbering, so each converted uid is
+/// looked up in `renames` (the `sutta_uid_renames` map, see
+/// `crate::sutta_uid_renames`) and replaced by the SuttaCentral-numbered uid
+/// that now carries the text. Pass an empty map to keep the old numbering.
+/// See docs/suttas-core-import.md.
+pub fn dhammatalk_org_convert_link_href_in_html(
+    link_selector: &Selector,
+    html_text: &str,
+    renames: &HashMap<String, String>,
+) -> String {
     let document = Html::parse_document(html_text);
     let mut replacements: Vec<(String, String)> = Vec::new();
 
@@ -710,6 +723,8 @@ pub fn dhammatalk_org_convert_link_href_in_html(link_selector: &Selector, html_t
             // Check if this href matches sutta HTML name pattern
             if RE_DHAMMATALKS_ORG_SUTTA_HTML_NAME.is_match(href) {
                 let ssp_href = dhammatalks_org_href_sutta_html_to_ssp(href);
+                let ssp_href = crate::sutta_uid_renames::rename_ssp_sutta_href(&ssp_href, renames)
+                    .unwrap_or(ssp_href);
                 replacements.push((href.to_string(), ssp_href));
             }
         }
@@ -2666,7 +2681,21 @@ fn generate_reference_anchor(segment_key: &str) -> String {
     }
 }
 
+/// The processed segments of a Bilara text, and the footnotes whose
+/// references were placed in them, in reading order.
+#[derive(Debug, Clone, Default)]
+pub struct BilaraSegments {
+    pub segments: IndexMap<String, String>,
+    pub footnotes: Vec<Footnote>,
+}
+
 /// Converts Bilara text JSON data into an IndexMap of processed HTML segments, preserving insertion order.
+///
+/// Comments become numbered footnotes (see `crate::footnotes`): a reference is
+/// placed in the segment text, with ids prefixed by `footnote_id_prefix`, and
+/// the note is returned in `footnotes` for the caller to list after the text.
+/// A plain SuttaCentral comment is numbered 1, 2, 3… in segment order and
+/// placed at the end of its segment.
 #[allow(clippy::too_many_arguments)]
 pub fn bilara_text_to_segments(
     content_json_str: &str,
@@ -2677,7 +2706,8 @@ pub fn bilara_text_to_segments(
     show_variant_readings: bool,
     show_glosses: bool,
     show_references: bool,
-) -> Result<IndexMap<String, String>> {
+    footnote_id_prefix: &str,
+) -> Result<BilaraSegments> {
     // Parse the JSON strings into IndexMaps to preserve insertion order
     let mut content_json: IndexMap<String, String> = serde_json::from_str(content_json_str)
         .with_context(|| format!("Failed to parse content JSON: '{}'", content_json_str))?;
@@ -2709,11 +2739,30 @@ pub fn bilara_text_to_segments(
     // However, collecting keys is safer if logic becomes more complex.
     let keys: Vec<String> = content_json.keys().cloned().collect();
 
+    let mut footnotes: Vec<Footnote> = Vec::new();
+    let mut plain_comment_number: u32 = 0;
+
     for i in keys {
         // Get the original content, update it, and put it back.
         // Need to handle the case where the key might have been removed, though unlikely here.
-        if let Some(original_content) = content_json.get(&i).cloned() {
+        if let Some(mut original_content) = content_json.get(&i).cloned() {
             let mut segment_additions = String::new();
+
+            // Footnote references go into the segment text itself (after a
+            // word, or at the segment's end), before the variant and gloss
+            // marks are appended.
+            if let Some(ref comments) = comment_json
+                && let Some(value) = comments.get(&i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    let notes = match parse_comment_value(value) {
+                        CommentValue::Footnotes(notes) => notes,
+                        CommentValue::Plain(text) => {
+                            plain_comment_number += 1;
+                            vec![Footnote { number: plain_comment_number, word_index: None, editor: false, html: text }]
+                        }
+                    };
+                    original_content = insert_markers(&original_content, &notes, footnote_id_prefix);
+                    footnotes.extend(notes);
+                }
 
             // Append Variant HTML
             if let Some(ref variants) = variant_json
@@ -2726,14 +2775,6 @@ pub fn bilara_text_to_segments(
                                         <span class='{}'>({})</span>
                                     </span>"#,
                                     classes.join(" "), txt);
-                    segment_additions.push_str(&s);
-                }
-
-            // Append Comment HTML
-            if let Some(ref comments) = comment_json
-                && let Some(txt) = comments.get(&i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                    let s = format!(r#"<span class='comment-wrap'><span class='mark'>✱</span><span class='comment hide'>({})</span></span>"#,
-                                    txt);
                     segment_additions.push_str(&s);
                 }
 
@@ -2795,8 +2836,7 @@ pub fn bilara_text_to_segments(
         }
     }
 
-    // Return the modified IndexMap
-    Ok(content_json)
+    Ok(BilaraSegments { segments: content_json, footnotes })
 }
 
 /// Converts an IndexMap of processed HTML segments into a single HTML string, preserving insertion order.
@@ -2812,6 +2852,17 @@ pub fn bilara_content_json_to_html_with_class(
     content_json: &IndexMap<String, String>,
     wrapper_extra_classes: &str,
     pre_content_html: &str,
+) -> Result<String> {
+    bilara_content_json_to_html_full(content_json, wrapper_extra_classes, pre_content_html, "")
+}
+
+/// Like `bilara_content_json_to_html_with_class`, with HTML emitted inside the
+/// wrapper after the article content (the footnote definitions).
+pub fn bilara_content_json_to_html_full(
+    content_json: &IndexMap<String, String>,
+    wrapper_extra_classes: &str,
+    pre_content_html: &str,
+    post_content_html: &str,
 ) -> Result<String> {
     // IndexMap preserves insertion order from JSON, so no custom sorting needed
     let page: String = content_json
@@ -2829,7 +2880,7 @@ pub fn bilara_content_json_to_html_with_class(
         format!("suttacentral bilara-text {}", wrapper_extra_classes)
     };
 
-    let content_html = format!("<div class='{}'>{}{}</div>", wrapper_classes, pre_content_html, processed_body);
+    let content_html = format!("<div class='{}'>{}{}{}</div>", wrapper_classes, pre_content_html, processed_body, post_content_html);
 
     Ok(content_html)
 }
@@ -2844,6 +2895,48 @@ pub struct ColumnSource {
     pub label: String,
     pub is_pali: bool,
     pub segments: IndexMap<String, String>,
+    /// The notes whose references are in `segments`, listed after the grid.
+    pub footnotes: Vec<Footnote>,
+    /// The footnote id prefix used for this column's references.
+    pub footnote_id_prefix: String,
+    /// The text's introduction (`suttas.description`), shown above the grid.
+    pub introduction: Option<String>,
+}
+
+/// A record's introduction (`suttas.description`: Ajahn Ṭhānissaro's, carried
+/// over from dhammatalks.org because suttas-core drops it), as a section of
+/// the page. Empty when there is none. `column_label`: in the multi-column
+/// view, the column it belongs to. See docs/suttas-core-import.md.
+pub fn introduction_html(introduction: Option<&str>, column_label: Option<&str>) -> String {
+    let Some(intro) = introduction.map(str::trim).filter(|s| !s.is_empty()) else {
+        return String::new();
+    };
+    match column_label {
+        Some(label) => format!(
+            "<section class='ssp-intro' data-label='{}'><div class='ssp-intro-label'>{}</div>{}</section>",
+            label.replace('\'', "&#39;"), label, intro,
+        ),
+        None => format!("<section class='ssp-intro'>{}</section>", intro),
+    }
+}
+
+/// Places a single text's introduction after its title: after the first
+/// `</header>` of the rendered text, or at the start of the content wrapper
+/// when the template has no header.
+pub fn insert_introduction(content_html: &str, introduction_html: &str) -> String {
+    if introduction_html.is_empty() {
+        return content_html.to_string();
+    }
+    if let Some(i) = content_html.find("</header>") {
+        let at = i + "</header>".len();
+        return format!("{}{}{}", &content_html[..at], introduction_html, &content_html[at..]);
+    }
+    match content_html.find('>') {
+        Some(i) if content_html.starts_with("<div") => {
+            format!("{}{}{}", &content_html[..=i], introduction_html, &content_html[i + 1..])
+        }
+        _ => format!("{}{}", introduction_html, content_html),
+    }
 }
 
 /// Creates the multi-column sutta view combining the segments of N column
@@ -2948,7 +3041,25 @@ pub fn bilara_multi_column_html(
         String::new()
     };
 
-    bilara_content_json_to_html_with_class(&content_json, &wrapper_extra_classes, &header_html)
+    // One notes list per column that has notes, after the grid, headed by the
+    // column label: each column numbers its own notes.
+    let notes_html: String = columns
+        .iter()
+        .map(|col| definitions_html(&col.footnotes, &col.footnote_id_prefix, Some(&col.label)))
+        .collect();
+
+    // The introductions go above the grid: their text is not segmented.
+    let intros_html: String = columns
+        .iter()
+        .map(|col| introduction_html(col.introduction.as_deref(), Some(&col.label)))
+        .collect();
+
+    bilara_content_json_to_html_full(
+        &content_json,
+        &wrapper_extra_classes,
+        &format!("{}{}", intros_html, header_html),
+        &notes_html,
+    )
 }
 
 /// Unaligned block-columns fallback for column sets that include a
@@ -2985,7 +3096,7 @@ pub fn bilara_text_to_html(
     show_glosses: bool,
     show_references: bool,
 ) -> Result<String> {
-    let content_json = bilara_text_to_segments(
+    let rendered = bilara_text_to_segments(
         content_json_str,
         Some(tmpl_json_str),
         variant_json_str,
@@ -2994,9 +3105,10 @@ pub fn bilara_text_to_html(
         show_variant_readings,
         show_glosses,
         show_references,
+        "",
     )?;
 
-    bilara_content_json_to_html(&content_json)
+    bilara_content_json_to_html_full(&rendered.segments, "", "", &definitions_html(&rendered.footnotes, "", None))
 }
 
 /// Remove duplicates based on title and uid
@@ -5485,6 +5597,32 @@ mod tests {
         assert_eq!(once, twice, "second pass is a no-op");
     }
 
+    #[test]
+    fn test_introduction_html() {
+        assert_eq!(introduction_html(None, None), "");
+        assert_eq!(introduction_html(Some("  "), None), "");
+        assert_eq!(introduction_html(Some("<p><em>Intro.</em></p>"), None), "<section class='ssp-intro'><p><em>Intro.</em></p></section>");
+        assert_eq!(
+            introduction_html(Some("<p>I</p>"), Some("Ṭhānissaro")),
+            "<section class='ssp-intro' data-label='Ṭhānissaro'><div class='ssp-intro-label'>Ṭhānissaro</div><p>I</p></section>",
+        );
+    }
+
+    #[test]
+    fn test_insert_introduction_after_the_title() {
+        let intro = "<section class='ssp-intro'>I</section>";
+        assert_eq!(
+            insert_introduction("<div class='x'><article><header><h1>T</h1></header><p>B</p></article></div>", intro),
+            "<div class='x'><article><header><h1>T</h1></header><section class='ssp-intro'>I</section><p>B</p></article></div>",
+        );
+        // No header: at the start of the wrapper.
+        assert_eq!(
+            insert_introduction("<div class='x'><p>B</p></div>", intro),
+            "<div class='x'><section class='ssp-intro'>I</section><p>B</p></div>",
+        );
+        assert_eq!(insert_introduction("<p>B</p>", ""), "<p>B</p>");
+    }
+
     fn cst_column(uid: &str, is_pali: bool, words: [&str; 2]) -> ColumnSource {
         ColumnSource {
             uid: uid.to_string(),
@@ -5494,6 +5632,9 @@ mod tests {
                 ("mn1:1.1".to_string(), words[0].to_string()),
                 ("mn1:1.2".to_string(), words[1].to_string()),
             ]),
+            footnotes: Vec::new(),
+            footnote_id_prefix: String::new(),
+            introduction: None,
         }
     }
 
@@ -5546,6 +5687,28 @@ mod tests {
         assert_eq!(dhammatalks_org_ref_notation_convert("MN_02"), "mn.2");
         assert_eq!(dhammatalks_org_ref_notation_convert("stnp1_1"), "snp1.1");
         assert_eq!(dhammatalks_org_ref_notation_convert("khp1"), "kp1");
+    }
+
+    #[test]
+    fn test_dhammatalk_org_convert_link_href_in_html_without_renames() {
+        let selector = Selector::parse("a").unwrap();
+        let html = r#"<p><a href="../AN/AN10_165.html#note1">AN 10:165</a> <a href='https://example.org/'>x</a></p>"#;
+        let out = dhammatalk_org_convert_link_href_in_html(&selector, html, &HashMap::new());
+        assert!(out.contains(r#"href="ssp://suttas/an10.165/en/thanissaro#note1""#), "{out}");
+        assert!(out.contains("href='https://example.org/'"), "{out}");
+    }
+
+    #[test]
+    fn test_dhammatalk_org_convert_link_href_in_html_with_rename() {
+        let selector = Selector::parse("a").unwrap();
+        let mut renames = HashMap::new();
+        renames.insert("an10.165/en/thanissaro".to_string(), "an10.176/en/thanissaro".to_string());
+        let html = r#"<p><a href="../AN/AN10_165.html#note1">AN 10:165</a> <a href="../AN/AN10_166.html">AN 10:166</a></p>"#;
+        let out = dhammatalk_org_convert_link_href_in_html(&selector, html, &renames);
+        // Renamed, anchor kept.
+        assert!(out.contains(r#"href="ssp://suttas/an10.176/en/thanissaro#note1""#), "{out}");
+        // Not in the map: the converted old uid.
+        assert!(out.contains(r#"href="ssp://suttas/an10.166/en/thanissaro""#), "{out}");
     }
 
     #[test]
@@ -7646,5 +7809,28 @@ mod tests {
         let html = r#"<a href="https://example.com/test.html">test</a>"#;
         let result = thebuddhaswords_net_convert_links_in_html(html);
         assert_eq!(html, result);
+    }
+
+    /// Footnote text never reaches `content_plain`: the bootstrap renders the
+    /// plain text with no comments, and with comments the note text is only in
+    /// the notes list after the article, never in the article itself.
+    #[test]
+    fn test_footnote_text_stays_out_of_article_text() {
+        let json = r#"{"dummy1:1.1": "So I have heard. ", "dummy1:1.2": "At one time."}"#;
+        let tmpl = r#"{"dummy1:1.1": "<article id='dummy1'><p>{}", "dummy1:1.2": "{}</p></article>"}"#;
+        let comments = r#"{"dummy1:1.1": "A plain comment NOTEPLAIN.", "dummy1:1.2": "<span class='ssp-fn' data-n='4' data-w='1'>A new-form note NOTENEW.</span>"}"#;
+
+        let plain = sutta_html_to_plain_text(&bilara_text_to_html(json, tmpl, None, None, None, false, false, false).unwrap());
+        assert!(plain.contains("heard"));
+        assert!(!plain.contains("NOTE"));
+
+        let html = bilara_text_to_html(json, tmpl, None, Some(comments), None, false, false, false).unwrap();
+        let (article, notes) = html.split_once("<section class='ssp-footnotes'>").expect("notes list after the article");
+        assert!(!sutta_html_to_plain_text(article).contains("NOTE"));
+        assert!(notes.contains("NOTEPLAIN") && notes.contains("NOTENEW"));
+        // The plain comment is note 1 at its segment's end; the new-form note
+        // keeps its number and follows word 1.
+        assert!(article.contains("So I have heard.<span class='footnote-reference'><a href='#fn-1' id='fr-1'>1</a></span> "));
+        assert!(article.contains("At one<span class='footnote-reference'><a href='#fn-4' id='fr-4'>4</a></span> time."));
     }
 }

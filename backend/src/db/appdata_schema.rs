@@ -329,6 +329,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    /// Old sutta uids mapped to the uids that now carry their text (Ṭhānissaro's
+    /// dhammatalks.org numbering -> SuttaCentral numbering). Filled by the
+    /// bootstrap; may be absent after a failed migration. See
+    /// docs/suttas-core-import.md.
+    sutta_uid_renames (old_uid) {
+        old_uid -> Text,
+        new_uid -> Text,
+        reason -> Text,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     app_settings,
     suttas,
@@ -350,4 +362,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     topic_index_data,
     navigation_nodes,
     pali_edition_twins,
+    sutta_uid_renames,
 );
