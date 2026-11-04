@@ -10,4 +10,4 @@
 # comes from the package version in bridges/Cargo.toml (--app).
 #
 # Blank lines and #-comments are ignored; the first remaining line is the value.
-11
+12
