@@ -14,20 +14,24 @@ This document describes the implementation of FTS5 (Full-Text Search) indexes fo
 
 Integrated into the main dictionaries create_tables migration, this adds:
 
-- **FTS5 Virtual Table:** `dict_words_fts` with trigram tokenizer for efficient substring matching
-  - Columns: `dict_word_id` (UNINDEXED), `language` (UNINDEXED), `dict_label` (UNINDEXED), `word` (indexed), `definition_plain` (indexed)
-  - Uses `tokenize='trigram'` for substring search capability (like LIKE '%query%')
-  - Uses `detail='none'` to reduce index size by not storing term positions
-  - Both indexed columns ride the same trigram index — `word` serves headword `LIKE '%term%'` push-downs (Contains Phase 5 and Headword Match Path B for user-imported dictionaries), `definition_plain` serves definition body matching (Contains Phase 3). `dict_label` is `UNINDEXED` in the FTS table, so `dict_label IN (set)` is filtered by JOIN to `dict_words` (rides `idx_dict_words_dict_label_source_uid`).
+- **FTS5 Virtual Tables:** two narrow **external-content** trigram tables over `dict_words`, created by `scripts/dictionaries-fts5-indexes.sql` (not by a migration). They store only the index; the text is read from `dict_words`.
+  - `dict_words_fts(word, definition_plain)` serves Contains Match (definition bodies in Phase 3).
+  - `dict_words_word_fts(word)` serves Headword Match.
+  - `tokenize='trigram'` gives substring search (`LIKE '%query%'`); `detail='none'` stores no term positions.
+  - Only searched columns are declared. For every candidate row FTS5 reads each declared column from `dict_words`, `UNINDEXED` ones included, so `language` and `dict_label` are not in the tables; queries filter on the joined `dict_words` row (`dict_label IN (set)` rides `dict_words_idx`).
+  - **Why a separate `word` table.** With `detail='none'` an index records no column, so `f.word LIKE ?` on the two-column table gets as candidates every row with the query's trigrams in *either* column, and reads each from `dict_words`. For `kamma`: 27,159 candidates for 710 results, 1.9 s cold from `dict_words` (1.2 GB, scattered rows), against 0.06 s from a table over `word` alone. A search of one column of a several-column `detail='none'` table needs its own table.
+  - The source `dict_words.id` is the FTS5 `rowid`: joins are `f.rowid = d.id`, and the trigger lookups are O(log n).
 
-- **Triggers:** Automatically keep FTS5 table in sync with `dict_words` table
-  - `dict_words_fts_insert`: Syncs new insertions
-  - `dict_words_fts_update`: Handles updates (delete old, insert new)
-  - `dict_words_fts_delete`: Removes FTS entries when dict_words are deleted
+- **Triggers:** keep each FTS table in step with `dict_words`. FTS5 reports no error when an index is out of step, it returns wrong results, so every write to `word` or `definition_plain` must go through them.
+  - `*_insert`: indexes the new row. Every row is indexed with no condition, because `integrity-check` expects an entry for every row; a NULL column gives no tokens.
+  - `*_update`: `AFTER UPDATE OF word, definition_plain`, using the `'delete'` command with the old values and then inserting the new. Renaming a dictionary (`dict_label`) re-tokenizes nothing.
+  - `*_delete`: the `'delete'` command with the old values.
+  - The bootstrap runs `integrity-check` with rank 1 on both tables after the last import.
 
 - **Additional Performance Indexes:**
   - `idx_dict_words_source_uid`: For future source_uid filtering feature
   - `idx_dict_words_dict_label_source_uid`: Composite index for common filter combinations
+  - `dict_words_word_idx` on `dict_words(word)`: serves the per-headword lookups of Contains Match Phases 1, 2 and 4, which otherwise skip-scan `dict_words_idx (dict_label, word)` once per dictionary label.
 
 ### 2. Database Migration - Sutta Composite Indexes
 
@@ -45,57 +49,31 @@ Integrated into the main appdata create_tables migration, this adds performance 
 - `idx_suttas_nikaya_language`: For nikaya + language filtering
 - `idx_suttas_title_ascii_language`: For title searches with language filter
 
-### 3. Query Implementation Updates
+### 3. Query Implementation
 
 **Location:** `backend/src/query_task.rs`
 
-- **New Function:** `dict_words_contains_match_fts5()`
-  - Implements three-phase search similar to the old function:
-    1. Exact matches on `DpdHeadword.lemma_clean`
-    2. Contains matches on `DpdHeadword.lemma_1`
-    3. **FTS5 search** on `DictWord.definition_plain` (NEW - uses FTS5 index)
-  - Properly handles source filtering using SQL queries
-  - Uses `sql_query()` with parameterized bindings for safety
-  - Returns paginated results with proper deduplication
+Dictionary **Contains Match** (`dict_words_contains_match_ids()`) and **Headword Match** (`lemma_1_dpd_headword_match_ids()`) are id-first and page-sized:
 
-- **Updated Call Site:** Changed `SearchMode::ContainsMatch` for `SearchArea::Dictionary`
-  - Line 998: Now calls `dict_words_contains_match_fts5()` instead of `dict_words_contains_or_regex_match_page()`
+- Each phase yields ids, in the order it adds them; the union is deduplicated by id, in that order, and its length is the total. Then `dict_word_results_for_ids()` loads the rows of the page shown (one query, `json_each` over the ids, put back in order) and builds `SearchResult`s, with their DPD meaning snippets, for those rows only. This holds on every path, with and without the bold definitions (`dict_contains_with_bold()`, `headword_match_with_bold()` splice the bold stream on the id total).
+- Contains Match phases:
+  1. Exact matches on `DpdHeadword.lemma_clean`
+  2. Contains matches on `DpdHeadword.lemma_1`
+  3. `dict_words_fts` on `definition_plain` (and `word`), selecting ids only
+  4. A fallback on `word_ascii`
+- Phases 1, 2 and 4 resolve a phase's headwords to `dict_words` in one `word IN (SELECT value FROM json_each(?))` query (`resolve_lemmas_to_dict_word_ids()`), through `dict_words_word_idx`, with the same filters as before. They take the **lowest-id** `dict_words` row of a headword. Where a DPD headword is also a word in a user dictionary, the DPD row comes in the DPD phase and the other row in Phase 3.
+- Headword Match selects `id, word, dict_label` for its sort (tier, `dict_label`, id) and searches `dict_words_word_fts` (`headword_fts_table()`, which falls back to `dict_words_fts` on a database built before it).
+- **Page queries order by `f.rowid`**, not the content table's id. FTS5 delivers rows in rowid order and says so (`orderByConsumed`) only when the `ORDER BY` names its rowid, so SQLite does not sort every matching row, `s.*` with its HTML and JSON included, before `LIMIT`. The results are the same, since `f.rowid = id`. A two-column `OR` is planned as a `MULTI-INDEX OR` whose union SQLite still sorts; Phase 3 selects only ids, so what it sorts is small.
+- Suttas Contains (`suttas_contains_match_fts5()`) filters on the joined `suttas` row: `+s.language`, `s.nikaya`, `s.source_uid`. The unary plus matters: without it, a language the statistics do not describe (a freshly downloaded one) draws the plan to `idx_suttas_language_uid`, which probes `suttas_fts` per row.
+- `Total rows in suttas_fts` in `cli_support.rs` counts `suttas_fts_docsize`: `COUNT(*)` on an external-content table is answered from the content table.
 
-### 4. Model Updates
+### 4. Column order of the source tables
 
-**Location:** `backend/src/db/dictionaries_models.rs`
-
-- Added `QueryableByName` derive macro to `DictWord` struct
-- This enables `DictWord` to be loaded from SQL queries (required for `sql_query().load()`)
+SQLite reads a row's columns in order and follows the overflow chain of a large row from its start. An external-content check reads the declared columns of each candidate, so `content_plain` / `definition_plain` must lie before the large columns. The baselines declare the small, often-read columns first, then the plain text, then the large columns, `content_html` / `definition_html` last (`suttas`, `dict_words`, `book_spine_items`). Diesel's `table!` and the `Queryable` structs follow the database's order.
 
 ## Performance Benefits
 
-### Before (LIKE Query)
-```sql
--- Phase 3: Slow LIKE query on definition_plain
-SELECT * FROM dict_words
-WHERE definition_plain LIKE '%search_term%';
-```
-
-**Problems:**
-- Full table scan required
-- No index can help with `LIKE '%...%'` patterns
-- Very slow on large dictionaries (100,000+ entries)
-
-### After (FTS5 Index)
-```sql
--- Phase 3: Fast FTS5 search
-SELECT d.*
-FROM dict_words_fts f
-JOIN dict_words d ON f.dict_word_id = d.id
-WHERE f.definition_plain LIKE '%search_term%';
-```
-
-**Benefits:**
-- Uses trigram index for efficient substring matching
-- Significantly faster queries (100x+ improvement possible)
-- Scales well with dictionary size
-- Lower memory usage with `detail='none'` option
+The Dictionary Contains cases with the most matches (`ssa`: 51,089 results) took about 17 s cold, because every match was loaded in full, `definition_html` included, and turned into a result before one page was sliced. Now only the page is loaded. The external-content tables drop the stored copy of the text (suttas 342.5 MB, `dict_words` 175 MB, bold definitions 135 MB) without making search slower; any new table of this kind needs the measurements of `fts_bench` first (plans with real values, equal counts and uid hashes, cold and warm medians within max(110%, +20 ms) of before, on a slow phone as well as the desktop).
 
 ## Query Optimization Analysis
 
@@ -117,10 +95,9 @@ These indexes will be particularly beneficial when the source_uid filtering feat
 
 ## Bootstrap Integration
 
-The migrations are automatically applied during the bootstrap procedure:
-- FTS5 table is created and populated when dictionaries database is initialized
-- Triggers ensure FTS5 table stays synchronized with dict_words table
-- Initial population handles existing data with NULL handling
+- The dictionaries FTS script runs before `import_migrate_dpd`, whose updates to `dict_words` then go through the triggers. `suttas_fts` is filled by its insert trigger. The bold-definitions script runs after that table is filled.
+- After the last import the bootstrap runs `integrity-check` with rank 1 on every FTS table (`check_fts_tables()`); an error stops it. `import-cst` does the same for `suttas_fts`.
+- Runtime writes (language downloads, StarDict import, rename, delete) all go through the triggers.
 
 ## Testing Recommendations
 
@@ -142,29 +119,9 @@ The migrations are automatically applied during the bootstrap procedure:
    - NULL definition_plain values
    - Dictionary updates and deletions (trigger testing)
 
-## Migration Instructions
+## Changing the schema
 
-**Note:** These changes are integrated into the main `create_tables` migrations. For new databases, they will be applied automatically during bootstrap.
-
-For existing databases that need these optimizations:
-
-1. **Manual Application (Recommended):**
-   ```bash
-   # For dictionaries database - apply FTS5 and indexes manually
-   sqlite3 <path_to_dictionaries.sqlite3> < scripts/add-dict-words-fts5.sql
-   
-   # For appdata database - apply sutta indexes manually
-   sqlite3 <path_to_appdata.sqlite3> < scripts/add-sutta-indexes.sql
-   ```
-
-2. **Full Migration (Requires recreating databases):**
-   ```bash
-   # Backup existing data first!
-   # Then run migrations from scratch
-   diesel migration run --database-url <path_to_database>
-   ```
-
-**Important:** The FTS5 index and composite indexes are now part of the base schema, so new database instances will have them automatically.
+There is no Diesel migration for the FTS tables: the scripts drop and recreate them, so any change needs a re-bootstrap of the affected database. A change to a source table's schema goes into the baseline together with a DB version bump that changes the major or minor version (see [database-migrations.md](./database-migrations.md)).
 
 ## Future Enhancements
 
@@ -196,7 +153,7 @@ The Dictionary search-mode dropdown offers five modes, all of which honour the p
 
 The last-used mode is persisted **per search area** (Suttas / Dictionary / Library); switching areas restores the saved mode for that area and triggers a fresh query.
 
-> **Re-bootstrap reminder.** The Combined / Contains / Headword paths rely on the `word` column being indexed in `dict_words_fts`. After pulling the change from `tasks/prd-integrate-stardict-filtering.md` §5.0, manually re-bootstrap the dictionaries DB once so the FTS table and its triggers are recreated with the new column. Verify with `PRAGMA table_info(dict_words_fts);`.
+> The Combined / Contains / Headword paths rely on `dict_words_fts` (`word`, `definition_plain`) and `dict_words_word_fts` (`word`). Verify with `PRAGMA table_info(dict_words_fts);`.
 
 ## Related Files
 
@@ -204,3 +161,4 @@ The last-used mode is persisted **per search area** (Suttas / Dictionary / Libra
 - `backend/src/query_task.rs`: Query implementation
 - `backend/src/db/dictionaries_models.rs`: Model updates
 - `scripts/appdata-fts5-indexes.sql`: Reference for suttas FTS5 implementation
+- `backend/examples/fts_bench.rs`: The benchmark (the app's query code on the app's SQLite, cold and warm)

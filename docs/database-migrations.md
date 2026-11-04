@@ -13,10 +13,14 @@ Both runners live in `backend/src/db/mod.rs` and are called from
 `DbManager::new()`. Adding a schema change means creating **one** dated folder
 with `up.sql` / `down.sql`. There is no second list to register it in.
 
-Each database's baseline is a single squashed migration:
+Each database's baseline is a single migration holding the whole schema of the
+current DB version:
 
 - `backend/migrations/appdata/2026-07-23-000000_initial_schema/`
 - `backend/migrations/dictionaries/2026-07-23-000000_initial_schema/`
+
+Today each is the only folder of its database. §0 says when a baseline may be
+edited and why it keeps its name.
 
 The FTS5 virtual tables and their sync triggers are **not** in the migrations —
 they are created by the scripts in `scripts/` (`appdata-fts5-indexes.sql`,
@@ -25,6 +29,78 @@ separately runnable and re-runnable.
 
 This document records why there were two mechanisms until 1.0.0, why they were
 unified, and the startup / recovery behaviour built on that.
+
+## 0. Editing a baseline: only with a major or minor DB version bump
+
+A schema change takes one of two forms:
+
+- **A new dated folder**, which an installed database applies in place on the
+  first launch after the app update. Use it for a change an installed database
+  can take: a new table, a nullable column, an index.
+- **An edit to the baseline itself**, together with a DB version bump
+  (`scripts/set-version.py --db`) that **changes the major or minor version**.
+  Use it when every install should download new databases anyway, e.g. a column
+  reorder or a change to shipped data. Fold every later folder into the
+  baseline in the same change, as plain `CREATE TABLE`s with the
+  `ADD COLUMN`s written into their tables, and delete those folders.
+
+Why the version bump must change major or minor: `is_local_db_obsolete()`
+(`update_checker.rs`, `is_app_version_compatible_with_db_version()`) compares
+only those two parts. An install left on its old database after a patch-level
+bump would never be sent to the download, and would never get a table whose
+migration was folded away.
+
+**Why the baseline keeps its folder name.** Migrations run in
+`DbManager::new()`, before `is_local_db_obsolete()` sends the user to the
+download. An installed database has `20260723000000` recorded as applied, so
+under the same name nothing is pending and nothing runs on it before the
+download replaces it. A baseline under a new name would be pending there: its
+`CREATE TABLE suttas` would fail on every start until the download, and show as
+a failed migration in Database Validation. The versions of folded folders stay
+in an installed database's ledger, and Diesel ignores recorded versions that
+have no folder. `baseline_migration_tests` in `backend/src/db/mod.rs` pins both
+facts. The upgrade deletes and downloads all three databases
+(`check_delete_files_for_upgrade()`, `backend/src/lib.rs`), so the dictionaries
+baseline is edited the same way.
+
+**Check a fold by schema diff.** Before deleting the folders, build an empty
+database from the old folders and one from the new baseline, and compare per
+table the columns with their types, defaults and constraints, the indexes, the
+foreign keys and the `CHECK`s. Only the column orders you changed on purpose
+may differ.
+
+### The column order of `suttas`, and the `table!` order trap
+
+`suttas` puts its small, often-read columns first, then `content_plain`, then
+the large columns, `content_html` last. SQLite reads a row's columns in order
+and follows a large row's overflow chain from its start, and the external-content
+`suttas_fts` reads `content_plain` from `suttas` for every candidate row while the
+search filters read `language`, `nikaya` and `source_uid`. Measured column
+sizes: `content_plain`, `content_html`, `content_json` average 8 to 11 KB, up to
+1 MB; `content_json_tmpl` 2.4 KB; `description` is NULL on almost every row but
+up to 21 KB where it is set, so it comes after `content_plain`.
+
+`dict_words` and `book_spine_items` follow the same rule. In `dict_words` the
+small fixed columns come first, then `definition_plain` (read by the
+external-content `dict_words_fts`), then the optional columns, those that can
+be large last (`summary`, `inflections`), and `definition_html`, DPD's rendered
+pages averaging 4.8 KB, at the end. The optional columns are empty on every row
+today, but the order must not depend on that: an importer filling `inflections`
+in front of `definition_plain` would slow every FTS check without any error. In
+`book_spine_items`, `content_plain` and then `content_html` (62 KB average) come
+last, so its FTS table could become external-content without another schema
+break.
+
+**Diesel's `Queryable` maps struct fields to the `table!` columns by position**,
+and `diesel print-schema` writes `table!` in the database's column order. So
+`suttas` and `book_spine_items` in `appdata_schema.rs`, `dict_words` in
+`dictionaries_schema.rs`, and the `Sutta`, `BookSpineItem` and `DictWord`
+structs follow the database's order, as does every other
+appdata and dictionaries `table!`. A regenerated schema in a different order than a `Queryable` struct
+swaps same-typed fields (`content_html` and `content_json` are both
+`Option<String>`) with no compile error. `Insertable` and `QueryableByName`
+match by name and do not depend on the order. When reordering a table, keep the
+database, the `table!` and every `Queryable` struct over it in one order.
 
 ## 1. Why there were two mechanisms
 
@@ -375,8 +451,9 @@ rebuild entry points.
 - Migration folder names must remain date-ordered.
 - Old migration folders must be **deleted**, never moved to an `archive/`
   subdirectory under `backend/migrations/` — `embed_migrations!` walks that tree.
-- **Never edit a migration once it has shipped.** The 1.0.0 baselines are frozen;
-  further changes are new dated folders.
+- **Never edit a migration once it has shipped**, except to fold the later
+  folders into the baseline together with a DB version bump that changes the
+  major or minor version (§0).
 - Table rewrites and `BEGIN … END` trigger bodies are now expressible (real
   Diesel runs the file; there is no `;`-splitting and no error suppression), but
   a rewrite still argues for a DB minor-version bump so installs re-download

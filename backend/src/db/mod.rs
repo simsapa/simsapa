@@ -498,6 +498,18 @@ pub fn run_appdata_migrations(db_conn: &mut SqliteConnection) -> Result<usize> {
     }
 }
 
+/// An in-memory database with the appdata schema, built by the same embedded
+/// migrations the app runs, for tests that need its tables. It does not touch
+/// the startup report.
+#[cfg(test)]
+pub(crate) fn appdata_schema_test_db() -> SqliteConnection {
+    let mut db_conn = SqliteConnection::establish(":memory:").expect("in-memory db");
+    db_conn
+        .run_pending_migrations(APPDATA_MIGRATIONS)
+        .expect("appdata migrations apply");
+    db_conn
+}
+
 pub fn run_dictionaries_migrations(db_conn: &mut SqliteConnection) -> Result<()> {
     info("run_dictionaries_migrations()");
     match db_conn.run_pending_migrations(DICTIONARIES_MIGRATIONS) {
@@ -518,6 +530,38 @@ pub fn run_dictionaries_migrations(db_conn: &mut SqliteConnection) -> Result<()>
             Err(anyhow::anyhow!("Failed to execute pending dictionaries migrations: {}", msg))
         }
     }
+}
+
+/// The external-content FTS5 tables of each database, which store only an
+/// index of their content table's text. See
+/// docs/dict-words-fts5-implementation.md.
+pub const APPDATA_FTS_TABLES: [&str; 1] = ["suttas_fts"];
+pub const DICTIONARIES_FTS_TABLES: [&str; 2] = ["dict_words_fts", "dict_words_word_fts"];
+pub const DPD_FTS_TABLES: [&str; 2] = ["bold_definitions_fts", "bold_definitions_bold_fts"];
+
+/// Check that an FTS5 table's index agrees with its content: FTS5's
+/// `integrity-check` with rank 1, which for an external-content table reads
+/// every row of the content table and compares its tokens with the index.
+///
+/// An external-content index that is out of step with its content table
+/// raises no error when queried; it returns wrong results. So this runs after
+/// every bulk write in the bootstrap, and an error must stop it.
+pub fn fts5_integrity_check(db_conn: &mut SqliteConnection, table: &str) -> Result<()> {
+    if table.is_empty() || !table.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(anyhow::anyhow!("Not an FTS5 table name: {:?}", table));
+    }
+    info(&format!("fts5_integrity_check(): {}", table));
+    db_conn
+        .batch_execute(&format!("INSERT INTO {t}({t}, rank) VALUES('integrity-check', 1);", t = table))
+        .with_context(|| format!("FTS5 integrity-check failed on {}: its index is out of step with its content table", table))
+}
+
+/// `fts5_integrity_check()` on each of `tables`, stopping at the first error.
+pub fn fts5_integrity_check_all(db_conn: &mut SqliteConnection, tables: &[&str]) -> Result<()> {
+    for table in tables {
+        fts5_integrity_check(db_conn, table)?;
+    }
+    Ok(())
 }
 
 /// Returns connections as a tuple to appdata.sqlite3, dictionaries.sqlite3, dpd.sqlite3
@@ -561,6 +605,60 @@ pub fn establish_connection() -> (SqliteConnection, SqliteConnection, SqliteConn
     (appdata_conn, dict_conn, dpd_conn)
 }
 
+
+#[cfg(test)]
+mod fts_trigger_tests;
+
+#[cfg(test)]
+mod baseline_migration_tests {
+    use super::*;
+
+    /// An installed database has the baseline recorded under its kept name,
+    /// and also the versions of migrations that were later folded into it and
+    /// whose folders are gone. Nothing may run on it: it stays as it is until
+    /// the upgrade downloads its replacement. Diesel ignores recorded versions
+    /// that have no folder. See docs/database-migrations.md.
+    #[test]
+    fn installed_database_with_folded_versions_runs_nothing() {
+        let mut db_conn = appdata_schema_test_db();
+        db_conn
+            .batch_execute(
+                "INSERT INTO __diesel_schema_migrations (version) VALUES
+                     ('20260813000000'), ('20260813210000'), ('20260813220000'),
+                     ('20260919000000'), ('20260922000000'), ('20261101000000'),
+                     ('20261102000000');",
+            )
+            .expect("ledger rows insert");
+
+        let applied = run_appdata_migrations(&mut db_conn).expect("migrations run");
+        assert_eq!(applied, 0);
+    }
+
+    /// The baseline is the only appdata migration, so an installed database
+    /// with it recorded has nothing pending.
+    #[test]
+    fn baseline_is_the_only_appdata_migration() {
+        let mut db_conn = appdata_schema_test_db();
+        let pending = db_conn
+            .pending_migrations(APPDATA_MIGRATIONS)
+            .expect("pending migrations");
+        assert!(pending.is_empty());
+
+        let versions: Vec<String> = diesel::sql_query("SELECT version FROM __diesel_schema_migrations")
+            .load::<LedgerRow>(&mut db_conn)
+            .expect("ledger reads")
+            .into_iter()
+            .map(|r| r.version)
+            .collect();
+        assert_eq!(versions, vec!["20260723000000".to_string()]);
+    }
+
+    #[derive(QueryableByName)]
+    struct LedgerRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        version: String,
+    }
+}
 
 #[cfg(test)]
 mod startup_stub_tests {

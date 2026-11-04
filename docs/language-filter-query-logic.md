@@ -149,7 +149,7 @@ gate above:
 
 ### Suttas
 
-- `suttas_contains_match_fts5` — `AND f.language = ?` in the FTS5 SQL.
+- `suttas_contains_match_fts5` — `AND +s.language = ?` in the FTS5 SQL, read from the joined `suttas` row (`suttas_fts` declares only `content_plain`; the unary plus keeps `idx_suttas_language` from driving the query).
 - `uid_sutta_all` / `uid_sutta_range_all` — `.filter(language.eq(&self.lang))`.
 - `fulltext` searcher — via `SearchFilters.lang` + `lang_include`.
 
@@ -165,16 +165,19 @@ gate above:
 
 All dictionary modes honor the filter:
 
-- **ContainsMatch** — `dict_words_contains_match_fts5_full` pushes the filter
-  into **all four phases**: Phases 1, 2, 4 (DPD-headword-driven) add
-  `.filter(dict_dsl::language.eq(self.lang.clone()))` on the resolved
-  `dict_words` row; Phase 3 (unified `dict_words_fts` retrieval) appends
-  `AND d.language = ?` to the raw SQL.
+- **ContainsMatch** — `dict_words_contains_match_ids` collects ids, in result
+  order, without loading rows, and pushes the filter into **all four phases**:
+  Phases 1, 2, 4 (DPD-headword-driven) resolve each phase's headwords in one
+  `word IN (…)` query on `dict_words` (through `dict_words_word_idx`) with
+  `language = ?`, taking the lowest-id row per headword; Phase 3
+  (`dict_words_fts`) appends `AND d.language = ?` to the raw SQL. Only the page
+  shown is loaded and turned into `SearchResult`s
+  (`dict_word_results_for_ids`).
 - **FulltextMatch** — `fulltext_dict` via `SearchFilters.lang`.
 - **UidMatch** — `uid_word_all` filters the exact and partial-uid `dict_words`
   queries on `dict_words.language`; a numeric DPD uid (`34626/dpd`) goes to the
   DPD lookup and is gated by `dpd_excluded_by_lang()`.
-- **HeadwordMatch** — `lemma_1_dpd_headword_match_fts5_full` resolves to
+- **HeadwordMatch** — `lemma_1_dpd_headword_match_ids` (searching `dict_words_word_fts`) resolves to
   `dict_words` on both paths, so the same `dict_words.language` filter applies:
   Path A (DPD, `dict_label = "dpd"`) is excluded under a non-Pāli filter, while
   Path B keeps non-DPD headword matches in the selected language.

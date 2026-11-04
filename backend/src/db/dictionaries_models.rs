@@ -40,6 +40,8 @@ pub struct NewDictionary<'a> {
 }
 
 
+// `Queryable` maps the fields by position: the order of `dict_words` in
+// dictionaries_schema.rs.
 #[derive(
     Debug,
     Clone,
@@ -62,22 +64,22 @@ pub struct DictWord {
     pub word: String,
     pub word_ascii: String,
     pub language: Option<String>,
+    pub meaning_order: Option<i32>,
+    // pub created_at: chrono::NaiveDateTime,
+    // pub updated_at: Option<chrono::NaiveDateTime>,
+    // pub indexed_at: Option<chrono::NaiveDateTime>,
+    pub definition_plain: Option<String>,
     pub word_nom_sg: Option<String>,
-    pub inflections: Option<String>,
     pub phonetic: Option<String>,
     pub transliteration: Option<String>,
-    pub meaning_order: Option<i32>,
-    pub definition_plain: Option<String>,
-    pub definition_html: Option<String>,
-    pub summary: Option<String>,
     pub synonyms: Option<String>,
     pub antonyms: Option<String>,
     pub homonyms: Option<String>,
     pub also_written_as: Option<String>,
     pub see_also: Option<String>,
-    // pub created_at: chrono::NaiveDateTime,
-    // pub updated_at: Option<chrono::NaiveDateTime>,
-    // pub indexed_at: Option<chrono::NaiveDateTime>,
+    pub summary: Option<String>,
+    pub inflections: Option<String>,
+    pub definition_html: Option<String>,
 }
 
 impl DictWord {

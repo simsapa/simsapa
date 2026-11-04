@@ -1,5 +1,7 @@
 // @generated automatically by Diesel CLI.
 
+// In the order of the database's columns, the large text last. `DictWord`
+// maps its fields by position, so it follows this order too.
 diesel::table! {
     dict_words (id) {
         id -> Integer,
@@ -9,22 +11,22 @@ diesel::table! {
         word -> Text,
         word_ascii -> Text,
         language -> Nullable<Text>,
+        meaning_order -> Nullable<Integer>,
+        // created_at -> Nullable<Timestamp>,
+        // updated_at -> Nullable<Timestamp>,
+        // indexed_at -> Nullable<Timestamp>,
+        definition_plain -> Nullable<Text>,
         word_nom_sg -> Nullable<Text>,
-        inflections -> Nullable<Text>,
         phonetic -> Nullable<Text>,
         transliteration -> Nullable<Text>,
-        meaning_order -> Nullable<Integer>,
-        definition_plain -> Nullable<Text>,
-        definition_html -> Nullable<Text>,
-        summary -> Nullable<Text>,
         synonyms -> Nullable<Text>,
         antonyms -> Nullable<Text>,
         homonyms -> Nullable<Text>,
         also_written_as -> Nullable<Text>,
         see_also -> Nullable<Text>,
-        // created_at -> Nullable<Timestamp>,
-        // updated_at -> Nullable<Timestamp>,
-        // indexed_at -> Nullable<Timestamp>,
+        summary -> Nullable<Text>,
+        inflections -> Nullable<Text>,
+        definition_html -> Nullable<Text>,
     }
 }
 

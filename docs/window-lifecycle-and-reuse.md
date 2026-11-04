@@ -150,9 +150,8 @@ window count** restored on next launch. Pooled windows must not appear in it.
 - **Restore** — `restore_last_session()` fills the existing first window from
   entry 0 and calls `create_sutta_search_window()` for the rest, then activates
   whichever window was in front. Three per-window fields beyond the tab list
-  round-trip through `bookmark_folders` (migrations
-  `2026-08-13-210000_session_window_metadata` and
-  `2026-08-13-220000_session_active_window`): `window_title`,
+  round-trip through `bookmark_folders` (in the appdata baseline migration):
+  `window_title`,
   `active_tab_group` + `active_tab_index`, and `is_active_window`. All are
   nullable, so an older session restores unnamed, with the as-created tab
   selection, and with the newest window in front. The active-window flag is

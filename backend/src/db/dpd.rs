@@ -1735,8 +1735,10 @@ impl DpdDbHandle {
 
         let db_conn = &mut self.get_conn().ok()?;
 
-        // Find by lemma_1 field
+        // `lemma_1` has no index; `lemma_clean` has, and narrows it to the
+        // homonyms of one lemma.
         let headword: Option<DpdHeadword> = dpd_headwords::table
+            .filter(dpd_headwords::lemma_clean.eq(crate::db::dpd_models::lemma_clean_of(lemma_1)))
             .filter(dpd_headwords::lemma_1.eq(lemma_1))
             .first::<DpdHeadword>(db_conn)
             .optional()

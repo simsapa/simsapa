@@ -29,7 +29,10 @@ use std::{fs, env, thread, time};
 use diesel::prelude::*;
 use diesel_migrations::MigrationHarness;
 
-use simsapa_backend::db::{DatabaseHandle, APPDATA_MIGRATIONS, DICTIONARIES_MIGRATIONS};
+use simsapa_backend::db::{
+    fts5_integrity_check_all, DatabaseHandle, APPDATA_FTS_TABLES, APPDATA_MIGRATIONS,
+    DICTIONARIES_FTS_TABLES, DICTIONARIES_MIGRATIONS, DPD_FTS_TABLES,
+};
 use simsapa_backend::{init_app_data, get_app_data, get_app_globals, get_create_simsapa_dir, get_create_simsapa_app_assets_path, normalize_lexically, logger};
 use simsapa_backend::search::indexer;
 use simsapa_backend::dictionary_manager_core::import_user_zip;
@@ -65,6 +68,15 @@ pub fn run_migrations(conn: &mut SqliteConnection) -> Result<()> {
     conn.run_pending_migrations(APPDATA_MIGRATIONS)
         .map_err(|e| anyhow::anyhow!("Failed to execute pending database migrations: {}", e))?;
     Ok(())
+}
+
+/// Run the FTS5 integrity check on each of a database's external-content FTS
+/// tables, after its last import. FTS5 reports no error when such an index is
+/// out of step with its content table, so a failure stops the bootstrap.
+pub fn check_fts_tables(db_path: &Path, tables: &[&str]) -> Result<()> {
+    logger::info(&format!("=== FTS5 integrity check: {} ===", db_path.display()));
+    let mut conn = create_database_connection(db_path)?;
+    fts5_integrity_check_all(&mut conn, tables)
 }
 
 /// Create `dictionaries.sqlite3` and apply the dictionaries migrations.
@@ -423,11 +435,13 @@ RELEASE_CHANNEL=development
         // `sqlite_stat1` / `sqlite_stat4` populated. Without it the bundled
         // SQLite picks a catastrophic plan for Headword Match — see
         // tasks/prd-fixing-headword-match-slow-query.md.
+        check_fts_tables(&dict_db_path, &DICTIONARIES_FTS_TABLES)?;
         analyze_sqlite_db_via_cli(&dict_db_path)?;
         create_database_archive(&dict_db_path, &release_databases_dir)?;
 
         logger::info("=== Create dpd.tar.bz2 ===");
         let dpd_db_path = assets_dir.join("dpd.sqlite3");
+        check_fts_tables(&dpd_db_path, &DPD_FTS_TABLES)?;
         analyze_sqlite_db_via_cli(&dpd_db_path)?;
         create_database_archive(&dpd_db_path, &release_databases_dir)?;
     } else {
@@ -587,6 +601,7 @@ RELEASE_CHANNEL=development
 
         logger::info("=== Create appdata.tar.bz2 ===");
         let appdata_db_path = assets_dir.join("appdata.sqlite3");
+        check_fts_tables(&appdata_db_path, &APPDATA_FTS_TABLES)?;
         analyze_sqlite_db_via_cli(&appdata_db_path)?;
         create_appdata_archive(&assets_dir, &release_databases_dir)?;
     }

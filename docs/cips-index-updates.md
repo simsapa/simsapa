@@ -31,7 +31,7 @@ is a *prerequisite* for this feature, not a coincidence),
 | `backend/src/cips_parse.rs` | The parser, **moved** from `bootstrap_cli/src/bootstrap/parse_cips_index.rs`. Pure: no file access, no printing |
 | `backend/src/topic_index.rs` | The four data structs (declared **once**), the swappable cache, source resolution, store and reset |
 | `backend/src/cips_update.rs` | Fetch → gate → parse → validate → store, the two process-globals, the log block |
-| `backend/migrations/appdata/2026-08-13-000000_topic_index_data/` | The single-row `topic_index_data` table |
+| `backend/migrations/appdata/2026-07-23-000000_initial_schema/` | The single-row `topic_index_data` table, in the appdata baseline |
 | `assets/general-index.json` | The index shipped with the build (`CIPS_GENERAL_INDEX_JSON`) |
 | `assets/general-index-date.txt` | The **source CSV's** date for that shipped index (`app_settings::cips_general_index_date()`) |
 | `bridges/src/sutta_bridge.rs` | `update_topic_index()`, `reset_topic_index()`, `topic_index_source_info()`, `is_topic_index_update_running()`, `cancel_topic_index_update()`, and the three signals |
@@ -84,15 +84,10 @@ CREATE TABLE topic_index_data (
 this build".** Nothing is written at bootstrap; the shipped data is not
 duplicated into the shipped database.
 
-**A new, empty table — deliberately not a rewrite.** `appdata.sqlite3` is kept
-across app updates (it also holds bookmarks, gloss/prompts history, chanting
-recordings and imported books) and carries a populated
-`__diesel_schema_migrations` ledger, so on the first launch after the app update
-`run_appdata_migrations()` applies exactly this one migration, once, in a
-transaction, and stamps it. No `DB_VERSION` bump, no forced re-download, no
-re-bootstrap. That was verified against a real pre-existing `appdata.sqlite3`:
-exactly **1** migration applied, a `sqlite_master` diff showing **only**
-`topic_index_data` added, and a second run applying **0**.
+**A table of its own.** The stored index is a separate, single-row table
+rather than a column or a rewrite of an existing table, so storing, replacing
+and resetting it touch nothing else in `appdata.sqlite3`, which also holds
+bookmarks, gloss/prompts history, chanting recordings and imported books.
 
 **A migration failure is non-fatal by design** (see
 [database-migrations.md](./database-migrations.md)), so "the table does not

@@ -392,7 +392,11 @@ pub fn collect_appdata_stats(db_path: &Path) -> Result<AppdataStats> {
         stats.insert(format!("Total rows in {}", table), count.to_string());
     }
 
-    let fts_count = get_row_count(&mut conn, "suttas_fts")?;
+    // The index itself is counted, in its `_docsize` shadow table (one row
+    // per indexed row): a COUNT(*) on the external-content `suttas_fts` is
+    // answered from `suttas`, and so would report a row count even for an
+    // index that is empty or out of step.
+    let fts_count = get_row_count(&mut conn, "suttas_fts_docsize")?;
     stats.insert("Total rows in suttas_fts".to_string(), fts_count.to_string());
 
     if table_exists(&mut conn, "suttas") {

@@ -1,73 +1,75 @@
--- Migration: Rebuild FTS5 fulltext search for suttas table with language column
+-- FTS5 trigram index over suttas.content_plain, for Contains Match.
+--
+-- Modifying this script requires a re-bootstrap of the appdata DB. There is no
+-- Diesel migration: the FTS table and triggers are recreated by this script.
+-- See docs/dict-words-fts5-implementation.md.
 
--- Drop existing FTS table and triggers if they exist
--- This ensures we start fresh with the new schema that includes the language column
 DROP TRIGGER IF EXISTS suttas_fts_insert;
 DROP TRIGGER IF EXISTS suttas_fts_update;
 DROP TRIGGER IF EXISTS suttas_fts_delete;
 DROP TABLE IF EXISTS suttas_fts;
 
--- Create the FTS5 virtual table with trigram tokenizer
--- The trigram tokenizer enables efficient substring matching like LIKE '%query%'
--- detail='none' reduces index size by not storing term positions
+-- An external-content table: the text is read from `suttas` and not stored a
+-- second time; only the index is stored. The trigram tokenizer serves
+-- `LIKE '%query%'`, and detail='none' stores no term positions.
 --
--- PERFORMANCE: the source row id (suttas.id) is stored as the FTS5 `rowid`,
--- NOT as a separate UNINDEXED column. FTS5 has no secondary indexes, so a
--- `WHERE sutta_id = ?` lookup against an UNINDEXED column is a FULL TABLE SCAN;
--- the per-row delete/update triggers would then scan the whole FTS table once
--- per affected `suttas` row. Using the rowid makes those lookups O(log n).
--- Queries join `f.rowid = suttas.id` instead of the old `f.sutta_id`.
+-- It declares only the column it searches. For every candidate row FTS5 reads
+-- each declared column from `suttas`, so a declared column stored after
+-- `content_html` / `content_json` would walk their overflow pages on every
+-- check. The filters (language, nikaya, source_uid, uid) are read from the
+-- joined `suttas` row instead. `suttas` keeps `content_plain` before its large
+-- columns for the same reason (the appdata baseline migration).
+--
+-- The source row id (suttas.id) is the FTS5 `rowid`, which makes the trigger
+-- lookups O(log n). Queries join `f.rowid = s.id` and order by `f.rowid`.
 CREATE VIRTUAL TABLE suttas_fts USING fts5(
-    language UNINDEXED,  -- Store language for filtering, but don't index for search
-    source_uid UNINDEXED,  -- Store source_uid for filtering, but don't index for search
-    nikaya UNINDEXED,    -- Store nikaya for prefix filtering, but don't index for search
-    uid UNINDEXED,       -- Store uid for prefix filtering, but don't index for search
-    content_plain,       -- The field we want to search
-    tokenize='trigram', -- Use trigram tokenizer for substring search
-    detail='none'       -- Reduce index size
+    content_plain,
+    content='suttas', content_rowid='id',
+    tokenize='trigram',
+    detail='none'
 );
 
--- Populate the FTS table with existing data
--- Only insert rows where content_plain is not NULL.
--- `rowid` is set to suttas.id so deletes/updates can use the fast rowid path.
-INSERT INTO suttas_fts (rowid, language, source_uid, nikaya, uid, content_plain)
-SELECT id, language, source_uid, nikaya, uid, content_plain
-FROM suttas
-WHERE content_plain IS NOT NULL;
+-- Index the existing rows. A full bootstrap runs this on the empty database,
+-- and the insert trigger indexes the imported rows.
+--
+-- Every row is indexed, a NULL `content_plain` included (it gives no tokens).
+-- FTS5's integrity check of an external-content table expects an index entry
+-- for every row of the content table, and fails if a row is left out.
+INSERT INTO suttas_fts (rowid, content_plain)
+SELECT id, content_plain
+FROM suttas;
 
--- Create triggers to keep FTS table in sync with main table
+-- Every write to `suttas.content_plain` must go through these triggers. FTS5
+-- reports no error when the index is out of step with `suttas`; it returns
+-- wrong results. The `'delete'` command removes the index entries of the
+-- values it is given, so it must be given exactly what was indexed: the old
+-- values.
 
--- Trigger for INSERT operations
 CREATE TRIGGER suttas_fts_insert
 AFTER INSERT ON suttas
-WHEN NEW.content_plain IS NOT NULL
 BEGIN
-    INSERT INTO suttas_fts (rowid, language, source_uid, nikaya, uid, content_plain)
-    VALUES (NEW.id, NEW.language, NEW.source_uid, NEW.nikaya, NEW.uid, NEW.content_plain);
+    INSERT INTO suttas_fts (rowid, content_plain)
+    VALUES (NEW.id, NEW.content_plain);
 END;
 
--- Trigger for UPDATE operations
+-- Only an update of the indexed column re-tokenizes the row.
 CREATE TRIGGER suttas_fts_update
-AFTER UPDATE ON suttas
+AFTER UPDATE OF content_plain ON suttas
 BEGIN
-    -- Delete old entry if it exists (fast rowid lookup)
-    DELETE FROM suttas_fts WHERE rowid = OLD.id;
+    INSERT INTO suttas_fts (suttas_fts, rowid, content_plain)
+    VALUES ('delete', OLD.id, OLD.content_plain);
 
-    -- Insert new entry if content_plain is not NULL
-    INSERT INTO suttas_fts (rowid, language, source_uid, nikaya, uid, content_plain)
-    SELECT NEW.id, NEW.language, NEW.source_uid, NEW.nikaya, NEW.uid, NEW.content_plain
-    WHERE NEW.content_plain IS NOT NULL;
+    INSERT INTO suttas_fts (rowid, content_plain)
+    VALUES (NEW.id, NEW.content_plain);
 END;
 
--- Trigger for DELETE operations (fast rowid lookup)
 CREATE TRIGGER suttas_fts_delete
 AFTER DELETE ON suttas
 BEGIN
-    DELETE FROM suttas_fts WHERE rowid = OLD.id;
+    INSERT INTO suttas_fts (suttas_fts, rowid, content_plain)
+    VALUES ('delete', OLD.id, OLD.content_plain);
 END;
 
--- Optimize the FTS index
 INSERT INTO suttas_fts(suttas_fts) VALUES('optimize');
 
--- Vacuum to reclaim space and optimize database
 VACUUM;
