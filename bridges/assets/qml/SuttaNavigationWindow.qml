@@ -137,6 +137,8 @@ ApplicationWindow {
     Logger { id: logger }
 
     Component.onCompleted: {
+        // ThemeHelper only sets is_dark and the palette when apply() is called.
+        theme_helper.apply();
         root.extra_top_margin = root.is_mobile ? SuttaBridge.get_mobile_extra_top_margin() : 0;
         root.tree_is_available = SuttaBridge.nav_tree_is_available();
         summaries_toggle.checked = SuttaBridge.get_show_navigation_blurbs();
