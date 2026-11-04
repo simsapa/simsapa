@@ -232,6 +232,15 @@ Frame {
                                 ? root.node.node_uid
                                 : (root.node.sutta_uid || root.node.node_uid))
                             font.pointSize: Math.max(7, root.pointSize - 3)
+                            // A Label that neither wraps nor elides reports its
+                            // full text width as its minimum, so a long uid
+                            // (cst:atthakatha/vinayapiṭaka-aṭṭhakathā) widened
+                            // the whole row past the screen on a phone,
+                            // pushing Enter and the summary off the edge.
+                            // Eliding lets it shrink to the available width.
+                            elide: Text.ElideRight
+                            Layout.fillWidth: !root.is_redirected && !root.node.in_file
+                            Layout.minimumWidth: 0
                             // Legible, but still clearly secondary to the
                             // title. `palette.mid` is a *frame* colour and
                             // renders the uid almost invisible on some
