@@ -77,7 +77,7 @@ Item {
             visible: root.segments.length > 0
             text: "›"
             font.pointSize: root.pointSize
-            color: palette.mid
+            color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
         }
 
         // The first segment stays visible when the middle collapses, so the
@@ -121,7 +121,7 @@ Item {
             visible: root.is_collapsed
             text: "›"
             font.pointSize: root.pointSize
-            color: palette.mid
+            color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
         }
 
         Repeater {
@@ -137,7 +137,7 @@ Item {
                     visible: segment_item.index > 0
                     text: "›"
                     font.pointSize: root.pointSize
-                    color: palette.mid
+                    color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                 }
 
                 Button {

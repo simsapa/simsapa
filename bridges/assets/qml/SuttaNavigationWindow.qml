@@ -657,7 +657,7 @@ ApplicationWindow {
             visible: root.tree_is_available && root.filter_active
             Layout.fillWidth: true
             font.pointSize: Math.max(8, root.pointSize - 1)
-            color: palette.mid
+            color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
             text: root.filter_rows.length === root.filter_limit
                 ? "First " + root.filter_limit + " matches"
                 : root.filter_rows.length + (root.filter_rows.length === 1 ? " match" : " matches")

@@ -175,7 +175,7 @@ Frame {
                 Layout.fillWidth: true
                 text: root.breadcrumb_text
                 font.pointSize: Math.max(7, root.pointSize - 3)
-                color: palette.mid
+                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                 elide: Text.ElideLeft
             }
 
@@ -295,7 +295,7 @@ Frame {
                             text: "in " + (root.node.in_file || "")
                             font.pointSize: Math.max(7, root.pointSize - 3)
                             font.italic: true
-                            color: palette.mid
+                            color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
@@ -308,7 +308,7 @@ Frame {
                     visible: root.is_branch && !root.is_tree_row && root.node.child_count > 0
                     text: "(" + root.node.child_count + ")"
                     font.pointSize: Math.max(7, root.pointSize - 2)
-                    color: palette.mid
+                    color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                 }
 
                 // Translations of this text in the languages installed right
@@ -317,7 +317,7 @@ Frame {
                     visible: root.translation_count > 0 && !root.is_tree_row && !root.is_filter_row
                     text: "⇄ " + root.translation_count
                     font.pointSize: Math.max(7, root.pointSize - 2)
-                    color: palette.mid
+                    color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
                 }
 
                 Button {
@@ -375,7 +375,7 @@ Frame {
                 Layout.topMargin: 6
                 Layout.bottomMargin: 6
                 implicitHeight: 1
-                color: palette.mid
+                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
             }
 
             Label {
