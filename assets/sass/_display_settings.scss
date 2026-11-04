@@ -575,6 +575,10 @@ body:has(#columnBar.show) {
         bottom: $column_bar_height;
     }
 
+    .footnote-bar-toggle {
+        bottom: calc(#{$column_bar_height} + var(--footnote-bar-height, 0px) + 6px);
+    }
+
     #ssp_main {
         padding-bottom: 8em;
     }

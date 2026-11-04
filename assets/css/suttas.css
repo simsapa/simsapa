@@ -1646,6 +1646,38 @@ body.dark {
   visibility: visible;
 }
 
+.footnote-bar-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: calc(var(--footnote-bar-height, 0px) + 6px);
+  z-index: 1000;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--footnote-bar-border);
+  background: var(--footnote-bar-bg);
+  color: var(--footnote-bar-text);
+  box-shadow: 0 1px 4px var(--footnote-bar-shadow);
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: bottom 0.3s ease;
+}
+
+.footnote-bar-toggle.show {
+  display: inline-flex;
+}
+
+.footnote-bar-toggle.collapsed {
+  opacity: 0.75;
+}
+
+.footnote-bar-toggle svg {
+  display: block;
+}
+
 .footnote-item {
   display: flex;
   gap: 10px;
@@ -1813,7 +1845,8 @@ body.footnote-bar-visible #ssp_content {
 }
 
 @media print {
-  .footnote-bottom-bar {
+  .footnote-bottom-bar,
+  .footnote-bar-toggle {
     display: none !important;
   }
 }
@@ -2372,6 +2405,10 @@ body.footnote-bar-visible #ssp_content {
 
 body:has(#columnBar.show) .footnote-bottom-bar {
   bottom: 40px;
+}
+
+body:has(#columnBar.show) .footnote-bar-toggle {
+  bottom: calc(40px + var(--footnote-bar-height, 0px) + 6px);
 }
 
 body:has(#columnBar.show) #ssp_main {

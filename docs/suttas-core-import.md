@@ -212,6 +212,15 @@ Variant readings and glosses are untouched. The old `✱` comment mark and its
   `SSP.show_bottom_footnotes === false` the bar stays hidden and markers still
   open the pop-up; the setting applies live. Multi-column pages with notes in
   more than one column label each item with its column.
+- While the bar has notes to show, a round eye button (`#footnoteBarToggle`,
+  created by the bar's `init()`) sits above its top edge. It hides the bar
+  without touching the setting, and stays, lowered to the bottom edge (above
+  the column bar), to show it again. The hidden state lasts for the page,
+  across content swaps; the bar keeps tracking the notes in view meanwhile. The
+  button's offset comes from `--footnote-bar-height` on `<body>`, the bar's
+  `offsetHeight` (0 when hidden), refreshed on every visibility change and by a
+  `ResizeObserver`. Its click stops propagation so the page's word lookup does
+  not see it.
 
 ## 6. The survey command
 

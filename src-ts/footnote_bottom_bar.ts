@@ -7,6 +7,12 @@
  * attached to each new item once. Showing the bar reflows the page, which can
  * itself bring markers into or out of view; with incremental updates that
  * costs nothing to the items already shown.
+ *
+ * A round toggle button sits above the bar's top edge while the bar has notes
+ * to show. It hides the bar for the rest of the page's life (the setting is
+ * not changed) and stays, lowered to the bottom edge, to bring the bar back.
+ * Its offset follows the bar's measured height through the
+ * `--footnote-bar-height` property on `<body>`.
  */
 
 import { FOOTNOTE_LINK_SELECTOR, extract_footnote_number, get_footnote_content, is_footnote_link } from "./footnote_modal";
@@ -79,6 +85,12 @@ function several_columns_have_notes(): boolean {
     return labels.size > 1;
 }
 
+// mdi eye-off-outline / eye-outline (assets/icons/svg/mdi--eye-*.svg).
+const HIDE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 5.27L3.28 4L20 20.72L18.73 22l-3.08-3.08c-1.15.38-2.37.58-3.65.58c-5 0-9.27-3.11-11-7.5c.69-1.76 1.79-3.31 3.19-4.54zM12 9a3 3 0 0 1 3 3a3 3 0 0 1-.17 1L11 9.17A3 3 0 0 1 12 9m0-4.5c5 0 9.27 3.11 11 7.5a11.8 11.8 0 0 1-4 5.19l-1.42-1.43A9.86 9.86 0 0 0 20.82 12A9.82 9.82 0 0 0 12 6.5c-1.09 0-2.16.18-3.16.5L7.3 5.47c1.44-.62 3.03-.97 4.7-.97M3.18 12A9.82 9.82 0 0 0 12 17.5c.69 0 1.37-.07 2-.21L11.72 15A3.064 3.064 0 0 1 9 12.28L5.6 8.87c-.99.85-1.82 1.91-2.42 3.13"/></svg>';
+const SHOW_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 9a3 3 0 0 1 3 3a3 3 0 0 1-3 3a3 3 0 0 1-3-3a3 3 0 0 1 3-3m0-4.5c5 0 9.27 3.11 11 7.5c-1.73 4.39-6 7.5-11 7.5S2.73 16.39 1 12c1.73-4.39 6-7.5 11-7.5M3.18 12a9.821 9.821 0 0 0 17.64 0a9.821 9.821 0 0 0-17.64 0"/></svg>';
+
+const TOGGLE_ID = 'footnoteBarToggle';
+
 /** Column order first (each column numbers its own notes), then number. */
 function numeric_order(a: VisibleFootnote, b: VisibleFootnote): number {
     if (a.column !== b.column) {
@@ -98,6 +110,10 @@ class FootnoteBottomBar {
     private visible_footnotes: Map<string, VisibleFootnote> = new Map();
     private show_labels: boolean = false;
     private initialized: boolean = false;
+    private toggle: HTMLButtonElement | null = null;
+    private resize_observer: ResizeObserver | null = null;
+    /** Hidden with the toggle; kept across refresh() for the page's life. */
+    private user_hidden: boolean = false;
 
     /**
      * Find the container, observe every footnote reference on the page.
@@ -116,6 +132,7 @@ class FootnoteBottomBar {
         this.container.innerHTML = '';
         this.show_labels = several_columns_have_notes();
 
+        this.setup_toggle();
         this.setup_observer();
         this.observe_all_footnotes();
 
@@ -145,6 +162,71 @@ class FootnoteBottomBar {
             });
             this.update_visibility();
         }, options);
+    }
+
+    /** Find or create the toggle button; follow the bar's height. */
+    private setup_toggle(): void {
+        let toggle = document.getElementById(TOGGLE_ID) as HTMLButtonElement | null;
+        if (!toggle) {
+            toggle = document.createElement('button');
+            toggle.id = TOGGLE_ID;
+            toggle.type = 'button';
+            toggle.className = 'footnote-bar-toggle';
+            // Not the reader's text: the page's tap and double-click word
+            // lookup must not see this click.
+            toggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.set_user_hidden(!this.user_hidden);
+            });
+            // Toggling twice quickly is a double-click on desktop.
+            toggle.addEventListener('dblclick', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            document.body.appendChild(toggle);
+            // The button lives outside #ssp_content, so it survives content
+            // swaps; a new one means a new page, which starts with the bar shown.
+            this.user_hidden = false;
+        }
+        this.toggle = toggle;
+
+        if (typeof ResizeObserver !== 'undefined' && this.container) {
+            this.resize_observer = new ResizeObserver(() => this.update_bar_height());
+            this.resize_observer.observe(this.container);
+        }
+    }
+
+    private set_user_hidden(hidden: boolean): void {
+        this.user_hidden = hidden;
+        this.update_visibility();
+    }
+
+    /** Publish the bar's height for the toggle's offset (0 when hidden). */
+    private update_bar_height(): void {
+        const shown = this.container?.classList.contains('show') ?? false;
+        const height = shown && this.container ? this.container.offsetHeight : 0;
+        document.body.style.setProperty('--footnote-bar-height', `${height}px`);
+    }
+
+    private update_toggle(has_notes: boolean): void {
+        if (!this.toggle) {
+            return;
+        }
+        this.toggle.classList.toggle('show', has_notes);
+        // Runs on every observer callback: rewrite the icon only on a change,
+        // so a tap in progress keeps its target.
+        const state = this.user_hidden ? 'hidden' : 'shown';
+        if (this.toggle.dataset.state === state) {
+            return;
+        }
+        this.toggle.dataset.state = state;
+        this.toggle.classList.toggle('collapsed', this.user_hidden);
+        this.toggle.innerHTML = this.user_hidden ? SHOW_ICON : HIDE_ICON;
+        const label = this.user_hidden ? 'Show notes' : 'Hide notes';
+        this.toggle.title = label;
+        this.toggle.setAttribute('aria-label', label);
+        this.toggle.setAttribute('aria-pressed', this.user_hidden ? 'true' : 'false');
     }
 
     private observe_all_footnotes(): void {
@@ -229,13 +311,12 @@ class FootnoteBottomBar {
             return;
         }
         const setting_enabled = (document as any).SSP?.show_bottom_footnotes !== false;
-        if (!setting_enabled || this.visible_footnotes.size === 0) {
-            this.container.classList.remove('show');
-            document.body.classList.remove('footnote-bar-visible');
-            return;
-        }
-        this.container.classList.add('show');
-        document.body.classList.add('footnote-bar-visible');
+        const has_notes = setting_enabled && this.visible_footnotes.size > 0;
+        const show = has_notes && !this.user_hidden;
+        this.container.classList.toggle('show', show);
+        document.body.classList.toggle('footnote-bar-visible', show);
+        this.update_toggle(has_notes);
+        this.update_bar_height();
     }
 
     /** Disconnect the observer, empty and hide the bar. */
@@ -244,12 +325,18 @@ class FootnoteBottomBar {
             this.observer.disconnect();
             this.observer = null;
         }
+        if (this.resize_observer) {
+            this.resize_observer.disconnect();
+            this.resize_observer = null;
+        }
         this.visible_footnotes.clear();
         if (this.container) {
             this.container.innerHTML = '';
             this.container.classList.remove('show');
         }
+        this.toggle?.classList.remove('show');
         document.body.classList.remove('footnote-bar-visible');
+        document.body.style.removeProperty('--footnote-bar-height');
         this.initialized = false;
     }
 

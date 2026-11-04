@@ -59,6 +59,47 @@ body.dark {
     }
 }
 
+// Round hide / show button above the bar's top edge (footnote_bottom_bar.ts).
+// `--footnote-bar-height` is the bar's measured height, 0 while the reader has
+// hidden it, which lowers the button to the bottom edge.
+$toggle_size: 36px;
+$toggle_gap: 6px;
+
+.footnote-bar-toggle {
+    position: fixed;
+    right: 16px;
+    bottom: calc(var(--footnote-bar-height, 0px) + #{$toggle_gap});
+    // The bar's level: later in the DOM, so above the bar, and below the
+    // column bar (1001), whose upward menus open where the lowered button sits.
+    z-index: 1000;
+    width: $toggle_size;
+    height: $toggle_size;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--footnote-bar-border);
+    background: var(--footnote-bar-bg);
+    color: var(--footnote-bar-text);
+    box-shadow: 0 1px 4px var(--footnote-bar-shadow);
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    transition: bottom 0.3s ease;
+
+    &.show {
+        display: inline-flex;
+    }
+
+    // Lowered, with the bar hidden: lighter, so it covers less of the text.
+    &.collapsed {
+        opacity: 0.75;
+    }
+
+    svg {
+        display: block;
+    }
+}
+
 // Individual footnote item in the bar
 .footnote-item {
     display: flex;
@@ -255,7 +296,8 @@ body.footnote-bar-visible #ssp_content {
 
 // Print styles - hide the bottom bar when printing
 @media print {
-    .footnote-bottom-bar {
+    .footnote-bottom-bar,
+    .footnote-bar-toggle {
         display: none !important;
     }
 }

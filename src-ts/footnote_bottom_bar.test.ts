@@ -219,3 +219,77 @@ describe("footnote bottom bar", () => {
     expect(numbers).toEqual(["Sujato[2]", "Bodhi[1]"]);
   });
 });
+
+describe("footnote bar toggle", () => {
+  function toggle(): HTMLButtonElement {
+    return document.getElementById("footnoteBarToggle") as HTMLButtonElement;
+  }
+
+  test("appears with the bar and hides it, staying visible to show it again", () => {
+    setup_page(SEGMENTED_PAGE);
+    expect(toggle().classList.contains("show")).toBe(false);
+
+    current_observer().fire([[current_observer().observed[0], true]]);
+    expect(bar().classList.contains("show")).toBe(true);
+    expect(toggle().classList.contains("show")).toBe(true);
+    expect(toggle().getAttribute("aria-label")).toBe("Hide notes");
+
+    toggle().click();
+    expect(bar().classList.contains("show")).toBe(false);
+    expect(document.body.classList.contains("footnote-bar-visible")).toBe(false);
+    expect(toggle().classList.contains("show")).toBe(true);
+    expect(toggle().classList.contains("collapsed")).toBe(true);
+    expect(toggle().getAttribute("aria-label")).toBe("Show notes");
+    expect(document.body.style.getPropertyValue("--footnote-bar-height")).toBe("0px");
+
+    toggle().click();
+    expect(bar().classList.contains("show")).toBe(true);
+    expect(toggle().classList.contains("collapsed")).toBe(false);
+  });
+
+  test("keeps the notes updating while hidden, without showing the bar", () => {
+    setup_page(SEGMENTED_PAGE);
+    const [first, second] = current_observer().observed;
+    current_observer().fire([[first, true]]);
+    toggle().click();
+    current_observer().fire([[second, true]]);
+    expect(bar().classList.contains("show")).toBe(false);
+    expect(bar().querySelectorAll(".footnote-item").length).toBe(2);
+    toggle().click();
+    expect(bar().classList.contains("show")).toBe(true);
+  });
+
+  test("goes away when no note is in view", () => {
+    setup_page(SEGMENTED_PAGE);
+    const [first] = current_observer().observed;
+    current_observer().fire([[first, true]]);
+    current_observer().fire([[first, false]]);
+    expect(toggle().classList.contains("show")).toBe(false);
+  });
+
+  test("is not shown when the setting is off", () => {
+    setup_page(SEGMENTED_PAGE, false);
+    current_observer().fire([[current_observer().observed[0], true]]);
+    expect(toggle().classList.contains("show")).toBe(false);
+  });
+
+  test("the hidden state survives a content refresh", () => {
+    setup_page(SEGMENTED_PAGE);
+    current_observer().fire([[current_observer().observed[0], true]]);
+    toggle().click();
+    footnote_bottom_bar.refresh();
+    current_observer().fire([[current_observer().observed[0], true]]);
+    expect(bar().classList.contains("show")).toBe(false);
+    expect(toggle().classList.contains("collapsed")).toBe(true);
+  });
+
+  test("a new page starts with the bar shown", () => {
+    setup_page(SEGMENTED_PAGE);
+    current_observer().fire([[current_observer().observed[0], true]]);
+    toggle().click();
+    setup_page(SEGMENTED_PAGE);
+    current_observer().fire([[current_observer().observed[0], true]]);
+    expect(bar().classList.contains("show")).toBe(true);
+    expect(toggle().classList.contains("collapsed")).toBe(false);
+  });
+});
