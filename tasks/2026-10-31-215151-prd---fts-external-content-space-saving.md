@@ -194,3 +194,7 @@ searches.
    model and Android version, are recorded for every table, including any that failed.
 2. The Dictionary Contains cases with the most matches ("ssa", "ana", "kamma") are faster
    than before, cold and warm, with the same results.
+
+## 9. Outcome
+
+On 2026-11-04 the maintainer waived the phone measurement of requirement 4 and success metric 1 and accepted the desktop results (`tasks/data/fts-external-content-space-saving/`). All five tables shipped as external-content. Two sit slightly outside the gate on the desktop (`dict_words_fts` cold Contains `kamma` +16%; `bold_definitions_bold_fts` three warm `dpd_lookup+bold` lines, up to +13%). No phone figures were recorded.
