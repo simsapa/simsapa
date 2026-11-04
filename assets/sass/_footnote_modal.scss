@@ -132,9 +132,13 @@ body.dark {
     min-height: 0;
 }
 
+// show() replaces the body's innerHTML, which removes the template's
+// <p class="footnote-modal-content">, so the text styles must live on the body
+// itself. Sizes match the bottom bar's .footnote-content (rem, not px).
+.footnote-modal-body,
 .footnote-modal-content {
     margin: 0;
-    font-size: 14px;
+    font-size: 0.8rem;
     line-height: 1.6;
     color: var(--footnote-modal-text);
     font-family: inherit;
@@ -176,7 +180,8 @@ body.dark {
         max-height: 85vh;
     }
 
+    .footnote-modal-body,
     .footnote-modal-content {
-        font-size: 13px;
+        font-size: 0.7rem;
     }
 }
