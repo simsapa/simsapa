@@ -1550,9 +1550,10 @@ body.dark {
   min-height: 0;
 }
 
+.footnote-modal-body,
 .footnote-modal-content {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.8rem;
   line-height: 1.6;
   color: var(--footnote-modal-text);
   font-family: inherit;
@@ -1560,27 +1561,33 @@ body.dark {
   overflow-wrap: break-word;
 }
 
+.footnote-modal-body p,
 .footnote-modal-content p {
   margin: 0.5em 0;
 }
 
+.footnote-modal-body p:first-child,
 .footnote-modal-content p:first-child {
   margin-top: 0;
 }
 
+.footnote-modal-body p:last-child,
 .footnote-modal-content p:last-child {
   margin-bottom: 0;
 }
 
+.footnote-modal-body a,
 .footnote-modal-content a {
   color: var(--footnote-modal-text);
   text-decoration: underline;
 }
 
+.footnote-modal-body em,
 .footnote-modal-content em {
   font-style: italic;
 }
 
+.footnote-modal-body strong,
 .footnote-modal-content strong {
   font-weight: bold;
 }
@@ -1591,8 +1598,9 @@ body.dark {
     max-width: none;
     max-height: 85vh;
   }
+  .footnote-modal-body,
   .footnote-modal-content {
-    font-size: 13px;
+    font-size: 0.7rem;
   }
 }
 :root {
