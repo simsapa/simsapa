@@ -6,6 +6,7 @@ pub mod docs;
 pub mod gloss;
 pub mod health;
 pub mod import;
+pub mod install_skill;
 pub mod index;
 pub mod paths;
 pub mod query;

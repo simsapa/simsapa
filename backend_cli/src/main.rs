@@ -134,6 +134,10 @@ enum Commands {
     /// version of simsapa), keeping your user data
     DbUpgrade(db_upgrade::DbUpgradeArgs),
 
+    /// Install the simsapa skill that teaches a coding agent (Claude Code,
+    /// OpenCode, Pi) to use these commands, for the user or for one project
+    InstallSkill(commands::install_skill::InstallSkillArgs),
+
     /// Print the reference for these commands and the localhost API
     /// (Markdown), or save it with --output
     Docs(commands::docs::DocsArgs),
@@ -187,6 +191,10 @@ fn run(cli: &Cli) -> CliResult {
     // Needs neither the data folder nor the databases.
     if let Commands::Docs(args) = &cli.command {
         return commands::docs::run(args, cli.json);
+    }
+    // Needs neither the data folder nor the databases.
+    if let Commands::InstallSkill(args) = &cli.command {
+        return commands::install_skill::run(args, cli.json);
     }
     // Before any `AppGlobals` exists: it reads API_PORT once.
     if let Commands::Serve(args) = &cli.command {
@@ -264,7 +272,9 @@ fn run(cli: &Cli) -> CliResult {
             simsapa_api::init_app_globals_api();
             commands::serve::run(args, cli.json, cli.no_update_check, lock, port_file)
         }
-        Commands::Docs(_) => unreachable!("handled before the globals are initialised"),
+        Commands::Docs(_) | Commands::InstallSkill(_) => {
+            unreachable!("handled before the globals are initialised")
+        }
         Commands::Setup(args) => {
             if args.list_languages {
                 return setup::list_languages(cli.json);

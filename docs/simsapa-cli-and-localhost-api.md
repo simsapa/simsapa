@@ -88,6 +88,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa check-updates` | Whether a newer `simsapa` (npm) or a newer database release is available, and the command that installs each (A.8) | the `updates` object of `GET /health` (§10) |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
 | `simsapa app-assets` | Where the app assets are stored and their sizes (A.1) | — |
+| `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (A.2.3) | — |
 | `simsapa docs` | This document | — |
 
 The commands that change the data folder: `simsapa setup`, `simsapa
@@ -150,15 +151,57 @@ simsapa search library "pācittiya" --mode "Contains Match" --uid-prefix bmc.
 ```
 
 The CLI prints the hit's snippet but not the chapter. To read a whole chapter,
-run `simsapa serve` and fetch `GET /get_book_spine_item_html_by_uid/0/<uid>`
-(the first path segment is a window id, which `serve` ignores):
+fetch `GET /get_book_spine_item_html_by_uid/0/<uid>` from the localhost server
+(the first path segment is a window id, which the server ignores). The Simsapa
+app serves it while it is open, on the port in `<data folder>/api-port.txt`;
+otherwise start `simsapa serve`, which exits with code 3 while the app is open:
 
 ``` sh
-simsapa serve --port 4848 &
-curl -s localhost:4848/get_book_spine_item_html_by_uid/0/bmc.28
+PORT=$(cat "$SIMSAPA_DIR/api-port.txt" 2>/dev/null || echo 4848)
+curl -s localhost:$PORT/get_book_spine_item_html_by_uid/0/bmc.28
+# nothing answering?  simsapa serve --port 4848 &
 ```
 
 `simsapa sutta <uid>` does not read Library chapters.
+
+### A.2.3 Installing the agent skill: `simsapa install-skill`
+
+`simsapa install-skill` writes a short skill, `simsapa/SKILL.md`, that tells a
+coding agent when and how to use these commands. It is built into the binary,
+so it always matches the installed version, and it needs no databases. It
+points the agent to `simsapa docs` for this full reference.
+
+| Agent | `--global` (every project) | `--local` (the current folder, or `--dir`) |
+|---|---|---|
+| `claude` (Claude Code) | `~/.claude/skills/simsapa/` | `.claude/skills/simsapa/` |
+| `opencode` (OpenCode) | `~/.config/opencode/skills/simsapa/` (`$XDG_CONFIG_HOME/opencode` when set) | `.opencode/skills/simsapa/` |
+| `pi` (Pi) | `~/.pi/agent/skills/simsapa/` | `.pi/skills/simsapa/` |
+
+``` sh
+simsapa install-skill --agent claude --global      # named: installs, no questions
+simsapa install-skill --agent pi --agent claude --local
+simsapa install-skill                              # looks for existing agent folders, asks
+simsapa install-skill --yes                        # ... installs into every one it found
+simsapa install-skill --global                     # looks only at the global folders
+```
+
+With both `--agent` and `--global` or `--local`, the places are exactly the
+ones named. With either missing, the command looks for each agent's existing
+configuration folder (`~/.claude`, `./.claude`, and so on) and offers only
+those; at a terminal it shows a checklist with every place selected, and with no
+terminal it prints what it found and stops unless `--yes` is given. When nothing
+is found it installs nothing and says how to name a place.
+
+- Running it again is safe: an up-to-date skill is left alone, and one this
+  command wrote earlier is replaced by the current text. A `SKILL.md` it did
+  not write is never replaced without `--force`.
+- OpenCode also reads Claude Code's skill folders. With both selected for the
+  same scope only the Claude Code copy is written, so the agent does not see
+  two skills of one name.
+- `--json` prints one array of `{agent, scope, path, status}`, with `status`
+  `installed`, `updated` or `unchanged`.
+- Start a new agent session afterwards; agents read their skills at start-up.
+- After upgrading simsapa, run it again to refresh the skill.
 
 ## A.3 Output: clean text, or `--json`
 
