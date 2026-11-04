@@ -77,7 +77,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 
 | Command | What it answers | `--json` is the body of |
 |---|---|---|
-| `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`, `--pali-edition ms|cst|both` (A.2.1). Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
+| `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`, `--uid-prefix` (suttas and library only; A.2.2), `--pali-edition ms|cst|both` (A.2.1). Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
 | `simsapa word <uid>` | A dictionary entry; `--html` for the rendered page | `/word.json` (§13.3); `--html`: `/word_html` |
 | `simsapa sutta <uid>` | A sutta's title, uid and plain text; `--html`, `--content-json` (Bilara JSON), `--bilara` (with variants, comments, glosses) | `/sutta_html`, `/sutta.json` (§13.4), `/sutta_bilara.json` (§13.5) |
 | `simsapa gloss <text…\|->` | Every word of a passage with its dictionary options and compound break-downs; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
@@ -114,6 +114,51 @@ only one edition is always shown, so CST-only texts such as the Vinaya
 divisions appear under every value. Searching by uid (`Uid Match`) is never
 filtered: `mn1/pli/cst` is found under every value. The option does not read
 the GUI app's setting, so the same command always gives the same answer.
+
+### A.2.2 Searching the Library, and one book of it: `--uid-prefix`
+
+The Library holds imported books (EPUB, PDF, HTML), each split into chapters
+(spine items). A Library result is one chapter: its `uid` is
+`<book_uid>.<n>` (`bmc.28` is chapter 28 of the book `bmc`, The Buddhist
+Monastic Code), and its `title` is the book's title followed by the chapter's.
+
+``` sh
+simsapa search library "right speech"                    # every book
+simsapa search library "right speech" --uid-prefix bmc.  # only the BMC
+simsapa search library "right speech" --uid-prefix bmc. --json
+```
+
+`--uid-prefix TEXT` keeps only results whose uid starts with `TEXT`
+(case-insensitive). End a book's prefix with the dot, `bmc.`: a bare `bmc`
+would also match any other book whose uid begins with those letters. It
+works with the `Fulltext Match`, `Contains Match`, `Title Match` and
+`Uid Match` modes, and also with `simsapa search suttas` (`--uid-prefix sn`
+for the Saṁyutta Nikāya); `simsapa search dict` rejects it. Write the prefix
+with letters, digits, `.`, `-` and `/` only: `Contains Match` and `Title
+Match` read `_` and `%` as wildcards.
+A search that finds nothing in the book exits 0 with `0 results`; that is an
+answer, not a fault (the BMC has no hit for `satipaṭṭhāna`, for instance).
+
+Two useful variations:
+
+``` sh
+# the book's chapters in reading order, with no text query
+simsapa search library bmc --mode "Uid Match" --json     # query is the book uid
+simsapa search library bmc.28 --mode "Uid Match" --json  # one chapter
+# literal substring instead of ranked full-text
+simsapa search library "pācittiya" --mode "Contains Match" --uid-prefix bmc.
+```
+
+The CLI prints the hit's snippet but not the chapter. To read a whole chapter,
+run `simsapa serve` and fetch `GET /get_book_spine_item_html_by_uid/0/<uid>`
+(the first path segment is a window id, which `serve` ignores):
+
+``` sh
+simsapa serve --port 4848 &
+curl -s localhost:4848/get_book_spine_item_html_by_uid/0/bmc.28
+```
+
+`simsapa sutta <uid>` does not read Library chapters.
 
 ## A.3 Output: clean text, or `--json`
 
@@ -551,6 +596,7 @@ working unchanged.
   "show_all_snippets": true,        // default false; per-occurrence expansion
   "snippet_exclude": ["upādiyati"], // JSON array (NOT a CSV string)
   "pali_edition": "ms",             // "ms" (default), "cst" or "both"; see below
+  "uid_prefix": "bmc.",             // only uids starting with this (case-insensitive); see below
 
   // Dictionary area:
   "dict_lang": "en",
@@ -572,6 +618,14 @@ working unchanged.
   as `mn1` names a text, so the value applies to it. An unknown value is HTTP
   400, and the Dictionary area ignores the field. The GUI app's own setting is
   never read.
+- `uid_prefix` restricts Suttas and Library results to uids that start with
+  the text, case-insensitively; absent or blank means no restriction. A
+  Library chapter uid is `<book_uid>.<n>`, so `"bmc."` is exactly the book
+  `bmc` (a bare `"bmc"` would also match any other book beginning with those
+  letters). It applies in the `Fulltext Match`, `Contains Match`, `Title Match`
+  and `Uid Match` modes, and the Dictionary area ignores it. Use letters,
+  digits, `.`, `-` and `/` only: `_` and `%` are wildcards in `Contains Match`
+  and `Title Match`.
 - The language/source filters treat the placeholder values `"Languages"` /
   `"Language"` (and `"Dictionaries"` / `"Dictionary"` for the source) — and the
   empty string — as **no filter**.
@@ -1036,7 +1090,27 @@ curl -s -X POST "localhost:$PORT/search" \
 
 > Searching the **Library** (imported EPUB/PDF/HTML books) works the same way:
 > send `"search_area":"Library"` to `POST /search`. It honours the same
-> `suttas_lang*`, pagination, and snippet options as Suttas.
+> `suttas_lang*`, pagination, and snippet options as Suttas. A result is one
+> book chapter with the uid `<book_uid>.<n>`.
+
+To search **one book**, add `uid_prefix` with the book uid and a dot. This
+searches only The Buddhist Monastic Code (`bmc`):
+
+```sh
+curl -s -X POST "localhost:$PORT/search" \
+  -H 'Content-Type: application/json' \
+  -d '{"query_text":"right speech","search_area":"Library","uid_prefix":"bmc."}'
+```
+
+Then fetch a hit's whole chapter by its `uid`:
+
+```sh
+curl -s "localhost:$PORT/get_book_spine_item_html_by_uid/0/bmc.28"
+```
+
+The first path segment is a window id; any value works in `simsapa serve`.
+`Uid Match` with the bare book uid (`"query_text":"bmc"`, `"mode":"Uid Match"`)
+lists every chapter of the book in reading order.
 
 ### 12.2 Searching the dictionary
 

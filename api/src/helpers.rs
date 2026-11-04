@@ -66,6 +66,10 @@ pub struct ApiSearchRequest {
     /// "both". Absent means "ms". Suttas and Library only. Parsed via
     /// `parse_pali_edition`; never read from the GUI setting.
     pub pali_edition: Option<String>,
+    /// Only results whose uid starts with this text (case-insensitive), e.g.
+    /// `bmc` for the Library book with that uid, or `sn` for the Saṁyutta.
+    /// Absent or blank means no restriction.
+    pub uid_prefix: Option<String>,
 }
 
 /// Response structure for /sutta_and_dict_search_options endpoint
@@ -274,7 +278,7 @@ pub fn build_search_params(request: &ApiSearchRequest, mode: SearchMode, area: &
         include_cst_mula: true,
         include_cst_commentary: true,
         nikaya_prefix: None,
-        uid_prefix: None,
+        uid_prefix: request.uid_prefix.clone().filter(|p| !p.trim().is_empty()),
         uid_suffix: None,
         include_ms_mula: true,
         // Validated by the routes before this runs; an unparsed value is Ms.
@@ -771,6 +775,16 @@ mod tests {
         assert_eq!(p(None), PaliEditionPreference::Ms);
         assert_eq!(p(Some("cst")), PaliEditionPreference::Cst);
         assert_eq!(p(Some("both")), PaliEditionPreference::Both);
+    }
+
+    #[test]
+    fn test_build_search_params_uid_prefix() {
+        let req = |v: Option<&str>| ApiSearchRequest { uid_prefix: v.map(String::from), ..Default::default() };
+        let p = |v| build_search_params(&req(v), SearchMode::FulltextMatch, &SearchArea::Library).uid_prefix;
+        assert_eq!(p(None), None);
+        assert_eq!(p(Some("")), None);
+        assert_eq!(p(Some("  ")), None);
+        assert_eq!(p(Some("bmc.")), Some("bmc.".to_string()));
     }
 
     #[test]

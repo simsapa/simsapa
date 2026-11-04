@@ -84,6 +84,11 @@ pub struct SearchArgs {
     #[arg(long, requires = "source")]
     pub source_exclude: bool,
 
+    /// Suttas and library: only results whose uid starts with this text, e.g.
+    /// `bmc` to search just that library book
+    #[arg(long, value_name = "UID_PREFIX")]
+    pub uid_prefix: Option<String>,
+
     /// The page to show, from 1
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
     pub page: u32,
@@ -120,6 +125,7 @@ pub fn api_request(args: &SearchArgs) -> ApiSearchRequest {
         page_len: Some(args.page_len as i32),
         show_all_snippets: Some(args.all_snippets),
         pali_edition: Some(args.pali_edition.api_label().to_string()),
+        uid_prefix: args.uid_prefix.clone(),
         snippet_exclude: if args.snippet_exclude.is_empty() { None } else { Some(args.snippet_exclude.clone()) },
         ..Default::default()
     };
@@ -146,6 +152,10 @@ pub fn page_count(hits: i32, page_len: u32) -> u32 {
 pub fn run(args: &SearchArgs, json: bool) -> CliResult {
     if args.source.is_some() && args.area != SearchAreaArg::Dict {
         return Err(CliError::error("--source applies only to `simsapa search dict`."));
+    }
+
+    if args.uid_prefix.is_some() && args.area == SearchAreaArg::Dict {
+        return Err(CliError::error("--uid-prefix applies only to `simsapa search suttas` and `simsapa search library`."));
     }
 
     let req = api_request(args);
@@ -234,6 +244,14 @@ mod tests {
             assert_eq!(req.pali_edition.as_deref(), Some(v));
         }
         assert!(T::try_parse_from(["t", "suttas", "x", "--pali-edition", "nonsense"]).is_err());
+    }
+
+    #[test]
+    fn test_uid_prefix_reaches_the_request() {
+        let req = api_request(&parse(&["library", "mindfulness", "--uid-prefix", "bmc"]));
+        assert_eq!(req.search_area.as_deref(), Some("Library"));
+        assert_eq!(req.uid_prefix.as_deref(), Some("bmc"));
+        assert_eq!(api_request(&parse(&["library", "x"])).uid_prefix, None);
     }
 
     #[test]
