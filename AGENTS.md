@@ -381,7 +381,15 @@ Notable feature docs:
   [localhost-api-implementation.md](./docs/localhost-api-implementation.md).
   Part A is the CLI for users and agents: commands, clean text output vs.
   `--json` (an agent wanting another shape writes its own formatter over the
-  JSON; there is no formatter script), exit codes. Part B is
+  JSON; there is no formatter script), exit codes, and **`simsapa install-skill`
+  (A.2.3)**, which writes the built-in `simsapa` agent skill
+  (`backend_cli/skills/simsapa/SKILL.md`) into the Claude Code / OpenCode / Pi
+  skill folders — `--agent claude|opencode|pi` (repeatable), `--global` or
+  `--local` (`--dir`), `--yes`, `--force`; with both agent and scope it installs
+  unasked, otherwise it detects existing config folders and asks; no databases
+  needed; a re-run replaces only a `SKILL.md` carrying the
+  `generator: simsapa-cli` marker. Implementation notes are in
+  [backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md). Part B is
   the **whole Rocket route surface** (search, word/sutta retrieval,
   GUI-navigation, assets) — the shared data routes in `api/src/` (`simsapa_api`,
   also served by `simsapa serve`, with npm install instructions), the GUI-only,

@@ -33,6 +33,16 @@ as the desktop app, so if the app is already set up, there is no need to run
 `simsapa --help` lists the commands, and `simsapa docs` prints the full CLI and
 localhost API reference. See [npm/cli/README.md](npm/cli/README.md) for more.
 
+To let a coding agent (Claude Code, OpenCode or Pi) use the CLI, install the
+`simsapa` agent skill. It tells the agent when and how to search the suttas and
+look up Pāli words, and needs no databases:
+
+```sh
+simsapa install-skill --agent claude --global   # every project
+simsapa install-skill --agent claude --local    # the current folder only
+simsapa install-skill                           # finds agent folders, asks
+```
+
 ## Building
 
 ### Prerequisites

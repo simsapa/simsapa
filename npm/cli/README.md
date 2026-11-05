@@ -94,11 +94,29 @@ import` is running.
 | `simsapa stats` | Row and content-source counts of `appdata.sqlite3` |
 | `simsapa paths` | The data folder and database paths |
 | `simsapa health` | What `GET /health` returns, including the DPD and SuttaCentral data versions |
+| `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (`--agent`, `--global`/`--local`, `--yes`, `--force`) |
 | `simsapa docs` | The full CLI and API reference (Markdown); `--output <file>` saves it |
 | `simsapa serve` | Serve the localhost API |
 
 `simsapa <command> --help` lists each command's options. `-v` and `-vv` show
 more log output on stderr. The full log is `log.txt` in the data folder.
+
+### Installing the agent skill
+
+`simsapa install-skill` writes a short skill that tells a coding agent when and
+how to use these commands. It is built into the binary, matches the installed
+version and needs no databases.
+
+```sh
+simsapa install-skill --agent claude --global   # ~/.claude/skills/simsapa/
+simsapa install-skill --agent pi --agent claude --local
+simsapa install-skill                           # finds agent folders, asks
+```
+
+With `--agent` and `--global` or `--local` it installs exactly there; otherwise
+it offers the agents' existing configuration folders (`--yes` accepts them all
+without a terminal). Running it again is safe; a `SKILL.md` it did not write is
+replaced only with `--force`.
 
 ### `--json` output
 
