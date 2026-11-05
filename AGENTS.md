@@ -557,6 +557,15 @@ Notable feature docs:
   Play without touching the QML URI (a ~70-site, no-benefit refactor). Covers why
   the Android FileProvider authority and `/data/user/0/<pkg>/` data dir derive
   automatically from the package, and the change checklist.
+- [Apple App Store readiness](./docs/apple-app-store-readiness.md) — whether
+  the app would pass App Review on iOS and the Mac App Store, and what blocks
+  it: **Qt WebEngine is incompatible with the Mac App Store** (private APIs,
+  App Sandbox) so a store build needs the QtWebView reader views, and **iOS
+  uploads require Xcode 26 / iOS 26 SDK**, which Qt 6.9.3 does not document.
+  Also the shared work: privacy manifest, AI-provider consent (5.1.2(i)),
+  store-gated update notice (2.4.5(vii)), iCloud-backup exclusion of the
+  downloaded databases, and the sandbox's effect on `SIMSAPA_DIR` and the
+  global hotkey's synthetic ⌘C.
 - [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
   why the app's top-margin setting is only *extra* space: Qt's
   `ApplicationWindow` already binds its four padding properties to the window
