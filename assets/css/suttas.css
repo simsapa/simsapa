@@ -1769,11 +1769,11 @@ body.dark {
     padding: 10px;
   }
   .footnote-item {
-    gap: 8px;
-    flex-direction: column;
+    gap: 6px;
   }
   .footnote-number {
-    align-self: flex-start;
+    min-width: 24px;
+    padding: 0 2px;
   }
   .footnote-content {
     font-size: 0.7rem;
