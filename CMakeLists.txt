@@ -84,9 +84,17 @@ elseif (APPLE AND NOT IOS)
         unset(CMAKE_OSX_SYSROOT CACHE)
     endif()
 
-    # Set macOS deployment target to match the SDK being used
-    # This prevents version mismatch warnings during linking
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version" FORCE)
+    # Minimum macOS version. Two constraints, take the higher:
+    #   - Qt 6.9.3's frameworks are built with minos 12.0;
+    #   - cpal 0.18's CoreAudio loopback module (objc2-core-audio) imports
+    #     AudioHardwareCreateProcessTap / AudioHardwareDestroyProcessTap,
+    #     API_AVAILABLE(macos(14.2)), as STRONG imports — below 14.2 dyld
+    #     refuses to launch the app. cpal has no feature to drop that module.
+    # build-macos.sh reads this line for LSMinimumSystemVersion; keep the
+    # `set(CMAKE_OSX_DEPLOYMENT_TARGET "X.Y"` form. Do not lower it without
+    # re-checking the binary: `nm -m <app binary> | grep -i processtap`
+    # ("external" = strong, "weak external" = weak).
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.2" CACHE STRING "Minimum macOS version" FORCE)
     message(STATUS "macOS deployment target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 
     # Try to find Qt6 installation if CMAKE_PREFIX_PATH is not already set
@@ -391,6 +399,19 @@ cxx_qt_import_crate(
     QT_MODULES ${qt_modules}
 )
 
+# macOS: cargo must build for the same deployment target as CMake. Corrosion
+# does not forward CMAKE_OSX_DEPLOYMENT_TARGET, so rustc and cc-rs (which
+# compiles the bridge's C++, including a second copy of cpp/gui.cpp) fall back
+# to rustc's default (11.0 on aarch64-apple-darwin). The libc++ headers choose by
+# deployment target whether e.g. basic_stringbuf::str() is instantiated inline
+# or taken from libc++.dylib, so mismatched halves leave an undefined symbol in
+# CMake's gui.cpp.o that the linker satisfies by pulling the archive's gui.o —
+# and the link fails with ~36 duplicate symbols.
+if(APPLE AND NOT IOS)
+    corrosion_set_env_vars(simsapa_bridges
+        "MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+
 cxx_qt_import_qml_module(simsapa_qml_module
     URI "com.profoundlabs.simsapa"
     SOURCE_CRATE simsapa_bridges)
@@ -605,6 +626,14 @@ endif()
 # Link SystemConfiguration framework on macOS (required by Rust dependencies),
 # plus Carbon / AppKit / ApplicationServices for the global hotkey backend
 # (RegisterEventHotKey, [NSWorkspace openURL:], AXIsProcessTrusted, etc.).
+#
+# CoreAudio / AudioToolbox: macOS audio capture/playback — cpal's CoreAudio
+# backend and coreaudio-rs (in the Rust staticlib) reference AudioObject*,
+# AudioHardware* (CoreAudio) and AudioUnit*/AudioComponent*/AudioOutputUnit*
+# (AudioToolbox) symbols that must be resolved at the final link. The crates'
+# #[link(kind = "framework")] directives are NOT carried inside a staticlib
+# `.a`, so they are not redundant: without them the app link fails with 19
+# undefined symbols. Counterpart of the Linux ALSA block below.
 if(APPLE AND NOT IOS)
     target_link_libraries(simsapadhammareader
         PUBLIC
@@ -612,6 +641,8 @@ if(APPLE AND NOT IOS)
             "-framework Carbon"
             "-framework AppKit"
             "-framework ApplicationServices"
+            "-framework CoreAudio"
+            "-framework AudioToolbox"
     )
 endif()
 

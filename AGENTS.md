@@ -302,7 +302,10 @@ Notable feature docs:
   minSdk 28 just as it did at 27, and breaks the `cxx` C++ build); stay on
   r26b/r27 and
   16 KB-align the main app `.so` with `-Wl,-z,max-page-size=16384` in
-  `CMakeLists.txt`.
+  `CMakeLists.txt`. Also the **per-platform table of what the final link must
+  name** (the Rust staticlib carries no `#[link]` directives) and the **macOS
+  14.2 floor** (cpal's strongly-imported CoreAudio ProcessTap symbols), which
+  cargo must also be told via `MACOSX_DEPLOYMENT_TARGET`.
 - [Search snippet & highlight pipeline](./docs/search-snippet-highlight-pipeline.md) —
   how ContainsMatch (FTS5) and FulltextMatch (Tantivy) produce result snippets
   and highlight them. Highlighting is **producer-owned and range-based**
@@ -1144,6 +1147,18 @@ such a command exits non-zero, look for `file exists:` or `no such file or
 directory:` before reading it as a failed run. (Global rule in
 `~/.claude/CLAUDE.md`; repeated here because this project's runs are long.)
 
+### Unmatched globs abort the whole command (zsh `nomatch`)
+
+In the same shells a glob that matches nothing is an error
+(`no matches found: Simsapa-*.dmg`) and the **whole command is skipped**, not
+just the pattern. So `rm -rf build/simsapadhammareader dist Simsapa-*.dmg`
+deletes *nothing* when no `.dmg` exists, and the "clean" build that follows
+silently reuses the stale tree. The `(N)` null-glob qualifier also failed in
+the agent shell, so do not rely on it. Never put an optional glob in a command
+that must run: delete optional matches with a quoted pattern instead,
+`find . -maxdepth 1 -name 'Simsapa-*.dmg' -delete`, and look for
+`no matches found:` in the output before trusting a cleanup step.
+
 
 ### Android compatibility: File existence checks
 
@@ -1223,6 +1238,27 @@ breaking the `cxx` C++ build). **The exclusion is about API 30, not about 27 vs
 question. Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
 main app `.so` is achieved with `target_link_options(... "-Wl,-z,max-page-size=16384")`
 in `CMakeLists.txt`, not by relying on r28's default. Details in the doc above.
+
+### A Rust dependency that needs a native library: name it in `CMakeLists.txt`
+
+The Rust code reaches the app as a **staticlib** (`libsimsapa_bridges.a`)
+linked by CMake, and a Mach-O or ELF `.a` does not carry the crates'
+`#[link(name = …)]` / `#[link(kind = "framework")]` directives. So when a crate
+needs a system library or framework, the final link in `CMakeLists.txt` must
+name it — **per platform**, since a crate like cpal uses a different backend
+module on each. Worked examples: the Linux ALSA block (`asound`), the Android
+`android nativewindow aaudio` line, and the macOS `-framework CoreAudio` /
+`-framework AudioToolbox` entries, whose absence broke the macOS build for
+months unnoticed. There is no macOS CI: run `make macos -B` on the Mac before a
+release. Table in
+[docs/pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
+
+On macOS the deployment target lives in **one** place,
+`CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt` (14.2): it is forwarded to
+cargo with `corrosion_set_env_vars(… MACOSX_DEPLOYMENT_TARGET=…)` and read by
+`build-macos.sh` for `LSMinimumSystemVersion`. If cargo builds for a different
+target than CMake, the link fails with duplicate `gui.cpp` symbols (cc-rs
+compiles a second copy of `cpp/gui.cpp` into the staticlib).
 
 ### Adding a Qt module that needs an Android permission
 

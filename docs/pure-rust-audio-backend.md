@@ -122,6 +122,72 @@ target_link_libraries(simsapadhammareader PRIVATE android nativewindow aaudio)
 All three are stub libraries in the NDK sysroot; naming ones we don't strictly
 use is harmless.
 
+## Desktop links: what the final link must supply
+
+The same staticlib rule applies on every platform whose static archive format
+carries no link directives (Mach-O and ELF `.a`). Each platform uses a
+different cpal backend module, so each needs its own entry in `CMakeLists.txt`:
+
+| Platform | cpal backend | `CMakeLists.txt` names |
+|---|---|---|
+| Android | AAudio (`ndk`) | `android nativewindow aaudio` |
+| Linux | ALSA | `asound` (via pkg-config `alsa`) |
+| macOS | CoreAudio (`coreaudio-rs`, `objc2-core-audio`) | `-framework CoreAudio`, `-framework AudioToolbox` |
+| Windows | WASAPI | nothing audio-specific (only `bcrypt`, for getrandom) — verified November 2026: the Windows build links and runs. If a later cpal / `windows` crate upgrade fails the link on audio symbols, this row is the place to fix |
+| iOS (dormant) | RemoteIO + `AVAudioSession` (`host/coreaudio/ios/`) | **not implemented** — a revived iOS build will need `AudioToolbox` + `AVFAudio` (or `AVFoundation`), **not** `CoreAudio`; cpal's iOS module never touches the macOS HAL. The `elseif (IOS)` branch of `CMakeLists.txt` links neither today |
+
+macOS was missing its row from the switch away from Qt Multimedia until
+November 2026: the link failed with 19 undefined symbols (`AudioObject*`,
+`AudioHardware*` from CoreAudio; `AudioUnit*`, `AudioComponent*`,
+`AudioOutputUnit*` from AudioToolbox). Nothing caught it because there is no
+macOS CI — build on the Mac before a release.
+
+## macOS minimum version: 14.2
+
+`CMAKE_OSX_DEPLOYMENT_TARGET` (and `LSMinimumSystemVersion`, which
+`build-macos.sh` reads from that same line) is **14.2**, the higher of:
+
+- **12.0** — Qt 6.9.3's frameworks are built with `minos 12.0`;
+- **14.2** — cpal 0.18's loopback module (`host/coreaudio/macos/loopback.rs`,
+  declared unconditionally, no cargo feature to drop it) calls
+  `AudioHardwareCreateProcessTap` / `AudioHardwareDestroyProcessTap`
+  (`API_AVAILABLE(macos(14.2))`). `objc2-core-audio` links them **strongly**:
+
+```
+$ nm -m simsapadhammareader.app/Contents/MacOS/simsapadhammareader | grep -i processtap
+                 (undefined) external _AudioHardwareCreateProcessTap (from CoreAudio)
+                 (undefined) external _AudioHardwareDestroyProcessTap (from CoreAudio)
+```
+
+`external` (not `weak external`) means dyld refuses to launch the app on a
+macOS without them. cpal only *calls* them when opening an input stream on an
+output-only device, which the recorder never does, so weak-linking CoreAudio
+(`-weak_framework CoreAudio`) with a 12.0 floor would be possible — it was
+considered and not chosen, since no pre-14.2 Mac is available to test it.
+Re-run the `nm` check after any cpal / objc2-core-audio upgrade before
+changing the floor in either direction. A Qt upgrade can raise Qt's own floor
+too: check `otool -l` on a Qt framework (`LC_BUILD_VERSION` → `minos`) and take
+the higher of the two.
+
+**What has and has not been tested.** Verified on macOS 26.6.2 (November
+2026): the clean build has zero `ld: warning:` lines, the app installed from
+the DMG launches, recording and playback in Chanting Practice work, the
+microphone prompt appears, and the installed `Info.plist` reads 14.2. That
+machine **cannot** test behaviour on older macOS: every symbol in question
+exists on 26.x. That the 14.2 floor is right and sufficient rests on the `nm`
+evidence above, not on a launch on 14.2 itself.
+
+**Cargo must get the same target.** Corrosion does not forward
+`CMAKE_OSX_DEPLOYMENT_TARGET`, so without
+`corrosion_set_env_vars(simsapa_bridges "MACOSX_DEPLOYMENT_TARGET=…")` rustc and
+cc-rs build the staticlib for rustc's default (11.0). That broke the link once
+the CMake side moved to 14.2: libc++'s headers choose by deployment target
+whether `basic_stringbuf::str()` is instantiated inline or imported from
+`libc++.dylib`, so CMake's `gui.cpp.o` referenced it undefined, the linker
+pulled the staticlib's own `gui.o` (cxx-qt compiles `cpp/gui.cpp` there too) to
+satisfy it, and 36 duplicate symbols followed. `ld -why_load` names the
+culprit symbol.
+
 ## Android JNI context (`ndk_context`) — required, or playback aborts
 
 cpal's AAudio backend reaches the Java side over JNI (e.g. reading the

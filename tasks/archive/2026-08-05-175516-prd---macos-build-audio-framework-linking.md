@@ -1,7 +1,7 @@
 # PRD: Fix the macOS build — CoreAudio/AudioToolbox linking and deployment target
 
 - **Date:** 2026-08-05
-- **Status:** Draft (not yet implemented)
+- **Status:** Done (2026-11-05) — see the task list's Outcome section
 - **Source report:** `../feedback-and-bug-reports/macos-build-error.txt` — note this
   is **outside the git repository** (a sibling of `simsapa/` in the
   `simsapa-ng-project/` working tree), so it is not version-controlled and will

@@ -30,6 +30,11 @@ get_version_from_cargo_toml() {
     fi
 }
 
+# Function to extract the macOS deployment target from CMakeLists.txt
+get_macos_deployment_target() {
+    sed -n 's/^[[:space:]]*set(CMAKE_OSX_DEPLOYMENT_TARGET "\([0-9][0-9.]*\)".*/\1/p' CMakeLists.txt | head -n1
+}
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -199,9 +204,18 @@ update_info_plist() {
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$info_plist" 2>/dev/null || \
         /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$info_plist"
 
-    # Set minimum macOS version
-    /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$info_plist" 2>/dev/null || \
-        /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 11.0" "$info_plist"
+    # Set minimum macOS version — read from CMAKE_OSX_DEPLOYMENT_TARGET in
+    # CMakeLists.txt, the single source of the value (the binary's LC_BUILD_VERSION
+    # minos and this plist key must agree).
+    local min_macos
+    min_macos="$(get_macos_deployment_target)"
+    if [ -z "$min_macos" ]; then
+        print_error "Could not read CMAKE_OSX_DEPLOYMENT_TARGET from CMakeLists.txt"
+        exit 1
+    fi
+    print_status "LSMinimumSystemVersion: $min_macos"
+    /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $min_macos" "$info_plist" 2>/dev/null || \
+        /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $min_macos" "$info_plist"
 
     # Set category
     /usr/libexec/PlistBuddy -c "Set :LSApplicationCategoryType public.app-category.education" "$info_plist" 2>/dev/null || \

@@ -531,7 +531,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `Makefile` - Build shortcuts and common commands
 - `package.json` & `webpack.config.js` - TypeScript/JavaScript build setup
 - `build-appimage.sh` - Linux AppImage build script
-- `build-macos.sh` - macOS .app bundle and DMG build script
+- `build-macos.sh` - macOS .app bundle and DMG build script (`LSMinimumSystemVersion` is read from `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`)
 - `build-windows.ps1` - Windows installer build script (PowerShell)
 - `build-android.sh` - Signed multi-ABI Android AAB/APK build script
   (`make android-aab` / `android-apk`). Pre-flights the Qt-for-Android kits and
@@ -649,6 +649,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   - **Waveform:** `backend/src/waveform.rs` — `get_waveform_peaks()` / `get_audio_duration_ms()` (symphonia; FLAC + MP3).
   - **Android JNI init:** `backend/src/lib.rs` `init_android_context()` (called from `cpp/gui.cpp`) registers Qt's JavaVM + Activity with `ndk_context` so cpal's AAudio backend works.
   - **Mic permission:** native via `cpp/android_helpers.*` + `AssetManager` (not Qt Multimedia).
+  - **Platform link libraries:** the Rust staticlib carries no `#[link]` directives, so `CMakeLists.txt` names each platform's audio libraries (ALSA, AAudio, `CoreAudio` + `AudioToolbox`). macOS minimum is 14.2 (`CMAKE_OSX_DEPLOYMENT_TARGET`, forwarded to cargo and read by `build-macos.sh`). Table: [docs/pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
 
 ### File Saving (user "Save As…")
 - **Binary content:** `save_bytes_to_folder(folder_url, filename, bytes)` is the shared writer under both the text `save_file` and the binary exports (`export_gloss_docx` / `export_chat_docx`); it runs the same desktop/SAF scheme dispatch.

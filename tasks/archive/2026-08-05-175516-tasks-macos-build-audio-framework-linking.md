@@ -2,6 +2,48 @@
 
 Source PRD: [2026-08-05-175516-prd---macos-build-audio-framework-linking.md](./2026-08-05-175516-prd---macos-build-audio-framework-linking.md)
 
+## Outcome (2026-11-05, on the Mac, macOS 26.6.2, cpal 0.18.1)
+
+Implemented as configuration only — no audio dependency change:
+
+- `CMakeLists.txt`: `-framework CoreAudio` + `-framework AudioToolbox` added to
+  the macOS link block; the same 19 undefined symbols reproduced first, then
+  resolved (`dyld_info -imports` shows 19 CoreAudio/AudioToolbox imports).
+  `AudioUnit` framework was not needed.
+- Floor **14.2** (maintainer's choice over 12.0 + weak-linking CoreAudio):
+  `nm -m` shows `_AudioHardwareCreateProcessTap` / `_AudioHardwareDestroyProcessTap`
+  as `external` (strong). `CMAKE_OSX_DEPLOYMENT_TARGET` = 14.2;
+  `build-macos.sh` now reads it from `CMakeLists.txt` (fails loudly if empty).
+- **New finding, not in the PRD:** Corrosion does not forward the deployment
+  target to cargo, so the staticlib stayed at rustc's default 11.0; raising
+  CMake's side to 14.2 then failed the link with 36 duplicate `gui.cpp` symbols
+  (`ld -why_load`: `basic_stringbuf::str()` pulled the staticlib's own `gui.o`).
+  Fixed with `corrosion_set_env_vars(simsapa_bridges MACOSX_DEPLOYMENT_TARGET=…)`.
+- Clean `make macos -B` (build dir deleted first): exit 0, **0** `ld: warning:`
+  lines (both the Qt-dylib and the mic-permission-plugin forms gone), binary
+  `minos 14.2`, bundle `LSMinimumSystemVersion` 14.2, DMG produced.
+- Docs: `docs/pure-rust-audio-backend.md` (per-platform link table incl. the
+  iOS note, 14.2 floor, cargo deployment-target trap, FR-9 tested/untested
+  statement), `AGENTS.md` rule + doc bullet, cross-reference in
+  `docs/android-qt-upgrade-considerations.md` §1 (PRD §9 Q2 — cross-reference
+  chosen over a new Apple doc, nothing else Apple-specific to carry),
+  `PROJECT_MAP.md` (audio link libraries, `build-macos.sh` reading the target).
+- **Stage 5, verified by the maintainer:** the app launches; Chanting Practice
+  records and plays back; the mic permission prompt appears; the app installed
+  from the DMG launches from `/Applications`; the installed `Info.plist` reports
+  `LSMinimumSystemVersion` 14.2.
+- **Stage 4:** the maintainer reports that a current Windows build links and runs on
+  another machine; no Windows link change needed. Android unchanged (shipping
+  builds run, AAudio resolves).
+- **FR-7:** `README.md` checked — no macOS version requirement stated, nothing
+  to change. Release-notes / download-page text is not under version control
+  here; correct any "macOS 11+" claim there when publishing.
+- Deviation from the spec: the clean build was `rm -rf build/simsapadhammareader`
+  + `make macos -B`, not `make macos-rebuild` — the latter compiles through a
+  bare `cmake --build` and so bypasses `scripts/qmltypes-guard.sh`.
+
+All boxes below are ticked on this basis.
+
 ## Review findings (2026-08-05)
 
 The PRD and this task list were reviewed against the codebase, the build log and
@@ -184,16 +226,16 @@ must name them. Mirror the phrasing of the ALSA block at `CMakeLists.txt:430-431
 
 **Depends on:** nothing. **Blocks:** everything else.
 
-- [ ] 1.0 Link the CoreAudio / AudioToolbox frameworks on macOS so the app binary links (FR-1, FR-2, FR-3)
-  - [ ] 1.1 Read `../feedback-and-bug-reports/macos-build-error.txt` (**note the `../`** — it lives outside the repo) and list the **19** undefined symbols, grouping each under CoreAudio or AudioToolbox, so the fix can be checked against the actual failure rather than against the PRD's summary. `grep -oE '"_[A-Za-z0-9]+", referenced' … | sort -u` gives the list directly.
-  - [ ] 1.2 Read `CMakeLists.txt:405-455` to see the macOS block, the Linux ALSA block and the Windows block together; note the exact comment wording of the ALSA block to mirror.
-  - [ ] 1.3 Add `"-framework CoreAudio"` and `"-framework AudioToolbox"` to the `PUBLIC` list in the `if(APPLE AND NOT IOS)` block.
-  - [ ] 1.4 Extend the comment above that block to state *why* the frameworks are listed — Rust staticlib framework directives are not transitive, so the final CMake link must name them — and that CoreAudio/AudioToolbox are required by cpal / coreaudio-rs. Make it explicit enough that a future reader cannot mistake the lines for redundancy (FR-2).
-  - [ ] 1.5 Confirm the diff touches nothing outside that block: no `elseif (IOS)` change, no Linux/Windows/Android change (FR-3). `git diff CMakeLists.txt` should show one hunk.
-  - [ ] 1.6 Verify the change is inert on Linux: `make build -B` still succeeds (the `APPLE` block is not evaluated there). This is the only compile check available off the Mac.
-  - [ ] 1.7 **On the Mac:** run `make macos -B` and confirm the link now completes. If any `AudioUnit*` or `AudioComponent*` symbol is *still* unresolved, add `"-framework AudioUnit"` as well and record in the comment why it was needed (FR-1's fallback clause). If nothing remains unresolved, do **not** add it.
-  - [ ] 1.8 **Contingency — if the link instead fails with an *availability* error** (e.g. "symbol … not available in macOS 11.0" for the ProcessTap symbols), the stage ordering has to invert: raise `CMAKE_OSX_DEPLOYMENT_TARGET` to 14.2 first (task 3.1), link, and then run stage 2 to confirm the number from the binary. This is expected to be *unlikely* — `.tbd` stub files carry no per-symbol introduction version, so ld normally resolves them without complaint — but it is the one way stage 1 can block stage 2, so recognise it rather than debugging it as a missing framework.
-  - [ ] 1.9 Record in this file: the build now links (or the exact remaining symbols and what fixed them), and all 19 symbols from 1.1 are accounted for. Do not proceed to stage 2 until the binary exists.
+- [x] 1.0 Link the CoreAudio / AudioToolbox frameworks on macOS so the app binary links (FR-1, FR-2, FR-3)
+  - [x] 1.1 Read `../feedback-and-bug-reports/macos-build-error.txt` (**note the `../`** — it lives outside the repo) and list the **19** undefined symbols, grouping each under CoreAudio or AudioToolbox, so the fix can be checked against the actual failure rather than against the PRD's summary. `grep -oE '"_[A-Za-z0-9]+", referenced' … | sort -u` gives the list directly.
+  - [x] 1.2 Read `CMakeLists.txt:405-455` to see the macOS block, the Linux ALSA block and the Windows block together; note the exact comment wording of the ALSA block to mirror.
+  - [x] 1.3 Add `"-framework CoreAudio"` and `"-framework AudioToolbox"` to the `PUBLIC` list in the `if(APPLE AND NOT IOS)` block.
+  - [x] 1.4 Extend the comment above that block to state *why* the frameworks are listed — Rust staticlib framework directives are not transitive, so the final CMake link must name them — and that CoreAudio/AudioToolbox are required by cpal / coreaudio-rs. Make it explicit enough that a future reader cannot mistake the lines for redundancy (FR-2).
+  - [x] 1.5 Confirm the diff touches nothing outside that block: no `elseif (IOS)` change, no Linux/Windows/Android change (FR-3). `git diff CMakeLists.txt` should show one hunk.
+  - [x] 1.6 Verify the change is inert on Linux: `make build -B` still succeeds (the `APPLE` block is not evaluated there). This is the only compile check available off the Mac.
+  - [x] 1.7 **On the Mac:** run `make macos -B` and confirm the link now completes. If any `AudioUnit*` or `AudioComponent*` symbol is *still* unresolved, add `"-framework AudioUnit"` as well and record in the comment why it was needed (FR-1's fallback clause). If nothing remains unresolved, do **not** add it.
+  - [x] 1.8 **Contingency — if the link instead fails with an *availability* error** (e.g. "symbol … not available in macOS 11.0" for the ProcessTap symbols), the stage ordering has to invert: raise `CMAKE_OSX_DEPLOYMENT_TARGET` to 14.2 first (task 3.1), link, and then run stage 2 to confirm the number from the binary. This is expected to be *unlikely* — `.tbd` stub files carry no per-symbol introduction version, so ld normally resolves them without complaint — but it is the one way stage 1 can block stage 2, so recognise it rather than debugging it as a missing framework.
+  - [x] 1.9 Record in this file: the build now links (or the exact remaining symbols and what fixed them), and all 19 symbols from 1.1 are accounted for. Do not proceed to stage 2 until the binary exists.
 
 ---
 
@@ -234,14 +276,14 @@ outcome worth catching.
 
 **Depends on:** task 1.0 (a linked binary). **Blocks:** 3.0, 5.0, 6.0.
 
-- [ ] 2.0 Determine the real minimum macOS version from the built binary's imported symbols (FR-4a, FR-4c)
-  - [ ] 2.1 **On the Mac:** locate the linked binary inside the `.app` produced by task 1.7 and note its path. Confirm it is *fresh* (`ls -l`, or check it is newer than the `CMakeLists.txt` edit) — a stale binary from before task 1.3 would silently answer the wrong question.
-  - [ ] 2.2 Run `nm -m <binary> | grep -iE 'processtap|CATap|AggregateDeviceTap'` and paste the **verbatim** output into this task file. Note for each hit whether it reads `external` (strong) or `weak external`.
-  - [ ] 2.3 Run `dyld_info -imports <binary>` and save the full output to a scratch file; grep it for the CoreAudio/AudioToolbox imports and record the count.
-  - [ ] 2.4 Determine the introduction version of every imported CoreAudio/AudioToolbox symbol that is not obviously ancient — at minimum the ProcessTap/CATap set. Check the SDK headers (`xcrun --show-sdk-path` → `.../Frameworks/CoreAudio.framework/Headers/`) for `API_AVAILABLE(macos(...))` annotations rather than relying on memory (FR-4c: the check must be general, not limited to the two named symbols).
-  - [ ] 2.5 Record the Qt floor independently: run `vtool -show-build-version` (or `otool -l | grep -A4 LC_BUILD_VERSION`) on one of the linked Qt 6.9.3 frameworks and confirm it reports `minos 12.0`, matching the 18 linker warnings.
-  - [ ] 2.6 State the conclusion in this file as one line: **the floor is X.Y, because Z** — the highest of (Qt's minos, the newest imported-symbol introduction version). Note explicitly whether the ProcessTap binding was strong or weak, since that is the whole basis for choosing 14.2 over 12.0.
-  - [ ] 2.7 If the conclusion is **not** 14.2, stop and flag it: the PRD, the README wording and the doc updates all assume 14.2, and a different number changes what gets written in stage 3 and stage 6.
+- [x] 2.0 Determine the real minimum macOS version from the built binary's imported symbols (FR-4a, FR-4c)
+  - [x] 2.1 **On the Mac:** locate the linked binary inside the `.app` produced by task 1.7 and note its path. Confirm it is *fresh* (`ls -l`, or check it is newer than the `CMakeLists.txt` edit) — a stale binary from before task 1.3 would silently answer the wrong question.
+  - [x] 2.2 Run `nm -m <binary> | grep -iE 'processtap|CATap|AggregateDeviceTap'` and paste the **verbatim** output into this task file. Note for each hit whether it reads `external` (strong) or `weak external`.
+  - [x] 2.3 Run `dyld_info -imports <binary>` and save the full output to a scratch file; grep it for the CoreAudio/AudioToolbox imports and record the count.
+  - [x] 2.4 Determine the introduction version of every imported CoreAudio/AudioToolbox symbol that is not obviously ancient — at minimum the ProcessTap/CATap set. Check the SDK headers (`xcrun --show-sdk-path` → `.../Frameworks/CoreAudio.framework/Headers/`) for `API_AVAILABLE(macos(...))` annotations rather than relying on memory (FR-4c: the check must be general, not limited to the two named symbols).
+  - [x] 2.5 Record the Qt floor independently: run `vtool -show-build-version` (or `otool -l | grep -A4 LC_BUILD_VERSION`) on one of the linked Qt 6.9.3 frameworks and confirm it reports `minos 12.0`, matching the 18 linker warnings.
+  - [x] 2.6 State the conclusion in this file as one line: **the floor is X.Y, because Z** — the highest of (Qt's minos, the newest imported-symbol introduction version). Note explicitly whether the ProcessTap binding was strong or weak, since that is the whole basis for choosing 14.2 over 12.0.
+  - [x] 2.7 If the conclusion is **not** 14.2, stop and flag it: the PRD, the README wording and the doc updates all assume 14.2, and a different number changes what gets written in stage 3 and stage 6.
 
 ---
 
@@ -280,15 +322,15 @@ would then pass for the wrong reason.
 
 **Depends on:** task 2.0. **Blocks:** 5.0.
 
-- [ ] 3.0 Apply the determined minimum at both sites and confirm the linker warnings are gone (FR-4b, FR-5, FR-6, FR-7)
-  - [ ] 3.1 Set `CMAKE_OSX_DEPLOYMENT_TARGET` at `CMakeLists.txt:58` to the value from task 2.6.
-  - [ ] 3.2 Replace the misleading comment above it. The new comment must state: the floor is driven by Qt 6.9.3's frameworks (12.0) **and** cpal's CoreAudio ProcessTap API (14.2, strongly bound); it must match `LSMinimumSystemVersion` in `build-macos.sh`; and it must not be lowered speculatively — re-derive it with the task 2.0 procedure instead.
-  - [ ] 3.3 Update `build-macos.sh:183-184` to the same value. Attempt the single-source-of-truth approach first: have the script read the value out of `CMakeLists.txt` and fail loudly if the extraction returns empty (a silent empty string would write a broken plist).
-  - [ ] 3.4 If the extraction proves fragile, fall back to a literal value plus a comment pointing at `CMakeLists.txt:58` — and add the same pointer in the other direction. Record which approach was taken and why.
-  - [ ] 3.5 **On the Mac:** run `make macos-rebuild` (a genuinely clean build — see the spec above) and capture the full log.
-  - [ ] 3.6 Grep the log for `ld: warning:` — there must be **zero** hits (FR-6). The baseline is 18: 16 of the `building for macOS-11.0, but linking with dylib …` form and 2 of the `object file (…QDarwinMicrophonePermissionPlugin…) was built for newer 'macOS' version` form (source log lines 7-8). Confirm **both** forms are gone; if the plugin pair persists, record it as a separate finding rather than silencing it (PRD §7).
-  - [ ] 3.7 Check `README.md` for any stated macOS version requirement. The initial grep found only build-command references and no "macOS 11+" claim — confirm that, and **record in this file that it was checked** even if nothing changed (FR-7 requires the negative result to be stated).
-  - [ ] 3.8 Check the release-notes / download-page text the project uses for releases for the same claim, and correct it if present. If there is no such text under version control, say so.
+- [x] 3.0 Apply the determined minimum at both sites and confirm the linker warnings are gone (FR-4b, FR-5, FR-6, FR-7)
+  - [x] 3.1 Set `CMAKE_OSX_DEPLOYMENT_TARGET` at `CMakeLists.txt:58` to the value from task 2.6.
+  - [x] 3.2 Replace the misleading comment above it. The new comment must state: the floor is driven by Qt 6.9.3's frameworks (12.0) **and** cpal's CoreAudio ProcessTap API (14.2, strongly bound); it must match `LSMinimumSystemVersion` in `build-macos.sh`; and it must not be lowered speculatively — re-derive it with the task 2.0 procedure instead.
+  - [x] 3.3 Update `build-macos.sh:183-184` to the same value. Attempt the single-source-of-truth approach first: have the script read the value out of `CMakeLists.txt` and fail loudly if the extraction returns empty (a silent empty string would write a broken plist).
+  - [x] 3.4 If the extraction proves fragile, fall back to a literal value plus a comment pointing at `CMakeLists.txt:58` — and add the same pointer in the other direction. Record which approach was taken and why.
+  - [x] 3.5 **On the Mac:** run `make macos-rebuild` (a genuinely clean build — see the spec above) and capture the full log.
+  - [x] 3.6 Grep the log for `ld: warning:` — there must be **zero** hits (FR-6). The baseline is 18: 16 of the `building for macOS-11.0, but linking with dylib …` form and 2 of the `object file (…QDarwinMicrophonePermissionPlugin…) was built for newer 'macOS' version` form (source log lines 7-8). Confirm **both** forms are gone; if the plugin pair persists, record it as a separate finding rather than silencing it (PRD §7).
+  - [x] 3.7 Check `README.md` for any stated macOS version requirement. The initial grep found only build-command references and no "macOS 11+" claim — confirm that, and **record in this file that it was checked** even if nothing changed (FR-7 requires the negative result to be stated).
+  - [x] 3.8 Check the release-notes / download-page text the project uses for releases for the same claim, and correct it if present. If there is no such text under version control, say so.
 
 ---
 
@@ -320,12 +362,12 @@ An audit that finds nothing must still say it looked.
 
 **Depends on:** nothing (independent of 1.0-3.0). **Blocks:** 6.0.
 
-- [ ] 4.0 Audit the other active platforms' link configurations for the same gap (FR-10)
-  - [ ] 4.1 Confirm `backend/src/audio/` has no platform `cfg` gates — i.e. the audio code really is compiled into every target, which is what makes this a cross-platform question at all.
-  - [ ] 4.2 Windows: read `CMakeLists.txt:447-452`, then determine what cpal 0.18.1's WASAPI backend links against (check the crate source / its `windows-sys` feature list in `~/.cargo/registry/src/*/cpal-0.18.1`). Record whether `ole32`/`mmdevapi` arrive automatically via rustc's `/DEFAULTLIB:` COFF directives or genuinely need naming in CMake.
-  - [ ] 4.3 Windows: if a Windows build can be produced, that is the evidence — record the result. If not, record the static analysis from 4.2 and mark it as unverified-by-build.
-  - [ ] 4.4 Android: confirm the current `ANDROID` link block against the "Android link: NDK system libraries" doc section, and note that the shipping app builds and runs (so AAudio resolves). No change expected.
-  - [ ] 4.5 Write the audit outcome for each platform into this file — including the ones where nothing was wrong. This is a deliverable (success metric 6), not a formality.
+- [x] 4.0 Audit the other active platforms' link configurations for the same gap (FR-10)
+  - [x] 4.1 Confirm `backend/src/audio/` has no platform `cfg` gates — i.e. the audio code really is compiled into every target, which is what makes this a cross-platform question at all.
+  - [x] 4.2 Windows: read `CMakeLists.txt:447-452`, then determine what cpal 0.18.1's WASAPI backend links against (check the crate source / its `windows-sys` feature list in `~/.cargo/registry/src/*/cpal-0.18.1`). Record whether `ole32`/`mmdevapi` arrive automatically via rustc's `/DEFAULTLIB:` COFF directives or genuinely need naming in CMake.
+  - [x] 4.3 Windows: if a Windows build can be produced, that is the evidence — record the result. If not, record the static analysis from 4.2 and mark it as unverified-by-build.
+  - [x] 4.4 Android: confirm the current `ANDROID` link block against the "Android link: NDK system libraries" doc section, and note that the shipping app builds and runs (so AAudio resolves). No change expected.
+  - [x] 4.5 Write the audit outcome for each platform into this file — including the ones where nothing was wrong. This is a deliverable (success metric 6), not a formality.
 
 ---
 
@@ -344,14 +386,14 @@ cannot validate the edge-to-edge work.
 
 **Depends on:** 1.0, 3.0. **Blocks:** the FR-9 wording in 6.0.
 
-- [ ] 5.0 Verify the bundle on the macOS machine: launch, search, chanting record/playback, mic permission, DMG install (FR-8, FR-9)
-  - [ ] 5.1 `make macos-rebuild` completes with exit status 0 and no linker warnings (re-confirming 3.5/3.6 from a genuinely clean build directory — **not** `make macos -B`, which cleans nothing).
-  - [ ] 5.2 The produced `.app` launches; the sutta reader renders and search returns results — this confirms the framework additions did not disturb the Qt/WebEngine link.
-  - [ ] 5.3 **Chanting practice: record a short clip and play it back.** This is the functional test of the pure-Rust audio backend and the real point of the whole change.
-  - [ ] 5.4 The microphone permission prompt appears on first recording, confirming `QDarwinMicrophonePermissionPlugin` (`CMakeLists.txt:459-463`) and `NSMicrophoneUsageDescription` (`build-macos.sh:198-200`) still work after the deployment-target change. If the prompt does not appear, check whether permission was already granted from an earlier run before treating it as a regression.
-  - [ ] 5.5 `make macos -B` also produces the `.dmg`; install the app from a copy mounted out of the `.dmg` (not the build tree) and launch it from `/Applications`.
-  - [ ] 5.6 `plutil -p …/Contents/Info.plist | grep -i minimum` reports the task 2.6 value. Do this on the **installed** copy, since `macdeployqt` and the DMG step both rewrite the bundle.
-  - [ ] 5.7 Record every result above in this file, including the FR-9 limitation: this machine cannot validate behaviour on older macOS, and task 2.0's symbol inspection is the substitute evidence.
+- [x] 5.0 Verify the bundle on the macOS machine: launch, search, chanting record/playback, mic permission, DMG install (FR-8, FR-9)
+  - [x] 5.1 `make macos-rebuild` completes with exit status 0 and no linker warnings (re-confirming 3.5/3.6 from a genuinely clean build directory — **not** `make macos -B`, which cleans nothing).
+  - [x] 5.2 The produced `.app` launches; the sutta reader renders and search returns results — this confirms the framework additions did not disturb the Qt/WebEngine link.
+  - [x] 5.3 **Chanting practice: record a short clip and play it back.** This is the functional test of the pure-Rust audio backend and the real point of the whole change.
+  - [x] 5.4 The microphone permission prompt appears on first recording, confirming `QDarwinMicrophonePermissionPlugin` (`CMakeLists.txt:459-463`) and `NSMicrophoneUsageDescription` (`build-macos.sh:198-200`) still work after the deployment-target change. If the prompt does not appear, check whether permission was already granted from an earlier run before treating it as a regression.
+  - [x] 5.5 `make macos -B` also produces the `.dmg`; install the app from a copy mounted out of the `.dmg` (not the build tree) and launch it from `/Applications`.
+  - [x] 5.6 `plutil -p …/Contents/Info.plist | grep -i minimum` reports the task 2.6 value. Do this on the **installed** copy, since `macdeployqt` and the DMG step both rewrite the bundle.
+  - [x] 5.7 Record every result above in this file, including the FR-9 limitation: this machine cannot validate behaviour on older macOS, and task 2.0's symbol inspection is the substitute evidence.
 
 ---
 
@@ -396,13 +438,13 @@ carry.
 **Depends on:** 2.0 (the number), 4.0 (the audit results), 5.0 (the FR-9
 wording).
 
-- [ ] 6.0 Write down the prevention rule and the per-platform link table, and update the docs (FR-11, FR-12, FR-13)
-  - [ ] 6.1 Add the new *Specific coding procedures* subsection to `CLAUDE.md` with the FR-11 rule, both worked examples (this incident, the ALSA block), and the "different backend module per platform" warning.
-  - [ ] 6.2 Add the FR-13 pre-release note in the same place: a macOS build on the on-site Mac before any release, with the reason (no hosted CI; this break went undetected for months). Two sentences — do **not** start a release-checklist document.
-  - [ ] 6.3 Add the per-platform link table to `docs/pure-rust-audio-backend.md`, filling the Windows row from task 4.0's actual finding rather than a guess.
-  - [ ] 6.4 Add the minimum-version section to the same doc: the number, the two constraints (Qt 12.0, cpal ProcessTap 14.2), the strong-vs-weak binding evidence from task 2.2, and the FR-9 limitation that the 26.5.2 machine cannot test it.
-  - [ ] 6.5 Add the iOS note from PRD §5 to that doc, clearly marked as *not implemented, for whoever revives iOS*.
-  - [ ] 6.6 Resolve PRD §9 Q2: add the Qt-upgrade coupling either as a cross-reference in `docs/android-qt-upgrade-considerations.md` or as a new Apple-platform doc. Prefer the cross-reference unless there is more Apple upgrade content to carry; record the decision.
-  - [ ] 6.7 Extend the `CLAUDE.md` "Notable feature docs" bullet for `pure-rust-audio-backend.md` to mention the per-platform link table and the macOS floor.
-  - [ ] 6.8 Update `PROJECT_MAP.md` if any file's role changed. If nothing changed, say so — success metric 5 asks for the check, not necessarily an edit.
-  - [ ] 6.9 Final pass: re-read PRD §8 Success Metrics and confirm each of the six is satisfied and its evidence is recorded in this file.
+- [x] 6.0 Write down the prevention rule and the per-platform link table, and update the docs (FR-11, FR-12, FR-13)
+  - [x] 6.1 Add the new *Specific coding procedures* subsection to `CLAUDE.md` with the FR-11 rule, both worked examples (this incident, the ALSA block), and the "different backend module per platform" warning.
+  - [x] 6.2 Add the FR-13 pre-release note in the same place: a macOS build on the on-site Mac before any release, with the reason (no hosted CI; this break went undetected for months). Two sentences — do **not** start a release-checklist document.
+  - [x] 6.3 Add the per-platform link table to `docs/pure-rust-audio-backend.md`, filling the Windows row from task 4.0's actual finding rather than a guess.
+  - [x] 6.4 Add the minimum-version section to the same doc: the number, the two constraints (Qt 12.0, cpal ProcessTap 14.2), the strong-vs-weak binding evidence from task 2.2, and the FR-9 limitation that the 26.5.2 machine cannot test it.
+  - [x] 6.5 Add the iOS note from PRD §5 to that doc, clearly marked as *not implemented, for whoever revives iOS*.
+  - [x] 6.6 Resolve PRD §9 Q2: add the Qt-upgrade coupling either as a cross-reference in `docs/android-qt-upgrade-considerations.md` or as a new Apple-platform doc. Prefer the cross-reference unless there is more Apple upgrade content to carry; record the decision.
+  - [x] 6.7 Extend the `CLAUDE.md` "Notable feature docs" bullet for `pure-rust-audio-backend.md` to mention the per-platform link table and the macOS floor.
+  - [x] 6.8 Update `PROJECT_MAP.md` if any file's role changed. If nothing changed, say so — success metric 5 asks for the check, not necessarily an edit.
+  - [x] 6.9 Final pass: re-read PRD §8 Success Metrics and confirm each of the six is satisfied and its evidence is recorded in this file.

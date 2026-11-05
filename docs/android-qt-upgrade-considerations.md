@@ -161,6 +161,13 @@ it is dormant, not useless.
 | `targetSdkVersion` | 36 | `android/build.gradle` `defaultConfig` |
 | `minSdkVersion` | 28 | Matches Qt's declared floor, and is a hard requirement of `libQt6Core` — **raised 2026-08-26, decoupled from the upgrade**; see §2.2 |
 
+**Not Android, but coupled to the same upgrade:** the macOS minimum
+(`CMAKE_OSX_DEPLOYMENT_TARGET`, 14.2) is the higher of Qt's own floor (12.0 for
+6.9.3) and cpal's CoreAudio ProcessTap symbols (14.2). A Qt upgrade that raises
+Qt's macOS floor above 14.2 must raise it too. See
+[pure-rust-audio-backend.md](./pure-rust-audio-backend.md), "macOS minimum
+version".
+
 ---
 
 ## 2. Deferred work, to be picked up with the upgrade
