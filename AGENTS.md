@@ -166,7 +166,10 @@ Notable feature docs:
   notify nothing, because rejecting it skips Qt's quit-on-last-window check and
   strands a live app with no windows. The reuse predicate differs accordingly —
   `visible` (`window_is_open()`) for the pool, **`m_root != nullptr`** for the
-  rest — and each predicate is a bug in the other family. Covers, for the pool: the revive
+  rest — and each predicate is a bug in the other family. **Never bring a window
+  forward with a bare `show()`**: in Qt 6.9.3 it is `showNormal()` on every
+  desktop platform and un-maximizes the window; use
+  `show_window_preserving_state()` (§8 rule 6). Covers, for the pool: the revive
   path in `create_sutta_search_window()` (`clear_all_tabs()` because callers
   assume a blank window, keep the `window_id`, move to the end of the list,
   `show_and_activate_window()`), the two places that must filter on `visible`
