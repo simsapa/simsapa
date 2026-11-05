@@ -50,28 +50,64 @@ extern "C" void mac_activate_app_and_window(unsigned long long winid);
 //                 sees `0` and downgrades activation to "demands attention".
 //                 We feed Qt the most recent X server time captured by the
 //                 hotkey worker before calling requestActivate().
+// Make a top-level window visible without discarding its Maximized /
+// FullScreen state.
+//
+// Never invoke QWindow::show() on a window that may already be maximized:
+// for a top-level window it is showNormal() unless the platform's default
+// state is maximized or full screen (qwindow.cpp, QWindow::show()), and
+// showNormal() is setWindowStates(Qt::WindowNoState) + setVisible(true). Only
+// Android and iOS report a maximized default (ShowIsMaximized); on Windows,
+// macOS, X11 and Wayland show() restores a maximized window to its
+// pre-maximize geometry and takes a full-screen one out of full screen, every
+// time a sutta is sent to it. (A tiling X11 WM ignores the request.)
+//
+// The `visible` property is written, never the "setVisible" slot: the slot
+// is QWindow's, while the property WRITE is QQuickWindowQmlImpl::setVisible,
+// the path QML's own `visible = true` takes. Once a window has been shown,
+// its QML visibility is no longer AutomaticVisibility, so that path applies
+// visible only and keeps the window state.
+//
+// show() is kept for a hidden window in the normal state, where it applies
+// the platform's default state.
+static void show_window_preserving_state(QObject* root) {
+    if (!root) return;
+
+    auto* qw = qobject_cast<QWindow*>(root);
+    if (!qw) {
+        QMetaObject::invokeMethod(root, "show");
+        return;
+    }
+
+    // Clear the minimized flag at the QWindow level so Qt's bookkeeping stays
+    // in sync with the deminiaturize that the native activation in
+    // show_and_activate_window() will trigger. Without this, Qt still believes
+    // the window is minimized until the WM_STATE / NSWindow notification
+    // arrives, which can race subsequent show()/raise() calls. Preserves
+    // Maximized/FullScreen bits.
+    //
+    // On X11 specifically, this is the only Qt-side step needed: the
+    // _NET_ACTIVE_WINDOW message sent afterwards with source = 2 instructs the
+    // WM to deminiaturize *and* switch workspaces if the window is on another
+    // desktop -- EWMH semantics every major WM (Mutter, KWin, Xfwm, i3, qtile,
+    // Openbox, Fluxbox) implements as part of activation.
+    Qt::WindowStates st = qw->windowStates();
+    if (st & Qt::WindowMinimized) {
+        st &= ~Qt::WindowMinimized;
+        qw->setWindowStates(st);
+    }
+
+    if (qw->isVisible() || (st & (Qt::WindowMaximized | Qt::WindowFullScreen))) {
+        root->setProperty("visible", true);
+    } else {
+        QMetaObject::invokeMethod(root, "show");
+    }
+}
+
 static void show_and_activate_window(QObject* root) {
     if (!root) return;
 
-    // Clear the minimized flag at the QWindow level so Qt's bookkeeping stays
-    // in sync with the deminiaturize that the native activation below will
-    // trigger. Without this, Qt still believes the window is minimized until
-    // the WM_STATE / NSWindow notification arrives, which can race subsequent
-    // show()/raise() calls. Preserves Maximized/FullScreen bits.
-    //
-    // On X11 specifically, this is the only Qt-side step needed: the
-    // _NET_ACTIVE_WINDOW message we send afterwards with source = 2 instructs
-    // the WM to deminiaturize *and* switch workspaces if the window is on
-    // another desktop -- EWMH semantics every major WM (Mutter, KWin, Xfwm,
-    // i3, qtile, Openbox, Fluxbox) implements as part of activation.
-    if (auto* qw = qobject_cast<QWindow*>(root)) {
-        Qt::WindowStates st = qw->windowStates();
-        if (st & Qt::WindowMinimized) {
-            qw->setWindowStates(st & ~Qt::WindowMinimized);
-        }
-    }
-
-    QMetaObject::invokeMethod(root, "show");
+    show_window_preserving_state(root);
     QMetaObject::invokeMethod(root, "raise");
 
 #ifdef WITH_X11
@@ -936,7 +972,7 @@ void WindowManager::run_sutta_menu_action(const QString& window_id, const QStrin
     }
 
     // Show and raise the window
-    QMetaObject::invokeMethod(target_window->m_root, "show");
+    show_window_preserving_state(target_window->m_root);
     QMetaObject::invokeMethod(target_window->m_root, "raise");
     QMetaObject::invokeMethod(target_window->m_root, "requestActivate");
 
@@ -980,7 +1016,7 @@ void WindowManager::open_sutta_tab_in_window(const QString& window_id, const QSt
 
     if (target_window && target_window->m_root) {
         // Show and raise the window
-        QMetaObject::invokeMethod(target_window->m_root, "show");
+        show_window_preserving_state(target_window->m_root);
         QMetaObject::invokeMethod(target_window->m_root, "raise");
 
         // Show the sutta in a new tab
@@ -1017,7 +1053,7 @@ void WindowManager::show_chapter_in_sutta_window(const QString& window_id, const
 
     if (target_window && target_window->m_root) {
         // Show and raise the window
-        QMetaObject::invokeMethod(target_window->m_root, "show");
+        show_window_preserving_state(target_window->m_root);
         QMetaObject::invokeMethod(target_window->m_root, "raise");
 
         // Show the chapter in the HTML view (replace current tab, don't create new)

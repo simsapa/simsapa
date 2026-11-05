@@ -198,12 +198,12 @@ $toggle_gap: 6px;
     }
 
     .footnote-item {
-        gap: 8px;
-        flex-direction: column; // Stack number and content vertically on mobile
+        gap: 6px;
     }
 
     .footnote-number {
-        align-self: flex-start;
+        min-width: 24px;
+        padding: 0 2px;
     }
 
     .footnote-content {

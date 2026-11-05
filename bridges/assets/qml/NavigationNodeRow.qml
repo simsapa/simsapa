@@ -152,7 +152,12 @@ Frame {
     contentItem: MouseArea {
         implicitWidth: row_column.implicitWidth
         implicitHeight: row_column.implicitHeight
-        enabled: root.is_tappable
+        // Never `enabled: false`: `enabled` is inherited, so a disabled
+        // MouseArea would draw every label in the theme's *disabled* text
+        // colour (light grey) and disable the Enter button too -- which is
+        // what happened to branch hits in the filter list. Refusing the
+        // button leaves the row's contents enabled.
+        acceptedButtons: root.is_tappable ? Qt.LeftButton : Qt.NoButton
         cursorShape: root.is_tappable ? Qt.PointingHandCursor : Qt.ArrowCursor
 
         onClicked: {
@@ -174,8 +179,8 @@ Frame {
                 visible: root.is_filter_row && root.breadcrumb_text.length > 0
                 Layout.fillWidth: true
                 text: root.breadcrumb_text
-                font.pointSize: Math.max(7, root.pointSize - 3)
-                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.7)
+                font.pointSize: Math.max(7, root.pointSize - 2)
+                color: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.85)
                 elide: Text.ElideLeft
             }
 

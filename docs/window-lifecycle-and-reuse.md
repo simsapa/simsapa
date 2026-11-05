@@ -181,7 +181,9 @@ Four things in that shape are load-bearing:
 1. **`show_and_activate_window()`, not `show`/`raise`/`requestActivate`.** That
    helper handles X11 focus-stealing prevention, the Windows foreground-stealing
    demotion and the macOS app-level activate. Two reuse loops used the raw
-   triple and silently lost window activation on those platforms.
+   triple and silently lost window activation on those platforms. It also
+   makes the window visible without `show()`, which would un-maximize it on
+   every desktop platform (§8 rule 6).
 2. **The predicate is `m_root != nullptr`.** See §0. After the close path
    removes the wrapper from the list, a wrapper in the list is by construction a
    live one, so this degrades to a pointer-validity check against a failed
@@ -488,6 +490,28 @@ missing from them.
    and those windows host `WebEngineView`s (§5a).
 5. **Do not extend a mobile-only refuse-to-close to desktop** to solve a
    lifetime problem. Deferred destruction (§5b) is the answer.
+6. **Never call `show()` on a window that may already be open; use
+   `show_window_preserving_state()`** (or `show_and_activate_window()`, which
+   calls it). For a top-level window, Qt 6.9.3's `QWindow::show()` is
+   `showNormal()` (`setWindowStates(Qt::WindowNoState)` + `setVisible(true)`).
+   The only exception is a platform that reports a maximized or full-screen
+   default, and that is only Android and iOS. So on Windows, macOS, X11 and
+   Wayland, every `show()` used to bring a window forward un-maximizes it and
+   takes it out of full screen. On Windows this happened on every "Send to
+   Gloss" and every Sutta Navigation open, which un-maximized the reader
+   window. A tiling X11 WM such as qtile ignores the request, so the
+   development desktop does not show the bug. Test it on a floating WM or
+   on Windows.
+
+   The helper writes the **`visible` property**, never the `setVisible` slot.
+   `QQuickWindowQmlImpl::setVisible` is a plain method reached only through
+   the property's WRITE. The slot is `QWindow`'s and skips the QML window's
+   own handling. Once a window has been shown, its QML `visibility` holds its
+   real state, not `AutomaticVisibility`, so the property write applies
+   visibility only and keeps Maximized/FullScreen. That includes a pooled
+   window that was closed (hidden) while maximized: it reopens maximized.
+   `show()` is still used for a hidden window in the normal state, where it
+   applies the platform default (maximized on Android).
 
 ## 9. The mobile window switcher
 
