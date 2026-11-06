@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, Context};
 
 use simsapa_backend::logger;
-use simsapa_backend::helpers::{run_fts5_indexes_sql_script, consistent_niggahita};
+use simsapa_backend::helpers::consistent_niggahita;
+use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, FtsScript};
 
 use crate::import_stardict_dictionary;
 use crate::bootstrap::source_paths;
@@ -149,6 +150,5 @@ pub fn convert_dpd_res_niggahita() -> Result<()> {
 pub fn create_dictionaries_fts5_indexes(assets_dir: &Path) -> Result<()> {
     logger::info("=== create_dictionaries_fts5_indexes() ===");
     let dict_db_path = assets_dir.join("dictionaries.sqlite3");
-    let sql_script_path = PathBuf::from("../scripts/dictionaries-fts5-indexes.sql");
-    run_fts5_indexes_sql_script(&dict_db_path, &sql_script_path)
+    run_fts5_script_on_path(&dict_db_path, FtsScript::Dictionaries)
 }

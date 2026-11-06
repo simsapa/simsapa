@@ -117,6 +117,3 @@ BEGIN
 END;
 
 INSERT INTO bold_definitions_bold_fts(bold_definitions_bold_fts) VALUES('optimize');
-
--- Single VACUUM at the end of the script.
-VACUUM;

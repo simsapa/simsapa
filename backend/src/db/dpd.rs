@@ -14,6 +14,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::db::dpd_models::*;
 use crate::db::DatabaseHandle;
+use crate::db::fts_scripts::{run_fts5_script, FtsScript};
 
 use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for_sqlite};
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
@@ -3185,35 +3186,13 @@ pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<(), diesel::result::Erro
 
     info("Successfully created DPD B-tree indexes");
 
-    // Close the database connection before running FTS5 indexes
-    // The helper function uses sqlite3 CLI which requires exclusive access
-    drop(db_conn);
-
-    // Execute DPD FTS5 indexes SQL script using sqlite3 CLI
-    // FIXME: This is OK during the boostrap procedure but we can't rely on sqlite3 when the user migrates a newly downloaded DPD db.
-    info("Executing DPD FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to bootstrap_cli/ module folder
-    let fts5_script_path = std::path::PathBuf::from("../scripts/dpd-fts5-indexes.sql");
-
-    if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &fts5_script_path) {
-        return Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::Unknown,
-            Box::new(format!("Failed to run DPD FTS5 indexes script: {}", e)),
-        ));
-    }
-
-    info("Successfully created DPD FTS5 indexes");
-
-    // Execute DPD bold_definitions FTS5 indexes SQL script using sqlite3 CLI
-    info("Executing DPD bold_definitions FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to bootstrap_cli/ module folder
-    let bold_defs_fts5_script_path = std::path::PathBuf::from("../scripts/dpd-bold-definitions-fts5-indexes.sql");
-
-    if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &bold_defs_fts5_script_path) {
-        return Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::Unknown,
-            Box::new(format!("Failed to run DPD bold_definitions FTS5 indexes script: {}", e)),
-        ));
+    for script in [FtsScript::Dpd, FtsScript::DpdBoldDefinitions] {
+        if let Err(e) = run_fts5_script(&mut db_conn, script) {
+            return Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::Unknown,
+                Box::new(format!("{:#}", e)),
+            ));
+        }
     }
 
     info("Successfully created DPD bold_definitions FTS5 indexes");

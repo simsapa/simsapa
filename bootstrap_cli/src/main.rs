@@ -196,7 +196,7 @@ fn suttacentral_lang_code_to_name() -> Result<(), String> {
 fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), String> {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use simsapa_backend::epub_import::import_epub_to_db;
-    use simsapa_backend::helpers::run_fts5_indexes_sql_script;
+    use simsapa_backend::db::fts_scripts::{run_fts5_script, FtsScript};
 
     println!("Importing EPUB file...");
     println!("Database: {:?}", db_path);
@@ -243,8 +243,7 @@ fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), S
 
         // Run the books FTS5 indexes script
         println!("Creating FTS5 indexes for books...");
-        let sql_script_path = PathBuf::from("../scripts/books-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(db_path, &sql_script_path)
+        run_fts5_script(&mut conn, FtsScript::Books)
             .map_err(|e| format!("Failed to run FTS5 indexes script: {}", e))?;
     } else {
         println!("Books tables already exist, skipping migrations.");
@@ -264,7 +263,7 @@ fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), S
 fn import_html(db_path: &Path, html_path: &Path, book_uid: &str) -> Result<(), String> {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use simsapa_backend::html_import::import_html_to_db;
-    use simsapa_backend::helpers::run_fts5_indexes_sql_script;
+    use simsapa_backend::db::fts_scripts::{run_fts5_script, FtsScript};
 
     println!("Importing HTML file...");
     println!("Database: {:?}", db_path);
@@ -311,8 +310,7 @@ fn import_html(db_path: &Path, html_path: &Path, book_uid: &str) -> Result<(), S
 
         // Run the books FTS5 indexes script
         println!("Creating FTS5 indexes for books...");
-        let sql_script_path = PathBuf::from("../scripts/books-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(db_path, &sql_script_path)
+        run_fts5_script(&mut conn, FtsScript::Books)
             .map_err(|e| format!("Failed to run FTS5 indexes script: {}", e))?;
     } else {
         println!("Books tables already exist, skipping migrations.");

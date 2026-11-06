@@ -67,6 +67,3 @@ END;
 
 -- Optimize the FTS index
 INSERT INTO book_spine_items_fts(book_spine_items_fts) VALUES('optimize');
-
--- Vacuum to reclaim space and optimize database
-VACUUM;

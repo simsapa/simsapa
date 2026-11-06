@@ -7,7 +7,9 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 
 ### Backend (`backend/`)
 - `backend/src/helpers.rs` - `run_fts5_indexes_sql_script()` (to replace), `analyze_sqlite_db_via_cli()`, `consistent_niggahita()`, `gloss_option_uid_matches()`, `GlossWordCacheExportEntry` (add `selected_lemma`), `parse_word_selection_response()`.
-- `backend/src/db/fts_scripts.rs` - **new**: the embedded FTS5 scripts and the Diesel runner.
+- `backend/src/db/fts_scripts.rs` - **new**: `FtsScript` (the five embedded scripts), `run_fts5_script()` (`batch_execute`), `vacuum_db()` and `analyze_db()` for the bootstrap.
+- `backend/examples/fts_runner_equivalence.rs` - **new**: the §7.3 item 7 gate, CLI runner vs Diesel runner on copies of the dist databases.
+- `backend/tests/test_fts_runtime_writes.rs` - takes its FTS SQL from `FtsScript`.
 - `backend/src/db/fts_trigger_tests.rs` - Diesel FTS tests; add `dpd-fts5-indexes.sql`.
 - `backend/src/db/mod.rs` - `fts5_integrity_check()`, `*_FTS_TABLES`, DB handles.
 - `backend/src/db/dpd.rs` - `import_migrate_dpd()`, `migrate_dpd()`, `create_dpd_indexes()`, `populate_dpd_construction_summaries()`, the three DPD HTML conversions, `dpd_release_version()`.
@@ -44,7 +46,7 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `bootstrap_cli/src/bootstrap/source_paths.rs` - DPD path constants.
 - `bootstrap_cli/src/bootstrap/preflight.rs` - `bootstrap_sources()`, DPD res/ entry.
 - `bootstrap_cli/src/bootstrap/dpd.rs` - `dpd_bootstrap()`, `dpd_migrate()`, `convert_dpd_res_niggahita()` (delete), `create_dictionaries_fts5_indexes()`.
-- `bootstrap_cli/src/bootstrap/mod.rs` - `check_fts_tables()`, `analyze_sqlite_db_via_cli` calls, the VACUUM step.
+- `bootstrap_cli/src/bootstrap/mod.rs` - `check_fts_tables()`, then `vacuum_db()` + `analyze_db()` before each archive.
 - `bootstrap_cli/src/bootstrap/appdata.rs` - FTS script calls.
 - `bootstrap_cli/src/main.rs` - FTS script calls, `import_stardict_dictionary()`, the new `rebuild-dpd` command.
 - `bootstrap_cli/src/import_gloss_data.rs` - uid normalisation, `selected_uid_is_valid()`, the phrase seeder.
@@ -75,7 +77,7 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 
 ### Docs
 - `docs/dpd-upgrades.md` - **new**.
-- `docs/dict-words-fts5-implementation.md` - the `batch_execute` rule.
+- `docs/dict-words-fts5-implementation.md` - the `batch_execute` rule ("Running the scripts").
 - `docs/gloss-ai-word-selection.md` - the uid section and examples.
 - `docs/simsapa-cli-and-localhost-api.md` - `simsapa dpd …`, `/dpd_res/<path..>` (self-contained, no repo paths).
 - `docs/backend-cli-and-npm-package.md` - the commands, the new marker.
@@ -110,15 +112,15 @@ Update the file after completing each sub-task, not just after completing an ent
 **Specs.** One function, e.g. `db::fts_scripts::run_fts5_script(conn: &mut SqliteConnection, script: FtsScript) -> Result<()>`, where `FtsScript` names one of the five embedded scripts (`include_str!("../../../scripts/…")`) and the call is `conn.batch_execute(sql)`, **never** `sql_query` (which runs only the first statement; §7.1.1). No `VACUUM` in any script; a separate `vacuum_db(path)` for the bootstrap only, run outside any transaction. `ANALYZE` through `DatabaseHandle::analyze`.
 **Depends on:** nothing. **Gate:** 1.4 must pass before 1.6 deletes the CLI runner.
 
-- [ ] 1.0 Run the FTS5 scripts through Diesel, and prove the indexes are unchanged (FR-15a, §7.1.1, §7.3 item 7)
-  - [ ] 1.1 Add `backend/src/db/fts_scripts.rs`: the `FtsScript` enum with the five embedded scripts, `run_fts5_script()` using `batch_execute`, and `vacuum_db()`. Make `fts_trigger_tests.rs` take its SQL from `FtsScript`, so there is one copy of each `include_str!`.
-  - [ ] 1.2 Remove the trailing `VACUUM;` (and its comment) from all five `scripts/*-fts5-indexes.sql`. Check that no script contains a `sqlite3` dot-command or a statement that `batch_execute` rejects.
-  - [ ] 1.3 Add a `dpd-fts5-indexes.sql` test to `fts_trigger_tests.rs`, in the same shape as the other three: build a small `dpd_headwords` / `dpd_roots` fixture, run the script, check `MATCH`, the app's `LIKE`, and `integrity-check`.
-  - [ ] 1.4 **Equivalence gate (§7.3 item 7).** Write an `#[ignore]`d test or an example binary that copies the dist `appdata.sqlite3`, `dictionaries.sqlite3` and `dpd.sqlite3` to a temp folder, drops their FTS5 tables and triggers, and rebuilds them twice: with the old `run_fts5_indexes_sql_script()` (CLI) and with `run_fts5_script()` (Diesel). For each pair compare: the `sqlite_master` SQL of every `*_fts` object and trigger; `integrity-check`; row counts of `<t>_docsize` and `<t>_data`; and the count and ordered ids of `MATCH` and of the `query_task.rs` Contains / Headword / bold-definition queries for a fixed term list (`dhamma`, `saṁvega`, `kho` (3 chars), `ānāpāna` inside compounds, `monastery`, `zzqx` (no hits)). Run `fts_bench` on both builds; require equal counts and uid hashes. Record the results in the commit message. **Any difference stops the task.**
-  - [ ] 1.5 Switch every caller to the Diesel runner: `bootstrap/appdata.rs` (appdata + books), `bootstrap/dpd.rs` `create_dictionaries_fts5_indexes()`, `bootstrap_cli/src/main.rs` (two sites, ~lines 199 and 267), and `create_dpd_indexes()` in `backend/src/db/dpd.rs` (the two `../scripts/` paths). Run `vacuum_db()` in the bootstrap where the scripts used to vacuum, and replace `analyze_sqlite_db_via_cli` with `DatabaseHandle::analyze`.
-  - [ ] 1.6 Delete `run_fts5_indexes_sql_script()` and `analyze_sqlite_db_via_cli()` once nothing calls them, and remove any `sqlite3` program check from the preflight. Grep for `Command::new("sqlite3")`: it must be gone from `backend/` and `bootstrap_cli/`.
-  - [ ] 1.7 Add the `batch_execute` rule (and the 2025-09 symptom it explains) to `docs/dict-words-fts5-implementation.md`. Fix the FTS sections of `CLAUDE.md` and `docs/user-data-and-sqlite-analyze.md` that name the CLI.
-  - [ ] 1.8 Run `make rust-test`, then a full bootstrap with `sqlite3` removed from `PATH` (e.g. `env PATH=<dir without sqlite3> …`). Check `integrity-check` on all FTS tables and compare search results with the previous dist.
+- [x] 1.0 Run the FTS5 scripts through Diesel, and prove the indexes are unchanged (FR-15a, §7.1.1, §7.3 item 7)
+  - [x] 1.1 Add `backend/src/db/fts_scripts.rs`: the `FtsScript` enum with the five embedded scripts, `run_fts5_script()` using `batch_execute`, and `vacuum_db()`. Make `fts_trigger_tests.rs` take its SQL from `FtsScript`, so there is one copy of each `include_str!`.
+  - [x] 1.2 Remove the trailing `VACUUM;` (and its comment) from all five `scripts/*-fts5-indexes.sql`. Check that no script contains a `sqlite3` dot-command or a statement that `batch_execute` rejects.
+  - [x] 1.3 Add a `dpd-fts5-indexes.sql` test to `fts_trigger_tests.rs`, in the same shape as the other three: build a small `dpd_headwords` / `dpd_roots` fixture, run the script, check `MATCH`, the app's `LIKE`, and `integrity-check`.
+  - [x] 1.4 **Equivalence gate (§7.3 item 7).** Write an `#[ignore]`d test or an example binary that copies the dist `appdata.sqlite3`, `dictionaries.sqlite3` and `dpd.sqlite3` to a temp folder, drops their FTS5 tables and triggers, and rebuilds them twice: with the old `run_fts5_indexes_sql_script()` (CLI) and with `run_fts5_script()` (Diesel). For each pair compare: the `sqlite_master` SQL of every `*_fts` object and trigger; `integrity-check`; row counts of `<t>_docsize` and `<t>_data`; and the count and ordered ids of `MATCH` and of the `query_task.rs` Contains / Headword / bold-definition queries for a fixed term list (`dhamma`, `saṁvega`, `kho` (3 chars), `ānāpāna` inside compounds, `monastery`, `zzqx` (no hits)). Run `fts_bench` on both builds; require equal counts and uid hashes. Record the results in the commit message. **Any difference stops the task.**
+  - [x] 1.5 Switch every caller to the Diesel runner: `bootstrap/appdata.rs` (appdata + books), `bootstrap/dpd.rs` `create_dictionaries_fts5_indexes()`, `bootstrap_cli/src/main.rs` (two sites, ~lines 199 and 267), and `create_dpd_indexes()` in `backend/src/db/dpd.rs` (the two `../scripts/` paths). Run `vacuum_db()` in the bootstrap where the scripts used to vacuum, and replace `analyze_sqlite_db_via_cli` with `DatabaseHandle::analyze`.
+  - [x] 1.6 Delete `run_fts5_indexes_sql_script()` and `analyze_sqlite_db_via_cli()` once nothing calls them, and remove any `sqlite3` program check from the preflight. Grep for `Command::new("sqlite3")`: it must be gone from `backend/` and `bootstrap_cli/`.
+  - [x] 1.7 Add the `batch_execute` rule (and the 2025-09 symptom it explains) to `docs/dict-words-fts5-implementation.md`. Fix the FTS sections of `CLAUDE.md` and `docs/user-data-and-sqlite-analyze.md` that name the CLI.
+  - [x] 1.8 Run `make rust-test`, then a full bootstrap with `sqlite3` removed from `PATH` (e.g. `env PATH=<dir without sqlite3> …`). Check `integrity-check` on all FTS tables and compare search results with the previous dist.
 
 ### 2.0 Make the DPD import and migration functions take explicit databases and paths
 

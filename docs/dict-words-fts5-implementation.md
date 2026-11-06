@@ -99,6 +99,28 @@ These indexes will be particularly beneficial when the source_uid filtering feat
 - After the last import the bootstrap runs `integrity-check` with rank 1 on every FTS table (`check_fts_tables()`); an error stops it. `import-cst` does the same for `suttas_fts`.
 - Runtime writes (language downloads, StarDict import, rename, delete) all go through the triggers.
 
+## Running the scripts
+
+The five scripts are embedded in the binary (`backend/src/db/fts_scripts.rs`,
+`FtsScript`), and `run_fts5_script()` is the only way they are run: by the
+bootstrap, by `create_dpd_indexes()`, by the tests, and on a user's device by
+the DPD upgrade. No `sqlite3` program is needed.
+
+**Run a script with `batch_execute`, never with `diesel::sql_query(…).execute()`.**
+`batch_execute` calls `sqlite3_exec`, which runs every statement of the
+script. `sql_query` prepares only the first statement and drops the rest
+without an error, so a script run that way creates its FTS5 table, never
+populates it, and creates no triggers: the table exists and its index is empty.
+That symptom once led to the scripts being run through the `sqlite3` program,
+on the guess that Diesel's SQLite lacked the trigram tokenizer. It does not: the
+bundled SQLite has FTS5, `trigram` is part of FTS5, and a missing tokenizer
+makes `CREATE VIRTUAL TABLE` fail rather than create an empty table.
+
+The scripts do not `VACUUM`. The bootstrap vacuums each shipped database once,
+with `vacuum_db()`, before its `ANALYZE` and its archive. The runtime never
+vacuums: on `dpd.sqlite3` that rewrites 2.4 GB and needs as much free space
+again. `VACUUM` cannot run inside a transaction.
+
 ## Testing Recommendations
 
 1. **Functional Testing:**

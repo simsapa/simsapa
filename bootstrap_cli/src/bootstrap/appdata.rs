@@ -9,7 +9,7 @@ use simsapa_backend::logger;
 use simsapa_backend::db::appdata::{ScDataVersion, SC_DATA_COMMIT_KEY, SC_DATA_DATE_KEY};
 use simsapa_backend::db::appdata_models::NewAppSetting;
 use simsapa_backend::db::appdata_schema::app_settings;
-use simsapa_backend::helpers::run_fts5_indexes_sql_script;
+use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, FtsScript};
 
 use crate::bootstrap::{create_database_connection, run_migrations, ensure_directory_exists};
 
@@ -71,13 +71,8 @@ impl AppdataBootstrap {
     pub fn create_fts5_indexes(&self) -> Result<()> {
         let appdata_db_path = &self.output_path;
 
-        // Run appdata FTS5 indexes
-        let appdata_sql_script_path = PathBuf::from("../scripts/appdata-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(appdata_db_path, &appdata_sql_script_path)?;
-
-        // Run books FTS5 indexes
-        let books_sql_script_path = PathBuf::from("../scripts/books-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(appdata_db_path, &books_sql_script_path)?;
+        run_fts5_script_on_path(appdata_db_path, FtsScript::Appdata)?;
+        run_fts5_script_on_path(appdata_db_path, FtsScript::Books)?;
 
         Ok(())
     }

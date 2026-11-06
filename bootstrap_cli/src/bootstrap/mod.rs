@@ -38,7 +38,7 @@ use simsapa_backend::db::{
 use simsapa_backend::{init_app_data, get_app_data, get_app_globals, get_create_simsapa_dir, get_create_simsapa_app_assets_path, normalize_lexically, logger};
 use simsapa_backend::search::indexer;
 use simsapa_backend::dictionary_manager_core::import_user_zip;
-use simsapa_backend::helpers::analyze_sqlite_db_via_cli;
+use simsapa_backend::db::fts_scripts::{analyze_db, vacuum_db};
 use simsapa_backend::stardict_parse::StardictImportProgress;
 
 pub use helpers::SuttaData;
@@ -441,13 +441,15 @@ RELEASE_CHANNEL=development
         // SQLite picks a catastrophic plan for Headword Match — see
         // tasks/prd-fixing-headword-match-slow-query.md.
         check_fts_tables(&dict_db_path, &DICTIONARIES_FTS_TABLES)?;
-        analyze_sqlite_db_via_cli(&dict_db_path)?;
+        vacuum_db(&dict_db_path)?;
+        analyze_db(&dict_db_path)?;
         create_database_archive(&dict_db_path, &release_databases_dir)?;
 
         logger::info("=== Create dpd.tar.bz2 ===");
         let dpd_db_path = assets_dir.join("dpd.sqlite3");
         check_fts_tables(&dpd_db_path, &DPD_FTS_TABLES)?;
-        analyze_sqlite_db_via_cli(&dpd_db_path)?;
+        vacuum_db(&dpd_db_path)?;
+        analyze_db(&dpd_db_path)?;
         create_database_archive(&dpd_db_path, &release_databases_dir)?;
     } else {
         logger::info("Skipping DPD initialization and bootstrap");
@@ -608,7 +610,8 @@ RELEASE_CHANNEL=development
         logger::info("=== Create appdata.tar.bz2 ===");
         let appdata_db_path = assets_dir.join("appdata.sqlite3");
         check_fts_tables(&appdata_db_path, &APPDATA_FTS_TABLES)?;
-        analyze_sqlite_db_via_cli(&appdata_db_path)?;
+        vacuum_db(&appdata_db_path)?;
+        analyze_db(&appdata_db_path)?;
         create_appdata_archive(&assets_dir, &release_databases_dir)?;
     }
 

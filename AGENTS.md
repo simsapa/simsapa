@@ -1902,7 +1902,12 @@ The fulltext search tables are FTS5 virtual tables created by the SQL scripts in
 `dpd-bold-definitions-fts5-indexes.sql`). There is **no Diesel migration** for
 these — the scripts drop and recreate the FTS table + sync triggers, so any
 schema change requires a **manual re-bootstrap** of the affected DB (run the
-script again). The scripts are run from the bootstrap code in `bootstrap_cli/src/`.
+script again). The scripts are embedded in the binary and run through Diesel by
+`db::fts_scripts::run_fts5_script()`, from the bootstrap and from
+`create_dpd_indexes()`; no `sqlite3` program is needed. **Run a multi-statement
+script with `batch_execute`, never `sql_query(…).execute()`**, which runs only
+the first statement and silently leaves the FTS table empty. The scripts do not
+`VACUUM`; the bootstrap calls `vacuum_db()` once per shipped database.
 
 **IMPORTANT — store the source row id as the FTS5 `rowid`, never as an
 `UNINDEXED` column.** FTS5 has no secondary indexes, so a lookup like
