@@ -566,6 +566,22 @@ Notable feature docs:
   store-gated update notice (2.4.5(vii)), iCloud-backup exclusion of the
   downloaded databases, and the sandbox's effect on `SIMSAPA_DIR` and the
   global hotkey's synthetic ⌘C.
+- [macOS: distributing without a Developer ID](./docs/macos-unsigned-distribution.md) —
+  why a downloaded DMG said **"Simsapa is damaged and can't be opened"**: the
+  bundle was effectively unsigned (main executable `linker-signed`,
+  `Info.plist=not bound`, no seal), because **the Qt 6.9.3 `macdeployqt` signs
+  nothing by default**. A quarantined bundle that fails
+  `codesign --verify --deep --strict` gets "damaged" with no way through; a
+  verified ad-hoc one gets "Apple could not verify…" plus **Open Anyway** in
+  Privacy & Security. `build-macos.sh`'s `code_sign()` ad-hoc signs after the
+  last change to the bundle and fails the build if it does not verify, and
+  `verify_dmg_app()` verifies the copy **inside the finished DMG** (the DMG's
+  license agreement makes `hdiutil attach` cancel unless fed `Y`). **No
+  hardened runtime** on the ad-hoc build — measured on macOS 26 to give the
+  same prompt with and without it. Never judge Gatekeeper from a local build
+  (no quarantine attribute); the page has the hand-set-quarantine test, the
+  user's first-launch steps, and the `xattr -dr` fallback (on the app, not the
+  DMG).
 - [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
   why the app's top-margin setting is only *extra* space: Qt's
   `ApplicationWindow` already binds its four padding properties to the window

@@ -533,7 +533,7 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 - `Makefile` - Build shortcuts and common commands
 - `package.json` & `webpack.config.js` - TypeScript/JavaScript build setup
 - `build-appimage.sh` - Linux AppImage build script
-- `build-macos.sh` - macOS .app bundle and DMG build script (`LSMinimumSystemVersion` is read from `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`)
+- `build-macos.sh` - macOS .app bundle and DMG build script (`LSMinimumSystemVersion` is read from `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`). `code_sign()` ad-hoc signs the bundle after `macdeployqt` (or with `APPLE_SIGNING_IDENTITY`) and fails the build if `codesign --verify --deep --strict` fails; `verify_dmg_app()` verifies the app copy inside the finished DMG. See [docs/macos-unsigned-distribution.md](./docs/macos-unsigned-distribution.md)
 - `build-windows.ps1` - Windows installer build script (PowerShell)
 - `build-android.sh` - Signed multi-ABI Android AAB/APK build script
   (`make android-aab` / `android-apk`). Pre-flights the Qt-for-Android kits and

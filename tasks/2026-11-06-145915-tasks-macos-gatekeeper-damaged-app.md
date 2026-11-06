@@ -63,34 +63,34 @@ Update the file after completing each sub-task, not just after completing an ent
 
 ## Tasks
 
-- [ ] 1.0 Diagnose the released v1.2.0-alpha.2 bundle
-  - [ ] 1.1 Download `https://github.com/simsapa/simsapa/releases/download/v1.2.0-alpha.2/Simsapa-v1.2.0-alpha.2-arm64.dmg`
+- [x] 1.0 Diagnose the released v1.2.0-alpha.2 bundle
+  - [x] 1.1 Download `https://github.com/simsapa/simsapa/releases/download/v1.2.0-alpha.2/Simsapa-v1.2.0-alpha.2-arm64.dmg`
         (or use the old `dist/Simsapa.app` if it is still from that build), mount
         it read-only with `hdiutil attach -nobrowse -readonly`.
-  - [ ] 1.2 Run `codesign -dvv` and `codesign --verify --deep --strict --verbose=2`
+  - [x] 1.2 Run `codesign -dvv` and `codesign --verify --deep --strict --verbose=2`
         on the `.app` inside the mount; also on
         `Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app`.
         Record the output in the PRD's Open Question 1.
-  - [ ] 1.3 Conclude: verify fails / `linker-signed` / `Info.plist=not bound` →
+  - [x] 1.3 Conclude: verify fails / `linker-signed` / `Info.plist=not bound` →
         the signature was the cause. Verify passes → it was not; record the
         alternative candidates (PRD §10.1) and ask the maintainer for the other
         users' macOS version, browser, and the exact steps they took.
-- [ ] 2.0 Build with the new script and verify
-  - [ ] 2.1 `make macos -B`; confirm the log shows the ad-hoc signing and
+- [x] 2.0 Build with the new script and verify
+  - [x] 2.1 `make macos -B`; confirm the log shows the ad-hoc signing and
         "Code signing completed and verified", and that the build does not stop.
-  - [ ] 2.2 Run `codesign -dvv` and `--verify --deep --strict` on
+  - [x] 2.2 Run `codesign -dvv` and `--verify --deep --strict` on
         `dist/Simsapa.app`; expect `Sealed Resources version=2` and
         `valid on disk`.
-  - [ ] 2.3 Launch `dist/Simsapa.app` locally and open a sutta, to confirm the
+  - [x] 2.3 Launch `dist/Simsapa.app` locally and open a sutta, to confirm the
         re-sign did not break QtWebEngine (no quarantine involved here; this only
         checks that the app runs).
 - [ ] 3.0 A/B test the ad-hoc variants
-  - [ ] 3.1 Variant A = current code (ad-hoc, no hardened runtime). Copy the app
+  - [x] 3.1 Variant A = current code (ad-hoc, no hardened runtime). Copy the app
         out of the built DMG into `~/Applications` of a second account, set the
         quarantine attribute by hand (PRD §8) and `open` it. Record the exact
         dialog text and buttons, whether Privacy & Security offers Open Anyway,
         and whether the app then renders a sutta.
-  - [ ] 3.2 Variant B = ad-hoc with `--options runtime --entitlements entitlements.plist`
+  - [x] 3.2 Variant B = ad-hoc with `--options runtime --entitlements entitlements.plist`
         (the YUI case). Repeat 3.1 with a fresh copy. Also check QtWebEngine
         works under the hardened runtime (`codesign -d --entitlements - ` on
         `QtWebEngineProcess.app` shows the entitlements reached the helper).
@@ -100,27 +100,27 @@ Update the file after completing each sub-task, not just after completing an ent
         the second account, confirm `xattr -l` shows `com.apple.quarantine`, and
         repeat the 3.1 observations.
   - [ ] 3.4 If time allows, repeat 3.3 with a Chrome download.
-  - [ ] 3.5 Keep the variant that gives Open Anyway **and** runs QtWebEngine;
+  - [x] 3.5 Keep the variant that gives Open Anyway **and** runs QtWebEngine;
         update `code_sign()` and its comment accordingly. If both give "damaged",
         stop and report back with the `codesign -dvv` output of each.
-- [ ] 4.0 Verify the app inside the finished DMG
-  - [ ] 4.1 In `build-macos.sh`, after the DMG is created (both the create-dmg
+- [x] 4.0 Verify the app inside the finished DMG
+  - [x] 4.1 In `build-macos.sh`, after the DMG is created (both the create-dmg
         and the hdiutil fallback paths), mount it read-only, run
         `codesign --verify --deep --strict` on the `.app` inside, detach, and
         exit 1 on failure.
-  - [ ] 4.2 `make macos -B` again and confirm the check runs and passes.
-- [ ] 5.0 Documentation
-  - [ ] 5.1 Write `docs/macos-unsigned-distribution.md`: signing order rules
+  - [x] 4.2 `make macos -B` again and confirm the check runs and passes.
+- [x] 5.0 Documentation
+  - [x] 5.1 Write `docs/macos-unsigned-distribution.md`: signing order rules
         (sign after the last change to the bundle; verify bundle and DMG copy),
         "damaged" vs "could not verify", the user's first-launch steps (Open
         Anyway in Privacy & Security), the fallback
         `xattr -dr com.apple.quarantine /Applications/Simsapa.app` (on the app,
         not the DMG), the Task 3 result, and the sources from PRD §12. Describe
         current behaviour; keep the traps; no history narration.
-  - [ ] 5.2 Add a "Notable feature docs" entry for it in `CLAUDE.md`, and
+  - [x] 5.2 Add a "Notable feature docs" entry for it in `CLAUDE.md`, and
         extend the `build-macos.sh` line in `PROJECT_MAP.md` (around line 537)
         to mention the signing step and the new doc.
 - [ ] 6.0 Wrap up
-  - [ ] 6.1 Update the PRD's Open Questions with the answers found.
+  - [x] 6.1 Update the PRD's Open Questions with the answers found.
   - [ ] 6.2 Show `git status` / `git diff --stat` and ask the maintainer before
         committing.

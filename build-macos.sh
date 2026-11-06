@@ -288,6 +288,39 @@ create_app_bundle() {
     fi
 }
 
+# Verify the signature of the app copy inside the finished DMG. The DMG step
+# copies the bundle (cp -R, then create-dmg or hdiutil), so a valid
+# dist/$APP_NAME.app does not prove the shipped copy is valid.
+#
+# The DMG carries a license agreement (create-dmg adds one from the bundle's
+# license file), so `hdiutil attach` stops at an "Agree?" prompt: answer it
+# with "Y" on stdin, or the attach is cancelled.
+verify_dmg_app() {
+    local dmg="$1"
+    local mount_point
+    mount_point="$(mktemp -d -t simsapa-dmg-verify)"
+
+    print_status "Verifying the app signature inside $dmg..."
+    if ! echo Y | hdiutil attach -nobrowse -readonly -noautoopen \
+            -mountpoint "$mount_point" "$dmg" > /dev/null; then
+        print_error "Could not mount $dmg to verify it"
+        rmdir "$mount_point" 2>/dev/null || true
+        exit 1
+    fi
+
+    local verify_ok=0
+    codesign --verify --deep --strict "$mount_point/$APP_NAME.app" || verify_ok=$?
+
+    hdiutil detach "$mount_point" > /dev/null || hdiutil detach -force "$mount_point" > /dev/null || true
+    rmdir "$mount_point" 2>/dev/null || true
+
+    if [ $verify_ok -ne 0 ]; then
+        print_error "Signature verification failed for the app inside $dmg"
+        exit 1
+    fi
+    print_status "✓ App inside the DMG verified"
+}
+
 # Create DMG file
 create_dmg() {
     print_status "Creating DMG file..."
@@ -425,6 +458,8 @@ create_dmg() {
         fi
     fi
 
+    verify_dmg_app "$dmg_name"
+
     # Generate SHA256 checksum
     if [ -f "$dmg_name" ]; then
         print_status "Generating SHA256 checksum..."
@@ -436,14 +471,15 @@ create_dmg() {
 # Code signing. Must run after macdeployqt and every Info.plist edit, and
 # before the DMG is made: both rewrite files the signature covers.
 #
-# Without a developer identity the bundle is signed ad-hoc ("-"). macdeployqt
-# already ad-hoc signs by default; this re-sign plus the strict verify makes a
-# broken seal a build failure instead of a release. A quarantined bundle whose
-# signature does not verify is reported by Gatekeeper as "damaged and can't be
-# opened", with no "Open Anyway" offered. Whether this ad-hoc signature, without
-# the hardened runtime, gets the "Apple could not verify…" prompt instead is
-# not yet measured: see
-# tasks/2026-11-06-145915-prd---macos-gatekeeper-damaged-app.md.
+# Without a developer identity the bundle is signed ad-hoc ("-"). This step is
+# what signs the bundle: the Qt 6.9.3 macdeployqt signs nothing by default, and
+# without this step the main executable carries only the linker's signature and
+# the bundle has no seal. A quarantined bundle whose signature does not verify
+# is reported by Gatekeeper as "damaged and can't be opened", with no
+# "Open Anyway" offered; a verified ad-hoc bundle gets "Apple could not verify…"
+# plus Open Anyway. The hardened runtime is not needed for that (measured on
+# macOS 26: with and without it gave the same prompt). See
+# docs/macos-unsigned-distribution.md.
 code_sign() {
     local app_bundle="$1"
 

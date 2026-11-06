@@ -93,6 +93,11 @@ documented by Qt: whether `macdeployqt` seals the bundle as a whole
 (`Contents/_CodeSignature/CodeResources`) or signs only the executables. The
 Mac measurement in Task 1 settles it.
 
+> **Measured on the Mac (Task 1): this correction is itself wrong for the Qt
+> 6.9.3 kit.** Its `macdeployqt` has no ad-hoc default and signed nothing; the
+> released bundle was linker-signed only and fails `codesign --verify`. See
+> Open Question 1.
+
 ### 5.2 Gatekeeper behaviour
 
 - An Apple engineer on the Apple Developer Forums (thread 740680):
@@ -234,15 +239,52 @@ does not apply. It does apply to the Developer ID branch: it would give
 
 ## 10. Open Questions
 
-1. Did the v1.2.0-alpha.2 bundle verify? (Task 1 answers it.) If it did, the
-   "damaged" reports have a cause other than the signature. Candidates: users
-   removing quarantine from the DMG after the app was already copied; a Chrome
-   or Firefox download behaving differently from Safari; an older macOS.
+1. Did the v1.2.0-alpha.2 bundle verify? **Answered (Task 1, measured on the
+   Mac, macOS 26.6.2): no — the signature was the cause.** The released DMG,
+   mounted read-only, is byte-for-byte the YUI "before" case:
+
+   ```
+   Simsapa.app (and Contents/MacOS/simsapadhammareader):
+     Identifier=simsapadhammareader
+     CodeDirectory v=20400 … flags=0x20002(adhoc,linker-signed) hashes=53740+0
+     Signature=adhoc
+     Info.plist=not bound
+     Sealed Resources=none
+   codesign --verify --deep --strict:
+     code has no resources but signature indicates they must be present   (exit 1)
+   No Contents/_CodeSignature/ folder.
+
+   QtWebEngineProcess.app, QtCore/QtWebEngineCore/QtQuick.framework, plugins:
+     flags=0x10000(runtime)  TeamIdentifier=A5GTH44LYL   (The Qt Company's own
+     Developer ID signature, as shipped in the Qt kit)
+     QtWebEngineProcess.app: valid on disk, satisfies its Designated Requirement
+   ```
+
+   So `macdeployqt` signed **nothing**: the frameworks still carry Qt's
+   original signatures and the main executable only the linker's. §5.1's
+   "macdeployqt ad-hoc signs by default" does not hold for the Qt 6.9.3 kit
+   used here: its `macdeployqt` help lists `-codesign=<ident>` with no
+   "default: ad-hoc sign" and has no `-no-codesign` option. The default cited
+   in §5.1 belongs to a newer qtbase than the one the project builds with.
+   The "damaged" reports from other users are consistent with this (any
+   quarantined copy of this bundle fails verification); their macOS versions
+   and steps (Open Question 4) are no longer needed to explain them.
 2. Is the hardened runtime required on ad-hoc builds for Open Anyway on macOS
-   26? (Task 3.)
+   26? **Answered (Task 3.1/3.2, macOS 26.6.2, second account, hand-set
+   quarantine on a copy in `~/Applications`): no.** Variant A (ad-hoc, no
+   runtime, the current code) and Variant B (ad-hoc + `--options runtime
+   --entitlements entitlements.plist`) behaved identically: "Apple could not
+   verify 'Simsapa'" → Done → Privacy & Security listed Simsapa with
+   **Open Anyway** → the app opened and ran. Variant A is kept. In B the
+   entitlements did reach `QtWebEngineProcess.app` (`flags=adhoc,runtime`).
+   Not yet done: the same check on a real browser download (Task 3.3).
 3. Should the Developer ID branch stop using `--deep` and sign inside out? Only
    relevant once there is an identity.
-4. Which macOS versions and browsers were the other users on?
+4. Which macOS versions and browsers were the other users on? No longer
+   needed to explain the reports (see 1). The users' remaining "damaged" after
+   removing quarantine is consistent with removing it from the **DMG** after
+   the app had already been copied out; the docs page gives the command on the
+   installed app instead.
 
 ## 11. Follow-up tasks (summary)
 
