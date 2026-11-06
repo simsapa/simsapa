@@ -433,25 +433,44 @@ create_dmg() {
     fi
 }
 
-# Code signing (optional - requires Apple Developer account)
+# Code signing. Must run after macdeployqt and every Info.plist edit, and
+# before the DMG is made: both rewrite files the signature covers.
+#
+# Without a developer identity the bundle is signed ad-hoc ("-"). macdeployqt
+# already ad-hoc signs by default; this re-sign plus the strict verify makes a
+# broken seal a build failure instead of a release. A quarantined bundle whose
+# signature does not verify is reported by Gatekeeper as "damaged and can't be
+# opened", with no "Open Anyway" offered. Whether this ad-hoc signature, without
+# the hardened runtime, gets the "Apple could not verify…" prompt instead is
+# not yet measured: see
+# tasks/2026-11-06-145915-prd---macos-gatekeeper-damaged-app.md.
 code_sign() {
     local app_bundle="$1"
-    
-    # Check if signing identity is available
+
     if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
         print_status "Code signing with identity: $APPLE_SIGNING_IDENTITY"
-        
-        codesign --deep --force --verify --verbose \
+        if ! codesign --deep --force --verbose \
             --sign "$APPLE_SIGNING_IDENTITY" \
             --options runtime \
             --entitlements entitlements.plist \
-            "$app_bundle"
-        
-        print_status "Code signing completed"
+            "$app_bundle"; then
+            print_error "codesign failed"
+            exit 1
+        fi
     else
-        print_warning "Skipping code signing (set APPLE_SIGNING_IDENTITY to enable)"
-        print_warning "App will not be notarized and may show security warnings"
+        print_warning "No APPLE_SIGNING_IDENTITY: signing ad-hoc (not notarized)"
+        # No hardened runtime: without it QtWebEngine's JIT needs no entitlements.
+        if ! codesign --deep --force --verbose --sign - "$app_bundle"; then
+            print_error "Ad-hoc codesign failed"
+            exit 1
+        fi
     fi
+
+    if ! codesign --verify --deep --strict --verbose=2 "$app_bundle"; then
+        print_error "Signature verification failed for $app_bundle"
+        exit 1
+    fi
+    print_status "Code signing completed and verified"
 }
 
 # Parse command line arguments
@@ -523,6 +542,7 @@ main() {
     "$(dirname "${BASH_SOURCE[0]}")/scripts/qt-env-verify.sh" --platform macos || exit 1
     build_app
     create_app_bundle
+    code_sign "./dist/$APP_NAME.app"
 
     if [ $SKIP_DMG -eq 0 ]; then
         create_dmg
@@ -537,9 +557,9 @@ main() {
     fi
 
     print_status ""
-    print_status "Note: If not code signed, users may need to:"
-    print_status "  1. Right-click the app and select 'Open'"
-    print_status "  2. Or go to System Preferences > Security & Privacy to allow it"
+    print_status "Note: an ad-hoc signed app is not notarized. On first launch users"
+    print_status "must allow it in System Settings > Privacy & Security > Open Anyway,"
+    print_status "or run: xattr -dr com.apple.quarantine /Applications/$APP_NAME.app"
 }
 
 # Run main function
