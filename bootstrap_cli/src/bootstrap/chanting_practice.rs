@@ -12,6 +12,7 @@ use simsapa_backend::db::appdata_schema;
 use simsapa_backend::logger;
 
 use crate::bootstrap::SuttaImporter;
+use crate::bootstrap::source_paths;
 
 // === TOML deserialization structs ===
 
@@ -99,7 +100,7 @@ pub struct ChantingPracticeImporter {
 
 impl ChantingPracticeImporter {
     pub fn new(base_dir: PathBuf, recordings_dest_dir: PathBuf, overwrite: bool) -> Self {
-        let toml_path = base_dir.join("chanting-practice.toml");
+        let toml_path = base_dir.join(source_paths::CHANTING_PRACTICE_TOML_SUBFILE);
         Self {
             base_dir,
             toml_path,

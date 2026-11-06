@@ -2040,7 +2040,14 @@ as `√path 1`).
 **When a bootstrap step starts reading a new file or folder under
 `bootstrap-assets-resources/` (or a new external service), add it to
 `bootstrap_sources()` in `bootstrap_cli/src/bootstrap/preflight.rs` in the same
-change.** The preflight runs at the start of `bootstrap()`, **before**
+change.** Write the path **once**, as a constant in
+`bootstrap_cli/src/bootstrap/source_paths.rs`, and build it from that constant
+in the import step, the preflight entry, any CLI subcommand that re-runs the
+step, and tests that read the real checkout — never as a string literal in any
+of them, so the preflight checks exactly the path the step reads. A path inside
+a source folder is a `*_SUBDIR` / `*_SUBFILE` constant (or a helper such as
+`cst_toc_dir()`) relative to that folder, because CLI subcommands take the
+folder as an argument. The preflight runs at the start of `bootstrap()`, **before**
 `clean_and_create_folders()` empties `dist/`, and reports every missing source
 at once. A source it does not list is found missing only when its step is
 reached, often an hour in, after the previous build has already been wiped.

@@ -341,7 +341,7 @@ fn import_chanting_practice_command(
         return Err(format!("Data directory not found: {:?}", data_dir));
     }
 
-    let toml_path = data_dir.join("chanting-practice.toml");
+    let toml_path = data_dir.join(bootstrap::source_paths::CHANTING_PRACTICE_TOML_SUBFILE);
     if !toml_path.exists() {
         return Err(format!("TOML file not found at {:?}", toml_path));
     }
@@ -388,8 +388,8 @@ fn import_cst(
 
     let mut importer = bootstrap::TipitakaXmlImporter::new(
         fragments_db_path.to_path_buf(),
-        cst_xml_dir.join("romn/"),
-        cst_xml_dir.join("tipitaka.org/romn/cscd/"),
+        bootstrap::source_paths::cst_source_dir(cst_xml_dir),
+        bootstrap::source_paths::cst_toc_dir(cst_xml_dir),
     );
     let report = importer
         .reimport(&mut db_conn)
@@ -432,10 +432,10 @@ fn build_navigation_tree(
     }
 
     if let Some(cst_xml_dir) = cst_xml_dir {
-        let site_dir = cst_xml_dir.join("tipitaka.org/romn/");
-        let source_dir = cst_xml_dir.join("romn/");
+        let site_dir = bootstrap::source_paths::cst_site_dir(cst_xml_dir);
+        let source_dir = bootstrap::source_paths::cst_source_dir(cst_xml_dir);
         let fragments_db_path = fragments_db_path.map(|p| p.to_path_buf()).unwrap_or_else(|| {
-            cst_xml_dir.join("../../tipitaka-xml-data/fragments.sqlite3")
+            bootstrap::source_paths::cst_fragments_db_beside(cst_xml_dir)
         });
 
         let mut report = bootstrap::navigation_tree::coverage_report::CstCoverageReport::default();
@@ -720,7 +720,7 @@ enum Commands {
 
         /// Session JSON files or directories to scan (default: the
         /// bootstrap-assets-resources/gloss-data-cache/ data bank)
-        #[arg(value_name = "DIR_OR_FILES", default_value = "../../bootstrap-assets-resources/gloss-data-cache")]
+        #[arg(value_name = "DIR_OR_FILES", default_values_os_t = vec![bootstrap::source_paths::gloss_data_cache_dir_from_crate()])]
         inputs: Vec<PathBuf>,
     },
 
@@ -730,7 +730,7 @@ enum Commands {
     /// pipeline progress (status).
     GlossAgentCheck {
         /// Path to the gloss-data-cache folder
-        #[arg(long, value_name = "DIR", default_value = "../../bootstrap-assets-resources/gloss-data-cache")]
+        #[arg(long, value_name = "DIR", default_value_os_t = bootstrap::source_paths::gloss_data_cache_dir_from_crate())]
         data_cache: PathBuf,
 
         #[command(subcommand)]
@@ -743,7 +743,7 @@ enum Commands {
     /// over the databases; writes only to the output directory.
     GlossCorpusExplore {
         /// Output directory for the candidate session files and reports
-        #[arg(long, value_name = "DIR", default_value = "../../bootstrap-assets-resources/gloss-data-cache/candidates")]
+        #[arg(long, value_name = "DIR", default_value_os_t = bootstrap::source_paths::gloss_data_cache_dir_from_crate().join(bootstrap::source_paths::GLOSS_CANDIDATES_SUBDIR))]
         output_dir: PathBuf,
 
         /// Comma-separated nikāya allowlist override (default: dn,mn,sn,an,kp,dhp,ud,iti,snp)

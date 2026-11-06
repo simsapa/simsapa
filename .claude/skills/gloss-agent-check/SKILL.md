@@ -15,7 +15,8 @@ occurrence, using the sentence context. Confirmed selections are shipped as
 ## Paths and environment
 
 All commands run from the `bootstrap_cli/` directory of this repo. The data-cache root
-defaults to `../../bootstrap-assets-resources/gloss-data-cache` (override with
+defaults to `../../bootstrap-assets-resources/gloss-data-cache`, resolved from the
+`bootstrap_cli/` crate folder (override with
 `--data-cache DIR`). Folders under it:
 
 | folder | role |

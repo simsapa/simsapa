@@ -98,7 +98,7 @@ fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
 
         if input.is_dir() {
             scan_dir(input, &mut files)?;
-            for sub in ["human-checked", "agent-checked"] {
+            for sub in crate::bootstrap::source_paths::GLOSS_CHECKED_SUBDIRS {
                 let sub_dir = input.join(sub);
                 if matches!(sub_dir.try_exists(), Ok(true)) && sub_dir.is_dir() {
                     scan_dir(&sub_dir, &mut files)?;

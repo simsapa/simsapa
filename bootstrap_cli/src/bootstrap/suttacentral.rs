@@ -1632,13 +1632,12 @@ mod tests {
     #[test]
     #[ignore] // Only run when ArangoDB is available
     fn test_get_bilara_templates() {
-        use std::path::PathBuf;
-
         let db = connect_to_arangodb()
             .expect("Failed to connect to ArangoDB for testing");
 
         // Use the sc-data directory (correct path)
-        let sc_data_dir = PathBuf::from("../../bootstrap-assets-resources/sc-data");
+        let sc_data_dir = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate()
+            .join(crate::bootstrap::source_paths::SC_DATA_DIR);
 
         let templates = get_bilara_templates(&db, &sc_data_dir)
             .expect("Failed to get Bilara templates");

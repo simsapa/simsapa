@@ -177,10 +177,10 @@ mod tests {
 
     #[test]
     fn test_snp4_10() {
-        let resource_path = PathBuf::from("../../bootstrap-assets-resources/nyanadipa-translations/");
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::NYANADIPA_DIR);
         let importer = NyanadipaImporter::new(resource_path);
 
-        let md_path = PathBuf::from("../../bootstrap-assets-resources/nyanadipa-translations/texts-sc-numbering/snp4.10.md");
+        let md_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::NYANADIPA_DIR).join("texts-sc-numbering/snp4.10.md");
         let expected_path = PathBuf::from("tests/data/nyanadipa/snp4.10.html");
 
         if !md_path.exists() {

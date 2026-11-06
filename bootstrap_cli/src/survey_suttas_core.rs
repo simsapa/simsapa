@@ -146,7 +146,7 @@ pub struct Report {
 
 /// The default `--suttas-core` path, resolved from this crate.
 pub fn default_suttas_core_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources/suttas-core-db/current/suttas.sqlite")
+    crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::SUTTAS_CORE_DB)
 }
 
 pub fn default_output_path() -> PathBuf {

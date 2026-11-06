@@ -708,8 +708,9 @@ Gotchas found while building it:
 ### The agent review stage: `gloss-agent-check`
 
 **`gloss-agent-check {prepare|apply|status}`** (`bootstrap_cli/src/gloss_agent_check.rs`;
-`--data-cache` defaults to `../../bootstrap-assets-resources/gloss-data-cache`,
-run from `bootstrap_cli/`; `SIMSAPA_DIR` must point at the dist assets because `apply`
+`--data-cache` defaults to `bootstrap-assets-resources/gloss-data-cache` beside
+the repository, resolved from the `bootstrap_cli/` crate folder whatever the working
+directory; `SIMSAPA_DIR` must point at the dist assets because `apply`
 validates uids against the real dictionaries):
 
 - **`prepare <candidate.json> [--out FILE]`** emits the shared

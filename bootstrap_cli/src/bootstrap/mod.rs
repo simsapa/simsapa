@@ -20,6 +20,7 @@ pub mod chanting_practice;
 pub mod parse_cips_index;
 pub mod navigation_tree;
 pub mod preflight;
+pub mod source_paths;
 
 use anyhow::{Result, Context};
 use chrono::{DateTime, Local};
@@ -164,7 +165,7 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
     let bootstrap_assets_dir = normalize_lexically(
         &env::current_dir()
             .context("Failed to get current working directory")?
-            .join("../../bootstrap-assets-resources"));
+            .join(source_paths::BOOTSTRAP_ASSETS_DIR_FROM_CRATE));
 
     if !bootstrap_assets_dir.exists() {
         anyhow::bail!(
@@ -188,7 +189,9 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
         .join(format!("releases/{}-dev/", iso_date));
     let release_databases_dir = release_dir.join("databases/");
     let dist_dir = bootstrap_assets_dir.join("dist");
-    let sc_data_dir = bootstrap_assets_dir.join("sc-data");
+    let sc_data_dir = bootstrap_assets_dir.join(source_paths::SC_DATA_DIR);
+    let cst_xml_dir = bootstrap_assets_dir.join(source_paths::CST_XML_DIR);
+    let cst_fragments_db_path = bootstrap_assets_dir.join(source_paths::CST_FRAGMENTS_DB);
 
     // During bootstrap, don't touch the user's Simsapa dir (~/.local/share/simsapa)
     // Create files in the dist/ folder instead.
@@ -270,13 +273,10 @@ RELEASE_CHANNEL=development
         // in the toc-leaf assignment half of it and logs the whole thing --
         // only the spine knows which leaves ended up opening a record.
         let mut cst_report = {
-            let tipitaka_xml_fragments_db_path = bootstrap_assets_dir.join("tipitaka-xml-data/fragments.sqlite3");
-            let tipitaka_xml_romn_path = bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/romn/");
-            let tipitaka_xml_toc_path = bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn/cscd/");
             let mut importer = TipitakaXmlImporter::new(
-                tipitaka_xml_fragments_db_path,
-                tipitaka_xml_romn_path,
-                tipitaka_xml_toc_path,
+                cst_fragments_db_path.clone(),
+                source_paths::cst_source_dir(&cst_xml_dir),
+                source_paths::cst_toc_dir(&cst_xml_dir),
             );
             importer.import(&mut conn)?
         };
@@ -285,7 +285,7 @@ RELEASE_CHANNEL=development
         {
             // Required: Ṭhānissaro's English translations. The preflight has
             // already checked it; this guards a folder removed mid-run.
-            let dhammatalks_path = bootstrap_assets_dir.join("dhammatalks-org/www.dhammatalks.org/suttas");
+            let dhammatalks_path = bootstrap_assets_dir.join(source_paths::DHAMMATALKS_SUTTAS_DIR);
             if !matches!(dhammatalks_path.try_exists(), Ok(true)) {
                 anyhow::bail!("Dhammatalks.org resource path not found: {}", dhammatalks_path.display());
             }
@@ -299,7 +299,7 @@ RELEASE_CHANNEL=development
         // after those imports, and before the navigation-tree builds, which
         // resolve each leaf against the final uids. See docs/suttas-core-import.md.
         {
-            let suttas_core_path = bootstrap_assets_dir.join("suttas-core-db/current/suttas.sqlite");
+            let suttas_core_path = bootstrap_assets_dir.join(source_paths::SUTTAS_CORE_DB);
             logger::info("Importing segmented translations from suttas-core");
             let mut importer = SuttasCoreImporter::new(suttas_core_path, limit);
             importer.import(&mut conn)?;
@@ -308,7 +308,7 @@ RELEASE_CHANNEL=development
         // Import Dhammapada from Tipitaka.net (Daw Mya Tin translation)
         // Uses exported database from dhammapada_tipitaka_net_export command
         {
-            let exported_db_path = bootstrap_assets_dir.join("dhammapada-tipitaka-net/dhammapada-tipitaka-net.sqlite3");
+            let exported_db_path = bootstrap_assets_dir.join(source_paths::DHAMMAPADA_TIPITAKA_NET_DB);
             if exported_db_path.exists() {
                 logger::info("Importing suttas from dhammapada-tipitaka-net (exported DB)");
                 let mut importer = DhammapadaTipitakaImporter::new(exported_db_path);
@@ -321,7 +321,7 @@ RELEASE_CHANNEL=development
 
         // Import Nyanadipa translations (Sutta Nipata selections)
         {
-            let nyanadipa_path = bootstrap_assets_dir.join("nyanadipa-translations");
+            let nyanadipa_path = bootstrap_assets_dir.join(source_paths::NYANADIPA_DIR);
             if nyanadipa_path.exists() {
                 logger::info("Importing suttas from nyanadipa-translations");
                 let mut importer = NyanadipaImporter::new(nyanadipa_path);
@@ -333,7 +333,7 @@ RELEASE_CHANNEL=development
 
         // Import Ajahn Munindo's Dhammapada
         {
-            let dhammapada_munindo_path = bootstrap_assets_dir.join("dhammapada-munindo");
+            let dhammapada_munindo_path = bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR);
             if dhammapada_munindo_path.exists() {
                 logger::info("Importing suttas from dhammapada-munindo");
                 let mut importer = DhammapadaMunindoImporter::new(dhammapada_munindo_path);
@@ -354,17 +354,11 @@ RELEASE_CHANNEL=development
 
         logger::info("=== Build navigation tree (CST spine) ===");
         {
-            let cst_site_dir = bootstrap_assets_dir
-                .join("tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn/");
-            let cst_source_dir =
-                bootstrap_assets_dir.join("tipitaka-org-vri-cst/tipitaka-xml/romn/");
-            let fragments_db_path =
-                bootstrap_assets_dir.join("tipitaka-xml-data/fragments.sqlite3");
             navigation_tree::build_cst_spine(
                 &mut conn,
-                &cst_site_dir,
-                &cst_source_dir,
-                &fragments_db_path,
+                &source_paths::cst_site_dir(&cst_xml_dir),
+                &source_paths::cst_source_dir(&cst_xml_dir),
+                &cst_fragments_db_path,
                 Some(&mut cst_report),
             )?;
         }
@@ -374,8 +368,8 @@ RELEASE_CHANNEL=development
 
         // Import library documents from library-imports.toml
         {
-            let library_imports_toml_path = bootstrap_assets_dir.join("library-imports/library-imports.toml");
-            let library_imports_books_folder = bootstrap_assets_dir.join("library-imports/books/");
+            let library_imports_toml_path = bootstrap_assets_dir.join(source_paths::LIBRARY_IMPORTS_TOML);
+            let library_imports_books_folder = bootstrap_assets_dir.join(source_paths::LIBRARY_IMPORTS_BOOKS_DIR);
 
             // Get database connection for library imports (using main appdata database)
             let mut conn = create_database_connection(&appdata_db_path)?;
@@ -397,7 +391,7 @@ RELEASE_CHANNEL=development
         // Import chanting practice data from TOML definition
         logger::info("=== Bootstrap Chanting Practice ===");
         {
-            let chanting_practice_dir = bootstrap_assets_dir.join("chanting-practice");
+            let chanting_practice_dir = bootstrap_assets_dir.join(source_paths::CHANTING_PRACTICE_DIR);
             let recordings_dest_dir = assets_dir.join("chanting-recordings");
 
             let mut conn = create_database_connection(&appdata_db_path)?;
@@ -580,7 +574,7 @@ RELEASE_CHANNEL=development
         // agent-answers/ are never scanned).
         logger::info("=== Import gloss data bank (gloss-data-cache/) ===");
         {
-            let gloss_data_cache_dir = bootstrap_assets_dir.join("gloss-data-cache");
+            let gloss_data_cache_dir = bootstrap_assets_dir.join(source_paths::GLOSS_DATA_CACHE_DIR);
             let dir_has_json = |dir: &std::path::Path| -> bool {
                 std::fs::read_dir(dir)
                     .map(|entries| {
@@ -594,8 +588,9 @@ RELEASE_CHANNEL=development
             // Session files may live at the top level or only in the checked
             // subfolders — the gate must match the import's scan.
             let has_session_files = dir_has_json(&gloss_data_cache_dir)
-                || dir_has_json(&gloss_data_cache_dir.join("human-checked"))
-                || dir_has_json(&gloss_data_cache_dir.join("agent-checked"));
+                || source_paths::GLOSS_CHECKED_SUBDIRS
+                    .iter()
+                    .any(|sub| dir_has_json(&gloss_data_cache_dir.join(sub)));
             if has_session_files {
                 let appdata_db_path = assets_dir.join("appdata.sqlite3");
                 match crate::import_gloss_data::import_gloss_data(&appdata_db_path, &[gloss_data_cache_dir]) {
@@ -745,7 +740,7 @@ RELEASE_CHANNEL=development
         // Selected by the only_languages filter, the same decision the
         // preflight checked the Buddha Ujja source for.
         if steps.hungarian {
-            let bu_db_path = bootstrap_assets_dir.join("buddha-ujja-sql/bu.sqlite3");
+            let bu_db_path = bootstrap_assets_dir.join(source_paths::BUDDHA_UJJA_DB);
             if bu_db_path.exists() {
                 logger::info("Importing Hungarian suttas from Buddha Ujja");
 

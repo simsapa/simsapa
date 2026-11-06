@@ -20,6 +20,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
+use crate::bootstrap::source_paths;
 
 use simsapa_backend::get_app_data;
 use simsapa_backend::helpers::{
@@ -365,7 +366,7 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             .map_err(|e| format!("Failed to serialize word_cache: {}", e))?,
     );
 
-    let out_dir = data_cache.join("agent-checked");
+    let out_dir = data_cache.join(source_paths::GLOSS_AGENT_CHECKED_SUBDIR);
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| format!("Cannot create {}: {}", out_dir.display(), e))?;
     let file_name = candidate
@@ -436,9 +437,9 @@ fn review_count(path: &Path) -> Result<usize, String> {
 }
 
 fn status(data_cache: &Path) -> Result<(), String> {
-    let candidates_dir = data_cache.join("candidates");
-    let agent_dir = data_cache.join("agent-checked");
-    let human_dir = data_cache.join("human-checked");
+    let candidates_dir = data_cache.join(source_paths::GLOSS_CANDIDATES_SUBDIR);
+    let agent_dir = data_cache.join(source_paths::GLOSS_AGENT_CHECKED_SUBDIR);
+    let human_dir = data_cache.join(source_paths::GLOSS_HUMAN_CHECKED_SUBDIR);
 
     // The corpus-explore generator writes `candidates-NNN.json` plus
     // `report.json`/`report.md` into the same folder; only the candidate

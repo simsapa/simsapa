@@ -6,6 +6,7 @@ use simsapa_backend::logger;
 use simsapa_backend::helpers::{run_fts5_indexes_sql_script, consistent_niggahita};
 
 use crate::import_stardict_dictionary;
+use crate::bootstrap::source_paths;
 
 pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option<i32>) -> Result<()> {
     // Import DPD stardict.
@@ -18,7 +19,7 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
     // (avoiding an N+1 resolve across the dictionaries/dpd DBs). If the DPD
     // import is ever changed to use a different key, the headword-match path
     // in `backend/src/query_task.rs` must be revisited.
-    let dpd_stardict_path = bootstrap_assets_dir.join("dpd-db-for-bootstrap/current/dpd/");
+    let dpd_stardict_path = bootstrap_assets_dir.join(source_paths::DPD_STARDICT_DIR);
     let limit_usize = limit.map(|l| l as usize);
     import_stardict_dictionary("dpd", &dpd_stardict_path, limit_usize)
         .map_err(|e| anyhow::anyhow!("Failed to import DPD Stardict: {}", e))?;
@@ -26,7 +27,7 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
     // Convert the DPD example sutta references (e.g. "AN6.61 majjhesuttaṁ") in
     // the imported definition_html into internal ssp:// links. Done before the
     // FTS5 indexes exist so the bulk updates don't fire the sync triggers.
-    let source_dpd_db_path = bootstrap_assets_dir.join("dpd-db-for-bootstrap/current/dpd.db");
+    let source_dpd_db_path = bootstrap_assets_dir.join(source_paths::DPD_DB);
     let dict_db_path = assets_dir.join("dictionaries.sqlite3");
     simsapa_backend::db::dpd::convert_dpd_example_sutta_links(&dict_db_path, &source_dpd_db_path)
         .map_err(|e| anyhow::anyhow!("Failed to convert DPD example sutta links: {}", e))?;
@@ -60,7 +61,7 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
     logger::info("=== dpd_migrate() ===");
 
     let source_db_path = bootstrap_assets_dir
-        .join("dpd-db-for-bootstrap/current/dpd.db");
+        .join(source_paths::DPD_DB);
     let dest_db_path = assets_dir.join("dpd.db");
 
     // Check if source database exists

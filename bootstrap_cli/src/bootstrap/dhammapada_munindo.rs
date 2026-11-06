@@ -230,10 +230,10 @@ mod tests {
 
     #[test]
     fn test_parse_dhp1() {
-        let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammapada-munindo");
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMAPADA_MUNINDO_DIR);
         let importer = DhammapadaMunindoImporter { resource_path };
 
-        let file_path = PathBuf::from("../../bootstrap-assets-resources/dhammapada-munindo/html/dhp-1.html");
+        let file_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMAPADA_MUNINDO_DIR).join("html/dhp-1.html");
 
         if !file_path.exists() {
             println!("Test file not found, skipping test: {:?}", file_path);
@@ -266,10 +266,10 @@ mod tests {
 
     #[test]
     fn test_parse_dhp17() {
-        let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammapada-munindo");
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMAPADA_MUNINDO_DIR);
         let importer = DhammapadaMunindoImporter { resource_path };
 
-        let file_path = PathBuf::from("../../bootstrap-assets-resources/dhammapada-munindo/html/dhp-17.html");
+        let file_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMAPADA_MUNINDO_DIR).join("html/dhp-17.html");
 
         if !file_path.exists() {
             println!("Test file not found, skipping test: {:?}", file_path);
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_discover_html_files() {
-        let resource_path = PathBuf::from("../../bootstrap-assets-resources/dhammapada-munindo");
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMAPADA_MUNINDO_DIR);
         let importer = DhammapadaMunindoImporter { resource_path };
 
         if !importer.resource_path.join("html").exists() {

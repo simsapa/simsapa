@@ -1831,8 +1831,8 @@ mod tests {
     #[test]
     #[ignore]
     fn test_real_data_thanissaro_map() {
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
-        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let mut db = SuttasCoreDb::open(&base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB))
             .unwrap()
             .expect("suttas-core database");
         let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
@@ -1883,8 +1883,8 @@ mod tests {
             return;
         };
         assert!(!scratch.contains("/dist/"), "use a copy, not the dist database");
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
-        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let mut db = SuttasCoreDb::open(&base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB))
             .unwrap()
             .expect("suttas-core database");
         let mut app = SqliteConnection::establish(&scratch).unwrap();
@@ -1919,8 +1919,8 @@ mod tests {
     #[test]
     #[ignore]
     fn test_real_data_footnote_links() {
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
-        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let mut db = SuttasCoreDb::open(&base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB))
             .unwrap()
             .expect("suttas-core database");
         let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
@@ -1981,8 +1981,8 @@ mod tests {
     #[test]
     #[ignore]
     fn test_real_data_builds() {
-        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bootstrap-assets-resources");
-        let mut db = SuttasCoreDb::open(&base.join("suttas-core-db/current/suttas.sqlite"))
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let mut db = SuttasCoreDb::open(&base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB))
             .unwrap()
             .expect("suttas-core database");
         let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");

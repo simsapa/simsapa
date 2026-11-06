@@ -77,6 +77,7 @@ use tipitaka_xml_parser::types::GroupType;
 
 use crate::bootstrap::cst_coverage::{coverage_of, CoverageClass, FileCoverage};
 use crate::bootstrap::tipitaka_xml::{fragment_title, fragment_uid};
+use crate::bootstrap::source_paths;
 
 use super::{DefectReport, TreeNode};
 
@@ -307,7 +308,7 @@ impl CstSpineBuilder {
         let source_file = format!("{}.xml", stem);
         self.reachable_sources.insert(source_file.clone());
 
-        let path = self.site_dir.join("cscd").join(&toc_name);
+        let path = self.site_dir.join(source_paths::CST_TOC_SUBDIR).join(&toc_name);
         let Some(inner) = self.read_toc(&path) else {
             self.defects.record("toc src= names a missing or unparsable file", toc_name);
             return None;
@@ -1168,8 +1169,8 @@ mod tests {
     /// is the check that it does, against the real files.
     #[test]
     fn reads_both_toc_encodings() {
-        let site_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../bootstrap-assets-resources/tipitaka-org-vri-cst/tipitaka-xml/tipitaka.org/romn");
+        let site_dir = source_paths::cst_site_dir(
+            &crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(source_paths::CST_XML_DIR));
         if !site_dir.join("toc2.xml").exists() {
             eprintln!("skipping: CST checkout not present at {}", site_dir.display());
             return;
@@ -1178,7 +1179,7 @@ mod tests {
         let mislabelled = read_xml_file(&site_dir.join("toc2.xml")).unwrap();
         assert!(mislabelled.contains("aṭṭhakathā"), "toc2.xml decoded as mojibake");
 
-        let utf16 = read_xml_file(&site_dir.join("cscd/s0305m.mul.toc.xml")).unwrap();
+        let utf16 = read_xml_file(&site_dir.join(source_paths::CST_TOC_SUBDIR).join("s0305m.mul.toc.xml")).unwrap();
         assert!(utf16.contains("Maggasaṃyuttaṃ"), "cscd toc decoded as mojibake");
 
         let root = parse_toc(&utf16).unwrap();

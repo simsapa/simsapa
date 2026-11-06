@@ -62,6 +62,7 @@ use simsapa_backend::logger;
 
 use super::{DefectReport, TreeNode};
 use crate::bootstrap::suttacentral::get_titles;
+use crate::bootstrap::source_paths;
 
 pub const TREE_SOURCE: &str = "sc";
 
@@ -241,7 +242,7 @@ impl ScSpineBuilder {
 
     /// Build the three SC roots, in `super-tree.json`'s own order.
     pub fn build(&mut self) -> Result<Vec<TreeNode>> {
-        let path = self.sc_data_dir.join("structure/tree/super-tree.json");
+        let path = source_paths::sc_super_tree_file(&self.sc_data_dir);
         let super_tree: Value = read_json(&path)?;
 
         let entries = super_tree.as_array().with_context(|| {
@@ -379,7 +380,7 @@ impl ScSpineBuilder {
     fn build_collection(&mut self, root_uid: &str, collection_uid: &str) -> Option<TreeNode> {
         let path = self
             .sc_data_dir
-            .join("structure/tree")
+            .join(source_paths::SC_TREE_SUBDIR)
             .join(root_uid)
             .join(format!("{}-tree.json", collection_uid));
 
@@ -933,7 +934,7 @@ fn rule_segment(uid: &str) -> &str {
 /// - a member with a space in it is a **prose label**, not a uid
 ///   ("Bhikkhu Parivāra Pārājika 1"), and is dropped rather than looked up.
 fn load_parallels(sc_data_dir: &Path) -> Result<HashMap<String, Vec<String>>> {
-    let path = sc_data_dir.join("relationship/parallels.json");
+    let path = sc_data_dir.join(source_paths::SC_PARALLELS_SUBFILE);
     let value: Value = match read_json(&path) {
         Ok(v) => v,
         Err(e) => {
@@ -1070,7 +1071,7 @@ fn read_json(path: &Path) -> Result<Value> {
 /// groupings contribute 4189 uids with **no** conflicting duplicate, so
 /// flattening loses nothing.
 fn load_blurbs(sc_data_dir: &Path) -> Result<HashMap<String, String>> {
-    let path = sc_data_dir.join("additional-info/blurbs.json");
+    let path = sc_data_dir.join(source_paths::SC_BLURBS_SUBFILE);
     let value: Value = read_json(&path)?;
 
     let mut out = HashMap::new();

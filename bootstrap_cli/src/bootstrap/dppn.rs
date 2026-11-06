@@ -11,6 +11,7 @@ use simsapa_backend::db::dictionaries_models::{NewDictionary, NewDictWord};
 use simsapa_backend::db::dictionaries_schema::dictionaries;
 use simsapa_backend::helpers::compact_rich_text;
 use crate::bootstrap::create_database_connection;
+use crate::bootstrap::source_paths;
 
 lazy_static! {
     static ref T14_SPAN_RE: Regex =
@@ -74,7 +75,7 @@ struct SourceDictWord {
 pub fn dppn_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path) -> Result<()> {
     logger::info("=== dppn_bootstrap() ===");
 
-    let dppn_source_path = bootstrap_assets_dir.join("dppn-anandajoti/dppn.sqlite3");
+    let dppn_source_path = bootstrap_assets_dir.join(source_paths::DPPN_DB);
     let dict_db_path = assets_dir.join("dictionaries.sqlite3");
 
     if !dppn_source_path.exists() {
