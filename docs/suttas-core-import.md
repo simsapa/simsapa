@@ -14,8 +14,11 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
 - Input: `<bootstrap assets>/suttas-core-db/current/suttas.sqlite`. `current` is
   a symlink to a dated folder (`2026-10-31`); the step logs the resolved path,
   and every record it writes gets `source_info = "suttas-core <dated folder>"`.
-  The database is opened read-only. A missing file is a warning and the step is
-  skipped (records stay as the earlier importers wrote them).
+  The database is opened read-only. It is **required**: a missing file stops the
+  bootstrap, checked up front by the preflight
+  (`bootstrap_cli/src/bootstrap/preflight.rs`) before anything is written,
+  because without it the release would silently lose its segmented English
+  translations.
 - To use a new suttas-core build: put its database in a new dated folder, repoint
   `current`, re-run the bootstrap.
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org

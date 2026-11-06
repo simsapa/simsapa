@@ -1156,9 +1156,10 @@ impl SuttasCoreImporter {
 
 impl SuttaImporter for SuttasCoreImporter {
     fn import(&mut self, conn: &mut SqliteConnection) -> Result<()> {
+        // Required: it carries the segmented English translations, so a release
+        // built without it would silently lose them.
         let Some(mut db) = SuttasCoreDb::open(&self.db_path)? else {
-            logger::warn(&format!("suttas-core database not found, skipping: {}", self.db_path.display()));
-            return Ok(());
+            return Err(anyhow!("suttas-core database not found: {}", self.db_path.display()));
         };
         // The Ṭhānissaro map is built before anything changes the records it
         // reads.
@@ -1578,11 +1579,11 @@ mod tests {
     }
 
     #[test]
-    fn test_import_with_missing_database_is_a_no_op() {
+    fn test_import_with_missing_database_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = scratch_appdata(&dir);
         let mut importer = SuttasCoreImporter::new(dir.path().join("current/suttas.sqlite"), None);
-        importer.import(&mut app).unwrap();
+        assert!(importer.import(&mut app).is_err());
         assert!(row(&mut app, "mn1/en/bodhi").0.is_none());
     }
 

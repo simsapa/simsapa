@@ -2035,6 +2035,33 @@ as `√path 1`).
 > bump; the headword join is clean (`word = lemma_1`) but the root join needs care
 > (disambiguation). See the API-tolerance task list for the trade-off analysis.
 
+### New bootstrap import sources go into the preflight check
+
+**When a bootstrap step starts reading a new file or folder under
+`bootstrap-assets-resources/` (or a new external service), add it to
+`bootstrap_sources()` in `bootstrap_cli/src/bootstrap/preflight.rs` in the same
+change.** The preflight runs at the start of `bootstrap()`, **before**
+`clean_and_create_folders()` empties `dist/`, and reports every missing source
+at once. A source it does not list is found missing only when its step is
+reached, often an hour in, after the previous build has already been wiped.
+
+- Mark it **`required`** when the step stops the bootstrap without it, and
+  **`optional`** when the step warns and skips. The two must agree: a required
+  source's step must fail, not skip, when the source is missing.
+- **Translations are required.** A source that carries sutta text or English
+  translations (SuttaCentral, CST/OpenTipitaka, suttas-core, dhammatalks.org)
+  is never optional: a skip silently ships a release without that content.
+- List it under the step flag that runs it (`appdata`, `dpd`,
+  `sc_languages`, `hungarian` in `PreflightSteps`), so `--skip-*` /
+  `--only-languages` runs do not demand sources they never read.
+- A new service the bootstrap connects to (like the SuttaCentral ArangoDB,
+  checked in `run_preflight()`) gets a connection check there too.
+
+After editing the list, run `cd bootstrap_cli && cargo test
+test_full_bootstrap_sources -- --ignored`: it checks every required path against
+the real `bootstrap-assets-resources` checkout, which catches a misspelled path.
+It is `#[ignore]`d because it tests the local assets folder, not the code.
+
 ### Versions — set them with `scripts/set-version.py`, never by hand
 
 Four versions are each stored in more than one place, some with a `v` prefix

@@ -19,6 +19,7 @@ pub mod library_imports;
 pub mod chanting_practice;
 pub mod parse_cips_index;
 pub mod navigation_tree;
+pub mod preflight;
 
 use anyhow::{Result, Context};
 use chrono::{DateTime, Local};
@@ -172,6 +173,14 @@ pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, ski
         );
     }
 
+    // Check every source the selected steps read, and ArangoDB, before
+    // anything is written: `clean_and_create_folders()` below empties `dist/`,
+    // so a source found missing later costs the previous build as well.
+    let steps = preflight::PreflightSteps::from_flags(
+        skip_appdata, skip_dpd, skip_languages, only_languages_vec.as_deref());
+    let run_sc_languages = steps.sc_languages;
+    preflight::run_preflight(&bootstrap_assets_dir, &steps)?;
+
     let release_dir = bootstrap_assets_dir
         .parent()
         .map(|p| p.to_path_buf())
@@ -242,16 +251,17 @@ RELEASE_CHANNEL=development
 
         // Import suttas from SuttaCentral
         {
-            if sc_data_dir.exists() {
-                logger::info("Importing suttas from SuttaCentral");
-                for lang in ["en", "pli"] {
-                    let mut importer = SuttaCentralImporter::new(sc_data_dir.clone(), lang, limit);
-                    importer.import(&mut conn)?;
-                }
-                appdata::record_sc_data_version(&mut conn, &sc_data_dir)?;
-            } else {
-                logger::warn("SuttaCentral data directory not found, skipping");
+            // Required, checked by the preflight; this guards a folder removed
+            // mid-run. `build_sc_spine()` below would otherwise also skip.
+            if !matches!(sc_data_dir.try_exists(), Ok(true)) {
+                anyhow::bail!("SuttaCentral data directory not found: {}", sc_data_dir.display());
             }
+            logger::info("Importing suttas from SuttaCentral");
+            for lang in ["en", "pli"] {
+                let mut importer = SuttaCentralImporter::new(sc_data_dir.clone(), lang, limit);
+                importer.import(&mut conn)?;
+            }
+            appdata::record_sc_data_version(&mut conn, &sc_data_dir)?;
         }
 
         // Import suttas from tipitaka.org (CST).
@@ -273,14 +283,15 @@ RELEASE_CHANNEL=development
 
         // Import from Dhammatalks.org
         {
+            // Required: Ṭhānissaro's English translations. The preflight has
+            // already checked it; this guards a folder removed mid-run.
             let dhammatalks_path = bootstrap_assets_dir.join("dhammatalks-org/www.dhammatalks.org/suttas");
-            if dhammatalks_path.exists() {
-                logger::info("Importing suttas from dhammatalks.org");
-                let mut importer = DhammatalksSuttaImporter::new(dhammatalks_path, limit);
-                importer.import(&mut conn)?;
-            } else {
-                logger::warn("Dhammatalks.org resource path not found, skipping");
+            if !matches!(dhammatalks_path.try_exists(), Ok(true)) {
+                anyhow::bail!("Dhammatalks.org resource path not found: {}", dhammatalks_path.display());
             }
+            logger::info("Importing suttas from dhammatalks.org");
+            let mut importer = DhammatalksSuttaImporter::new(dhammatalks_path, limit);
+            importer.import(&mut conn)?;
         }
 
         // Segmented translations from suttas-core. They replace HTML-only
@@ -608,9 +619,12 @@ RELEASE_CHANNEL=development
 
     logger::info("=== Bootstrap Languages from SuttaCentral ===");
 
-    // Import suttas for each language from SuttaCentral ArangoDB
-    if !skip_languages {
-        if sc_data_dir.exists() {
+    // Import suttas for each language from SuttaCentral ArangoDB. sc-data and
+    // ArangoDB are required here, checked by the preflight; a failure of either
+    // mid-run stops the bootstrap rather than shipping without the languages.
+    // A single language that fails to import is logged and the rest continue.
+    if run_sc_languages {
+        if matches!(sc_data_dir.try_exists(), Ok(true)) {
             // Connect to ArangoDB to get the languages list
             match suttacentral::connect_to_arangodb() {
                 Ok(db) => {
@@ -707,18 +721,16 @@ RELEASE_CHANNEL=development
                             }
                         }
                         Err(e) => {
-                            logger::error(&format!("Failed to get languages list from ArangoDB: {}", e));
-                            logger::warn("Skipping SuttaCentral language imports");
+                            anyhow::bail!("Failed to get languages list from ArangoDB: {:#}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    logger::error(&format!("Failed to connect to ArangoDB: {}", e));
-                    logger::warn("Skipping SuttaCentral language imports");
+                    anyhow::bail!("Failed to connect to ArangoDB: {:#}", e);
                 }
             }
         } else {
-            logger::warn("SuttaCentral data directory not found, skipping language imports");
+            anyhow::bail!("SuttaCentral data directory not found: {}", sc_data_dir.display());
         }
     } else {
         logger::info("Skipping SuttaCentral languages bootstrap");
@@ -730,14 +742,9 @@ RELEASE_CHANNEL=development
     if !skip_languages {
         let lang = "hu";
 
-        // Check if we should import Hungarian based on only_languages filter
-        let should_import_hungarian = if let Some(ref only_langs) = only_languages_vec {
-            only_langs.contains(&lang.to_lowercase())
-        } else {
-            true
-        };
-
-        if should_import_hungarian {
+        // Selected by the only_languages filter, the same decision the
+        // preflight checked the Buddha Ujja source for.
+        if steps.hungarian {
             let bu_db_path = bootstrap_assets_dir.join("buddha-ujja-sql/bu.sqlite3");
             if bu_db_path.exists() {
                 logger::info("Importing Hungarian suttas from Buddha Ujja");

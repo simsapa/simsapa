@@ -111,6 +111,10 @@ pub fn connect_to_arangodb() -> Result<Database<ReqwestClient>> {
     Ok(db)
 }
 
+/// Language codes `get_sorted_languages_list()` leaves out. Keep in step with
+/// its AQL filter.
+pub const LANGUAGES_NOT_IN_LIST: [&str; 4] = ["en", "pli", "san", "hu"];
+
 /// Get sorted list of languages from ArangoDB
 ///
 /// Queries the 'language' collection and returns a sorted list of language codes,
