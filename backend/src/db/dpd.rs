@@ -14,9 +14,10 @@ use serde::{Serialize, Deserialize};
 
 use crate::db::dpd_models::*;
 use crate::db::DatabaseHandle;
-use crate::db::fts_scripts::{run_fts5_script, FtsScript};
+use crate::db::fts_scripts::{open_db_path, run_fts5_script, FtsScript};
+use diesel::connection::SimpleConnection;
 
-use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for_sqlite};
+use crate::{get_app_data, get_create_simsapa_app_assets_path};
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
@@ -2286,7 +2287,7 @@ pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf
 
     // Run the migrations on the db
     migrate_dpd(&migrate_db_path, dpd_dict.id)
-        .map_err(|e| format!("{}", e))?;
+        .map_err(|e| format!("{:#}", e))?;
 
     // Move to local data folder or the specified path
     let output_path = match dpd_output_path {
@@ -2322,7 +2323,7 @@ pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf
         .map_err(|e| format!("{}", e))?
         .log();
 
-    create_dpd_indexes(&output_path).map_err(|e| format!("{}", e))?;
+    create_dpd_indexes(&output_path).map_err(|e| format!("{:#}", e))?;
 
     Ok(())
 }
@@ -3046,14 +3047,10 @@ pub fn dpd_update_schema(db_conn: &mut SqliteConnection) -> Result<(), diesel::r
 }
 
 /// Performs schema changes and data migrations for DPD tables.
-pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
-                   -> Result<(), diesel::result::Error> {
+pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32) -> Result<()> {
     info("migrate_dpd()");
 
-    let abs_path = normalize_path_for_sqlite(fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()));
-    let database_url = format!("sqlite://{}", abs_path.as_os_str().to_str().expect("os_str Error!"));
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let mut db_conn = open_db_path(dpd_db_path)?;
 
     dpd_update_schema(&mut db_conn)?;
 
@@ -3062,11 +3059,6 @@ pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
     use crate::db::dpd_schema::{dpd_headwords, dpd_roots};
 
     info("Updating dictionary_id ...");
-
-    let abs_path = normalize_path_for_sqlite(fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()));
-    let database_url = format!("sqlite://{}", abs_path.as_os_str().to_str().expect("os_str Error!"));
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
 
     db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
         // Update dictionary_id for all rows
@@ -3135,64 +3127,30 @@ pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
     Ok(())
 }
 
+/// The DPD B-tree index script. Like the FTS5 scripts it does not `VACUUM`:
+/// the bootstrap vacuums `dpd.sqlite3` once before its archive, and an
+/// on-device upgrade must never rewrite the whole 2.4 GB file.
+pub const DPD_BTREE_INDEXES_SQL: &str = include_str!("../../../scripts/dpd-btree-indexes.sql");
+
 /// Run the DPD index SQL scripts (B-tree then FTS5) against the given DPD
 /// sqlite database. Split from `migrate_dpd` so the CLI bootstrap can defer
 /// index creation until after derived-column population (e.g.
 /// `bold_definitions.uid`), which the scripts depend on.
-pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<(), diesel::result::Error> {
+pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<()> {
     info("create_dpd_indexes()");
 
-    let abs_path = normalize_path_for_sqlite(
-        fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()),
-    );
-    let database_url = format!(
-        "sqlite://{}",
-        abs_path.as_os_str().to_str().expect("os_str Error!")
-    );
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let mut db_conn = open_db_path(dpd_db_path)?;
 
-    // Execute DPD B-tree indexes SQL script
+    // A multi-statement script: batch_execute, never sql_query, which runs
+    // only the first statement.
     info("Executing DPD B-tree indexes script...");
-    let sql_content = include_str!("../../../scripts/dpd-btree-indexes.sql");
-
-    // Remove comments (both full-line and inline) and split into individual commands
-    let cleaned_sql = sql_content
-        .lines()
-        .map(|line| {
-            // Remove inline comments by finding '--' and keeping the content before it
-            if let Some(comment_pos) = line.find("--") {
-                &line[..comment_pos]
-            } else {
-                line
-            }
-        })
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<&str>>()
-        .join("\n");
-
-    let sql_commands: Vec<&str> = cleaned_sql
-        .split(';')
-        .map(|cmd| cmd.trim())
-        .filter(|cmd| !cmd.is_empty())
-        .collect();
-
-    // Execute each SQL command individually
-    for sql_command in sql_commands {
-        info(&format!("Executing SQL: {}", sql_command));
-        diesel::sql_query(sql_command).execute(&mut db_conn)?;
-    }
+    db_conn.batch_execute(DPD_BTREE_INDEXES_SQL)
+        .context("dpd-btree-indexes.sql failed")?;
 
     info("Successfully created DPD B-tree indexes");
 
     for script in [FtsScript::Dpd, FtsScript::DpdBoldDefinitions] {
-        if let Err(e) = run_fts5_script(&mut db_conn, script) {
-            return Err(diesel::result::Error::DatabaseError(
-                diesel::result::DatabaseErrorKind::Unknown,
-                Box::new(format!("{:#}", e)),
-            ));
-        }
+        run_fts5_script(&mut db_conn, script)?;
     }
 
     info("Successfully created DPD bold_definitions FTS5 indexes");

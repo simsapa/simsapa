@@ -131,13 +131,16 @@ mod tests {
 
     #[test]
     fn scripts_have_no_vacuum_and_no_dot_commands() {
-        for script in FtsScript::ALL {
-            for (n, line) in script.sql().lines().enumerate() {
+        let scripts = FtsScript::ALL.iter()
+            .map(|s| (s.file_name(), s.sql()))
+            .chain([("dpd-btree-indexes.sql", crate::db::dpd::DPD_BTREE_INDEXES_SQL)]);
+        for (file_name, sql) in scripts {
+            for (n, line) in sql.lines().enumerate() {
                 let code = line.split("--").next().unwrap_or("").trim().to_uppercase();
-                assert!(!code.contains("VACUUM"), "{}:{} vacuums", script.file_name(), n + 1);
-                assert!(!code.starts_with('.'), "{}:{} is a sqlite3 dot-command", script.file_name(), n + 1);
+                assert!(!code.contains("VACUUM"), "{}:{} vacuums", file_name, n + 1);
+                assert!(!code.starts_with('.'), "{}:{} is a sqlite3 dot-command", file_name, n + 1);
                 assert!(!code.starts_with("BEGIN TRANSACTION") && !code.starts_with("COMMIT"),
-                        "{}:{} manages a transaction", script.file_name(), n + 1);
+                        "{}:{} manages a transaction", file_name, n + 1);
             }
         }
     }
