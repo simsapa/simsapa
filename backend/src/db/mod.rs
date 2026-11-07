@@ -7,6 +7,7 @@ pub mod dictionaries_models;
 pub mod dictionaries_schema;
 pub mod dpd;
 pub mod dpd_models;
+pub mod dpd_res;
 pub mod dpd_schema;
 pub mod fts_scripts;
 

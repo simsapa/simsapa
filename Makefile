@@ -81,10 +81,10 @@ parse-cips:
 	cd bootstrap_cli && cargo run -- parse-cips-index --csv-path ../../src-lib/CIPS/src/data/general-index.csv --json-path ../assets/general-index.json --db-path ../../bootstrap-assets-resources/dist/simsapa/app-assets/appdata.sqlite3 --minify
 
 count-code:
-	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
+	tokei --types Rust,QML,C++,TypeScript,Javascript,CMake --compact --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | grep -vE '===|---'
 
 count-code-pie:
-	tokei -o json --types Rust,QML,C++,TypeScript,Javascript,CMake --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude assets/dpd-res/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | tokei-pie
+	tokei -o json --types Rust,QML,C++,TypeScript,Javascript,CMake --exclude bridges/assets/qml/data/ --exclude bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml --exclude assets/js/simsapa.min.js --exclude assets/js/vendor/ --exclude assets/pdf-viewer/ --exclude backend/src/lookup.rs --exclude "*/tests/" --exclude "tst_*.qml" . | tokei-pie
 
 simsapa.min.js:
 	npx webpack
@@ -120,7 +120,7 @@ qml-test: qml-lint
 	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/
 
 project-tree:
-	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I dpd-res/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt
+	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt
 
 bootstrap:
 	cd bootstrap_cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv

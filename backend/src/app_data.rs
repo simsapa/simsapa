@@ -1043,9 +1043,12 @@ impl AppData {
                             Some(body_class.to_string()),
                         );
                     }
-                    // DPD ships its resources as files under assets/dpd-res/ and
-                    // references them with bare <link href="…"> tags that get
-                    // rewritten to that folder below. User-imported dictionaries
+                    // DPD's resources are in the dpd_res table of dpd.sqlite3,
+                    // and its pages reference them with bare <link href="…">
+                    // tags that get rewritten to the /dpd_res/ route below. The
+                    // page's inline loader turns each `<link class="load_js">`
+                    // into a <script src> with the same href, so the scripts
+                    // follow the rewrite. User-imported dictionaries
                     // instead carry their res/ files in the dict_resources table:
                     // CSS/JS are injected inline here, images/fonts are served via
                     // the /dict_resources/<id>/… API route.
@@ -1107,11 +1110,11 @@ impl AppData {
                     };
 
                     if is_dpd {
-                        // DPD-only: rewrite every <link href> to the dpd-res folder.
+                        // DPD-only: rewrite every <link href> to the /dpd_res/ route.
                         word_html = RE_LINK_HREF.replace_all(&word_html, |caps: &Captures| {
                             format!("{}{}{}{}",
                                     &caps[1],
-                                    &format!("{}/assets/dpd-res/", &self.api_url),
+                                    &format!("{}/dpd_res/", &self.api_url),
                                     &caps[2],
                                     &caps[3])
                         }).to_string();

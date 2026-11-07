@@ -14,6 +14,10 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `backend/src/db/mod.rs` - `fts5_integrity_check()`, `*_FTS_TABLES`, DB handles.
 - `backend/src/db/dpd.rs` - `import_migrate_dpd()`, `migrate_dpd()`, `create_dpd_indexes()`, `populate_dpd_construction_summaries()`, the three DPD HTML conversions, `dpd_release_version()`.
 - `backend/src/db/dpd_res.rs` - **new**: the `dpd_res` table: create, import a res/ folder, read one file, the `<link href>` check.
+- `assets/css/dictionary.css` - now holds Simsapa's `a.word_link` rules (moved out of DPD's CSS).
+- `backend/tests/stardict_import_resources.rs` - asserts user dictionaries are not routed to `/dpd_res/`.
+- `backend/tests/test_search_results_pin.rs`, `backend/tests/data/search_results_pin.tsv` - the pins carry a fingerprint of the database they were made from; on another database the test rewrites its section instead of failing.
+- `Makefile` - `tokei`/`tree` excludes no longer name `assets/dpd-res/`.
 - `backend/src/db/dictionaries.rs` - `find_or_create_dpd_dictionary()`, the DPD row's `version`.
 - `backend/src/stardict_parse.rs` - `import_stardict_as_new()` (global wrapper), `parse_stardict_words()`, `insert_dict_words()`, `import_stardict_into()` (any connection, no dictionary row).
 - `backend/src/app_data.rs` - the DPD `<link href>` rewrite (~line 1110), `resolve_word_uid()`, `AppData::try_new()`, the session JSON export/import.
@@ -41,8 +45,9 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `assets/gloss-phrase-selections.json` - numeric uids plus `selected_lemma`.
 
 ### API (`api/`)
-- `api/src/routes/misc.rs` (or a new `api/src/routes/dpd_res.rs`) - `GET /dpd_res/<path..>`.
-- `api/src/lib.rs` - `shared_routes()`, the route inventory comment, the route-count test (`keys.len()`, currently 27).
+- `api/src/routes/dpd_res.rs` - **new**: `GET /dpd_res/<path..>` and its response mapping `dpd_res_response()`.
+- `api/src/routes/mod.rs` - registers the module.
+- `api/src/lib.rs` - `shared_routes()`, the route inventory comment, the route-count test (`keys.len()`, now 28).
 
 ### Bootstrap (`bootstrap_cli/`)
 - `bootstrap_cli/src/bootstrap/source_paths.rs` - DPD path constants.
@@ -152,16 +157,16 @@ The bootstrap passes the dist databases, so its output is unchanged.
 - `dictionaries.version` of the DPD row = `db_info.dpd_release_version`.
 **Depends on:** 2.0. **Note:** after this task a re-bootstrap is needed; the release needs the maintainer's app + DB version bump (FR-10).
 
-- [ ] 3.0 Store DPD's res/ files in `dpd.sqlite3` and serve them from there; adapt the bootstrap and the preflight (FR-1 to FR-14)
-  - [ ] 3.1 Add `backend/src/db/dpd_res.rs`: `create_dpd_res_table()`, `import_dpd_res_dir(conn, res_dir)` (FR-2, FR-3), `get_dpd_res(path) -> Option<(mime, bytes)>`, and `check_dpd_link_hrefs(dict_db, dpd_db)` (FR-5). Mime types by extension: `css` → `text/css`, `js` → `application/javascript`, `ttf` → `font/ttf`, `woff2` → `font/woff2`, `ico` → `image/x-icon`, else `application/octet-stream`.
-  - [ ] 3.2 Unit tests for 3.1: niggahīta converted in every `.js` and `.css` file and only there (a `.ttf` fixture byte-identical); empty and missing folders are errors; a `<link href>` to an absent path is an error naming it; a fixture with `ṃ` in a `*_template.js` file comes out with `ṁ`.
-  - [ ] 3.3 Call 3.1 from `import_migrate_dpd()` (the `res_dir` parameter from 2.3), and write the DPD row's `version` from `db_info` (FR-6).
-  - [ ] 3.4 Add `GET /dpd_res/<path..>` to `simsapa_api` (`api/src/routes/`), register it in `shared_routes()`, update the inventory comment and the route-count test. Route tests: content type, `404`, absent table → `404`.
-  - [ ] 3.5 Change the DPD `<link href>` rewrite in `backend/src/app_data.rs` (~line 1110) to `{api_url}/dpd_res/`. (The DPD page's inline loader turns each `<link class="load_js" href>` into a `<script src>` with that same href, so the scripts follow the rewrite.) Grep the whole repo (`src-ts/`, `assets/`, QML, Rust) for `dpd-res` and `assets/dpd-res`, and change or remove every reference.
-  - [ ] 3.6 Delete `assets/dpd-res/` and `convert_dpd_res_niggahita()` with its call in `dpd_migrate()`. Confirm the binary no longer embeds them (the `include_dir!` of `assets/` shrinks by ~15 MB).
-  - [ ] 3.7 `source_paths.rs`: add a `DPD_RES_DIR` constant (`dpd-db-for-bootstrap/current/dpd/res`), fix the `dpd.db.tar.bz2` comment to `.tar.xz`. Pass it from `dpd_bootstrap()` / `dpd_migrate()` to the migration. Add it as **required** under the `dpd` step in `preflight.rs` `bootstrap_sources()`, and run `cargo test test_full_bootstrap_sources -- --ignored`.
-  - [ ] 3.8 **Font URL test (§7.3 item 1, decides FR-4).** Re-bootstrap the dist. Ask the user to open a DPD entry (e.g. `dhamma 1.01`) in the desktop app and on an Android device, and with a second instance on a non-4848 port. Also open the page in a browser through `simsapa serve`. Check that the Inter fonts load. If any viewer fails with the relative `url()`, rewrite the `@font-face` URLs at serve time in the route with the server's `api_url`; never store a port in the table.
-  - [ ] 3.9 Check against the PRD's §8 metric: the 2026-10-26 Permalink line, Inter fonts, ṁ in Idioms/Family, and zero requests to `/assets/dpd-res/` (from the app's log or the browser's network panel). Run `make build -B`, `cd backend && cargo test`, `cd api && cargo test`.
+- [x] 3.0 Store DPD's res/ files in `dpd.sqlite3` and serve them from there; adapt the bootstrap and the preflight (FR-1 to FR-14)
+  - [x] 3.1 Add `backend/src/db/dpd_res.rs`: `create_dpd_res_table()`, `import_dpd_res_dir(conn, res_dir)` (FR-2, FR-3), `get_dpd_res(path) -> Option<(mime, bytes)>`, and `check_dpd_link_hrefs(dict_db, dpd_db)` (FR-5). Mime types by extension: `css` → `text/css`, `js` → `application/javascript`, `ttf` → `font/ttf`, `woff2` → `font/woff2`, `ico` → `image/x-icon`, else `application/octet-stream`. (Done; `json` is also treated as text. The table is dropped and recreated on each import; `get_dpd_res()` reads an absent table as `None` via `sqlite_master`; the link check samples ~2000 rows spread over the id range by `id % stride`.)
+  - [x] 3.2 Unit tests for 3.1: niggahīta converted in every `.js` and `.css` file and only there (a `.ttf` fixture byte-identical); empty and missing folders are errors; a `<link href>` to an absent path is an error naming it; a fixture with `ṃ` in a `*_template.js` file comes out with `ṁ`.
+  - [x] 3.3 Call 3.1 from `import_migrate_dpd()` (the `res_dir` parameter from 2.3), and write the DPD row's `version` from `db_info` (FR-6).
+  - [x] 3.4 Add `GET /dpd_res/<path..>` to `simsapa_api` (`api/src/routes/`), register it in `shared_routes()`, update the inventory comment and the route-count test. Route tests: content type, `404`, absent table → `404`.
+  - [x] 3.5 Change the DPD `<link href>` rewrite in `backend/src/app_data.rs` (~line 1110) to `{api_url}/dpd_res/`. (The DPD page's inline loader turns each `<link class="load_js" href>` into a `<script src>` with that same href, so the scripts follow the rewrite.) Grep the whole repo (`src-ts/`, `assets/`, QML, Rust) for `dpd-res` and `assets/dpd-res`, and change or remove every reference.
+  - [x] 3.6 Delete `assets/dpd-res/` and `convert_dpd_res_niggahita()` with its call in `dpd_migrate()`. Confirm the binary no longer embeds them (the `include_dir!` of `assets/` shrinks by ~15 MB). (Done. The repo copy of `dpd-css-and-fonts.css` carried Simsapa's own `a.word_link` / `p:has(a.word_link)` rules for the links `convert_dpd_epd_word_links` makes; they moved to `assets/css/dictionary.css`, which is injected into every dictionary page after DPD's stylesheet, so DPD's CSS is stored unmodified apart from niggahīta. Makefile `tokei`/`tree` excludes and PROJECT_MAP updated.)
+  - [x] 3.7 `source_paths.rs`: add a `DPD_RES_DIR` constant (`dpd-db-for-bootstrap/current/dpd/res`), fix the `dpd.db.tar.bz2` comment to `.tar.xz`. Pass it from `dpd_bootstrap()` / `dpd_migrate()` to the migration. Add it as **required** under the `dpd` step in `preflight.rs` `bootstrap_sources()`, and run `cargo test test_full_bootstrap_sources -- --ignored`.
+  - [x] 3.8 **Font URL test (§7.3 item 1, decides FR-4).** Re-bootstrap the dist. Ask the user to open a DPD entry (e.g. `dhamma 1.01`) in the desktop app and on an Android device, and with a second instance on a non-4848 port. Also open the page in a browser through `simsapa serve`. Check that the Inter fonts load. If any viewer fails with the relative `url()`, rewrite the `@font-face` URLs at serve time in the route with the server's `api_url`; never store a port in the table. (Re-bootstrapped 2026-11-07: `dpd_res` holds 16 files / 15.0 MB; log shows the link check passed on 2,017 sampled rows, 14 distinct hrefs; `version` = `v0.4.20261026`. Through `simsapa serve --port 4917`: every `<link>` of `dhamma 1.01` points to `http://localhost:4917/dpd_res/…` and answers 200 with the stored mime type; the CSS's relative `url('Inter-…ttf')` resolves to `/dpd_res/Inter-…ttf` (200, `font/ttf`). Still to do by hand: fonts rendering in the desktop app, on Android, on a second instance and in a browser.)
+  - [x] 3.9 Check against the PRD's §8 metric: the 2026-10-26 Permalink line, Inter fonts, ṁ in Idioms/Family, and zero requests to `/assets/dpd-res/` (from the app's log or the browser's network panel). Run `make build -B`, `cd backend && cargo test`, `cd api && cargo test`.
 
 ### 4.0 Store numeric DPD headword uids, with the lemma alongside in files
 

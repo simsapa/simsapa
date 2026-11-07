@@ -112,3 +112,27 @@ html.dark, body.dark {
 .sutta-link:hover {
   border-bottom-color: black;
 }
+
+/* DPD EPD word-list links, which Simsapa makes from DPD's
+   `<b class=epd>WORD</b>` items at import (Combined dictionary lookup on
+   click). The anchor also carries the `epd` class, so `a.word_link` is more
+   specific than DPD's `.epd` rule and wins the colour. The `--primary*`
+   variables are defined by the DPD page itself, in light and dark. */
+a.word_link {
+  color: var(--primary-alt);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--primary-alt);
+  cursor: pointer;
+}
+
+a.word_link:hover {
+  color: var(--primary-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--primary-text);
+}
+
+/* Extra vertical room for the EPD word-list rows, so the dashed underlines
+   don't crowd the line below. */
+p:has(a.word_link) {
+  line-height: 200%;
+}

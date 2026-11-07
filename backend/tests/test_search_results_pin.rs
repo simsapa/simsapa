@@ -8,9 +8,14 @@
 //! that the first and last pages at the normal page length are its slices.
 //! Suttas cases pin the first and the last page.
 //!
-//! The golden file describes the database the tests run on. After a new
-//! bootstrap, check the differences against the source data, then regenerate
-//! it with:
+//! The pins describe one database, so each section of the golden file starts
+//! with a fingerprint of the rows its searches read (`dict.@db`, `suttas.@db`:
+//! ids, uids, languages and text lengths). On the database the pins were made
+//! from, any difference is a change in the search code and fails the test. On
+//! another database (a new bootstrap) the comparison says nothing about the
+//! code: the test rewrites its section of the golden file and passes. Review
+//! that rewrite in `git diff` against the source data before committing it.
+//! To rewrite every pin regardless of the fingerprint:
 //!
 //!     SIMSAPA_PIN_WRITE=1 cargo test --test test_search_results_pin -- --nocapture
 //!
@@ -20,6 +25,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{BigInt, Integer, Text};
 use serial_test::serial;
 use sha2::{Digest, Sha256};
 use simsapa_backend::app_settings::PaliEditionPreference;
@@ -213,6 +221,64 @@ fn suttas_pins(out: &mut BTreeMap<String, String>) {
     }
 }
 
+#[derive(QueryableByName)]
+struct FingerprintRow {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Text)]
+    key: String,
+    #[diesel(sql_type = BigInt)]
+    a: i64,
+    #[diesel(sql_type = BigInt)]
+    b: i64,
+}
+
+/// `<label>:<rows>:<hash>` over the rows of one fingerprint query, in id order.
+fn table_fingerprint(conn: &mut SqliteConnection, label: &str, sql: &str) -> diesel::QueryResult<String> {
+    let rows: Vec<FingerprintRow> = sql_query(sql).load(conn)?;
+    let mut hasher = Sha256::new();
+    for r in &rows {
+        hasher.update(format!("{}\t{}\t{}\t{}\n", r.id, r.key, r.a, r.b).as_bytes());
+    }
+    Ok(format!("{}:{}:{}", label, rows.len(), hex_prefix(hasher.finalize().as_slice())))
+}
+
+/// The rows the Dictionary searches read: the dictionaries, their words and
+/// the DPD bold definitions. A change of row ids reorders the results, so ids
+/// are part of it; text lengths stand for the searched text.
+fn dictionary_db_fingerprint() -> String {
+    let app_data = get_app_data();
+    let dict = app_data.dbm.dictionaries.do_read(|conn| {
+        Ok(vec![
+            table_fingerprint(conn, "dictionaries",
+                "SELECT id, label || char(9) || COALESCE(language, '') AS key, 0 AS a, 0 AS b \
+                 FROM dictionaries ORDER BY id")?,
+            table_fingerprint(conn, "dict_words",
+                "SELECT id, uid || char(9) || dictionary_id || char(9) || COALESCE(language, '') AS key, \
+                 COALESCE(length(word), 0) AS a, COALESCE(length(definition_plain), 0) AS b \
+                 FROM dict_words ORDER BY id")?,
+        ])
+    }).expect("dictionaries fingerprint");
+    let bold = app_data.dbm.dpd.do_read(|conn| {
+        table_fingerprint(conn, "bold_definitions",
+            "SELECT id, COALESCE(uid, '') || char(9) || bold AS key, \
+             COALESCE(length(bold), 0) AS a, COALESCE(length(commentary_plain), 0) AS b \
+             FROM bold_definitions ORDER BY id")
+    }).expect("bold_definitions fingerprint");
+    format!("{} {}", dict.join(" "), bold)
+}
+
+/// The rows the Suttas Contains searches read.
+fn suttas_db_fingerprint() -> String {
+    get_app_data().dbm.appdata.do_read(|conn| {
+        table_fingerprint(conn, "suttas",
+            "SELECT id, uid || char(9) || COALESCE(language, '') || char(9) || COALESCE(nikaya, '') \
+             || char(9) || COALESCE(source_uid, '') AS key, \
+             COALESCE(length(title), 0) AS a, COALESCE(length(content_plain), 0) AS b \
+             FROM suttas ORDER BY id")
+    }).expect("suttas fingerprint")
+}
+
 fn golden_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GOLDEN_FILE)
 }
@@ -229,22 +295,22 @@ fn read_golden() -> BTreeMap<String, String> {
         .collect()
 }
 
-fn check_or_write(got: BTreeMap<String, String>, prefix: &str) {
-    if std::env::var("SIMSAPA_PIN_WRITE").is_ok() {
-        let mut all = if golden_path().try_exists().unwrap_or(false) { read_golden() } else { BTreeMap::new() };
-        all.retain(|k, _| !k.starts_with(prefix));
-        all.extend(got);
-        let mut text = String::from("# case\ttotal\trows\tuids_sha256\tcontent_sha256\tfirst_uids\n");
-        for (k, v) in &all {
-            text.push_str(&format!("{}\t{}\n", k, v));
-        }
-        fs::write(golden_path(), text).expect("write golden file");
-        return;
+fn write_section(got: &BTreeMap<String, String>, prefix: &str) {
+    let mut all = if golden_path().try_exists().unwrap_or(false) { read_golden() } else { BTreeMap::new() };
+    all.retain(|k, _| !k.starts_with(prefix));
+    all.extend(got.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let mut text = String::from("# case\ttotal\trows\tuids_sha256\tcontent_sha256\tfirst_uids\n");
+    text.push_str("# <area>.@db: the fingerprint of the database the pins of <area> were made from\n");
+    for (k, v) in &all {
+        text.push_str(&format!("{}\t{}\n", k, v));
     }
+    fs::write(golden_path(), text).expect("write golden file");
+}
 
-    let golden = read_golden();
+/// The differences between `got` and the pinned section `prefix`.
+fn diffs_against(golden: &BTreeMap<String, String>, got: &BTreeMap<String, String>, prefix: &str) -> Vec<String> {
     let mut diffs = Vec::new();
-    for (k, v) in &got {
+    for (k, v) in got {
         match golden.get(k) {
             Some(g) if g == v => {}
             Some(g) => diffs.push(format!("{}\n  pinned: {}\n  now:    {}", k, g, v)),
@@ -254,7 +320,32 @@ fn check_or_write(got: BTreeMap<String, String>, prefix: &str) {
     for k in golden.keys().filter(|k| k.starts_with(prefix) && !got.contains_key(*k)) {
         diffs.push(format!("{}\n  pinned, but no longer run", k));
     }
-    assert!(diffs.is_empty(), "{} pinned results differ:\n{}", diffs.len(), diffs.join("\n"));
+    diffs
+}
+
+/// Compare `got` with the golden section `prefix`, or rewrite the section
+/// when the pins were made from another database (see the module docs).
+/// `got` holds the `<prefix>@db` fingerprint.
+fn check_or_write(got: BTreeMap<String, String>, prefix: &str) {
+    if std::env::var("SIMSAPA_PIN_WRITE").is_ok() {
+        write_section(&got, prefix);
+        return;
+    }
+
+    let db_key = format!("{}@db", prefix);
+    let golden = if golden_path().try_exists().unwrap_or(false) { read_golden() } else { BTreeMap::new() };
+    if golden.get(&db_key) != got.get(&db_key) {
+        let n = diffs_against(&golden, &got, prefix).len();
+        write_section(&got, prefix);
+        eprintln!("{}: the pins were made from another database ({} cases differ); \
+                   rewrote them in {}. Review the git diff against the source data.",
+                  prefix, n.saturating_sub(1), GOLDEN_FILE);
+        return;
+    }
+
+    let diffs = diffs_against(&golden, &got, prefix);
+    assert!(diffs.is_empty(), "{} pinned results differ on the database they were made from:\n{}",
+            diffs.len(), diffs.join("\n"));
 }
 
 #[test]
@@ -262,6 +353,7 @@ fn check_or_write(got: BTreeMap<String, String>, prefix: &str) {
 fn test_dictionary_results_pinned() {
     h::app_data_setup();
     let mut got = BTreeMap::new();
+    got.insert("dict.@db".to_string(), dictionary_db_fingerprint());
     dictionary_pins(&mut got);
     check_or_write(got, "dict.");
 }
@@ -271,6 +363,7 @@ fn test_dictionary_results_pinned() {
 fn test_suttas_contains_results_pinned() {
     h::app_data_setup();
     let mut got = BTreeMap::new();
+    got.insert("suttas.@db".to_string(), suttas_db_fingerprint());
     suttas_pins(&mut got);
     check_or_write(got, "suttas.");
 }

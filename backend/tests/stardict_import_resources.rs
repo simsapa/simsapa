@@ -209,9 +209,9 @@ fn render_applies_dict_resources() {
     let expected_img = format!("/dict_resources/{}/logo.png", dict_id);
     assert!(html.contains(&expected_img),
         "image src must be rewritten to {}.\n{}", expected_img, html);
-    // The DPD-only assets/dpd-res rewrite must NOT have fired for this user dict.
-    assert!(!html.contains("/assets/dpd-res/"),
-        "user-dict links must not be misrouted to assets/dpd-res/.\n{}", html);
+    // The DPD-only /dpd_res/ rewrite must NOT have fired for this user dict.
+    assert!(!html.contains("/dpd_res/"),
+        "user-dict links must not be misrouted to /dpd_res/.\n{}", html);
 
     delete_user_dictionary(dict_id).expect("delete_user_dictionary");
 }

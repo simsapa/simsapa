@@ -122,9 +122,12 @@ pub fn gloss_data_cache_dir_from_crate() -> PathBuf {
 
 // === Dictionaries ===
 
-/// The DPD StarDict export.
+/// The DPD StarDict export (the `dpd/` folder of `dpd-goldendict.zip`).
 pub const DPD_STARDICT_DIR: &str = "dpd-db-for-bootstrap/current/dpd";
-/// The extracted `dpd.db` (from `dpd.db.tar.bz2`).
+/// The `res/` folder of the DPD StarDict export: the CSS, fonts and page
+/// scripts imported into the `dpd_res` table.
+pub const DPD_RES_DIR: &str = "dpd-db-for-bootstrap/current/dpd/res";
+/// The extracted `dpd.db` (from `dpd.db.tar.xz`).
 pub const DPD_DB: &str = "dpd-db-for-bootstrap/current/dpd.db";
 pub const DPPN_DB: &str = "dppn-anandajoti/dppn.sqlite3";
 

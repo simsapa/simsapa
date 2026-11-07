@@ -1,11 +1,13 @@
 # case	total	rows	uids_sha256	content_sha256	first_uids
+# <area>.@db: the fingerprint of the database the pins of <area> were made from
+dict.@db	dictionaries:3:6d4d7ddbb2f37115 dict_words:187122:86464143554ed9d9 bold_definitions:369147:8361c33e101d53d0
 dict.contains+bold|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
-dict.contains+bold|-|kamma|all	46930	46930	4c651325223ff91b	07b27d0b7770bc9e	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|-|ssa|all	250185	250185	eec67826a6c35441	03c36269abc9de10	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains+bold|-|kamma|all	46930	46930	d6431c1c87fe1213	575242a46608f086	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|-|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains+bold|-|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains+bold|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|dicts=dpd|kamma|all	46815	46815	b490505ebc21c01f	a1b181f4e5510dbd	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|dicts=dpd|ssa|all	250185	250185	eec67826a6c35441	03c36269abc9de10	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains+bold|dicts=dpd|kamma|all	46815	46815	15b4f5efe31ebf0d	d165ffc1945040a0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|dicts=dpd|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains+bold|dicts=dpd|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains+bold|dicts=dppn|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
 dict.contains+bold|dicts=dppn|kamma|all	28128	28128	ff5c7785f8d83282	b9f8f27f3e97aab1	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
@@ -16,20 +18,20 @@ dict.contains+bold|lang=en|kamma|all	115	115	da666801e58dcab1	6a1873eeac98509e	a
 dict.contains+bold|lang=en|ssa|all	2261	2261	fd605254bdf010ef	079a84fdd571efbb	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
 dict.contains+bold|lang=en|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains+bold|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|lang=pli|kamma|all	46815	46815	b490505ebc21c01f	a1b181f4e5510dbd	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|lang=pli|ssa|all	250185	250185	eec67826a6c35441	03c36269abc9de10	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains+bold|lang=pli|kamma|all	46815	46815	15b4f5efe31ebf0d	d165ffc1945040a0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|lang=pli|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains+bold|lang=pli|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains+bold|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|uid_prefix=kamma|kamma|all	1257	1257	831731162e4ad308	2a9cc13880c44d3f	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|uid_prefix=kamma|ssa|all	788	788	6a8de0f900cffb33	6103f580062f91ec	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
+dict.contains+bold|uid_prefix=kamma|kamma|all	1257	1257	ae1d0ab80aeff9f9	43cd2299fe8eb858	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|uid_prefix=kamma|ssa|all	788	788	5805957a2e90dc80	48ee5da6ce4e3957	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
 dict.contains+bold|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.contains|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
-dict.contains|-|kamma|all	18917	18917	f1c4b7cd21bec238	4a4d8a80daa084c8	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains|-|ssa|all	51194	51194	9e4a3d92e043071c	2cc2b2bcc91bd36c	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains|-|kamma|all	18917	18917	fcac4dd8b0b5e6d4	7fefd53739db7d06	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains|-|ssa|all	51163	51163	cd397696f3a3925c	7d2dd039fb05ee27	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains|-|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains|dicts=dpd|kamma|all	18802	18802	5fdcf3e4be2a3f51	5e7ecdc4f71a0eb0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains|dicts=dpd|ssa|all	51194	51194	9e4a3d92e043071c	2cc2b2bcc91bd36c	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains|dicts=dpd|kamma|all	18802	18802	cc68539a108a5d82	6279e62e4fc81eb0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains|dicts=dpd|ssa|all	51163	51163	cd397696f3a3925c	7d2dd039fb05ee27	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains|dicts=dpd|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains|dicts=dppn|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
 dict.contains|dicts=dppn|kamma|all	115	115	da666801e58dcab1	6a1873eeac98509e	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
@@ -40,20 +42,20 @@ dict.contains|lang=en|kamma|all	115	115	da666801e58dcab1	6a1873eeac98509e	aṅgu
 dict.contains|lang=en|ssa|all	2261	2261	fd605254bdf010ef	079a84fdd571efbb	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
 dict.contains|lang=en|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains|lang=pli|kamma|all	18802	18802	5fdcf3e4be2a3f51	5e7ecdc4f71a0eb0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains|lang=pli|ssa|all	51194	51194	9e4a3d92e043071c	2cc2b2bcc91bd36c	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains|lang=pli|kamma|all	18802	18802	cc68539a108a5d82	6279e62e4fc81eb0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains|lang=pli|ssa|all	51163	51163	cd397696f3a3925c	7d2dd039fb05ee27	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains|lang=pli|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
 dict.contains|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains|uid_prefix=kamma|kamma|all	187	187	07d584471c5482ca	dc174bee35bb547b	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains|uid_prefix=kamma|ssa|all	159	159	f989c6963c12a6e0	bde09af8e75c4075	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
+dict.contains|uid_prefix=kamma|kamma|all	187	187	ec6a15deef82886a	63c425fbfcaa58d0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains|uid_prefix=kamma|ssa|all	159	159	02a25fdb7433a575	d5b2fdc0c0d3567f	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
 dict.contains|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword+bold|-|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
-dict.headword+bold|-|kamma|all	4200	4200	67ce86f440196e28	b4b1ac8550fa7ac8	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword+bold|-|ssa|all	33004	33004	9fbc41aa7fbe0b84	5def0e7ea9fa7805	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword+bold|-|kamma|all	4200	4200	ec220ba48f6373a7	f1f3155166925718	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|-|ssa|all	33004	33004	88b20314d9ce3b54	4ce3e39ae8c671a7	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword+bold|-|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
 dict.headword+bold|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|dicts=dpd|kamma|all	4174	4174	001af7c0da740f13	f76745941e9f687a	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword+bold|dicts=dpd|ssa|all	32460	32460	d7a70b470509b442	c59d5a44ebc6a798	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword+bold|dicts=dpd|kamma|all	4174	4174	bbe226c340914f1b	f075b1860bd135a0	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|dicts=dpd|ssa|all	32460	32460	9099451418f7b97b	00461fc866459b82	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword+bold|dicts=dpd|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
 dict.headword+bold|dicts=dppn|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
 dict.headword+bold|dicts=dppn|kamma|all	3512	3512	8a17a497b2d04aa2	a6ad8cb75de3ce54	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
@@ -64,20 +66,20 @@ dict.headword+bold|lang=en|kamma|all	26	26	c02fa9328f5795ea	9b4ef1e51757fd35	apa
 dict.headword+bold|lang=en|ssa|all	544	544	1356f135eded0436	111406ae4d5a23f2	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
 dict.headword+bold|lang=en|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword+bold|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|lang=pli|kamma|all	4174	4174	001af7c0da740f13	f76745941e9f687a	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword+bold|lang=pli|ssa|all	32460	32460	d7a70b470509b442	c59d5a44ebc6a798	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword+bold|lang=pli|kamma|all	4174	4174	bbe226c340914f1b	f075b1860bd135a0	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|lang=pli|ssa|all	32460	32460	9099451418f7b97b	00461fc866459b82	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword+bold|lang=pli|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
 dict.headword+bold|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|uid_prefix=kamma|kamma|all	1257	1257	d730580769273d36	bb0462ddf2accb78	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword+bold|uid_prefix=kamma|ssa|all	95	95	ad06100d19697c3c	a4ba6ef1a520bb18	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
+dict.headword+bold|uid_prefix=kamma|kamma|all	1257	1257	6f12fe0706578c74	672597d4d17deedf	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|uid_prefix=kamma|ssa|all	95	95	22c18085e4ea91f8	c897250d09bf59fd	kammassakomhi/dpd,kammassakatā/dpd,kammassaka/dpd
 dict.headword+bold|uid_prefix=kamma|sutthu|all	1	1	2e2ae64ac852ac13	a3c19d07100f7c55	kammaṭṭhānavimuttiyā-suṭṭhu-vimutta/snt
 dict.headword|-|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
-dict.headword|-|kamma|all	714	714	cfe056a7313580b5	ee8d9ea206f79463	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword|-|ssa|all	4030	4030	52981bedacfc539a	08a19294523ff900	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword|-|kamma|all	714	714	5be2e426b725e94c	227b11de1fc2f866	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword|-|ssa|all	4030	4030	b05a471ce48b43a1	fe731f439e5f8cb7	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword|-|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword|dicts=dpd|kamma|all	688	688	f3e098d5c3d5ed5a	8f38e3fb2936f946	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword|dicts=dpd|ssa|all	3486	3486	461c55bede8504e3	378cbcbf79278f88	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword|dicts=dpd|kamma|all	688	688	18cc712e0de8654b	89d74cce18d458e3	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword|dicts=dpd|ssa|all	3486	3486	773ee52f76e13ee7	d4c6df7727089e4a	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword|dicts=dpd|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword|dicts=dppn|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
 dict.headword|dicts=dppn|kamma|all	26	26	c02fa9328f5795ea	9b4ef1e51757fd35	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
@@ -88,22 +90,23 @@ dict.headword|lang=en|kamma|all	26	26	c02fa9328f5795ea	9b4ef1e51757fd35	apaccakk
 dict.headword|lang=en|ssa|all	544	544	1356f135eded0436	111406ae4d5a23f2	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
 dict.headword|lang=en|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword|lang=pli|kamma|all	688	688	f3e098d5c3d5ed5a	8f38e3fb2936f946	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword|lang=pli|ssa|all	3486	3486	461c55bede8504e3	378cbcbf79278f88	ssabbattha/dpd,ssa-1/dpd,ssa-2/dpd
+dict.headword|lang=pli|kamma|all	688	688	18cc712e0de8654b	89d74cce18d458e3	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword|lang=pli|ssa|all	3486	3486	773ee52f76e13ee7	d4c6df7727089e4a	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword|lang=pli|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.headword|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword|uid_prefix=kamma|kamma|all	187	187	c16bfc98bb0b275c	b9b189522470b167	kammanta-3/dpd,kammakāraka-3/dpd,kammasacca/dpd
-dict.headword|uid_prefix=kamma|ssa|all	4	4	b16cfd271e277d93	252c4a642cc455ab	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
+dict.headword|uid_prefix=kamma|kamma|all	187	187	057aeba3ae779e3d	02a17b18e9055081	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword|uid_prefix=kamma|ssa|all	4	4	62cd07b8cf1fe90f	f9f68fe146dfd5e3	kammassakomhi/dpd,kammassakatā/dpd,kammassaka/dpd
 dict.headword|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.contains|-|kakacena|p0	30	10	1591e63211dd885a	c52f463bf2635259	ps1.3/pli/ms,mn28/pli/ms,mn21/pli/ms
+suttas.@db	suttas:36021:f506ac5419e8497f
+suttas.contains|-|kakacena|p0	30	10	41e23d7cae0b3b38	e93739ec0440b943	mn28/pli/ms,ps1.3/pli/ms,mn21/pli/ms
 suttas.contains|-|kakacena|plast	30	10	d5b61b1d5dfc95a3	84cad4d8b327bd67	s0508a2.att2.xml/pli/cst,s0512a.att3.xml/pli/cst,s0513a1.att1.xml/pli/cst
-suttas.contains|-|mindfulness|p0	3327	10	9925c3fcd61f70f1	e0f0843a3686002d	snp5.2/en/sujato,sn46.37/en/bodhi,sn48.7/en/sujato
+suttas.contains|-|mindfulness|p0	3327	10	4174d635d99c02b8	949759cd6d15f17b	mn9/en/sujato,thi-ap17/en/walters,sn46.42/en/bodhi
 suttas.contains|-|mindfulness|plast	3327	7	07343346dccca0b3	33404676a5b361da	dhp235-255/en/daw,dhp273-289/en/daw,dhp290-305/en/daw
-suttas.contains|-|saṅkhārā|p0	1375	10	740088664e652ec3	6e43cdad3825c68d	bv9/pli/ms,sn22.5/pli/ms,mn10/pli/ms
+suttas.contains|-|saṅkhārā|p0	1375	10	809ab8324f07cb36	17a4d6c40e3bc0d4	an10.60/pli/ms,mn102/pli/ms,an6.102/pli/ms
 suttas.contains|-|saṅkhārā|plast	1375	5	fa136fae6af2afed	867b1e95067fc9fe	vin11t.nrf0.xml/pli/cst,vin11t.nrf35.xml/pli/cst,vin12t.nrf2.xml/pli/cst
 suttas.contains|lang=en|kakacena|p0	1	1	aa051fe5537dc0cd	3761440f68561422	s0105t.nrf0.xml/en/opentipitaka
 suttas.contains|lang=en|kakacena|plast	1	1	aa051fe5537dc0cd	3761440f68561422	s0105t.nrf0.xml/en/opentipitaka
-suttas.contains|lang=en|mindfulness|p0	3327	10	9925c3fcd61f70f1	e0f0843a3686002d	snp5.2/en/sujato,sn46.37/en/bodhi,sn48.7/en/sujato
+suttas.contains|lang=en|mindfulness|p0	3327	10	4174d635d99c02b8	949759cd6d15f17b	mn9/en/sujato,thi-ap17/en/walters,sn46.42/en/bodhi
 suttas.contains|lang=en|mindfulness|plast	3327	7	07343346dccca0b3	33404676a5b361da	dhp235-255/en/daw,dhp273-289/en/daw,dhp290-305/en/daw
 suttas.contains|lang=en|saṅkhārā|p0	48	10	00a585e1c038e68f	cf09664de6880cc0	dn15.tik/en/opentipitaka,dn33.att/en/opentipitaka,dn28.tik/en/opentipitaka
 suttas.contains|lang=en|saṅkhārā|plast	48	8	68c0f3db01258d33	2e18718846ad3ccd	s0515a.att4.xml/en/opentipitaka,s0515a.att9.xml/en/opentipitaka,s0515a.att10.xml/en/opentipitaka
@@ -112,19 +115,19 @@ suttas.contains|lang=pli,nikaya=majjhima,no_ms|kakacena|plast	5	5	b3915c5431f0da
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|mindfulness|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|saṅkhārā|p0	76	10	06320aaa41ee6c9c	6391a771ee0c3b2f	mn1.att/pli/cst,mn2.att/pli/cst,mn9.att/pli/cst
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|saṅkhārā|plast	76	6	0fb59037836abfc6	59eebfedf78f5ef4	mn120.tik/pli/cst,mn121.tik/pli/cst,mn122.tik/pli/cst
-suttas.contains|lang=pli|kakacena|p0	29	10	1591e63211dd885a	c52f463bf2635259	ps1.3/pli/ms,mn28/pli/ms,mn21/pli/ms
+suttas.contains|lang=pli|kakacena|p0	29	10	41e23d7cae0b3b38	e93739ec0440b943	mn28/pli/ms,ps1.3/pli/ms,mn21/pli/ms
 suttas.contains|lang=pli|kakacena|plast	29	9	cb1bc2517d86e04a	72023ffffee0e91e	s0512a.att3.xml/pli/cst,s0513a1.att1.xml/pli/cst,s0513a2.att0.xml/pli/cst
 suttas.contains|lang=pli|mindfulness|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.contains|lang=pli|saṅkhārā|p0	1327	10	740088664e652ec3	6e43cdad3825c68d	bv9/pli/ms,sn22.5/pli/ms,mn10/pli/ms
+suttas.contains|lang=pli|saṅkhārā|p0	1327	10	809ab8324f07cb36	17a4d6c40e3bc0d4	an10.60/pli/ms,mn102/pli/ms,an6.102/pli/ms
 suttas.contains|lang=pli|saṅkhārā|plast	1327	7	0c678a6a43d6c572	d72598dd7b4f297f	vin08t.nrf31.xml/pli/cst,vin09t.nrf13.xml/pli/cst,vin11t.nrf0.xml/pli/cst
 suttas.contains|nikaya=sn|kakacena|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.contains|nikaya=sn|mindfulness|p0	648	10	125be1c94090c40f	15b36e3cedf86864	snp5.2/en/sujato,sn46.37/en/bodhi,sn48.7/en/sujato
+suttas.contains|nikaya=sn|mindfulness|p0	648	10	ab084e26c4f5ab52	96a349ca16febee5	sn46.42/en/bodhi,sn47.17/en/sujato,sn46.22/en/sujato
 suttas.contains|nikaya=sn|mindfulness|plast	648	8	887da6c230cc2908	64e33effddebd731	snp2.11/en/thanissaro,snp3.2/en/thanissaro,snp5.1/en/thanissaro
-suttas.contains|nikaya=sn|saṅkhārā|p0	199	10	4dfb49a06208223d	eb18b8ad769db539	sn22.5/pli/ms,sn24.6/pli/ms,sn22.58/pli/ms
-suttas.contains|nikaya=sn|saṅkhārā|plast	199	9	cd4941b32a321b46	fc30cc84c3bb0e3b	sn23.20/pli/ms,sn12.16/pli/ms,sn24.70/pli/ms
+suttas.contains|nikaya=sn|saṅkhārā|p0	199	10	90a046ea752874af	c341973495704020	sn23.21/pli/ms,sn22.54/pli/ms,sn22.130/pli/ms
+suttas.contains|nikaya=sn|saṅkhārā|plast	199	9	a2289c73626f4e45	c4e67b54a17df7d3	sn12.21/pli/ms,sn22.120/pli/ms,sn22.92/pli/ms
 suttas.contains|no_ms|kakacena|p0	27	10	2d5fd511213a4a36	d632aeba977bc313	dn1.tik/pli/cst,mn21.att/pli/cst,mn21/pli/cst
 suttas.contains|no_ms|kakacena|plast	27	7	2731c108aed2952d	33fb2848a39687a6	s0513a2.att0.xml/pli/cst,s0513a4.att6.xml/pli/cst,s0514a3.att.xml/pli/cst
-suttas.contains|no_ms|mindfulness|p0	3327	10	9925c3fcd61f70f1	e0f0843a3686002d	snp5.2/en/sujato,sn46.37/en/bodhi,sn48.7/en/sujato
+suttas.contains|no_ms|mindfulness|p0	3327	10	4174d635d99c02b8	949759cd6d15f17b	mn9/en/sujato,thi-ap17/en/walters,sn46.42/en/bodhi
 suttas.contains|no_ms|mindfulness|plast	3327	7	07343346dccca0b3	33404676a5b361da	dhp235-255/en/daw,dhp273-289/en/daw,dhp290-305/en/daw
 suttas.contains|no_ms|saṅkhārā|p0	962	10	53f06799a43c24d0	d9e469e0e7c23afe	dn1.att/pli/cst,dn1.tik/pli/cst,dn2.tik/pli/cst
 suttas.contains|no_ms|saṅkhārā|plast	962	2	3ef61fda8f907734	5f7ce1bb931c78d7	vin13t.nrf1.xml/pli/cst,vin13t.nrf2.xml/pli/cst

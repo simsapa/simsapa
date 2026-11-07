@@ -693,6 +693,11 @@ enum Commands {
         /// if you don't want it to be moved to Simsapa's local assets folder.
         #[arg(value_name = "DIRECTORY_PATH")]
         dpd_output_path: Option<PathBuf>,
+
+        /// The `res/` folder of the DPD StarDict export of the same release,
+        /// imported into the `dpd_res` table
+        #[arg(long, value_name = "RES_DIR")]
+        res_dir: PathBuf,
     },
 
     /// Add and fill `dpd_headwords.construction_summary` in an existing DPD
@@ -1118,7 +1123,7 @@ fn main() {
              }
         }
 
-        Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path } => {
+        Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path, res_dir } => {
             match dpd_input_path.try_exists() {
                 Ok(true) => {
                     let paths = &simsapa_backend::get_app_globals().paths;
@@ -1127,7 +1132,7 @@ fn main() {
                     get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
                         .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
                         .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
-                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, None))
+                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None))
                 }
                 Ok(false) => Err(format!("DPD input path does not exist: {:?}", dpd_input_path)),
                 Err(e) => Err(format!("Cannot access DPD input path {:?}: {}", dpd_input_path, e)),

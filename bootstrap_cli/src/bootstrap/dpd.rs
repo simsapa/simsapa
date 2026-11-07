@@ -1,9 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use anyhow::{Result, Context};
 
 use simsapa_backend::{get_app_data, logger};
-use simsapa_backend::helpers::consistent_niggahita;
 use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, FtsScript};
 
 use crate::import_stardict_dictionary;
@@ -90,62 +89,13 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
         .context("Failed to find the DPD dictionary row")?
         .id;
 
-    simsapa_backend::db::dpd::import_migrate_dpd(&dpd_input_path, &dpd_output_path, &dict_db_path, dpd_dictionary_id, limit)
+    // The res/ files of the same release go into dpd.sqlite3's dpd_res table.
+    let res_dir = bootstrap_assets_dir.join(source_paths::DPD_RES_DIR);
+
+    simsapa_backend::db::dpd::import_migrate_dpd(&dpd_input_path, &dpd_output_path, &dict_db_path, dpd_dictionary_id, &res_dir, limit)
         .map_err(|e| anyhow::anyhow!("Failed to migrate DPD database: {}", e))?;
 
     logger::info("Successfully migrated DPD database");
-
-    // The DB migration's replace_all_niggahitas() normalizes ṃ→ṁ in the
-    // dpd.sqlite3 tables, but the Idioms / Family sections rendered in the word
-    // page are built client-side from the static `family_*_json.js` assets in
-    // assets/dpd-res/ (bundled via include_dir!), which Bodhirasa's DPD export
-    // still ships with ṃ. Apply the same niggahita normalization to those
-    // assets so the rendered HTML is consistent with the database.
-    convert_dpd_res_niggahita()?;
-
-    Ok(())
-}
-
-/// Normalize niggahīta (ṃ→ṁ, ŋ→ṁ) in the static DPD `family_*_json.js` assets.
-///
-/// Runs from the bootstrap cwd (simsapa/bootstrap_cli/), so the repo asset directory is
-/// reached via the same `../` convention used for the FTS5 scripts.
-pub fn convert_dpd_res_niggahita() -> Result<()> {
-    logger::info("=== convert_dpd_res_niggahita() ===");
-
-    let dpd_res_dir = PathBuf::from("../assets/dpd-res");
-    let json_files = [
-        "family_compound_json.js",
-        "family_idiom_json.js",
-        "family_root_json.js",
-        "family_set_json.js",
-        "family_word_json.js",
-        "frequency_template.js",
-    ];
-
-    for name in json_files {
-        let path = dpd_res_dir.join(name);
-        match path.try_exists() {
-            Ok(true) => {
-                let content = fs::read_to_string(&path)
-                    .with_context(|| format!("Failed to read {}", path.display()))?;
-                let converted = consistent_niggahita(Some(content));
-                fs::write(&path, converted)
-                    .with_context(|| format!("Failed to write {}", path.display()))?;
-                logger::info(&format!("Normalized niggahita in {}", name));
-            }
-            Ok(false) => {
-                logger::warn(&format!("DPD asset not found, skipping: {}", path.display()));
-            }
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "Failed to check existence of {}: {}",
-                    path.display(),
-                    e
-                ));
-            }
-        }
-    }
 
     Ok(())
 }

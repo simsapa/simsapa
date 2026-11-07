@@ -311,6 +311,14 @@ fn uid_like_patterns(
 }
 
 impl DpdDbHandle {
+    /// One file of the `dpd_res` table: `(mime_type, content)`, or `None` when
+    /// it is not stored or the table is missing (a `dpd.sqlite3` built before
+    /// the table existed).
+    pub fn get_dpd_res(&self, path: &str) -> Result<Option<(String, Vec<u8>)>> {
+        self.do_read(|db_conn| crate::db::dpd_res::get_dpd_res(db_conn, path))
+            .context("get_dpd_res failed")
+    }
+
     /// Count `dpd_headwords` rows (for `/health`). A 0 here means the DPD DB
     /// is not loaded / not installed.
     pub fn count_dpd_headwords(&self) -> Result<i64> {
@@ -2280,13 +2288,19 @@ fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashM
 ///
 /// `dict_db_path` is the dictionaries database holding the DPD StarDict pages
 /// of the same release (the construction summaries are cut from them), and
-/// `dpd_dictionary_id` is the id of the DPD row in it. Uses no global app
-/// data, so it can run on staged files before the app's databases are open.
+/// `dpd_dictionary_id` is the id of the DPD row in it. `res_dir` is the
+/// StarDict export's `res/` folder of the same release, imported into the
+/// `dpd_res` table. Uses no global app data, so it can run on staged files
+/// before the app's databases are open.
+///
+/// Writes the DPD release version into the DPD row's `version` in
+/// `dict_db_path`, so the pages and the data record which release they are.
 pub fn import_migrate_dpd(
     dpd_input_path: &Path,
     dpd_output_path: &Path,
     dict_db_path: &Path,
     dpd_dictionary_id: i32,
+    res_dir: &Path,
     limit: Option<i32>,
 ) -> Result<(), String> {
     migrate_dpd(dpd_input_path, dpd_dictionary_id)
@@ -2295,6 +2309,9 @@ pub fn import_migrate_dpd(
     let output_path = dpd_output_path.to_path_buf();
     move_file(dpd_input_path, &output_path)
         .map_err(|e| format!("Failed to move {} to {}: {}", dpd_input_path.display(), output_path.display(), e))?;
+
+    import_dpd_res(&output_path, dict_db_path, dpd_dictionary_id, res_dir)
+        .map_err(|e| format!("{:#}", e))?;
 
     // Populate derived columns on `bold_definitions` (uid, commentary_plain)
     // before creating indexes — the B-tree script creates a UNIQUE INDEX on
@@ -2309,6 +2326,55 @@ pub fn import_migrate_dpd(
 
     create_dpd_indexes(&output_path).map_err(|e| format!("{:#}", e))?;
 
+    record_dpd_release_version(&output_path, dict_db_path, dpd_dictionary_id)
+        .map_err(|e| format!("{:#}", e))?;
+
+    Ok(())
+}
+
+/// Import `res_dir` into the `dpd_res` table of `dpd_db_path`, then check that
+/// the DPD pages in `dict_db_path` link only to files it holds.
+fn import_dpd_res(dpd_db_path: &Path, dict_db_path: &Path, dpd_dictionary_id: i32, res_dir: &Path) -> Result<()> {
+    let mut dpd_conn = open_db_path(dpd_db_path)?;
+    crate::db::dpd_res::import_dpd_res_dir(&mut dpd_conn, res_dir)?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+    crate::db::dpd_res::check_dpd_link_hrefs(&mut dict_conn, dpd_dictionary_id, &mut dpd_conn)?;
+    Ok(())
+}
+
+#[derive(QueryableByName)]
+struct DbInfoValueRow {
+    #[diesel(sql_type = Text)]
+    value: String,
+}
+
+/// `db_info.dpd_release_version` of the DPD database file at `dpd_db_path`.
+pub fn read_dpd_release_version(dpd_db_path: &Path) -> Result<String> {
+    let mut conn = open_db_path(dpd_db_path)?;
+    let row: Option<DbInfoValueRow> = sql_query("SELECT value FROM db_info WHERE key = 'dpd_release_version'")
+        .get_result(&mut conn)
+        .optional()
+        .with_context(|| format!("Failed to read db_info of {}", dpd_db_path.display()))?;
+    match row.map(|r| r.value.trim().to_string()) {
+        Some(v) if !v.is_empty() => Ok(v),
+        _ => anyhow::bail!("No dpd_release_version in db_info of {}", dpd_db_path.display()),
+    }
+}
+
+/// Write the DPD release version of `dpd_db_path` into the `version` of the
+/// DPD row (`dpd_dictionary_id`) of `dict_db_path`.
+fn record_dpd_release_version(dpd_db_path: &Path, dict_db_path: &Path, dpd_dictionary_id: i32) -> Result<()> {
+    let version = read_dpd_release_version(dpd_db_path)?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+    let n = sql_query("UPDATE dictionaries SET version = ? WHERE id = ?")
+        .bind::<Text, _>(&version)
+        .bind::<Integer, _>(dpd_dictionary_id)
+        .execute(&mut dict_conn)
+        .context("Failed to write the DPD dictionary version")?;
+    if n != 1 {
+        anyhow::bail!("No dictionaries row with id {} to write the DPD version to", dpd_dictionary_id);
+    }
+    info(&format!("record_dpd_release_version(): DPD dictionary version = {}", version));
     Ok(())
 }
 

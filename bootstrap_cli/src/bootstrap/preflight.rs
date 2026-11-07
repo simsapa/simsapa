@@ -129,6 +129,7 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
     if steps.dpd {
         sources.extend([
             required("DPD StarDict export", paths::DPD_STARDICT_DIR, Dir),
+            required("DPD res/ folder (CSS, fonts, page scripts)", paths::DPD_RES_DIR, Dir),
             required("DPD database (extracted dpd.db)", paths::DPD_DB, File),
             required("DPPN database", paths::DPPN_DB, File),
         ]);
@@ -268,6 +269,7 @@ mod tests {
         let steps = PreflightSteps { appdata: false, dpd: true, sc_languages: false, hungarian: false };
         let rel_paths: Vec<_> = bootstrap_sources(&steps).into_iter().map(|s| s.rel_path).collect();
         assert!(rel_paths.contains(&PathBuf::from(paths::DPD_DB)));
+        assert!(rel_paths.contains(&PathBuf::from(paths::DPD_RES_DIR)));
         assert!(!rel_paths.iter().any(|p| p.starts_with(paths::SC_DATA_DIR)));
         assert!(!steps.needs_arangodb());
     }
