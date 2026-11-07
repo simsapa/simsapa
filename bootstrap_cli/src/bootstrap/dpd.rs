@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use anyhow::{Result, Context};
 
-use simsapa_backend::logger;
+use simsapa_backend::{get_app_data, logger};
 use simsapa_backend::helpers::consistent_niggahita;
 use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, FtsScript};
 
@@ -65,12 +65,10 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
         .join(source_paths::DPD_DB);
     let dest_db_path = assets_dir.join("dpd.db");
 
-    // Check if source database exists
-    if !source_db_path.exists() {
-        return Err(anyhow::anyhow!(
-            "Source DPD database not found at: {}",
-            source_db_path.display()
-        ));
+    match source_db_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => anyhow::bail!("Source DPD database not found at: {}", source_db_path.display()),
+        Err(e) => anyhow::bail!("Cannot access source DPD database {}: {}", source_db_path.display(), e),
     }
 
     // Copy the database file
@@ -83,11 +81,16 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
 
     logger::info("Copied dpd.db to assets directory");
 
-    // Call the import_migrate_dpd function
     let dpd_input_path = dest_db_path;
     let dpd_output_path = assets_dir.join("dpd.sqlite3");
+    let dict_db_path = assets_dir.join("dictionaries.sqlite3");
 
-    simsapa_backend::db::dpd::import_migrate_dpd(&dpd_input_path, Some(dpd_output_path), limit)
+    // The DPD StarDict import has created the `dpd` dictionaries row.
+    let dpd_dictionary_id = get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
+        .context("Failed to find the DPD dictionary row")?
+        .id;
+
+    simsapa_backend::db::dpd::import_migrate_dpd(&dpd_input_path, &dpd_output_path, &dict_db_path, dpd_dictionary_id, limit)
         .map_err(|e| anyhow::anyhow!("Failed to migrate DPD database: {}", e))?;
 
     logger::info("Successfully migrated DPD database");

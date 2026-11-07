@@ -697,8 +697,8 @@ enum Commands {
 
     /// Add and fill `dpd_headwords.construction_summary` in an existing DPD
     /// SQLite database, from the summary lines of the DPD pages already
-    /// imported into Simsapa's dictionaries database. This is the step
-    /// `import-migrate-dpd` runs; use it to update a DB without a full
+    /// imported into the `dictionaries.sqlite3` of `SIMSAPA_DIR`. This is the
+    /// step `import-migrate-dpd` runs; use it to update a DB without a full
     /// bootstrap. Writes the given DB in place: run it with the app closed.
     #[command(arg_required_else_help = true)]
     PopulateDpdConstructionSummary {
@@ -1119,16 +1119,25 @@ fn main() {
         }
 
         Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path } => {
-             if !dpd_input_path.exists() {
-                 Err(format!("DPD input path does not exist: {:?}", dpd_input_path))
-             } else {
-                 db::dpd::import_migrate_dpd(&dpd_input_path, dpd_output_path, None)
-             }
+            match dpd_input_path.try_exists() {
+                Ok(true) => {
+                    let paths = &simsapa_backend::get_app_globals().paths;
+                    let output_path = dpd_output_path
+                        .unwrap_or_else(|| simsapa_backend::get_create_simsapa_app_assets_path().join("dpd.sqlite3"));
+                    get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
+                        .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
+                        .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
+                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, None))
+                }
+                Ok(false) => Err(format!("DPD input path does not exist: {:?}", dpd_input_path)),
+                Err(e) => Err(format!("Cannot access DPD input path {:?}: {}", dpd_input_path, e)),
+            }
         }
 
         Commands::PopulateDpdConstructionSummary { dpd_db_path } => {
             match dpd_db_path.try_exists() {
-                Ok(true) => db::dpd::populate_dpd_construction_summaries(&dpd_db_path)
+                Ok(true) => db::dpd::populate_dpd_construction_summaries(
+                    &dpd_db_path, &simsapa_backend::get_app_globals().paths.dict_db_path)
                     .map(|report| report.log())
                     .map_err(|e| format!("{}", e)),
                 Ok(false) => Err(format!("DPD database not found: {:?}", dpd_db_path)),

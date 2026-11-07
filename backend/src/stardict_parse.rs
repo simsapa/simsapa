@@ -358,64 +358,123 @@ pub fn import_stardict_as_new(
         }
     };
 
-    // Add dict_word entries, assign dictionary_id to make them related
+    // Parse outside the write lock: a large dictionary takes minutes.
+    let parsed = match parse_stardict_words(unzipped_dir, physical_stem, new_dict_label, lang,
+                                            dictionary_id, limit, progress, cancel) {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            // Aborted during parsing, before any insertion. The bridge
+            // removes the empty `dictionaries` row.
+            progress(StardictImportProgress::Aborted { inserted: 0 });
+            return Ok(ImportOutcome { dictionary_id, inserted: 0, cancelled: true });
+        }
+        Err(msg) => {
+            // Roll back the dictionaries row we just inserted so the DB stays clean.
+            let _ = app_data.dbm.dictionaries.delete_dictionary_by_label(new_dict_label);
+            return Err(msg);
+        }
+    };
 
-    // Load the dictionary data
+    let insert_result = {
+        let _lock = app_data.dbm.dictionaries.write_lock.lock();
+        let db_conn = &mut app_data.dbm.dictionaries.get_conn().map_err(|e| {
+            let msg = format!("{}", e);
+            progress(StardictImportProgress::Failed { msg: msg.clone() });
+            msg
+        })?;
+        insert_dict_words(db_conn, &parsed.words, progress, cancel)
+    };
+
+    match insert_result {
+        // On cancel the partial rows and the `dictionaries` row stay, so
+        // the next startup reconcile indexes what is there.
+        Ok(outcome) => finish_import(&parsed.bookname, dictionary_id, outcome, progress),
+        Err(msg) => {
+            // A failed chunk is unrecoverable: drop the parent row (and any
+            // prior chunks) so a half-imported dictionary does not remain.
+            let _ = app_data.dbm.dictionaries.delete_dictionary_by_label(new_dict_label);
+            Err(msg)
+        }
+    }
+}
+
+/// The parsed rows of a StarDict dictionary, ready to insert.
+pub struct ParsedStardict {
+    pub bookname: String,
+    pub words: Vec<NewDictWord>,
+}
+
+/// Parse a StarDict folder into `dict_words` rows for an existing
+/// `dictionary_id`. Writes nothing.
+///
+/// Emits `Identified` once the index is loaded. Returns `Ok(None)` when
+/// `cancel` is set during parsing. On error it emits `Failed`.
+pub fn parse_stardict_words(
+    unzipped_dir: &Path,
+    physical_stem: &str,
+    dict_label: &str,
+    lang: &str,
+    dictionary_id: i32,
+    limit: Option<usize>,
+    progress: &dyn Fn(StardictImportProgress),
+    cancel: &AtomicBool,
+) -> Result<Option<ParsedStardict>, String> {
+    let ifo_path = unzipped_dir.join(format!("{}.ifo", physical_stem));
+
     let mut dict = match stardict::no_cache(ifo_path) {
         Ok(x) => x,
         Err(e) => {
-            // Roll back the dictionaries row we just inserted so the DB stays clean.
-            let _ = app_data.dbm.dictionaries.delete_dictionary_by_label(new_dict_label);
             let msg = format!("Error loading stardict dictionary: {}", e);
             progress(StardictImportProgress::Failed { msg: msg.clone() });
             return Err(msg);
         }
     };
 
-    info(&format!("Importing {}, {} total entries ...", &ifo.bookname, dict.idx.items.len()));
+    let bookname = dict.ifo.bookname.clone();
+    info(&format!("Importing {}, {} total entries ...", &bookname, dict.idx.items.len()));
     progress(StardictImportProgress::Identified {
-        title: ifo.bookname.clone(),
+        title: bookname.clone(),
         total: dict.idx.items.len(),
     });
 
-    let words_to_insert = match parse_dict(&mut dict, dictionary_id, new_dict_label, lang, limit, cancel) {
-        Some(w) => w,
+    match parse_dict(&mut dict, dictionary_id, dict_label, lang, limit, cancel) {
+        Some(words) => Ok(Some(ParsedStardict { bookname, words })),
         None => {
-            // Aborted during parsing, before any insertion. No rows were
-            // committed, so report a 0-entry cancel; the bridge removes the
-            // empty `dictionaries` row.
-            info(&format!("Import aborted for '{}' during parsing (0 entries).", &ifo.bookname));
-            progress(StardictImportProgress::Aborted { inserted: 0 });
-            return Ok(ImportOutcome { dictionary_id, inserted: 0, cancelled: true });
+            info(&format!("Import aborted for '{}' during parsing (0 entries).", &bookname));
+            Ok(None)
         }
-    };
-    let total = words_to_insert.len();
+    }
+}
 
+/// How an `insert_dict_words()` run ended.
+#[derive(Debug, Clone, Copy)]
+pub struct InsertOutcome {
+    pub inserted: usize,
+    pub cancelled: bool,
+}
+
+/// Insert `words` in chunks of 1000, each chunk in its own transaction, so
+/// that on cancel the rows already inserted stay in the database. Emits
+/// `InsertingWords` after each chunk and `Failed` on an error. Deletes
+/// nothing on failure: that is the caller's decision.
+pub fn insert_dict_words(
+    db_conn: &mut SqliteConnection,
+    words: &[NewDictWord],
+    progress: &dyn Fn(StardictImportProgress),
+    cancel: &AtomicBool,
+) -> Result<InsertOutcome, String> {
+    let total = words.len();
     info(&format!("Inserting {} words into the database via batch...", total));
     progress(StardictImportProgress::InsertingWords { done: 0, total });
 
-    let _lock = app_data.dbm.dictionaries.write_lock.lock();
-    let db_conn = &mut app_data.dbm.dictionaries.get_conn().map_err(|e| {
-        let msg = format!("{}", e);
-        progress(StardictImportProgress::Failed { msg: msg.clone() });
-        msg
-    })?;
-
-    // Chunk size of 1000 doubles as the progress tick cadence AND the abort
-    // checkpoint cadence (PRD §4.8 / §7.3.3). Each chunk commits in its own
-    // transaction so that on cancel the rows already inserted survive in
-    // the DB and the next startup reconcile picks them up.
+    // Chunk size of 1000 doubles as the progress tick cadence and the cancel
+    // checkpoint cadence.
     let chunk_size = 1000;
     let mut inserted: usize = 0;
-    let mut cancelled = false;
 
-    for chunk in words_to_insert.chunks(chunk_size) {
-        // Cancel check between chunks. On cancel, KEEP the partial rows
-        // and the parent `dictionaries` row in the DB — the next startup
-        // reconcile pass will index what's there.
+    for chunk in words.chunks(chunk_size) {
         if cancel.load(Ordering::Relaxed) {
-            cancelled = true;
-            break;
+            return Ok(InsertOutcome { inserted, cancelled: true });
         }
 
         let chunk_result = db_conn.transaction::<_, diesel::result::Error, _>(|tx| {
@@ -428,12 +487,6 @@ pub fn import_stardict_as_new(
                 progress(StardictImportProgress::InsertingWords { done: inserted, total });
             }
             Err(e) => {
-                // Per-chunk transaction failure is treated as an unrecoverable
-                // error: drop the parent row (and any prior chunks) so we
-                // don't leak a half-imported dictionary. This is the
-                // `Failed` path — distinct from cancel.
-                drop(_lock);
-                let _ = app_data.dbm.dictionaries.delete_dictionary_by_label(new_dict_label);
                 let msg = format!("Batch insertion failed: {}", e);
                 progress(StardictImportProgress::Failed { msg: msg.clone() });
                 return Err(msg);
@@ -441,14 +494,53 @@ pub fn import_stardict_as_new(
         }
     }
 
-    if cancelled {
-        info(&format!("Import aborted for '{}' after {} entries.", &ifo.bookname, inserted));
-        progress(StardictImportProgress::Aborted { inserted });
-        return Ok(ImportOutcome { dictionary_id, inserted, cancelled: true });
+    Ok(InsertOutcome { inserted, cancelled: false })
+}
+
+/// Import a StarDict folder's entries into the dictionaries database behind
+/// `db_conn`, under an existing `dictionary_id`. Creates no `dictionaries` row
+/// and deletes nothing, so it can write into a staging database. The row with
+/// `dictionary_id` must exist: `dict_words.dictionary_id` is a foreign key.
+///
+/// On cancel the rows already inserted are kept and `cancelled` is set.
+pub fn import_stardict_into(
+    db_conn: &mut SqliteConnection,
+    unzipped_dir: &Path,
+    physical_stem: &str,
+    dict_label: &str,
+    lang: &str,
+    dictionary_id: i32,
+    limit: Option<usize>,
+    progress: &dyn Fn(StardictImportProgress),
+    cancel: &AtomicBool,
+) -> Result<ImportOutcome, String> {
+    progress(StardictImportProgress::Parsing);
+
+    let parsed = match parse_stardict_words(unzipped_dir, physical_stem, dict_label, lang,
+                                            dictionary_id, limit, progress, cancel)? {
+        Some(p) => p,
+        None => {
+            progress(StardictImportProgress::Aborted { inserted: 0 });
+            return Ok(ImportOutcome { dictionary_id, inserted: 0, cancelled: true });
+        }
+    };
+
+    let outcome = insert_dict_words(db_conn, &parsed.words, progress, cancel)?;
+    finish_import(&parsed.bookname, dictionary_id, outcome, progress)
+}
+
+fn finish_import(
+    bookname: &str,
+    dictionary_id: i32,
+    outcome: InsertOutcome,
+    progress: &dyn Fn(StardictImportProgress),
+) -> Result<ImportOutcome, String> {
+    if outcome.cancelled {
+        info(&format!("Import aborted for '{}' after {} entries.", bookname, outcome.inserted));
+        progress(StardictImportProgress::Aborted { inserted: outcome.inserted });
+    } else {
+        info(&format!("Import finished for '{}'.", bookname));
+        progress(StardictImportProgress::Done);
     }
-
-    info(&format!("Import finished for '{}'.", &ifo.bookname));
-    progress(StardictImportProgress::Done);
-
-    Ok(ImportOutcome { dictionary_id, inserted, cancelled: false })
+    Ok(ImportOutcome { dictionary_id, inserted: outcome.inserted, cancelled: outcome.cancelled })
 }

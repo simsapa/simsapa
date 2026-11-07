@@ -21,7 +21,7 @@ use simsapa_backend::dictionary_manager_core::{
     suggested_label_for_dir, ScanKind,
 };
 use simsapa_backend::get_app_data;
-use simsapa_backend::stardict_parse::import_stardict_as_new;
+use simsapa_backend::stardict_parse::{import_stardict_as_new, import_stardict_into};
 
 mod helpers;
 use helpers as h;
@@ -565,6 +565,59 @@ fn builtin_import_sets_dictionary_and_word_language() {
     assert_eq!(word_lang.as_deref(), Some("pli"), "dict_words.language must be pli");
 
     app_data.dbm.dictionaries.delete_dictionary_by_label(&label).expect("cleanup");
+}
+
+/// `import_stardict_into()` writes the entries into the database it is given,
+/// under the given `dictionary_id`, and creates no `dictionaries` row (the
+/// caller provides it, as the foreign key requires): the
+/// DPD upgrade imports into a staging database this way.
+#[test]
+fn import_into_given_database_uses_given_dictionary_id() {
+    use diesel_migrations::MigrationHarness;
+
+    let tmp = tempfile::Builder::new()
+        .prefix("simsapa-import-into-test-")
+        .tempdir()
+        .expect("tempdir");
+    let sd = tmp.path().join("sd");
+    fs::create_dir_all(&sd).unwrap();
+    write_synthetic_stardict(&sd, "test", 2500, "Import Into Test").expect("write stardict");
+
+    let db_path = tmp.path().join("staging-dictionaries.sqlite3");
+    let mut conn = SqliteConnection::establish(db_path.to_str().unwrap()).expect("open staging db");
+    conn.run_pending_migrations(simsapa_backend::db::DICTIONARIES_MIGRATIONS)
+        .expect("dictionaries migrations");
+    // `dict_words.dictionary_id` is a foreign key, so the caller provides the
+    // parent row.
+    diesel::sql_query("INSERT INTO dictionaries (id, label, title, dict_type, is_user_imported) \
+                       VALUES (42, 'dpd', 'DPD', 'sql', 0)")
+        .execute(&mut conn)
+        .expect("insert parent dictionaries row");
+
+    let cancel = AtomicBool::new(false);
+    let outcome = import_stardict_into(&mut conn, &sd, "test", "dpd", "pli", 42, None, &|_p| {}, &cancel)
+        .expect("import into staging db");
+    assert_eq!(outcome.inserted, 2500);
+    assert!(!outcome.cancelled);
+    assert_eq!(outcome.dictionary_id, 42);
+
+    use dictionaries_schema::dict_words::dsl as dw;
+    let ids: Vec<i32> = dw::dict_words.select(dw::dictionary_id).load(&mut conn).unwrap();
+    assert_eq!(ids.len(), 2500);
+    assert!(ids.iter().all(|id| *id == 42));
+    let uid: String = dw::dict_words.select(dw::uid).filter(dw::word.eq("word_000007"))
+        .first(&mut conn).unwrap();
+    assert_eq!(uid, "word_000007/dpd");
+
+    let n_dicts: i64 = dictionaries_schema::dictionaries::table.count().get_result(&mut conn).unwrap();
+    assert_eq!(n_dicts, 1, "no dictionaries row is created");
+
+    // A cancel before the first chunk inserts nothing more and reports it.
+    let cancel = AtomicBool::new(true);
+    let outcome = import_stardict_into(&mut conn, &sd, "test", "dpd", "pli", 42, None, &|_p| {}, &cancel)
+        .expect("cancelled import");
+    assert!(outcome.cancelled);
+    assert_eq!(outcome.inserted, 0);
 }
 
 #[test]
