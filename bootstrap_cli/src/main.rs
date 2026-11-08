@@ -727,6 +727,19 @@ enum Commands {
         inputs: Vec<PathBuf>,
     },
 
+    /// Seed the Gloss tab's curated set-phrase rules
+    /// (`assets/gloss-phrase-selections.json`, embedded at build time) into the
+    /// given appdata database, so its `gloss_phrase_selections` table mirrors
+    /// the file: the bootstrap's seeding step, without a full bootstrap. Each
+    /// rule's uid is resolved against the DPD of `SIMSAPA_DIR`. Writes the given
+    /// DB in place: run it with the app closed.
+    #[command(arg_required_else_help = true)]
+    SeedGlossPhrases {
+        /// Path to the target appdata.sqlite3 database
+        #[arg(value_name = "APPDATA_DB_PATH")]
+        db_path: PathBuf,
+    },
+
     /// Agent review of gloss candidate session files: emit the word-selection
     /// request payload for a candidate (prepare), validate the agent's answers
     /// and write the finished session to agent-checked/ (apply), or list the
@@ -1152,6 +1165,10 @@ fn main() {
 
         Commands::ImportGlossData { db_path, inputs } => {
             import_gloss_data::import_gloss_data(&db_path, &inputs)
+        }
+
+        Commands::SeedGlossPhrases { db_path } => {
+            import_gloss_data::seed_gloss_phrases(&db_path)
         }
 
         Commands::GlossAgentCheck { data_cache, action } => {

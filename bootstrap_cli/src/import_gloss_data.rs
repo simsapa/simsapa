@@ -550,3 +550,33 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     }
     Ok(())
 }
+
+/// The `seed-gloss-phrases` command: run the bootstrap's phrase seeder
+/// (`AppdataDbHandle::seed_gloss_phrase_selections`) on `appdata_db_path`, with
+/// the rule uids resolved against the DPD of `SIMSAPA_DIR`.
+pub fn seed_gloss_phrases(appdata_db_path: &Path) -> Result<(), String> {
+    match appdata_db_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return Err(format!("Appdata database does not exist: {}", appdata_db_path.display())),
+        Err(e) => return Err(format!("Cannot access appdata database {}: {}", appdata_db_path.display(), e)),
+    }
+    let lemma_index = get_app_data()
+        .dpd_lemma_index()
+        .map_err(|e| format!("Cannot read the DPD headwords: {}", e))?;
+
+    let url = appdata_db_path.to_string_lossy().to_string();
+    let appdata = DatabaseHandle::new(&url)
+        .map_err(|e| format!("Cannot open appdata database {}: {}", url, e))?;
+    let written = appdata
+        .seed_gloss_phrase_selections(&lemma_index)
+        .map_err(|e| format!("{:#}", e))?;
+
+    println!("Gloss phrase rules: {} rows written or removed", written);
+    for row in appdata.get_all_gloss_phrase_selections() {
+        let lemma = dpd_headword_id_of(&row.selected_uid)
+            .and_then(|id| lemma_index.lemma_of(id))
+            .unwrap_or("");
+        println!("  \"{}\" / {} -> {} {}", row.phrase, row.word, row.selected_uid, lemma);
+    }
+    Ok(())
+}

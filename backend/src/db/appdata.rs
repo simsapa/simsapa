@@ -2756,9 +2756,13 @@ impl AppdataDbHandle {
     }
 
     /// Seed `gloss_phrase_selections` from the embedded curated JSON
-    /// (`assets/gloss-phrase-selections.json`). Idempotent upsert keyed on the
-    /// normalized `(phrase, word)`: existing rows get their `selected_uid`
-    /// updated, new rows are inserted. Called from the appdata bootstrap.
+    /// (`assets/gloss-phrase-selections.json`), so the table mirrors the file.
+    /// Idempotent, keyed on the normalized `(phrase, word)`: existing rows get
+    /// their `selected_uid` updated, new rows are inserted, and rows for rules
+    /// no longer in the file are deleted (the table has no in-app write path,
+    /// so it holds nothing else). Returns the number of rows written or
+    /// deleted. Called from the appdata bootstrap and the `seed-gloss-phrases`
+    /// command.
     ///
     /// The JSON stores the human-readable phrase; it is normalized here with
     /// the same `normalize_gloss_context` pipeline used for context windows,
@@ -2865,6 +2869,29 @@ impl AppdataDbHandle {
                     written += 1;
                 }
             }
+        }
+
+        // Rules removed from the file.
+        let keep: std::collections::HashSet<(&str, &str)> = rules
+            .iter()
+            .map(|(p, w, _)| (p.as_str(), w.as_str()))
+            .collect();
+        let stale: Vec<GlossPhraseSelection> = self
+            .do_read(|db_conn| {
+                gloss_phrase_selections
+                    .select(GlossPhraseSelection::as_select())
+                    .load(db_conn)
+            })?
+            .into_iter()
+            .filter(|r| !keep.contains(&(r.phrase.as_str(), r.word.as_str())))
+            .collect();
+        for row in &stale {
+            info(&format!(
+                "seed_gloss_phrase_selections(): removing \"{}\" / {}, no longer in the file",
+                row.phrase, row.word
+            ));
+            self.do_write(|db_conn| diesel::delete(gloss_phrase_selections.find(row.id)).execute(db_conn))?;
+            written += 1;
         }
 
         Ok(written)
@@ -3237,6 +3264,34 @@ mod gloss_word_selection_tests {
         assert_eq!(rows[0].selected_uid, "49885/dpd");
 
         assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
+    }
+
+    #[test]
+    fn seed_phrases_converts_old_uids_and_removes_rules_not_in_the_file() {
+        use crate::db::appdata_models::NewGlossPhraseSelection;
+        use crate::db::appdata_schema::gloss_phrase_selections::dsl::*;
+        use diesel::prelude::*;
+        let db = setup();
+        // An appdata seeded before the uids were numeric, plus a rule the file
+        // no longer has.
+        for (p, w, u) in [
+            ("anāthapiṇḍikassa ārāme", "ārāme", "ārāma-4/dpd"),
+            ("dummy phrase removed", "dummy", "dummy-1/dpd"),
+        ] {
+            db.do_write(|c| {
+                diesel::insert_into(gloss_phrase_selections)
+                    .values(&NewGlossPhraseSelection { phrase: p, word: w, selected_uid: u })
+                    .execute(c)
+            })
+            .unwrap();
+        }
+
+        // ārāme updated, bhikkhū inserted, dummy removed.
+        assert_eq!(db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap(), 3);
+        assert_eq!(db.get_gloss_phrase_selections("ārāme")[0].selected_uid, "12463/dpd");
+        assert!(db.get_gloss_phrase_selections("dummy").is_empty());
+        assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
+        assert_eq!(db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap(), 0);
     }
 
     #[test]

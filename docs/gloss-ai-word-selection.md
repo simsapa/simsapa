@@ -168,7 +168,8 @@ Two appdata tables (introduced by the pre-1.0.0 migrations
 | | UNIQUE `(phrase, word)` |
 
 `gloss_phrase_selections` is **bootstrap-seeded only** — it is written solely by
-`seed_gloss_phrase_selections()` from the embedded curated JSON, has no in-app or
+`seed_gloss_phrase_selections()` from the embedded curated JSON (by the bootstrap
+and the maintainer's `seed-gloss-phrases` command), has no in-app or `simsapa`
 CLI write path, and carries no user-vs-shipped marker (its columns are just `id`,
 `phrase`, `word`, `selected_uid`). There is therefore nothing user-owned in it to
 preserve across an appdata re-download; the upgrade export/import cycle (§6)
@@ -882,7 +883,19 @@ numeric `selected_uid` and its `selected_lemma`:
 A new rule may give only `selected_lemma`. The seeder normalises every rule
 against the DPD it is given (§1) before writing anything, and fails naming every
 rule that does not resolve; a `selected_lemma` that disagrees with the DPD is
-logged and the rule is seeded by its id.
+logged and the rule is seeded by its id. The table then **mirrors the file**: a
+rule removed from it is deleted from the table.
+
+To apply an edit of the file to an existing appdata without a full bootstrap:
+
+```sh
+cd bootstrap_cli
+cargo run -- seed-gloss-phrases <SIMSAPA_DIR>/app-assets/appdata.sqlite3
+```
+
+The file is embedded at build time, so `cargo run` (which rebuilds) picks up the
+edit. The uids are resolved against the DPD of `SIMSAPA_DIR`. Run it with the app
+closed; it prints each stored rule with its lemma.
 
 ## 8. Where things live
 
