@@ -1,16 +1,18 @@
 {
-  "comment": "Curated Pāli set phrases that unambiguously determine a word's dictionary entry in the Gloss tab. 'phrase' is the human-readable phrase; the seeder normalizes it with normalize_gloss_context before insert. 'word' is the surface form the rule applies to; 'selected_uid' is the dict_words uid to select. See docs/gloss-ai-word-selection.md.",
+  "comment": "Curated Pāli set phrases that unambiguously determine a word's dictionary entry in the Gloss tab. 'phrase' is the human-readable phrase; the seeder normalizes it with normalize_gloss_context before insert. 'word' is the surface form the rule applies to. 'selected_uid' is the key: the numeric DPD headword uid ('<id>/dpd'), stable across DPD releases. 'selected_lemma' is the DPD lemma_1 of that id, for the reader; the seeder reports it when it differs from the installed DPD. A new rule may give only 'selected_lemma', which must name exactly one headword. See docs/gloss-ai-word-selection.md.",
   "version": 1,
   "phrases": [
     {
       "phrase": "anāthapiṇḍikassa ārāme",
       "word": "ārāme",
-      "selected_uid": "ārāma-4/dpd"
+      "selected_uid": "12463/dpd",
+      "selected_lemma": "ārāma 4"
     },
     {
       "phrase": "manobhāvanīyā bhikkhū",
       "word": "bhikkhū",
-      "selected_uid": "bhikkhu/dpd"
+      "selected_uid": "49885/dpd",
+      "selected_lemma": "bhikkhu"
     }
   ]
 }

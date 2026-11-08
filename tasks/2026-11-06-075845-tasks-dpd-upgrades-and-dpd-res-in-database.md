@@ -6,7 +6,10 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 ## Relevant Files
 
 ### Backend (`backend/`)
-- `backend/src/helpers.rs` - `run_fts5_indexes_sql_script()` (to replace), `analyze_sqlite_db_via_cli()`, `consistent_niggahita()`, `gloss_option_uid_matches()`, `GlossWordCacheExportEntry` (add `selected_lemma`), `parse_word_selection_response()`.
+- `backend/src/helpers.rs` - `consistent_niggahita()`, `gloss_option_uid_matches()`, `GlossWordCacheExportEntry.selected_lemma`, `fill_selected_lemmas()`, `normalize_gloss_word_cache_entries()`, `build_gloss_session_export_json()` (optional DPD handle), `parse_word_selection_response()`.
+- `backend/src/gloss_dpd_uid.rs` - **new**: `DpdLemmaIndex`, `normalize_dpd_selected_uid()`, `dpd_headword_id_of()`, `lemmas_for_uids()`.
+- `backend/src/db/appdata.rs` - `seed_gloss_phrase_selections(&DpdLemmaIndex)` normalises the curated rules.
+- `backend/tests/test_gloss_session_export.rs`, `backend/tests/test_gloss_word_resolution.rs` - `selected_lemma` export/import and the lemma-in-request / numeric-stored tests.
 - `backend/src/db/fts_scripts.rs` - **new**: `FtsScript` (the five embedded scripts), `run_fts5_script()` (`batch_execute`), `vacuum_db()` and `analyze_db()` for the bootstrap.
 - (The §7.3 item 7 gate was run as a one-off against the old CLI runner and not kept, since that runner is deleted; its results are in commit `23720808`.)
 - `backend/tests/test_fts_runtime_writes.rs` - takes its FTS SQL from `FtsScript`.
@@ -20,7 +23,7 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `Makefile` - `tokei`/`tree` excludes no longer name `assets/dpd-res/`.
 - `backend/src/db/dictionaries.rs` - `find_or_create_dpd_dictionary()`, the DPD row's `version`.
 - `backend/src/stardict_parse.rs` - `import_stardict_as_new()` (global wrapper), `parse_stardict_words()`, `insert_dict_words()`, `import_stardict_into()` (any connection, no dictionary row).
-- `backend/src/app_data.rs` - the DPD `<link href>` rewrite (~line 1110), `resolve_word_uid()`, `AppData::try_new()`, the session JSON export/import.
+- `backend/src/app_data.rs` - the DPD `<link href>` rewrite (~line 1110), `resolve_word_uid()`, `AppData::try_new()`, `dpd_lemma_index()`, `normalize_gloss_entries_logged()`.
 - `backend/src/dpd_upgrade/mod.rs` - **new**: the shared pipeline (steps, progress, cancel, errors).
 - `backend/src/dpd_upgrade/releases.rs` - **new**: GitHub release discovery and the candidate rule.
 - `backend/src/dpd_upgrade/archives.rs` - **new**: download, `.tar.xz` and `dpd/` zip extraction.
@@ -56,7 +59,8 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `bootstrap_cli/src/bootstrap/mod.rs` - `check_fts_tables()`, then `vacuum_db()` + `analyze_db()` before each archive.
 - `bootstrap_cli/src/bootstrap/appdata.rs` - FTS script calls.
 - `bootstrap_cli/src/main.rs` - FTS script calls, `import_stardict_dictionary()`, the new `rebuild-dpd` command.
-- `bootstrap_cli/src/import_gloss_data.rs` - uid normalisation, `selected_uid_is_valid()`, the phrase seeder.
+- `bootstrap_cli/src/import_gloss_data.rs` - uid normalisation as entries are collected, the DPD lemma mismatch report.
+- `bootstrap_cli/src/bootstrap/mod.rs` - passes the DPD lemma index to the phrase seeder.
 - `bootstrap_cli/src/gloss_agent_check.rs` - write `selected_lemma` in `apply`.
 
 ### CLI (`backend_cli/`)
@@ -67,7 +71,7 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `backend_cli/tests/dpd_upgrade.rs` - **new**: CLI tests.
 
 ### GUI (`bridges/`, `cpp/`)
-- `bridges/src/sutta_bridge.rs` - `check_for_updates()` (line ~5410), new DPD signals and the marker invokable.
+- `bridges/src/sutta_bridge.rs` - `check_for_updates()` (line ~5410), new DPD signals and the marker invokable; Open JSON and `import_gloss_word_cache` normalise uids, the export fills `selected_lemma`.
 - `bridges/src/dpd_upgrade_manager.rs` - **new** bridge: runs the pipeline on a worker thread, progress signals.
 - `bridges/build.rs` - register the new bridge and QML file.
 - `bridges/assets/qml/DpdUpgradeWindow.qml` - **new**: the startup progress window.
@@ -176,15 +180,15 @@ The bootstrap passes the dist databases, so its output is unchanged.
 - Import normaliser, e.g. `normalize_dpd_selected_uid(app_data, uid, lemma) -> Result<NormalizedUid, String>`: lemma-form → numeric via `resolve_word_uid`; lemma only → must resolve to exactly one headword; both present but the installed `lemma_1` differs → keep the id, return a report line with both labels.
 **Depends on:** nothing in this feature (it can be done in parallel with 1–3). FR-42/43 come in 5.0.
 
-- [ ] 4.0 Store numeric DPD headword uids, with the lemma alongside in files (FR-38 to FR-41, FR-44, FR-45)
-  - [ ] 4.1 Confirm the runtime writers store numeric uids: `GlossTab.qml` (`sel.uid`, component selections), `save_gloss_word_cache` in `sutta_bridge.rs`, and the AI path in `parse_word_selection_response()`. Write a backend test: an AI answer given by lemma is stored as the option's numeric uid. No code change is expected; if a writer stores a lemma form, fix it.
-  - [ ] 4.2 Add `normalize_dpd_selected_uid()` (spec above) with unit tests: numeric unchanged; lemma-form resolved; lemma-only resolved; ambiguous or unknown lemma → error; mismatching lemma → id kept plus a report; root uid unchanged.
-  - [ ] 4.3 Add `selected_lemma` to `GlossWordCacheExportEntry`. Fill it on JSON session export from the installed `dpd.sqlite3`. Old files without it must still load (test).
-  - [ ] 4.4 Use the normaliser in Open JSON's word-cache import, in `import-gloss-data` (replace the yes/no `selected_uid_is_valid()` with the resolved id), and in the phrase seeder. Print or log the mismatch reports.
-  - [ ] 4.5 Write `selected_lemma` in `gloss-agent-check apply` and in the Gloss UI's human-checked session export.
-  - [ ] 4.6 Convert `assets/gloss-phrase-selections.json`: the 2 rules get numeric `selected_uid` and `selected_lemma` (`ārāma 4`, `bhikkhu`); look the ids up in the installed `dpd.sqlite3`. Update the file's `comment` to say which field is the key.
-  - [ ] 4.7 Add a test that the AI request JSON and the `gloss-agent-check prepare` payload still carry each option's `word` lemma.
-  - [ ] 4.8 Update `docs/gloss-ai-word-selection.md`: the "uid two-lane gotcha" section and the examples (AI request, session export). Run `cd backend && cargo test`, `cd bootstrap_cli && cargo test`.
+- [x] 4.0 Store numeric DPD headword uids, with the lemma alongside in files (FR-38 to FR-41, FR-44, FR-45)
+  - [x] 4.1 Confirm the runtime writers store numeric uids: `GlossTab.qml` (`sel.uid`, component selections), `save_gloss_word_cache` in `sutta_bridge.rs`, and the AI path in `parse_word_selection_response()`. Write a backend test: an AI answer given by lemma is stored as the option's numeric uid. No code change is expected; if a writer stores a lemma form, fix it. (Confirmed: all six `save_gloss_word_cache` call sites in `GlossTab.qml` pass `results[i].uid` or the AI-mapped `sel.uid`, and `resolve_compound_selections()` fills `component_selected_uids` from `comp_results[idx].uid`. No code change. Test `test_ai_request_carries_lemmas_and_answer_by_lemma_stores_numeric_uid` in `test_gloss_word_resolution.rs`, covering 4.7 too.)
+  - [x] 4.2 Add `normalize_dpd_selected_uid()` (spec above) with unit tests: numeric unchanged; lemma-form resolved; lemma-only resolved; ambiguous or unknown lemma → error; mismatching lemma → id kept plus a report; root uid unchanged. (In `backend/src/gloss_dpd_uid.rs`, over a `DpdLemmaIndex` loaded once from a `dpd.sqlite3` connection rather than `AppData`, so the FR-42 conversion in 5.9 can run it against the **old** `dpd.sqlite3` before `init_app_data()`. A lemma-form uid is matched by `word_uid_sanitize(lemma_1)`, the same comparison `gloss_option_uid_matches()` makes; no two of the 89,763 headwords of v0.4.20261026 share a sanitized form. An unknown numeric id is an error too.)
+  - [x] 4.3 Add `selected_lemma` to `GlossWordCacheExportEntry`. Fill it on JSON session export from the installed `dpd.sqlite3`. Old files without it must still load (test). (`build_gloss_session_export_json()` takes an optional DPD handle; `fill_selected_lemmas()`. Tests in `test_gloss_session_export.rs`.)
+  - [x] 4.4 Use the normaliser in Open JSON's word-cache import, in `import-gloss-data` (replace the yes/no `selected_uid_is_valid()` with the resolved id), and in the phrase seeder. Print or log the mismatch reports. (`normalize_gloss_word_cache_entries()` + `AppData::normalize_gloss_entries_logged()` for Open JSON and `import_gloss_word_cache`, unresolved entries skipped and logged; `import-gloss-data` normalises as it collects, so dedup and the reports compare numeric uids, and prints a "DPD lemma mismatches" section; `seed_gloss_phrase_selections(&DpdLemmaIndex)` fails naming every unresolved rule before writing. The appdata upgrade export/import cycle (`import-me/gloss_selections.json`) only carries this install's own runtime rows and is not normalised.)
+  - [x] 4.5 Write `selected_lemma` in `gloss-agent-check apply` and in the Gloss UI's human-checked session export. (`apply` takes the lemma from the option the agent was shown; the Gloss UI export is 4.3.)
+  - [x] 4.6 Convert `assets/gloss-phrase-selections.json`: the 2 rules get numeric `selected_uid` and `selected_lemma` (`ārāma 4`, `bhikkhu`); look the ids up in the installed `dpd.sqlite3`. Update the file's `comment` to say which field is the key. (`12463/dpd` *ārāma 4*, `49885/dpd` *bhikkhu*.)
+  - [x] 4.7 Add a test that the AI request JSON and the `gloss-agent-check prepare` payload still carry each option's `word` lemma.
+  - [x] 4.8 Update `docs/gloss-ai-word-selection.md`: the "uid two-lane gotcha" section and the examples (AI request, session export). Run `cd backend && cargo test`, `cd bootstrap_cli && cargo test`.
 
 ### 5.0 Build the shared DPD upgrade pipeline in the backend
 

@@ -3406,6 +3406,7 @@ impl qobject::SuttaBridge {
         let app_data = get_app_data();
         match simsapa_backend::helpers::build_gloss_session_export_json(
             &app_data.dbm.appdata,
+            Some(&app_data.dbm.dpd),
             &session_json.to_string(),
         ) {
             Ok(json) => QString::from(json),
@@ -3432,7 +3433,11 @@ impl qobject::SuttaBridge {
                 }
             };
         let app_data = get_app_data();
+        let total = entries.len();
+        let entries = app_data.normalize_gloss_entries_logged(entries, "import_gloss_word_cache()");
+        let unresolved = total - entries.len();
         let (imported, skipped) = import_gloss_word_cache_entries(&app_data.dbm.appdata, &entries);
+        let skipped = skipped + unresolved;
         QString::from(serde_json::json!({"imported": imported, "skipped": skipped}).to_string())
     }
 
@@ -3460,10 +3465,14 @@ impl qobject::SuttaBridge {
             };
 
         let app_data = get_app_data();
+        let total = word_cache.len();
+        let word_cache = app_data.normalize_gloss_entries_logged(word_cache, "open_gloss_session_export()");
+        let unresolved = total - word_cache.len();
         let (imported, skipped) = simsapa_backend::helpers::import_gloss_word_cache_entries(
             &app_data.dbm.appdata,
             &word_cache,
         );
+        let skipped = skipped + unresolved;
 
         QString::from(
             serde_json::json!({

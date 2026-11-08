@@ -12,7 +12,7 @@ use crate::get_app_data;
 use crate::db::appdata_models::*;
 use crate::db::DatabaseHandle;
 use crate::app_settings::AppSettings;
-use crate::logger::{info, error};
+use crate::logger::{info, error, warn};
 
 static COMMON_WORDS_JSON: &str = include_str!("../../../assets/common-words.json");
 
@@ -2763,7 +2763,16 @@ impl AppdataDbHandle {
     /// The JSON stores the human-readable phrase; it is normalized here with
     /// the same `normalize_gloss_context` pipeline used for context windows,
     /// so phrase rows and window normalization cannot drift.
-    pub fn seed_gloss_phrase_selections(&self) -> Result<usize> {
+    ///
+    /// Each rule's `selected_uid` / `selected_lemma` is normalised against the
+    /// given DPD (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`), so the
+    /// stored uid is numeric. A rule that does not resolve fails the seeding,
+    /// before anything is written, naming every such rule; a `selected_lemma`
+    /// that disagrees with the DPD is logged and the rule is seeded by its id.
+    pub fn seed_gloss_phrase_selections(
+        &self,
+        dpd_index: &crate::gloss_dpd_uid::DpdLemmaIndex,
+    ) -> Result<usize> {
         use crate::db::appdata_schema::gloss_phrase_selections::dsl::*;
         use crate::helpers::{gloss_cache_word_key, normalize_gloss_context};
 
@@ -2771,7 +2780,10 @@ impl AppdataDbHandle {
         struct PhraseEntry {
             phrase: String,
             word: String,
+            #[serde(default)]
             selected_uid: String,
+            #[serde(default)]
+            selected_lemma: Option<String>,
         }
 
         #[derive(serde::Deserialize)]
@@ -2782,18 +2794,47 @@ impl AppdataDbHandle {
         let data: PhraseFile = serde_json::from_str(GLOSS_PHRASE_SELECTIONS_JSON)
             .context("Failed to parse gloss-phrase-selections.json")?;
 
-        let mut written = 0;
+        // (normalized phrase, word key, stored uid) for every rule.
+        let mut rules: Vec<(String, String, String)> = Vec::new();
+        let mut unresolved: Vec<String> = Vec::new();
         for entry in &data.phrases {
             let norm_phrase = normalize_gloss_context(&entry.phrase);
             let word_key = gloss_cache_word_key(&entry.word);
             if norm_phrase.is_empty() || word_key.is_empty() {
                 continue;
             }
+            match crate::gloss_dpd_uid::normalize_dpd_selected_uid(
+                dpd_index,
+                &entry.selected_uid,
+                entry.selected_lemma.as_deref(),
+            ) {
+                Ok(n) if n.uid.is_empty() => {
+                    unresolved.push(format!("\"{}\": no selected_uid or selected_lemma", entry.phrase));
+                }
+                Ok(n) => {
+                    if let Some(r) = n.report {
+                        warn(&format!("seed_gloss_phrase_selections(): \"{}\": {}", entry.phrase, r));
+                    }
+                    rules.push((norm_phrase, word_key, n.uid));
+                }
+                Err(e) => unresolved.push(format!("\"{}\": {}", entry.phrase, e)),
+            }
+        }
+        if !unresolved.is_empty() {
+            anyhow::bail!(
+                "gloss-phrase-selections.json: {} rules do not resolve against the DPD: {}",
+                unresolved.len(),
+                unresolved.join("; ")
+            );
+        }
+
+        let mut written = 0;
+        for (norm_phrase, word_key, rule_uid) in &rules {
 
             let existing: Option<GlossPhraseSelection> = self.do_read(|db_conn| {
                 gloss_phrase_selections
-                    .filter(phrase.eq(&norm_phrase))
-                    .filter(word.eq(&word_key))
+                    .filter(phrase.eq(norm_phrase))
+                    .filter(word.eq(word_key))
                     .select(GlossPhraseSelection::as_select())
                     .first(db_conn)
                     .optional()
@@ -2801,10 +2842,10 @@ impl AppdataDbHandle {
 
             match existing {
                 Some(row) => {
-                    if row.selected_uid != entry.selected_uid {
+                    if &row.selected_uid != rule_uid {
                         self.do_write(|db_conn| {
                             diesel::update(gloss_phrase_selections.find(row.id))
-                                .set(selected_uid.eq(&entry.selected_uid))
+                                .set(selected_uid.eq(rule_uid))
                                 .execute(db_conn)
                         })?;
                         written += 1;
@@ -2812,9 +2853,9 @@ impl AppdataDbHandle {
                 }
                 None => {
                     let new_row = NewGlossPhraseSelection {
-                        phrase: &norm_phrase,
-                        word: &word_key,
-                        selected_uid: &entry.selected_uid,
+                        phrase: norm_phrase,
+                        word: word_key,
+                        selected_uid: rule_uid,
                     };
                     self.do_write(|db_conn| {
                         diesel::insert_into(gloss_phrase_selections)
@@ -3168,24 +3209,32 @@ mod gloss_word_selection_tests {
         ]);
     }
 
+    /// The two headwords the curated phrase rules name.
+    fn phrase_dpd_index() -> crate::gloss_dpd_uid::DpdLemmaIndex {
+        crate::gloss_dpd_uid::DpdLemmaIndex::from_headwords([
+            (12463, "ārāma 4".to_string()),
+            (49885, "bhikkhu".to_string()),
+        ])
+    }
+
     #[test]
     fn seed_phrases_is_idempotent_and_lookup_matches() {
         let db = setup();
-        let first = db.seed_gloss_phrase_selections().unwrap();
+        let first = db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap();
         assert_eq!(first, 2, "both curated phrases are inserted");
         // Re-run: nothing changes.
-        let second = db.seed_gloss_phrase_selections().unwrap();
+        let second = db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap();
         assert_eq!(second, 0);
 
-        // Lookup by the word key.
+        // Lookup by the word key. The stored uid is numeric.
         let rows = db.get_gloss_phrase_selections("ārāme");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].selected_uid, "ārāma-4/dpd");
+        assert_eq!(rows[0].selected_uid, "12463/dpd");
         assert_eq!(rows[0].phrase, "anāthapiṇḍikassa ārāme");
 
         let rows = db.get_gloss_phrase_selections("bhikkhū");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].selected_uid, "bhikkhu/dpd");
+        assert_eq!(rows[0].selected_uid, "49885/dpd");
 
         assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
     }
@@ -3193,7 +3242,7 @@ mod gloss_word_selection_tests {
     #[test]
     fn phrase_occurs_in_normalized_window() {
         let db = setup();
-        db.seed_gloss_phrase_selections().unwrap();
+        db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap();
 
         // PRD test case 1: the seeded phrase matches inside the normalized
         // context window of `ārāme`.

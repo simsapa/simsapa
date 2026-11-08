@@ -3,6 +3,7 @@
 pub mod db;
 pub mod types;
 pub mod helpers;
+pub mod gloss_dpd_uid;
 pub mod highlight;
 pub mod asset_helpers;
 pub mod cli_support;

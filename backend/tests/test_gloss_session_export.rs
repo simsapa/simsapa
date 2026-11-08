@@ -17,6 +17,9 @@ use simsapa_backend::helpers::{
 };
 use diesel_migrations::MigrationHarness;
 
+mod helpers;
+use helpers as h;
+
 const ARAME_SENTENCE: &str = "jetavane anāthapiṇḍikassa <b>ārāme</b>";
 const CITTAM_SENTENCE: &str = "evaṁ bahulamakāsi <b>cittaṁ</b> tathā tathā";
 
@@ -91,7 +94,7 @@ fn test_gloss_session_export_round_trip() {
     db_a.upsert_gloss_word_cache("unrelated", "other-hash", "ctx", "x/dpd", "user-selected")
         .unwrap();
 
-    let export = build_gloss_session_export_json(&db_a, &session_json()).unwrap();
+    let export = build_gloss_session_export_json(&db_a, None, &session_json()).unwrap();
 
     // The envelope validates and carries exactly the session's rows.
     let (session, word_cache) = parse_gloss_session_export(&export).unwrap();
@@ -205,4 +208,70 @@ fn test_import_skips_review_entries_and_accepts_agent_checked() {
     assert!(db.get_gloss_word_cache("w1", "h1").is_none());
     let row = db.get_gloss_word_cache("w2", "h2").expect("agent entry imported");
     assert_eq!(row.origin, "built-in-agent-checked");
+}
+
+#[test]
+fn test_entry_without_selected_lemma_still_loads() {
+    // An export written before `selected_lemma` existed.
+    let old = r#"{"format": "simsapa-gloss-session", "format_version": 1, "session": {},
+        "word_cache": [{"word": "ārāme", "context_hash": "h", "context_snippet": "c",
+                        "selected_uid": "ārāma-4/dpd", "origin": "user-selected"}]}"#;
+    let (_, word_cache) = parse_gloss_session_export(old).unwrap();
+    assert_eq!(word_cache.len(), 1);
+    assert_eq!(word_cache[0].selected_lemma, None);
+
+    // And an absent lemma is left out of the JSON written.
+    let json = serde_json::to_string(&word_cache[0]).unwrap();
+    assert!(!json.contains("selected_lemma"), "{}", json);
+}
+
+/// The export fills `selected_lemma` from the installed DPD; Open JSON's
+/// normalisation turns a lemma-form uid into the numeric one and reports a
+/// `selected_lemma` that disagrees with the installed DPD. Reads the dist
+/// `dpd.sqlite3`; writes only to temp appdata DBs.
+#[test]
+#[serial_test::serial]
+fn test_export_fills_selected_lemma_and_import_normalizes() {
+    use simsapa_backend::get_app_data;
+    use simsapa_backend::helpers::{normalize_gloss_word_cache_entries, GlossWordCacheExportEntry};
+    h::app_data_setup();
+    let app_data = get_app_data();
+
+    let arame_hash = gloss_context_hash(&normalize_gloss_context(ARAME_SENTENCE));
+    let cittam_hash = gloss_context_hash(&normalize_gloss_context(CITTAM_SENTENCE));
+    let db_a = temp_appdata("lemma");
+    db_a.upsert_gloss_word_cache(
+        &gloss_cache_word_key("ārāme"), &arame_hash, ARAME_SENTENCE, "12463/dpd", "user-selected")
+        .unwrap();
+    // A non-numeric uid gets no lemma.
+    db_a.upsert_gloss_word_cache(
+        &gloss_cache_word_key("cittaṁ"), &cittam_hash, CITTAM_SENTENCE, "citta-2/dpd", "ai-selected")
+        .unwrap();
+
+    let export = build_gloss_session_export_json(&db_a, Some(&app_data.dbm.dpd), &session_json()).unwrap();
+    let (_, word_cache) = parse_gloss_session_export(&export).unwrap();
+    let arame = word_cache.iter().find(|e| e.selected_uid == "12463/dpd").unwrap();
+    assert_eq!(arame.selected_lemma.as_deref(), Some("ārāma 4"));
+    let cittam = word_cache.iter().find(|e| e.selected_uid == "citta-2/dpd").unwrap();
+    assert_eq!(cittam.selected_lemma, None);
+
+    let index = app_data.dpd_lemma_index().unwrap();
+    let entry = |uid: &str, lemma: Option<&str>| GlossWordCacheExportEntry {
+        word: "w".into(), context_hash: "h".into(), selected_uid: uid.into(),
+        origin: "user-selected".into(), selected_lemma: lemma.map(String::from),
+        ..Default::default()
+    };
+    let n = normalize_gloss_word_cache_entries(&index, vec![
+        entry("ārāma-4/dpd", None),
+        // Written when id 7945 was labelled 'abhinīhāra 2'.
+        entry("7945/dpd", Some("abhinīhāra 2")),
+        entry("", Some("bhikkhu")),
+        entry("nosuchlemma-9/dpd", None),
+    ]);
+    let uids: Vec<&str> = n.entries.iter().map(|e| e.selected_uid.as_str()).collect();
+    assert_eq!(uids, ["12463/dpd", "7945/dpd", "49885/dpd"]);
+    assert_eq!(n.converted, 2);
+    assert_eq!(n.unresolved.len(), 1, "{:?}", n.unresolved);
+    assert_eq!(n.reports.len(), 1, "{:?}", n.reports);
+    assert!(n.reports[0].contains("abhinīhāra 1"), "{}", n.reports[0]);
 }

@@ -562,7 +562,10 @@ RELEASE_CHANNEL=development
         logger::info("=== Seed gloss phrase selections ===");
         {
             let app_data = simsapa_backend::get_app_data();
-            match app_data.dbm.appdata.seed_gloss_phrase_selections() {
+            let seeded = app_data
+                .dpd_lemma_index()
+                .and_then(|index| app_data.dbm.appdata.seed_gloss_phrase_selections(&index));
+            match seeded {
                 Ok(n) => logger::info(&format!("Seeded {} gloss phrase selection rows", n)),
                 Err(e) => logger::warn(&format!("Failed to seed gloss phrase selections: {}", e)),
             }

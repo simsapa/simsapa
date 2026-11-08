@@ -2004,6 +2004,43 @@ impl AppData {
         })
     }
 
+    /// The installed `dpd.sqlite3`'s `lemma_1` ↔ id mapping, for normalising
+    /// gloss selection uids taken from a file
+    /// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`).
+    pub fn dpd_lemma_index(&self) -> Result<crate::gloss_dpd_uid::DpdLemmaIndex> {
+        let mut conn = self.dbm.dpd.get_conn().context("dpd_lemma_index(): no dpd db connection")?;
+        crate::gloss_dpd_uid::DpdLemmaIndex::load(&mut conn)
+    }
+
+    /// Normalise word-cache entries from a file against the installed DPD
+    /// (`helpers::normalize_gloss_word_cache_entries`) and log the entries
+    /// left out and the label mismatches. When the DPD cannot be read the
+    /// entries are returned unchanged, with an error logged.
+    pub fn normalize_gloss_entries_logged(
+        &self,
+        entries: Vec<GlossWordCacheExportEntry>,
+        caller: &str,
+    ) -> Vec<GlossWordCacheExportEntry> {
+        let index = match self.dpd_lemma_index() {
+            Ok(ix) => ix,
+            Err(e) => {
+                error(&format!("{}: cannot normalise DPD uids, importing them unchanged: {}", caller, e));
+                return entries;
+            }
+        };
+        let n = crate::helpers::normalize_gloss_word_cache_entries(&index, entries);
+        if n.converted > 0 {
+            info(&format!("{}: {} DPD uids converted to the numeric form", caller, n.converted));
+        }
+        for line in &n.unresolved {
+            warn(&format!("{}: skipped, {}", caller, line));
+        }
+        for line in &n.reports {
+            warn(&format!("{}: {}", caller, line));
+        }
+        n.entries
+    }
+
     pub fn get_dpd_headword_by_uid(&self, uid_str: &str) -> Option<String> {
         use diesel::prelude::*;
         use crate::db::dpd_schema::dpd_headwords::dsl::*;
@@ -5227,6 +5264,7 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
                 confidence: None,
                 note: None,
                 deconstruction: row.deconstruction,
+                selected_lemma: None,
             })
             .collect(),
     };

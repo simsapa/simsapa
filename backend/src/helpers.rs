@@ -3862,6 +3862,13 @@ pub struct GlossWordCacheExportEntry {
     /// it `None` and the field is omitted from the JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deconstruction: Option<String>,
+    /// The DPD `lemma_1` of a numeric `selected_uid` (`"ārāma 4"` beside
+    /// `"12463/dpd"`), so a person reading the file can tell the sense. The
+    /// uid is the key; on import this is only a cross-check
+    /// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`). A hand-written
+    /// entry may give only this, with an empty `selected_uid`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_lemma: Option<String>,
 }
 
 /// Collect the distinct `(word_key, context_hash)` pairs referenced by a
@@ -3913,8 +3920,12 @@ fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String
 /// Build the versioned gloss session export envelope (PRD req 38): the same
 /// session serialization the Gloss history saves, plus the word-selection
 /// cache rows (any origin) referenced by the session's words.
+///
+/// With a `dpd` handle, each numeric DPD `selected_uid` gets its
+/// `selected_lemma` from that `dpd.sqlite3`.
 pub fn build_gloss_session_export_json(
     appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: Option<&crate::db::dpd::DpdDbHandle>,
     session_json: &str,
 ) -> Result<String, String> {
     let session: serde_json::Value = serde_json::from_str(session_json)
@@ -3933,8 +3944,12 @@ pub fn build_gloss_session_export_json(
             confidence: None,
             note: None,
             deconstruction: r.deconstruction,
+            selected_lemma: None,
         })
         .collect();
+    if let Some(dpd) = dpd {
+        fill_selected_lemmas(dpd, &mut word_cache)?;
+    }
     // A key can carry both a local and a shipped row, so `origin` is part of the
     // sort key to keep the export deterministic.
     word_cache.sort_by(|a, b| {
@@ -3986,6 +4001,75 @@ pub fn parse_gloss_session_export(
             .map_err(|e| format!("Invalid word_cache entries: {}", e))?,
     };
     Ok((session, word_cache))
+}
+
+/// Set `selected_lemma` on every entry whose `selected_uid` is a numeric DPD
+/// uid, from the given `dpd.sqlite3`. Entries with other uids are left as they
+/// are.
+pub fn fill_selected_lemmas(
+    dpd: &crate::db::dpd::DpdDbHandle,
+    entries: &mut [GlossWordCacheExportEntry],
+) -> Result<(), String> {
+    let mut conn = dpd
+        .get_conn()
+        .map_err(|e| format!("fill_selected_lemmas(): no dpd db connection: {}", e))?;
+    let lemmas = crate::gloss_dpd_uid::lemmas_for_uids(
+        &mut conn,
+        entries.iter().map(|e| e.selected_uid.as_str()),
+    )
+    .map_err(|e| format!("fill_selected_lemmas(): {}", e))?;
+    for e in entries.iter_mut() {
+        if let Some(lemma) = lemmas.get(&e.selected_uid) {
+            e.selected_lemma = Some(lemma.clone());
+        }
+    }
+    Ok(())
+}
+
+/// The outcome of `normalize_gloss_word_cache_entries()`.
+#[derive(Debug, Default)]
+pub struct GlossUidNormalization {
+    /// The entries to import, each DPD headword `selected_uid` now numeric.
+    pub entries: Vec<GlossWordCacheExportEntry>,
+    /// How many uids were rewritten (lemma form or `selected_lemma` only →
+    /// numeric).
+    pub converted: usize,
+    /// Entries left out because their uid did not resolve, one line each.
+    pub unresolved: Vec<String>,
+    /// Entries imported by id whose `selected_lemma` disagrees with the
+    /// installed DPD, one line each.
+    pub reports: Vec<String>,
+}
+
+/// Normalise the `selected_uid` of word-cache entries taken from a file
+/// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`), so that only numeric
+/// DPD headword uids are stored. Entries whose uid does not resolve are
+/// dropped and listed in `unresolved`.
+pub fn normalize_gloss_word_cache_entries(
+    index: &crate::gloss_dpd_uid::DpdLemmaIndex,
+    entries: Vec<GlossWordCacheExportEntry>,
+) -> GlossUidNormalization {
+    let mut out = GlossUidNormalization::default();
+    for mut e in entries {
+        match crate::gloss_dpd_uid::normalize_dpd_selected_uid(
+            index,
+            &e.selected_uid,
+            e.selected_lemma.as_deref(),
+        ) {
+            Ok(n) => {
+                if n.uid != e.selected_uid {
+                    out.converted += 1;
+                    e.selected_uid = n.uid;
+                }
+                if let Some(r) = n.report {
+                    out.reports.push(format!("word '{}': {}", e.word, r));
+                }
+                out.entries.push(e);
+            }
+            Err(err) => out.unresolved.push(format!("word '{}': {}", e.word, err)),
+        }
+    }
+    out
 }
 
 /// Import exported cache rows with the strictly-higher precedence rule

@@ -103,7 +103,7 @@ fn find_word<'a>(words: &'a [ProcessedWord], original_word: &str) -> &'a Process
 fn test_seeded_phrase_resolves_arame() {
     h::app_data_setup();
     let db = temp_appdata();
-    db.seed_gloss_phrase_selections().expect("seed phrases");
+    db.seed_gloss_phrase_selections(&get_app_data().dpd_lemma_index().unwrap()).expect("seed phrases");
 
     let words = gloss_paragraph(ARAME_SENTENCE, Some(&db));
     let arame = find_word(&words, "ārāme");
@@ -143,7 +143,7 @@ fn test_no_resolution_data_leaves_words_unresolved() {
 fn test_user_cache_beats_phrase_and_stale_uid_falls_through() {
     h::app_data_setup();
     let db = temp_appdata();
-    db.seed_gloss_phrase_selections().expect("seed phrases");
+    db.seed_gloss_phrase_selections(&get_app_data().dpd_lemma_index().unwrap()).expect("seed phrases");
 
     // First pass: get the word key inputs (context hash) from processing itself.
     let words = gloss_paragraph(ARAME_SENTENCE, Some(&db));
@@ -243,7 +243,7 @@ fn test_annotate_gloss_words_json_rederives_state() {
 
     h::app_data_setup();
     let db = temp_appdata();
-    db.seed_gloss_phrase_selections().expect("seed phrases");
+    db.seed_gloss_phrase_selections(&get_app_data().dpd_lemma_index().unwrap()).expect("seed phrases");
 
     // Simulate an old (pre-feature) session: gloss without resolution data,
     // then strip context_hash/resolution as an old session JSON would lack them,
@@ -484,7 +484,7 @@ fn test_prd_cases_phrase_ai_cache_and_user_survival() {
 
     h::app_data_setup();
     let db = temp_appdata();
-    db.seed_gloss_phrase_selections().expect("seed phrases");
+    db.seed_gloss_phrase_selections(&get_app_data().dpd_lemma_index().unwrap()).expect("seed phrases");
 
     // (2) PRD test sentence: bhikkhū resolves via the phrase to the monk entry.
     let sentence = "Paṭisallīnā manobhāvanīyā bhikkhū.";
@@ -736,4 +736,56 @@ fn test_gloss_apostrophe_compounds_and_long_vowel_iti() {
     );
     // ProcessedWord.original_word is the clean word: no split-off halves.
     assert!(words.iter().all(|w| w.original_word != "gamā" && w.original_word != "pi"));
+}
+
+// What a model reads keeps the lemma, what is stored is the numeric uid
+// (docs/gloss-ai-word-selection.md, "The uid two-lane gotcha"). The request
+// items built for the live AI request (SkipResolved) and for the
+// `gloss-agent-check prepare` payload (IncludeResolved) carry each option's
+// `word` lemma beside its numeric `uid`, and an answer given by lemma maps to
+// that numeric uid.
+#[test]
+#[serial]
+fn test_ai_request_carries_lemmas_and_answer_by_lemma_stores_numeric_uid() {
+    use simsapa_backend::helpers::{
+        build_word_selection_items, build_word_selection_payload, parse_word_selection_response,
+        WordSelectionBuildMode, WordSelectionParagraphInput, WordSelectionParseMode,
+    };
+
+    h::app_data_setup();
+    let words = gloss_paragraph(ARAME_SENTENCE, None);
+    let arame = find_word(&words, "ārāme");
+    assert!(arame.results.len() > 1, "ārāme should be ambiguous");
+
+    let paras = vec![WordSelectionParagraphInput {
+        paragraph_index: 0,
+        words_json: serde_json::to_string(&words).unwrap(),
+        source_uid: None,
+    }];
+
+    for mode in [
+        WordSelectionBuildMode::SkipResolved { forced: false },
+        WordSelectionBuildMode::IncludeResolved,
+    ] {
+        let items = build_word_selection_items(&paras, mode).unwrap();
+        let item = items
+            .iter()
+            .find(|it| it.get("word").and_then(|v| v.as_str()) == Some(arame.original_word.as_str()))
+            .expect("an item for ārāme");
+        let options = item.get("options").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(options.len(), arame.results.len());
+        for (o, r) in options.iter().zip(&arame.results) {
+            assert_eq!(o.get("word").and_then(|v| v.as_str()), Some(r.word.as_str()), "option lemma");
+            assert_eq!(o.get("uid").and_then(|v| v.as_str()), Some(r.uid.as_str()));
+        }
+        let payload = build_word_selection_payload(&items).unwrap();
+        assert!(payload.contains("\"ārāma 4\""), "the payload names the lemma: {}", payload);
+
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap();
+        let answer = format!(r#"{{"selections": [{{"id": "{}", "word": "ārāma 4"}}]}}"#, id);
+        let items_json = serde_json::to_string(&items).unwrap();
+        let sel = parse_word_selection_response(&answer, &items_json, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!(sel.len(), 1);
+        assert_eq!(sel[0].uid, "12463/dpd", "an answer by lemma is the option's numeric uid");
+    }
 }
