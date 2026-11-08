@@ -125,6 +125,9 @@ project-tree:
 bootstrap:
 	cd bootstrap_cli/ && cargo build && cargo run -- bootstrap --write-new-dotenv
 
+cargo-clean:
+	cd backend && cargo clean && cd ../backend_cli && cargo clean && cd ../api && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd ..
+
 # First 'cargo clean' on each module, then build.
 cargo-clean-build:
 	cd backend && cargo clean && cd ../backend_cli && cargo clean && cd ../api && cargo clean && cd ../bridges && cargo clean && cd ../bootstrap_cli && cargo clean && cd .. && \
