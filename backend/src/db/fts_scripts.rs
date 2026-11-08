@@ -56,6 +56,33 @@ impl FtsScript {
         }
     }
 
+    /// The `CREATE TRIGGER … END;` statements of the script, with each
+    /// trigger's name, in script order. The DPD upgrade recreates the sync
+    /// triggers from these, so their SQL exists only in the script.
+    pub fn trigger_statements(self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut current: Option<(String, String)> = None;
+        for line in self.sql().lines() {
+            let code = line.split("--").next().unwrap_or("");
+            if current.is_none() {
+                let mut words = code.split_whitespace();
+                if let (Some(a), Some(b), Some(name)) = (words.next(), words.next(), words.next()) {
+                    if a.eq_ignore_ascii_case("CREATE") && b.eq_ignore_ascii_case("TRIGGER") {
+                        current = Some((name.trim_end_matches(';').to_string(), String::new()));
+                    }
+                }
+            }
+            if let Some((_, sql)) = current.as_mut() {
+                sql.push_str(line);
+                sql.push('\n');
+                if code.trim().eq_ignore_ascii_case("END;") {
+                    out.push(current.take().unwrap());
+                }
+            }
+        }
+        out
+    }
+
     /// The script's SQL.
     pub fn sql(self) -> &'static str {
         match self {
@@ -80,7 +107,23 @@ pub fn run_fts5_script(conn: &mut SqliteConnection, script: FtsScript) -> Result
 
 /// Open a plain connection (no pool, no connection customizer) to a database
 /// file that must already exist.
+///
+/// A file in the DPD upgrade's staging folder
+/// (`crate::dpd_upgrade::is_staged_db_path()`) is opened with
+/// `journal_mode = OFF` and `synchronous = OFF`: it is thrown away on any
+/// failure, so a journal would only cost disk space and time. Both pragmas
+/// are per connection, which is why it is decided here, for every opener on
+/// the DPD import path. An installed database is never in that folder.
 pub fn open_db_path(db_path: &Path) -> Result<SqliteConnection> {
+    let mut conn = open_db_path_plain(db_path)?;
+    if crate::dpd_upgrade::is_staged_db_path(db_path) {
+        conn.batch_execute("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;")
+            .with_context(|| format!("Failed to turn off the journal of {}", db_path.display()))?;
+    }
+    Ok(conn)
+}
+
+fn open_db_path_plain(db_path: &Path) -> Result<SqliteConnection> {
     match db_path.try_exists() {
         Ok(true) => {}
         Ok(false) => return Err(anyhow::anyhow!("Database not found: {}", db_path.display())),
@@ -128,6 +171,28 @@ pub fn analyze_db(db_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_dictionaries_script_has_the_six_sync_triggers() {
+        let triggers = FtsScript::Dictionaries.trigger_statements();
+        let names: Vec<&str> = triggers.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, [
+            "dict_words_fts_insert", "dict_words_fts_update", "dict_words_fts_delete",
+            "dict_words_word_fts_insert", "dict_words_word_fts_update", "dict_words_word_fts_delete",
+        ]);
+        for (name, sql) in &triggers {
+            assert!(sql.trim_start().starts_with("CREATE TRIGGER"), "{}", name);
+            assert!(sql.trim_end().ends_with("END;"), "{}", name);
+        }
+        // Each statement runs on its own once the FTS tables exist.
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute("CREATE TABLE dict_words (id INTEGER PRIMARY KEY, word TEXT, definition_plain TEXT);").unwrap();
+        run_fts5_script(&mut conn, FtsScript::Dictionaries).unwrap();
+        for (name, sql) in &triggers {
+            conn.batch_execute(&format!("DROP TRIGGER {};", name)).unwrap();
+            conn.batch_execute(sql).unwrap();
+        }
+    }
 
     #[test]
     fn scripts_have_no_vacuum_and_no_dot_commands() {

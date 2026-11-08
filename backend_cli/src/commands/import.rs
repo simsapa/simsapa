@@ -195,7 +195,13 @@ fn show_progress(bar: &ProgressBar, p: &StardictImportProgress) {
             bar.set_length(*total as u64);
             bar.set_position(0);
         }
+        StardictImportProgress::ParsingWords { done, total } => {
+            bar.set_message("Reading the entries");
+            bar.set_length(*total as u64);
+            bar.set_position(*done as u64);
+        }
         StardictImportProgress::InsertingWords { done, total } => {
+            bar.set_message("Writing the entries");
             bar.set_length(*total as u64);
             bar.set_position(*done as u64);
         }

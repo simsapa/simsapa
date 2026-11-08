@@ -1145,7 +1145,10 @@ fn main() {
                     get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
                         .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
                         .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
-                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None))
+                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None,
+                            &|stage| simsapa_backend::logger::info(stage.label()),
+                            &simsapa_backend::batch_progress::BatchProgress::none())
+                            .map_err(|e| format!("{:#}", e)))
                 }
                 Ok(false) => Err(format!("DPD input path does not exist: {:?}", dpd_input_path)),
                 Err(e) => Err(format!("Cannot access DPD input path {:?}: {}", dpd_input_path, e)),
@@ -1155,7 +1158,8 @@ fn main() {
         Commands::PopulateDpdConstructionSummary { dpd_db_path } => {
             match dpd_db_path.try_exists() {
                 Ok(true) => db::dpd::populate_dpd_construction_summaries(
-                    &dpd_db_path, &simsapa_backend::get_app_globals().paths.dict_db_path)
+                    &dpd_db_path, &simsapa_backend::get_app_globals().paths.dict_db_path,
+                    &simsapa_backend::batch_progress::BatchProgress::none())
                     .map(|report| report.log())
                     .map_err(|e| format!("{}", e)),
                 Ok(false) => Err(format!("DPD database not found: {:?}", dpd_db_path)),

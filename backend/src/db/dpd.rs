@@ -14,6 +14,7 @@ use serde::{Serialize, Deserialize};
 
 use crate::db::dpd_models::*;
 use crate::db::DatabaseHandle;
+use crate::batch_progress::BatchProgress;
 use crate::db::fts_scripts::{open_db_path, run_fts5_script, FtsScript};
 use diesel::connection::SimpleConnection;
 
@@ -2314,6 +2315,10 @@ fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashM
 ///
 /// Writes the DPD release version into the DPD row's `version` in
 /// `dict_db_path`, so the pages and the data record which release they are.
+///
+/// `on_stage` is called with the name of each part as it starts, and
+/// `progress` reports rows inside the long ones and is checked for a cancel
+/// between batches. A cancel returns an error that `is::<Cancelled>()`.
 pub fn import_migrate_dpd(
     dpd_input_path: &Path,
     dpd_output_path: &Path,
@@ -2321,34 +2326,63 @@ pub fn import_migrate_dpd(
     dpd_dictionary_id: i32,
     res_dir: &Path,
     limit: Option<i32>,
-) -> Result<(), String> {
-    migrate_dpd(dpd_input_path, dpd_dictionary_id)
-        .map_err(|e| format!("{:#}", e))?;
+    on_stage: &dyn Fn(MigrateStage),
+    progress: &BatchProgress,
+) -> Result<()> {
+    on_stage(MigrateStage::Schema);
+    migrate_dpd(dpd_input_path, dpd_dictionary_id, progress)?;
+    progress.check_cancel()?;
 
     let output_path = dpd_output_path.to_path_buf();
     move_file(dpd_input_path, &output_path)
-        .map_err(|e| format!("Failed to move {} to {}: {}", dpd_input_path.display(), output_path.display(), e))?;
+        .with_context(|| format!("Failed to move {} to {}", dpd_input_path.display(), output_path.display()))?;
 
-    import_dpd_res(&output_path, dict_db_path, dpd_dictionary_id, res_dir)
-        .map_err(|e| format!("{:#}", e))?;
+    on_stage(MigrateStage::PageFiles);
+    import_dpd_res(&output_path, dict_db_path, dpd_dictionary_id, res_dir)?;
+    progress.check_cancel()?;
 
     // Populate derived columns on `bold_definitions` (uid, commentary_plain)
     // before creating indexes — the B-tree script creates a UNIQUE INDEX on
     // bold_definitions.uid, which depends on population having run.
-    populate_bold_definitions_derived_columns(&output_path, limit)
-        .map_err(|e| format!("{}", e))?;
+    on_stage(MigrateStage::BoldDefinitions);
+    populate_bold_definitions_derived_columns(&output_path, limit, progress)?;
 
     // The DPD StarDict pages are already in dictionaries.sqlite3.
-    populate_dpd_construction_summaries(&output_path, dict_db_path)
-        .map_err(|e| format!("{}", e))?
-        .log();
+    on_stage(MigrateStage::ConstructionSummaries);
+    populate_dpd_construction_summaries(&output_path, dict_db_path, progress)?.log();
+    progress.check_cancel()?;
 
-    create_dpd_indexes(&output_path).map_err(|e| format!("{:#}", e))?;
+    on_stage(MigrateStage::Indexes);
+    create_dpd_indexes(&output_path)?;
 
-    record_dpd_release_version(&output_path, dict_db_path, dpd_dictionary_id)
-        .map_err(|e| format!("{:#}", e))?;
+    record_dpd_release_version(&output_path, dict_db_path, dpd_dictionary_id)?;
 
     Ok(())
+}
+
+/// The parts of `import_migrate_dpd()`, in order, for progress messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrateStage {
+    /// The schema changes, the computed columns and the niggahīta pass.
+    Schema,
+    /// The `res/` files into `dpd_res`, and the `<link href>` check.
+    PageFiles,
+    BoldDefinitions,
+    ConstructionSummaries,
+    /// The B-tree and FTS5 indexes.
+    Indexes,
+}
+
+impl MigrateStage {
+    pub fn label(self) -> &'static str {
+        match self {
+            MigrateStage::Schema => "Converting the word data",
+            MigrateStage::PageFiles => "Storing the page files",
+            MigrateStage::BoldDefinitions => "Preparing the commentary definitions",
+            MigrateStage::ConstructionSummaries => "Reading the word constructions",
+            MigrateStage::Indexes => "Building the word data indexes",
+        }
+    }
 }
 
 /// Import `res_dir` into the `dpd_res` table of `dpd_db_path`, then check that
@@ -2411,6 +2445,23 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 #[derive(QueryableByName)]
+struct IdRangeRow {
+    #[diesel(sql_type = diesel::sql_types::Nullable<Integer>)]
+    min_id: Option<i32>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<Integer>)]
+    max_id: Option<i32>,
+}
+
+/// The smallest and largest id of the DPD rows of `dict_words`, so a batched
+/// walk in id order can report how far it is. `(0, 0)` when there are none.
+fn dpd_dict_words_id_range(dict_conn: &mut SqliteConnection) -> Result<(i32, i32)> {
+    let row: IdRangeRow = sql_query("SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM dict_words WHERE dict_label = 'dpd'")
+        .get_result(dict_conn)
+        .context("Failed to read the DPD dict_words id range")?;
+    Ok((row.min_id.unwrap_or(0), row.max_id.unwrap_or(0)))
+}
+
+#[derive(QueryableByName)]
 struct SuttaInfoRow {
     #[diesel(sql_type = Text)]
     dpd_code: String,
@@ -2456,7 +2507,7 @@ struct DictWordHtmlRow {
 /// ssp:// links for navigation), but `definition_plain` — which feeds the
 /// fulltext / contains search — is recomputed with those paragraphs stripped so
 /// the Pāli sutta names in examples don't pollute search hits.
-pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) -> Result<()> {
+pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("convert_dpd_example_sutta_links()");
 
     // 1. Build the DPD source-code -> (uid_path, display) map from sutta_info.
@@ -2490,6 +2541,9 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
     // 2. Rewrite DPD dict_words definition_html in batches.
     let mut dict_conn = open_db_path(dict_db_path)?;
 
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
+
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
     let mut converted_total: u64 = 0;
@@ -2509,6 +2563,7 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let converted_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2539,6 +2594,7 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
         .context("Failed to update dict_words batch")?;
 
         converted_total += converted_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2561,10 +2617,13 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
 /// plain search field, while the visible word text remains (search still
 /// matches the word). The transform is idempotent, so a re-bootstrap will not
 /// double-wrap already-linked items.
-pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
+pub fn convert_dpd_epd_word_links(dict_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("convert_dpd_epd_word_links()");
 
     let mut dict_conn = open_db_path(dict_db_path)?;
+
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
 
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
@@ -2585,6 +2644,7 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let converted_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2612,6 +2672,7 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
         .context("Failed to update dict_words batch")?;
 
         converted_total += converted_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2638,10 +2699,13 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
 /// triggers don't fire, and after the epd/sutta link conversions so it operates
 /// on the final HTML. Only footer-bearing rows are touched (LIKE pre-filter);
 /// the write is skipped when the plain text is unchanged.
-pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
+pub fn strip_dpd_footers_from_plain(dict_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("strip_dpd_footers_from_plain()");
 
     let mut dict_conn = open_db_path(dict_db_path)?;
+
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
 
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
@@ -2664,6 +2728,7 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let updated_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2686,6 +2751,7 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
         .context("Failed to update dict_words batch")?;
 
         updated_total += updated_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2724,7 +2790,7 @@ struct BoldDefRow {
 /// Add `uid` and `commentary_plain` columns to `bold_definitions` and
 /// populate them. Idempotent: skipped if all rows already have non-empty uid.
 /// `limit` caps the number of rows processed (for bootstrap testing).
-pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Option<i32>) -> Result<()> {
+pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Option<i32>, progress: &BatchProgress) -> Result<()> {
     info("populate_bold_definitions_derived_columns()");
 
     let mut conn = open_db_path(dpd_db_path)?;
@@ -2789,7 +2855,13 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
     //   count == N (>=2): "{bold} N/{ref_code}"
     let mut seen: HashMap<(String, String), u32> = HashMap::new();
     let mut updates: Vec<(i32, String, String, String)> = Vec::with_capacity(rows.len());
-    for r in &rows {
+    // Computing the columns is half the work and writing them the other half.
+    let progress_total = (rows.len() as u64) * 2;
+    for (i, r) in rows.iter().enumerate() {
+        if i % PROGRESS_BATCH_ROWS == 0 {
+            progress.check_cancel()?;
+            progress.report(i as u64, progress_total);
+        }
         let bold_lc = word_uid_sanitize(&r.bold).to_lowercase();
         let ref_lc = r.ref_code.to_lowercase();
         let n = seen.entry((bold_lc.clone(), ref_lc.clone())).or_insert(0);
@@ -2806,7 +2878,11 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
 
     // Apply all updates in a single transaction.
     conn.transaction::<_, anyhow::Error, _>(|conn| {
-        for (id, uid, cp, ba) in &updates {
+        for (i, (id, uid, cp, ba)) in updates.iter().enumerate() {
+            if i % PROGRESS_BATCH_ROWS == 0 {
+                progress.check_cancel()?;
+                progress.report((rows.len() + i) as u64, progress_total);
+            }
             sql_query(
                 "UPDATE bold_definitions SET uid = ?, commentary_plain = ?, bold_ascii = ? WHERE id = ?",
             )
@@ -2903,7 +2979,7 @@ struct HeadwordSummaryInputRow {
 /// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
 /// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
 /// the `table!`. See docs/simsapa-cli-and-localhost-api.md §19.1.
-pub fn populate_dpd_construction_summaries(dpd_db_path: &Path, dict_db_path: &Path) -> Result<ConstructionSummaryReport> {
+pub fn populate_dpd_construction_summaries(dpd_db_path: &Path, dict_db_path: &Path, progress: &BatchProgress) -> Result<ConstructionSummaryReport> {
     info("populate_dpd_construction_summaries()");
 
     let mut conn = open_db_path(dpd_db_path)?;
@@ -2972,7 +3048,11 @@ pub fn populate_dpd_construction_summaries(dpd_db_path: &Path, dict_db_path: &Pa
     }
 
     conn.transaction::<_, anyhow::Error, _>(|conn| {
-        for (id, summary) in &updates {
+        for (i, (id, summary)) in updates.iter().enumerate() {
+            if i % PROGRESS_BATCH_ROWS == 0 {
+                progress.check_cancel()?;
+                progress.report(i as u64, updates.len() as u64);
+            }
             sql_query("UPDATE dpd_headwords SET construction_summary = ? WHERE id = ?")
                 .bind::<Text, _>(summary)
                 .bind::<Integer, _>(*id)
@@ -3006,19 +3086,22 @@ struct ColumnInfo {
 }
 
 /// Iterates through all tables and text columns to replace 'ṃ' with 'ṁ'.
-pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
+pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection, progress: &BatchProgress) -> Result<()> {
     info("replace_all_niggahitas()");
 
     // Avoid "FOREIGN KEY constraint failed" errors when updating columns that
     // might be part of a foreign key relationship.
     diesel::sql_query("PRAGMA foreign_keys = OFF;").execute(db_conn)?;
 
-    let res = db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
+    let res = db_conn.transaction::<_, anyhow::Error, _>(|conn| {
         // Get all table names
         let tables = diesel::sql_query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
             .load::<TableName>(conn)?;
 
-        for table_row in tables {
+        let n_tables = tables.len() as u64;
+        for (table_i, table_row) in tables.into_iter().enumerate() {
+            progress.check_cancel()?;
+            progress.report(table_i as u64, n_tables);
             let table_name = table_row.name;
 
             // Get all column names of the table
@@ -3046,6 +3129,10 @@ pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection) -> Result<(), dies
     // Return the result of the transaction
     res
 }
+
+/// How many rows a batched step processes between two progress reports and
+/// cancel checks.
+const PROGRESS_BATCH_ROWS: usize = 5000;
 
 /// Update the DPD db schema to agree with Diesel dpd_models.rs
 pub fn dpd_update_schema(db_conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
@@ -3093,7 +3180,7 @@ pub fn dpd_update_schema(db_conn: &mut SqliteConnection) -> Result<(), diesel::r
 }
 
 /// Performs schema changes and data migrations for DPD tables.
-pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32) -> Result<()> {
+pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32, progress: &BatchProgress) -> Result<()> {
     info("migrate_dpd()");
 
     let mut db_conn = open_db_path(dpd_db_path)?;
@@ -3168,7 +3255,7 @@ pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32) -> Result<()> {
 
     // FIXME save_dpd_caches(dpd_db_session)
 
-    replace_all_niggahitas(&mut db_conn)?;
+    replace_all_niggahitas(&mut db_conn, progress)?;
 
     Ok(())
 }

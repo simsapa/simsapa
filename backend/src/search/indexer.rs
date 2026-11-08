@@ -282,13 +282,16 @@ pub fn append_dict_label_to_dict_index(
     // stored as a single term and matches via `delete_term`.
     writer.delete_term(Term::from_field_text(source_uid_field, dict_label_value));
 
+    // Only the indexed columns: the DPD's `definition_html` alone is ~880 MB,
+    // which would otherwise be loaded and never read.
     let lang_clone = lang.to_string();
     let label_clone = dict_label_value.to_string();
-    let word_list: Vec<DictWord> = dict_db.do_read(|db_conn| {
+    #[allow(clippy::type_complexity)]
+    let word_list: Vec<(String, String, Option<String>, Option<String>, Option<String>, String)> = dict_db.do_read(|db_conn| {
         dict_words
             .filter(language.eq(&lang_clone))
             .filter(dict_label.eq(&label_clone))
-            .select(DictWord::as_select())
+            .select((uid, word, synonyms, definition_plain, language, dict_label))
             .load(db_conn)
     })?;
 
@@ -298,27 +301,26 @@ pub fn append_dict_label_to_dict_index(
     ));
 
     let mut indexed_count = 0;
-    for dw in &word_list {
-        let def = dw.definition_plain.as_deref().unwrap_or("");
+    for (dw_uid, w, dw_synonyms, dw_plain, dw_language, dw_label) in &word_list {
+        let def = dw_plain.as_deref().unwrap_or("");
         if def.is_empty() {
             continue;
         }
 
-        let w = &dw.word;
-        let syn = dw.synonyms.as_deref().unwrap_or("");
+        let syn = dw_synonyms.as_deref().unwrap_or("");
         let content_text = format!("{} {} {}", w, syn, def);
 
-        let lang_val = dw.language.as_deref().unwrap_or("");
+        let lang_val = dw_language.as_deref().unwrap_or("");
 
-        let uid_rev = reversed_lowercased(&dw.uid);
+        let uid_rev = reversed_lowercased(dw_uid);
 
         writer.add_document(doc!(
-            uid_field => dw.uid.as_str(),
+            uid_field => dw_uid.as_str(),
             uid_rev_field => uid_rev.as_str(),
             word_field => w.as_str(),
             synonyms_field => syn,
             language_field => lang_val,
-            source_uid_field => dw.dict_label.as_str(),
+            source_uid_field => dw_label.as_str(),
             content_field => content_text.as_str(),
             content_exact_field => content_text.as_str(),
             is_bold_definition_field => false,
@@ -775,6 +777,28 @@ where
         "index_dict_words_into_dict_index: indexed {} of {} words for lang={}",
         indexed, total, lang
     ));
+    Ok(())
+}
+
+/// Delete every bold-definition document (`is_bold_definition = true`) from
+/// one language's dict index folder (`index/dict_words/<lang>`). Their
+/// `source_uid` is the row's `ref_code`, so a delete by dictionary label does
+/// not reach them; `append_bold_definitions_to_dict_index()` only appends, so
+/// a re-index calls this first. A missing folder is not an error.
+pub fn delete_bold_definitions_from_dict_index(lang_index_dir: &Path, lang: &str) -> Result<()> {
+    match lang_index_dir.try_exists() {
+        Ok(true) => {}
+        _ => return Ok(()),
+    }
+    let schema = build_dict_schema(lang);
+    let index = open_or_create_index(lang_index_dir, schema, lang)?;
+    let mut writer: IndexWriter = index.writer(50_000_000)?;
+    let field = index.schema().get_field("is_bold_definition").unwrap();
+    writer.delete_term(Term::from_field_bool(field, true));
+    writer.commit()?;
+    writer.wait_merging_threads()?;
+    index.directory().sync_directory()?;
+    info(&format!("Deleted the bold-definition documents from {}", lang_index_dir.display()));
     Ok(())
 }
 

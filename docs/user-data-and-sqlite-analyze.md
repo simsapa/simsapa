@@ -57,6 +57,7 @@ table**.
 | Book delete                 | `SuttaBridge::remove_book` → `appdata::delete_book_by_uid`            | `appdata`        | success arm of `remove_book` in `bridges/src/sutta_bridge.rs`                 |
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
 | Navigation-tree build       | `bootstrap_cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+| DPD upgrade                 | `dpd_upgrade::run_dpd_upgrade` (GUI startup window, `simsapa dpd upgrade`, `bootstrap_cli rebuild-dpd`) | `dictionaries`, `dpd` | `dpd_upgrade::reindex::reindex`, after the pages and `dpd.sqlite3` are replaced |
 
 The `simsapa` CLI (`backend_cli/src/commands/import.rs`, `backend_cli/src/setup.rs`) calls the same entry
 points as the GUI, so the `ANALYZE` sites are the same and it adds none of its

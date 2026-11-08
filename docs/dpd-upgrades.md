@@ -129,3 +129,81 @@ A DPD headword keeps its id across releases while its `lemma_1` label can
 change, so stored gloss selections use the numeric `<id>/dpd` uid, with the
 lemma beside it in files. See the "uid two-lane gotcha" in
 [gloss-ai-word-selection.md](./gloss-ai-word-selection.md).
+
+## 6. The upgrade pipeline (`backend/src/dpd_upgrade/`)
+
+One implementation, `run_dpd_upgrade()`, for the three entry points
+(`bootstrap_cli rebuild-dpd`, `simsapa dpd upgrade`, the GUI's startup upgrade
+window). It takes its files as a `DpdUpgradePaths` and opens only its own
+connections, so it runs before `init_app_data()` and needs no global app data.
+
+**Releases** (`releases.rs`). `GET /repos/digitalpalidictionary/dpd-db/releases`,
+not cached. A candidate's tag parses as a version, has the installed DPD's
+major and minor (`db_info.dpd_release_version`), is newer, is not a draft or a
+prerelease, and has both `dpd.db.tar.xz` and `dpd-goldendict.zip` (a
+`.tar.bz2`-only release is not a candidate). The newest candidate is offered.
+An installed version that is unknown or does not parse gives **no** candidate.
+
+**Steps**, each named in an error (`UpgradeError.step`):
+
+| Step | Writes | What it does |
+|---|---|---|
+| `check` | staging folder | installed version, compatibility, free space, the lock |
+| `download` | staging | both assets, 5 connection attempts with backoff |
+| `extract` | staging | `dpd.db` out of the `.tar.xz` (pure-Rust `lzma-rust2`, CRC64 checked), only the `dpd/` member of the zip; a local `dpd.db` is **copied**, a local `dpd/` folder is read in place |
+| `verify` | — | `dpd.db`'s version is the tag (local: compatible and newer), `dpd.ifo` and a non-empty `res/` exist |
+| `prepare_html` | staging | a staging `dictionaries` database (the Diesel migrations, no FTS5 tables), the installed DPD row copied with its id, the StarDict pages, then the bootstrap's three conversions in the bootstrap's order. The conversions read `sutta_info` from the **unmigrated** `dpd.db`, so this runs before `prepare_data` |
+| `prepare_data` | staging | `import_migrate_dpd()` into a staged `dpd.sqlite3`; summaries cut from the **staged** pages; FTS5 integrity checks |
+| `apply` | installed | gloss uids, pages, `dpd.sqlite3` (below) |
+| `reindex` | installed | `ANALYZE` both databases; the `pli` dictionary index: `append_dict_label_to_dict_index(…, "pli", "dpd")`, then the bold definitions deleted by `is_bold_definition = true` and appended again. Never `build_dict_index`, which clears user-imported Pāli dictionaries |
+
+Nothing before `apply` writes an installed file. The cancel flag is checked
+between steps and between batches inside the long ones (`BatchProgress`); from
+`apply` on the run is not cancelled.
+
+**Apply** (`apply.rs`), in this order:
+
+1. Lemma-form DPD `selected_uid`s in `gloss_word_context_cache` and
+   `gloss_phrase_selections` become numeric, resolved against the **installed**
+   `dpd.sqlite3` (the release they were written against). Unresolved ones are
+   reported and left. Numeric uids are right for either release, so this goes
+   first.
+2. One transaction on `dictionaries.sqlite3`: delete the DPD rows, insert the
+   staged ones (new rowids, same `dictionary_id`), set the DPD row's
+   `version`. The six FTS5 sync triggers are dropped first, both FTS5 tables
+   are rebuilt from `dict_words` (`'rebuild'`) and the triggers are recreated
+   from the embedded `dictionaries-fts5-indexes.sql`
+   (`FtsScript::trigger_statements()`, never a second copy of their SQL), all
+   in the transaction. DPD is 96% of the tables' text, so tokenizing it once
+   beats the triggers' `'delete'` of every old row and insert of every new one,
+   and the file does not grow. Then `integrity-check` on both. The column
+   lists are the columns both databases have, by name: in the GUI the
+   installed database may be a migration behind this build.
+3. Leftover `-journal`/`-wal`/`-shm` files of the old `dpd.sqlite3` are
+   removed (a hot journal would be replayed into the new file), and the staged
+   file is renamed over it. Every handle to it must be closed first (Windows).
+
+After the run, the stored selections whose headword id the new release removed
+are reported (`removed_headword_selections`), not changed.
+
+**Staging folder**: `app-assets/dpd-upgrade-staging/`, on the same volume as
+`dpd.sqlite3` so the replacement is a rename. A file in it is opened with
+`journal_mode = OFF` and `synchronous = OFF` by `fts_scripts::open_db_path()`,
+which decides by location (`is_staged_db_path()`): the staged files are thrown
+away on any failure, and both pragmas are per connection. An installed database
+is never in that folder. The folder holds `upgrade.lock`, rewritten every 30 s
+by a heartbeat thread; a lock older than 5 minutes was left by a killed
+process. A run removes such a leftover folder before it starts, and refuses to
+start while the lock is fresh. The folder is removed when the run ends, on
+success, failure and cancel; `init_app_data()` also sweeps a stale one.
+
+**Free space** (`estimate_space()`): the larger of the unpacking peak (both
+archives, `dpd.db`, the `dpd/` folder) and the apply peak (the staged
+`dpd.sqlite3`, the `dpd/` folder, the staging pages database, and the page
+replacement's rollback journal, 1.2 × the pages), plus 15%. The extracted
+`dpd.db` and the pages are estimated from the installed `dpd.sqlite3` and the
+installed DPD pages.
+
+**Consistency** (`dpd_versions_mismatch()`): the DPD row's `version` and
+`dpd_release_version` differ when a run was killed between steps 2 and 3 of
+the apply. Reported, never repaired. An empty `version` is not a mismatch.

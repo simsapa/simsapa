@@ -1267,6 +1267,7 @@ fn import_stardict_zip_bootstrap(zip_path: &Path, label: &str, lang: &str) -> Re
         match p {
             StardictImportProgress::Extracting { .. } => logger::info("  extracting..."),
             StardictImportProgress::Parsing => logger::info("  parsing..."),
+            StardictImportProgress::ParsingWords { .. } => {}
             StardictImportProgress::InsertingWords { done, total } => {
                 if total > 0 && (done == 0 || done == total || done % 1000 == 0) {
                     logger::info(&format!("  inserting words: {}/{}", done, total));

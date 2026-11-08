@@ -31,6 +31,7 @@ use serial_test::serial;
 use simsapa_backend::db::dpd::{
     has_construction_summary_column, populate_dpd_construction_summaries, read_construction_summaries,
 };
+use simsapa_backend::batch_progress::BatchProgress;
 use simsapa_backend::get_app_data;
 use simsapa_backend::logger::info;
 
@@ -92,7 +93,7 @@ fn test_populate_dpd_construction_summaries() {
     create_temp_dpd_db(&db_path);
     let dict_db_path = simsapa_backend::get_app_globals().paths.dict_db_path.clone();
 
-    let report = populate_dpd_construction_summaries(&db_path, &dict_db_path).expect("first run");
+    let report = populate_dpd_construction_summaries(&db_path, &dict_db_path, &BatchProgress::none()).expect("first run");
 
     let expected = vec![
         SummaryRow { id: 26276, construction_summary: "√car + a + ti".to_string() },
@@ -111,7 +112,7 @@ fn test_populate_dpd_construction_summaries() {
     report.log();
 
     // Idempotent: the column already exists, and every row is rewritten.
-    let again = populate_dpd_construction_summaries(&db_path, &dict_db_path).expect("second run");
+    let again = populate_dpd_construction_summaries(&db_path, &dict_db_path, &BatchProgress::none()).expect("second run");
     assert_eq!(read_summaries(&db_path), expected);
     assert_eq!(again.updated, 3);
     assert_eq!(again.with_summary, 2);

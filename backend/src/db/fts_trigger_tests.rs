@@ -401,5 +401,5 @@ fn create_dpd_indexes_runs_every_script_on_a_file() {
 
     let missing = dir.path().join("missing.sqlite3");
     assert!(super::dpd::create_dpd_indexes(&missing).is_err());
-    assert!(super::dpd::migrate_dpd(&missing, 1).is_err());
+    assert!(super::dpd::migrate_dpd(&missing, 1, &crate::batch_progress::BatchProgress::none()).is_err());
 }

@@ -24,6 +24,9 @@ pub enum StardictImportProgress {
     /// as an indeterminate bar.
     Extracting { done: usize, total: usize },
     Parsing,
+    /// Reading the definitions out of the `.dict`, before any row is written.
+    /// `total` is the number of index entries to read.
+    ParsingWords { done: usize, total: usize },
     InsertingWords { done: usize, total: usize },
     /// Emitted as soon as the dictionary's identity is known (after the
     /// `.ifo` is parsed and `stardict::no_cache` loads the dict). `total` is
@@ -189,6 +192,7 @@ fn parse_dict(dict: &mut stardict::StarDictStd,
               new_dict_label: &str,
               lang: &str,
               limit: Option<usize>,
+              progress: &dyn Fn(StardictImportProgress),
               cancel: &AtomicBool) -> Option<Vec<NewDictWord>> {
     let mut words_to_insert: Vec<NewDictWord> = Vec::with_capacity(dict.idx.items.len());
 
@@ -202,9 +206,13 @@ fn parse_dict(dict: &mut stardict::StarDictStd,
         } else {
             n += 1;
         }
-        // Cooperative cancel check during parsing (cadence: every 1000 entries).
-        if n % 1000 == 0 && cancel.load(Ordering::Relaxed) {
-            return None;
+        // Cooperative cancel check and progress during parsing (cadence:
+        // every 1000 entries).
+        if n % 1000 == 0 {
+            if cancel.load(Ordering::Relaxed) {
+                return None;
+            }
+            progress(StardictImportProgress::ParsingWords { done: n, total: max_n });
         }
         let def_result = dict.dict.get_definition(idx_entry, &dict.ifo);
 
@@ -437,7 +445,7 @@ pub fn parse_stardict_words(
         total: dict.idx.items.len(),
     });
 
-    match parse_dict(&mut dict, dictionary_id, dict_label, lang, limit, cancel) {
+    match parse_dict(&mut dict, dictionary_id, dict_label, lang, limit, progress, cancel) {
         Some(words) => Ok(Some(ParsedStardict { bookname, words })),
         None => {
             info(&format!("Import aborted for '{}' during parsing (0 entries).", &bookname));

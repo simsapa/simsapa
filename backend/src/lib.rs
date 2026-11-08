@@ -4,6 +4,8 @@ pub mod db;
 pub mod types;
 pub mod helpers;
 pub mod gloss_dpd_uid;
+pub mod batch_progress;
+pub mod dpd_upgrade;
 pub mod highlight;
 pub mod asset_helpers;
 pub mod cli_support;
@@ -303,6 +305,21 @@ pub extern "C" fn init_app_data() {
                     "init_app_data: swept {} orphaned staged import file(s)",
                     staged
                 ));
+            }
+
+            // A DPD upgrade killed mid-run leaves its staging folder (up to
+            // ~5 GB) in app-assets/. Kept while its lock file is fresh.
+            crate::dpd_upgrade::sweep_orphaned_staging(&get_app_globals().paths.app_assets_dir);
+
+            // Pages and word data from different DPD releases: a DPD upgrade
+            // was stopped between its two replacements. Reported, not repaired.
+            match crate::dpd_upgrade::dpd_versions_mismatch(&crate::dpd_upgrade::DpdUpgradePaths::from_globals()) {
+                Ok(Some((pages, data))) => crate::logger::warn(&format!(
+                    "init_app_data: DPD dictionary pages and DPD data are from different releases (pages {}, data {})",
+                    pages, data
+                )),
+                Ok(None) => {}
+                Err(e) => info(&format!("init_app_data: DPD release consistency not checked: {:#}", e)),
             }
         });
     }
