@@ -2123,6 +2123,11 @@ impl qobject::SuttaBridge {
             crate::queue_or_log(&qt_thread, "sutta_bridge::load_db", move |mut qo| {
                 qo.as_mut().set_db_loaded(r);
             });
+            // DPD's page files (CSS, fonts, scripts, ~15 MB) into memory, so
+            // `/dpd_res/` never reads the database. After `db_loaded`, which
+            // does not wait for it; idempotent, so a second window's call is
+            // a no-op. A DPD page opened before it finishes loads them itself.
+            get_app_data().dbm.dpd.warm_dpd_res_cache();
             info("SuttaBridge::load_db() end");
         });
     }

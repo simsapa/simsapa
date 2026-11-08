@@ -155,6 +155,10 @@ fn serve(args: &ServeArgs, json: bool, no_update_check: bool) -> CliResult {
     let rocket = build_rocket(config.clone())
         .map_err(|e| CliError::error(format!("Could not start the API server: {:#}", e)))?;
 
+    // DPD's page files into memory, off the server's runtime, as the GUI does
+    // after startup. Only `serve` serves them, so no other command loads them.
+    std::thread::spawn(|| get_app_data().dbm.dpd.warm_dpd_res_cache());
+
     let listening_line = if json {
         serde_json::json!({ "url": url, "host": config.host.to_string(), "port": config.port }).to_string()
     } else {

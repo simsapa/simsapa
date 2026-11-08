@@ -504,6 +504,22 @@ Notable feature docs:
   (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
   when absent; `/word.json` adds it in `word_json_with_extras()`, never in
   `resolve_word_uid()` (the word-page renderer calls that).
+- [DPD releases and the `dpd_res` table](./docs/dpd-upgrades.md) — DPD's
+  structured data, rendered pages and page files (`res/`: CSS, fonts, scripts,
+  `family_*_json.js`) must come from the **same release**, so the `res/` files
+  are a table in `dpd.sqlite3` (`dpd_res`), not files compiled into the app.
+  Covers the manual bootstrap preparation (extract `dpd.db.tar.xz` and the
+  `dpd/` folder of `dpd-goldendict.zip` into `dpd-db-for-bootstrap/<date>/`,
+  point `current` at it; the bootstrap never extracts), the import order in
+  `import_migrate_dpd()` (explicit paths, no global app data), the `res/`
+  conversions (niggahīta in text files only; the stylesheet's relative font
+  `url()`s kept, **never a port in the table**), the `<link href>` check
+  (report, never repair), the DPD row's `version` = `dpd_release_version`, and
+  `GET /dpd_res/<path..>` in `simsapa_api`, served from a process-wide
+  **in-memory copy** warmed off the GUI thread after startup — a DPD headword
+  or root page loads ~13 MB of them, so they are never read from SQLite per
+  page, and the copy is never reloaded: never replace `dpd.sqlite3` in a
+  process that has loaded it.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) — the
   bootstrap step that replaces HTML-only Bodhi / PTS records with suttas-core's
   segmented text and imports **all** of Ṭhānissaro's under **SuttaCentral

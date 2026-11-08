@@ -486,7 +486,9 @@ The default port is 4848. Two programs provide the server:
 
 Paths, JSON and status codes of the shared routes are the same from both. HTML pages rendered by `simsapa serve` still
 link `{api_url}/assets/…` (fonts, scripts, icons), which 404 there: the reader
-CSS is inlined in the page, so the text an agent extracts is unaffected.
+CSS is inlined in the page, so the text an agent extracts is unaffected. A DPD
+dictionary page's own files are at `/dpd_res/…` (§14.3), which `simsapa serve`
+does serve.
 
 ```sh
 simsapa serve              # Simsapa API listening on http://127.0.0.1:4848
@@ -1669,6 +1671,7 @@ views, not for headless data retrieval.
 | `GET /favicon.ico` | *GUI only (static asset).* Serve the app icon as the favicon. |
 | `GET /book_resources/<book_uid>/<path..>` | *GUI only (static asset).* Serve a binary resource (image/css/font/pdf) imported with a Library book, from the DB. |
 | `GET /dict_resources/<dict_id>/<path..>` | *GUI only (static asset).* Serve a binary resource imported with a StarDict dictionary, keyed by numeric `dict_id`. |
+| `GET /dpd_res/<path..>` | The static files a DPD dictionary page loads (its stylesheet and fonts, page scripts and the word-family data, e.g. `dpd-css-and-fonts.css`, `main.js`), with their own content type; `404` when the installed DPD has no such file. They come with the installed DPD data, so they are always from the same DPD release as the pages. Served by `simsapa serve` too, so DPD pages fetched from it render completely. |
 | `GET /get_pdf_viewer/<book_uid>` | *GUI only (static asset).* Redirect/loader HTML that opens the bundled PDF.js viewer pointed at a book's `document.pdf` (browser testing). |
 | `POST /logger` | Write a message to the app log. Body: `LoggerRequest` (§15). |
 | `POST /copy_to_clipboard` | *GUI only.* Copy text to the system clipboard (`text/plain`). Body: `CopyToClipboardRequest` (§15). |

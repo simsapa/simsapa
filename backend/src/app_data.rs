@@ -3851,7 +3851,16 @@ impl AppData {
     }
 
     fn export_gloss_selections(&self, import_dir: &Path) -> Result<()> {
-        export_gloss_selections_to_dir(&self.dbm.appdata, import_dir)
+        // The export runs before the old databases are replaced, so this is
+        // the DPD release the rows were written against.
+        let dpd_index = match self.dpd_lemma_index() {
+            Ok(ix) => Some(ix),
+            Err(e) => {
+                error(&format!("export_gloss_selections(): cannot read the DPD headwords, exporting uids unchanged: {}", e));
+                None
+            }
+        };
+        export_gloss_selections_to_dir(&self.dbm.appdata, dpd_index.as_ref(), import_dir)
     }
 
     fn import_gloss_selections(&self, import_dir: &Path) -> Result<()> {
@@ -5242,7 +5251,19 @@ pub fn rename_label_in_user_dictionaries_snapshot(snapshot_path: &Path, old_labe
 /// The `gloss_phrase_selections` table is not exported at all: it is
 /// bootstrap-seeded from the embedded curated JSON, has no in-app write path and
 /// no user-vs-shipped marker, so it holds nothing user-owned.
-pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+///
+/// `dpd_index` is the DPD that is installed while the export runs, which is the
+/// release the rows were written against. With it, a lemma-form DPD headword
+/// uid (`abhinīhāra-1/dpd`) is written as its numeric uid, and every numeric
+/// uid gets its `selected_lemma`. This must happen here, not on import: after
+/// the upgrade the lemma form would be matched against the new release's
+/// labels, which can name another sense. A uid that does not resolve is
+/// written unchanged and logged.
+pub fn export_gloss_selections_to_dir(
+    appdata: &AppdataDbHandle,
+    dpd_index: Option<&crate::gloss_dpd_uid::DpdLemmaIndex>,
+    import_dir: &Path,
+) -> Result<()> {
     let rows = appdata.get_local_gloss_word_cache_rows()
         .context("Failed to load local gloss word selections for export")?;
 
@@ -5251,7 +5272,7 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
         return Ok(());
     }
 
-    let export = GlossSelectionsExport {
+    let mut export = GlossSelectionsExport {
         format: GLOSS_SELECTIONS_EXPORT_FORMAT.to_string(),
         format_version: GLOSS_SELECTIONS_EXPORT_FORMAT_VERSION,
         word_cache: rows.into_iter()
@@ -5268,6 +5289,9 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
             })
             .collect(),
     };
+    if let Some(index) = dpd_index {
+        normalize_exported_dpd_uids(index, &mut export.word_cache);
+    }
 
     let json_path = import_dir.join("gloss_selections.json");
     let json = serde_json::to_string_pretty(&export)
@@ -5281,6 +5305,35 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
     ));
 
     Ok(())
+}
+
+/// Rewrite lemma-form DPD headword uids to numeric and fill `selected_lemma`,
+/// against the DPD the rows were written with. Unresolved uids stay as they
+/// are, with a warning.
+fn normalize_exported_dpd_uids(
+    index: &crate::gloss_dpd_uid::DpdLemmaIndex,
+    entries: &mut [GlossWordCacheExportEntry],
+) {
+    use crate::gloss_dpd_uid::{dpd_headword_id_of, is_lemma_form_dpd_uid, normalize_dpd_selected_uid};
+    let mut converted = 0;
+    for e in entries.iter_mut() {
+        if is_lemma_form_dpd_uid(&e.selected_uid) {
+            match normalize_dpd_selected_uid(index, &e.selected_uid, None) {
+                Ok(n) => {
+                    e.selected_uid = n.uid;
+                    converted += 1;
+                }
+                Err(err) => warn(&format!(
+                    "export_gloss_selections_to_dir(): word '{}': {}; exported unchanged", e.word, err)),
+            }
+        }
+        if let Some(lemma) = dpd_headword_id_of(&e.selected_uid).and_then(|hw_id| index.lemma_of(hw_id)) {
+            e.selected_lemma = Some(lemma.to_string());
+        }
+    }
+    if converted > 0 {
+        info(&format!("export_gloss_selections_to_dir(): {} DPD uids converted to the numeric form", converted));
+    }
 }
 
 /// Import the user's gloss word selections after a database upgrade.

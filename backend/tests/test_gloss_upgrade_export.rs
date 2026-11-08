@@ -61,7 +61,7 @@ fn test_gloss_selections_export_skips_shipped_rows() {
     old_db.upsert_gloss_word_cache("bhikkhū", "h4", "ctx4", "bhikkhu-1/dpd", "built-in-agent-checked").unwrap();
 
     let import_dir = temp_import_dir("sel_export");
-    export_gloss_selections_to_dir(&old_db, &import_dir).expect("export gloss selections");
+    export_gloss_selections_to_dir(&old_db, None, &import_dir).expect("export gloss selections");
 
     let json = std::fs::read_to_string(import_dir.join("gloss_selections.json"))
         .expect("read gloss_selections.json");
@@ -93,7 +93,7 @@ fn test_gloss_selections_round_trip_user_row_beats_shipped_row() {
     old_db.upsert_gloss_word_cache("cittaṁ", "h2", "ctx2", "citta-1/dpd", "ai-selected").unwrap();
 
     let import_dir = temp_import_dir("sel_rt");
-    export_gloss_selections_to_dir(&old_db, &import_dir).expect("export gloss selections");
+    export_gloss_selections_to_dir(&old_db, None, &import_dir).expect("export gloss selections");
 
     // The freshly downloaded DB ships its own curated rows for the same keys.
     let fresh_db = temp_appdata("sel_rt_fresh");
@@ -120,7 +120,7 @@ fn test_gloss_selections_ai_row_restores_when_no_shipped_row() {
     old_db.upsert_gloss_word_cache("cittaṁ", "h2", "ctx2", "citta-1/dpd", "ai-selected").unwrap();
 
     let import_dir = temp_import_dir("sel_ai");
-    export_gloss_selections_to_dir(&old_db, &import_dir).expect("export gloss selections");
+    export_gloss_selections_to_dir(&old_db, None, &import_dir).expect("export gloss selections");
 
     let fresh_db = temp_appdata("sel_ai_fresh");
     import_gloss_selections_from_dir(&fresh_db, &import_dir).expect("import gloss selections");
@@ -137,7 +137,7 @@ fn test_gloss_selections_export_noop_when_only_shipped_rows() {
     old_db.upsert_gloss_word_cache("dhammaṁ", "h3", "ctx3", "dhamma-1-01/dpd", "built-in-human-checked").unwrap();
 
     let import_dir = temp_import_dir("sel_noop");
-    export_gloss_selections_to_dir(&old_db, &import_dir).expect("export gloss selections");
+    export_gloss_selections_to_dir(&old_db, None, &import_dir).expect("export gloss selections");
 
     assert!(
         !import_dir.join("gloss_selections.json").exists(),
@@ -147,6 +147,47 @@ fn test_gloss_selections_export_noop_when_only_shipped_rows() {
     // The import side tolerates the missing file.
     let fresh_db = temp_appdata("sel_noop_fresh");
     import_gloss_selections_from_dir(&fresh_db, &import_dir).expect("import with no export file");
+}
+
+/// With the DPD that was installed while the rows were written, a lemma-form
+/// uid is exported as its numeric uid, and each numeric uid carries its lemma:
+/// after the upgrade the lemma form would be read against the new release's
+/// labels. Unresolved and non-DPD uids are exported unchanged.
+#[test]
+fn test_gloss_selections_export_converts_lemma_form_uids_with_the_old_dpd() {
+    use simsapa_backend::gloss_dpd_uid::DpdLemmaIndex;
+
+    let old_db = temp_appdata("sel_lemma_old");
+    old_db.upsert_gloss_word_cache("abhinīhāraṁ", "h1", "ctx1", "abhinīhāra-2/dpd", "user-selected").unwrap();
+    old_db.upsert_gloss_word_cache("ārāme", "h2", "ctx2", "12463/dpd", "user-selected").unwrap();
+    old_db.upsert_gloss_word_cache("kammaṁ", "h3", "ctx3", "kamma-9/dpd", "ai-selected").unwrap();
+    old_db.upsert_gloss_word_cache("karoti", "h4", "ctx4", "√kar/dpd", "user-selected").unwrap();
+
+    // The old release: id 7945 was "abhinīhāra 2" (the next release renamed it "abhinīhāra 1").
+    let old_dpd = DpdLemmaIndex::from_headwords([
+        (7944, "abhinīhāra 1".to_string()),
+        (7945, "abhinīhāra 2".to_string()),
+        (12463, "ārāma 4".to_string()),
+    ]);
+
+    let import_dir = temp_import_dir("sel_lemma");
+    export_gloss_selections_to_dir(&old_db, Some(&old_dpd), &import_dir).expect("export gloss selections");
+    let json = std::fs::read_to_string(import_dir.join("gloss_selections.json")).unwrap();
+    let export: GlossSelectionsExport = serde_json::from_str(&json).unwrap();
+    let by_word = |w: &str| export.word_cache.iter().find(|e| e.word == w).unwrap();
+
+    assert_eq!(by_word("abhinīhāraṁ").selected_uid, "7945/dpd");
+    assert_eq!(by_word("abhinīhāraṁ").selected_lemma.as_deref(), Some("abhinīhāra 2"));
+    assert_eq!(by_word("ārāme").selected_uid, "12463/dpd");
+    assert_eq!(by_word("ārāme").selected_lemma.as_deref(), Some("ārāma 4"));
+    assert_eq!(by_word("kammaṁ").selected_uid, "kamma-9/dpd", "unresolved: exported unchanged");
+    assert!(by_word("kammaṁ").selected_lemma.is_none());
+    assert_eq!(by_word("karoti").selected_uid, "√kar/dpd", "root uids are stable");
+
+    // The fresh DB receives the numeric uid.
+    let fresh_db = temp_appdata("sel_lemma_fresh");
+    import_gloss_selections_from_dir(&fresh_db, &import_dir).expect("import gloss selections");
+    assert_eq!(fresh_db.get_gloss_word_cache("abhinīhāraṁ", "h1").unwrap().selected_uid, "7945/dpd");
 }
 
 // --- gloss_prompts_history ---

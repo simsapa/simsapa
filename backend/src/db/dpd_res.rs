@@ -4,11 +4,13 @@
 //! The files come from the `res/` folder of the same DPD release as the
 //! `dict_words` pages and the structured data, so the three can never come from
 //! different releases. The DPD migration imports them; `GET /dpd_res/<path..>`
-//! serves them. See docs/dpd-upgrades.md.
+//! serves them from memory (`DPD_RES_CACHE`), loaded once per process. See
+//! docs/dpd-upgrades.md.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Context, Result};
 use diesel::connection::SimpleConnection;
@@ -195,6 +197,94 @@ pub fn list_dpd_res_paths(conn: &mut SqliteConnection) -> QueryResult<BTreeSet<S
     let rows: Vec<PathRow> = sql_query("SELECT path FROM dpd_res").load(conn)?;
     Ok(rows.into_iter().map(|r| r.path).collect())
 }
+
+/// One `res/` file held in memory.
+#[derive(Debug, Clone)]
+pub struct DpdResFile {
+    pub mime_type: String,
+    pub content: Arc<[u8]>,
+}
+
+/// Every `res/` file of one `dpd.sqlite3`, by path.
+pub type DpdResFiles = HashMap<String, DpdResFile>;
+
+#[derive(QueryableByName)]
+struct DpdResFullRow {
+    #[diesel(sql_type = Text)]
+    path: String,
+    #[diesel(sql_type = Text)]
+    mime_type: String,
+    #[diesel(sql_type = Binary)]
+    content: Vec<u8>,
+}
+
+/// Read every row of `dpd_res` (an empty map when there is no table).
+pub fn load_all_dpd_res(conn: &mut SqliteConnection) -> QueryResult<DpdResFiles> {
+    if !has_dpd_res_table(conn)? {
+        return Ok(HashMap::new());
+    }
+    let rows: Vec<DpdResFullRow> = sql_query("SELECT path, mime_type, content FROM dpd_res").load(conn)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.path, DpdResFile { mime_type: r.mime_type, content: Arc::from(r.content) }))
+        .collect())
+}
+
+/// The `res/` files in memory, so the page route never reads the database: a
+/// DPD headword or root page loads 13 or 14 of them (about 13 MB, mostly the
+/// `family_*_json.js` data).
+///
+/// Loaded once per process, on a background thread after startup
+/// (`DpdDbHandle::warm_dpd_res_cache()`), or by the first request if that has
+/// not finished. A load that fails is not kept, so the next request tries
+/// again; a `dpd.sqlite3` without the table is kept as an empty set, since the
+/// table cannot appear while the process runs. Never reloaded: `dpd.sqlite3` is
+/// only replaced while the app is not running (the DPD upgrade runs before the
+/// app's databases are opened, or from the CLI while the app is closed).
+pub struct DpdResCache {
+    files: RwLock<Option<Arc<DpdResFiles>>>,
+    /// Held while loading, so concurrent first requests and the warm-up load
+    /// the table once.
+    load_lock: Mutex<()>,
+}
+
+impl DpdResCache {
+    pub const fn new() -> Self {
+        Self { files: RwLock::new(None), load_lock: Mutex::new(()) }
+    }
+
+    fn loaded(&self) -> Option<Arc<DpdResFiles>> {
+        self.files.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.loaded().is_some()
+    }
+
+    /// The loaded files, or the result of `load` stored for later calls.
+    pub fn get_or_load(&self, load: impl FnOnce() -> Result<DpdResFiles>) -> Result<Arc<DpdResFiles>> {
+        if let Some(files) = self.loaded() {
+            return Ok(files);
+        }
+        let _guard = self.load_lock.lock().unwrap_or_else(|e| e.into_inner());
+        // Another caller may have loaded it while this one waited.
+        if let Some(files) = self.loaded() {
+            return Ok(files);
+        }
+        let files = Arc::new(load()?);
+        *self.files.write().unwrap_or_else(|e| e.into_inner()) = Some(files.clone());
+        Ok(files)
+    }
+}
+
+impl Default for DpdResCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The process-wide copy of the installed `dpd.sqlite3`'s `res/` files.
+pub static DPD_RES_CACHE: DpdResCache = DpdResCache::new();
 
 #[derive(QueryableByName)]
 struct HtmlRow {
@@ -398,6 +488,43 @@ mod tests {
         // No rows for the dictionary is an error, not a pass.
         let mut dict_conn = dict_conn_with_pages(&[]);
         assert!(check_dpd_link_hrefs(&mut dict_conn, 7, &mut dpd_conn).is_err());
+    }
+
+    #[test]
+    fn load_all_reads_every_row_and_tolerates_no_table() {
+        let mut conn = mem_conn();
+        assert!(load_all_dpd_res(&mut conn).unwrap().is_empty());
+
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "main.js", "aṃ".as_bytes());
+        write(tmp.path(), "Inter.ttf", FONT_BYTES);
+        import_dpd_res_dir(&mut conn, tmp.path()).unwrap();
+
+        let files = load_all_dpd_res(&mut conn).unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files["main.js"].mime_type, "application/javascript");
+        assert_eq!(&*files["main.js"].content, "aṁ".as_bytes());
+        assert_eq!(&*files["Inter.ttf"].content, FONT_BYTES);
+    }
+
+    #[test]
+    fn cache_loads_once_and_retries_after_a_failure() {
+        let cache = DpdResCache::new();
+        assert!(!cache.is_loaded());
+
+        assert!(cache.get_or_load(|| anyhow::bail!("disk I/O error")).is_err());
+        assert!(!cache.is_loaded(), "a failed load is not kept");
+
+        let one = |name: &str| {
+            let mut m = DpdResFiles::new();
+            m.insert(name.to_string(), DpdResFile { mime_type: "text/css".into(), content: Arc::from(&b"x"[..]) });
+            m
+        };
+        let files = cache.get_or_load(|| Ok(one("a.css"))).unwrap();
+        assert!(files.contains_key("a.css"));
+        // A second load is never run.
+        let again = cache.get_or_load(|| Ok(one("b.css"))).unwrap();
+        assert!(again.contains_key("a.css") && !again.contains_key("b.css"));
     }
 
     #[test]

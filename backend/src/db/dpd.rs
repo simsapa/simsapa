@@ -311,12 +311,31 @@ fn uid_like_patterns(
 }
 
 impl DpdDbHandle {
-    /// One file of the `dpd_res` table: `(mime_type, content)`, or `None` when
-    /// it is not stored or the table is missing (a `dpd.sqlite3` built before
-    /// the table existed).
-    pub fn get_dpd_res(&self, path: &str) -> Result<Option<(String, Vec<u8>)>> {
-        self.do_read(|db_conn| crate::db::dpd_res::get_dpd_res(db_conn, path))
-            .context("get_dpd_res failed")
+    /// One file of the `dpd_res` table, from the in-memory copy
+    /// (`dpd_res::DPD_RES_CACHE`), which this loads if the startup warm-up has
+    /// not. `None` when the path is not stored or the table is missing (a
+    /// `dpd.sqlite3` built before the table existed).
+    pub fn get_dpd_res(&self, path: &str) -> Result<Option<crate::db::dpd_res::DpdResFile>> {
+        let files = crate::db::dpd_res::DPD_RES_CACHE.get_or_load(|| self.load_all_dpd_res())?;
+        Ok(files.get(path).cloned())
+    }
+
+    fn load_all_dpd_res(&self) -> Result<crate::db::dpd_res::DpdResFiles> {
+        let started = std::time::Instant::now();
+        let files = self.do_read(crate::db::dpd_res::load_all_dpd_res)
+            .context("Failed to load the dpd_res table")?;
+        let bytes: usize = files.values().map(|f| f.content.len()).sum();
+        info(&format!("dpd_res: loaded {} files, {} bytes into memory in {:?}", files.len(), bytes, started.elapsed()));
+        Ok(files)
+    }
+
+    /// Load the `res/` files into memory, for the startup warm-up. Run it on a
+    /// background thread: it reads about 15 MB. Idempotent; a failure is logged
+    /// and the first request tries again.
+    pub fn warm_dpd_res_cache(&self) {
+        if let Err(e) = crate::db::dpd_res::DPD_RES_CACHE.get_or_load(|| self.load_all_dpd_res()) {
+            error(&format!("warm_dpd_res_cache(): {:#}", e));
+        }
     }
 
     /// Count `dpd_headwords` rows (for `/health`). A 0 here means the DPD DB

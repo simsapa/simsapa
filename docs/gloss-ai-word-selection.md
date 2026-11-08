@@ -124,7 +124,10 @@ stored as they are.
   (`backend/src/gloss_dpd_uid.rs`) against a `DpdLemmaIndex` of the installed
   DPD. A lemma-form uid is resolved to its numeric uid; a hand-written entry
   may give only `selected_lemma`, which must name exactly one headword; one
-  that does not resolve is an error (Open JSON skips and logs the entry). When
+  that does not resolve is an error (Open JSON skips and logs the entry). That
+  includes a numeric id the installed DPD no longer has: an entry taken from a
+  file is not imported, while a row **already stored** with such an id is kept
+  and falls through to the next tier of the chain (§1) at lookup. When
   both are given and the installed `lemma_1` for the id differs from
   `selected_lemma`, the entry is **reported** with both labels and stored by
   its id, never re-pointed: that is how a file written against an older DPD
@@ -619,6 +622,15 @@ in `backend/src/app_data.rs`) carry it across:
 |---|---|
 | `gloss_selections.json` (`simsapa-gloss-selections` v1) | the **local** `gloss_word_context_cache` rows — origins `user-selected` and `ai-selected` only |
 | `gloss_prompts_history.json` (`simsapa-gloss-prompts-history` v1) | every `gloss_prompts_history` row (Gloss **and** Prompts sessions), timestamps included |
+
+The export runs while the **old** databases are still installed, so the DPD it
+can read is the release the rows were written against. It converts any
+lemma-form DPD headword uid to its numeric uid against that DPD, and writes each
+numeric uid's `selected_lemma` beside it (`export_gloss_selections_to_dir()`).
+It must happen there and not on import: after the upgrade a lemma-form uid would
+be matched against the new release's labels, which can name another sense. A
+uid that does not resolve is exported unchanged, with a warning. The import
+does not normalise again.
 
 What is deliberately *not* exported:
 

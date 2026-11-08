@@ -57,6 +57,8 @@ process start
 │
 ├─ SuttaSearchWindow.qml::Component.onCompleted
 │   ├─ apply_theme()  ← critical-path target reached
+│   ├─ SuttaBridge.load_db()                  [BG THREAD]
+│   │     db_loaded = true, then warm_dpd_res_cache()  (see §4a)
 │   └─ Qt.callLater(add blank tab)             [DEFERRED past app.exec(), see §6]
 │
 ├─ QTimer::singleShot(0, restore_last_session)  [DEFERRED past app.exec(), see §6]
@@ -195,6 +197,24 @@ The three other `reinit_fulltext_searcher()` call sites
 `sutta_bridge.rs` around the dict reconcile / upgrade flows) stay
 synchronous. They run after the cold-start path is done, with their
 own progress UI; blocking the caller there is intentional.
+
+## 4a. DPD's page files in memory (`dpd_res`)
+
+A DPD headword or root page loads 13 or 14 files from `/dpd_res/` (stylesheet,
+fonts, page scripts and the ~13 MB of `family_*_json.js` word-family data).
+They live in the `dpd_res` table of `dpd.sqlite3`, and the route serves them
+from a process-wide in-memory copy, `DPD_RES_CACHE`
+(`backend/src/db/dpd_res.rs`), so a page never reads them from the database.
+
+The copy is loaded by `DpdDbHandle::warm_dpd_res_cache()` on the thread of
+`SuttaBridge::load_db()`, **after** it has queued `db_loaded`, so it delays
+nothing. `simsapa serve` warms it on a
+thread of its own before launching; no other CLI command loads it. A DPD page
+requested before the warm-up finishes loads the copy itself, under the same
+lock, so the table is read once. A failed load is not kept (the next request
+retries); a `dpd.sqlite3` without the table is kept as empty, and the route
+answers `404`. It is never reloaded: `dpd.sqlite3` is only replaced while the
+app is not running.
 
 ## 5. QML cold-path (not pursued)
 
