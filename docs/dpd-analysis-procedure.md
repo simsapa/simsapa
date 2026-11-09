@@ -1,0 +1,372 @@
+# The DPD passage analysis procedure, compared with Simsapa's gloss
+
+The Digital Pāḷi Dictionary ships a passage analysis tool (`dpd-db`,
+`exporter/analysis/`). It takes a Pāḷi passage, looks up every word in the DPD
+database, has an LLM pick the sense of each word, and writes a Markdown study
+report: the passage, a Translation and a Literal Translation, and a
+Word-by-Word table (`ID | Word in Sentence | Grammar | Meaning | Construction |
+Root`). Simsapa's Gloss feature does the same job against the same database.
+
+This page describes the DPD procedure (§1), maps each step to Simsapa's (§2),
+and lists every difference with a decision (§3). Reference reports for testing
+are in `backend/tests/data/dpd_analysis/` (see its `SOURCE.md`).
+
+Python names below are DPD's (`dpd-db` commit `36b75c79`); module paths are
+relative to `exporter/analysis/` unless they start with `tools/` or `db/`.
+
+## 1. The DPD procedure
+
+### 1.1 Passage text and spelling variants
+
+1. **Passage retrieval** (`passage_by_code.get_passage_by_code`). A code such as
+   `DHP23`, `MN41`, `SN15.1` names a CST passage; a verse code gives one gāthā
+   per verse, a prose code gives the paragraphs of the sutta, and the user picks
+   paragraphs by number (`1`, `1-3`, `1-2 4`).
+2. **Speech marks** (`passage_by_code._apply_speech_marks_to_paragraphs` →
+   `tools/example_cleaning.clean_example`). DPD keeps a table
+   (`tools/speech_marks.SpeechMarkManager`, a JSON file rebuilt from the
+   apostrophes and hyphens in DPD's own example sentences) mapping a clean
+   word to the spellings with marks seen in the corpus. Each word of the
+   passage that has entries is replaced by all of them joined with `//`
+   (`vā'ti//vāti`; `clean_speech_marks`). `clean_text` then converts `ṁ` →
+   `ṃ`, writes `'tipi` as `'ti'pi` and tidies spaces. Bracketed readings
+   stay in the text (`anamataggo'yaṃ [anamataggāyaṃ]`), and the tokeniser
+   turns the brackets into spaces, so the bracketed word is analysed as a
+   token of its own. (`tools/speech_marks_replacement.replace_speech_marks`,
+   which also removes `[…]`, is used by `example_bolding.py`, not for
+   passages.)
+3. **Variant extraction** (`translate_core.extract_variant_options`). Each
+   `//` group is resolved to its **first** spelling for analysis and kept in
+   `speech_mark_options` (`{first spelling: [all spellings]}`).
+
+### 1.2 Tokenisation and lookup
+
+4. **Tokens** (`analyzer.tokenize_sentence`). Lower-case; keep only Pāḷi
+   letters, space and apostrophe (`’` is folded to `'`); split on spaces. An
+   apostrophe stays **inside** the token: `vā'ti`, `pan'āniccaṃ`,
+   `eso'ham'asmi` are one token each. Every token is analysed, repeats
+   included, in passage order.
+5. **Lookup row** (`analyzer.analyze_sentence`). The token is looked up as a
+   `lookup.lookup_key`; when that fails and the token has an apostrophe, the
+   apostrophe-free form is tried (`yo'dha` → `yodha`). No other fallback: no
+   stem match, no "starts with" guess, no `ṁ` respelling. No row → status
+   `not_found`.
+6. **Headword options** (`analyzer.get_word_details`), for each headword id in
+   the row's `headwords`:
+   - **Filters.** A headword whose `stem` contains `!` is dropped (e.g.
+     `tasmā 1`, stem `!*`). Unless `grammatical=True` (never set by the
+     report tool): a headword whose `pos` is in `exceptions_list` (`cs`,
+     `letter`, `prefix`, `root`, `suffix`, `ve`) or whose `meaning_1` contains
+     `(gram)` is dropped. Inside a construction (`from_construction`) a `pos`
+     of `abbrev` is also dropped.
+   - **One option per grammar reading.** The row's `grammar` is a list of
+     `[lemma, class, parse]` triples (`grammar_unpack`). For each triple whose
+     lemma is the headword's `lemma_clean` and whose class passes
+     `is_pos_compatible(hw.pos, class, parse)`, the option key is
+     `<id>_<triple index>`, its `grammar` is `<parse> of <lemma>`
+     (`masc nom pl of jhāyī`) and its `pos` is the triple's **class**
+     (`noun`, `adj`, `verb`, `pron`, `pp` …), not the headword's `pos`.
+   - **`is_pos_compatible`.** Equal strings pass. Class `noun` accepts `masc`,
+     `fem`, `nt`, but if the parse contains `masc ` / `fem ` / `nt ` the
+     headword's `pos` must be that gender. Class `adj` accepts `adj`. Class
+     `verb` accepts `pr`, `aor`, `fut`, `cond`, `imp`, `opt`, `pp`, `prp`,
+     `abs`, `inf`, `ger`. Everything else fails.
+   - **`_default` fallback.** A headword with no compatible triple gets one
+     option keyed `<id>_default`, whose `grammar` is the headword's own
+     `grammar` field (`ind, adv, acc sg of nicca`, `ind`, `sandhi, ind + ind`)
+     and whose `pos` is the headword's `pos`. This is where indeclinables and
+     sandhi headwords get their Grammar text.
+   - Each option carries `id`, `lemma` (`lemma_1`), `meaning_1`,
+     `meaning_combo`, `compound_type`, `compound_construction`,
+     `construction` (= the headword's `construction_summary`), `root_key`
+     (= `root_combo`), `example_1/2`, `source_1/2`, the completeness `score`
+     (`get_completeness`: 2 = `meaning_1` and `source_1`, 1 = `meaning_1`
+     only, 0 = neither), and `components` (§1.3).
+   - Options are sorted by `(-score, lemma)`.
+7. **Particle filter** (`analyzer._filter_particle_lookup_headwords`). When a
+   deconstructor split of the row ends in ` + api`, ` + ca`, ` + eva`,
+   ` + iti`, ` + iva` or ` + hi`, the row's headword list also holds the
+   headwords of the parts (the `vāti` row lists `vā 1`, `vā 2`, `vā 3`, `vā 4`
+   and `va 4.1` beside `vāti 1.1` and `vāti 2.1`). Only options that are
+   sandhi headwords (`pos` `sandhi` or `sandhi` in `grammar`) or keyed by a
+   grammar triple are kept.
+8. **Deconstruction options.** Each deconstructor split of the row that is not
+   already the `construction` of a kept sandhi headword becomes an option keyed
+   `decon_<lookup key>_<n>`, with no id, `pos` `sandhi`, `grammar`
+   `sandhi/compound`, `meaning_combo` `[Deconstructed]`, `construction` = the
+   split, and components from the split with every part treated as inflected.
+   Headword options and deconstruction options of one token compete with each
+   other.
+9. **Occurrence prefix.** Every option key, components included, gets the
+   prefix `w<token index>_`, so repeated words are chosen independently.
+
+### 1.3 Compound and sandhi components
+
+10. **Which headwords are expanded.** A headword gets components when its
+    `grammar` contains `comp` but not `in comp`, or contains `sandhi`, or it
+    is a `comp vb`, **and** it has no `root_key`.
+11. **Breakdown source** by `compound_type` (lower-cased, substring match):
+    - `dvanda` → `construction_summary`;
+    - `abyayībhāva`, `tappurisa` (all kinds), `digu`, `kammadhāraya` →
+      `compound_construction` when present; for `kammadhāraya` it is first
+      normalised (`_normalize_kammadharaya_construction`): when there is no
+      ` + `, the words are joined with ` + ` after dropping `eva`, `iva`,
+      `iti`, `etassa`, `viya` from position 2 onwards
+      (`paññā eva āvudha` → `paññā + āvudha`);
+    - any other type → `compound_construction` when it has text once `<b>`
+      tags are removed, else `construction_summary`.
+12. **Parts** (`get_components_from_construction`). The source is split on
+    ` + `. A part in the `suffixes` set (`a`, `ā`, `ika`, `*ika`, `tta` …) is
+    skipped. A part in `<b>…</b>` is **inflected** (it keeps its case ending:
+    `yog<b>asmā</b>` → `yogasmā`); sandhi and `comp vb` headwords make every
+    part inflected (`force_inflected`).
+    - An **inflected** part is analysed like a token (§1.2 step 6), with its
+      grammar readings: `- yogasmā | masc abl sg of yoga`.
+    - A **stem** part of a compound (`is_compound_part`, not inflected) gets
+      one option per headword, keyed `<id>_0`, with an empty `grammar`; the
+      table then shows its `pos` (`- daḷha | pp`). A headword of the lookup
+      row is accepted as a stem without further checks; `is_stem_compatible`
+      and `get_in_comp_forms` (the "in comps" row of `inflections_html`) are
+      reached only when there is no lookup row, which `get_word_details`
+      already returned early for, so they never decide in practice.
+    - A part with no lookup row: when inflected, `search_inflections_for_form`
+      scans every headword's `inflections_list` and takes the first that
+      contains the form, with grammar from `get_grammar_from_inflections_html`
+      (the `title` of the inflection table cell, `masc abl sg of yoga`);
+      otherwise a `missing_<part>` placeholder (no id, grammar `in comp`).
+13. **Recursion.** A part's own options are expanded by the same rules
+    (§1.3 step 10), to any depth.
+14. **Negative kammadhāraya** (`_is_neg_kammadhāraya_components`). A
+    kammadhāraya whose first part is `na` and whose second part has no option
+    with a `compound_type` gets **no** components (`anuttara` = `na + uttara`
+    is shown without rows under it).
+
+### 1.4 AI selection
+
+15. **DB-example pre-match** (`scoring.pre_match_db_examples`, only when the
+    passage has a source code). An option whose `example_1` or `example_2`
+    overlaps the passage text gets `ai_score` 10 and
+    `db_example_match_type`: `source_text_overlap` when the example's source
+    equals the passage code, else `text_overlap`. Overlap
+    (`ai_response._texts_overlap`): lower-case, apostrophes removed, every
+    non-word run turned into one space, then either text contains the other.
+16. **First-pass prompt** (`prompts.build_system_prompt`). The whole option
+    tree is sent as JSON in the system prompt, with instructions to score the
+    right key 10 (and plausible alternatives 1–9), to pick among grammar
+    variants of one id the one matching the parse ("the score-10 variant's
+    grammar is what readers see in the table"), to score components too, to
+    give a `contextual_meaning` ("Adjust the dictionary `meaning_combo` to fit
+    the grammar (e.g., "dwells" -> "I would dwell")"), mandatory for
+    deconstruction keys, `selected_pos` (`sandhi` / `compound`) for
+    `sandhi/compound` options, and to prefer `db_example_match` options. It
+    includes `COMMON_PALI_RULES` (stock-phrase cases, quotative *ti* vowel
+    shortening, `yena … tena`, vocatives, accusative of duration, genitive
+    over dative). When the passage has `//` variants the prompt lists them and
+    asks for `variant_choices` (`{first spelling: index}`). The user prompt is
+    `Return JSON for: <passage>`.
+17. **Response schema.**
+    `{"translation", "literal_translation", "variant_choices"?, "scores": {key: {"score", "contextual_meaning"?, "selected_pos"?}}}`.
+    One request produces both the selections and the two translations.
+18. **Recovery** (`translate_core._request_first_pass`, `ai_response`). Code
+    fences are stripped; invalid JSON falls back to regex extraction of the
+    translations and `"key": {"score": N}` pairs
+    (`_extract_partial_response`). Wrong-schema answers are recovered: a flat
+    `{word: key}` map, a `disambiguation` / `sentence_analysis` /
+    `selected_meanings` list, a `{word: {lemma}}` map, or a `selected_keys`
+    list become a word→key map (`_handle_compact_map_response`), followed by
+    a translation-only request (§1.5); anything else gets a reformat request
+    (`_build_reformat_prompt`). Nested `scores.scores` is flattened and bare
+    numbers become `{"score": N}` (`_normalize_ai_response`).
+19. **Chunking** (`_split_into_sentence_chunks`). Only when the option JSON is
+    over 900,000 characters: split by sentence, or for a single sentence by
+    word with a grounded translation afterwards.
+20. **Deterministic scores** (`scoring._apply_deterministic_scores_to_map`),
+    after the AI answer:
+    - **Quotative *ti*** (`_apply_quotative_ti_deconstruction_score`): for a
+      token ending in `'ti`, among its deconstruction options whose split
+      ends in `+ iti`, if exactly one has a first part with `pos` `verb` and a
+      finite-verb parse (`pr|aor|fut|cond|imp|opt` + person), that one is
+      scored 10 and the others 0.
+    - **DB-example groups:** options of one headword id with a DB-example
+      match keep 10 for the one(s) the AI scored highest; when the AI scored
+      none, all keep their pre-set score, marked "all variants tied".
+    - Other pre-scored options keep their score.
+21. **Retries** (`retry.py`). Option groups (a token's options, or one
+    component's options) with no score are re-asked with a focused prompt
+    (`_build_missing_scores_prompt`), in batches of up to 60,000 characters,
+    at most 8 batches, two passes; identical groups (same word, same keys
+    after the occurrence prefix) are asked once and the answer fanned out.
+    DB-example ties are then narrowed to the AI's top choice.
+22. **Merge** (`scoring.merge_ai_selections`). Each option gets `ai_score`;
+    when the score is positive, `contextual_meaning` **replaces**
+    `meaning_combo` and `selected_pos` is stored.
+
+### 1.5 Translation
+
+Both translations normally come from the first-pass answer (step 17). Two
+smaller prompts exist for the cases where they do not:
+
+- **Translation-only** (`prompts._build_translation_prompt`), after a compact
+  word→key answer:
+
+  ```
+  Translate this Pāḷi sentence into English: "<sentence>"
+
+  Return ONLY a JSON object with these three keys and nothing else:
+  {
+    "translation": "Fluent English translation of the sentence",
+    "literal_translation": "Literal word-by-word English translation",
+    "meanings": {"surface_word": "short contextual English meaning"}
+  }
+  Use exactly these surface-word keys in meanings: [...]
+  Provide ONLY the core meaning. Do NOT append grammatical case notes in parentheses.
+  No prose, no markdown fences, no scores.
+  ```
+
+- **Grounded translation** (`prompts._build_grounded_translation_prompt`),
+  after word-level chunking; the word table is the rendered table of §1.7:
+
+  ```
+  Do not use tools, do not plan tasks, and do not wait for anything. Produce the complete JSON directly in this single response.
+
+  You are a Pāḷi translator. Using ONLY the word senses provided in the table below, translate the Pāḷi sentence into natural English. Do not introduce senses not listed.
+
+  Sentence:
+  <sentence>
+
+  Chosen word senses:
+  <word table>
+
+  Return a JSON object with exactly two keys:
+  {"translation": "<natural English>", "literal_translation": "<word-by-word>"}
+  ```
+
+Simsapa's translation template (task 6.0) adapts the grounded prompt, since
+Simsapa translates after the senses are chosen.
+
+### 1.6 Ranking
+
+`ranking._option_rank` orders options; the highest tuple wins
+(`_select_best_option` = Python `max`, so among equal tuples the **first** in
+list order wins). The tuple, in order:
+
+1. `numeric_score_rank` — 1 when `ai_score` is a number;
+2. `ai_score` (−1 when absent);
+3. `_db_example_rank` — 2 `source_text_overlap`, 1 `text_overlap`, 0;
+4. `_direct_key_rank` — 1 for a grammar-triple key (`<id>_<i>`, `<id>_0`), 0
+   for `_default`, `_inflection`, `decon_`, `missing_`;
+5. `_parent_meaning_overlap_rank` — components only: 1 when a word of the
+   parent's meaning (lower-case letters, stop-words `of the a an to in is
+   one's` removed) occurs in the option's `meaning_combo` or `meaning_1`;
+6. `component_pos_rank` — components only: 1 for `pos` `ind`;
+7. `_dictionary_quality_rank` — 2 with `meaning_1` and an example, 1 with
+   `meaning_1` only, 0 without;
+8. `_grammar_case_rank` — 2 when the grammar has `gen`, 1 when `dat`, else 0;
+9. the completeness `score` (2/1/0);
+10. `stable_id_rank` — `-id`, so the lower id wins.
+
+Without an AI answer, ranks 3–10 decide alone.
+
+### 1.7 Rendering
+
+`rendering.generate_markdown_report` writes, joined by blank lines:
+`# Analysis of: <code>` (or the passage itself when there is no code), the
+passage with the chosen variant spellings applied (`apply_variant_choices`),
+`### English Translation` with `**Translation:**` and `**Literal
+Translation:**`, `### Variants` (one `a//b` line per variant group, only when
+there are groups), `### Word-by-Word Analysis` and the table
+(`format_markdown_table`):
+
+- **Top-level row** per token, in passage order. The best option (§1.6) gives:
+  - ID — `id` (empty for a deconstruction);
+  - Word in Sentence — the token as written (after variant choice;
+    `sync_analysis_words_to_sentence`);
+  - Grammar — the option's `grammar`; `selected_pos` replaces
+    `sandhi/compound`; `adj, ` is prefixed when the option's `pos` is `adj`
+    (a triple of class `adj`, or a `_default` option of an `adj` headword)
+    and the text does not start with `adj`;
+  - Meaning — `meaning_combo` (the contextual meaning after the merge), with
+    a trailing grammar parenthetical containing a quoted word removed
+    (`_base._clean_meaning`); a deconstruction with no meaning gets its
+    components' first senses joined with ` + `;
+  - Construction — `compound_construction`, else `construction`
+    (= `construction_summary`), with `<b>` tags removed;
+  - Root — `root_combo`: `<root_clean> <root_group> <root_sign>
+    (<root_meaning>)`, empty without a root (`√jhā 3 ya (think, meditate)`).
+- **Unresolved token:** `| | <token> | | | | |`.
+- **Component rows** follow their parent, one per part, prefixed with `- `
+  per depth (`- - taṇhakkhayassa`). The part's best option uses
+  `is_component=True` and the parent's `meaning_combo`. Grammar is the
+  option's `grammar`, else its `pos` (stem parts: `pp`, `masc`, `adj`);
+  `selected_pos` replaces `sandhi/compound`; **no** `adj, ` prefix. Meaning,
+  Construction and Root as for the top-level row.
+- **Recursion** into a row's components only when its best option has a
+  `compound_type`, or `pos` `sandhi` / `sandhi/compound`, or is a
+  deconstruction — not into etymological breakdowns.
+- Cells escape `|` as `\|`.
+
+`example_bolding.py` bolds the analysed word inside DPD example sentences for
+DPD's own editing workflow; it does not affect the report.
+
+## 2. Step by step: DPD and Simsapa
+
+| DPD step | Simsapa |
+|---|---|
+| 1 Passage by code | none yet — `simsapa gloss` takes text only (reference input: task 8.1, `query_text_to_uid`, `dhp_verse_to_chapter` in `helpers.rs`) |
+| 2 Speech marks (`//` from the speech-mark table) | none |
+| 3 Variant extraction | none |
+| 4 Tokens (apostrophe kept inside) | `extract_words_with_context` (`helpers.rs`): `strip_gloss_annotations`, `preprocess_text_for_word_extraction` (iti split `normalize_iti_sandhi`, `join_mid_word_apostrophes`), position finding with `original_word` as written; a standalone `ti` after a quoted iti is skipped |
+| 5 Lookup row | `process_word_for_glossing` → `gloss_lookup_words` → `DpdDbHandle::dpd_lookup_grouped` (`db/dpd.rs`): `normalize_dpd_query_text`, then lemma_clean match, roots, `lookup` row (`inflection_to_pali_words`), `ṁ` respelling, stem, no-space compound, deconstructor, "starts with" guesses |
+| 6 Headword filters | none: every headword of the row is a candidate |
+| 6 Grammar readings | `dpd_form_grammar::assign_form_grammar` (used by `/lookup_forms` only; the gloss shows the headword's `grammar` field) |
+| 6 `_default` reading | the gloss shows the headword's `grammar` field for every candidate |
+| 7 Particle filter | none |
+| 8 Deconstruction options | `GroupedDpdLookup.deconstructions`; offered (break-down selector) only for a deconstructor-resolved word (no direct match), FR-A5 partition in `docs/gloss-ai-word-selection.md` §9 |
+| 9 Occurrence keys | AI item ids `p<pi>w<wi>` (sense), `…d` (break-down), `…c<k>` (component) — `build_word_selection_items` |
+| 10–14 Components of a compound headword | none: a direct match is shown compact |
+| 10–14 Components of a deconstruction | `Deconstruction.components` with their lookup results; `resolve_compound_selections` |
+| 15 DB-example pre-match | none |
+| 16 First-pass prompt | `"Gloss Tab: Word Selection System Prompt"` + `"… Request"` (`app_settings.rs`), assembled in QML (`GlossTab.build_word_selection_prompt`) and in `bridges/src/api.rs` (`build_ws_word_selection_prompt`); senses only, no translation |
+| 17 Response schema | `parse_word_selection_response`, `validate_word_selection_response_shape` (`helpers.rs`): chosen uid per item |
+| 18 Recovery | `invalid_response` classification and the fallback/retry engine (`ai_error.rs`, `ai_fallback.rs`) |
+| 19 Chunking | `WORD_SELECTION_BATCH_CHAR_LIMIT` batching (`docs/gloss-ai-word-selection.md`) |
+| 20 Quotative *ti* | iti rules: the quoted `'ti` is always *iti*; the base word is looked up (`docs/pali-sandhi-and-quote-marks.md` §5) |
+| 21 Retries | the sequential fallback engine (`ai_fallback.rs`, `prompt_manager.rs`) |
+| 22 Merge | QML apply path in `GlossTab.qml` (writes `ai-selected` cache rows) |
+| Cache | `resolve_gloss_word_selection` chain over `gloss_word_context_cache` and `gloss_phrase_selections`; DPD has none |
+| 1.5 Translation | `"Gloss Tab: AI Translation with/without Vocabulary"` templates, `GlossTab.translation_prompt_for` (QML); one free-text translation |
+| 1.6 Ranking | none: `selected_index` 0, i.e. the first result in lookup phase order, `sort_search_results_natural` within a phase |
+| 1.7 Rendering | `text_export.rs` (`gloss_export`), `docx_export.rs`, `anki_export.rs`, from `GlossExportData` built in QML; one row per headword (Headwords layout) |
+
+## 3. Gap list
+
+Each difference, its expected effect on Simsapa's results, and the decision.
+"Required by the format" means the Word in Sentence format cannot match DPD's
+table without it.
+
+| # | Gap | Expected effect | Decision |
+|---|---|---|---|
+| 1 | **One row per token.** Simsapa drops a repeat within a paragraph whatever "No duplicates" says. | Word in Sentence needs every token. | Required by the format → task 3.0. |
+| 2 | **Grammar reading per headword.** DPD shows the triple's parse (`masc nom pl of jhāyī`) and lets the AI choose among triples; Simsapa shows the headword's `grammar` field. | The Grammar column states the inflection; a word like `taṃ` can be read as acc or nom. | Required by the format → task 4.3 (readings, `adj, ` rule, default reading by `_grammar_case_rank` then first), task 6.1 (AI `grammar_index`). |
+| 3 | **`is_pos_compatible` vs `assign_form_grammar`.** Same rules except: DPD's `verb` class omits `perf` / `imperf` headwords, and DPD tests the gender by substring (`masc ` anywhere in the parse), Simsapa by the parse's first word. The `ind, adv, acc sg of nicca` readings come from the `_default` fallback (headword `grammar`), not from a POS rule. | None measurable: lookup triples use classes `pp`, `prp`, `pron` … directly, and a parse starts with its gender. | Adopted as is: reuse `assign_form_grammar`, add the `_default` fallback → task 4.3. Confirmed or corrected by the conformance test (task 4.14). |
+| 4 | **Components of a compound or sandhi headword** (source ii). DPD expands `daḷhaparakkama`, `yogakkhema`, `vāti 2.1`; Simsapa shows them compact. | Rows under compounds, as in every DPD report. | Required by the format → task 4.5 (rules §1.3), task 6.1 (`c<k>` AI items). Headwords format unchanged. |
+| 5 | **`search_inflections_for_form`** for an inflected part with no lookup row: a scan of every headword's inflections. | Rare (a bold part normally has a lookup row); costs a full-table scan per miss. | Rejected: such a part gets an unresolved component row. Revisit only if the conformance test shows a fixture row that needs it. |
+| 6 | **Contextual meaning.** DPD's Meaning is the AI's `contextual_meaning`, else `meaning_combo` (`meaning_1` + `; lit. <meaning_lit>`, else `meaning_2`). | Meanings fitted to the sentence ("meditators"). | Adopted → task 4.4 (`meaning_combo`), task 6.1/6.2 (`contextual_meaning`, session only). |
+| 7 | **Headword filters** (`!` stem, `pos` in `cs letter prefix root suffix ve`, `(gram)` in `meaning_1`, `abbrev` inside constructions). Simsapa offers e.g. `tasmā 1` (stem `!*`) and `ta 2.1` (letter) for `tasmā`. | Fewer grammarian's entries chosen by default and sent to the AI. | Adopted as a **ranking demotion**, not a removal → task 5.2: removing candidates changes `results`, whose order the ComboBox index, the AI item options and saved sessions refer to (Technical Considerations 5b). A filtered candidate is never the default and is left out of AI item options; it stays selectable. Check that no built-in cache row points to one. |
+| 8 | **Particle filter** (step 7): synthetic part headwords in a lookup row whose split ends in a particle. | `vāti` stops defaulting to `va 4.1` / `vā 1`. | Adopted as a ranking demotion with gap 7 → task 5.2. |
+| 9 | **Default sense without AI** (§1.6 ranks 3–10). Simsapa takes the first result in lookup phase order, which puts a `lemma_clean` match first: `dhīrā` → the nun's name, `nibbānaṁ` → `nibba` "eaves". | Better default when no cache row and no AI decides; measured by the agreement rate (task 5.1/5.7). | Adopted → task 5.3, through `selected_index` only. Rank 4 (direct key) applies to readings, rank 5–6 to components (task 4.7). |
+| 10 | **DB-example pre-match.** | Picks the editor's sense when the passage is the headword's DPD example. | Adopted → task 5.4: `text_overlap` always; `source_text_overlap` when the input is a reference whose DPD source code is known. Overlap normalisation as DPD, plus `ṃ`→`ṁ`. |
+| 11 | **Quotative *ti* scoring** picks among `… + iti` splits the one starting with a finite verb. | Simsapa never offers the joined-verb reading for a quoted `'ti`: the quote decides *iti*, and `gloss_lookup_words` fixes the base spelling (short vowel, then long). DPD's rule only chooses between base spellings, which Simsapa's rule already decides. | Rejected (Simsapa's iti rules win), to be confirmed on the fixtures in task 5.5. Disagreement: without AI, DPD's ranking prefers the verb reading of `vā'ti` (`vāti 1.1` "blows", a grammar-triple key, rank 4) over the sandhi headword `vāti 2.1`; Simsapa never reads a quoted `'ti` as part of a verb. |
+| 12 | **Quoted iti token as one row.** DPD's token `vā'ti` is looked up as `vāti` and shows the sandhi headword `vāti 2.1` (`sandhi, ind + ind`) with `- vā`, `- iti`, or, when there is none, a deconstruction row `attā + iti` with no ID. Simsapa looks up the base word (`vā`) and skips the `ti`. | Word in Sentence must show the whole written token. | Required by the format → task 4.5/4.12: the top-level row of a token written with a quoted iti is the sandhi headword of its joined key when DPD has one (Simsapa's rule: joined key only when DPD splits it `… + iti`), else a sandhi row `<base> + iti` with no ID; its components are the base word, with the sense the shared pipeline chose (so both formats agree, B7), and `iti`. The base word's lookup and cache key are unchanged. |
+| 13 | **Mid-word apostrophes** (`pan'āniccaṃ`, `h'etaṃ`, `eso'ham'asmi`). DPD looks the token up as written, then without the apostrophe; Simsapa joins them (`join_mid_word_apostrophes`). | Same lookup key. | Adopted as is. Word in Sentence shows the token as written (`original_word`), the lookup uses the joined form (PRD Open Question 6). |
+| 14 | **Deconstruction options beside headwords.** DPD lets the AI pick a split even when the token has headwords; Simsapa offers splits only when there is no direct match (FR-A5). | A token with both (e.g. a sandhi that is also an inflected form) can differ. | Deferred: changing the FR-A5 partition changes which AI items exist and which cache rows apply (FR A3). The conformance test reports such rows. |
+| 15 | **`//` spelling variants.** DPD inserts them from its speech-mark table, which is built from DPD's example sentences and is not in `dpd.sqlite3`. | Only text that already carries `//` can have a Variants section. | Adopted for `//` already in the input → task 4.11 (first spelling without AI; AI `variant_choices` later). Porting the speech-mark table is deferred: it needs a new data file shipped with each DPD release. |
+| 16 | **Translation in the selection request.** DPD gets both translations with the selections; Simsapa translates separately, after selection. | Simsapa's translation sees the final senses (including user and cached ones). | Kept: Simsapa's order is the grounded-translation order (§1.5). The two-part translation → task 6.5. |
+| 17 | **Unresolved row.** DPD leaves Meaning empty; the PRD asks for "not found". | Display only. | Simsapa writes "not found" (PRD B6); the conformance test does not compare Meaning. |
+| 18 | **Extra lookup phases.** Simsapa also matches roots, `ṁ` respellings, stems, no-space compounds and "starts with" guesses. | Simsapa resolves words DPD reports as not found. | Kept: DPD's report has an empty row there; Simsapa's row has a candidate (the conformance test reports these). |
+| 19 | **Retries per missing group, reformat requests, compact-map recovery.** | Robustness against malformed LLM answers. | Rejected: Simsapa's fallback engine retries and falls back across models on `invalid_response`; the item scheme gives every item an id to answer. |
+
+Selection agreement (share of top-level rows where Simsapa's own choice, AI
+off, has DPD's ID) is measured by the `#[ignore]`d test in
+`backend/tests/test_dpd_analysis_conformance.rs`; the figures before and after
+the task 5.0 changes are recorded here once measured.

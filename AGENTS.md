@@ -504,6 +504,22 @@ Notable feature docs:
   (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
   when absent; `/word.json` adds it in `word_json_with_extras()`, never in
   `resolve_word_uid()` (the word-page renderer calls that).
+- [DPD passage analysis procedure](./docs/dpd-analysis-procedure.md) — DPD's
+  own analysis tool (`exporter/analysis/` in `dpd-db`), whose study reports
+  (`ID | Word in Sentence | Grammar | Meaning | Construction | Root`) the Word in
+  Sentence gloss format follows: the procedure step by step (§1: tokens keep
+  apostrophes, one option per headword **and** grammar triple, the `_default`
+  reading from the headword's `grammar` field, component rules by
+  `compound_type`, the `_option_rank` tuple, every rendering rule), a
+  step-by-step map to Simsapa's gloss functions (§2), and the **gap list** with
+  a decision per difference (§3). Two decisions to keep: DPD's headword
+  filters become a **ranking demotion, never a removal** from `results` (the
+  ComboBox index, AI item options and saved sessions refer to that order),
+  and DPD's quotative-*ti* scoring is rejected because Simsapa's iti rules
+  already decide the base word. The reference reports are in
+  `backend/tests/data/dpd_analysis/` — copied unchanged, including six tokens
+  where DPD's own `distilled.json` and `study.md` disagree (report, never
+  repair; listed in its `SOURCE.md`).
 - [DPD releases and the `dpd_res` table](./docs/dpd-upgrades.md) — DPD's
   structured data, rendered pages and page files (`res/`: CSS, fonts, scripts,
   `family_*_json.js`) must come from the **same release**, so the `res/` files
