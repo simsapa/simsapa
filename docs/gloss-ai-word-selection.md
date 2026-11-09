@@ -38,7 +38,7 @@ user cache  >  built-in human-checked cache  >  set phrase  >  built-in agent-ch
 - **built-in human-checked cache** — a `built-in-human-checked`-origin row
   shipped in the bootstrapped appdata DB (§7).
 - **set phrase** — a curated rule ("in `anāthapiṇḍikassa ārāme`, `ārāme` is
-  always `ārāma-4/dpd`"). Phrase matches write **no** cache row; they are
+  always `12463/dpd`, *ārāma 4*"). Phrase matches write **no** cache row; they are
   re-derived on every gloss.
 - **built-in agent-checked cache** — a `built-in-agent-checked`-origin row
   shipped in the bootstrapped appdata DB, produced by the `gloss-agent-check`
@@ -92,15 +92,51 @@ outcome is identical — only the stored rows differ.
 
 ### The uid two-lane gotcha
 
-Gloss options carry the **numeric** DPD headword uid (`12463/dpd`), while
-curated data (the phrase JSON, the shipped built-in rows, anything a human typed)
-uses the lemma-based `dict_words` form (`ārāma-4/dpd`). These are two views of
-the same word and are **not string-equal** — see the "DPD records correlate to
-dict_words" section of `AGENTS.md`. `gloss_option_uid_matches()` therefore accepts
-both: a direct `uid` match, or `word_uid_sanitize(option.word) == <uid minus
-"/dpd">`. Cache rows written at runtime store whatever uid the option carries
-(numeric); curated rows keep their lemma form. Anything comparing a selected uid
-to an option must go through this helper.
+A DPD headword has two uids that are **not string-equal**: the **numeric**
+headword uid (`12463/dpd`), which gloss options carry, and the lemma-based
+`dict_words` form (`ārāma-4/dpd`) — see the "DPD records correlate to
+dict_words" section of `CLAUDE.md`.
+
+**The numeric uid is the stored form; the lemma travels beside it.** A headword
+keeps its id across DPD releases, while its `lemma_1` label does not: between
+two releases 428 headwords kept their id but changed `lemma_1`, and some homonym
+pairs swapped (id 7945 went from *abhinīhāra 2* to *abhinīhāra 1*). A lemma-form
+uid can therefore silently name another sense after a DPD upgrade; a numeric one
+cannot. Root uids (`√kar/dpd`) are keyed by the root, which is stable, and are
+stored as they are.
+
+- **Stored** (`gloss_word_context_cache.selected_uid`,
+  `gloss_phrase_selections.selected_uid`, `component_selected_uids` in a
+  session): numeric. Every runtime writer stores the option's
+  `LookupResult.uid` — the ComboBox, the shield, compound components, and AI
+  answers, which `parse_word_selection_response()` maps from the lemma to the
+  option's uid.
+- **Read by a model**: the lemma. Each request option carries `uid` *and*
+  `word` (the lemma), and the model answers by lemma (§4). The same holds for
+  the `gloss-agent-check` payload.
+- **Read by a person**: both. Files carry an optional `selected_lemma` (the DPD
+  `lemma_1`) beside `selected_uid`: the session export's `word_cache` entries
+  (filled from the installed `dpd.sqlite3`), the `gloss-agent-check apply`
+  output (taken from the option the agent saw), and
+  `assets/gloss-phrase-selections.json`.
+- **Taken from outside** (Open JSON, `import-gloss-data`, the phrase seeder):
+  normalised by `normalize_dpd_selected_uid()`
+  (`backend/src/gloss_dpd_uid.rs`) against a `DpdLemmaIndex` of the installed
+  DPD. A lemma-form uid is resolved to its numeric uid; a hand-written entry
+  may give only `selected_lemma`, which must name exactly one headword; one
+  that does not resolve is an error (Open JSON skips and logs the entry). That
+  includes a numeric id the installed DPD no longer has: an entry taken from a
+  file is not imported, while a row **already stored** with such an id is kept
+  and falls through to the next tier of the chain (§1) at lookup. When
+  both are given and the installed `lemma_1` for the id differs from
+  `selected_lemma`, the entry is **reported** with both labels and stored by
+  its id, never re-pointed: that is how a file written against an older DPD
+  release shows up. `selected_lemma` is never stored in the database.
+
+`gloss_option_uid_matches()` still accepts both forms — a direct `uid` match, or
+`word_uid_sanitize(option.word) == <uid minus "/dpd">` — so older rows and
+files keep working. Anything comparing a selected uid to an option must go
+through this helper.
 
 ## 2. The cache key: word + normalized context window + tier
 
@@ -128,11 +164,12 @@ Two appdata tables (introduced by the pre-1.0.0 migrations
 |---|---|
 | `phrase` | the **normalized** set phrase |
 | `word` | the surface form the rule applies to |
-| `selected_uid` | the uid to select |
+| `selected_uid` | the uid to select (numeric for a DPD headword, §1) |
 | | UNIQUE `(phrase, word)` |
 
 `gloss_phrase_selections` is **bootstrap-seeded only** — it is written solely by
-`seed_gloss_phrase_selections()` from the embedded curated JSON, has no in-app or
+`seed_gloss_phrase_selections()` from the embedded curated JSON (by the bootstrap
+and the maintainer's `seed-gloss-phrases` command), has no in-app or `simsapa`
 CLI write path, and carries no user-vs-shipped marker (its columns are just `id`,
 `phrase`, `word`, `selected_uid`). There is therefore nothing user-owned in it to
 preserve across an appdata re-download; the upgrade export/import cycle (§6)
@@ -280,8 +317,8 @@ Payload (substituted for `<<WORD_SELECTION_JSON>>`):
     { "id": "p0w4", "word": "ārāme",
       "context": "jetavane anāthapiṇḍikassa <b>ārāme</b>.",
       "options": [
-        { "uid": "ārāma-1/dpd", "word": "ārāma 1", "summary": "(adj) enjoying; taking pleasure (in) ..." },
-        { "uid": "ārāma-4/dpd", "word": "ārāma 4", "summary": "(masc) monastery; park ..." }
+        { "uid": "12460/dpd", "word": "ārāma 1", "summary": "(adj) enjoying; taking pleasure (in) ..." },
+        { "uid": "12463/dpd", "word": "ārāma 4", "summary": "(masc) monastery; park ..." }
       ] }
   ]
 }
@@ -499,7 +536,8 @@ format:
                   example_sentence, context_hash), translations, tab options */ },
   "word_cache": [
     { "word": "ārāme", "context_hash": "…", "context_snippet": "…",
-      "selected_uid": "ārāma-4/dpd", "origin": "user-selected" }
+      "selected_uid": "12463/dpd", "selected_lemma": "ārāma 4",
+      "origin": "user-selected" }
   ]
 }
 ```
@@ -507,12 +545,16 @@ format:
 `word_cache` holds the rows referenced by this session's words (any origin). The
 pairs are collected by **recomputing** the hash from `example_sentence`, with the
 stored `context_hash` only as a fallback — so sessions saved before this feature
-(no `context_hash` field) still export their cache rows correctly.
+(no `context_hash` field) still export their cache rows correctly. A numeric DPD
+`selected_uid` gets its `selected_lemma` from the installed `dpd.sqlite3`; the
+field is optional, so files without it still load.
 
 **Open JSON** (button next to Export As...) restores such a file:
 `open_gloss_session_export(file_path)` does read → `parse_gloss_session_export()`
 validation → cache import, returning `{ok, session, imported, skipped}` or
-`{error}`. It behaves like opening an external history session (unsaved-changes
+`{error}`. Before the import, every entry's `selected_uid` is normalised
+(§1); the entries that do not resolve are skipped and logged, and counted in
+`skipped`. It behaves like opening an external history session (unsaved-changes
 confirm first, becomes a new unsaved session); a wrong `format` /
 `format_version` / malformed file is rejected with an error dialog and changes
 nothing. Android `content://` inputs go through the existing
@@ -581,6 +623,15 @@ in `backend/src/app_data.rs`) carry it across:
 |---|---|
 | `gloss_selections.json` (`simsapa-gloss-selections` v1) | the **local** `gloss_word_context_cache` rows — origins `user-selected` and `ai-selected` only |
 | `gloss_prompts_history.json` (`simsapa-gloss-prompts-history` v1) | every `gloss_prompts_history` row (Gloss **and** Prompts sessions), timestamps included |
+
+The export runs while the **old** databases are still installed, so the DPD it
+can read is the release the rows were written against. It converts any
+lemma-form DPD headword uid to its numeric uid against that DPD, and writes each
+numeric uid's `selected_lemma` beside it (`export_gloss_selections_to_dir()`).
+It must happen there and not on import: after the upgrade a lemma-form uid would
+be matched against the new release's labels, which can name another sense. A
+uid that does not resolve is exported unchanged, with a warning. The import
+does not normalise again.
 
 What is deliberately *not* exported:
 
@@ -756,17 +807,23 @@ of the import). Each entry is tiered by its origin: **human** = origins
 (imported as itself). Entries with `confidence: "review"` are **skipped** and
 counted as "pending human review" — an agent's flagged guesses never become
 confirmed rows (the in-app Open JSON import applies the same skip). Every
-`selected_uid` is validated against the dictionaries DB
-(`AppData::resolve_word_uid`); dedup is by (word, context_hash) with
+DPD headword `selected_uid` is normalised to its numeric form as it is
+collected (§1: a lemma-form uid or a bare `selected_lemma` is resolved, one
+that does not resolve is skipped and counted as invalid), so the dedup and the
+reports below compare numeric uids; other uids are validated against the
+dictionaries DB (`AppData::resolve_word_uid`). Dedup is by (word, context_hash) with
 **human-over-agent precedence** independent of scan order (entries are
 collected first, conflicts listed), and the summary reports human and agent
 counts separately.
 
 It also prints:
 
+- a **DPD lemma mismatch report**: entries imported by id whose
+  `selected_lemma` names a different label in the installed DPD (the file was
+  written against another DPD release);
 - a **phrase-candidates report** (recurring 2–4-word n-grams containing a
   confirmed word, one consistent uid, ≥ 3 distinct contexts) as ready-to-merge
-  `assets/gloss-phrase-selections.json` lines — one phrase rule replaces many
+  `assets/gloss-phrase-selections.json` lines, each with its `selected_lemma` — one phrase rule replaces many
   context rows *and* covers unseen suttas. Non-review agent entries count
   toward the ≥ 3 contexts rule (they are confirmed input);
 - a **phrase-vs-row conflict report**: confirmed entries whose `selected_uid`
@@ -815,13 +872,37 @@ conflict report above keeps disagreements visible at curation time.
 The set-phrase list is `assets/gloss-phrase-selections.json` (`include_str!`,
 versioned, seeded idempotently at bootstrap). It stores the **human-readable**
 phrase; the seeder normalizes it with the same `normalize_gloss_context` pipeline
-as the context windows, so the two sides cannot drift.
+as the context windows, so the two sides cannot drift. Each rule gives the
+numeric `selected_uid` and its `selected_lemma`:
+
+```json
+{ "phrase": "anāthapiṇḍikassa ārāme", "word": "ārāme",
+  "selected_uid": "12463/dpd", "selected_lemma": "ārāma 4" }
+```
+
+A new rule may give only `selected_lemma`. The seeder normalises every rule
+against the DPD it is given (§1) before writing anything, and fails naming every
+rule that does not resolve; a `selected_lemma` that disagrees with the DPD is
+logged and the rule is seeded by its id. The table then **mirrors the file**: a
+rule removed from it is deleted from the table.
+
+To apply an edit of the file to an existing appdata without a full bootstrap:
+
+```sh
+cd bootstrap_cli
+cargo run -- seed-gloss-phrases <SIMSAPA_DIR>/app-assets/appdata.sqlite3
+```
+
+The file is embedded at build time, so `cargo run` (which rebuilds) picks up the
+edit. The uids are resolved against the DPD of `SIMSAPA_DIR`. Run it with the app
+closed; it prints each stored rule with its lemma.
 
 ## 8. Where things live
 
 | | |
 |---|---|
 | Normalization, hashing, resolution, export/import, response parsing | `backend/src/helpers.rs` |
+| DPD uid normalisation (`DpdLemmaIndex`, `normalize_dpd_selected_uid`) | `backend/src/gloss_dpd_uid.rs` |
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
 | Migration | `backend/migrations/appdata/2026-07-23-000000_initial_schema/` (the 1.0.0 baseline; the tables and the `deconstruction` column arrived pre-1.0.0 as `2026-07-09-160000_create_gloss_word_selection` / `2026-07-16-120000_gloss_cache_built_in_tier` / `2026-07-21-173000_gloss_cache_deconstruction`, since squashed) |
 | Grouped DPD lookup | `backend/src/db/dpd.rs` (`dpd_lookup_grouped()`), structs in `backend/src/types.rs` (`GroupedDpdLookup` / `Deconstruction` / `DeconstructionComponent`) — see §9 |

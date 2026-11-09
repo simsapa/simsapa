@@ -46,6 +46,12 @@ mimalloc = "0.1"
 tempfile = "3"
 # The EPUB fixture of the book-import test; the version `backend` uses.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The installed databases and release archives of the DPD upgrade tests; the
+# versions `backend` uses.
+diesel = { version = "2.3.9", features = ["sqlite"] }
+diesel_migrations = { version = "2.3.0", features = ["sqlite"] }
+sha2 = "0.10"
+lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
 
 # Applies only when this crate is the build root, so it never affects the GUI's
 # build (bridges) or the backend's tests. See docs/backend-cli-and-npm-package.md.

@@ -1043,9 +1043,12 @@ impl AppData {
                             Some(body_class.to_string()),
                         );
                     }
-                    // DPD ships its resources as files under assets/dpd-res/ and
-                    // references them with bare <link href="…"> tags that get
-                    // rewritten to that folder below. User-imported dictionaries
+                    // DPD's resources are in the dpd_res table of dpd.sqlite3,
+                    // and its pages reference them with bare <link href="…">
+                    // tags that get rewritten to the /dpd_res/ route below. The
+                    // page's inline loader turns each `<link class="load_js">`
+                    // into a <script src> with the same href, so the scripts
+                    // follow the rewrite. User-imported dictionaries
                     // instead carry their res/ files in the dict_resources table:
                     // CSS/JS are injected inline here, images/fonts are served via
                     // the /dict_resources/<id>/… API route.
@@ -1107,11 +1110,11 @@ impl AppData {
                     };
 
                     if is_dpd {
-                        // DPD-only: rewrite every <link href> to the dpd-res folder.
+                        // DPD-only: rewrite every <link href> to the /dpd_res/ route.
                         word_html = RE_LINK_HREF.replace_all(&word_html, |caps: &Captures| {
                             format!("{}{}{}{}",
                                     &caps[1],
-                                    &format!("{}/assets/dpd-res/", &self.api_url),
+                                    &format!("{}/dpd_res/", &self.api_url),
                                     &caps[2],
                                     &caps[3])
                         }).to_string();
@@ -1999,6 +2002,43 @@ impl AppData {
             json_value: value,
             dict_word: Some(dw),
         })
+    }
+
+    /// The installed `dpd.sqlite3`'s `lemma_1` ↔ id mapping, for normalising
+    /// gloss selection uids taken from a file
+    /// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`).
+    pub fn dpd_lemma_index(&self) -> Result<crate::gloss_dpd_uid::DpdLemmaIndex> {
+        let mut conn = self.dbm.dpd.get_conn().context("dpd_lemma_index(): no dpd db connection")?;
+        crate::gloss_dpd_uid::DpdLemmaIndex::load(&mut conn)
+    }
+
+    /// Normalise word-cache entries from a file against the installed DPD
+    /// (`helpers::normalize_gloss_word_cache_entries`) and log the entries
+    /// left out and the label mismatches. When the DPD cannot be read the
+    /// entries are returned unchanged, with an error logged.
+    pub fn normalize_gloss_entries_logged(
+        &self,
+        entries: Vec<GlossWordCacheExportEntry>,
+        caller: &str,
+    ) -> Vec<GlossWordCacheExportEntry> {
+        let index = match self.dpd_lemma_index() {
+            Ok(ix) => ix,
+            Err(e) => {
+                error(&format!("{}: cannot normalise DPD uids, importing them unchanged: {}", caller, e));
+                return entries;
+            }
+        };
+        let n = crate::helpers::normalize_gloss_word_cache_entries(&index, entries);
+        if n.converted > 0 {
+            info(&format!("{}: {} DPD uids converted to the numeric form", caller, n.converted));
+        }
+        for line in &n.unresolved {
+            warn(&format!("{}: skipped, {}", caller, line));
+        }
+        for line in &n.reports {
+            warn(&format!("{}: {}", caller, line));
+        }
+        n.entries
     }
 
     pub fn get_dpd_headword_by_uid(&self, uid_str: &str) -> Option<String> {
@@ -3811,7 +3851,16 @@ impl AppData {
     }
 
     fn export_gloss_selections(&self, import_dir: &Path) -> Result<()> {
-        export_gloss_selections_to_dir(&self.dbm.appdata, import_dir)
+        // The export runs before the old databases are replaced, so this is
+        // the DPD release the rows were written against.
+        let dpd_index = match self.dpd_lemma_index() {
+            Ok(ix) => Some(ix),
+            Err(e) => {
+                error(&format!("export_gloss_selections(): cannot read the DPD headwords, exporting uids unchanged: {}", e));
+                None
+            }
+        };
+        export_gloss_selections_to_dir(&self.dbm.appdata, dpd_index.as_ref(), import_dir)
     }
 
     fn import_gloss_selections(&self, import_dir: &Path) -> Result<()> {
@@ -5202,7 +5251,19 @@ pub fn rename_label_in_user_dictionaries_snapshot(snapshot_path: &Path, old_labe
 /// The `gloss_phrase_selections` table is not exported at all: it is
 /// bootstrap-seeded from the embedded curated JSON, has no in-app write path and
 /// no user-vs-shipped marker, so it holds nothing user-owned.
-pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Path) -> Result<()> {
+///
+/// `dpd_index` is the DPD that is installed while the export runs, which is the
+/// release the rows were written against. With it, a lemma-form DPD headword
+/// uid (`abhinīhāra-1/dpd`) is written as its numeric uid, and every numeric
+/// uid gets its `selected_lemma`. This must happen here, not on import: after
+/// the upgrade the lemma form would be matched against the new release's
+/// labels, which can name another sense. A uid that does not resolve is
+/// written unchanged and logged.
+pub fn export_gloss_selections_to_dir(
+    appdata: &AppdataDbHandle,
+    dpd_index: Option<&crate::gloss_dpd_uid::DpdLemmaIndex>,
+    import_dir: &Path,
+) -> Result<()> {
     let rows = appdata.get_local_gloss_word_cache_rows()
         .context("Failed to load local gloss word selections for export")?;
 
@@ -5211,7 +5272,7 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
         return Ok(());
     }
 
-    let export = GlossSelectionsExport {
+    let mut export = GlossSelectionsExport {
         format: GLOSS_SELECTIONS_EXPORT_FORMAT.to_string(),
         format_version: GLOSS_SELECTIONS_EXPORT_FORMAT_VERSION,
         word_cache: rows.into_iter()
@@ -5224,9 +5285,13 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
                 confidence: None,
                 note: None,
                 deconstruction: row.deconstruction,
+                selected_lemma: None,
             })
             .collect(),
     };
+    if let Some(index) = dpd_index {
+        normalize_exported_dpd_uids(index, &mut export.word_cache);
+    }
 
     let json_path = import_dir.join("gloss_selections.json");
     let json = serde_json::to_string_pretty(&export)
@@ -5240,6 +5305,35 @@ pub fn export_gloss_selections_to_dir(appdata: &AppdataDbHandle, import_dir: &Pa
     ));
 
     Ok(())
+}
+
+/// Rewrite lemma-form DPD headword uids to numeric and fill `selected_lemma`,
+/// against the DPD the rows were written with. Unresolved uids stay as they
+/// are, with a warning.
+fn normalize_exported_dpd_uids(
+    index: &crate::gloss_dpd_uid::DpdLemmaIndex,
+    entries: &mut [GlossWordCacheExportEntry],
+) {
+    use crate::gloss_dpd_uid::{dpd_headword_id_of, is_lemma_form_dpd_uid, normalize_dpd_selected_uid};
+    let mut converted = 0;
+    for e in entries.iter_mut() {
+        if is_lemma_form_dpd_uid(&e.selected_uid) {
+            match normalize_dpd_selected_uid(index, &e.selected_uid, None) {
+                Ok(n) => {
+                    e.selected_uid = n.uid;
+                    converted += 1;
+                }
+                Err(err) => warn(&format!(
+                    "export_gloss_selections_to_dir(): word '{}': {}; exported unchanged", e.word, err)),
+            }
+        }
+        if let Some(lemma) = dpd_headword_id_of(&e.selected_uid).and_then(|hw_id| index.lemma_of(hw_id)) {
+            e.selected_lemma = Some(lemma.to_string());
+        }
+    }
+    if converted > 0 {
+        info(&format!("export_gloss_selections_to_dir(): {} DPD uids converted to the numeric form", converted));
+    }
 }
 
 /// Import the user's gloss word selections after a database upgrade.

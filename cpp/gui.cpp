@@ -29,6 +29,7 @@
 #include "utils.h"
 #include "window_manager.h"
 #include "storage_recovery_window.h"
+#include "dpd_upgrade_window.h"
 #include "global_hotkey_manager.h"
 #include "system_palette.h"
 
@@ -52,6 +53,7 @@ extern "C" int storage_path_state_c();
 extern "C" char* recorded_storage_path_c();
 extern "C" bool storage_scan_log_requested_c();
 extern "C" bool peek_auto_start_download_c();
+extern "C" bool peek_auto_start_dpd_upgrade_c();
 extern "C" void log_storage_scan_c(const char* enumeration_json);
 extern "C" void check_delete_files_for_upgrade();
 extern "C" void check_remove_lang_index_dirs();
@@ -763,6 +765,33 @@ int start(int argc, char* argv[]) {
     log_info_c(msg.str().c_str());
 
     throw NormalExit("Exiting after StorageRecoveryWindow", status);
+  }
+
+  // A DPD upgrade the user accepted runs now, in place of the main app and
+  // before init_app_data(), so nothing holds dpd.sqlite3 open when it is
+  // replaced. The peek does not consume the marker (the window deletes it when
+  // the run ends); it deletes it only when a database download is pending or
+  // there are no databases, which the download branch below then handles.
+  // Never against an unreachable storage path. See docs/dpd-upgrades.md.
+  const bool dpd_upgrade_pending = !storage_unreachable && peek_auto_start_dpd_upgrade_c();
+
+  if (dpd_upgrade_pending && appdata_db_exists()) {
+    DpdUpgradeWindow* dpd_window = AppGlobals::manager->create_dpd_upgrade_window();
+
+    // A window that failed to load would leave app.exec() on a blank screen
+    // with nothing to close. Fall through to the main app instead; the marker
+    // stays, so the upgrade is offered again at the next start.
+    if (dpd_window != nullptr && dpd_window->m_root != nullptr) {
+      log_info_c("app.exec()");
+      int status = app.exec();
+
+      std::ostringstream msg;
+      msg << "Exiting with status " << status << ".";
+      log_info_c(msg.str().c_str());
+
+      throw NormalExit("Exiting after DpdUpgradeWindow", status);
+    }
+    log_error_c("The DPD upgrade window could not be created; starting the main app.");
   }
 
   if (!appdata_db_exists()) {

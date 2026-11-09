@@ -127,11 +127,8 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
     }
 
     if steps.dpd {
-        sources.extend([
-            required("DPD StarDict export", paths::DPD_STARDICT_DIR, Dir),
-            required("DPD database (extracted dpd.db)", paths::DPD_DB, File),
-            required("DPPN database", paths::DPPN_DB, File),
-        ]);
+        sources.extend(dpd_release_sources());
+        sources.push(required("DPPN database", paths::DPPN_DB, File));
     }
 
     if steps.hungarian {
@@ -139,6 +136,34 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
     }
 
     sources
+}
+
+/// The extracted DPD release under `dpd-db-for-bootstrap/current/`: the inputs
+/// of the bootstrap's DPD step and of `rebuild-dpd`.
+pub fn dpd_release_sources() -> Vec<Source> {
+    use SourceKind::{Dir, File};
+    vec![
+        required("DPD StarDict export", paths::DPD_STARDICT_DIR, Dir),
+        required("DPD res/ folder (CSS, fonts, page scripts)", paths::DPD_RES_DIR, Dir),
+        required("DPD database (extracted dpd.db)", paths::DPD_DB, File),
+    ]
+}
+
+/// Check the sources of `rebuild-dpd`: an error naming every missing one.
+pub fn run_dpd_release_preflight(bootstrap_assets_dir: &Path) -> Result<()> {
+    let sources = dpd_release_sources();
+    let report = check_sources(bootstrap_assets_dir, &sources);
+    if report.errors.is_empty() {
+        logger::info(&format!("Preflight passed: {} DPD source(s) checked", sources.len()));
+        return Ok(());
+    }
+    anyhow::bail!(
+        "DPD preflight failed, nothing was changed. {} problem(s):\n  - {}\n\
+         Extract the DPD release into dpd-db-for-bootstrap/<date>/ and point `current` at it \
+         (docs/dpd-upgrades.md).",
+        report.errors.len(),
+        report.errors.join("\n  - ")
+    );
 }
 
 /// What is wrong with a source, or `None` when it is present and of the
@@ -268,8 +293,24 @@ mod tests {
         let steps = PreflightSteps { appdata: false, dpd: true, sc_languages: false, hungarian: false };
         let rel_paths: Vec<_> = bootstrap_sources(&steps).into_iter().map(|s| s.rel_path).collect();
         assert!(rel_paths.contains(&PathBuf::from(paths::DPD_DB)));
+        assert!(rel_paths.contains(&PathBuf::from(paths::DPD_RES_DIR)));
         assert!(!rel_paths.iter().any(|p| p.starts_with(paths::SC_DATA_DIR)));
         assert!(!steps.needs_arangodb());
+    }
+
+    #[test]
+    fn test_dpd_release_preflight_names_every_missing_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = run_dpd_release_preflight(dir.path()).unwrap_err().to_string();
+        for rel in [paths::DPD_DB, paths::DPD_STARDICT_DIR, paths::DPD_RES_DIR] {
+            assert!(err.contains(rel), "{rel} missing from: {err}");
+        }
+        // The DPD step of the bootstrap reads the same three, plus the DPPN.
+        let steps = PreflightSteps { appdata: false, dpd: true, sc_languages: false, hungarian: false };
+        let bootstrap: Vec<_> = bootstrap_sources(&steps).into_iter().map(|s| s.rel_path).collect();
+        for s in dpd_release_sources() {
+            assert!(bootstrap.contains(&s.rel_path));
+        }
     }
 
     #[test]

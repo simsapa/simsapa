@@ -12,9 +12,10 @@ catastrophic plan: the Headword Match query ran in **~170 s** with no stats and
 documented in
 [tasks/prd-fixing-headword-match-slow-query.md](../tasks/prd-fixing-headword-match-slow-query.md).
 
-The system `sqlite3` CLI happens to be compiled with different defaults and
+The system `sqlite3` program happens to be compiled with different defaults and
 picks a reasonable plan even without stats, which masked the bug for a long
-time. Don't rely on that — make sure stats are present.
+time. Don't rely on that — make sure stats are present, and check plans on the
+app's own SQLite (`fts_bench --explain`).
 
 ## Where stats come from
 
@@ -24,8 +25,9 @@ There are two paths that produce `sqlite_stat1` / `sqlite_stat4`:
    `bootstrap_cli/src/bootstrap/mod.rs` right before its `.tar.bz2` archive is created.
    This means a fresh install of the app gets correct stats on first launch
    with zero runtime work. The helper is
-   `simsapa_backend::helpers::analyze_sqlite_db_via_cli` (uses the `sqlite3`
-   CLI so it doesn't need an open Diesel connection).
+   `simsapa_backend::db::fts_scripts::analyze_db(path)`, which opens its own
+   connection and, unlike the runtime hook, fails the bootstrap on an error.
+   It runs after `vacuum_db()`.
 
 2. **Runtime, after the user adds data.** Whenever the user adds enough rows
    to materially change a table's selectivity, the import path calls
@@ -55,6 +57,7 @@ table**.
 | Book delete                 | `SuttaBridge::remove_book` → `appdata::delete_book_by_uid`            | `appdata`        | success arm of `remove_book` in `bridges/src/sutta_bridge.rs`                 |
 | Sutta language download     | `asset_helpers::import_suttas_lang_to_appdata`                        | `appdata`        | end of `import_suttas_lang_to_appdata` (one `ANALYZE` after the whole batch)  |
 | Navigation-tree build       | `bootstrap_cli::bootstrap::navigation_tree::build_sc_spine` / `build_cst_spine` | `appdata`        | `navigation_tree::analyze_appdata`, at the end of each spine build            |
+| DPD upgrade                 | `dpd_upgrade::run_dpd_upgrade` (GUI startup window, `simsapa dpd upgrade`, `bootstrap_cli rebuild-dpd`) | `dictionaries`, `dpd` | `dpd_upgrade::reindex::reindex`, after the pages and `dpd.sqlite3` are replaced |
 
 The `simsapa` CLI (`backend_cli/src/commands/import.rs`, `backend_cli/src/setup.rs`) calls the same entry
 points as the GUI, so the `ANALYZE` sites are the same and it adds none of its
@@ -140,7 +143,7 @@ Notes:
 ## Related
 
 - `backend/src/db/mod.rs::DatabaseHandle::analyze` — the runtime hook.
-- `backend/src/helpers.rs::analyze_sqlite_db_via_cli` — the bootstrap hook.
+- `backend/src/db/fts_scripts.rs::analyze_db` — the bootstrap hook.
 - `bootstrap_cli/src/bootstrap/mod.rs` — call sites just before each
   `create_database_archive` / `create_appdata_archive`.
 - `tasks/prd-fixing-headword-match-slow-query.md` — the original investigation.

@@ -1,8 +1,7 @@
 use std::collections::{HashSet, HashMap};
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::fs;
-use std::process::Command;
 use indexmap::IndexMap;
 
 use regex::Regex;
@@ -3863,6 +3862,13 @@ pub struct GlossWordCacheExportEntry {
     /// it `None` and the field is omitted from the JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deconstruction: Option<String>,
+    /// The DPD `lemma_1` of a numeric `selected_uid` (`"ārāma 4"` beside
+    /// `"12463/dpd"`), so a person reading the file can tell the sense. The
+    /// uid is the key; on import this is only a cross-check
+    /// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`). A hand-written
+    /// entry may give only this, with an empty `selected_uid`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_lemma: Option<String>,
 }
 
 /// Collect the distinct `(word_key, context_hash)` pairs referenced by a
@@ -3914,8 +3920,12 @@ fn gloss_session_cache_pairs(session: &serde_json::Value) -> Vec<(String, String
 /// Build the versioned gloss session export envelope (PRD req 38): the same
 /// session serialization the Gloss history saves, plus the word-selection
 /// cache rows (any origin) referenced by the session's words.
+///
+/// With a `dpd` handle, each numeric DPD `selected_uid` gets its
+/// `selected_lemma` from that `dpd.sqlite3`.
 pub fn build_gloss_session_export_json(
     appdata: &crate::db::appdata::AppdataDbHandle,
+    dpd: Option<&crate::db::dpd::DpdDbHandle>,
     session_json: &str,
 ) -> Result<String, String> {
     let session: serde_json::Value = serde_json::from_str(session_json)
@@ -3934,8 +3944,12 @@ pub fn build_gloss_session_export_json(
             confidence: None,
             note: None,
             deconstruction: r.deconstruction,
+            selected_lemma: None,
         })
         .collect();
+    if let Some(dpd) = dpd {
+        fill_selected_lemmas(dpd, &mut word_cache)?;
+    }
     // A key can carry both a local and a shipped row, so `origin` is part of the
     // sort key to keep the export deterministic.
     word_cache.sort_by(|a, b| {
@@ -3987,6 +4001,75 @@ pub fn parse_gloss_session_export(
             .map_err(|e| format!("Invalid word_cache entries: {}", e))?,
     };
     Ok((session, word_cache))
+}
+
+/// Set `selected_lemma` on every entry whose `selected_uid` is a numeric DPD
+/// uid, from the given `dpd.sqlite3`. Entries with other uids are left as they
+/// are.
+pub fn fill_selected_lemmas(
+    dpd: &crate::db::dpd::DpdDbHandle,
+    entries: &mut [GlossWordCacheExportEntry],
+) -> Result<(), String> {
+    let mut conn = dpd
+        .get_conn()
+        .map_err(|e| format!("fill_selected_lemmas(): no dpd db connection: {}", e))?;
+    let lemmas = crate::gloss_dpd_uid::lemmas_for_uids(
+        &mut conn,
+        entries.iter().map(|e| e.selected_uid.as_str()),
+    )
+    .map_err(|e| format!("fill_selected_lemmas(): {}", e))?;
+    for e in entries.iter_mut() {
+        if let Some(lemma) = lemmas.get(&e.selected_uid) {
+            e.selected_lemma = Some(lemma.clone());
+        }
+    }
+    Ok(())
+}
+
+/// The outcome of `normalize_gloss_word_cache_entries()`.
+#[derive(Debug, Default)]
+pub struct GlossUidNormalization {
+    /// The entries to import, each DPD headword `selected_uid` now numeric.
+    pub entries: Vec<GlossWordCacheExportEntry>,
+    /// How many uids were rewritten (lemma form or `selected_lemma` only →
+    /// numeric).
+    pub converted: usize,
+    /// Entries left out because their uid did not resolve, one line each.
+    pub unresolved: Vec<String>,
+    /// Entries imported by id whose `selected_lemma` disagrees with the
+    /// installed DPD, one line each.
+    pub reports: Vec<String>,
+}
+
+/// Normalise the `selected_uid` of word-cache entries taken from a file
+/// (`crate::gloss_dpd_uid::normalize_dpd_selected_uid`), so that only numeric
+/// DPD headword uids are stored. Entries whose uid does not resolve are
+/// dropped and listed in `unresolved`.
+pub fn normalize_gloss_word_cache_entries(
+    index: &crate::gloss_dpd_uid::DpdLemmaIndex,
+    entries: Vec<GlossWordCacheExportEntry>,
+) -> GlossUidNormalization {
+    let mut out = GlossUidNormalization::default();
+    for mut e in entries {
+        match crate::gloss_dpd_uid::normalize_dpd_selected_uid(
+            index,
+            &e.selected_uid,
+            e.selected_lemma.as_deref(),
+        ) {
+            Ok(n) => {
+                if n.uid != e.selected_uid {
+                    out.converted += 1;
+                    e.selected_uid = n.uid;
+                }
+                if let Some(r) = n.report {
+                    out.reports.push(format!("word '{}': {}", e.word, r));
+                }
+                out.entries.push(e);
+            }
+            Err(err) => out.unresolved.push(format!("word '{}': {}", e.word, err)),
+        }
+    }
+    out
 }
 
 /// Import exported cache rows with the strictly-higher precedence rule
@@ -5200,112 +5283,6 @@ Exec=env QTWEBENGINE_DISABLE_SANDBOX=1 {}
         }
     }
 
-    Ok(())
-}
-
-/// Executes FTS5 indexes SQL script using sqlite3 CLI
-///
-/// This function runs the provided SQL script against the specified database using sqlite3 CLI.
-/// We use the CLI instead of Diesel because the trigram tokenizer may not be available in Diesel SQLite.
-///
-/// This function runs the SQL script with the sqlite3 cli, it creates the fts5 index data.
-/// But executing it with a Diesel db connection from Rust, the fts5 tables are created but there is no index data in them.
-/// Perhaps the trigram tokenizer is missing from Diesel SQLite?
-///
-/// # Arguments
-/// * `db_path` - Path to the SQLite database file
-/// * `sql_script_path` - Path to the SQL script containing FTS5 index creation commands
-///
-/// # Note
-/// Make sure all database connections are closed before calling this function.
-pub fn run_fts5_indexes_sql_script(db_path: &Path, sql_script_path: &Path) -> Result<()> {
-    info(&format!("Running FTS5 indexes SQL script: {}", sql_script_path.display()));
-
-    // Check if the SQL script exists
-    if !sql_script_path.exists() {
-        return Err(anyhow::anyhow!(
-            "SQL script not found at: {}",
-            sql_script_path.display()
-        ));
-    }
-
-    // Get absolute path to the destination database
-    let db_abs_path = fs::canonicalize(db_path)
-        .with_context(|| format!("Failed to get absolute path for database: {}", db_path.display()))?;
-
-    // Execute sqlite3 CLI command with input redirection
-    let mut child = Command::new("sqlite3")
-        .arg(&db_abs_path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .with_context(|| "Failed to spawn sqlite3 command")?;
-
-    // Read the SQL script content and write it to sqlite3's stdin
-    let sql_content = fs::read_to_string(sql_script_path)
-        .with_context(|| format!("Failed to read SQL script: {}", sql_script_path.display()))?;
-
-    if let Some(stdin) = child.stdin.take() {
-        use std::io::Write;
-        let mut stdin = stdin;
-        stdin.write_all(sql_content.as_bytes())
-            .with_context(|| "Failed to write SQL content to sqlite3 stdin")?;
-        // Close stdin to signal end of input
-        drop(stdin);
-    }
-
-    // Wait for the command to complete
-    let output = child.wait_with_output()
-        .with_context(|| "Failed to execute sqlite3 command")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "sqlite3 command failed with exit code {}: {}",
-            output.status.code().unwrap_or(-1),
-            stderr
-        ));
-    }
-
-    info("Successfully created FTS5 indexes and triggers using sqlite3 CLI");
-    Ok(())
-}
-
-/// Run `ANALYZE` on a SQLite DB via the `sqlite3` CLI, so that shipped DBs
-/// arrive with `sqlite_stat1` / `sqlite_stat4` populated. Without those
-/// tables, the bundled-SQLite query planner picks a catastrophic plan for
-/// the Headword Match query (FTS5 trigram LIKE + `dict_label IN (...)`):
-/// ~170 s vs ~17 ms once stats are present. See
-/// `tasks/prd-fixing-headword-match-slow-query.md` and
-/// `docs/user-data-and-sqlite-analyze.md`.
-///
-/// Call this once per shipped DB (`appdata`, `dictionaries`, `dpd`) right
-/// before the `.tar.bz2` archive is created. Caller must ensure all
-/// connections to the DB are closed first (same constraint as
-/// `run_fts5_indexes_sql_script`).
-pub fn analyze_sqlite_db_via_cli(db_path: &Path) -> Result<()> {
-    info(&format!("Running ANALYZE on: {}", db_path.display()));
-
-    let db_abs_path = fs::canonicalize(db_path)
-        .with_context(|| format!("Failed to get absolute path for database: {}", db_path.display()))?;
-
-    let output = Command::new("sqlite3")
-        .arg(&db_abs_path)
-        .arg("ANALYZE;")
-        .output()
-        .with_context(|| "Failed to spawn sqlite3 command for ANALYZE")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow::anyhow!(
-            "sqlite3 ANALYZE failed with exit code {}: {}",
-            output.status.code().unwrap_or(-1),
-            stderr
-        ));
-    }
-
-    info("Successfully ran ANALYZE via sqlite3 CLI");
     Ok(())
 }
 

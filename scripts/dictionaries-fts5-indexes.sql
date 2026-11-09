@@ -135,6 +135,3 @@ BEGIN
 END;
 
 INSERT INTO dict_words_word_fts(dict_words_word_fts) VALUES('optimize');
-
--- Single VACUUM at the end of the script.
-VACUUM;

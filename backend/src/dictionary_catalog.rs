@@ -161,6 +161,10 @@ pub struct ReleaseEntry {
     pub prerelease: bool,
     #[serde(default)]
     pub assets: Vec<ReleaseAsset>,
+    /// The release notes (Markdown). `null` in the API for a release without
+    /// notes.
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -172,9 +176,11 @@ pub struct ReleaseAsset {
     pub browser_download_url: String,
 }
 
-/// The GitHub releases-list endpoint for [`REPO`].
-fn releases_api_url() -> String {
-    format!("https://api.github.com/repos/{REPO}/releases")
+/// The GitHub releases-list endpoint of a repository (`owner/name`).
+/// The newest 100 releases (the API's maximum page; its default is 30), so a
+/// `--version` naming an older DPD release is still found.
+fn releases_api_url(repo: &str) -> String {
+    format!("https://api.github.com/repos/{repo}/releases?per_page=100")
 }
 
 /// The constructed download URL for an asset under a given tag, used on the
@@ -200,6 +206,11 @@ pub fn select_tag(releases: &[ReleaseEntry]) -> Option<String> {
 }
 
 /// Fetch and parse the GitHub releases list for [`REPO`].
+pub fn fetch_releases() -> Result<Vec<ReleaseEntry>> {
+    fetch_releases_for(REPO)
+}
+
+/// Fetch and parse the GitHub releases list of a repository (`owner/name`).
 ///
 /// Every failure — offline, DNS, HTTP status, rate limit, unparseable JSON — is
 /// an `Err`; the caller ([`resolve_catalogue`]) turns that into the fallback
@@ -209,7 +220,12 @@ pub fn select_tag(releases: &[ReleaseEntry]) -> Option<String> {
 /// series currently has 9 releases, so page 1 always contains the highest tag
 /// and no pagination is needed. Revisit only if upstream ever publishes more
 /// than 30 releases *above* the pinned series.
-pub fn fetch_releases() -> Result<Vec<ReleaseEntry>> {
+pub fn fetch_releases_for(repo: &str) -> Result<Vec<ReleaseEntry>> {
+    fetch_releases_from_url(&releases_api_url(repo))
+}
+
+/// [`fetch_releases_for`], from a releases-list URL.
+pub fn fetch_releases_from_url(url: &str) -> Result<Vec<ReleaseEntry>> {
     // A `User-Agent` is mandatory, not polite: `api.github.com` answers 403 to a
     // request with an empty UA.
     let client = reqwest::blocking::Client::builder()
@@ -219,7 +235,7 @@ pub fn fetch_releases() -> Result<Vec<ReleaseEntry>> {
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
     let response = client
-        .get(releases_api_url())
+        .get(url)
         .send()
         .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
 
@@ -358,7 +374,7 @@ mod tests {
     use crate::dictionary_manager_core::validate_label;
 
     fn rel(tag: &str, draft: bool, prerelease: bool) -> ReleaseEntry {
-        ReleaseEntry { tag_name: tag.to_string(), draft, prerelease, assets: vec![] }
+        ReleaseEntry { tag_name: tag.to_string(), draft, prerelease, assets: vec![], body: None }
     }
 
     #[test]

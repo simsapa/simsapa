@@ -71,5 +71,3 @@ BEGIN
 END;
 
 INSERT INTO suttas_fts(suttas_fts) VALUES('optimize');
-
-VACUUM;

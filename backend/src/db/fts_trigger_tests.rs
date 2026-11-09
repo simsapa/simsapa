@@ -13,12 +13,9 @@ use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Text};
 
+use super::fts_scripts::{run_fts5_script, FtsScript};
 use super::{appdata_schema_test_db, fts5_integrity_check, DICTIONARIES_MIGRATIONS};
 use diesel_migrations::MigrationHarness;
-
-const APPDATA_FTS_SQL: &str = include_str!("../../../scripts/appdata-fts5-indexes.sql");
-const DICTIONARIES_FTS_SQL: &str = include_str!("../../../scripts/dictionaries-fts5-indexes.sql");
-const BOLD_FTS_SQL: &str = include_str!("../../../scripts/dpd-bold-definitions-fts5-indexes.sql");
 
 #[derive(QueryableByName)]
 struct IdRow {
@@ -86,7 +83,7 @@ fn assert_no_content_copy(conn: &mut SqliteConnection, fts: &str) {
 #[test]
 fn suttas_fts_follows_suttas() {
     let mut conn = appdata_schema_test_db();
-    exec(&mut conn, APPDATA_FTS_SQL);
+    run_fts5_script(&mut conn, FtsScript::Appdata).expect("FTS script");
     let fts = "suttas_fts";
     assert_no_content_copy(&mut conn, fts);
 
@@ -145,7 +142,7 @@ fn suttas_fts_follows_suttas() {
 fn dict_words_fts_follows_dict_words() {
     let mut conn = SqliteConnection::establish(":memory:").expect("in-memory db");
     conn.run_pending_migrations(DICTIONARIES_MIGRATIONS).expect("dictionaries migrations");
-    exec(&mut conn, DICTIONARIES_FTS_SQL);
+    run_fts5_script(&mut conn, FtsScript::Dictionaries).expect("FTS script");
     let fts = "dict_words_fts";
     let wfts = "dict_words_word_fts";
     assert_no_content_copy(&mut conn, fts);
@@ -228,7 +225,7 @@ fn bold_definitions_fts_tables_follow_bold_definitions() {
         nikaya TEXT NOT NULL, book TEXT NOT NULL, title TEXT NOT NULL, subhead TEXT NOT NULL,
         bold TEXT NOT NULL, bold_end TEXT NOT NULL, commentary TEXT NOT NULL, uid TEXT NOT NULL,
         commentary_plain TEXT NOT NULL, bold_ascii TEXT NOT NULL)");
-    exec(&mut conn, BOLD_FTS_SQL);
+    run_fts5_script(&mut conn, FtsScript::DpdBoldDefinitions).expect("FTS script");
     let comm = "bold_definitions_fts";
     let bold = "bold_definitions_bold_fts";
     assert_no_content_copy(&mut conn, comm);
@@ -297,7 +294,7 @@ fn bold_definitions_fts_tables_follow_bold_definitions() {
 #[test]
 fn integrity_check_reports_an_index_out_of_step() {
     let mut conn = appdata_schema_test_db();
-    exec(&mut conn, APPDATA_FTS_SQL);
+    run_fts5_script(&mut conn, FtsScript::Appdata).expect("FTS script");
     exec(&mut conn, "INSERT INTO suttas (id, uid, sutta_ref, nikaya, language, content_plain) \
                      VALUES (1, 'sn1/pli/ms', 'SN 1', 'sn', 'pli', 'alpha bravo')");
     fts5_integrity_check(&mut conn, "suttas_fts").expect("in step");
@@ -307,4 +304,102 @@ fn integrity_check_reports_an_index_out_of_step() {
     assert!(fts5_integrity_check(&mut conn, "suttas_fts").is_err(), "an index out of step passed the check");
 
     assert!(fts5_integrity_check(&mut conn, "suttas_fts; DROP TABLE suttas").is_err());
+}
+
+/// `dpd_headwords_fts` keeps its own copy of `lemma_1` (it is not an
+/// external-content table), and indexes only rows with a non-empty lemma.
+#[test]
+fn dpd_headwords_fts_follows_dpd_headwords() {
+    let mut conn = SqliteConnection::establish(":memory:").expect("in-memory db");
+    // The columns the script and the query read; the rest of DPD's table does
+    // not affect the index.
+    exec(&mut conn, "CREATE TABLE dpd_headwords (
+        id INTEGER NOT NULL PRIMARY KEY, lemma_1 TEXT NOT NULL, lemma_clean TEXT NOT NULL DEFAULT '')");
+    exec(&mut conn, "INSERT INTO dpd_headwords (id, lemma_1) VALUES (1, 'dhamma 1.01'), (2, 'saṁvega')");
+    run_fts5_script(&mut conn, FtsScript::Dpd).expect("FTS script");
+    let fts = "dpd_headwords_fts";
+
+    // The script indexes the rows already in the table.
+    check(&mut conn, fts, "script");
+    assert_eq!(match_ids(&mut conn, fts, "dhamma"), vec![1]);
+    assert_eq!(match_ids(&mut conn, fts, "saṁvega"), vec![2]);
+
+    let like = |conn: &mut SqliteConnection, w: &str| ids(conn, &format!(
+        "SELECT h.id AS id FROM dpd_headwords_fts f JOIN dpd_headwords h ON h.id = f.rowid \
+         WHERE f.lemma_1 LIKE '%{w}%' ORDER BY f.rowid"
+    ));
+    assert_eq!(like(&mut conn, "amm"), vec![1]);
+    assert_eq!(like(&mut conn, "ṁve"), vec![2]);
+
+    exec(&mut conn, "INSERT INTO dpd_headwords (id, lemma_1) VALUES (3, 'kammaṭṭhāna'), (4, '')");
+    check(&mut conn, fts, "insert");
+    assert_eq!(like(&mut conn, "amm"), vec![1, 3]);
+    assert_eq!(index_state(&mut conn, fts).0, 3, "an empty lemma was indexed");
+
+    exec(&mut conn, "UPDATE dpd_headwords SET lemma_1 = 'nibbāna' WHERE id = 3");
+    check(&mut conn, fts, "update");
+    assert_eq!(match_ids(&mut conn, fts, "kamma"), Vec::<i64>::new(), "the old lemma is still indexed");
+    assert_eq!(match_ids(&mut conn, fts, "nibbāna"), vec![3]);
+
+    exec(&mut conn, "UPDATE dpd_headwords SET lemma_1 = 'vedanā' WHERE id = 4");
+    check(&mut conn, fts, "update empty to text");
+    assert_eq!(like(&mut conn, "edan"), vec![4]);
+
+    exec(&mut conn, "DELETE FROM dpd_headwords WHERE id = 1");
+    check(&mut conn, fts, "delete");
+    assert_eq!(match_ids(&mut conn, fts, "dhamma"), Vec::<i64>::new());
+    assert_eq!(like(&mut conn, "zzqx"), Vec::<i64>::new());
+
+    exec(&mut conn, "DELETE FROM dpd_headwords");
+    check(&mut conn, fts, "delete all");
+    assert_eq!(index_state(&mut conn, fts).0, 0);
+}
+
+/// The books script, which no other test runs.
+#[test]
+fn book_spine_items_fts_script_runs() {
+    let mut conn = appdata_schema_test_db();
+    run_fts5_script(&mut conn, FtsScript::Books).expect("FTS script");
+    check(&mut conn, "book_spine_items_fts", "script");
+}
+
+/// `create_dpd_indexes()` runs the whole B-tree script (every statement, not
+/// only the first) and both DPD FTS5 scripts on a file, and a database that
+/// cannot be opened is an error, not a panic.
+#[test]
+fn create_dpd_indexes_runs_every_script_on_a_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("dpd.sqlite3");
+    {
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).expect("create db");
+        exec(&mut conn, "CREATE TABLE dpd_headwords (
+            id INTEGER NOT NULL PRIMARY KEY, lemma_1 TEXT NOT NULL UNIQUE, lemma_clean TEXT NOT NULL,
+            word_ascii TEXT NOT NULL, stem TEXT NOT NULL)");
+        exec(&mut conn, "CREATE TABLE dpd_roots (
+            root TEXT NOT NULL PRIMARY KEY, uid TEXT NOT NULL UNIQUE, root_clean TEXT NOT NULL,
+            root_no_sign TEXT NOT NULL, word_ascii TEXT NOT NULL)");
+        exec(&mut conn, "CREATE TABLE bold_definitions (
+            id INTEGER NOT NULL PRIMARY KEY, file_name TEXT NOT NULL, ref_code TEXT NOT NULL,
+            nikaya TEXT NOT NULL, book TEXT NOT NULL, title TEXT NOT NULL, subhead TEXT NOT NULL,
+            bold TEXT NOT NULL, bold_end TEXT NOT NULL, commentary TEXT NOT NULL, uid TEXT NOT NULL,
+            commentary_plain TEXT NOT NULL, bold_ascii TEXT NOT NULL)");
+        exec(&mut conn, "INSERT INTO dpd_headwords VALUES (1, 'dhamma 1.01', 'dhamma', 'dhamma', 'dhamm')");
+    }
+
+    super::dpd::create_dpd_indexes(&path).expect("create_dpd_indexes");
+
+    let mut conn = SqliteConnection::establish(path.to_str().unwrap()).expect("open db");
+    for index in ["idx_dpd_headwords_lemma_clean", "idx_dpd_headwords_word_ascii", "idx_dpd_headwords_stem",
+                  "idx_dpd_roots_root_clean", "idx_dpd_roots_root_no_sign", "idx_dpd_roots_word_ascii",
+                  "idx_bold_definitions_uid"] {
+        let n = ids(&mut conn, &format!(
+            "SELECT COUNT(*) AS id FROM sqlite_master WHERE type = 'index' AND name = '{index}'"));
+        assert_eq!(n, vec![1], "{index} was not created");
+    }
+    assert_eq!(match_ids(&mut conn, "dpd_headwords_fts", "dhamma"), vec![1]);
+    check(&mut conn, "bold_definitions_fts", "create_dpd_indexes");
+
+    let missing = dir.path().join("missing.sqlite3");
+    assert!(super::dpd::create_dpd_indexes(&missing).is_err());
+    assert!(super::dpd::migrate_dpd(&missing, 1, &crate::batch_progress::BatchProgress::none()).is_err());
 }

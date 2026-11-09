@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,8 +14,10 @@ use serde::{Serialize, Deserialize};
 
 use crate::db::dpd_models::*;
 use crate::db::DatabaseHandle;
+use crate::batch_progress::BatchProgress;
+use crate::db::fts_scripts::{open_db_path, run_fts5_script, FtsScript};
+use diesel::connection::SimpleConnection;
 
-use crate::{get_app_data, get_create_simsapa_app_assets_path, normalize_path_for_sqlite};
 use crate::helpers::{compact_rich_text, word_uid, pali_to_ascii, strip_html, root_info_clean_plaintext, normalize_dpd_query_text, word_uid_sanitize};
 use crate::pali_stemmer::pali_stem;
 use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
@@ -310,6 +312,33 @@ fn uid_like_patterns(
 }
 
 impl DpdDbHandle {
+    /// One file of the `dpd_res` table, from the in-memory copy
+    /// (`dpd_res::DPD_RES_CACHE`), which this loads if the startup warm-up has
+    /// not. `None` when the path is not stored or the table is missing (a
+    /// `dpd.sqlite3` built before the table existed).
+    pub fn get_dpd_res(&self, path: &str) -> Result<Option<crate::db::dpd_res::DpdResFile>> {
+        let files = crate::db::dpd_res::DPD_RES_CACHE.get_or_load(|| self.load_all_dpd_res())?;
+        Ok(files.get(path).cloned())
+    }
+
+    fn load_all_dpd_res(&self) -> Result<crate::db::dpd_res::DpdResFiles> {
+        let started = std::time::Instant::now();
+        let files = self.do_read(crate::db::dpd_res::load_all_dpd_res)
+            .context("Failed to load the dpd_res table")?;
+        let bytes: usize = files.values().map(|f| f.content.len()).sum();
+        info(&format!("dpd_res: loaded {} files, {} bytes into memory in {:?}", files.len(), bytes, started.elapsed()));
+        Ok(files)
+    }
+
+    /// Load the `res/` files into memory, for the startup warm-up. Run it on a
+    /// background thread: it reads about 15 MB. Idempotent; a failure is logged
+    /// and the first request tries again.
+    pub fn warm_dpd_res_cache(&self) {
+        if let Err(e) = crate::db::dpd_res::DPD_RES_CACHE.get_or_load(|| self.load_all_dpd_res()) {
+            error(&format!("warm_dpd_res_cache(): {:#}", e));
+        }
+    }
+
     /// Count `dpd_headwords` rows (for `/health`). A 0 here means the DPD DB
     /// is not loaded / not installed.
     pub fn count_dpd_headwords(&self) -> Result<i64> {
@@ -2274,56 +2303,162 @@ fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashM
     Ok(res)
 }
 
-pub fn import_migrate_dpd(dpd_input_path: &Path, dpd_output_path: Option<PathBuf>, limit: Option<i32>) -> Result<(), String> {
-    // Migrate the db at the provided input path.
-    let migrate_db_path = dpd_input_path.to_path_buf();
+/// Migrate the upstream DPD database at `dpd_input_path` in place, move it to
+/// `dpd_output_path`, and add the derived columns and the indexes.
+///
+/// `dict_db_path` is the dictionaries database holding the DPD StarDict pages
+/// of the same release (the construction summaries are cut from them), and
+/// `dpd_dictionary_id` is the id of the DPD row in it. `res_dir` is the
+/// StarDict export's `res/` folder of the same release, imported into the
+/// `dpd_res` table. Uses no global app data, so it can run on staged files
+/// before the app's databases are open.
+///
+/// Writes the DPD release version into the DPD row's `version` in
+/// `dict_db_path`, so the pages and the data record which release they are.
+///
+/// `on_stage` is called with the name of each part as it starts, and
+/// `progress` reports rows inside the long ones and is checked for a cancel
+/// between batches. A cancel returns an error that `is::<Cancelled>()`.
+pub fn import_migrate_dpd(
+    dpd_input_path: &Path,
+    dpd_output_path: &Path,
+    dict_db_path: &Path,
+    dpd_dictionary_id: i32,
+    res_dir: &Path,
+    limit: Option<i32>,
+    on_stage: &dyn Fn(MigrateStage),
+    progress: &BatchProgress,
+) -> Result<()> {
+    on_stage(MigrateStage::Schema);
+    migrate_dpd(dpd_input_path, dpd_dictionary_id, progress)?;
+    progress.check_cancel()?;
 
-    // Find or create the DPD dict record in dictionaries
-    let app_data = get_app_data();
-    let dpd_dict = app_data.dbm.dictionaries.find_or_create_dpd_dictionary()
-        .map_err(|e| format!("{}", e))?;
+    let output_path = dpd_output_path.to_path_buf();
+    move_file(dpd_input_path, &output_path)
+        .with_context(|| format!("Failed to move {} to {}", dpd_input_path.display(), output_path.display()))?;
 
-    // Run the migrations on the db
-    migrate_dpd(&migrate_db_path, dpd_dict.id)
-        .map_err(|e| format!("{}", e))?;
-
-    // Move to local data folder or the specified path
-    let output_path = match dpd_output_path {
-        Some(p) => p,
-        None => get_create_simsapa_app_assets_path().join("dpd.sqlite3"),
-    };
-
-    match fs::rename(&migrate_db_path, &output_path) {
-        Ok(_) => {},
-        Err(e) => {
-            // fs::rename() doesn't work across different fs mounts, e.g. partitions.
-            // In that case, copy and remove.
-            // Otherwise, return the error.
-            let msg = format!("{}", e);
-            // Error executing command: Invalid cross-device link (os error 18)
-            if msg.contains("Invalid cross-device link") {
-                fs::copy(&migrate_db_path, &output_path).map_err(|e| format!("{}", e))?;
-                fs::remove_file(&migrate_db_path).map_err(|e| format!("{}", e))?;
-            } else {
-                return Err(format!("{}", e));
-            }
-        }
-    }
+    on_stage(MigrateStage::PageFiles);
+    import_dpd_res(&output_path, dict_db_path, dpd_dictionary_id, res_dir)?;
+    progress.check_cancel()?;
 
     // Populate derived columns on `bold_definitions` (uid, commentary_plain)
     // before creating indexes — the B-tree script creates a UNIQUE INDEX on
     // bold_definitions.uid, which depends on population having run.
-    populate_bold_definitions_derived_columns(&output_path, limit)
-        .map_err(|e| format!("{}", e))?;
+    on_stage(MigrateStage::BoldDefinitions);
+    populate_bold_definitions_derived_columns(&output_path, limit, progress)?;
 
     // The DPD StarDict pages are already in dictionaries.sqlite3.
-    populate_dpd_construction_summaries(&output_path)
-        .map_err(|e| format!("{}", e))?
-        .log();
+    on_stage(MigrateStage::ConstructionSummaries);
+    populate_dpd_construction_summaries(&output_path, dict_db_path, progress)?.log();
+    progress.check_cancel()?;
 
-    create_dpd_indexes(&output_path).map_err(|e| format!("{}", e))?;
+    on_stage(MigrateStage::Indexes);
+    create_dpd_indexes(&output_path)?;
+
+    record_dpd_release_version(&output_path, dict_db_path, dpd_dictionary_id)?;
 
     Ok(())
+}
+
+/// The parts of `import_migrate_dpd()`, in order, for progress messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrateStage {
+    /// The schema changes, the computed columns and the niggahīta pass.
+    Schema,
+    /// The `res/` files into `dpd_res`, and the `<link href>` check.
+    PageFiles,
+    BoldDefinitions,
+    ConstructionSummaries,
+    /// The B-tree and FTS5 indexes.
+    Indexes,
+}
+
+impl MigrateStage {
+    pub fn label(self) -> &'static str {
+        match self {
+            MigrateStage::Schema => "Converting the word data",
+            MigrateStage::PageFiles => "Storing the page files",
+            MigrateStage::BoldDefinitions => "Preparing the commentary definitions",
+            MigrateStage::ConstructionSummaries => "Reading the word constructions",
+            MigrateStage::Indexes => "Building the word data indexes",
+        }
+    }
+}
+
+/// Import `res_dir` into the `dpd_res` table of `dpd_db_path`, then check that
+/// the DPD pages in `dict_db_path` link only to files it holds.
+fn import_dpd_res(dpd_db_path: &Path, dict_db_path: &Path, dpd_dictionary_id: i32, res_dir: &Path) -> Result<()> {
+    let mut dpd_conn = open_db_path(dpd_db_path)?;
+    crate::db::dpd_res::import_dpd_res_dir(&mut dpd_conn, res_dir)?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+    crate::db::dpd_res::check_dpd_link_hrefs(&mut dict_conn, dpd_dictionary_id, &mut dpd_conn)?;
+    Ok(())
+}
+
+#[derive(QueryableByName)]
+struct DbInfoValueRow {
+    #[diesel(sql_type = Text)]
+    value: String,
+}
+
+/// `db_info.dpd_release_version` of the DPD database file at `dpd_db_path`.
+pub fn read_dpd_release_version(dpd_db_path: &Path) -> Result<String> {
+    let mut conn = open_db_path(dpd_db_path)?;
+    let row: Option<DbInfoValueRow> = sql_query("SELECT value FROM db_info WHERE key = 'dpd_release_version'")
+        .get_result(&mut conn)
+        .optional()
+        .with_context(|| format!("Failed to read db_info of {}", dpd_db_path.display()))?;
+    match row.map(|r| r.value.trim().to_string()) {
+        Some(v) if !v.is_empty() => Ok(v),
+        _ => anyhow::bail!("No dpd_release_version in db_info of {}", dpd_db_path.display()),
+    }
+}
+
+/// Write the DPD release version of `dpd_db_path` into the `version` of the
+/// DPD row (`dpd_dictionary_id`) of `dict_db_path`.
+fn record_dpd_release_version(dpd_db_path: &Path, dict_db_path: &Path, dpd_dictionary_id: i32) -> Result<()> {
+    let version = read_dpd_release_version(dpd_db_path)?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+    let n = sql_query("UPDATE dictionaries SET version = ? WHERE id = ?")
+        .bind::<Text, _>(&version)
+        .bind::<Integer, _>(dpd_dictionary_id)
+        .execute(&mut dict_conn)
+        .context("Failed to write the DPD dictionary version")?;
+    if n != 1 {
+        anyhow::bail!("No dictionaries row with id {} to write the DPD version to", dpd_dictionary_id);
+    }
+    info(&format!("record_dpd_release_version(): DPD dictionary version = {}", version));
+    Ok(())
+}
+
+/// `fs::rename`, or copy and remove when the two paths are on different
+/// volumes.
+fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    match fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            fs::copy(from, to)?;
+            fs::remove_file(from)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[derive(QueryableByName)]
+struct IdRangeRow {
+    #[diesel(sql_type = diesel::sql_types::Nullable<Integer>)]
+    min_id: Option<i32>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<Integer>)]
+    max_id: Option<i32>,
+}
+
+/// The smallest and largest id of the DPD rows of `dict_words`, so a batched
+/// walk in id order can report how far it is. `(0, 0)` when there are none.
+fn dpd_dict_words_id_range(dict_conn: &mut SqliteConnection) -> Result<(i32, i32)> {
+    let row: IdRangeRow = sql_query("SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM dict_words WHERE dict_label = 'dpd'")
+        .get_result(dict_conn)
+        .context("Failed to read the DPD dict_words id range")?;
+    Ok((row.min_id.unwrap_or(0), row.max_id.unwrap_or(0)))
 }
 
 #[derive(QueryableByName)]
@@ -2372,17 +2507,11 @@ struct DictWordHtmlRow {
 /// ssp:// links for navigation), but `definition_plain` — which feeds the
 /// fulltext / contains search — is recomputed with those paragraphs stripped so
 /// the Pāli sutta names in examples don't pollute search hits.
-pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) -> Result<()> {
+pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("convert_dpd_example_sutta_links()");
 
     // 1. Build the DPD source-code -> (uid_path, display) map from sutta_info.
-    let dpd_abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
-    let dpd_url = dpd_abs
-        .to_str()
-        .context("dpd db path is not valid UTF-8")?
-        .to_string();
-    let mut dpd_conn = SqliteConnection::establish(&dpd_url)
-        .with_context(|| format!("Failed to connect to {}", dpd_url))?;
+    let mut dpd_conn = open_db_path(dpd_db_path)?;
 
     let rows: Vec<SuttaInfoRow> = sql_query(
         "SELECT dpd_code, sc_code, sc_file_path FROM sutta_info \
@@ -2410,13 +2539,10 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
     info(&format!("Loaded {} DPD sutta_info code mappings", sutta_map.len()));
 
     // 2. Rewrite DPD dict_words definition_html in batches.
-    let dict_abs = fs::canonicalize(dict_db_path).unwrap_or_else(|_| dict_db_path.to_path_buf());
-    let dict_url = dict_abs
-        .to_str()
-        .context("dictionaries db path is not valid UTF-8")?
-        .to_string();
-    let mut dict_conn = SqliteConnection::establish(&dict_url)
-        .with_context(|| format!("Failed to connect to {}", dict_url))?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
 
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
@@ -2437,6 +2563,7 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let converted_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2467,6 +2594,7 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
         .context("Failed to update dict_words batch")?;
 
         converted_total += converted_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2489,16 +2617,13 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path) 
 /// plain search field, while the visible word text remains (search still
 /// matches the word). The transform is idempotent, so a re-bootstrap will not
 /// double-wrap already-linked items.
-pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
+pub fn convert_dpd_epd_word_links(dict_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("convert_dpd_epd_word_links()");
 
-    let dict_abs = fs::canonicalize(dict_db_path).unwrap_or_else(|_| dict_db_path.to_path_buf());
-    let dict_url = dict_abs
-        .to_str()
-        .context("dictionaries db path is not valid UTF-8")?
-        .to_string();
-    let mut dict_conn = SqliteConnection::establish(&dict_url)
-        .with_context(|| format!("Failed to connect to {}", dict_url))?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
 
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
@@ -2519,6 +2644,7 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let converted_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2546,6 +2672,7 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
         .context("Failed to update dict_words batch")?;
 
         converted_total += converted_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2572,16 +2699,13 @@ pub fn convert_dpd_epd_word_links(dict_db_path: &Path) -> Result<()> {
 /// triggers don't fire, and after the epd/sutta link conversions so it operates
 /// on the final HTML. Only footer-bearing rows are touched (LIKE pre-filter);
 /// the write is skipped when the plain text is unchanged.
-pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
+pub fn strip_dpd_footers_from_plain(dict_db_path: &Path, progress: &BatchProgress) -> Result<()> {
     info("strip_dpd_footers_from_plain()");
 
-    let dict_abs = fs::canonicalize(dict_db_path).unwrap_or_else(|_| dict_db_path.to_path_buf());
-    let dict_url = dict_abs
-        .to_str()
-        .context("dictionaries db path is not valid UTF-8")?
-        .to_string();
-    let mut dict_conn = SqliteConnection::establish(&dict_url)
-        .with_context(|| format!("Failed to connect to {}", dict_url))?;
+    let mut dict_conn = open_db_path(dict_db_path)?;
+
+    let (min_id, max_id) = dpd_dict_words_id_range(&mut dict_conn)?;
+    let id_span = (max_id - min_id).max(0) as u64;
 
     let batch_size: i32 = 2000;
     let mut last_id: i32 = 0;
@@ -2604,6 +2728,7 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
             break;
         }
         last_id = batch.last().unwrap().id;
+        progress.check_cancel()?;
 
         let updated_batch = dict_conn.transaction::<u64, diesel::result::Error, _>(|conn| {
             let mut n = 0u64;
@@ -2626,6 +2751,7 @@ pub fn strip_dpd_footers_from_plain(dict_db_path: &Path) -> Result<()> {
         .context("Failed to update dict_words batch")?;
 
         updated_total += updated_batch;
+        progress.report((last_id - min_id).max(0) as u64, id_span);
     }
 
     info(&format!(
@@ -2664,17 +2790,10 @@ struct BoldDefRow {
 /// Add `uid` and `commentary_plain` columns to `bold_definitions` and
 /// populate them. Idempotent: skipped if all rows already have non-empty uid.
 /// `limit` caps the number of rows processed (for bootstrap testing).
-pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Option<i32>) -> Result<()> {
+pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Option<i32>, progress: &BatchProgress) -> Result<()> {
     info("populate_bold_definitions_derived_columns()");
 
-    let abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
-    let database_url = abs
-        .to_str()
-        .context("dpd.sqlite3 path is not valid UTF-8")?
-        .to_string();
-
-    let mut conn = SqliteConnection::establish(&database_url)
-        .with_context(|| format!("Failed to connect to {}", database_url))?;
+    let mut conn = open_db_path(dpd_db_path)?;
 
     // Pre-check column existence (SQLite ADD COLUMN has no IF NOT EXISTS).
     let cols: Vec<TableColumnInfo> = sql_query("PRAGMA table_info(bold_definitions)")
@@ -2736,7 +2855,13 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
     //   count == N (>=2): "{bold} N/{ref_code}"
     let mut seen: HashMap<(String, String), u32> = HashMap::new();
     let mut updates: Vec<(i32, String, String, String)> = Vec::with_capacity(rows.len());
-    for r in &rows {
+    // Computing the columns is half the work and writing them the other half.
+    let progress_total = (rows.len() as u64) * 2;
+    for (i, r) in rows.iter().enumerate() {
+        if i % PROGRESS_BATCH_ROWS == 0 {
+            progress.check_cancel()?;
+            progress.report(i as u64, progress_total);
+        }
         let bold_lc = word_uid_sanitize(&r.bold).to_lowercase();
         let ref_lc = r.ref_code.to_lowercase();
         let n = seen.entry((bold_lc.clone(), ref_lc.clone())).or_insert(0);
@@ -2753,7 +2878,11 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
 
     // Apply all updates in a single transaction.
     conn.transaction::<_, anyhow::Error, _>(|conn| {
-        for (id, uid, cp, ba) in &updates {
+        for (i, (id, uid, cp, ba)) in updates.iter().enumerate() {
+            if i % PROGRESS_BATCH_ROWS == 0 {
+                progress.check_cancel()?;
+                progress.report((rows.len() + i) as u64, progress_total);
+            }
             sql_query(
                 "UPDATE bold_definitions SET uid = ?, commentary_plain = ?, bold_ascii = ? WHERE id = ?",
             )
@@ -2843,23 +2972,17 @@ struct HeadwordSummaryInputRow {
 /// `dictionaries.sqlite3` (`dict_words.word` = `lemma_1`, `dict_label =
 /// 'dpd'`). A headword with no page or no well-formed bracket gets `""`.
 ///
-/// Reads the dictionaries DB through `get_app_data()`, so the DPD StarDict
-/// must already be imported there. Writes only the DPD DB at `dpd_db_path`.
+/// Reads the DPD pages from the dictionaries DB at `dict_db_path`, so the
+/// DPD StarDict of the same release must already be imported there. Writes
+/// only the DPD DB at `dpd_db_path`.
 ///
 /// The column is deliberately not in `dpd_schema.rs` / `DpdHeadword`: an
 /// installed `dpd.sqlite3` may predate it, and Diesel selects every column of
 /// the `table!`. See docs/simsapa-cli-and-localhost-api.md §19.1.
-pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<ConstructionSummaryReport> {
+pub fn populate_dpd_construction_summaries(dpd_db_path: &Path, dict_db_path: &Path, progress: &BatchProgress) -> Result<ConstructionSummaryReport> {
     info("populate_dpd_construction_summaries()");
 
-    let abs = fs::canonicalize(dpd_db_path).unwrap_or_else(|_| dpd_db_path.to_path_buf());
-    let database_url = abs
-        .to_str()
-        .context("dpd.sqlite3 path is not valid UTF-8")?
-        .to_string();
-
-    let mut conn = SqliteConnection::establish(&database_url)
-        .with_context(|| format!("Failed to connect to {}", database_url))?;
+    let mut conn = open_db_path(dpd_db_path)?;
 
     // SQLite ADD COLUMN has no IF NOT EXISTS.
     if !has_construction_summary_column(&mut conn)? {
@@ -2870,8 +2993,8 @@ pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<Constru
 
     // Cut the summary line out in SQL: the DPD pages hold hundreds of MB of
     // definition_html, and sql_query loads the whole result.
-    let lines: Vec<DpdSummaryLineRow> = get_app_data().dbm.dictionaries.do_read(|db_conn| {
-        sql_query(
+    let mut dict_conn = open_db_path(dict_db_path)?;
+    let lines: Vec<DpdSummaryLineRow> = sql_query(
             "SELECT word, \
                     substr(definition_html, instr(definition_html, '<div class=dpd><p>'), \
                            instr(substr(definition_html, instr(definition_html, '<div class=dpd><p>')), '</div>') + 5) \
@@ -2879,8 +3002,9 @@ pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<Constru
              FROM dict_words \
              WHERE dict_label = 'dpd' AND instr(definition_html, '<div class=dpd><p>') > 0",
         )
-        .load(db_conn)
-    }).context("Failed to read the DPD summary lines from dict_words")?;
+        .load(&mut dict_conn)
+        .context("Failed to read the DPD summary lines from dict_words")?;
+    drop(dict_conn);
 
     let lines: HashMap<String, String> = lines.into_iter()
         .map(|r| (r.word, r.summary_line))
@@ -2924,7 +3048,11 @@ pub fn populate_dpd_construction_summaries(dpd_db_path: &Path) -> Result<Constru
     }
 
     conn.transaction::<_, anyhow::Error, _>(|conn| {
-        for (id, summary) in &updates {
+        for (i, (id, summary)) in updates.iter().enumerate() {
+            if i % PROGRESS_BATCH_ROWS == 0 {
+                progress.check_cancel()?;
+                progress.report(i as u64, updates.len() as u64);
+            }
             sql_query("UPDATE dpd_headwords SET construction_summary = ? WHERE id = ?")
                 .bind::<Text, _>(summary)
                 .bind::<Integer, _>(*id)
@@ -2958,19 +3086,22 @@ struct ColumnInfo {
 }
 
 /// Iterates through all tables and text columns to replace 'ṃ' with 'ṁ'.
-pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
+pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection, progress: &BatchProgress) -> Result<()> {
     info("replace_all_niggahitas()");
 
     // Avoid "FOREIGN KEY constraint failed" errors when updating columns that
     // might be part of a foreign key relationship.
     diesel::sql_query("PRAGMA foreign_keys = OFF;").execute(db_conn)?;
 
-    let res = db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
+    let res = db_conn.transaction::<_, anyhow::Error, _>(|conn| {
         // Get all table names
         let tables = diesel::sql_query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
             .load::<TableName>(conn)?;
 
-        for table_row in tables {
+        let n_tables = tables.len() as u64;
+        for (table_i, table_row) in tables.into_iter().enumerate() {
+            progress.check_cancel()?;
+            progress.report(table_i as u64, n_tables);
             let table_name = table_row.name;
 
             // Get all column names of the table
@@ -2998,6 +3129,10 @@ pub fn replace_all_niggahitas(db_conn: &mut SqliteConnection) -> Result<(), dies
     // Return the result of the transaction
     res
 }
+
+/// How many rows a batched step processes between two progress reports and
+/// cancel checks.
+const PROGRESS_BATCH_ROWS: usize = 5000;
 
 /// Update the DPD db schema to agree with Diesel dpd_models.rs
 pub fn dpd_update_schema(db_conn: &mut SqliteConnection) -> Result<(), diesel::result::Error> {
@@ -3045,14 +3180,10 @@ pub fn dpd_update_schema(db_conn: &mut SqliteConnection) -> Result<(), diesel::r
 }
 
 /// Performs schema changes and data migrations for DPD tables.
-pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
-                   -> Result<(), diesel::result::Error> {
+pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32, progress: &BatchProgress) -> Result<()> {
     info("migrate_dpd()");
 
-    let abs_path = normalize_path_for_sqlite(fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()));
-    let database_url = format!("sqlite://{}", abs_path.as_os_str().to_str().expect("os_str Error!"));
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let mut db_conn = open_db_path(dpd_db_path)?;
 
     dpd_update_schema(&mut db_conn)?;
 
@@ -3061,11 +3192,6 @@ pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
     use crate::db::dpd_schema::{dpd_headwords, dpd_roots};
 
     info("Updating dictionary_id ...");
-
-    let abs_path = normalize_path_for_sqlite(fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()));
-    let database_url = format!("sqlite://{}", abs_path.as_os_str().to_str().expect("os_str Error!"));
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
 
     db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
         // Update dictionary_id for all rows
@@ -3083,15 +3209,19 @@ pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
 
     // Update DpdHeadwords calculated fields
     db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        let headwords_all: Vec<DpdHeadword> = dpd_headwords::table.load::<DpdHeadword>(conn)?;
+        // Only the two columns the fields are computed from: every column of
+        // every headword is ~1.4 GB in memory.
+        let headwords_all: Vec<(i32, String)> = dpd_headwords::table
+            .select((dpd_headwords::id, dpd_headwords::lemma_1))
+            .load(conn)?;
 
-        for headword_item in headwords_all.iter() {
-            let new_uid = word_uid(&headword_item.id.to_string(), "dpd");
-            let new_lemma_clean = headword_item.calc_lemma_clean();
+        for (id, lemma_1) in headwords_all.iter() {
+            let new_uid = word_uid(&id.to_string(), "dpd");
+            let new_lemma_clean = crate::db::dpd_models::lemma_clean_of(lemma_1);
             // Use lemma_clean for word_ascii to remove trailing numbers.
             let new_word_ascii = pali_to_ascii(Some(&new_lemma_clean));
 
-            diesel::update(dpd_headwords::table.find(headword_item.id))
+            diesel::update(dpd_headwords::table.find(*id))
                 .set((
                     dpd_headwords::uid.eq(new_uid),
                     dpd_headwords::lemma_clean.eq(new_lemma_clean),
@@ -3129,91 +3259,35 @@ pub fn migrate_dpd(dpd_db_path: &PathBuf, dpd_dictionary_id: i32)
 
     // FIXME save_dpd_caches(dpd_db_session)
 
-    replace_all_niggahitas(&mut db_conn)?;
+    replace_all_niggahitas(&mut db_conn, progress)?;
 
     Ok(())
 }
+
+/// The DPD B-tree index script. Like the FTS5 scripts it does not `VACUUM`:
+/// the bootstrap vacuums `dpd.sqlite3` once before its archive, and an
+/// on-device upgrade must never rewrite the whole 2.4 GB file.
+pub const DPD_BTREE_INDEXES_SQL: &str = include_str!("../../../scripts/dpd-btree-indexes.sql");
 
 /// Run the DPD index SQL scripts (B-tree then FTS5) against the given DPD
 /// sqlite database. Split from `migrate_dpd` so the CLI bootstrap can defer
 /// index creation until after derived-column population (e.g.
 /// `bold_definitions.uid`), which the scripts depend on.
-pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<(), diesel::result::Error> {
+pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<()> {
     info("create_dpd_indexes()");
 
-    let abs_path = normalize_path_for_sqlite(
-        fs::canonicalize(dpd_db_path).unwrap_or(dpd_db_path.to_path_buf()),
-    );
-    let database_url = format!(
-        "sqlite://{}",
-        abs_path.as_os_str().to_str().expect("os_str Error!")
-    );
-    let mut db_conn = SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let mut db_conn = open_db_path(dpd_db_path)?;
 
-    // Execute DPD B-tree indexes SQL script
+    // A multi-statement script: batch_execute, never sql_query, which runs
+    // only the first statement.
     info("Executing DPD B-tree indexes script...");
-    let sql_content = include_str!("../../../scripts/dpd-btree-indexes.sql");
-
-    // Remove comments (both full-line and inline) and split into individual commands
-    let cleaned_sql = sql_content
-        .lines()
-        .map(|line| {
-            // Remove inline comments by finding '--' and keeping the content before it
-            if let Some(comment_pos) = line.find("--") {
-                &line[..comment_pos]
-            } else {
-                line
-            }
-        })
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<&str>>()
-        .join("\n");
-
-    let sql_commands: Vec<&str> = cleaned_sql
-        .split(';')
-        .map(|cmd| cmd.trim())
-        .filter(|cmd| !cmd.is_empty())
-        .collect();
-
-    // Execute each SQL command individually
-    for sql_command in sql_commands {
-        info(&format!("Executing SQL: {}", sql_command));
-        diesel::sql_query(sql_command).execute(&mut db_conn)?;
-    }
+    db_conn.batch_execute(DPD_BTREE_INDEXES_SQL)
+        .context("dpd-btree-indexes.sql failed")?;
 
     info("Successfully created DPD B-tree indexes");
 
-    // Close the database connection before running FTS5 indexes
-    // The helper function uses sqlite3 CLI which requires exclusive access
-    drop(db_conn);
-
-    // Execute DPD FTS5 indexes SQL script using sqlite3 CLI
-    // FIXME: This is OK during the boostrap procedure but we can't rely on sqlite3 when the user migrates a newly downloaded DPD db.
-    info("Executing DPD FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to bootstrap_cli/ module folder
-    let fts5_script_path = std::path::PathBuf::from("../scripts/dpd-fts5-indexes.sql");
-
-    if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &fts5_script_path) {
-        return Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::Unknown,
-            Box::new(format!("Failed to run DPD FTS5 indexes script: {}", e)),
-        ));
-    }
-
-    info("Successfully created DPD FTS5 indexes");
-
-    // Execute DPD bold_definitions FTS5 indexes SQL script using sqlite3 CLI
-    info("Executing DPD bold_definitions FTS5 indexes script using sqlite3 CLI...");
-    // Path is relative to bootstrap_cli/ module folder
-    let bold_defs_fts5_script_path = std::path::PathBuf::from("../scripts/dpd-bold-definitions-fts5-indexes.sql");
-
-    if let Err(e) = crate::helpers::run_fts5_indexes_sql_script(dpd_db_path, &bold_defs_fts5_script_path) {
-        return Err(diesel::result::Error::DatabaseError(
-            diesel::result::DatabaseErrorKind::Unknown,
-            Box::new(format!("Failed to run DPD bold_definitions FTS5 indexes script: {}", e)),
-        ));
+    for script in [FtsScript::Dpd, FtsScript::DpdBoldDefinitions] {
+        run_fts5_script(&mut db_conn, script)?;
     }
 
     info("Successfully created DPD bold_definitions FTS5 indexes");

@@ -34,6 +34,7 @@
 //! | `POST /save_sutta_display_settings` | shared (writes the GUI's settings) | api |
 //! | `GET /get_book_spine_item_html_by_uid/<window_id>/<uid..>` | shared (renders HTML only) | api |
 //! | `GET /book_pages/<book_uid>/<path..>` | shared | api |
+//! | `GET /dpd_res/<path..>` | shared | api |
 //! | `GET /navigation_timeline` | shared | api |
 //! | `POST /gloss_text` | shared | api |
 //! | `POST /lookup_forms` | shared | api |
@@ -129,7 +130,7 @@ impl ApiConfig {
 
 /// The shared routes, without `/shutdown`.
 pub fn shared_routes() -> Vec<Route> {
-    use routes::{gloss, misc, search, suttas, words};
+    use routes::{dpd_res, gloss, misc, search, suttas, words};
     routes![
         misc::index,
         misc::logger_route,
@@ -156,6 +157,7 @@ pub fn shared_routes() -> Vec<Route> {
         suttas::get_book_spine_item_html_by_uid,
         suttas::get_book_page_by_path,
         suttas::get_navigation_timeline,
+        dpd_res::get_dpd_res,
         gloss::gloss_text,
         gloss::lookup_forms,
     ]
@@ -209,7 +211,7 @@ mod tests {
         let mut dedup = keys.clone();
         dedup.dedup();
         assert_eq!(keys, dedup);
-        assert_eq!(keys.len(), 27);
+        assert_eq!(keys.len(), 28);
     }
 
     #[test]

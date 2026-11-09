@@ -76,7 +76,7 @@
     {
       "uid": "26560/dpd",
       "word": "citta 2.4",
-      "summary": "<i>(masc)</i> name of a householder lay-disciple; foremost lay disciple in giving Dhamma talks  <b>[√citt + a]</b>  <i>masc, from citteti</i>"
+      "summary": "<i>(masc)</i> name of a lay-disciple; great disciple of the Buddha; foremost layman in giving Dhamma talks; Citta Macchikāsaṇḍika  <b>[√citt + a]</b>  <i>masc, from citteti</i>"
     },
     {
       "uid": "26561/dpd",
@@ -351,7 +351,7 @@
     {
       "uid": "20960/dpd",
       "word": "kāma 4",
-      "summary": "<i>(masc)</i> (objects of) pleasure; sensual pleasure; sexual pleasure; sensual tempation  <b>[√kam > kām + *a]</b>  <i>masc, from kāmeti</i>"
+      "summary": "<i>(masc)</i> (objects of) pleasure; sensual pleasure; sexual pleasure; sensual temptation  <b>[√kam > kām + *a]</b>  <i>masc, from kāmeti</i>"
     },
     {
       "uid": "21117/dpd",
@@ -446,7 +446,7 @@
     {
       "uid": "75647/dpd",
       "word": "pītisukha 2",
-      "summary": "<i>(adj)</i> having delight and ease; with joy and happiness  <b>[pīti + sukha]</b>  <i>adj, comp</i>"
+      "summary": "<i>(adj)</i> having delight and ease; with joy and comfort  <b>[pīti + sukha]</b>  <i>adj, comp</i>"
     }
   ],
   "saddhassa": [
@@ -469,13 +469,18 @@
       "uid": "58043/dpd",
       "word": "saddha 4",
       "summary": "<i>(masc)</i> name of a monk; son of Sudatta  <b>[sad + √dhā + ā + a], [saddhā + a]</b>  <i>masc, from saddhā</i>"
+    },
+    {
+      "uid": "89594/dpd",
+      "word": "saddha 5",
+      "summary": "<i>(nt)</i> food offered to ancestors  <b>[sad + √dhā + ā + a], [saddhā + a]</b>  <i>nt, from saddhā</i>"
     }
   ],
   "samādhi": [
     {
       "uid": "59623/dpd",
       "word": "samādhi 1",
-      "summary": "<i>(masc)</i> perfect peace of mind; stability of mind; stillness of mind; mental composure  <b>[saṁ + ā + √dhā + i]</b>  <i>masc, abstr, from samādahati</i>"
+      "summary": "<i>(masc)</i> perfect peace of mind; stability of mind; stillness of mind; meditative composure  <b>[saṁ + ā + √dhā + i]</b>  <i>masc, abstr, from samādahati</i>"
     },
     {
       "uid": "59624/dpd",
@@ -494,7 +499,7 @@
     {
       "uid": "59623/dpd",
       "word": "samādhi 1",
-      "summary": "<i>(masc)</i> perfect peace of mind; stability of mind; stillness of mind; mental composure  <b>[saṁ + ā + √dhā + i]</b>  <i>masc, abstr, from samādahati</i>"
+      "summary": "<i>(masc)</i> perfect peace of mind; stability of mind; stillness of mind; meditative composure  <b>[saṁ + ā + √dhā + i]</b>  <i>masc, abstr, from samādahati</i>"
     },
     {
       "uid": "59624/dpd",
@@ -562,7 +567,7 @@
     {
       "uid": "62518/dpd",
       "word": "sāriputta",
-      "summary": "<i>(masc)</i> name of an arahant monk; chief disciple; great disciple of the Buddha; foremost disciple in great wisdom  <b>[sāri + putta]</b>  <i>masc, matr, comp</i>"
+      "summary": "<i>(masc)</i> name of an arahant monk; chief disciple; great disciple of the Buddha; foremost monk in great wisdom  <b>[sāri + putta]</b>  <i>masc, matr, comp</i>"
     }
   ],
   "tadassa": [
@@ -581,7 +586,7 @@
     {
       "uid": "16124/dpd",
       "word": "upasampajja 1",
-      "summary": "<i>(ger)</i> reaching; attaining; arriving at  <b>[upa + saṁ + √pad + ya]</b>  <i>ger of upasampajjati</i>"
+      "summary": "<i>(ger)</i> arriving at; attaining; having reached  <b>[upa + saṁ + √pad + ya]</b>  <i>ger of upasampajjati</i>"
     },
     {
       "uid": "16125/dpd",
@@ -591,7 +596,7 @@
     {
       "uid": "16126/dpd",
       "word": "upasampajja 3",
-      "summary": "<i>(ger)</i> undertaking  <b>[upa + saṁ + √pad + ya]</b>  <i>ger of upasampajjati</i>"
+      "summary": "<i>(ger)</i> undertaking; taking up; putting into action  <b>[upa + saṁ + √pad + ya]</b>  <i>ger of upasampajjati</i>"
     },
     {
       "uid": "16127/dpd",
@@ -625,7 +630,7 @@
     {
       "uid": "69662/dpd",
       "word": "viharati 2",
-      "summary": "<i>(pr)</i> stays; remains; continues; dwells; abides (in)  <b>[vi + hara + ti]</b>  <i>pr</i>"
+      "summary": "<i>(pr)</i> stays; remains; continues; abides (in)  <b>[vi + hara + ti]</b>  <i>pr</i>"
     }
   ],
   "vivekajaṁ": [

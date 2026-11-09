@@ -504,6 +504,22 @@ Notable feature docs:
   (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
   when absent; `/word.json` adds it in `word_json_with_extras()`, never in
   `resolve_word_uid()` (the word-page renderer calls that).
+- [DPD releases and the `dpd_res` table](./docs/dpd-upgrades.md) — DPD's
+  structured data, rendered pages and page files (`res/`: CSS, fonts, scripts,
+  `family_*_json.js`) must come from the **same release**, so the `res/` files
+  are a table in `dpd.sqlite3` (`dpd_res`), not files compiled into the app.
+  Covers the manual bootstrap preparation (extract `dpd.db.tar.xz` and the
+  `dpd/` folder of `dpd-goldendict.zip` into `dpd-db-for-bootstrap/<date>/`,
+  point `current` at it; the bootstrap never extracts), the import order in
+  `import_migrate_dpd()` (explicit paths, no global app data), the `res/`
+  conversions (niggahīta in text files only; the stylesheet's relative font
+  `url()`s kept, **never a port in the table**), the `<link href>` check
+  (report, never repair), the DPD row's `version` = `dpd_release_version`, and
+  `GET /dpd_res/<path..>` in `simsapa_api`, served from a process-wide
+  **in-memory copy** warmed off the GUI thread after startup — a DPD headword
+  or root page loads ~13 MB of them, so they are never read from SQLite per
+  page, and the copy is never reloaded: never replace `dpd.sqlite3` in a
+  process that has loaded it.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) — the
   bootstrap step that replaces HTML-only Bodhi / PTS records with suttas-core's
   segmented text and imports **all** of Ṭhānissaro's under **SuttaCentral
@@ -1918,7 +1934,12 @@ The fulltext search tables are FTS5 virtual tables created by the SQL scripts in
 `dpd-bold-definitions-fts5-indexes.sql`). There is **no Diesel migration** for
 these — the scripts drop and recreate the FTS table + sync triggers, so any
 schema change requires a **manual re-bootstrap** of the affected DB (run the
-script again). The scripts are run from the bootstrap code in `bootstrap_cli/src/`.
+script again). The scripts are embedded in the binary and run through Diesel by
+`db::fts_scripts::run_fts5_script()`, from the bootstrap and from
+`create_dpd_indexes()`; no `sqlite3` program is needed. **Run a multi-statement
+script with `batch_execute`, never `sql_query(…).execute()`**, which runs only
+the first statement and silently leaves the FTS table empty. The scripts do not
+`VACUUM`; the bootstrap calls `vacuum_db()` once per shipped database.
 
 **IMPORTANT — store the source row id as the FTS5 `rowid`, never as an
 `UNINDEXED` column.** FTS5 has no secondary indexes, so a lookup like

@@ -9,6 +9,7 @@
 
 class SuttaSearchWindow;
 class DownloadAppdataWindow;
+class DpdUpgradeWindow;
 class StorageRecoveryWindow;
 class SuttaLanguagesWindow;
 class DictionariesWindow;
@@ -75,6 +76,7 @@ class WindowManager : public QObject {
         DownloadAppdataWindow* create_download_appdata_window(
             const QVariantMap& initial_properties = QVariantMap());
         StorageRecoveryWindow* create_storage_recovery_window();
+        DpdUpgradeWindow* create_dpd_upgrade_window();
         SuttaLanguagesWindow* create_sutta_languages_window();
         DictionariesWindow* create_dictionaries_window();
         LibraryWindow* create_library_window();
@@ -101,6 +103,7 @@ class WindowManager : public QObject {
         QList<SuttaSearchWindow*> sutta_search_windows;
         QList<DownloadAppdataWindow*> download_appdata_windows;
         QList<StorageRecoveryWindow*> storage_recovery_windows;
+        QList<DpdUpgradeWindow*> dpd_upgrade_windows;
         QList<SuttaLanguagesWindow*> sutta_languages_windows;
         QList<DictionariesWindow*> dictionaries_windows;
         QList<LibraryWindow*> library_windows;

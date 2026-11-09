@@ -65,6 +65,9 @@ ApplicationWindow {
     property string release_notes: ""
     property var languages: []
 
+    // A DPD check error shown in the "no updates" notice of a manual check.
+    property string dpd_note: ""
+
     // Theme support
     property bool is_dark: theme_helper.is_dark
 
@@ -139,7 +142,8 @@ ApplicationWindow {
         root.requestActivate();
     }
 
-    function show_no_updates() {
+    function show_no_updates(dpd_note: string) {
+        root.dpd_note = dpd_note;
         root.dialog_type = "no_updates";
         root.version = "";
         root.message = "";
@@ -712,6 +716,15 @@ ApplicationWindow {
                             text: "No updates are currently available."
                             font.pointSize: root.pointSize
                             color: root.palette.mid
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Label {
+                            visible: root.dpd_note.length > 0
+                            text: root.dpd_note
+                            font.pointSize: root.pointSize
+                            wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                         }

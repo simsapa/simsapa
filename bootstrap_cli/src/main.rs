@@ -3,6 +3,7 @@ pub mod gloss_agent_check;
 pub mod gloss_corpus_explore;
 pub mod gloss_ngrams;
 pub mod import_gloss_data;
+pub mod rebuild_dpd;
 pub mod survey_suttas_core;
 pub mod update_provider_models;
 pub mod update_releases_fallback;
@@ -196,7 +197,7 @@ fn suttacentral_lang_code_to_name() -> Result<(), String> {
 fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), String> {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use simsapa_backend::epub_import::import_epub_to_db;
-    use simsapa_backend::helpers::run_fts5_indexes_sql_script;
+    use simsapa_backend::db::fts_scripts::{run_fts5_script, FtsScript};
 
     println!("Importing EPUB file...");
     println!("Database: {:?}", db_path);
@@ -243,8 +244,7 @@ fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), S
 
         // Run the books FTS5 indexes script
         println!("Creating FTS5 indexes for books...");
-        let sql_script_path = PathBuf::from("../scripts/books-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(db_path, &sql_script_path)
+        run_fts5_script(&mut conn, FtsScript::Books)
             .map_err(|e| format!("Failed to run FTS5 indexes script: {}", e))?;
     } else {
         println!("Books tables already exist, skipping migrations.");
@@ -264,7 +264,7 @@ fn import_epub(db_path: &Path, epub_path: &Path, book_uid: &str) -> Result<(), S
 fn import_html(db_path: &Path, html_path: &Path, book_uid: &str) -> Result<(), String> {
     use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
     use simsapa_backend::html_import::import_html_to_db;
-    use simsapa_backend::helpers::run_fts5_indexes_sql_script;
+    use simsapa_backend::db::fts_scripts::{run_fts5_script, FtsScript};
 
     println!("Importing HTML file...");
     println!("Database: {:?}", db_path);
@@ -311,8 +311,7 @@ fn import_html(db_path: &Path, html_path: &Path, book_uid: &str) -> Result<(), S
 
         // Run the books FTS5 indexes script
         println!("Creating FTS5 indexes for books...");
-        let sql_script_path = PathBuf::from("../scripts/books-fts5-indexes.sql");
-        run_fts5_indexes_sql_script(db_path, &sql_script_path)
+        run_fts5_script(&mut conn, FtsScript::Books)
             .map_err(|e| format!("Failed to run FTS5 indexes script: {}", e))?;
     } else {
         println!("Books tables already exist, skipping migrations.");
@@ -695,18 +694,35 @@ enum Commands {
         /// if you don't want it to be moved to Simsapa's local assets folder.
         #[arg(value_name = "DIRECTORY_PATH")]
         dpd_output_path: Option<PathBuf>,
+
+        /// The `res/` folder of the DPD StarDict export of the same release,
+        /// imported into the `dpd_res` table
+        #[arg(long, value_name = "RES_DIR")]
+        res_dir: PathBuf,
     },
 
     /// Add and fill `dpd_headwords.construction_summary` in an existing DPD
     /// SQLite database, from the summary lines of the DPD pages already
-    /// imported into Simsapa's dictionaries database. This is the step
-    /// `import-migrate-dpd` runs; use it to update a DB without a full
+    /// imported into the `dictionaries.sqlite3` of `SIMSAPA_DIR`. This is the
+    /// step `import-migrate-dpd` runs; use it to update a DB without a full
     /// bootstrap. Writes the given DB in place: run it with the app closed.
     #[command(arg_required_else_help = true)]
     PopulateDpdConstructionSummary {
         /// Path to the DPD SQLite database to update in place
         #[arg(value_name = "DPD_DB_PATH")]
         dpd_db_path: PathBuf,
+    },
+
+    /// Replace the DPD of `SIMSAPA_DIR` (pages, word data, page files, search
+    /// index) with the extracted release in
+    /// `bootstrap-assets-resources/dpd-db-for-bootstrap/current/`, without a
+    /// full bootstrap. The same pipeline as `simsapa dpd upgrade`, accepting
+    /// the release already installed. Creates no release archives. Run it with
+    /// the app closed.
+    RebuildDpd {
+        /// Import only this many StarDict entries and bold definitions (testing)
+        #[arg(long, value_name = "N")]
+        limit: Option<i32>,
     },
 
     /// Import confirmed gloss word-selection data from exported gloss session
@@ -722,6 +738,19 @@ enum Commands {
         /// bootstrap-assets-resources/gloss-data-cache/ data bank)
         #[arg(value_name = "DIR_OR_FILES", default_values_os_t = vec![bootstrap::source_paths::gloss_data_cache_dir_from_crate()])]
         inputs: Vec<PathBuf>,
+    },
+
+    /// Seed the Gloss tab's curated set-phrase rules
+    /// (`assets/gloss-phrase-selections.json`, embedded at build time) into the
+    /// given appdata database, so its `gloss_phrase_selections` table mirrors
+    /// the file: the bootstrap's seeding step, without a full bootstrap. Each
+    /// rule's uid is resolved against the DPD of `SIMSAPA_DIR`. Writes the given
+    /// DB in place: run it with the app closed.
+    #[command(arg_required_else_help = true)]
+    SeedGlossPhrases {
+        /// Path to the target appdata.sqlite3 database
+        #[arg(value_name = "APPDATA_DB_PATH")]
+        db_path: PathBuf,
     },
 
     /// Agent review of gloss candidate session files: emit the word-selection
@@ -1073,7 +1102,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1120,17 +1149,30 @@ fn main() {
              }
         }
 
-        Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path } => {
-             if !dpd_input_path.exists() {
-                 Err(format!("DPD input path does not exist: {:?}", dpd_input_path))
-             } else {
-                 db::dpd::import_migrate_dpd(&dpd_input_path, dpd_output_path, None)
-             }
+        Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path, res_dir } => {
+            match dpd_input_path.try_exists() {
+                Ok(true) => {
+                    let paths = &simsapa_backend::get_app_globals().paths;
+                    let output_path = dpd_output_path
+                        .unwrap_or_else(|| simsapa_backend::get_create_simsapa_app_assets_path().join("dpd.sqlite3"));
+                    get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
+                        .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
+                        .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
+                            &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None,
+                            &|stage| simsapa_backend::logger::info(stage.label()),
+                            &simsapa_backend::batch_progress::BatchProgress::none())
+                            .map_err(|e| format!("{:#}", e)))
+                }
+                Ok(false) => Err(format!("DPD input path does not exist: {:?}", dpd_input_path)),
+                Err(e) => Err(format!("Cannot access DPD input path {:?}: {}", dpd_input_path, e)),
+            }
         }
 
         Commands::PopulateDpdConstructionSummary { dpd_db_path } => {
             match dpd_db_path.try_exists() {
-                Ok(true) => db::dpd::populate_dpd_construction_summaries(&dpd_db_path)
+                Ok(true) => db::dpd::populate_dpd_construction_summaries(
+                    &dpd_db_path, &simsapa_backend::get_app_globals().paths.dict_db_path,
+                    &simsapa_backend::batch_progress::BatchProgress::none())
                     .map(|report| report.log())
                     .map_err(|e| format!("{}", e)),
                 Ok(false) => Err(format!("DPD database not found: {:?}", dpd_db_path)),
@@ -1138,8 +1180,16 @@ fn main() {
             }
         }
 
+        Commands::RebuildDpd { limit } => {
+            rebuild_dpd::rebuild_dpd(&simsapa_dir, &bootstrap::source_paths::bootstrap_assets_dir_from_crate(), limit)
+        }
+
         Commands::ImportGlossData { db_path, inputs } => {
             import_gloss_data::import_gloss_data(&db_path, &inputs)
+        }
+
+        Commands::SeedGlossPhrases { db_path } => {
+            import_gloss_data::seed_gloss_phrases(&db_path)
         }
 
         Commands::GlossAgentCheck { data_cache, action } => {

@@ -432,6 +432,7 @@ list(APPEND cpp_files
     cpp/window_manager.cpp
     cpp/sutta_search_window.cpp
     cpp/download_appdata_window.cpp
+    cpp/dpd_upgrade_window.cpp
     cpp/storage_recovery_window.cpp
     cpp/sutta_languages_window.cpp
     cpp/dictionaries_window.cpp

@@ -134,6 +134,11 @@ enum Commands {
     /// version of simsapa), keeping your user data
     DbUpgrade(db_upgrade::DbUpgradeArgs),
 
+    /// Check for a newer release of the DPD dictionary, or install one
+    /// (from GitHub or from local files) without a new database release
+    #[command(subcommand)]
+    Dpd(commands::dpd::DpdCommands),
+
     /// Install the simsapa skill that teaches a coding agent (Claude Code,
     /// OpenCode, Pi) to use these commands, for the user or for one project
     InstallSkill(commands::install_skill::InstallSkillArgs),
@@ -271,6 +276,13 @@ fn run(cli: &Cli) -> CliResult {
             simsapa_backend::set_write_api_port_file(true);
             simsapa_api::init_app_globals_api();
             commands::serve::run(args, cli.json, cli.no_update_check, lock, port_file)
+        }
+        // No preamble: the pipeline opens its own connections, and nothing
+        // may hold dpd.sqlite3 open when it is replaced.
+        Commands::Dpd(commands::dpd::DpdCommands::Check) => commands::dpd::run_check(cli.json),
+        Commands::Dpd(commands::dpd::DpdCommands::Upgrade(args)) => {
+            let _lock = acquire_for_writing()?;
+            commands::dpd::run_upgrade(args, cli.json)
         }
         Commands::Docs(_) | Commands::InstallSkill(_) => {
             unreachable!("handled before the globals are initialised")

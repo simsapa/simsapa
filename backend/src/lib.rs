@@ -3,6 +3,9 @@
 pub mod db;
 pub mod types;
 pub mod helpers;
+pub mod gloss_dpd_uid;
+pub mod batch_progress;
+pub mod dpd_upgrade;
 pub mod highlight;
 pub mod asset_helpers;
 pub mod cli_support;
@@ -302,6 +305,21 @@ pub extern "C" fn init_app_data() {
                     "init_app_data: swept {} orphaned staged import file(s)",
                     staged
                 ));
+            }
+
+            // A DPD upgrade killed mid-run leaves its staging folder (up to
+            // ~5 GB) in app-assets/. Kept while its lock file is fresh.
+            crate::dpd_upgrade::sweep_orphaned_staging(&get_app_globals().paths.app_assets_dir);
+
+            // Pages and word data from different DPD releases: a DPD upgrade
+            // was stopped between its two replacements. Reported, not repaired.
+            match crate::dpd_upgrade::dpd_versions_mismatch(&crate::dpd_upgrade::DpdUpgradePaths::from_globals()) {
+                Ok(Some((pages, data))) => crate::logger::warn(&format!(
+                    "init_app_data: DPD dictionary pages and DPD data are from different releases (pages {}, data {})",
+                    pages, data
+                )),
+                Ok(None) => {}
+                Err(e) => info(&format!("init_app_data: DPD release consistency not checked: {:#}", e)),
             }
         });
     }
@@ -667,6 +685,11 @@ pub struct AppGlobalPaths {
     // (index/suttas/<lang>) should be removed on the next app start,
     // written by the Sutta Languages window's language removal.
     pub remove_lang_index_dirs_marker: PathBuf,
+
+    // Marker file holding the DPD release tag the user chose to install. The
+    // next start runs the DPD upgrade window in place of the main app. See
+    // docs/dpd-upgrades.md.
+    pub auto_start_dpd_upgrade_marker: PathBuf,
 }
 
 impl AppGlobals {
@@ -810,6 +833,7 @@ impl AppGlobalPaths {
         let delete_files_for_upgrade_marker = app_assets_dir.join("delete_files_for_upgrade.txt");
         let download_select_sanskrit_bundle_marker = app_assets_dir.join("download_select_sanskrit_bundle.txt");
         let remove_lang_index_dirs_marker = app_assets_dir.join("remove_lang_index_dirs.txt");
+        let auto_start_dpd_upgrade_marker = app_assets_dir.join(crate::dpd_upgrade::marker::MARKER_FILE_NAME);
 
         AppGlobalPaths {
             simsapa_dir,
@@ -840,6 +864,7 @@ impl AppGlobalPaths {
             delete_files_for_upgrade_marker,
             download_select_sanskrit_bundle_marker,
             remove_lang_index_dirs_marker,
+            auto_start_dpd_upgrade_marker,
         }
     }
 }
@@ -2187,6 +2212,29 @@ pub extern "C" fn peek_auto_start_download_c() -> bool {
     let found = marker.try_exists().unwrap_or(false);
     info(&format!("peek_auto_start_download_c(): {} at {}", found, marker.display()));
     found
+}
+
+/// FFI: whether this start runs the DPD upgrade window, i.e. the
+/// `auto_start_dpd_upgrade.txt` marker holds a release tag. **Does not consume
+/// the marker**: the upgrade window deletes it when the run ends, so a run that
+/// is killed runs again at the next start. The marker is deleted here only when
+/// it must never run: a database download is pending (the new databases bring
+/// their own DPD), or there are no installed databases.
+/// See docs/dpd-upgrades.md.
+#[unsafe(no_mangle)]
+pub extern "C" fn peek_auto_start_dpd_upgrade_c() -> bool {
+    let paths = AppGlobalPaths::new();
+    let tag = crate::dpd_upgrade::marker::pending_at_startup(
+        &paths.auto_start_dpd_upgrade_marker,
+        &paths.auto_start_download_marker,
+        &paths.appdata_db_path,
+    );
+    info(&format!(
+        "peek_auto_start_dpd_upgrade_c(): {} at {}",
+        tag.as_deref().unwrap_or("none"),
+        paths.auto_start_dpd_upgrade_marker.display()
+    ));
+    tag.is_some()
 }
 
 /// FFI: the recorded storage path (trimmed), or null when there is none.

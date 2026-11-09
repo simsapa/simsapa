@@ -63,12 +63,13 @@ the summary line; the malformed count would show it if one ever did.
 
 ## 3. The bootstrap step
 
-`populate_dpd_construction_summaries(dpd_db_path)` in `backend/src/db/dpd.rs`:
+`populate_dpd_construction_summaries(dpd_db_path, dict_db_path)` in
+`backend/src/db/dpd.rs`:
 
 1. adds `construction_summary VARCHAR NOT NULL DEFAULT ''` to `dpd_headwords`
    if `PRAGMA table_info` lacks it, so it can run on an existing DB;
-2. reads `(word, summary_line)` for the DPD pages through
-   `get_app_data().dbm.dictionaries`, **cutting the line out in SQL** with
+2. reads `(word, summary_line)` for the DPD pages from the dictionaries
+   database at `dict_db_path`, **cutting the line out in SQL** with
    `substr` / `instr`. `dict_words` holds about 840 MB of DPD
    `definition_html` and Diesel's `sql_query` loads the whole result, so the
    HTML itself is never fetched (the line averages 170 bytes);
@@ -77,7 +78,11 @@ the summary line; the malformed count would show it if one ever did.
 
 `import_migrate_dpd()` calls it after the DB is moved into place and before
 `create_dpd_indexes()`, so both the full bootstrap and the
-`import-migrate-dpd` command fill the column. The column has no index (it is
+`import-migrate-dpd` command fill the column. It passes on the dictionaries
+database it was given, which must hold the DPD pages of the **same release**:
+the summary line has the same shape in every release, so pages from another
+release give plausible but wrong summaries, and nothing reports it. The
+function uses no global app data, so it also runs on staged files. The column has no index (it is
 read by primary key), and the bootstrap's `ANALYZE` of `dpd.sqlite3` needs
 nothing more.
 

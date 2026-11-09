@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use simsapa_backend::get_app_data;
 use simsapa_backend::db::appdata::AppdataDbHandle;
 use simsapa_backend::db::DatabaseHandle;
+use simsapa_backend::gloss_dpd_uid::{dpd_headword_id_of, normalize_dpd_selected_uid, DpdLemmaIndex};
 use simsapa_backend::helpers::{
     annotate_gloss_words_json, gloss_cache_word_key, gloss_context_hash, gloss_phrase_occurs,
     normalize_gloss_context, parse_gloss_session_export, GlossWordCacheExportEntry,
@@ -114,10 +115,10 @@ fn collect_input_files(inputs: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-/// Whether a `selected_uid` refers to an existing dictionary record: a
-/// numeric DPD headword (`34626/dpd`), a root (`√kar/dpd`), a sanitized
-/// dict_words uid (`ārāma-4/dpd`) or any other dict_words form. Uses the
-/// shared `AppData::resolve_word_uid` tolerance-layer resolver.
+/// Whether a `selected_uid` that is not a DPD headword uid refers to an
+/// existing dictionary record: a root (`√kar/dpd`) or any other dict_words
+/// form. Uses the shared `AppData::resolve_word_uid` tolerance-layer resolver.
+/// DPD headword uids are checked by `normalize_dpd_selected_uid()` instead.
 fn selected_uid_is_valid(uid: &str) -> bool {
     get_app_data().resolve_word_uid(uid).is_some()
 }
@@ -245,6 +246,16 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     let mut confirmed_total: usize = 0;
     let mut pending_review: usize = 0;
     let mut conflicts: usize = 0;
+    let mut invalid_uids: usize = 0;
+    let mut converted_uids: usize = 0;
+    let mut lemma_reports: Vec<String> = Vec::new();
+
+    // Stored DPD headword selections are numeric (`12463/dpd`); a lemma-form
+    // uid or a bare `selected_lemma` in a file is resolved against the
+    // installed DPD before the entries are compared or imported.
+    let lemma_index: DpdLemmaIndex = get_app_data()
+        .dpd_lemma_index()
+        .map_err(|e| format!("Cannot read the DPD headwords: {}", e))?;
 
     for path in &files {
         let file_name = path
@@ -271,7 +282,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         };
 
         let mut file_confirmed: usize = 0;
-        for entry in word_cache {
+        for mut entry in word_cache {
             let tier = match entry.origin.as_str() {
                 "user-selected" | "built-in-human-checked" => EntryTier::Human,
                 "built-in-agent-checked" => EntryTier::Agent,
@@ -288,11 +299,28 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
             // selected_uid (PRD FR-C5); it is a valid entry despite the empty uid.
             let is_deconstruction_row =
                 entry.deconstruction.as_deref().is_some_and(|d| !d.is_empty());
+            let has_lemma = entry.selected_lemma.as_deref().is_some_and(|l| !l.is_empty());
             if word_key.is_empty()
                 || entry.context_hash.is_empty()
-                || (entry.selected_uid.is_empty() && !is_deconstruction_row)
+                || (entry.selected_uid.is_empty() && !is_deconstruction_row && !has_lemma)
             {
                 continue;
+            }
+            match normalize_dpd_selected_uid(&lemma_index, &entry.selected_uid, entry.selected_lemma.as_deref()) {
+                Ok(n) => {
+                    if n.uid != entry.selected_uid {
+                        converted_uids += 1;
+                        entry.selected_uid = n.uid;
+                    }
+                    if let Some(r) = n.report {
+                        lemma_reports.push(format!("  {}: word '{}': {}", file_name, entry.word, r));
+                    }
+                }
+                Err(e) => {
+                    invalid_uids += 1;
+                    eprintln!("{}: word '{}': {}, skipping", file_name, entry.word, e);
+                    continue;
+                }
             }
             file_confirmed += 1;
             confirmed_total += 1;
@@ -342,12 +370,15 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         return Err("No valid gloss session export files found.".to_string());
     }
 
-    // Validate the selected uids against the dictionaries / DPD databases.
+    // Validate the remaining selected uids against the dictionaries. DPD
+    // headword uids were checked by the normalisation above.
     let mut valid: Vec<(&GlossWordCacheExportEntry, EntryTier)> = Vec::new();
-    let mut invalid_uids: usize = 0;
     for (entry, tier) in confirmed.values() {
         // Deconstruction-only rows (empty selected_uid) have no uid to validate.
-        if entry.selected_uid.is_empty() || selected_uid_is_valid(&entry.selected_uid) {
+        if entry.selected_uid.is_empty()
+            || dpd_headword_id_of(&entry.selected_uid).is_some()
+            || selected_uid_is_valid(&entry.selected_uid)
+        {
             valid.push((entry, *tier));
         } else {
             invalid_uids += 1;
@@ -434,6 +465,7 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
     );
     println!("Pending human review: {} entries skipped (confidence: \"review\")", pending_review);
     println!("Invalid uids skipped: {}", invalid_uids);
+    println!("DPD uids converted:   {} (lemma form or selected_lemma → numeric)", converted_uids);
     println!(
         "Imported as built-in: {} human-checked + {} agent-checked written, {} already present (equal or higher precedence)",
         imported_human, imported_agent, already_present
@@ -474,10 +506,28 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
         println!("Review manually and merge into assets/gloss-phrase-selections.json:");
         println!();
         for c in &phrase_candidates {
+            let lemma = dpd_headword_id_of(&c.selected_uid)
+                .and_then(|id| lemma_index.lemma_of(id))
+                .map(|l| format!(", \"selected_lemma\": \"{}\"", l))
+                .unwrap_or_default();
             println!(
-                "  {:>3} contexts  {{\"phrase\": \"{}\", \"word\": \"{}\", \"selected_uid\": \"{}\"}}",
-                c.context_count, c.phrase, c.word, c.selected_uid
+                "  {:>3} contexts  {{\"phrase\": \"{}\", \"word\": \"{}\", \"selected_uid\": \"{}\"{}}}",
+                c.context_count, c.phrase, c.word, c.selected_uid, lemma
             );
+        }
+    }
+
+    println!();
+    println!("=== DPD lemma mismatches ===");
+    if lemma_reports.is_empty() {
+        println!("Every selected_lemma matches the installed DPD.");
+    } else {
+        println!(
+            "{} entries were imported by id, but their selected_lemma names a different DPD label (the file was likely written against another DPD release):",
+            lemma_reports.len()
+        );
+        for line in &lemma_reports {
+            println!("{}", line);
         }
     }
 
@@ -497,6 +547,36 @@ pub fn import_gloss_data(appdata_db_path: &Path, inputs: &[PathBuf]) -> Result<(
 
     if errors > 0 {
         return Err(format!("{} rows failed to import", errors));
+    }
+    Ok(())
+}
+
+/// The `seed-gloss-phrases` command: run the bootstrap's phrase seeder
+/// (`AppdataDbHandle::seed_gloss_phrase_selections`) on `appdata_db_path`, with
+/// the rule uids resolved against the DPD of `SIMSAPA_DIR`.
+pub fn seed_gloss_phrases(appdata_db_path: &Path) -> Result<(), String> {
+    match appdata_db_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return Err(format!("Appdata database does not exist: {}", appdata_db_path.display())),
+        Err(e) => return Err(format!("Cannot access appdata database {}: {}", appdata_db_path.display(), e)),
+    }
+    let lemma_index = get_app_data()
+        .dpd_lemma_index()
+        .map_err(|e| format!("Cannot read the DPD headwords: {}", e))?;
+
+    let url = appdata_db_path.to_string_lossy().to_string();
+    let appdata = DatabaseHandle::new(&url)
+        .map_err(|e| format!("Cannot open appdata database {}: {}", url, e))?;
+    let written = appdata
+        .seed_gloss_phrase_selections(&lemma_index)
+        .map_err(|e| format!("{:#}", e))?;
+
+    println!("Gloss phrase rules: {} rows written or removed", written);
+    for row in appdata.get_all_gloss_phrase_selections() {
+        let lemma = dpd_headword_id_of(&row.selected_uid)
+            .and_then(|id| lemma_index.lemma_of(id))
+            .unwrap_or("");
+        println!("  \"{}\" / {} -> {} {}", row.phrase, row.word, row.selected_uid, lemma);
     }
     Ok(())
 }

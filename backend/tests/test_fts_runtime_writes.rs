@@ -12,25 +12,20 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sql_types::BigInt;
 use diesel_migrations::MigrationHarness;
 
 use simsapa_backend::asset_helpers::import_suttas_from_db;
 use simsapa_backend::db::{fts5_integrity_check, APPDATA_MIGRATIONS, DICTIONARIES_MIGRATIONS};
+use simsapa_backend::db::fts_scripts::{run_fts5_script, FtsScript};
 use simsapa_backend::dictionary_manager_core::{delete_user_dictionary, import_user_dir, rename_user_dictionary};
 use simsapa_backend::query_task::SearchQueryTask;
 use simsapa_backend::types::{SearchArea, SearchMode, SearchParams};
 use simsapa_backend::{get_app_data, init_app_data};
-
-fn script(name: &str) -> String {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../scripts").join(name);
-    fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {}", p.display(), e))
-}
 
 fn open(path: &Path) -> SqliteConnection {
     SqliteConnection::establish(path.to_str().unwrap()).expect("open db")
@@ -151,14 +146,14 @@ fn runtime_writes_keep_the_fts_indexes_in_step() {
     {
         let mut conn = open(&appdata_path);
         conn.run_pending_migrations(APPDATA_MIGRATIONS).expect("appdata migrations");
-        conn.batch_execute(&script("appdata-fts5-indexes.sql")).expect("appdata FTS script");
+        run_fts5_script(&mut conn, FtsScript::Appdata).expect("appdata FTS script");
         insert_sutta(&mut conn, "sn1.1/en/test", "the old alphaword text");
         insert_sutta(&mut conn, "sn1.9/en/test", "a kept zuluword text");
     }
     {
         let mut conn = open(&dict_path);
         conn.run_pending_migrations(DICTIONARIES_MIGRATIONS).expect("dictionaries migrations");
-        conn.batch_execute(&script("dictionaries-fts5-indexes.sql")).expect("dictionaries FTS script");
+        run_fts5_script(&mut conn, FtsScript::Dictionaries).expect("dictionaries FTS script");
     }
     check(&appdata_path, "suttas_fts", "setup");
     check(&dict_path, "dict_words_fts", "setup");

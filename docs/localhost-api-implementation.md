@@ -42,6 +42,7 @@ Crate layout, builds and npm packaging are in
 | `/health` `sc_data_version` | `AppdataDbHandle::sc_data_version()` reads the `app_settings` rows `sc_data_date` / `sc_data_commit`, written by `record_sc_data_version()` in `bootstrap_cli/src/bootstrap/appdata.rs` from `git log -1` of the `sc-data` checkout, after the SuttaCentral import. The About window shows it through `SuttaBridge.sc_data_version()` |
 | `/health` `updates` | `api/src/update_cache.rs`; see "The `updates` field of `/health`" below |
 | `/shutdown` | `Shutdown::notify`; used by `shutdown_webserver` / `shutdown_webserver_tcp` |
+| `/dpd_res/<path..>` | `api/src/routes/dpd_res.rs` → `DpdDbHandle::get_dpd_res()`, which reads the in-memory `DPD_RES_CACHE` (`backend/src/db/dpd_res.rs`), never the database per request: a DPD headword or root page loads ~13 MB of them. The GUI warms it in `SuttaBridge::load_db()`'s thread and `simsapa serve` on a thread before launch; the first request loads it otherwise. See [dpd-upgrades.md](./dpd-upgrades.md) |
 
 The two uid lanes of DPD records (`34626/dpd` vs `dhamma-1-01/dpd`) are
 explained in `CLAUDE.md`, "DPD records correlate to dict_words".

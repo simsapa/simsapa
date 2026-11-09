@@ -12,9 +12,6 @@ CREATE INDEX IF NOT EXISTS idx_dpd_roots_word_ascii ON dpd_roots(word_ascii);
 -- no-op on re-run.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bold_definitions_uid ON bold_definitions(uid);
 
--- VACUUM to optimize database file size and performance
-VACUUM;
-
 -- NOTE: Do NOT create composite indexes for OR queries
 -- SQLite cannot use multicolumn indexes for OR conditions like:
 -- WHERE lemma_clean = X OR word_ascii = Y

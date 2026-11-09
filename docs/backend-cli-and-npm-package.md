@@ -186,6 +186,8 @@ Known limitations:
 | `setup [--languages] [--list-languages] [--yes]` | Download the databases, or add sutta languages | the GUI's first-run download |
 | `db-upgrade [--yes] [--ignore-export-errors] [--languages]` | Install a newer **compatible** database release, keeping the user data | the GUI's "Database Update Available → Yes" |
 | `check-updates` | Newer CLI on npm, newer compatible database release; works without databases, takes no lock | the GUI's "Check for updates" (database part) |
+| `dpd check` | Installed DPD version, the newest compatible GitHub release (`select_dpd_candidate()`), its download size and `estimate_space()`; read-only, no lock, no preamble | the GUI's "Check for updates" (DPD part) |
+| `dpd upgrade [--version] [--yes] [--dpd-db-archive\|--dpd-db] [--goldendict-zip\|--goldendict-dir]` | Install a newer compatible DPD release through the shared pipeline (`simsapa_backend::dpd_upgrade::run_dpd_upgrade()`, `commands/dpd.rs`). Takes the write lock but runs **no preamble**: the pipeline opens its own connections, and nothing may hold `dpd.sqlite3` open when it is renamed over. The local-source rules are clap groups. Prints the confirmation (the shared `ESTIMATED_MINUTES` / `UPGRADE_OUTLINE` / `UPGRADE_BENEFIT`) on stderr even with `--yes`. A `--json` failure is `{"error", "step", "code"}` (`CliError::reported`). A hidden `--test-limit` caps the StarDict entries for the tests | the GUI's DPD upgrade window; `bootstrap_cli rebuild-dpd` |
 | `serve [--port] [--host]` | Serve the shared routes until Ctrl-C | the GUI's server minus GUI/AI/asset routes |
 | `search <suttas\|dict\|library> <query> [--mode] [--lang] [--source] [--page] [--page-len] [--all-snippets] …` | Search | `POST /search` (`run_search`) |
 | `query <suttas\|words> <query>` | ContainsMatch, first page | — |
@@ -272,6 +274,17 @@ The GUI's upgrade has two triggers, and the CLI one command for each: a
 database of **another major.minor** is `simsapa setup`'s (below), a **newer
 compatible** release is `simsapa db-upgrade`'s (next section). Both run the same
 `setup.rs` functions, so the procedure exists once in the CLI.
+
+**The DPD-only upgrade has a third marker, `app-assets/auto_start_dpd_upgrade.txt`**,
+holding the DPD release tag the user accepted (`prepare_for_dpd_upgrade()`).
+`gui.cpp` peeks at it before `init_app_data()` and opens `DpdUpgradeWindow` in
+place of the main app; the window deletes it when the run ends (success, failure
+or cancel), never at the start, and keeps it when another upgrade holds the
+staging lock. The peek deletes it when
+`auto_start_download.txt` is also present (the new databases bring their own
+DPD) or `appdata.sqlite3` is missing. `simsapa dpd upgrade` neither reads nor
+writes it: it runs the same pipeline directly. See
+[dpd-upgrades.md](./dpd-upgrades.md).
 
 **The upgrade of an incompatible database is the GUI's procedure in one run.**
 In the GUI, `check_for_updates()` finds a database of another major.minor
@@ -474,13 +487,16 @@ app's "Notify about Simsapa updates" setting off. The result is
 request at all; see
 [localhost-api-implementation.md](./localhost-api-implementation.md).
 
-**Only `check-updates`, `health`, `serve`, `setup` and `db-upgrade` use the
-network.** The other commands make no update check and print no update hint.
+**Only `check-updates`, `health`, `serve`, `setup`, `db-upgrade`, `dpd check`
+and `dpd upgrade` use the network.** The other commands make no update check and print no update hint.
 
 The tests reach neither npm nor the releases server: every test helper that
 spawns `health` or `serve` sets `SIMSAPA_NO_UPDATE_CHECK=1`, and the tests of
 the check itself point `SIMSAPA_NPM_DIST_TAGS_URL` / `SIMSAPA_RELEASES_API_URL`
-at a local listener (`UpdateCheckConfig::from_env()` reads them).
+at a local listener (`UpdateCheckConfig::from_env()` reads them). The `dpd`
+tests point `SIMSAPA_DPD_RELEASES_URL` at one in place of GitHub's releases
+list (`fetch_dpd_releases()` reads it); a test without a listener gets a
+refused port, never GitHub.
 
 ## Release builds per target
 

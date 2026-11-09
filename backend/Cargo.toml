@@ -71,6 +71,12 @@ flacenc = { version = "0.5", optional = true }
 rubato = { version = "3", optional = true }
 tempfile = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# DPD upgrades: `dpd.db.tar.xz` is one tar entry in a multi-block xz stream
+# with CRC64 checks. lzma-rust2 is pure Rust, so the staticlib needs no native
+# liblzma on any platform; single-threaded, since its multi-threaded reader
+# holds whole decompressed blocks (~190 MB each) in memory.
+tar = "0.4.44"
+lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std", "xz", "optimization"] }
 urlencoding = "2.1"
 # Stable digest for the gloss word-context cache keys (std's DefaultHasher is
 # not stable across Rust versions).
@@ -109,6 +115,8 @@ required-features = ["audio"]
 
 [dev-dependencies]
 serial_test = "3.0"
+# The archive tests write a small .tar.xz.
+lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
 
 [lints.clippy]
 missing_safety_doc = "allow"

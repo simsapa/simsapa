@@ -90,13 +90,6 @@ fn snippet_is_excluded(snippet: &str, normalized_excludes: &[String]) -> bool {
     normalized_excludes.iter().any(|ex| plain.contains(ex.as_str()))
 }
 
-/// One id of a query that selects `id` only.
-#[derive(QueryableByName)]
-struct RowId {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-}
-
 /// A `dict_words` row's id and headword, for resolving DPD lemmas.
 #[derive(QueryableByName)]
 struct DictWordIdWord {
@@ -120,8 +113,27 @@ struct DictWordSortKey {
     id: i32,
     #[diesel(sql_type = Text)]
     word: String,
-    #[diesel(sql_type = Text)]
-    dict_label: String,
+    #[diesel(sql_type = Integer)]
+    dictionary_id: i32,
+}
+
+/// A `dict_words` id with its dictionary, for [`sort_by_dictionary_rank`].
+#[derive(QueryableByName)]
+struct DictWordRank {
+    #[diesel(sql_type = Integer)]
+    id: i32,
+    #[diesel(sql_type = Integer)]
+    dictionary_id: i32,
+}
+
+/// Order dictionary results by dictionary, most relevant first, then by entry
+/// order within a dictionary. The dictionary rank is `dictionaries.id`: the
+/// bootstrap creates DPD first, then DPPN, and a user-imported dictionary gets
+/// the next id. Never `dict_words.id` alone: a DPD upgrade re-inserts DPD's
+/// rows after every other dictionary's (keeping its `dictionary_id`), and
+/// never `dict_label`, whose alphabetical order is not a relevance order.
+fn sort_by_dictionary_rank(rows: &mut [DictWordRank]) {
+    rows.sort_by_key(|r| (r.dictionary_id, r.id));
 }
 
 /// The filters a Dictionary Contains phase applies when it resolves DPD
@@ -1379,7 +1391,8 @@ impl<'a> SearchQueryTask<'a> {
     ///      to `dict_words`. This is what surfaces user-imported dictionaries
     ///      whose headwords are not DPD lemmas, and it also covers a
     ///      user-headword substring search, since `f.word LIKE ?` is one half
-    ///      of the OR.
+    ///      of the OR. Its rows are ordered by dictionary rank, then entry
+    ///      order (`sort_by_dictionary_rank`), so DPD comes first.
     ///   4. ASCII fallback on `dpd_headwords.word_ascii`, used only when phases 1–3
     ///      returned nothing — lets queries like `sutthu` find `suṭṭhu`. Its
     ///      exact pass applies no language filter; its contains pass does.
@@ -1515,7 +1528,7 @@ impl<'a> SearchQueryTask<'a> {
             let like_pattern = format!("%{}%", term);
 
             let mut sql = String::from(
-                "SELECT d.id AS id FROM dict_words d \
+                "SELECT d.id AS id, d.dictionary_id AS dictionary_id FROM dict_words d \
                  JOIN dict_words_fts f ON f.rowid = d.id \
                  WHERE (f.word LIKE ? OR f.definition_plain LIKE ?)"
             );
@@ -1564,7 +1577,19 @@ impl<'a> SearchQueryTask<'a> {
                 .bind::<Text, _>(uid_suffix_pat.clone())
                 .bind::<BigInt, _>(SAFETY_LIMIT_SQL);
 
-            let rows: Vec<RowId> = q.load(db_conn)?;
+            let mut rows: Vec<DictWordRank> = q.load(db_conn)?;
+            // The cap is applied in rowid order, before the rank sort. After
+            // a DPD upgrade DPD's rows have the highest rowids, so a query
+            // over the cap loses DPD rows rather than another dictionary's.
+            // Ordering the SQL by dictionary instead would sort every match
+            // before the LIMIT; the cap is reached only by very common terms.
+            if (rows.len() as i64) >= SAFETY_LIMIT_SQL {
+                warn(&format!(
+                    "dict_words_fts contains phase hit SAFETY_LIMIT_SQL={} (term='{}')",
+                    SAFETY_LIMIT_SQL, term
+                ));
+            }
+            sort_by_dictionary_rank(&mut rows);
             push_ids(rows.into_iter().map(|r| r.id).collect(), &mut result_ids);
         }
 
@@ -2263,11 +2288,12 @@ impl<'a> SearchQueryTask<'a> {
     /// rows that match (see `headword_fts_table`). The source,
     /// `dict_label IN (...)`, language and uid filters are on the joined
     /// `dict_words` row. Only `id`, `word` and
-    /// `dict_label` are selected, which is what the sort needs.
+    /// `dictionary_id` are selected, which is what the sort needs.
     ///
     /// Sort tiers: exact `word == query_text` first, then starts-with
-    /// (`word.starts_with(query_text)`), then contains; tie-break by
-    /// `dict_label`, then `id` for stable ordering. The starts-with tier
+    /// (`word.starts_with(query_text)`), then contains; tie-break by the
+    /// dictionary's rank (`dictionary_id`, see [`sort_by_dictionary_rank`]),
+    /// then `id` for stable ordering. The starts-with tier
     /// matters for prefix queries like "gacch" — without it, alphabetic
     /// inflections like `abhigacchati` outrank `gacchati` itself. The length
     /// of the list is the total.
@@ -2303,7 +2329,7 @@ impl<'a> SearchQueryTask<'a> {
             .unwrap_or_else(|| "%".to_string());
 
         let mut sql = format!(
-            "SELECT dw.id AS id, dw.word AS word, dw.dict_label AS dict_label \
+            "SELECT dw.id AS id, dw.word AS word, dw.dictionary_id AS dictionary_id \
              FROM dict_words dw \
              JOIN {} f ON f.rowid = dw.id \
              WHERE f.word LIKE ?",
@@ -2368,7 +2394,7 @@ impl<'a> SearchQueryTask<'a> {
         };
         rows.sort_by(|a, b| {
             tier(&b.word).cmp(&tier(&a.word))
-                .then_with(|| a.dict_label.cmp(&b.dict_label))
+                .then_with(|| a.dictionary_id.cmp(&b.dictionary_id))
                 .then_with(|| a.id.cmp(&b.id))
         });
 
@@ -3065,7 +3091,20 @@ mod pali_edition_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_for_exclude, snippet_is_excluded};
+    use super::{normalize_for_exclude, snippet_is_excluded, sort_by_dictionary_rank, DictWordRank};
+
+    #[test]
+    fn dictionary_rank_puts_dpd_first_whatever_its_row_ids() {
+        // After a DPD upgrade, DPD (dictionary 1) has row ids after DPPN (2)
+        // and a user-imported dictionary (4).
+        let mut rows: Vec<DictWordRank> = [(170_500, 2), (184_100, 1), (180_000, 4), (184_010, 1), (170_423, 2)]
+            .into_iter()
+            .map(|(id, dictionary_id)| DictWordRank { id, dictionary_id })
+            .collect();
+        sort_by_dictionary_rank(&mut rows);
+        let order: Vec<(i32, i32)> = rows.iter().map(|r| (r.id, r.dictionary_id)).collect();
+        assert_eq!(order, vec![(184_010, 1), (184_100, 1), (170_423, 2), (170_500, 2), (180_000, 4)]);
+    }
 
     fn excludes(terms: &[&str]) -> Vec<String> {
         terms.iter().map(|t| normalize_for_exclude(t)).collect()

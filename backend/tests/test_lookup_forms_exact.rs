@@ -313,7 +313,8 @@ fn test_iti_rule_appends_iti_to_the_base_splits() {
     // A base with splits and no headwords gets no bare `<base> + iti`.
     let r = lookup_one("vikālāyan’ti");
     assert_eq!(r.lookup_key, "vikālāyaṁ");
-    assert_eq!(splits(&r), vec!["vikālā + ayaṁ + iti", "vikāla + ayaṁ + iti"]);
+    // In DPD's own order (v0.4.20261026 lists vikāla first).
+    assert_eq!(splits(&r), vec!["vikāla + ayaṁ + iti", "vikālā + ayaṁ + iti"]);
 }
 
 /// The exact `<base> + iti` rule is a copy of `dpd_lookup_grouped_iti_split()`'s.

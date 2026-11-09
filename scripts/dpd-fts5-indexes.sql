@@ -65,7 +65,3 @@ END;
 
 -- Optimize the FTS index
 INSERT INTO dpd_headwords_fts(dpd_headwords_fts) VALUES('optimize');
-
--- Vacuum to reclaim space and optimize database
-VACUUM;
-

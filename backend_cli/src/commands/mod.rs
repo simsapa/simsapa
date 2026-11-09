@@ -3,6 +3,7 @@
 pub mod app_assets;
 pub mod check_updates;
 pub mod docs;
+pub mod dpd;
 pub mod gloss;
 pub mod health;
 pub mod import;

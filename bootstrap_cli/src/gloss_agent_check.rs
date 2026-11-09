@@ -340,6 +340,20 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
         } else {
             confirmed += 1;
         }
+        // The lemma beside a numeric DPD uid, taken from the option the agent
+        // was shown, so a person reading the file can tell the sense.
+        let selected_lemma = simsapa_backend::gloss_dpd_uid::dpd_headword_id_of(&selected_uid)
+            .and_then(|_| items_by_id.get(entry.id.as_str()))
+            .and_then(|it| it.get("options"))
+            .and_then(|v| v.as_array())
+            .and_then(|opts| {
+                opts.iter().find(|o| o.get("uid").and_then(|v| v.as_str()) == Some(selected_uid.as_str()))
+            })
+            .and_then(|o| o.get("word"))
+            .and_then(|v| v.as_str())
+            .filter(|w| !w.is_empty())
+            .map(String::from);
+
         word_cache.push(GlossWordCacheExportEntry {
             word: cache_word,
             context_hash,
@@ -349,6 +363,7 @@ fn apply(data_cache: &Path, candidate: &Path, answers: &Path) -> Result<(), Stri
             confidence: if is_review { Some("review".to_string()) } else { None },
             note: entry.note.clone(),
             deconstruction,
+            selected_lemma,
         });
     }
 
@@ -666,11 +681,14 @@ mod tests {
         assert_eq!(dhamma.get("context_hash").unwrap().as_str().unwrap(), "hash-dhamma");
         assert_eq!(dhamma.get("context_snippet").unwrap().as_str().unwrap(), "<b>Dhammaṁ</b> vo bhikkhave desessāmi.");
         assert_eq!(dhamma.get("selected_uid").unwrap().as_str().unwrap(), "34626/dpd");
+        // The lemma travels beside the numeric uid.
+        assert_eq!(dhamma.get("selected_lemma").unwrap().as_str().unwrap(), "dhamma 1.01");
         assert_eq!(dhamma.get("origin").unwrap().as_str().unwrap(), "built-in-agent-checked");
         assert!(dhamma.get("confidence").is_none());
         assert!(dhamma.get("note").is_none());
         let evam = &cache[1];
         assert_eq!(evam.get("selected_uid").unwrap().as_str().unwrap(), "18135/dpd");
+        assert_eq!(evam.get("selected_lemma").unwrap().as_str().unwrap(), "evaṁ 2");
         assert_eq!(evam.get("confidence").unwrap().as_str().unwrap(), "review");
         assert_eq!(evam.get("note").unwrap().as_str().unwrap(), "formulaic opening; sense unclear");
 

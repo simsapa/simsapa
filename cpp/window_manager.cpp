@@ -1,6 +1,7 @@
 #include "window_manager.h"
 #include "sutta_search_window.h"
 #include "download_appdata_window.h"
+#include "dpd_upgrade_window.h"
 #include "storage_recovery_window.h"
 #include "sutta_languages_window.h"
 #include "dictionaries_window.h"
@@ -649,6 +650,12 @@ DownloadAppdataWindow* WindowManager::create_download_appdata_window(
     const QVariantMap& initial_properties) {
     DownloadAppdataWindow* w = new DownloadAppdataWindow(this->m_app, initial_properties);
     download_appdata_windows.append(w);
+    return w;
+}
+
+DpdUpgradeWindow* WindowManager::create_dpd_upgrade_window() {
+    DpdUpgradeWindow* w = new DpdUpgradeWindow(this->m_app);
+    dpd_upgrade_windows.append(w);
     return w;
 }
 
