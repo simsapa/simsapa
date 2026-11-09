@@ -24,9 +24,10 @@ pub enum StardictImportProgress {
     /// as an indeterminate bar.
     Extracting { done: usize, total: usize },
     Parsing,
-    /// Reading the definitions out of the `.dict`, before any row is written.
-    /// `total` is the number of index entries to read.
-    ParsingWords { done: usize, total: usize },
+    /// Reading the entries and writing them, a chunk at a time. `done` is the
+    /// number of index entries read so far (inserted or skipped), `total` the
+    /// number to read (the index size, or `limit`). Emitted once with
+    /// `done: 0` before the first chunk, then after each chunk.
     InsertingWords { done: usize, total: usize },
     /// Emitted as soon as the dictionary's identity is known (after the
     /// `.ifo` is parsed and `stardict::no_cache` loads the dict). `total` is
@@ -180,98 +181,203 @@ fn parse_word(word_def: &WordDefinition) -> DictEntry {
     parsed_data
 }
 
-/// Parse all (or `limit`) index entries into `NewDictWord` rows.
+/// Entries per chunk: the insert transaction, the progress tick and the
+/// cancel checkpoint all use this cadence.
+const CHUNK_SIZE: usize = 1000;
+
+/// A loaded StarDict and the `.dict` file behind it, so that the `.dict`
+/// reader can be reopened.
 ///
-/// `cancel` is polled periodically: parsing a large goldendict bundle (e.g.
-/// mw-gd's ~194k entries) takes several seconds, and without this check an
-/// abort clicked during parsing would not take effect until parsing finished.
-/// On cancel the function returns early with `None` so the caller can abort
-/// before any DB insertion.
-fn parse_dict(dict: &mut stardict::StarDictStd,
-              dictionary_id: i32,
-              new_dict_label: &str,
-              lang: &str,
-              limit: Option<usize>,
-              progress: &dyn Fn(StardictImportProgress),
-              cancel: &AtomicBool) -> Option<Vec<NewDictWord>> {
-    let mut words_to_insert: Vec<NewDictWord> = Vec::with_capacity(dict.idx.items.len());
+/// The `stardict` crate's dictzip reader keeps every chunk it has inflated
+/// for the life of the reader, which for DPD is the whole uncompressed
+/// `.dict` (~1 GB). `import_entries()` reopens it after each chunk of
+/// entries, which drops that cache.
+struct LoadedStardict {
+    sd: stardict::StarDictStd,
+    dict_file: std::path::PathBuf,
+    dict_dz: bool,
+}
 
-    let max_n = if let Some(n) = limit { n } else { dict.idx.items.len() };
-    let mut n: usize = 0;
+/// How an `import_entries()` run ended.
+#[derive(Debug, Clone, Copy)]
+struct InsertOutcome {
+    inserted: usize,
+    cancelled: bool,
+}
 
-    // NOTE: items is a HashMap, so entries are not sorted
-    for (word, idx_entry) in &dict.idx.items {
-        if n >= max_n {
-            break;
-        } else {
-            n += 1;
-        }
-        // Cooperative cancel check and progress during parsing (cadence:
-        // every 1000 entries).
-        if n % 1000 == 0 {
-            if cancel.load(Ordering::Relaxed) {
-                return None;
+/// Read all (or `limit`) index entries and hand them to `insert` in chunks of
+/// `chunk_size`, so that at most one chunk of parsed pages is in memory (the
+/// DPD pages are ~880 MB of HTML). The entries are read in the order of their
+/// offset in the `.dict`, so that each compressed chunk of a `.dict.dz` is
+/// inflated once even though the reader is reopened after every chunk of
+/// entries (see `LoadedStardict`).
+///
+/// Colliding uids are disambiguated as each entry is parsed, with a map of the
+/// uids seen so far that lives across chunks. Two index entries produce the
+/// same uid when they differ only in characters normalized away by
+/// `consistent_niggahita` (ṃ/ṁ/ŋ) or by `word_uid_sanitize`. The 2nd, 3rd, …
+/// occurrence gets ` N` before the `/{label}` suffix, the shape DPD uses for
+/// multi-meaning headwords (`dhamma 1.01/dpd`), matched by the user-query
+/// disambiguator in `helpers.rs`. The entry that comes first in the `.dict`
+/// keeps the plain uid.
+///
+/// `cancel` is checked before each chunk: the chunks already inserted stay
+/// and `cancelled` is set. `InsertingWords` reports the index entries read
+/// so far (inserted or skipped) of the total, after each chunk. An `insert`
+/// error emits `Failed` and is returned; deleting anything is the caller's
+/// decision.
+fn import_entries(
+    loaded: &mut LoadedStardict,
+    dictionary_id: i32,
+    dict_label: &str,
+    lang: &str,
+    limit: Option<usize>,
+    chunk_size: usize,
+    progress: &dyn Fn(StardictImportProgress),
+    cancel: &AtomicBool,
+    insert: &mut dyn FnMut(&[NewDictWord]) -> Result<(), String>,
+) -> Result<InsertOutcome, String> {
+    let idx = &loaded.sd.idx;
+    let ifo = &loaded.sd.ifo;
+    let reader = &mut loaded.sd.dict;
+    let (dict_file, dict_dz) = (&loaded.dict_file, loaded.dict_dz);
+
+    let mut entries: Vec<(&String, &stardict::idx::IdxEntry)> = idx.items.iter().collect();
+    entries.sort_by(|(wa, a), (wb, b)| {
+        let offset = |e: &stardict::idx::IdxEntry| e.blocks.first().map_or(usize::MAX, |b| b.offset);
+        offset(a).cmp(&offset(b)).then_with(|| wa.cmp(wb))
+    });
+
+    let total = limit.map_or(entries.len(), |n| n.min(entries.len()));
+    progress(StardictImportProgress::InsertingWords { done: 0, total });
+
+    let label_suffix = format!("/{}", dict_label);
+    let mut seen: HashMap<String, u32> = HashMap::with_capacity(total);
+    let mut collisions: u32 = 0;
+
+    let mut chunk: Vec<NewDictWord> = Vec::with_capacity(chunk_size);
+    let mut read: usize = 0;
+    let mut inserted: usize = 0;
+
+    let mut flush = |chunk: &mut Vec<NewDictWord>,
+                     reader: &mut stardict::dict::Dict,
+                     read: usize,
+                     inserted: &mut usize| -> Result<(), String> {
+        // Drop the reader's cache of inflated chunks.
+        *reader = stardict::dict::Dict::new(dict_file.clone(), dict_dz).map_err(|e| {
+            let msg = format!("Error reopening {}: {}", dict_file.display(), e);
+            progress(StardictImportProgress::Failed { msg: msg.clone() });
+            msg
+        })?;
+        if !chunk.is_empty() {
+            if let Err(e) = insert(chunk) {
+                let msg = format!("Batch insertion failed: {}", e);
+                progress(StardictImportProgress::Failed { msg: msg.clone() });
+                return Err(msg);
             }
-            progress(StardictImportProgress::ParsingWords { done: n, total: max_n });
+            *inserted += chunk.len();
+            chunk.clear();
         }
-        let def_result = dict.dict.get_definition(idx_entry, &dict.ifo);
+        progress(StardictImportProgress::InsertingWords { done: read, total });
+        Ok(())
+    };
 
-        match def_result {
+    for (word, idx_entry) in entries.into_iter() {
+        if read >= total {
+            break;
+        }
+        if read % chunk_size == 0 && cancel.load(Ordering::Relaxed) {
+            return Ok(InsertOutcome { inserted, cancelled: true });
+        }
+        read += 1;
+
+        match reader.get_definition(idx_entry, ifo) {
             Ok(Some(def)) => {
-                // Parse the word definition using the new logic (returns owned data)
-                let dict_entry = parse_word(&def);
-                words_to_insert.push(db_entries(&dict_entry, dictionary_id, new_dict_label, lang));
+                let mut nw = db_entries(&parse_word(&def), dictionary_id, dict_label, lang);
+                let count = seen.entry(nw.uid.clone()).or_insert(0);
+                *count += 1;
+                if *count > 1 {
+                    collisions += 1;
+                    let base = nw.uid.strip_suffix(&label_suffix).unwrap_or(&nw.uid).to_string();
+                    let new_uid = format!("{} {}{}", base, *count, label_suffix);
+                    warn(&format!(
+                        "Stardict uid collision: '{}' (occurrence {}) -> '{}'",
+                        nw.uid, *count, new_uid
+                    ));
+                    nw.uid = new_uid;
+                }
+                chunk.push(nw);
             }
             Ok(None) => {
                 warn(&format!("No definitions found for index entry: {}", word));
             }
             Err(e) => {
                 error(&format!("Failed to get definition for {}: {}", word, e));
-                // Decide whether to stop or continue; here we continue
             }
         }
-    }
 
-    // Disambiguate colliding uids. Two stardict index entries can produce the
-    // same uid when they differ only in characters normalized away by
-    // `consistent_niggahita` (ṃ/ṁ/ŋ) or by `.trim()` in db_entries(). The
-    // 2026 DPD goldendict bundle introduced such collisions; older bundles
-    // had none.
-    //
-    // Convention: append ` N` before the `/{label}` suffix for the 2nd, 3rd,
-    // … occurrence — same shape DPD itself uses for multi-meaning headwords
-    // (e.g. `dhamma 1.01/dpd`), and matched by the user-query disambiguator
-    // at helpers.rs:85.
-    let label_suffix = format!("/{}", new_dict_label);
-    let mut seen: HashMap<String, u32> = HashMap::with_capacity(words_to_insert.len());
-    let mut collisions: u32 = 0;
-    for nw in words_to_insert.iter_mut() {
-        let count = seen.entry(nw.uid.clone()).or_insert(0);
-        *count += 1;
-        if *count > 1 {
-            collisions += 1;
-            let base = nw.uid.strip_suffix(&label_suffix).unwrap_or(&nw.uid).to_string();
-            let new_uid = format!("{} {}{}", base, *count, label_suffix);
-            warn(&format!(
-                "Stardict uid collision: '{}' (occurrence {}) -> '{}'",
-                nw.uid, *count, new_uid
-            ));
-            nw.uid = new_uid;
+        if read % chunk_size == 0 {
+            flush(&mut chunk, reader, read, &mut inserted)?;
         }
     }
+    if read % chunk_size != 0 || read == 0 {
+        flush(&mut chunk, reader, read, &mut inserted)?;
+    }
+
     if collisions > 0 {
         info(&format!(
             "Disambiguated {} colliding stardict uid(s) for '{}'",
-            collisions, new_dict_label
+            collisions, dict_label
         ));
     }
 
-    Some(words_to_insert)
+    Ok(InsertOutcome { inserted, cancelled: false })
+}
+
+/// Insert one chunk in its own transaction, so that on cancel the chunks
+/// already inserted stay in the database.
+fn insert_chunk(db_conn: &mut SqliteConnection, chunk: &[NewDictWord]) -> Result<(), String> {
+    db_conn
+        .transaction::<_, diesel::result::Error, _>(|tx| db::dictionaries::create_dict_words_batch(tx, chunk))
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Load the StarDict behind `<unzipped_dir>/<physical_stem>.ifo` and emit
+/// `Identified`. Emits `Failed` on an error.
+fn load_stardict(
+    unzipped_dir: &Path,
+    physical_stem: &str,
+    progress: &dyn Fn(StardictImportProgress),
+) -> Result<LoadedStardict, String> {
+    let fail = |msg: String| {
+        progress(StardictImportProgress::Failed { msg: msg.clone() });
+        msg
+    };
+    let ifo_path = unzipped_dir.join(format!("{}.ifo", physical_stem));
+    let sd = stardict::no_cache(ifo_path)
+        .map_err(|e| fail(format!("Error loading stardict dictionary: {}", e)))?;
+
+    // The same choice `stardict::no_cache` makes: `.dict`, else `.dict.dz`.
+    let plain = unzipped_dir.join(format!("{}.dict", physical_stem));
+    let (dict_file, dict_dz) = match plain.try_exists() {
+        Ok(true) => (plain, false),
+        Ok(false) => (unzipped_dir.join(format!("{}.dict.dz", physical_stem)), true),
+        Err(e) => return Err(fail(format!("Cannot access {}: {}", plain.display(), e))),
+    };
+
+    info(&format!("Importing {}, {} total entries ...", &sd.ifo.bookname, sd.idx.items.len()));
+    progress(StardictImportProgress::Identified {
+        title: sd.ifo.bookname.clone(),
+        total: sd.idx.items.len(),
+    });
+    Ok(LoadedStardict { sd, dict_file, dict_dz })
 }
 
 /// SQL-only StarDict import.
 ///
-/// - Parses the `.ifo` + index, builds `dict_words`, inserts them in chunks.
+/// - Parses the `.ifo` + index and inserts the `dict_words` rows a chunk at a
+///   time as they are read (`import_entries()`).
 /// - Does NOT touch FTS5 / Tantivy. Index writes are owned by the startup
 ///   reconciliation pass (see `dict_index_reconcile`).
 /// - When `description` is `Some`, that value is stored on the new
@@ -285,6 +391,9 @@ fn parse_dict(dict: &mut stardict::StarDictStd,
 ///   `unzipped_dir` (i.e. how the StarDict archive names them).
 /// - `new_dict_label` is the logical label stored on the `dictionaries` row and used as the
 ///   `{word}/{label}` uid suffix; the two may differ when the user picks a custom label at import time.
+/// - The dictionaries write lock is taken for each chunk insert, not for the
+///   whole run (a large dictionary takes minutes), so other writers are not
+///   blocked meanwhile.
 pub fn import_stardict_as_new(
     unzipped_dir: &Path,
     lang: &str,
@@ -351,8 +460,8 @@ pub fn import_stardict_as_new(
         is_user_imported,
         // Store the language on the dictionary row regardless of
         // `is_user_imported` so the built-in DPD stardict import gets `pli`.
-        // `dict_words.language` is set from `lang` in
-        // `parse_dict`/`db_entries` independently.
+        // `dict_words.language` is set from `lang` in `db_entries`
+        // independently.
         language: lang_opt,
         indexed_at: None,
     };
@@ -366,16 +475,8 @@ pub fn import_stardict_as_new(
         }
     };
 
-    // Parse outside the write lock: a large dictionary takes minutes.
-    let parsed = match parse_stardict_words(unzipped_dir, physical_stem, new_dict_label, lang,
-                                            dictionary_id, limit, progress, cancel) {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            // Aborted during parsing, before any insertion. The bridge
-            // removes the empty `dictionaries` row.
-            progress(StardictImportProgress::Aborted { inserted: 0 });
-            return Ok(ImportOutcome { dictionary_id, inserted: 0, cancelled: true });
-        }
+    let mut dict = match load_stardict(unzipped_dir, physical_stem, progress) {
+        Ok(d) => d,
         Err(msg) => {
             // Roll back the dictionaries row we just inserted so the DB stays clean.
             let _ = app_data.dbm.dictionaries.delete_dictionary_by_label(new_dict_label);
@@ -383,20 +484,20 @@ pub fn import_stardict_as_new(
         }
     };
 
-    let insert_result = {
-        let _lock = app_data.dbm.dictionaries.write_lock.lock();
-        let db_conn = &mut app_data.dbm.dictionaries.get_conn().map_err(|e| {
-            let msg = format!("{}", e);
-            progress(StardictImportProgress::Failed { msg: msg.clone() });
-            msg
-        })?;
-        insert_dict_words(db_conn, &parsed.words, progress, cancel)
+    let dbh = &app_data.dbm.dictionaries;
+    let mut insert = |chunk: &[NewDictWord]| -> Result<(), String> {
+        let _lock = dbh.write_lock.lock();
+        let mut db_conn = dbh.get_conn().map_err(|e| e.to_string())?;
+        insert_chunk(&mut db_conn, chunk)
     };
+    let result = import_entries(&mut dict, dictionary_id, new_dict_label, lang, limit, CHUNK_SIZE,
+                                progress, cancel, &mut insert);
 
-    match insert_result {
-        // On cancel the partial rows and the `dictionaries` row stay, so
-        // the next startup reconcile indexes what is there.
-        Ok(outcome) => finish_import(&parsed.bookname, dictionary_id, outcome, progress),
+    match result {
+        // On cancel the partial rows and the `dictionaries` row stay, so the
+        // next startup reconcile indexes what is there. (On a cancel before
+        // the first chunk the bridge removes the empty row.)
+        Ok(outcome) => finish_import(&dict.sd.ifo.bookname, dictionary_id, outcome, progress),
         Err(msg) => {
             // A failed chunk is unrecoverable: drop the parent row (and any
             // prior chunks) so a half-imported dictionary does not remain.
@@ -404,105 +505,6 @@ pub fn import_stardict_as_new(
             Err(msg)
         }
     }
-}
-
-/// The parsed rows of a StarDict dictionary, ready to insert.
-pub struct ParsedStardict {
-    pub bookname: String,
-    pub words: Vec<NewDictWord>,
-}
-
-/// Parse a StarDict folder into `dict_words` rows for an existing
-/// `dictionary_id`. Writes nothing.
-///
-/// Emits `Identified` once the index is loaded. Returns `Ok(None)` when
-/// `cancel` is set during parsing. On error it emits `Failed`.
-pub fn parse_stardict_words(
-    unzipped_dir: &Path,
-    physical_stem: &str,
-    dict_label: &str,
-    lang: &str,
-    dictionary_id: i32,
-    limit: Option<usize>,
-    progress: &dyn Fn(StardictImportProgress),
-    cancel: &AtomicBool,
-) -> Result<Option<ParsedStardict>, String> {
-    let ifo_path = unzipped_dir.join(format!("{}.ifo", physical_stem));
-
-    let mut dict = match stardict::no_cache(ifo_path) {
-        Ok(x) => x,
-        Err(e) => {
-            let msg = format!("Error loading stardict dictionary: {}", e);
-            progress(StardictImportProgress::Failed { msg: msg.clone() });
-            return Err(msg);
-        }
-    };
-
-    let bookname = dict.ifo.bookname.clone();
-    info(&format!("Importing {}, {} total entries ...", &bookname, dict.idx.items.len()));
-    progress(StardictImportProgress::Identified {
-        title: bookname.clone(),
-        total: dict.idx.items.len(),
-    });
-
-    match parse_dict(&mut dict, dictionary_id, dict_label, lang, limit, progress, cancel) {
-        Some(words) => Ok(Some(ParsedStardict { bookname, words })),
-        None => {
-            info(&format!("Import aborted for '{}' during parsing (0 entries).", &bookname));
-            Ok(None)
-        }
-    }
-}
-
-/// How an `insert_dict_words()` run ended.
-#[derive(Debug, Clone, Copy)]
-pub struct InsertOutcome {
-    pub inserted: usize,
-    pub cancelled: bool,
-}
-
-/// Insert `words` in chunks of 1000, each chunk in its own transaction, so
-/// that on cancel the rows already inserted stay in the database. Emits
-/// `InsertingWords` after each chunk and `Failed` on an error. Deletes
-/// nothing on failure: that is the caller's decision.
-pub fn insert_dict_words(
-    db_conn: &mut SqliteConnection,
-    words: &[NewDictWord],
-    progress: &dyn Fn(StardictImportProgress),
-    cancel: &AtomicBool,
-) -> Result<InsertOutcome, String> {
-    let total = words.len();
-    info(&format!("Inserting {} words into the database via batch...", total));
-    progress(StardictImportProgress::InsertingWords { done: 0, total });
-
-    // Chunk size of 1000 doubles as the progress tick cadence and the cancel
-    // checkpoint cadence.
-    let chunk_size = 1000;
-    let mut inserted: usize = 0;
-
-    for chunk in words.chunks(chunk_size) {
-        if cancel.load(Ordering::Relaxed) {
-            return Ok(InsertOutcome { inserted, cancelled: true });
-        }
-
-        let chunk_result = db_conn.transaction::<_, diesel::result::Error, _>(|tx| {
-            db::dictionaries::create_dict_words_batch(tx, chunk)
-        });
-
-        match chunk_result {
-            Ok(_) => {
-                inserted += chunk.len();
-                progress(StardictImportProgress::InsertingWords { done: inserted, total });
-            }
-            Err(e) => {
-                let msg = format!("Batch insertion failed: {}", e);
-                progress(StardictImportProgress::Failed { msg: msg.clone() });
-                return Err(msg);
-            }
-        }
-    }
-
-    Ok(InsertOutcome { inserted, cancelled: false })
 }
 
 /// Import a StarDict folder's entries into the dictionaries database behind
@@ -523,18 +525,11 @@ pub fn import_stardict_into(
     cancel: &AtomicBool,
 ) -> Result<ImportOutcome, String> {
     progress(StardictImportProgress::Parsing);
-
-    let parsed = match parse_stardict_words(unzipped_dir, physical_stem, dict_label, lang,
-                                            dictionary_id, limit, progress, cancel)? {
-        Some(p) => p,
-        None => {
-            progress(StardictImportProgress::Aborted { inserted: 0 });
-            return Ok(ImportOutcome { dictionary_id, inserted: 0, cancelled: true });
-        }
-    };
-
-    let outcome = insert_dict_words(db_conn, &parsed.words, progress, cancel)?;
-    finish_import(&parsed.bookname, dictionary_id, outcome, progress)
+    let mut dict = load_stardict(unzipped_dir, physical_stem, progress)?;
+    let mut insert = |chunk: &[NewDictWord]| insert_chunk(db_conn, chunk);
+    let outcome = import_entries(&mut dict, dictionary_id, dict_label, lang, limit, CHUNK_SIZE,
+                                 progress, cancel, &mut insert)?;
+    finish_import(&dict.sd.ifo.bookname, dictionary_id, outcome, progress)
 }
 
 fn finish_import(
@@ -551,4 +546,92 @@ fn finish_import(
         progress(StardictImportProgress::Done);
     }
     Ok(ImportOutcome { dictionary_id, inserted: outcome.inserted, cancelled: outcome.cancelled })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Write a StarDict triplet whose index holds `words` (sorted by bytes),
+    /// each with a one-word definition.
+    fn write_stardict(dir: &Path, stem: &str, words: &[&str]) {
+        let mut words: Vec<&str> = words.to_vec();
+        words.sort();
+        let mut dict_bytes: Vec<u8> = Vec::new();
+        let mut idx_bytes: Vec<u8> = Vec::new();
+        for w in &words {
+            let def = format!("def of {}", w);
+            idx_bytes.extend_from_slice(w.as_bytes());
+            idx_bytes.push(0);
+            idx_bytes.extend_from_slice(&(dict_bytes.len() as u32).to_be_bytes());
+            idx_bytes.extend_from_slice(&(def.len() as u32).to_be_bytes());
+            dict_bytes.extend_from_slice(def.as_bytes());
+        }
+        std::fs::File::create(dir.join(format!("{}.dict", stem))).unwrap().write_all(&dict_bytes).unwrap();
+        std::fs::write(dir.join(format!("{}.idx", stem)), &idx_bytes).unwrap();
+        let ifo = format!(
+            "StarDict's dict ifo file\nversion=2.4.2\nwordcount={}\nidxfilesize={}\nbookname=Chunk Test\nsametypesequence=m\n",
+            words.len(), idx_bytes.len(),
+        );
+        std::fs::write(dir.join(format!("{}.ifo", stem)), ifo).unwrap();
+    }
+
+    /// Colliding entries that fall in different chunks are still
+    /// disambiguated: with one entry per chunk, `kaṃ` and `kaṁ` (one uid
+    /// after `consistent_niggahita`) come out as `kaṁ/lbl` and `kaṁ 2/lbl`.
+    #[test]
+    fn colliding_uids_in_different_chunks_are_disambiguated() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_stardict(tmp.path(), "t", &["kaṃ", "kaṁ", "other"]);
+        let mut dict = load_stardict(tmp.path(), "t", &|_| {}).unwrap();
+
+        let mut chunks: Vec<Vec<String>> = Vec::new();
+        let mut insert = |chunk: &[NewDictWord]| -> Result<(), String> {
+            chunks.push(chunk.iter().map(|w| w.uid.clone()).collect());
+            Ok(())
+        };
+        let cancel = AtomicBool::new(false);
+        let outcome = import_entries(&mut dict, 1, "lbl", "pli", None, 1, &|_| {}, &cancel, &mut insert)
+            .unwrap();
+
+        assert_eq!(outcome.inserted, 3);
+        assert!(!outcome.cancelled);
+        assert_eq!(chunks.len(), 3, "one entry per chunk");
+        let mut uids: Vec<String> = chunks.into_iter().flatten().collect();
+        uids.sort();
+        let base = h::word_uid("kaṁ", "lbl");
+        let second = format!("{} 2/lbl", base.strip_suffix("/lbl").unwrap());
+        let mut expected = vec![base, second, h::word_uid("other", "lbl")];
+        expected.sort();
+        assert_eq!(uids, expected);
+    }
+
+    /// `limit` caps the entries read, and the progress ticks report entries
+    /// read of the capped total, ending at the total.
+    #[test]
+    fn limit_and_progress_cover_the_entries_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_stardict(tmp.path(), "t", &["a1", "a2", "a3", "a4", "a5"]);
+        let mut dict = load_stardict(tmp.path(), "t", &|_| {}).unwrap();
+
+        let ticks = std::cell::RefCell::new(Vec::new());
+        let progress = |p: StardictImportProgress| {
+            if let StardictImportProgress::InsertingWords { done, total } = p {
+                ticks.borrow_mut().push((done, total));
+            }
+        };
+        let mut inserted_rows = 0;
+        let mut insert = |chunk: &[NewDictWord]| -> Result<(), String> {
+            inserted_rows += chunk.len();
+            Ok(())
+        };
+        let cancel = AtomicBool::new(false);
+        let outcome = import_entries(&mut dict, 1, "lbl", "pli", Some(3), 2, &progress, &cancel, &mut insert)
+            .unwrap();
+
+        assert_eq!(outcome.inserted, 3);
+        assert_eq!(inserted_rows, 3);
+        assert_eq!(*ticks.borrow(), vec![(0, 3), (2, 3), (3, 3)]);
+    }
 }

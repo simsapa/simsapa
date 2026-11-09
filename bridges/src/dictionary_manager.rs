@@ -400,7 +400,6 @@ fn stardict_progress_to_signal(p: &StardictImportProgress) -> (String, i32, i32)
             ("Extracting".to_string(), *done as i32, *total as i32)
         }
         StardictImportProgress::Parsing => ("Parsing".to_string(), 0, 0),
-        StardictImportProgress::ParsingWords { .. } => ("Parsing".to_string(), 0, 0),
         StardictImportProgress::InsertingWords { done, total } => {
             ("Inserting words".to_string(), *done as i32, *total as i32)
         }

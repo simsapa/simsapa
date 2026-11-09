@@ -180,11 +180,8 @@ pub fn prepare_html(
         }
 
         let import_progress = |p: StardictImportProgress| match p {
-            StardictImportProgress::ParsingWords { done, total } => {
-                progress("Reading the dictionary pages", done as u64, total as u64)
-            }
             StardictImportProgress::InsertingWords { done, total } => {
-                progress("Writing the dictionary pages", done as u64, total as u64)
+                progress("Reading the dictionary pages", done as u64, total as u64)
             }
             StardictImportProgress::Parsing | StardictImportProgress::Identified { .. } => {
                 progress("Reading the dictionary pages", 0, 0)

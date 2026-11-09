@@ -3209,15 +3209,19 @@ pub fn migrate_dpd(dpd_db_path: &Path, dpd_dictionary_id: i32, progress: &BatchP
 
     // Update DpdHeadwords calculated fields
     db_conn.transaction::<_, diesel::result::Error, _>(|conn| {
-        let headwords_all: Vec<DpdHeadword> = dpd_headwords::table.load::<DpdHeadword>(conn)?;
+        // Only the two columns the fields are computed from: every column of
+        // every headword is ~1.4 GB in memory.
+        let headwords_all: Vec<(i32, String)> = dpd_headwords::table
+            .select((dpd_headwords::id, dpd_headwords::lemma_1))
+            .load(conn)?;
 
-        for headword_item in headwords_all.iter() {
-            let new_uid = word_uid(&headword_item.id.to_string(), "dpd");
-            let new_lemma_clean = headword_item.calc_lemma_clean();
+        for (id, lemma_1) in headwords_all.iter() {
+            let new_uid = word_uid(&id.to_string(), "dpd");
+            let new_lemma_clean = crate::db::dpd_models::lemma_clean_of(lemma_1);
             // Use lemma_clean for word_ascii to remove trailing numbers.
             let new_word_ascii = pali_to_ascii(Some(&new_lemma_clean));
 
-            diesel::update(dpd_headwords::table.find(headword_item.id))
+            diesel::update(dpd_headwords::table.find(*id))
                 .set((
                     dpd_headwords::uid.eq(new_uid),
                     dpd_headwords::lemma_clean.eq(new_lemma_clean),

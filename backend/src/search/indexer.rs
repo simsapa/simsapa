@@ -9,7 +9,6 @@ use tantivy::schema::IndexRecordOption;
 use crate::db::DatabaseHandle;
 use crate::db::appdata_models::Sutta;
 use crate::db::dictionaries_models::DictWord;
-use crate::db::dpd_models::BoldDefinition;
 use crate::logger::{error, info, warn};
 use crate::AppGlobalPaths;
 
@@ -381,50 +380,58 @@ pub fn append_bold_definitions_to_dict_index(
     let content_exact_field = schema.get_field("content_exact").unwrap();
     let is_bold_definition_field = schema.get_field("is_bold_definition").unwrap();
 
-    let rows: Vec<BoldDefinition> = dpd_db.do_read(|db_conn| {
-        bd_dsl::bold_definitions
-            .select(BoldDefinition::as_select())
-            .load(db_conn)
-    })?;
-
-    info(&format!("Indexing {} bold_definitions rows", rows.len()));
-
+    // Read in id-ordered pages of only the columns the document uses: the
+    // whole table with every column is ~370k rows and hundreds of MB.
+    type BoldRow = (i32, String, String, String, String, String, String, String, String);
+    const PAGE: i64 = 10_000;
+    let mut last_id: i32 = 0;
+    let mut read_count = 0;
     let mut indexed_count = 0;
-    for row in &rows {
-        let plain = row.commentary_plain.as_str();
-        if plain.is_empty() {
-            continue;
+    loop {
+        let rows: Vec<BoldRow> = dpd_db.do_read(|db_conn| {
+            bd_dsl::bold_definitions
+                .select((bd_dsl::id, bd_dsl::uid, bd_dsl::bold, bd_dsl::ref_code, bd_dsl::nikaya,
+                         bd_dsl::book, bd_dsl::title, bd_dsl::subhead, bd_dsl::commentary_plain))
+                .filter(bd_dsl::id.gt(last_id))
+                .order(bd_dsl::id.asc())
+                .limit(PAGE)
+                .load(db_conn)
+        })?;
+        let Some(last) = rows.last() else { break };
+        last_id = last.0;
+        read_count += rows.len();
+
+        for (_id, uid, bold, ref_code, nikaya, book, title, subhead, plain) in &rows {
+            if plain.is_empty() {
+                continue;
+            }
+
+            let group_path = [nikaya.as_str(), book.as_str(), title.as_str(), subhead.as_str()]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .copied()
+                .collect::<Vec<&str>>()
+                .join(" / ");
+
+            let uid_rev = reversed_lowercased(uid);
+
+            writer.add_document(doc!(
+                uid_field => uid.as_str(),
+                uid_rev_field => uid_rev.as_str(),
+                word_field => bold.as_str(),
+                synonyms_field => "",
+                language_field => lang,
+                source_uid_field => ref_code.as_str(),
+                nikaya_group_path_field => group_path.as_str(),
+                content_field => plain.as_str(),
+                content_exact_field => plain.as_str(),
+                is_bold_definition_field => true,
+            ))?;
+
+            indexed_count += 1;
         }
-
-        let group_path = [
-            row.nikaya.as_str(),
-            row.book.as_str(),
-            row.title.as_str(),
-            row.subhead.as_str(),
-        ]
-        .iter()
-        .filter(|s| !s.is_empty())
-        .copied()
-        .collect::<Vec<&str>>()
-        .join(" / ");
-
-        let uid_rev = reversed_lowercased(&row.uid);
-
-        writer.add_document(doc!(
-            uid_field => row.uid.as_str(),
-            uid_rev_field => uid_rev.as_str(),
-            word_field => row.bold.as_str(),
-            synonyms_field => "",
-            language_field => lang,
-            source_uid_field => row.ref_code.as_str(),
-            nikaya_group_path_field => group_path.as_str(),
-            content_field => plain,
-            content_exact_field => plain,
-            is_bold_definition_field => true,
-        ))?;
-
-        indexed_count += 1;
     }
+    info(&format!("Indexed {} of {} bold_definitions rows", indexed_count, read_count));
 
     // Finalize the index: see build_sutta_index for the rationale behind
     // wait_merging_threads() and sync_directory().
