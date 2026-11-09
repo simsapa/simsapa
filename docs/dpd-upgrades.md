@@ -184,6 +184,14 @@ between steps and between batches inside the long ones (`BatchProgress`); from
    removed (a hot journal would be replayed into the new file), and the staged
    file is renamed over it. Every handle to it must be closed first (Windows).
 
+**Result order.** The new DPD rows get row ids after every other
+dictionary's, while DPD keeps its `dictionary_id`. Dictionary results are
+therefore ordered by `dictionary_id` (the dictionary's relevance rank: the
+bootstrap creates DPD first, DPPN second, and user imports get later ids), then
+by row id, never by row id alone and never by `dict_label`
+(`sort_by_dictionary_rank()` in `backend/src/query_task.rs`), so DPD still
+comes first after an upgrade.
+
 After the run, the stored selections whose headword id the new release removed
 are reported (`removed_headword_selections`), not changed.
 
@@ -213,3 +221,39 @@ installed DPD pages.
 **Consistency** (`dpd_versions_mismatch()`): the DPD row's `version` and
 `dpd_release_version` differ when a run was killed between steps 2 and 3 of
 the apply. Reported, never repaired. An empty `version` is not a mismatch.
+
+## 7. Entry points
+
+### 7.1 `bootstrap_cli rebuild-dpd`
+
+Replaces the DPD of an existing `SIMSAPA_DIR` (normally the dist,
+`dist/simsapa`) with the extracted release in
+`dpd-db-for-bootstrap/current/`, without a full bootstrap:
+
+``` sh
+cd bootstrap_cli
+cargo run --release -- rebuild-dpd            # SIMSAPA_DIR from .env or the environment
+cargo run --release -- --simsapa-dir <dir> rebuild-dpd [--limit N]
+```
+
+- It first checks the three release inputs (`dpd_release_sources()` in
+  `preflight.rs`, the same entries the bootstrap's `dpd` step lists, without
+  the DPPN) and fails naming every missing one before anything is written.
+- Then it runs `run_dpd_upgrade()` with the two **extracted** inputs as a
+  local source, so nothing is downloaded or unpacked, and with
+  `allow_same_version`: the release may be the one already installed. An
+  older or incompatible release is still refused.
+- It writes no release archives, and opens no `AppData` (the pipeline uses its
+  own connections), so `init_app_data()` is skipped for it in `main.rs`.
+- Run it with the app closed. The pipeline's `upgrade.lock` stops a second
+  run, but nothing stops the app from holding the databases open.
+- `--limit N` imports only N StarDict entries and bold definitions, for a
+  quick test of the wiring; the result is not a usable dictionary.
+- Use `cargo run --release`: in a debug build the StarDict parse and the
+  footer strip take several minutes each instead of under a minute.
+- Disk: the run needs the free space `estimate_space()` prints (about 6 GB for
+  v0.4.20261026) on the volume of `SIMSAPA_DIR`.
+
+The usual round after a new DPD release is §1 (extract, point `current` at
+it), then `rebuild-dpd` on the dist to test the release in the app, and a full
+bootstrap for the database release.

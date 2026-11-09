@@ -3,6 +3,7 @@ pub mod gloss_agent_check;
 pub mod gloss_corpus_explore;
 pub mod gloss_ngrams;
 pub mod import_gloss_data;
+pub mod rebuild_dpd;
 pub mod survey_suttas_core;
 pub mod update_provider_models;
 pub mod update_releases_fallback;
@@ -712,6 +713,18 @@ enum Commands {
         dpd_db_path: PathBuf,
     },
 
+    /// Replace the DPD of `SIMSAPA_DIR` (pages, word data, page files, search
+    /// index) with the extracted release in
+    /// `bootstrap-assets-resources/dpd-db-for-bootstrap/current/`, without a
+    /// full bootstrap. The same pipeline as `simsapa dpd upgrade`, accepting
+    /// the release already installed. Creates no release archives. Run it with
+    /// the app closed.
+    RebuildDpd {
+        /// Import only this many StarDict entries and bold definitions (testing)
+        #[arg(long, value_name = "N")]
+        limit: Option<i32>,
+    },
+
     /// Import confirmed gloss word-selection data from exported gloss session
     /// JSON files as built-in cache rows into the given appdata database.
     /// Directory inputs are scanned non-recursively for *.json files.
@@ -1089,7 +1102,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1165,6 +1178,10 @@ fn main() {
                 Ok(false) => Err(format!("DPD database not found: {:?}", dpd_db_path)),
                 Err(e) => Err(format!("Cannot access DPD database {:?}: {}", dpd_db_path, e)),
             }
+        }
+
+        Commands::RebuildDpd { limit } => {
+            rebuild_dpd::rebuild_dpd(&simsapa_dir, &bootstrap::source_paths::bootstrap_assets_dir_from_crate(), limit)
         }
 
         Commands::ImportGlossData { db_path, inputs } => {
