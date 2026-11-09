@@ -167,7 +167,9 @@ impl Step {
     /// The user-facing name, in plain words.
     pub fn label(self) -> &'static str {
         match self {
-            Step::Check => "Checking free space",
+            // The release lookup, the version, the user's files and the free
+            // space: one plain name for all of them.
+            Step::Check => "Getting ready",
             Step::Download => "Downloading",
             Step::Extract => "Unpacking",
             Step::Verify => "Checking the download",
@@ -746,6 +748,7 @@ fn run_steps(
     // counts as free below.
     let guard = StagingGuard::acquire(paths)?;
     let staging = guard.dir.clone();
+    reporter.report(Step::Check, "Checking free space", 0, 0);
     let estimate = estimate_space(paths, &source);
     if !estimate.is_enough() {
         return Err(UpgradeError::new(

@@ -1578,6 +1578,17 @@ impl<'a> SearchQueryTask<'a> {
                 .bind::<BigInt, _>(SAFETY_LIMIT_SQL);
 
             let mut rows: Vec<DictWordRank> = q.load(db_conn)?;
+            // The cap is applied in rowid order, before the rank sort. After
+            // a DPD upgrade DPD's rows have the highest rowids, so a query
+            // over the cap loses DPD rows rather than another dictionary's.
+            // Ordering the SQL by dictionary instead would sort every match
+            // before the LIMIT; the cap is reached only by very common terms.
+            if (rows.len() as i64) >= SAFETY_LIMIT_SQL {
+                warn(&format!(
+                    "dict_words_fts contains phase hit SAFETY_LIMIT_SQL={} (term='{}')",
+                    SAFETY_LIMIT_SQL, term
+                ));
+            }
             sort_by_dictionary_rank(&mut rows);
             push_ids(rows.into_iter().map(|r| r.id).collect(), &mut result_ids);
         }

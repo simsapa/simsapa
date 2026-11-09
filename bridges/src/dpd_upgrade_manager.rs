@@ -66,7 +66,7 @@ pub mod qobject {
         #[cxx_name = "upgradeCompleted"]
         fn upgrade_completed(self: Pin<&mut DpdUpgradeManager>, report_json: QString);
 
-        /// `{ step, step_label, code, message, installed_changed }`
+        /// `{ step, step_label, code, message, installed_changed, marker_kept }`
         #[qsignal]
         #[cxx_name = "upgradeFailed"]
         fn upgrade_failed(self: Pin<&mut DpdUpgradeManager>, error_json: QString);
@@ -115,6 +115,8 @@ fn error_json(e: &UpgradeError) -> String {
         // re-index failure the new release is installed and only its search
         // index needs rebuilding.
         "installed_changed": matches!(e.step, Step::Apply | Step::Reindex),
+        // The upgrade runs again at the next start.
+        "marker_kept": marker::error_keeps_marker(e),
     })
     .to_string()
 }
@@ -160,19 +162,23 @@ impl qobject::DpdUpgradeManager {
                 overall: 0.0,
             });
 
-            let result = offer::release_for_tag(&paths, &tag).and_then(|candidate| {
-                let mut progress = |p: UpgradeProgress| emit_progress(p);
-                run_dpd_upgrade(
-                    &paths,
-                    DpdSource::Release(candidate),
-                    &UpgradeOptions::default(),
-                    &mut progress,
-                    &cancel,
-                )
+            // The marker is consumed when the run ends, except when another
+            // upgrade holds the staging lock (see `marker::run_for_marker`).
+            let result = marker::run_for_marker(&marker_path, |marker_tag| {
+                offer::release_for_tag(&paths, marker_tag).and_then(|candidate| {
+                    let mut progress = |p: UpgradeProgress| emit_progress(p);
+                    run_dpd_upgrade(
+                        &paths,
+                        DpdSource::Release(candidate),
+                        &UpgradeOptions::default(),
+                        &mut progress,
+                        &cancel,
+                    )
+                })
+            })
+            .unwrap_or_else(|| {
+                Err(UpgradeError::failed(Step::Check, "The DPD upgrade marker was removed before the run started."))
             });
-
-            // The run has ended: the marker is consumed whatever the outcome.
-            marker::remove_marker(&marker_path);
             running.store(false, Ordering::SeqCst);
 
             match result {

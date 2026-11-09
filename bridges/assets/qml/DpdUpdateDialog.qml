@@ -97,6 +97,16 @@ ApplicationWindow {
         }
     }
 
+    // Once the marker is written the screen says Simsapa will now close, so
+    // closing the window quits too. Otherwise the app would go on with the
+    // marker in place, and the 20–30 minute update would start at whatever
+    // start comes next, perhaps days later.
+    onClosing: function(close) {
+        if (root.view === "closing") {
+            Qt.quit();
+        }
+    }
+
     // The outline's first line is the download; it carries the size.
     function outline_line(index: int, text: string): string {
         if (index === 0 && root.download_size.length > 0) {

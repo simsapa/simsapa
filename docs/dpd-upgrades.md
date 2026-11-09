@@ -283,7 +283,8 @@ setup calls the same check).
 `DpdUpdateDialog.qml` shows the offer, then the confirmation (the time first,
 the steps, the benefit, the space), then **Start update** calls
 `prepare_for_dpd_upgrade(tag)`, which writes the marker, and the dialog asks
-the user to quit.
+the user to quit. Closing the dialog on that last screen quits too, so the
+update never starts at some later, unexpected start.
 
 **The marker** `app-assets/auto_start_dpd_upgrade.txt` holds the tag
 (`dpd_upgrade::marker`). At the next start `gui.cpp` calls
@@ -297,9 +298,15 @@ there is no `appdata.sqlite3`.
 `DpdUpgradeManager`, looks the tag up again (`offer::release_for_tag()`: the
 download URLs and sizes come with the release, and a tag that is no longer a
 candidate is a Check-step `version` error), runs `run_dpd_upgrade()` on a
-worker thread, and deletes the marker when the run ends, whatever the outcome.
-A run that is killed leaves the marker, so the window opens again at the next
-start and runs from the beginning, after the staging sweep.
+worker thread through `marker::run_for_marker()`, which deletes the marker
+when the run ends: after success, failure and cancel. It **keeps** the marker
+when the run was refused because another upgrade holds the staging lock
+(`in_progress`): that run never started, and on Windows, which cannot tell
+whether the lock's process is alive, the lock of a run killed a few minutes
+ago counts as held until it is 5 minutes old. The window then says the update
+starts again at the next start. A run that is killed leaves the marker, so the
+window opens again at the next start and runs from the beginning; the run
+itself removes the killed run's staging folder when it takes the lock.
 
 - The window uses no `SuttaBridge` call: there is no app data before
   `init_app_data()`, and a `/dpd_res/` request would load the old release's

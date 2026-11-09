@@ -139,7 +139,15 @@ ApplicationWindow {
             } catch (err) {
                 logger.error("DpdUpgradeWindow: cannot parse the error: " + err);
             }
-            if (e.code === "cancelled") {
+            if (e.marker_kept) {
+                // Another upgrade holds the staging lock (or the lock of a
+                // run that was just killed has not gone stale yet).
+                root.show_failure("Another DPD update is running",
+                                  "The update did not start, and your current DPD dictionary is unchanged. It will "
+                                  + "start again the next time you start Simsapa. If no other update is running, wait "
+                                  + "a few minutes before starting Simsapa again.",
+                                  e.message);
+            } else if (e.code === "cancelled") {
                 root.show_failure("The update was cancelled",
                                   "Your current DPD dictionary is unchanged.", "");
             } else if (e.code === "reindex_failed") {

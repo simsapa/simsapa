@@ -279,7 +279,8 @@ compatible** release is `simsapa db-upgrade`'s (next section). Both run the same
 holding the DPD release tag the user accepted (`prepare_for_dpd_upgrade()`).
 `gui.cpp` peeks at it before `init_app_data()` and opens `DpdUpgradeWindow` in
 place of the main app; the window deletes it when the run ends (success, failure
-or cancel), never at the start. The peek deletes it when
+or cancel), never at the start, and keeps it when another upgrade holds the
+staging lock. The peek deletes it when
 `auto_start_download.txt` is also present (the new databases bring their own
 DPD) or `appdata.sqlite3` is missing. `simsapa dpd upgrade` neither reads nor
 writes it: it runs the same pipeline directly. See
