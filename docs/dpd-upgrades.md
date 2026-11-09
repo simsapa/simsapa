@@ -127,8 +127,12 @@ answers `404`.
 
 A DPD headword keeps its id across releases while its `lemma_1` label can
 change, so stored gloss selections use the numeric `<id>/dpd` uid, with the
-lemma beside it in files. See the "uid two-lane gotcha" in
-[gloss-ai-word-selection.md](./gloss-ai-word-selection.md).
+lemma beside it in files (`selected_lemma`, informational; a cross-check on
+import). Entry points that take uids from outside (Open JSON, `import-gloss-data`,
+the phrase seeder) resolve a lemma-form uid to its numeric one; the upgrade's
+apply step (§6, step 1) converts any that remain, against the **old**
+`dpd.sqlite3`, whose `lemma_1` → id mapping they were written with. See the
+"uid two-lane gotcha" in [gloss-ai-word-selection.md](./gloss-ai-word-selection.md).
 
 ## 6. The upgrade pipeline (`backend/src/dpd_upgrade/`)
 
@@ -327,3 +331,23 @@ once, and Database Validation shows it as its own row
 (`SuttaBridge::get_dpd_release_mismatch()`): "DPD dictionary pages and DPD data
 are from different releases". It is reported, never repaired, and is not a
 downloadable failure.
+
+### 7.3 `simsapa dpd check` and `simsapa dpd upgrade`
+
+`backend_cli/src/commands/dpd.rs`; the client-facing description (options,
+exit codes, output) is in `simsapa-cli-and-localhost-api.md` A.9.
+
+- `check` is read-only: it lists the releases, applies the candidate rule (§6)
+  and prints the versions, the download size and the space estimate (`--json`
+  gives the same). It works while the app is running.
+- `upgrade` runs `run_dpd_upgrade()` directly. It runs no startup preamble and
+  opens no `AppData`, since nothing may hold `dpd.sqlite3` open when it is
+  replaced. It refuses while the app or another write command uses the folder
+  (`api-port.txt` + `/health`, `cli-write.lock`), asks for confirmation unless
+  `--yes`, and reports progress on stderr.
+- Local sources: `--dpd-db-archive` / `--dpd-db` and `--goldendict-zip` /
+  `--goldendict-dir`, one form of each, no `--version`. The same compatibility
+  rule applies, with the version read from `dpd.db`. The user's files are never
+  modified: archives are extracted into the staging folder, a `dpd.db` is
+  copied, a `dpd/` folder is read in place.
+- Ctrl-C cancels between steps; from the apply step on the run finishes.
