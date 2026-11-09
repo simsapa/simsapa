@@ -83,6 +83,7 @@ pub fn gloss_word_processing_options(opts: &GlossTextOptions) -> WordProcessingO
         existing_global_stems: std::collections::HashMap::new(),
         existing_paragraph_unrecognized: std::collections::HashMap::new(),
         existing_global_unrecognized: Vec::new(),
+        gloss_format: simsapa_backend::types::GlossFormat::Headwords,
     }
 }
 

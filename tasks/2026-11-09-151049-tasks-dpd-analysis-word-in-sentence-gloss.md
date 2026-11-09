@@ -40,7 +40,7 @@ Backend:
 - `backend/src/gloss_variants.rs` - **New.** `//` spelling alternatives.
 - `backend/src/gloss_translation.rs` - **New.** Translation prompt assembly and JSON response parsing.
 - `backend/src/dpd_form_grammar.rs` - `assign_form_grammar()`, extended by the A1 findings.
-- `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples through the grouped lookup.
+- `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples through the grouped lookup; grouped lookup adds roots in uid order (`direct_uids` was in `HashSet` order, so the gloss output varied between runs).
 - `backend/src/app_settings.rs` - New translation template, gloss format / auto-translate settings.
 - `backend/src/app_data.rs` - Settings getters/setters.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
@@ -52,7 +52,14 @@ Backend:
 - `backend/tests/helpers/dpd_report.rs` - **New.** Parser for DPD reports (`parse_report`) and `distilled.json` (`parse_distilled`, option keys).
 - `backend/tests/test_dpd_report_parser.rs` - **New.** Tests of the report parser on all ten reports.
 - `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components.
+- `backend/tests/test_gloss_headwords_snapshot.rs` - **New.** Byte-for-byte snapshot of the Headwords output (fixture passages, No duplicates, Skip common, single-paragraph path); `SIMSAPA_UPDATE_SNAPSHOTS=1` regenerates.
+- `backend/tests/data/gloss_headwords_snapshot/` - **New.** The snapshot files.
 - `backend/tests/test_gloss_compound_dedup.rs`, `test_gloss_word_resolution.rs`, `test_gloss_session_export.rs`, `test_gloss_text_exact.rs`, `test_anki_export.rs` - Existing tests that must keep passing; extended where noted.
+- `backend/tests/test_process_all_paragraphs.rs`, `test_dpd_niggahita_spelling.rs` - Existing tests; construct `WordProcessingOptions` with `gloss_format`.
+
+Bootstrap:
+
+- `bootstrap_cli/src/gloss_corpus_explore.rs` - Calls `process_word_for_glossing` then `headwords_dedup_word` (same output as before).
 
 API:
 
@@ -175,14 +182,14 @@ sub-task, not only after a whole parent task.
   `gloss_dedup_key`, same per-paragraph and global maps, same order of the
   `skip_common` check), so the behaviour is moved, not rewritten.
 
-- [ ] 3.0 Make the gloss pipeline emit every token, with the Headwords format's de-dup as a format step and its output byte-identical (FR B1–B3)
-  - [ ] 3.1 Write a snapshot test (`backend/tests/test_gloss_headwords_snapshot.rs`) that glosses five passages (the five DPD fixture passages' Pāli, plus one with `no_duplicates_globally` and one with `skip_common`) and stores the serialized `AllParagraphsProcessingResult` JSON under `backend/tests/data/gloss_headwords_snapshot/`. Generate the snapshot files from the current code and commit them with this task. The snapshot depends on the dist `dpd.sqlite3` and `appdata.sqlite3` data, not only on code: say so in the test's doc comment, with the regenerate command, so a DPD data upgrade is not read as a regression.
-  - [ ] 3.2 Add `GlossFormat` to `backend/src/types.rs` and the field to `WordProcessingOptions` (`#[serde(default)]` = `Headwords` for now). Update `gloss_word_processing_options()` in `api/src/routes/gloss.rs` and every other constructor.
-  - [ ] 3.3 In `process_word_for_glossing`, move the `paragraph_shown_stems` / `global_stems` checks and inserts into `apply_headwords_dedup()`, called from `process_all_paragraphs` and `process_single_paragraph` (the GUI's per-paragraph "Update Gloss" path, which seeds `global_stems` from `existing_global_stems`) only for `Headwords`. Keep the `skip_common` per-component logic where it is; in `WordInSentence` format it applies only when `skip_common` is on (it already does).
-  - [ ] 3.4 For `WordInSentence`, apply de-dup only when `no_duplicates_globally` is on (FR B3), using the same key; never drop a within-paragraph repeat otherwise.
-  - [ ] 3.5 Make sure `collect_unrecognized_words` and the AI word-selection item builder see the same word list as before for `Headwords` (they run on the de-duplicated list).
-  - [ ] 3.6 Add a `WordInSentence` test: a paragraph with `aniccaṁ … aniccaṁ` yields two `ProcessedWord`s with different `context_hash`es; with `no_duplicates_globally` it yields one.
-  - [ ] 3.7 Run the snapshot test, `test_gloss_compound_dedup`, `test_gloss_word_resolution`, `test_gloss_text_exact`, `cd api && cargo test`, `cd backend_cli && cargo test`, `make qml-test`.
+- [x] 3.0 Make the gloss pipeline emit every token, with the Headwords format's de-dup as a format step and its output byte-identical (FR B1–B3)
+  - [x] 3.1 Write a snapshot test (`backend/tests/test_gloss_headwords_snapshot.rs`) that glosses five passages (the five DPD fixture passages' Pāli, plus one with `no_duplicates_globally` and one with `skip_common`) and stores the serialized `AllParagraphsProcessingResult` JSON under `backend/tests/data/gloss_headwords_snapshot/`. Generate the snapshot files from the current code and commit them with this task. The snapshot depends on the dist `dpd.sqlite3` and `appdata.sqlite3` data, not only on code: say so in the test's doc comment, with the regenerate command, so a DPD data upgrade is not read as a regression.
+  - [x] 3.2 Add `GlossFormat` to `backend/src/types.rs` and the field to `WordProcessingOptions` (`#[serde(default)]` = `Headwords` for now). Update `gloss_word_processing_options()` in `api/src/routes/gloss.rs` and every other constructor.
+  - [x] 3.3 In `process_word_for_glossing`, move the `paragraph_shown_stems` / `global_stems` checks and inserts into `apply_headwords_dedup()`, called from `process_all_paragraphs` and `process_single_paragraph` (the GUI's per-paragraph "Update Gloss" path, which seeds `global_stems` from `existing_global_stems`) only for `Headwords`. Keep the `skip_common` per-component logic where it is; in `WordInSentence` format it applies only when `skip_common` is on (it already does).
+  - [x] 3.4 For `WordInSentence`, apply de-dup only when `no_duplicates_globally` is on (FR B3), using the same key; never drop a within-paragraph repeat otherwise.
+  - [x] 3.5 Make sure `collect_unrecognized_words` and the AI word-selection item builder see the same word list as before for `Headwords` (they run on the de-duplicated list).
+  - [x] 3.6 Add a `WordInSentence` test: a paragraph with `aniccaṁ … aniccaṁ` yields two `ProcessedWord`s with different `context_hash`es; with `no_duplicates_globally` it yields one.
+  - [x] 3.7 Run the snapshot test, `test_gloss_compound_dedup`, `test_gloss_word_resolution`, `test_gloss_text_exact`, `cd api && cargo test`, `cd backend_cli && cargo test`, `make qml-test`.
 
 ### 4.0 — specs and dependencies
 

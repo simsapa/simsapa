@@ -39,7 +39,7 @@ use simsapa_backend::get_app_data;
 use simsapa_backend::db::appdata_schema::suttas;
 use simsapa_backend::helpers::{
     clean_word_pali, extract_words_with_context, gloss_cache_word_key, gloss_context_hash,
-    is_common_word, normalize_gloss_context, process_word_for_glossing, GlossResolutionData,
+    headwords_dedup_word, is_common_word, normalize_gloss_context, process_word_for_glossing, GlossResolutionData,
     GLOSS_SESSION_EXPORT_FORMAT, GLOSS_SESSION_EXPORT_FORMAT_VERSION,
 };
 use simsapa_backend::types::{WordInfo, WordProcessingOptions, WordProcessingResult};
@@ -463,6 +463,7 @@ pub fn gloss_corpus_explore(params: &ExploreParams) -> Result<(), String> {
         existing_global_stems: HashMap::new(),
         existing_paragraph_unrecognized: HashMap::new(),
         existing_global_unrecognized: Vec::new(),
+        gloss_format: simsapa_backend::types::GlossFormat::Headwords,
     };
 
     let mut file_count: usize = 0;
@@ -565,15 +566,12 @@ fn gloss_paragraph_words(
             sentence: wc.context_snippet.clone(),
             original_word: wc.original_word.clone(),
         };
-        let processed = process_word_for_glossing(
-            &word_info,
+        let processed = headwords_dedup_word(
+            process_word_for_glossing(&word_info, options, &app_data.dbm.dpd, Some(&resolution_data))?,
             &mut paragraph_shown_stems,
             &mut global_stems,
             options.no_duplicates_globally,
-            options,
-            &app_data.dbm.dpd,
-            Some(&resolution_data),
-        )?;
+        );
         if let Some(WordProcessingResult::Recognized(pw)) = processed {
             let value = serde_json::to_value(&pw)
                 .map_err(|e| format!("Failed to serialize processed word: {}", e))?;
@@ -881,6 +879,7 @@ mod tests {
             existing_global_stems: HashMap::new(),
             existing_paragraph_unrecognized: HashMap::new(),
             existing_global_unrecognized: Vec::new(),
+            gloss_format: simsapa_backend::types::GlossFormat::Headwords,
         };
         let rerun = gloss_paragraph_words(text, &options).expect("re-gloss paragraph");
         assert_eq!(

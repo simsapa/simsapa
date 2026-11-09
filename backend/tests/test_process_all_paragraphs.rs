@@ -20,6 +20,7 @@ fn default_options() -> WordProcessingOptions {
         existing_global_stems: HashMap::new(),
         existing_paragraph_unrecognized: HashMap::new(),
         existing_global_unrecognized: Vec::new(),
+        gloss_format: simsapa_backend::types::GlossFormat::Headwords,
     }
 }
 

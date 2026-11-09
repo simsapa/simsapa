@@ -620,6 +620,18 @@ pub struct SearchResultPage {
     pub direct_uids: Vec<String>,
 }
 
+/// How a gloss is laid out. `Headwords` is one entry per dictionary word, a
+/// repeat within a paragraph left out; `WordInSentence` is one entry per token
+/// of the passage, in passage order, repeats included. See
+/// docs/gloss-ai-word-selection.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlossFormat {
+    WordInSentence,
+    #[default]
+    Headwords,
+}
+
 /// Options for word processing in gloss operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordProcessingOptions {
@@ -629,6 +641,9 @@ pub struct WordProcessingOptions {
     pub existing_global_stems: std::collections::HashMap<String, bool>,
     pub existing_paragraph_unrecognized: std::collections::HashMap<String, Vec<String>>,
     pub existing_global_unrecognized: Vec<String>,
+    /// Absent in the GUI's processing input JSON, which predates the option.
+    #[serde(default)]
+    pub gloss_format: GlossFormat,
 }
 
 /// Information about a word for processing

@@ -132,6 +132,7 @@ fn test_gloss_spaced_n_ti() {
             existing_global_stems: Default::default(),
             existing_paragraph_unrecognized: Default::default(),
             existing_global_unrecognized: Vec::new(),
+            gloss_format: simsapa_backend::types::GlossFormat::Headwords,
         },
     };
     let res = process_all_paragraphs(&input, &app_data.dbm.appdata, &app_data.dbm.dpd).unwrap();

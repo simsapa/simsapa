@@ -1,0 +1,577 @@
+{
+  "success": true,
+  "paragraphs": [
+    {
+      "paragraph_index": 0,
+      "words_data": [
+        {
+          "original_word": "tasmā",
+          "results": [
+            {
+              "uid": "30147/dpd",
+              "word": "tasmā 1",
+              "summary": "<i>(pron)</i> from that  <b>[ta + smā]</b>  <i>pron, masc & nt abl sg of ta</i>"
+            },
+            {
+              "uid": "30148/dpd",
+              "word": "tasmā 2",
+              "summary": "<i>(ind)</i> therefore; that is why  <b>[ta + smā]</b>  <i>ind, adv, abl sg of ta</i>"
+            },
+            {
+              "uid": "29188/dpd",
+              "word": "ta 1.1",
+              "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+            },
+            {
+              "uid": "29189/dpd",
+              "word": "ta 2.1",
+              "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tasmā 1",
+          "example_sentence": "<b>tasmā</b> piyaṃ na kayirātha, piy'āpāyo hi pāpako, ganthā",
+          "context_hash": "eb59e77bdbf4f84b62cc010917d5e3558e01e3618ce6507cf5bf094409ec8ec3",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "30147/dpd",
+            "30148/dpd",
+            "29188/dpd",
+            "29189/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "piyaṁ",
+          "results": [
+            {
+              "uid": "46170/dpd",
+              "word": "piya 1",
+              "summary": "<i>(adj)</i> dear (to); beloved (by); loved (by)  <b>[√pī > piy + a]</b>  <i>adj</i>"
+            },
+            {
+              "uid": "46171/dpd",
+              "word": "piya 2",
+              "summary": "<i>(adj)</i> liked; pleasant; agreeable  <b>[√pī > piy + a]</b>  <i>adj</i>"
+            },
+            {
+              "uid": "46173/dpd",
+              "word": "piya 3",
+              "summary": "<i>(nt)</i> friend; dear one; loved one  <b>[√pī > piy + a]</b>  <i>nt</i>"
+            },
+            {
+              "uid": "46174/dpd",
+              "word": "piya 4",
+              "summary": "<i>(nt)</i> love; friendship  <b>[√pī > piy + a]</b>  <i>nt</i>"
+            },
+            {
+              "uid": "46172/dpd",
+              "word": "piya 5",
+              "summary": "<i>(masc)</i> husband; lover; partner  <b>[√pī > piy + a]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "46227/dpd",
+              "word": "piyā",
+              "summary": "<i>(fem)</i> wife  <b>[√pī + ā]</b>  <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "piya 1",
+          "example_sentence": "tasmā piyaṃ na kayirātha, piy'āpāyo hi pāpako, ganthā tesaṃ na vijjanti, ye",
+          "context_hash": "caa0631c78922d0581178fa5df8921705929da333a2ebf3f593d9240acbfee48",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "46170/dpd",
+            "46171/dpd",
+            "46172/dpd",
+            "46173/dpd",
+            "46174/dpd",
+            "46227/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "na",
+          "results": [
+            {
+              "uid": "35345/dpd",
+              "word": "na 1",
+              "summary": "<i>(ind)</i> no; not; neither; nor   <i>ind</i>"
+            },
+            {
+              "uid": "35346/dpd",
+              "word": "na 2",
+              "summary": "<i>(ind)</i> (adds a question mark) surely?; does one not?   <i>ind, interr</i>"
+            },
+            {
+              "uid": "35347/dpd",
+              "word": "na 3",
+              "summary": "<i>(prefix)</i> not   <i>prefix, in comps</i>"
+            },
+            {
+              "uid": "35348/dpd",
+              "word": "na 4",
+              "summary": "<i>(masc)</i> (gram) negative prefix na   <i>masc, prefix</i>"
+            },
+            {
+              "uid": "36020/dpd",
+              "word": "nā",
+              "summary": "<i>(cs)</i> (gram) nā; conjugational sign of group 5 kiyādigaṇa verbs   <i>cs, masc</i>"
+            },
+            {
+              "uid": "28831/dpd",
+              "word": "ña 1.1",
+              "summary": "<i>(ind)</i> 10th item in a numerical list   <i>ind</i>"
+            },
+            {
+              "uid": "28832/dpd",
+              "word": "ña 2.1",
+              "summary": "<i>(adj)</i> knowing; who knows; familiar with  <b>[√ñā + a]</b>  <i>adj, in comps</i>"
+            },
+            {
+              "uid": "28853/dpd",
+              "word": "ñā",
+              "summary": "<i>(root)</i> (gram) √ñā (know)  <b>[√ñā + ā]</b>  <i>root, masc</i>"
+            },
+            {
+              "uid": "78576/dpd",
+              "word": "ṅa",
+              "summary": "<i>(ind)</i> 5th item in a numerical list   <i>ind</i>"
+            },
+            {
+              "uid": "29174/dpd",
+              "word": "ṇa",
+              "summary": "<i>(masc)</i> (gram) indicatory letter ṇ; sign indicating that vuddhi takes place   <i>masc, prefix</i>"
+            },
+            {
+              "uid": "29180/dpd",
+              "word": "ṇā",
+              "summary": "<i>(cs)</i> (gram) ṇā; conjugational sign of group 4 svādigaṇa verbs   <i>cs, masc</i>"
+            },
+            {
+              "uid": "√ñā/dpd",
+              "word": "√ñā",
+              "summary": "<b>√ñā</b> know <b>·</b> <i>√ñā 5 kiyādigaṇa + nā (know)</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "na 1",
+          "example_sentence": "tasmā piyaṃ <b>na</b> kayirātha, piy'āpāyo hi pāpako, ganthā tesaṃ na",
+          "context_hash": "190606fc2903a7d91f07016c80e583d5c0b7b83ba5386c8a401688185f45cb36",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "35345/dpd",
+            "35346/dpd",
+            "35347/dpd",
+            "35348/dpd",
+            "28831/dpd",
+            "28832/dpd",
+            "28853/dpd",
+            "29174/dpd",
+            "29180/dpd",
+            "36020/dpd",
+            "78576/dpd",
+            "√ñā/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "kayirātha",
+          "results": [
+            {
+              "uid": "20420/dpd",
+              "word": "kayirātha 1",
+              "summary": "<i>(opt)</i> one oneself should make; one should do for oneself  <b>[karo + eyya + ātha], [kareyyātha > kayirātha]</b>  <i>opt, reflx 3rd sg of kayirā, irreg conjugation</i>"
+            },
+            {
+              "uid": "20421/dpd",
+              "word": "kayirātha 2",
+              "summary": "<i>(opt)</i> you all should do; you all should make  <b>[karo + eyya + ātha], [kareyyātha > kayirātha]</b>  <i>opt 2nd pl of kayirā, irreg conjugation</i>"
+            },
+            {
+              "uid": "20558/dpd",
+              "word": "karoti 1",
+              "summary": "<i>(pr)</i> does; acts; performs  <b>[karo + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "20559/dpd",
+              "word": "karoti 2",
+              "summary": "<i>(pr)</i> makes  <b>[karo + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "20560/dpd",
+              "word": "karoti 3",
+              "summary": "<i>(pr)</i> builds; constructs  <b>[karo + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "20419/dpd",
+              "word": "kayirā",
+              "summary": "<i>(opt)</i> should do; could make  <b>[karo + eyya], [kareyya > kayirā]</b>  <i>opt of karoti, irreg</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "kayirātha 1",
+          "example_sentence": "tasmā piyaṃ na <b>kayirātha</b>, piy'āpāyo hi pāpako, ganthā tesaṃ na vijjanti,",
+          "context_hash": "41b6cfdae3a6eeacb810b68bbb3d276c90f73238176fe0e9f7ce3d24f0cbea9e",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "20420/dpd",
+            "20421/dpd",
+            "20419/dpd",
+            "20558/dpd",
+            "20559/dpd",
+            "20560/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "piyāpāyo",
+          "results": [
+            {
+              "uid": "46228/dpd",
+              "word": "piyāpāya",
+              "summary": "<i>(masc)</i> loss of loved ones; separation from the beloved; absence of the loved  <b>[piya + apāya]</b>  <i>masc, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "piyāpāya",
+          "example_sentence": "tasmā piyaṃ na kayirātha, <b>piy'āpāyo</b> hi pāpako, ganthā tesaṃ na vijjanti, yesaṃ n'",
+          "context_hash": "2b93548ae41005f805c58281dfa67c897b662e235ffaba4643c2fe9eb0b47551",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "46228/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "hi",
+          "results": [
+            {
+              "uid": "71212/dpd",
+              "word": "hi 1",
+              "summary": "<i>(ind)</i> indeed; certainly; truly; definitely   <i>ind, emph</i>"
+            },
+            {
+              "uid": "71213/dpd",
+              "word": "hi 2",
+              "summary": "<i>(ind)</i> because; for   <i>ind</i>"
+            },
+            {
+              "uid": "71214/dpd",
+              "word": "hi 3",
+              "summary": "<i>(ve)</i> (gram) hi; verbal ending of imperative 2nd person singular   <i>ve, masc</i>"
+            },
+            {
+              "uid": "√hi-1/dpd",
+              "word": "√hi 1",
+              "summary": "<b>√hi 1</b> send <b>·</b> <i>√hi 4 svādigaṇa + ṇo, ṇā (send)</i>"
+            },
+            {
+              "uid": "√hi-2/dpd",
+              "word": "√hi 2",
+              "summary": "<b>√hi 2</b> impel <b>·</b> <i>√hi 7 tanādigaṇa + o (impel)Base:hinoDhātupātha:hi gatiyaṁ (going) #525Dhātumañjūsa:hi gatimhi (going) #713Saddanīti:hi gati-buddhīsu upatāpe ca (going, knowing and vexation, tormenting)Sanskrit Root:√hi 1, 5 (impel)Pāṇinīya Dhātupāṭha:hi gatau vṛddhau ca (going and cutting off)</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "hi 1",
+          "example_sentence": "tasmā piyaṃ na kayirātha, piy'āpāyo <b>hi</b> pāpako, ganthā tesaṃ na vijjanti, yesaṃ n'atthi",
+          "context_hash": "3fe17498a80b952d490e16c2106b27a55048b4bc7f13148a1bfdb5131d7ee9b6",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "71212/dpd",
+            "71213/dpd",
+            "71214/dpd",
+            "√hi-1/dpd",
+            "√hi-2/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "pāpako",
+          "results": [
+            {
+              "uid": "45580/dpd",
+              "word": "pāpaka 1.1",
+              "summary": "<i>(adj)</i> bad; wicked; evil; wrong; worthless; harmful  <b>[pāpa + ka]</b>  <i>adj, from pāpa</i>"
+            },
+            {
+              "uid": "45581/dpd",
+              "word": "pāpaka 1.2",
+              "summary": "<i>(adj)</i> (of speech) rough; harsh; dirty  <b>[pāpa + ka]</b>  <i>adj, in comps, from pāpa</i>"
+            },
+            {
+              "uid": "45582/dpd",
+              "word": "pāpaka 2.1",
+              "summary": "<i>(adj)</i> leading to  <b>[pa + āpe + aka]</b>  <i>adj, in comps, from pāpa</i>"
+            },
+            {
+              "uid": "45583/dpd",
+              "word": "pāpaka 2.2",
+              "summary": "<i>(adj)</i> what reaches, causes to reach  <b>[pa + āpe + aka]</b>  <i>adj</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "pāpaka 1.1",
+          "example_sentence": "tasmā piyaṃ na kayirātha, piy'āpāyo hi <b>pāpako</b>, ganthā tesaṃ na vijjanti, yesaṃ n'atthi piy'",
+          "context_hash": "376a40672d53581de6895a214bcfd1893759037ba923256c0cfb382f8e89be18",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "45580/dpd",
+            "45581/dpd",
+            "45582/dpd",
+            "45583/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ganthā",
+          "results": [
+            {
+              "uid": "24269/dpd",
+              "word": "gantha 1",
+              "summary": "<i>(masc)</i> (mental) tie; knot; bond  <b>[√ganth + a]</b>  <i>masc, from gantheti</i>"
+            },
+            {
+              "uid": "75484/dpd",
+              "word": "gantha 2",
+              "summary": "<i>(nt)</i> (mental) tie; knot; bond  <b>[√ganth + a]</b>  <i>nt, from gantheti</i>"
+            },
+            {
+              "uid": "24270/dpd",
+              "word": "gantha 3",
+              "summary": "<i>(masc)</i> book; text  <b>[√ganth + a]</b>  <i>masc, from gantheti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "gantha 1",
+          "example_sentence": "tasmā piyaṃ na kayirātha, piy'āpāyo hi pāpako, <b>ganthā</b> tesaṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
+          "context_hash": "96c7a4c324c2cc5d6ef5e4f8aad9b893978c8490e8428891506be94fd1ca24e9",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "24269/dpd",
+            "24270/dpd",
+            "75484/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tesaṁ",
+          "results": [
+            {
+              "uid": "31315/dpd",
+              "word": "tesaṁ 1",
+              "summary": "<i>(pron)</i> for them; to them; to those  <b>[ta + esānaṁ > esaṁ]</b>  <i>pron, masc & nt dat pl of ta</i>"
+            },
+            {
+              "uid": "31316/dpd",
+              "word": "tesaṁ 2",
+              "summary": "<i>(pron)</i> their; of these; of them; of those  <b>[ta + esānaṁ > esaṁ]</b>  <i>pron, masc & nt gen pl of ta</i>"
+            },
+            {
+              "uid": "31317/dpd",
+              "word": "tesaṁ 3",
+              "summary": "<i>(pron)</i> when they; when these  <b>[ta + esānaṁ > esaṁ]</b>  <i>pron, masc & nt gen pl of ta, gen abs</i>"
+            },
+            {
+              "uid": "29188/dpd",
+              "word": "ta 1.1",
+              "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tesaṁ 1",
+          "example_sentence": "a, piy'āpāyo hi pāpako, ganthā tesaṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
+          "context_hash": "3297f5eb5897fb665882f55aba9874e865e93b5525c613cfed78ddf86c493d70",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "31315/dpd",
+            "31316/dpd",
+            "31317/dpd",
+            "29188/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "vijjanti",
+          "results": [
+            {
+              "uid": "67615/dpd",
+              "word": "vijjati 1",
+              "summary": "<i>(pr)</i> exists; is found; is present (in)  <b>[vijja + ti]</b>  <i>pr, pass of vindati</i>"
+            },
+            {
+              "uid": "67616/dpd",
+              "word": "vijjati 2",
+              "summary": "<i>(pr)</i> is possible; is plausible  <b>[vijja + ti]</b>  <i>pr, pass of vindati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "vijjati 1",
+          "example_sentence": "na kayirātha, piy'āpāyo hi pāpako, ganthā tesaṃ na <b>vijjanti</b>, yesaṃ n'atthi piy'āppiyaṃ.",
+          "context_hash": "db45421a53c9cf912618435919af980651dfb208dca2735465dedef07bb5fb99",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "67615/dpd",
+            "67616/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "yesaṁ",
+          "results": [
+            {
+              "uid": "54200/dpd",
+              "word": "yesaṁ 1",
+              "summary": "<i>(pron)</i> for whoever; to whom; for which; for such and such  <b>[ya + esānaṁ > esaṁ]</b>  <i>pron, masc & nt dat pl of ya</i>"
+            },
+            {
+              "uid": "54201/dpd",
+              "word": "yesaṁ 2",
+              "summary": "<i>(pron)</i> of whoever; of whom; of which; of such and such; of them  <b>[ya + esānaṁ > esaṁ]</b>  <i>pron, masc & nt gen pl of ya</i>"
+            },
+            {
+              "uid": "53444/dpd",
+              "word": "ya 2.1",
+              "summary": "<i>(pron)</i> whoever; whatever; whichever   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "yesaṁ 1",
+          "example_sentence": "pako, ganthā tesaṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
+          "context_hash": "b358439f96283abc46f7aa6bdbcb8e89afc8c6de442920914e31e5b5b04bab8a",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "54200/dpd",
+            "54201/dpd",
+            "53444/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "natthi",
+          "results": [
+            {
+              "uid": "35540/dpd",
+              "word": "natthi 1",
+              "summary": "<i>(pr)</i> is not; it is not; there is not; there is no; there is nothing  <b>[na + √as + ti], [na + atthi]</b>  <i>pr, from na atthi</i>"
+            },
+            {
+              "uid": "35541/dpd",
+              "word": "natthi 2",
+              "summary": "<i>(pr)</i> does not exist; no longer exists  <b>[na + √as + ti], [na + atthi]</b>  <i>pr, from na atthi</i>"
+            },
+            {
+              "uid": "35552/dpd",
+              "word": "natthī",
+              "summary": "<i>(pr)</i> is not; it is not; there is not; there is no  <b>[na + √as + ti], [na + atthi > nathī]</b>  <i>pr 3rd sg of natthi, irreg form of natthi</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "natthi 1",
+          "example_sentence": "'āpāyo hi pāpako, ganthā tesaṃ na vijjanti, yesaṃ <b>n'atthi</b> piy'āppiyaṃ.",
+          "context_hash": "392b2399c63a7994ec7ab0f8506c918561508a84021e4ffb139541549507bb3e",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "35540/dpd",
+            "35541/dpd",
+            "35552/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "piyāppiyaṁ",
+          "results": [
+            {
+              "uid": "46230/dpd",
+              "word": "piyāppiya 1",
+              "summary": "<i>(adj)</i> beloved and unloved; pleasant and unpleasant  <b>[piya + appiya]</b>  <i>adj, comp</i>"
+            },
+            {
+              "uid": "46231/dpd",
+              "word": "piyāppiya 2",
+              "summary": "<i>(nt)</i> friend or foe; dear or unloved person  <b>[piya + appiya]</b>  <i>nt, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "piyāppiya 1",
+          "example_sentence": "saṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
+          "context_hash": "3b4c749b00de8c2b00eefa9ea29ee571d04726cf2cdd607db2a2742113e609c8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "46230/dpd",
+            "46231/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        }
+      ],
+      "unrecognized_words": []
+    }
+  ],
+  "global_unrecognized_words": [],
+  "updated_global_stems": {}
+}

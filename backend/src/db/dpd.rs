@@ -1367,6 +1367,10 @@ impl DpdDbHandle {
             roots.extend(q.load::<DpdRoot>(db_conn)?);
         }
         {
+            // A set has no order, and `direct_uids` keeps the order rows are
+            // added in: sort so the gloss output is the same on every run.
+            let mut roots: Vec<DpdRoot> = roots.into_iter().collect();
+            roots.sort_by(|a, b| a.uid.cmp(&b.uid));
             let res_words: Vec<UDpdWord> =
                 roots.into_iter().map(|r| UDpdWord::Root(Box::new(r))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);

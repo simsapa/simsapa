@@ -4706,7 +4706,6 @@ pub fn parse_word_selection_response(
     Ok(result)
 }
 
-/// Process a single word for glossing, equivalent to QML process_word_for_glossing function
 /// The words to look up for a gloss word, in order: the clean word, then, for an
 /// iti-sandhi word, the clean word with its final vowel long, when that is how
 /// the text writes it. The iti-sandhi split shortens the vowel
@@ -4742,11 +4741,11 @@ fn gloss_lookup_words(word_info: &WordInfo) -> Vec<String> {
     words
 }
 
+/// Looks up and resolves one token. Every token is returned, repeats included:
+/// leaving out repeats is a step of the gloss format (`apply_gloss_dedup`).
+/// A common word is `Skipped` here when `options.skip_common` is on.
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
-    paragraph_shown_stems: &mut std::collections::HashMap<String, bool>,
-    global_stems: &mut std::collections::HashMap<String, bool>,
-    check_global: bool,
     options: &WordProcessingOptions,
     dpd: &crate::db::dpd::DpdDbHandle,
     resolution_data: Option<&GlossResolutionData>,
@@ -4794,11 +4793,6 @@ pub fn process_word_for_glossing(
     // (a)/(b)) keep the flat `selected_index` sense selection.
     let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
 
-    // Dedup key spans every component lemma so a sandhi-compound (e.g.
-    // atthaññe -> atthi + aññe) is not dropped as a duplicate of its first
-    // component (atthi). See gloss_dedup_key().
-    let dedup_key = gloss_dedup_key(&results);
-
     // Skip common words if the option is enabled. For a deconstructor-resolved
     // compound the check is per-component: a common component (e.g. `pañca` in
     // `pañcaggadāyakaṁ`) is dropped from every break-down's component list —
@@ -4824,22 +4818,6 @@ pub fn process_word_for_glossing(
         } else if is_common_word(&stem, &options.common_words) {
             return Ok(Some(WordProcessingResult::Skipped));
         }
-    }
-
-    // Skip if already shown in this paragraph
-    if paragraph_shown_stems.contains_key(&dedup_key) {
-        return Ok(Some(WordProcessingResult::Skipped));
-    }
-
-    // Skip if global deduplication is on and already shown
-    if check_global && global_stems.contains_key(&dedup_key) {
-        return Ok(Some(WordProcessingResult::Skipped));
-    }
-
-    // Mark as shown
-    paragraph_shown_stems.insert(dedup_key.clone(), true);
-    if check_global {
-        global_stems.insert(dedup_key, true);
     }
 
     let original_word = clean_word_pali(&word_info.word);
@@ -4923,6 +4901,72 @@ pub fn process_word_for_glossing(
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
 }
 
+/// The Headwords format's de-dup of one processed token: a recognized word
+/// whose `gloss_dedup_key` was already shown in this paragraph, or anywhere
+/// when `check_global`, becomes `Skipped`; otherwise its key is marked shown.
+/// Unrecognized and skipped tokens pass through and mark nothing.
+///
+/// The key spans every component lemma, so a sandhi-compound (`atthaññe` →
+/// atthi + aññe) is not dropped as a duplicate of its first component.
+pub fn headwords_dedup_word(
+    result: Option<WordProcessingResult>,
+    paragraph_shown_stems: &mut std::collections::HashMap<String, bool>,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+    check_global: bool,
+) -> Option<WordProcessingResult> {
+    let Some(WordProcessingResult::Recognized(word)) = result else {
+        return result;
+    };
+    let dedup_key = gloss_dedup_key(&word.results);
+    if paragraph_shown_stems.contains_key(&dedup_key)
+        || (check_global && global_stems.contains_key(&dedup_key))
+    {
+        return Some(WordProcessingResult::Skipped);
+    }
+    paragraph_shown_stems.insert(dedup_key.clone(), true);
+    if check_global {
+        global_stems.insert(dedup_key, true);
+    }
+    Some(WordProcessingResult::Recognized(word))
+}
+
+/// `headwords_dedup_word` over one paragraph's tokens, in order, with a fresh
+/// per-paragraph map.
+pub fn apply_headwords_dedup(
+    processed_words: Vec<Option<WordProcessingResult>>,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+    check_global: bool,
+) -> Vec<Option<WordProcessingResult>> {
+    let mut paragraph_shown_stems = std::collections::HashMap::new();
+    processed_words
+        .into_iter()
+        .map(|r| headwords_dedup_word(r, &mut paragraph_shown_stems, global_stems, check_global))
+        .collect()
+}
+
+/// Leaves out repeated tokens as the gloss format says. Headwords: a repeat
+/// within the paragraph always, a repeat of an earlier paragraph when "No
+/// duplicates" is on. Word in Sentence: every token stays, unless "No
+/// duplicates" is on, which leaves out any repeat, by the same key.
+pub fn apply_gloss_dedup(
+    processed_words: Vec<Option<WordProcessingResult>>,
+    options: &WordProcessingOptions,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+) -> Vec<Option<WordProcessingResult>> {
+    match options.gloss_format {
+        crate::types::GlossFormat::Headwords => {
+            apply_headwords_dedup(processed_words, global_stems, options.no_duplicates_globally)
+        }
+        crate::types::GlossFormat::WordInSentence => {
+            if options.no_duplicates_globally {
+                apply_headwords_dedup(processed_words, global_stems, true)
+            } else {
+                processed_words
+            }
+        }
+    }
+}
+
 /// Collect unrecognized words and update global tracking
 pub fn collect_unrecognized_words(
     processing_results: &[Option<WordProcessingResult>],
@@ -4982,7 +5026,6 @@ pub fn process_all_paragraphs(
         // takes no appdata handle).
         let words_with_context = extract_words_with_context(paragraph_text);
         let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
-        let mut paragraph_shown_stems = std::collections::HashMap::new();
         let mut processed_words = Vec::new();
 
         for word_context in words_with_context {
@@ -4992,19 +5035,13 @@ pub fn process_all_paragraphs(
                 original_word: word_context.original_word.clone(),
             };
 
-            match process_word_for_glossing(
-                &word_info,
-                &mut paragraph_shown_stems,
-                &mut global_stems,
-                input.options.no_duplicates_globally,
-                &input.options,
-                dpd,
-                Some(&resolution_data),
-            ) {
+            match process_word_for_glossing(&word_info, &input.options, dpd, Some(&resolution_data)) {
                 Ok(result) => processed_words.push(result),
                 Err(e) => return Err(format!("Word processing error: {}", e)),
             }
         }
+
+        let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
         collect_unrecognized_words(
             &processed_words,
@@ -5108,7 +5145,6 @@ pub fn process_single_paragraph(
 ) -> Result<crate::types::SingleParagraphProcessingResult, String> {
     let words_with_context = extract_words_with_context(&input.paragraph_text);
     let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
-    let mut paragraph_shown_stems = std::collections::HashMap::new();
     let mut global_stems = input.options.existing_global_stems.clone();
     let mut processed_words = Vec::new();
 
@@ -5119,19 +5155,13 @@ pub fn process_single_paragraph(
             original_word: word_context.original_word.clone(),
         };
 
-        match process_word_for_glossing(
-            &word_info,
-            &mut paragraph_shown_stems,
-            &mut global_stems,
-            input.options.no_duplicates_globally,
-            &input.options,
-            dpd,
-            Some(&resolution_data),
-        ) {
+        match process_word_for_glossing(&word_info, &input.options, dpd, Some(&resolution_data)) {
             Ok(result) => processed_words.push(result),
             Err(e) => return Err(format!("Word processing error: {}", e)),
         }
     }
+
+    let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
     let mut paragraph_unrecognized_words = std::collections::HashMap::new();
     let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();

@@ -1,0 +1,2753 @@
+{
+  "success": true,
+  "paragraphs": [
+    {
+      "paragraph_index": 0,
+      "words_data": [
+        {
+          "original_word": "anamataggoyaṁ",
+          "results": [
+            {
+              "uid": "3803/dpd",
+              "word": "anamataggoyaṁ",
+              "summary": "<i>(sandhi)</i> this (has) an inconceivable beginning  <b>[anamataggo + ayaṁ]</b>  <i>sandhi, adj + pron</i>"
+            },
+            {
+              "uid": "3799/dpd",
+              "word": "anamatagga",
+              "summary": "<i>(adj)</i> with inconceivable beginning  <b>[anu + na > a + mata + agga]</b>  <i>adj, comp</i>"
+            },
+            {
+              "uid": "8709/dpd",
+              "word": "aya 1.1",
+              "summary": "<i>(masc)</i> good luck; good fortune  <b>[√i > ay + *a]</b>  <i>masc, from eti</i>"
+            },
+            {
+              "uid": "8710/dpd",
+              "word": "aya 1.2",
+              "summary": "<i>(adj)</i> coming; going  <b>[√i > ay + *a]</b>  <i>adj, in comps, from eti</i>"
+            },
+            {
+              "uid": "8711/dpd",
+              "word": "aya 1.3",
+              "summary": "<i>(masc)</i> way  <b>[√i > ay + *a]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "8712/dpd",
+              "word": "aya 1.4",
+              "summary": "<i>(masc)</i> reason, source  <b>[√i > ay + *a]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "8713/dpd",
+              "word": "aya 2.1",
+              "summary": "<i>(nt)</i> iron   <i>nt, in comps</i>"
+            },
+            {
+              "uid": "8753/dpd",
+              "word": "ayas",
+              "summary": "<i>(masc)</i> iron   <i>masc, mano group</i>"
+            },
+            {
+              "uid": "8757/dpd",
+              "word": "ayaṁ",
+              "summary": "<i>(pron)</i> this; this person; this thing   <i>pron, masc & fem nom sg of ima</i>"
+            },
+            {
+              "uid": "13779/dpd",
+              "word": "ima 1.1",
+              "summary": "<i>(pron)</i> this   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "anamataggoyaṁ",
+          "example_sentence": "anamataggo'yaṃ [anamataggāyaṃ] bhikkhave, saṃsāro. pubbā koṭi na paññā",
+          "context_hash": "143b31b4189221e18ee2148c3821ddc036b47b7be53397ba49b64a2f5760549c",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "anamataggo + ayaṁ",
+              "components": [
+                {
+                  "word": "anamataggo",
+                  "result_uids": [
+                    "3799/dpd"
+                  ]
+                },
+                {
+                  "word": "ayaṁ",
+                  "result_uids": [
+                    "8709/dpd",
+                    "8710/dpd",
+                    "8711/dpd",
+                    "8712/dpd",
+                    "8713/dpd",
+                    "8753/dpd",
+                    "8757/dpd",
+                    "13779/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "3803/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "anamataggāyaṁ",
+          "results": [
+            {
+              "uid": "3799/dpd",
+              "word": "anamatagga",
+              "summary": "<i>(adj)</i> with inconceivable beginning  <b>[anu + na > a + mata + agga]</b>  <i>adj, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "anamatagga",
+          "example_sentence": "anamataggo'yaṃ [anamataggāyaṃ] bhikkhave, saṃsāro. pubbā koṭi na paññā",
+          "context_hash": "143b31b4189221e18ee2148c3821ddc036b47b7be53397ba49b64a2f5760549c",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "3799/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "saṁsāro",
+          "results": [
+            {
+              "uid": "61784/dpd",
+              "word": "saṁsāra 1",
+              "summary": "<i>(masc)</i> wandering on; moving on continuously; transmigration; passing from one state of existence to another; stream of existence; cyclic existence  <b>[saṁ + √sar > sār + *a]</b>  <i>masc, from saṁsarati</i>"
+            },
+            {
+              "uid": "61785/dpd",
+              "word": "saṁsāra 2",
+              "summary": "<i>(masc)</i> going back and forth  <b>[saṁ + √sar > sār + *a]</b>  <i>masc, in comps, from saṁsarati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "saṁsāra 1",
+          "example_sentence": "'yaṃ [anamataggāyaṃ] bhikkhave, saṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃ",
+          "context_hash": "5e96827d6ac22df6b5f58f9dd92f458bd1e8f84502e764ea4eb72872a51e81a2",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "61784/dpd",
+            "61785/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "pubbā",
+          "results": [
+            {
+              "uid": "46904/dpd",
+              "word": "pubbā",
+              "summary": "<i>(fem)</i> east   <i>fem</i>"
+            },
+            {
+              "uid": "46819/dpd",
+              "word": "pubba 1.1",
+              "summary": "<i>(adj)</i> previous; earlier; former   <i>adj, prep</i>"
+            },
+            {
+              "uid": "46820/dpd",
+              "word": "pubba 1.2",
+              "summary": "<i>(adj)</i> going before; been before   <i>adj, in comps</i>"
+            },
+            {
+              "uid": "46821/dpd",
+              "word": "pubba 1.3",
+              "summary": "<i>(adj)</i> eastern   <i>adj</i>"
+            },
+            {
+              "uid": "46822/dpd",
+              "word": "pubba 1.4",
+              "summary": "<i>(adj)</i> (gram) initial; preceding; first   <i>adj</i>"
+            },
+            {
+              "uid": "46823/dpd",
+              "word": "pubba 1.5",
+              "summary": "<i>(masc)</i> (gram) initial vowel; preceding letter; first syllable   <i>masc</i>"
+            },
+            {
+              "uid": "46824/dpd",
+              "word": "pubba 2.1",
+              "summary": "<i>(masc)</i> pus; suppuration  <b>[√pūy > pūv > puvv > pubb + a]</b>  <i>masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "pubbā",
+          "example_sentence": "<b>pubbā</b> koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ",
+          "context_hash": "fbb12421b16a3a026b46f752cafe4a8b1086e7e88c086bfa4126e518a779f4e0",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "46904/dpd",
+            "46819/dpd",
+            "46820/dpd",
+            "46821/dpd",
+            "46822/dpd",
+            "46823/dpd",
+            "46824/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "koṭi",
+          "results": [
+            {
+              "uid": "22963/dpd",
+              "word": "koṭi 1",
+              "summary": "<i>(card)</i> ten million (10 000 000)  <b>[√kuṭ > koṭ + *i]</b>  <i>card, fem</i>"
+            },
+            {
+              "uid": "22964/dpd",
+              "word": "koṭi 2",
+              "summary": "<i>(fem)</i> point; end point  <b>[√kuṭ > koṭ + *i]</b>  <i>fem</i>"
+            },
+            {
+              "uid": "22965/dpd",
+              "word": "koṭi 3",
+              "summary": "<i>(fem)</i> tip; top; point  <b>[√kuṭ > koṭ + *i]</b>  <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "koṭi 1",
+          "example_sentence": "pubbā <b>koṭi</b> na paññāyati avijjānīvaraṇānaṃ sattānaṃ",
+          "context_hash": "fbb12421b16a3a026b46f752cafe4a8b1086e7e88c086bfa4126e518a779f4e0",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "22963/dpd",
+            "22964/dpd",
+            "22965/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "paññāyati",
+          "results": [
+            {
+              "uid": "40072/dpd",
+              "word": "paññāyati 1",
+              "summary": "<i>(pr)</i> is clearly known; is evident; is perceived; there is  <b>[pa + ñāya + ti]</b>  <i>pr, pass of pajānāti</i>"
+            },
+            {
+              "uid": "40073/dpd",
+              "word": "paññāyati 2",
+              "summary": "<i>(pr)</i> is allowed; is permitted (to); is known  <b>[pa + ñāya + ti]</b>  <i>pr, pass of pajānāti</i>"
+            },
+            {
+              "uid": "40074/dpd",
+              "word": "paññāyati 3",
+              "summary": "<i>(pr)</i> is well known; is recognized (by)  <b>[pa + ñāya + ti]</b>  <i>pr, pass of pajānāti</i>"
+            },
+            {
+              "uid": "40076/dpd",
+              "word": "paññāyati 4",
+              "summary": "<i>(pr)</i> happens (to); occurs (to); exists (for)  <b>[pa + ñāya + ti]</b>  <i>pr, pass of pajānāti</i>"
+            },
+            {
+              "uid": "40075/dpd",
+              "word": "paññāyati 5",
+              "summary": "<i>(pr)</i> is manifested  <b>[pa + ñāya + ti]</b>  <i>pr, pass of pajānāti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "paññāyati 1",
+          "example_sentence": "pubbā koṭi na <b>paññāyati</b> avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ",
+          "context_hash": "f9230e214d7553f229c7be37c6cef292eb4bf03df986675cff50f70a3bd178d9",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "40072/dpd",
+            "40073/dpd",
+            "40074/dpd",
+            "40075/dpd",
+            "40076/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "avijjānīvaraṇānaṁ",
+          "results": [
+            {
+              "uid": "10531/dpd",
+              "word": "avijjānīvaraṇa 1",
+              "summary": "<i>(adj)</i> impeded by ignorance; obstructed by not understanding  <b>[avijjā + nīvaraṇa]</b>  <i>adj, comp</i>"
+            },
+            {
+              "uid": "74606/dpd",
+              "word": "avijjānīvaraṇa 2",
+              "summary": "<i>(nt)</i> obstacle that is ignorance; obstruction of not understanding  <b>[avijjā + nīvaraṇa]</b>  <i>nt, abstr, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "avijjānīvaraṇa 1",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "10531/dpd",
+            "74606/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "sattānaṁ",
+          "results": [
+            {
+              "uid": "57676/dpd",
+              "word": "satta 2.1",
+              "summary": "<i>(masc)</i> being; living being; creature  <b>[sa + tta]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "57677/dpd",
+              "word": "satta 2.2",
+              "summary": "<i>(masc)</i> bright principal, sattva (of the Sāṁkhya)  <b>[sa + tta]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "57678/dpd",
+              "word": "satta 3.1",
+              "summary": "<i>(pp)</i> clung; stuck; attached (to)  <b>[√saj + ta]</b>  <i>pp of sajjati</i>"
+            },
+            {
+              "uid": "57679/dpd",
+              "word": "satta 4.1",
+              "summary": "<i>(pp)</i> cursed; sworn  <b>[√sap + ta]</b>  <i>pp of sapati</i>"
+            },
+            {
+              "uid": "57767/dpd",
+              "word": "sattar",
+              "summary": "<i>(masc)</i> enemy; adversary   <i>masc, agent</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "satta 2.1",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "57676/dpd",
+            "57677/dpd",
+            "57678/dpd",
+            "57679/dpd",
+            "57767/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "taṇhāsaṁyojanānaṁ",
+          "results": [
+            {
+              "uid": "29404/dpd",
+              "word": "taṇhāsaṁyojana 1",
+              "summary": "<i>(adj)</i> with craving as fetter; having desire as a bond  <b>[taṇhā + saṁyojana]</b>  <i>adj, comp</i>"
+            },
+            {
+              "uid": "74608/dpd",
+              "word": "taṇhāsaṁyojana 2",
+              "summary": "<i>(nt)</i> fetter that is craving; bond of desire  <b>[taṇhā + saṁyojana]</b>  <i>nt, abstr, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "taṇhāsaṁyojana 1",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "29404/dpd",
+            "74608/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "sandhāvataṁ",
+          "results": [
+            {
+              "uid": "58457/dpd",
+              "word": "sandhāvanta",
+              "summary": "<i>(prp)</i> wandering; drifting; transmigrating  <b>[saṁ + dhāva + nta]</b>  <i>prp of sandhāvati</i>"
+            },
+            {
+              "uid": "58455/dpd",
+              "word": "sandhāvati",
+              "summary": "<i>(pr)</i> wanders; transmigrates  <b>[saṁ + dhāva + ti]</b>  <i>pr</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "sandhāvanta",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "58455/dpd",
+            "58457/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "saṁsarataṁ",
+          "results": [
+            {
+              "uid": "61773/dpd",
+              "word": "saṁsaranta",
+              "summary": "<i>(prp)</i> wandering on; moving on continuously; transmigrating  <b>[saṁ + sara + nta]</b>  <i>prp of saṁsarati</i>"
+            },
+            {
+              "uid": "61772/dpd",
+              "word": "saṁsarati",
+              "summary": "<i>(pr)</i> wanders on; travels; transmigrates (to)  <b>[saṁ + sara + ti]</b>  <i>pr</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "saṁsaranta",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "61772/dpd",
+            "61773/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "seyyathāpi",
+          "results": [
+            {
+              "uid": "64953/dpd",
+              "word": "seyyathāpi",
+              "summary": "<i>(sandhi)</i> just like; as if; imagine if; suppose  <b>[se + yathā + api]</b>  <i>sandhi, pron + adv + ind</i>"
+            },
+            {
+              "uid": "56236/dpd",
+              "word": "sa 1.1",
+              "summary": "<i>(letter)</i> (gram) letter s; 36th letter of the alphabet; dental consonant   <i>letter, masc</i>"
+            },
+            {
+              "uid": "56233/dpd",
+              "word": "sa 3.1",
+              "summary": "<i>(pron)</i> own; one's own; one's own possession   <i>pron, base, reflx</i>"
+            },
+            {
+              "uid": "56234/dpd",
+              "word": "sa 3.2",
+              "summary": "<i>(adj)</i> self-; personal-   <i>adj, in comps, reflx</i>"
+            },
+            {
+              "uid": "64787/dpd",
+              "word": "se 1",
+              "summary": "<i>(pron)</i> they (object)  <b>[sa + e]</b>  <i>pron, masc & nt acc pl of ta</i>"
+            },
+            {
+              "uid": "64788/dpd",
+              "word": "se 2",
+              "summary": "<i>(pron)</i> that; it  <b>[sa + e]</b>  <i>pron, nt nom sg of ta, irreg</i>"
+            },
+            {
+              "uid": "64876/dpd",
+              "word": "seti 1",
+              "summary": "<i>(pr)</i> lies; lies around  <b>[se + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "64877/dpd",
+              "word": "seti 2",
+              "summary": "<i>(pr)</i> sleeps (on)  <b>[se + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "64878/dpd",
+              "word": "seti 3",
+              "summary": "<i>(pr)</i> (comm) lives; stays; dwells  <b>[se + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "62705/dpd",
+              "word": "si 1.1",
+              "summary": "<i>(ve)</i> (gram) verbal ending of the present tense 2nd person singular   <i>ve, masc</i>"
+            },
+            {
+              "uid": "29188/dpd",
+              "word": "ta 1.1",
+              "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+            },
+            {
+              "uid": "53575/dpd",
+              "word": "yathā 1",
+              "summary": "<i>(ind)</i> like; as; as per; according to; how; in whatever way  <b>[ya + thā]</b>  <i>ind, adv, from ya</i>"
+            },
+            {
+              "uid": "53576/dpd",
+              "word": "yathā 2",
+              "summary": "<i>(ind)</i> because; since  <b>[ya + thā]</b>  <i>ind, adv, from ya</i>"
+            },
+            {
+              "uid": "53577/dpd",
+              "word": "yathā 3",
+              "summary": "<i>(ind)</i> (gram) for example  <b>[ya + thā]</b>  <i>ind, adv, from ya</i>"
+            },
+            {
+              "uid": "6657/dpd",
+              "word": "api 1.1",
+              "summary": "<i>(ind)</i> just; only   <i>ind</i>"
+            },
+            {
+              "uid": "6658/dpd",
+              "word": "api 1.2",
+              "summary": "<i>(ind)</i> even; even then   <i>ind</i>"
+            },
+            {
+              "uid": "6659/dpd",
+              "word": "api 1.3",
+              "summary": "<i>(ind)</i> if; even if   <i>ind</i>"
+            },
+            {
+              "uid": "6660/dpd",
+              "word": "api 1.4",
+              "summary": "<i>(ind)</i> have?; did?; was?; perhaps?   <i>ind, interr</i>"
+            },
+            {
+              "uid": "6661/dpd",
+              "word": "api 1.5",
+              "summary": "<i>(ind)</i> but; however; yet   <i>ind</i>"
+            },
+            {
+              "uid": "6662/dpd",
+              "word": "api 1.6",
+              "summary": "<i>(ind)</i> yes; surely; indeed   <i>ind, emph</i>"
+            },
+            {
+              "uid": "6663/dpd",
+              "word": "api 1.7",
+              "summary": "<i>(ind)</i> too; also; as well   <i>ind</i>"
+            },
+            {
+              "uid": "6664/dpd",
+              "word": "api 2.1",
+              "summary": "<i>(prefix)</i> on; onto   <i>prefix</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "seyyathāpi",
+          "example_sentence": "<b>seyyathā'pi</b>, bhikkhave, puriso yaṃ imasmiṃ jambudīpe",
+          "context_hash": "c1107709437fc979acb14d85a20cffa184652150c3c36d6e99954def18aaf72c",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "se + yathā + api",
+              "components": [
+                {
+                  "word": "se",
+                  "result_uids": [
+                    "29188/dpd",
+                    "56233/dpd",
+                    "56234/dpd",
+                    "56236/dpd",
+                    "62705/dpd",
+                    "64787/dpd",
+                    "64788/dpd",
+                    "64876/dpd",
+                    "64877/dpd",
+                    "64878/dpd"
+                  ]
+                },
+                {
+                  "word": "yathā",
+                  "result_uids": [
+                    "53575/dpd",
+                    "53576/dpd",
+                    "53577/dpd"
+                  ]
+                },
+                {
+                  "word": "api",
+                  "result_uids": [
+                    "6657/dpd",
+                    "6658/dpd",
+                    "6659/dpd",
+                    "6660/dpd",
+                    "6661/dpd",
+                    "6662/dpd",
+                    "6663/dpd",
+                    "6664/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "64953/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "puriso",
+          "results": [
+            {
+              "uid": "47031/dpd",
+              "word": "purisa 1",
+              "summary": "<i>(masc)</i> man; male; person   <i>masc</i>"
+            },
+            {
+              "uid": "47032/dpd",
+              "word": "purisa 2",
+              "summary": "<i>(masc)</i> servant; labourer   <i>masc</i>"
+            },
+            {
+              "uid": "47034/dpd",
+              "word": "purisa 3",
+              "summary": "<i>(adj)</i> male; masculine   <i>adj</i>"
+            },
+            {
+              "uid": "47035/dpd",
+              "word": "purisa 4",
+              "summary": "<i>(masc)</i> World Soul (in Sāṁkhya system)   <i>masc</i>"
+            },
+            {
+              "uid": "47033/dpd",
+              "word": "purisa 5",
+              "summary": "<i>(masc)</i> (gram) grammatical person; 3rd 2nd 1st person   <i>masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "purisa 1",
+          "example_sentence": "seyyathā'pi, bhikkhave, <b>puriso</b> yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ",
+          "context_hash": "e7faabdf8e338f5f3a605178dd772c4f15339fd6fc80daee5e887f46eff247b8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "47031/dpd",
+            "47032/dpd",
+            "47033/dpd",
+            "47034/dpd",
+            "47035/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "imasmiṁ",
+          "results": [
+            {
+              "uid": "13791/dpd",
+              "word": "imasmiṁ 1",
+              "summary": "<i>(pron)</i> in this  <b>[ima + smiṁ]</b>  <i>pron, masc & nt loc sg of ima</i>"
+            },
+            {
+              "uid": "13792/dpd",
+              "word": "imasmiṁ 2",
+              "summary": "<i>(pron)</i> when this  <b>[ima + smiṁ]</b>  <i>pron, masc & nt loc sg of ima, loc abs</i>"
+            },
+            {
+              "uid": "13779/dpd",
+              "word": "ima 1.1",
+              "summary": "<i>(pron)</i> this   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "imasmiṁ 1",
+          "example_sentence": "seyyathā'pi, bhikkhave, puriso yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (b",
+          "context_hash": "699eb58b1bfb71e2cb3008192f9be7799c0017d81235467fb39a513d437f7342",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "13791/dpd",
+            "13792/dpd",
+            "13779/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "jambudīpe",
+          "results": [
+            {
+              "uid": "27978/dpd",
+              "word": "jambudīpa",
+              "summary": "<i>(masc)</i> India; name of the central continent in Buddhist cosmology  <b>[jambu + dīpa]</b>  <i>masc, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "jambudīpa",
+          "example_sentence": "seyyathā'pi, bhikkhave, puriso yaṃ imasmiṃ <b>jambudīpe</b> tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (",
+          "context_hash": "03df09005aabfa0f14598d40b5b2bc46670c41857dbea99c47bed8aae4601b38",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "27978/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tiṇakaṭṭhasākhāpalāsaṁ",
+          "results": [
+            {
+              "uid": "30514/dpd",
+              "word": "tiṇakaṭṭhasākhāpalāsa",
+              "summary": "<i>(nt)</i> grass, timber, branches and leaves  <b>[tiṇa + kaṭṭha + sākhā + palāsa]</b>  <i>nt, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tiṇakaṭṭhasākhāpalāsa",
+          "example_sentence": ", puriso yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃha",
+          "context_hash": "a5a4ce4b776d8d417db5b9d7e126a3d7618694daf062742dcbab78e4134d1ef1",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "30514/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "chetvā",
+          "results": [
+            {
+              "uid": "27732/dpd",
+              "word": "chetvā 1",
+              "summary": "<i>(abs)</i> having cut off; having severed; (comm) having killed  <b>[√chid > ched + *tvā]</b>  <i>abs of chindati</i>"
+            },
+            {
+              "uid": "27733/dpd",
+              "word": "chetvā 2",
+              "summary": "<i>(abs)</i> having injured; (comm) having beaten  <b>[√chid > ched + *tvā]</b>  <i>abs of chindati</i>"
+            },
+            {
+              "uid": "27734/dpd",
+              "word": "chetvā 3",
+              "summary": "<i>(abs)</i> having cut up; having sliced up  <b>[√chid > ched + *tvā]</b>  <i>abs of chindati</i>"
+            },
+            {
+              "uid": "27735/dpd",
+              "word": "chetvā 4",
+              "summary": "<i>(abs)</i> (of a stream) having cut across; having breasted; having forded  <b>[√chid > ched + *tvā]</b>  <i>abs of chindati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "chetvā 1",
+          "example_sentence": "yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ <b>chetvā</b> [tacchetvā (bahūsu)] ekajjhaṃ saṃharitvā",
+          "context_hash": "f70de5b5950ff75406f75b50a71c827b2b29e200ce0d33deec9faa8a4394b512",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "27732/dpd",
+            "27733/dpd",
+            "27734/dpd",
+            "27735/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tacchetvā",
+          "results": [
+            {
+              "uid": "29272/dpd",
+              "word": "tacchetvā",
+              "summary": "<i>(abs)</i> having chopped; having cut off  <b>[tacche + tvā]</b>  <i>abs of taccheti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tacchetvā",
+          "example_sentence": "imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [<b>tacchetvā</b> (bahūsu)] ekajjhaṃ saṃharitvā caturaṅgulaṃ",
+          "context_hash": "5d374c9bd19d071fc80b079fc28309335c500c5112ae71415fdee4ffd9f6f8e6",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "29272/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "bahūsu",
+          "results": [
+            {
+              "uid": "48098/dpd",
+              "word": "bahu",
+              "summary": "<i>(adj)</i> many; much; lots; a lot (of); great; large  <b>[√bah + u]</b>  <i>adj</i>"
+            },
+            {
+              "uid": "48220/dpd",
+              "word": "bahū",
+              "summary": "<i>(masc)</i> many people; many things; much; a lot  <b>[√bah + u + ū], [bahu + ū]</b>  <i>masc pl of bahu</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "bahu",
+          "example_sentence": "jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (<b>bahūsu</b>)] ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ",
+          "context_hash": "f66cb34eecfa6ce391a0441e3f363130c40f1fbade9e1ddcc1da6caae2c987f2",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "48098/dpd",
+            "48220/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ekajjhaṁ",
+          "results": [
+            {
+              "uid": "17447/dpd",
+              "word": "ekajjhaṁ",
+              "summary": "<i>(ind)</i> together; in one place; in the same place  <b>[eka + dhā + ya + aṁ], [ekajjha + aṁ]</b>  <i>ind, adv, acc sg of ekadhā</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "ekajjhaṁ",
+          "example_sentence": " taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā nikkhi",
+          "context_hash": "59813a5320d58d9447af9bccc1d33bd795915b8c46b878125c3c046fbfb3e34a",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "17447/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "saṁharitvā",
+          "results": [
+            {
+              "uid": "62014/dpd",
+              "word": "saṁharitvā 1",
+              "summary": "<i>(abs)</i> having collected; having brought together  <b>[saṁ + √har + itvā]</b>  <i>abs of saṁharati</i>"
+            },
+            {
+              "uid": "62015/dpd",
+              "word": "saṁharitvā 2",
+              "summary": "<i>(abs)</i> having folded; having tucked in  <b>[saṁ + √har + itvā]</b>  <i>abs of saṁharati</i>"
+            },
+            {
+              "uid": "62016/dpd",
+              "word": "saṁharitvā 3",
+              "summary": "<i>(abs)</i> (of hands) having put together  <b>[saṁ + √har + itvā]</b>  <i>abs of saṁharati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "saṁharitvā 1",
+          "example_sentence": " taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā nikkhi",
+          "context_hash": "59813a5320d58d9447af9bccc1d33bd795915b8c46b878125c3c046fbfb3e34a",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "62014/dpd",
+            "62015/dpd",
+            "62016/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "caturaṅgulaṁ",
+          "results": [
+            {
+              "uid": "26032/dpd",
+              "word": "caturaṅgula",
+              "summary": "<i>(adj)</i> measuring four inches; four fingerbreadths long  <b>[catu + [r] + aṅgula]</b>  <i>adj, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "caturaṅgula",
+          "example_sentence": " taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā nikkhi",
+          "context_hash": "59813a5320d58d9447af9bccc1d33bd795915b8c46b878125c3c046fbfb3e34a",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "26032/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ghaṭikaṁ",
+          "results": [
+            {
+              "uid": "25447/dpd",
+              "word": "ghaṭikā 1",
+              "summary": "<i>(fem)</i> stick; peg; stub; piece  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            },
+            {
+              "uid": "25448/dpd",
+              "word": "ghaṭikā 2",
+              "summary": "<i>(fem)</i> (comm) game of sticks; tip-cat  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            },
+            {
+              "uid": "25449/dpd",
+              "word": "ghaṭikā 3",
+              "summary": "<i>(fem)</i> small alms bowl  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            },
+            {
+              "uid": "25450/dpd",
+              "word": "ghaṭikā 4",
+              "summary": "<i>(fem)</i> knot  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            },
+            {
+              "uid": "25451/dpd",
+              "word": "ghaṭikā 5",
+              "summary": "<i>(fem)</i> measure of time; 24 minutes  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            },
+            {
+              "uid": "25452/dpd",
+              "word": "ghaṭikā 6",
+              "summary": "<i>(fem)</i> ball  <b>[√ghaṭ + a + ikā], [ghaṭa + ikā]</b>  <i>fem, from ghaṭa</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "ghaṭikā 1",
+          "example_sentence": " taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā nikkhi",
+          "context_hash": "59813a5320d58d9447af9bccc1d33bd795915b8c46b878125c3c046fbfb3e34a",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "25447/dpd",
+            "25448/dpd",
+            "25449/dpd",
+            "25450/dpd",
+            "25451/dpd",
+            "25452/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "katvā",
+          "results": [
+            {
+              "uid": "19788/dpd",
+              "word": "katvā 1",
+              "summary": "<i>(abs)</i> having done  <b>[√kar + tvā]</b>  <i>abs of karoti</i>"
+            },
+            {
+              "uid": "19789/dpd",
+              "word": "katvā 2",
+              "summary": "<i>(abs)</i> having made  <b>[√kar + tvā]</b>  <i>abs of karoti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "katvā 1",
+          "example_sentence": "ekajjhaṃ saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ <b>katvā</b> nikkhipeyya, ayaṃ me mātā, tassā me mātu ayaṃ",
+          "context_hash": "74e11582a4f05d4fe835bbb0c94843b2f79ccff98b37c91eeac20a8ab3192404",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "19788/dpd",
+            "19789/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "nikkhipeyya",
+          "results": [
+            {
+              "uid": "36802/dpd",
+              "word": "nikkhipati 1",
+              "summary": "<i>(pr)</i> throws down; discards; drops  <b>[ni + khipa + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "36803/dpd",
+              "word": "nikkhipati 2",
+              "summary": "<i>(pr)</i> puts down; places down; lays down  <b>[ni + khipa + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "36804/dpd",
+              "word": "nikkhipati 3",
+              "summary": "<i>(pr)</i> sets aside; lays aside; keeps; saves; stores (something in)  <b>[ni + khipa + ti]</b>  <i>pr</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "nikkhipati 1",
+          "example_sentence": "saṃharitvā caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā <b>nikkhipeyya</b>, ayaṃ me mātā, tassā me mātu ayaṃ mātā'ti,",
+          "context_hash": "969ce6d7458fa3a61b9cb3fcff1f75cd4cbb5f0299014e481e780e17c3f496ba",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "36802/dpd",
+            "36803/dpd",
+            "36804/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ayaṁ",
+          "results": [
+            {
+              "uid": "8757/dpd",
+              "word": "ayaṁ",
+              "summary": "<i>(pron)</i> this; this person; this thing   <i>pron, masc & fem nom sg of ima</i>"
+            },
+            {
+              "uid": "8709/dpd",
+              "word": "aya 1.1",
+              "summary": "<i>(masc)</i> good luck; good fortune  <b>[√i > ay + *a]</b>  <i>masc, from eti</i>"
+            },
+            {
+              "uid": "8710/dpd",
+              "word": "aya 1.2",
+              "summary": "<i>(adj)</i> coming; going  <b>[√i > ay + *a]</b>  <i>adj, in comps, from eti</i>"
+            },
+            {
+              "uid": "8711/dpd",
+              "word": "aya 1.3",
+              "summary": "<i>(masc)</i> way  <b>[√i > ay + *a]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "8712/dpd",
+              "word": "aya 1.4",
+              "summary": "<i>(masc)</i> reason, source  <b>[√i > ay + *a]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "8713/dpd",
+              "word": "aya 2.1",
+              "summary": "<i>(nt)</i> iron   <i>nt, in comps</i>"
+            },
+            {
+              "uid": "8753/dpd",
+              "word": "ayas",
+              "summary": "<i>(masc)</i> iron   <i>masc, mano group</i>"
+            },
+            {
+              "uid": "13779/dpd",
+              "word": "ima 1.1",
+              "summary": "<i>(pron)</i> this   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "ayaṁ",
+          "example_sentence": "laṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, tassā me mātu ayaṃ mātā'ti, apariyādinnā'va [apariyādi",
+          "context_hash": "ecea059d075aa2f48c1c9b4a864c112ab1ed02ecd8ab21069b6c3d84a1ad0a03",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "8757/dpd",
+            "8709/dpd",
+            "8710/dpd",
+            "8711/dpd",
+            "8712/dpd",
+            "8713/dpd",
+            "8753/dpd",
+            "13779/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "mātā",
+          "results": [
+            {
+              "uid": "52175/dpd",
+              "word": "mātar",
+              "summary": "<i>(fem)</i> mother   <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "mātar",
+          "example_sentence": "caturaṅgulaṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ me <b>mātā</b>, tassā me mātu ayaṃ mātā'ti, apariyādinnā'va [",
+          "context_hash": "03b8ea41a259b2d8d753a9cd4005f1165d408945ef8f31d9165e048749a7eeb0",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "52175/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tassā",
+          "results": [
+            {
+              "uid": "30177/dpd",
+              "word": "tassā 1",
+              "summary": "<i>(pron)</i> to her; for her; to that; for that  <b>[ta + ssā]</b>  <i>pron, fem dat sg of ta</i>"
+            },
+            {
+              "uid": "30178/dpd",
+              "word": "tassā 2",
+              "summary": "<i>(pron)</i> of her; hers; of that  <b>[ta + ssā]</b>  <i>pron, fem gen sg of ta</i>"
+            },
+            {
+              "uid": "29188/dpd",
+              "word": "ta 1.1",
+              "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tassā 1",
+          "example_sentence": "caturaṅgulaṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, <b>tassā</b> me mātu ayaṃ mātā'ti, apariyādinnā'va [",
+          "context_hash": "03b8ea41a259b2d8d753a9cd4005f1165d408945ef8f31d9165e048749a7eeb0",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "30177/dpd",
+            "30178/dpd",
+            "29188/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "mātu",
+          "results": [
+            {
+              "uid": "52209/dpd",
+              "word": "mātu 1",
+              "summary": "<i>(fem)</i> for the mother; to the mother  <b>[mātar + u]</b>  <i>fem, dat sg of mātar</i>"
+            },
+            {
+              "uid": "52210/dpd",
+              "word": "mātu 2",
+              "summary": "<i>(fem)</i> mother's; of mother  <b>[mātar + u]</b>  <i>fem, gen sg of mātar</i>"
+            },
+            {
+              "uid": "52211/dpd",
+              "word": "mātu 3",
+              "summary": "<i>(fem)</i> mother  <b>[mātar + u]</b>  <i>fem, in comps, from mātar</i>"
+            },
+            {
+              "uid": "52175/dpd",
+              "word": "mātar",
+              "summary": "<i>(fem)</i> mother   <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "mātu 1",
+          "example_sentence": "ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, tassā me <b>mātu</b> ayaṃ mātā'ti, apariyādinnā'va [apariyādiṇṇā'va]",
+          "context_hash": "006dbb28b0ac26d9d08ebb239064f4af584170c4d43f227494a4797c6a72db4e",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "52209/dpd",
+            "52210/dpd",
+            "52211/dpd",
+            "52175/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "apariyādinnāva",
+          "results": [
+            {
+              "uid": "6398/dpd",
+              "word": "apariyādinna 1",
+              "summary": "<i>(pp)</i> not used up; not exhausted; not consumed; not run out  <b>[na > a + pari + [y] + √ādā > ādī + na]</b>  <i>pp of na pariyādiyati</i>"
+            },
+            {
+              "uid": "6399/dpd",
+              "word": "apariyādinna 2",
+              "summary": "<i>(pp)</i> not overwhelmed; not overpowered; not under the control of  <b>[na > a + pari + [y] + √ādā > ādī + na]</b>  <i>pp of na pariyādiyati</i>"
+            },
+            {
+              "uid": "13932/dpd",
+              "word": "iva",
+              "summary": "<i>(ind)</i> like; as   <i>ind</i>"
+            },
+            {
+              "uid": "18051/dpd",
+              "word": "eva 1",
+              "summary": "<i>(ind)</i> only; just; merely; exclusively   <i>ind, emph</i>"
+            },
+            {
+              "uid": "18052/dpd",
+              "word": "eva 2",
+              "summary": "<i>(ind)</i> still   <i>ind</i>"
+            },
+            {
+              "uid": "18053/dpd",
+              "word": "eva 3",
+              "summary": "<i>(ind)</i> even; too; as well   <i>ind, adv</i>"
+            },
+            {
+              "uid": "18054/dpd",
+              "word": "eva 4",
+              "summary": "<i>(ind)</i> indeed; really; certainly; absolutely  <b>[eva]</b>  <i>ind, emph</i>"
+            },
+            {
+              "uid": "18055/dpd",
+              "word": "eva 5",
+              "summary": "<i>(ind)</i> as soon as   <i>ind, emph</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "apariyādinna 1",
+          "example_sentence": "nikkhipeyya, ayaṃ me mātā, tassā me mātu ayaṃ mātā'ti, <b>apariyādinnā'va</b> [apariyādiṇṇā'va] bhikkhave, tassa purisassa",
+          "context_hash": "e42dbf9b0cbdee490bc485fe8ddb35afd6feaee5154359ba40653b786d3cb2ba",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "apariyādinna + iva",
+              "components": [
+                {
+                  "word": "apariyādinna",
+                  "result_uids": [
+                    "6398/dpd",
+                    "6399/dpd"
+                  ]
+                },
+                {
+                  "word": "iva",
+                  "result_uids": [
+                    "13932/dpd"
+                  ]
+                }
+              ]
+            },
+            {
+              "words_joined": "apariyādinnā + eva",
+              "components": [
+                {
+                  "word": "apariyādinnā",
+                  "result_uids": [
+                    "6398/dpd",
+                    "6399/dpd"
+                  ]
+                },
+                {
+                  "word": "eva",
+                  "result_uids": [
+                    "18051/dpd",
+                    "18052/dpd",
+                    "18053/dpd",
+                    "18054/dpd",
+                    "18055/dpd"
+                  ]
+                }
+              ]
+            },
+            {
+              "words_joined": "apariyādinnā + iva",
+              "components": [
+                {
+                  "word": "apariyādinnā",
+                  "result_uids": [
+                    "6398/dpd",
+                    "6399/dpd"
+                  ]
+                },
+                {
+                  "word": "iva",
+                  "result_uids": [
+                    "13932/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "6398/dpd",
+            "6399/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "apariyādiṇṇāva",
+          "results": [
+            {
+              "uid": "6397/dpd",
+              "word": "apariyādiṇṇa",
+              "summary": "<i>(pp)</i> not used up; not exhausted; not consumed; not reached the end  <b>[na > a + pari + [y] + √ādā > ādī + na]</b>  <i>pp of na pariyādiyati</i>"
+            },
+            {
+              "uid": "18051/dpd",
+              "word": "eva 1",
+              "summary": "<i>(ind)</i> only; just; merely; exclusively   <i>ind, emph</i>"
+            },
+            {
+              "uid": "18052/dpd",
+              "word": "eva 2",
+              "summary": "<i>(ind)</i> still   <i>ind</i>"
+            },
+            {
+              "uid": "18053/dpd",
+              "word": "eva 3",
+              "summary": "<i>(ind)</i> even; too; as well   <i>ind, adv</i>"
+            },
+            {
+              "uid": "18054/dpd",
+              "word": "eva 4",
+              "summary": "<i>(ind)</i> indeed; really; certainly; absolutely  <b>[eva]</b>  <i>ind, emph</i>"
+            },
+            {
+              "uid": "18055/dpd",
+              "word": "eva 5",
+              "summary": "<i>(ind)</i> as soon as   <i>ind, emph</i>"
+            },
+            {
+              "uid": "13932/dpd",
+              "word": "iva",
+              "summary": "<i>(ind)</i> like; as   <i>ind</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "apariyādiṇṇa",
+          "example_sentence": "mātā, tassā me mātu ayaṃ mātā'ti, apariyādinnā'va [<b>apariyādiṇṇā'va</b>] bhikkhave, tassa purisassa mātumātaro assu, atha",
+          "context_hash": "aa970a5fd653039143083a053d42421fb9c851cb07646dd6281107929e71fa2d",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "apariyādiṇṇā + eva",
+              "components": [
+                {
+                  "word": "apariyādiṇṇā",
+                  "result_uids": [
+                    "6397/dpd"
+                  ]
+                },
+                {
+                  "word": "eva",
+                  "result_uids": [
+                    "18051/dpd",
+                    "18052/dpd",
+                    "18053/dpd",
+                    "18054/dpd",
+                    "18055/dpd"
+                  ]
+                }
+              ]
+            },
+            {
+              "words_joined": "apariyādiṇṇā + iva",
+              "components": [
+                {
+                  "word": "apariyādiṇṇā",
+                  "result_uids": [
+                    "6397/dpd"
+                  ]
+                },
+                {
+                  "word": "iva",
+                  "result_uids": [
+                    "13932/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "6397/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tassa",
+          "results": [
+            {
+              "uid": "30163/dpd",
+              "word": "tassa 1",
+              "summary": "<i>(pron)</i> to him; for him; to that; for that  <b>[ta + ssa]</b>  <i>pron, masc & nt dat sg of ta</i>"
+            },
+            {
+              "uid": "30164/dpd",
+              "word": "tassa 2",
+              "summary": "<i>(pron)</i> of that; his; its  <b>[ta + ssa]</b>  <i>pron, masc & nt gen sg of ta</i>"
+            },
+            {
+              "uid": "30165/dpd",
+              "word": "tassa 3",
+              "summary": "<i>(pron)</i> when he; when it  <b>[ta + ssa]</b>  <i>pron, masc & nt gen sg of ta, gen abs</i>"
+            },
+            {
+              "uid": "30166/dpd",
+              "word": "tassa 4",
+              "summary": "<i>(ind)</i> therefore; thus; so; because of that; regarding that  <b>[ta + ssa]</b>  <i>ind, adv, masc & nt gen sg of ta</i>"
+            },
+            {
+              "uid": "30177/dpd",
+              "word": "tassā 1",
+              "summary": "<i>(pron)</i> to her; for her; to that; for that  <b>[ta + ssā]</b>  <i>pron, fem dat sg of ta</i>"
+            },
+            {
+              "uid": "30178/dpd",
+              "word": "tassā 2",
+              "summary": "<i>(pron)</i> of her; hers; of that  <b>[ta + ssā]</b>  <i>pron, fem gen sg of ta</i>"
+            },
+            {
+              "uid": "29188/dpd",
+              "word": "ta 1.1",
+              "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+            },
+            {
+              "uid": "29189/dpd",
+              "word": "ta 2.1",
+              "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tassa 1",
+          "example_sentence": "'ti, apariyādinnā'va [apariyādiṇṇā'va] bhikkhave, <b>tassa</b> purisassa mātumātaro assu, atha imasmiṃ jambudīpe",
+          "context_hash": "5b6d8573920f457c6961e6dfd17a30a0a0150d240dadd11fff01d558d9f67a3b",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "30163/dpd",
+            "30164/dpd",
+            "30165/dpd",
+            "30166/dpd",
+            "30177/dpd",
+            "30178/dpd",
+            "29188/dpd",
+            "29189/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "mātumātaro",
+          "results": [
+            {
+              "uid": "52240/dpd",
+              "word": "mātumātar",
+              "summary": "<i>(fem)</i> grandmother; mother's mother  <b>[mātu + mātar]</b>  <i>fem, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "mātumātar",
+          "example_sentence": "apariyādinnā'va [apariyādiṇṇā'va] bhikkhave, tassa purisassa <b>mātumātaro</b> assu, atha imasmiṃ jambudīpe",
+          "context_hash": "d6d8f51d6ab21ea01e48abf6ca9768d3111443a8294d83b008162d9f7745b046",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "52240/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "assu",
+          "results": [
+            {
+              "uid": "10096/dpd",
+              "word": "assu 1.1",
+              "summary": "<i>(nt)</i> tears   <i>nt</i>"
+            },
+            {
+              "uid": "10097/dpd",
+              "word": "assu 2.1",
+              "summary": "<i>(ind)</i> (emphatic particle)   <i>ind, emph</i>"
+            },
+            {
+              "uid": "10098/dpd",
+              "word": "assu 3.1",
+              "summary": "<i>(opt)</i> they should be; they may be; they would be; may they be  <b>[assa + u]</b>  <i>opt 3rd pl of assa, irreg conjugation</i>"
+            },
+            {
+              "uid": "10099/dpd",
+              "word": "assu 4.1",
+              "summary": "<i>(aor)</i> aor. 2nd pers. sing. of suṇāti   <i>aor 2nd sg of suṇi</i>"
+            },
+            {
+              "uid": "9915/dpd",
+              "word": "assa 3.1",
+              "summary": "<i>(opt)</i> may be; could be; should be; would be; could become  <b>[√as + a]</b>  <i>opt of atthi, irreg</i>"
+            },
+            {
+              "uid": "10122/dpd",
+              "word": "assosi",
+              "summary": "<i>(aor)</i> heard  <b>[a + so + si]</b>  <i>aor of suṇāti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "assu 1.1",
+          "example_sentence": "apariyādiṇṇā'va] bhikkhave, tassa purisassa mātumātaro <b>assu</b>, atha imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ",
+          "context_hash": "d632aedb009c4e9fa42adfa609918c0c5e7a48fda318ebb11c983c1448af137c",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "10096/dpd",
+            "10097/dpd",
+            "10098/dpd",
+            "10099/dpd",
+            "9915/dpd",
+            "10122/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "parikkhayaṁ",
+          "results": [
+            {
+              "uid": "43231/dpd",
+              "word": "parikkhaya",
+              "summary": "<i>(masc)</i> exhaustion; destruction; extinction; depletion (of)  <b>[pari + √khī > khay + *a]</b>  <i>masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "parikkhaya",
+          "example_sentence": "o assu, atha imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ parikkhayaṃ pariyādānaṃ gaccheyya. taṃ kissa h",
+          "context_hash": "b225582dbaf27187d0695d647ae6480f2e35e6f50776546bcce33dfa8d8cd901",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "43231/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "pariyādānaṁ",
+          "results": [
+            {
+              "uid": "43942/dpd",
+              "word": "pariyādāna 1",
+              "summary": "<i>(nt)</i> using up; exhausting; consuming; depleting (of)  <b>[pari + [y] + √ādā + ana]</b>  <i>nt, act, from pariyādāti</i>"
+            },
+            {
+              "uid": "43943/dpd",
+              "word": "pariyādāna 2",
+              "summary": "<i>(nt)</i> obsession; overpowering; occupation; fixation  <b>[pari + [y] + √ādā + ana]</b>  <i>nt, act, from pariyādāpeti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "pariyādāna 1",
+          "example_sentence": "o assu, atha imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ parikkhayaṃ pariyādānaṃ gaccheyya. taṃ kissa h",
+          "context_hash": "b225582dbaf27187d0695d647ae6480f2e35e6f50776546bcce33dfa8d8cd901",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "43942/dpd",
+            "43943/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "gaccheyya",
+          "results": [
+            {
+              "uid": "24051/dpd",
+              "word": "gaccheyya",
+              "summary": "<i>(opt)</i> could go; would move; would walk  <b>[gaccha + eyya]</b>  <i>opt of gacchati</i>"
+            },
+            {
+              "uid": "24043/dpd",
+              "word": "gacchati 1",
+              "summary": "<i>(pr)</i> goes; walks; moves; wanders around; travels  <b>[gaccha + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "24044/dpd",
+              "word": "gacchati 2",
+              "summary": "<i>(pr)</i> becomes  <b>[gaccha + ti]</b>  <i>pr</i>"
+            },
+            {
+              "uid": "90229/dpd",
+              "word": "gacchati 3",
+              "summary": "<i>(pr)</i> mates; has sexual intercourse (with)  <b>[gaccha + ti]</b>  <i>pr</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "gaccheyya",
+          "example_sentence": "jambudīpe tiṇakaṭṭhasākhāpalāsaṃ parikkhayaṃ pariyādānaṃ <b>gaccheyya</b>.",
+          "context_hash": "9a7f85510d11c21bd9f1ef15678d853a4d445c30f90f3e11210fee6cf14d007b",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "24051/dpd",
+            "24043/dpd",
+            "24044/dpd",
+            "90229/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "kissa",
+          "results": [
+            {
+              "uid": "21930/dpd",
+              "word": "kissa 1",
+              "summary": "<i>(pron)</i> for whom?; for what reason?; why?  <b>[ka > ki + issa]</b>  <i>pron, interr, masc & nt dat sg of ka</i>"
+            },
+            {
+              "uid": "21931/dpd",
+              "word": "kissa 2",
+              "summary": "<i>(pron)</i> of whom?; of what?; of which?  <b>[ka > ki + issa]</b>  <i>pron, interr, masc & nt gen sg of ka</i>"
+            },
+            {
+              "uid": "19158/dpd",
+              "word": "ka 1.1",
+              "summary": "<i>(pron)</i> who?; what?; which?   <i>pron, interr, base</i>"
+            },
+            {
+              "uid": "19159/dpd",
+              "word": "ka 1.2",
+              "summary": "<i>(pron)</i> where?   <i>pron</i>"
+            },
+            {
+              "uid": "21591/dpd",
+              "word": "ki",
+              "summary": "<i>(pron)</i> who?; what?; which?   <i>pron, interr, base</i>"
+            },
+            {
+              "uid": "22021/dpd",
+              "word": "kī 1.1",
+              "summary": "<i>(masc)</i> name of the reigning king at the time of Kassapa Buddha   <i>masc</i>"
+            },
+            {
+              "uid": "22022/dpd",
+              "word": "kī 2.1",
+              "summary": "<i>(root)</i> (gram) √kī (buy)  <b>[√kī + ī]</b>  <i>root, masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "kissa 1",
+          "example_sentence": "taṃ <b>kissa</b> hetu?",
+          "context_hash": "62290ffe181900783b1f6f8da5a4762978c2ec7c36e4034155b760ae071a1f28",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "21930/dpd",
+            "21931/dpd",
+            "19158/dpd",
+            "19159/dpd",
+            "21591/dpd",
+            "22021/dpd",
+            "22022/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "hetu",
+          "results": [
+            {
+              "uid": "71432/dpd",
+              "word": "hetu 1",
+              "summary": "<i>(adj)</i> because; by virtue (of)  <b>[√hi > he + *tu]</b>  <i>adj, in comps</i>"
+            },
+            {
+              "uid": "71433/dpd",
+              "word": "hetu 2",
+              "summary": "<i>(masc)</i> reason (for); cause (for); condition (for); sake (of)  <b>[√hi > he + *tu]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "89413/dpd",
+              "word": "hetu 3",
+              "summary": "<i>(ind)</i> because (of); due (to)  <b>[√hi > he + *tu]</b>  <i>ind, adv</i>"
+            },
+            {
+              "uid": "71434/dpd",
+              "word": "hetu 4",
+              "summary": "<i>(ind)</i> by means of; according to  <b>[√hi > he + *tu]</b>  <i>ind, adv, in comps</i>"
+            },
+            {
+              "uid": "71435/dpd",
+              "word": "hetu 5",
+              "summary": "<i>(ind)</i> for; for the purpose; for the sake (of)  <b>[√hi > he + *tu]</b>  <i>ind, adv, in comps</i>"
+            },
+            {
+              "uid": "71436/dpd",
+              "word": "hetu 6",
+              "summary": "<i>(masc)</i> root-cause  <b>[√hi > he + *tu]</b>  <i>masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "hetu 1",
+          "example_sentence": "taṃ kissa <b>hetu</b>?",
+          "context_hash": "62290ffe181900783b1f6f8da5a4762978c2ec7c36e4034155b760ae071a1f28",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "71432/dpd",
+            "71433/dpd",
+            "71434/dpd",
+            "71435/dpd",
+            "71436/dpd",
+            "89413/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "evaṁ",
+          "results": [
+            {
+              "uid": "18134/dpd",
+              "word": "evaṁ 1",
+              "summary": "<i>(ind)</i> thus; this; like this; similarly; in the same manner; just as; such  <b>[eva + aṁ]</b>  <i>ind, adv</i>"
+            },
+            {
+              "uid": "18135/dpd",
+              "word": "evaṁ 2",
+              "summary": "<i>(ind)</i> yes!; that is right!; correct!  <b>[eva + aṁ]</b>  <i>ind, excl</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "evaṁ 1",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "18134/dpd",
+            "18135/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "dīgharattaṁ",
+          "results": [
+            {
+              "uid": "32757/dpd",
+              "word": "dīgharattaṁ",
+              "summary": "<i>(ind)</i> for a long time  <b>[dīgha + ratta + aṁ], [dīgharatta + aṁ]</b>  <i>ind, adv, comp, acc sg of digharatta</i>"
+            },
+            {
+              "uid": "32754/dpd",
+              "word": "dīgharatta",
+              "summary": "<i>(nt)</i> long time  <b>[dīgha + ratta]</b>  <i>nt, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "dīgharattaṁ",
+          "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
+          "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "32757/dpd",
+            "32754/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "vo",
+          "results": [
+            {
+              "uid": "81109/dpd",
+              "word": "vo 1.1",
+              "summary": "<i>(pron)</i> you all (subject)   <i>pron, 2nd nom pl of tvaṁ</i>"
+            },
+            {
+              "uid": "70560/dpd",
+              "word": "vo 1.2",
+              "summary": "<i>(pron)</i> you all (object)   <i>pron, 2nd acc pl of tvaṁ</i>"
+            },
+            {
+              "uid": "70561/dpd",
+              "word": "vo 1.3",
+              "summary": "<i>(pron)</i> by you all; with you all   <i>pron, 2nd instr pl of tvaṁ</i>"
+            },
+            {
+              "uid": "70562/dpd",
+              "word": "vo 1.4",
+              "summary": "<i>(pron)</i> to you all; for you all   <i>pron, 2nd dat pl of tvaṁ</i>"
+            },
+            {
+              "uid": "70563/dpd",
+              "word": "vo 1.5",
+              "summary": "<i>(pron)</i> of you all; your   <i>pron, 2nd gen pl of tvaṁ</i>"
+            },
+            {
+              "uid": "70564/dpd",
+              "word": "vo 1.6",
+              "summary": "<i>(pron)</i> when you all; while you all   <i>pron, 2nd gen pl, gen abs of tvaṁ</i>"
+            },
+            {
+              "uid": "70565/dpd",
+              "word": "vo 2.1",
+              "summary": "<i>(prefix)</i> -  <b>[vi + ava > vo]</b>  <i>prefix, comp</i>"
+            },
+            {
+              "uid": "70566/dpd",
+              "word": "vo 3.1",
+              "summary": "<i>(ind)</i> indeed; truly; surely   <i>ind, emph</i>"
+            },
+            {
+              "uid": "31017/dpd",
+              "word": "tumha",
+              "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>"
+            },
+            {
+              "uid": "31383/dpd",
+              "word": "tvaṁ 1",
+              "summary": "<i>(pron)</i> you (subject)  <b>[tumha + aṁ > tuvaṁ > tvaṁ]</b>  <i>pron, 2nd nom sg of tumha</i>"
+            },
+            {
+              "uid": "65506/dpd",
+              "word": "va 4.1",
+              "summary": "<i>(letter)</i> (gram) letter v; 37th letter of the alphabet; dento-labial semi-vowel   <i>letter, masc</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "vo 1.1",
+          "example_sentence": "evaṃ dīgharattaṃ <b>vo</b>, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ",
+          "context_hash": "bac294b67d43e29d6d8f51609ef68bcdb7a80924b30ff926b11fe9f2d29bf877",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "70560/dpd",
+            "70561/dpd",
+            "70562/dpd",
+            "70563/dpd",
+            "70564/dpd",
+            "70565/dpd",
+            "70566/dpd",
+            "81109/dpd",
+            "31017/dpd",
+            "31383/dpd",
+            "65506/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "dukkhaṁ",
+          "results": [
+            {
+              "uid": "32985/dpd",
+              "word": "dukkhaṁ",
+              "summary": "<i>(ind)</i> badly; with difficulty; uncomfortably  <b>[√dukkh + a + aṁ], [dukkha + aṁ]</b>  <i>ind, adv, acc sg of dukkha</i>"
+            },
+            {
+              "uid": "32875/dpd",
+              "word": "dukkha 1",
+              "summary": "<i>(adj)</i> uncomfortable; unpleasant  <b>[√dukkh + a]</b>  <i>adj</i>"
+            },
+            {
+              "uid": "32876/dpd",
+              "word": "dukkha 2",
+              "summary": "<i>(adj)</i> painful  <b>[√dukkh + a]</b>  <i>adj</i>"
+            },
+            {
+              "uid": "32877/dpd",
+              "word": "dukkha 3",
+              "summary": "<i>(nt)</i> discomfort; suffering; unease; unpleasantness; something unsatisfactory; trouble; a bummer; stress  <b>[√dukkh + a]</b>  <i>nt</i>"
+            },
+            {
+              "uid": "32878/dpd",
+              "word": "dukkha 4",
+              "summary": "<i>(nt)</i> pain; physical discomfort  <b>[√dukkh + a]</b>  <i>nt</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "dukkhaṁ",
+          "example_sentence": "evaṃ dīgharattaṃ vo, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, k",
+          "context_hash": "f3ec75048ae164974b2ed77dc46acaf858f4c1f123e7b3d4ad0c47ed74d607d8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "32985/dpd",
+            "32875/dpd",
+            "32876/dpd",
+            "32877/dpd",
+            "32878/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "paccanubhūtaṁ",
+          "results": [
+            {
+              "uid": "39348/dpd",
+              "word": "paccanubhūta",
+              "summary": "<i>(pp)</i> personally experienced; suffered; undergone; met with (by)  <b>[pati > paty > pacc + anu + √bhū + ta]</b>  <i>pp of paccanubhavati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "paccanubhūta",
+          "example_sentence": "evaṃ dīgharattaṃ vo, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, k",
+          "context_hash": "f3ec75048ae164974b2ed77dc46acaf858f4c1f123e7b3d4ad0c47ed74d607d8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "39348/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "tibbaṁ",
+          "results": [
+            {
+              "uid": "30681/dpd",
+              "word": "tibba 1",
+              "summary": "<i>(pp)</i> sharp; piercing; acute  <b>[√tij > tib + ta]</b>  <i>pp of tejeti</i>"
+            },
+            {
+              "uid": "30682/dpd",
+              "word": "tibba 2",
+              "summary": "<i>(pp)</i> intense; keen; acute  <b>[√tij > tib + ta]</b>  <i>pp of tejeti</i>"
+            },
+            {
+              "uid": "30683/dpd",
+              "word": "tibba 3",
+              "summary": "<i>(nt)</i> agony; torture; suffering  <b>[√tij > tib + ta]</b>  <i>nt, pp of √tij</i>"
+            },
+            {
+              "uid": "30684/dpd",
+              "word": "tibba 4",
+              "summary": "<i>(pp)</i> dense; thick; dark  <b>[√tij > tib + ta]</b>  <i>pp of tejeti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "tibba 1",
+          "example_sentence": "evaṃ dīgharattaṃ vo, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, k",
+          "context_hash": "f3ec75048ae164974b2ed77dc46acaf858f4c1f123e7b3d4ad0c47ed74d607d8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "30681/dpd",
+            "30682/dpd",
+            "30683/dpd",
+            "30684/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "byasanaṁ",
+          "results": [
+            {
+              "uid": "48765/dpd",
+              "word": "byasana",
+              "summary": "<i>(nt)</i> misfortune; disaster; calamity  <b>[vi > vy > by + √as + ana]</b>  <i>nt, from byasati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "byasana",
+          "example_sentence": "evaṃ dīgharattaṃ vo, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, k",
+          "context_hash": "f3ec75048ae164974b2ed77dc46acaf858f4c1f123e7b3d4ad0c47ed74d607d8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "48765/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "kaṭasī",
+          "results": [
+            {
+              "uid": "19333/dpd",
+              "word": "kaṭasī",
+              "summary": "<i>(fem)</i> cemetery; charnel ground   <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "kaṭasī",
+          "example_sentence": "paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, <b>kaṭasī</b> [kaṭasi kaṭā chavā sayan'ti etthā'ti kaṭasī]",
+          "context_hash": "952a21aee838706d4c3bd9d4b46ee12cac1b9ea227958a72e3ee69c3ac24e0a1",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "19333/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "kaṭā",
+          "results": [
+            {
+              "uid": "19316/dpd",
+              "word": "kaṭa 1",
+              "summary": "<i>(masc)</i> winning dice  <b>[√kar + ta]</b>  <i>masc</i>"
+            },
+            {
+              "uid": "73800/dpd",
+              "word": "kaṭa 2",
+              "summary": "<i>(pp)</i> done; did; completed  <b>[√kar + ta]</b>  <i>pp of karoti, in comps</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "kaṭa 1",
+          "example_sentence": "paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, kaṭasī [kaṭasi <b>kaṭā</b> chavā sayan'ti etthā'ti kaṭasī] vaḍḍhitā.",
+          "context_hash": "e0ef37cdf01c07c809697582656f1c5f69f3cae5597cc7a7e955c9d4e9ada127",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "19316/dpd",
+            "73800/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "chavā",
+          "results": [
+            {
+              "uid": "27535/dpd",
+              "word": "chava 1",
+              "summary": "<i>(adj)</i> low; base; vile; wretched; poor; terrible   <i>adj</i>"
+            },
+            {
+              "uid": "27536/dpd",
+              "word": "chava 2",
+              "summary": "<i>(adj)</i> worthless; trivial; lowly; unimportant   <i>adj</i>"
+            },
+            {
+              "uid": "27537/dpd",
+              "word": "chava 3",
+              "summary": "<i>(masc)</i> corpse   <i>masc, in comps</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "chava 1",
+          "example_sentence": "paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, kaṭasī [kaṭasi kaṭā <b>chavā</b> sayan'ti etthā'ti kaṭasī] vaḍḍhitā.",
+          "context_hash": "e0ef37cdf01c07c809697582656f1c5f69f3cae5597cc7a7e955c9d4e9ada127",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "27535/dpd",
+            "27536/dpd",
+            "27537/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "sayaṁ",
+          "results": [
+            {
+              "uid": "60965/dpd",
+              "word": "sayaṁ",
+              "summary": "<i>(ind)</i> by one's own; oneself; one's own  <b>[sa + [y] + a + aṁ], [saya + aṁ]</b>  <i>ind, adv, from sa</i>"
+            },
+            {
+              "uid": "60941/dpd",
+              "word": "saya 1.1",
+              "summary": "<i>(adj)</i> lying; resting; existing; residing (in)  <b>[√sī > say + *a]</b>  <i>adj, in comps, from sayati</i>"
+            },
+            {
+              "uid": "60942/dpd",
+              "word": "saya 2.1",
+              "summary": "<i>(adj)</i> one's own; oneself; self-  <b>[sa + [y] + a]</b>  <i>adj, in comps, from sa</i>"
+            },
+            {
+              "uid": "60956/dpd",
+              "word": "sayanta",
+              "summary": "<i>(prp)</i> lying down; resting  <b>[saya + nta]</b>  <i>prp of sayati</i>"
+            },
+            {
+              "uid": "60979/dpd",
+              "word": "sayi 1",
+              "summary": "<i>(aor)</i> lay down  <b>[saya + i]</b>  <i>aor of sayati</i>"
+            },
+            {
+              "uid": "60980/dpd",
+              "word": "sayi 2",
+              "summary": "<i>(aor)</i> slept  <b>[saya + i]</b>  <i>aor of sayati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "sayaṁ",
+          "example_sentence": "byasanaṃ paccanubhūtaṃ, kaṭasī [kaṭasi kaṭā chavā <b>sayan'ti</b> etthā'ti kaṭasī] vaḍḍhitā.",
+          "context_hash": "c56a96423fd7f5aae37f3b126e1797f00236877efeac85e5112bca28119ac88c",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "60965/dpd",
+            "60941/dpd",
+            "60942/dpd",
+            "60956/dpd",
+            "60979/dpd",
+            "60980/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ettha",
+          "results": [
+            {
+              "uid": "17945/dpd",
+              "word": "ettha 1",
+              "summary": "<i>(ind)</i> here; in this place; in this case; in this regard  <b>[ima + ttha]</b>  <i>ind, adv, from ima</i>"
+            },
+            {
+              "uid": "17946/dpd",
+              "word": "ettha 2",
+              "summary": "<i>(ind)</i> (gram) in this grammatical rule  <b>[ima + ttha]</b>  <i>ind, adv, from ima</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "ettha 1",
+          "example_sentence": "paccanubhūtaṃ, kaṭasī [kaṭasi kaṭā chavā sayan'ti <b>etthā'ti</b> kaṭasī] vaḍḍhitā.",
+          "context_hash": "3ec7c0962c62476b0f6a844ad1146a326b5c1ffa9ad7e5fd2992bd9076147ec8",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "17945/dpd",
+            "17946/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "vaḍḍhitā",
+          "results": [
+            {
+              "uid": "65849/dpd",
+              "word": "vaḍḍhita 1",
+              "summary": "<i>(pp)</i> filled up; increased  <b>[√vaḍḍh + ita]</b>  <i>pp of vaḍḍhati</i>"
+            },
+            {
+              "uid": "65850/dpd",
+              "word": "vaḍḍhita 2",
+              "summary": "<i>(pp)</i> cultivated; developed  <b>[vaḍḍhe + ita]</b>  <i>pp of vaḍḍheti</i>"
+            },
+            {
+              "uid": "65851/dpd",
+              "word": "vaḍḍhita 3",
+              "summary": "<i>(pp)</i> grown, prospered   <i>pp of vaḍḍhati</i>"
+            },
+            {
+              "uid": "65852/dpd",
+              "word": "vaḍḍhita 4",
+              "summary": "<i>(pp)</i> grown up; raised; reared; brought up (in)  <b>[√vaḍḍh + ita]</b>  <i>pp of vaḍḍhati</i>"
+            },
+            {
+              "uid": "65853/dpd",
+              "word": "vaḍḍhita 5",
+              "summary": "<i>(pp)</i> (of food) got ready, served in  <b>[√vaḍḍh + ita]</b>  <i>pp of vaḍḍheti</i>"
+            },
+            {
+              "uid": "65854/dpd",
+              "word": "vaḍḍhita 6",
+              "summary": "<i>(pp)</i> set into motion  <b>[√vaḍḍh + ita]</b>  <i>pp of vaḍḍheti</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "vaḍḍhita 1",
+          "example_sentence": "kaṭasī [kaṭasi kaṭā chavā sayan'ti etthā'ti kaṭasī] <b>vaḍḍhitā</b>.",
+          "context_hash": "cb6f6082d8acc0c1dd56f02177195ff88575762a1220239867209f707902c9cc",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "65849/dpd",
+            "65850/dpd",
+            "65851/dpd",
+            "65852/dpd",
+            "65853/dpd",
+            "65854/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "yāvañcidaṁ",
+          "results": [
+            {
+              "uid": "54022/dpd",
+              "word": "yāvañcidaṁ",
+              "summary": "<i>(sandhi)</i> and in this case; and in this regard; and as far as this; to such an extent  <b>[yāva + [ṁ] + ca + idaṁ]</b>  <i>sandhi, ind + ind + pron</i>"
+            },
+            {
+              "uid": "54013/dpd",
+              "word": "yāva 1",
+              "summary": "<i>(ind)</i> as long as; as far as; so much so; up to; until; from… to   <i>ind, adv</i>"
+            },
+            {
+              "uid": "54014/dpd",
+              "word": "yāva 2",
+              "summary": "<i>(ind)</i> how; how much; how well   <i>ind, adv</i>"
+            },
+            {
+              "uid": "54047/dpd",
+              "word": "yāvant",
+              "summary": "<i>(adj)</i> as many as; however many  <b>[yāva + vant]</b>  <i>adj, from yāva</i>"
+            },
+            {
+              "uid": "25666/dpd",
+              "word": "ca 1.1",
+              "summary": "<i>(ind)</i> 6th item in a numerical list   <i>ind</i>"
+            },
+            {
+              "uid": "25665/dpd",
+              "word": "ca 1.2",
+              "summary": "<i>(letter)</i> (gram) letter c; 14th letter of the alphabet; palatal consonant   <i>letter, masc</i>"
+            },
+            {
+              "uid": "25662/dpd",
+              "word": "ca 2.1",
+              "summary": "<i>(ind)</i> and; both   <i>ind, conj</i>"
+            },
+            {
+              "uid": "25663/dpd",
+              "word": "ca 2.2",
+              "summary": "<i>(ind)</i> but; although; and if   <i>ind, conj</i>"
+            },
+            {
+              "uid": "25664/dpd",
+              "word": "ca 2.3",
+              "summary": "<i>(ind)</i> (gram) and; as well as; but; terms and conditions apply to a rule   <i>ind</i>"
+            },
+            {
+              "uid": "13628/dpd",
+              "word": "idaṁ 1",
+              "summary": "<i>(pron)</i> this; this thing  <b>[ida + aṁ]</b>  <i>pron, nt nom sg of ima</i>"
+            },
+            {
+              "uid": "13629/dpd",
+              "word": "idaṁ 2",
+              "summary": "<i>(pron)</i> this; this thing; this place (object)  <b>[ida + aṁ]</b>  <i>pron, nt acc sg of ima</i>"
+            },
+            {
+              "uid": "74149/dpd",
+              "word": "idaṁ 3",
+              "summary": "<i>(ind)</i> here; in this case  <b>[ima > ida + aṁ]</b>  <i>ind, adv, acc sg of ima</i>"
+            },
+            {
+              "uid": "13779/dpd",
+              "word": "ima 1.1",
+              "summary": "<i>(pron)</i> this   <i>pron, base</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "yāvañcidaṁ",
+          "example_sentence": "n'ti etthā'ti kaṭasī] vaḍḍhitā. yāvañ'c'idaṃ, bhikkhave, alam'eva sabbasaṅkhāresu nibbindituṃ alaṃ v",
+          "context_hash": "13a6ea8c7467eb7fa0df6d48de8cbe58d0092f4271b58c4689ac13e130871ef0",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "yāva + ca + idaṁ",
+              "components": [
+                {
+                  "word": "yāva",
+                  "result_uids": [
+                    "54013/dpd",
+                    "54014/dpd",
+                    "54047/dpd"
+                  ]
+                },
+                {
+                  "word": "ca",
+                  "result_uids": [
+                    "25662/dpd",
+                    "25663/dpd",
+                    "25664/dpd",
+                    "25665/dpd",
+                    "25666/dpd"
+                  ]
+                },
+                {
+                  "word": "idaṁ",
+                  "result_uids": [
+                    "13628/dpd",
+                    "13629/dpd",
+                    "13779/dpd",
+                    "74149/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "54022/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "alameva",
+          "results": [
+            {
+              "uid": "9183/dpd",
+              "word": "alameva",
+              "summary": "<i>(sandhi)</i> it is enough; it is quite enough; that's quite sufficient (to)  <b>[alaṁ + eva]</b>  <i>sandhi, ind + ind</i>"
+            },
+            {
+              "uid": "9110/dpd",
+              "word": "ala",
+              "summary": "<i>(masc)</i> claw of a crab, etc.   <i>masc, nt</i>"
+            },
+            {
+              "uid": "9199/dpd",
+              "word": "alaṁ 1",
+              "summary": "<i>(ind)</i> (it is) suitable; proper; worthy; appropriate (to)   <i>ind, adv, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9200/dpd",
+              "word": "alaṁ 2",
+              "summary": "<i>(ind)</i> is able (to); is possible (to); is capable (of)  <b>[ala + aṁ]</b>  <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9201/dpd",
+              "word": "alaṁ 3",
+              "summary": "<i>(ind)</i> enough; it is enough (for)   <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9202/dpd",
+              "word": "alaṁ 4",
+              "summary": "<i>(ind)</i> able; capable; competent   <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9203/dpd",
+              "word": "alaṁ 5",
+              "summary": "<i>(ind)</i> that's enough (of)!; stop (with)!   <i>ind, excl, acc sg of ala</i>"
+            },
+            {
+              "uid": "18051/dpd",
+              "word": "eva 1",
+              "summary": "<i>(ind)</i> only; just; merely; exclusively   <i>ind, emph</i>"
+            },
+            {
+              "uid": "18052/dpd",
+              "word": "eva 2",
+              "summary": "<i>(ind)</i> still   <i>ind</i>"
+            },
+            {
+              "uid": "18053/dpd",
+              "word": "eva 3",
+              "summary": "<i>(ind)</i> even; too; as well   <i>ind, adv</i>"
+            },
+            {
+              "uid": "18054/dpd",
+              "word": "eva 4",
+              "summary": "<i>(ind)</i> indeed; really; certainly; absolutely  <b>[eva]</b>  <i>ind, emph</i>"
+            },
+            {
+              "uid": "18055/dpd",
+              "word": "eva 5",
+              "summary": "<i>(ind)</i> as soon as   <i>ind, emph</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "alameva",
+          "example_sentence": "yāvañ'c'idaṃ, bhikkhave, <b>alam'eva</b> sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ",
+          "context_hash": "4a4a705f3745573274f85a9907f55897132927c6e1c70edade2388542e95f385",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "alaṁ + eva",
+              "components": [
+                {
+                  "word": "alaṁ",
+                  "result_uids": [
+                    "9110/dpd",
+                    "9199/dpd",
+                    "9200/dpd",
+                    "9201/dpd",
+                    "9202/dpd",
+                    "9203/dpd"
+                  ]
+                },
+                {
+                  "word": "eva",
+                  "result_uids": [
+                    "18051/dpd",
+                    "18052/dpd",
+                    "18053/dpd",
+                    "18054/dpd",
+                    "18055/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "9183/dpd",
+            "9110/dpd",
+            "9199/dpd",
+            "9200/dpd",
+            "9201/dpd",
+            "9202/dpd",
+            "9203/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "sabbasaṅkhāresu",
+          "results": [
+            {
+              "uid": "58953/dpd",
+              "word": "sabbasaṅkhāra",
+              "summary": "<i>(masc)</i> all activities; all processes; all conditions; all fabrications; all formations  <b>[sabba + saṅkhāra]</b>  <i>masc, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "sabbasaṅkhāra",
+          "example_sentence": "yāvañ'c'idaṃ, bhikkhave, alam'eva <b>sabbasaṅkhāresu</b> nibbindituṃ alaṃ virajjituṃ alaṃ vimuccitun'ti.",
+          "context_hash": "7c986b9ac4f39bb344bf84a2191a7c09dd3f13d694b9428e48ab6d4882f94c5e",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "58953/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "nibbindituṁ",
+          "results": [
+            {
+              "uid": "37686/dpd",
+              "word": "nibbindituṁ",
+              "summary": "<i>(inf)</i> to become dis-enchanted (with); to become disinterested (in); to be disillusioned (with); to lose interest (in)  <b>[nī + vinda + ituṁ]</b>  <i>inf of nibbindati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "nibbindituṁ",
+          "example_sentence": "have, alam'eva sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
+          "context_hash": "8232aa8770c5207ef75e2606d7e9eac3dc6cee43b52e812ef2aec88c2494c559",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "37686/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "alaṁ",
+          "results": [
+            {
+              "uid": "9199/dpd",
+              "word": "alaṁ 1",
+              "summary": "<i>(ind)</i> (it is) suitable; proper; worthy; appropriate (to)   <i>ind, adv, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9200/dpd",
+              "word": "alaṁ 2",
+              "summary": "<i>(ind)</i> is able (to); is possible (to); is capable (of)  <b>[ala + aṁ]</b>  <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9201/dpd",
+              "word": "alaṁ 3",
+              "summary": "<i>(ind)</i> enough; it is enough (for)   <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9202/dpd",
+              "word": "alaṁ 4",
+              "summary": "<i>(ind)</i> able; capable; competent   <i>ind, emph, acc sg of ala</i>"
+            },
+            {
+              "uid": "9203/dpd",
+              "word": "alaṁ 5",
+              "summary": "<i>(ind)</i> that's enough (of)!; stop (with)!   <i>ind, excl, acc sg of ala</i>"
+            },
+            {
+              "uid": "9110/dpd",
+              "word": "ala",
+              "summary": "<i>(masc)</i> claw of a crab, etc.   <i>masc, nt</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "alaṁ 1",
+          "example_sentence": "have, alam'eva sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
+          "context_hash": "8232aa8770c5207ef75e2606d7e9eac3dc6cee43b52e812ef2aec88c2494c559",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "9199/dpd",
+            "9200/dpd",
+            "9201/dpd",
+            "9202/dpd",
+            "9203/dpd",
+            "9110/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "virajjituṁ",
+          "results": [
+            {
+              "uid": "68826/dpd",
+              "word": "virajjituṁ",
+              "summary": "<i>(inf)</i> to lose desire (for); to become detached (from); to lose interest (in); to become dispassionate (about); to get bored (of)  <b>[vi + rajja + ituṁ]</b>  <i>inf of virajjati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "virajjituṁ",
+          "example_sentence": "have, alam'eva sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
+          "context_hash": "8232aa8770c5207ef75e2606d7e9eac3dc6cee43b52e812ef2aec88c2494c559",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "68826/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "vimuccituṁ",
+          "results": [
+            {
+              "uid": "68702/dpd",
+              "word": "vimuccituṁ",
+              "summary": "<i>(inf)</i> to become free; to be released; to be liberated (from)  <b>[vi + mucca + ituṁ]</b>  <i>inf of vimuccati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "vimuccituṁ",
+          "example_sentence": "sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ <b>vimuccitun'ti</b>.",
+          "context_hash": "5c853fe95e7a19f841e499daf21b13320d9384d5dc17b09e277ac38413d8b32c",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "68702/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "paṭhamaṁ",
+          "results": [
+            {
+              "uid": "41468/dpd",
+              "word": "paṭhamaṁ 1",
+              "summary": "<i>(ind)</i> first; firstly; at first; first of all  <b>[pa + tama > ṭhama + aṁ], [paṭhama + aṁ]</b>  <i>ind, adv, acc sg of paṭhama</i>"
+            },
+            {
+              "uid": "41469/dpd",
+              "word": "paṭhamaṁ 2",
+              "summary": "<i>(ind)</i> before; recently; newly; just  <b>[pa + tama > ṭhama + aṁ], [paṭhama + aṁ]</b>  <i>ind, adv, acc sg of paṭhama</i>"
+            },
+            {
+              "uid": "41150/dpd",
+              "word": "paṭhama 1",
+              "summary": "<i>(ordin)</i> first (1st); prime  <b>[pa + tama > ṭhama]</b>  <i>ordin, from pa</i>"
+            },
+            {
+              "uid": "41151/dpd",
+              "word": "paṭhama 2",
+              "summary": "<i>(adj)</i> (gram) 3rd (person); he; she; it; they  <b>[pa + tama > ṭhama]</b>  <i>adj, from pa</i>"
+            },
+            {
+              "uid": "41152/dpd",
+              "word": "paṭhama 3",
+              "summary": "<i>(masc)</i> (gram) first consonant of each vagga; k, c, ṭ, t, p  <b>[pa + tama > ṭhama]</b>  <i>masc, from pa</i>"
+            },
+            {
+              "uid": "41470/dpd",
+              "word": "paṭhamā",
+              "summary": "<i>(fem)</i> (gram) nominative case   <i>fem</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "paṭhamaṁ 1",
+          "example_sentence": " virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
+          "context_hash": "c877473990d4e63dd3c5dadc5884cf3129289243444327c67b7324074383bf52",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "41468/dpd",
+            "41469/dpd",
+            "41150/dpd",
+            "41151/dpd",
+            "41152/dpd",
+            "41470/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        }
+      ],
+      "unrecognized_words": []
+    }
+  ],
+  "global_unrecognized_words": [],
+  "updated_global_stems": {}
+}
