@@ -40,6 +40,8 @@ pub mod anthropic_messages;
 pub mod lookup;
 pub mod lookup_forms;
 pub mod dpd_form_grammar;
+pub mod gloss_rows;
+pub mod gloss_variants;
 pub mod sutta_json;
 pub mod lookup_cancel;
 pub mod html_format;

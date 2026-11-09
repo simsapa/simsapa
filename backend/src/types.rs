@@ -391,6 +391,11 @@ pub struct GroupedDpdLookup {
     pub results: Vec<SearchResult>,
     pub deconstructions: Vec<Deconstruction>,
     pub direct_uids: Vec<String>,
+    /// The grammar triples of the `lookup` row of the word as looked up (the
+    /// Phase 4 row), for the Word in Sentence gloss rows. Not serialized: the
+    /// JSON of this type is a route response.
+    #[serde(skip)]
+    pub lookup_grammar: Vec<GrammarTriple>,
 }
 
 impl GroupedDpdLookup {
@@ -717,6 +722,16 @@ pub struct ProcessedWord {
     /// pass) and the apply path enforce user-override-wins for break-downs.
     #[serde(default)]
     pub deconstruction_resolution: Option<String>,
+    /// The `lookup.grammar` triples of the word as looked up, for the Word
+    /// in Sentence rows (`gloss_rows.rs`). Set only in that format, so the
+    /// Headwords JSON is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_grammar_raw: Vec<GrammarTriple>,
+    /// The word the lookup found results for: the clean word, or for an
+    /// iti-sandhi word possibly its long-vowel spelling (see
+    /// `gloss_lookup_words`). Word in Sentence only, like `form_grammar_raw`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lookup_word: String,
 }
 
 /// Result indicating an unrecognized word
@@ -755,6 +770,15 @@ pub struct ParagraphProcessingResult {
     pub paragraph_index: usize,
     pub words_data: Vec<ProcessedWord>,
     pub unrecognized_words: Vec<String>,
+    /// The Word in Sentence rows, one per token in passage order (empty in
+    /// the Headwords format, and then not serialized).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<crate::gloss_rows::GlossRow>,
+    /// The `//` spelling alternatives of the paragraph (`["vā'ti", "vāti"]`),
+    /// Word in Sentence only; the first spelling is the one glossed
+    /// (`gloss_variants.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Vec<String>>,
 }
 
 /// Result data for all paragraphs processing
@@ -774,6 +798,14 @@ pub struct SingleParagraphProcessingResult {
     pub words_data: Vec<ProcessedWord>,
     pub unrecognized_words: Vec<String>,
     pub updated_global_stems: std::collections::HashMap<String, bool>,
+    /// As `ParagraphProcessingResult::rows`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<crate::gloss_rows::GlossRow>,
+    /// The `//` spelling alternatives of the paragraph (`["vā'ti", "vāti"]`),
+    /// Word in Sentence only; the first spelling is the one glossed
+    /// (`gloss_variants.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Vec<String>>,
 }
 
 /// Error response for background processing operations

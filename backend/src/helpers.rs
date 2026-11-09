@@ -4764,15 +4764,19 @@ pub fn process_word_for_glossing(
             Err(e) => return Err(format!("DPD lookup failed: {}", e)),
         };
         let done = !found.results.is_empty();
-        grouped = Some(found);
+        grouped = Some((lookup_word, found));
         if done {
             break;
         }
     }
-    let grouped = grouped.expect("gloss_lookup_words is never empty");
+    let (lookup_word, grouped) = grouped.expect("gloss_lookup_words is never empty");
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
+    let (form_grammar_raw, lookup_word) = match options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => (grouped.lookup_grammar, lookup_word),
+        crate::types::GlossFormat::Headwords => (Vec::new(), String::new()),
+    };
     let mut deconstructions = grouped.deconstructions;
     let direct_uids = grouped.direct_uids;
 
@@ -4896,6 +4900,8 @@ pub fn process_word_for_glossing(
         component_selected_uids,
         component_resolutions,
         deconstruction_resolution,
+        form_grammar_raw,
+        lookup_word,
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -5019,16 +5025,23 @@ pub fn process_all_paragraphs(
     let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
     let mut global_stems = input.options.existing_global_stems.clone();
     let mut paragraph_unrecognized_words = input.options.existing_paragraph_unrecognized.clone();
+    let mut row_builder = match input.options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => Some(
+            crate::gloss_rows::GlossRowBuilder::new(dpd).map_err(|e| format!("Gloss rows: {}", e))?,
+        ),
+        crate::types::GlossFormat::Headwords => None,
+    };
 
     for (paragraph_idx, paragraph_text) in input.paragraphs.iter().enumerate() {
         // Extract words with context, then pre-fetch the word-selection cache
         // rows + set-phrase table for this paragraph (process_word_for_glossing
         // takes no appdata handle).
-        let words_with_context = extract_words_with_context(paragraph_text);
+        let (paragraph_text, variants) = gloss_paragraph_variants(paragraph_text, &input.options);
+        let words_with_context = extract_words_with_context(&paragraph_text);
         let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
         let mut processed_words = Vec::new();
 
-        for word_context in words_with_context {
+        for word_context in &words_with_context {
             let word_info = WordInfo {
                 word: word_context.clean_word.clone(),
                 sentence: word_context.context_snippet.clone(),
@@ -5050,6 +5063,11 @@ pub fn process_all_paragraphs(
             &mut global_unrecognized_words,
         );
 
+        let rows = match row_builder.as_mut() {
+            Some(builder) => paragraph_gloss_rows(builder, &words_with_context, &processed_words, &resolution_data)?,
+            None => Vec::new(),
+        };
+
         let words_data: Vec<ProcessedWord> = processed_words
             .into_iter()
             .filter_map(|result| match result {
@@ -5067,6 +5085,8 @@ pub fn process_all_paragraphs(
             paragraph_index: paragraph_idx,
             words_data,
             unrecognized_words: paragraph_unrecognized,
+            rows,
+            variants,
         });
     }
 
@@ -5143,12 +5163,13 @@ pub fn process_single_paragraph(
     appdata: &crate::db::appdata::AppdataDbHandle,
     dpd: &crate::db::dpd::DpdDbHandle,
 ) -> Result<crate::types::SingleParagraphProcessingResult, String> {
-    let words_with_context = extract_words_with_context(&input.paragraph_text);
+    let (paragraph_text, variants) = gloss_paragraph_variants(&input.paragraph_text, &input.options);
+    let words_with_context = extract_words_with_context(&paragraph_text);
     let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
     let mut global_stems = input.options.existing_global_stems.clone();
     let mut processed_words = Vec::new();
 
-    for word_context in words_with_context {
+    for word_context in &words_with_context {
         let word_info = WordInfo {
             word: word_context.clean_word.clone(),
             sentence: word_context.context_snippet.clone(),
@@ -5172,6 +5193,14 @@ pub fn process_single_paragraph(
         &mut global_unrecognized_words,
     );
 
+    let rows = match input.options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => {
+            let mut builder = crate::gloss_rows::GlossRowBuilder::new(dpd).map_err(|e| format!("Gloss rows: {}", e))?;
+            paragraph_gloss_rows(&mut builder, &words_with_context, &processed_words, &resolution_data)?
+        }
+        crate::types::GlossFormat::Headwords => Vec::new(),
+    };
+
     let words_data: Vec<ProcessedWord> = processed_words
         .into_iter()
         .filter_map(|result| match result {
@@ -5191,7 +5220,42 @@ pub fn process_single_paragraph(
         words_data,
         unrecognized_words: paragraph_unrecognized,
         updated_global_stems: global_stems,
+        rows,
+        variants,
     })
+}
+
+/// The paragraph text to gloss and its `//` spelling alternatives: in the
+/// Word in Sentence format each group is glossed by its first spelling; the
+/// Headwords format glosses the text as it is.
+fn gloss_paragraph_variants(
+    paragraph_text: &str,
+    options: &WordProcessingOptions,
+) -> (String, Vec<Vec<String>>) {
+    match options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => {
+            crate::gloss_variants::extract_spelling_variants(paragraph_text)
+        }
+        crate::types::GlossFormat::Headwords => (paragraph_text.to_string(), Vec::new()),
+    }
+}
+
+/// The Word in Sentence rows of one paragraph, from its tokens and their
+/// processing results (one per token, after the format's de-dup).
+fn paragraph_gloss_rows(
+    builder: &mut crate::gloss_rows::GlossRowBuilder,
+    words_with_context: &[GlossWordContext],
+    processed_words: &[Option<WordProcessingResult>],
+    resolution_data: &GlossResolutionData,
+) -> Result<Vec<crate::gloss_rows::GlossRow>, String> {
+    let tokens: Vec<crate::gloss_rows::TokenInput> = words_with_context
+        .iter()
+        .zip(processed_words)
+        .map(|(context, result)| crate::gloss_rows::TokenInput { context, result })
+        .collect();
+    builder
+        .paragraph_rows(&tokens, Some(resolution_data), None)
+        .map_err(|e| format!("Gloss rows: {}", e))
 }
 
 /// Create or update Linux desktop launcher file for AppImage

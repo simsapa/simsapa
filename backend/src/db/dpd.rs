@@ -356,6 +356,17 @@ impl DpdDbHandle {
         uid_prefix_pat: Option<&str>,
         uid_suffix_pat: Option<&str>,
     ) -> Result<Vec<DpdHeadword>> {
+        Ok(self.inflection_to_pali_words_with_grammar(word_form, uid_prefix_pat, uid_suffix_pat)?.0)
+    }
+
+    /// `inflection_to_pali_words()`, also returning the `lookup` row's grammar
+    /// triples (empty when there is no row).
+    fn inflection_to_pali_words_with_grammar(
+        &self,
+        word_form: &str,
+        uid_prefix_pat: Option<&str>,
+        uid_suffix_pat: Option<&str>,
+    ) -> Result<(Vec<DpdHeadword>, Vec<GrammarTriple>)> {
         use crate::db::dpd_schema::lookup::dsl as lk;
         use crate::db::dpd_schema::dpd_headwords::dsl as hd;
 
@@ -377,9 +388,9 @@ impl DpdDbHandle {
                 q = q.filter(hd::uid.like(s.to_string()));
             }
             let headwords = q.load::<DpdHeadword>(db_conn)?;
-            Ok(headwords)
+            Ok((headwords, i2h.grammar_unpack()))
         } else {
-            Ok(Vec::new())
+            Ok((Vec::new(), Vec::new()))
         }
     }
 
@@ -1225,6 +1236,7 @@ impl DpdDbHandle {
         let mut results_uids: Vec<String> = Vec::new();
         let mut direct_uids: Vec<String> = Vec::new();
         let mut deconstructions: Vec<Deconstruction> = Vec::new();
+        let mut lookup_grammar: Vec<GrammarTriple> = Vec::new();
 
         // Append `res_words` to the flat `results` list, deduplicating by uid
         // against what is already present, and return the uids of the newly
@@ -1310,6 +1322,7 @@ impl DpdDbHandle {
                     results,
                     deconstructions,
                     direct_uids,
+                    lookup_grammar,
                 });
             }
         }
@@ -1382,7 +1395,9 @@ impl DpdDbHandle {
         cancel.check()?;
         {
             let t = Instant::now();
-            let r = self.inflection_to_pali_words(&query_text, uid_prefix_ref, uid_suffix_ref)?;
+            let (r, grammar) =
+                self.inflection_to_pali_words_with_grammar(&query_text, uid_prefix_ref, uid_suffix_ref)?;
+            lookup_grammar = grammar;
             let res_words: Vec<UDpdWord> =
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
@@ -1561,6 +1576,7 @@ impl DpdDbHandle {
             results,
             deconstructions,
             direct_uids,
+            lookup_grammar,
         })
     }
 
@@ -1656,6 +1672,7 @@ impl DpdDbHandle {
             results,
             deconstructions,
             direct_uids: Vec::new(),
+            lookup_grammar: base_lookup.lookup_grammar,
         })
     }
 
@@ -1750,6 +1767,7 @@ impl DpdDbHandle {
                     results: Vec::new(),
                     deconstructions: Vec::new(),
                     direct_uids: Vec::new(),
+                    lookup_grammar: Vec::new(),
                 };
                 Some(serde_json::to_string(&empty).unwrap_or_default())
             }
@@ -2302,6 +2320,129 @@ fn headwords_by_ids(db_conn: &mut SqliteConnection, ids: &[i32]) -> Result<HashM
             .context("headwords_by_ids failed")?;
         for hw in rows {
             res.insert(hw.id, hw);
+        }
+    }
+    Ok(res)
+}
+
+/// The `dpd_headwords` columns a Word in Sentence gloss row needs, read
+/// without the large `inflections_html` / `freq_html` columns. See
+/// docs/dpd-analysis-procedure.md §1.7.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HeadwordRowFields {
+    pub id: i32,
+    pub lemma_1: String,
+    pub lemma_clean: String,
+    pub pos: String,
+    pub grammar: String,
+    pub meaning_1: String,
+    pub meaning_lit: String,
+    pub meaning_2: String,
+    pub construction: String,
+    pub compound_type: String,
+    pub compound_construction: String,
+    /// `None` on a `dpd.sqlite3` without the column
+    /// (docs/dpd-construction-summary.md).
+    pub construction_summary: Option<String>,
+    pub root_key: String,
+    pub root_sign: String,
+    pub example_1: String,
+    pub example_2: String,
+    pub source_1: String,
+    pub source_2: String,
+    pub stem: String,
+}
+
+type HeadwordRowTuple = (
+    i32, String, String, String, String, String, String, String, String,
+    String, String, String, String, String, String, String, String, String,
+);
+
+/// `HeadwordRowFields` for `ids`, in chunked `IN (…)` queries (one per
+/// `HEADWORD_ID_CHUNK` ids, plus the same for `construction_summary` when the
+/// column exists). Ids without a row are absent.
+pub fn headword_row_fields_by_ids(
+    db_conn: &mut SqliteConnection,
+    ids: &[i32],
+) -> Result<HashMap<i32, HeadwordRowFields>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+
+    let mut res = HashMap::with_capacity(ids.len());
+    for chunk in ids.chunks(HEADWORD_ID_CHUNK) {
+        let rows: Vec<HeadwordRowTuple> = hd::dpd_headwords
+            .filter(hd::id.eq_any(chunk))
+            .select((
+                hd::id, hd::lemma_1, hd::lemma_clean, hd::pos, hd::grammar,
+                hd::meaning_1, hd::meaning_lit, hd::meaning_2, hd::construction,
+                hd::compound_type, hd::compound_construction, hd::root_key, hd::root_sign,
+                hd::example_1, hd::example_2, hd::source_1, hd::source_2, hd::stem,
+            ))
+            .load(db_conn)
+            .context("headword_row_fields_by_ids failed")?;
+        for r in rows {
+            res.insert(r.0, HeadwordRowFields {
+                id: r.0,
+                lemma_1: r.1,
+                lemma_clean: r.2,
+                pos: r.3,
+                grammar: r.4,
+                meaning_1: r.5,
+                meaning_lit: r.6,
+                meaning_2: r.7,
+                construction: r.8,
+                compound_type: r.9,
+                compound_construction: r.10,
+                construction_summary: None,
+                root_key: r.11,
+                root_sign: r.12,
+                example_1: r.13,
+                example_2: r.14,
+                source_1: r.15,
+                source_2: r.16,
+                stem: r.17,
+            });
+        }
+    }
+
+    if let Some(summaries) = construction_summaries_by_ids(db_conn, ids)? {
+        for (id, summary) in summaries {
+            if let Some(hw) = res.get_mut(&id) {
+                hw.construction_summary = Some(summary);
+            }
+        }
+    }
+    Ok(res)
+}
+
+/// The `dpd_roots` columns of DPD's `root_combo()`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RootFields {
+    /// `dpd_roots.root`, the headwords' `root_key` (`√kam 1`).
+    pub root: String,
+    /// Without the homonym number (`√kam`).
+    pub root_clean: String,
+    pub root_group: i32,
+    pub root_meaning: String,
+}
+
+/// `RootFields` for the given `root_key`s, in chunked `IN (…)` queries. Empty
+/// keys are skipped; keys without a row are absent.
+pub fn root_fields_by_keys(
+    db_conn: &mut SqliteConnection,
+    keys: &[String],
+) -> Result<HashMap<String, RootFields>> {
+    use crate::db::dpd_schema::dpd_roots::dsl as rt;
+
+    let keys: Vec<&String> = keys.iter().filter(|k| !k.is_empty()).collect();
+    let mut res = HashMap::with_capacity(keys.len());
+    for chunk in keys.chunks(HEADWORD_ID_CHUNK) {
+        let rows: Vec<(String, String, i32, String)> = rt::dpd_roots
+            .filter(rt::root.eq_any(chunk))
+            .select((rt::root, rt::root_clean, rt::root_group, rt::root_meaning))
+            .load(db_conn)
+            .context("root_fields_by_keys failed")?;
+        for (root, root_clean, root_group, root_meaning) in rows {
+            res.insert(root.clone(), RootFields { root, root_clean, root_group, root_meaning });
         }
     }
     Ok(res)
