@@ -32,6 +32,10 @@ pub mod theme_colors;
 pub mod app_settings;
 pub mod ai_error;
 pub mod ai_fallback;
+#[cfg(feature = "ai")]
+pub mod ai_engine;
+#[cfg(feature = "ai")]
+pub mod gloss_word_selection_run;
 pub mod anthropic_messages;
 pub mod lookup;
 pub mod lookup_forms;

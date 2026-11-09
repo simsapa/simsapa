@@ -906,7 +906,8 @@ closed; it prints each stored rule with its lemma.
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
 | Migration | `backend/migrations/appdata/2026-07-23-000000_initial_schema/` (the 1.0.0 baseline; the tables and the `deconstruction` column arrived pre-1.0.0 as `2026-07-09-160000_create_gloss_word_selection` / `2026-07-16-120000_gloss_cache_built_in_tier` / `2026-07-21-173000_gloss_cache_deconstruction`, since squashed) |
 | Grouped DPD lookup | `backend/src/db/dpd.rs` (`dpd_lookup_grouped()`), structs in `backend/src/types.rs` (`GroupedDpdLookup` / `Deconstruction` / `DeconstructionComponent`) — see §9 |
-| AI fallback engine (Qt-free) | `bridges/src/ai_engine.rs` (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
+| AI fallback engine (Qt-free) | `backend/src/ai_engine.rs`, behind the backend's `ai` feature (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
+| Word-selection run (Qt-free) | `backend/src/gloss_word_selection_run.rs` `run_word_selection()` (batching, pacing, walk per batch, Lenient parse; reports `WordSelectionRunEvent`s), behind the `ai` feature; `/word_selection_ws` turns its events into the WebSocket protocol |
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
 | Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |

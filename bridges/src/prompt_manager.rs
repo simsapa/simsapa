@@ -14,7 +14,7 @@ use simsapa_backend::ai_error::AiRequestError;
 use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::helpers::validate_word_selection_response_shape;
 
-use crate::ai_engine::{
+use simsapa_backend::ai_engine::{
     ChatMessage, fallback_walk_settings, is_provider_enabled, provider_disabled_error,
     run_single_model_walk, run_walk_blocking,
 };
@@ -101,7 +101,7 @@ pub struct PromptManagerRust {
 /// generation token, plus (for the prompt paths) its own `request_id`. The
 /// word-selection paths have no per-request id and pass `cancel_key: None`.
 ///
-/// The engine (`crate::ai_engine`) takes cancellation as a plain
+/// The engine (`simsapa_backend::ai_engine`) takes cancellation as a plain
 /// `FnMut() -> bool` closure; each spawned walk passes `&mut || cancel.is_cancelled()`.
 struct CancelState {
     generation: Arc<AtomicUsize>,

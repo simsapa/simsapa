@@ -181,7 +181,7 @@ exception: it is not sent through rig (§5), so its status is kept. Transport er
 their detail — the `reqwest::Error` survives inside `http_client::Error::Instance`
 and still answers `is_timeout()`. The classifier core is rig-free and unit-tested
 against recorded provider bodies; the rig-shaped adapter `classify_rig_error()`
-lives in `bridges/src/ai_engine.rs` (it hooks the `get_response!` macro's
+lives in `backend/src/ai_engine.rs` (behind the backend's `ai` feature; it hooks the `get_response!` macro's
 `map_err`, i.e. it classifies the `CompletionError` *value*, not a formatted
 string).
 

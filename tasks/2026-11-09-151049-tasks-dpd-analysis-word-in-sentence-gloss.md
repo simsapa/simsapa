@@ -23,14 +23,17 @@ Docs:
 - `docs/simsapa-cli-and-localhost-api.md` - Self-contained doc compiled into the binary: CLI options, `/gloss_text` options, the skill.
 - `docs/backend-cli-and-npm-package.md` - The `ai` feature, binary sizes.
 - `docs/ai-model-management-and-fallback.md` - Engine location after the move.
+- `docs/localhost-api-implementation.md` - Engine location behind `/word_selection_ws`.
 - `PROJECT_MAP.md`, `CLAUDE.md` (a symlink to `AGENTS.md`) - New modules and the new doc.
 
 Backend:
 
 - `backend/Cargo.toml` - New `ai` feature, `rig-core` / `reqwest` pins.
+- `backend/Cargo.lock`, `backend_cli/Cargo.lock`, `bridges/Cargo.lock` - Lock updates for the moved dependencies.
+- `backend/src/lib.rs` - `ai_engine` and `gloss_word_selection_run` gated on `ai`.
 - `backend/src/ai_engine.rs` - **Moved** from `bridges/src/ai_engine.rs`.
 - `backend/src/gloss_word_selection_run.rs` - **New.** Qt-free word-selection run, extracted from `run_ws_word_selection()` in `bridges/src/api.rs`.
-- `backend/src/helpers.rs` - Gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`), word-selection items/parsing.
+- `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`); gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`), word-selection items/parsing.
 - `backend/src/types.rs` - `ProcessedWord`, `WordProcessingOptions`, new row types.
 - `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking.
 - `backend/src/gloss_rows_tests.rs` or `#[cfg(test)]` in `gloss_rows.rs` - Unit tests for row rules.
@@ -58,8 +61,8 @@ API:
 Bridges / GUI:
 
 - `bridges/Cargo.toml` - Depends on `simsapa_backend` with the `ai` feature.
-- `bridges/src/ai_engine.rs` - Becomes a re-export (or removed and imports updated).
-- `bridges/src/api.rs` - `/word_selection_ws` and an AI-enabled `/gloss_text` path call the backend run.
+- `bridges/src/ai_engine.rs` - Removed (moved to `backend/src/ai_engine.rs`); `prompt_manager.rs` and `api.rs` import `simsapa_backend::ai_engine`.
+- `bridges/src/api.rs` - `/word_selection_ws` is a protocol adapter over `gloss_word_selection_run::run_word_selection()`; later, the `GlossAiRunner` for `/gloss_text`.
 - `bridges/src/prompt_manager.rs` - Translation request returns JSON; unchanged dispatch.
 - `bridges/src/sutta_bridge.rs` - New invokables: translation prompt, gloss format / auto-translate settings, row data.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `qmllint` stubs for the new invokables.
@@ -146,16 +149,16 @@ sub-task, not only after a whole parent task.
 - **Keep** the reqwest 0.12 / rig-core 0.30 pin comment from
   `bridges/Cargo.toml` verbatim next to the moved dependency.
 
-- [ ] 2.0 Move the AI engine from `bridges` into a `backend` `ai` feature, with no behaviour change (TC 5)
-  - [ ] 2.1 Record the "before" sizes: `make cli-release` binary size and, if available, the `make cli-linux-x64` musl binary size. Note them for the commit message.
-  - [ ] 2.2 Add the `ai` feature and the optional `rig-core`, `tokio` (runtime), `reqwest` 0.12 dependencies to `backend/Cargo.toml`, copying versions, features and the pin comment from `bridges/Cargo.toml`.
-  - [ ] 2.3 `git mv bridges/src/ai_engine.rs backend/src/ai_engine.rs`; gate it with `#[cfg(feature = "ai")] pub mod ai_engine;` in `backend/src/lib.rs`; change `simsapa_backend::` paths inside it to `crate::`.
-  - [ ] 2.4 Extract the Qt-free core of `run_ws_word_selection()` (`bridges/src/api.rs`) into `backend/src/gloss_word_selection_run.rs` (also `#[cfg(feature = "ai")]`): input = glossed paragraphs + cancel closure + progress callback; output = parsed selections. Keep the WebSocket message handling in `bridges`.
-  - [ ] 2.5 Update `bridges`: depend on `simsapa_backend` with `features = ["ai"]`, remove its own `rig-core` dependency if nothing else uses it, and point `prompt_manager.rs` and `api.rs` at `simsapa_backend::ai_engine` / the new run module.
-  - [ ] 2.6 Enable the `ai` feature for `backend_cli` in its `Cargo.toml` (not yet used).
-  - [ ] 2.7 Build and test: `make build -B`, `make rust-test`, `cd api && cargo test` (confirm `cargo tree -p simsapa_api | grep rig` is empty).
-  - [ ] 2.8 Record the "after" CLI sizes; if the musl binary grows by more than the budget in `docs/backend-cli-and-npm-package.md`, stop and report before continuing.
-  - [ ] 2.9 Update `docs/ai-model-management-and-fallback.md`, `docs/backend-cli-and-npm-package.md` and `PROJECT_MAP.md` with the new location.
+- [x] 2.0 Move the AI engine from `bridges` into a `backend` `ai` feature, with no behaviour change (TC 5)
+  - [x] 2.1 Record the "before" sizes: `make cli-release` binary size and, if available, the `make cli-linux-x64` musl binary size. Note them for the commit message.
+  - [x] 2.2 Add the `ai` feature and the optional `rig-core`, `tokio` (runtime), `reqwest` 0.12 dependencies to `backend/Cargo.toml`, copying versions, features and the pin comment from `bridges/Cargo.toml`.
+  - [x] 2.3 `git mv bridges/src/ai_engine.rs backend/src/ai_engine.rs`; gate it with `#[cfg(feature = "ai")] pub mod ai_engine;` in `backend/src/lib.rs`; change `simsapa_backend::` paths inside it to `crate::`.
+  - [x] 2.4 Extract the Qt-free core of `run_ws_word_selection()` (`bridges/src/api.rs`) into `backend/src/gloss_word_selection_run.rs` (also `#[cfg(feature = "ai")]`): input = glossed paragraphs + cancel closure + progress callback; output = parsed selections. Keep the WebSocket message handling in `bridges`.
+  - [x] 2.5 Update `bridges`: depend on `simsapa_backend` with `features = ["ai"]`, remove its own `rig-core` dependency if nothing else uses it, and point `prompt_manager.rs` and `api.rs` at `simsapa_backend::ai_engine` / the new run module.
+  - [x] 2.6 Enable the `ai` feature for `backend_cli` in its `Cargo.toml` (not yet used).
+  - [x] 2.7 Build and test: `make build -B`, `make rust-test`, `cd api && cargo test` (confirm `cargo tree -p simsapa_api | grep rig` is empty).
+  - [x] 2.8 Record the "after" CLI sizes; if the musl binary grows by more than the budget in `docs/backend-cli-and-npm-package.md`, stop and report before continuing.
+  - [x] 2.9 Update `docs/ai-model-management-and-fallback.md`, `docs/backend-cli-and-npm-package.md` and `PROJECT_MAP.md` with the new location.
 
 ### 3.0 — specs and dependencies
 

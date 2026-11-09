@@ -1064,7 +1064,8 @@ Notable feature docs:
   (`deconstruction` string, empty uid) + component-row cache** keyed on the
   compound's context hash with the `fetch_for_context_hashes` batch fetch, the
   shared `resolve_compound_selections()` used by both live glossing and session
-  restore, and the Qt-free `bridges/src/ai_engine.rs` engine shared with the
+  restore, and the Qt-free `backend/src/ai_engine.rs` engine (the backend's
+  `ai` feature) shared with the
   `/word_selection_ws` route.
 - [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
   how the provider/model lists keep themselves current and how a model is chosen

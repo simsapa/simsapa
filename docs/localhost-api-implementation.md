@@ -19,7 +19,9 @@ Crate layout, builds and npm packaging are in
   `simsapa_api::build_rocket()` mounts them; `simsapa serve` calls it as is.
 - **GUI, AI and static-asset routes:** `bridges/src/api.rs`.
   `start_webserver()` calls `build_rocket()` and mounts these on top. The AI
-  engine behind `/word_selection_ws` is `bridges/src/ai_engine.rs`.
+  engine behind `/word_selection_ws` is `backend/src/ai_engine.rs`, driven
+  through `backend/src/gloss_word_selection_run.rs` (both behind the backend's
+  `ai` feature).
 - **Request and result types:** `SearchMode` / `SearchArea` serde labels and
   `SearchResult` in `backend/src/types.rs`; the smaller request/response
   structs of §15 next to their routes.

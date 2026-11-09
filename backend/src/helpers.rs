@@ -4459,6 +4459,23 @@ pub fn build_word_selection_payload(items: &[serde_json::Value]) -> Result<Strin
     .map_err(|e| format!("Failed to serialize the word-selection payload: {}", e))
 }
 
+/// Assemble the word-selection prompt as the Gloss tab does
+/// (`GlossTab.build_word_selection_prompt()`): the system prompt, a blank
+/// line, and the request template with the `pali_word_selection` payload
+/// substituted for `<<WORD_SELECTION_JSON>>`.
+pub fn build_word_selection_prompt(items: &[serde_json::Value]) -> String {
+    let app_data = crate::get_app_data();
+    let system_prompt = app_data.get_system_prompt("Gloss Tab: Word Selection System Prompt");
+    let template = app_data.get_system_prompt("Gloss Tab: Word Selection Request");
+    let payload = serde_json::json!({ "task": "pali_word_selection", "items": items });
+    let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", &payload.to_string());
+    if system_prompt.trim().is_empty() {
+        user_prompt
+    } else {
+        format!("{}\n\n{}", system_prompt, user_prompt)
+    }
+}
+
 /// Cheap structural check of an AI word-selection response, used by the
 /// request engine (`bridges/src/prompt_manager.rs`) to classify a truncated or
 /// malformed reply as a retryable `invalid_response` error *before* it is

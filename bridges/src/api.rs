@@ -27,13 +27,12 @@ use simsapa_backend::html_content::sutta_html_page;
 use simsapa_backend::dir_list::generate_html_directory_listing;
 use simsapa_backend::db::DbManager;
 use simsapa_backend::helpers::{create_or_update_linux_desktop_icon_file, convert_verse_ref_to_sutta_uid};
-use simsapa_backend::helpers::{build_word_selection_items, WordSelectionBuildMode, WordSelectionParagraphInput, parse_word_selection_response, WordSelectionParseMode};
+use simsapa_backend::helpers::WordSelectionParagraphInput;
+use simsapa_backend::gloss_word_selection_run::{run_word_selection, WordSelectionRunEvent};
 use simsapa_backend::logger::{info, warn, error};
 use simsapa_backend::app_settings::ModelUsageEntry;
-use simsapa_backend::ai_fallback::WalkOutcome;
 use simsapa_api::{ApiConfig, build_rocket, init_app_globals_api, get_app_globals_api, init_update_status, pathbuf_to_forward_slash_string, lookup_sutta_with_fallback};
 use simsapa_backend::update_status::{DisabledReason, UpdateStatus};
-use crate::ai_engine::{ChatMessage, fallback_walk_settings, run_walk_blocking, WORD_SELECTION_BATCH_CHAR_LIMIT, WORD_SELECTION_REQUEST_SPACING_MS};
 
 /// Request body for POST /lookup_window_query endpoint
 #[derive(Debug, Clone, Deserialize)]
@@ -870,27 +869,10 @@ fn ws_result_json(selections: &[serde_json::Value]) -> String {
     serde_json::json!({ "type": "result", "selections": selections }).to_string()
 }
 
-/// Assemble the word-selection prompt exactly as the GlossTab does
-/// (`build_word_selection_prompt`): system prompt + "\n\n" + the request
-/// template with the `pali_word_selection` payload substituted.
-fn build_ws_word_selection_prompt(items: &[serde_json::Value]) -> String {
-    let app_data = get_app_data();
-    let system_prompt = app_data.get_system_prompt("Gloss Tab: Word Selection System Prompt");
-    let template = app_data.get_system_prompt("Gloss Tab: Word Selection Request");
-    let payload = serde_json::json!({ "task": "pali_word_selection", "items": items });
-    let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", &payload.to_string());
-    if system_prompt.trim().is_empty() {
-        user_prompt
-    } else {
-        format!("{}\n\n{}", system_prompt, user_prompt)
-    }
-}
-
-/// Run the word-selection fallback engine over `paragraphs` on a dedicated
-/// thread (its own tokio runtime is created inside `run_walk_blocking`), with
-/// server-side batching that mirrors the in-app pacing constants. Progress,
-/// per-batch errors and the final accumulated result are pushed through `tx`;
-/// `cancel` is polled by the engine between attempts and per backoff second.
+/// Run the backend word-selection run over `paragraphs` on the current
+/// (dedicated) thread and translate its events into the WebSocket protocol:
+/// `status` progress, `error` per-batch failures, and the terminal `result`.
+/// `cancel` is polled by the run between batches, attempts and backoff seconds.
 fn run_ws_word_selection(
     paragraphs: Vec<WordSelectionParagraphInput>,
     cancel: Arc<AtomicBool>,
@@ -900,125 +882,48 @@ fn run_ws_word_selection(
         let _ = tx.send(WsOut { text, terminal });
     };
 
-    // Build the full item set once to decide batching.
-    let all_items = match build_word_selection_items(
-        &paragraphs, WordSelectionBuildMode::SkipResolved { forced: false }) {
-        Ok(v) => v,
-        Err(e) => {
-            send(ws_error_json(&e), false);
-            send(ws_result_json(&[]), true);
-            return;
-        }
-    };
-    if all_items.is_empty() {
-        // Nothing ambiguous to ask about.
-        send(ws_result_json(&[]), true);
-        return;
-    }
-
-    // Single batch when there is one paragraph or the combined prompt fits
-    // under the char limit; otherwise one batch per paragraph, spaced by the
-    // pacing constant (free-tier RPM limits).
-    let combined_prompt = build_ws_word_selection_prompt(&all_items);
-    let batches: Vec<Vec<WordSelectionParagraphInput>> =
-        if paragraphs.len() <= 1 || combined_prompt.len() < WORD_SELECTION_BATCH_CHAR_LIMIT {
-            vec![paragraphs.clone()]
-        } else {
-            paragraphs.iter().map(|p| vec![p.clone()]).collect()
-        };
-    let n_batches = batches.len();
-
-    let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
-    let mut all_selections: Vec<serde_json::Value> = Vec::new();
-
-    for (batch_idx, batch) in batches.iter().enumerate() {
-        if cancel.load(Ordering::SeqCst) {
-            break;
-        }
-
-        let items = match build_word_selection_items(
-            batch, WordSelectionBuildMode::SkipResolved { forced: false }) {
-            Ok(v) => v,
-            Err(e) => { send(ws_error_json(&e), false); continue; }
-        };
-        if items.is_empty() {
-            continue;
-        }
-
-        let items_json = serde_json::json!(items).to_string();
-        let prompt = build_ws_word_selection_prompt(&items);
-        let messages = vec![ChatMessage { role: "user".to_string(), content: prompt }];
-
-        let tx_progress = tx.clone();
-        let mut on_progress = move |model: String, status: String, kind: String| {
-            let stage = match kind.as_str() {
-                "trying" => "model_attempt",
-                "retry" => "retry_wait",
-                "failed" => "attempt_failed",
-                _ => "status",
-            };
-            let msg = serde_json::json!({
-                "type": "status",
-                "stage": stage,
-                "model": model,
-                "message": status,
-                "batch": batch_idx,
-                "batch_count": n_batches,
-            }).to_string();
-            let _ = tx_progress.send(WsOut { text: msg, terminal: false });
-        };
-
-        let cancel_walk = cancel.clone();
-        let outcome = run_walk_blocking(
-            &mut || cancel_walk.load(Ordering::SeqCst),
-            &entries, auto_fallback, auto_retry,
-            &messages,
-            Some(&|response: &str| simsapa_backend::helpers::validate_word_selection_response_shape(response)),
-            &mut on_progress,
-        );
-
-        match outcome {
-            WalkOutcome::Success { response, .. } => {
-                match parse_word_selection_response(&response, &items_json, WordSelectionParseMode::Lenient) {
-                    Ok(batch_entries) => {
-                        for entry in batch_entries {
-                            all_selections.push(
-                                serde_json::to_value(&entry).unwrap_or(serde_json::Value::Null));
-                        }
-                    }
-                    Err(e) => send(ws_error_json(&e), false),
-                }
+    let selections = run_word_selection(
+        &paragraphs,
+        &|| cancel.load(Ordering::SeqCst),
+        &mut |event| match event {
+            WordSelectionRunEvent::Progress { batch, batch_count, model, message, kind } => {
+                let stage = match kind.as_str() {
+                    "trying" => "model_attempt",
+                    "retry" => "retry_wait",
+                    "failed" => "attempt_failed",
+                    _ => "status",
+                };
+                let msg = serde_json::json!({
+                    "type": "status",
+                    "stage": stage,
+                    "model": model,
+                    "message": message,
+                    "batch": batch,
+                    "batch_count": batch_count,
+                }).to_string();
+                send(msg, false);
             }
-            WalkOutcome::Failed(err) => {
+            WordSelectionRunEvent::Error(e) => send(ws_error_json(&e), false),
+            WordSelectionRunEvent::BatchFailed { batch, error } => {
                 // Forward the classified ai_error envelope for this batch as a
                 // typed error message; the run continues with later batches.
-                let envelope = err.to_envelope_json(); // {"ai_error": {...}}
+                let envelope = error.to_envelope_json(); // {"ai_error": {...}}
                 let mut v: serde_json::Value =
                     serde_json::from_str(&envelope).unwrap_or_else(|_| serde_json::json!({}));
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("type".to_string(), serde_json::json!("error"));
-                    obj.insert("batch".to_string(), serde_json::json!(batch_idx));
+                    obj.insert("batch".to_string(), serde_json::json!(batch));
                 }
                 send(v.to_string(), false);
             }
-            WalkOutcome::Cancelled => break,
-        }
+        },
+    );
 
-        // Pace between batches (not after the last, not once cancelled), sliced
-        // so a cancel takes effect promptly.
-        if batch_idx + 1 < n_batches && !cancel.load(Ordering::SeqCst) {
-            let mut slept: u64 = 0;
-            while slept < WORD_SELECTION_REQUEST_SPACING_MS {
-                if cancel.load(Ordering::SeqCst) {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-                slept += 100;
-            }
-        }
-    }
-
-    send(ws_result_json(&all_selections), true);
+    let selections: Vec<serde_json::Value> = selections
+        .iter()
+        .map(|entry| serde_json::to_value(entry).unwrap_or(serde_json::Value::Null))
+        .collect();
+    send(ws_result_json(&selections), true);
 }
 
 /// GET /word_selection_ws

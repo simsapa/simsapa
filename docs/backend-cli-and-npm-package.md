@@ -45,6 +45,15 @@ ALSA/CoreAudio/WASAPI (`ldd` on a glibc build shows no `libasound`). A new
 default feature added to the backend must be re-enabled explicitly in those two
 `Cargo.toml`s.
 
+### The backend's `ai` feature
+
+The AI provider engine (`backend/src/ai_engine.rs`, `rig-core`) and the
+word-selection run built on it (`backend/src/gloss_word_selection_run.rs`) are
+behind the backend's `ai` feature, off by default. `bridges` and `backend_cli`
+enable it; `api` does not, so `cargo tree -p simsapa_api | grep rig` stays
+empty. The reqwest 0.12 / rig-core 0.30 pins and the reason for them are in
+`backend/Cargo.toml`; both are load-bearing on Android.
+
 ## The API routes: shared, GUI, AI, asset
 
 The authoritative inventory is the doc comment at the top of `api/src/lib.rs`;
@@ -62,10 +71,11 @@ that keeps the GUI, AI and asset routes out of it.
   the internal storage path). They stay in `bridges/src/api.rs`, which mounts
   them on top of `build_rocket(ApiConfig::loopback(port))`.
 - **AI** routes (`/word_selection_ws`, `/set_ai_provider_key`,
-  `/ai_provider_key`) stay in `bridges` with `ai_engine.rs` and `rig-core`. The
-  CLI has no provider keys; the agent calling it is the model. `/gloss_text`
-  must never depend on `ai_engine`: if a helper it needs sits next to the AI
-  code, move the helper into `api` or `backend`, not the route into `bridges`.
+  `/ai_provider_key`) stay in `bridges`. The engine they drive is in `backend`
+  behind the `ai` feature (see "The backend's `ai` feature" below). `simsapa_api`
+  never enables it, so `/gloss_text` must never depend on `ai_engine`: if a
+  helper it needs sits next to the AI code, move the helper out of the `ai`
+  feature, not the route into `bridges`.
 - **Asset** routes (`/assets/…`, `/favicon.ico`, `/get_pdf_viewer/…`,
   `/book_resources/…`, `/dict_resources/…`) stay in `bridges` with the
   `include_dir!` of the 48 MB `assets/` folder. HTML from `simsapa serve` still
