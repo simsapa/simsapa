@@ -205,7 +205,9 @@ the DPD tool's output, and whose translations are the agent's own.
    the same: the AI word-selection response gains an optional
    `contextual_meaning` per item; it is kept in the session (history, JSON
    export) and shown in the Meaning column; without it the Meaning is the
-   chosen headword's `meaning_combo` (DPD's `meaning_1` + `meaning_2`). The
+   chosen headword's `meaning_combo` (DPD's rule: `meaning_1`, plus
+   `; lit. <meaning_lit>` when there is one; `meaning_2` when `meaning_1` is
+   empty — `docs/dpd-analysis-procedure.md` gap 6). The
    contextual meaning is **not** written to `gloss_word_context_cache` (no
    migration): a later session that resolves the word from the cache shows
    `meaning_combo` until the AI is asked again.

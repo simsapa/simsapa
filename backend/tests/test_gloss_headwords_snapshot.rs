@@ -14,7 +14,7 @@
 //! cd backend && SIMSAPA_UPDATE_SNAPSHOTS=1 cargo test --test test_gloss_headwords_snapshot
 //! ```
 //!
-//! A missing snapshot file is written on the first run, and the test passes.
+//! A missing snapshot file fails the test: run the command above to write it.
 
 #[path = "helpers/dpd_report.rs"]
 mod dpd_report;
@@ -61,18 +61,24 @@ fn fixture_passage(name: &str) -> String {
     dpd_report::read_report(&dpd_report::fixture_report_path(name)).passage
 }
 
-/// Compare `value`'s pretty JSON with the snapshot file `name`, writing it when
-/// missing or when `SIMSAPA_UPDATE_SNAPSHOTS` is set.
+/// Compare `value`'s pretty JSON with the snapshot file `name`, or write it
+/// when `SIMSAPA_UPDATE_SNAPSHOTS` is set. A missing file is a failure, so a
+/// deleted snapshot cannot hide a change.
 fn check_snapshot<T: serde::Serialize>(name: &str, value: &T) {
     let actual = serde_json::to_string_pretty(value).unwrap() + "\n";
     let path = snapshot_dir().join(format!("{}.json", name));
     let update = std::env::var_os("SIMSAPA_UPDATE_SNAPSHOTS").is_some();
     let exists = path.try_exists().unwrap_or(false);
-    if update || !exists {
+    if update {
         std::fs::create_dir_all(snapshot_dir()).unwrap();
         std::fs::write(&path, &actual).unwrap();
         return;
     }
+    assert!(
+        exists,
+        "Headwords snapshot {} is missing; write it with SIMSAPA_UPDATE_SNAPSHOTS=1",
+        path.display()
+    );
     let expected = std::fs::read_to_string(&path).unwrap();
     if expected != actual {
         let first_diff = expected

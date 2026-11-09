@@ -164,7 +164,7 @@ sub-task, not only after a whole parent task.
   - [x] 2.5 Update `bridges`: depend on `simsapa_backend` with `features = ["ai"]`, remove its own `rig-core` dependency if nothing else uses it, and point `prompt_manager.rs` and `api.rs` at `simsapa_backend::ai_engine` / the new run module.
   - [x] 2.6 Enable the `ai` feature for `backend_cli` in its `Cargo.toml` (not yet used).
   - [x] 2.7 Build and test: `make build -B`, `make rust-test`, `cd api && cargo test` (confirm `cargo tree -p simsapa_api | grep rig` is empty).
-  - [x] 2.8 Record the "after" CLI sizes; if the musl binary grows by more than the budget in `docs/backend-cli-and-npm-package.md`, stop and report before continuing.
+  - [x] 2.8 Record the "after" CLI sizes; if the musl binary grows by more than the budget in `docs/backend-cli-and-npm-package.md`, stop and report before continuing. (The doc had no budget; the growth, +615 KiB / +2.2% unstripped, is in the commit message. The doc's size table is refreshed in 9.9.)
   - [x] 2.9 Update `docs/ai-model-management-and-fallback.md`, `docs/backend-cli-and-npm-package.md` and `PROJECT_MAP.md` with the new location.
 
 ### 3.0 — specs and dependencies
@@ -225,18 +225,32 @@ sub-task, not only after a whole parent task.
   `ai-selected`, `built-in-agent-checked` → `A`; `user-selected`,
   `built-in-human-checked`, `built-in-phrase-match` → `H`.
 - **Queries:** one narrow headword `select` per paragraph (id, lemma_1,
-  lemma_clean, pos, grammar, meaning_1, meaning_2, construction,
+  lemma_clean, pos, grammar, meaning_1, meaning_lit, meaning_2, construction,
   compound_type, compound_construction, construction_summary (if present),
-  root_key, root_sign, example_1, example_2, stem) and one `dpd_roots`
-  query (root, root_group, root_meaning). Never load `inflections_html` in
-  the batch.
+  root_key, root_sign, example_1, example_2, source_1, source_2, stem) and
+  one `dpd_roots` query (root, root_group, root_meaning). `meaning_lit` is
+  needed by `meaning_combo` (doc gap 6); `source_1` by the completeness score
+  (doc §1.2 step 6, ranking rank 9, task 5.3); `source_2` and the examples by
+  the DB-example rank (task 5.4). Never load `inflections_html` in the batch.
+- **Quoted-iti token row** (doc gap 12, `vā'ti`): the top-level row shows
+  the sandhi headword of the joined key (`vāti 2.1`) when DPD splits that key
+  `… + iti`, else a sandhi row `<base> + iti` with no ID. That row has **no
+  sense choice of its own**: its `candidates` hold only that one entry, its
+  `confidence` is `None`, it has no shield and no ComboBox, and E6 saves
+  nothing for it. Its `word_index` points at the base word's `ProcessedWord`.
+  The **shared sense choice lives on the base-word component row** (`- vā`),
+  which is that `ProcessedWord` (its `results`, `selected_index`,
+  `resolution`, cache key and confidence), so both formats choose the same
+  sense for the base word (B7) and the user cache, shield and session
+  restore work unchanged. The `- iti` row is a fixed component (one
+  candidate, no confidence).
 
 - [ ] 4.0 Build the Word in Sentence row model: row fields, grammar readings, source-(ii) components, unresolved rows, confidence, `//` variants, plus the conformance test (FR B4–B9, D1, J2)
-  - [ ] 4.1 Add `headword_row_fields_by_ids()` and `root_fields_by_keys()` to `backend/src/db/dpd.rs` (narrow selects, chunked by `HEADWORD_ID_CHUNK`, `construction_summary` read with the existing presence check). Unit-test on `dhamma 1.01` and a headword with no root.
+  - [ ] 4.1 Add `headword_row_fields_by_ids()` and `root_fields_by_keys()` to `backend/src/db/dpd.rs` (narrow selects with the columns in the spec above, chunked by `HEADWORD_ID_CHUNK`, `construction_summary` read with the existing presence check). Unit-test on `dhamma 1.01`, a headword with `meaning_lit`, and a headword with no root.
   - [ ] 4.2 Pass each token's `lookup.grammar` triples through the grouped lookup into `ProcessedWord` (e.g. `form_grammar_raw: Vec<GrammarTriple>`, `#[serde(default, skip_serializing_if = "Vec::is_empty")]`, set only in `WordInSentence`), so no second `lookup` query is made.
   - [ ] 4.3 Implement the reading rules in `gloss_rows.rs`: readings via `assign_form_grammar()` (doc §3 gap 3: it already equals `is_pos_compatible()` in practice) plus DPD's `_default` reading — the headword's own `grammar` field when no triple matches (`niccaṁ` → `ind, adv, acc sg of nicca`, `tasmā` → `ind, adv, abl sg of ta`) — keeping `/lookup_forms` output unchanged (its tests must pass); text `<parse> of <lemma_clean>`; `adj, ` prefix when the reading's class (triple class, or the headword `pos` for a `_default` reading) is `adj`, top-level rows only; fallback to the headword's `grammar`; component stems show `pos`. Unit-test each rule with the DHP23 rows.
-  - [ ] 4.4 Implement Construction (compound_construction minus `<b>` → construction_summary → construction minus `<b>`), Root (`root_combo` format) and Meaning (`meaning_combo` = `meaning_1` or `meaning_2` as DPD defines it; check doc §1) with unit tests.
-  - [ ] 4.5 Implement source-(ii) component expansion (B5): the expand condition, the breakdown source by `compound_type`, kammadhāraya normalisation, negative-kammadhāraya rule, recursion condition, and per-part lookup (stem logic for compound parts, inflected logic for sandhi / comp vb parts). Memoise per construction string within a run. Also the quoted-iti token row (doc §3 gap 12): the sandhi headword of the joined key when DPD has one, else a sandhi row `<base> + iti` with no ID; components = the base word (its shared sense) and `iti`. A part with no lookup row gets an unresolved component row (gap 5: no `search_inflections_for_form`).
+  - [ ] 4.4 Implement Construction (compound_construction minus `<b>` → construction_summary → construction minus `<b>`), Root (`root_combo` format) and Meaning (`meaning_combo`: `meaning_1`, plus `; lit. <meaning_lit>` when there is one, else `meaning_2`; doc gap 6) with unit tests.
+  - [ ] 4.5 Implement source-(ii) component expansion (B5): the expand condition, the breakdown source by `compound_type`, kammadhāraya normalisation, negative-kammadhāraya rule, recursion condition, and per-part lookup (stem logic for compound parts, inflected logic for sandhi / comp vb parts). Memoise per construction string within a run. Also the quoted-iti token row (doc §3 gap 12), as specified in "Quoted-iti token row" above: the top-level row is fixed (no choice, no confidence), the base-word component row carries the shared sense. Test that changing the base word's sense in Headwords and in Word in Sentence saves the same cache row. A part with no lookup row gets an unresolved component row (gap 5: no `search_inflections_for_form`).
   - [ ] 4.6 Implement source-(i) component rows from the selected break-down (reuse `resolve_compound_selections()` results and `component_selected_uids`).
   - [ ] 4.7 Implement default choices without AI or cache: a candidate's reading by `_grammar_case_rank` then first; a component's sense by DPD's component ranking (parent-meaning overlap, `ind`, dictionary quality); set `selected_candidate` / `selected_index`, never reorder `results` (TC 5b). The full sub-rank list for top-level tokens is task 5.0; here use the current Simsapa default (first) for top-level tokens.
   - [ ] 4.8 Implement confidence (spec above) for tokens and for components (component resolution from `component_resolutions`, keyed on the parent's `context_hash`).
@@ -245,7 +259,13 @@ sub-task, not only after a whole parent task.
   - [ ] 4.11 `//` variants (B9) in `backend/src/gloss_variants.rs`: split tokens with `//`, use the first spelling for lookup, keep the options for the Variants section; check whether Simsapa's input ever contains `//` (the GUI and CLI take user text; DPD inserts them in `speech_marks_replacement.py`) and, per the doc §3 decision, either port the speech-mark replacement table or only honour `//` already in the input. Unit-test `vā'ti//vāti`.
   - [ ] 4.12 Build `GlossRow`s in `process_all_paragraphs` and `process_single_paragraph` for `WordInSentence` (one batch of 4.1 queries per paragraph), keeping the unrecognized tokens' positions so their rows land in passage order, and attach them to the paragraph result's `rows`.
   - [ ] 4.13 Pipeline tests (`backend/tests/test_gloss_word_in_sentence.rs`): DHP23 rows in order; `daḷhaparakkamā` with two components; `vā'ti` → `vāti 2.1` with `- vā`, `- iti`; a deconstructor-resolved word's components; an unresolved token; confidence `N` on a multi-sense word with no cache row.
-  - [ ] 4.14 Conformance test (`backend/tests/test_dpd_analysis_conformance.rs`, J2): for each fixture and example, gloss the passage text, replay DPD's top-level choice (ID + reading, from the table's ID + Grammar for fixtures and examples alike — a fixture's `distilled.json` disagrees with its `study.md` on six tokens, `SOURCE.md`; a deconstruction row by its Construction) as a fixed selection, render rows, normalise (TC 6: `ṃ`→`ṁ`, trim, collapse spaces, apostrophe forms equal) and compare ID / Word / Grammar / Construction / Root / depth / order. Mismatches caused by a different DPD data version are collected and printed with both `dpd_version`s (J4) instead of failing; any other mismatch fails.
+  - [ ] 4.14 Conformance test (`backend/tests/test_dpd_analysis_conformance.rs`, J2): for each fixture and example, gloss the passage text, replay DPD's top-level choice (ID + reading, from the table's ID + Grammar for fixtures and examples alike — a fixture's `distilled.json` disagrees with its `study.md` on six tokens, `SOURCE.md`; a deconstruction row by its Construction) as a fixed selection, render rows, normalise (TC 6: `ṃ`→`ṁ`, trim, collapse spaces, apostrophe forms equal) and compare ID / Word / Grammar / Construction / Root / depth / order. Each mismatching row is put in exactly one category, decided by a stated rule, never by hand:
+    - **data version** (J4): DPD's ID is missing from Simsapa's `dpd.sqlite3`, or its `lemma_1` differs from the one implied by the report, or (with ID and Grammar equal) DPD's Construction text is not any of the headword's `compound_construction` / `construction_summary` / `construction` with `<b>` removed, or DPD's Root names a different root than the headword's `root_key`. A Construction that one of those fields does produce, or a Root built from the same root, is a rule bug and fails. The fixtures do not record their DPD data version (`SOURCE.md`), so print Simsapa's `dpd_release_version` and "fixture: not recorded";
+    - **gap 14** (deconstruction beside headwords): DPD's row is a deconstruction (no ID, `sandhi/compound`) and Simsapa has direct matches for the token, so the choice cannot be replayed;
+    - **gap 18** (Simsapa resolves more): DPD's row is unresolved (`| | <token> | | | | |`) and Simsapa's has a candidate;
+    - **gap 5** (no `search_inflections_for_form`): a component row DPD resolved from inflection tables, which Simsapa shows unresolved.
+
+    Rows in these four categories are printed, grouped by category and fixture, and do not fail the test; every other mismatch fails. The per-category counts go in doc §3. A category whose count grows after a change is a regression to look at, not a licence.
   - [ ] 4.15 Fix rule mismatches the test reveals in 4.3–4.11 (never edit the fixture). Record any remaining, explained differences in doc §3.
   - [ ] 4.16 Measure gloss time for MN 10 in both formats (before 4.12 and after) and confirm Headwords is not slower; rerun the 3.1 snapshot test.
 
@@ -263,7 +283,7 @@ sub-task, not only after a whole parent task.
   - [ ] 5.1 Add the J3 measurement as an `#[ignore]`d test in `test_dpd_analysis_conformance.rs`: gloss each passage with AI off, no fixed selections, and compare Simsapa's top-level ID with DPD's. Run it and record the "before" figures.
   - [ ] 5.2 Implement DPD's headword filters and particle filter (doc §3 gaps 7, 8) as a **ranking demotion**, not a removal from `results`: a filtered candidate is never the default and is left out of AI item options, but stays selectable (it changes which candidates are offered to the AI; check it removes no candidate that a built-in cache row points to — run `test_gloss_word_resolution`).
   - [ ] 5.3 Implement the default-sense ranking for top-level tokens with DPD's sub-ranks as decided in doc §3 (direct-key, DB-example, dictionary quality, grammar case, completeness score, stable id), used only when no cache row and no AI decides.
-  - [ ] 5.4 Implement DB-example pre-matching if adopted: a candidate whose `example_1` / `example_2` overlaps the passage text ranks first (`source_text_overlap` > `text_overlap`). Use the narrow select from 4.1 (add `source_1`, `source_2`).
+  - [ ] 5.4 Implement DB-example pre-matching if adopted: a candidate whose `example_1` / `example_2` overlaps the passage text ranks first (`source_text_overlap` > `text_overlap`). Use the narrow select from 4.1 (it already reads `example_1/2` and `source_1/2`).
   - [ ] 5.5 Compare DPD's quotative-*ti* scoring with Simsapa's iti rules on the fixture passages; adopt only what does not contradict `docs/pali-sandhi-and-quote-marks.md`.
   - [ ] 5.6 Make sure the Headwords format gets the same default choice (shared resolution, B7) and update the 3.1 snapshot **only** for `selected_index` changes, with each changed word listed in the commit message.
   - [ ] 5.7 Re-run J3, record the "after" figures in doc §3 and the commit message, and re-run J2, `test_gloss_word_resolution`, `test_gloss_compound_dedup`.
@@ -391,6 +411,7 @@ sub-task, not only after a whole parent task.
   - [ ] 9.6 Read-only mode: when in-use detection says the GUI is running, skip cache writes and say so once on stderr. Check how `startup.rs` exposes the mode to commands.
   - [ ] 9.7 Tests (`backend_cli/tests/gloss_command.rs`): `--no-ai` markdown for DHP23 contains the expected headings, table header and legend; `--gloss-format headwords` output unchanged from today for the same text (compare with `--json`); reference `dhp23`; `--format docx` without `--output` → error; closed stdout is not a panic (pattern from `read_only_commands.rs`). No test makes a network call: AI tests set no enabled provider and assert the "AI off" path.
   - [ ] 9.8 `make rust-test`; run `test_no_print_macros_in_sources`.
+  - [ ] 9.9 Measure the stripped linux-x64 and linux-arm64 musl binaries and the packed npm `.tgz` sizes now that the CLI calls the AI engine, and update the size tables in `docs/backend-cli-and-npm-package.md` (they still show 1.1.0-alpha.3). Ask the user whether to add a size budget there; do not invent one.
 
 ### 10.0 — specs and dependencies
 
