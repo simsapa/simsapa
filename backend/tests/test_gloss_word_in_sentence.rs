@@ -299,3 +299,71 @@ fn test_headword_row_fields_by_ids() {
     assert_eq!(roots["√kam 1"].root_group, 1);
     assert_eq!(roots["√kam 1"].root_meaning, "go");
 }
+
+// -- Default sense without a cache row or AI (gloss_sense_ranking.rs) --------
+
+/// The token `word`'s ProcessedWord in paragraph 0, which no cache row or set
+/// phrase may have resolved (the ranking decides only then).
+fn unresolved_word<'a>(result: &'a AllParagraphsProcessingResult, word: &str) -> &'a simsapa_backend::types::ProcessedWord {
+    let pw = result.paragraphs[0]
+        .words_data
+        .iter()
+        .find(|w| w.original_word == word)
+        .unwrap_or_else(|| panic!("{} is glossed", word));
+    assert_eq!(pw.resolution, None, "{}: a cache row resolved it; pick another test word", word);
+    pw
+}
+
+fn selected_uid(pw: &simsapa_backend::types::ProcessedWord) -> &str {
+    &pw.results[pw.selected_index as usize].uid
+}
+
+#[test]
+#[serial]
+fn test_default_sense_db_example_and_same_in_both_formats() {
+    h::app_data_setup();
+    // `niccaṁ 1` (ind, DPD example DHP23) over `nicca` (adj), which has the
+    // lookup row's triples: the DB-example rank comes first.
+    let wis = gloss(&[DHP23], options(GlossFormat::WordInSentence, false));
+    let headwords = gloss(&[DHP23], options(GlossFormat::Headwords, false));
+    assert_eq!(selected_uid(unresolved_word(&wis, "niccaṁ")), "37008/dpd");
+    assert_eq!(selected_uid(unresolved_word(&headwords, "niccaṁ")), "37008/dpd");
+
+    // The same results order and the same choice for every word (B7).
+    // DHP23 has no repeated word, so the two formats gloss the same tokens.
+    assert_eq!(headwords.paragraphs[0].words_data.len(), wis.paragraphs[0].words_data.len());
+    for (pw, other) in headwords.paragraphs[0].words_data.iter().zip(&wis.paragraphs[0].words_data) {
+        let uids = |w: &simsapa_backend::types::ProcessedWord| w.results.iter().map(|r| r.uid.clone()).collect::<Vec<_>>();
+        assert_eq!(uids(pw), uids(other), "{}: results are never reordered", pw.original_word);
+        assert_eq!(pw.selected_index, other.selected_index, "{}", pw.original_word);
+    }
+}
+
+#[test]
+#[serial]
+fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
+    h::app_data_setup();
+    let result = gloss(&["tasmā hi so na gacchati."], options(GlossFormat::Headwords, false));
+
+    // `ña 1.1` comes from a lemma match only; the `na` lookup row has `na 1`.
+    assert_eq!(selected_uid(unresolved_word(&result, "na")), "35345/dpd");
+
+    // `tasmā 1` (stem `!*`) is demoted: never the default, not offered to
+    // the AI, still in `results`.
+    let tasma = unresolved_word(&result, "tasmā");
+    assert!(tasma.results.iter().any(|r| r.uid == "30147/dpd"));
+    // `ta 2.1` is the letter `ta` (pos `letter`).
+    assert_eq!(tasma.demoted_uids, vec!["30147/dpd".to_string(), "29189/dpd".to_string()]);
+    assert_ne!(selected_uid(tasma), "30147/dpd");
+
+    let words_json = serde_json::to_string(&result.paragraphs[0].words_data).unwrap();
+    let items = simsapa_backend::helpers::build_word_selection_items(
+        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None }],
+        simsapa_backend::helpers::WordSelectionBuildMode::IncludeResolved,
+    )
+    .unwrap();
+    let tasma_item = items.iter().find(|i| i["word"] == "tasmā").expect("tasmā still has a choice");
+    let offered: Vec<&str> = tasma_item["options"].as_array().unwrap().iter().map(|o| o["uid"].as_str().unwrap()).collect();
+    assert!(!offered.contains(&"30147/dpd") && !offered.contains(&"29189/dpd"), "offered: {:?}", offered);
+    assert!(offered.len() >= 2);
+}

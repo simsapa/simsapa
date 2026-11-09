@@ -329,8 +329,6 @@ const COMPONENT_SUFFIXES: [&str; 42] = [
 ];
 
 /// Headword `pos` values DPD never offers (grammarians' entries).
-const EXCLUDED_POS: [&str; 6] = ["cs", "letter", "prefix", "root", "suffix", "ve"];
-
 const KAMMADHARAYA_FILTER_WORDS: [&str; 5] = ["eva", "iva", "iti", "etassa", "viya"];
 
 fn is_comp_vb(hw: &HeadwordRowFields) -> bool {
@@ -719,11 +717,7 @@ impl GlossRowBuilder {
             let Some(hw) = self.headwords.get(id).cloned() else {
                 continue;
             };
-            if hw.stem.contains('!')
-                || hw.pos == "abbrev"
-                || EXCLUDED_POS.contains(&hw.pos.as_str())
-                || hw.meaning_1.contains("(gram)")
-            {
+            if crate::gloss_sense_ranking::dpd_filtered_headword(&hw, true) {
                 continue;
             }
             let readings = if is_stem {

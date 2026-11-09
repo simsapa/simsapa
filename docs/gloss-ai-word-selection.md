@@ -63,6 +63,18 @@ The resolved index is written to `ProcessedWord.selected_index` and the origin t
 fields are `#[serde(default)]` — pre-feature
 `gloss_prompts_history` sessions have neither and must still deserialize.
 
+**Unresolved words still get a default sense.** When no cache row or set phrase
+resolves a direct / mixed word, `rank_paragraph_default_senses()`
+(`backend/src/gloss_sense_ranking.rs`) sets `selected_index` with DPD's ranking
+(docs/dpd-analysis-procedure.md §3 gap 9), per paragraph, in both gloss formats;
+`resolution` stays `None` (shield: Not checked). It also fills
+`ProcessedWord.demoted_uids`: the senses DPD's headword and particle filters
+leave out (`!`-stem irregular forms such as `ime`, letters, `(gram)` entries).
+They are never the default and `build_word_selection_items()` does not offer
+them to the AI (unless nothing else is left), but they stay in `results` and in
+the ComboBox, and cache rows still resolve to them. `results` is never
+reordered.
+
 An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.
@@ -1013,7 +1025,8 @@ state resets on a **new query only** (keyed on query-text change in
 The flat-suffix scheme reuses the existing `build_word_selection_items()` /
 `parse_word_selection_response()` option-validation machinery unchanged:
 
-- **`p<pi>w<wi>`** — sense item over the direct results (case (b) only).
+- **`p<pi>w<wi>`** — sense item over the direct results less `demoted_uids`
+  (case (b) only; §1).
 - **`p<pi>w<wi>d`** — break-down choice, emitted **only for ≥ 2 break-downs**.
   Options reuse the standard shape with pseudo-uids
   `{"uid":"d:<n>","word":"<words_joined>","summary":""}`. Applying `d:<n>` sets

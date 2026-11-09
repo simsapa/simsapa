@@ -19,7 +19,7 @@ DPD source (read only, not part of the repo):
 Docs:
 
 - `docs/dpd-analysis-procedure.md` - **New.** DPD procedure outline, side-by-side comparison, gap list.
-- `docs/gloss-ai-word-selection.md` - Gloss format, N / A / H in exports, item schema additions, two-part translation.
+- `docs/gloss-ai-word-selection.md` - Default sense of unresolved words, `demoted_uids`; gloss format, N / A / H in exports, item schema additions, two-part translation.
 - `docs/simsapa-cli-and-localhost-api.md` - Self-contained doc compiled into the binary: CLI options, `/gloss_text` options, the skill.
 - `docs/backend-cli-and-npm-package.md` - The `ai` feature, binary sizes.
 - `docs/ai-model-management-and-fallback.md` - Engine location after the move.
@@ -33,14 +33,15 @@ Backend:
 - `backend/src/lib.rs` - `ai_engine` and `gloss_word_selection_run` gated on `ai`.
 - `backend/src/ai_engine.rs` - **Moved** from `bridges/src/ai_engine.rs`.
 - `backend/src/gloss_word_selection_run.rs` - **New.** Qt-free word-selection run, extracted from `run_ws_word_selection()` in `bridges/src/api.rs`.
-- `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`); gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`), word-selection items/parsing.
-- `backend/src/types.rs` - `ProcessedWord` (`form_grammar_raw`, `lookup_word`), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar` (not serialized), paragraph results' `rows` and `variants`.
+- `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`); gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`, the default-sense ranking call), word-selection items/parsing (demoted senses not offered).
+- `backend/src/types.rs` - `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
+- `backend/src/gloss_sense_ranking.rs` - **New.** Default sense without cache or AI (DPD's ranking, headword and particle filters as a demotion, DB-example overlap); `demoted_uids`.
 - `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking.
 - `backend/src/gloss_rows_tests.rs` or `#[cfg(test)]` in `gloss_rows.rs` - Unit tests for row rules.
 - `backend/src/gloss_variants.rs` - **New.** `//` spelling alternatives (`extract_spelling_variants`).
 - `backend/src/gloss_translation.rs` - **New.** Translation prompt assembly and JSON response parsing.
 - `backend/src/dpd_form_grammar.rs` - `assign_form_grammar()`, extended by the A1 findings.
-- `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples through the grouped lookup; grouped lookup adds roots in uid order (`direct_uids` was in `HashSet` order, so the gloss output varied between runs).
+- `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples and headword ids through the grouped lookup; grouped lookup adds roots in uid order (`direct_uids` was in `HashSet` order, so the gloss output varied between runs).
 - `backend/src/app_settings.rs` - New translation template, gloss format / auto-translate settings.
 - `backend/src/app_data.rs` - Settings getters/setters.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
@@ -51,7 +52,7 @@ Backend:
 - `backend/tests/data/dpd_analysis/` - **New.** Ported fixtures and example reports, with `SOURCE.md` (DPD commits, `distilled.json` format, the six tokens where `distilled.json` and `study.md` disagree).
 - `backend/tests/helpers/dpd_report.rs` - **New.** Parser for DPD reports (`parse_report`) and `distilled.json` (`parse_distilled`, option keys).
 - `backend/tests/test_dpd_report_parser.rs` - **New.** Tests of the report parser on all ten reports.
-- `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components.
+- `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components, the default-sense ranking.
 - `backend/tests/test_gloss_headwords_snapshot.rs` - **New.** Byte-for-byte snapshot of the Headwords output (fixture passages, No duplicates, Skip common, single-paragraph path); `SIMSAPA_UPDATE_SNAPSHOTS=1` regenerates.
 - `backend/tests/data/gloss_headwords_snapshot/` - **New.** The snapshot files.
 - `backend/tests/test_gloss_compound_dedup.rs`, `test_gloss_word_resolution.rs`, `test_gloss_session_export.rs`, `test_gloss_text_exact.rs`, `test_anki_export.rs` - Existing tests that must keep passing; extended where noted.
@@ -281,15 +282,15 @@ sub-task, not only after a whole parent task.
 - **Measurement output:** per fixture: rows, agreeing rows, rate; overall
   rate. Printed by an `#[ignore]`d test.
 
-- [ ] 5.0 Adopt the DPD procedure improvements and measure selection agreement before and after (FR A2–A4, J3, J4, TC 5b)
-  - [ ] 5.1 Add the J3 measurement as an `#[ignore]`d test in `test_dpd_analysis_conformance.rs`: gloss each passage with AI off, no fixed selections, and compare Simsapa's top-level ID with DPD's. Run it and record the "before" figures.
-  - [ ] 5.2 Implement DPD's headword filters and particle filter (doc §3 gaps 7, 8) as a **ranking demotion**, not a removal from `results`: a filtered candidate is never the default and is left out of AI item options, but stays selectable (it changes which candidates are offered to the AI; check it removes no candidate that a built-in cache row points to — run `test_gloss_word_resolution`).
-  - [ ] 5.3 Implement the default-sense ranking for top-level tokens with DPD's sub-ranks as decided in doc §3 (direct-key, DB-example, dictionary quality, grammar case, completeness score, stable id), used only when no cache row and no AI decides.
-  - [ ] 5.4 Implement DB-example pre-matching if adopted: a candidate whose `example_1` / `example_2` overlaps the passage text ranks first (`source_text_overlap` > `text_overlap`). Use the narrow select from 4.1 (it already reads `example_1/2` and `source_1/2`).
-  - [ ] 5.5 Compare DPD's quotative-*ti* scoring with Simsapa's iti rules on the fixture passages; adopt only what does not contradict `docs/pali-sandhi-and-quote-marks.md`.
-  - [ ] 5.6 Make sure the Headwords format gets the same default choice (shared resolution, B7) and update the 3.1 snapshot **only** for `selected_index` changes, with each changed word listed in the commit message.
-  - [ ] 5.7 Re-run J3, record the "after" figures in doc §3 and the commit message, and re-run J2, `test_gloss_word_resolution`, `test_gloss_compound_dedup`.
-  - [ ] 5.8 Update doc §2/§3 decisions to "adopted" with the function names.
+- [x] 5.0 Adopt the DPD procedure improvements and measure selection agreement before and after (FR A2–A4, J3, J4, TC 5b)
+  - [x] 5.1 Add the J3 measurement as an `#[ignore]`d test in `test_dpd_analysis_conformance.rs`: gloss each passage with AI off, no fixed selections, and compare Simsapa's top-level ID with DPD's. Run it and record the "before" figures. (`measure_selection_agreement`; before: 61.6%, 239/388; 48.3% of the 288 rows with a choice.)
+  - [x] 5.2 Implement DPD's headword filters and particle filter (doc §3 gaps 7, 8) as a **ranking demotion**, not a removal from `results`: a filtered candidate is never the default and is left out of AI item options, but stays selectable (it changes which candidates are offered to the AI; check it removes no candidate that a built-in cache row points to — run `test_gloss_word_resolution`). (`gloss_sense_ranking.rs`; `ProcessedWord::demoted_uids`, read by `build_word_selection_items`. The check found 72 of the 523 senses of the built-in agent-checked data are filtered headwords, 71 `!`-stem forms; the user chose DPD's handling, and the data is to be re-checked — see "Found along the way".)
+  - [x] 5.3 Implement the default-sense ranking for top-level tokens with DPD's sub-ranks as decided in doc §3 (direct-key, DB-example, dictionary quality, grammar case, completeness score, stable id), used only when no cache row and no AI decides. (Plus a first tier: headwords of the word's `lookup` row above those only Simsapa's other lookup phases find.)
+  - [x] 5.4 Implement DB-example pre-matching if adopted: a candidate whose `example_1` / `example_2` overlaps the passage text ranks first (`source_text_overlap` > `text_overlap`). Use the narrow select from 4.1 (it already reads `example_1/2` and `source_1/2`).
+  - [x] 5.5 Compare DPD's quotative-*ti* scoring with Simsapa's iti rules on the fixture passages; adopt only what does not contradict `docs/pali-sandhi-and-quote-marks.md`.
+  - [x] 5.6 Make sure the Headwords format gets the same default choice (shared resolution, B7) and update the 3.1 snapshot **only** for `selected_index` changes, with each changed word listed in the commit message. (Also the new `demoted_uids` field, by the 5.2 decision.)
+  - [x] 5.7 Re-run J3, record the "after" figures in doc §3 and the commit message, and re-run J2, `test_gloss_word_resolution`, `test_gloss_compound_dedup`. (After: 76.0%, 295/388; 67.7% of rows with a choice.)
+  - [x] 5.8 Update doc §2/§3 decisions to "adopted" with the function names.
 
 ### 6.0 — specs and dependencies
 
@@ -478,6 +479,44 @@ sub-task, not only after a whole parent task.
   `context_hash`). Found in 4.0; the conformance test feeds `ṁ` text. Fixing it
   changes the context hashes of `ṃ` passages, so cached selections made on
   such text would no longer apply (FR A3): decide with the user.
+
+- [ ] Re-check the built-in agent-checked gloss data against DPD's headword
+  filters. It was made before the filters were adopted (task 5.2): 72 of its
+  523 chosen senses are headwords the filters demote (71 `!`-stem irregular
+  forms such as `ime`, `ko`, `rājā`, `tassa 1`; the letter `pa 4.1`). The rows
+  still resolve, but the AI is no longer offered these senses, so a new
+  context gets the paradigm headword (`ima 1.1`) where the data bank has the
+  form entry. Regenerate the candidates with the current pipeline and re-run
+  `gloss-agent-check` at a suitable time (needs a re-bootstrap of the appdata
+  DB).
+
+- [ ] **Bad default senses left by DPD's ranking (task 5.3).** With no cache
+  row and no AI, `rank_paragraph_default_senses` (`gloss_sense_ranking.rs`)
+  follows DPD's `_option_rank` exactly, and some defaults are plainly wrong
+  for ordinary prose. Found on the DPD fixtures and the Headwords snapshot
+  (DPD `v0.4.20261026`), with the rank that decides each:
+  - `ahaṁ` → `aha 1.1` "day" (not `ahaṁ` "I"): both have lookup triples and tie
+    on ranks 3–9; rank 10 (lower id) picks 10832 over 10868. Same for
+    `āyasmā` → `āya 1.1`, `ayaṁ` → `aya 1.1`, `sayaṁ` → `saya 1.1`.
+  - `nibbānaṁ` → `nibba` "eaves" (not `nibbāna`): `nibba` has a `nt gen pl`
+    triple, and rank 8 (grammar case, `gen` > `dat` > other) wins.
+  - `te` → `tumha` (not `ta 1.1` masc nom pl): `tumha` has `2nd gen sg`, rank 8.
+  - Indeclinables lose to a pronoun or noun with a triple, rank 4 (direct key):
+    `yena` / `yaṁ` / `yato` → `ya 2.1` (DPD's AI: `yena 3`, `yaṁ 3`, `yato 3`,
+    ind, adv), `paraṁ` → `para 1`, `paṭhamaṁ` → `paṭhama 1`, `alaṁ` → `ala`.
+  - `dhīrā` → `dhīra 1.1` and `dhammā` → `dhamma 1.01` where DPD's AI has
+    `dhīra` 35176 / `dhamma` 34630: lower id among homonyms.
+
+  Measured alternatives (agreement with DPD's AI choices, 388 rows; current
+  76.0%): Simsapa's result order instead of rank 10, 77.1% (fixes `ahaṁ`,
+  `bheda`, `jivhā`; brings back `dhīrā` → the nun's name, `dhammā` → 77248);
+  no rank 4, 75.0%; rank 4 after ranks 7–8, 74.7%. None was adopted. Ideas not
+  yet tried: weight rank 8 (`gen`) only between readings of one headword, not
+  between headwords; prefer the reading's case that the context allows (nom
+  before gen for a sentence subject); a frequency signal (DPD's `freq_html`
+  or Simsapa's own corpus counts) above rank 10. Re-measure with
+  `measure_selection_agreement` and check the list above before adopting any.
+  Doc: docs/dpd-analysis-procedure.md §3 gap 9.
 
 ### Conformance notes for review with example texts
 

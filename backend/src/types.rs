@@ -396,6 +396,10 @@ pub struct GroupedDpdLookup {
     /// JSON of this type is a route response.
     #[serde(skip)]
     pub lookup_grammar: Vec<GrammarTriple>,
+    /// The headword ids of that `lookup` row: the senses DPD's analysis tool
+    /// offers (the default-sense ranking prefers them). Not serialized.
+    #[serde(skip)]
+    pub lookup_headword_ids: Vec<i32>,
 }
 
 impl GroupedDpdLookup {
@@ -732,6 +736,20 @@ pub struct ProcessedWord {
     /// `gloss_lookup_words`). Word in Sentence only, like `form_grammar_raw`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lookup_word: String,
+    /// The `lookup.grammar` triples of the word as looked up, in both
+    /// formats, for the default-sense ranking (`gloss_sense_ranking.rs`).
+    /// Not serialized.
+    #[serde(skip)]
+    pub lookup_grammar: Vec<GrammarTriple>,
+    /// The headword ids of the word's `lookup` row, for the same ranking.
+    /// Not serialized.
+    #[serde(skip)]
+    pub lookup_headword_ids: Vec<i32>,
+    /// The direct senses DPD's headword and particle filters leave out
+    /// (docs/dpd-analysis-procedure.md §3 gaps 7, 8): never the default
+    /// sense and not offered to the AI, but still selectable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub demoted_uids: Vec<String>,
 }
 
 /// Result indicating an unrecognized word

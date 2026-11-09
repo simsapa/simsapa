@@ -4192,7 +4192,8 @@ pub enum WordSelectionBuildMode {
 ///
 /// - **Direct / mixed words** (cases (a)/(b); `direct_uids` non-empty, or no
 ///   break-downs at all): one sense item `p<pi>w<wi>` when the word has ≥ 2
-///   **direct** senses (options over the direct results only — a mixed word's
+///   **direct** senses (options over the direct results only, less the
+///   `demoted_uids` that DPD's filters leave out — a mixed word's
 ///   deconstructor-derived component results are not sense options and no
 ///   break-down/component items are emitted for it).
 /// - **Deconstructor-resolved words** (cases (c)/(d); `direct_uids` empty,
@@ -4314,6 +4315,20 @@ pub fn build_word_selection_items(
                         })
                         .collect()
                 };
+                // Senses DPD's filters leave out are not offered, unless
+                // nothing else is left (docs/dpd-analysis-procedure.md §3
+                // gaps 7, 8; they stay selectable in the Gloss tab).
+                let demoted: Vec<&str> = w
+                    .get("demoted_uids")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|u| u.as_str()).collect())
+                    .unwrap_or_default();
+                let offered: Vec<&serde_json::Value> = sense_results
+                    .iter()
+                    .copied()
+                    .filter(|r| r.get("uid").and_then(|v| v.as_str()).is_none_or(|u| !demoted.contains(&u)))
+                    .collect();
+                let sense_results = if offered.is_empty() { sense_results } else { offered };
                 if sense_results.len() <= 1 {
                     continue;
                 }
@@ -4773,8 +4788,10 @@ pub fn process_word_for_glossing(
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
+    let lookup_grammar = grouped.lookup_grammar;
+    let lookup_headword_ids = grouped.lookup_headword_ids;
     let (form_grammar_raw, lookup_word) = match options.gloss_format {
-        crate::types::GlossFormat::WordInSentence => (grouped.lookup_grammar, lookup_word),
+        crate::types::GlossFormat::WordInSentence => (lookup_grammar.clone(), lookup_word),
         crate::types::GlossFormat::Headwords => (Vec::new(), String::new()),
     };
     let mut deconstructions = grouped.deconstructions;
@@ -4902,6 +4919,9 @@ pub fn process_word_for_glossing(
         deconstruction_resolution,
         form_grammar_raw,
         lookup_word,
+        lookup_grammar,
+        lookup_headword_ids,
+        demoted_uids: Vec::new(),
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
@@ -5054,6 +5074,8 @@ pub fn process_all_paragraphs(
             }
         }
 
+        crate::gloss_sense_ranking::rank_paragraph_default_senses(dpd, &mut processed_words, &paragraph_text)
+            .map_err(|e| format!("Default sense ranking: {}", e))?;
         let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
         collect_unrecognized_words(
@@ -5182,6 +5204,8 @@ pub fn process_single_paragraph(
         }
     }
 
+    crate::gloss_sense_ranking::rank_paragraph_default_senses(dpd, &mut processed_words, &paragraph_text)
+        .map_err(|e| format!("Default sense ranking: {}", e))?;
     let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
     let mut paragraph_unrecognized_words = std::collections::HashMap::new();

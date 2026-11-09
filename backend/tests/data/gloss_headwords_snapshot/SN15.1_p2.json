@@ -136,7 +136,7 @@
               "summary": "<i>(masc)</i> monk; monastic; mendicant; fully ordained monk  <b>[√bhikkh + u]</b>  <i>masc, from bhikkhati</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bhikkhave",
           "example_sentence": "anamataggo'yaṃ [anamataggāyaṃ] <b>bhikkhave</b>, saṃsāro.",
           "context_hash": "bfc5182cd64e1df3153a9859b685d04954ff874fd808e2e996a11e06e940dae3",
@@ -150,7 +150,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49868/dpd"
+          ]
         },
         {
           "original_word": "saṁsāro",
@@ -221,7 +224,7 @@
               "summary": "<i>(masc)</i> pus; suppuration  <b>[√pūy > pūv > puvv > pubb + a]</b>  <i>masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "pubbā",
           "example_sentence": "<b>pubbā</b> koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ",
           "context_hash": "fbb12421b16a3a026b46f752cafe4a8b1086e7e88c086bfa4126e518a779f4e0",
@@ -240,7 +243,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "46822/dpd",
+            "46823/dpd"
+          ]
         },
         {
           "original_word": "koṭi",
@@ -366,7 +373,15 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "35347/dpd",
+            "35348/dpd",
+            "36020/dpd",
+            "28853/dpd",
+            "29174/dpd",
+            "29180/dpd"
+          ]
         },
         {
           "original_word": "paññāyati",
@@ -801,7 +816,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "47033/dpd"
+          ]
         },
         {
           "original_word": "yaṁ",
@@ -842,7 +860,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "yaṁ 1",
           "example_sentence": "seyyathā'pi, bhikkhave, puriso yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (b",
           "context_hash": "699eb58b1bfb71e2cb3008192f9be7799c0017d81235467fb39a513d437f7342",
@@ -861,7 +879,14 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "53872/dpd",
+            "53873/dpd",
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd"
+          ]
         },
         {
           "original_word": "imasmiṁ",
@@ -882,7 +907,7 @@
               "summary": "<i>(pron)</i> this   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "imasmiṁ 1",
           "example_sentence": "seyyathā'pi, bhikkhave, puriso yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (b",
           "context_hash": "699eb58b1bfb71e2cb3008192f9be7799c0017d81235467fb39a513d437f7342",
@@ -897,7 +922,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "13791/dpd",
+            "13792/dpd"
+          ]
         },
         {
           "original_word": "jambudīpe",
@@ -986,7 +1015,7 @@
               "summary": "<i>(pron)</i> you (subject)  <b>[tumha + aṁ > tuvaṁ > tvaṁ]</b>  <i>pron, 2nd nom sg of tumha</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 3,
           "stem": "taṁ 1.1",
           "example_sentence": ", puriso yaṃ imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ taṃ chetvā [tacchetvā (bahūsu)] ekajjhaṃ saṃha",
           "context_hash": "a5a4ce4b776d8d417db5b9d7e126a3d7618694daf062742dcbab78e4134d1ef1",
@@ -1005,7 +1034,13 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "30215/dpd",
+            "30216/dpd",
+            "30217/dpd",
+            "29189/dpd"
+          ]
         },
         {
           "original_word": "chetvā",
@@ -1351,7 +1386,7 @@
               "summary": "<i>(pron)</i> this   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "ayaṁ",
           "example_sentence": "laṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, tassā me mātu ayaṃ mātā'ti, apariyādinnā'va [apariyādi",
           "context_hash": "ecea059d075aa2f48c1c9b4a864c112ab1ed02ecd8ab21069b6c3d84a1ad0a03",
@@ -1371,7 +1406,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "8757/dpd"
+          ]
         },
         {
           "original_word": "me",
@@ -1437,7 +1475,7 @@
               "summary": "<i>(root)</i> (gram) √mā (measure)  <b>[√mā + ā]</b>  <i>root, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 6,
           "stem": "me 1",
           "example_sentence": "caturaṅgulaṃ caturaṅgulaṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ <b>me</b> mātā, tassā me mātu ayaṃ mātā'ti, apariyādinnā'va",
           "context_hash": "c20424571907fdae4b6e3a0986f81f88f9917e935f95020faf12822b368c7815",
@@ -1461,7 +1499,19 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "53163/dpd",
+            "53164/dpd",
+            "53165/dpd",
+            "53166/dpd",
+            "53167/dpd",
+            "53168/dpd",
+            "50429/dpd",
+            "50426/dpd",
+            "52519/dpd",
+            "52134/dpd"
+          ]
         },
         {
           "original_word": "mātā",
@@ -1506,7 +1556,7 @@
               "summary": "<i>(pron)</i> that   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "tassā 1",
           "example_sentence": "caturaṅgulaṃ ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, <b>tassā</b> me mātu ayaṃ mātā'ti, apariyādinnā'va [",
           "context_hash": "03b8ea41a259b2d8d753a9cd4005f1165d408945ef8f31d9165e048749a7eeb0",
@@ -1521,7 +1571,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "30177/dpd",
+            "30178/dpd"
+          ]
         },
         {
           "original_word": "mātu",
@@ -1547,7 +1601,7 @@
               "summary": "<i>(fem)</i> mother   <i>fem</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 3,
           "stem": "mātu 1",
           "example_sentence": "ghaṭikaṃ katvā nikkhipeyya, ayaṃ me mātā, tassā me <b>mātu</b> ayaṃ mātā'ti, apariyādinnā'va [apariyādiṇṇā'va]",
           "context_hash": "006dbb28b0ac26d9d08ebb239064f4af584170c4d43f227494a4797c6a72db4e",
@@ -1563,7 +1617,12 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "52209/dpd",
+            "52210/dpd",
+            "52211/dpd"
+          ]
         },
         {
           "original_word": "apariyādinnāva",
@@ -1682,7 +1741,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "6398/dpd",
+            "6399/dpd"
+          ]
         },
         {
           "original_word": "apariyādiṇṇāva",
@@ -1821,7 +1884,7 @@
               "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 6,
           "stem": "tassa 1",
           "example_sentence": "'ti, apariyādinnā'va [apariyādiṇṇā'va] bhikkhave, <b>tassa</b> purisassa mātumātaro assu, atha imasmiṃ jambudīpe",
           "context_hash": "5b6d8573920f457c6961e6dfd17a30a0a0150d240dadd11fff01d558d9f67a3b",
@@ -1841,7 +1904,15 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "30163/dpd",
+            "30164/dpd",
+            "30165/dpd",
+            "30177/dpd",
+            "30178/dpd",
+            "29189/dpd"
+          ]
         },
         {
           "original_word": "mātumātaro",
@@ -1901,7 +1972,7 @@
               "summary": "<i>(aor)</i> heard  <b>[a + so + si]</b>  <i>aor of suṇāti</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "assu 1.1",
           "example_sentence": "apariyādiṇṇā'va] bhikkhave, tassa purisassa mātumātaro <b>assu</b>, atha imasmiṃ jambudīpe tiṇakaṭṭhasākhāpalāsaṃ",
           "context_hash": "d632aedb009c4e9fa42adfa609918c0c5e7a48fda318ebb11c983c1448af137c",
@@ -1919,7 +1990,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "10098/dpd",
+            "10099/dpd"
+          ]
         },
         {
           "original_word": "atha",
@@ -2029,7 +2104,7 @@
               "summary": "<i>(pr)</i> mates; has sexual intercourse (with)  <b>[gaccha + ti]</b>  <i>pr</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "gaccheyya",
           "example_sentence": "jambudīpe tiṇakaṭṭhasākhāpalāsaṃ parikkhayaṃ pariyādānaṃ <b>gaccheyya</b>.",
           "context_hash": "9a7f85510d11c21bd9f1ef15678d853a4d445c30f90f3e11210fee6cf14d007b",
@@ -2045,7 +2120,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "24051/dpd"
+          ]
         },
         {
           "original_word": "kissa",
@@ -2086,7 +2164,7 @@
               "summary": "<i>(root)</i> (gram) √kī (buy)  <b>[√kī + ī]</b>  <i>root, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "kissa 1",
           "example_sentence": "taṃ <b>kissa</b> hetu?",
           "context_hash": "62290ffe181900783b1f6f8da5a4762978c2ec7c36e4034155b760ae071a1f28",
@@ -2105,7 +2183,12 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "21930/dpd",
+            "21931/dpd",
+            "22022/dpd"
+          ]
         },
         {
           "original_word": "hetu",
@@ -2205,7 +2288,7 @@
               "summary": "<i>(nt)</i> long time  <b>[dīgha + ratta]</b>  <i>nt, comp</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "dīgharattaṁ",
           "example_sentence": "ṃsāro. pubbā koṭi na paññāyati avijjānīvaraṇānaṃ sattānaṃ taṇhāsaṃyojanānaṃ sandhāvataṃ saṃsarataṃ. ",
           "context_hash": "23b1618c0e1e45f577dbde5d85cf56b6ad3dc8db3ef6c1b558093d7612fdbbee",
@@ -2280,7 +2363,7 @@
               "summary": "<i>(letter)</i> (gram) letter v; 37th letter of the alphabet; dento-labial semi-vowel   <i>letter, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 8,
           "stem": "vo 1.1",
           "example_sentence": "evaṃ dīgharattaṃ <b>vo</b>, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ",
           "context_hash": "bac294b67d43e29d6d8f51609ef68bcdb7a80924b30ff926b11fe9f2d29bf877",
@@ -2303,7 +2386,17 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "81109/dpd",
+            "70560/dpd",
+            "70561/dpd",
+            "70562/dpd",
+            "70563/dpd",
+            "70564/dpd",
+            "70565/dpd",
+            "65506/dpd"
+          ]
         },
         {
           "original_word": "dukkhaṁ",
@@ -2334,7 +2427,7 @@
               "summary": "<i>(nt)</i> pain; physical discomfort  <b>[√dukkh + a]</b>  <i>nt</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "dukkhaṁ",
           "example_sentence": "evaṃ dīgharattaṃ vo, bhikkhave, dukkhaṃ paccanubhūtaṃ tibbaṃ paccanubhūtaṃ byasanaṃ paccanubhūtaṃ, k",
           "context_hash": "f3ec75048ae164974b2ed77dc46acaf858f4c1f123e7b3d4ad0c47ed74d607d8",
@@ -2567,7 +2660,7 @@
               "summary": "<i>(aor)</i> slept  <b>[saya + i]</b>  <i>aor of sayati</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "sayaṁ",
           "example_sentence": "byasanaṃ paccanubhūtaṃ, kaṭasī [kaṭasi kaṭā chavā <b>sayan'ti</b> etthā'ti kaṭasī] vaḍḍhitā.",
           "context_hash": "c56a96423fd7f5aae37f3b126e1797f00236877efeac85e5112bca28119ac88c",
@@ -2615,7 +2708,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "17946/dpd"
+          ]
         },
         {
           "original_word": "vaḍḍhitā",
@@ -2898,7 +2994,15 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "9110/dpd",
+            "9199/dpd",
+            "9200/dpd",
+            "9201/dpd",
+            "9202/dpd",
+            "9203/dpd"
+          ]
         },
         {
           "original_word": "sabbasaṅkhāresu",
@@ -2982,7 +3086,7 @@
               "summary": "<i>(masc)</i> claw of a crab, etc.   <i>masc, nt</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 5,
           "stem": "alaṁ 1",
           "example_sentence": "have, alam'eva sabbasaṅkhāresu nibbindituṃ alaṃ virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
           "context_hash": "8232aa8770c5207ef75e2606d7e9eac3dc6cee43b52e812ef2aec88c2494c559",
@@ -3084,7 +3188,7 @@
               "summary": "<i>(fem)</i> (gram) nominative case   <i>fem</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "paṭhamaṁ 1",
           "example_sentence": " virajjituṃ alaṃ vimuccitun'ti. paṭhamaṃ.",
           "context_hash": "c877473990d4e63dd3c5dadc5884cf3129289243444327c67b7324074383bf52",
@@ -3102,7 +3206,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "41151/dpd",
+            "41152/dpd"
+          ]
         }
       ],
       "unrecognized_words": []

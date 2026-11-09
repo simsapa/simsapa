@@ -154,6 +154,7 @@ fn mk_grouped() -> GroupedDpdLookup {
         ],
         direct_uids: vec!["d1".to_string(), "d2".to_string()],
         lookup_grammar: Vec::new(),
+        lookup_headword_ids: Vec::new(),
     }
 }
 

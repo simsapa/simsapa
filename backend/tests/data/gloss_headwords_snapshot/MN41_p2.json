@@ -145,7 +145,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "yena 1",
           "example_sentence": "atha kho sāleyyakā brāhmaṇagahapatikā <b>yena</b> bhagavā ten'upasaṅkamiṃsu, upasaṅkamitvā app'",
           "context_hash": "316b9665f8ea52b4844e91a243704d2f2dba5bacb412ee13f9b4efea8127e29f",
@@ -164,7 +164,13 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "54167/dpd",
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd"
+          ]
         },
         {
           "original_word": "bhagavā",
@@ -185,7 +191,7 @@
               "summary": "<i>(adj)</i> fortunate  <b>[√bhaj > bhag + a + vant], [bhaga + vant]</b>  <i>adj, from bhaga</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bhagavā",
           "example_sentence": "atha kho sāleyyakā brāhmaṇagahapatikā yena <b>bhagavā</b> ten'upasaṅkamiṃsu, upasaṅkamitvā app'ekacce",
           "context_hash": "e17b16ec3b2e85f99b7470f3e99e3f2d6fe36d0ab76335a2ef77694a5532ea3f",
@@ -200,7 +206,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49147/dpd"
+          ]
         },
         {
           "original_word": "tenupasaṅkamiṁsu",
@@ -407,7 +416,7 @@
               "summary": "<i>(adj)</i> fortunate  <b>[√bhaj > bhag + a + vant], [bhaga + vant]</b>  <i>adj, from bhaga</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bhagavatā",
           "example_sentence": "bhagavantaṃ abhivādetvā ekam'antaṃ nisīdiṃsu, app'ekacce <b>bhagavatā</b> saddhiṃ sammodiṃsu, sammodanīyaṃ kathaṃ sāraṇīyaṃ",
           "context_hash": "cff7310125c2ac76e974f79a22c8da8a901429bebf54cc5d1f2021dbb18d50c8",
@@ -422,7 +431,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49133/dpd"
+          ]
         },
         {
           "original_word": "saddhiṁ",
@@ -545,7 +557,7 @@
               "summary": "<i>(fem)</i> commentary; detailed discussion; analysis  <b>[√kath + ā]</b>  <i>fem, in comps, from katheti</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "kathaṁ 1",
           "example_sentence": "isīdiṃsu, app'ekacce bhagavatā saddhiṃ sammodiṃsu, sammodanīyaṃ kathaṃ sāraṇīyaṃ vītisāretvā ekam'an",
           "context_hash": "12a2b46d361dc4602d09176b2b879540bdbb35dd61c77796445b82df9440bee4",
@@ -769,7 +781,7 @@
               "summary": "<i>(adj)</i> fortunate  <b>[√bhaj > bhag + a + vant], [bhaga + vant]</b>  <i>adj, from bhaga</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 3,
           "stem": "bhagavato 1",
           "example_sentence": "añjaliṃ paṇāmetvā ekam'antaṃ nisīdiṃsu, app'ekacce <b>bhagavato</b> santike nāmagottaṃ sāvetvā ekam'antaṃ nisīdiṃsu,",
           "context_hash": "053e10425d583c7ad15b075715a446832fece68c7a47964cc09f678618dfce57",
@@ -786,7 +798,12 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49136/dpd",
+            "49137/dpd",
+            "49138/dpd"
+          ]
         },
         {
           "original_word": "santike",
@@ -822,7 +839,7 @@
               "summary": "<i>(fem)</i> (a game variously called) jackstraws; spillikins; spellicans; pick-up-sticks  <b>[sa + anta + ika + ā], [santika + ā]</b>  <i>fem, from santika</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "santike 1",
           "example_sentence": "paṇāmetvā ekam'antaṃ nisīdiṃsu, app'ekacce bhagavato <b>santike</b> nāmagottaṃ sāvetvā ekam'antaṃ nisīdiṃsu, app'",
           "context_hash": "6a74a276c8c2225f93606097f71443e04da848cbcdd8806f685d560fd384a387",
@@ -992,7 +1009,7 @@
               "summary": "<i>(pron)</i> who?; what?; which?   <i>pron, interr, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "ko",
           "example_sentence": "sāleyyakā brāhmaṇagahapatikā bhagavantaṃ etadavocuṃ, <b>ko</b> nu kho, bho gotama, hetu, ko paccayo, yena m'idh'",
           "context_hash": "7fc0c0a39e92c0d7a231da46a66fb6fe3a0a9fed0eb373aa5588909af4addee9",
@@ -1008,7 +1025,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "22919/dpd"
+          ]
         },
         {
           "original_word": "nu",
@@ -1050,7 +1070,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "29181/dpd"
+          ]
         },
         {
           "original_word": "bho",
@@ -1066,7 +1089,7 @@
               "summary": "<i>(masc)</i> master; sir; respected man  <b>[bhava + ant]</b>  <i>masc, from bhavati, irreg</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bho",
           "example_sentence": "brāhmaṇagahapatikā bhagavantaṃ etadavocuṃ, ko nu kho, <b>bho</b> gotama, hetu, ko paccayo, yena m'idh'ekacce sattā",
           "context_hash": "716c7ae7b68869f86dc5873c790824b74e420d79bff340f255039cf0e074720b",
@@ -1080,7 +1103,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "50331/dpd"
+          ]
         },
         {
           "original_word": "gotama",
@@ -1224,7 +1250,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "39377/dpd"
+          ]
         },
         {
           "original_word": "midhekacce",
@@ -1496,7 +1525,7 @@
               "summary": "<i>(adj)</i> consisting of; comprised of  <b>[√bhid > bhed + *a]</b>  <i>adj, in comps, from bhindati</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bheda 1",
           "example_sentence": "hetu, ko paccayo, yena m'idh'ekacce sattā kāyassa <b>bhedā</b> paraṃ maraṇā apāyaṃ duggatiṃ vinipātaṃ nirayaṃ",
           "context_hash": "4c31acc81652b83eeab737088bfbad5182eecdd0fbc4b16f8b5e63a14f35bf5b",
@@ -1563,7 +1592,7 @@
               "summary": "<i>(masc)</i> (gram) next letter; following vowel   <i>masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "paraṁ",
           "example_sentence": "idh'ekacce sattā kāyassa bhedā paraṃ maraṇā apāyaṃ duggatiṃ vinipātaṃ nirayaṃ upapajjanti? ko pana, ",
           "context_hash": "028a80a7c49e1b8c2d0170bacb261abc93bca8c2023fda3ee8be5b668c56fc7b",
@@ -1583,7 +1612,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "42856/dpd",
+            "42858/dpd"
+          ]
         },
         {
           "original_word": "maraṇā",

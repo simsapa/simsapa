@@ -102,7 +102,7 @@
               "summary": "<i>(adj)</i> venerable; respectable  <b>[ā + √i > ay + *as + mant], [āyas + mant]</b>  <i>adj, from āyas</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "āyasmā",
           "example_sentence": "atha kho <b>āyasmā</b> sāriputto yena bhagavā ten'upasaṅkami,",
           "context_hash": "c00cd660215044e4885789544dbc2286dad9163ad4bbd15a603cfc1818136741",
@@ -122,7 +122,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "12243/dpd"
+          ]
         },
         {
           "original_word": "sāriputto",
@@ -187,7 +190,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "yena 1",
           "example_sentence": "atha kho āyasmā sāriputto <b>yena</b> bhagavā ten'upasaṅkami, upasaṅkamitvā bhagavantaṃ",
           "context_hash": "aac88f5aa659990e88b4743820ec06d1a328105a1a306cebff8863bc2e12d71b",
@@ -206,7 +209,13 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "54167/dpd",
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd"
+          ]
         },
         {
           "original_word": "bhagavā",
@@ -227,7 +236,7 @@
               "summary": "<i>(adj)</i> fortunate  <b>[√bhaj > bhag + a + vant], [bhaga + vant]</b>  <i>adj, from bhaga</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bhagavā",
           "example_sentence": "atha kho āyasmā sāriputto yena <b>bhagavā</b> ten'upasaṅkami, upasaṅkamitvā bhagavantaṃ",
           "context_hash": "aac88f5aa659990e88b4743820ec06d1a328105a1a306cebff8863bc2e12d71b",
@@ -242,7 +251,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49147/dpd"
+          ]
         },
         {
           "original_word": "tenupasaṅkami",
@@ -591,7 +603,12 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "61570/dpd",
+            "61571/dpd",
+            "61582/dpd"
+          ]
         },
         {
           "original_word": "ahaṁ",
@@ -612,7 +629,7 @@
               "summary": "<i>(masc)</i> day   <i>masc, in comps</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "ahaṁ",
           "example_sentence": " etadavoca, saṃkhittena'pi kho ahaṃ, sāriputta, dhammaṃ deseyyaṃ, vitthārena'pi kho ahaṃ, sāriputta,",
           "context_hash": "3ba19265dae96c7e6fbdf82d4d30dfd3408b86217f74787e7a47ee93d896774a",
@@ -907,7 +924,15 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "67927/dpd",
+            "67928/dpd",
+            "67929/dpd",
+            "67947/dpd",
+            "67948/dpd",
+            "78627/dpd"
+          ]
         },
         {
           "original_word": "saṁkhittavitthārenapi",
@@ -1051,7 +1076,7 @@
               "summary": "<i>(ind)</i> (gram) and; as well as; but; terms and conditions apply to a rule   <i>ind</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "ca 1.1",
           "example_sentence": "pi kho ahaṃ, sāriputta, dhammaṃ deseyyaṃ, aññātāro <b>ca</b> dullabhā'ti.",
           "context_hash": "2933fba5c0955cf258f834066e3565511f222c8ec7291dc77254f9037045a808",
@@ -1068,7 +1093,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "25665/dpd",
+            "25664/dpd"
+          ]
         },
         {
           "original_word": "dullabha",
@@ -1119,7 +1148,7 @@
               "summary": "<i>(pron)</i> this   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "etassa 1",
           "example_sentence": "<b>etassa</b>, bhagavā, kālo, etassa, sugata, kālo yaṃ bhagavā",
           "context_hash": "31602a31aba3eba42e52604954a5720d740d5294181d4f417bf8026ba5c522a4",
@@ -1134,7 +1163,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "17893/dpd",
+            "17894/dpd"
+          ]
         },
         {
           "original_word": "kālo",
@@ -1194,7 +1227,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "21395/dpd",
+            "21394/dpd"
+          ]
         },
         {
           "original_word": "sugata",
@@ -1271,7 +1308,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 4,
           "stem": "yaṁ 1",
           "example_sentence": "vā, kālo, etassa, sugata, kālo yaṃ bhagavā saṃkhittena'pi dhammaṃ deseyya, vitthārena'pi dhammaṃ des",
           "context_hash": "5a503b2ac0214f173edb2bbb6cfcd0f142e830d4d93e39dcd3e74f3e0cdb486b",
@@ -1290,7 +1327,14 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "53872/dpd",
+            "53873/dpd",
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd"
+          ]
         },
         {
           "original_word": "deseyya",
@@ -1321,7 +1365,7 @@
               "summary": "<i>(pr)</i> (vinaya) appoints; allocates; designates (to)  <b>[dese + ti]</b>  <i>pr, caus of disati</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "deseyya 1",
           "example_sentence": ", sugata, kālo yaṃ bhagavā saṃkhittena'pi dhammaṃ <b>deseyya</b>, vitthārena'pi dhammaṃ deseyya,",
           "context_hash": "76ed4f6a8962e259458464a4ea36872a623d7e470818f83ce32bb42f0b0eeaec",
@@ -1338,7 +1382,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "34010/dpd",
+            "34011/dpd"
+          ]
         },
         {
           "original_word": "bhavissaṁ",
@@ -1379,7 +1427,7 @@
               "summary": "<i>(fut)</i> will happen; will occur  <b>[bhavissa + ti]</b>  <i>fut of bhavati</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "bhavissaṁ",
           "example_sentence": "<b>bhavissan'ti</b> dhammassa aññātāro'ti.",
           "context_hash": "5f47087c323e0aed2746ed8f882aca07908be29ac55a14e2e5a374a8774eae74",
@@ -1398,7 +1446,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "49628/dpd"
+          ]
         },
         {
           "original_word": "dhammassa",

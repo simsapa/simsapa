@@ -1237,6 +1237,7 @@ impl DpdDbHandle {
         let mut direct_uids: Vec<String> = Vec::new();
         let mut deconstructions: Vec<Deconstruction> = Vec::new();
         let mut lookup_grammar: Vec<GrammarTriple> = Vec::new();
+        let mut lookup_headword_ids: Vec<i32> = Vec::new();
 
         // Append `res_words` to the flat `results` list, deduplicating by uid
         // against what is already present, and return the uids of the newly
@@ -1323,6 +1324,7 @@ impl DpdDbHandle {
                     deconstructions,
                     direct_uids,
                     lookup_grammar,
+                    lookup_headword_ids,
                 });
             }
         }
@@ -1398,6 +1400,7 @@ impl DpdDbHandle {
             let (r, grammar) =
                 self.inflection_to_pali_words_with_grammar(&query_text, uid_prefix_ref, uid_suffix_ref)?;
             lookup_grammar = grammar;
+            lookup_headword_ids = r.iter().map(|h| h.id).collect();
             let res_words: Vec<UDpdWord> =
                 r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
             let new_uids = add_results(res_words, &mut results, &mut results_uids);
@@ -1577,6 +1580,7 @@ impl DpdDbHandle {
             deconstructions,
             direct_uids,
             lookup_grammar,
+            lookup_headword_ids,
         })
     }
 
@@ -1673,6 +1677,7 @@ impl DpdDbHandle {
             deconstructions,
             direct_uids: Vec::new(),
             lookup_grammar: base_lookup.lookup_grammar,
+            lookup_headword_ids: base_lookup.lookup_headword_ids,
         })
     }
 
@@ -1768,6 +1773,7 @@ impl DpdDbHandle {
                     deconstructions: Vec::new(),
                     direct_uids: Vec::new(),
                     lookup_grammar: Vec::new(),
+                    lookup_headword_ids: Vec::new(),
                 };
                 Some(serde_json::to_string(&empty).unwrap_or_default())
             }

@@ -28,7 +28,7 @@
               "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "tasmā 1",
           "example_sentence": "<b>tasmā</b> piyaṃ na kayirātha, piy'āpāyo hi pāpako, ganthā",
           "context_hash": "eb59e77bdbf4f84b62cc010917d5e3558e01e3618ce6507cf5bf094409ec8ec3",
@@ -44,7 +44,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "30147/dpd",
+            "29189/dpd"
+          ]
         },
         {
           "original_word": "piyaṁ",
@@ -188,7 +192,15 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "35347/dpd",
+            "35348/dpd",
+            "36020/dpd",
+            "28853/dpd",
+            "29174/dpd",
+            "29180/dpd"
+          ]
         },
         {
           "original_word": "kayirātha",
@@ -224,7 +236,7 @@
               "summary": "<i>(opt)</i> should do; could make  <b>[karo + eyya], [kareyya > kayirā]</b>  <i>opt of karoti, irreg</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 5,
           "stem": "kayirātha 1",
           "example_sentence": "tasmā piyaṃ na <b>kayirātha</b>, piy'āpāyo hi pāpako, ganthā tesaṃ na vijjanti,",
           "context_hash": "41b6cfdae3a6eeacb810b68bbb3d276c90f73238176fe0e9f7ce3d24f0cbea9e",
@@ -242,7 +254,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "20420/dpd",
+            "20421/dpd"
+          ]
         },
         {
           "original_word": "piyāpāyo",
@@ -314,7 +330,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "71214/dpd"
+          ]
         },
         {
           "original_word": "pāpako",
@@ -418,7 +437,7 @@
               "summary": "<i>(pron)</i> that   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 3,
           "stem": "tesaṁ 1",
           "example_sentence": "a, piy'āpāyo hi pāpako, ganthā tesaṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
           "context_hash": "3297f5eb5897fb665882f55aba9874e865e93b5525c613cfed78ddf86c493d70",
@@ -434,7 +453,12 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "31315/dpd",
+            "31316/dpd",
+            "31317/dpd"
+          ]
         },
         {
           "original_word": "vijjanti",
@@ -485,7 +509,7 @@
               "summary": "<i>(pron)</i> whoever; whatever; whichever   <i>pron, base</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "yesaṁ 1",
           "example_sentence": "pako, ganthā tesaṃ na vijjanti, yesaṃ n'atthi piy'āppiyaṃ.",
           "context_hash": "b358439f96283abc46f7aa6bdbcb8e89afc8c6de442920914e31e5b5b04bab8a",
@@ -500,7 +524,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "54200/dpd",
+            "54201/dpd"
+          ]
         },
         {
           "original_word": "natthi",
@@ -536,7 +564,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "35552/dpd"
+          ]
         },
         {
           "original_word": "piyāppiyaṁ",

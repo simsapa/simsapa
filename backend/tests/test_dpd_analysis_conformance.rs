@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, HashMap};
 use serial_test::serial;
 use simsapa_backend::db::dpd::{headword_row_fields_by_ids, HeadwordRowFields};
 use simsapa_backend::get_app_data;
+use simsapa_backend::gloss_sense_ranking::rank_paragraph_default_senses;
 use simsapa_backend::gloss_rows::{GlossRow, GlossRowBuilder, RowCandidate, RowChoice, RowChooser, TokenInput};
 use simsapa_backend::helpers::{
     apply_gloss_dedup, extract_words_with_context, normalize_dpd_query_text, process_word_for_glossing,
@@ -262,6 +263,8 @@ fn gloss_rows(passage: &str, chooser: Option<&dyn RowChooser>) -> Vec<GlossRow> 
             process_word_for_glossing(&info, &options, dpd, None).unwrap()
         })
         .collect();
+    let mut processed = processed;
+    rank_paragraph_default_senses(dpd, &mut processed, passage).unwrap();
     let mut stems = HashMap::new();
     let processed = apply_gloss_dedup(processed, &options, &mut stems);
     let tokens: Vec<TokenInput> = words
@@ -456,4 +459,81 @@ fn test_word_in_sentence_matches_dpd_reports() {
 
     let failures = mismatches.iter().filter(|m| m.category == CATEGORY_FAIL).count();
     assert_eq!(failures, 0, "{} rows differ from DPD's reports outside the reported categories (see the output above)", failures);
+}
+
+/// Selection agreement (PRD FR J3): Simsapa chooses every sense itself (AI
+/// off, no cache, no replay) and its top-level ID is compared with DPD's, on
+/// the token rows where DPD's row has an ID. Reports; never fails. Run with
+/// `cargo test --test test_dpd_analysis_conformance -- --ignored --nocapture`.
+#[test]
+#[ignore]
+#[serial]
+fn measure_selection_agreement() {
+    h::app_data_setup();
+    let dpd_version = get_app_data().dbm.dpd.dpd_release_version().unwrap_or_default();
+
+    let mut out = format!(
+        "Selection agreement, AI off (Simsapa dpd.sqlite3 {})\n\
+         report | rows | agree | rate | rows with a choice | agree | rate\n",
+        dpd_version
+    );
+    let (mut total, mut total_agree, mut total_choice, mut total_choice_agree) = (0, 0, 0, 0);
+    let mut disagreements = String::new();
+    let rate = |a: usize, n: usize| if n == 0 { "-".to_string() } else { format!("{:.1}%", 100.0 * a as f64 / n as f64) };
+
+    for (name, report) in reports() {
+        let passage = norm(&report.passage).replace('\n', " ");
+        let dpd_tokens = report_tree(&report.rows);
+        let rows = gloss_rows(&passage, None);
+        let a: Vec<String> = dpd_tokens.iter().map(|n| bare(&n.row.word)).collect();
+        let b: Vec<String> = rows.iter().map(|r| bare(&r.word)).collect();
+
+        let (mut n, mut agree, mut n_choice, mut agree_choice) = (0, 0, 0, 0);
+        for (i, j) in align(&a, &b) {
+            let (Some(i), Some(j)) = (i, j) else { continue };
+            let d = &dpd_tokens[i].row;
+            let Some(dpd_id) = d.id else { continue };
+            let s = &rows[j];
+            // A quoted iti token's sense choice is on its base-word row.
+            let chooser_row = if s.candidates.len() == 1 && s.components.first().is_some_and(|c| c.word_index.is_some()) {
+                &s.components[0]
+            } else {
+                s
+            };
+            let has_choice = chooser_row.candidates.len() > 1;
+            let ok = s.id == Some(dpd_id);
+            n += 1;
+            agree += ok as usize;
+            if has_choice {
+                n_choice += 1;
+                agree_choice += ok as usize;
+            }
+            if !ok {
+                let lemma = |r: &GlossRow| r.candidates.get(r.selected_candidate).map(|c| c.lemma_1.clone()).unwrap_or_default();
+                disagreements.push_str(&format!(
+                    "  {}: {} — DPD {} ({}), Simsapa {} ({}){}\n",
+                    name,
+                    d.word,
+                    dpd_id,
+                    d.grammar,
+                    s.id.map(|i| i.to_string()).unwrap_or_else(|| "-".to_string()),
+                    lemma(s),
+                    if has_choice { "" } else { " [no choice]" },
+                ));
+            }
+        }
+        out.push_str(&format!(
+            "{} | {} | {} | {} | {} | {} | {}\n",
+            name, n, agree, rate(agree, n), n_choice, agree_choice, rate(agree_choice, n_choice)
+        ));
+        total += n;
+        total_agree += agree;
+        total_choice += n_choice;
+        total_choice_agree += agree_choice;
+    }
+    out.push_str(&format!(
+        "overall | {} | {} | {} | {} | {} | {}\n\nDisagreements:\n{}",
+        total, total_agree, rate(total_agree, total), total_choice, total_choice_agree, rate(total_choice_agree, total_choice), disagreements
+    ));
+    println!("{}", out);
 }
