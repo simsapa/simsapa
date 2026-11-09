@@ -7,3 +7,4 @@ PromptManager 1.0 PromptManager.qml
 ClipboardManager 1.0 ClipboardManager.qml
 DictionaryManager 1.0 DictionaryManager.qml
 GlobalHotkeyManager 1.0 GlobalHotkeyManager.qml
+DpdUpgradeManager 1.0 DpdUpgradeManager.qml

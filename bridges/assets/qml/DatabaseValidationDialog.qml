@@ -91,7 +91,13 @@ ApplicationWindow {
     readonly property bool has_downloadable_failures: appdata_failed || dpd_failed || dictionaries_failed
     // Migration failures need no term here: the backend folds them into the
     // database's own result, flipping appdata_failed / dictionaries_failed.
+    // The DPD dictionary pages and the DPD data are from different releases:
+    // a DPD update stopped between its two replacements. Reported, never
+    // repaired, and not a downloadable failure. Empty when they match.
+    property string dpd_release_mismatch: ""
+
     readonly property bool has_any_failure: has_downloadable_failures || search_index_failed || fulltext_failed
+                                            || dpd_release_mismatch.length > 0
 
     // Track if dialog was opened from menu (manual) vs automatic validation failure
     property bool opened_from_menu: false
@@ -133,6 +139,7 @@ ApplicationWindow {
 
         root.refresh_startup_db_report();
         root.refresh_search_index_status();
+        root.dpd_release_mismatch = SuttaBridge.get_dpd_release_mismatch();
 
         // Run the first query checks which will emit validation signals.
         // appdata_first_query covers both the sutta query and app_settings read.
@@ -220,6 +227,7 @@ ApplicationWindow {
         root.refresh_startup_db_report();
         root.refresh_search_index_status();
         root.refresh_fulltext_status();
+        root.dpd_release_mismatch = SuttaBridge.get_dpd_release_mismatch();
 
         // Parse the failed_databases string (comma-separated list)
         root.appdata_failed = failed_databases.includes("appdata");
@@ -1205,6 +1213,27 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                     visible: root.fulltext_message.length > 0
+                }
+            }
+
+            ColumnLayout {
+                spacing: 2
+                Layout.fillWidth: true
+                Layout.topMargin: 5
+                visible: root.dpd_release_mismatch.length > 0
+
+                Label {
+                    text: "DPD dictionary releases:"
+                    font.pointSize: root.pointSize
+                    font.bold: true
+                }
+
+                Label {
+                    text: "  - " + root.dpd_release_mismatch
+                    font.pointSize: root.pointSize
+                    color: palette.mid
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                 }
             }
 

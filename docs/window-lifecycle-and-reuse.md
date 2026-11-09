@@ -32,7 +32,8 @@ a second one on **every** reopen, since a closed one is by definition not
 visible. Using list membership for a pooled window re-opens a window the user
 closed — that is a real bug that shipped, see §3.
 
-`DownloadAppdataWindow` and `StorageRecoveryWindow` are in neither family. They
+`DownloadAppdataWindow`, `StorageRecoveryWindow` and `DpdUpgradeWindow` are in
+neither family. They
 exist only during startup, inside their own dedicated `app.exec()` which the app
 **exits** when they close (`cpp/gui.cpp`, `throw NormalExit(…)`), so destroying
 them on close would be meaningless and risks running destruction during
@@ -253,6 +254,7 @@ leaks the window.
 | `ChantingPracticeReviewWindow` | `chanting_review` | an in-progress recording | `onRecording_completed` |
 | `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3/6 (deleting, importing, renaming, downloading), so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
 | `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
+| `DpdUpgradeWindow` | *(none — a startup window in its own `app.exec()`, see §0)* | the DPD upgrade, started from a `Timer` once the window is up. Nothing is destroyed early, but closing the window would quit the app mid-run, so its `onClosing` **refuses** the close while the run is going (from the Apply step on the run cannot be cancelled either). The keep-screen-on hold `dpd-upgrade-window` is released in the completion handlers, never in `onClosing` | `onUpgradeCompleted` / `onUpgradeFailed` |
 | `SuttaNavigationWindow` | *(none — never notifies)* | **nothing to defer** — it is never destroyed (§5d), so no completion signal can be lost to a close. It also starts nothing off the Qt thread: every `nav_tree_*` read is synchronous | — |
 
 Five traps in that table:

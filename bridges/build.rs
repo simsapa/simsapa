@@ -13,6 +13,8 @@ fn main() {
     let qml_files = vec![
         "assets/qml/SuttaSearchWindow.qml",
         "assets/qml/DownloadAppdataWindow.qml",
+        "assets/qml/DpdUpgradeWindow.qml",
+        "assets/qml/DpdUpdateDialog.qml",
         "assets/qml/SuttaLanguagesWindow.qml",
         "assets/qml/LibraryWindow.qml",
         "assets/qml/ReferenceSearchWindow.qml",
@@ -178,6 +180,7 @@ fn main() {
             "src/clipboard_manager.rs",
             "src/dictionary_manager.rs",
             "src/global_hotkey_manager.rs",
+            "src/dpd_upgrade_manager.rs",
         ])
         // The cc_builder() closure is `unsafe fn` since 0.9. It is not needed
         // here: include_dir() and cpp_files() are the safe equivalents of the

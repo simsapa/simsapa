@@ -275,6 +275,16 @@ database of **another major.minor** is `simsapa setup`'s (below), a **newer
 compatible** release is `simsapa db-upgrade`'s (next section). Both run the same
 `setup.rs` functions, so the procedure exists once in the CLI.
 
+**The DPD-only upgrade has a third marker, `app-assets/auto_start_dpd_upgrade.txt`**,
+holding the DPD release tag the user accepted (`prepare_for_dpd_upgrade()`).
+`gui.cpp` peeks at it before `init_app_data()` and opens `DpdUpgradeWindow` in
+place of the main app; the window deletes it when the run ends (success, failure
+or cancel), never at the start. The peek deletes it when
+`auto_start_download.txt` is also present (the new databases bring their own
+DPD) or `appdata.sqlite3` is missing. `simsapa dpd upgrade` neither reads nor
+writes it: it runs the same pipeline directly. See
+[dpd-upgrades.md](./dpd-upgrades.md).
+
 **The upgrade of an incompatible database is the GUI's procedure in one run.**
 In the GUI, `check_for_updates()` finds a database of another major.minor
 version (`is_local_db_obsolete()`), `UpdateNotificationDialog` asks, and

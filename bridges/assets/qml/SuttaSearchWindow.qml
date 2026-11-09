@@ -2743,7 +2743,25 @@ ${query_text}`;
     UpdateNotificationDialog {
         id: update_notification_dialog
         extra_top_margin: root.extra_top_margin
+
+        // A DPD offer found by the same check waits until the app update
+        // notice is closed.
+        onVisibleChanged: {
+            if (!visible && root.pending_dpd_update_json.length > 0) {
+                const json = root.pending_dpd_update_json;
+                root.pending_dpd_update_json = "";
+                dpd_update_dialog.show_offer(json);
+            }
+        }
     }
+
+    DpdUpdateDialog {
+        id: dpd_update_dialog
+        extra_top_margin: root.extra_top_margin
+    }
+
+    property string pending_dpd_update_json: ""
+    property string dpd_check_error: ""
 
     Dialog {
         id: search_index_notification
@@ -2920,7 +2938,31 @@ ${query_text}`;
         }
 
         function onNoUpdatesAvailable() {
-            update_notification_dialog.show_no_updates();
+            // Only a manual check emits this; a DPD check error on it is
+            // reported in the same notice.
+            const dpd_note = root.dpd_check_error.length > 0 ? root.dpd_check_error : "";
+            root.dpd_check_error = "";
+            update_notification_dialog.show_no_updates(dpd_note);
+            root.run_startup_validation_once();
+        }
+
+        function onDpdUpdateAvailable(update_info_json: string) {
+            if (update_notification_dialog.visible) {
+                root.pending_dpd_update_json = update_info_json;
+            } else {
+                dpd_update_dialog.show_offer(update_info_json);
+            }
+            root.run_startup_validation_once();
+        }
+
+        function onDpdUpdateCheckError(error_message: string) {
+            logger.info("DPD update check error: " + error_message);
+            root.dpd_check_error = error_message;
+        }
+
+        // Emitted once at the end of every check. When the check found
+        // nothing to show, no other handler has run validation yet.
+        function onReleasesCheckCompleted() {
             root.run_startup_validation_once();
         }
 

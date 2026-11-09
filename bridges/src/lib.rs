@@ -8,6 +8,7 @@ pub mod prompt_manager;
 pub mod clipboard_manager;
 pub mod dictionary_manager;
 pub mod global_hotkey_manager;
+pub mod dpd_upgrade_manager;
 
 use core::pin::Pin;
 use cxx_qt::{CxxQtThread, Threading};

@@ -15,6 +15,8 @@ pub mod archives;
 pub mod staged;
 pub mod apply;
 pub mod reindex;
+pub mod marker;
+pub mod offer;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

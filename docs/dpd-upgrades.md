@@ -257,3 +257,66 @@ cargo run --release -- --simsapa-dir <dir> rebuild-dpd [--limit N]
 The usual round after a new DPD release is §1 (extract, point `current` at
 it), then `rebuild-dpd` on the dist to test the release in the app, and a full
 bootstrap for the database release.
+
+### 7.2 The app
+
+**The offer.** `SuttaBridge::check_for_updates()` (the automatic check at
+startup, gated by the update-notification setting, and the manual **Check for
+updates** action) starts `check_for_dpd_update()` on its own thread before it
+asks the releases server, so an outage of either does not hide the other's
+answer. `dpd_upgrade::offer::check_for_update()` gives a `DpdUpdateOffer`: the
+two versions, the release notes, the download size, the space estimate and the
+shared `ESTIMATED_MINUTES` / `UPGRADE_OUTLINE` / `UPGRADE_BENEFIT`. It answers
+`None` without asking GitHub when no `dpd.sqlite3` is installed (first-run
+setup calls the same check).
+
+- An obsolete local database or a database update: no DPD offer, since the new
+  databases bring their own DPD.
+- An app update: the DPD offer (`dpdUpdateAvailable`) follows it, and
+  `SuttaSearchWindow` holds it until the app update notice is closed.
+- No other update: `dpdUpdateAvailable` when there is a candidate. A GitHub
+  failure is shown only on a manual check, as a line in the "No updates"
+  notice (`dpdUpdateCheckError` just before `noUpdatesAvailable`); the
+  automatic check only logs it.
+- `releasesCheckCompleted` is emitted once per check, whatever was found.
+
+`DpdUpdateDialog.qml` shows the offer, then the confirmation (the time first,
+the steps, the benefit, the space), then **Start update** calls
+`prepare_for_dpd_upgrade(tag)`, which writes the marker, and the dialog asks
+the user to quit.
+
+**The marker** `app-assets/auto_start_dpd_upgrade.txt` holds the tag
+(`dpd_upgrade::marker`). At the next start `gui.cpp` calls
+`peek_auto_start_dpd_upgrade_c()` after the storage-state gating (never with an
+unreachable storage path) and before the first-run download branch and
+`init_app_data()`. The peek does not consume the marker; it deletes it only
+when `auto_start_download.txt` is also present (the database download wins) or
+there is no `appdata.sqlite3`.
+
+**The run.** `DpdUpgradeWindow.qml` opens in place of the main app. Its bridge,
+`DpdUpgradeManager`, looks the tag up again (`offer::release_for_tag()`: the
+download URLs and sizes come with the release, and a tag that is no longer a
+candidate is a Check-step `version` error), runs `run_dpd_upgrade()` on a
+worker thread, and deletes the marker when the run ends, whatever the outcome.
+A run that is killed leaves the marker, so the window opens again at the next
+start and runs from the beginning, after the staging sweep.
+
+- The window uses no `SuttaBridge` call: there is no app data before
+  `init_app_data()`, and a `/dpd_res/` request would load the old release's
+  page files into the in-memory copy, which is never reloaded.
+- Cancel is disabled once a progress report from the Apply step arrives
+  (`can_cancel`), since the pipeline ignores the flag from then on, and the
+  window refuses to close while the run is going.
+- The keep-screen-on hold `dpd-upgrade-window` is released in the completion
+  handlers, on success and failure.
+- A `reindex_failed` error says the new release is installed and the search
+  index needs rebuilding (Database Validation → Rebuild Search Index); a failure
+  from the Apply step on says Database Validation shows whether the dictionary
+  needs repairing; earlier failures say the dictionary is unchanged.
+- The run ends with **Quit**; the next start opens the main app.
+
+**The consistency check.** `init_app_data()` logs `dpd_versions_mismatch()`
+once, and Database Validation shows it as its own row
+(`SuttaBridge::get_dpd_release_mismatch()`): "DPD dictionary pages and DPD data
+are from different releases". It is reported, never repaired, and is not a
+downloadable failure.

@@ -16,6 +16,8 @@ Item {
     }
 
     signal updateWindowTitle(item_uid: string, sutta_ref: string, sutta_title: string);
+    signal dpdUpdateAvailable(update_info_json: string);
+    signal dpdUpdateCheckError(error_message: string);
     signal resultsPageReady(results_json: string);
     signal allParagraphsGlossReady(results_json: string);
     signal paragraphGlossReady(paragraph_index: int, results_json: string);
@@ -1072,6 +1074,15 @@ Item {
 
     function prepare_for_database_upgrade() {
         console.log("prepare_for_database_upgrade()");
+    }
+
+    function prepare_for_dpd_upgrade(version_tag: string): bool {
+        console.log("prepare_for_dpd_upgrade(): " + version_tag);
+        return true;
+    }
+
+    function get_dpd_release_mismatch(): string {
+        return "";
     }
 
     function force_database_upgrade() {
