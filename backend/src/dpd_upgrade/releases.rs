@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::dictionary_catalog::{fetch_releases_for, ReleaseEntry};
+use crate::dictionary_catalog::{fetch_releases_for, fetch_releases_from_url, ReleaseEntry};
 use crate::logger::info;
 use crate::update_checker::{compare_versions, to_version, Version};
 
@@ -128,10 +128,16 @@ pub fn select_dpd_release(releases: &[ReleaseEntry], installed: Option<&str>, ta
     select_dpd_candidate(&only, installed)
 }
 
+/// Names a releases-list URL to ask instead of GitHub's, for tests.
+pub const RELEASES_URL_ENV: &str = "SIMSAPA_DPD_RELEASES_URL";
+
 /// Fetch DPD's GitHub releases. Every failure (offline, HTTP status, rate
 /// limit, bad JSON) is an `Err`.
 pub fn fetch_dpd_releases() -> Result<Vec<ReleaseEntry>> {
-    fetch_releases_for(DPD_REPO)
+    match std::env::var(RELEASES_URL_ENV) {
+        Ok(url) if !url.trim().is_empty() => fetch_releases_from_url(url.trim()),
+        _ => fetch_releases_for(DPD_REPO),
+    }
 }
 
 /// Release notes for display: each `<img …>` tag reduced to its `alt` text (an

@@ -128,22 +128,35 @@ pub fn verify_inputs(
             .map_err(|m| UpgradeError::new(Step::Verify, "version", m).with_part(SourcePart::DpdDb))?,
     }
 
-    let missing = |m: String| UpgradeError::new(Step::Verify, "missing_input", m).with_part(SourcePart::Goldendict);
-    let ifo = inputs.dpd_dir.join(format!("{}.ifo", DPD_STARDICT_STEM));
+    check_dpd_dir(&inputs.dpd_dir)
+        .map_err(|m| UpgradeError::new(Step::Verify, "missing_input", m).with_part(SourcePart::Goldendict))?;
+
+    Ok(version)
+}
+
+/// Whether `dir` is a DPD StarDict folder: it has `dpd.ifo` and a `res/`
+/// folder with files. The message names the folder.
+pub fn check_dpd_dir(dir: &Path) -> Result<(), String> {
+    match dir.try_exists() {
+        Ok(true) if dir.is_dir() => {}
+        Ok(true) => return Err(format!("{} is not a folder.", dir.display())),
+        Ok(false) => return Err(format!("{} does not exist.", dir.display())),
+        Err(e) => return Err(format!("Cannot access {}: {}", dir.display(), e)),
+    }
+    let ifo = dir.join(format!("{}.ifo", DPD_STARDICT_STEM));
     match ifo.try_exists() {
         Ok(true) => {}
-        Ok(false) => return Err(missing(format!("{} has no {}.ifo.", inputs.dpd_dir.display(), DPD_STARDICT_STEM))),
-        Err(e) => return Err(missing(format!("Cannot access {}: {}", ifo.display(), e))),
+        Ok(false) => return Err(format!("{} has no {}.ifo.", dir.display(), DPD_STARDICT_STEM)),
+        Err(e) => return Err(format!("Cannot access {}: {}", ifo.display(), e)),
     }
-    let res = inputs.dpd_dir.join("res");
+    let res = dir.join("res");
     let res_has_files = std::fs::read_dir(&res)
         .map(|entries| entries.flatten().any(|e| e.path().is_file()))
         .unwrap_or(false);
     if !res_has_files {
-        return Err(missing(format!("{} has no res/ folder with files.", inputs.dpd_dir.display())));
+        return Err(format!("{} has no res/ folder with files.", dir.display()));
     }
-
-    Ok(version)
+    Ok(())
 }
 
 /// The staging dictionaries database with the new pages.

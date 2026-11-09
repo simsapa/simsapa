@@ -221,6 +221,11 @@ pub fn fetch_releases() -> Result<Vec<ReleaseEntry>> {
 /// and no pagination is needed. Revisit only if upstream ever publishes more
 /// than 30 releases *above* the pinned series.
 pub fn fetch_releases_for(repo: &str) -> Result<Vec<ReleaseEntry>> {
+    fetch_releases_from_url(&releases_api_url(repo))
+}
+
+/// [`fetch_releases_for`], from a releases-list URL.
+pub fn fetch_releases_from_url(url: &str) -> Result<Vec<ReleaseEntry>> {
     // A `User-Agent` is mandatory, not polite: `api.github.com` answers 403 to a
     // request with an empty UA.
     let client = reqwest::blocking::Client::builder()
@@ -230,7 +235,7 @@ pub fn fetch_releases_for(repo: &str) -> Result<Vec<ReleaseEntry>> {
         .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
     let response = client
-        .get(releases_api_url(repo))
+        .get(url)
         .send()
         .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
 

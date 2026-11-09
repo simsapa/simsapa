@@ -34,6 +34,19 @@ pub use releases::ReleaseCandidate;
 /// before they confirm, by the GUI and the CLI.
 pub const ESTIMATED_MINUTES: (u32, u32) = (20, 30);
 
+/// What the upgrade does, in plain words, for the confirmation the user reads
+/// before it starts (the GUI and the CLI).
+pub const UPGRADE_OUTLINE: [&str; 4] = [
+    "Download the new dictionary",
+    "Unpack it and convert it to Simsapa's format",
+    "Replace the dictionary pages and the word data",
+    "Rebuild the search index for dictionary words",
+];
+
+/// What the user gets from the upgrade, for the same confirmation.
+pub const UPGRADE_BENEFIT: &str = "The latest DPD corrections and new words, without waiting for a new Simsapa \
+release. Your bookmarks, gloss selections and other data are kept.";
+
 /// The staging folder's name, directly under `app-assets/`. It is on the same
 /// volume as the installed `dpd.sqlite3`, so the final replacement is a rename
 /// and not a 2.4 GB copy.
@@ -703,6 +716,7 @@ fn run_steps(
     // Check.
     let t = Instant::now();
     reporter.start(Step::Check, Step::Check.label());
+    archives::check_local_inputs(&source)?;
     let installed = installed_dpd_version(paths);
     report.previous_version = installed.clone();
     if installed.is_none() {

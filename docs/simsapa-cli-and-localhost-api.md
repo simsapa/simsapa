@@ -86,19 +86,21 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa fulltext-search …` | The fulltext index directly; takes `--pali-edition` too | — |
 | `simsapa health` | Versions (app, DPD, SuttaCentral data), database paths, counts, fulltext index status, available updates | `GET /health` (§10) |
 | `simsapa check-updates` | Whether a newer `simsapa` (npm) or a newer database release is available, and the command that installs each (A.8) | the `updates` object of `GET /health` (§10) |
+| `simsapa dpd check` | Whether a newer compatible release of the DPD dictionary is available, its download size and the free space its upgrade needs (A.9) | — |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
 | `simsapa app-assets` | Where the app assets are stored and their sizes (A.1) | — |
 | `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (A.2.3) | — |
 | `simsapa docs` | This document | — |
 
 The commands that change the data folder: `simsapa setup`, `simsapa
-db-upgrade` (A.8), `simsapa app-assets --remove` (A.1), `simsapa import
+db-upgrade` (A.8), `simsapa dpd upgrade` (A.9), `simsapa app-assets --remove` (A.1), `simsapa import
 stardict|stardict-zip|epub|html …` (a user dictionary or book, searchable in
 the GUI app too), `simsapa index build|rebuild|delete …`, and `simsapa serve`
 (§10.1).
 
-Only `check-updates`, `health`, `serve`, `setup` and `db-upgrade` use the
-network; the others never do.
+Only `check-updates`, `health`, `serve`, `setup`, `db-upgrade`, `dpd check`
+and `dpd upgrade` use the network (`dpd upgrade` not when it installs from
+local files); the others never do.
 
 Uids are the ones search results carry (`sn56.11/pli/ms`, `34626/dpd`,
 `dhamma-1-01/dpd`); `sutta` also takes a reference (`mn1`, `SN 56.11`,
@@ -294,7 +296,7 @@ partial match use `--mode "Contains Match"`.
 
 The CLI and the GUI app share the data folder, the databases and the settings.
 While the app is running, the read-only commands and `check-updates` work as
-usual, but `serve`, `setup`, `db-upgrade`, `import`, `index` and
+usual, but `serve`, `setup`, `db-upgrade`, `dpd upgrade`, `import`, `index` and
 `app-assets --remove` refuse with
 exit code 3 and name the app's own
 server to use instead (§10.1). Close the app first to change the folder.
@@ -330,6 +332,9 @@ Two things can be newer than what is installed:
   this `simsapa` can read: `simsapa db-upgrade` installs it. A database of
   another major.minor is not an update but an incompatible database, which
   `simsapa setup` replaces (A.1).
+
+A third, the DPD dictionary alone, has its own commands, `simsapa dpd check`
+and `simsapa dpd upgrade` (A.9); `check-updates` does not report it.
 
 ### `simsapa check-updates`
 
@@ -465,6 +470,108 @@ Updates          not checked (turned off in Simsapa's settings)
 Being offline is not an error for `health`: its exit code does not depend on
 the update check. `simsapa health --json` carries the same result as its
 `updates` object (§10).
+
+## A.9 The DPD dictionary: `dpd check` and `dpd upgrade`
+
+The Digital Pāḷi Dictionary (DPD) publishes new releases more often than
+Simsapa publishes databases. `simsapa dpd upgrade` installs a newer DPD
+release on its own: the word data, the dictionary pages, the files the pages
+load and the dictionary search index, all from the same release. Other data
+(bookmarks, gloss selections, imported dictionaries) is kept.
+
+A release can be installed when it has the **same major and minor version** as
+the installed DPD (`v0.4.…` over `v0.4.…`) and is **newer**. Releases of
+another major or minor arrive only with a new Simsapa database release
+(`db-upgrade`, A.8). Drafts and prereleases are never offered.
+
+### `simsapa dpd check`
+
+Read-only, no lock: it also works while the app is running. It asks GitHub for
+DPD's releases and prints the installed version, the newest release that can be
+installed (or "up to date"), the download size and the free space needed:
+
+```
+$ simsapa dpd check
+Installed DPD: v0.4.20260501
+Newer release: v0.4.20261026
+Download: 420.6 MB
+Free space needed: about 5.2 GB (120.3 GB available)
+The upgrade takes about 20–30 minutes. Install it with `simsapa dpd upgrade`.
+```
+
+`--json`:
+
+```json
+{"status": "update_available", "installed_version": "v0.4.20260501",
+ "release": {"tag": "v0.4.20261026", "download_bytes": 441000000, "release_notes": "…"},
+ "needed_bytes": 5583457484, "available_bytes": 129166295040, "enough_space": true,
+ "estimated_minutes": {"min": 20, "max": 30}, "command": "simsapa dpd upgrade"}
+```
+
+With nothing newer, `status` is `up_to_date` and `release`, the byte counts,
+`enough_space` and `command` are `null`. `release_notes` is the release's
+Markdown with images reduced to their alt text. A failed request (offline,
+GitHub's rate limit of 60 requests per hour) is exit 1, "Could not check for
+DPD updates: …".
+
+### `simsapa dpd upgrade`
+
+```sh
+simsapa dpd upgrade                          # the newest release; shows what it will do, asks
+simsapa dpd upgrade --yes                    # in a script
+simsapa dpd upgrade --version v0.4.20261026  # this release only
+# From local files, with no network:
+simsapa dpd upgrade --dpd-db-archive dpd.db.tar.xz --goldendict-zip dpd-goldendict.zip
+simsapa dpd upgrade --dpd-db dpd.db --goldendict-dir dpd/
+```
+
+It takes **about 20–30 minutes** and needs about 5 GB of free space in the data
+folder's storage location; before it starts (or asks) it prints both, the
+steps (download, unpack and convert, replace the dictionary pages and word
+data, rebuild the dictionary search index) and the release notes. Progress
+goes to stderr, one line per step and stage, and at most one every 10 s within
+one. Keep the app closed: the command refuses with exit 3 while the app or
+another `simsapa` command uses the folder, and the dictionary is not
+available in the app until it finishes.
+
+**Local files.** Each of the two parts of a release can be given as the
+release's archive or as already extracted files, in any combination:
+
+| Part | Archive | Extracted |
+|---|---|---|
+| Word data | `--dpd-db-archive <dpd.db.tar.xz>` | `--dpd-db <dpd.db>` |
+| Dictionary pages | `--goldendict-zip <dpd-goldendict.zip>` | `--goldendict-dir <dpd/>` (the folder holding `dpd.ifo` and `res/`) |
+
+Both parts must be given, one form each, and `--version` cannot be combined
+with them. The version is read from the `dpd.db` itself (an archive's once it
+is unpacked), and the same rule applies: same major and minor, newer. **Your
+files are never changed, moved or deleted**: archives are unpacked into a
+temporary folder, a `dpd.db` is copied before it is converted, and a `dpd/`
+folder is only read. An error about a given file names its option.
+
+**Ctrl-C** stops the upgrade at its next check point and leaves the installed
+DPD as it was (exit 130). Once it prints "Replacing the installed dictionary
+now", it no longer stops: from there it finishes, so that the dictionary pages
+and the word data never come from different releases.
+
+| Situation | Result |
+|---|---|
+| Installed | "Installed DPD v0.4.20261026 (was v0.4.20260501): 173535 dictionary pages.", plus any stored gloss selections it converted, or that name a headword the new release removed (`--json`: `{"status": "ok", "upgraded_from", "upgraded_to", "dict_words_rows", "converted_selections", "unresolved_selections", "removed_headword_selections", "step_seconds"}`) |
+| No newer release | exit 0, "The DPD dictionary is up to date (v0.4.20261026)." (`--json`: `{"status": "up_to_date", "installed_version": …}`) |
+| `--version` or local files that are not a newer compatible release | exit 1; the message names both versions |
+| Not enough free space | exit 1 before anything is downloaded |
+| No databases | exit 2 |
+| The app or a `simsapa serve` uses the folder | exit 3 |
+| No terminal on stdin and no `--yes` | exit 1, nothing changed |
+| Any failure before the replacement | exit 1, names the step; the installed DPD is unchanged |
+| The search index could not be updated | exit 1; the new release is installed, and the message says to run `simsapa index rebuild` |
+
+With `--json` a failure is one document with the step and a stable code
+besides the message: `{"error": "…", "step": "prepare_html", "code": "failed"}`.
+The steps are `check`, `download`, `extract`, `verify`, `prepare_html`,
+`prepare_data`, `apply`, `reindex`; the codes `failed`, `cancelled`,
+`insufficient_space`, `in_progress` (another upgrade is running, exit 3),
+`version`, `missing_input` and `reindex_failed`.
 
 ---
 

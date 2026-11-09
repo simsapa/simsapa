@@ -224,6 +224,25 @@ pub fn stage_inputs(
     Ok(StagedInputs { dpd_db: staged_db, dpd_dir })
 }
 
+/// Check the user's own files before anything is staged: each file exists,
+/// and an extracted `dpd/` folder has `dpd.ifo` and a `res/` folder with
+/// files. An archive's contents are checked once unpacked. The error names the
+/// input at fault. Nothing to check for a release.
+pub fn check_local_inputs(source: &DpdSource) -> Result<(), UpgradeError> {
+    let DpdSource::Local { dpd_db, goldendict } = source else {
+        return Ok(());
+    };
+    let missing = |m: String, part: SourcePart| UpgradeError::new(Step::Check, "missing_input", m).with_part(part);
+    match dpd_db {
+        LocalFile::Archive(p) | LocalFile::Extracted(p) => require_file(p).map_err(|m| missing(m, SourcePart::DpdDb))?,
+    }
+    match goldendict {
+        LocalDir::Zip(p) => require_file(p).map_err(|m| missing(m, SourcePart::Goldendict))?,
+        LocalDir::Extracted(p) => crate::dpd_upgrade::staged::check_dpd_dir(p).map_err(|m| missing(m, SourcePart::Goldendict))?,
+    }
+    Ok(())
+}
+
 fn require_file(path: &Path) -> Result<(), String> {
     match path.try_exists() {
         Ok(true) if path.is_file() => Ok(()),

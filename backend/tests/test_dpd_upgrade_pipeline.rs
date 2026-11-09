@@ -367,13 +367,14 @@ fn failures_before_apply_change_nothing_and_name_the_input() {
     std::fs::create_dir_all(&no_res).unwrap();
     std::fs::copy(f.dpd_dir.join("dpd.ifo"), no_res.join("dpd.ifo")).unwrap();
     let src = DpdSource::Local { dpd_db: LocalFile::Extracted(f.new_dpd_db.clone()), goldendict: LocalDir::Extracted(no_res) };
+    // The user's own files are checked before anything is staged.
     let e = run(&f, src, None).unwrap_err();
-    assert_eq!((e.step, e.code, e.source_part), (Step::Verify, "missing_input", Some(SourcePart::Goldendict)), "{:?}", e);
+    assert_eq!((e.step, e.code, e.source_part), (Step::Check, "missing_input", Some(SourcePart::Goldendict)), "{:?}", e);
 
     // A dpd.db that does not exist.
     let src = DpdSource::Local { dpd_db: LocalFile::Extracted(f._tmp.path().join("missing.db")), goldendict: LocalDir::Extracted(f.dpd_dir.clone()) };
     let e = run(&f, src, None).unwrap_err();
-    assert_eq!((e.step, e.source_part), (Step::Extract, Some(SourcePart::DpdDb)), "{:?}", e);
+    assert_eq!((e.step, e.code, e.source_part), (Step::Check, "missing_input", Some(SourcePart::DpdDb)), "{:?}", e);
 
     assert_eq!(snapshot(&f), before);
 

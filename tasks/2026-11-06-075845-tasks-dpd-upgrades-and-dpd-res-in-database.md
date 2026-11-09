@@ -31,11 +31,11 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `backend/src/batch_progress.rs` - **new**: `BatchProgress` (report + cancel) and `Cancelled` for the long DPD steps.
 - `backend/examples/dpd_upgrade_run.rs` - **new**: runs the pipeline / measures the apply strategies on a copy of `app-assets/`.
 - `backend/tests/test_dpd_upgrade_pipeline.rs` - **new**: end-to-end, cancel and failure tests on fixtures.
-- `backend/src/dpd_upgrade/releases.rs` - **new**: GitHub release discovery and the candidate rule.
+- `backend/src/dpd_upgrade/releases.rs` - **new**: GitHub release discovery and the candidate rule; `SIMSAPA_DPD_RELEASES_URL` for tests.
 - `backend/src/dpd_upgrade/archives.rs` - **new**: download with retry, `.tar.xz` (`lzma-rust2`) and `dpd/` zip extraction, local inputs.
 - `backend/src/dpd_upgrade/apply.rs` - **new**: the uid conversion, the page replacement transaction (`replace_dpd_pages`), the file swap, `common_columns()`.
 - `backend/src/dpd_upgrade/reindex.rs` - **new**: `ANALYZE`, the Tantivy DPD re-index, `selections_with_removed_headwords()`.
-- `backend/src/dictionary_catalog.rs` - `ReleaseEntry` (+ `body`), `fetch_releases_for(repo)`.
+- `backend/src/dictionary_catalog.rs` - `ReleaseEntry` (+ `body`), `fetch_releases_for(repo)`, `fetch_releases_from_url()`.
 - `backend/src/dictionary_catalog_download.rs` - `download_entry()` (to generalise).
 - `backend/src/import_staging.rs` - `staging_dir()`, `ensure_free_space()`, `StagingError`, the startup sweeps.
 - `backend/src/dictionary_manager_core.rs` - `extract_archive()` / `extract_one_entry()` (zip).
@@ -71,11 +71,13 @@ PRD: `tasks/2026-11-06-075845-prd---dpd-upgrades-and-dpd-res-in-database.md`
 - `bootstrap_cli/src/gloss_agent_check.rs` - write `selected_lemma` in `apply`.
 
 ### CLI (`backend_cli/`)
-- `backend_cli/src/commands/dpd.rs` - **new**: `simsapa dpd check|upgrade`.
+- `backend_cli/src/commands/dpd.rs` - **new**: `simsapa dpd check|upgrade`: clap groups, confirmation, progress, error mapping, report.
+- `backend_cli/src/commands/mod.rs` - registers `dpd`.
 - `backend_cli/src/main.rs` - register `Dpd`.
 - `backend_cli/src/db_upgrade.rs` - the model to follow (in-use detection, lock, confirmation).
 - `backend_cli/src/output.rs` - `outln!` / `errln!`; `test_no_print_macros_in_sources`.
-- `backend_cli/tests/dpd_upgrade.rs` - **new**: CLI tests.
+- `backend_cli/tests/dpd_upgrade.rs` - **new**: CLI tests (option rules, input and version errors, in-use refusal, releases list, closed pipes, end-to-end from local files).
+- `backend_cli/Cargo.toml` - dev-deps `diesel`, `diesel_migrations`, `sha2`, `lzma-rust2` (encoder) for the CLI tests.
 
 ### GUI (`bridges/`, `cpp/`)
 - `bridges/src/sutta_bridge.rs` - `check_for_updates()` (line ~5410), new DPD signals and the marker invokable; Open JSON and `import_gloss_word_cache` normalise uids, the export fills `selected_lemma`.
@@ -266,13 +268,13 @@ The bootstrap passes the dist databases, so its output is unchanged.
 - Refuses while the folder is in use (`api-port.txt` + `/health`, `cli-write.lock`), as `db_upgrade.rs` does. Progress on stderr, result on stdout, `outln!`/`errln!` only. Exit codes as documented for the other commands; "up to date" exits 0.
 **Depends on:** 5.0.
 
-- [ ] 7.0 Add `simsapa dpd check` and `simsapa dpd upgrade` (FR-31, FR-32)
-  - [ ] 7.1 Add `backend_cli/src/commands/dpd.rs` with the clap definitions above and register `Dpd` in `main.rs`. Follow `db_upgrade.rs` for the in-use check, the lock, the confirmation prompt (`--yes`, no-terminal error) and the local `AppData::try_new()`.
-  - [ ] 7.2 Implement `check` (text and `--json`), using `select_dpd_candidate()` and the FR-19 estimate.
-  - [ ] 7.3 Implement `upgrade` for a release (`--version` or newest) and for local sources; map `UpgradeError.step` to the error output; print the FR-43 report. Call `reinit_fulltext_searcher()` after success if a searcher was opened (FR-27; the shared pipeline does not). For `--dpd-db`, `dpd_upgrade::staged::read_local_dpd_db_version()` gives the version for the confirmation without writing the user's file. `reindex_failed` means the new release is installed: print its message (the rebuild instruction) and exit non-zero.
-  - [ ] 7.3a **Confirmation text (FR-34a).** Before `upgrade` asks for confirmation (or before it starts with `--yes`), print to stderr the same content as the GUI: about 20–30 minutes (the shared constant), the four-step outline, the benefit, the download size and the disk space needed. With `--json`, include `estimated_minutes` and the sizes in `dpd check`'s output.
-  - [ ] 7.4 Tests in `backend_cli/tests/dpd_upgrade.rs` (temporary folders only): the option combinations of the PRD's §7.5, version errors naming both versions, the user's files byte-identical after success and failure, refusing while the folder is in use, closed stdout/stderr not a panic. Run `cargo test --bin simsapa test_no_print_macros`.
-  - [ ] 7.5 Document both commands in `docs/simsapa-cli-and-localhost-api.md` (self-contained) and in `docs/backend-cli-and-npm-package.md` (the command table). (`/dpd_res/<path..>` is already documented there, 3.11.) If the bundled skill (`backend_cli/skills/simsapa/SKILL.md`) lists commands, add them there too.
+- [x] 7.0 Add `simsapa dpd check` and `simsapa dpd upgrade` (FR-31, FR-32)
+  - [x] 7.1 Add `backend_cli/src/commands/dpd.rs` with the clap definitions above and register `Dpd` in `main.rs`. Follow `db_upgrade.rs` for the in-use check, the lock, the confirmation prompt (`--yes`, no-terminal error) and the local `AppData::try_new()`. (No `AppData::try_new()` and no preamble: the pipeline opens its own connections, and none may hold `dpd.sqlite3` when it is renamed over. `check` takes no lock; `upgrade` takes `acquire_for_writing()`. The local-source rules are two clap `ArgGroup`s that require each other, plus `conflicts_with_all` on `--version`.)
+  - [x] 7.2 Implement `check` (text and `--json`), using `select_dpd_candidate()` and the FR-19 estimate.
+  - [x] 7.3 Implement `upgrade` for a release (`--version` or newest) and for local sources; map `UpgradeError.step` to the error output; print the FR-43 report. Call `reinit_fulltext_searcher()` after success if a searcher was opened (FR-27; the shared pipeline does not). For `--dpd-db`, `dpd_upgrade::staged::read_local_dpd_db_version()` gives the version for the confirmation without writing the user's file. `reindex_failed` means the new release is installed: print its message (the rebuild instruction) and exit non-zero. (Exit codes: `cancelled` 130, `in_progress` 3, others 1; `--json` failures are `{"error", "step", "code"}`. The user's files are now checked in the pipeline's Check step (`archives::check_local_inputs()`, `staged::check_dpd_dir()`), before anything is staged, so `rebuild-dpd` and the GUI get it too; two assertions of `failures_before_apply_change_nothing_and_name_the_input` moved from Verify/Extract to Check. Ctrl-C cancels until the Apply step, which prints that it can no longer stop.)
+  - [x] 7.3a **Confirmation text (FR-34a).** Before `upgrade` asks for confirmation (or before it starts with `--yes`), print to stderr the same content as the GUI: about 20–30 minutes (the shared constant), the four-step outline, the benefit, the download size and the disk space needed. With `--json`, include `estimated_minutes` and the sizes in `dpd check`'s output. (`UPGRADE_OUTLINE` and `UPGRADE_BENEFIT` next to `ESTIMATED_MINUTES` in `dpd_upgrade/mod.rs`, for the GUI too. A local install leaves out the download line.)
+  - [x] 7.4 Tests in `backend_cli/tests/dpd_upgrade.rs` (temporary folders only): the option combinations of the PRD's §7.5, version errors naming both versions, the user's files byte-identical after success and failure, refusing while the folder is in use, closed stdout/stderr not a panic. Run `cargo test --bin simsapa test_no_print_macros`. (8 tests; GitHub is a local listener through the new `SIMSAPA_DPD_RELEASES_URL`. The end-to-end test runs all four combinations on fixture archives built from the real release, with the hidden `--test-limit`, plus a failure at `prepare_html`, and checks the user's files by SHA-256: 137 s, skipped without the bootstrap sources.)
+  - [x] 7.5 Document both commands in `docs/simsapa-cli-and-localhost-api.md` (self-contained) and in `docs/backend-cli-and-npm-package.md` (the command table). (`/dpd_res/<path..>` is already documented there, 3.11.) If the bundled skill (`backend_cli/skills/simsapa/SKILL.md`) lists commands, add them there too. (New §A.9; the skill lists only the search and reading commands, so it is unchanged.)
 
 ### 8.0 Add the GUI DPD update
 
