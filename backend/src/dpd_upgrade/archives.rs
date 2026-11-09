@@ -249,33 +249,52 @@ fn copy_file(from: &Path, to: &Path, cancel: &AtomicBool, progress: &dyn Fn(u64,
 }
 
 /// Unpack the `dpd.db` entry of `dpd.db.tar.xz` to `dest`. The xz stream may
-/// hold several blocks; each block's CRC64 is checked by the decoder.
+/// hold several blocks; the decoder checks each block's CRC64 when it reaches
+/// the block's end, so the stream is read to its end after the entry: the
+/// last block (the tail of `dpd.db` and the tar trailer) and the stream's
+/// index and footer are checked too. On a failed check `dest` is removed.
 pub fn extract_dpd_db(archive: &Path, dest: &Path, cancel: &AtomicBool, progress: &dyn Fn(u64, u64)) -> Result<(), UpgradeError> {
     let fail = |m: String| UpgradeError::failed(Step::Extract, m);
     let file = File::open(archive).map_err(|e| fail(format!("Cannot open {}: {}", archive.display(), e)))?;
     let xz = lzma_rust2::XzReader::new(BufReader::with_capacity(CHUNK_BYTES, file), true);
     let mut tar = tar::Archive::new(xz);
 
-    let entries = tar.entries().map_err(|e| fail(format!("{} is not a tar archive: {}", archive.display(), e)))?;
-    for entry in entries {
-        let mut entry = entry.map_err(|e| fail(format!("Reading {} failed: {}", archive.display(), e)))?;
-        let is_dpd_db = entry.header().entry_type().is_file()
-            && entry.path().ok().and_then(|p| p.file_name().map(|n| n == DPD_DB_FILE)).unwrap_or(false);
-        if !is_dpd_db {
-            continue;
-        }
-        let total = entry.header().size().unwrap_or(0);
-        copy_stream_to_file(&mut entry, dest, Some(total), cancel, &mut |done, total| progress(done, total)).map_err(|e| {
-            if e.code == "cancelled" {
-                UpgradeError::cancelled(Step::Extract)
-            } else {
-                fail(format!("Unpacking {} from {} failed: {}", DPD_DB_FILE, archive.display(), e.message))
+    let mut unpacked: Option<u64> = None;
+    {
+        let entries = tar.entries().map_err(|e| fail(format!("{} is not a tar archive: {}", archive.display(), e)))?;
+        for entry in entries {
+            let mut entry = entry.map_err(|e| fail(format!("Reading {} failed: {}", archive.display(), e)))?;
+            let is_dpd_db = entry.header().entry_type().is_file()
+                && entry.path().ok().and_then(|p| p.file_name().map(|n| n == DPD_DB_FILE)).unwrap_or(false);
+            if !is_dpd_db {
+                continue;
             }
-        })?;
-        info(&format!("dpd_upgrade: unpacked {} ({})", dest.display(), human_bytes(total)));
-        return Ok(());
+            let total = entry.header().size().unwrap_or(0);
+            copy_stream_to_file(&mut entry, dest, Some(total), cancel, &mut |done, total| progress(done, total)).map_err(|e| {
+                if e.code == "cancelled" {
+                    UpgradeError::cancelled(Step::Extract)
+                } else {
+                    fail(format!("Unpacking {} from {} failed: {}", DPD_DB_FILE, archive.display(), e.message))
+                }
+            })?;
+            unpacked = Some(total);
+            break;
+        }
     }
-    Err(fail(format!("{} holds no {}.", archive.display(), DPD_DB_FILE)))
+    let Some(total) = unpacked else {
+        return Err(fail(format!("{} holds no {}.", archive.display(), DPD_DB_FILE)));
+    };
+
+    if let Err(e) = std::io::copy(&mut tar.into_inner(), &mut std::io::sink()) {
+        let _ = std::fs::remove_file(dest);
+        return Err(fail(format!(
+            "{} is damaged or incomplete (the end of the archive failed its check: {}). Download it again.",
+            archive.display(),
+            e
+        )));
+    }
+    info(&format!("dpd_upgrade: unpacked {} ({})", dest.display(), human_bytes(total)));
+    Ok(())
 }
 
 /// Unpack only the `dpd/` member of `dpd-goldendict.zip` under `dest_root`, and
@@ -404,6 +423,16 @@ mod tests {
         let dest = tmp.path().join("out.db");
         extract_dpd_db(&xz_path, &dest, &cancel, &|_, _| {}).unwrap();
         assert_eq!(std::fs::read(&dest).unwrap(), b"SQLite format 3\0 fixture");
+
+        // The entry decodes in full, but the stream's footer is missing: only
+        // reading the stream to its end finds it.
+        let bytes = std::fs::read(&xz_path).unwrap();
+        let cut_path = tmp.path().join("cut.tar.xz");
+        std::fs::write(&cut_path, &bytes[..bytes.len() - 12]).unwrap();
+        let cut_dest = tmp.path().join("cut.db");
+        let e = extract_dpd_db(&cut_path, &cut_dest, &cancel, &|_, _| {}).unwrap_err();
+        assert!(!e.is_cancelled() && e.message.contains("damaged or incomplete"), "{}", e.message);
+        assert!(!cut_dest.try_exists().unwrap(), "a failed check leaves no file");
 
         cancel.store(true, Ordering::Relaxed);
         let e = extract_dpd_db(&xz_path, &tmp.path().join("out2.db"), &cancel, &|_, _| {}).unwrap_err();

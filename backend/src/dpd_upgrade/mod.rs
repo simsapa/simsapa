@@ -198,7 +198,9 @@ pub enum SourcePart {
 pub struct UpgradeError {
     pub step: Step,
     /// A stable code: `cancelled`, `insufficient_space`, `in_progress`,
-    /// `version`, `missing_input`, or `failed`.
+    /// `version`, `missing_input`, `reindex_failed` (the new release is
+    /// installed, the search index is not; see
+    /// [`reindex::REINDEX_RECOVERY`]), or `failed`.
     pub code: &'static str,
     pub message: String,
     pub source_part: Option<SourcePart>,
@@ -461,7 +463,9 @@ impl StagingGuard {
 
         match dir.try_exists() {
             Ok(true) => {
-                if lock_is_fresh(&lock) {
+                // This process holds `RUNNING`, so a lock with our own pid is
+                // left by an earlier run of this process, not a live one.
+                if lock_is_held(&lock, false) {
                     return Err(UpgradeError::new(
                         Step::Check,
                         "in_progress",
@@ -543,6 +547,60 @@ fn lock_is_fresh(lock: &Path) -> bool {
     }
 }
 
+/// The pid written in a lock file (`pid <n>`).
+fn lock_pid(lock: &Path) -> Option<u32> {
+    let text = std::fs::read_to_string(lock).ok()?;
+    text.trim().strip_prefix("pid ")?.trim().parse().ok()
+}
+
+/// Whether a process with this pid exists, when the platform can tell.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> Option<bool> {
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return Some(false) };
+    if pid <= 0 {
+        return Some(false);
+    }
+    // Signal 0 sends nothing; it only checks that the process exists.
+    // SAFETY: `kill` with signal 0 has no effect on the target.
+    if unsafe { libc::kill(pid, 0) } == 0 {
+        return Some(true);
+    }
+    match std::io::Error::last_os_error().raw_os_error() {
+        Some(libc::ESRCH) => Some(false),
+        // EPERM: it exists, but belongs to another user.
+        Some(libc::EPERM) => Some(true),
+        _ => None,
+    }
+}
+
+#[cfg(not(unix))]
+fn process_is_alive(_pid: u32) -> Option<bool> {
+    None
+}
+
+/// Whether the lock belongs to a running upgrade. A lock whose process is
+/// gone is not held, however new it is: an upgrade killed a minute ago (the
+/// app swiped away) must not block the next start. A lock with this
+/// process's pid is held only when `own_pid_is_running` (an upgrade of this
+/// process is in progress). Where the platform cannot say whether a pid
+/// exists, or the pid cannot be read, the lock's age decides. A live pid also
+/// needs a fresh lock, since pids are reused.
+fn lock_is_held(lock: &Path, own_pid_is_running: bool) -> bool {
+    match lock.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return false,
+        Err(_) => return true,
+    }
+    match lock_pid(lock) {
+        Some(pid) if pid == std::process::id() => own_pid_is_running,
+        Some(pid) => match process_is_alive(pid) {
+            Some(false) => false,
+            Some(true) | None => lock_is_fresh(lock),
+        },
+        None => lock_is_fresh(lock),
+    }
+}
+
 /// Remove a staging folder left by a run that was killed. Called at startup.
 /// A folder whose lock is fresh belongs to a running upgrade and is kept. One
 /// without a lock file is removed only when it is an hour old. Returns whether
@@ -554,7 +612,7 @@ pub fn sweep_orphaned_staging(app_assets_dir: &Path) -> bool {
     }
     let lock = dir.join(LOCK_FILE_NAME);
     let stale = match lock.try_exists() {
-        Ok(true) => !lock_is_fresh(&lock),
+        Ok(true) => !lock_is_held(&lock, RUNNING.load(Ordering::SeqCst)),
         Ok(false) => age_of(&dir).is_some_and(|age| age >= UNLOCKED_STALE_AFTER),
         Err(_) => false,
     };
@@ -654,9 +712,19 @@ fn run_steps(
             format!("The installed DPD version could not be read from {}.", paths.dpd_db.display()),
         ));
     }
-    if let DpdSource::Release(c) = &source {
-        staged::check_version(installed.as_deref(), &c.tag, opts.allow_same_version)
-            .map_err(|m| UpgradeError::new(Step::Check, "version", m))?;
+    match &source {
+        DpdSource::Release(c) => {
+            staged::check_version(installed.as_deref(), &c.tag, opts.allow_same_version)
+                .map_err(|m| UpgradeError::new(Step::Check, "version", m))?;
+        }
+        // A local dpd.db is checked here, before 2.3 GB are copied; an
+        // archive can only be checked once unpacked, at Verify.
+        DpdSource::Local { dpd_db: LocalFile::Extracted(p), .. } => match staged::read_local_dpd_db_version(p) {
+            Ok(v) => staged::check_version(installed.as_deref(), &v, opts.allow_same_version)
+                .map_err(|m| UpgradeError::new(Step::Check, "version", m).with_part(SourcePart::DpdDb))?,
+            Err(e) => info(&format!("dpd_upgrade: {:#}; checked again after copying", e)),
+        },
+        DpdSource::Local { .. } => {}
     }
     // Takes the lock and removes a killed run's staging folder, so its space
     // counts as free below.
@@ -821,7 +889,9 @@ mod tests {
         assert_eq!(UpgradeError::from_anyhow(Step::PrepareHtml, e).code, "failed");
     }
 
+    // `RUNNING` is process-wide: the tests that take the guard run one at a time.
     #[test]
+    #[serial_test::serial(dpd_staging_guard)]
     fn a_fresh_lock_blocks_a_second_run_and_the_sweep_keeps_it() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = DpdUpgradePaths::from_app_assets_dir(tmp.path());
@@ -868,19 +938,77 @@ mod tests {
         }
     }
 
+    /// A pid that names no process: a child that has exited and been reaped.
+    #[cfg(unix)]
+    fn dead_pid() -> u32 {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    /// The pid of a process that is running for the whole test: this test
+    /// binary's parent (cargo, or the shell).
+    #[cfg(unix)]
+    fn live_other_pid() -> u32 {
+        std::os::unix::process::parent_id()
+    }
+
     #[test]
     fn a_stale_lock_is_swept() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join(STAGING_DIR_NAME);
         std::fs::create_dir_all(&dir).unwrap();
         let lock = dir.join(LOCK_FILE_NAME);
-        std::fs::write(&lock, "pid 1\n").unwrap();
-        assert!(lock_is_fresh(&lock));
+        // A pid that cannot be read: the age decides.
+        std::fs::write(&lock, "unreadable\n").unwrap();
+        assert!(lock_is_held(&lock, false));
         let old = SystemTime::now() - LOCK_STALE_AFTER - Duration::from_secs(1);
         std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
         assert!(!lock_is_fresh(&lock));
+        assert!(!lock_is_held(&lock, false));
         assert!(sweep_orphaned_staging(tmp.path()));
         assert!(!dir.try_exists().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial_test::serial(dpd_staging_guard)]
+    fn a_fresh_lock_of_a_dead_process_is_not_held() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = DpdUpgradePaths::from_app_assets_dir(tmp.path());
+        let dir = paths.staging_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let lock = dir.join(LOCK_FILE_NAME);
+
+        // A run killed seconds ago: the next start may take over at once.
+        std::fs::write(&lock, format!("pid {}\n", dead_pid())).unwrap();
+        assert!(lock_is_fresh(&lock));
+        assert!(!lock_is_held(&lock, false));
+        let g = StagingGuard::acquire(&paths).expect("a dead process's lock does not block");
+        drop(g);
+
+        // A live process with a fresh lock holds it.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&lock, format!("pid {}\n", live_other_pid())).unwrap();
+        assert!(lock_is_held(&lock, false));
+        assert!(!sweep_orphaned_staging(tmp.path()));
+        assert_eq!(StagingGuard::acquire(&paths).unwrap_err().code, "in_progress");
+
+        // ... but not once the lock has gone stale (the pid may be reused).
+        let old = SystemTime::now() - LOCK_STALE_AFTER - Duration::from_secs(1);
+        std::fs::File::options().write(true).open(&lock).unwrap().set_modified(old).unwrap();
+        assert!(!lock_is_held(&lock, false));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_lock_with_this_process_pid_is_held_only_while_it_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lock = tmp.path().join(LOCK_FILE_NAME);
+        std::fs::write(&lock, format!("pid {}\n", std::process::id())).unwrap();
+        assert!(lock_is_held(&lock, true));
+        assert!(!lock_is_held(&lock, false));
     }
 
     #[test]

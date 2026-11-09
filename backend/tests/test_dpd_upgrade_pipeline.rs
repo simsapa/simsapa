@@ -377,13 +377,61 @@ fn failures_before_apply_change_nothing_and_name_the_input() {
 
     assert_eq!(snapshot(&f), before);
 
-    // A release that is not newer than the installed one.
+    // A release that is not newer than the installed one: found before the
+    // local dpd.db is copied.
     conn(&f.paths.dpd_db).batch_execute("UPDATE db_info SET value = 'v0.4.20261231' WHERE key = 'dpd_release_version';").unwrap();
     let before = snapshot(&f);
     let e = run(&f, source(&f), None).unwrap_err();
-    assert_eq!((e.step, e.code), (Step::Verify, "version"), "{:?}", e);
+    assert_eq!((e.step, e.code, e.source_part), (Step::Check, "version", Some(SourcePart::DpdDb)), "{:?}", e);
     assert!(e.message.contains("v0.4.20261231") && e.message.contains(NEW_VERSION), "{}", e.message);
 
+    assert_eq!(snapshot(&f), before);
+    assert!(!f.paths.staging_dir().try_exists().unwrap());
+}
+
+/// A copy of the real `dpd/` folder without the files named in `skip` (paths
+/// relative to it). The large files are symlinked, not copied.
+fn dpd_dir_without(f: &Fixture, name: &str, skip: &[&str]) -> PathBuf {
+    let out = f._tmp.path().join(name);
+    for e in walkdir::WalkDir::new(&f.dpd_dir).into_iter().flatten() {
+        let rel = e.path().strip_prefix(&f.dpd_dir).unwrap();
+        let target = out.join(rel);
+        if e.file_type().is_dir() {
+            std::fs::create_dir_all(&target).unwrap();
+        } else if !skip.iter().any(|s| Path::new(s) == rel) {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(std::path::absolute(e.path()).unwrap(), &target).unwrap();
+            #[cfg(not(unix))]
+            std::fs::copy(e.path(), &target).unwrap();
+        }
+    }
+    out
+}
+
+#[test]
+#[serial]
+fn failures_while_preparing_change_nothing() {
+    let Some((real_db, dpd_dir)) = sources() else { return };
+    let f = fixture(&real_db, &dpd_dir);
+    let before = snapshot(&f);
+    let local = |dir: PathBuf| DpdSource::Local {
+        dpd_db: LocalFile::Extracted(f.new_dpd_db.clone()),
+        goldendict: LocalDir::Extracted(dir),
+    };
+
+    // The StarDict index is missing: the pages cannot be read.
+    let no_idx = dpd_dir_without(&f, "no-idx-dpd", &["dpd.idx"]);
+    let e = run(&f, local(no_idx), None).unwrap_err();
+    assert_eq!((e.step, e.source_part), (Step::PrepareHtml, Some(SourcePart::Goldendict)), "{:?}", e);
+    assert_eq!(snapshot(&f), before);
+    assert!(!f.paths.staging_dir().try_exists().unwrap());
+
+    // The stylesheet every page links to is missing from res/: the
+    // `<link href>` check of the word data step fails and names it.
+    let no_css = dpd_dir_without(&f, "no-css-dpd", &["res/dpd-css-and-fonts.css"]);
+    let e = run(&f, local(no_css), None).unwrap_err();
+    assert_eq!(e.step, Step::PrepareData, "{:?}", e);
+    assert!(e.message.contains("dpd-css-and-fonts.css"), "{}", e.message);
     assert_eq!(snapshot(&f), before);
     assert!(!f.paths.staging_dir().try_exists().unwrap());
 }

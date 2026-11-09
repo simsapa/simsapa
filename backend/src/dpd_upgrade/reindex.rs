@@ -32,8 +32,16 @@ fn handle_for(path: &std::path::Path) -> Result<DatabaseHandle> {
     DatabaseHandle::new(&format!("sqlite://{}", abs.to_string_lossy()))
 }
 
+/// What a failed re-index tells the user. The new release is installed by
+/// then, so running the upgrade again is refused ("not newer"): the way back
+/// to a complete index is a full rebuild. Not `index rebuild --area dict-words
+/// --lang pli`, which leaves out the bold definitions.
+pub const REINDEX_RECOVERY: &str = "The new DPD dictionary is installed, but its search index could not be updated, \
+so fulltext dictionary search may show old or missing results. Rebuild the search index: in the app with \
+Settings > Rebuild Search Index, or on the command line with `simsapa index rebuild`.";
+
 pub fn reindex(paths: &DpdUpgradePaths, progress: &dyn Fn(&str, u64, u64)) -> Result<(), UpgradeError> {
-    let fail = |e: anyhow::Error| UpgradeError::failed(Step::Reindex, format!("{:#}", e));
+    let fail = |e: anyhow::Error| UpgradeError::new(Step::Reindex, "reindex_failed", format!("{} ({:#})", REINDEX_RECOVERY, e));
 
     let dict_h = handle_for(&paths.dict_db).map_err(fail)?;
     let dpd_h = handle_for(&paths.dpd_db).map_err(fail)?;

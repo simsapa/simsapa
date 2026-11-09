@@ -177,8 +177,10 @@ pub struct ReleaseAsset {
 }
 
 /// The GitHub releases-list endpoint of a repository (`owner/name`).
+/// The newest 100 releases (the API's maximum page; its default is 30), so a
+/// `--version` naming an older DPD release is still found.
 fn releases_api_url(repo: &str) -> String {
-    format!("https://api.github.com/repos/{repo}/releases")
+    format!("https://api.github.com/repos/{repo}/releases?per_page=100")
 }
 
 /// The constructed download URL for an asset under a given tag, used on the

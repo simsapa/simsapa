@@ -57,6 +57,51 @@ pub fn check_version(installed: Option<&str>, new: &str, allow_same: bool) -> Re
     }
 }
 
+/// `db_info.dpd_release_version` of a user's own `dpd.db`, opened read-only
+/// (`mode=ro`), so that the file is never written: not even a leftover
+/// journal is rolled back into it (that fails the open instead). For checking
+/// a local release before it is copied; the copy is checked again at Verify.
+pub fn read_local_dpd_db_version(path: &Path) -> anyhow::Result<String> {
+    match path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => anyhow::bail!("Database not found: {}", path.display()),
+        Err(e) => anyhow::bail!("Cannot access database {}: {}", path.display(), e),
+    }
+    let abs = crate::normalize_path_for_sqlite(std::path::absolute(path)?);
+    let mut conn = SqliteConnection::establish(&read_only_uri(&abs))
+        .map_err(|e| anyhow::anyhow!("Failed to open {} read-only: {}", path.display(), e))?;
+    #[derive(QueryableByName)]
+    struct ValueRow {
+        #[diesel(sql_type = Text)]
+        value: String,
+    }
+    let row: Option<ValueRow> = sql_query("SELECT value FROM db_info WHERE key = 'dpd_release_version'")
+        .get_result(&mut conn)
+        .optional()
+        .map_err(|e| anyhow::anyhow!("Failed to read db_info of {}: {}", path.display(), e))?;
+    match row.map(|r| r.value.trim().to_string()) {
+        Some(v) if !v.is_empty() => Ok(v),
+        _ => anyhow::bail!("{} has no dpd_release_version in db_info", path.display()),
+    }
+}
+
+/// An SQLite `file:` URI opening `path` read-only. The characters a URI gives
+/// a meaning to are percent-encoded, and Windows separators become `/`.
+fn read_only_uri(path: &Path) -> String {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    let mut out = String::from("file:");
+    for c in raw.chars() {
+        match c {
+            '%' => out.push_str("%25"),
+            '?' => out.push_str("%3F"),
+            '#' => out.push_str("%23"),
+            _ => out.push(c),
+        }
+    }
+    out.push_str("?mode=ro");
+    out
+}
+
 /// Check the staged release before it is used: its `dpd.db` names the
 /// expected release (or, for local files, one that may be installed), and the
 /// `dpd/` folder has `dpd.ifo` and a non-empty `res/`. Returns the new version.
@@ -283,6 +328,34 @@ pub fn prepare_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_local_dpd_db_is_read_without_writing_it() {
+        use diesel::connection::SimpleConnection;
+        let tmp = tempfile::tempdir().unwrap();
+        // Characters a URI would otherwise read as its query or fragment.
+        let dir = tmp.path().join("a%20b?c#d");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("dpd.db");
+        {
+            // Made under a plain name: a `sqlite://` URL would read `?c#d`
+            // as its query.
+            let plain = tmp.path().join("plain.db");
+            let mut c = SqliteConnection::establish(&format!("sqlite://{}", plain.display())).unwrap();
+            c.batch_execute("CREATE TABLE db_info (key TEXT, value TEXT); \
+                INSERT INTO db_info VALUES ('dpd_release_version', ' v0.4.20261026 ');").unwrap();
+            drop(c);
+            std::fs::rename(&plain, &db).unwrap();
+        }
+        let before = (std::fs::read(&db).unwrap(), std::fs::metadata(&db).unwrap().modified().unwrap());
+        assert_eq!(read_local_dpd_db_version(&db).unwrap(), "v0.4.20261026");
+        let after = (std::fs::read(&db).unwrap(), std::fs::metadata(&db).unwrap().modified().unwrap());
+        assert_eq!(before, after);
+        let names: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(names.len(), 1, "no journal or other file is created: {:?}", names);
+
+        assert!(read_local_dpd_db_version(&dir.join("missing.db")).is_err());
+    }
 
     #[test]
     fn version_messages_name_both_versions() {

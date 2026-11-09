@@ -137,8 +137,9 @@ One implementation, `run_dpd_upgrade()`, for the three entry points
 window). It takes its files as a `DpdUpgradePaths` and opens only its own
 connections, so it runs before `init_app_data()` and needs no global app data.
 
-**Releases** (`releases.rs`). `GET /repos/digitalpalidictionary/dpd-db/releases`,
-not cached. A candidate's tag parses as a version, has the installed DPD's
+**Releases** (`releases.rs`). `GET /repos/digitalpalidictionary/dpd-db/releases?per_page=100`
+(the API's default page is 30, which a `--version` naming an older release
+could miss), not cached. A candidate's tag parses as a version, has the installed DPD's
 major and minor (`db_info.dpd_release_version`), is newer, is not a draft or a
 prerelease, and has both `dpd.db.tar.xz` and `dpd-goldendict.zip` (a
 `.tar.bz2`-only release is not a candidate). The newest candidate is offered.
@@ -148,14 +149,14 @@ An installed version that is unknown or does not parse gives **no** candidate.
 
 | Step | Writes | What it does |
 |---|---|---|
-| `check` | staging folder | installed version, compatibility, free space, the lock |
+| `check` | staging folder | installed version, compatibility (of a release's tag, or of a local extracted `dpd.db`, read with `mode=ro` so the user's file is never written), free space, the lock |
 | `download` | staging | both assets, 5 connection attempts with backoff |
-| `extract` | staging | `dpd.db` out of the `.tar.xz` (pure-Rust `lzma-rust2`, CRC64 checked), only the `dpd/` member of the zip; a local `dpd.db` is **copied**, a local `dpd/` folder is read in place |
+| `extract` | staging | `dpd.db` out of the `.tar.xz` (pure-Rust `lzma-rust2`), then the rest of the xz stream read and discarded: the decoder checks a block's CRC64 only when it reaches the block's end, so stopping after the tar entry would leave the last block (the tail of `dpd.db`) and the stream footer unchecked. Only the `dpd/` member of the zip; a local `dpd.db` is **copied**, a local `dpd/` folder is read in place |
 | `verify` | — | `dpd.db`'s version is the tag (local: compatible and newer), `dpd.ifo` and a non-empty `res/` exist |
 | `prepare_html` | staging | a staging `dictionaries` database (the Diesel migrations, no FTS5 tables), the installed DPD row copied with its id, the StarDict pages, then the bootstrap's three conversions in the bootstrap's order. The conversions read `sutta_info` from the **unmigrated** `dpd.db`, so this runs before `prepare_data` |
 | `prepare_data` | staging | `import_migrate_dpd()` into a staged `dpd.sqlite3`; summaries cut from the **staged** pages; FTS5 integrity checks |
 | `apply` | installed | gloss uids, pages, `dpd.sqlite3` (below) |
-| `reindex` | installed | `ANALYZE` both databases; the `pli` dictionary index: `append_dict_label_to_dict_index(…, "pli", "dpd")`, then the bold definitions deleted by `is_bold_definition = true` and appended again. Never `build_dict_index`, which clears user-imported Pāli dictionaries |
+| `reindex` | installed | `ANALYZE` both databases; the `pli` dictionary index: `append_dict_label_to_dict_index(…, "pli", "dpd")`, then the bold definitions deleted by `is_bold_definition = true` and appended again. Never `build_dict_index`, which clears user-imported Pāli dictionaries. A failure here has the code `reindex_failed`: the new release is installed, so the upgrade cannot be run again ("not newer"), and the message (`REINDEX_RECOVERY`) names the full rebuild, Settings > Rebuild Search Index or `simsapa index rebuild`; not `index rebuild --area dict-words --lang pli`, which leaves out the bold definitions |
 
 Nothing before `apply` writes an installed file. The cancel flag is checked
 between steps and between batches inside the long ones (`BatchProgress`); from
@@ -191,10 +192,15 @@ are reported (`removed_headword_selections`), not changed.
 `journal_mode = OFF` and `synchronous = OFF` by `fts_scripts::open_db_path()`,
 which decides by location (`is_staged_db_path()`): the staged files are thrown
 away on any failure, and both pragmas are per connection. An installed database
-is never in that folder. The folder holds `upgrade.lock`, rewritten every 30 s
-by a heartbeat thread; a lock older than 5 minutes was left by a killed
-process. A run removes such a leftover folder before it starts, and refuses to
-start while the lock is fresh. The folder is removed when the run ends, on
+is never in that folder. The folder holds `upgrade.lock` (`pid <n>`), rewritten
+every 30 s by a heartbeat thread. The lock is held while its process is alive
+and the lock is under 5 minutes old (`lock_is_held()`). A dead pid releases it
+at once, however new the lock: an upgrade killed a minute ago (the app swiped
+away) must not block the next start, which would otherwise end with "already
+running". Where the platform cannot tell whether a pid exists (Windows), the
+age alone decides. The lock with this process's own pid is held only while
+this process runs an upgrade. A run removes a leftover folder before it
+starts, and refuses to start while the lock is held. The folder is removed when the run ends, on
 success, failure and cancel; `init_app_data()` also sweeps a stale one.
 
 **Free space** (`estimate_space()`): the larger of the unpacking peak (both
