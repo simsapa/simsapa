@@ -280,7 +280,7 @@ ApplicationWindow {
         root.download_cancelling = false;
         root.pending_import_items = [];
         root.download_failed = [];
-        // Distinct holder name (CLAUDE.md holder rules): the import phase that
+        // Distinct holder name (docs/keep-screen-awake.md holder rules): the import phase that
         // follows acquires `dictionary-import-batch`, and one shared name would
         // be released by whichever phase finished first. Released in
         // `finish_download_phase()`, the one function every ending goes through.
@@ -701,7 +701,7 @@ ApplicationWindow {
         width: Math.min(parent.width - 40, 480)
         // A title plus wrapping content is the combination that can produce an
         // implicitHeight binding loop with Fusion's default header; see
-        // AGENTS.md, "`Dialog` with a title and wrapping text".
+        // docs/qml-dialog-sizing.md, "`Dialog` with a title and wrapping text".
         header: DialogHeader { text: confirm_delete_all_dialog.title }
 
         contentItem: Label {

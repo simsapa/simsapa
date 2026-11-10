@@ -182,7 +182,7 @@ upload format, and the Play listing is the plain id.
 filtered logcat and nothing more. There is no reason to deploy from Qt Creator
 to read logs, and two reasons not to: its kits are single-ABI, and a Qt Creator
 deploy triggers the spurious "This app isn't 16 KB compatible" dialog (see
-`AGENTS.md`).
+[android-16kb-compatibility-warning.md](./android-16kb-compatibility-warning.md)).
 
 `make android-beta-debug-run` clears the log, launches the app and streams:
 

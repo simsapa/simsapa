@@ -647,6 +647,10 @@ adding an exception. The rule and its replacements are also in `AGENTS.md`,
 > `import`, `index` or `setup` mid-write when its stdout went away. Finishing
 > the work matters more than the output.
 
+The behaviour is covered by `backend_cli/tests/read_only_commands.rs`
+(`test_closed_stdout_is_not_a_panic`, `test_closed_stderr_is_not_a_panic`,
+`test_failed_stdout_write_exits_1`).
+
 ## The npm packages
 
 `@simsapa/cli` uses the per-platform optional-dependency layout (as esbuild,
@@ -711,8 +715,8 @@ packed.
 2. Writes that version into the tracked `npm/*/package.json` files, in
    `version` and in the main package's `optionalDependencies` pins, if any of
    them differs, and names each file it changed. `scripts/set-version.py --app`
-   already sets them with every other app-version place (AGENTS.md,
-   "Versions"), so this is a backstop for a version changed by hand; a file it
+   already sets them with every other app-version place ([versions.md](./versions.md)),
+   so this is a backstop for a version changed by hand; a file it
    names belongs in the version commit. The files are written in
    `JSON.stringify(…, null, 2)` form, so keep them in that form or the script
    rewrites them.

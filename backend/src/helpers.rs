@@ -3618,8 +3618,8 @@ pub fn annotate_gloss_words_json(
 /// options carry the `dpd_lookup` uid — **numeric** `<row_id>/dpd` for DPD
 /// headwords — while curated data (the set-phrase JSON, shipped built-in cache
 /// rows) stores the stable, human-readable dict_words form built from the
-/// lemma (`ārāma-4/dpd`; see "DPD records correlate to dict_words" in
-/// AGENTS.md). Match the uid directly, or via the sanitized lemma form of the
+/// lemma (`ārāma-4/dpd`; see docs/dpd-and-dict-words-correlation.md).
+/// Match the uid directly, or via the sanitized lemma form of the
 /// option's word (`word_uid_sanitize("ārāma 4") == "ārāma-4"`).
 pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_uid: &str) -> bool {
     if result.uid == selected_uid {

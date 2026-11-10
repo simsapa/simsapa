@@ -53,7 +53,7 @@ cfg_if! {
         /// enough to erase a whole logging convention from logcat (it did:
         /// `STARTUP-TRACE`, C++ and QML alike).
         ///
-        /// See `AGENTS.md` "Logging in C++".
+        /// See `docs/logging.md`, "The Android log level comes from the event metadata".
         #[derive(Clone, Copy)]
         struct AndroidLogWriter {
             level: log::Level,

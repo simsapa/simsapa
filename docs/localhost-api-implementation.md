@@ -47,7 +47,7 @@ Crate layout, builds and npm packaging are in
 | `/dpd_res/<path..>` | `api/src/routes/dpd_res.rs` → `DpdDbHandle::get_dpd_res()`, which reads the in-memory `DPD_RES_CACHE` (`backend/src/db/dpd_res.rs`), never the database per request: a DPD headword or root page loads ~13 MB of them. The GUI warms it in `SuttaBridge::load_db()`'s thread and `simsapa serve` on a thread before launch; the first request loads it otherwise. See [dpd-upgrades.md](./dpd-upgrades.md) |
 
 The two uid lanes of DPD records (`34626/dpd` vs `dhamma-1-01/dpd`) are
-explained in `CLAUDE.md`, "DPD records correlate to dict_words".
+explained in [dpd-and-dict-words-correlation.md](./dpd-and-dict-words-correlation.md).
 
 ## Shared helpers (`api/src/helpers.rs`)
 

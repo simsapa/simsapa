@@ -277,7 +277,7 @@ Frame {
                         // the wrapper, and a layout that reflows -- which this
                         // one does, inside a ListView delegate -- is where that
                         // shape turns into an implicitWidth binding loop. See
-                        // the DialogHeader note in CLAUDE.md for the same trap
+                        // the DialogHeader note in docs/qml-dialog-sizing.md for the same trap
                         // one level up. Padding sizes the background here, so
                         // the dependency runs one way only.
                         Label {
