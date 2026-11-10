@@ -386,23 +386,41 @@ pub fn gloss_document(
     gloss_format: GlossFormat,
     format: TextFormat,
 ) -> String {
-    let translations: Vec<_> = {
-        let mut t = vec![Vec::new(); paragraphs.len()];
-        for p in &result.paragraphs {
-            if let Some(slot) = t.get_mut(p.paragraph_index) {
-                *slot = p.ai_translations.clone();
-            }
-        }
-        t
-    };
+    gloss_export_document(&gloss_result_export_data(result, paragraphs, title, gloss_format), format)
+}
+
+/// The export data of a gloss result whose translations, if any, are in its
+/// paragraphs' `ai_translations` (a run without Qt). `paragraphs` are the
+/// glossed texts, indexed by `paragraph_index`.
+pub fn gloss_result_export_data(
+    result: &AllParagraphsProcessingResult,
+    paragraphs: &[String],
+    title: &str,
+    gloss_format: GlossFormat,
+) -> simsapa_backend::export_types::GlossExportData {
+    let translations = result_translations(result, paragraphs.len());
     let options = GlossExportOptions {
         text: paragraphs.join("\n\n"),
         title: title.to_string(),
         gloss_format,
         no_ai_provider: get_app_data().get_ai_fallback_sequence().is_empty(),
     };
-    let data = build_gloss_export_data(result, paragraphs, &translations, &options);
-    gloss_export_document(&data, format)
+    build_gloss_export_data(result, paragraphs, &translations, &options)
+}
+
+/// The translations of a gloss result by `paragraph_index`, as
+/// `build_gloss_export_data` and `build_gloss_session_json` take them.
+pub fn result_translations(
+    result: &AllParagraphsProcessingResult,
+    paragraph_count: usize,
+) -> Vec<Vec<simsapa_backend::export_types::AiResponse>> {
+    let mut t = vec![Vec::new(); paragraph_count];
+    for p in &result.paragraphs {
+        if let Some(slot) = t.get_mut(p.paragraph_index) {
+            *slot = p.ai_translations.clone();
+        }
+    }
+    t
 }
 
 /// Request body for `POST /lookup_forms`. `forms` is an `Option` so a missing

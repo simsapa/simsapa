@@ -17,6 +17,9 @@ pub const DATABASES_MISSING: i32 = 2;
 pub const IN_USE: i32 = 3;
 /// An unknown uid or reference.
 pub const NOT_FOUND: i32 = 4;
+/// `gloss`: the document was made, but an AI request failed; the senses it
+/// would have chosen are marked N and the failed translations are missing.
+pub const AI_FAILED: i32 = 5;
 /// Stopped by Ctrl-C.
 pub const INTERRUPTED: i32 = 130;
 
@@ -28,6 +31,7 @@ Exit codes:
   2    the databases are not set up (run `simsapa setup`)
   3    the data folder is in use by the Simsapa app or another simsapa command
   4    not found (unknown uid)
+  5    gloss: the document was made, but an AI request failed
   130  interrupted";
 
 #[derive(Debug)]

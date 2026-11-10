@@ -237,7 +237,8 @@ it).
 Exit codes (also in `--help`): 0 success, 1 error (including a usage error:
 clap's own 2 would read as "databases missing"), 2 databases missing, 3 folder
 in use, 4 not found (unknown uid; a `not_found` form from `lookup` is a result,
-not exit 4), 130 interrupted.
+not exit 4), 5 `gloss` made its document but an AI request failed, 130
+interrupted.
 
 `main` stays synchronous: `reqwest::blocking` (setup, db-upgrade, the in-use
 check, the releases lookup, the update check) panics when created or dropped
@@ -574,27 +575,30 @@ Windows builds keep the system allocator.
 
 ### What the binary contains
 
-Stripped sizes at `1.1.0-alpha.3`:
+Stripped sizes at `1.2.0-alpha.3`, with the backend `ai` feature (the AI
+provider client for `simsapa gloss`) and the DOCX-export fonts:
 
 | Target | Size |
 |---|---|
-| linux-x64 (musl) | 25.3 MiB |
-| linux-arm64 (musl) | 22.8 MiB |
+| linux-x64 (musl) | 32.6 MiB |
+| linux-arm64 (musl) | 29.3 MiB |
 | darwin-arm64 | not yet measured |
 | win32-x64 | not yet measured |
 
 The CLI embeds only what `backend` compiles in with `include_str!` /
 `include_bytes!` (HTML templates, the inline reader CSS, the JSON/TOML data
-files). Two things it must **not** contain:
+files).
 
-- **The `assets/` folder.** The `include_dir!` of `assets/` lives in `bridges`
-  only. Check: `grep -ac pdf.worker dist/cli/linux-x64/simsapa` prints `0`.
-- **The DOCX-export fonts.** `docx_export.rs` `include_bytes!`s six TTF files,
-  but only `bridges` calls it, so the linker drops them from the CLI. **Do not
+- **The `assets/` folder must not be in it.** The `include_dir!` of `assets/`
+  lives in `bridges` only. Check: `grep -ac pdf.worker dist/cli/linux-x64/simsapa`
+  prints `0`.
+- **The DOCX-export fonts are in it, on purpose.** `docx_export.rs`
+  `include_bytes!`s six TTF files (about 1 MB) and embeds them in each `.docx`;
+  `simsapa gloss --format docx` calls it, so the CLI carries them. **Do not
   check this by grepping for the font names**: `Crimson Pro` and `Abhaya Libre`
   also occur as CSS `font-family` names in the inline reader CSS, so a name grep
-  is never 0. Check for the font *data* instead — a 64-byte slice from the
-  middle of each TTF must not occur in the binary:
+  always matches. Check for the font *data* instead — a 64-byte slice from the
+  middle of each TTF:
 
   ``` sh
   python3 -I -c "
@@ -605,7 +609,8 @@ files). Two things it must **not** contain:
       if d[len(d)//2:len(d)//2+64] in b: print('EMBEDDED', f)"
   ```
 
-  No output means no font is embedded.
+  It lists the six fonts `docx_export.rs` names (two Abhaya Libre, four
+  Crimson Pro) and no other.
 
 The linux-x64 binary links no `libasound` (the backend's `audio` feature is
 off); being static, it links nothing at all.
@@ -737,13 +742,13 @@ win32 binaries are built on their own machines (`make cli-darwin-arm64`,
 > tracked launcher. The ignore entries are `npm/cli-*/bin/` and `npm/**/*.tgz`;
 > `dist/` is ignored as a whole.
 
-Packed sizes for 1.1.0-alpha.3:
+Packed sizes for 1.2.0-alpha.3:
 
 | Tarball | Packed | Binary unpacked |
 |---|---|---|
-| `simsapa-cli-1.1.0-alpha.3.tgz` | 9,393 B | — |
-| `simsapa-cli-linux-x64-1.1.0-alpha.3.tgz` | 9,855,437 B (9.4 MiB) | 26,577,032 B |
-| `simsapa-cli-linux-arm64-1.1.0-alpha.3.tgz` | 9,414,547 B (9.0 MiB) | 23,913,464 B |
+| `simsapa-cli-1.2.0-alpha.3.tgz` | 9,866 B | — |
+| `simsapa-cli-linux-x64-1.2.0-alpha.3.tgz` | 13,092,629 B (12.5 MiB) | 34,227,272 B |
+| `simsapa-cli-linux-arm64-1.2.0-alpha.3.tgz` | 12,530,688 B (12.0 MiB) | 30,671,544 B |
 | `simsapa-cli-darwin-arm64-…` | not yet measured | |
 | `simsapa-cli-win32-x64-…` | not yet measured | |
 

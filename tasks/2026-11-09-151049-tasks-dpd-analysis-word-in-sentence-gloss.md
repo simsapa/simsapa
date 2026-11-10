@@ -99,7 +99,9 @@ CLI:
 
 - `backend_cli/Cargo.toml` - `ai` feature on.
 - `backend_cli/src/commands/gloss.rs` - New options, reference input, export formats, AI and progress.
-- `backend_cli/src/exit.rs` - New "partial" exit code.
+- `api/src/routes/gloss.rs` - `gloss_result_export_data()` and `result_translations()`, shared with the CLI.
+- `backend_cli/src/exit.rs` - `AI_FAILED` (5): the document was made, an AI request failed.
+- `backend_cli/src/main.rs` - `gloss` keeps the write lock it took in the preamble (`preamble_keeping_write_lock`) and runs read-only without it.
 - `backend_cli/src/commands/install_skill.rs` - List of skills.
 - `backend_cli/skills/gloss-pali-passage/SKILL.md` - **New.** The skill.
 - `backend_cli/src/commands/docs.rs` - `test_bundled_doc_has_no_repo_references` keeps passing.
@@ -417,16 +419,16 @@ sub-task, not only after a whole parent task.
 - **Read-only** (GUI running): AI may run, cache rows are not written, one
   stderr line says so.
 
-- [ ] 9.0 Extend `simsapa gloss`: references, edition and paragraphs, gloss format, export formats, AI by default with progress on stderr, read-only and failure handling (FR G1–G9)
-  - [ ] 9.1 Add the flags to `GlossArgs`; validation: `--exact` only with `headwords`; `docx` needs `--output`; `--json` with `--format` is an error; `--no-translate` with `--no-ai` is allowed (no-op).
-  - [ ] 9.2 Input: single reference-like argument → 8.1 resolver; otherwise text / stdin as today. Print the resolved uid in the title.
-  - [ ] 9.3 Output: `text` (terminal; aligned columns with Grammar in Word in Sentence format and the legend), `markdown` default when stdout is not a TTY, other formats through the 7.x exporters to stdout or `--output` (via `outln!` / file write).
-  - [ ] 9.4 AI: decide on/off from the app settings (reuse `fallback_walk_settings()` / `is_provider_enabled()`); run word selection, then `apply_word_selection_answers(write_cache: !read_only)` (6.3), then translation, through the backend modules; stderr progress via `errln!`. Respect the word-selection on/off setting of the Word Selection dialog as the GUI does.
-  - [ ] 9.5 Failure handling (G8): on AI failure, produce the document with `N` marks and no translation, print the error to stderr, exit with `AI_FAILED`. Add the constant and help text.
-  - [ ] 9.6 Read-only mode: when in-use detection says the GUI is running, skip cache writes and say so once on stderr. Check how `startup.rs` exposes the mode to commands.
-  - [ ] 9.7 Tests (`backend_cli/tests/gloss_command.rs`): `--no-ai` markdown for DHP23 contains the expected headings, table header and legend; `--gloss-format headwords` output unchanged from today for the same text (compare with `--json`); reference `dhp23`; `--format docx` without `--output` → error; closed stdout is not a panic (pattern from `read_only_commands.rs`). No test makes a network call: AI tests set no enabled provider and assert the "AI off" path.
-  - [ ] 9.8 `make rust-test`; run `test_no_print_macros_in_sources`.
-  - [ ] 9.9 Measure the stripped linux-x64 and linux-arm64 musl binaries and the packed npm `.tgz` sizes now that the CLI calls the AI engine, and update the size tables in `docs/backend-cli-and-npm-package.md` (they still show 1.1.0-alpha.3). Ask the user whether to add a size budget there; do not invent one.
+- [x] 9.0 Extend `simsapa gloss`: references, edition and paragraphs, gloss format, export formats, AI by default with progress on stderr, read-only and failure handling (FR G1–G9)
+  - [x] 9.1 Add the flags to `GlossArgs`; validation: `--exact` only with `headwords`; `docx` needs `--output`; `--json` with `--format` is an error; `--no-translate` with `--no-ai` is allowed (no-op).
+  - [x] 9.2 Input: single reference-like argument → 8.1 resolver; otherwise text / stdin as today. Print the resolved uid in the title.
+  - [x] 9.3 Output: `text` (terminal; aligned columns with Grammar in Word in Sentence format and the legend), `markdown` default when stdout is not a TTY, other formats through the 7.x exporters to stdout or `--output` (via `outln!` / file write).
+  - [x] 9.4 AI: decide on/off from the app settings (reuse `fallback_walk_settings()` / `is_provider_enabled()`); run word selection, then `apply_word_selection_answers(write_cache: !read_only)` (6.3), then translation, through the backend modules; stderr progress via `errln!`. Respect the word-selection on/off setting of the Word Selection dialog as the GUI does.
+  - [x] 9.5 Failure handling (G8): on AI failure, produce the document with `N` marks and no translation, print the error to stderr, exit with `AI_FAILED`. Add the constant and help text.
+  - [x] 9.6 Read-only mode: when in-use detection says the GUI is running, skip cache writes and say so once on stderr. Check how `startup.rs` exposes the mode to commands.
+  - [x] 9.7 Tests (`backend_cli/tests/gloss_command.rs`): `--no-ai` markdown for DHP23 contains the expected headings, table header and legend; `--gloss-format headwords` output unchanged from today for the same text (compare with `--json`); reference `dhp23`; `--format docx` without `--output` → error; closed stdout is not a panic (pattern from `read_only_commands.rs`). No test makes a network call: AI tests set no enabled provider and assert the "AI off" path.
+  - [x] 9.8 `make rust-test`; run `test_no_print_macros_in_sources`.
+  - [x] 9.9 Measure the stripped linux-x64 and linux-arm64 musl binaries and the packed npm `.tgz` sizes now that the CLI calls the AI engine, and update the size tables in `docs/backend-cli-and-npm-package.md` (they still show 1.1.0-alpha.3). Ask the user whether to add a size budget there; do not invent one.
 
 ### 10.0 — specs and dependencies
 

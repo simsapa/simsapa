@@ -290,6 +290,7 @@ partial match use `--mode "Contains Match"`.
 | 2 | the databases are not set up (run `simsapa setup`) |
 | 3 | the data folder is in use by the Simsapa app or another `simsapa` command |
 | 4 | not found (an unknown uid or reference; a `lookup` form that is `not_found` is a result, not exit 4) |
+| 5 | `gloss` only: the document was made, but an AI request failed; its senses are marked `N` and its translations are missing, and the failures are on stderr |
 | 130 | interrupted |
 
 ## A.5 Alongside the GUI app

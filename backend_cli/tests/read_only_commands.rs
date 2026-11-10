@@ -245,7 +245,7 @@ fn test_sutta_bilara() {
 #[test]
 fn test_gloss_compound_has_deconstruction() {
     if !have_dist() { return; }
-    let out = simsapa(&["gloss", "--json", "Te jānanti atthaññe āvāsikā bhikkhū"]);
+    let out = simsapa(&["gloss", "--json", "--no-ai", "--gloss-format", "headwords", "Te jānanti atthaññe āvāsikā bhikkhū"]);
     assert_ok(&out);
     let doc = stdout_json(&out);
     assert_eq!(doc["success"], true);
@@ -254,7 +254,7 @@ fn test_gloss_compound_has_deconstruction() {
     assert!(compound["direct_uids"].as_array().unwrap().is_empty());
     assert_eq!(compound["deconstructions"].as_array().unwrap().len(), 1);
 
-    let out = simsapa(&["gloss", "Te jānanti atthaññe āvāsikā bhikkhū"]);
+    let out = simsapa(&["gloss", "--no-ai", "--gloss-format", "headwords", "--format", "text", "Te jānanti atthaññe āvāsikā bhikkhū"]);
     assert_ok(&out);
     let text = String::from_utf8_lossy(&out.stdout);
     let line = text.lines().find(|l| l.starts_with("atthaññe")).unwrap();
@@ -265,7 +265,7 @@ fn test_gloss_compound_has_deconstruction() {
 #[test]
 fn test_gloss_reads_stdin() {
     if !have_dist() { return; }
-    let out = simsapa_stdin(&["gloss", "--json", "-"], "evaṁ me sutaṁ\n\nbhikkhave\n");
+    let out = simsapa_stdin(&["gloss", "--json", "--no-ai", "-"], "evaṁ me sutaṁ\n\nbhikkhave\n");
     assert_ok(&out);
     assert_eq!(stdout_json(&out)["paragraphs"].as_array().unwrap().len(), 2);
 }
