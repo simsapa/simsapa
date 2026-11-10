@@ -1,5 +1,7 @@
 //! `simsapa serve`: the shared routes of the localhost API
 //! (`simsapa_api::build_rocket()`), without the GUI, AI and static-asset routes.
+//! It manages a `GlossAiRunner`, so `POST /gloss_text` can use the app's AI
+//! provider when asked (`"ai": true`).
 //!
 //! The port is resolved before anything creates an `AppGlobals`, because both
 //! globals (the backend's, created by `init_globals()`, and `simsapa_api`'s)
@@ -17,6 +19,7 @@ use rocket::fairing::AdHoc;
 use rocket::error::ErrorKind;
 
 use simsapa_api::{ApiConfig, build_rocket, set_update_status, spawn_background_update_check};
+use simsapa_api::routes::gloss::GlossAiRunner;
 use simsapa_backend::errln;
 use simsapa_backend::update_checker::get_app_version;
 use simsapa_backend::update_status::{UpdateStatus, implicit_check_disabled};
@@ -153,7 +156,9 @@ fn serve(args: &ServeArgs, json: bool, no_update_check: bool) -> CliResult {
     }
 
     let rocket = build_rocket(config.clone())
-        .map_err(|e| CliError::error(format!("Could not start the API server: {:#}", e)))?;
+        .map_err(|e| CliError::error(format!("Could not start the API server: {:#}", e)))?
+        // `POST /gloss_text` with `"ai": true` runs through this.
+        .manage(GlossAiRunner::new(simsapa_backend::gloss_ai_run::run_gloss_ai_for_api));
 
     // DPD's page files into memory, off the server's runtime, as the GUI does
     // after startup. Only `serve` serves them, so no other command loads them.

@@ -468,7 +468,9 @@ async function gloss() {
   try {
     const r = await fetch(base() + "/gloss_text", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      // This page renders the Headwords layout (one entry per word, repeats
+      // left out); the route's default is the Word in Sentence format.
+      body: JSON.stringify({ text, options: { gloss_format: "headwords" } }),
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     DATA = await r.json();

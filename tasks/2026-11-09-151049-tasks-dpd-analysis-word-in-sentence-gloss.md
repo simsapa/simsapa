@@ -34,7 +34,7 @@ Backend:
 - `backend/src/ai_engine.rs` - **Moved** from `bridges/src/ai_engine.rs`.
 - `backend/src/gloss_word_selection_run.rs` - **New.** Qt-free word-selection run, extracted from `run_ws_word_selection()` in `bridges/src/api.rs`.
 - `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`), `word_selection_prompt_text()`; `WordSelectionParagraphInput::rows_json` / `from_result`, row-based items, `grammar_index` / `contextual_meaning` parsing; gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`, the default-sense ranking call), word-selection items/parsing (demoted senses not offered).
-- `backend/src/types.rs` - `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`, `reading`, `component_readings`; `SenseReading`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
+- `backend/src/types.rs` - `ParagraphProcessingResult::ai_translations`, `AllParagraphsProcessingResult::ai_errors`; `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`, `reading`, `component_readings`; `SenseReading`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
 - `backend/src/gloss_sense_ranking.rs` - **New.** Default sense without cache or AI (DPD's ranking, headword and particle filters as a demotion, DB-example overlap); `demoted_uids`.
 - `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking; session readings, `resolution`, `rebuild_paragraph_rows`.
 - `backend/src/gloss_rows_tests.rs` or `#[cfg(test)]` in `gloss_rows.rs` - Unit tests for row rules.
@@ -47,6 +47,9 @@ Backend:
 - `backend/src/app_data.rs` - Settings getters/setters.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
 - `backend/src/export_types.rs` - `AiResponse::literal_translation`; `GlossExportData` format, title, no-AI flag, `GlossExportRow`s, variants, confidence; `WORD_TABLE_COLUMNS`, title and cell helpers.
+- `backend/src/gloss_source.rs` - **New.** Sutta reference → passage paragraphs (`resolve_gloss_source`, `parse_paragraph_spec`, `is_sutta_reference`).
+- `backend/tests/test_gloss_source.rs` - **New.** Reference resolution against the dist database.
+- `backend/src/gloss_ai_run.rs` - **New.** AI run without Qt: word selection → apply → translation (`run_gloss_ai`, `run_gloss_ai_for_api`).
 - `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData` (Headwords vocabulary ported from QML, flattened rows) and the session JSON.
 - `backend/src/text_export.rs`, `backend/src/docx_export.rs`, `backend/src/anki_export.rs` - Word in Sentence document, `Conf.` column, legend, Variants, two translations; Anki reads `GlossExportData` and makes Word in Sentence notes.
 - `backend/tests/test_gloss_export_contract.rs`, `backend/tests/data/gloss_export_contract/` - **New.** Export data contract test (Rust side) and its stored gloss and expected files.
@@ -68,13 +71,18 @@ Bootstrap:
 
 API:
 
-- `api/src/routes/gloss.rs` - `/gloss_text` options, `rows`, output formats, reference input.
+- `api/src/routes/gloss.rs` - `/gloss_text` options and validation, reference input, output formats, `GlossAiRunner` / `MaybeGlossAiRunner`.
+- `api/tests/gloss_text.rs` - **New.** Route tests through Rocket's local client: defaults, Headwords snapshot, rows, reference, documents, 400s, stub AI runner.
+- `backend_cli/tests/route_parity.rs` - `gloss --json` (still Headwords until 9.0) compared with an explicit Headwords request.
+- `backend_cli/src/commands/serve.rs` - Manages the `GlossAiRunner`.
+- `scripts/gloss_demo.html` - Asks for the Headwords format it renders.
+- `docs/localhost-api-implementation.md` - `/gloss_text` code locations and the runner / sentinel trap.
 
 Bridges / GUI:
 
 - `bridges/Cargo.toml` - Depends on `simsapa_backend` with the `ai` feature.
 - `bridges/src/ai_engine.rs` - Removed (moved to `backend/src/ai_engine.rs`); `prompt_manager.rs` and `api.rs` import `simsapa_backend::ai_engine`.
-- `bridges/src/api.rs` - `/word_selection_ws` is a protocol adapter over `gloss_word_selection_run::run_word_selection()`; later, the `GlossAiRunner` for `/gloss_text`.
+- `bridges/src/api.rs` - `/word_selection_ws` is a protocol adapter over `gloss_word_selection_run::run_word_selection()`; manages the `GlossAiRunner` for `/gloss_text`.
 - `bridges/src/prompt_manager.rs` - `gloss_translation_request` / `sequential_gloss_translation_request` with the translation validate hook; unchanged dispatch.
 - `bridges/assets/qml/com/profoundlabs/simsapa/PromptManager.qml` - `qmllint` stubs for the two translation requests.
 - `bridges/src/sutta_bridge.rs` - New invokables: `build_word_selection_prompt`, `gloss_translation_prompt`, `parse_gloss_translation`; later gloss format / auto-translate settings, row data.
@@ -382,14 +390,14 @@ sub-task, not only after a whole parent task.
   OS thread (as `/word_selection_ws` does) or `tokio::task::spawn_blocking`,
   and the handler awaits its result.
 
-- [ ] 8.0 Extend `POST /gloss_text`: format, AI and output options, additive `rows`, reference input (FR H1–H4)
-  - [ ] 8.1 Add the reference resolver to `backend` (`gloss_source.rs`): reference → uid (reuse `query_text_to_uid`, `dhp_verse_to_chapter`), edition choice (`/pli/cst` if it exists, else `/pli/ms`), verse segment selection inside range records (`dhp23:*`, excluding `:0.x`), CST text from segments not `content_plain`, DPD-style codes (`UD1` → `ud1.1`, `ITI1` → `iti1`), paragraph spec parser (`1`, `1-3`, `1-2 4`). Unit tests for `dhp23`, `sn1.71`, `sn18.1` ¶2, `ud1`, `iti1`, a bad reference.
-  - [ ] 8.2 Extend `GlossTextRequest` / `GlossTextOptions` and the validation (spec above); add `rows` to the `Default` variant's paragraph struct without going through `serde_json::Value`.
-  - [ ] 8.3 Flip the API default to `word_in_sentence`; keep the 3.1 Headwords snapshot test passing for an explicit `"gloss_format": "headwords"` request.
-  - [ ] 8.4 Implement `output_format` through the 7.x exporters (via the 7.8 builder).
-  - [ ] 8.5 AI path (spec above): define `GlossAiRunner` in `api/src/routes/gloss.rs`; implement it in `backend` (`ai` feature) as word selection (2.4) + `apply_word_selection_answers(write_cache: false)` (6.3; the API is stateless and writes no cache rows) + translation (6.5) when `translate`; `.manage()` it in `bridges/src/api.rs` `start_webserver()` and in `backend_cli` `serve`; run it off the async runtime. Test the 400 path in `api/` and the runner with a stub (no network).
-  - [ ] 8.6 Tests in `api/`: defaults, headwords byte-identical, rows present, reference input, bad combinations → 400, output formats' content types. Update the route-count test only if a route was added (none expected).
-  - [ ] 8.7 Check `scripts/gloss_demo.html` and `/word_selection_ws` still work against the new default response (read the code paths; describe a manual check for the user).
+- [x] 8.0 Extend `POST /gloss_text`: format, AI and output options, additive `rows`, reference input (FR H1–H4)
+  - [x] 8.1 Add the reference resolver to `backend` (`gloss_source.rs`): reference → uid (reuse `query_text_to_uid`, `dhp_verse_to_chapter`), edition choice (`/pli/cst` if it exists, else `/pli/ms`), verse segment selection inside range records (`dhp23:*`, excluding `:0.x`), CST text from segments not `content_plain`, DPD-style codes (`UD1` → `ud1.1`, `ITI1` → `iti1`), paragraph spec parser (`1`, `1-3`, `1-2 4`). Unit tests for `dhp23`, `sn1.71`, `sn18.1` ¶2, `ud1`, `iti1`, a bad reference. (`backend/tests/test_gloss_source.rs`. `UD<n>` counts the Udāna through (`UD12` → `ud2.2`); DPD's `TH<n>` is **not** SuttaCentral's verse number (DPD's TH215 is in `thag6.6`), so `th215` means SuttaCentral's verse 215 (`thag2.48`), documented. An MS paragraph is a `<n>.x` group; a CST paragraph is one segment.)
+  - [x] 8.2 Extend `GlossTextRequest` / `GlossTextOptions` and the validation (spec above); add `rows` to the `Default` variant's paragraph struct without going through `serde_json::Value`.
+  - [x] 8.3 Flip the API default to `word_in_sentence`; keep the 3.1 Headwords snapshot test passing for an explicit `"gloss_format": "headwords"` request.
+  - [x] 8.4 Implement `output_format` through the 7.x exporters (via the 7.8 builder).
+  - [x] 8.5 AI path (spec above): define `GlossAiRunner` in `api/src/routes/gloss.rs`; implement it in `backend` (`ai` feature) as word selection (2.4) + `apply_word_selection_answers(write_cache: false)` (6.3; the API is stateless and writes no cache rows) + translation (6.5) when `translate`; `.manage()` it in `bridges/src/api.rs` `start_webserver()` and in `backend_cli` `serve`; run it off the async runtime. Test the 400 path in `api/` and the runner with a stub (no network). (`backend/src/gloss_ai_run.rs`: `run_gloss_ai()`, shared with the CLI in 9.4, and `run_gloss_ai_for_api()`. The route reads the runner through a `MaybeGlossAiRunner` request guard: Rocket's sentinel aborts launch on an unmanaged `Option<&State<T>>`. Translations go to a new `ParagraphProcessingResult::ai_translations`, failures to `AllParagraphsProcessingResult::ai_errors`, both skipped when empty.)
+  - [x] 8.6 Tests in `api/`: defaults, headwords byte-identical, rows present, reference input, bad combinations → 400, output formats' content types. Update the route-count test only if a route was added (none expected).
+  - [x] 8.7 Check `scripts/gloss_demo.html` and `/word_selection_ws` still work against the new default response (read the code paths; describe a manual check for the user). (The demo renders `words_data` as a Headwords list, so it now asks for `"gloss_format": "headwords"`; the doc's copy too. `/word_selection_ws` takes `rows_json` optionally, documented.)
 
 ### 9.0 — specs and dependencies
 

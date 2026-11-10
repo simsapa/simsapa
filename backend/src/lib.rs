@@ -45,6 +45,8 @@ pub mod gloss_sense_ranking;
 pub mod gloss_variants;
 pub mod gloss_word_selection_apply;
 pub mod gloss_translation;
+pub mod gloss_source;
+pub mod gloss_ai_run;
 pub mod sutta_json;
 pub mod lookup_cancel;
 pub mod html_format;

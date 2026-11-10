@@ -300,6 +300,7 @@ fn test_word_in_sentence_session_export_round_trip() {
         paragraphs: vec![paragraph],
         global_unrecognized_words: vec!["xyzqw".to_string()],
         updated_global_stems: Default::default(),
+        ai_errors: Vec::new(),
     };
     let translations = vec![vec![AiResponse {
         model_name: "m".to_string(),

@@ -5343,6 +5343,7 @@ pub fn process_all_paragraphs(
             unrecognized_words: paragraph_unrecognized,
             rows,
             variants,
+            ai_translations: Vec::new(),
         });
     }
 
@@ -5351,6 +5352,7 @@ pub fn process_all_paragraphs(
         paragraphs: paragraph_results,
         global_unrecognized_words,
         updated_global_stems: global_stems,
+        ai_errors: Vec::new(),
     })
 }
 

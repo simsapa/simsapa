@@ -68,6 +68,7 @@ impl GlossArgs {
             skip_common: self.skip_common.then_some(true),
             common_words: self.common_words.clone(),
             exact: self.exact.then_some(true),
+            ..Default::default()
         }
     }
 }
@@ -92,7 +93,7 @@ pub fn run_gloss(args: &GlossArgs, json: bool) -> CliResult {
 
     let input = AllParagraphsProcessingInput {
         paragraphs,
-        options: gloss_word_processing_options(&opts),
+        options: gloss_word_processing_options(&opts, simsapa_backend::types::GlossFormat::Headwords),
     };
     let result = process_all_paragraphs(&input, &dbm.appdata, &dbm.dpd)
         .map_err(|e| CliError::error(format!("Glossing failed: {}", e)))?;

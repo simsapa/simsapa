@@ -1187,6 +1187,10 @@ pub async extern "C" fn start_webserver() {
             get_ai_provider_key,
         ])
         .manage(AssetsHandler::default())
+        // `POST /gloss_text` with `"ai": true` runs through this.
+        .manage(simsapa_api::routes::gloss::GlossAiRunner::new(
+            simsapa_backend::gloss_ai_run::run_gloss_ai_for_api,
+        ))
         .launch().await;
 }
 

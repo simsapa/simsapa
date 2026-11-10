@@ -827,6 +827,12 @@ pub struct ParagraphProcessingResult {
     /// (`gloss_variants.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub variants: Vec<Vec<String>>,
+    /// The two-part AI translations of the paragraph, made by a run without
+    /// Qt (`gloss_ai_run`) for `POST /gloss_text` and `simsapa gloss`; the
+    /// Gloss tab keeps its translations in the session instead. Empty, and
+    /// then not serialized, without one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_translations: Vec<crate::export_types::AiResponse>,
 }
 
 /// Result data for all paragraphs processing
@@ -836,6 +842,11 @@ pub struct AllParagraphsProcessingResult {
     pub paragraphs: Vec<ParagraphProcessingResult>,
     pub global_unrecognized_words: Vec<String>,
     pub updated_global_stems: std::collections::HashMap<String, bool>,
+    /// The failures of an AI run (`gloss_ai_run`): the result is complete
+    /// without the AI's choices or translations they name. Empty, and then
+    /// not serialized, when no AI ran or it succeeded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_errors: Vec<String>,
 }
 
 /// Result data for single paragraph processing
