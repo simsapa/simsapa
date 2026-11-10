@@ -80,7 +80,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`, `--uid-prefix` (suttas and library only; A.2.2), `--pali-edition ms|cst|both` (A.2.1). Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
 | `simsapa word <uid>` | A dictionary entry; `--html` for the rendered page | `/word.json` (§13.3); `--html`: `/word_html` |
 | `simsapa sutta <uid>` | A sutta's title, uid and plain text; `--html`, `--content-json` (Bilara JSON), `--bilara` (with variants, comments, glosses) | `/sutta_html`, `/sutta.json` (§13.4), `/sutta_bilara.json` (§13.5) |
-| `simsapa gloss <text…\|->` | Every word of a passage with its dictionary options and compound break-downs; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
+| `simsapa gloss <text…\|reference\|->` | A passage (or a sutta reference such as `dhp23`) as a word-by-word analysis document (A.2.4); `--json` for the raw pipeline result; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
 | `simsapa lookup <form…\|->` | Exact DPD form lookup, forms as arguments or one per line on stdin | `POST /lookup_forms` (§19.1) |
 | `simsapa query suttas\|words <text>` | Literal substring match, first page; `--titles`, `--count` | — |
 | `simsapa fulltext-search …` | The fulltext index directly; takes `--pali-edition` too | — |
@@ -89,7 +89,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa dpd check` | Whether a newer compatible release of the DPD dictionary is available, its download size and the free space its upgrade needs (A.9) | — |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
 | `simsapa app-assets` | Where the app assets are stored and their sizes (A.1) | — |
-| `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (A.2.3) | — |
+| `simsapa install-skill` | Install the `simsapa` and `gloss-pali-passage` agent skills, and their slash commands, into Claude Code, OpenCode or Pi (A.2.3) | — |
 | `simsapa docs` | This document | — |
 
 The commands that change the data folder: `simsapa setup`, `simsapa
@@ -166,18 +166,36 @@ curl -s localhost:$PORT/get_book_spine_item_html_by_uid/0/bmc.28
 
 `simsapa sutta <uid>` does not read Library chapters.
 
-### A.2.3 Installing the agent skill: `simsapa install-skill`
+### A.2.3 Installing the agent skills: `simsapa install-skill`
 
-`simsapa install-skill` writes a short skill, `simsapa/SKILL.md`, that tells a
-coding agent when and how to use these commands. It is built into the binary,
-so it always matches the installed version, and it needs no databases. It
-points the agent to `simsapa docs` for this full reference.
+`simsapa install-skill` writes two short skills that tell a coding agent when
+and how to use these commands, and makes each of them a slash command:
+
+- `simsapa`: searching the canon, the dictionaries and the library, reading a
+  sutta, looking up a word. It points the agent to `simsapa docs` for this full
+  reference. Slash command: `/simsapa`.
+- `gloss-pali-passage`: making a word-by-word analysis document of a Pāli
+  passage (A.2.4). Slash command:
+  `/gloss-pali-passage [headwords|word-in-sentence] <text or reference>`.
+
+The skills are built into the binary, so they always match the installed
+version, and the command needs no databases.
 
 | Agent | `--global` (every project) | `--local` (the current folder, or `--dir`) |
 |---|---|---|
-| `claude` (Claude Code) | `~/.claude/skills/simsapa/` | `.claude/skills/simsapa/` |
-| `opencode` (OpenCode) | `~/.config/opencode/skills/simsapa/` (`$XDG_CONFIG_HOME/opencode` when set) | `.opencode/skills/simsapa/` |
-| `pi` (Pi) | `~/.pi/agent/skills/simsapa/` | `.pi/skills/simsapa/` |
+| `claude` (Claude Code) | `~/.claude/skills/<name>/` | `.claude/skills/<name>/` |
+| `opencode` (OpenCode) | `~/.config/opencode/skills/<name>/` and `~/.config/opencode/commands/<name>.md` (`$XDG_CONFIG_HOME/opencode` when set) | `.opencode/skills/<name>/` and `.opencode/commands/<name>.md` |
+| `pi` (Pi) | `~/.pi/agent/skills/<name>/` | `.pi/skills/<name>/` |
+
+Slash commands, as each agent expects them:
+
+- **Claude Code** makes `/<name>` from a skill folder by itself, so no extra
+  file is written; the skill is the command, and a command file of the same name
+  would be shadowed by it.
+- **OpenCode** does not turn skills into commands. For each skill the command
+  writes a markdown file in `commands/`, whose text tells the agent to load that
+  skill and passes the words typed after the command (`$ARGUMENTS`).
+- **Pi** gets the skills only.
 
 ``` sh
 simsapa install-skill --agent claude --global      # named: installs, no questions
@@ -194,16 +212,74 @@ those; at a terminal it shows a checklist with every place selected, and with no
 terminal it prints what it found and stops unless `--yes` is given. When nothing
 is found it installs nothing and says how to name a place.
 
-- Running it again is safe: an up-to-date skill is left alone, and one this
-  command wrote earlier is replaced by the current text. A `SKILL.md` it did
-  not write is never replaced without `--force`.
+- Running it again is safe: an up-to-date file is left alone, and one this
+  command wrote earlier is replaced by the current text. A `SKILL.md` or command
+  file it did not write is never replaced without `--force`.
 - OpenCode also reads Claude Code's skill folders. With both selected for the
-  same scope only the Claude Code copy is written, so the agent does not see
-  two skills of one name.
-- `--json` prints one array of `{agent, scope, path, status}`, with `status`
-  `installed`, `updated` or `unchanged`.
-- Start a new agent session afterwards; agents read their skills at start-up.
-- After upgrading simsapa, run it again to refresh the skill.
+  same scope only the Claude Code skill copies are written, so the agent does
+  not see two skills of one name; OpenCode's command files are still written.
+- `--json` prints one array of `{agent, scope, kind, name, path, status}`, with
+  `kind` `skill` or `command` and `status` `installed`, `updated` or
+  `unchanged`.
+- Start a new agent session afterwards; agents read their skills and commands
+  at start-up.
+- After upgrading simsapa, run it again to refresh them.
+
+### A.2.4 Glossing a passage: `simsapa gloss`
+
+`simsapa gloss` makes the analysis document of a passage: every word with its
+grammar, meaning, construction and root.
+
+``` sh
+simsapa gloss --format markdown dhp23            # a sutta reference
+simsapa gloss --no-ai --format markdown "te jhāyino sātatikā"
+simsapa gloss --gloss-format headwords sn1.71
+simsapa gloss --format docx --output dhp23.docx dhp23
+```
+
+| Option | Meaning |
+|---|---|
+| `<text…>` | Pāli text, `-` for stdin, or one sutta reference (`dhp23`, `sn1.71`, `mn4`, `ud1`, `iti1`). Paragraphs are separated by a blank line |
+| `--gloss-format word-in-sentence\|headwords` | `word-in-sentence` (default): one row per word as written in the passage, with the grammar of that form (`masc nom pl of jhāyī`); a compound is followed by its parts. `headwords`: the dictionary entries, a repeat within a paragraph left out |
+| `--edition cst\|ms` | The edition of a reference. Default: CST when the text has one, else Mahāsaṅgīti |
+| `--paragraphs <spec>` | Paragraphs of a reference: `1`, `1-3`, `1-2 4` |
+| `--format markdown\|html\|org\|docx\|anki-csv\|json\|text` | The output. Default: `text` (aligned columns) on a terminal, `markdown` otherwise. `json` is the Gloss tab's session export, which the app opens with "Open JSON" |
+| `--output <path>` | Write the document to a file; required for `docx` |
+| `--json` | The raw pipeline result (the `/gloss_text` response); not together with `--format` |
+| `--no-ai` | Make no AI request. Without `--no-ai`, an AI provider enabled in the app chooses word senses and writes the translations |
+| `--no-translate` | Let the AI choose word senses but make no translation |
+| `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
+| `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
+
+A Word in Sentence document has this structure: `# Analysis of: <reference>`,
+the passage, `### English Translation` (**Translation** and **Literal
+Translation**, only when a translation was made), `### Variants` (only for
+`//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
+table `ID | Word in Sentence | Grammar | Meaning | Construction | Root |
+Conf.`, with the parts of a compound on rows starting `- `. A multi-paragraph
+passage repeats these under `## Paragraph <n>`. The `Conf.` column says how
+a word with several dictionary senses was decided, and a legend under the table
+explains it:
+
+- `N`: Not checked. No saved selection; the first of several meanings was
+  chosen, and it may need review.
+- `A`: AI-checked. Picked by a machine (an AI request, or data built into the
+  app).
+- `H`: Human-checked. Confirmed by the user, or by selections and set phrases
+  built into the app.
+
+A word with one possible sense has an empty `Conf.`. While an AI response is
+awaited, a progress line is printed on stderr; stdout holds the document only.
+When an AI request fails, the document is still made (senses `N`, no
+translation), the failure is on stderr, and the exit code is 5. When the Simsapa
+app is running, the command does not write the AI's choices into the app's
+selection cache, and says so on stderr.
+
+The `gloss-pali-passage` skill (A.2.3) has an agent do the AI's part itself:
+it runs `simsapa gloss --no-ai`, chooses the senses of the `N` rows from their
+candidates (and marks them `A`), writes the Translation and the Literal
+Translation, and saves the document as `<reference>-gloss.md`, without making
+any LLM request of its own.
 
 ## A.3 Output: clean text, or `--json`
 

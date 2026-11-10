@@ -1,7 +1,16 @@
-//! `simsapa install-skill`: write the `simsapa` agent skill (`SKILL.md`,
-//! compiled into the binary so it matches the installed version) into the skill
-//! folder of Claude Code, OpenCode or Pi, for the user or for one project.
-//! Works without databases.
+//! `simsapa install-skill`: write the agent skills (`SKILL.md` files, compiled
+//! into the binary so they match the installed version) into the skill folder
+//! of Claude Code, OpenCode or Pi, for the user or for one project, and make
+//! each skill a slash command where the agent needs a file for that. Works
+//! without databases.
+//!
+//! Slash commands, as each tool documents them:
+//! - Claude Code: a skill folder creates `/<name>` by itself (and wins over a
+//!   `commands/<name>.md` of the same name), so no command file is written.
+//! - OpenCode: skills are not commands; a command is a markdown file in
+//!   `commands/` of its config folder, whose body is the prompt. The file
+//!   loads the skill and passes `$ARGUMENTS` on.
+//! - Pi: skills only.
 //!
 //! Nothing is written to a place the user did not either name or confirm: with
 //! both `--agent` and a scope the paths are explicit; otherwise the agents'
@@ -19,12 +28,54 @@ use simsapa_backend::update_checker::get_app_version;
 use crate::exit::{CliError, CliResult};
 use crate::output::{outln, print_json};
 
-pub const SKILL_NAME: &str = "simsapa";
 const SKILL_FILE: &str = "SKILL.md";
-const SKILL_TEMPLATE: &str = include_str!("../../skills/simsapa/SKILL.md");
-/// In the frontmatter of every skill this command writes. A `SKILL.md` without
-/// it is the user's own and is only replaced with `--force`.
+/// In the frontmatter of every skill, and in every command file, this command
+/// writes. A file without it is the user's own and is only replaced with
+/// `--force`.
 const GENERATOR_MARKER: &str = "generator: simsapa-cli";
+
+/// One embedded skill, and the text of the slash command that starts it in
+/// OpenCode.
+pub struct SkillDef {
+    pub name: &'static str,
+    template: &'static str,
+    /// The `description` in the OpenCode command's frontmatter.
+    command_description: &'static str,
+}
+
+pub const SKILLS: [SkillDef; 2] = [
+    SkillDef {
+        name: "simsapa",
+        template: include_str!("../../skills/simsapa/SKILL.md"),
+        command_description: "Search the Pāli canon, dictionaries and library books offline with the simsapa program",
+    },
+    SkillDef {
+        name: "gloss-pali-passage",
+        template: include_str!("../../skills/gloss-pali-passage/SKILL.md"),
+        command_description: "Word-by-word analysis document of a Pāli passage or sutta reference (usage: [headwords|word-in-sentence] <text or reference>)",
+    },
+];
+
+impl SkillDef {
+    /// The skill text for this build.
+    pub fn render(&self) -> String {
+        self.template.replace("{{version}}", get_app_version().trim_start_matches('v'))
+    }
+
+    /// The OpenCode command file: the body is the prompt, `$ARGUMENTS` the
+    /// text typed after the command.
+    pub fn render_command(&self) -> String {
+        format!(
+            "---\ndescription: {}\n---\n<!-- {} version: {} -->\n\
+             Load the `{}` skill and follow it for this request.\n\n\
+             Arguments: $ARGUMENTS\n",
+            self.command_description,
+            GENERATOR_MARKER,
+            get_app_version().trim_start_matches('v'),
+            self.name
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum Agent {
@@ -100,7 +151,7 @@ pub struct InstallSkillArgs {
     #[arg(long, short = 'y')]
     pub yes: bool,
 
-    /// Replace a SKILL.md that simsapa did not write
+    /// Replace a SKILL.md or command file that simsapa did not write
     #[arg(long)]
     pub force: bool,
 }
@@ -153,15 +204,24 @@ impl SkillEnv {
         })
     }
 
-    /// The folder holding `SKILL.md`: `<agent config>/skills/simsapa`, with
-    /// Pi's global skills one level down, under `agent/`.
-    fn skill_dir(&self, agent: Agent, scope: Scope) -> Result<PathBuf, CliError> {
+    /// The folder holding a skill's `SKILL.md`: `<agent config>/skills/<name>`,
+    /// with Pi's global skills one level down, under `agent/`.
+    fn skill_dir(&self, agent: Agent, scope: Scope, name: &str) -> Result<PathBuf, CliError> {
         let config = self.config_dir(agent, scope)?;
         let skills = match (agent, scope) {
             (Agent::Pi, Scope::Global) => config.join("agent").join("skills"),
             _ => config.join("skills"),
         };
-        Ok(skills.join(SKILL_NAME))
+        Ok(skills.join(name))
+    }
+
+    /// The slash-command file of a skill, for the agents that need one
+    /// (OpenCode: `<config>/commands/<name>.md`).
+    fn command_file(&self, agent: Agent, scope: Scope, name: &str) -> Result<Option<PathBuf>, CliError> {
+        Ok(match agent {
+            Agent::Opencode => Some(self.config_dir(agent, scope)?.join("commands").join(format!("{}.md", name))),
+            Agent::Claude | Agent::Pi => None,
+        })
     }
 }
 
@@ -172,49 +232,78 @@ enum Existing {
     UpToDate,
     /// Written by this command, an older or different text.
     Outdated,
-    /// A `SKILL.md` this command did not write.
+    /// A file this command did not write.
     Foreign,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Skill,
+    Command,
+}
+
+/// One file to write.
+#[derive(Debug, Clone)]
+pub struct FileTarget {
+    pub kind: Kind,
+    pub name: &'static str,
+    pub path: PathBuf,
+    content: String,
+    existing: Existing,
+}
+
+/// What goes into one agent's folder, for one scope.
 #[derive(Debug, Clone)]
 pub struct Target {
     pub agent: Agent,
     pub scope: Scope,
-    pub skill_dir: PathBuf,
-    existing: Existing,
+    pub files: Vec<FileTarget>,
 }
 
 impl Target {
-    fn file(&self) -> PathBuf {
-        self.skill_dir.join(SKILL_FILE)
+    fn has_foreign(&self) -> bool {
+        self.files.iter().any(|f| f.existing == Existing::Foreign)
+    }
+
+    fn all_up_to_date(&self) -> bool {
+        self.files.iter().all(|f| f.existing == Existing::UpToDate)
     }
 
     fn describe(&self) -> String {
-        let state = match self.existing {
-            Existing::Absent => "",
-            Existing::UpToDate => " (already installed)",
-            Existing::Outdated => " (will be updated)",
-            Existing::Foreign => " (a SKILL.md not made by simsapa is there; --force replaces it)",
+        let state = if self.has_foreign() {
+            " (a file not made by simsapa is there; --force replaces it)"
+        } else if self.files.iter().any(|f| f.existing == Existing::Outdated) {
+            " (will be updated)"
+        } else if self.all_up_to_date() {
+            " (already installed)"
+        } else {
+            ""
         };
-        format!("{} ({}): {}{}", self.agent.label(), self.scope.label(), self.skill_dir.display(), state)
+        let places: Vec<String> = self
+            .files
+            .iter()
+            .filter(|f| f.kind == Kind::Skill)
+            .map(|f| f.path.parent().unwrap_or(&f.path).display().to_string())
+            .chain(
+                self.files
+                    .iter()
+                    .filter(|f| f.kind == Kind::Command)
+                    .map(|f| f.path.display().to_string()),
+            )
+            .collect();
+        format!("{} ({}): {}{}", self.agent.label(), self.scope.label(), places.join(", "), state)
     }
-}
-
-/// The skill text for this build.
-pub fn render_skill() -> String {
-    SKILL_TEMPLATE.replace("{{version}}", get_app_version().trim_start_matches('v'))
 }
 
 fn path_exists(path: &Path) -> bool {
     matches!(path.try_exists(), Ok(true))
 }
 
-fn existing_state(skill_dir: &Path, rendered: &str) -> Result<Existing, CliError> {
-    let file = skill_dir.join(SKILL_FILE);
-    if !path_exists(&file) {
+fn existing_state(file: &Path, rendered: &str) -> Result<Existing, CliError> {
+    if !path_exists(file) {
         return Ok(Existing::Absent);
     }
-    let text = std::fs::read_to_string(&file)
+    let text = std::fs::read_to_string(file)
         .map_err(|e| CliError::error(format!("Cannot read {}: {}", file.display(), e)))?;
     Ok(if text == rendered {
         Existing::UpToDate
@@ -225,26 +314,38 @@ fn existing_state(skill_dir: &Path, rendered: &str) -> Result<Existing, CliError
     })
 }
 
-fn make_target(env: &SkillEnv, agent: Agent, scope: Scope, rendered: &str) -> Result<Target, CliError> {
-    let skill_dir = env.skill_dir(agent, scope)?;
-    let existing = existing_state(&skill_dir, rendered)?;
-    Ok(Target { agent, scope, skill_dir, existing })
+fn file_target(kind: Kind, def: &SkillDef, path: PathBuf, content: String) -> Result<FileTarget, CliError> {
+    let existing = existing_state(&path, &content)?;
+    Ok(FileTarget { kind, name: def.name, path, content, existing })
+}
+
+fn make_target(env: &SkillEnv, agent: Agent, scope: Scope) -> Result<Target, CliError> {
+    let mut files = Vec::new();
+    for def in SKILLS.iter() {
+        let path = env.skill_dir(agent, scope, def.name)?.join(SKILL_FILE);
+        files.push(file_target(Kind::Skill, def, path, def.render())?);
+    }
+    for def in SKILLS.iter() {
+        if let Some(path) = env.command_file(agent, scope, def.name)? {
+            files.push(file_target(Kind::Command, def, path, def.render_command())?);
+        }
+    }
+    Ok(Target { agent, scope, files })
 }
 
 /// OpenCode reads Claude's skill folders as well, so with both selected for one
-/// scope the OpenCode copy would be a duplicate of the same name. Returns what
-/// was dropped.
-fn drop_opencode_duplicates(targets: &mut Vec<Target>) -> Vec<Target> {
-    let has_claude = |scope: Scope, ts: &[Target]| ts.iter().any(|t| t.agent == Agent::Claude && t.scope == scope);
-    let snapshot = targets.clone();
+/// scope the OpenCode skill copies would duplicate the same names. They are
+/// dropped; the OpenCode command files stay, because Claude's folder has no
+/// commands for OpenCode to read. Returns the scopes where skills were dropped.
+fn drop_opencode_duplicates(targets: &mut [Target]) -> Vec<Scope> {
+    let claude_scopes: Vec<Scope> = targets.iter().filter(|t| t.agent == Agent::Claude).map(|t| t.scope).collect();
     let mut dropped = Vec::new();
-    targets.retain(|t| {
-        let duplicate = t.agent == Agent::Opencode && has_claude(t.scope, &snapshot);
-        if duplicate {
-            dropped.push(t.clone());
+    for t in targets.iter_mut() {
+        if t.agent == Agent::Opencode && claude_scopes.contains(&t.scope) {
+            t.files.retain(|f| f.kind != Kind::Skill);
+            dropped.push(t.scope);
         }
-        !duplicate
-    });
+    }
     dropped
 }
 
@@ -254,8 +355,9 @@ fn drop_opencode_duplicates(targets: &mut Vec<Target>) -> Vec<Target> {
 pub struct Selection {
     pub targets: Vec<Target>,
     pub explicit: bool,
-    pub dropped_duplicates: Vec<Target>,
-    /// Detected, but holding a SKILL.md that is not ours (not explicit only).
+    /// The scopes whose OpenCode skill copies were left out beside Claude's.
+    pub dropped_duplicates: Vec<Scope>,
+    /// Detected, but holding a file that is not ours (not explicit only).
     pub left_out_foreign: Vec<Target>,
 }
 
@@ -265,7 +367,6 @@ pub fn select_targets(
     local: bool,
     force: bool,
     env: &SkillEnv,
-    rendered: &str,
 ) -> Result<Selection, CliError> {
     let explicit = !agents.is_empty() && (global || local);
     let agent_list: Vec<Agent> = if agents.is_empty() {
@@ -293,8 +394,8 @@ pub fn select_targets(
             if !explicit && !path_exists(&config) {
                 continue;
             }
-            let target = make_target(env, agent, scope, rendered)?;
-            if !explicit && !force && target.existing == Existing::Foreign {
+            let target = make_target(env, agent, scope)?;
+            if !explicit && !force && target.has_foreign() {
                 left_out_foreign.push(target);
             } else {
                 targets.push(target);
@@ -310,20 +411,24 @@ pub fn select_targets(
 struct Installed {
     agent: &'static str,
     scope: &'static str,
+    /// `skill` or `command`.
+    kind: &'static str,
+    name: &'static str,
     path: String,
     status: &'static str,
 }
 
-fn write_target(target: &Target, rendered: &str) -> Result<&'static str, CliError> {
-    if target.existing == Existing::UpToDate {
+fn write_file(file: &FileTarget) -> Result<&'static str, CliError> {
+    if file.existing == Existing::UpToDate {
         return Ok("unchanged");
     }
-    std::fs::create_dir_all(&target.skill_dir)
-        .map_err(|e| CliError::error(format!("Cannot create {}: {}", target.skill_dir.display(), e)))?;
-    let file = target.file();
-    std::fs::write(&file, rendered)
-        .map_err(|e| CliError::error(format!("Cannot write {}: {}", file.display(), e)))?;
-    Ok(match target.existing {
+    if let Some(dir) = file.path.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| CliError::error(format!("Cannot create {}: {}", dir.display(), e)))?;
+    }
+    std::fs::write(&file.path, &file.content)
+        .map_err(|e| CliError::error(format!("Cannot write {}: {}", file.path.display(), e)))?;
+    Ok(match file.existing {
         Existing::Absent => "installed",
         _ => "updated",
     })
@@ -344,7 +449,7 @@ fn ask(targets: &[Target]) -> Result<Vec<Target>, CliError> {
     let labels: Vec<String> = targets.iter().map(|t| t.describe()).collect();
     let defaults = vec![true; targets.len()];
     let chosen = dialoguer::MultiSelect::new()
-        .with_prompt("Install the simsapa skill into (space toggles, enter confirms)")
+        .with_prompt("Install the simsapa skills into (space toggles, enter confirms)")
         .items(&labels)
         .defaults(&defaults)
         .interact()
@@ -359,27 +464,31 @@ fn ask(targets: &[Target]) -> Result<Vec<Target>, CliError> {
 
 pub fn run(args: &InstallSkillArgs, json: bool) -> CliResult {
     let env = SkillEnv::from_process(args.dir.as_deref())?;
-    let rendered = render_skill();
-    let selection = select_targets(&args.agent, args.global, args.local, args.force, &env, &rendered)?;
+    let selection = select_targets(&args.agent, args.global, args.local, args.force, &env)?;
 
     for t in &selection.left_out_foreign {
         errln!("Left out: {}", t.describe());
     }
-    for t in &selection.dropped_duplicates {
+    for scope in &selection.dropped_duplicates {
         errln!(
-            "Not installing for OpenCode ({}): it reads the Claude Code skill folder installed alongside.",
-            t.scope.label()
+            "Not installing the OpenCode skill folders ({}): OpenCode reads the Claude Code skill folder installed alongside. \
+             Its slash commands are installed.",
+            scope.label()
         );
     }
 
     let mut targets = selection.targets;
     if selection.explicit {
-        let foreign: Vec<&Target> = targets.iter().filter(|t| t.existing == Existing::Foreign).collect();
+        let foreign: Vec<String> = targets
+            .iter()
+            .flat_map(|t| t.files.iter())
+            .filter(|f| f.existing == Existing::Foreign)
+            .map(|f| format!("  {}", f.path.display()))
+            .collect();
         if !foreign.is_empty() && !args.force {
-            let list: Vec<String> = foreign.iter().map(|t| format!("  {}", t.file().display())).collect();
             return Err(CliError::error(format!(
-                "A SKILL.md that simsapa did not write is already here; --force replaces it:\n{}",
-                list.join("\n")
+                "A file that simsapa did not write is already here; --force replaces it:\n{}",
+                foreign.join("\n")
             )));
         }
     } else {
@@ -387,7 +496,7 @@ pub fn run(args: &InstallSkillArgs, json: bool) -> CliResult {
             return Err(none_found_error(&env));
         }
         if targets.is_empty() {
-            return Err(CliError::error("Nothing to install: the places found hold a SKILL.md that simsapa did not write. Name one with --agent and --global/--local, and --force to replace it."));
+            return Err(CliError::error("Nothing to install: the places found hold a file that simsapa did not write. Name one with --agent and --global/--local, and --force to replace it."));
         }
         if !args.yes {
             if !io::stdin().is_terminal() {
@@ -408,27 +517,33 @@ pub fn run(args: &InstallSkillArgs, json: bool) -> CliResult {
 
     let mut done = Vec::new();
     for target in &targets {
-        let status = write_target(target, &rendered)?;
-        done.push(Installed {
-            agent: target.agent.api_name(),
-            scope: target.scope.api_name(),
-            path: target.file().to_string_lossy().into_owned(),
-            status,
-        });
+        for file in &target.files {
+            let status = write_file(file)?;
+            done.push(Installed {
+                agent: target.agent.api_name(),
+                scope: target.scope.api_name(),
+                kind: if file.kind == Kind::Skill { "skill" } else { "command" },
+                name: file.name,
+                path: file.path.to_string_lossy().into_owned(),
+                status,
+            });
+        }
     }
 
     if json {
         return print_json(&done);
     }
-    for (target, d) in targets.iter().zip(&done) {
+    for d in &done {
         let verb = match d.status {
             "installed" => "Installed",
             "updated" => "Updated",
             _ => "Already up to date",
         };
-        outln!("{} for {} ({}): {}", verb, target.agent.label(), target.scope.label(), d.path);
+        outln!("{} {} {} for {} ({}): {}", verb, d.kind, d.name, d.agent, d.scope, d.path);
     }
-    outln!("Start a new agent session to load it.");
+    let names: Vec<String> = SKILLS.iter().map(|d| format!("/{}", d.name)).collect();
+    outln!("Slash commands: {} (Claude Code makes them from the skills; Pi has skills only).", names.join(", "));
+    outln!("Start a new agent session to load them.");
     Ok(())
 }
 
@@ -449,34 +564,72 @@ mod tests {
     }
 
     fn pick(agents: &[Agent], global: bool, local: bool, e: &SkillEnv) -> Selection {
-        select_targets(agents, global, local, false, e, &render_skill()).unwrap()
+        select_targets(agents, global, local, false, e).unwrap()
+    }
+
+    fn paths(t: &Target, kind: Kind) -> Vec<PathBuf> {
+        t.files.iter().filter(|f| f.kind == kind).map(|f| f.path.clone()).collect()
     }
 
     #[test]
-    fn test_skill_text_is_valid_and_self_contained() {
-        let text = render_skill();
-        assert!(!text.contains("{{"), "an unfilled placeholder");
-        assert!(text.starts_with("---\nname: simsapa\ndescription: "));
-        assert!(text.contains(GENERATOR_MARKER));
-        // The name rule shared by the three agents.
-        assert!(SKILL_NAME.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
-        let description = text.lines().find(|l| l.starts_with("description: ")).unwrap();
-        assert!(description.len() - "description: ".len() <= 1024);
-        // Read outside this repository, like the bundled reference.
-        for needle in ["](./", "CLAUDE.md", "AGENTS.md", "PROJECT_MAP", "backend/src", "tasks/", "docs/"] {
-            assert!(!text.contains(needle), "repo reference {:?}", needle);
+    fn test_skill_texts_are_valid_and_self_contained() {
+        for def in SKILLS.iter() {
+            let text = def.render();
+            assert!(!text.contains("{{"), "an unfilled placeholder in {}", def.name);
+            assert!(
+                text.starts_with(&format!("---\nname: {}\ndescription: ", def.name)),
+                "frontmatter of {}",
+                def.name
+            );
+            assert!(text.contains(GENERATOR_MARKER));
+            // The name rule shared by the three agents.
+            assert!(def.name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+            let description = text.lines().find(|l| l.starts_with("description: ")).unwrap();
+            assert!(description.len() - "description: ".len() <= 1024);
+            // Read outside this repository, like the bundled reference.
+            for needle in ["](./", "CLAUDE.md", "AGENTS.md", "PROJECT_MAP", "backend/src", "tasks/", "docs/"] {
+                assert!(!text.contains(needle), "repo reference {:?} in {}", needle, def.name);
+            }
         }
+        assert_eq!(SKILLS[0].name, "simsapa");
+        assert_eq!(SKILLS[1].name, "gloss-pali-passage");
     }
 
     #[test]
     fn test_skill_commands_exist() {
-        // Every command the skill names is a real subcommand.
+        // Every command the skills name is a real subcommand.
         use clap::CommandFactory;
         let cmd = crate::Cli::command();
         for name in ["search", "sutta", "word", "lookup", "gloss", "docs", "health", "serve", "setup"] {
             assert!(cmd.find_subcommand(name).is_some(), "no `{}` command", name);
         }
-        assert!(SKILL_TEMPLATE.contains("--uid-prefix"));
+        assert!(SKILLS[0].template.contains("--uid-prefix"));
+        // The gloss skill only uses flags `simsapa gloss` has.
+        let gloss = cmd.find_subcommand("gloss").unwrap();
+        for flag in ["no-ai", "format", "gloss-format", "paragraphs", "edition"] {
+            assert!(gloss.get_arguments().any(|a| a.get_long() == Some(flag)), "no --{}", flag);
+            assert!(SKILLS[1].template.contains(&format!("--{}", flag)), "skill does not name --{}", flag);
+        }
+    }
+
+    #[test]
+    fn test_gloss_skill_forbids_its_own_llm_requests() {
+        let text = SKILLS[1].render();
+        assert!(text.contains("argument-hint:"));
+        assert!(text.contains("Make no LLM API request of your own"));
+        assert!(text.contains("simsapa gloss --no-ai --format"));
+    }
+
+    #[test]
+    fn test_command_text_for_opencode() {
+        for def in SKILLS.iter() {
+            let text = def.render_command();
+            assert!(text.starts_with("---\ndescription: "));
+            assert!(text.contains(GENERATOR_MARKER));
+            assert!(text.contains(&format!("`{}` skill", def.name)));
+            assert!(text.contains("$ARGUMENTS"));
+            assert!(!text.contains("{{"));
+        }
     }
 
     #[test]
@@ -484,14 +637,42 @@ mod tests {
         let (h, b) = dirs();
         let e = env(h.path(), b.path());
         let g = pick(&[Agent::Claude, Agent::Opencode, Agent::Pi], true, false, &e);
-        let paths: Vec<PathBuf> = g.targets.iter().map(|t| t.skill_dir.clone()).collect();
-        // OpenCode is dropped as a duplicate of Claude's folder.
-        assert_eq!(paths, vec![h.path().join(".claude/skills/simsapa"), h.path().join(".pi/agent/skills/simsapa")]);
-        assert_eq!(g.dropped_duplicates.len(), 1);
+        assert_eq!(g.targets.len(), 3);
+        let claude = &g.targets[0];
+        assert_eq!(claude.agent, Agent::Claude);
+        assert_eq!(
+            paths(claude, Kind::Skill),
+            vec![
+                h.path().join(".claude/skills/simsapa/SKILL.md"),
+                h.path().join(".claude/skills/gloss-pali-passage/SKILL.md")
+            ]
+        );
+        // A Claude Code skill is its own slash command: no command file.
+        assert!(paths(claude, Kind::Command).is_empty());
+
+        // OpenCode's skill copies are dropped beside Claude's, its commands stay.
+        let oc = &g.targets[1];
+        assert_eq!(oc.agent, Agent::Opencode);
+        assert!(paths(oc, Kind::Skill).is_empty());
+        assert_eq!(
+            paths(oc, Kind::Command),
+            vec![
+                h.path().join(".config/opencode/commands/simsapa.md"),
+                h.path().join(".config/opencode/commands/gloss-pali-passage.md")
+            ]
+        );
+        assert_eq!(g.dropped_duplicates, vec![Scope::Global]);
+
+        let pi = &g.targets[2];
+        assert_eq!(paths(pi, Kind::Skill)[1], h.path().join(".pi/agent/skills/gloss-pali-passage/SKILL.md"));
+        assert!(paths(pi, Kind::Command).is_empty());
 
         let l = pick(&[Agent::Opencode, Agent::Pi], false, true, &e);
-        let paths: Vec<PathBuf> = l.targets.iter().map(|t| t.skill_dir.clone()).collect();
-        assert_eq!(paths, vec![b.path().join(".opencode/skills/simsapa"), b.path().join(".pi/skills/simsapa")]);
+        let oc = &l.targets[0];
+        assert_eq!(paths(oc, Kind::Skill)[0], b.path().join(".opencode/skills/simsapa/SKILL.md"));
+        assert_eq!(paths(oc, Kind::Command)[1], b.path().join(".opencode/commands/gloss-pali-passage.md"));
+        assert_eq!(paths(&l.targets[1], Kind::Skill)[0], b.path().join(".pi/skills/simsapa/SKILL.md"));
+        assert!(l.dropped_duplicates.is_empty());
     }
 
     #[test]
@@ -500,7 +681,8 @@ mod tests {
         let mut e = env(h.path(), b.path());
         e.xdg_config_home = Some(h.path().join("xdg"));
         let s = pick(&[Agent::Opencode], true, false, &e);
-        assert_eq!(s.targets[0].skill_dir, h.path().join("xdg/opencode/skills/simsapa"));
+        assert_eq!(paths(&s.targets[0], Kind::Skill)[0], h.path().join("xdg/opencode/skills/simsapa/SKILL.md"));
+        assert_eq!(paths(&s.targets[0], Kind::Command)[0], h.path().join("xdg/opencode/commands/simsapa.md"));
     }
 
     #[test]
@@ -513,8 +695,11 @@ mod tests {
         let s = pick(&[], false, false, &e);
         assert!(!s.explicit);
         let found: Vec<(Agent, Scope)> = s.targets.iter().map(|t| (t.agent, t.scope)).collect();
-        // Global first; OpenCode's global copy is dropped beside Claude's.
-        assert_eq!(found, vec![(Agent::Claude, Scope::Global), (Agent::Pi, Scope::Local)]);
+        // Global first; OpenCode's global target stays, for its commands.
+        assert_eq!(
+            found,
+            vec![(Agent::Claude, Scope::Global), (Agent::Opencode, Scope::Global), (Agent::Pi, Scope::Local)]
+        );
     }
 
     #[test]
@@ -550,10 +735,10 @@ mod tests {
     fn test_global_without_a_home_folder_is_an_error_only_when_asked() {
         let (_h, b) = dirs();
         let e = SkillEnv { home: None, xdg_config_home: None, base: b.path().to_path_buf() };
-        assert!(select_targets(&[Agent::Claude], true, false, false, &e, "x").is_err());
+        assert!(select_targets(&[Agent::Claude], true, false, false, &e).is_err());
         // Detection across both scopes just skips the global one.
         mk(&b.path().join(".claude"));
-        let s = select_targets(&[], false, false, false, &e, "x").unwrap();
+        let s = select_targets(&[], false, false, false, &e).unwrap();
         assert_eq!(s.targets.len(), 1);
         assert_eq!(s.targets[0].scope, Scope::Local);
     }
@@ -562,22 +747,28 @@ mod tests {
     fn test_write_states_and_idempotence() {
         let (h, b) = dirs();
         let e = env(h.path(), b.path());
-        let rendered = render_skill();
-        let t = pick(&[Agent::Claude], true, false, &e).targets.remove(0);
-        assert_eq!(t.existing, Existing::Absent);
-        assert_eq!(write_target(&t, &rendered).unwrap(), "installed");
-        assert_eq!(std::fs::read_to_string(t.file()).unwrap(), rendered);
+        let t = pick(&[Agent::Opencode], true, false, &e).targets.remove(0);
+        assert_eq!(t.files.len(), 4);
+        assert!(t.files.iter().all(|f| f.existing == Existing::Absent));
+        for f in &t.files {
+            assert_eq!(write_file(f).unwrap(), "installed");
+            assert_eq!(std::fs::read_to_string(&f.path).unwrap(), f.content);
+        }
 
-        let t = pick(&[Agent::Claude], true, false, &e).targets.remove(0);
-        assert_eq!(t.existing, Existing::UpToDate);
-        assert_eq!(write_target(&t, &rendered).unwrap(), "unchanged");
+        let t = pick(&[Agent::Opencode], true, false, &e).targets.remove(0);
+        assert!(t.files.iter().all(|f| f.existing == Existing::UpToDate));
+        for f in &t.files {
+            assert_eq!(write_file(f).unwrap(), "unchanged");
+        }
 
-        // An older build's text is replaced without --force.
-        std::fs::write(t.file(), format!("---\nname: simsapa\nmetadata:\n  {}\n---\nold\n", GENERATOR_MARKER)).unwrap();
-        let t = pick(&[Agent::Claude], true, false, &e).targets.remove(0);
-        assert_eq!(t.existing, Existing::Outdated);
-        assert_eq!(write_target(&t, &rendered).unwrap(), "updated");
-        assert_eq!(std::fs::read_to_string(t.file()).unwrap(), rendered);
+        // An older build's command text is replaced without --force.
+        let cmd = &t.files.iter().find(|f| f.kind == Kind::Command).unwrap().path;
+        std::fs::write(cmd, format!("---\ndescription: old\n---\n<!-- {} -->\nold\n", GENERATOR_MARKER)).unwrap();
+        let t = pick(&[Agent::Opencode], true, false, &e).targets.remove(0);
+        let f = t.files.iter().find(|f| f.kind == Kind::Command).unwrap();
+        assert_eq!(f.existing, Existing::Outdated);
+        assert_eq!(write_file(f).unwrap(), "updated");
+        assert_eq!(std::fs::read_to_string(&f.path).unwrap(), f.content);
     }
 
     #[test]
@@ -589,7 +780,7 @@ mod tests {
         std::fs::write(dir.join(SKILL_FILE), "my own notes").unwrap();
 
         let explicit = pick(&[Agent::Claude], true, false, &e);
-        assert_eq!(explicit.targets[0].existing, Existing::Foreign);
+        assert!(explicit.targets[0].has_foreign());
 
         // Found by detection, it is left out of what is offered.
         let found = pick(&[], true, false, &e);
@@ -599,13 +790,35 @@ mod tests {
     }
 
     #[test]
+    fn test_a_foreign_command_file_is_not_ours_to_replace() {
+        let (h, b) = dirs();
+        let dir = b.path().join(".opencode/commands");
+        mk(&dir);
+        std::fs::write(dir.join("simsapa.md"), "my own command").unwrap();
+        let args = |force| InstallSkillArgs {
+            agent: vec![Agent::Opencode],
+            global: false,
+            local: true,
+            dir: Some(b.path().to_path_buf()),
+            yes: false,
+            force,
+        };
+        let _ = &h;
+        assert!(run(&args(false), true).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("simsapa.md")).unwrap(), "my own command");
+        assert!(run(&args(true), true).is_ok());
+        assert_eq!(std::fs::read_to_string(dir.join("simsapa.md")).unwrap(), SKILLS[0].render_command());
+        assert!(dir.join("gloss-pali-passage.md").exists());
+    }
+
+    #[test]
     fn test_force_offers_a_foreign_skill_found_by_detection() {
         let (h, b) = dirs();
         let e = env(h.path(), b.path());
         let dir = h.path().join(".claude/skills/simsapa");
         mk(&dir);
         std::fs::write(dir.join(SKILL_FILE), "my own notes").unwrap();
-        let s = select_targets(&[], true, false, true, &e, &render_skill()).unwrap();
+        let s = select_targets(&[], true, false, true, &e).unwrap();
         assert_eq!(s.targets.len(), 1);
         assert!(s.left_out_foreign.is_empty());
     }
@@ -628,6 +841,27 @@ mod tests {
         assert!(run(&args(false), true).is_err());
         assert_eq!(std::fs::read_to_string(dir.join(SKILL_FILE)).unwrap(), "my own notes");
         assert!(run(&args(true), true).is_ok());
-        assert_eq!(std::fs::read_to_string(dir.join(SKILL_FILE)).unwrap(), render_skill());
+        assert_eq!(std::fs::read_to_string(dir.join(SKILL_FILE)).unwrap(), SKILLS[0].render());
+        assert!(b.path().join(".claude/skills/gloss-pali-passage/SKILL.md").exists());
+        // No command file for Claude Code.
+        assert!(!b.path().join(".claude/commands").exists());
+    }
+
+    #[test]
+    fn test_run_installs_claude_and_opencode_together() {
+        let (_h, b) = dirs();
+        let args = InstallSkillArgs {
+            agent: vec![Agent::Claude, Agent::Opencode],
+            global: false,
+            local: true,
+            dir: Some(b.path().to_path_buf()),
+            yes: false,
+            force: false,
+        };
+        assert!(run(&args, true).is_ok());
+        assert!(b.path().join(".claude/skills/gloss-pali-passage/SKILL.md").exists());
+        assert!(!b.path().join(".opencode/skills").exists());
+        assert!(b.path().join(".opencode/commands/gloss-pali-passage.md").exists());
+        assert!(b.path().join(".opencode/commands/simsapa.md").exists());
     }
 }

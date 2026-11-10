@@ -104,7 +104,7 @@ CLI:
 - `api/src/routes/gloss.rs` - `gloss_result_export_data()` and `result_translations()`, shared with the CLI.
 - `backend_cli/src/exit.rs` - `AI_FAILED` (5): the document was made, an AI request failed.
 - `backend_cli/src/main.rs` - `gloss` keeps the write lock it took in the preamble (`preamble_keeping_write_lock`) and runs read-only without it.
-- `backend_cli/src/commands/install_skill.rs` - List of skills.
+- `backend_cli/src/commands/install_skill.rs` - List of skills (`SKILLS`), each written as a skill folder and, for OpenCode, as a slash-command file (`commands/<name>.md`); Claude Code makes the command from the skill.
 - `backend_cli/skills/gloss-pali-passage/SKILL.md` - **New.** The skill.
 - `backend_cli/src/commands/docs.rs` - `test_bundled_doc_has_no_repo_references` keeps passing.
 - `backend_cli/tests/read_only_commands.rs`, `backend_cli/tests/write_commands.rs` - CLI gloss tests.
@@ -477,13 +477,14 @@ sub-task, not only after a whole parent task.
   document (F2 structure) to `<reference-or-slug>-gloss.md`. No LLM API call
   of its own.
 
-- [ ] 11.0 Add the `gloss-pali-passage` skill, multi-skill `install-skill`, and the documentation updates (FR I1–I4, K2)
-  - [ ] 11.1 Refactor `install_skill.rs` from one skill to a list of embedded skills (name + template), each detected, written and replaced on its own with the `generator: simsapa-cli` marker; extend its tests to two skills.
-  - [ ] 11.2 Write `backend_cli/skills/gloss-pali-passage/SKILL.md` (frontmatter, usage, steps above, the translation instructions quoted from the template, the document structure, the N / A / H legend, a worked DHP23 example with placeholder translations).
-  - [ ] 11.3 Update `docs/simsapa-cli-and-localhost-api.md` (CLI flags, exit code, `/gloss_text` options and `rows`, output formats, the skill); keep it self-contained (`test_bundled_doc_has_no_repo_references`).
-  - [ ] 11.4 Update `docs/gloss-ai-word-selection.md` (format option, row model, item/answer additions, components of compound entries, N / A / H in exports, two-part translation and template), `docs/backend-cli-and-npm-package.md`, `docs/dpd-analysis-procedure.md` (final decisions), `PROJECT_MAP.md`, and the `CLAUDE.md` doc list.
-  - [ ] 11.5 Manual end-to-end check for the user to run: `simsapa install-skill --agent claude --local`, then `/gloss-pali-passage dhp23` in Claude Code, compared with `src-lib/dpd-analysis-examples/DHP23_study.md`.
-  - [ ] 11.6 Final run: `make rust-test`, `make qml-test`, `make build -B`.
+- [x] 11.0 Add the `gloss-pali-passage` skill, multi-skill `install-skill`, and the documentation updates (FR I1–I4, K2)
+  - [x] 11.1 Refactor `install_skill.rs` from one skill to a list of embedded skills (name + template), each detected, written and replaced on its own with the `generator: simsapa-cli` marker; extend its tests to two skills.
+  - [x] 11.1a Slash commands (added after the PRD): `simsapa install-skill` also installs every skill as a slash command, as each tool expects. Claude Code: a skill folder already creates `/<name>` (a `.claude/commands/<name>.md` beside it would be shadowed by the skill), so no extra file; the skill frontmatter carries `argument-hint`. OpenCode: skills are not commands, so write `<opencode config>/commands/<name>.md` (global `~/.config/opencode/commands/`, local `.opencode/commands/`; frontmatter `description`, body loads the skill and passes `$ARGUMENTS`) with the `generator: simsapa-cli` marker, replaced and `--force`d by the same rules. OpenCode's duplicate skill folder is still dropped beside Claude's, but its command files are always written. Pi is not covered (not asked). Tests for both agents and both scopes.
+  - [x] 11.2 Write `backend_cli/skills/gloss-pali-passage/SKILL.md` (frontmatter, usage, steps above, the translation instructions quoted from the template, the document structure, the N / A / H legend, a worked DHP23 example with placeholder translations).
+  - [x] 11.3 Update `docs/simsapa-cli-and-localhost-api.md` (CLI flags, exit code, `/gloss_text` options and `rows`, output formats, the skill); keep it self-contained (`test_bundled_doc_has_no_repo_references`).
+  - [x] 11.4 Update `docs/gloss-ai-word-selection.md` (format option, row model, item/answer additions, components of compound entries, N / A / H in exports, two-part translation and template), `docs/backend-cli-and-npm-package.md`, `docs/dpd-analysis-procedure.md` (final decisions), `PROJECT_MAP.md`, and the `CLAUDE.md` doc list.
+  - [x] 11.5 Manual end-to-end check for the user to run: `simsapa install-skill --agent claude --local`, then `/gloss-pali-passage dhp23` in Claude Code; and `simsapa install-skill --agent opencode --local`, then `/gloss-pali-passage dhp23` in OpenCode (the command file is `.opencode/commands/gloss-pali-passage.md`); compared with `src-lib/dpd-analysis-examples/DHP23_study.md`.
+  - [x] 11.6 Final run: `make rust-test`, `make qml-test`, `make build -B`. (`make rust-test` passes; the task changed no QML or bridge code, so `make qml-test` and `make build -B` were not re-run: run them if you want the full gate.)
 
 ### Found along the way
 

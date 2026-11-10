@@ -1332,3 +1332,17 @@ covers it (`auto_translate_after_ws`), never twice while a translation of the
 paragraph is waiting, and not after a format switch or a session restore. The
 screen is kept on under the holder `"gloss-auto-translate"` while any
 auto-translation is in flight (`auto_translate_in_flight`).
+
+### The agent skill: an agent is the AI
+
+`backend_cli/skills/gloss-pali-passage/SKILL.md` (installed by
+`simsapa install-skill`, as a skill for every agent and as a slash command file
+for OpenCode; Claude Code makes `/gloss-pali-passage` from the skill folder)
+lets a coding agent do the AI part of this chapter itself: `simsapa gloss
+--no-ai` gives the rows with their candidates and `N` marks, the agent chooses
+the senses (marking the rows `A`) and writes the Translation and the Literal
+Translation from the same instructions as the `"Gloss Tab: AI Translation"`
+template, and writes the document in the structure of §10's Word in Sentence
+export. It makes no LLM request through the app. When the translation template
+or the document structure changes, change the skill's quoted text with it
+(`test_skill_commands_exist` checks only the flags it names).
