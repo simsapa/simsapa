@@ -275,3 +275,65 @@ fn test_export_fills_selected_lemma_and_import_normalizes() {
     assert_eq!(n.reports.len(), 1, "{:?}", n.reports);
     assert!(n.reports[0].contains("abhinīhāra 1"), "{}", n.reports[0]);
 }
+
+/// The session JSON the CLI writes for `--format json`
+/// (`gloss_export_builder::build_gloss_session_json`) wraps and opens like
+/// the Gloss tab's, carrying the gloss format, the Word in Sentence rows and
+/// both translations; an older session without them still opens.
+#[test]
+fn test_word_in_sentence_session_export_round_trip() {
+    use simsapa_backend::export_types::AiResponse;
+    use simsapa_backend::gloss_export_builder::{build_gloss_session_json, GlossExportOptions};
+    use simsapa_backend::types::{AllParagraphsProcessingResult, GlossFormat, ParagraphProcessingResult, ProcessedWord};
+
+    // The stored gloss of the export contract test (no dist DB needed).
+    let contract: serde_json::Value = serde_json::from_str(include_str!(
+        "data/gloss_export_contract/paragraph.json"
+    ))
+    .unwrap();
+    let paragraph: ParagraphProcessingResult =
+        serde_json::from_value(contract.get("paragraph").unwrap().clone()).unwrap();
+    let text = contract.get("text").unwrap().as_str().unwrap().to_string();
+    let rows = paragraph.rows.len();
+    let result = AllParagraphsProcessingResult {
+        success: true,
+        paragraphs: vec![paragraph],
+        global_unrecognized_words: vec!["xyzqw".to_string()],
+        updated_global_stems: Default::default(),
+    };
+    let translations = vec![vec![AiResponse {
+        model_name: "m".to_string(),
+        response: "Translation.".to_string(),
+        literal_translation: "Literal.".to_string(),
+        is_selected: true,
+    }]];
+    let options = GlossExportOptions {
+        text: text.clone(),
+        gloss_format: GlossFormat::WordInSentence,
+        ..Default::default()
+    };
+    let session = build_gloss_session_json(&result, &[text.clone()], &translations, &options, false, false);
+
+    let db = temp_appdata("wis");
+    let export = build_gloss_session_export_json(&db, None, &session.to_string()).unwrap();
+    let (session, _) = parse_gloss_session_export(&export).unwrap();
+
+    assert_eq!(session["gloss_format"], "word_in_sentence");
+    assert_eq!(session["text"], text);
+    let para = &session["paragraphs"][0];
+    assert_eq!(para["text"], text);
+    assert_eq!(para["rows"].as_array().unwrap().len(), rows);
+    assert_eq!(para["translations"][0]["response"], "Translation.");
+    assert_eq!(para["translations"][0]["literal_translation"], "Literal.");
+    assert_eq!(para["translations"][0]["status"], "completed");
+    assert_eq!(session["paragraph_unrecognized_words"]["0"][0], "xyzqw");
+    // The words read back as the pipeline's words.
+    let words: Vec<ProcessedWord> = serde_json::from_value(para["words"].clone()).unwrap();
+    assert!(words.iter().any(|w| w.original_word == "daḷhaparakkamā"));
+
+    // A session saved before the format option opens unchanged.
+    let old = build_gloss_session_export_json(&db, None, &session_json()).unwrap();
+    let (old_session, _) = parse_gloss_session_export(&old).unwrap();
+    assert!(old_session.get("gloss_format").is_none());
+    assert!(old_session["paragraphs"][0].get("rows").is_none());
+}

@@ -1,0 +1,113 @@
+{
+  "text": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā te xyzqw.",
+  "vocabulary": [
+    {
+      "uid": "31017/dpd",
+      "word": "tumha",
+      "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>",
+      "context_snippet": "<b>te</b> jhāyino sātatikā, niccaṁ daḷhaparakkamā,",
+      "confidence": "N"
+    },
+    {
+      "uid": "28822/dpd",
+      "word": "jhāyi 1.1",
+      "summary": "<i>(masc)</i> meditator; yogi  <b>[√jhā + [y] + i]</b>  <i>masc, agent, from jhāyati</i>",
+      "context_snippet": "te <b>jhāyino</b> sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ",
+      "confidence": "N"
+    },
+    {
+      "uid": "62145/dpd",
+      "word": "sātatika",
+      "summary": "<i>(adj)</i> diligent; persevering; consistent; practising continuously  <b>[sa > sā + √tan + ta + *ika], [satata + *ika]</b>  <i>adj, from satata</i>",
+      "context_snippet": "te jhāyino <b>sātatikā</b>, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā te",
+      "confidence": null
+    },
+    {
+      "uid": "36976/dpd",
+      "word": "nicca 1",
+      "summary": "<i>(adj)</i> permanent; lasting; ordered; stable; reliable; immutable  <b>[ni + tya]</b>  <i>adj</i>",
+      "context_snippet": "te jhāyino sātatikā, <b>niccaṁ</b> daḷhaparakkamā, evaṁhetaṁ yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "32215/dpd",
+      "word": "daḷhaparakkama",
+      "summary": "<i>(adj)</i> having persistent effort; making continuous effort; striving diligently  <b>[daḷha + parakkama]</b>  <i>adj, comp</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ <b>daḷhaparakkamā</b>, evaṁhetaṁ yenāyasmā te xyzqw.",
+      "confidence": null
+    },
+    {
+      "uid": "18134/dpd",
+      "word": "evaṁ 1",
+      "summary": "<i>(ind)</i> thus; this; like this; similarly; in the same manner; just as; such  <b>[eva + aṁ]</b>  <i>ind, adv</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "10832/dpd",
+      "word": "aha 1.1",
+      "summary": "<i>(nt)</i> day   <i>nt, in comps</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "29188/dpd",
+      "word": "ta 1.1",
+      "summary": "<i>(pron)</i> that   <i>pron, base</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "71212/dpd",
+      "word": "hi 1",
+      "summary": "<i>(ind)</i> indeed; certainly; truly; definitely   <i>ind, emph</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "17847/dpd",
+      "word": "eta",
+      "summary": "<i>(pron)</i> this   <i>pron, base</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "70762/dpd",
+      "word": "ha 1.1",
+      "summary": "<i>(letter)</i> (gram) letter h; 39th letter of the alphabet; guttural semi-vowel   <i>letter, masc</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "10832/dpd",
+      "word": "aha 1.1",
+      "summary": "<i>(nt)</i> day   <i>nt, in comps</i>",
+      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "54177/dpd",
+      "word": "yenāyasmā",
+      "summary": "<i>(sandhi)</i> where venerable  <b>[yena + āyasmā]</b>  <i>sandhi, adv + masc</i>",
+      "context_snippet": "jhāyino sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ <b>yenāyasmā</b> te xyzqw.",
+      "confidence": "N"
+    },
+    {
+      "uid": "31017/dpd",
+      "word": "tumha",
+      "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>",
+      "context_snippet": "sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā <b>te</b> xyzqw.",
+      "confidence": "N"
+    }
+  ],
+  "ai_translations": [
+    {
+      "model_name": "test-model",
+      "response": "Those meditators, persevering, constantly of firm effort.",
+      "literal_translation": "Those meditating ones, persevering, constant, firm-effort ones.",
+      "is_selected": true
+    }
+  ],
+  "variants": [],
+  "rows": []
+}

@@ -632,6 +632,70 @@ bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
 See [android-file-saving-saf.md](./android-file-saving-saf.md).
 
+### The export data, its two producers, and the two document layouts
+
+Every gloss export (HTML, Markdown, Org-Mode, DOCX, Anki CSV) reads one struct,
+`GlossExportData` (`backend/src/export_types.rs`). It has two producers that
+must write the same JSON for the same paragraph:
+
+- the Gloss tab, `GlossTab.gloss_export_data()` in QML;
+- `backend/src/gloss_export_builder.rs` (`build_gloss_export_data()` /
+  `build_export_paragraph()`), for the CLI and `POST /gloss_text`. Its
+  Headwords vocabulary is a port of the QML loop, including
+  `DeconstructorUtils.visible_components()` / `component_results()`.
+
+The contract test `backend/tests/test_gloss_export_contract.rs` builds both
+formats from a stored gloss (`backend/tests/data/gloss_export_contract/`) and
+compares them with the expected files there; the QML builder is tested against
+the same files. Change the two producers together.
+
+Fields added after the first version are `#[serde(default)]`, so export data
+from an older Gloss tab still renders: `gloss_format` (absent = Headwords),
+`title`, `no_ai_provider`, per paragraph `variants` and `rows`, per vocabulary
+item `uid`, `context_snippet` and `confidence`, and per translation
+`literal_translation`. `rows` are the Word in Sentence rows flattened in table
+order (`depth` 1+ for components), each with the chosen sense's `uid`,
+`lemma`, `summary` and the token's `context_snippet` for the Anki notes.
+
+The **Word in Sentence** document follows DPD's analysis report
+([dpd-analysis-procedure.md](./dpd-analysis-procedure.md) §1.7):
+`# Analysis of: <title, or the first eight words>`, then per paragraph (under
+`## Paragraph <n>` when there are several) the passage with the glossed
+spelling of each `//` group, `### English Translation` with `**Translation:**`
+and `**Literal Translation:**` (a model heading only when there are several;
+no Literal line for a translation saved before the two-part translation),
+`### Variants` (one `a//b` line per group, only when there are groups),
+`### Word-by-Word Analysis` and the table
+`ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf.`.
+Component rows carry `- ` per depth (DOCX indents the word instead); cells
+escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend closes the
+document, followed by the no-AI note when `no_ai_provider`.
+
+The **Headwords** document keeps its layout. It gains the Conf. column and the
+legend only when some word carries a confidence value, so an export of an
+older session is unchanged; a translation with a Literal Translation shows both
+under labels. A per-paragraph "Copy As…" fragment uses the Word in Sentence
+layout when the paragraph has rows.
+
+The legend sentences are `CONFIDENCE_LEGEND` and `NO_AI_PROVIDER_NOTE` in
+`backend/src/gloss_rows.rs`; the Word Selection dialog
+(`GlossWordSelectionDialog.qml`) shows the same three sentences. Change them
+together.
+
+**Anki CSV** makes one note per vocabulary item, or, for a paragraph with rows,
+one per row that has a DPD headword (token and component rows; unresolved and
+break-down rows have none, and "No duplicates" has already left out repeats).
+A Simple / cloze note's front shows the word as written, its back the row's
+grammar above the sense's summary (the meaning when there is no summary).
+Templates get `{word_in_sentence}`, `{grammar}` and `{meaning}` (empty for a
+Headwords note); the data CSV gains `word_in_sentence` and
+`grammar_in_sentence` columns when the gloss has rows.
+
+The **session JSON** (`build_gloss_session_json()` in the builder, and the
+Gloss tab's `session_data_json()`) carries `gloss_format`, and per paragraph
+`rows`, `variants` and translations with `literal_translation`; a session
+without them still opens.
+
 ### Surviving an appdata re-download (the upgrade export/import cycle)
 
 A DB-version bump makes the app re-download `appdata.sqlite3`, which would
@@ -933,6 +997,7 @@ closed; it prints each stored rule with its lemma.
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
 | Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
+| Export data and session JSON built in Rust (CLI, API) | `backend/src/gloss_export_builder.rs`; contract test `backend/tests/test_gloss_export_contract.rs` |
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |

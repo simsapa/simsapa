@@ -46,6 +46,15 @@ pub enum Confidence {
 }
 
 impl Confidence {
+    /// The mark as written in the documents' Conf. column.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Confidence::N => "N",
+            Confidence::A => "A",
+            Confidence::H => "H",
+        }
+    }
+
     /// The mark of a resolution origin (`ProcessedWord::resolution` and its
     /// component / break-down counterparts). `None` and an unknown origin are
     /// `N`.
@@ -118,7 +127,9 @@ pub struct GlossRow {
 }
 
 /// The legend lines of the confidence marks, worded like the Word Selection
-/// dialog. Every export and the CLI text output use these.
+/// dialog. Every export and the CLI text output use these. The dialog
+/// (`GlossWordSelectionDialog.qml`) shows the same three sentences without
+/// the mark and the N line's last sentence; change them together.
 pub const CONFIDENCE_LEGEND: [&str; 3] = [
     "N: Not checked — plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.",
     "A: AI-checked — picked by a machine (runtime AI request, or built-in data).",

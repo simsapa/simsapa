@@ -46,9 +46,10 @@ Backend:
 - `backend/src/app_settings.rs` - New translation template, word-selection request additions, upgrade of unedited earlier defaults (`superseded_default_system_prompts`); gloss format / auto-translate settings.
 - `backend/src/app_data.rs` - Settings getters/setters.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
-- `backend/src/export_types.rs` - `AiResponse::literal_translation`; `GlossExportData` row fields.
-- `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData`.
-- `backend/src/text_export.rs`, `backend/src/docx_export.rs`, `backend/src/anki_export.rs` - Word in Sentence document, `Conf.` column, legend, Variants, two translations.
+- `backend/src/export_types.rs` - `AiResponse::literal_translation`; `GlossExportData` format, title, no-AI flag, `GlossExportRow`s, variants, confidence; `WORD_TABLE_COLUMNS`, title and cell helpers.
+- `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData` (Headwords vocabulary ported from QML, flattened rows) and the session JSON.
+- `backend/src/text_export.rs`, `backend/src/docx_export.rs`, `backend/src/anki_export.rs` - Word in Sentence document, `Conf.` column, legend, Variants, two translations; Anki reads `GlossExportData` and makes Word in Sentence notes.
+- `backend/tests/test_gloss_export_contract.rs`, `backend/tests/data/gloss_export_contract/` - **New.** Export data contract test (Rust side) and its stored gloss and expected files.
 - `backend/tests/test_dpd_analysis_conformance.rs` - **New.** J2 conformance test and J3 agreement measurement (`#[ignore]`).
 - `backend/tests/data/dpd_analysis/` - **New.** Ported fixtures and example reports, with `SOURCE.md` (DPD commits, `distilled.json` format, the six tokens where `distilled.json` and `study.md` disagree).
 - `backend/tests/helpers/dpd_report.rs` - **New.** Parser for DPD reports (`parse_report`) and `distilled.json` (`parse_distilled`, option keys).
@@ -56,7 +57,7 @@ Backend:
 - `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components, the default-sense ranking, row-based word-selection items and `apply_word_selection_answers`.
 - `backend/tests/test_gloss_headwords_snapshot.rs` - **New.** Byte-for-byte snapshot of the Headwords output (fixture passages, No duplicates, Skip common, single-paragraph path); `SIMSAPA_UPDATE_SNAPSHOTS=1` regenerates.
 - `backend/tests/data/gloss_headwords_snapshot/` - **New.** The snapshot files.
-- `backend/tests/test_gloss_compound_dedup.rs`, `test_gloss_word_resolution.rs`, `test_gloss_session_export.rs`, `test_gloss_text_exact.rs`, `test_anki_export.rs` - Existing tests that must keep passing; extended where noted.
+- `backend/tests/test_gloss_compound_dedup.rs`, `test_gloss_word_resolution.rs`, `test_gloss_session_export.rs`, `test_gloss_text_exact.rs`, `test_anki_export.rs` - Existing tests that must keep passing; extended where noted (session JSON round trip with rows and two translations; Word in Sentence Anki notes).
 - `backend/tests/test_process_all_paragraphs.rs`, `test_dpd_niggahita_spelling.rs` - Existing tests; construct `WordProcessingOptions` with `gloss_format`.
 - `backend/tests/test_deconstructor_result_pagination.rs` - Builds a `GroupedDpdLookup` by hand; gains the `lookup_grammar` field.
 
@@ -81,7 +82,7 @@ Bridges / GUI:
 - `bridges/assets/qml/GlossTab.qml` - Word-selection prompt through `SuttaBridge.build_word_selection_prompt`; options row, Auto-translate, AI Translate button, Word in Sentence rows, export data, session save/restore.
 - `bridges/assets/qml/GlossWordInSentenceRow.qml` - **New.** One row (word, shield, grammar, meaning, construction, root, components). Add to `qml_files` in `bridges/build.rs`.
 - `bridges/assets/qml/AiResponseCoordinator.qml` - Two-part translation results.
-- `bridges/assets/qml/GlossWordSelectionDialog.qml` - Legend wording source.
+- `bridges/assets/qml/GlossWordSelectionDialog.qml` - Legend wording, the same sentences as `CONFIDENCE_LEGEND`.
 - `bridges/assets/qml/tst_GlossTab.qml`, `tst_GlossTabBackgroundProcessing.qml` - Extended for the new options and rows.
 - `bridges/assets/qml/tst_GlossExportData.qml` - **New.** Export data contract test (GUI side).
 - `bridges/build.rs` - Register the new QML file.
@@ -324,7 +325,7 @@ sub-task, not only after a whole parent task.
   - [x] 6.7 Hook the response validation into the sequential engine's validate hook, so an invalid translation JSON retries/falls back like a truncated body. (New `PromptManager.gloss_translation_request` / `sequential_gloss_translation_request` pass `validate_translation_response_shape`; `prompt_request` / `sequential_prompt_request` stay unvalidated for the old buttons until 10.7.)
   - [x] 6.8 Add `literal_translation` to `AiResponse` in `export_types.rs` and to the session JSON; test that an old session with a single translation deserializes with an empty `literal_translation`.
   - [x] 6.9 Expose `SuttaBridge.gloss_translation_prompt(paragraph_json)` and `SuttaBridge.parse_gloss_translation(response)` (with `qmllint` stubs), for 10.0.
-  - [ ] 6.10 `make rust-test`, `make build -B`.
+  - [x] 6.10 `make rust-test`, `make build -B`.
 
 ### 7.0 — specs and dependencies
 
@@ -341,16 +342,16 @@ sub-task, not only after a whole parent task.
 - **Legend text** is one Rust constant set used by every exporter and by
   the CLI text output.
 
-- [ ] 7.0 Extend the exports: `GlossExportData`, the Rust builder, the Word in Sentence document, legend and Variants in every format (FR D2, D3, F1–F4)
-  - [ ] 7.1 Extend `export_types.rs` (spec above); confirm the existing export tests still deserialize their fixtures.
-  - [ ] 7.2 Add the legend constants (D2, D3) in one place (e.g. `gloss_rows.rs`) and use the same wording in `GlossWordSelectionDialog.qml` text (or document that they must match).
-  - [ ] 7.3 Markdown export: the Word in Sentence structure; the Headwords layout gains `Conf.`, the legend and both translations. Escape `|` in cells. Test against the DHP23 structure with fixed rows.
-  - [ ] 7.4 HTML and Org-Mode exports: same structure.
-  - [ ] 7.5 DOCX export (`docx_export.rs`): a table with the seven columns, component rows indented, the translation and Variants sections, the legend. Test by unzipping the result and checking `word/document.xml` text order.
-  - [ ] 7.6 Anki CSV (F4): Word in Sentence notes, one per row (respecting No duplicates), with Word in Sentence and Grammar fields; templated CSV gets `word_in_sentence` and `grammar` template variables. Extend `test_anki_export.rs`.
-  - [ ] 7.7 JSON export: add `gloss_format`, rows, two-part translations to the `simsapa-gloss-session` format; "Open JSON" of an old file still works (`test_gloss_session_export.rs`).
-  - [ ] 7.8 Add `backend/src/gloss_export_builder.rs`: `AllParagraphsProcessingResult` (+ translations, title, variants) → `GlossExportData`. Unit test.
-  - [ ] 7.9 Contract test, Rust side: build `GlossExportData` for a fixed paragraph JSON (`backend/tests/data/gloss_export_contract/paragraph.json`) and write the expected JSON next to it. QML side is task 10.10.
+- [x] 7.0 Extend the exports: `GlossExportData`, the Rust builder, the Word in Sentence document, legend and Variants in every format (FR D2, D3, F1–F4)
+  - [x] 7.1 Extend `export_types.rs` (spec above); confirm the existing export tests still deserialize their fixtures. (Also `no_ai_provider`; vocabulary items gain `uid`, `context_snippet` (Anki reads the shared struct now); rows gain `uid`, `lemma`, `summary`, `context_snippet` for the Anki notes.)
+  - [x] 7.2 Add the legend constants (D2, D3) in one place (e.g. `gloss_rows.rs`) and use the same wording in `GlossWordSelectionDialog.qml` text (or document that they must match). (The dialog now uses the legend's sentences; both places say to change them together.)
+  - [x] 7.3 Markdown export: the Word in Sentence structure; the Headwords layout gains `Conf.`, the legend and both translations. Escape `|` in cells. Test against the DHP23 structure with fixed rows. (Headwords gains the Conf. column and legend only when some word carries a confidence, so older sessions export unchanged.)
+  - [x] 7.4 HTML and Org-Mode exports: same structure.
+  - [x] 7.5 DOCX export (`docx_export.rs`): a table with the seven columns, component rows indented, the translation and Variants sections, the legend. Test by unzipping the result and checking `word/document.xml` text order.
+  - [x] 7.6 Anki CSV (F4): Word in Sentence notes, one per row (respecting No duplicates), with Word in Sentence and Grammar fields; templated CSV gets `word_in_sentence` and `grammar` template variables. Extend `test_anki_export.rs`. (One note per row with a headword, components included; also `{meaning}`; the data CSV gains `word_in_sentence`, `grammar_in_sentence` columns.)
+  - [x] 7.7 JSON export: add `gloss_format`, rows, two-part translations to the `simsapa-gloss-session` format; "Open JSON" of an old file still works (`test_gloss_session_export.rs`). (`build_gloss_session_json` in the builder, for the CLI; the GUI's `session_data_json()` gains the fields in 10.9.)
+  - [x] 7.8 Add `backend/src/gloss_export_builder.rs`: `AllParagraphsProcessingResult` (+ translations, title, variants) → `GlossExportData`. Unit test.
+  - [x] 7.9 Contract test, Rust side: build `GlossExportData` for a fixed paragraph JSON (`backend/tests/data/gloss_export_contract/paragraph.json`) and write the expected JSON next to it. QML side is task 10.10. (`test_gloss_export_contract.rs`; `paragraph.json` is `{text, paragraph, ai_translations}`, expected files for both formats; `SIMSAPA_UPDATE_SNAPSHOTS=1` regenerates.)
 
 ### 8.0 — specs and dependencies
 

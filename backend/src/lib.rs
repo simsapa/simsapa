@@ -55,6 +55,7 @@ pub mod anki_export;
 pub mod export_types;
 pub mod text_export;
 pub mod docx_export;
+pub mod gloss_export_builder;
 pub mod epub_import;
 pub mod pdf_import;
 pub mod html_import;
