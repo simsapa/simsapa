@@ -625,29 +625,31 @@ Those three text formats are **also generated in Rust** now
 (`backend/src/text_export.rs`, via `SuttaBridge.gloss_export` /
 `gloss_paragraph_export` / `chat_export` / `chat_message_export`) so the
 formatting is unit-tested against fixed JSON; the shared serde structs live in
-`backend/src/export_types.rs`. The QML side only collects the JSON
-(`gloss_export_data()` / `chat_export_data()`).
+`backend/src/export_types.rs`. The QML side only assembles the JSON
+(`gloss_export_data()` / `chat_export_data()`); a gloss paragraph's part of
+it is built in Rust too (next section).
 Output goes through `save_bytes_to_folder(folder_url, filename, bytes)` — the
 bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
 See [android-file-saving-saf.md](./android-file-saving-saf.md).
 
-### The export data, its two producers, and the two document layouts
+### The export data, one builder, and the two document layouts
 
 Every gloss export (HTML, Markdown, Org-Mode, DOCX, Anki CSV) reads one struct,
-`GlossExportData` (`backend/src/export_types.rs`). It has two producers that
-must write the same JSON for the same paragraph:
-
-- the Gloss tab, `GlossTab.gloss_export_data()` in QML;
-- `backend/src/gloss_export_builder.rs` (`build_gloss_export_data()` /
-  `build_export_paragraph()`), for the CLI and `POST /gloss_text`. Its
-  Headwords vocabulary is a port of the QML loop, including
-  `DeconstructorUtils.visible_components()` / `component_results()`.
+`GlossExportData` (`backend/src/export_types.rs`). Its paragraphs are built in
+one place, `build_export_paragraph()` in `backend/src/gloss_export_builder.rs`,
+for every caller: the CLI and `POST /gloss_text` through
+`build_gloss_export_data()`, and the Gloss tab through
+`SuttaBridge.gloss_export_paragraph_json()`, called per paragraph by
+`GlossTab.gloss_export_data()`. The QML side only puts each paragraph's
+translations in export order (the selected tab first,
+`GlossTab.export_translations()`) and sets the top-level fields. The Headwords
+vocabulary follows `DeconstructorUtils.visible_components()` /
+`component_results()` for a break-down, as the vocabulary list on screen does.
 
 The contract test `backend/tests/test_gloss_export_contract.rs` builds both
 formats from a stored gloss (`backend/tests/data/gloss_export_contract/`) and
-compares them with the expected files there; the QML builder is tested against
-the same files. Change the two producers together.
+compares them with the expected files there.
 
 Fields added after the first version are `#[serde(default)]`, so export data
 from an older Gloss tab still renders: `gloss_format` (absent = Headwords),
@@ -997,10 +999,11 @@ closed; it prints each stored rule with its lemma.
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
 | Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
-| Export data and session JSON built in Rust (CLI, API) | `backend/src/gloss_export_builder.rs`; contract test `backend/tests/test_gloss_export_contract.rs` |
-| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
+| Export data and session JSON built in Rust (CLI, API, and the Gloss tab's export paragraphs) | `backend/src/gloss_export_builder.rs`; contract test `backend/tests/test_gloss_export_contract.rs` |
+| Word in Sentence rows, session carry-over | `backend/src/gloss_rows.rs` (`GlossRowBuilder`, `carry_over_session_choices()`); rows rebuilt against the cache: `gloss_word_selection_apply::rebuild_rows_with_cache()` |
+| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`, `get_gloss_format` / `set_gloss_format`, `get_gloss_auto_translate` / `set_gloss_auto_translate`, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
-| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
+| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordInSentenceRow.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `bootstrap_cli/src/import_gloss_data.rs`, `bootstrap_cli/src/gloss_corpus_explore.rs`, `bootstrap_cli/src/gloss_ngrams.rs`, `bootstrap_cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
@@ -1238,18 +1241,21 @@ QML, use `apply_word_selection_answers()` in
 answers route by item id and `component_word`; an answer never replaces a
 choice whose origin is not `ai-selected` (checked per field: sense, break-down,
 each component); a break-down answer locks the break-down; the same
-`ai-selected` cache rows are written. **A change to the apply rules goes into
+`ai-selected` cache rows are written; a reading-only item (one option) sets
+only the reading, with no cache row and no resolution, since the sense was not
+a choice; an answer's `grammar_index` / `contextual_meaning` become the
+`reading` unless the user chose a reading for the same sense
+(`GlossTab.ai_answer_reading()` / `set_reading()`). Afterwards the
+paragraph's rows are rebuilt from its `words_data` (Rust:
+`rebuild_rows_with_cache()`; QML: `GlossTab.set_paragraph_words()` →
+`SuttaBridge.refresh_gloss_paragraph_json()`, the same function), so they show
+the answers with confidence `A`. **A change to the apply rules goes into
 both.** The differences, because a Rust run is one-shot:
 
 - no late-response guard (nothing changes the result while the request is in
   flight);
 - with `write_cache` off (the stateless API; the CLI while the GUI holds the
-  database) no row is written, and the choice is still marked `ai-selected`;
-- a reading-only item (one option) sets only the reading: no cache row, no
-  resolution, since the sense was not a choice;
-- afterwards the paragraph's rows are rebuilt from its `words_data`
-  (`GlossRowBuilder::rebuild_paragraph_rows`), so they show the answers with
-  confidence `A`.
+  database) no row is written, and the choice is still marked `ai-selected`.
 
 ### The two-part translation
 
@@ -1273,3 +1279,49 @@ that JSON is retried and falls back like a truncated body. The stored
 translation (`AiResponse` in `export_types.rs`) keeps the Translation in
 `response` and the Literal Translation in `literal_translation`; a session
 saved with one translation reads it as the Translation.
+
+In the Gloss tab, `AiResponseCoordinator`'s `parse_response` hook turns the
+answer into those two fields (an answer that still does not parse marks the
+entry failed), and `AssistantResponses.qml` shows a completed entry with a
+Literal Translation as `**Translation:** … **Literal Translation:** …`.
+
+### The Gloss tab in the Word in Sentence format
+
+The **Gloss format** option (`gloss_format` in `AppSettings`, default
+`word_in_sentence`; `SuttaBridge.get_gloss_format()` / `set_gloss_format()`)
+is the format of new sessions. A session keeps its own (`gloss_format` in the
+session JSON); a session saved without one is a Headwords session and opens as
+saved. The gloss request passes it as `options.gloss_format`.
+
+Each paragraph holds `rows_json` and `variants_json` next to
+`words_data_json`, and shows a `GlossWordInSentenceRow.qml` per row:
+`GlossTab.flatten_paragraph_rows()` lists the rows in table order, each with
+the word that holds its choice (`owner`: the token's `word_index`) and what
+the choice is: `sense` (a row with a `word_index`), `breakdown` (the same, for
+a deconstructor-resolved word, whose candidates are break-downs), `component`
+(keyed by the component word on its token's word) or `none`. A sense, break-down
+or component choice goes through the same functions as the Headwords list
+(`update_word_selection()`, `update_deconstruction_selection()`,
+`update_component_selection()`: a `user-selected` cache row); a grammar
+reading is a session `reading` with origin `user-selected`. The shield has the
+§5 click cycle; a break-down row's shield writes the compound's break-down row.
+Every change of a paragraph's words goes through
+`GlossTab.set_paragraph_words()`, which rebuilds the rows with the backend
+(`SuttaBridge.refresh_gloss_paragraph_json()`), so the row's grammar, meaning
+and components follow the new choice. A restored session's rows are rebuilt the
+same way after the words are re-annotated.
+
+**Switching the format** re-glosses the text and makes no AI request:
+`switch_gloss_format()` keeps each paragraph's words and translations in
+`format_switch_carry`, and the results handler carries them over to the
+paragraphs with unchanged text. Saved choices resolve from the cache;
+session-only ones (readings, contextual meanings, an unsaved choice) move by
+context hash and word (`gloss_rows::carry_over_session_choices()`).
+
+**Auto-translate** (`gloss_auto_translate`, default off; disabled with a
+tooltip when the dispatch mode has no model) sends "AI Translate" for each
+paragraph when its gloss is complete — after its AI word selection when one
+covers it (`auto_translate_after_ws`), never twice while a translation of the
+paragraph is waiting, and not after a format switch or a session restore. The
+screen is kept on under the holder `"gloss-auto-translate"` while any
+auto-translation is in flight (`auto_translate_in_flight`).

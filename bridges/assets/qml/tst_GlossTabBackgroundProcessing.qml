@@ -128,6 +128,8 @@ Item {
             gloss_tab.paragraph_model.append({
                 text: "Buddha dhamma sutta text.",
                 words_data_json: "[]",
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: "[]",
                 selected_ai_tab: 0
             });
@@ -227,6 +229,8 @@ Item {
             gloss_tab.paragraph_model.append({
                 text: "Buddha dhamma test.",
                 words_data_json: "[]",
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: "[]",
                 selected_ai_tab: 0
             });
@@ -347,6 +351,8 @@ Item {
                         "stem": "dhamma"
                     }
                 ]),
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: "[]",
                 selected_ai_tab: 0
             });

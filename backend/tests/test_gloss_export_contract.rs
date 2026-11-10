@@ -1,15 +1,15 @@
-//! Contract test of the gloss export data, Rust side: one glossed paragraph
+//! Contract test of the gloss export data: one glossed paragraph
 //! (`tests/data/gloss_export_contract/paragraph.json`) goes through
 //! `gloss_export_builder::build_export_paragraph` in both formats, and the
 //! result must equal `expected_word_in_sentence.json` /
-//! `expected_headwords.json` next to it. The Gloss tab's QML builder
-//! (`GlossTab.gloss_export_data()`) is tested against the same files, so the
-//! GUI and the CLI cannot write different export data for one paragraph.
+//! `expected_headwords.json` next to it. The Gloss tab builds its export
+//! paragraphs with the same function (`SuttaBridge.gloss_export_paragraph_json`),
+//! so the GUI and the CLI cannot write different export data for one paragraph.
 //!
 //! `paragraph.json` is a stored gloss result, so this test does not depend on
 //! the dist databases. To regenerate it from the current pipeline and data,
 //! and the expected files from the current builder (check the difference
-//! before committing it, and update the QML side to match):
+//! before committing it):
 //!
 //! ```sh
 //! cd backend && SIMSAPA_UPDATE_SNAPSHOTS=1 cargo test --test test_gloss_export_contract

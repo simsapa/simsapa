@@ -1,8 +1,8 @@
 //! Shared data types for the Gloss and Prompts export formats.
 //!
-//! These mirror the JSON collected in QML by `GlossTab.gloss_export_data()` and
-//! `PromptsTab.chat_export_data()`; for the CLI and the API the gloss data is
-//! built in Rust (`gloss_export_builder.rs`). The same structs are read by the
+//! These are the JSON assembled in QML by `GlossTab.gloss_export_data()` and
+//! `PromptsTab.chat_export_data()`; a gloss paragraph is built in Rust for
+//! every caller (`gloss_export_builder.rs`). The same structs are read by the
 //! text exporters (`text_export.rs`, producing HTML / Markdown / Org-Mode),
 //! the DOCX exporter (`docx_export.rs`) and the Anki CSV exporter
 //! (`anki_export.rs`), so the formatting logic lives in Rust where it can be

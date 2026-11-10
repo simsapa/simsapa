@@ -363,13 +363,15 @@ reset only on a length / id-sequence change) so delegates are never rebuilt by
 a response landing, and emits `tabSelectionChanged` only from a real tab-button
 click — never from `TabBar.currentIndex` churn.
 
-**Gloss tab — "AI translation:" combobox** (`gloss_ai_translate_mode`, default
-*Sequential retry*):
+**Gloss tab — "Dispatch mode:" combobox** (`gloss_ai_translate_mode`, default
+*Sequential retry*). A translation request checks that the answer is the
+two-part translation JSON (`validate_translation_response_shape`), so a
+malformed answer retries and falls back like a truncated body:
 
-- *Sequential retry* → one `sequential_prompt_request`, one translation entry.
-  The entry starts with an empty `model_name` and learns which model answered
-  from the first progress event and from the response.
-- *Parallel* → one `prompt_request` per **enabled Parallel-prompts entry**
+- *Sequential retry* → one `sequential_gloss_translation_request`, one
+  translation entry. The entry starts with an empty `model_name` and learns
+  which model answered from the first progress event and from the response.
+- *Parallel* → one `gloss_translation_request` per **enabled Parallel-prompts entry**
   (the coordinator's `enabled_parallel_models()` reads that list, not "all
   enabled models of all enabled providers" — FR-G5), results shown side by
   side as before.

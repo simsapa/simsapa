@@ -394,6 +394,16 @@ pub struct AppSettings {
     /// Prompts tab: how the next assistant response is requested.
     #[serde(default)]
     pub prompts_request_mode: AiRequestMode,
+    /// Gloss tab: the gloss layout, Word in Sentence or Headwords.
+    #[serde(default = "default_gloss_format")]
+    pub gloss_format: crate::types::GlossFormat,
+    /// Gloss tab: translate each paragraph as soon as its gloss is complete.
+    #[serde(default)]
+    pub gloss_auto_translate: bool,
+}
+
+fn default_gloss_format() -> crate::types::GlossFormat {
+    crate::types::GlossFormat::WordInSentence
 }
 
 /// Sutta view layout mode. UI labels are "Solo" / "Columns" / "Lines"; the
@@ -564,34 +574,6 @@ pub fn default_system_prompts() -> IndexMap<String, String> {
         r#"
 You are a helpful assistant for studying the suttas of the Theravāda Pāli Tipitaka and the Pāli language.
 Respond with concise answers and respond only with the information requested in the task.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-    prompts.insert("Gloss Tab: AI Translation with Vocabulary".to_string(),
-        r#"
-Translate the following Pāli passage to English, keeping in mind the provided dictionary definitions.
-
-Pāli passage:
-
-<<PALI_PASSAGE>>
-
-Dictionary definitions:
-
-<<DICTIONARY_DEFINITIONS>>
-
-Respond with only the translation of the Pāli passage.
-Respond with GFM-Markdown formatted text.
-"#.trim().to_string());
-
-    prompts.insert("Gloss Tab: AI Translation without Vocabulary".to_string(),
-        r#"
-Translate the following Pāli passage to English.
-
-Pāli passage:
-
-<<PALI_PASSAGE>>
-
-Respond with only the translation of the Pāli passage.
 Respond with GFM-Markdown formatted text.
 "#.trim().to_string());
 
@@ -926,6 +908,8 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             ai_auto_fallback: true,
             gloss_ai_translate_mode: AiRequestMode::default(),
             prompts_request_mode: AiRequestMode::default(),
+            gloss_format: default_gloss_format(),
+            gloss_auto_translate: false,
         }
     }
 }

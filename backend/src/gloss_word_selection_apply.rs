@@ -23,12 +23,12 @@ use regex::Regex;
 
 use crate::db::appdata::AppdataDbHandle;
 use crate::db::dpd::DpdDbHandle;
-use crate::gloss_rows::GlossRowBuilder;
+use crate::gloss_rows::{GlossRow, GlossRowBuilder};
 use crate::helpers::{
     gloss_cache_word_key, gloss_context_hash, normalize_gloss_context, GlossResolutionData, WordSelectionEntry,
 };
 use crate::logger::{error, info};
-use crate::types::{AllParagraphsProcessingResult, ProcessedWord, SenseReading};
+use crate::types::{AllParagraphsProcessingResult, ParagraphProcessingResult, ProcessedWord, SenseReading};
 
 const AI_SELECTED: &str = "ai-selected";
 
@@ -183,34 +183,48 @@ pub fn apply_word_selection_answers(
     // Rebuild the rows of the paragraphs whose words changed.
     let mut builder: Option<GlossRowBuilder> = None;
     for pi in changed_paragraphs {
-        let paragraph = &result.paragraphs[paragraph_positions[&pi]];
-        if paragraph.rows.is_empty() {
+        let position = paragraph_positions[&pi];
+        if result.paragraphs[position].rows.is_empty() {
             continue;
         }
         if builder.is_none() {
             builder = Some(GlossRowBuilder::new(dpd).map_err(|e| format!("Gloss rows: {}", e))?);
         }
-        let hashes: Vec<String> = paragraph
-            .words_data
-            .iter()
-            .map(|w| {
-                if w.context_hash.is_empty() {
-                    gloss_context_hash(&normalize_gloss_context(&w.example_sentence))
-                } else {
-                    w.context_hash.clone()
-                }
-            })
-            .collect();
-        let resolution_data = GlossResolutionData::fetch_for_context_hashes(appdata, &hashes);
-        let rows = builder
-            .as_mut()
-            .expect("builder is set")
-            .rebuild_paragraph_rows(paragraph, Some(&resolution_data))
-            .map_err(|e| format!("Gloss rows: {}", e))?;
-        result.paragraphs[paragraph_positions[&pi]].rows = rows;
+        let rows = rebuild_rows_with_cache(
+            builder.as_mut().expect("builder is set"),
+            &result.paragraphs[position],
+            appdata,
+        )?;
+        result.paragraphs[position].rows = rows;
     }
 
     Ok(summary)
+}
+
+/// The Word in Sentence rows of `paragraph` rebuilt from its `words_data`,
+/// with the saved choices of its contexts (component rows of compound
+/// headwords resolve from the cache). Used after its words changed: an
+/// applied AI answer, a choice in the Gloss tab, a restored session.
+pub fn rebuild_rows_with_cache(
+    builder: &mut GlossRowBuilder,
+    paragraph: &ParagraphProcessingResult,
+    appdata: &AppdataDbHandle,
+) -> Result<Vec<GlossRow>, String> {
+    let hashes: Vec<String> = paragraph
+        .words_data
+        .iter()
+        .map(|w| {
+            if w.context_hash.is_empty() {
+                gloss_context_hash(&normalize_gloss_context(&w.example_sentence))
+            } else {
+                w.context_hash.clone()
+            }
+        })
+        .collect();
+    let resolution_data = GlossResolutionData::fetch_for_context_hashes(appdata, &hashes);
+    builder
+        .rebuild_paragraph_rows(paragraph, Some(&resolution_data))
+        .map_err(|e| format!("Gloss rows: {}", e))
 }
 
 /// Writes a cache row when `write_cache`; returns whether the choice counts

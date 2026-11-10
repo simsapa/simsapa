@@ -1,11 +1,12 @@
 //! Builds the gloss export data and the gloss session JSON from a gloss
 //! result in Rust, for the `simsapa gloss` CLI and `POST /gloss_text`.
 //!
-//! The Gloss tab builds the same export data in QML
-//! (`GlossTab.gloss_export_data()`) and the same session JSON
-//! (`GlossTab.session_data_json()`). The two producers must agree: a contract
-//! test feeds one paragraph through each and compares the JSON
-//! (`backend/tests/data/gloss_export_contract/`). Change them together.
+//! The Gloss tab's export paragraphs come from `build_export_paragraph()`
+//! too (`SuttaBridge.gloss_export_paragraph_json`), so the GUI and the CLI
+//! write the same document; the contract test
+//! (`backend/tests/data/gloss_export_contract/`) holds its output. The Gloss
+//! tab writes the same session JSON in QML (`GlossTab.session_data_json()`):
+//! change the two together.
 
 use std::collections::HashMap;
 
@@ -88,8 +89,7 @@ pub fn build_export_paragraph(
 
 /// The Headwords vocabulary: the chosen sense of each word; for a
 /// deconstructor-resolved word, one item per visible component with that
-/// component's chosen sense. A port of the loop in
-/// `GlossTab.gloss_export_data()`.
+/// component's chosen sense, as the Gloss tab's vocabulary list shows them.
 fn headwords_vocabulary(words: &[ProcessedWord]) -> Vec<GlossExportVocabItem> {
     let mut out = Vec::new();
     for w in words {

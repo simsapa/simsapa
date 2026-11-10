@@ -1206,6 +1206,18 @@ pub mod qobject {
         fn set_gloss_ai_translate_mode(self: Pin<&mut SuttaBridge>, mode: &QString);
 
         #[qinvokable]
+        fn get_gloss_format(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_format(self: Pin<&mut SuttaBridge>, format: &QString);
+
+        #[qinvokable]
+        fn get_gloss_auto_translate(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_gloss_auto_translate(self: Pin<&mut SuttaBridge>, on: bool);
+
+        #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -1264,6 +1276,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn parse_gloss_translation(self: &SuttaBridge, response: &QString) -> QString;
+
+        #[qinvokable]
+        fn refresh_gloss_paragraph_json(self: &SuttaBridge, paragraph_json: &QString, old_words_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn gloss_export_paragraph_json(self: &SuttaBridge, paragraph_json: &QString, gloss_format: &QString) -> QString;
 
         #[qinvokable]
         fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
@@ -3262,6 +3280,30 @@ impl qobject::SuttaBridge {
         app_data.set_gloss_ai_translate_mode(AiRequestMode::from_str_or_default(&mode.to_string()));
     }
 
+    /// The Gloss tab's gloss format: "word_in_sentence" | "headwords".
+    pub fn get_gloss_format(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(gloss_format_str(app_settings.gloss_format))
+    }
+
+    /// Save the Gloss tab's gloss format; an unknown value is Word in Sentence.
+    pub fn set_gloss_format(self: Pin<&mut Self>, format: &QString) {
+        get_app_data().set_gloss_format(parse_gloss_format(&format.to_string()));
+    }
+
+    /// The Gloss tab's Auto-translate option.
+    pub fn get_gloss_auto_translate(&self) -> bool {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.gloss_auto_translate
+    }
+
+    /// Save the Gloss tab's Auto-translate option.
+    pub fn set_gloss_auto_translate(self: Pin<&mut Self>, on: bool) {
+        get_app_data().set_gloss_auto_translate(on);
+    }
+
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")
     pub fn get_prompts_request_mode(&self) -> QString {
         let app_data = get_app_data();
@@ -3413,6 +3455,114 @@ impl qobject::SuttaBridge {
                 false
             }
         }
+    }
+
+    /// One Gloss tab paragraph after its words changed. `paragraph_json` is
+    /// `{"words_data": [...], "rows": [...]}`; `old_words_json` is a words
+    /// array whose session choices are carried over first (the format switch,
+    /// `gloss_rows::carry_over_session_choices`), or `""`. Returns
+    /// `{"words_data": [...], "rows": [...]}` with the Word in Sentence rows
+    /// rebuilt from the words and the saved choices (none when the input had
+    /// none), or `""` on failure (logged).
+    pub fn refresh_gloss_paragraph_json(&self, paragraph_json: &QString, old_words_json: &QString) -> QString {
+        use simsapa_backend::gloss_rows::{carry_over_session_choices, GlossRow, GlossRowBuilder};
+        use simsapa_backend::types::{ParagraphProcessingResult, ProcessedWord};
+        #[derive(serde::Deserialize)]
+        struct Paragraph {
+            #[serde(default)]
+            words_data: Vec<ProcessedWord>,
+            #[serde(default)]
+            rows: Vec<GlossRow>,
+        }
+        let paragraph: Paragraph = match serde_json::from_str(&paragraph_json.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                error(&format!("refresh_gloss_paragraph_json(): invalid paragraph JSON: {}", e));
+                return QString::from("");
+            }
+        };
+        let old_words_json = old_words_json.to_string();
+        let mut words = paragraph.words_data;
+        if !old_words_json.trim().is_empty() {
+            match serde_json::from_str::<Vec<ProcessedWord>>(&old_words_json) {
+                Ok(old) => {
+                    carry_over_session_choices(&mut words, &old);
+                }
+                Err(e) => error(&format!("refresh_gloss_paragraph_json(): invalid old words JSON: {}", e)),
+            }
+        }
+        let mut result = ParagraphProcessingResult {
+            paragraph_index: 0,
+            words_data: words,
+            unrecognized_words: Vec::new(),
+            rows: paragraph.rows,
+            variants: Vec::new(),
+            ai_translations: Vec::new(),
+        };
+        if !result.rows.is_empty() {
+            let app_data = get_app_data();
+            let rows = GlossRowBuilder::new(&app_data.dbm.dpd)
+                .map_err(|e| format!("Gloss rows: {}", e))
+                .and_then(|mut b| {
+                    simsapa_backend::gloss_word_selection_apply::rebuild_rows_with_cache(&mut b, &result, &app_data.dbm.appdata)
+                });
+            match rows {
+                Ok(rows) => result.rows = rows,
+                Err(e) => {
+                    error(&format!("refresh_gloss_paragraph_json(): {}", e));
+                    return QString::from("");
+                }
+            }
+        }
+        QString::from(
+            serde_json::json!({"words_data": result.words_data, "rows": result.rows}).to_string(),
+        )
+    }
+
+    /// One paragraph of the gloss export data (`GlossExportParagraph`), made
+    /// by the same builder as the CLI's (`gloss_export_builder`), so the two
+    /// cannot write different documents. `paragraph_json` is `{"text",
+    /// "words_data", "rows", "variants", "ai_translations"}`, the translations
+    /// already in export order. Returns `""` on invalid input (logged).
+    pub fn gloss_export_paragraph_json(&self, paragraph_json: &QString, gloss_format: &QString) -> QString {
+        use simsapa_backend::export_types::AiResponse;
+        use simsapa_backend::gloss_rows::GlossRow;
+        use simsapa_backend::types::{ParagraphProcessingResult, ProcessedWord};
+        #[derive(serde::Deserialize)]
+        struct Paragraph {
+            #[serde(default)]
+            text: String,
+            #[serde(default)]
+            words_data: Vec<ProcessedWord>,
+            #[serde(default)]
+            rows: Vec<GlossRow>,
+            #[serde(default)]
+            variants: Vec<Vec<String>>,
+            #[serde(default)]
+            ai_translations: Vec<AiResponse>,
+        }
+        let p: Paragraph = match serde_json::from_str(&paragraph_json.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                error(&format!("gloss_export_paragraph_json(): invalid paragraph JSON: {}", e));
+                return QString::from("");
+            }
+        };
+        let result = ParagraphProcessingResult {
+            paragraph_index: 0,
+            words_data: p.words_data,
+            unrecognized_words: Vec::new(),
+            rows: p.rows,
+            variants: p.variants,
+            ai_translations: Vec::new(),
+        };
+        let paragraph = simsapa_backend::gloss_export_builder::build_export_paragraph(
+            &result,
+            &p.text,
+            p.ai_translations,
+            parse_gloss_format(&gloss_format.to_string()),
+        );
+        QString::from(serde_json::to_string(&paragraph).unwrap_or_default())
     }
 
     /// Re-derive `resolution` / `selected_index` / `context_hash` for a
@@ -7089,4 +7239,22 @@ fn join_dpd_check(handle: thread::JoinHandle<Result<Option<String>, String>>) ->
         error("check_for_dpd_update(): the thread panicked");
         Err("Could not check for DPD updates.".to_string())
     })
+}
+
+/// The settings / session string of a gloss format.
+fn gloss_format_str(format: simsapa_backend::types::GlossFormat) -> &'static str {
+    match format {
+        simsapa_backend::types::GlossFormat::WordInSentence => "word_in_sentence",
+        simsapa_backend::types::GlossFormat::Headwords => "headwords",
+    }
+}
+
+/// A gloss format from its string; anything but "headwords" is Word in
+/// Sentence.
+fn parse_gloss_format(s: &str) -> simsapa_backend::types::GlossFormat {
+    if s == "headwords" {
+        simsapa_backend::types::GlossFormat::Headwords
+    } else {
+        simsapa_backend::types::GlossFormat::WordInSentence
+    }
 }

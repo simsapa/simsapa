@@ -2,7 +2,7 @@
 //!
 //! The formatting was ported from the QML `format_paragraph_*` /
 //! `message_as_*` helpers so it can be unit-tested against fixed JSON. The
-//! input JSON is collected in QML (`gloss_export_data()` /
+//! input JSON is assembled in QML (`gloss_export_data()` /
 //! `chat_export_data()`); the same structs are shared with the DOCX exporter
 //! (see [`crate::export_types`]).
 

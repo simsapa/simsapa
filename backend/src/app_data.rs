@@ -1432,6 +1432,34 @@ impl AppData {
         };
     }
 
+    /// Changes the cached settings with `change` and writes them to the db.
+    fn update_app_settings(&self, change: impl FnOnce(&mut AppSettings)) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        change(&mut app_settings);
+        let settings_json = serde_json::to_string(&*app_settings).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+        if let Err(e) = diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            error(&format!("{}", e));
+        }
+    }
+
+    /// Saves the Gloss tab's gloss format.
+    pub fn set_gloss_format(&self, format: crate::types::GlossFormat) {
+        self.update_app_settings(|s| s.gloss_format = format);
+    }
+
+    /// Saves the Gloss tab's Auto-translate option.
+    pub fn set_gloss_auto_translate(&self, on: bool) {
+        self.update_app_settings(|s| s.gloss_auto_translate = on);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 

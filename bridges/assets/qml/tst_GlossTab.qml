@@ -210,13 +210,14 @@ Item {
             // 1st paragraph, word at index 1 (citta), change to 3rd selection 'citta 1.3'
             gloss_tab.update_word_selection(0, 1, 2);
 
-            // The export formatting itself is unit-tested in Rust
-            // (backend/src/text_export.rs). Here we verify the QML-side data
-            // collection reflects the selected senses.
-            var export_data = gloss_tab.gloss_export_data();
-            var words = export_data.paragraphs[0].vocabulary.map(function(v) { return v.word; });
-            verify(words.includes("karitvā 4"));
-            verify(words.includes("citta 1.3"));
+            // The export data is built from these words in Rust
+            // (gloss_export_builder.rs, tested there); here the session words
+            // must carry the selected senses.
+            var words = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json);
+            compare(words[0].stem, "karitvā 4");
+            compare(words[0].selected_index, 3);
+            compare(words[1].stem, "citta 1.3");
+            compare(words[1].selected_index, 2);
         }
 
         function test_clean_word() {
@@ -299,6 +300,8 @@ Item {
             gloss_tab.paragraph_model.append({
                 text: "Test paragraph",
                 words_data_json: "[]",
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: JSON.stringify(sample_translations),
                 selected_ai_tab: 0
             });
@@ -423,6 +426,8 @@ Item {
             gloss_tab.paragraph_model.append({
                 text: "Test paragraph for retry",
                 words_data_json: "[]",
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: JSON.stringify(error_translations),
                 selected_ai_tab: 0
             });
@@ -468,6 +473,8 @@ Item {
             gloss_tab.paragraph_model.append({
                 text: paragraph,
                 words_data_json: "[]",
+                rows_json: "[]",
+                variants_json: "[]",
                 translations_json: JSON.stringify(translations),
                 selected_ai_tab: 0
             });
@@ -563,16 +570,11 @@ Item {
             verify(data.paragraphs[0].text.includes(paragraph1));
             verify(data.paragraphs[1].text.includes("Katamañca"));
 
-            // Vocabulary is collected as {word, summary, ...} entries.
-            var words0 = data.paragraphs[0].vocabulary.map(function(v) { return v.word; });
-            verify(words0.includes("karitvā 1"));
-            verify(words0.includes("citta 1.1"));
-
-            var citta = data.paragraphs[0].vocabulary.filter(function(v) { return v.word === "citta 1.1"; })[0];
-            verify(citta.summary.includes("mind, heart"));
-
-            var words1 = data.paragraphs[1].vocabulary.map(function(v) { return v.word; });
-            verify(words1.includes("karitvā 1"));
+            // The paragraphs' vocabulary / rows are built in Rust
+            // (SuttaBridge.gloss_export_paragraph_json; the stub has no
+            // builder, so the QML fallback carries the text only).
+            compare(data.gloss_format, gloss_tab.gloss_format);
+            compare(data.paragraphs[0].vocabulary.length, 0);
         }
 
         function test_gloss_export_delegates_to_bridge() {
@@ -589,6 +591,215 @@ Item {
             verify(gloss_tab.paragraph_gloss_as_orgmode(0).length > 0);
         }
 
+
+
+        // --- Gloss format, translation buttons, sessions (Word in Sentence) ---
+
+        // Every descendant item whose `text` is `text` (a Button and its
+        // label item both match).
+        function find_items_by_text(item, text) {
+            var found = [];
+            if (!item) return found;
+            if (item.text !== undefined && item.text === text) found.push(item);
+            var kids = item.children || [];
+            for (var i = 0; i < kids.length; i++) {
+                found = found.concat(find_items_by_text(kids[i], text));
+            }
+            if (item.contentItem && kids.indexOf(item.contentItem) < 0) {
+                found = found.concat(find_items_by_text(item.contentItem, text));
+            }
+            return found;
+        }
+
+        function mock_paragraph(words) {
+            return {
+                success: true,
+                paragraphs: [{ paragraph_index: 0, words_data: words, unrecognized_words: [] }],
+                updated_global_stems: {},
+                global_unrecognized_words: []
+            };
+        }
+
+        function test_default_gloss_format_is_word_in_sentence() {
+            gloss_tab.load_gloss_settings();
+            compare(gloss_tab.gloss_format, "word_in_sentence");
+            verify(gloss_tab.is_word_in_sentence);
+            compare(gloss_tab.auto_translate, false);
+        }
+
+        function test_options_row_labels() {
+            verify(find_items_by_text(gloss_tab, "Gloss format:").length > 0);
+            verify(find_items_by_text(gloss_tab, "Dispatch mode:").length > 0);
+            verify(find_items_by_text(gloss_tab, "Auto-translate").length > 0);
+            compare(find_items_by_text(gloss_tab, "AI translation:").length, 0);
+        }
+
+        function test_ai_translate_button_replaces_old_buttons() {
+            gloss_tab.current_text = "Katamañca, bhikkhave, samādhindriyaṁ?";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([]));
+            compare(gloss_tab.paragraph_model.count, 1);
+            wait(0);
+            verify(find_items_by_text(gloss_tab, "AI Translate").length > 0);
+            compare(find_items_by_text(gloss_tab, "AI Translate w/ Vocab").length, 0);
+            compare(find_items_by_text(gloss_tab, "w/o Vocab").length, 0);
+            verify(find_items_by_text(gloss_tab, "AI Translation:").length > 0);
+        }
+
+        function test_session_data_has_format_rows_and_variants() {
+            gloss_tab.current_text = "vā'ti//vāti";
+            gloss_tab.handle_all_paragraphs_results({
+                success: true,
+                paragraphs: [{ paragraph_index: 0, words_data: [], unrecognized_words: [],
+                               rows: [{ word: "xyz", depth: 0, word_index: null, meaning: "not found", candidates: [], components: [] }],
+                               variants: [["vā'ti", "vāti"]] }],
+                updated_global_stems: {},
+                global_unrecognized_words: []
+            });
+            var session = JSON.parse(gloss_tab.session_data_json());
+            compare(session.gloss_format, gloss_tab.gloss_format);
+            compare(session.paragraphs[0].rows.length, 1);
+            compare(session.paragraphs[0].rows[0].word, "xyz");
+            compare(session.paragraphs[0].variants[0][1], "vāti");
+        }
+
+        function test_old_session_opens_as_headwords() {
+            gloss_tab.load_session("", JSON.stringify({
+                text: "Idha bhikkhave",
+                paragraphs: [{ text: "Idha bhikkhave", words: [], translations: [], selected_ai_tab: 0 }]
+            }));
+            compare(gloss_tab.gloss_format, "headwords");
+            compare(gloss_tab.paragraph_model.get(0).rows_json, "[]");
+            // A new session takes the saved setting again.
+            gloss_tab.new_session();
+            compare(gloss_tab.gloss_format, "word_in_sentence");
+        }
+
+        function test_old_single_translation_shows_as_translation() {
+            gloss_tab.load_session("", JSON.stringify({
+                text: "Idha",
+                paragraphs: [{ text: "Idha", words: [],
+                               translations: [{ model_name: "m", status: "completed", response: "Here.", with_vocab: true }],
+                               selected_ai_tab: 0 }]
+            }));
+            var ai = gloss_tab.export_translations(gloss_tab.paragraph_model.get(0));
+            compare(ai.length, 1);
+            compare(ai[0].response, "Here.");
+            compare(ai[0].literal_translation, "");
+            gloss_tab.new_session();
+        }
+
+        function test_format_switch_keeps_translations_and_makes_no_ai_request() {
+            gloss_tab.is_processing_all = false;
+            gloss_tab.gloss_format = "word_in_sentence";
+            gloss_tab.current_text = "Idha bhikkhave";
+            gloss_tab.gloss_text_input.text = "Idha bhikkhave";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([]));
+            var translations = [{ model_name: "m", status: "completed", response: "Here, monks.", literal_translation: "Here, o monks." }];
+            gloss_tab.paragraph_model.setProperty(0, "translations_json", JSON.stringify(translations));
+
+            gloss_tab.switch_gloss_format("headwords");
+            compare(gloss_tab.gloss_format, "headwords");
+            verify(gloss_tab.format_switch_carry !== null);
+
+            // The re-gloss result arrives (the stub bridge sends no signal).
+            gloss_tab.auto_translate = true;
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([]));
+            compare(gloss_tab.format_switch_carry, null);
+            var kept = JSON.parse(gloss_tab.paragraph_model.get(0).translations_json);
+            compare(kept.length, 1);
+            compare(kept[0].literal_translation, "Here, o monks.");
+            compare(Object.keys(gloss_tab.auto_translate_in_flight).length, 0);
+            gloss_tab.auto_translate = false;
+            gloss_tab.is_processing_all = false;
+            gloss_tab.gloss_format = "word_in_sentence";
+        }
+
+        function test_flatten_paragraph_rows_kinds() {
+            var words = [
+                { original_word: "te", results: [{ uid: "1/dpd" }, { uid: "2/dpd" }], direct_uids: ["1/dpd", "2/dpd"], deconstructions: [] },
+                { original_word: "evaṁhetaṁ", results: [], direct_uids: [], deconstructions: [{ words_joined: "evaṁ + hi + etaṁ", components: [] }] },
+            ];
+            var rows = [
+                { word: "te", depth: 0, word_index: 0, candidates: [], components: [] },
+                { word: "daḷhaparakkamā", depth: 0, word_index: 0, candidates: [],
+                  components: [{ word: "daḷha", depth: 1, word_index: null, candidates: [], components: [] }] },
+                { word: "evaṁhetaṁ", depth: 0, word_index: 1, candidates: [], components: [] },
+                { word: "xyz", depth: 0, word_index: null, candidates: [], components: [] },
+                { word: "vā'ti", depth: 0, word_index: 0, candidates: [],
+                  components: [{ word: "vā", depth: 1, word_index: 0, candidates: [], components: [] }] },
+            ];
+            var flat = gloss_tab.flatten_paragraph_rows(JSON.stringify(rows), JSON.stringify(words));
+            compare(flat.length, 7);
+            compare(flat[0].kind, "sense");
+            compare(flat[2].kind, "component");
+            compare(flat[2].key, "daḷha");
+            compare(flat[2].owner, 0);
+            compare(flat[2].alt, 1);
+            compare(flat[3].kind, "breakdown");
+            compare(flat[4].kind, "none");
+            // A quoted iti token: the base row holds the choice.
+            compare(flat[5].kind, "none");
+            compare(flat[6].kind, "sense");
+            compare(flat[6].owner, 0);
+            verify(flat[1].row.components === undefined);
+        }
+
+        function test_ai_answer_reading_rules() {
+            compare(gloss_tab.ai_answer_reading(null, { uid: "1/dpd" }), null);
+            var r = gloss_tab.ai_answer_reading(null, { uid: "1/dpd", grammar_index: 1, contextual_meaning: "they" });
+            compare(r.grammar_index, 1);
+            compare(r.contextual_meaning, "they");
+            compare(r.origin, "ai-selected");
+            // A reading the user chose for the same sense stays.
+            var user = { uid: "1/dpd", grammar_index: 0, origin: "user-selected" };
+            compare(gloss_tab.ai_answer_reading(user, { uid: "1/dpd", grammar_index: 1 }), null);
+            verify(gloss_tab.ai_answer_reading(user, { uid: "2/dpd", grammar_index: 1 }) !== null);
+        }
+
+        function test_reading_only_answer_writes_no_choice() {
+            gloss_tab.current_text = "te";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([{
+                original_word: "te", results: [{ uid: "1/dpd", word: "ta 1", summary: "" }],
+                selected_index: 0, stem: "ta 1", example_sentence: "te", direct_uids: ["1/dpd"], deconstructions: []
+            }]));
+            var applied = gloss_tab.apply_word_selections(0, [
+                { word_idx: 0, uid: "1/dpd", kind: "sense", option_count: 1, grammar_index: 2, contextual_meaning: "they" }
+            ]);
+            compare(applied, 1);
+            var w = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0];
+            compare(w.reading.grammar_index, 2);
+            compare(w.reading.contextual_meaning, "they");
+            compare(w.resolution === undefined || w.resolution === null, true);
+        }
+
+        function test_auto_translate_waits_for_word_selection() {
+            gloss_tab.current_text = "Idha";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([]));
+            gloss_tab.auto_translate = true;
+            gloss_tab.ws_set_status(0, "busy", "Selecting words...");
+            gloss_tab.auto_translate_paragraph(0);
+            verify(gloss_tab.auto_translate_after_ws[0] === true);
+            compare(JSON.parse(gloss_tab.paragraph_model.get(0).translations_json).length, 0);
+
+            gloss_tab.ws_clear_status(0);
+            gloss_tab.auto_translate_after_word_selection(0);
+            compare(gloss_tab.auto_translate_after_ws[0], undefined);
+            var entries = JSON.parse(gloss_tab.paragraph_model.get(0).translations_json);
+            compare(entries.length, 1);
+            compare(entries[0].status, "waiting");
+            verify(gloss_tab.auto_translate_in_flight[0] === true);
+
+            // A re-run while the request is in flight sends nothing more.
+            gloss_tab.auto_translate_paragraph(0);
+            compare(JSON.parse(gloss_tab.paragraph_model.get(0).translations_json).length, 1);
+
+            // The answer arrives: two parts, and the screen hold ends.
+            gloss_tab.ai_coordinator.handle_response({ paragraph_idx: 0 }, entries[0].request_id, "m", '{"translation": "Here.", "literal_translation": "Here."}');
+            var done = JSON.parse(gloss_tab.paragraph_model.get(0).translations_json)[0];
+            compare(done.status, "completed");
+            compare(Object.keys(gloss_tab.auto_translate_in_flight).length, 0);
+            gloss_tab.auto_translate = false;
+        }
 
     }
 }

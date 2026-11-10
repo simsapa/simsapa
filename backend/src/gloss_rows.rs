@@ -1244,9 +1244,163 @@ fn unresolved_component_row(word: &str, depth: u8) -> GlossRow {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Session choices
+// ---------------------------------------------------------------------------
+
+fn word_context_hash(w: &ProcessedWord) -> String {
+    if w.context_hash.is_empty() {
+        gloss_context_hash(&normalize_gloss_context(&w.example_sentence))
+    } else {
+        w.context_hash.clone()
+    }
+}
+
+/// Carries the session-only choices of `old` words over to `new` words of
+/// the same text glossed again (the Gloss tab's format switch). A word is
+/// matched by its context hash and word. Cache rows already resolved the
+/// saved choices while `new` was glossed, so only what is not in the cache
+/// moves: grammar readings and contextual meanings, and a sense, break-down
+/// or component choice that `new` left unresolved. Returns how many words
+/// took something over.
+pub fn carry_over_session_choices(new: &mut [ProcessedWord], old: &[ProcessedWord]) -> usize {
+    let by_key: HashMap<(String, &str), &ProcessedWord> =
+        old.iter().map(|o| ((word_context_hash(o), o.original_word.as_str()), o)).collect();
+    let mut carried = 0;
+    for w in new.iter_mut() {
+        let Some(o) = by_key.get(&(word_context_hash(w), w.original_word.as_str())).copied() else {
+            continue;
+        };
+        let mut changed = false;
+
+        // The sense.
+        if w.resolution.is_none()
+            && let Some(origin) = o.resolution.as_ref()
+            && let Some(old_uid) = usize::try_from(o.selected_index).ok().and_then(|i| o.results.get(i)).map(|r| &r.uid)
+            && let Some(i) = w.results.iter().position(|r| &r.uid == old_uid)
+        {
+            w.selected_index = i as i32;
+            w.stem = w.results[i].word.clone();
+            w.resolution = Some(origin.clone());
+            changed = true;
+        }
+
+        // The break-down.
+        if w.deconstruction_resolution.is_none()
+            && let Some(origin) = o.deconstruction_resolution.as_ref()
+            && let Some(joined) = o.selected_deconstruction_index.and_then(|i| o.deconstructions.get(i)).map(|d| &d.words_joined)
+            && let Some(i) = w.deconstructions.iter().position(|d| &d.words_joined == joined)
+        {
+            w.selected_deconstruction_index = Some(i);
+            w.deconstruction_locked = o.deconstruction_locked;
+            w.deconstruction_resolution = Some(origin.clone());
+            changed = true;
+        }
+
+        // Component senses.
+        for (cw, uid) in &o.component_selected_uids {
+            if w.component_resolutions.contains_key(cw) {
+                continue;
+            }
+            let Some(origin) = o.component_resolutions.get(cw) else {
+                continue;
+            };
+            w.component_selected_uids.insert(cw.clone(), uid.clone());
+            w.component_resolutions.insert(cw.clone(), origin.clone());
+            changed = true;
+        }
+
+        // Readings and contextual meanings.
+        if w.reading.is_none()
+            && let Some(r) = o.reading.as_ref()
+            && w.results.iter().any(|res| res.uid == r.uid)
+        {
+            w.reading = Some(r.clone());
+            changed = true;
+        }
+        for (cw, r) in &o.component_readings {
+            if !w.component_readings.contains_key(cw) {
+                w.component_readings.insert(cw.clone(), r.clone());
+                changed = true;
+            }
+        }
+
+        if changed {
+            carried += 1;
+        }
+    }
+    carried
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lr(uid: &str) -> LookupResult {
+        LookupResult { uid: uid.to_string(), word: uid.to_string(), summary: String::new() }
+    }
+
+    fn pw(word: &str, uids: &[&str]) -> ProcessedWord {
+        ProcessedWord {
+            original_word: word.to_string(),
+            results: uids.iter().map(|u| lr(u)).collect(),
+            selected_index: 0,
+            stem: uids[0].to_string(),
+            example_sentence: format!("a {} b", word),
+            context_hash: String::new(),
+            resolution: None,
+            deconstructions: Vec::new(),
+            direct_uids: uids.iter().map(|u| u.to_string()).collect(),
+            selected_deconstruction_index: None,
+            deconstruction_locked: false,
+            component_selected_uids: HashMap::new(),
+            component_resolutions: HashMap::new(),
+            deconstruction_resolution: None,
+            form_grammar_raw: Vec::new(),
+            lookup_word: String::new(),
+            lookup_grammar: Vec::new(),
+            lookup_headword_ids: Vec::new(),
+            demoted_uids: Vec::new(),
+            reading: None,
+            component_readings: Default::default(),
+        }
+    }
+
+    #[test]
+    fn carry_over_moves_session_choices_only() {
+        let mut old_te = pw("te", &["1/dpd", "2/dpd"]);
+        old_te.selected_index = 1;
+        old_te.resolution = Some("ai-selected".into());
+        old_te.reading = Some(SenseReading {
+            uid: "2/dpd".into(),
+            grammar_index: Some(1),
+            contextual_meaning: Some("they".into()),
+            origin: "ai-selected".into(),
+        });
+        old_te.component_selected_uids.insert("ta".into(), "9/dpd".into());
+        old_te.component_resolutions.insert("ta".into(), "user-selected".into());
+        // A user choice the cache already resolved in the new gloss stays.
+        let mut old_kho = pw("kho", &["3/dpd", "4/dpd"]);
+        old_kho.selected_index = 1;
+        old_kho.resolution = Some("ai-selected".into());
+        // A word in another context is not matched.
+        let mut other = pw("te", &["1/dpd", "2/dpd"]);
+        other.example_sentence = "other context te".into();
+
+        let mut new_kho = pw("kho", &["3/dpd", "4/dpd"]);
+        new_kho.resolution = Some("user-selected".into());
+        let mut new = vec![pw("te", &["1/dpd", "2/dpd"]), new_kho, other];
+        let carried = carry_over_session_choices(&mut new, &[old_te.clone(), old_kho]);
+
+        assert_eq!(carried, 1);
+        assert_eq!(new[0].selected_index, 1);
+        assert_eq!(new[0].resolution.as_deref(), Some("ai-selected"));
+        assert_eq!(new[0].reading, old_te.reading);
+        assert_eq!(new[0].component_selected_uids.get("ta").map(String::as_str), Some("9/dpd"));
+        assert_eq!(new[0].component_resolutions.get("ta").map(String::as_str), Some("user-selected"));
+        assert_eq!(new[1].selected_index, 0, "a resolved sense is not replaced");
+        assert_eq!(new[2].resolution, None);
+    }
 
     fn hw() -> HeadwordRowFields {
         HeadwordRowFields { id: 1, lemma_clean: "x".to_string(), ..Default::default() }

@@ -63,6 +63,7 @@ ColumnLayout {
             model_name: (item && item.model_name) ? item.model_name : "",
             status: (item && item.status) ? item.status : "waiting",
             response: (item && item.response) ? item.response : "",
+            literal_translation: (item && item.literal_translation) ? item.literal_translation : "",
             progress: (item && item.progress) ? item.progress : "",
             continuing: (item && item.continuing) ? true : false,
             request_id: (item && item.request_id) ? item.request_id : ""
@@ -86,6 +87,7 @@ ColumnLayout {
             if (row.request_id !== fresh.request_id) entries_model.setProperty(i, "request_id", fresh.request_id);
             if (row.status !== fresh.status) entries_model.setProperty(i, "status", fresh.status);
             if (row.response !== fresh.response) entries_model.setProperty(i, "response", fresh.response);
+            if (row.literal_translation !== fresh.literal_translation) entries_model.setProperty(i, "literal_translation", fresh.literal_translation);
             if (row.progress !== fresh.progress) entries_model.setProperty(i, "progress", fresh.progress);
             if (row.continuing !== fresh.continuing) entries_model.setProperty(i, "continuing", fresh.continuing);
             if (row.model_name !== fresh.model_name) entries_model.setProperty(i, "model_name", fresh.model_name);
@@ -179,6 +181,7 @@ ColumnLayout {
                 model_name: response_content.entry.model_name,
                 status: response_content.entry.status,
                 response: response_content.entry.response,
+                literal_translation: response_content.entry.literal_translation,
                 progress: response_content.entry.progress
             })
 
@@ -187,6 +190,12 @@ ColumnLayout {
                     var formatted = ai_error_utils.format_response_error(data.response)
                     return formatted || data.response || "Unknown error occurred";
                 } else if (data.status === "completed") {
+                    // A Gloss tab two-part translation shows both parts; an
+                    // older single translation or a chat answer shows as is.
+                    if (data.literal_translation) {
+                        return SuttaBridge.markdown_to_html("**Translation:** " + (data.response || "")
+                            + "\n\n**Literal Translation:** " + data.literal_translation);
+                    }
                     return SuttaBridge.markdown_to_html(data.response || "");
                 }
                 // "waiting" (and any unknown status). The Rust

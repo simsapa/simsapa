@@ -449,6 +449,14 @@ Item {
         return '{"translation": "", "literal_translation": ""}';
     }
 
+    function refresh_gloss_paragraph_json(paragraph_json: string, old_words_json: string): string {
+        return '';
+    }
+
+    function gloss_export_paragraph_json(paragraph_json: string, gloss_format: string): string {
+        return '';
+    }
+
     function annotate_gloss_words_json(words_data_json: string): string {
         return words_data_json;
     }
@@ -580,6 +588,20 @@ Item {
 
     function set_ai_auto_fallback(auto_fallback: bool) {
         console.log("set_ai_auto_fallback():", auto_fallback);
+    }
+
+    function get_gloss_format(): string {
+        return 'word_in_sentence';
+    }
+
+    function set_gloss_format(format: string) {
+    }
+
+    function get_gloss_auto_translate(): bool {
+        return false;
+    }
+
+    function set_gloss_auto_translate(on: bool) {
     }
 
     function get_gloss_ai_translate_mode(): string {

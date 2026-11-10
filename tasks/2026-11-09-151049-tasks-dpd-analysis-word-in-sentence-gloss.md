@@ -22,7 +22,7 @@ Docs:
 - `docs/gloss-ai-word-selection.md` - Default sense of unresolved words, `demoted_uids`; gloss format, N / A / H in exports, item schema additions, two-part translation.
 - `docs/simsapa-cli-and-localhost-api.md` - Self-contained doc compiled into the binary: CLI options, `/gloss_text` options, the skill.
 - `docs/backend-cli-and-npm-package.md` - The `ai` feature, binary sizes.
-- `docs/ai-model-management-and-fallback.md` - Engine location after the move.
+- `docs/ai-model-management-and-fallback.md` - Engine location after the move; the Gloss tab's "Dispatch mode:" sends `gloss_translation_request`s.
 - `docs/localhost-api-implementation.md` - Engine location behind `/word_selection_ws`.
 - `PROJECT_MAP.md`, `CLAUDE.md` (a symlink to `AGENTS.md`) - New modules and the new doc.
 
@@ -36,21 +36,21 @@ Backend:
 - `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`), `word_selection_prompt_text()`; `WordSelectionParagraphInput::rows_json` / `from_result`, row-based items, `grammar_index` / `contextual_meaning` parsing; gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`, the default-sense ranking call), word-selection items/parsing (demoted senses not offered).
 - `backend/src/types.rs` - `ParagraphProcessingResult::ai_translations`, `AllParagraphsProcessingResult::ai_errors`; `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`, `reading`, `component_readings`; `SenseReading`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
 - `backend/src/gloss_sense_ranking.rs` - **New.** Default sense without cache or AI (DPD's ranking, headword and particle filters as a demotion, DB-example overlap); `demoted_uids`.
-- `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking; session readings, `resolution`, `rebuild_paragraph_rows`.
+- `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking; session readings, `resolution`, `rebuild_paragraph_rows`; `carry_over_session_choices()` for the format switch.
 - `backend/src/gloss_rows_tests.rs` or `#[cfg(test)]` in `gloss_rows.rs` - Unit tests for row rules.
 - `backend/src/gloss_variants.rs` - **New.** `//` spelling alternatives (`extract_spelling_variants`).
 - `backend/src/gloss_translation.rs` - **New.** Translation prompt assembly (word table from rows or words), JSON response parsing and the validate hook.
-- `backend/src/gloss_word_selection_apply.rs` - **New.** `apply_word_selection_answers()`, the Rust port of the QML apply path.
+- `backend/src/gloss_word_selection_apply.rs` - **New.** `apply_word_selection_answers()`, the Rust port of the QML apply path; `rebuild_rows_with_cache()`, shared with the Gloss tab.
 - `backend/src/dpd_form_grammar.rs` - `assign_form_grammar()`, extended by the A1 findings.
 - `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples and headword ids through the grouped lookup; grouped lookup adds roots in uid order (`direct_uids` was in `HashSet` order, so the gloss output varied between runs).
 - `backend/src/app_settings.rs` - New translation template, word-selection request additions, upgrade of unedited earlier defaults (`superseded_default_system_prompts`); gloss format / auto-translate settings.
-- `backend/src/app_data.rs` - Settings getters/setters.
+- `backend/src/app_data.rs` - Settings getters/setters; `update_app_settings()`, `set_gloss_format()`, `set_gloss_auto_translate()`.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
 - `backend/src/export_types.rs` - `AiResponse::literal_translation`; `GlossExportData` format, title, no-AI flag, `GlossExportRow`s, variants, confidence; `WORD_TABLE_COLUMNS`, title and cell helpers.
 - `backend/src/gloss_source.rs` - **New.** Sutta reference → passage paragraphs (`resolve_gloss_source`, `parse_paragraph_spec`, `is_sutta_reference`).
 - `backend/tests/test_gloss_source.rs` - **New.** Reference resolution against the dist database.
 - `backend/src/gloss_ai_run.rs` - **New.** AI run without Qt: word selection → apply → translation (`run_gloss_ai`, `run_gloss_ai_for_api`).
-- `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData` (Headwords vocabulary ported from QML, flattened rows) and the session JSON.
+- `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData` (Headwords vocabulary, flattened rows) and the session JSON; also builds the Gloss tab's export paragraphs.
 - `backend/src/text_export.rs`, `backend/src/docx_export.rs`, `backend/src/anki_export.rs` - Word in Sentence document, `Conf.` column, legend, Variants, two translations; Anki reads `GlossExportData` and makes Word in Sentence notes.
 - `backend/tests/test_gloss_export_contract.rs`, `backend/tests/data/gloss_export_contract/` - **New.** Export data contract test (Rust side) and its stored gloss and expected files.
 - `backend/tests/test_dpd_analysis_conformance.rs` - **New.** J2 conformance test and J3 agreement measurement (`#[ignore]`).
@@ -89,10 +89,12 @@ Bridges / GUI:
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `qmllint` stubs for the new invokables.
 - `bridges/assets/qml/GlossTab.qml` - Word-selection prompt through `SuttaBridge.build_word_selection_prompt`; options row, Auto-translate, AI Translate button, Word in Sentence rows, export data, session save/restore.
 - `bridges/assets/qml/GlossWordInSentenceRow.qml` - **New.** One row (word, shield, grammar, meaning, construction, root, components). Add to `qml_files` in `bridges/build.rs`.
-- `bridges/assets/qml/AiResponseCoordinator.qml` - Two-part translation results.
+- `bridges/assets/qml/AiResponseCoordinator.qml` - Two-part translation results: optional `parse_response` and `on_entry_finished` hooks.
+- `bridges/assets/qml/AssistantResponses.qml` - Shows a completed two-part translation as Translation and Literal Translation.
+- `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - Stubs for the gloss format / auto-translate settings, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`.
 - `bridges/assets/qml/GlossWordSelectionDialog.qml` - Legend wording, the same sentences as `CONFIDENCE_LEGEND`.
-- `bridges/assets/qml/tst_GlossTab.qml`, `tst_GlossTabBackgroundProcessing.qml` - Extended for the new options and rows.
-- `bridges/assets/qml/tst_GlossExportData.qml` - **New.** Export data contract test (GUI side).
+- `bridges/assets/qml/tst_GlossTab.qml`, `tst_GlossTabBackgroundProcessing.qml` - Extended for the new options, rows, sessions, the format switch, readings and Auto-translate.
+- `backend/src/export_types.rs`, `backend/src/text_export.rs`, `backend/tests/test_gloss_export_contract.rs` - Comments: the Gloss tab's export paragraphs come from the Rust builder.
 - `bridges/build.rs` - Register the new QML file.
 
 CLI:
@@ -449,20 +451,20 @@ sub-task, not only after a whole parent task.
 - **Keep-screen-on:** Auto-translate holds `"gloss-auto-translate"` from the
   first request until the last response or failure.
 
-- [ ] 10.0 Update the GUI Gloss tab: options row, Auto-translate, one AI Translate button, Word in Sentence rows, sessions and history (FR E1–E8, C4)
-  - [ ] 10.1 Add the two settings in `app_settings.rs` / `app_data.rs`, the `SuttaBridge` invokables and the qmllint stubs.
-  - [ ] 10.2 Options row: add the Gloss format ComboBox (persisted), rename "AI translation:" to "Dispatch mode:", add the Auto-translate CheckBox; check the row wraps on mobile widths.
-  - [ ] 10.3 Pass `gloss_format` into the gloss processing call(s) in `GlossTab.qml` (foreground and background processing).
-  - [ ] 10.4 Create `GlossWordInSentenceRow.qml` (spec above), register it in `bridges/build.rs`, and use it in the paragraph delegate when the format is Word in Sentence; keep the existing vocabulary rows for Headwords.
-  - [ ] 10.5 Sense change (E6): ComboBox `onActivated` updates the row from `candidates[i]` without a backend call and saves a `user-selected` row as today; Grammar ComboBox updates `grammar_index` in the session only; component rows use the existing component save path.
-  - [ ] 10.5a QML apply path for AI answers: pass the paragraph's rows as `rows_json` to `build_word_selection_items_json`; read the new `grammar_index` and `contextual_meaning` fields (into `reading` / `component_readings`, as `gloss_word_selection_apply.rs` does) and the source-(ii) `c<k>` answers alongside the existing ones; a one-option (reading-only) item writes no cache row (same load-bearing rules: `onActivated` not `onCurrentIndexChanged`; a late AI response never clobbers a fresh user choice); rebuild the rows after applying (a backend call; `GlossRowBuilder::rebuild_paragraph_rows`). (The prompt already goes through the 6.1a invokable.)
-  - [ ] 10.6 Format switch (E7): re-gloss the paragraphs with no AI request, carrying chosen senses, grammar indexes and contextual meanings over by `context_hash`.
-  - [ ] 10.7 Translation: replace the two buttons with `AI Translate`; send through `PromptManager.gloss_translation_request` / `sequential_gloss_translation_request` (6.7); remove the two old templates from `default_system_prompts()` and `translation_prompt_for()` / `dictionary_definitions_from_paragraph()` from `GlossTab.qml` (add the old texts to `superseded_default_system_prompts()` only if they are to be upgraded; the PRD says they stay unused); build the prompt with `SuttaBridge.gloss_translation_prompt`; parse with `parse_gloss_translation`; show "AI Translation:" with Translation and Literal Translation (per-model tabs in Parallel mode); old single translations show as Translation (C4). Update `AiResponseCoordinator.qml` for the two fields.
-  - [ ] 10.8 Auto-translate (E3): after a paragraph's gloss completes (and its AI word selection, if enabled), queue `AI Translate` for it; keep-screen-on holder; guard so an "Update Gloss" re-run does not duplicate a request already in flight.
-  - [ ] 10.9 Sessions/history: serialize `gloss_format`, rows' `grammar_index` / contextual meaning, two-part translations; restore old sessions (no format → Headwords as saved, so their view does not change); keep the `gloss-prompts-history` state machine rules (`docs/gloss-prompts-history.md`).
-  - [ ] 10.10 `gloss_export_data()` emits the 7.1 fields; add `tst_GlossExportData.qml` that builds export data for the 7.9 paragraph and compares it with the Rust expected JSON.
-  - [ ] 10.11 Extend `tst_GlossTab.qml` / `tst_GlossTabBackgroundProcessing.qml`: default format is Word in Sentence, options persist, the AI Translate button exists and the old buttons do not.
-  - [ ] 10.12 `make build -B`, `make qml-test`; list the manual GUI checks for the user (format switch, shield click on a component row, Auto-translate with one model, export to DOCX, an old history session).
+- [x] 10.0 Update the GUI Gloss tab: options row, Auto-translate, one AI Translate button, Word in Sentence rows, sessions and history (FR E1–E8, C4)
+  - [x] 10.1 Add the two settings in `app_settings.rs` / `app_data.rs`, the `SuttaBridge` invokables and the qmllint stubs. (`gloss_format` defaults to Word in Sentence, `gloss_auto_translate` off; `AppData::update_app_settings()` helper. Also `refresh_gloss_paragraph_json` and `gloss_export_paragraph_json`, below.)
+  - [x] 10.2 Options row: add the Gloss format ComboBox (persisted), rename "AI translation:" to "Dispatch mode:", add the Auto-translate CheckBox; check the row wraps on mobile widths.
+  - [x] 10.3 Pass `gloss_format` into the gloss processing call(s) in `GlossTab.qml` (foreground and background processing).
+  - [x] 10.4 Create `GlossWordInSentenceRow.qml` (spec above), register it in `bridges/build.rs`, and use it in the paragraph delegate when the format is Word in Sentence; keep the existing vocabulary rows for Headwords.
+  - [x] 10.5 Sense change (E6): ComboBox `onActivated` updates the row from `candidates[i]` without a backend call and saves a `user-selected` row as today; Grammar ComboBox updates `grammar_index` in the session only; component rows use the existing component save path. (Changed: the row is rebuilt by one backend call, `SuttaBridge.refresh_gloss_paragraph_json` → `rebuild_rows_with_cache`, because a new sense brings its own component rows, which the candidates do not carry. Every words change goes through `GlossTab.set_paragraph_words()`. A break-down row's shield writes the compound's break-down row.)
+  - [x] 10.5a QML apply path for AI answers: pass the paragraph's rows as `rows_json` to `build_word_selection_items_json`; read the new `grammar_index` and `contextual_meaning` fields (into `reading` / `component_readings`, as `gloss_word_selection_apply.rs` does) and the source-(ii) `c<k>` answers alongside the existing ones; a one-option (reading-only) item writes no cache row (same load-bearing rules: `onActivated` not `onCurrentIndexChanged`; a late AI response never clobbers a fresh user choice); rebuild the rows after applying (a backend call; `GlossRowBuilder::rebuild_paragraph_rows`). (The prompt already goes through the 6.1a invokable.)
+  - [x] 10.6 Format switch (E7): re-gloss the paragraphs with no AI request, carrying chosen senses, grammar indexes and contextual meanings over by `context_hash`.
+  - [x] 10.7 Translation: replace the two buttons with `AI Translate`; send through `PromptManager.gloss_translation_request` / `sequential_gloss_translation_request` (6.7); remove the two old templates from `default_system_prompts()` and `translation_prompt_for()` / `dictionary_definitions_from_paragraph()` from `GlossTab.qml` (add the old texts to `superseded_default_system_prompts()` only if they are to be upgraded; the PRD says they stay unused); build the prompt with `SuttaBridge.gloss_translation_prompt`; parse with `parse_gloss_translation`; show "AI Translation:" with Translation and Literal Translation (per-model tabs in Parallel mode); old single translations show as Translation (C4). Update `AiResponseCoordinator.qml` for the two fields.
+  - [x] 10.8 Auto-translate (E3): after a paragraph's gloss completes (and its AI word selection, if enabled), queue `AI Translate` for it; keep-screen-on holder; guard so an "Update Gloss" re-run does not duplicate a request already in flight.
+  - [x] 10.9 Sessions/history: serialize `gloss_format`, rows' `grammar_index` / contextual meaning, two-part translations; restore old sessions (no format → Headwords as saved, so their view does not change); keep the `gloss-prompts-history` state machine rules (`docs/gloss-prompts-history.md`).
+  - [x] 10.10 `gloss_export_data()` emits the 7.1 fields; add `tst_GlossExportData.qml` that builds export data for the 7.9 paragraph and compares it with the Rust expected JSON. (Changed: `gloss_export_data()` builds each paragraph with the CLI's Rust builder, `SuttaBridge.gloss_export_paragraph_json` → `build_export_paragraph`, so there is one producer and the 7.9 contract test covers it. No `tst_GlossExportData.qml`: under `qmltestrunner` `SuttaBridge` is the stub, so it could not run the builder.)
+  - [x] 10.11 Extend `tst_GlossTab.qml` / `tst_GlossTabBackgroundProcessing.qml`: default format is Word in Sentence, options persist, the AI Translate button exists and the old buttons do not.
+  - [x] 10.12 `make build -B`, `make qml-test`; list the manual GUI checks for the user (format switch, shield click on a component row, Auto-translate with one model, export to DOCX, an old history session).
 
 ### 11.0 — specs and dependencies
 
@@ -531,6 +533,19 @@ sub-task, not only after a whole parent task.
   or Simsapa's own corpus counts) above rank 10. Re-measure with
   `measure_selection_agreement` and check the list above before adopting any.
   Doc: docs/dpd-analysis-procedure.md §3 gap 9.
+
+- [ ] **"Ignore for this session" on a compound headword's component.** In
+  the Word in Sentence rows, clicking the full shield of a built-in choice
+  clears its resolution for the session. For a component of a compound or
+  sandhi headword (`daḷha` under `daḷhaparakkamā`), the row rebuild resolves
+  it from the cache again (`GlossRowBuilder::component_rows`), so the shield
+  stays full. Token rows and break-down components are not affected. Found
+  in 10.0.
+
+- [ ] **GUI "No duplicates" / "Skip common" defaults.** PRD B3 says both are
+  off by default in Word in Sentence. The Gloss tab still starts a session
+  with both on (unchanged), so its table leaves out repeated and common
+  tokens until they are unticked. Decide with the user.
 
 ### Conformance notes for review with example texts
 
