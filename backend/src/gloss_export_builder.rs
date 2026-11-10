@@ -56,7 +56,7 @@ pub fn build_gloss_export_data(
         })
         .collect();
     GlossExportData {
-        text: options.text.trim().to_string(),
+        text: crate::helpers::gloss_niggahita(options.text.trim()),
         gloss_format: options.gloss_format,
         title: options.title.clone(),
         no_ai_provider: options.no_ai_provider,
@@ -77,7 +77,7 @@ pub fn build_export_paragraph(
         GlossFormat::WordInSentence => (Vec::new(), export_rows(&paragraph.rows, &paragraph.words_data)),
     };
     GlossExportParagraph {
-        text: text.trim().to_string(),
+        text: crate::helpers::gloss_niggahita(text.trim()),
         vocabulary,
         ai_translations,
         variants: paragraph.variants.clone(),
@@ -117,10 +117,18 @@ fn headwords_vocabulary(words: &[ProcessedWord]) -> Vec<GlossExportVocabItem> {
             .ok()
             .filter(|&i| i < w.results.len())
             .unwrap_or(0);
+        // The senses to choose from are the direct results (a mixed word's
+        // break-down component results are not senses of the word), as in
+        // the Word in Sentence rows.
+        let senses = if w.direct_uids.is_empty() {
+            w.results.len()
+        } else {
+            w.results.iter().filter(|r| w.direct_uids.contains(&r.uid)).count()
+        };
         out.push(vocab_item(
             &w.results[index],
             w,
-            Confidence::for_choice(w.resolution.as_deref(), w.results.len()),
+            Confidence::for_choice(w.resolution.as_deref(), senses),
         ));
     }
     out
@@ -292,6 +300,20 @@ mod tests {
         assert_eq!(items[0].confidence, Some(Confidence::A));
         assert_eq!(items[0].context_snippet, "x <b>ārāme</b> y");
         assert_eq!(items[1].confidence, None);
+    }
+
+    /// A mixed word (one direct sense, plus the component results of its
+    /// break-downs) has nothing to choose: no mark, as in its row.
+    #[test]
+    fn headwords_vocabulary_counts_direct_senses_only() {
+        let mut w = processed_word(
+            "saddhammo",
+            vec![result("1/dpd", "saddhamma"), result("2/dpd", "sant"), result("3/dpd", "dhamma 1.01")],
+        );
+        w.direct_uids = vec!["1/dpd".to_string()];
+        let items = headwords_vocabulary(&[w]);
+        assert_eq!(items[0].word, "saddhamma");
+        assert_eq!(items[0].confidence, None);
     }
 
     #[test]

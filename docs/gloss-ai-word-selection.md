@@ -191,7 +191,11 @@ The context window is **not new**: it is the ±50-char, sentence-bounded window
 `extract_words_with_context()` already computes per word and hands to QML as
 `ProcessedWord.example_sentence` (with the target marked `<b>word</b>`). The
 displayed context, the AI request's `context` field and the hash input are
-therefore identical by construction.
+therefore identical by construction. The text is converted to `ṁ` first
+(`gloss_niggahita()`, also `Ṃ` → `Ṁ`): the tokeniser finds each clean word
+(`ṁ`) in the text as written, and a `ṃ` text would not match, losing the
+written form (`pan'āniccaṃ` → `panāniccaṁ`) and the sentence window. Every
+gloss output therefore writes `ṁ`.
 
 Because the key is only the word plus its **local** window — not the sutta — a
 formulaic pericope produces the **same row in every sutta that contains it**. One
@@ -1200,7 +1204,10 @@ describe.
   annotation. `k` indexes the token's component rows (tree order, deduplicated
   by word, all of them), so skipping one never shifts later ids. A word with a
   direct match never has break-down component items, so the two kinds of `c`
-  item never meet on one word.
+  item never meet on one word. The items are the components of the sense
+  **shown when the request is built**: when the same answer picks another
+  sense for the token, the component answers are still stored by component
+  word, and only those the new sense also has show in its rows.
 - **Contextual meaning.** Every answer may give `contextual_meaning`, the
   dictionary meaning fitted to the sentence (DPD's field of that name).
 

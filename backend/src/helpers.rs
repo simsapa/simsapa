@@ -1138,6 +1138,14 @@ pub fn consistent_niggahita(text: Option<String>) -> String {
     }
 }
 
+/// The gloss's niggahīta: `ṁ` for `ṃ` / `ŋ`, and `Ṁ` for `Ṃ`. Every gloss
+/// input is converted before it is tokenised, so the words, their context
+/// snippets and context hashes, and every output column use `ṁ` whatever
+/// spelling the passage was written in.
+pub fn gloss_niggahita(text: &str) -> String {
+    text.replace('ṃ', "ṁ").replace('ŋ', "ṁ").replace('Ṃ', "Ṁ")
+}
+
 lazy_static! {
     // The quoted iti-sandhi forms (see normalize_iti_sandhi). The quote mark
     // may be before or after the n / long vowel. Only at the end of a word: a
@@ -2223,7 +2231,10 @@ pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
     // "... SN 56.11", verse numbers, PTS pages) are not part of the passage:
     // strip them so they are not glossed and cannot pollute the surrounding
     // context windows / hashes.
-    let (text, _sutta_refs) = strip_gloss_annotations(text);
+    // `ṃ` would not match the clean words (`ṁ`), losing the written form and
+    // the sentence context of the word.
+    let text = gloss_niggahita(text);
+    let (text, _sutta_refs) = strip_gloss_annotations(&text);
     let original_text = text.trim();
     if original_text.is_empty() {
         return Vec::new();
@@ -5494,7 +5505,7 @@ fn gloss_paragraph_variants(
 ) -> (String, Vec<Vec<String>>) {
     match options.gloss_format {
         crate::types::GlossFormat::WordInSentence => {
-            crate::gloss_variants::extract_spelling_variants(paragraph_text)
+            crate::gloss_variants::extract_spelling_variants(&gloss_niggahita(paragraph_text))
         }
         crate::types::GlossFormat::Headwords => (paragraph_text.to_string(), Vec::new()),
     }
@@ -6228,6 +6239,19 @@ mod tests {
         }
         assert_eq!(normalize_iti_sandhi("maraṇā’ti."), "maraṇa ti.");
         assert_eq!(normalize_iti_sandhi("hevan’ti"), "hevaṁ ti");
+    }
+
+    /// A text written with `ṃ` is glossed as `ṁ`: the written form keeps its
+    /// apostrophe and the context is the sentence, as for the same text in `ṁ`.
+    #[test]
+    fn test_extract_words_converts_niggahita() {
+        let m = extract_words_with_context("Saṁvaro sādhu. Rūpaṁ pan'āniccaṁ, taṁ dukkhaṁ.");
+        let dot = extract_words_with_context("Saṃvaro sādhu. Rūpaṃ pan'āniccaṃ, taṃ dukkhaṃ.");
+        assert_eq!(m, dot);
+        let pan = dot.iter().find(|w| w.clean_word == "panāniccaṁ").unwrap();
+        assert_eq!(pan.original_word, "pan'āniccaṁ");
+        assert!(!pan.context_snippet.contains("sādhu"), "{}", pan.context_snippet);
+        assert_eq!(gloss_niggahita("Ṃ ṃ ŋ"), "Ṁ ṁ ṁ");
     }
 
     #[test]

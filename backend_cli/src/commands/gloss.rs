@@ -429,7 +429,7 @@ fn session_export_json(
         text: paragraphs.join("\n\n"),
         title: title.to_string(),
         gloss_format,
-        no_ai_provider: get_app_data().get_ai_fallback_sequence().is_empty(),
+        no_ai_provider: !get_app_data().has_enabled_ai_model(),
     };
     let translations = result_translations(result, paragraphs.len());
     let session = build_gloss_session_json(
@@ -601,7 +601,7 @@ fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str) {
         for line in CONFIDENCE_LEGEND {
             outln!("{}", line);
         }
-        if get_app_data().get_ai_fallback_sequence().is_empty() {
+        if !get_app_data().has_enabled_ai_model() {
             outln!("{}", NO_AI_PROVIDER_NOTE);
         }
     }

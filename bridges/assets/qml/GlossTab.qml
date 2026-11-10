@@ -338,8 +338,9 @@ Item {
         root.auto_translate_update_screen_hold();
     }
 
-    // Forget the pending auto-translations (the paragraphs were rebuilt or
-    // the session changed); in-flight answers still land in their entries.
+    // Forget the pending auto-translations (the paragraphs were glossed
+    // again or the session changed): the entries they would answer are gone,
+    // so their answers are discarded and the screen hold is released.
     function auto_translate_reset() {
         root.auto_translate_after_ws = ({});
         root.auto_translate_in_flight = ({});
@@ -1515,7 +1516,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         // The paragraph list is rebuilt: any in-flight/queued word-selection
         // request now refers to stale content.
         root.ws_reset();
-        root.auto_translate_reset();
+        // A format switch keeps the translations, and with them the
+        // auto-translate requests in flight: their answers still land, so the
+        // screen stays on for them (checked again below). A new gloss drops
+        // the translations, and answers to them are discarded.
+        if (carry === null) root.auto_translate_reset();
 
         // Clear the paragraph model
         paragraph_model.clear();
@@ -1557,7 +1562,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         logger.debug(`✅ Successfully processed ${results.paragraphs.length} paragraphs`);
         root.session_needs_saving = true;
-        if (carry !== null) return;
+        if (carry !== null) {
+            // Release the auto-translate requests that are no longer waiting.
+            for (let k of Object.keys(root.auto_translate_in_flight)) {
+                root.auto_translate_entry_finished(parseInt(k, 10));
+            }
+            return;
+        }
 
         // Auto-run AI word selection over all glossed paragraphs.
         if (root.is_word_selection_enabled() && paragraph_model.count > 0) {

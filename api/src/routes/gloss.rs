@@ -403,7 +403,7 @@ pub fn gloss_result_export_data(
         text: paragraphs.join("\n\n"),
         title: title.to_string(),
         gloss_format,
-        no_ai_provider: get_app_data().get_ai_fallback_sequence().is_empty(),
+        no_ai_provider: !get_app_data().has_enabled_ai_model(),
     };
     build_gloss_export_data(result, paragraphs, &translations, &options)
 }

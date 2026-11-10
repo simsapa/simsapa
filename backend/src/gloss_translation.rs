@@ -137,7 +137,7 @@ pub fn build_translation_prompt(
     template: &str,
 ) -> String {
     let user_prompt = template
-        .replace("<<PALI_PASSAGE>>", paragraph_text.trim())
+        .replace("<<PALI_PASSAGE>>", &crate::helpers::gloss_niggahita(paragraph_text.trim()))
         .replace("<<WORD_TABLE>>", &word_table_markdown(vocab));
     if system_prompt.trim().is_empty() {
         user_prompt

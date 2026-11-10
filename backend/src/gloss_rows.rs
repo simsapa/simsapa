@@ -343,7 +343,8 @@ const COMPONENT_SUFFIXES: [&str; 42] = [
     "*āya", "*iya",
 ];
 
-/// Headword `pos` values DPD never offers (grammarians' entries).
+/// Filler words DPD drops from a kammadhāraya construction written without
+/// ` + ` (after its first word), in `normalize_kammadharaya_construction`.
 const KAMMADHARAYA_FILTER_WORDS: [&str; 5] = ["eva", "iva", "iti", "etassa", "viya"];
 
 fn is_comp_vb(hw: &HeadwordRowFields) -> bool {
@@ -901,7 +902,9 @@ impl GlossRowBuilder {
             }
         }
         if cands.is_empty() {
-            return Ok(unresolved_token_row(word));
+            // A token row says "not found"; the base word of a quoted iti
+            // token stays a component row at its depth.
+            return Ok(if depth == 0 { unresolved_token_row(word) } else { unresolved_component_row(word, depth) });
         }
         let cand = &cands[selected];
         // A token row shows its sense's components; a component row (the base

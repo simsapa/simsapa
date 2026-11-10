@@ -78,10 +78,10 @@ mod run {
         }
     }
 
-    /// Whether an AI run can ask anything: the Fallback sequence has a model of
-    /// an enabled provider.
+    /// Whether an AI run can ask anything: the Fallback sequence has an
+    /// enabled model (of an enabled provider).
     pub fn ai_available() -> bool {
-        !fallback_walk_settings().0.is_empty()
+        crate::get_app_data().has_enabled_ai_model()
     }
 
     /// Run the AI steps of `options` over `result`, whose paragraphs'

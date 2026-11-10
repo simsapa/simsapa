@@ -1791,6 +1791,14 @@ impl AppData {
         app_settings.ai_fallback_sequence.clone()
     }
 
+    /// Whether the Fallback sequence has an enabled model: what a sequential
+    /// AI request (the CLI's and `/gloss_text`'s gloss runs) can try. The
+    /// engine skips disabled entries (`ai_fallback.rs`), so a sequence whose
+    /// models are all switched off is no AI provider.
+    pub fn has_enabled_ai_model(&self) -> bool {
+        self.get_ai_fallback_sequence().iter().any(|e| e.enabled)
+    }
+
     pub fn get_ai_fallback_sequence_json(&self) -> String {
         serde_json::to_string(&self.get_ai_fallback_sequence()).unwrap_or_else(|_| "[]".to_string())
     }

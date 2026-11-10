@@ -487,14 +487,14 @@ sub-task, not only after a whole parent task.
 
 ### Found along the way
 
-- [ ] Gloss tokeniser: a word written with `ṃ` loses its written form and
-  context window. `extract_words_with_context` matches the clean word (`ṁ`)
-  against the original text and fails on `ṃ`, so `original_word` falls back to
-  the clean word (`pan'āniccaṃ` → `panāniccaṁ`, apostrophes lost) and the
-  context snippet is a fixed window instead of the sentence (a different
-  `context_hash`). Found in 4.0; the conformance test feeds `ṁ` text. Fixing it
-  changes the context hashes of `ṃ` passages, so cached selections made on
-  such text would no longer apply (FR A3): decide with the user.
+- [x] Gloss tokeniser: a word written with `ṃ` lost its written form and
+  context window (`pan'āniccaṃ` → `panāniccaṁ`, a fixed window instead of the
+  sentence). Decided: the niggahīta is always `ṁ`. `extract_words_with_context`
+  converts the text first (`gloss_niggahita`, also `Ṃ` → `Ṁ`), as do the
+  export passage text, the `//` variants and the translation prompt. The
+  context hashes of `ṃ` passages changed (cached selections made on such text
+  no longer apply); the Headwords snapshots were regenerated: only `ṃ` → `ṁ`,
+  the sentence windows and their hashes changed, no sense choice.
 
 - [ ] Re-check the built-in agent-checked gloss data against DPD's headword
   filters. It was made before the filters were adopted (task 5.2): 72 of its
@@ -542,10 +542,20 @@ sub-task, not only after a whole parent task.
   stays full. Token rows and break-down components are not affected. Found
   in 10.0.
 
-- [ ] **GUI "No duplicates" / "Skip common" defaults.** PRD B3 says both are
-  off by default in Word in Sentence. The Gloss tab still starts a session
-  with both on (unchanged), so its table leaves out repeated and common
-  tokens until they are unticked. Decide with the user.
+- [x] **GUI "No duplicates" / "Skip common" defaults.** Decided: the Gloss
+  tab keeps starting with both ticked (the user sees the options); the CLI
+  and the API keep both off unless the caller gives them (the caller only
+  knows about the behaviour by asking for it).
+
+- [x] **Review fixes after 10.0.** `has_enabled_ai_model()`: the CLI, the
+  `/gloss_text` documents and the AI run count only enabled Fallback-sequence
+  models (a sequence with every model switched off is no provider). The
+  Headwords `Conf.` mark counts the direct senses only (a mixed word with one
+  direct sense has no mark, as in its row). An unresolved quoted-iti base row
+  stays a component row. `gloss --no-ai` / `--exact` run with the read-only
+  preamble (no lock held). A format switch keeps the auto-translate screen
+  hold for translations still in flight. Doc: `c<k>` items of a compound
+  headword are for the sense shown when the request is built.
 
 ### Conformance notes for review with example texts
 

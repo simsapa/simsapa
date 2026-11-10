@@ -251,11 +251,18 @@ fn run(cli: &Cli) -> CliResult {
             commands::sutta::run(args, cli.json)
         }
         Commands::Gloss(args) => {
-            // The lock, when taken, is held for the whole command: the AI's
-            // sense choices are written to the word-selection cache.
-            let (_lock, can_write) = preamble_keeping_write_lock()?;
-            startup::check_db_compatible(IncompatibleDb::Warn)?;
-            commands::gloss::run_gloss(args, cli.json, can_write)
+            // With AI word selection the lock, when taken, is held for the
+            // whole command: the AI's sense choices are written to the
+            // word-selection cache. Without it (`--no-ai`, `--exact`) gloss
+            // writes nothing and runs as the other read-only commands do.
+            if args.no_ai || args.exact {
+                read_only_preamble()?;
+                commands::gloss::run_gloss(args, cli.json, false)
+            } else {
+                let (_lock, can_write) = preamble_keeping_write_lock()?;
+                startup::check_db_compatible(IncompatibleDb::Warn)?;
+                commands::gloss::run_gloss(args, cli.json, can_write)
+            }
         }
         Commands::Lookup(args) => {
             read_only_preamble()?;
