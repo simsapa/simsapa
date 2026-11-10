@@ -19,6 +19,14 @@ Item {
         // Silence for less output during qml tests.
     }
 
+    function gloss_translation_request(request_id: string, paragraph_idx: int, translation_idx: int, provider_name: string, model_name: string, prompt: string) {
+        // Silence for less output during qml tests.
+    }
+
+    function sequential_gloss_translation_request(request_id: string, paragraph_idx: int, translation_idx: int, prompt: string) {
+        // Silence for less output during qml tests.
+    }
+
     function sequential_word_selection_request(request_id: int, prompt: string) {
         // Silence for less output during qml tests.
     }

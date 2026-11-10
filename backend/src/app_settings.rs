@@ -595,6 +595,25 @@ Respond with only the translation of the Pāli passage.
 Respond with GFM-Markdown formatted text.
 "#.trim().to_string());
 
+    prompts.insert(crate::gloss_translation::TRANSLATION_TEMPLATE_KEY.to_string(),
+        r#"
+You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. Do not introduce senses that are not listed; a word without a sense in the table you may translate as you see fit. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
+
+Pāli passage:
+
+<<PALI_PASSAGE>>
+
+Chosen word senses:
+
+<<WORD_TABLE>>
+
+Return two translations: "translation", in natural, readable English; and "literal_translation", close to word-by-word, following the Pāli word order and grammar where English allows.
+
+Respond with a JSON object with exactly these two keys, and nothing else (no prose, no markdown code fences):
+
+{"translation": "<natural English>", "literal_translation": "<word-by-word English>"}
+"#.trim().to_string());
+
     prompts.insert("Gloss Tab: Word Selection System Prompt".to_string(),
         r#"
 You are an expert in Pāli grammar and vocabulary, assisting with the word-by-word glossing of Theravāda Pāli texts. For each listed word, choose the dictionary entry whose meaning fits the word as used in its context. Some items instead ask which compound break-down (sandhi/compound deconstruction) fits the context, or which sense a component word of a compound has; answer them with the same option format. Respond with JSON only — no explanations, no markdown code fences.
@@ -610,11 +629,15 @@ There are three kinds of items, distinguished by their "id" suffix:
 - Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
 - Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
 
+Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context. An item with a single option asks only for this reading.
+
+For every selection, also return "contextual_meaning": the selected entry's dictionary meaning adjusted to fit the grammar and the context (e.g. "dwells" -> "I would dwell"), in a few words. Give only the core meaning; do not append grammatical case notes in parentheses.
+
 <<WORD_SELECTION_JSON>>
 
 Respond with JSON in exactly this format, one selection per item:
 
-{"selections": [{"id": "<item id>", "word": "<chosen option's word>"}]}
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>"}]}
 
 A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
 "#.trim().to_string());
@@ -627,6 +650,31 @@ Respond with GFM-Markdown formatted text.
 "#.trim().to_string());
 
     prompts
+}
+
+/// Earlier default texts of system prompts. A user's prompt still equal to
+/// one of these was never edited, so `merge_default_system_prompts()`
+/// replaces it with the current default; an edited prompt is kept.
+fn superseded_default_system_prompts() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("Gloss Tab: Word Selection Request", r#"
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
+
+There are three kinds of items, distinguished by their "id" suffix:
+
+- Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
+
+<<WORD_SELECTION_JSON>>
+
+Respond with JSON in exactly this format, one selection per item:
+
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>"}]}
+
+A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
+"#),
+    ]
 }
 
 fn default_true() -> bool {
@@ -886,9 +934,22 @@ impl AppSettings {
     /// Insert any missing built-in default `system_prompts` keys, so existing
     /// users' settings gain newly added prompts without overwriting their
     /// edits to existing keys. Returns true if any key was added.
+    /// Insert the default prompts missing from the settings, and upgrade the
+    /// prompts still equal to an earlier default (never edited) to the
+    /// current one. Returns whether anything changed.
     pub fn merge_default_system_prompts(&mut self) -> bool {
         let mut changed = false;
-        for (prompt_key, prompt_text) in default_system_prompts() {
+        let defaults = default_system_prompts();
+        for (prompt_key, old_text) in superseded_default_system_prompts() {
+            if let Some(current) = self.system_prompts.get_mut(prompt_key)
+                && current.trim() == old_text.trim()
+                && let Some(new_text) = defaults.get(prompt_key)
+            {
+                *current = new_text.clone();
+                changed = true;
+            }
+        }
+        for (prompt_key, prompt_text) in defaults {
             if !self.system_prompts.contains_key(&prompt_key) {
                 self.system_prompts.insert(prompt_key, prompt_text);
                 changed = true;
@@ -1021,6 +1082,33 @@ impl AppKeybindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Settings saved before the two-part translation template existed gain
+    /// it on load; an unedited earlier word-selection request is upgraded, an
+    /// edited one is kept.
+    #[test]
+    fn merge_default_system_prompts_adds_and_upgrades() {
+        let translation_key = crate::gloss_translation::TRANSLATION_TEMPLATE_KEY;
+        let request_key = "Gloss Tab: Word Selection Request";
+        let (_, old_request) = superseded_default_system_prompts()
+            .into_iter()
+            .find(|(k, _)| *k == request_key)
+            .unwrap();
+
+        let mut settings = AppSettings::default();
+        settings.system_prompts.shift_remove(translation_key);
+        settings.system_prompts.insert(request_key.to_string(), old_request.trim().to_string());
+        assert!(settings.merge_default_system_prompts());
+        let defaults = default_system_prompts();
+        assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
+        assert!(settings.system_prompts[translation_key].contains("<<WORD_TABLE>>"));
+        assert_eq!(settings.system_prompts[request_key], defaults[request_key]);
+        assert!(settings.system_prompts[request_key].contains("grammar_index"));
+
+        settings.system_prompts.insert(request_key.to_string(), "my own request".to_string());
+        assert!(!settings.merge_default_system_prompts());
+        assert_eq!(settings.system_prompts[request_key], "my own request");
+    }
 
     /// The canonical string must be the serde spelling for every variant, so that
     /// a provider name persisted in the model-usage lists (or passed from QML)

@@ -62,8 +62,15 @@ pub struct ChatMessage {
 pub struct AiResponse {
     #[serde(default)]
     pub model_name: String,
+    /// The model's answer; for a Gloss tab translation, the (readable)
+    /// Translation. A session saved before the two-part translation holds its
+    /// one translation here.
     #[serde(default)]
     pub response: String,
+    /// The Literal Translation of a two-part Gloss tab translation; empty
+    /// for older sessions and for Prompts tab responses.
+    #[serde(default)]
+    pub literal_translation: String,
     #[serde(default)]
     pub is_selected: bool,
 }
@@ -76,5 +83,31 @@ impl AiResponse {
         } else {
             ""
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A session saved before the two-part translation (one translation per
+    /// model, in `response`) reads with an empty Literal Translation; a new
+    /// one carries both.
+    #[test]
+    fn ai_translation_reads_old_and_two_part_sessions() {
+        let old: GlossExportData = serde_json::from_str(
+            r#"{"paragraphs": [{"text": "x", "ai_translations": [{"model_name": "m", "response": "They are wise.", "is_selected": true}]}]}"#,
+        )
+        .unwrap();
+        let t = &old.paragraphs[0].ai_translations[0];
+        assert_eq!(t.response, "They are wise.");
+        assert_eq!(t.literal_translation, "");
+        assert!(t.is_selected);
+
+        let new: GlossExportData = serde_json::from_str(
+            r#"{"paragraphs": [{"ai_translations": [{"model_name": "m", "response": "A", "literal_translation": "B"}]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(new.paragraphs[0].ai_translations[0].literal_translation, "B");
     }
 }

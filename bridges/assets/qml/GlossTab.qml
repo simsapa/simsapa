@@ -371,18 +371,11 @@ Item {
         }
     }
 
-    // Assemble the combined prompt following the AI Translate convention:
-    // system prompt + "\n\n" + request template with the payload substituted.
+    // The combined prompt (system prompt + request template with the payload
+    // substituted), assembled in Rust so the CLI and the API send the same
+    // text (simsapa_backend::helpers::build_word_selection_prompt).
     function build_word_selection_prompt(items) {
-        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection System Prompt");
-        let template = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection Request");
-        let payload = { task: "pali_word_selection", items: items };
-        let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", JSON.stringify(payload));
-        let combined_prompt = user_prompt;
-        if (system_prompt && system_prompt.trim() !== "") {
-            combined_prompt = system_prompt + "\n\n" + user_prompt;
-        }
-        return combined_prompt;
+        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items));
     }
 
     // Entry point: run AI word selection for the given paragraphs. Batched

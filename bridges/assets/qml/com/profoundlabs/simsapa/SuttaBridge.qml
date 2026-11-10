@@ -437,6 +437,18 @@ Item {
         return '[]';
     }
 
+    function build_word_selection_prompt(items_json: string): string {
+        return '';
+    }
+
+    function gloss_translation_prompt(paragraph_json: string): string {
+        return '';
+    }
+
+    function parse_gloss_translation(response: string): string {
+        return '{"translation": "", "literal_translation": ""}';
+    }
+
     function annotate_gloss_words_json(words_data_json: string): string {
         return words_data_json;
     }

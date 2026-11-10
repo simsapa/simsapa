@@ -1257,6 +1257,15 @@ pub mod qobject {
         fn build_word_selection_items_json(self: &SuttaBridge, paragraphs_json: &QString, forced: bool) -> QString;
 
         #[qinvokable]
+        fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn gloss_translation_prompt(self: &SuttaBridge, paragraph_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn parse_gloss_translation(self: &SuttaBridge, response: &QString) -> QString;
+
+        #[qinvokable]
         fn annotate_gloss_words_json(self: &SuttaBridge, words_data_json: &QString) -> QString;
 
         #[qinvokable]
@@ -3549,6 +3558,64 @@ impl qobject::SuttaBridge {
                 error(&format!("build_word_selection_items_json(): {}", e));
                 QString::from("[]")
             }
+        }
+    }
+
+    /// The word-selection prompt for request items (an items JSON array from
+    /// `build_word_selection_items_json`), with the saved system prompt and
+    /// request template (`simsapa_backend::helpers::build_word_selection_prompt`).
+    pub fn build_word_selection_prompt(&self, items_json: &QString) -> QString {
+        let items: Vec<serde_json::Value> = match serde_json::from_str(&items_json.to_string()) {
+            Ok(items) => items,
+            Err(e) => {
+                error(&format!("build_word_selection_prompt(): invalid items JSON: {}", e));
+                Vec::new()
+            }
+        };
+        QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items))
+    }
+
+    /// The two-part translation prompt for one paragraph
+    /// (`simsapa_backend::gloss_translation`). `paragraph_json` is
+    /// `{"text": …, "rows": [...]}` (Word in Sentence rows) or
+    /// `{"text": …, "words_data": [...]}` (Headwords); rows win when both are
+    /// given. Returns `""` on invalid input (logged).
+    pub fn gloss_translation_prompt(&self, paragraph_json: &QString) -> QString {
+        use simsapa_backend::gloss_translation::{
+            build_translation_prompt_from_settings, translation_vocabulary_from_rows,
+            translation_vocabulary_from_words,
+        };
+        #[derive(serde::Deserialize)]
+        struct Paragraph {
+            #[serde(default)]
+            text: String,
+            #[serde(default)]
+            rows: Vec<simsapa_backend::gloss_rows::GlossRow>,
+            #[serde(default)]
+            words_data: Vec<simsapa_backend::types::ProcessedWord>,
+        }
+        let paragraph: Paragraph = match serde_json::from_str(&paragraph_json.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                error(&format!("gloss_translation_prompt(): invalid paragraph JSON: {}", e));
+                return QString::from("");
+            }
+        };
+        let vocab = if paragraph.rows.is_empty() {
+            translation_vocabulary_from_words(&paragraph.words_data)
+        } else {
+            translation_vocabulary_from_rows(&paragraph.rows)
+        };
+        QString::from(build_translation_prompt_from_settings(&paragraph.text, &vocab))
+    }
+
+    /// Parse a two-part translation answer: `{"translation": …,
+    /// "literal_translation": …}`, or an `{"ai_error": …}` envelope
+    /// (`invalid_response`) when the answer is not that JSON.
+    pub fn parse_gloss_translation(&self, response: &QString) -> QString {
+        match simsapa_backend::gloss_translation::parse_translation_response(&response.to_string()) {
+            Ok(t) => QString::from(serde_json::to_string(&t).unwrap_or_default()),
+            Err(e) => QString::from(e.to_envelope_json()),
         }
     }
 

@@ -30,7 +30,7 @@ use crate::helpers::{
     consistent_niggahita, gloss_cache_word_key, gloss_context_hash, normalize_dpd_query_text,
     normalize_gloss_context, resolve_gloss_word_selection, GlossResolutionData, GlossWordContext,
 };
-use crate::types::{GrammarTriple, ProcessedWord, WordProcessingResult};
+use crate::types::{GrammarTriple, ParagraphProcessingResult, ProcessedWord, SenseReading, WordProcessingResult};
 
 /// How a row's sense was decided, with the same three levels as the Gloss
 /// tab's shield (docs/gloss-ai-word-selection.md §5).
@@ -108,6 +108,10 @@ pub struct GlossRow {
     pub root: String,
     /// `None` when there was nothing to choose (one candidate).
     pub confidence: Option<Confidence>,
+    /// The resolution origin of the choice (`"ai-selected"`, `"user-selected"`,
+    /// …), as on `ProcessedWord::resolution`; `None` when nothing decided it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
     pub candidates: Vec<RowCandidate>,
     pub selected_candidate: usize,
     pub components: Vec<GlossRow>,
@@ -542,6 +546,9 @@ pub struct TokenInput<'a> {
 /// cache under the token's context hash (a compound headword's component).
 struct ComponentContext<'a> {
     token_index: usize,
+    /// The token's `ProcessedWord`: its component choices and readings come
+    /// before the cache's.
+    word: Option<&'a ProcessedWord>,
     normalized_context: String,
     context_hash: String,
     resolution_data: Option<&'a GlossResolutionData>,
@@ -781,6 +788,7 @@ impl GlossRowBuilder {
                 Some(WordProcessingResult::Recognized(pw)) => {
                     let ctx = ComponentContext {
                         token_index,
+                        word: Some(pw),
                         normalized_context: normalize_gloss_context(&pw.example_sentence),
                         context_hash: if pw.context_hash.is_empty() {
                             gloss_context_hash(&normalize_gloss_context(&pw.example_sentence))
@@ -798,6 +806,46 @@ impl GlossRowBuilder {
                 }
                 Some(WordProcessingResult::Skipped) => {}
             }
+        }
+        Ok(rows)
+    }
+
+    /// The rows of a glossed paragraph again, after its `words_data` changed
+    /// (an applied AI answer): each token row is rebuilt from its
+    /// `ProcessedWord`, an unresolved token row is kept.
+    pub fn rebuild_paragraph_rows(
+        &mut self,
+        paragraph: &ParagraphProcessingResult,
+        resolution_data: Option<&GlossResolutionData>,
+    ) -> Result<Vec<GlossRow>> {
+        let mut rows = Vec::with_capacity(paragraph.rows.len());
+        for (token_index, old) in paragraph.rows.iter().enumerate() {
+            let Some(pw) = old.word_index.and_then(|wi| paragraph.words_data.get(wi)) else {
+                rows.push(old.clone());
+                continue;
+            };
+            let word_index = old.word_index.unwrap_or_default();
+            // The row's word is the token as written (`ṁ`), which is what the
+            // token row reads from its context.
+            let context = GlossWordContext {
+                clean_word: pw.original_word.clone(),
+                original_word: old.word.clone(),
+                context_snippet: pw.example_sentence.clone(),
+            };
+            let normalized_context = normalize_gloss_context(&pw.example_sentence);
+            let ctx = ComponentContext {
+                token_index,
+                word: Some(pw),
+                context_hash: if pw.context_hash.is_empty() {
+                    gloss_context_hash(&normalized_context)
+                } else {
+                    pw.context_hash.clone()
+                },
+                normalized_context,
+                resolution_data,
+                chooser: None,
+            };
+            rows.push(self.token_row(&context, pw, word_index, &ctx)?);
         }
         Ok(rows)
     }
@@ -830,6 +878,10 @@ impl GlossRowBuilder {
 
         let mut selected = usize::try_from(pw.selected_index).unwrap_or(0).min(cands.len().saturating_sub(1));
         let mut reading = cands.get(selected).map(|c| default_reading_index(&c.readings)).unwrap_or(0);
+        let session_reading = cands.get(selected).and_then(|c| reading_for(pw.reading.as_ref(), c));
+        if let Some(gi) = session_reading.and_then(|r| r.grammar_index) {
+            reading = gi;
+        }
         let confidence = Confidence::for_choice(pw.resolution.as_deref(), cands.len());
         if let Some(choice) = ctx.chooser.and_then(|ch| ch.choose(ctx.token_index, path, &row_cands)) {
             if choice.candidate < cands.len() {
@@ -848,7 +900,10 @@ impl GlossRowBuilder {
         } else {
             Vec::new()
         };
-        Ok(make_row(word, depth, Some(word_index), cand, reading, top_level, confidence, row_cands, selected, components))
+        let mut row = make_row(word, depth, Some(word_index), cand, reading, top_level, confidence, row_cands, selected, components);
+        row.resolution = pw.resolution.clone();
+        apply_contextual_meaning(&mut row, reading_for(pw.reading.as_ref(), cand));
+        Ok(row)
     }
 
     /// The row of a word the deconstructor resolved (no direct match): the
@@ -888,7 +943,8 @@ impl GlossRowBuilder {
                 .get(&comp.word)
                 .and_then(|uid| cands.iter().position(|c| &c.uid == uid));
             let resolution = chosen.and_then(|_| pw.component_resolutions.get(&comp.word).map(String::as_str));
-            components.push(self.part_row(&comp.word, depth + 1, &comp_path, &cands, "", chosen, resolution, ctx)?);
+            let reading = pw.component_readings.get(&comp.word);
+            components.push(self.part_row(&comp.word, depth + 1, &comp_path, &cands, "", chosen, resolution, reading, ctx)?);
         }
 
         let meaning = components
@@ -900,6 +956,7 @@ impl GlossRowBuilder {
         candidates[selected].meaning = meaning.clone();
         let confidence = Confidence::for_choice(pw.deconstruction_resolution.as_deref(), candidates.len());
         Ok(GlossRow {
+            resolution: pw.deconstruction_resolution.clone(),
             word: word.to_string(),
             depth,
             word_index: Some(word_index),
@@ -985,6 +1042,7 @@ impl GlossRowBuilder {
                     construction: construction.clone(),
                     root: String::new(),
                     confidence: None,
+                    resolution: None,
                     candidates: vec![RowCandidate {
                         id: None,
                         uid: construction.clone(),
@@ -1016,10 +1074,21 @@ impl GlossRowBuilder {
                 rows.push(unresolved_component_row(&part.word, depth));
                 continue;
             }
-            // A choice saved for this component under the token's context.
+            // A choice made for this component in the session (an AI answer
+            // applied without a cache row), else one saved for it under the
+            // token's context.
             let mut chosen = None;
             let mut resolution = None;
             if part.cands.len() > 1
+                && let Some(pw) = ctx.word
+                && let Some(uid) = pw.component_selected_uids.get(&part.word)
+                && let Some(idx) = part.cands.iter().position(|c| &c.uid == uid)
+            {
+                chosen = Some(idx);
+                resolution = pw.component_resolutions.get(&part.word).cloned();
+            }
+            if part.cands.len() > 1
+                && chosen.is_none()
                 && let Some(data) = ctx.resolution_data
             {
                 let results: Vec<LookupResult> = part
@@ -1038,7 +1107,8 @@ impl GlossRowBuilder {
                     resolution = Some(origin);
                 }
             }
-            rows.push(self.part_row(&part.word, depth, &comp_path, &part.cands, parent_meaning, chosen, resolution.as_deref(), ctx)?);
+            let reading = ctx.word.and_then(|pw| pw.component_readings.get(&part.word));
+            rows.push(self.part_row(&part.word, depth, &comp_path, &part.cands, parent_meaning, chosen, resolution.as_deref(), reading, ctx)?);
         }
         Ok(rows)
     }
@@ -1055,6 +1125,7 @@ impl GlossRowBuilder {
         parent_meaning: &str,
         chosen: Option<usize>,
         resolution: Option<&str>,
+        reading: Option<&SenseReading>,
         ctx: &ComponentContext,
     ) -> Result<GlossRow> {
         if cands.is_empty() {
@@ -1065,6 +1136,9 @@ impl GlossRowBuilder {
             Some(ci) => (ci, best_component_reading(&cands[ci], parent_meaning)),
             None => best_component_option(cands, parent_meaning),
         };
+        if let Some(gi) = reading_for(reading, &cands[ci]).and_then(|r| r.grammar_index) {
+            ri = gi;
+        }
         if let Some(choice) = ctx.chooser.and_then(|ch| ch.choose(ctx.token_index, path, &row_cands))
             && choice.candidate < cands.len()
         {
@@ -1078,7 +1152,22 @@ impl GlossRowBuilder {
             Vec::new()
         };
         let confidence = Confidence::for_choice(resolution, cands.len());
-        Ok(make_row(word, depth, None, cand, ri, false, confidence, row_cands, ci, components))
+        let mut row = make_row(word, depth, None, cand, ri, false, confidence, row_cands, ci, components);
+        row.resolution = resolution.map(str::to_string);
+        apply_contextual_meaning(&mut row, reading_for(reading, cand));
+        Ok(row)
+    }
+}
+
+/// `reading` when it belongs to `cand` (the sense still chosen).
+fn reading_for<'a>(reading: Option<&'a SenseReading>, cand: &Cand) -> Option<&'a SenseReading> {
+    reading.filter(|r| r.uid == cand.uid)
+}
+
+/// Shows a session reading's contextual meaning in place of `meaning_combo`.
+fn apply_contextual_meaning(row: &mut GlossRow, reading: Option<&SenseReading>) {
+    if let Some(m) = reading.and_then(|r| r.contextual_meaning.as_deref()).map(str::trim).filter(|m| !m.is_empty()) {
+        row.meaning = m.to_string();
     }
 }
 
@@ -1118,6 +1207,7 @@ fn make_row(
         construction: cand.construction.clone(),
         root: cand.root.clone(),
         confidence,
+        resolution: None,
         candidates,
         selected_candidate,
         components,

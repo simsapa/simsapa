@@ -358,7 +358,7 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
 
     let words_json = serde_json::to_string(&result.paragraphs[0].words_data).unwrap();
     let items = simsapa_backend::helpers::build_word_selection_items(
-        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None }],
+        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None, rows_json: None }],
         simsapa_backend::helpers::WordSelectionBuildMode::IncludeResolved,
     )
     .unwrap();
@@ -366,4 +366,231 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
     let offered: Vec<&str> = tasma_item["options"].as_array().unwrap().iter().map(|o| o["uid"].as_str().unwrap()).collect();
     assert!(!offered.contains(&"30147/dpd") && !offered.contains(&"29189/dpd"), "offered: {:?}", offered);
     assert!(offered.len() >= 2);
+}
+
+// -- AI word selection over the rows (grammar readings, components of
+// compound headwords) and applying the answers in Rust ----------------------
+
+use simsapa_backend::gloss_word_selection_apply::apply_word_selection_answers;
+use simsapa_backend::helpers::{
+    build_word_selection_items, gloss_cache_word_key, WordSelectionBuildMode, WordSelectionEntry,
+    WordSelectionParagraphInput,
+};
+
+/// A passage whose context no real cache row has, so a test can write and
+/// delete its own rows.
+const DUMMY_DHP23: &str = "dummyword te jhāyino sātatikā, niccaṁ daḷhaparakkamā, phusanti dhīrā nibbānaṁ.";
+
+fn items_of(result: &AllParagraphsProcessingResult) -> Vec<serde_json::Value> {
+    let inputs = WordSelectionParagraphInput::from_result(result).unwrap();
+    build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap()
+}
+
+fn answer(id: &str, uid: &str, grammar_index: Option<usize>, contextual_meaning: Option<&str>) -> WordSelectionEntry {
+    WordSelectionEntry {
+        id: id.to_string(),
+        uid: uid.to_string(),
+        confidence: "confident".to_string(),
+        note: None,
+        grammar_index,
+        contextual_meaning: contextual_meaning.map(str::to_string),
+    }
+}
+
+#[test]
+#[serial]
+fn test_word_selection_items_from_rows() {
+    h::app_data_setup();
+    let result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let rows = &result.paragraphs[0].rows;
+    let items = items_of(&result);
+
+    // The components of the compound headword `daḷhaparakkama`, with the
+    // token's construction as the annotation.
+    let token_wi = rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().word_index.unwrap();
+    let comp_items: Vec<&serde_json::Value> = items
+        .iter()
+        .filter(|i| i["id"].as_str().unwrap().starts_with(&format!("p0w{}c", token_wi)))
+        .collect();
+    let comp_words: Vec<&str> = comp_items.iter().map(|i| i["component_word"].as_str().unwrap()).collect();
+    assert_eq!(comp_words, vec!["daḷha", "parakkama"]);
+    assert_eq!(comp_items[0]["id"], format!("p0w{}c0", token_wi));
+    assert_eq!(comp_items[0]["deconstructions"], serde_json::json!(["daḷha + parakkama"]));
+    assert!(comp_items[0]["options"].as_array().unwrap().len() > 1);
+
+    // Every option whose sense has several readings lists them.
+    for r in rows.iter().filter(|r| r.depth == 0 && r.word_index.is_some()) {
+        let id = format!("p0w{}", r.word_index.unwrap());
+        let item = items.iter().find(|i| i["id"] == id.as_str());
+        for c in r.candidates.iter().filter(|c| c.grammar_options.len() > 1) {
+            let item = item.unwrap_or_else(|| panic!("{}: a sense with several readings is asked about", r.word));
+            let option = item["options"].as_array().unwrap().iter().find(|o| o["uid"] == c.uid.as_str());
+            if let Some(o) = option {
+                assert_eq!(o["grammar_options"], serde_json::json!(c.grammar_options), "{}", r.word);
+            }
+        }
+        if r.candidates.len() == 1 && r.candidates[0].grammar_options.len() < 2 {
+            assert!(item.is_none(), "{}: nothing to choose", r.word);
+        }
+    }
+
+    // The Headwords format asks about the same words as before (no rows).
+    let headwords = gloss(&[DUMMY_DHP23], options(GlossFormat::Headwords, false));
+    let hw_items = items_of(&headwords);
+    assert!(hw_items.iter().all(|i| i["options"].as_array().unwrap().iter().all(|o| o.get("grammar_options").is_none())));
+    assert!(hw_items.iter().all(|i| i.get("component_word").is_none()), "DHP23 has no deconstructor-resolved word");
+}
+
+#[test]
+#[serial]
+fn test_apply_word_selection_answers_without_cache() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let items = items_of(&result);
+    let rows = result.paragraphs[0].rows.clone();
+
+    // A component answer: the sense the ranking did not choose.
+    let token = rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap();
+    let wi = token.word_index.unwrap();
+    let daḷha = &token.components[0];
+    let other = (daḷha.selected_candidate + 1) % daḷha.candidates.len();
+    let other_uid = daḷha.candidates[other].uid.clone();
+
+    // A sense answer for a word with a real choice.
+    let sense_item = items
+        .iter()
+        .find(|i| i.get("component_word").is_none() && i["options"].as_array().unwrap().len() > 1)
+        .expect("DHP23 has an ambiguous word");
+    let sense_id = sense_item["id"].as_str().unwrap().to_string();
+    let sense_wi: usize = sense_id.trim_start_matches("p0w").parse().unwrap();
+    let sense_uid = sense_item["options"][1]["uid"].as_str().unwrap().to_string();
+    let sense_gi = sense_item["options"][1].get("grammar_options").map(|_| 1);
+
+    let answers = vec![
+        answer(&format!("p0w{}c0", wi), &other_uid, None, Some("steady")),
+        answer(&sense_id, &sense_uid, sense_gi, Some("in context")),
+        answer("p0w999", "x", None, None),
+    ];
+    let summary = apply_word_selection_answers(
+        &mut result, &items, &answers, &app_data.dbm.appdata, &app_data.dbm.dpd, false,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped, summary.cache_rows_written), (2, 1, 0));
+
+    let pw = &result.paragraphs[0].words_data[wi];
+    assert_eq!(pw.component_selected_uids["daḷha"], other_uid);
+    assert_eq!(pw.component_resolutions["daḷha"], "ai-selected");
+
+    let rows = &result.paragraphs[0].rows;
+    let comp = &rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().components[0];
+    assert_eq!(comp.selected_candidate, other);
+    assert_eq!(comp.id, daḷha.candidates[other].id);
+    assert_eq!(comp.confidence, Some(Confidence::A));
+    assert_eq!(comp.meaning, "steady");
+
+    let sense_pw = &result.paragraphs[0].words_data[sense_wi];
+    assert_eq!(sense_pw.results[sense_pw.selected_index as usize].uid, sense_uid);
+    assert_eq!(sense_pw.resolution.as_deref(), Some("ai-selected"));
+    let sense_row = rows.iter().find(|r| r.word_index == Some(sense_wi) && r.depth == 0).unwrap();
+    assert_eq!(sense_row.confidence, Some(Confidence::A));
+    assert_eq!(sense_row.meaning, "in context");
+    if let Some(gi) = sense_gi {
+        assert_eq!(sense_row.grammar_index, gi);
+        assert_eq!(sense_row.grammar, sense_row.grammar_options[gi]);
+    }
+
+    // Answered items are not asked again.
+    let again = items_of(&result);
+    assert!(!again.iter().any(|i| i["id"] == sense_id.as_str() || i["id"] == format!("p0w{}c0", wi).as_str()));
+}
+
+#[test]
+#[serial]
+fn test_apply_word_selection_answers_writes_component_cache_row() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let appdata = &app_data.dbm.appdata;
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let items = items_of(&result);
+    let token = result.paragraphs[0].rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().clone();
+    let wi = token.word_index.unwrap();
+    let context_hash = result.paragraphs[0].words_data[wi].context_hash.clone();
+    let parakkama = &token.components[1];
+    let other = (parakkama.selected_candidate + 1) % parakkama.candidates.len();
+    let other_uid = parakkama.candidates[other].uid.clone();
+
+    let answers = vec![answer(&format!("p0w{}c1", wi), &other_uid, None, Some("exertion"))];
+    let summary = apply_word_selection_answers(&mut result, &items, &answers, appdata, &app_data.dbm.dpd, true).unwrap();
+    let written = summary.cache_rows_written;
+
+    // A new gloss of the same passage resolves the component from the cache
+    // row, keyed on the token's context; the contextual meaning is not cached.
+    let again = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let comp = &again.paragraphs[0].rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().components[1];
+    let cache_resolved = (comp.selected_candidate, comp.confidence, comp.resolution.clone(), comp.meaning.clone());
+
+    appdata.delete_gloss_word_cache(&gloss_cache_word_key("parakkama"), &context_hash).unwrap();
+    assert_eq!(written, 1);
+    assert_eq!(cache_resolved.0, other);
+    assert_eq!(cache_resolved.1, Some(Confidence::A));
+    assert_eq!(cache_resolved.2.as_deref(), Some("ai-selected"));
+    assert_ne!(cache_resolved.3, "exertion");
+}
+
+/// The Gloss tab's rules for a deconstructor-resolved word (break-down item
+/// `d`, component items `c<k>`), and the guard: an answer never replaces a
+/// person's choice.
+#[test]
+#[serial]
+fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let text = "dummyword santi h'eke samaṇabrāhmaṇā atthaññe";
+    let mut result = gloss(&[text], options(GlossFormat::WordInSentence, false));
+    let wi = result.paragraphs[0].rows.iter().find(|r| r.word == "atthaññe").unwrap().word_index.unwrap();
+    let decs = result.paragraphs[0].words_data[wi].deconstructions.len();
+    let comp_word = result.paragraphs[0].words_data[wi].deconstructions[0].components[0].word.clone();
+    let comp_uid = {
+        let pw = &result.paragraphs[0].words_data[wi];
+        let comp = &pw.deconstructions[0].components[0];
+        comp.result_uids[0].clone()
+    };
+    let items = vec![
+        serde_json::json!({"id": format!("p0w{}d", wi), "options": []}),
+        serde_json::json!({"id": format!("p0w{}c0", wi), "component_word": comp_word, "options": []}),
+        serde_json::json!({"id": format!("p0w{}c1", wi), "options": []}),
+    ];
+    let answers = vec![
+        answer(&format!("p0w{}d", wi), &format!("d:{}", decs - 1), None, None),
+        answer(&format!("p0w{}c0", wi), &comp_uid, Some(0), Some("is")),
+        // No component_word on its item: skipped.
+        answer(&format!("p0w{}c1", wi), &comp_uid, None, None),
+    ];
+    let summary = apply_word_selection_answers(&mut result, &items, &answers, &app_data.dbm.appdata, &app_data.dbm.dpd, false).unwrap();
+    assert_eq!((summary.applied, summary.skipped), (2, 1));
+    let pw = &result.paragraphs[0].words_data[wi];
+    assert_eq!(pw.selected_deconstruction_index, Some(decs - 1));
+    assert!(pw.deconstruction_locked);
+    assert_eq!(pw.deconstruction_resolution.as_deref(), Some("ai-selected"));
+    assert_eq!(pw.component_selected_uids[&comp_word], comp_uid);
+    assert_eq!(pw.component_readings[&comp_word].contextual_meaning.as_deref(), Some("is"));
+
+    // A person's choice stays.
+    let w = &mut result.paragraphs[0].words_data[wi];
+    w.deconstruction_resolution = Some("user-selected".to_string());
+    w.component_resolutions.insert(comp_word.clone(), "built-in-human-checked".to_string());
+    let summary = apply_word_selection_answers(
+        &mut result,
+        &items,
+        &[answer(&format!("p0w{}d", wi), "d:0", None, None), answer(&format!("p0w{}c0", wi), "other/dpd", None, None)],
+        &app_data.dbm.appdata,
+        &app_data.dbm.dpd,
+        false,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped), (0, 2));
+    let pw = &result.paragraphs[0].words_data[wi];
+    assert_eq!(pw.selected_deconstruction_index, Some(decs - 1));
+    assert_eq!(pw.component_selected_uids[&comp_word], comp_uid);
 }

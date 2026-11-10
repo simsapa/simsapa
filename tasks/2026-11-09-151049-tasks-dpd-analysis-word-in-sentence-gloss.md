@@ -33,26 +33,27 @@ Backend:
 - `backend/src/lib.rs` - `ai_engine` and `gloss_word_selection_run` gated on `ai`.
 - `backend/src/ai_engine.rs` - **Moved** from `bridges/src/ai_engine.rs`.
 - `backend/src/gloss_word_selection_run.rs` - **New.** Qt-free word-selection run, extracted from `run_ws_word_selection()` in `bridges/src/api.rs`.
-- `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`); gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`, the default-sense ranking call), word-selection items/parsing (demoted senses not offered).
-- `backend/src/types.rs` - `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
+- `backend/src/helpers.rs` - `build_word_selection_prompt()` (moved from `bridges/src/api.rs`), `word_selection_prompt_text()`; `WordSelectionParagraphInput::rows_json` / `from_result`, row-based items, `grammar_index` / `contextual_meaning` parsing; gloss pipeline (`process_all_paragraphs`, `process_word_for_glossing`, `gloss_dedup_key`, the default-sense ranking call), word-selection items/parsing (demoted senses not offered).
+- `backend/src/types.rs` - `ProcessedWord` (`form_grammar_raw`, `lookup_word`, `demoted_uids`, `reading`, `component_readings`; `SenseReading`; `lookup_grammar`, `lookup_headword_ids` not serialized), `WordProcessingOptions`, `GroupedDpdLookup::lookup_grammar`, `lookup_headword_ids` (not serialized), paragraph results' `rows` and `variants`.
 - `backend/src/gloss_sense_ranking.rs` - **New.** Default sense without cache or AI (DPD's ranking, headword and particle filters as a demotion, DB-example overlap); `demoted_uids`.
-- `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking.
+- `backend/src/gloss_rows.rs` - **New.** Word in Sentence row model: row fields, grammar readings, components, confidence, ranking; session readings, `resolution`, `rebuild_paragraph_rows`.
 - `backend/src/gloss_rows_tests.rs` or `#[cfg(test)]` in `gloss_rows.rs` - Unit tests for row rules.
 - `backend/src/gloss_variants.rs` - **New.** `//` spelling alternatives (`extract_spelling_variants`).
-- `backend/src/gloss_translation.rs` - **New.** Translation prompt assembly and JSON response parsing.
+- `backend/src/gloss_translation.rs` - **New.** Translation prompt assembly (word table from rows or words), JSON response parsing and the validate hook.
+- `backend/src/gloss_word_selection_apply.rs` - **New.** `apply_word_selection_answers()`, the Rust port of the QML apply path.
 - `backend/src/dpd_form_grammar.rs` - `assign_form_grammar()`, extended by the A1 findings.
 - `backend/src/db/dpd.rs` - Narrow headword / root batch queries; pass the `lookup.grammar` triples and headword ids through the grouped lookup; grouped lookup adds roots in uid order (`direct_uids` was in `HashSet` order, so the gloss output varied between runs).
-- `backend/src/app_settings.rs` - New translation template, gloss format / auto-translate settings.
+- `backend/src/app_settings.rs` - New translation template, word-selection request additions, upgrade of unedited earlier defaults (`superseded_default_system_prompts`); gloss format / auto-translate settings.
 - `backend/src/app_data.rs` - Settings getters/setters.
 - `backend/src/ai_error.rs` - `invalid_response` for the translation JSON.
-- `backend/src/export_types.rs` - `GlossExportData` row fields.
+- `backend/src/export_types.rs` - `AiResponse::literal_translation`; `GlossExportData` row fields.
 - `backend/src/gloss_export_builder.rs` - **New.** `AllParagraphsProcessingResult` → `GlossExportData`.
 - `backend/src/text_export.rs`, `backend/src/docx_export.rs`, `backend/src/anki_export.rs` - Word in Sentence document, `Conf.` column, legend, Variants, two translations.
 - `backend/tests/test_dpd_analysis_conformance.rs` - **New.** J2 conformance test and J3 agreement measurement (`#[ignore]`).
 - `backend/tests/data/dpd_analysis/` - **New.** Ported fixtures and example reports, with `SOURCE.md` (DPD commits, `distilled.json` format, the six tokens where `distilled.json` and `study.md` disagree).
 - `backend/tests/helpers/dpd_report.rs` - **New.** Parser for DPD reports (`parse_report`) and `distilled.json` (`parse_distilled`, option keys).
 - `backend/tests/test_dpd_report_parser.rs` - **New.** Tests of the report parser on all ten reports.
-- `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components, the default-sense ranking.
+- `backend/tests/test_gloss_word_in_sentence.rs` - **New.** Pipeline-level tests for rows, repeats, components, the default-sense ranking, row-based word-selection items and `apply_word_selection_answers`.
 - `backend/tests/test_gloss_headwords_snapshot.rs` - **New.** Byte-for-byte snapshot of the Headwords output (fixture passages, No duplicates, Skip common, single-paragraph path); `SIMSAPA_UPDATE_SNAPSHOTS=1` regenerates.
 - `backend/tests/data/gloss_headwords_snapshot/` - **New.** The snapshot files.
 - `backend/tests/test_gloss_compound_dedup.rs`, `test_gloss_word_resolution.rs`, `test_gloss_session_export.rs`, `test_gloss_text_exact.rs`, `test_anki_export.rs` - Existing tests that must keep passing; extended where noted.
@@ -62,6 +63,7 @@ Backend:
 Bootstrap:
 
 - `bootstrap_cli/src/gloss_corpus_explore.rs` - Calls `process_word_for_glossing` then `headwords_dedup_word` (same output as before).
+- `bootstrap_cli/src/gloss_agent_check.rs` - `WordSelectionParagraphInput` without rows (`rows_json: None`).
 
 API:
 
@@ -72,10 +74,11 @@ Bridges / GUI:
 - `bridges/Cargo.toml` - Depends on `simsapa_backend` with the `ai` feature.
 - `bridges/src/ai_engine.rs` - Removed (moved to `backend/src/ai_engine.rs`); `prompt_manager.rs` and `api.rs` import `simsapa_backend::ai_engine`.
 - `bridges/src/api.rs` - `/word_selection_ws` is a protocol adapter over `gloss_word_selection_run::run_word_selection()`; later, the `GlossAiRunner` for `/gloss_text`.
-- `bridges/src/prompt_manager.rs` - Translation request returns JSON; unchanged dispatch.
-- `bridges/src/sutta_bridge.rs` - New invokables: translation prompt, gloss format / auto-translate settings, row data.
+- `bridges/src/prompt_manager.rs` - `gloss_translation_request` / `sequential_gloss_translation_request` with the translation validate hook; unchanged dispatch.
+- `bridges/assets/qml/com/profoundlabs/simsapa/PromptManager.qml` - `qmllint` stubs for the two translation requests.
+- `bridges/src/sutta_bridge.rs` - New invokables: `build_word_selection_prompt`, `gloss_translation_prompt`, `parse_gloss_translation`; later gloss format / auto-translate settings, row data.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `qmllint` stubs for the new invokables.
-- `bridges/assets/qml/GlossTab.qml` - Options row, Auto-translate, AI Translate button, Word in Sentence rows, export data, session save/restore.
+- `bridges/assets/qml/GlossTab.qml` - Word-selection prompt through `SuttaBridge.build_word_selection_prompt`; options row, Auto-translate, AI Translate button, Word in Sentence rows, export data, session save/restore.
 - `bridges/assets/qml/GlossWordInSentenceRow.qml` - **New.** One row (word, shield, grammar, meaning, construction, root, components). Add to `qml_files` in `bridges/build.rs`.
 - `bridges/assets/qml/AiResponseCoordinator.qml` - Two-part translation results.
 - `bridges/assets/qml/GlossWordSelectionDialog.qml` - Legend wording source.
@@ -309,18 +312,18 @@ sub-task, not only after a whole parent task.
   String` (`#[serde(default)]`); `response` holds the Translation, so old
   sessions read unchanged (C4).
 
-- [ ] 6.0 Extend AI word selection (grammar readings, contextual meaning, source-(ii) components) and implement the two-part translation in Rust (FR B4a, B4b, B5, C0–C4)
-  - [ ] 6.1 Extend `build_word_selection_items()` with `grammar_options` and source-(ii) `c<k>` items; extend the word-selection system prompt (in `app_settings.rs`) to ask for `grammar_index` and `contextual_meaning` (adapted from DPD's `prompts.py` text quoted in doc §1).
-  - [ ] 6.1a Move the word-selection **prompt** assembly into the backend: today it exists twice, in QML (`GlossTab.build_word_selection_prompt()`, system prompt + `"Gloss Tab: Word Selection Request"` template with `<<WORD_SELECTION_JSON>>`) and in `bridges/src/api.rs` (`build_ws_word_selection_prompt()`). Add `helpers::build_word_selection_prompt(items)` and call it from both (QML via a new `SuttaBridge` invokable + stub) and from the CLI. Test that the GUI prompt text is unchanged for an existing item list.
-  - [ ] 6.2 Extend `parse_word_selection_response()` and `validate_word_selection_response_shape()` for the optional fields; old-shape answers still parse (unit tests for both shapes).
-  - [ ] 6.3 Add a Rust `apply_word_selection_answers(result, answers, appdata, write_cache: bool)` for the CLI and API. Today the answers are applied **in QML** (`GlossTab.qml`, the `SuttaBridge.save_gloss_word_cache` / `save_gloss_word_deconstruction_cache` calls around lines 1612–1854), which neither the CLI nor the API can run. The Rust function sets `selected_index` / break-down / component selections, writes the same `ai-selected` cache rows the QML writes (sense rows, the compound row, component rows keyed on the parent `context_hash`) when `write_cache`, sets `grammar_index` and contextual meaning on the rows, and sets confidence `A`. Port the QML rules exactly (late-response and user-choice guards do not apply to a one-shot run; state that in a comment). Test it against the same answers the QML tests use, and write in `docs/gloss-ai-word-selection.md` that the two must change together.
-  - [ ] 6.3a Note for task 10: the GUI keeps its QML apply path and must learn the new `grammar_index` / `contextual_meaning` fields there (10.5a).
-  - [ ] 6.4 Keep contextual meaning and grammar index in the session only: check `gloss_word_context_cache` writes are unchanged (the existing write tests pass).
-  - [ ] 6.5 Add `backend/src/gloss_translation.rs`: `build_translation_prompt(paragraph_text, rows, system_prompt, template) -> String` and `parse_translation_response(&str) -> Result<TwoPartTranslation, AiRequestError>` (strip code fences; anything else → `invalid_response`). Unit tests.
-  - [ ] 6.6 Replace the two templates in `default_system_prompts()` with `"Gloss Tab: AI Translation"`, adapted from DPD's translation-only prompt; confirm `merge_default_system_prompts()` inserts it into an old settings object (test).
-  - [ ] 6.7 Hook the response validation into the sequential engine's validate hook, so an invalid translation JSON retries/falls back like a truncated body.
-  - [ ] 6.8 Add `literal_translation` to `AiResponse` in `export_types.rs` and to the session JSON; test that an old session with a single translation deserializes with an empty `literal_translation`.
-  - [ ] 6.9 Expose `SuttaBridge.gloss_translation_prompt(paragraph_json)` and `SuttaBridge.parse_gloss_translation(response)` (with `qmllint` stubs), for 10.0.
+- [x] 6.0 Extend AI word selection (grammar readings, contextual meaning, source-(ii) components) and implement the two-part translation in Rust (FR B4a, B4b, B5, C0–C4)
+  - [x] 6.1 Extend `build_word_selection_items()` with `grammar_options` and source-(ii) `c<k>` items; extend the word-selection system prompt (in `app_settings.rs`) to ask for `grammar_index` and `contextual_meaning` (adapted from DPD's `prompts.py` text quoted in doc §1). (Built from the paragraph's rows, `WordSelectionParagraphInput::rows_json`, so the Headwords items are unchanged; per-option `grammar_options`; a one-sense word with several readings gets a reading-only item. The instructions went into the Request template; `merge_default_system_prompts()` now also upgrades a prompt still equal to an earlier default, `superseded_default_system_prompts()`.)
+  - [x] 6.1a Move the word-selection **prompt** assembly into the backend: today it exists twice, in QML (`GlossTab.build_word_selection_prompt()`, system prompt + `"Gloss Tab: Word Selection Request"` template with `<<WORD_SELECTION_JSON>>`) and in `bridges/src/api.rs` (`build_ws_word_selection_prompt()`). Add `helpers::build_word_selection_prompt(items)` and call it from both (QML via a new `SuttaBridge` invokable + stub) and from the CLI. Test that the GUI prompt text is unchanged for an existing item list. (The Rust function already existed from 2.4; it now writes `task` before `items` as the QML did, `word_selection_prompt_text`; QML calls `SuttaBridge.build_word_selection_prompt`.)
+  - [x] 6.2 Extend `parse_word_selection_response()` and `validate_word_selection_response_shape()` for the optional fields; old-shape answers still parse (unit tests for both shapes).
+  - [x] 6.3 Add a Rust `apply_word_selection_answers(result, answers, appdata, write_cache: bool)` for the CLI and API. Today the answers are applied **in QML** (`GlossTab.qml`, the `SuttaBridge.save_gloss_word_cache` / `save_gloss_word_deconstruction_cache` calls around lines 1612–1854), which neither the CLI nor the API can run. The Rust function sets `selected_index` / break-down / component selections, writes the same `ai-selected` cache rows the QML writes (sense rows, the compound row, component rows keyed on the parent `context_hash`) when `write_cache`, sets `grammar_index` and contextual meaning on the rows, and sets confidence `A`. Port the QML rules exactly (late-response and user-choice guards do not apply to a one-shot run; state that in a comment). Test it against the same answers the QML tests use, and write in `docs/gloss-ai-word-selection.md` that the two must change together. (`gloss_word_selection_apply.rs`; takes the request items too, for `component_word`. There are no QML tests of the apply path, so the Rust tests cover its rules directly. Readings and contextual meanings live on `ProcessedWord::reading` / `component_readings` (`SenseReading`, applied only while its uid is the chosen sense); a compound headword's component choice on `component_selected_uids` / `component_resolutions`, as a break-down component's; rows gain `resolution`; the rows are rebuilt with `GlossRowBuilder::rebuild_paragraph_rows`.)
+  - [x] 6.3a Note for task 10: the GUI keeps its QML apply path and must learn the new `grammar_index` / `contextual_meaning` fields there (10.5a).
+  - [x] 6.4 Keep contextual meaning and grammar index in the session only: check `gloss_word_context_cache` writes are unchanged (the existing write tests pass).
+  - [x] 6.5 Add `backend/src/gloss_translation.rs`: `build_translation_prompt(paragraph_text, rows, system_prompt, template) -> String` and `parse_translation_response(&str) -> Result<TwoPartTranslation, AiRequestError>` (strip code fences; anything else → `invalid_response`). Unit tests.
+  - [x] 6.6 Replace the two templates in `default_system_prompts()` with `"Gloss Tab: AI Translation"`, adapted from DPD's translation-only prompt; confirm `merge_default_system_prompts()` inserts it into an old settings object (test). (Added; the two old templates stay in the defaults until 10.7 switches the GUI, so a fresh install's AI Translate buttons keep working in between.)
+  - [x] 6.7 Hook the response validation into the sequential engine's validate hook, so an invalid translation JSON retries/falls back like a truncated body. (New `PromptManager.gloss_translation_request` / `sequential_gloss_translation_request` pass `validate_translation_response_shape`; `prompt_request` / `sequential_prompt_request` stay unvalidated for the old buttons until 10.7.)
+  - [x] 6.8 Add `literal_translation` to `AiResponse` in `export_types.rs` and to the session JSON; test that an old session with a single translation deserializes with an empty `literal_translation`.
+  - [x] 6.9 Expose `SuttaBridge.gloss_translation_prompt(paragraph_json)` and `SuttaBridge.parse_gloss_translation(response)` (with `qmllint` stubs), for 10.0.
   - [ ] 6.10 `make rust-test`, `make build -B`.
 
 ### 7.0 — specs and dependencies
@@ -441,9 +444,9 @@ sub-task, not only after a whole parent task.
   - [ ] 10.3 Pass `gloss_format` into the gloss processing call(s) in `GlossTab.qml` (foreground and background processing).
   - [ ] 10.4 Create `GlossWordInSentenceRow.qml` (spec above), register it in `bridges/build.rs`, and use it in the paragraph delegate when the format is Word in Sentence; keep the existing vocabulary rows for Headwords.
   - [ ] 10.5 Sense change (E6): ComboBox `onActivated` updates the row from `candidates[i]` without a backend call and saves a `user-selected` row as today; Grammar ComboBox updates `grammar_index` in the session only; component rows use the existing component save path.
-  - [ ] 10.5a QML apply path for AI answers: read the new `grammar_index` and `contextual_meaning` fields and the source-(ii) `c<k>` answers alongside the existing ones (same load-bearing rules: `onActivated` not `onCurrentIndexChanged`; a late AI response never clobbers a fresh user choice); switch `build_word_selection_prompt()` to the 6.1a invokable.
+  - [ ] 10.5a QML apply path for AI answers: pass the paragraph's rows as `rows_json` to `build_word_selection_items_json`; read the new `grammar_index` and `contextual_meaning` fields (into `reading` / `component_readings`, as `gloss_word_selection_apply.rs` does) and the source-(ii) `c<k>` answers alongside the existing ones; a one-option (reading-only) item writes no cache row (same load-bearing rules: `onActivated` not `onCurrentIndexChanged`; a late AI response never clobbers a fresh user choice); rebuild the rows after applying (a backend call; `GlossRowBuilder::rebuild_paragraph_rows`). (The prompt already goes through the 6.1a invokable.)
   - [ ] 10.6 Format switch (E7): re-gloss the paragraphs with no AI request, carrying chosen senses, grammar indexes and contextual meanings over by `context_hash`.
-  - [ ] 10.7 Translation: replace the two buttons with `AI Translate`; build the prompt with `SuttaBridge.gloss_translation_prompt`; parse with `parse_gloss_translation`; show "AI Translation:" with Translation and Literal Translation (per-model tabs in Parallel mode); old single translations show as Translation (C4). Update `AiResponseCoordinator.qml` for the two fields.
+  - [ ] 10.7 Translation: replace the two buttons with `AI Translate`; send through `PromptManager.gloss_translation_request` / `sequential_gloss_translation_request` (6.7); remove the two old templates from `default_system_prompts()` and `translation_prompt_for()` / `dictionary_definitions_from_paragraph()` from `GlossTab.qml` (add the old texts to `superseded_default_system_prompts()` only if they are to be upgraded; the PRD says they stay unused); build the prompt with `SuttaBridge.gloss_translation_prompt`; parse with `parse_gloss_translation`; show "AI Translation:" with Translation and Literal Translation (per-model tabs in Parallel mode); old single translations show as Translation (C4). Update `AiResponseCoordinator.qml` for the two fields.
   - [ ] 10.8 Auto-translate (E3): after a paragraph's gloss completes (and its AI word selection, if enabled), queue `AI Translate` for it; keep-screen-on holder; guard so an "Update Gloss" re-run does not duplicate a request already in flight.
   - [ ] 10.9 Sessions/history: serialize `gloss_format`, rows' `grammar_index` / contextual meaning, two-part translations; restore old sessions (no format → Headwords as saved, so their view does not change); keep the `gloss-prompts-history` state machine rules (`docs/gloss-prompts-history.md`).
   - [ ] 10.10 `gloss_export_data()` emits the 7.1 fields; add `tst_GlossExportData.qml` that builds export data for the 7.9 paragraph and compares it with the Rust expected JSON.

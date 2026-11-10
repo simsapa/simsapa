@@ -750,6 +750,36 @@ pub struct ProcessedWord {
     /// sense and not offered to the AI, but still selectable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub demoted_uids: Vec<String>,
+    /// The grammar reading and contextual meaning chosen for the selected
+    /// sense (by the AI, or by the user in the Word in Sentence rows).
+    /// Session only, never cached (docs/gloss-ai-word-selection.md).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading: Option<SenseReading>,
+    /// As `reading`, per component word (the components of a break-down,
+    /// and of a compound or sandhi headword).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub component_readings: std::collections::BTreeMap<String, SenseReading>,
+}
+
+/// A grammar reading and a contextual meaning chosen for one sense of a
+/// word. The Word in Sentence rows apply it only while `uid` is still the
+/// chosen sense, so a later sense change makes it inert. Kept in the session,
+/// never in `gloss_word_context_cache`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenseReading {
+    /// The sense (result uid) the reading belongs to.
+    pub uid: String,
+    /// An index into that sense's `grammar_options`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar_index: Option<usize>,
+    /// The dictionary meaning fitted to the sentence (DPD's
+    /// `contextual_meaning`); shown in place of `meaning_combo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contextual_meaning: Option<String>,
+    /// Who chose it, with the resolution origin names: `"ai-selected"` or
+    /// `"user-selected"`.
+    #[serde(default)]
+    pub origin: String,
 }
 
 /// Result indicating an unrecognized word
