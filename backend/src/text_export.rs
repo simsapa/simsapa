@@ -14,7 +14,7 @@ use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
     GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS,
 };
-use crate::gloss_rows::{CONFIDENCE_LEGEND, NO_AI_PROVIDER_NOTE};
+use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
 use crate::types::GlossFormat;
 use crate::markdown_convert::markdown_to_orgmode;
 use crate::prompt_utils::markdown_to_html;
@@ -90,7 +90,7 @@ fn confidence_legend(format: TextFormat, no_ai_provider: bool) -> String {
     let mut out = String::from("\n");
     match format {
         TextFormat::Html => {
-            out.push_str("<ul>\n");
+            out.push_str(&format!("<p>{}</p>\n<ul>\n", escape_html(CONFIDENCE_LEGEND_LEAD)));
             for line in CONFIDENCE_LEGEND {
                 out.push_str(&format!("<li>{}</li>\n", escape_html(line)));
             }
@@ -100,6 +100,7 @@ fn confidence_legend(format: TextFormat, no_ai_provider: bool) -> String {
             }
         }
         TextFormat::Markdown | TextFormat::OrgMode => {
+            out.push_str(&format!("{}\n\n", CONFIDENCE_LEGEND_LEAD));
             for line in CONFIDENCE_LEGEND {
                 out.push_str(&format!("- {}\n", line));
             }
@@ -811,6 +812,7 @@ mod tests {
             "| 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort | daḷha + parakkama |  | N |\n",
             "| 32201 | - daḷha | pp | firm \\| strong | √dah + ta | √dah 1 a (be strong) | H |\n",
             "|  | xyz |  | not found |  |  |  |\n\n",
+            "Confidence marks:\n\n",
             "- N: Not checked",
         );
         assert!(out.starts_with(expected), "got:\n{}", out);
@@ -831,7 +833,7 @@ mod tests {
         data.paragraphs[0].variants = vec![vec!["gacchan'ti".to_string(), "gacchanti".to_string()]];
         let out = gloss_export_document(&data, TextFormat::Markdown);
         // The title falls back to the text's first words.
-        assert!(out.starts_with("# Analysis of: te jhāyino sātatikā, niccaṁ daḷhaparakkamā,\n"));
+        assert!(out.starts_with("# Analysis of: te jhāyino sātatikā, niccaṁ…\n"));
         assert!(!out.contains("English Translation"));
         // The passage shows the glossed spelling; Variants lists the group.
         assert!(out.contains("\nyena lobhena luddhāse, sattā gacchan'ti duggatiṁ\n"));

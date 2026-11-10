@@ -20,7 +20,7 @@ use crate::types::GlossFormat;
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct GlossExportData {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clean_text")]
     pub text: String,
     /// Which document layout to write. Absent (an older Gloss tab) means
     /// Headwords.
@@ -41,7 +41,7 @@ pub struct GlossExportData {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct GlossExportParagraph {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clean_text")]
     pub text: String,
     /// The Headwords vocabulary list (empty in the Word in Sentence format).
     #[serde(default)]
@@ -146,9 +146,38 @@ pub fn confidence_cell(confidence: Option<Confidence>) -> &'static str {
     confidence.map(Confidence::as_str).unwrap_or("")
 }
 
-/// How many words of the text a Word in Sentence title shows when there is
-/// no reference.
-const TITLE_WORDS: usize = 8;
+/// The longest text, in characters, a Word in Sentence title shows when
+/// there is no reference.
+const TITLE_MAX_CHARS: usize = 40;
+
+/// The marker the rendered Gloss text puts between the words of a passage
+/// (`<span class='mark'>⧫</span>`); a copy-paste from the rendered text
+/// brings it along, and it is not part of the passage.
+const PASSAGE_MARK: char = '⧫';
+
+/// `text` without the rendered-text marker, and without the space it leaves.
+fn strip_passage_marks(text: &str) -> String {
+    if !text.contains(PASSAGE_MARK) {
+        return text.to_string();
+    }
+    text.lines()
+        .map(|line| {
+            line.replace(PASSAGE_MARK, "")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn deserialize_clean_text<'de, D>(d: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let text = String::deserialize(d)?;
+    Ok(strip_passage_marks(&text))
+}
 
 impl GlossExportData {
     /// The document title: `Analysis of: <title or first words>` in the Word
@@ -163,7 +192,7 @@ impl GlossExportData {
                     } else {
                         self.text.as_str()
                     };
-                    first_words(source, TITLE_WORDS)
+                    first_words(source, TITLE_MAX_CHARS)
                 } else {
                     self.title.trim().to_string()
                 };
@@ -207,14 +236,27 @@ impl GlossExportParagraph {
     }
 }
 
-/// The first `n` words of `text`, with `…` when there were more.
-fn first_words(text: &str, n: usize) -> String {
+/// The leading words of `text` that fit in `max_chars` characters (counting
+/// the spaces), with `…` when words were left out. The cut is always between
+/// words, never inside one.
+fn first_words(text: &str, max_chars: usize) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() > n {
-        format!("{}…", words[..n].join(" "))
-    } else {
-        words.join(" ")
+    let mut out = String::new();
+    let mut used = 0;
+    for (i, word) in words.iter().enumerate() {
+        let len = word.chars().count();
+        let needed = if i == 0 { len } else { used + 1 + len };
+        if needed > max_chars && i > 0 {
+            let kept = out.trim_end_matches([',', ';', ':', '.', ' ']);
+            return format!("{}…", kept);
+        }
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push_str(word);
+        used = needed;
     }
+    out
 }
 
 // --- Prompts / chat export ------------------------------------------------
@@ -274,6 +316,20 @@ mod tests {
     /// A session saved before the two-part translation (one translation per
     /// model, in `response`) reads with an empty Literal Translation; a new
     /// one carries both.
+    #[test]
+    fn title_cuts_at_a_word_and_passage_marks_are_dropped() {
+        assert_eq!(
+            first_words("Te jhāyino sātatikā, niccaṁ daḷhaparakkamā; Phusanti dhīrā", 40),
+            "Te jhāyino sātatikā, niccaṁ…"
+        );
+        assert_eq!(first_words("Te jhāyino sātatikā, niccaṁ daḷhaparakkamā", 42), "Te jhāyino sātatikā, niccaṁ daḷhaparakkamā");
+        assert_eq!(first_words("abc defgh ijk", 10), "abc defgh…");
+        let data: GlossExportData =
+            serde_json::from_str(r#"{"text": "te ⧫ jhāyino ⧫\nniccaṁ", "paragraphs": [{"text": "⧫ te ⧫ jhāyino"}]}"#).unwrap();
+        assert_eq!(data.text, "te jhāyino\nniccaṁ");
+        assert_eq!(data.paragraphs[0].text, "te jhāyino");
+    }
+
     #[test]
     fn ai_translation_reads_old_and_two_part_sessions() {
         let old: GlossExportData = serde_json::from_str(

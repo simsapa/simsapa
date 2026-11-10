@@ -7,15 +7,15 @@
     "api_key_value": null,
     "models": [
       {
-        "model_name": "gemini-flash-latest",
+        "model_name": "gemini-3-flash-preview",
         "enabled": true,
         "origin": "fetched",
         "stale": false,
         "reasoning": true
       },
       {
-        "model_name": "gemini-3-flash-preview",
-        "enabled": true,
+        "model_name": "gemini-flash-latest",
+        "enabled": false,
         "origin": "fetched",
         "stale": false,
         "reasoning": true

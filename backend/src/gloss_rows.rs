@@ -136,6 +136,9 @@ pub const CONFIDENCE_LEGEND: [&str; 3] = [
     "H: Human-checked — confirmed by you, or by selections and set phrases built into the app.",
 ];
 
+/// The line that introduces the legend in an export.
+pub const CONFIDENCE_LEGEND_LEAD: &str = "Confidence marks:";
+
 /// The note under the legend when no AI provider is enabled.
 pub const NO_AI_PROVIDER_NOTE: &str =
     "No AI provider is enabled, so senses marked N were not checked and no translation was made.";

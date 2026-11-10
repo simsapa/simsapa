@@ -665,7 +665,7 @@ order (`depth` 1+ for components), each with the chosen sense's `uid`,
 
 The **Word in Sentence** document follows DPD's analysis report
 ([dpd-analysis-procedure.md](./dpd-analysis-procedure.md) §1.7):
-`# Analysis of: <title, or the first eight words>`, then per paragraph (under
+`# Analysis of: <title, or the leading words of the text that fit in 40 characters, cut between words with `…`>`, then per paragraph (under
 `## Paragraph <n>` when there are several) the passage with the glossed
 spelling of each `//` group, `### English Translation` with `**Translation:**`
 and `**Literal Translation:**` (a model heading only when there are several;
@@ -673,9 +673,11 @@ no Literal line for a translation saved before the two-part translation),
 `### Variants` (one `a//b` line per group, only when there are groups),
 `### Word-by-Word Analysis` and the table
 `ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf.`.
-Component rows carry `- ` per depth (DOCX indents the word instead); cells
-escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend closes the
-document, followed by the no-AI note when `no_ai_provider`.
+Component rows carry `- ` per depth (DOCX also indents the word); a passage's
+line breaks stay line breaks inside one DOCX paragraph; the `⧫` marker of the
+rendered Gloss text is dropped from the passage text on import; cells
+escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend, introduced by
+`Confidence marks:`, closes the document, followed by the no-AI note when `no_ai_provider`.
 
 The **Headwords** document keeps its layout. It gains the Conf. column and the
 legend only when some word carries a confidence value, so an export of an

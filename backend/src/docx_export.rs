@@ -49,7 +49,7 @@ use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
     GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS,
 };
-use crate::gloss_rows::{CONFIDENCE_LEGEND, NO_AI_PROVIDER_NOTE};
+use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
 use crate::types::GlossFormat;
 use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, InlineRun};
 
@@ -371,9 +371,7 @@ fn headwords_body(data: &GlossExportData, numbering: &mut NumberingRegistry) -> 
     body.push_str(&styled_paragraph("Title", &[run(false, false, &data.document_title())]));
 
     // The combined glossed text uses the Vocab Quote Block paragraph style.
-    for line in data.text.lines().filter(|l| !l.trim().is_empty()) {
-        body.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
-    }
+    body.push_str(&quote_block(&data.text));
 
     if !data.paragraphs.is_empty() {
         body.push_str(&styled_paragraph("Heading1", &[run(false, false, "Paragraphs")]));
@@ -407,9 +405,7 @@ fn word_in_sentence_body(data: &GlossExportData, numbering: &mut NumberingRegist
 
 fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
-    for line in paragraph.display_text().lines().filter(|l| !l.trim().is_empty()) {
-        out.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
-    }
+    out.push_str(&quote_block(&paragraph.display_text()));
 
     let translations: Vec<&AiResponse> = paragraph
         .ai_translations
@@ -479,7 +475,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         let mut cells = String::new();
         let texts = [
             row.id_cell(),
-            row.word.clone(),
+            row.word_cell(),
             row.grammar.clone(),
             row.meaning.clone(),
             row.construction.clone(),
@@ -505,13 +501,25 @@ fn word_table(rows: &[GlossExportRow]) -> String {
     )
 }
 
+/// A passage as one Vocab Quote Block paragraph, its lines kept as line
+/// breaks within the paragraph.
+fn quote_block(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    styled_paragraph("VocabQuoteBlock", &[run(false, false, &lines.join("\n"))])
+}
+
 /// The confidence legend, with the no-AI note under it when no AI provider
 /// was enabled.
 fn confidence_legend(no_ai_provider: bool) -> String {
-    let mut out: String = CONFIDENCE_LEGEND
-        .iter()
-        .map(|line| styled_paragraph("BodyText", &[run(false, false, line)]))
-        .collect();
+    let mut out = styled_paragraph("BodyText", &[run(true, false, CONFIDENCE_LEGEND_LEAD)]);
+    out.extend(
+        CONFIDENCE_LEGEND
+            .iter()
+            .map(|line| styled_paragraph("BodyText", &[run(false, false, line)])),
+    );
     if no_ai_provider {
         out.push_str(&styled_paragraph("BodyText", &[run(false, false, NO_AI_PROVIDER_NOTE)]));
     }
@@ -562,9 +570,7 @@ fn format_paragraph(paragraph: &GlossExportParagraph, show_conf: bool, numbering
     let mut out = String::new();
 
     // The paragraph text (shown above its vocab table) uses Vocab Quote Block.
-    for line in paragraph.text.lines().filter(|l| !l.trim().is_empty()) {
-        out.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
-    }
+    out.push_str(&quote_block(&paragraph.text));
 
     if !paragraph.ai_translations.is_empty() {
         out.push_str(&styled_paragraph("BodyText", &[run(true, false, "AI Translations")]));
@@ -1252,8 +1258,8 @@ mod tests {
             "Word-by-Word Analysis|",
             "ID|Word in Sentence|Grammar|Meaning|Construction|Root|Conf.|",
             "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|having firm effort|daḷha + parakkama|N|",
-            "32201|daḷha|pp|firm &amp; strong|√dah + ta|√dah 1 a (be strong)|",
-            "N: Not checked",
+            "32201|- daḷha|pp|firm &amp; strong|√dah + ta|√dah 1 a (be strong)|",
+            "Confidence marks:|N: Not checked",
             "H: Human-checked",
         ];
         let mut at = 0;
@@ -1262,7 +1268,7 @@ mod tests {
             at += found + piece.len();
         }
         // The component's word is indented, the token's is not.
-        assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
+        assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
         assert!(!text.contains("Paragraph 1"));
         assert!(!text.contains(NO_AI_PROVIDER_NOTE));
     }
