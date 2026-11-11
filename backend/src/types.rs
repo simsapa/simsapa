@@ -400,6 +400,11 @@ pub struct GroupedDpdLookup {
     /// offers (the default-sense ranking prefers them). Not serialized.
     #[serde(skip)]
     pub lookup_headword_ids: Vec<i32>,
+    /// The results come from the inflection tables (Phase 4b of
+    /// `dpd_lookup_grouped()`): the word has no `lookup` row. The iti rule
+    /// prefers a base with a `lookup` row. Not serialized.
+    #[serde(skip)]
+    pub from_inflection_tables: bool,
 }
 
 impl GroupedDpdLookup {

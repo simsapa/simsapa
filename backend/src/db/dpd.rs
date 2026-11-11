@@ -236,6 +236,10 @@ struct GroupedTiming {
     /// The lookup was resolved as the `ṁ` spelling of a final `n`; that
     /// lookup logs its own line.
     niggahita: bool,
+    /// Phase 4b (inflection tables), when it ran.
+    inflection_tables: Option<f64>,
+    /// Phase 4b found the word.
+    inflection_tables_hit: bool,
 }
 
 impl GroupedTiming {
@@ -255,18 +259,21 @@ impl GroupedTiming {
             .enumerate()
             .map(|(i, v)| format!("p{}={}", i + 1, fmt_ms(*v)))
             .collect();
+        let p4b = format!(" p4b={}", fmt_ms(self.inflection_tables));
         let dec = self.dec.as_ref().map_or("-".to_string(), |d| d.format());
         let first = self.first_results_phase.map_or("none".to_string(), |n| n.to_string());
         let via = if self.iti_split {
             " via=iti_split"
         } else if self.niggahita {
             " via=niggahita"
+        } else if self.inflection_tables_hit {
+            " via=inflection_tables"
         } else {
             ""
         };
         format!(
-            "DPD-LOOKUP-TIMING: q=\"{}\" total={:.1} {} dec={} first_results_phase={}{}",
-            query, total_ms, phases.join(" "), dec, first, via,
+            "DPD-LOOKUP-TIMING: q=\"{}\" total={:.1} {}{} dec={} first_results_phase={}{}",
+            query, total_ms, phases.join(" "), p4b, dec, first, via,
         )
     }
 }
@@ -871,6 +878,17 @@ impl DpdDbHandle {
             }
         }
 
+        // The inflection tables, under the same gate as `dpd_lookup_grouped()`'s
+        // Phase 4b (no exact match, no lookup row with headwords or splits).
+        if results.is_empty() && !lookup_row_has_word(db_conn, &query_text)? {
+            let (r, _) = inflection_table_headwords(db_conn, &query_text, uid_prefix_ref, uid_suffix_ref)?;
+            let res_words: Vec<UDpdWord> = r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+            let mut res = parse_words(res_words, do_pali_sort);
+            results_uids.extend(res.iter().map(|i| i.uid.clone()));
+            sort_search_results_natural(&mut res);
+            results.extend(res);
+        }
+
         if results.is_empty() {
             // Stem form exact match.
             let stem = pali_stem(&query_text, false);
@@ -1325,6 +1343,7 @@ impl DpdDbHandle {
                     direct_uids,
                     lookup_grammar,
                     lookup_headword_ids,
+                    from_inflection_tables: false,
                 });
             }
         }
@@ -1429,6 +1448,32 @@ impl DpdDbHandle {
             }
         }
 
+        // Phase 4b: inflection tables — when Phases 2–4 found nothing and the
+        // word has no `lookup` row with headwords or splits (DPD's `lookup`
+        // lists mostly forms that occur in its texts; the inflection tables
+        // list the whole paradigm). Exact, so it comes before the guesses of
+        // Phases 5–8. Its headwords count as the lookup row's: their grammar
+        // triples are made from the inflection-table cells that hold the word.
+        // See docs/dpd-analysis-procedure.md, gap 5.
+        cancel.check()?;
+        if results.is_empty() && !lookup_row_has_word(db_conn, &query_text)? {
+            let t = Instant::now();
+            let (r, grammar) = inflection_table_headwords(db_conn, &query_text, uid_prefix_ref, uid_suffix_ref)?;
+            if !r.is_empty() {
+                lookup_grammar = grammar;
+                lookup_headword_ids = r.iter().map(|h| h.id).collect();
+                let res_words: Vec<UDpdWord> =
+                    r.into_iter().map(|h| UDpdWord::Headword(Box::new(h))).collect();
+                let new_uids = add_results(res_words, &mut results, &mut results_uids);
+                direct_uids.extend(new_uids);
+            }
+            timing.inflection_tables = Some(elapsed_ms(t));
+            if !results.is_empty() {
+                timing.inflection_tables_hit = true;
+                timing.first_results_phase.get_or_insert(4);
+            }
+        }
+
         // Phase 5: stem form exact match — gated on `results` empty.
         cancel.check()?;
         if results.is_empty() {
@@ -1480,8 +1525,10 @@ impl DpdDbHandle {
         // `deconstructor_nested()` (list-of-lists parallel to
         // `deconstructor_unpack()`'s `words_joined` strings — same order).
         let t = Instant::now();
+        // A word Phase 4b found exactly gets no "starts with" guess
+        // (attempts 2 and 4), as a word with a lookup row gets none.
         let dec_row = self.dpd_deconstructor_query_timed(
-            &query_text, deconstructor_exact_only, cancel,
+            &query_text, deconstructor_exact_only || timing.inflection_tables_hit, cancel,
             timing.dec.insert(DeconstructorTiming::default()),
         )?;
         if let Some(lookup) = dec_row {
@@ -1581,6 +1628,7 @@ impl DpdDbHandle {
             direct_uids,
             lookup_grammar,
             lookup_headword_ids,
+            from_inflection_tables: timing.inflection_tables_hit,
         })
     }
 
@@ -1613,21 +1661,33 @@ impl DpdDbHandle {
         cancel: &LookupCancel,
     ) -> Result<GroupedDpdLookup> {
         // The first base candidate DPD has results for, else the shortened
-        // base. A base has no ` ti`, so this does not come back here.
+        // base. A base has no ` ti`, so this does not come back here. Results
+        // from the inflection tables alone (a form with no `lookup` row, such
+        // as the rare vocative `gopālika`) count only when no candidate has
+        // others: the rule decides on DPD's `lookup` rows, as
+        // `lookup_forms_exact()`'s copy of it does.
         let mut chosen: Option<(String, GroupedDpdLookup)> = None;
+        let mut table_only: Option<(String, GroupedDpdLookup)> = None;
         for candidate in iti_base_candidates(joined, base) {
             let lookup = self.dpd_lookup_grouped_inner(
                 &candidate, do_pali_sort, exact_only, true, uid_prefix, uid_suffix, log_timing, cancel,
             )?;
             let found = !lookup.results.is_empty();
-            if chosen.is_none() || found {
+            if found && !lookup.from_inflection_tables {
                 chosen = Some((candidate, lookup));
-            }
-            if found {
                 break;
             }
+            if found {
+                table_only.get_or_insert((candidate, lookup));
+            } else if chosen.is_none() {
+                chosen = Some((candidate, lookup));
+            }
         }
-        let (base, base_lookup) = chosen.expect("iti_base_candidates is never empty");
+        let (base, base_lookup) = match (chosen, table_only) {
+            (Some(c), _) if !c.1.results.is_empty() => c,
+            (_, Some(t)) => t,
+            (c, None) => c.expect("iti_base_candidates is never empty"),
+        };
         let base = base.as_str();
 
         let (uid_prefix_pat, uid_suffix_pat) = uid_like_patterns(uid_prefix, uid_suffix);
@@ -1678,6 +1738,7 @@ impl DpdDbHandle {
             direct_uids: Vec::new(),
             lookup_grammar: base_lookup.lookup_grammar,
             lookup_headword_ids: base_lookup.lookup_headword_ids,
+            from_inflection_tables: base_lookup.from_inflection_tables,
         })
     }
 
@@ -1774,6 +1835,7 @@ impl DpdDbHandle {
                     direct_uids: Vec::new(),
                     lookup_grammar: Vec::new(),
                     lookup_headword_ids: Vec::new(),
+                    from_inflection_tables: false,
                 };
                 Some(serde_json::to_string(&empty).unwrap_or_default())
             }
@@ -2418,6 +2480,171 @@ pub fn headword_row_fields_by_ids(
         }
     }
     Ok(res)
+}
+
+/// The `id` and `inflections` of the headwords with an irregular stem (one
+/// starting with `!` or `*`), whose inflections need not start with the
+/// stem. Read with two range searches on `idx_dpd_headwords_stem` (about
+/// 1,300 rows); a `GLOB` on `stem` would scan the table.
+pub fn irregular_stem_inflections(db_conn: &mut SqliteConnection) -> Result<Vec<(i32, String)>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+    hd::dpd_headwords
+        .filter(
+            (hd::stem.ge("!").and(hd::stem.lt("\"")))
+                .or(hd::stem.ge("*").and(hd::stem.lt("+"))),
+        )
+        .select((hd::id, hd::inflections))
+        .load(db_conn)
+        .context("irregular_stem_inflections failed")
+}
+
+/// `irregular_stem_inflections()`, read once per process. Process-wide is
+/// sound for the same reason as `DPD_RELEASE_VERSION`: a new `dpd.sqlite3`
+/// takes effect only after a restart.
+static IRREGULAR_STEM_INFLECTIONS: OnceLock<Vec<(i32, String)>> = OnceLock::new();
+
+/// `irregular_stem_inflections()`, read on the first call (~3 ms, ~24 KB).
+pub fn irregular_stem_inflections_shared(db_conn: &mut SqliteConnection) -> Result<&'static [(i32, String)]> {
+    if let Some(rows) = IRREGULAR_STEM_INFLECTIONS.get() {
+        return Ok(rows);
+    }
+    let rows = irregular_stem_inflections(db_conn)?;
+    Ok(IRREGULAR_STEM_INFLECTIONS.get_or_init(|| rows))
+}
+
+/// DPD's `lookup` grammar class for a headword `pos`, for a triple made from
+/// an inflection table: `noun` for a gender, `verb` for a finite verb, else
+/// the `pos` itself (`adj`, `pp`, `prp`, `ptp`, `pron` …), as the lookup
+/// rows have them.
+pub fn lookup_grammar_class(pos: &str) -> String {
+    match pos {
+        "masc" | "fem" | "nt" => "noun".to_string(),
+        "pr" | "aor" | "fut" | "cond" | "imp" | "opt" | "imperf" | "perf" => "verb".to_string(),
+        _ => pos.to_string(),
+    }
+}
+
+/// The headwords whose inflection tables hold `form` (`headwords_inflecting_to`),
+/// with the uid filters, and the `lookup`-style grammar triples
+/// `[lemma_clean, class, cell title]` of the cells that hold it, in match
+/// order. The lookups' step for a word with no `lookup` row (gap 5 of
+/// docs/dpd-analysis-procedure.md).
+fn inflection_table_headwords(
+    db_conn: &mut SqliteConnection,
+    form: &str,
+    uid_prefix_pat: Option<&str>,
+    uid_suffix_pat: Option<&str>,
+) -> Result<(Vec<DpdHeadword>, Vec<GrammarTriple>)> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+    let irregular = irregular_stem_inflections_shared(db_conn)?;
+    let matches = headwords_inflecting_to(db_conn, form, irregular)?;
+    if matches.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let ids: Vec<i32> = matches.iter().map(|m| m.id).collect();
+    let mut q = hd::dpd_headwords.filter(hd::id.eq_any(&ids)).into_boxed();
+    if let Some(p) = uid_prefix_pat {
+        q = q.filter(hd::uid.like(p.to_string()));
+    }
+    if let Some(s) = uid_suffix_pat {
+        q = q.filter(hd::uid.like(s.to_string()));
+    }
+    let headwords = q.load::<DpdHeadword>(db_conn)?;
+    let mut grammar = Vec::new();
+    for m in &matches {
+        if let Some(hw) = headwords.iter().find(|h| h.id == m.id) {
+            let class = lookup_grammar_class(&hw.pos);
+            for title in &m.cell_titles {
+                grammar.push([hw.lemma_clean.clone(), class.clone(), title.clone()]);
+            }
+        }
+    }
+    Ok((headwords, grammar))
+}
+
+/// A headword whose `inflections` list contains a form, with the titles of
+/// the `inflections_html` cells that hold it (`masc abl sg`), in table order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InflectionMatch {
+    pub id: i32,
+    pub cell_titles: Vec<String>,
+}
+
+/// The headwords whose `inflections` list contains `form` exactly: DPD's
+/// `search_inflections_for_form`, for a construction part with no `lookup`
+/// row. DPD scans every headword (~140 ms); this reads only the headwords
+/// whose `stem` is a prefix of `form` (an indexed `IN`, under 0.1 ms) and
+/// checks `irregular` (`irregular_stem_inflections()`) in memory. Headwords
+/// with stem `-` are not searched: each of their forms has a `lookup` row.
+/// Ordered by id. See docs/dpd-analysis-procedure.md, gap 5.
+pub fn headwords_inflecting_to(
+    db_conn: &mut SqliteConnection,
+    form: &str,
+    irregular: &[(i32, String)],
+) -> Result<Vec<InflectionMatch>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+
+    let has_form = |inflections: &str| inflections.split(',').any(|f| f == form);
+    let prefixes: Vec<String> = form
+        .char_indices()
+        .map(|(i, c)| form[..i + c.len_utf8()].to_string())
+        .collect();
+    if prefixes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(i32, String)> = hd::dpd_headwords
+        .filter(hd::stem.eq_any(&prefixes))
+        .select((hd::id, hd::inflections))
+        .load(db_conn)
+        .context("headwords_inflecting_to: stem prefixes")?;
+    let mut ids: Vec<i32> = rows
+        .iter()
+        .chain(irregular.iter())
+        .filter(|(_, inflections)| has_form(inflections))
+        .map(|(id, _)| *id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    ids.sort_unstable();
+    let tables: HashMap<i32, String> = hd::dpd_headwords
+        .filter(hd::id.eq_any(&ids))
+        .select((hd::id, hd::inflections_html))
+        .load::<(i32, String)>(db_conn)
+        .context("headwords_inflecting_to: inflections_html")?
+        .into_iter()
+        .collect();
+    Ok(ids
+        .into_iter()
+        .map(|id| InflectionMatch {
+            id,
+            cell_titles: tables.get(&id).map(|t| inflection_cell_titles(t, form)).unwrap_or_default(),
+        })
+        .collect())
+}
+
+/// The `title`s of the `<td>` cells of an `inflections_html` table that hold
+/// `form` as one of their `<br>`-separated entries, in table order, without
+/// repeats. DPD's `get_grammar_from_inflections_html` takes only the first
+/// cell whose text matches, and also matches `form` inside a longer entry.
+pub fn inflection_cell_titles(inflections_html: &str, form: &str) -> Vec<String> {
+    lazy_static::lazy_static! {
+        static ref RE_CELL: regex::Regex = regex::Regex::new(r"(?s)<td title='([^']*)'>(.*?)</td>").unwrap();
+        static ref RE_TAG: regex::Regex = regex::Regex::new(r"<[^>]*>").unwrap();
+    }
+    let mut titles: Vec<String> = Vec::new();
+    for cap in RE_CELL.captures_iter(inflections_html) {
+        let title = &cap[1];
+        if title.is_empty() || titles.iter().any(|t| t == title) {
+            continue;
+        }
+        if cap[2].split("<br>").any(|entry| RE_TAG.replace_all(entry, "").trim() == form) {
+            titles.push(title.to_string());
+        }
+    }
+    titles
 }
 
 /// The `dpd_roots` columns of DPD's `root_combo()`.
@@ -3444,4 +3671,21 @@ pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<()> {
     info("Successfully created DPD bold_definitions FTS5 indexes");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::inflection_cell_titles;
+
+    const YOGA_TABLE: &str = "<table class='inflection'><tr><th>nom</th><td title='masc nom sg'>yog<b>o</b></td><td title='masc nom pl'>yog<b>ā</b><br><span class='gray'>yog<b>āse</b></span></td></tr><tr><th>instr</th><td title='masc instr sg'>yog<b>ā</b><br>yog<b>ena</b></td><td title='masc instr pl'>yog<b>ehi</b></td></tr><tr><th>abl</th><td title='masc abl sg'>yog<b>ato</b><br><span class='gray'>yog<b>asmā</b></span><br>yog<b>ā</b></td><td title='masc abl pl'>yog<b>ato</b></td></tr><tr><th>in comps</th><td title='in comps'>yog<b>a</b></td><td title=''></td></tr></table>";
+
+    #[test]
+    fn cell_titles_match_whole_entries() {
+        assert_eq!(inflection_cell_titles(YOGA_TABLE, "yogasmā"), vec!["masc abl sg"]);
+        assert_eq!(inflection_cell_titles(YOGA_TABLE, "yogā"), vec!["masc nom pl", "masc instr sg", "masc abl sg"]);
+        assert_eq!(inflection_cell_titles(YOGA_TABLE, "yogato"), vec!["masc abl sg", "masc abl pl"]);
+        // `yog` + `e` is not an entry, though `yogena` starts with it.
+        assert!(inflection_cell_titles(YOGA_TABLE, "yoge").is_empty());
+        assert!(inflection_cell_titles(YOGA_TABLE, "yogas").is_empty());
+    }
 }

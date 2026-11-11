@@ -209,7 +209,7 @@ fn align(a: &[String], b: &[String]) -> Vec<(Option<usize>, Option<usize>)> {
 const CATEGORY_DATA_VERSION: &str = "data version";
 const CATEGORY_GAP_14: &str = "gap 14 (deconstruction beside headwords)";
 const CATEGORY_GAP_18: &str = "gap 18 (Simsapa resolves more)";
-const CATEGORY_GAP_5: &str = "gap 5 (no search_inflections_for_form)";
+const CATEGORY_GAP_5: &str = "gap 5 (inflection-table part not found)";
 const CATEGORY_GAP_11: &str = "gap 11 (quoted ti read as part of a verb)";
 const CATEGORY_GAP_12: &str = "gap 12 (iti base spelling)";
 const CATEGORY_FAIL: &str = "FAIL";

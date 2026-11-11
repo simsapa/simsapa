@@ -8,7 +8,9 @@ use std::collections::HashMap;
 
 use serial_test::serial;
 use simsapa_backend::get_app_data;
-use simsapa_backend::db::dpd::{headword_row_fields_by_ids, root_fields_by_keys};
+use simsapa_backend::db::dpd::{
+    headword_row_fields_by_ids, headwords_inflecting_to, irregular_stem_inflections, root_fields_by_keys,
+};
 use simsapa_backend::gloss_rows::{Confidence, GlossRow};
 use simsapa_backend::helpers::process_all_paragraphs;
 use simsapa_backend::types::{
@@ -129,10 +131,15 @@ fn test_rows_dhp23_in_passage_order() {
     let yogakkhemam = row("yogakkhemaṁ");
     assert_eq!(yogakkhemam.grammar, "masc acc sg of yogakkhema");
     assert_eq!(yogakkhemam.construction, "yogasmā + khema");
-    // `yogasmā` has no lookup row (DPD finds it in an inflection table, gap 5).
+    // `yogasmā` has no lookup row: it is found in the inflection tables of
+    // the `yoga` homonyms (gap 5), and the parent's "rest from the yoke"
+    // ranks `yoga 1` first.
     assert_eq!(words(&yogakkhemam.components), vec!["yogasmā", "khema"]);
-    assert_eq!(yogakkhemam.components[0].grammar, "in comp");
-    assert_eq!(yogakkhemam.components[0].id, None);
+    let yogasma = &yogakkhemam.components[0];
+    assert_eq!(yogasma.id, Some(54211));
+    assert_eq!(yogasma.grammar, "masc abl sg of yoga");
+    assert!(yogasma.candidates.len() > 1, "every yoga homonym is offered");
+    assert_eq!(yogasma.confidence, Some(Confidence::N));
     assert_eq!(yogakkhemam.components[1].id, Some(23920));
     assert_eq!(yogakkhemam.components[1].grammar, "adj");
 
@@ -593,4 +600,73 @@ fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
     let pw = &result.paragraphs[0].words_data[wi];
     assert_eq!(pw.selected_deconstruction_index, Some(decs - 1));
     assert_eq!(pw.component_selected_uids[&comp_word], comp_uid);
+}
+
+// --- Inflection-table fallback (gap 5) --------------------------------------
+
+#[test]
+#[serial]
+fn test_headwords_inflecting_to() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let mut conn = app_data.dbm.dpd.get_conn().unwrap();
+    let irregular = irregular_stem_inflections(&mut conn).unwrap();
+    assert!(irregular.len() > 1000, "irregular stems: {}", irregular.len());
+
+    // A regular stem: found through the stem index.
+    let yogasma = headwords_inflecting_to(&mut conn, "yogasmā", &irregular).unwrap();
+    let yoga_1 = yogasma.iter().find(|m| m.id == 54211).expect("yoga 1");
+    assert_eq!(yoga_1.cell_titles, vec!["masc abl sg".to_string()]);
+
+    // A form in several cells: one title per cell, in table order.
+    let yoga = headwords_inflecting_to(&mut conn, "yogā", &irregular).unwrap();
+    let titles = &yoga.iter().find(|m| m.id == 54211).unwrap().cell_titles;
+    assert_eq!(titles[0], "masc nom pl");
+    assert!(titles.contains(&"masc abl sg".to_string()));
+
+    // An irregular stem (`addasā`, stem `*`): found in the preloaded rows.
+    let apassum = headwords_inflecting_to(&mut conn, "apassuṁ", &irregular).unwrap();
+    assert!(apassum.iter().any(|m| m.id == 2975 && m.cell_titles == vec!["imperf 3rd pl".to_string()]));
+
+    assert!(headwords_inflecting_to(&mut conn, "xyzqq", &irregular).unwrap().is_empty());
+}
+
+/// A passage word with no lookup row is resolved from the inflection tables
+/// in both formats, instead of "not found".
+#[test]
+#[serial]
+fn test_word_without_lookup_row_resolved_from_inflection_tables() {
+    h::app_data_setup();
+    let (_, rows) = wis_rows("yogasmā apassuṁ");
+    assert_eq!(words(&rows), vec!["yogasmā", "apassuṁ"]);
+    assert_eq!(rows[0].grammar, "masc abl sg of yoga");
+    assert!(rows[0].candidates.len() > 1);
+    // `addasā` (imperf, irregular stem) and `apassi` (aor of passati).
+    assert!(matches!(rows[1].id, Some(2975) | Some(84071)), "{:?}", rows[1].id);
+    assert_eq!(rows[1].candidates.len(), 2);
+    assert_ne!(rows[1].meaning, "not found");
+
+    let result = gloss(&["yogasmā apassuṁ"], options(GlossFormat::Headwords, false));
+    let p = &result.paragraphs[0];
+    assert_eq!(p.words_data.len(), 2, "both words recognized: {:?}", p.unrecognized_words);
+}
+
+/// Canonical words with no lookup row (docs/dpd-analysis-procedure.md, "Gap 5
+/// in canonical text"): `ṅ` spellings whose `lookup` key has `ṁ`, and a rare
+/// verb form.
+#[test]
+#[serial]
+fn test_canonical_words_without_lookup_row() {
+    h::app_data_setup();
+    // SN 12.67:2.1
+    let (_, rows) = wis_rows("sayaṅkatā jāti, paraṅkatā jāti, udāhu asayaṅkārā aparaṅkārā adhiccasamuppannā jātī");
+    let ids: Vec<(&str, Option<i32>)> = rows.iter().map(|r| (r.word.as_str(), r.id)).collect();
+    for (word, id) in [("sayaṅkatā", 60943), ("paraṅkatā", 42889), ("asayaṅkārā", 9593), ("aparaṅkārā", 6266)] {
+        assert!(ids.contains(&(word, Some(id))), "{}: {:?}", word, ids);
+    }
+    // MN 46:2.1, AN 7.66:8.2
+    let (_, rows) = wis_rows("sattā evaṅkāmā evaṁchandā. dhūmāyanti sandhūmāyanti sampadhūmāyanti.");
+    let row = |w: &str| rows.iter().find(|r| r.word == w).unwrap().clone();
+    assert_eq!(row("evaṅkāmā").grammar, "adj, masc nom pl of evaṅkāma");
+    assert_eq!(row("sandhūmāyanti").grammar, "pr 3rd pl of sandhūmāyati");
 }

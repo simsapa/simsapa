@@ -22,8 +22,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::db::dpd::{
-    headword_row_fields_by_ids, root_fields_by_keys, DpdDbHandle, HeadwordRowFields, LookupResult,
-    RootFields,
+    headword_row_fields_by_ids, headwords_inflecting_to, irregular_stem_inflections_shared, root_fields_by_keys,
+    DpdDbHandle, HeadwordRowFields, InflectionMatch, LookupResult, RootFields,
 };
 use crate::db::dpd_models::Lookup;
 use crate::helpers::{
@@ -271,6 +271,9 @@ pub enum ReadingSource {
     Default,
     /// `<id>_0`: a stem part of a compound; shows the headword's `pos`.
     Stem,
+    /// `<id>_inflection`: an inflected part with no lookup row, found in the
+    /// headword's inflection table (gap 5).
+    Inflection,
 }
 
 /// One grammar reading of a sense, before the top-level `adj, ` prefix.
@@ -327,6 +330,21 @@ pub fn inflected_readings(hw: &HeadwordRowFields, raw: &[GrammarTriple]) -> Vec<
         return readings;
     }
     vec![Reading { text: hw.grammar.clone(), class: hw.pos.clone(), source: ReadingSource::Default }]
+}
+
+/// The readings of an inflected construction part found in `hw`'s inflection
+/// table: `<cell title> of <lemma_clean>` per cell that holds it, else DPD's
+/// `inflected form of <lemma_clean>`.
+pub fn inflection_table_readings(hw: &HeadwordRowFields, cell_titles: &[String]) -> Vec<Reading> {
+    let texts: Vec<String> = if cell_titles.is_empty() {
+        vec![format!("inflected form of {}", hw.lemma_clean)]
+    } else {
+        cell_titles.iter().map(|t| format!("{} of {}", t, hw.lemma_clean)).collect()
+    };
+    texts
+        .into_iter()
+        .map(|text| Reading { text, class: hw.pos.clone(), source: ReadingSource::Inflection })
+        .collect()
 }
 
 /// The reading of a stem part of a compound: the headword's `pos`.
@@ -584,6 +602,8 @@ pub struct GlossRowBuilder {
     expansions: HashMap<(String, bool, bool), Rc<Vec<PartTree>>>,
     /// Recursion guard against a construction that contains itself.
     expanding: HashSet<(String, bool, bool)>,
+    /// Inflection-table matches per construction part with no lookup row.
+    inflection_matches: HashMap<String, Rc<Vec<InflectionMatch>>>,
 }
 
 impl GlossRowBuilder {
@@ -597,6 +617,7 @@ impl GlossRowBuilder {
             missing_roots: HashSet::new(),
             expansions: HashMap::new(),
             expanding: HashSet::new(),
+            inflection_matches: HashMap::new(),
         })
     }
 
@@ -717,7 +738,10 @@ impl GlossRowBuilder {
             if word.is_empty() || COMPONENT_SUFFIXES.contains(&word.as_str()) {
                 continue;
             }
-            let cands = self.part_cands(&word, is_compound_part && !inflected)?;
+            let mut cands = self.part_cands(&word, is_compound_part && !inflected)?;
+            if cands.is_empty() && inflected {
+                cands = self.inflection_table_cands(&word)?;
+            }
             parts.push(PartTree { word, cands });
         }
         self.expanding.remove(&key);
@@ -748,6 +772,42 @@ impl GlossRowBuilder {
                 inflected_readings(&hw, &row.grammar)
             };
             cands.push(self.cand_for_headword(&hw, readings)?);
+        }
+        cands.sort_by(|a, b| b.completeness.cmp(&a.completeness).then_with(|| a.lemma_1.cmp(&b.lemma_1)));
+        Ok(cands)
+    }
+
+    /// DPD's fallback for an inflected construction part with no senses from
+    /// a lookup row (`yogasmā` in `yog<b>asmā</b> + khema`): the headwords
+    /// whose inflection table holds the form, with the cells' grammar. DPD
+    /// takes the first such headword; every one is offered here, through
+    /// DPD's construction-part filter unless it would remove them all.
+    fn inflection_table_cands(&mut self, word: &str) -> Result<Vec<Cand>> {
+        let matches = match self.inflection_matches.get(word) {
+            Some(m) => m.clone(),
+            None => {
+                let irregular = irregular_stem_inflections_shared(&mut self.conn)?;
+                let found = Rc::new(headwords_inflecting_to(&mut self.conn, word, irregular)?);
+                self.inflection_matches.insert(word.to_string(), found.clone());
+                found
+            }
+        };
+        if matches.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<i32> = matches.iter().map(|m| m.id).collect();
+        self.ensure_headwords(&ids)?;
+        let found: Vec<(HeadwordRowFields, &InflectionMatch)> = matches
+            .iter()
+            .filter_map(|m| self.headwords.get(&m.id).cloned().map(|hw| (hw, m)))
+            .collect();
+        let kept: Vec<&(HeadwordRowFields, &InflectionMatch)> =
+            found.iter().filter(|(hw, _)| !crate::gloss_sense_ranking::dpd_filtered_headword(hw, true)).collect();
+        let kept = if kept.is_empty() { found.iter().collect() } else { kept };
+        let mut cands = Vec::with_capacity(kept.len());
+        for (hw, m) in kept {
+            let readings = inflection_table_readings(hw, &m.cell_titles);
+            cands.push(self.cand_for_headword(hw, readings)?);
         }
         cands.sort_by(|a, b| b.completeness.cmp(&a.completeness).then_with(|| a.lemma_1.cmp(&b.lemma_1)));
         Ok(cands)

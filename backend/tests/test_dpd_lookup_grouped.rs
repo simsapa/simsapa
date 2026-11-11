@@ -429,3 +429,71 @@ fn test_dpd_headword_prefix_columns_are_lowercase() {
         .unwrap();
     assert_eq!(count, 0, "dpd_headwords lemma_clean / word_ascii / stem must be lowercase");
 }
+
+/// A word with no `lookup` row that is in an inflection table (Phase 4b):
+/// its headwords are direct results, with grammar triples made from the
+/// table cells. `yogasmā` is in the tables of the `yoga` homonyms;
+/// `apassuṁ` in that of `addasā`, whose stem `*` is irregular.
+#[test]
+#[serial]
+fn test_grouped_inflection_table_phase() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let dpd = &app_data.dbm.dpd;
+
+    let g = dpd.dpd_lookup_grouped("yogasmā", false, true, true, None, None).unwrap();
+    assert!(g.lookup_headword_ids.contains(&54211), "yoga 1: {:?}", g.lookup_headword_ids);
+    assert_eq!(g.direct_uids.len(), g.results.len(), "only direct results");
+    assert!(g.deconstructions.is_empty());
+    assert!(g.lookup_grammar.contains(&["yoga".to_string(), "noun".to_string(), "masc abl sg".to_string()]));
+
+    let g = dpd.dpd_lookup_grouped("apassuṁ", false, true, true, None, None).unwrap();
+    // Also the aorist `apassi` (84071), whose stem `apass` is regular.
+    assert_eq!(g.lookup_headword_ids, vec![2975, 84071]);
+    assert!(g.lookup_grammar.contains(&["addasā".to_string(), "verb".to_string(), "imperf 3rd pl".to_string()]));
+    assert!(g.lookup_grammar.contains(&["apassi".to_string(), "verb".to_string(), "aor 3rd pl".to_string()]));
+
+    // A word with a lookup row is unchanged: the phase does not run.
+    let g = dpd.dpd_lookup_grouped("yogā", false, true, true, None, None).unwrap();
+    assert!(g.lookup_grammar.iter().any(|t| t[1] == "adj"), "the lookup row's own triples");
+}
+
+/// Every form of an irregular-stem headword (`!` / `*`, whose forms need not
+/// start with the stem) that has no `lookup` row is found by Phase 4b, with
+/// that headword among the results.
+#[test]
+#[serial]
+fn test_grouped_inflection_table_phase_finds_every_irregular_form() {
+    use diesel::prelude::*;
+    use simsapa_backend::db::dpd::irregular_stem_inflections;
+    use simsapa_backend::db::dpd_schema::lookup::dsl as lk;
+
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let dpd = &app_data.dbm.dpd;
+    let mut conn = dpd.get_conn().unwrap();
+
+    let mut checked = 0;
+    let mut missed: Vec<String> = Vec::new();
+    for (id, inflections) in irregular_stem_inflections(&mut conn).unwrap() {
+        for form in inflections.split(',').filter(|f| !f.is_empty()) {
+            let has_row = lk::lookup
+                .filter(lk::lookup_key.eq(form))
+                .select(lk::lookup_key)
+                .first::<String>(&mut conn)
+                .optional()
+                .unwrap()
+                .is_some();
+            if has_row {
+                continue;
+            }
+            checked += 1;
+            let g = dpd.dpd_lookup_grouped(form, false, true, true, None, None).unwrap();
+            if !g.lookup_headword_ids.contains(&id) {
+                missed.push(format!("{} ({}): {:?}", form, id, g.lookup_headword_ids));
+            }
+        }
+    }
+    assert!(checked > 100, "irregular forms without a lookup row: {}", checked);
+    assert!(missed.is_empty(), "{} of {} missed: {:?}", missed.len(), checked, missed);
+}

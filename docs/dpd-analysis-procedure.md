@@ -324,7 +324,7 @@ DPD's own editing workflow; it does not affect the report.
 | 7 Particle filter | `rank_paragraph_default_senses` (`has_particle_split`, `kept_by_particle_filter`), as a demotion with step 6 |
 | 8 Deconstruction options | `GroupedDpdLookup.deconstructions`; offered (break-down selector) only for a deconstructor-resolved word (no direct match), FR-A5 partition in `docs/gloss-ai-word-selection.md` §9 |
 | 9 Occurrence keys | AI item ids `p<pi>w<wi>` (sense), `…d` (break-down), `…c<k>` (component) — `build_word_selection_items` |
-| 10–14 Components of a compound headword | Word in Sentence: `GlossRowBuilder::headword_parts` / `construction_parts` / `part_cands` (`expands_into_components`, `breakdown_source`, `normalize_kammadharaya_construction`, the negative-kammadhāraya rule), memoised per construction for a gloss run; Headwords: shown compact |
+| 10–14 Components of a compound headword | Word in Sentence: `GlossRowBuilder::headword_parts` / `construction_parts` / `part_cands` (`expands_into_components`, `breakdown_source`, `normalize_kammadharaya_construction`, the negative-kammadhāraya rule), memoised per construction for a gloss run; an inflected part with no lookup row: `GlossRowBuilder::inflection_table_cands` over `db::dpd::headwords_inflecting_to` (gap 5); Headwords: shown compact |
 | 10–14 Components of a deconstruction | `Deconstruction.components` with their lookup results; `resolve_compound_selections` |
 | 15 DB-example pre-match | `rank_paragraph_default_senses`: `text_overlap` against the paragraph (`example_overlap_text`), as the first rank after the demotion tier; no `source_text_overlap` |
 | 16 First-pass prompt | `"Gloss Tab: Word Selection System Prompt"` + `"… Request"` (`app_settings.rs`), assembled by `build_word_selection_prompt` (`helpers.rs`) for every caller; with the Word in Sentence rows the items carry `grammar_options` and the components of compound headwords (`docs/gloss-ai-word-selection.md` §10); senses only, no translation |
@@ -351,7 +351,7 @@ table without it.
 | 2 | **Grammar reading per headword.** DPD shows the triple's parse (`masc nom pl of jhāyī`) and lets the AI choose among triples; Simsapa shows the headword's `grammar` field. | The Grammar column states the inflection; a word like `taṃ` can be read as acc or nom. | Required by the format → task 4.3 (readings, `adj, ` rule, default reading by `_grammar_case_rank` then first), AI `grammar_index` among the chosen sense's readings (`grammar_options` on the request options). |
 | 3 | **`is_pos_compatible` vs `assign_form_grammar`.** Same rules except: DPD's `verb` class omits `perf` / `imperf` headwords, and DPD tests the gender by substring (`masc ` anywhere in the parse), Simsapa by the parse's first word. The `ind, adv, acc sg of nicca` readings come from the `_default` fallback (headword `grammar`), not from a POS rule. | The `imperf` difference shows: `anajjhagā` (TH215) has the triple `imperf 1st sg of anajjhagā`, which DPD rejects, so DPD shows the headword's `imperf of na adhigacchati`. | Adopted DPD's rule for the rows: `gloss_rows::dpd_pos_compatible`, a port of `is_pos_compatible`, plus the `_default` fallback. `/lookup_forms` keeps `assign_form_grammar`, unchanged. |
 | 4 | **Components of a compound or sandhi headword** (source ii). DPD expands `daḷhaparakkama`, `yogakkhema`, `vāti 2.1`; Simsapa shows them compact. | Rows under compounds, as in every DPD report. | Adopted in the Word in Sentence rows (`gloss_rows.rs`, rules §1.3); AI items for them: `c<k>` items over the token's component rows, the choices kept and cached like a break-down component's. A construction part's candidates are filtered with DPD's headword filters by leaving them out, as DPD does: these candidate lists are new and nothing refers to their order (gap 7 is about `results`). Without a cache row a part's sense is DPD's component ranking. Headwords format unchanged. |
-| 5 | **`search_inflections_for_form`** for an inflected part with no lookup row: a scan of every headword's inflections. | Rare (a bold part normally has a lookup row); costs a full-table scan per miss. | Rejected: such a part gets an unresolved component row. The conformance test reports these rows in its "gap 5" category; revisit if they matter. |
+| 5 | **`search_inflections_for_form`** for an inflected part with no lookup row: a scan of every headword's inflections. | Not rare: the `lookup` table has no row for many case forms that occur only inside compounds. Of the 11,988 bold parts in DPD's `compound_construction`s, 1,670 have no lookup row and 940 of those (845 distinct forms: `yogasmā`, `agilānato`, `aggaḷāya`, `ajapālanigrodhassa` …) are in some headword's `inflections`; 264 of the 940 are in more than one headword's (`yogasmā`: the eight `yoga` homonyms). The other misses are inflected compounds (`aniccasaññena`), which DPD cannot resolve either. | Adopted, with an indexed search instead of DPD's scan: `db::dpd::headwords_inflecting_to` reads the headwords whose `stem` is a prefix of the form (`stem IN (…)` on `idx_dpd_headwords_stem`, under 0.1 ms per part, against ~140 ms for a scan of the 24.7 MB `inflections` column) and checks the ~1,300 irregular-stem headwords (`!` / `*`, whose forms need not start with the stem) in memory, read once per gloss run (`irregular_stem_inflections`, two index range searches, ~3 ms, ~24 KB). `-` stems are not searched: each of their forms has a lookup row. This finds the same headwords as DPD's scan for all 940 parts. Unlike DPD, which takes the first headword in table order and the first cell whose text matches (also inside a longer form), every headword is offered (after DPD's construction-part filter, unless it removes them all), with a reading per cell that holds the form as a whole entry (`inflection_cell_titles`), and the part's sense is chosen by the component ranking, the AI or the cache like any part. The readings' source is `ReadingSource::Inflection` (DPD's `<id>_inflection` key: not a direct key). A compound headword found this way is expanded into its own components, as a part found through a lookup row is; DPD gives its fallback option no components. Results are memoised per form for a gloss run. **Beyond DPD**, which uses the fallback only for construction parts, the DPD lookups use the same search for a passage word with no `lookup` row (Phase 4b of `dpd_lookup_grouped()`, and `dpd_lookup()`; docs/search-snippet-highlight-pipeline.md §9g), so `yogasmā` or `apassuṁ` written alone is glossed in both formats, and found by the Dictionary search, instead of "not found" or a stem-match guess. |
 | 6 | **Contextual meaning.** DPD's Meaning is the AI's `contextual_meaning`, else `meaning_combo` (`meaning_1` + `; lit. <meaning_lit>`, else `meaning_2`). | Meanings fitted to the sentence ("meditators"). | Adopted → task 4.4 (`meaning_combo`), the AI's `contextual_meaning` per answer, kept in the session only (`SenseReading`). |
 | 7 | **Headword filters** (`!` stem, `pos` in `cs letter prefix root suffix ve`, `(gram)` in `meaning_1`, `abbrev` inside constructions). Simsapa offers e.g. `tasmā 1` (stem `!*`) and `ta 2.1` (letter) for `tasmā`. | Fewer grammarian's entries chosen by default and sent to the AI. A `!`-stem entry is an irregular form (`ime`, `ko`, `tassa 1`) whose only reading is its `grammar` field (`pron, masc nom & acc pl of ima`); DPD shows the paradigm headword with the triple's parse instead (`masc nom pl of ima`). No DPD report row has a filtered headword's ID; in 146 token rows whose lookup row lists one, DPD shows the paradigm. | Adopted as a **ranking demotion**, not a removal: `gloss_sense_ranking.rs` (`dpd_filtered_headword`). Removing candidates would change `results`, whose order the ComboBox index, the AI item options and saved sessions refer to (Technical Considerations 5b). A filtered sense is never the default, is listed in `ProcessedWord::demoted_uids` and is left out of AI item options (unless nothing else is left); it stays selectable. Cache rows still resolve to it. The built-in agent-checked data predates this rule: 72 of its 523 chosen senses are filtered headwords (71 `!`-stem forms, the letter `pa 4.1`); they are to be re-checked. |
 | 8 | **Particle filter** (step 7): synthetic part headwords in a lookup row whose split ends in a particle. | `vāti` stops defaulting to `va 4.1` / `vā 1`. | Adopted as a ranking demotion with gap 7 (`has_particle_split` over the word's break-downs, `kept_by_particle_filter`). |
@@ -366,6 +366,33 @@ table without it.
 | 17 | **Unresolved row.** DPD leaves Meaning empty; the PRD asks for "not found". | Display only. | Simsapa writes "not found" (PRD B6); the conformance test does not compare Meaning. |
 | 18 | **Extra lookup phases.** Simsapa also matches roots, `ṁ` respellings, stems, no-space compounds and "starts with" guesses. | Simsapa resolves words DPD reports as not found. | Kept: DPD's report has an empty row there; Simsapa's row has a candidate (the conformance test reports these in its "gap 18" category). |
 | 19 | **Retries per missing group, reformat requests, compact-map recovery.** | Robustness against malformed LLM answers. | Rejected: Simsapa's fallback engine retries and falls back across models on `invalid_response`; the item scheme gives every item an id to answer. |
+
+### Gap 5 in canonical text: words DPD's analysis leaves unresolved
+
+DPD's analyser searches the inflection tables only for a part of a compound
+(`yogasmā` in `yog<b>asmā</b> + khema`, DHP 23). A word of the passage with no
+`lookup` row is "not found". Such words do occur in the texts: about 100
+distinct words of the MS Pāli texts are in an inflection table but not in
+`lookup`. About 40 are `ṅ` spellings before a velar, where `lookup` has only
+the `ṁ` spelling (`evaṁkāmā`, not the `evaṅkāmā` of MN 46); many are Vinaya
+section titles (`…anujānana`, `…sikkhāpadaṁ`); the rest are rare forms.
+Simsapa resolves them through Phase 4b of its lookups (gap 5 above). Some of
+them, each "not found" before Phase 4b:
+
+| Text | Pāli | Resolved by Simsapa |
+|---|---|---|
+| SN 12.67:2.1 | Kiṁ nu kho, āvuso sāriputta, **sayaṅkatā** jāti, **paraṅkatā** jāti, … udāhu **asayaṅkārā aparaṅkārā** adhiccasamuppannā jātī”ti? | `adj, masc nom pl of sayaṅkata` (60943); `paraṅkata` (42889), `asayaṅkāra` (9593), `aparaṅkāra` (6266) |
+| MN 46:2.1 | yebhuyyena, bhikkhave, sattā **evaṅkāmā** evaṁchandā evaṁadhippāyā | `adj, masc nom pl of evaṅkāma` (18056) |
+| MN 86:12.11 | “**Kathaṅgotto** ayyassa pitā, **kathaṅgottā** mātā”ti? | `adj, masc nom sg of kathaṅgotta` (19796) |
+| SN 16.2:2.3 | ‘anuppannā me kusalā dhammā **nuppajjamānā** anatthāya saṁvatteyyun’ti | `masc nom pl of nuppajjamāna` (38681) |
+| Dhp 57 | Tesaṁ sampannasīlānaṁ, appamādavihārinaṁ; **Sammadaññāvimuttānaṁ**, māro maggaṁ na vindati. | `adj, masc gen pl of sammadaññāvimutta` (60734) |
+| AN 7.66:8.2 | ayañca mahāpathavī sineru ca pabbatarājā dhūmāyanti **sandhūmāyanti** sampadhūmāyanti. | `pr 3rd pl of sandhūmāyati` (58494) |
+| MN 4:10.6 | Etamahaṁ, brāhmaṇa, **vigatathinamiddhataṁ** attani sampassamāno | `fem acc sg of vigatathinamiddhatā` (67322) |
+
+The default reading follows the usual rule (the first of the table's cells
+with the best `_grammar_case_rank`), so `kathaṅgottā` beside `mātā` defaults
+to `masc nom pl`, not `fem nom sg`. The AI's `grammar_index` chooses among the
+readings, as for a word with a `lookup` row.
 
 Selection agreement (share of top-level rows where DPD's row has an ID and
 Simsapa's own choice, AI off and no cache, has the same ID) is measured by
@@ -392,14 +419,15 @@ fields for that headword can produce — a difference that a field does produce
 is a rendering bug and fails; the fixtures do not record their DPD data
 version), **gap 14** (DPD's token row is a break-down and Simsapa's has an ID),
 **gap 18** (DPD's token row is unresolved and Simsapa's has an ID), **gap 5**
-(a component DPD resolved that Simsapa shows `in comp`), **gap 11** (a quoted
+(a component DPD resolved from an inflection table that Simsapa still shows
+`in comp`), **gap 11** (a quoted
 iti token whose DPD row is a headword that is not a sandhi), and **gap 12, base
 spelling** (the token row and base row of a quoted iti token whose base DPD
 spells with the long vowel of Simsapa's, same IDs). A token-level category
 covers the token's component rows.
 
 Counts with DPD `v0.4.20261026` (649 DPD rows): data version 0, gap 14 38,
-gap 18 0, gap 5 1 (`yogasmā`, DHP23), gap 11 9, gap 12 16, failing 0. Most
+gap 18 0, gap 5 0, gap 11 9, gap 12 16, failing 0. Most
 gap 14 rows are `… + api` splits that Simsapa's stem-match phase answers with
 a headword instead (`saṁkhittena'pi` → `saṁkhitta`), and the `pi` row is then
 missing.

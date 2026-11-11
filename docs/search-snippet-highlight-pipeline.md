@@ -623,8 +623,11 @@ them leading to the right word, fully or in part.
 line per call, reaching `log.txt` and the `simsapa` logcat tag:
 
 ```
-DPD-LOOKUP-TIMING: q="<query>" total=<ms> p1=<ms> … p8=<ms> dec=[a1=<ms>,a2=<ms>/<rows>,a3=<ms>,a4=<ms>/<rows>,hit=<1-4|none>] first_results_phase=<n|none>
+DPD-LOOKUP-TIMING: q="<query>" total=<ms> p1=<ms> … p8=<ms> p4b=<ms> dec=[a1=<ms>,a2=<ms>/<rows>,a3=<ms>,a4=<ms>/<rows>,hit=<1-4|none>] first_results_phase=<n|none>
 ```
+
+`p4b` is the inflection-table step (§9g); a word it found shows
+`first_results_phase=4` and ends in ` via=inflection_tables`.
 
 `-` marks a phase or attempt that did not run, or did not finish because the
 lookup was cancelled during it. `a2` / `a4` carry the rows the guess checked,
@@ -670,6 +673,48 @@ The exact form lookup (`lookup_forms_exact()`) makes no guesses, so it does not
 respell: `vuttan` stays `not_found` there.
 
 ---
+
+### 9g. A word with no `lookup` row: the inflection tables
+
+DPD's `lookup` table lists mostly the forms that occur in its texts, while each
+headword's `inflections` column lists its whole paradigm. A form missing from
+`lookup` (`yogasmā`, which occurs only inside `yogakkhema`; `apassuṁ`) would
+otherwise reach the guesses of the stem match and the "starts with" steps, or
+"not found". Both lookups first look for the word in the inflection tables:
+
+- `dpd_lookup_grouped()`, **Phase 4b**: after Phase 4 and the `ṁ` retry (§9f),
+  when `results` is empty and the word has no `lookup` row with headwords or
+  splits (`lookup_row_has_word()`, the same gate as §9f). The headwords found
+  are direct results and count as the lookup row's (`lookup_headword_ids`),
+  and `lookup_grammar` gets a triple per inflection-table cell that holds the
+  word (`[lemma_clean, class, cell title]`, the class as the `lookup` rows
+  have it: `lookup_grammar_class()`), so the Word in Sentence rows show
+  `masc abl sg of yoga`.
+- `dpd_lookup()`: the same, before its stem match, so the two lookups stay
+  equal for a word without a break-down.
+
+A word Phase 4b found gets no "starts with" break-down guess in Phase 7
+(§9e), as a word with a `lookup` row gets none: without this `yogasmā` would
+also get the guess `yogasmiṁ + iti`.
+
+**Trap: the iti rule decides on `lookup` rows.** `dpd_lookup_grouped_iti_split()`
+takes the first base candidate with results, short vowel first. A base found
+only in the inflection tables (`GroupedDpdLookup::from_inflection_tables`)
+counts only when no candidate has a `lookup` row: `gopālika` is a rare
+vocative of `gopālikā`, and taking it would make `gopālikā’ti` read
+`gopālika + iti`, against `lookup_forms_exact()`'s copy of the rule
+(`test_iti_rule_matches_grouped_lookup`) and
+[pali-sandhi-and-quote-marks.md](./pali-sandhi-and-quote-marks.md).
+
+Both call `inflection_table_headwords()` (`backend/src/db/dpd.rs`). The search
+(`headwords_inflecting_to()`) is exact and indexed: it reads the headwords
+whose `stem` is a prefix of the word (`stem IN (…)` on `idx_dpd_headwords_stem`,
+under 0.1 ms) and checks the ~1,300 irregular-stem headwords (`!` / `*`) in
+memory, read once per process (`irregular_stem_inflections_shared()`). A scan
+of the `inflections` column would take ~140 ms. It runs only for a word that
+Phases 2–4 missed, so an ordinary lookup does not pay for it. The gloss uses
+the same search for a compound part with no `lookup` row
+(docs/dpd-analysis-procedure.md, gap 5).
 
 ## 10. Where to look in the code
 
