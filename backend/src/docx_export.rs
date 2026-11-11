@@ -47,7 +47,8 @@ use markdown::mdast::{Code, List, Node, Table};
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS,
+    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
 use crate::types::GlossFormat;
@@ -471,8 +472,9 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         .collect();
     xml_rows.push_str(&format!("<w:tr><w:trPr><w:tblHeader/></w:trPr>{}</w:tr>", header));
 
-    for row in rows {
+    for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
         let mut cells = String::new();
+        let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
         let texts = [
             row.id_cell(),
             row.word_cell(),
@@ -485,7 +487,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         for (col, (text, w)) in texts.iter().zip(WORD_TABLE_COL_TWIPS).enumerate() {
             let runs = [run(false, false, text)];
             let indent = if col == 1 { row.depth as u32 * COMPONENT_INDENT_TWIPS } else { 0 };
-            cells.push_str(&table_cell_indent("VocabEntry", &w.to_string(), indent, &runs));
+            cells.push_str(&table_cell_indent_fill("VocabEntry", &w.to_string(), indent, fill, &runs));
         }
         xml_rows.push_str(&format!("<w:tr>{}</w:tr>", cells));
     }
@@ -494,11 +496,21 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         .iter()
         .map(|w| format!(r#"<w:gridCol w:w="{}"/>"#, w))
         .collect();
-    format!(
-        "{}{}",
-        borderless_table(&format!("<w:tblGrid>{}</w:tblGrid>", grid), &xml_rows),
-        table_spacer(454)
-    )
+    // A small left cell margin, so the text does not touch the edge of a
+    // shaded row.
+    let table = format!(
+        concat!(
+            r#"<w:tbl><w:tblPr>"#,
+            r#"<w:tblW w:w="0" w:type="auto"/>"#,
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
+            r#"</w:tblPr><w:tblGrid>{}</w:tblGrid>{}</w:tbl>"#,
+        ),
+        grid, xml_rows
+    );
+    format!("{}{}", table, table_spacer(454))
 }
 
 /// A passage as one Vocab Quote Block paragraph, its lines kept as line
@@ -692,11 +704,22 @@ fn table_cell(style_id: &str, width_twips: &str, width_type: &str, runs: &[Strin
     )
 }
 
-/// A table cell whose paragraph has a left indent (0: none).
-fn table_cell_indent(style_id: &str, width_twips: &str, indent_twips: u32, runs: &[String]) -> String {
+/// A table cell whose paragraph has a left indent (0: none), with an
+/// optional background fill (RGB hex).
+fn table_cell_indent_fill(
+    style_id: &str,
+    width_twips: &str,
+    indent_twips: u32,
+    fill: Option<&str>,
+    runs: &[String],
+) -> String {
+    let shd = fill
+        .map(|hex| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, hex))
+        .unwrap_or_default();
     format!(
-        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/></w:tcPr>{}</w:tc>"#,
+        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>{}</w:tcPr>{}</w:tc>"#,
         width_twips,
+        shd,
         styled_paragraph_indent(style_id, indent_twips, runs)
     )
 }
@@ -1271,6 +1294,9 @@ mod tests {
         assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
         assert!(!text.contains("Paragraph 1"));
         assert!(!text.contains(NO_AI_PROVIDER_NOTE));
+        // The token and its component share the first (shaded) band: 7 cells each.
+        let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
+        assert_eq!(doc.matches(&shd).count(), 14);
     }
 
     #[test]

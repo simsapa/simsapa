@@ -12,7 +12,8 @@ use regex::Regex;
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS,
+    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
 use crate::types::GlossFormat;
@@ -195,8 +196,12 @@ fn word_table(rows: &[GlossExportRow], format: TextFormat) -> String {
                 out.push_str(&format!("<th>{}</th>", escape_html(col)));
             }
             out.push_str("</tr></thead>\n<tbody>\n");
-            for row in rows {
-                out.push_str("<tr>");
+            for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
+                if shaded {
+                    out.push_str(&format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">"));
+                } else {
+                    out.push_str("<tr>");
+                }
                 for cell in row.cells() {
                     out.push_str(&format!("<td>{}</td>", table_cell_text(&cell, format)));
                 }
@@ -861,6 +866,11 @@ mod tests {
         assert!(html.contains("<h3>English Translation</h3>"));
         assert!(html.contains("<th>Conf.</th>"));
         assert!(html.contains("<td>- daḷha</td><td>pp</td><td>firm | strong</td>"));
+        // te: shaded; jhāyino: plain; daḷhaparakkamā and its component: shaded; xyz: plain.
+        let shaded = format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">");
+        assert_eq!(html.matches(&shaded).count(), 3);
+        assert!(html.contains(&format!("{shaded}<td>32201</td><td>- daḷha</td>")));
+        assert!(html.contains("<tr><td></td><td>xyz</td>"));
         assert!(html.contains("<li>A: AI-checked"));
 
         let org = gloss_export(&word_in_sentence_json(), "org").unwrap();

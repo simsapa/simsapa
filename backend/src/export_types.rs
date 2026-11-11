@@ -115,6 +115,30 @@ pub struct GlossExportRow {
 pub const WORD_TABLE_COLUMNS: [&str; 7] =
     ["ID", "Word in Sentence", "Grammar", "Meaning", "Construction", "Root", "Conf."];
 
+/// Background shade of a Word-by-Word table row, as in the Gloss tab:
+/// alternating per token, and a compound's component rows share their
+/// token's shade. `true` is the shaded band (the first token's, like the
+/// Gloss tab's `index % 2 === 0`).
+pub fn word_table_row_shades(rows: &[GlossExportRow]) -> Vec<bool> {
+    let mut band: usize = 0;
+    let mut seen_token = false;
+    rows.iter()
+        .map(|row| {
+            if row.depth == 0 {
+                if seen_token {
+                    band += 1;
+                }
+                seen_token = true;
+            }
+            band % 2 == 0
+        })
+        .collect()
+}
+
+/// Background colour of a shaded Word-by-Word row, in the HTML and docx
+/// exports (RGB hex, no `#`).
+pub const WORD_TABLE_SHADE_HEX: &str = "F2F2F2";
+
 impl GlossExportRow {
     /// The row's cells, in `WORD_TABLE_COLUMNS` order, as plain text.
     pub fn cells(&self) -> [String; 7] {
@@ -312,6 +336,17 @@ impl AiResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn row_shades_alternate_per_token_and_components_share_their_token_band() {
+        let row = |depth: u8| GlossExportRow { depth, ..Default::default() };
+        let rows = [row(0), row(0), row(1), row(1), row(2), row(0), row(0), row(1)];
+        assert_eq!(
+            word_table_row_shades(&rows),
+            vec![true, false, false, false, false, true, false, false]
+        );
+        assert!(word_table_row_shades(&[]).is_empty());
+    }
 
     /// A session saved before the two-part translation (one translation per
     /// model, in `response`) reads with an empty Literal Translation; a new
