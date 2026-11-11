@@ -664,7 +664,7 @@ Item {
     }
 
     function gloss_export(gloss_json: string, format: string): string {
-        return "# Gloss Export";
+        return "# Gloss of: …";
     }
 
     function gloss_paragraph_export(paragraph_json: string, paragraph_number: int, format: string): string {

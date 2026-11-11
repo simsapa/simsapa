@@ -71,7 +71,7 @@ yourself, from the data `simsapa` prints.
 ## Document structure (Word in Sentence format)
 
 ``` text
-# Analysis of: <reference or first words>
+# Gloss of: <reference or first words>
 
 <the passage text>
 

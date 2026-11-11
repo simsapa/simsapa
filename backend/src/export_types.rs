@@ -27,8 +27,7 @@ pub struct GlossExportData {
     #[serde(default)]
     pub gloss_format: GlossFormat,
     /// The reference or name of the passage (`dhp23/pli/ms`). Empty: the
-    /// Word in Sentence title uses the first words of the text, the Headwords
-    /// title is "Gloss Export".
+    /// document title uses the first words of the text.
     #[serde(default)]
     pub title: String,
     /// No AI provider was enabled, so the legend says why senses marked N
@@ -204,31 +203,25 @@ where
 }
 
 impl GlossExportData {
-    /// The document title: `Analysis of: <title or first words>` in the Word
-    /// in Sentence format; the title, or "Gloss Export", in the Headwords
-    /// format.
+    /// The document title, in both formats: `Gloss of: <title or first
+    /// words>` (the Gloss tab's and the `simsapa gloss` command's name for
+    /// it; DPD's own reports say `Analysis of:`), or `Gloss` for an empty
+    /// document.
     pub fn document_title(&self) -> String {
-        match self.gloss_format {
-            GlossFormat::WordInSentence => {
-                let name = if self.title.trim().is_empty() {
-                    let source = if self.text.trim().is_empty() {
-                        self.paragraphs.first().map(|p| p.text.as_str()).unwrap_or("")
-                    } else {
-                        self.text.as_str()
-                    };
-                    first_words(source, TITLE_MAX_CHARS)
-                } else {
-                    self.title.trim().to_string()
-                };
-                format!("Analysis of: {}", name)
-            }
-            GlossFormat::Headwords => {
-                if self.title.trim().is_empty() {
-                    "Gloss Export".to_string()
-                } else {
-                    self.title.trim().to_string()
-                }
-            }
+        let name = if self.title.trim().is_empty() {
+            let source = if self.text.trim().is_empty() {
+                self.paragraphs.first().map(|p| p.text.as_str()).unwrap_or("")
+            } else {
+                self.text.as_str()
+            };
+            first_words(source, TITLE_MAX_CHARS)
+        } else {
+            self.title.trim().to_string()
+        };
+        if name.is_empty() {
+            "Gloss".to_string()
+        } else {
+            format!("Gloss of: {}", name)
         }
     }
 

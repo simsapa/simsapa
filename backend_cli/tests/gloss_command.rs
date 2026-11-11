@@ -60,7 +60,7 @@ fn test_dhp23_markdown_without_ai() {
     let out = simsapa(&["gloss", "--no-ai", "--format", "markdown", "dhp23"]);
     assert_ok(&out);
     let doc = stdout(&out);
-    assert!(doc.starts_with("# Analysis of: dhp23 (dhp21-32/pli/ms)\n"), "{doc}");
+    assert!(doc.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{doc}");
     assert!(doc.contains("### Word-by-Word Analysis"), "{doc}");
     assert!(doc.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |"), "{doc}");
     assert!(doc.contains("| 62145 | sātatikā | adj, masc nom pl of sātatika |"), "{doc}");
@@ -77,7 +77,7 @@ fn test_markdown_is_the_default_when_piped() {
     if !have_dist() { return; }
     let out = simsapa(&["gloss", "--no-ai", "dhp23"]);
     assert_ok(&out);
-    assert!(stdout(&out).starts_with("# Analysis of: dhp23"));
+    assert!(stdout(&out).starts_with("# Gloss of: dhp23"));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn test_paragraph_selection() {
     if !have_dist() { return; }
     let out = simsapa(&["gloss", "--no-ai", "--paragraphs", "2", "sn1.71"]);
     assert_ok(&out);
-    assert!(stdout(&out).starts_with("# Analysis of: sn1.71 ¶2 ("), "{}", stdout(&out));
+    assert!(stdout(&out).starts_with("# Gloss of: sn1.71 ¶2 ("), "{}", stdout(&out));
 }
 
 #[test]

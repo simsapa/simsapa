@@ -154,7 +154,7 @@ fn test_gloss_text_route() {
     let (s, ct, md) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "output_format": "markdown" } }));
     assert_eq!(s, Status::Ok);
     assert_eq!(ct.map(|c| c.to_string()), Some("text/markdown; charset=utf-8".to_string()));
-    assert!(md.starts_with("# Analysis of: dhp23 (dhp21-32/pli/ms)\n"), "{md}");
+    assert!(md.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{md}");
     assert!(md.contains("### Word-by-Word Analysis"), "{md}");
     assert!(md.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |"), "{md}");
     assert!(md.contains("N: Not checked"), "{md}");
@@ -166,7 +166,7 @@ fn test_gloss_text_route() {
     let (s, ct, org) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "output_format": "org" } }));
     assert_eq!(s, Status::Ok);
     assert_eq!(ct, Some(ContentType::Plain));
-    assert!(org.starts_with("* Analysis of: te jhāyino") || org.contains("Analysis of: te jhāyino"), "{org}");
+    assert!(org.starts_with("* Gloss of: te jhāyino") || org.contains("Gloss of: te jhāyino"), "{org}");
 
     // Bad combinations.
     let bad = Status::BadRequest;

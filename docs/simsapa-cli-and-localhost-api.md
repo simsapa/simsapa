@@ -251,7 +251,7 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 | `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
 | `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
 
-A Word in Sentence document has this structure: `# Analysis of: <reference>`,
+A Word in Sentence document has this structure: `# Gloss of: <reference>`,
 the passage, `### English Translation` (**Translation** and **Literal
 Translation**, only when a translation was made), `### Variants` (only for
 `//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
@@ -2059,7 +2059,7 @@ Pāli text of a sutta reference.
   A paragraph is one CST paragraph, or one verse or paragraph of the `ms`
   text; `paragraphs` selects some of them (`"1"`, `"1-3"`, `"1-2 4"`). The
   document title names the reference and the record:
-  `Analysis of: dhp23 (dhp21-32/pli/ms)`.
+  `Gloss of: dhp23 (dhp21-32/pli/ms)`.
 - **`exact: true`** switches to a different response, `ExactGlossResult`: one
   token per word of each paragraph, in order, each with its exact DPD lookup,
   and nothing deduplicated, skipped or chosen. Its shape, tokenisation and an

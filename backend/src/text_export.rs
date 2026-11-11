@@ -667,7 +667,7 @@ mod tests {
     #[test]
     fn gloss_html_has_no_removed_headers() {
         let out = gloss_export(&gloss_json(), "html").unwrap();
-        assert!(out.contains("<h1>Gloss Export</h1>"));
+        assert!(out.contains("<h1>Gloss of: "));
         // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
         assert!(out.contains("<h2>Paragraphs</h2>"));
         assert!(!out.contains("Paragraph 1"));
@@ -686,7 +686,7 @@ mod tests {
     #[test]
     fn gloss_markdown_table_and_no_headers() {
         let out = gloss_export(&gloss_json(), "markdown").unwrap();
-        assert!(out.contains("# Gloss Export"));
+        assert!(out.contains("# Gloss of: "));
         assert!(out.contains("## Paragraphs"));
         assert!(!out.contains("## Paragraph 1"));
         assert!(out.contains("| **evaṁ** | thus; this **way** |"));
@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn gloss_orgmode_escapes_and_converts_response() {
         let out = gloss_export(&gloss_json(), "orgmode").unwrap();
-        assert!(out.contains("* Gloss Export"));
+        assert!(out.contains("* Gloss of: "));
         assert!(out.contains("** Paragraphs"));
         assert!(!out.contains("** Paragraph 1"));
         assert!(out.contains("| *evaṁ* | thus; this *way* |"));
@@ -726,7 +726,7 @@ mod tests {
         // The per-paragraph fragment no longer carries a "Paragraph N" heading.
         assert!(!out.contains("Paragraph 3"));
         assert!(out.contains("| **evaṁ** | thus |"));
-        assert!(!out.contains("Gloss Export"));
+        assert!(!out.contains("Gloss of"));
     }
 
     #[test]
@@ -804,7 +804,7 @@ mod tests {
     fn word_in_sentence_markdown_has_dpd_report_structure() {
         let out = gloss_export(&word_in_sentence_json(), "markdown").unwrap();
         let expected = concat!(
-            "# Analysis of: DHP23\n\n",
+            "# Gloss of: DHP23\n\n",
             "te jhāyino sātatikā,\nniccaṁ daḷhaparakkamā,\n\n",
             "### English Translation\n\n",
             "**Translation:** Those wise ones, meditative, persevering.\n\n",
@@ -825,7 +825,6 @@ mod tests {
         // No Variants without `//` groups, no no-AI note unless asked for.
         assert!(!out.contains("### Variants"));
         assert!(!out.contains(NO_AI_PROVIDER_NOTE));
-        assert!(!out.contains("Gloss Export"));
     }
 
     #[test]
@@ -838,7 +837,7 @@ mod tests {
         data.paragraphs[0].variants = vec![vec!["gacchan'ti".to_string(), "gacchanti".to_string()]];
         let out = gloss_export_document(&data, TextFormat::Markdown);
         // The title falls back to the text's first words.
-        assert!(out.starts_with("# Analysis of: te jhāyino sātatikā, niccaṁ…\n"));
+        assert!(out.starts_with("# Gloss of: te jhāyino sātatikā, niccaṁ…\n"));
         assert!(!out.contains("English Translation"));
         // The passage shows the glossed spelling; Variants lists the group.
         assert!(out.contains("\nyena lobhena luddhāse, sattā gacchan'ti duggatiṁ\n"));
@@ -861,8 +860,8 @@ mod tests {
     #[test]
     fn word_in_sentence_html_and_org() {
         let html = gloss_export(&word_in_sentence_json(), "html").unwrap();
-        assert!(html.contains("<title>Analysis of: DHP23</title>"));
-        assert!(html.contains("<h1>Analysis of: DHP23</h1>"));
+        assert!(html.contains("<title>Gloss of: DHP23</title>"));
+        assert!(html.contains("<h1>Gloss of: DHP23</h1>"));
         assert!(html.contains("<h3>English Translation</h3>"));
         assert!(html.contains("<th>Conf.</th>"));
         assert!(html.contains("<td>- daḷha</td><td>pp</td><td>firm | strong</td>"));
@@ -874,7 +873,7 @@ mod tests {
         assert!(html.contains("<li>A: AI-checked"));
 
         let org = gloss_export(&word_in_sentence_json(), "org").unwrap();
-        assert!(org.starts_with("* Analysis of: DHP23\n"));
+        assert!(org.starts_with("* Gloss of: DHP23\n"));
         assert!(org.contains("*** English Translation"));
         assert!(org.contains("*Translation:* Those wise ones"));
         assert!(org.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |\n|---+---+---+---+---+---+---|\n"));
@@ -889,7 +888,7 @@ mod tests {
         assert!(out.starts_with("te jhāyino"));
         assert!(out.contains("| 29188 | te |"));
         assert!(out.contains("- N: Not checked"));
-        assert!(!out.contains("Analysis of"));
+        assert!(!out.contains("Gloss of"));
     }
 
     #[test]
@@ -898,7 +897,7 @@ mod tests {
         data.paragraphs[0].vocabulary[0].confidence = Some(crate::gloss_rows::Confidence::A);
         data.paragraphs[0].ai_translations[0].literal_translation = "Thus by me heard.".to_string();
         let out = gloss_export_document(&data, TextFormat::Markdown);
-        assert!(out.starts_with("# Gloss Export"));
+        assert!(out.starts_with("# Gloss of: "));
         assert!(out.contains("|    |    |    |\n|----|----|----|\n| **evaṁ** | thus; this **way** | A |\n| **sutaṁ** | heard *(pp)* |  |"));
         assert!(out.contains("### gemini (selected)\n\n**Translation:**\n\n> Thus have I heard.\n\n**Literal Translation:**\n\n> Thus by me heard."));
         // A translation without a literal one keeps the old layout.

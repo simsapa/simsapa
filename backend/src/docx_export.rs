@@ -1217,7 +1217,7 @@ mod tests {
         // Well-formed XML (parses as a document).
         roxmltree_lite_check(&doc);
 
-        assert!(doc.contains("Gloss Export"));
+        assert!(doc.contains("Gloss of: "));
         // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
         assert!(doc.contains("Paragraphs"));
         assert!(!doc.contains("Paragraph 1"));
@@ -1272,7 +1272,7 @@ mod tests {
         roxmltree_lite_check(&doc);
         let text = document_text(&doc);
         let expected = [
-            "Analysis of: DHP23|",
+            "Gloss of: DHP23|",
             "te jhāyino gacchan'ti|",
             "English Translation|",
             "Translation: |Those wise ones.|",
@@ -1321,7 +1321,7 @@ mod tests {
         let docx = generate_gloss_docx(r#"{"text": "", "paragraphs": []}"#).unwrap();
         let doc = read_part(&docx, "word/document.xml");
         roxmltree_lite_check(&doc);
-        assert!(doc.contains("Gloss Export"));
+        assert!(doc.contains(">Gloss<"));
     }
 
     fn chat_sample_json() -> String {

@@ -736,9 +736,13 @@ item `uid`, `context_snippet` and `confidence`, and per translation
 order (`depth` 1+ for components), each with the chosen sense's `uid`,
 `lemma`, `summary` and the token's `context_snippet` for the Anki notes.
 
-The **Word in Sentence** document follows DPD's analysis report
-([dpd-analysis-procedure.md](./dpd-analysis-procedure.md) §1.7):
-`# Analysis of: <title, or the leading words of the text that fit in 40 characters, cut between words with `…`>`, then per paragraph (under
+Every gloss document, in both formats, is titled `Gloss of: <title, or the
+leading words of the text that fit in 40 characters, cut between words with
+`…`>` (`Gloss` when empty; `GlossExportData::document_title`). DPD's own
+reports say `Analysis of:`; the Gloss tab and `simsapa gloss` name theirs
+after the feature. The **Word in Sentence** document otherwise follows DPD's
+analysis report ([dpd-analysis-procedure.md](./dpd-analysis-procedure.md)
+§1.7): the title, then per paragraph (under
 `## Paragraph <n>` when there are several) the passage with the glossed
 spelling of each `//` group, `### English Translation` with `**Translation:**`
 and `**Literal Translation:**` (a model heading only when there are several;
