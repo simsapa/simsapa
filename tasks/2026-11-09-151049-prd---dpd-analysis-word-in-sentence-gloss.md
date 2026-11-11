@@ -578,7 +578,7 @@ the DPD tool's output, and whose translations are the agent's own.
 ## 6. Design Considerations
 
 - **Options row (GUI):**
-  `Gloss format: [Word in Sentence ▾]  Dispatch mode: [Sequential retry ▾]  [✓] Auto-translate  [Word Selection...] [Common Words...] [Update All Glosses]`
+  `Gloss format: [Word in Sentence ▾]  Dispatch mode: [Sequential retry ▾]  [✓] Auto-translate  [✓] AI word selection (i) [Common Words...] [Update All Glosses]`
   plus the existing "No duplicates" / "Skip common" CheckBoxes and the export
   ComboBox. On narrow (mobile) widths the row must wrap, not overflow.
 - **Word in Sentence rows (GUI):**

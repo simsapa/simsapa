@@ -2854,11 +2854,30 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                     : "No AI model is enabled for the dispatch mode. See Prompts menu > AI Models."
                             }
 
-                            Button {
-                                text: "Word Selection..."
-                                icon.source: "icons/32x32/famicons--shield-half-outline.png"
-                                icon.color: "transparent"
-                                onClicked: word_selection_dialog.open()
+                            // On/off for AI word selection, persisted through the
+                            // dialog's persist_selection() (one writer of the
+                            // setting). The info button opens the dialog with the
+                            // shield legend and the cache maintenance.
+                            RowLayout {
+                                spacing: 0
+
+                                CheckBox {
+                                    id: word_selection_check
+                                    text: "AI word selection"
+                                    checked: root.word_selection_setting_enabled
+                                    onToggled: word_selection_dialog.persist_selection(word_selection_check.checked)
+                                }
+
+                                Button {
+                                    flat: true
+                                    icon.source: "icons/32x32/fa_circle-info-solid.png"
+                                    Layout.preferredWidth: word_selection_check.implicitHeight
+                                    Layout.preferredHeight: word_selection_check.implicitHeight
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 500
+                                    ToolTip.text: "About AI word selection"
+                                    onClicked: word_selection_dialog.open()
+                                }
                             }
 
                             Button {

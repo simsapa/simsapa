@@ -372,11 +372,13 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 > are kept only as the one-time seed for the sequence. See
 > [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).
 
-**Word Selection...** in the Gloss toolbar (before "Common Words...") opens
-`bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a **"Use AI word
-selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
-the Fallback sequence has no enabled model, and a
-**Clear Word-Selection Cache...** button (confirm dialog shows the row count).
+The Gloss toolbar (before "Common Words...") has an **"AI word selection"**
+checkbox, which persists `gloss_word_selection_enabled` through the dialog's
+`persist_selection()`, and an info button next to it that opens
+`bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a note that
+selections are saved, the **Clear Word-Selection Cache...** button (confirm
+dialog shows the row count), a warning when the feature is on but the Fallback
+sequence has no enabled model, and the shield legend.
 The clear deletes the **local tier** only (`built_in = 0`, i.e. the
 `ai-selected` / `user-selected` rows) — the shipped rows and the phrase table
 survive, since they are shipped data, not user state. Every built-in selection

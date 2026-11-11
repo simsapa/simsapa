@@ -7,11 +7,13 @@ import QtQuick.Dialogs
 
 import com.profoundlabs.simsapa
 
-// Settings dialog for the Gloss tab's AI word-selection feature.
-// The model is no longer chosen here: requests walk the global Fallback
-// sequence (Settings > AI Models). This dialog only turns the feature on/off
-// and offers a maintenance button to clear the ai/user rows of the
-// word-selection cache. See docs/ai-model-management-and-fallback.md.
+// Info dialog for the Gloss tab's AI word-selection feature, opened from the
+// info button next to the tab's "AI word selection" checkbox. The checkbox
+// persists the on/off state through persist_selection() here. Requests walk
+// the global Fallback sequence (Settings > AI Models). The dialog explains the
+// feature and the shield legend, and offers a maintenance button to clear the
+// ai/user rows of the word-selection cache.
+// See docs/ai-model-management-and-fallback.md.
 Dialog {
     id: root
 
@@ -56,7 +58,6 @@ Dialog {
             logger.error("load_selection(): Failed to parse settings JSON: " + e);
             root.selection_enabled = false;
         }
-        enabled_check.checked = root.selection_enabled;
     }
 
     function persist_selection(is_enabled: bool) {
@@ -93,27 +94,24 @@ Dialog {
             text: "When a word has several dictionary senses, an AI model picks one from the sentence context. The request uses the Fallback sequence in Settings > AI Models."
         }
 
-        RowLayout {
-            spacing: 8
-            Image {
-                source: "icons/32x32/famicons--shield-half-outline.png"
-                sourceSize.width: 24
-                sourceSize.height: 24
-                fillMode: Image.PreserveAspectFit
-                Layout.alignment: Qt.AlignVCenter
-            }
-            CheckBox {
-                id: enabled_check
-                text: "Use AI word selection"
-                checked: root.selection_enabled
-                onToggled: root.persist_selection(enabled_check.checked)
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: "Selections are saved: AI-selected senses and the ones you confirm are kept, and the same word in the same context is resolved from them without a new request."
+        }
+
+        Button {
+            text: "Clear Word-Selection Cache..."
+            onClicked: {
+                clear_cache_confirm_dialog.cache_count = SuttaBridge.gloss_word_cache_count();
+                clear_cache_confirm_dialog.open();
             }
         }
 
         Label {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            visible: enabled_check.checked && !root.has_enabled_sequence_model()
+            visible: root.selection_enabled && !root.has_enabled_sequence_model()
             color: "#E07B39"
             text: "No models are enabled in the Fallback sequence, so no requests can be sent."
         }
@@ -185,14 +183,6 @@ Dialog {
                     wrapMode: Text.WordWrap
                     text: "Built-in selections are never deleted, clicking one sets the word aside for this session only."
                 }
-            }
-        }
-
-        Button {
-            text: "Clear Word-Selection Cache..."
-            onClicked: {
-                clear_cache_confirm_dialog.cache_count = SuttaBridge.gloss_word_cache_count();
-                clear_cache_confirm_dialog.open();
             }
         }
 
