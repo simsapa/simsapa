@@ -146,7 +146,7 @@ Dialog {
                         // The three legend lines say what CONFIDENCE_LEGEND in
                         // backend/src/gloss_rows.rs says in the exported
                         // documents; change them together.
-                        text: "Not checked — plain dictionary lookup, no saved selection."
+                        text: "Not checked: plain dictionary lookup, no saved selection."
                     }
 
                     Image {
@@ -158,7 +158,7 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "AI-checked — picked by a machine (runtime AI request, or built-in data)."
+                        text: "AI-checked: picked by a machine (runtime AI request, or built-in data)."
                     }
 
                     Image {
@@ -170,7 +170,7 @@ Dialog {
                     Label {
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
-                        text: "Human-checked — confirmed by you, or by selections and set phrases built into the app."
+                        text: "Human-checked: confirmed by you, or by selections and set phrases built into the app."
                     }
                 }
 

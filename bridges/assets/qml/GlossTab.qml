@@ -2377,7 +2377,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return {
             state: "none", owned: false,
             icon: "icons/32x32/famicons--shield-outline.png",
-            tooltip: "Not checked — plain dictionary lookup. Click to confirm the shown sense as Human-checked."
+            tooltip: "Not checked (plain dictionary lookup). Click to confirm the shown sense as Human-checked."
         };
     }
 

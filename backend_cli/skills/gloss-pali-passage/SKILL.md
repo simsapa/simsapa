@@ -91,9 +91,9 @@ yourself, from the data `simsapa` prints.
 | 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort | daḷha + parakkama | | |
 | 32201 | - daḷha | pp | firm | √dah + ta | √dah 1 a (be strong) | A |
 
-- N: Not checked — plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.
-- A: AI-checked — picked by a machine (runtime AI request, or built-in data).
-- H: Human-checked — confirmed by you, or by selections and set phrases built into the app.
+- N: Not checked, plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.
+- A: AI-checked, picked by a machine (runtime AI request, or built-in data).
+- H: Human-checked, confirmed by you, or by selections and set phrases built into the app.
 ```
 
 - Keep `simsapa`'s own table and legend text as printed; the example above

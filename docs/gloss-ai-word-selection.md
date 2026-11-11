@@ -548,7 +548,7 @@ origins:
 
 | icon | state | resolution values | meaning |
 |---|---|---|---|
-| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it — a plain dictionary lookup |
+| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it, a plain dictionary lookup |
 | `famicons--shield-half-outline.png` | AI-checked | `ai-selected`, `built-in-agent-checked` | a machine chose it: a runtime AI response, or the shipped agent pipeline (§7) |
 | `famicons--shield.png` | Human-checked | `user-selected`, `built-in-human-checked`, `built-in-phrase-match` | a person confirmed it: the reader here, or a curator |
 

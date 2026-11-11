@@ -133,9 +133,9 @@ pub struct GlossRow {
 /// (`GlossWordSelectionDialog.qml`) shows the same three sentences without
 /// the mark and the N line's last sentence; change them together.
 pub const CONFIDENCE_LEGEND: [&str; 3] = [
-    "N: Not checked — plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.",
-    "A: AI-checked — picked by a machine (runtime AI request, or built-in data).",
-    "H: Human-checked — confirmed by you, or by selections and set phrases built into the app.",
+    "N: Not checked, plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.",
+    "A: AI-checked, picked by a machine (runtime AI request, or built-in data).",
+    "H: Human-checked, confirmed by you, or by selections and set phrases built into the app.",
 ];
 
 /// The line that introduces the legend in an export.
