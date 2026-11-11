@@ -36,6 +36,11 @@ Item {
     property string bg_color_darker: root.is_dark ? "#1C2025" : "#F8DA8E"
 
     property string border_color: root.is_dark ? "#0a0a0a" : "#ccc"
+    // Background of the AI word-selection status rows, distinct from the
+    // tab's own background so "Selecting words..." / "Request sent to ..."
+    // stand out.
+    property string ws_status_bg_color: root.is_dark ? "#1E3A55" : "#D6E8F7"
+    property string ws_status_border_color: root.is_dark ? "#3A6A99" : "#7FAAD3"
 
     // Signals
     signal requestWordSummary(string word)
@@ -1061,10 +1066,54 @@ Item {
         onAccepted: accept_fn() // qmllint disable use-proper-function
     }
 
+    // One-time explanation of the Word in Sentence format, opened before the
+    // first gloss in that format. Only OK records it as seen; closing it any
+    // other way shows it again on the next gloss.
+    Dialog {
+        id: word_in_sentence_info_dialog
+        title: "Word in Sentence Format"
+        modal: true
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        standardButtons: Dialog.Ok
+        header: DialogHeader { text: word_in_sentence_info_dialog.title }
+
+        // Width from the dialog, height from the label (the StorageDialog
+        // pattern): a RichText Label set as the contentItem with
+        // `width: parent.width` makes the Fusion implicitHeight binding loop.
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                textFormat: Text.RichText
+                text: "<p>The Gloss format: <b>Word in Sentence</b> setting shows more grammar details than the <b>Headwords</b> setting.</p>" +
+                    "<p>Both work best with <b>AI word selection</b>, which selects the specific meaning from the dictionary's results for the glossed word.</p>" +
+                    "<p>E.g. which of the many meanings of 'kamma' fits the given sentence context.</p>" +
+                    "<p>Enable an AI provider service in Prompts &gt; AI Models... by adding an API key.</p>" +
+                    "<p>Without AI, the first dictionary meaning is shown.</p>"
+            }
+        }
+
+        onAccepted: SuttaBridge.set_gloss_word_in_sentence_info_shown(true)
+    }
+
+    // Opens the Word in Sentence info dialog once, until the user dismisses it
+    // with OK.
+    function maybe_show_word_in_sentence_info() {
+        if (!root.is_word_in_sentence) return;
+        if (word_in_sentence_info_dialog.opened) return;
+        if (SuttaBridge.get_gloss_word_in_sentence_info_shown()) return;
+        word_in_sentence_info_dialog.open();
+    }
+
     MessageDialog {
         id: no_models_dialog
         title: "No AI Models"
-        text: "There are no enabled models. See Prompts menu > AI Models"
+        text: "There are no enabled models. See Prompts > AI Models"
         buttons: MessageDialog.Ok
     }
 
@@ -1660,6 +1709,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         logger.debug(`🚀 Starting background processing for ${paragraphs.length} paragraphs`);
+
+        root.maybe_show_word_in_sentence_info();
 
         // Set processing state
         root.is_processing_all = true;
@@ -2700,32 +2751,43 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         // selection request is in flight or queued; Cancel drops
                         // the whole run (in-flight responses arrive stale and
                         // are ignored).
-                        RowLayout {
+                        Rectangle {
                             Layout.fillWidth: true
                             visible: root.is_ws_any_active()
-                            spacing: 8
+                            implicitHeight: ws_global_row.implicitHeight + 12
+                            color: root.ws_status_bg_color
+                            border.color: root.ws_status_border_color
+                            border.width: 1
+                            radius: 4
 
-                            BusyIndicator {
-                                running: parent.visible
-                                Layout.preferredHeight: 24
-                                Layout.preferredWidth: 24
-                            }
+                            RowLayout {
+                                id: ws_global_row
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                spacing: 8
 
-                            Text {
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                font.pointSize: root.vocab_font_point_size
-                                color: root.text_color
-                                text: {
-                                    let n = root.ws_pending_count();
-                                    let noun = n === 1 ? "paragraph" : "paragraphs";
-                                    return `Selecting words... ${n} ${noun} remaining.`;
+                                BusyIndicator {
+                                    running: parent.visible
+                                    Layout.preferredHeight: 24
+                                    Layout.preferredWidth: 24
                                 }
-                            }
 
-                            Button {
-                                text: "Cancel"
-                                onClicked: root.ws_reset()
+                                Text {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                    text: {
+                                        let n = root.ws_pending_count();
+                                        let noun = n === 1 ? "paragraph" : "paragraphs";
+                                        return `Selecting words... ${n} ${noun} remaining.`;
+                                    }
+                                }
+
+                                Button {
+                                    text: "Cancel"
+                                    onClicked: root.ws_reset()
+                                }
                             }
                         }
 
@@ -2851,7 +2913,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 ToolTip.delay: 500
                                 ToolTip.text: root.has_translate_model
                                     ? "Translate each paragraph when its gloss is complete."
-                                    : "No AI model is enabled for the dispatch mode. See Prompts menu > AI Models."
+                                    : "No AI model is enabled for the dispatch mode. See Prompts > AI Models."
                             }
 
                             // On/off for AI word selection, persisted through the
@@ -3110,61 +3172,71 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
                 // AI word-selection status: waiting / busy / auto-hiding
                 // success / persistent error, under the paragraph text input.
-                RowLayout {
-                    id: ws_status_row
+                Rectangle {
                     Layout.fillWidth: true
                     Layout.leftMargin: 10
                     Layout.rightMargin: 10
-                    spacing: 8
+                    visible: ws_status_row.ws_state !== undefined
+                    implicitHeight: ws_status_row.implicitHeight + 12
+                    color: root.ws_status_bg_color
+                    border.color: root.ws_status_border_color
+                    border.width: 1
+                    radius: 4
 
-                    property var ws_state: root.ws_status[paragraph_item.index]
-                    visible: ws_state !== undefined
+                    RowLayout {
+                        id: ws_status_row
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 8
 
-                    onWs_stateChanged: {
-                        if (ws_state !== undefined && ws_state.state === "success") {
-                            ws_success_hide_timer.restart();
+                        property var ws_state: root.ws_status[paragraph_item.index]
+
+                        onWs_stateChanged: {
+                            if (ws_state !== undefined && ws_state.state === "success") {
+                                ws_success_hide_timer.restart();
+                            }
                         }
-                    }
 
-                    Timer {
-                        id: ws_success_hide_timer
-                        interval: 4000
-                        onTriggered: root.ws_clear_status(paragraph_item.index, "success")
-                    }
-
-                    BusyIndicator {
-                        visible: ws_status_row.ws_state !== undefined && ws_status_row.ws_state.state === "busy"
-                        running: visible
-                        Layout.preferredHeight: 24
-                        Layout.preferredWidth: 24
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        font.pointSize: root.vocab_font_point_size
-                        text: {
-                            let s = ws_status_row.ws_state;
-                            if (s === undefined) return "";
-                            if (s.state === "waiting") return "Waiting for word selection...";
-                            return s.message || "";
+                        Timer {
+                            id: ws_success_hide_timer
+                            interval: 4000
+                            onTriggered: root.ws_clear_status(paragraph_item.index, "success")
                         }
-                        color: {
-                            let s = ws_status_row.ws_state;
-                            if (s !== undefined && s.state === "error") return "#E53935";
-                            if (s !== undefined && s.state === "success") return "#4CAF50";
-                            return root.text_color;
-                        }
-                    }
 
-                    // Cancel waiting for this paragraph's selection (drops the
-                    // whole covering request in batched mode).
-                    Button {
-                        text: "Cancel"
-                        visible: ws_status_row.ws_state !== undefined &&
-                                 (ws_status_row.ws_state.state === "waiting" ||
-                                  ws_status_row.ws_state.state === "busy")
-                        onClicked: root.ws_cancel_paragraph(paragraph_item.index)
+                        BusyIndicator {
+                            visible: ws_status_row.ws_state !== undefined && ws_status_row.ws_state.state === "busy"
+                            running: visible
+                            Layout.preferredHeight: 24
+                            Layout.preferredWidth: 24
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            font.pointSize: root.vocab_font_point_size
+                            text: {
+                                let s = ws_status_row.ws_state;
+                                if (s === undefined) return "";
+                                if (s.state === "waiting") return "Waiting for word selection...";
+                                return s.message || "";
+                            }
+                            color: {
+                                let s = ws_status_row.ws_state;
+                                if (s !== undefined && s.state === "error") return "#E53935";
+                                if (s !== undefined && s.state === "success") return "#4CAF50";
+                                return root.text_color;
+                            }
+                        }
+
+                        // Cancel waiting for this paragraph's selection (drops the
+                        // whole covering request in batched mode).
+                        Button {
+                            text: "Cancel"
+                            visible: ws_status_row.ws_state !== undefined &&
+                                     (ws_status_row.ws_state.state === "waiting" ||
+                                      ws_status_row.ws_state.state === "busy")
+                            onClicked: root.ws_cancel_paragraph(paragraph_item.index)
+                        }
                     }
                 }
 

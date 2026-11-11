@@ -84,6 +84,13 @@ contentItem — that binding is what makes `wrapMode` work (see
 `docs/android-edge-to-edge-and-safe-areas.md`) and is measured to be irrelevant
 here.
 
+**A `RichText` `Label` set as the `contentItem` (with `width: parent.width`)
+loops even with `DialogHeader`**; the same text as plain text does not
+(GlossTab's `word_in_sentence_info_dialog`, measured A/B in `tst_GlossTab.qml`
+under Fusion). For a rich-text message, put the `Label` in a `ColumnLayout`
+anchored left and right, with `Layout.fillWidth: true`, as `StorageDialog.qml`
+does: width from the dialog, height from the label, no loop.
+
 **To reproduce or verify one, use the existing rig — do not build your own.**
 `scripts/tst_dialog_loop_harness.qml.keep` instantiates the real
 `SearchBarInput` in a window and drives the four scenarios that isolated the

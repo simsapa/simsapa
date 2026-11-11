@@ -604,6 +604,14 @@ Item {
     function set_gloss_auto_translate(on: bool) {
     }
 
+    // true in the stub, so QML tests never open the one-time info dialog.
+    function get_gloss_word_in_sentence_info_shown(): bool {
+        return true;
+    }
+
+    function set_gloss_word_in_sentence_info_shown(shown: bool) {
+    }
+
     function get_gloss_ai_translate_mode(): string {
         return 'sequential_retry';
     }

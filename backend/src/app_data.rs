@@ -1460,6 +1460,11 @@ impl AppData {
         self.update_app_settings(|s| s.gloss_auto_translate = on);
     }
 
+    /// Records that the Word in Sentence info dialog was dismissed with OK.
+    pub fn set_gloss_word_in_sentence_info_shown(&self, shown: bool) {
+        self.update_app_settings(|s| s.gloss_word_in_sentence_info_shown = shown);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 

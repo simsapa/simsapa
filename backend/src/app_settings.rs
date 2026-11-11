@@ -400,6 +400,10 @@ pub struct AppSettings {
     /// Gloss tab: translate each paragraph as soon as its gloss is complete.
     #[serde(default)]
     pub gloss_auto_translate: bool,
+    /// Gloss tab: the user has dismissed (OK) the one-time explanation of the
+    /// Word in Sentence format, shown before its first gloss.
+    #[serde(default)]
+    pub gloss_word_in_sentence_info_shown: bool,
 }
 
 fn default_gloss_format() -> crate::types::GlossFormat {
@@ -910,6 +914,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             prompts_request_mode: AiRequestMode::default(),
             gloss_format: default_gloss_format(),
             gloss_auto_translate: false,
+            gloss_word_in_sentence_info_shown: false,
         }
     }
 }
