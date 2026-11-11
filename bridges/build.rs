@@ -39,6 +39,7 @@ fn main() {
         "assets/qml/CMenuItem.qml",
         "assets/qml/KeySequenceDisplay.qml",
         "assets/qml/SuttaTabButton.qml",
+        "assets/qml/SplitHandleGrip.qml",
         "assets/qml/TabListDialog.qml",
         "assets/qml/WindowListDialog.qml",
         "assets/qml/WindowRenameDialog.qml",

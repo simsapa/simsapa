@@ -678,6 +678,22 @@ ApplicationWindow {
                             Layout.fillWidth: true
                         }
 
+                        CheckBox {
+                            id: show_split_drag_handles_checkbox
+                            text: "Show Drag Handles on Panel Separators"
+                            font.pointSize: root.pointSize
+                            onCheckedChanged: {
+                                SuttaBridge.set_show_split_drag_handles(checked);
+                            }
+                        }
+
+                        Label {
+                            text: "Show a half-round handle with a small triangle on the separator between the reading panel and the sidebar, and above the word lookup panel. Drag it to resize the panels."
+                            font.pointSize: root.pointSize - 2
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
                         Item { Layout.fillHeight: true }
                     }
                 }
@@ -1245,6 +1261,7 @@ ApplicationWindow {
 
         // Load footnotes setting
         show_footnotes_checkbox.checked = SuttaBridge.get_show_bottom_footnotes();
+        show_split_drag_handles_checkbox.checked = SuttaBridge.get_show_split_drag_handles();
 
         // Load initial state for Find tab settings
         search_as_you_type_checkbox.checked = SuttaBridge.get_search_as_you_type();

@@ -216,6 +216,9 @@ pub struct AppSettings {
     /// level rows. Tree rows never show one, whatever this says.
     /// See docs/sutta-navigation-tree.md
     pub show_navigation_blurbs: bool,
+    /// Whether the reading window draws a round grip with arrows on the
+    /// draggable panel separators, so users notice they can be dragged.
+    pub show_split_drag_handles: bool,
     pub first_time_start: bool,
     /// Extra space (dp) added below the system-provided safe area at the top of
     /// mobile windows. Qt's ApplicationWindow already pads the window by the real
@@ -868,6 +871,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             open_find_in_sutta_results: true,
             show_bottom_footnotes: true,
             show_navigation_blurbs: true,
+            show_split_drag_handles: true,
             first_time_start: true,
             mobile_extra_top_margin: 0,
             legacy_mobile_top_bar_margin: None,

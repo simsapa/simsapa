@@ -99,6 +99,9 @@ ApplicationWindow {
     // "Rendering"). Read once at startup and passed to FulltextResults. The
     // env-var backed toggles are applied in gui.cpp instead.
     readonly property bool render_use_flat_results_background: SuttaBridge.get_render_use_flat_results_background()
+    // Draw a round grip on the panel separators. Every window follows the
+    // setting live through showSplitDragHandlesChanged.
+    property bool show_split_drag_handles: SuttaBridge.get_show_split_drag_handles()
     readonly property bool render_disable_results_clip: SuttaBridge.get_render_disable_results_clip()
     readonly property bool item_height_use_default: SuttaBridge.get_item_height_use_default()
     readonly property int item_height_fixed: SuttaBridge.get_item_height_fixed()
@@ -265,6 +268,10 @@ ApplicationWindow {
 
     Connections {
         target: SuttaBridge
+
+        function onShowSplitDragHandlesChanged() {
+            root.show_split_drag_handles = SuttaBridge.get_show_split_drag_handles();
+        }
 
         function onUpdateWindowTitle(item_uid: string, sutta_ref: string, sutta_title: string) {
             /* logger.info("onUpdateWindowTitle():", item_uid, sutta_ref, sutta_title); */
@@ -3498,11 +3505,34 @@ ${query_text}`;
                         implicitWidth: root.is_desktop ? 2 : 4
                         implicitHeight: panel_split.height
                         color: SplitHandle.pressed ? panel_split.palette.dark : (SplitHandle.hovered ? panel_split.palette.midlight : panel_split.palette.mid)
-                        containmentMask: Item {
-                            x: (panel_split_handle.width - width) / 2
-                            // NOTE: 20 : 40 or 15 : 30 is too wide, interferes with dragging the scroll bar
-                            width: root.is_desktop ? 10 : 20
-                            height: panel_split_handle.height
+                        // The SplitView starts a drag only where this mask contains the
+                        // point, so it covers the thin strip and the grip's circle.
+                        containmentMask: QtObject {
+                            function contains(point: point): bool {
+                                // NOTE: 20 : 40 or 15 : 30 is too wide, interferes with dragging the scroll bar
+                                let strip_width = root.is_desktop ? 10 : 20;
+                                if (Math.abs(point.x - panel_split_handle.width / 2) <= strip_width / 2
+                                    && point.y >= 0 && point.y <= panel_split_handle.height) {
+                                    return true;
+                                }
+                                return panel_split_grip.contains_handle_point(panel_split_handle, point);
+                            }
+                        }
+
+                        // Shown only while both panels are open side by side. It sits to
+                        // the right of the line, over the sidebar, never over the reading
+                        // panel (its scrollbar, and on mobile the native webview).
+                        SplitHandleGrip {
+                            id: panel_split_grip
+                            orientation: Qt.Horizontal
+                            visible: root.show_split_drag_handles && suttas_tab_container.visible && sidebar_panel.visible
+                            grip_radius: root.is_desktop ? 12 : 18
+                            x: panel_split_handle.width
+                            y: (panel_split_handle.height - height) / 2
+                            active: panel_split_handle.SplitHandle.pressed || panel_split_handle.SplitHandle.hovered
+                            fill_color: panel_split.palette.mid
+                            active_color: panel_split.palette.dark
+                            arrow_color: panel_split.palette.base
                         }
                     }
 
@@ -4032,10 +4062,33 @@ ${query_text}`;
                                 implicitHeight: root.is_desktop ? 2 : 4
                                 implicitWidth: sutta_split.width
                                 color: SplitHandle.pressed ? sutta_split.palette.dark : (SplitHandle.hovered ? sutta_split.palette.midlight : sutta_split.palette.mid)
-                                containmentMask: Item {
-                                    y: (sutta_split_handle.height - height) / 2
-                                    height: root.is_desktop ? 15 : 30
-                                    width: sutta_split_handle.width
+                                // The SplitView starts a drag only where this mask contains the
+                                // point, so it covers the thin strip and the grip's circle.
+                                containmentMask: QtObject {
+                                    function contains(point: point): bool {
+                                        let strip_height = root.is_desktop ? 15 : 30;
+                                        if (Math.abs(point.y - sutta_split_handle.height / 2) <= strip_height / 2
+                                            && point.x >= 0 && point.x <= sutta_split_handle.width) {
+                                            return true;
+                                        }
+                                        return sutta_split_grip.contains_handle_point(sutta_split_handle, point);
+                                    }
+                                }
+
+                                // Shown only while the lookup panel is open. It sits below
+                                // the line, over the lookup panel: on mobile the native
+                                // webview above the line is drawn over every QML item.
+                                SplitHandleGrip {
+                                    id: sutta_split_grip
+                                    orientation: Qt.Vertical
+                                    visible: root.show_split_drag_handles && word_summary_wrap.visible
+                                    grip_radius: root.is_desktop ? 12 : 18
+                                    x: (sutta_split_handle.width - width) / 2
+                                    y: sutta_split_handle.height
+                                    active: sutta_split_handle.SplitHandle.pressed || sutta_split_handle.SplitHandle.hovered
+                                    fill_color: sutta_split.palette.mid
+                                    active_color: sutta_split.palette.dark
+                                    arrow_color: sutta_split.palette.base
                                 }
                             }
 

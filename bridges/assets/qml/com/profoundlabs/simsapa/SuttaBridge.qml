@@ -30,6 +30,7 @@ Item {
     signal showSuttaFromReferenceSearch(window_id: string, result_data_json: string);
     signal bookMetadataUpdated(success: bool, message: string);
     signal showBottomFootnotesChanged();
+    signal showSplitDragHandlesChanged();
     signal appSettingsReset();
     signal modelListsUpdated(success: bool, report_json: string);
     signal exportFailed(reason: string);
@@ -1226,6 +1227,15 @@ Item {
 
     function set_show_navigation_blurbs(enabled: bool) {
         console.log("set_show_navigation_blurbs():", enabled);
+    }
+
+    function get_show_split_drag_handles(): bool {
+        console.log("get_show_split_drag_handles()");
+        return true;
+    }
+
+    function set_show_split_drag_handles(enabled: bool) {
+        console.log("set_show_split_drag_handles():", enabled);
     }
 
     function open_sutta_navigation_window() {

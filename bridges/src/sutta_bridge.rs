@@ -940,6 +940,10 @@ pub mod qobject {
         #[cxx_name = "showNavigationBlurbsChanged"]
         fn show_navigation_blurbs_changed(self: Pin<&mut SuttaBridge>);
 
+        #[qsignal]
+        #[cxx_name = "showSplitDragHandlesChanged"]
+        fn show_split_drag_handles_changed(self: Pin<&mut SuttaBridge>);
+
         // Update checker signals
         #[qsignal]
         #[cxx_name = "appUpdateAvailable"]
@@ -1829,6 +1833,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn set_show_navigation_blurbs(self: Pin<&mut SuttaBridge>, enabled: bool);
+
+        #[qinvokable]
+        fn get_show_split_drag_handles(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_show_split_drag_handles(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         /// Open the Sutta Navigation window, or revive the one that exists.
         #[qinvokable]
@@ -6307,6 +6317,17 @@ impl qobject::SuttaBridge {
         let app_data = get_app_data();
         app_data.set_show_navigation_blurbs(enabled);
         self.as_mut().show_navigation_blurbs_changed();
+    }
+
+    pub fn get_show_split_drag_handles(&self) -> bool {
+        let app_data = get_app_data();
+        app_data.get_show_split_drag_handles()
+    }
+
+    pub fn set_show_split_drag_handles(mut self: Pin<&mut Self>, enabled: bool) {
+        let app_data = get_app_data();
+        app_data.set_show_split_drag_handles(enabled);
+        self.as_mut().show_split_drag_handles_changed();
     }
 
     /// Open the Sutta Navigation window.
