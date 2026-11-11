@@ -616,10 +616,11 @@ against example texts before they are settled. Counts are DPD rows, with DPD
   `bhavissanti`; Simsapa's iti rule always reads the quoted `'ti` as iti
   (`sayaṁ + iti`, `bhavissaṁ + iti`). Decision so far: Simsapa's rule wins
   (doc §3 gap 11). Check on texts where the verb reading is right.
-- [ ] **Gap 5, inflected component without a lookup row (1 row).**
+- [x] **Gap 5, inflected component without a lookup row (1 row).**
   `yogakkhema`'s part `yog<b>asmā</b>` has no `lookup` row; DPD finds `yoga`
-  by scanning inflection tables (`masc abl sg of yoga`), Simsapa shows
-  `yogasmā | in comp`. Decision so far: rejected (a table scan per miss).
+  by scanning inflection tables (`masc abl sg of yoga`). Adopted with an
+  indexed search (`db::dpd::headwords_inflecting_to`), also for passage words
+  with no lookup row (Phase 4b); 0 rows in the category now (doc §3 gap 5).
 - [ ] **Gap 3 corrected: `imperf` headwords.** The rows use a port of DPD's
   `is_pos_compatible` (`dpd_pos_compatible`), which gives `anajjhagā` its
   headword grammar `imperf of na adhigacchati` instead of the triple `imperf
@@ -628,8 +629,8 @@ against example texts before they are settled. Counts are DPD rows, with DPD
 - [ ] **Construction parts are filtered by removal.** A part's candidates
   leave out DPD's filtered headwords (`!` stem, `cs`/`letter`/`prefix`/
   `root`/`suffix`/`ve`, `abbrev`, `(gram)`), as DPD does; token candidates
-  are not filtered (task 5.2 plans a demotion). Check on compounds whose part
-  has only filtered headwords (they show `in comp`).
+  are demoted instead (task 5.2, `dpd_filtered_headword`). Check on compounds
+  whose part has only filtered headwords (they show `in comp`).
 - [ ] **Component rows are replayed in the test.** DPD's component choices
   were made by its AI, so the test fixes them; Simsapa's own component
   ranking (DPD's ranks 4–10, no DB-example rank) is not measured yet. In the
