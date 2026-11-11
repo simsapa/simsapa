@@ -125,12 +125,8 @@ a rule only for a sense that is right in most contexts: `dukkhaṁ` is the noun
 `dukkha 3` (about four in five uses; the adjective is in `dukkhaṁ vedanaṁ`),
 while `sukhaṁ` stays the adjective `sukha 1` (mostly `sukhaṁ vedanaṁ`). A word
 whose ranked default is already right, or whose common senses are evenly split
-(`kālo`, `hi`), gets no rule. The elision mark `…pe…` is not a rule: DPD's
-`pe` lookup row does not list `peyyāla`, so `pe` written between ellipses
-(`…pe…`, `… pe …`, `...pe...`; not `-pe-`) is looked up as `peyyāla`
-(`is_elision_mark`, `helpers.rs`), keeps the first sense alone, and reads
-`abbrev of peyyāla` (the `peyyāla` lookup triples are vocatives). To
-find candidates, run the `#[ignore]`d `survey_default_senses` in the same test
+(`kālo`, `hi`), gets no rule. The elision mark `…pe…` is handled at lookup,
+not by a rule (below). To find candidates, run the `#[ignore]`d `survey_default_senses` in the same test
 file: it glosses long suttas with AI off and lists the ambiguous forms by
 frequency with their default and the other senses; `survey_component_defaults`
 in `test_dpd_analysis_conformance.rs` does the same for component rows, with
@@ -151,6 +147,32 @@ defaults.
 An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.
+
+### The elision mark `…pe…`
+
+`pe` is the abbreviation of *peyyāla*, the mark of an elided repetition
+(`Sāvatthiyaṁ viharati…pe… paṭiccasamuppādaṁ vo…`). DPD's `pe` lookup row
+does not list `peyyāla` (a source-data gap, reported, not repaired), so a
+default-sense rule cannot reach it: by the ranking, `pe` would be `pa 1.1`
+"drinking". Instead `process_word_for_glossing` (`helpers.rs`) recognises the
+mark and looks it up as `peyyāla`:
+
+- **What counts as the mark** (`is_elision_mark`): the token `pe` with an
+  ellipsis or a full stop, or the edge of its context window, on each side,
+  spaces allowed: `…pe…` (how the MS and CST texts write it), `… pe …`, and
+  `...pe...` (the sentence split ends the window at the full stops, so it
+  reads `<b>pe</b>.`). A dash (`-pe-`) is not the mark.
+- **What the row shows:** the first `peyyāla` sense alone (`peyyāla 1`; its
+  homonym has the same meaning), so no choice, no N / A / H mark and no AI
+  item. Its one reading is `abbrev of peyyāla`: the lookup triples of
+  `peyyāla` (`nt voc sg`, `masc voc sg`) are not readings of `pe`, so they
+  are replaced by one triple with the headword's `pos` as its class. Meaning:
+  "denoting an elided repetition within a text". The Word in Sentence column
+  keeps `pe` as written; the Headwords format lists `peyyāla 1`.
+- **Identity:** the word stays `pe` (its cache key and display), as a quoted
+  iti base keeps the written word while the lookup changes.
+
+Test: `test_elision_mark_pe_is_peyyala` (`test_dpd_analysis_conformance.rs`).
 
 ### The two cache tiers coexist
 
@@ -1268,6 +1290,17 @@ than a sense. Everything here applies only when the request is built **with the
 paragraph's rows** (`WordSelectionParagraphInput::rows_json`); without them, as
 for the Headwords format and the agent workflow, the items are what §4 and §9
 describe.
+
+### Where a row's grammar comes from
+
+A token's or a part's readings are the `lookup` row's grammar triples that fit
+its headword (`inflected_readings`, a port of DPD's `is_pos_compatible`, which
+here also accepts `imperf` and `perf` headwords:
+[dpd-analysis-procedure.md](./dpd-analysis-procedure.md) gap 3). When none
+fits, `GlossRowBuilder::form_readings` reads the cells of the headword's own
+inflection table that hold the form before falling back to the headword's
+bare `grammar` (gap 20 there): `anajjhagā`, whose lookup row has no triple,
+reads `imperf 3rd sg of anajjhagā`, not `imperf of na adhigacchati`.
 
 ### Request items with rows
 
