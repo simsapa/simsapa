@@ -32,6 +32,7 @@ use crate::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, clas
 use crate::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
 use crate::prompt_utils::clean_prompt;
 use crate::anthropic_messages::{self, ChatTurn};
+use crate::openai_responses::{self, InputTurn};
 
 /// Single batched request when the substituted prompt is under this length,
 /// otherwise sequential per-paragraph requests. Single source of truth for
@@ -592,29 +593,66 @@ async fn handle_openai_request(
     api_key: &str,
     http_client: reqwest::Client,
 ) -> Result<String, AiRequestError> {
-    let client = openai::Client::<reqwest::Client>::builder()
-        .http_client(http_client)
-        .api_key(api_key)
-        .build()
-        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenAI client: {}", e)))?;
+    // Sent with plain reqwest, not rig-core: rig 0.30 always sends
+    // `temperature`, which the GPT-5 family rejects, and sends earlier
+    // assistant turns without the `id` an output message needs. See
+    // `crate::openai_responses`.
 
-    let system_prompt = extract_system_prompt(messages);
-
-    let agent = match system_prompt {
-        Some(system_prompt) => {
-            client.agent(model)
-                  .preamble(&system_prompt)
-                  .temperature(0.7)
-                  .build()
-        }
-        None => {
-            client.agent(model)
-                  .temperature(0.7)
-                  .build()
-        }
+    // Same message convention as `get_response!`: a lone message is the user
+    // prompt (any system prompt is already prepended to it); otherwise the
+    // first system message is the system prompt and the rest are the turns.
+    let (instructions, turns): (Option<String>, Vec<InputTurn>) = if messages.len() == 1 {
+        (None, vec![InputTurn { role: "user", content: &messages[0].content }])
+    } else {
+        let turns = messages
+            .iter()
+            .filter(|msg| msg.role.as_str() != "system")
+            .map(|msg| InputTurn {
+                role: if msg.role.as_str() == "assistant" { "assistant" } else { "user" },
+                content: &msg.content,
+            })
+            .collect();
+        (extract_system_prompt(messages), turns)
     };
+    if turns.is_empty() {
+        return Err(request_setup_error(provider, model, "No messages provided"));
+    }
 
-    Ok(get_response!(agent, messages, model, provider))
+    let with_temperature = openai_responses::sends_temperature(model, model_reasoning_flag(provider, model));
+    let body = openai_responses::request_body(model, instructions.as_deref(), &turns, with_temperature);
+
+    let response = http_client
+        .post(openai_responses::RESPONSES_URL)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(classify_provider_error(provider, model, Some(status.as_u16()), &text));
+    }
+
+    openai_responses::interpret_reply(provider, model, &text).map(|reply| clean_prompt(&reply))
+}
+
+/// The model list's reasoning flag for a provider's model, `None` when the
+/// model is not in the list or the flag is unknown.
+fn model_reasoning_flag(provider_name: &str, model: &str) -> Option<bool> {
+    let app_data = get_app_data();
+    let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+    app_settings
+        .providers
+        .iter()
+        .find(|p| p.name.as_str() == provider_name)
+        .and_then(|p| p.models.iter().find(|m| m.model_name == model))
+        .and_then(|m| m.reasoning)
 }
 
 async fn handle_openrouter_request(

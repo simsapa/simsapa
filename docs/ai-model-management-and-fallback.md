@@ -246,6 +246,27 @@ Walk semantics:
   the list (Sonnet 4.5, Haiku 4.5), and each model's default suits these
   requests. `max_tokens` is 16384; the 180 s timeout caps a non-streaming
   reply at about that length anyway.
+- **OpenAI requests do not go through rig-core either.**
+  `handle_openai_request` posts to the Responses API (`/v1/responses`) with
+  plain `reqwest`; the body and the reply interpretation are in
+  `backend/src/openai_responses.rs` (unit-tested). rig 0.30's body was wrong
+  in two ways:
+  - It always sent `temperature`. The GPT-5 family and the o-series reject it
+    with HTTP 400 unless reasoning effort is `none`, and these requests leave
+    the effort at the model's default. `temperature` (0.7) is sent only when
+    `sends_temperature()` allows it: the model entry's `reasoning` flag
+    decides, and when the flag is unknown (a hand-added model) the id does
+    (`gpt-5*`, `*codex*`, `o<digit>*` reason).
+  - It sent earlier assistant turns as output messages without the `id` the
+    API reference lists as required. Every turn is now an input message with
+    string `content`, which the reference allows for `assistant`. The system
+    prompt goes in `instructions`; `store` is `false`.
+  - The reply: `output_text` parts of `message` items are the text;
+    `reasoning` and unknown item types are skipped; a `refusal` part or
+    `status: "incomplete"` with reason `content_filter` → `refused`; any other
+    incomplete reply, or one with no text → retryable `invalid_response`.
+  - NVIDIA NIM and SambaNova still go through rig's OpenAI client, on
+    `/chat/completions`.
 - Provider API keys are trimmed on save and on read (`get_provider_api_key`):
   a pasted key with a trailing newline is not a valid HTTP header value, and
   the provider client reports it only as "Header value outside of legal range".
