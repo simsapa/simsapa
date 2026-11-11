@@ -507,7 +507,7 @@ sub-task, not only after a whole parent task.
   `gloss-agent-check` at a suitable time (needs a re-bootstrap of the appdata
   DB).
 
-- [ ] **Bad default senses left by DPD's ranking (task 5.3).** With no cache
+- [x] **Bad default senses left by DPD's ranking (task 5.3).** With no cache
   row and no AI, `rank_paragraph_default_senses` (`gloss_sense_ranking.rs`)
   follows DPD's `_option_rank` exactly, and some defaults are plainly wrong
   for ordinary prose. Found on the DPD fixtures and the Headwords snapshot
@@ -534,6 +534,32 @@ sub-task, not only after a whole parent task.
   or Simsapa's own corpus counts) above rank 10. Re-measure with
   `measure_selection_agreement` and check the list above before adopting any.
   Doc: docs/dpd-analysis-procedure.md §3 gap 9.
+
+  Done with **built-in default senses** rather than a change to the rank
+  order: `assets/gloss-default-senses.json` (form rules, e.g. `ahaṁ` → `ahaṁ`,
+  `nibbānaṁ` → `nibbāna 2`, `te` → `ta 1.1`, `yena` → `yena 3`; homonym rules,
+  e.g. `dhamma` → `dhamma 1.03`, `hetu` → `hetu 2`), applied after
+  `rank_paragraph_default_senses` and for component rows, `resolution` left
+  `None` (still N, still sent to the AI). Agreement 76.0% → 92.0% (288 rows
+  with a choice: 67.7% → 89.2%); many rules came from these passages, so the
+  figure overstates the gain on unseen text. A second batch came from
+  `survey_default_senses` (an `#[ignore]`d test glossing 12 long suttas, AI
+  off): `ānanda` → the monk, `mā` → "do not", `puna`, `satimā`, `āsava`,
+  `satthā`, `tathā`, `paṭicca`, `sādhukaṁ` and others (48 form rules, 12
+  homonym rules). `kathaṁ` defaults to "how?"; the set phrase `sammodanīyaṁ
+  kathaṁ` → `kathā 1` (`assets/gloss-phrase-selections.json`) covers the
+  "talk" sense, and a test checks that the phrase wins. `yaṁ` is left to the ranking
+  (`ya 2.1`, the relative pronoun, is the common sense); `dukkha` / `sukha`
+  homonym rules were tried and dropped (they lost the adjective readings in
+  SN 18.1). Tests: `test_gloss_default_senses.rs`. Doc:
+  docs/gloss-ai-word-selection.md §1.
+
+- [ ] **Keep extending the built-in default senses.** `survey_default_senses`
+  (`backend/tests/test_gloss_default_senses.rs`) lists the ambiguous forms of
+  12 long suttas by frequency with their default; the top 250 were reviewed.
+  Not yet ruled, as context-dependent: `dukkhaṁ` / `sukha` (noun or adj),
+  `kappaṁ`, `kālo`, `hi`, `sati`, `meti`, `pe` (no DPD sense for the
+  abbreviation). Survey other collections (verse: Dhp, Sn, Thag) next.
 
 - [ ] **"Ignore for this session" on a compound headword's component.** In
   the Word in Sentence rows, clicking the full shield of a built-in choice

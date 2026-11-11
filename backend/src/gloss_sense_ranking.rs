@@ -10,6 +10,9 @@
 //! `process_single_paragraph`), so the Headwords and Word in Sentence formats
 //! default to the same sense. A cached or AI-selected sense is never changed,
 //! nor any `context_hash`.
+//!
+//! The built-in default senses (`gloss_default_senses`) come after the
+//! ranking: where a curated rule names a sense of the word, it is the default.
 
 use std::collections::{HashMap, HashSet};
 
@@ -18,6 +21,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::db::dpd::{headword_row_fields_by_ids, DpdDbHandle, HeadwordRowFields, LookupResult};
+use crate::gloss_default_senses::{built_in_default_index, default_senses};
 use crate::gloss_rows::{grammar_case_rank, inflected_readings, Reading, ReadingSource};
 use crate::types::{ProcessedWord, WordProcessingResult};
 
@@ -219,6 +223,22 @@ pub fn rank_paragraph_default_senses(
                 if s.key() > ranked[best].key() {
                     best = i;
                 }
+            }
+            let ids: Vec<Option<i32>> = pw.results[..n].iter().map(result_headword_id).collect();
+            let lemma_cleans: Vec<Option<&str>> = ids
+                .iter()
+                .map(|id| id.and_then(|id| headwords.get(&id)).map(|hw| hw.lemma_clean.as_str()))
+                .collect();
+            if let Some(i) = built_in_default_index(
+                default_senses(),
+                &pw.original_word,
+                &ids,
+                &lemma_cleans,
+                best,
+                |i| ranked[i].tier > 0,
+                |i, j| (ranked[i].tier, ranked[i].direct_key) >= (ranked[j].tier, ranked[j].direct_key),
+            ) {
+                best = i;
             }
             pw.selected_index = best as i32;
         }

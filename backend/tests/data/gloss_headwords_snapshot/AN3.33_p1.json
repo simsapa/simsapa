@@ -102,7 +102,7 @@
               "summary": "<i>(adj)</i> venerable; respectable  <b>[ā + √i > ay + *as + mant], [āyas + mant]</b>  <i>adj, from āyas</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 7,
           "stem": "āyasmā",
           "example_sentence": "atha kho <b>āyasmā</b> sāriputto yena bhagavā ten'upasaṅkami,",
           "context_hash": "c00cd660215044e4885789544dbc2286dad9163ad4bbd15a603cfc1818136741",
@@ -190,7 +190,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 4,
+          "selected_index": 2,
           "stem": "yena 1",
           "example_sentence": "atha kho āyasmā sāriputto <b>yena</b> bhagavā ten'upasaṅkami, upasaṅkamitvā bhagavantaṁ",
           "context_hash": "aac88f5aa659990e88b4743820ec06d1a328105a1a306cebff8863bc2e12d71b",
@@ -629,7 +629,7 @@
               "summary": "<i>(masc)</i> day   <i>masc, in comps</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 0,
           "stem": "ahaṁ",
           "example_sentence": "sāriputtaṁ bhagavā etadavoca, saṁkhittena'pi kho <b>ahaṁ</b>, sāriputta, dhammaṁ deseyyaṁ, vitthārena'pi kho",
           "context_hash": "c62ac0de5f27f4f065c3f04c7e82e9057e84b355657a586269b7b4b572c0b13f",
@@ -735,7 +735,7 @@
               "summary": "<i>(fem)</i> name of an arahant nun  <b>[√dhar + ma + ā], [dhamma + ā]</b>  <i>fem, from dhamma</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "dhamma 1.01",
           "example_sentence": "bhagavā etadavoca, saṁkhittena'pi kho ahaṁ, sāriputta, <b>dhammaṁ</b> deseyyaṁ, vitthārena'pi kho ahaṁ, sāriputta,",
           "context_hash": "9a3f92639ff2e65ff12d85205291f07023e021f1433409aba9bfb9b690bb016b",
@@ -1252,7 +1252,7 @@
               "summary": "<i>(adj)</i> standard; commonly accepted; (comm) indication that a given measure is to be multiplied by three  <b>[su + √gam + ta]</b>  <i>adj, in comps, from gata</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "sugata 1",
           "example_sentence": "etassa, bhagavā, kālo, etassa, <b>sugata</b>, kālo yaṁ bhagavā saṁkhittena'pi dhammaṁ deseyya,",
           "context_hash": "fe68ecebcf291c6dbb13cb42578bb607bbb0eec10ecae8a128e56e24d6d94738",
@@ -1535,7 +1535,7 @@
               "summary": "<i>(adj)</i> having a bow  <b>[dhanu + a > dhanva > dhamma]</b>  <i>adj, in comps, from dhanu</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 2,
           "stem": "dhamma 1.01",
           "example_sentence": "bhavissan'ti <b>dhammassa</b> aññātāro'ti.",
           "context_hash": "5f47087c323e0aed2746ed8f882aca07908be29ac55a14e2e5a374a8774eae74",

@@ -145,7 +145,7 @@
               "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
             }
           ],
-          "selected_index": 4,
+          "selected_index": 2,
           "stem": "yena 1",
           "example_sentence": "atha kho sāleyyakā brāhmaṇagahapatikā <b>yena</b> bhagavā ten'upasaṅkamiṁsu, upasaṅkamitvā app'",
           "context_hash": "316b9665f8ea52b4844e91a243704d2f2dba5bacb412ee13f9b4efea8127e29f",
@@ -557,11 +557,11 @@
               "summary": "<i>(fem)</i> commentary; detailed discussion; analysis  <b>[√kath + ā]</b>  <i>fem, in comps, from katheti</i>"
             }
           ],
-          "selected_index": 4,
+          "selected_index": 5,
           "stem": "kathaṁ 1",
           "example_sentence": "ekacce bhagavatā saddhiṁ sammodiṁsu, sammodanīyaṁ <b>kathaṁ</b> sāraṇīyaṁ vītisāretvā ekam'antaṁ nisīdiṁsu, app'",
           "context_hash": "7083e927a6c3b67d4629a0c8f97a7a1cdb66e0f12e41b8bd867f7a0c213ff9f9",
-          "resolution": null,
+          "resolution": "built-in-phrase-match",
           "deconstructions": [],
           "direct_uids": [
             "19830/dpd",
@@ -839,7 +839,7 @@
               "summary": "<i>(fem)</i> (a game variously called) jackstraws; spillikins; spellicans; pick-up-sticks  <b>[sa + anta + ika + ā], [santika + ā]</b>  <i>fem, from santika</i>"
             }
           ],
-          "selected_index": 2,
+          "selected_index": 0,
           "stem": "santike 1",
           "example_sentence": "paṇāmetvā ekam'antaṁ nisīdiṁsu, app'ekacce bhagavato <b>santike</b> nāmagottaṁ sāvetvā ekam'antaṁ nisīdiṁsu, app'",
           "context_hash": "6a74a276c8c2225f93606097f71443e04da848cbcdd8806f685d560fd384a387",
@@ -1184,7 +1184,7 @@
               "summary": "<i>(masc)</i> root-cause  <b>[√hi > he + *tu]</b>  <i>masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "hetu 1",
           "example_sentence": "brāhmaṇagahapatikā bhagavantaṁ etadavocuṁ, ko nu kho, bho gotama, <b>hetu</b>, ko paccayo, yena m'idh'ekacce sattā kāyassa",
           "context_hash": "e5b4778c53377f40d596a2f1d8026a130be9a562178bae7a7b1514a19fb8ef2c",
@@ -1233,7 +1233,7 @@
               "summary": "<i>(masc)</i> (gram) affix; suffix; verbal ending  <b>[pati > paty > pacc + √i > ay + *a]</b>  <i>masc, from pacceti</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "paccaya 1",
           "example_sentence": "bhagavantaṁ etadavocuṁ, ko nu kho, bho gotama, hetu, ko <b>paccayo</b>, yena m'idh'ekacce sattā kāyassa bhedā paraṁ",
           "context_hash": "68c161b45aa2c9b87801ee3d47b7cd71e608fcc55f042a7c15c61f9d6862588e",
@@ -1525,7 +1525,7 @@
               "summary": "<i>(adj)</i> consisting of; comprised of  <b>[√bhid > bhed + *a]</b>  <i>adj, in comps, from bhindati</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 0,
           "stem": "bheda 1",
           "example_sentence": "hetu, ko paccayo, yena m'idh'ekacce sattā kāyassa <b>bhedā</b> paraṁ maraṇā apāyaṁ duggatiṁ vinipātaṁ nirayaṁ",
           "context_hash": "4c31acc81652b83eeab737088bfbad5182eecdd0fbc4b16f8b5e63a14f35bf5b",
@@ -1592,7 +1592,7 @@
               "summary": "<i>(masc)</i> (gram) next letter; following vowel   <i>masc</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 0,
           "stem": "paraṁ",
           "example_sentence": "ko paccayo, yena m'idh'ekacce sattā kāyassa bhedā <b>paraṁ</b> maraṇā apāyaṁ duggatiṁ vinipātaṁ nirayaṁ",
           "context_hash": "2b4fd82ffedf1c82df65d3d4f213b76723d2be35b242f73bc6c0b4d9d7b0b6e1",
@@ -1925,7 +1925,7 @@
               "summary": "<i>(masc)</i> relinquishment  <b>[√sajj > sagg + a]</b>  <i>masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "sagga 1.1",
           "example_sentence": "idh'ekacce sattā kāyassa bhedā paraṁ maraṇā sugatiṁ <b>saggaṁ</b> lokaṁ upapajjantī'ti?",
           "context_hash": "d48d931deedc45ec8d7553b5fee355dec53fdc8807699f93212c1da1e8950e79",

@@ -75,6 +75,48 @@ them to the AI (unless nothing else is left), but they stay in `results` and in
 the ComboBox, and cache rows still resolve to them. `results` is never
 reordered.
 
+**Built-in default senses** then correct the ranking where it is known to be
+poor for a common word (`ahaṁ` → `aha 1.1` "day", `nibbānaṁ` → `nibba`
+"eaves", `yena` → the pronoun `ya`). They are curated rules in
+`assets/gloss-default-senses.json` (`include_str!`, read by
+`backend/src/gloss_default_senses.rs`), of two kinds:
+
+- a **form rule** names the sense of one surface form, of any lemma
+  (`ahaṁ` → `10868/dpd`, `ahaṁ`);
+- a **homonym rule** names the sense to take among the numbered homonyms of
+  one lemma, whatever the form (`dhamma 1.03`, not `dhamma 1.01`). It acts
+  only when the ranked default is a homonym of that lemma, and only when the
+  rule's sense fits the form at least as well (same tier, and a grammar-triple
+  reading if the ranked one has one), so it never trades an adjective reading
+  for a noun without one. A form rule beats a homonym rule.
+
+A rule whose sense is not among the word's senses, or is demoted, is skipped.
+The same rules apply to compound and sandhi component rows
+(`gloss_rows.rs`, `built_in_component_option`). A built-in default is **not a
+resolution**: it is context-free, so `resolution` stays `None`, the shield and
+the exports show Not checked (`N`), and the word is still sent to the AI. That
+is what keeps them apart from set phrases (a context rule, Human-checked) and
+from the cache rows; nothing is written to the database, and no cached
+selection or `context_hash` changes. Unlike the phrase rules they are not
+seeded at bootstrap: they ship in the binary, so the CLI, the API and the GUI
+of one build give the same defaults.
+
+Each rule gives the numeric `selected_uid` and its `selected_lemma`.
+`backend/tests/test_gloss_default_senses.rs` checks every rule against the
+installed `dpd.sqlite3` (the headword exists, `lemma_1` still equals
+`selected_lemma`, and each form rule is the gloss default of its form); a
+failure after a DPD upgrade is a rule to review, not to delete unread. Write
+a rule only for a sense that is right in most contexts; a word whose common
+senses are evenly split (`dukkhaṁ` noun or adjective, `kālo` "time" or
+"right time") is left to the ranking and the AI. To find candidates, run the `#[ignore]`d `survey_default_senses` in the same
+test file: it glosses long suttas with AI off and lists the ambiguous forms by
+frequency with their default and the other senses. A rule must name a sense
+that is not demoted: for a `!`-stem form (`satthā`, `dassanāya 1`) name its
+paradigm headword (`satthar 1`, `dassana 2`). Measure a change with
+`measure_selection_agreement` (docs/dpd-analysis-procedure.md §3) and
+regenerate the Headwords snapshot, whose `selected_index` values follow the
+defaults.
+
 An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.

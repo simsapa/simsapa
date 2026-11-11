@@ -1122,7 +1122,7 @@
               "summary": "<i>(pron)</i> this   <i>pron, base</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 7,
           "stem": "ayaṁ",
           "example_sentence": "caturaṅgulaṁ caturaṅgulaṁ ghaṭikaṁ katvā nikkhipeyya, <b>ayaṁ</b> me mātā, tassā me mātu ayaṁ mātā'ti, apariyādinnā",
           "context_hash": "4bd1984343ec4b2ee94f24afedc35aed9fd7156dd243ea57c8dfec6987b59161",
@@ -1828,7 +1828,7 @@
               "summary": "<i>(masc)</i> root-cause  <b>[√hi > he + *tu]</b>  <i>masc</i>"
             }
           ],
-          "selected_index": 0,
+          "selected_index": 1,
           "stem": "hetu 1",
           "example_sentence": "taṁ kissa <b>hetu</b>?",
           "context_hash": "62290ffe181900783b1f6f8da5a4762978c2ec7c36e4034155b760ae071a1f28",
@@ -1892,7 +1892,7 @@
               "summary": "<i>(nt)</i> long time  <b>[dīgha + ratta]</b>  <i>nt, comp</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 0,
           "stem": "dīgharattaṁ",
           "example_sentence": "evaṁ <b>dīgharattaṁ</b> vo, bhikkhave, dukkhaṁ paccanubhūtaṁ tibbaṁ",
           "context_hash": "bac294b67d43e29d6d8f51609ef68bcdb7a80924b30ff926b11fe9f2d29bf877",
@@ -2264,7 +2264,7 @@
               "summary": "<i>(aor)</i> slept  <b>[saya + i]</b>  <i>aor of sayati</i>"
             }
           ],
-          "selected_index": 1,
+          "selected_index": 0,
           "stem": "sayaṁ",
           "example_sentence": "byasanaṁ paccanubhūtaṁ, kaṭasī [kaṭasi kaṭā chavā <b>sayan'ti</b> etthā'ti kaṭasī] vaḍḍhitā.",
           "context_hash": "c56a96423fd7f5aae37f3b126e1797f00236877efeac85e5112bca28119ac88c",
@@ -2690,7 +2690,7 @@
               "summary": "<i>(masc)</i> claw of a crab, etc.   <i>masc, nt</i>"
             }
           ],
-          "selected_index": 5,
+          "selected_index": 0,
           "stem": "alaṁ 1",
           "example_sentence": ", bhikkhave, alam'eva sabbasaṅkhāresu nibbindituṁ <b>alaṁ</b> virajjituṁ alaṁ vimuccitun'ti.",
           "context_hash": "bbac60bf78e6e899acbe2b6b5367b2d7eb7c63e734fcebb5f4a0132f5b9978be",
@@ -2792,7 +2792,7 @@
               "summary": "<i>(fem)</i> (gram) nominative case   <i>fem</i>"
             }
           ],
-          "selected_index": 2,
+          "selected_index": 0,
           "stem": "paṭhamaṁ 1",
           "example_sentence": "<b>paṭhamaṁ</b>.",
           "context_hash": "5259bd923da059719c1b4766c5e534a05663e06ec90f77865b9c0b2b98cc1333",

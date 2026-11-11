@@ -25,7 +25,8 @@ use crate::db::dpd::{
     headword_row_fields_by_ids, headwords_inflecting_to, irregular_stem_inflections_shared, root_fields_by_keys,
     DpdDbHandle, HeadwordRowFields, InflectionMatch, LookupResult, RootFields,
 };
-use crate::db::dpd_models::Lookup;
+use crate::db::dpd_models::{lemma_clean_of, Lookup};
+use crate::gloss_default_senses::{built_in_default_index, default_senses};
 use crate::helpers::{
     consistent_niggahita, gloss_cache_word_key, gloss_context_hash, normalize_dpd_query_text,
     normalize_gloss_context, resolve_gloss_word_selection, GlossResolutionData, GlossWordContext,
@@ -527,6 +528,22 @@ fn best_component_option(cands: &[Cand], parent_meaning: &str) -> (usize, usize)
         }
     }
     best.map(|(_, ci, ri)| (ci, ri)).unwrap_or((0, 0))
+}
+
+/// DPD's component ranking, then the built-in default senses
+/// (`gloss_default_senses`), as for a token.
+fn built_in_component_option(word: &str, cands: &[Cand], parent_meaning: &str) -> (usize, usize) {
+    let (ci, ri) = best_component_option(cands, parent_meaning);
+    let ids: Vec<Option<i32>> = cands.iter().map(|c| c.id).collect();
+    let lemma_cleans: Vec<String> = cands.iter().map(|c| lemma_clean_of(&c.lemma_1)).collect();
+    let lemma_refs: Vec<Option<&str>> = lemma_cleans.iter().map(|l| Some(l.as_str())).collect();
+    let direct = |c: &Cand| c.readings.iter().any(|r| matches!(r.source, ReadingSource::Triple(_) | ReadingSource::Stem));
+    match built_in_default_index(default_senses(), word, &ids, &lemma_refs, ci, |_| true, |i, j| {
+        direct(&cands[i]) >= direct(&cands[j])
+    }) {
+        Some(i) => (i, best_component_reading(&cands[i], parent_meaning)),
+        None => (ci, ri),
+    }
 }
 
 /// The best reading of one sense by the component ranking.
@@ -1211,7 +1228,7 @@ impl GlossRowBuilder {
         let row_cands: Vec<RowCandidate> = cands.iter().map(|c| c.row_candidate(false)).collect();
         let (mut ci, mut ri) = match chosen {
             Some(ci) => (ci, best_component_reading(&cands[ci], parent_meaning)),
-            None => best_component_option(cands, parent_meaning),
+            None => built_in_component_option(word, cands, parent_meaning),
         };
         if let Some(gi) = reading_for(reading, &cands[ci]).and_then(|r| r.grammar_index) {
             ri = gi;
