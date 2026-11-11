@@ -83,6 +83,18 @@ fn texts_overlap(first: &str, second: &str) -> bool {
     !first.is_empty() && !second.is_empty() && (first.contains(second) || second.contains(first))
 }
 
+/// The words an example must share with the paragraph (the shorter text's
+/// length) before its sense outranks a built-in default rule. DPD's overlap
+/// alone matches almost any example for a one-word or two-word passage.
+const STRONG_EXAMPLE_OVERLAP_WORDS: usize = 4;
+
+/// `texts_overlap` with a shorter text of at least
+/// `STRONG_EXAMPLE_OVERLAP_WORDS` words.
+fn texts_overlap_strongly(first: &str, second: &str) -> bool {
+    let shorter = if first.len() < second.len() { first } else { second };
+    texts_overlap(first, second) && shorter.split_whitespace().count() >= STRONG_EXAMPLE_OVERLAP_WORDS
+}
+
 /// One sense of a token as the ranking sees it.
 struct RankedSense {
     /// 3: a headword of the word's `lookup` row (DPD's options); 2: a
@@ -95,6 +107,11 @@ struct RankedSense {
     /// (`text_overlap`). DPD's 2, `source_text_overlap`, needs the passage's
     /// source code and is not given.
     db_example: u8,
+    /// An example overlaps the paragraph by at least
+    /// `STRONG_EXAMPLE_OVERLAP_WORDS` words: the passage is (or holds) the
+    /// example the DPD editor gave this sense, so no built-in default rule
+    /// overrides it.
+    db_example_strong: bool,
     /// DPD's `_direct_key_rank`: 1 for a reading from the lookup triples.
     direct_key: u8,
     /// DPD's `_dictionary_quality_rank`.
@@ -119,13 +136,13 @@ fn result_headword_id(r: &LookupResult) -> Option<i32> {
 
 fn rank_sense(hw: Option<&HeadwordRowFields>, pw: &ProcessedWord, particle_split: bool, paragraph: &str) -> RankedSense {
     let Some(hw) = hw else {
-        return RankedSense { tier: 1, db_example: 0, direct_key: 0, quality: 0, case: 0, completeness: 0, stable_id: i64::MIN };
+        return RankedSense { tier: 1, db_example: 0, db_example_strong: false, direct_key: 0, quality: 0, case: 0, completeness: 0, stable_id: i64::MIN };
     };
     let readings = inflected_readings(hw, &pw.lookup_grammar);
     let demoted = dpd_filtered_headword(hw, false) || (particle_split && !kept_by_particle_filter(hw, &readings));
-    let db_example = [&hw.example_1, &hw.example_2]
-        .iter()
-        .any(|e| texts_overlap(&example_overlap_text(e), paragraph)) as u8;
+    let examples: Vec<String> = [&hw.example_1, &hw.example_2].iter().map(|e| example_overlap_text(e)).collect();
+    let db_example = examples.iter().any(|e| texts_overlap(e, paragraph)) as u8;
+    let db_example_strong = examples.iter().any(|e| texts_overlap_strongly(e, paragraph));
     let quality = match (hw.meaning_1.is_empty(), hw.example_1.is_empty() && hw.example_2.is_empty()) {
         (true, _) => 0,
         (false, true) => 1,
@@ -145,6 +162,7 @@ fn rank_sense(hw: Option<&HeadwordRowFields>, pw: &ProcessedWord, particle_split
             2
         },
         db_example,
+        db_example_strong,
         direct_key: readings.iter().any(|r| matches!(r.source, ReadingSource::Triple(_))) as u8,
         quality,
         case: readings.iter().map(|r| grammar_case_rank(&r.text)).max().unwrap_or(0),
@@ -229,7 +247,12 @@ pub fn rank_paragraph_default_senses(
                 .iter()
                 .map(|id| id.and_then(|id| headwords.get(&id)).map(|hw| hw.lemma_clean.as_str()))
                 .collect();
-            if let Some(i) = built_in_default_index(
+            // A DPD example sentence that overlaps the paragraph strongly
+            // names the editor's sense for this very passage: no built-in
+            // rule overrides it (`dukkhaṁ` in MN 10's "katamañca, bhikkhave,
+            // dukkhaṁ?" stays `dukkha 4`, the sense whose example it is).
+            if !ranked[best].db_example_strong
+                && let Some(i) = built_in_default_index(
                 default_senses(),
                 &pw.original_word,
                 &ids,

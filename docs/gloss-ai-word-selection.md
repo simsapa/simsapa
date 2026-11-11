@@ -88,11 +88,26 @@ poor for a common word (`ahaṁ` → `aha 1.1` "day", `nibbānaṁ` → `nibba`
   only when the ranked default is a homonym of that lemma, and only when the
   rule's sense fits the form at least as well (same tier, and a grammar-triple
   reading if the ranked one has one), so it never trades an adjective reading
-  for a noun without one. A form rule beats a homonym rule.
+  for a noun without one. A form rule beats a homonym rule;
+- a **component rule** is a form rule for compound and sandhi component rows
+  only (`tena` in `tenupasaṅkami` → `tena 3` "there", `api` in `'pi` →
+  `api 1.7` "too; also", `kāyaṁ` in `kāyānupassī` → `kāya 1.1`), where it
+  beats the other two; the word written alone keeps its own default (the
+  token `tena` stays the pronoun). Components are ranked first by
+  `component_tier` (`gloss_rows.rs`), which puts grammarians' entries,
+  unfinished entries and the letters as numbered-list items (`cha 1.1` "7th
+  item in a numerical list") last, so these never default.
 
 A rule whose sense is not among the word's senses, or is demoted, is skipped.
-The same rules apply to compound and sandhi component rows
-(`gloss_rows.rs`, `built_in_component_option`). A built-in default is **not a
+No rule overrides a **strong DPD example match**: when a sense's `example_1`
+or `example_2` overlaps the paragraph and the shorter of the two texts has at
+least four words (`STRONG_EXAMPLE_OVERLAP_WORDS`, `gloss_sense_ranking.rs`),
+the passage is the DPD editor's example for that sense (`dukkhaṁ` in MN 10's
+"katamañca, bhikkhave, dukkhaṁ?" stays `dukkha 4`, though the form rule says
+`dukkha 3`). The ranking's own example rank uses DPD's overlap test as is,
+which for a one-word passage matches almost any example.
+The form and homonym rules apply to compound and sandhi component rows too
+(`gloss_rows.rs`, `built_in_component_option`), after the component rules. A built-in default is **not a
 resolution**: it is context-free, so `resolution` stays `None`, the shield and
 the exports show Not checked (`N`), and the word is still sent to the AI. That
 is what keeps them apart from set phrases (a context rule, Human-checked) and
@@ -106,13 +121,29 @@ Each rule gives the numeric `selected_uid` and its `selected_lemma`.
 installed `dpd.sqlite3` (the headword exists, `lemma_1` still equals
 `selected_lemma`, and each form rule is the gloss default of its form); a
 failure after a DPD upgrade is a rule to review, not to delete unread. Write
-a rule only for a sense that is right in most contexts; a word whose common
-senses are evenly split (`dukkhaṁ` noun or adjective, `kālo` "time" or
-"right time") is left to the ranking and the AI. To find candidates, run the `#[ignore]`d `survey_default_senses` in the same
-test file: it glosses long suttas with AI off and lists the ambiguous forms by
-frequency with their default and the other senses. A rule must name a sense
+a rule only for a sense that is right in most contexts: `dukkhaṁ` is the noun
+`dukkha 3` (about four in five uses; the adjective is in `dukkhaṁ vedanaṁ`),
+while `sukhaṁ` stays the adjective `sukha 1` (mostly `sukhaṁ vedanaṁ`). A word
+whose ranked default is already right, or whose common senses are evenly split
+(`kālo`, `hi`), gets no rule. The elision mark `…pe…` is not a rule: DPD's
+`pe` lookup row does not list `peyyāla`, so `pe` written between ellipses
+(`…pe…`, `… pe …`, `...pe...`; not `-pe-`) is looked up as `peyyāla`
+(`is_elision_mark`, `helpers.rs`), keeps the first sense alone, and reads
+`abbrev of peyyāla` (the `peyyāla` lookup triples are vocatives). To
+find candidates, run the `#[ignore]`d `survey_default_senses` in the same test
+file: it glosses long suttas with AI off and lists the ambiguous forms by
+frequency with their default and the other senses; `survey_component_defaults`
+in `test_dpd_analysis_conformance.rs` does the same for component rows, with
+the parent words each part occurs in (a part rule is right only when most
+parents agree: `ahaṁ` gets none, being "I" in `sohaṁ` and "day" in `ekāha`). `SURVEY_REFS`
+(comma-separated references, such as `dhp1-20/pli/ms`) surveys other texts,
+and `SURVEY_WORDS` prints every occurrence of the named words with its
+sentence. The rules come from 12 long prose suttas and the Dhammapada, Sutta
+Nipāta, Theragāthā and Therīgāthā, whose verse showed defaults that prose
+never does (`ve` → `vāti` "blows", `sammā` → `samma` "cymbal", `vāpi` → "reservoir"). A rule must name a sense
 that is not demoted: for a `!`-stem form (`satthā`, `dassanāya 1`) name its
-paradigm headword (`satthar 1`, `dassana 2`). Measure a change with
+paradigm headword (`satthar 1`, `dassana 2`, `passa` → `passati 1`, `care` →
+`carati 2.2`). Measure a change with
 `measure_selection_agreement` (docs/dpd-analysis-procedure.md §3) and
 regenerate the Headwords snapshot, whose `selected_index` values follow the
 defaults.

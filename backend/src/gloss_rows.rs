@@ -22,7 +22,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::db::dpd::{
-    headword_row_fields_by_ids, headwords_inflecting_to, irregular_stem_inflections_shared, root_fields_by_keys,
+    headword_row_fields_by_ids, headwords_inflecting_to, inflection_cell_titles, inflections_html_by_id,
+    irregular_stem_inflections_shared, root_fields_by_keys,
     DpdDbHandle, HeadwordRowFields, InflectionMatch, LookupResult, RootFields,
 };
 use crate::db::dpd_models::{lemma_clean_of, Lookup};
@@ -291,8 +292,10 @@ pub struct Reading {
 /// parse `parse` can be a reading of a headword with `pos`. Equal strings
 /// pass; class `noun` takes `masc` / `fem` / `nt` of the parse's gender;
 /// class `adj` takes `adj`; class `verb` takes the finite and participle
-/// `pos` values below (not `perf` / `imperf`, unlike `/lookup_forms`'
-/// `assign_form_grammar`, docs/dpd-analysis-procedure.md §3 gap 3).
+/// `pos` values below. DPD's list leaves out `imperf` and `perf`, so its
+/// `anajjhagaṁ` shows the headword's `imperf of na adhigacchati` with no
+/// person and number; Simsapa takes them, as `/lookup_forms`'
+/// `assign_form_grammar` does (docs/dpd-analysis-procedure.md §3 gap 3).
 pub fn dpd_pos_compatible(pos: &str, class: &str, parse: &str) -> bool {
     let (pos, class, parse) = (pos.to_lowercase(), class.to_lowercase(), parse.to_lowercase());
     if pos == class {
@@ -310,7 +313,8 @@ pub fn dpd_pos_compatible(pos: &str, class: &str, parse: &str) -> bool {
     if class == "adj" && pos == "adj" {
         return true;
     }
-    class == "verb" && ["pr", "aor", "fut", "cond", "imp", "opt", "pp", "prp", "abs", "inf", "ger"].contains(&pos.as_str())
+    class == "verb"
+        && ["pr", "aor", "imperf", "perf", "fut", "cond", "imp", "opt", "pp", "prp", "abs", "inf", "ger"].contains(&pos.as_str())
 }
 
 /// The readings of an inflected form of `hw`, from the form's lookup row
@@ -356,6 +360,10 @@ pub fn stem_reading(hw: &HeadwordRowFields) -> Reading {
 // ---------------------------------------------------------------------------
 // Compound and sandhi components of a headword
 // ---------------------------------------------------------------------------
+
+/// Headword `pos` values without an inflection table to read a form's
+/// grammar from (`form_readings`).
+const NON_INFLECTING_POS: [&str; 10] = ["ind", "sandhi", "idiom", "abbrev", "prefix", "suffix", "letter", "cs", "ve", "root"];
 
 /// DPD's suffix parts, skipped when a construction is split into components.
 const COMPONENT_SUFFIXES: [&str; 42] = [
@@ -439,6 +447,10 @@ struct Cand {
     /// DPD's completeness score: 2 `meaning_1` and `source_1`, 1
     /// `meaning_1`, 0 neither.
     completeness: u8,
+    /// DPD's construction-part headword filter (`dpd_filtered_headword`):
+    /// a grammarians' entry or an irregular form. Construction parts leave
+    /// such senses out; a break-down component keeps them, ranked last.
+    dpd_filtered: bool,
     readings: Vec<Reading>,
     meaning: String,
     construction: String,
@@ -496,10 +508,32 @@ fn meaning_tokens(text: &str) -> HashSet<String> {
         .collect()
 }
 
+/// The component rank's tier, ahead of DPD's ranks: 1 for a headword that
+/// passes DPD's filters and has a `meaning_1`, else 0 (a grammarians' entry
+/// such as the letter `ca 1.2`; an unfinished entry with only `meaning_2`,
+/// such as `pāti 2.1` against `pātu` in `pātu + bhavanti`; a root). DPD's
+/// rank 4 alone lets these win on a grammar triple; its rank 7 (dictionary
+/// quality) comes too late. The entries for a letter as the Nth item of a
+/// numbered list (`cha 1.1` "7th item in a numerical list", against `cha 2.1`
+/// "six" in `chaḷabhiññā`; `ga 2.1` in `urago`) rank last too.
+fn component_tier(cand: &Cand) -> u8 {
+    (cand.id.is_some() && !cand.dpd_filtered && !cand.meaning_1.trim().is_empty() && !is_list_item_entry(&cand.meaning_1)) as u8
+}
+
+/// DPD's ten entries for a letter as the Nth item of a numbered list
+/// (`ka 2.1` … `ña 1.1`: "7th item in a numerical list; …").
+fn is_list_item_entry(meaning_1: &str) -> bool {
+    lazy_static! {
+        static ref RE_LIST_ITEM: Regex = Regex::new(r"^\d+(st|nd|rd|th) item in a numerical list").unwrap();
+    }
+    RE_LIST_ITEM.is_match(meaning_1.trim())
+}
+
 /// DPD's `_option_rank` without an AI score, for a component sense and
-/// reading (ranks 4–10 of docs/dpd-analysis-procedure.md §1.6; rank 3, the
-/// DB-example match, is 0 here).
-fn component_option_rank(cand: &Cand, reading: &Reading, parent_tokens: &HashSet<String>) -> (u8, u8, u8, u8, u8, u8, i64) {
+/// reading, after `component_tier` (ranks 4–10 of
+/// docs/dpd-analysis-procedure.md §1.6; rank 3, the DB-example match, is 0
+/// here).
+fn component_option_rank(cand: &Cand, reading: &Reading, parent_tokens: &HashSet<String>) -> (u8, u8, u8, u8, u8, u8, u8, i64) {
     let direct_key = matches!(reading.source, ReadingSource::Triple(_) | ReadingSource::Stem) as u8;
     let overlap = (!parent_tokens.is_empty() && !parent_tokens.is_disjoint(&cand.meaning_tokens())) as u8;
     let pos_ind = (reading.class == "ind") as u8;
@@ -511,14 +545,14 @@ fn component_option_rank(cand: &Cand, reading: &Reading, parent_tokens: &HashSet
         1
     };
     let stable_id = cand.id.map(|i| -(i as i64)).unwrap_or(0);
-    (direct_key, overlap, pos_ind, quality, grammar_case_rank(&reading.text), cand.completeness, stable_id)
+    (component_tier(cand), direct_key, overlap, pos_ind, quality, grammar_case_rank(&reading.text), cand.completeness, stable_id)
 }
 
 /// The best (sense, reading) of a component by DPD's component ranking; the
 /// first among equals, in candidate then reading order.
 fn best_component_option(cands: &[Cand], parent_meaning: &str) -> (usize, usize) {
     let parent_tokens = meaning_tokens(parent_meaning);
-    let mut best: Option<((u8, u8, u8, u8, u8, u8, i64), usize, usize)> = None;
+    let mut best: Option<((u8, u8, u8, u8, u8, u8, u8, i64), usize, usize)> = None;
     for (ci, c) in cands.iter().enumerate() {
         for (ri, r) in c.readings.iter().enumerate() {
             let rank = component_option_rank(c, r, &parent_tokens);
@@ -531,14 +565,22 @@ fn best_component_option(cands: &[Cand], parent_meaning: &str) -> (usize, usize)
 }
 
 /// DPD's component ranking, then the built-in default senses
-/// (`gloss_default_senses`), as for a token.
+/// (`gloss_default_senses`): a component rule first, then the rules for a
+/// token.
 fn built_in_component_option(word: &str, cands: &[Cand], parent_meaning: &str) -> (usize, usize) {
+    if let Some(i) = default_senses()
+        .for_component(word)
+        .and_then(|id| cands.iter().position(|c| c.id == Some(id)))
+        .filter(|i| component_tier(&cands[*i]) == 1)
+    {
+        return (i, best_component_reading(&cands[i], parent_meaning));
+    }
     let (ci, ri) = best_component_option(cands, parent_meaning);
     let ids: Vec<Option<i32>> = cands.iter().map(|c| c.id).collect();
     let lemma_cleans: Vec<String> = cands.iter().map(|c| lemma_clean_of(&c.lemma_1)).collect();
     let lemma_refs: Vec<Option<&str>> = lemma_cleans.iter().map(|l| Some(l.as_str())).collect();
     let direct = |c: &Cand| c.readings.iter().any(|r| matches!(r.source, ReadingSource::Triple(_) | ReadingSource::Stem));
-    match built_in_default_index(default_senses(), word, &ids, &lemma_refs, ci, |_| true, |i, j| {
+    match built_in_default_index(default_senses(), word, &ids, &lemma_refs, ci, |i| component_tier(&cands[i]) == 1, |i, j| {
         direct(&cands[i]) >= direct(&cands[j])
     }) {
         Some(i) => (i, best_component_reading(&cands[i], parent_meaning)),
@@ -621,6 +663,9 @@ pub struct GlossRowBuilder {
     expanding: HashSet<(String, bool, bool)>,
     /// Inflection-table matches per construction part with no lookup row.
     inflection_matches: HashMap<String, Rc<Vec<InflectionMatch>>>,
+    /// Per (headword id, form): the cells of the headword's inflection table
+    /// that hold the form (`form_readings`).
+    own_table_cells: HashMap<(i32, String), Rc<Vec<String>>>,
 }
 
 impl GlossRowBuilder {
@@ -635,6 +680,7 @@ impl GlossRowBuilder {
             expansions: HashMap::new(),
             expanding: HashSet::new(),
             inflection_matches: HashMap::new(),
+            own_table_cells: HashMap::new(),
         })
     }
 
@@ -694,6 +740,37 @@ impl GlossRowBuilder {
         Ok(())
     }
 
+    /// The readings of `hw` for the inflected `form`: `inflected_readings`,
+    /// and when no lookup triple fits (only the headword's own `grammar`), the
+    /// cells of the headword's inflection table that hold the form. DPD's
+    /// `lookup` row for `anajjhagā` lists the headword but has no grammar
+    /// triple, so its table gives `imperf 3rd sg of anajjhagā` in place of
+    /// `imperf of na adhigacchati`.
+    fn form_readings(&mut self, hw: &HeadwordRowFields, grammar: &[GrammarTriple], form: &str) -> Result<Vec<Reading>> {
+        let readings = inflected_readings(hw, grammar);
+        let only_default = readings.len() == 1 && readings[0].source == ReadingSource::Default;
+        if !only_default || form.is_empty() || NON_INFLECTING_POS.contains(&hw.pos.as_str()) {
+            return Ok(readings);
+        }
+        let key = (hw.id, form.to_string());
+        let cells = match self.own_table_cells.get(&key) {
+            Some(c) => c.clone(),
+            None => {
+                let cells = match inflections_html_by_id(&mut self.conn, hw.id)? {
+                    Some(html) => inflection_cell_titles(&html, form),
+                    None => Vec::new(),
+                };
+                let cells = Rc::new(cells);
+                self.own_table_cells.insert(key, cells.clone());
+                cells
+            }
+        };
+        if cells.is_empty() {
+            return Ok(readings);
+        }
+        Ok(inflection_table_readings(hw, &cells))
+    }
+
     fn cand_for_headword(&mut self, hw: &HeadwordRowFields, readings: Vec<Reading>) -> Result<Cand> {
         let parts = if expands_into_components(hw) {
             self.headword_parts(hw)?
@@ -712,6 +789,7 @@ impl GlossRowBuilder {
                 (false, true) => 1,
                 (false, false) => 2,
             },
+            dpd_filtered: crate::gloss_sense_ranking::dpd_filtered_headword(hw, true),
             readings,
             meaning: meaning_combo(hw),
             construction: construction_text(hw),
@@ -786,7 +864,7 @@ impl GlossRowBuilder {
             let readings = if is_stem {
                 vec![stem_reading(&hw)]
             } else {
-                inflected_readings(&hw, &row.grammar)
+                self.form_readings(&hw, &row.grammar, word)?
             };
             cands.push(self.cand_for_headword(&hw, readings)?);
         }
@@ -832,14 +910,14 @@ impl GlossRowBuilder {
 
     /// The senses of one of `pw.results` (by uid), with readings from
     /// `grammar` (the lookup row of the word the result was found for).
-    fn result_cands(&mut self, results: &[&LookupResult], grammar: &[GrammarTriple]) -> Result<Vec<Cand>> {
+    fn result_cands(&mut self, results: &[&LookupResult], grammar: &[GrammarTriple], form: &str) -> Result<Vec<Cand>> {
         let ids: Vec<i32> = results.iter().filter_map(|r| result_headword_id(r)).collect();
         self.ensure_headwords(&ids)?;
         let mut cands = Vec::with_capacity(results.len());
         for r in results {
             match result_headword_id(r).and_then(|id| self.headwords.get(&id).cloned()) {
                 Some(hw) => {
-                    let readings = inflected_readings(&hw, grammar);
+                    let readings = self.form_readings(&hw, grammar, form)?;
                     cands.push(self.cand_for_headword(&hw, readings)?);
                 }
                 // A root, or a headword without a row: shown by its title.
@@ -851,6 +929,7 @@ impl GlossRowBuilder {
                     meaning_1: String::new(),
                     has_example: false,
                     completeness: 0,
+                    dpd_filtered: false,
                     readings: vec![Reading { text: String::new(), class: String::new(), source: ReadingSource::Default }],
                     meaning: String::new(),
                     construction: String::new(),
@@ -964,7 +1043,8 @@ impl GlossRowBuilder {
         } else {
             pw.results.iter().filter(|r| pw.direct_uids.contains(&r.uid)).collect()
         };
-        let cands = self.result_cands(&sense_results, &pw.form_grammar_raw)?;
+        let form = gloss_cache_word_key(word).replace(['\'', '’'], "");
+        let cands = self.result_cands(&sense_results, &pw.form_grammar_raw, &form)?;
         let top_level = depth == 0;
         let row_cands: Vec<RowCandidate> = cands.iter().map(|c| c.row_candidate(top_level)).collect();
 
@@ -1031,7 +1111,7 @@ impl GlossRowBuilder {
             comp_path.push(k);
             let results: Vec<&LookupResult> = pw.results.iter().filter(|r| comp.result_uids.contains(&r.uid)).collect();
             let grammar = self.lookup(&comp.word)?.map(|l| l.grammar.clone()).unwrap_or_default();
-            let cands = self.result_cands(&results, &grammar)?;
+            let cands = self.result_cands(&results, &grammar, &comp.word)?;
             let chosen = pw
                 .component_selected_uids
                 .get(&comp.word)
@@ -1565,8 +1645,9 @@ mod tests {
         assert!(dpd_pos_compatible("adj", "adj", "masc nom pl"));
         assert!(!dpd_pos_compatible("masc", "adj", "masc nom pl"));
         assert!(dpd_pos_compatible("pr", "verb", "pr 3rd pl"));
-        // anajjhagā (imperf) keeps its headword grammar: imperf of na adhigacchati.
-        assert!(!dpd_pos_compatible("imperf", "verb", "imperf 1st sg"));
+        // Unlike DPD: anajjhagaṁ reads `imperf 1st sg of anajjhagā`.
+        assert!(dpd_pos_compatible("imperf", "verb", "imperf 1st sg"));
+        assert!(dpd_pos_compatible("perf", "verb", "perf 3rd sg"));
         assert!(!dpd_pos_compatible("ind", "adj", "nt acc sg"));
     }
 
@@ -1670,6 +1751,7 @@ mod tests {
             meaning_1: meaning.into(),
             has_example: false,
             completeness: 1,
+            dpd_filtered: false,
             readings: vec![Reading { text: class.into(), class: class.into(), source }],
             meaning: meaning.into(),
             construction: String::new(),
@@ -1687,6 +1769,19 @@ mod tests {
         assert_eq!(best_component_option(&cands, ""), (1, 0));
         // A direct key (triple / stem) beats a default reading.
         let cands = vec![cand(1, "a", "ind", ReadingSource::Default), cand(2, "b", "masc", ReadingSource::Triple(0))];
+        assert_eq!(best_component_option(&cands, ""), (1, 0));
+        // … but not when it has no `meaning_1` (`pāti 2.1` against `pātu`) or is
+        // a filtered headword (the letter `ca 1.2` against `ca 2.1`).
+        let mut unfinished = cand(1, "", "pr", ReadingSource::Triple(0));
+        unfinished.meaning = "watches, protects".into();
+        let cands = vec![unfinished, cand(2, "in front", "ind", ReadingSource::Default)];
+        assert_eq!(best_component_option(&cands, ""), (1, 0));
+        let mut letter = cand(1, "letter c", "letter", ReadingSource::Triple(0));
+        letter.dpd_filtered = true;
+        let cands = vec![letter, cand(2, "and", "ind", ReadingSource::Default)];
+        assert_eq!(best_component_option(&cands, ""), (1, 0));
+        // … or a letter as a list item (`cha 1.1` against `cha 2.1` "six").
+        let cands = vec![cand(1, "7th item in a numerical list; (gram) letter ch", "ind", ReadingSource::Default), cand(2, "six (6)", "card", ReadingSource::Default)];
         assert_eq!(best_component_option(&cands, ""), (1, 0));
     }
 

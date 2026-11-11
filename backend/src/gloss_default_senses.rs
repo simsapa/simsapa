@@ -10,6 +10,9 @@
 //!   (`ahaṁ` → `ahaṁ`, not `aha 1.1`).
 //! - A **homonym rule** names the sense to take among the numbered homonyms
 //!   of one lemma (`dhamma 1.03`, not `dhamma 1.01`), whatever the form.
+//! - A **component rule** is a form rule for compound and sandhi component
+//!   rows only (`tena` in `ten'upasaṅkami` → `tena 3` "there", while the
+//!   word `tena` stays the pronoun); it beats the other rules there.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -44,6 +47,8 @@ impl DefaultSenseRule {
 pub struct DefaultSensesFile {
     pub forms: Vec<DefaultSenseRule>,
     pub homonyms: Vec<DefaultSenseRule>,
+    #[serde(default)]
+    pub components: Vec<DefaultSenseRule>,
 }
 
 pub struct DefaultSenses {
@@ -51,6 +56,8 @@ pub struct DefaultSenses {
     forms: HashMap<String, i32>,
     /// `lemma_clean` → headword id.
     homonyms: HashMap<String, i32>,
+    /// Component word key → headword id.
+    components: HashMap<String, i32>,
 }
 
 impl DefaultSenses {
@@ -72,7 +79,18 @@ impl DefaultSenses {
                 anyhow::bail!("gloss default senses: two homonym rules for '{}'", r.selected_lemma);
             }
         }
-        Ok(Self { forms, homonyms })
+        let mut components = HashMap::new();
+        for r in &file.components {
+            if components.insert(gloss_cache_word_key(&r.word), id(r)?).is_some() {
+                anyhow::bail!("gloss default senses: two component rules for '{}'", r.word);
+            }
+        }
+        Ok(Self { forms, homonyms, components })
+    }
+
+    /// The component rule's headword id for a component word.
+    pub fn for_component(&self, word: &str) -> Option<i32> {
+        self.components.get(&gloss_cache_word_key(word)).copied()
     }
 
     /// The form rule's headword id for a surface form.
@@ -93,7 +111,7 @@ pub fn default_senses() -> &'static DefaultSenses {
     RULES.get_or_init(|| {
         DefaultSenses::parse(GLOSS_DEFAULT_SENSES_JSON).unwrap_or_else(|e| {
             crate::logger::error(&format!("{}", e));
-            DefaultSenses { forms: HashMap::new(), homonyms: HashMap::new() }
+            DefaultSenses { forms: HashMap::new(), homonyms: HashMap::new(), components: HashMap::new() }
         })
     })
 }
@@ -134,6 +152,8 @@ mod tests {
         let rules = DefaultSenses::parse(GLOSS_DEFAULT_SENSES_JSON).expect("assets/gloss-default-senses.json");
         assert_eq!(rules.for_form("Ahaṃ"), Some(10868));
         assert_eq!(rules.for_lemma("dhamma"), Some(34628));
+        assert_eq!(rules.for_component("tena"), Some(31218));
+        assert_eq!(rules.for_form("tena"), None);
     }
 
     #[test]

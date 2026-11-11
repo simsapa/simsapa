@@ -59,7 +59,7 @@ fn default_ids(passage: &str) -> Vec<Option<i32>> {
 fn test_default_sense_rules_name_existing_headwords() {
     h::app_data_setup();
     let file = rules();
-    let all: Vec<_> = file.forms.iter().chain(&file.homonyms).collect();
+    let all: Vec<_> = file.forms.iter().chain(&file.homonyms).chain(&file.components).collect();
     let ids: Vec<i32> = all.iter().map(|r| r.headword_id().expect("selected_uid")).collect();
     let mut conn = get_app_data().dbm.dpd.get_conn().unwrap();
     let found = headword_row_fields_by_ids(&mut conn, &ids).unwrap();
@@ -102,10 +102,30 @@ fn test_homonym_rules_in_a_sentence() {
     assert_eq!(ids[5], Some(43071));
 }
 
+/// A DPD example that the paragraph holds names the editor's sense for this
+/// passage, and a form rule does not override it: `dukkhaṁ` is `dukkha 3` by
+/// its form rule, but in `dukkha 4`'s example (MN 10) it stays `dukkha 4`.
+/// A short passage that merely occurs inside some example is not protected.
+#[test]
+#[serial]
+fn test_strong_example_match_beats_a_form_rule() {
+    h::app_data_setup();
+    let ids = default_ids(
+        "Katamañca, bhikkhave, dukkhaṁ? Yaṁ kho, bhikkhave, kāyikaṁ dukkhaṁ kāyikaṁ asātaṁ \
+         kāyasamphassajaṁ dukkhaṁ asātaṁ vedayitaṁ, idaṁ vuccati, bhikkhave, dukkhaṁ.",
+    );
+    assert_eq!(ids[2], Some(32878));
+    assert_eq!(default_ids("dukkhaṁ"), vec![Some(32877)]);
+    assert_eq!(default_ids("bhikkhave dukkhaṁ"), vec![Some(49885), Some(32877)]);
+}
+
 /// Curation aid, not a check: glosses long suttas with AI off and prints the
 /// ambiguous forms by frequency with their default sense, to find forms that
 /// need a rule in `assets/gloss-default-senses.json`. Run with
 /// `cargo test --test test_gloss_default_senses survey_default_senses -- --ignored --nocapture`.
+/// `SURVEY_REFS` (comma-separated references, e.g. `dhp1-20/pli/ms`) replaces
+/// the suttas; `SURVEY_WORDS` (comma-separated word keys) prints every
+/// occurrence of those words with its sentence and default instead.
 #[test]
 #[ignore]
 #[serial]
@@ -114,7 +134,11 @@ fn survey_default_senses() {
     h::app_data_setup();
     let app_data = get_app_data();
     let dpd = &app_data.dbm.dpd;
-    let refs = ["mn10", "dn2", "dn16", "mn26", "mn118", "sn56.11", "sn22.59", "an3.65", "mn1", "mn2", "dn22", "sn12.2"];
+    let default_refs = "mn10,dn2,dn16,mn26,mn118,sn56.11,sn22.59,an3.65,mn1,mn2,dn22,sn12.2";
+    let refs_var = std::env::var("SURVEY_REFS").unwrap_or_else(|_| default_refs.to_string());
+    let refs: Vec<&str> = refs_var.split(',').map(str::trim).filter(|r| !r.is_empty()).collect();
+    let words_var = std::env::var("SURVEY_WORDS").unwrap_or_default();
+    let focus: Vec<String> = words_var.split(',').map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect();
     let options = WordProcessingOptions {
         no_duplicates_globally: false,
         skip_common: false,
@@ -148,6 +172,13 @@ fn survey_default_senses() {
                     continue;
                 }
                 let key = simsapa_backend::helpers::gloss_cache_word_key(&pw.original_word);
+                if !focus.is_empty() {
+                    if focus.contains(&key) {
+                        let chosen = pw.results.get(pw.selected_index as usize).map(|r| format!("{} {}", r.uid, r.word)).unwrap_or_default();
+                        println!("{} [{}] {} => {}\n    {}", key, r, pw.original_word, chosen, pw.example_sentence.replace('\n', " "));
+                    }
+                    continue;
+                }
                 let e = seen.entry(key).or_insert_with(|| {
                     let ids: Vec<i32> = pw.results[..n].iter().filter_map(|r| r.uid.strip_suffix("/dpd")?.parse().ok()).collect();
                     let hws = headword_row_fields_by_ids(&mut conn, &ids).unwrap();

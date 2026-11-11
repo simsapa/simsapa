@@ -3241,6 +3241,7 @@ mod gloss_word_selection_tests {
         crate::gloss_dpd_uid::DpdLemmaIndex::from_headwords([
             (12463, "ārāma 4".to_string()),
             (49885, "bhikkhu".to_string()),
+            (19850, "kathā 1".to_string()),
         ])
     }
 
@@ -3248,7 +3249,7 @@ mod gloss_word_selection_tests {
     fn seed_phrases_is_idempotent_and_lookup_matches() {
         let db = setup();
         let first = db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap();
-        assert_eq!(first, 2, "both curated phrases are inserted");
+        assert_eq!(first, 3, "every curated phrase is inserted");
         // Re-run: nothing changes.
         let second = db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap();
         assert_eq!(second, 0);
@@ -3263,7 +3264,7 @@ mod gloss_word_selection_tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].selected_uid, "49885/dpd");
 
-        assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
+        assert_eq!(db.get_all_gloss_phrase_selections().len(), 3);
     }
 
     #[test]
@@ -3286,11 +3287,11 @@ mod gloss_word_selection_tests {
             .unwrap();
         }
 
-        // ārāme updated, bhikkhū inserted, dummy removed.
-        assert_eq!(db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap(), 3);
+        // ārāme updated, bhikkhū and kathaṁ inserted, dummy removed.
+        assert_eq!(db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap(), 4);
         assert_eq!(db.get_gloss_phrase_selections("ārāme")[0].selected_uid, "12463/dpd");
         assert!(db.get_gloss_phrase_selections("dummy").is_empty());
-        assert_eq!(db.get_all_gloss_phrase_selections().len(), 2);
+        assert_eq!(db.get_all_gloss_phrase_selections().len(), 3);
         assert_eq!(db.seed_gloss_phrase_selections(&phrase_dpd_index()).unwrap(), 0);
     }
 

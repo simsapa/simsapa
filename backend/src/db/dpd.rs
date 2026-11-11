@@ -2683,6 +2683,17 @@ pub fn headwords_inflecting_to(
         .collect())
 }
 
+/// One headword's `inflections_html`, or `None` when it has no row.
+pub fn inflections_html_by_id(db_conn: &mut SqliteConnection, id: i32) -> Result<Option<String>> {
+    use crate::db::dpd_schema::dpd_headwords::dsl as hd;
+    hd::dpd_headwords
+        .filter(hd::id.eq(id))
+        .select(hd::inflections_html)
+        .first::<String>(db_conn)
+        .optional()
+        .context("inflections_html_by_id")
+}
+
 /// The `title`s of the `<td>` cells of an `inflections_html` table that hold
 /// `form` as one of their `<br>`-separated entries, in table order, without
 /// repeats. DPD's `get_grammar_from_inflections_html` takes only the first

@@ -212,6 +212,7 @@ const CATEGORY_GAP_18: &str = "gap 18 (Simsapa resolves more)";
 const CATEGORY_GAP_5: &str = "gap 5 (inflection-table part not found)";
 const CATEGORY_GAP_11: &str = "gap 11 (quoted ti read as part of a verb)";
 const CATEGORY_GAP_12: &str = "gap 12 (iti base spelling)";
+const CATEGORY_GAP_3: &str = "gap 3 (imperf / perf triple reading)";
 const CATEGORY_FAIL: &str = "FAIL";
 
 /// `word` with a final short vowel made long (`atta` → `attā`).
@@ -301,6 +302,18 @@ fn row_category(
             // Gap 5: DPD resolved a component from inflection tables.
             if d.depth > 0 && s.id.is_none() && s.grammar == "in comp" && norm(&s.word) == norm(&d.word) {
                 return CATEGORY_GAP_5;
+            }
+            // Gap 3: DPD's verb class leaves out imperf / perf headwords, so
+            // DPD shows the headword's grammar where Simsapa has the triple's.
+            if s.id == d.id
+                && ["imperf", "perf"].contains(&hw.pos.as_str())
+                && norm(&d.grammar) == norm(&hw.grammar)
+                && norm(&s.grammar).starts_with(&format!("{} ", hw.pos))
+                && norm(&s.grammar).ends_with(&format!(" of {}", norm(&hw.lemma_clean)))
+                && norm(&s.construction) == norm(&d.construction)
+                && norm(&s.root) == norm(&d.root)
+            {
+                return CATEGORY_GAP_3;
             }
             if s.id == d.id && norm(&s.grammar) == norm(&d.grammar) && norm(&s.word) == norm(&d.word) {
                 let strip = |t: &str| norm(&t.replace("<b>", "").replace("</b>", ""));
@@ -536,4 +549,263 @@ fn measure_selection_agreement() {
         total, total_agree, rate(total_agree, total), total_choice, total_choice_agree, rate(total_choice_agree, total_choice), disagreements
     ));
     println!("{}", out);
+}
+
+/// Replays DPD's token choices only (and a quoted iti token's base row, which
+/// is the token's own sense choice), so every other component row is chosen
+/// by Simsapa's component ranking.
+struct TokenOnlyChooser<'a> {
+    inner: DpdChooser<'a>,
+    quoted_iti_tokens: std::collections::HashSet<usize>,
+}
+
+impl RowChooser for TokenOnlyChooser<'_> {
+    fn choose(&self, token_index: usize, path: &[usize], candidates: &[RowCandidate]) -> Option<RowChoice> {
+        let replay = path.is_empty() || (path == [0] && self.quoted_iti_tokens.contains(&token_index));
+        if replay { self.inner.choose(token_index, path, candidates) } else { None }
+    }
+}
+
+/// Whether a row is a quoted iti token's top-level row, whose sense choice is
+/// on its base-word component row.
+fn is_quoted_iti_row(s: &GlossRow) -> bool {
+    s.candidates.len() == 1 && s.components.first().is_some_and(|c| c.word_index.is_some())
+}
+
+#[derive(Default)]
+struct ComponentTally {
+    rows: usize,
+    agree: usize,
+    rows_choice: usize,
+    agree_choice: usize,
+    disagreements: String,
+}
+
+/// Compares the component rows under one DPD node and one Simsapa row,
+/// matched by position and word, recursing where the IDs agree.
+fn tally_components(name: &str, parent: &str, d: &Node, s: &GlossRow, skip_first: bool, t: &mut ComponentTally) {
+    for (k, (dc, sc)) in d.children.iter().zip(s.components.iter()).enumerate() {
+        if bare(&dc.row.word) != bare(&sc.word) {
+            continue;
+        }
+        let replayed = skip_first && k == 0;
+        if !replayed && let Some(dpd_id) = dc.row.id {
+            let has_choice = sc.candidates.len() > 1;
+            let ok = sc.id == Some(dpd_id);
+            t.rows += 1;
+            t.agree += ok as usize;
+            if has_choice {
+                t.rows_choice += 1;
+                t.agree_choice += ok as usize;
+            }
+            if !ok {
+                let options: Vec<String> = sc
+                    .candidates
+                    .iter()
+                    .map(|c| format!("{} {}", c.id.map(|i| i.to_string()).unwrap_or_default(), c.lemma_1))
+                    .collect();
+                t.disagreements.push_str(&format!(
+                    "  {}: {} > {} — DPD {} ({}), Simsapa {} ({}); options: {}\n",
+                    name,
+                    parent,
+                    dc.row.word,
+                    dpd_id,
+                    dc.row.grammar,
+                    sc.id.map(|i| i.to_string()).unwrap_or_else(|| "-".to_string()),
+                    sc.candidates.get(sc.selected_candidate).map(|c| c.lemma_1.as_str()).unwrap_or(""),
+                    options.join(" | "),
+                ));
+            }
+        }
+        if dc.row.id == sc.id {
+            tally_components(name, &format!("{} > {}", parent, sc.word), dc, sc, false, t);
+        }
+    }
+}
+
+/// Component agreement: DPD's token choices are replayed, Simsapa chooses
+/// every component itself (AI off, no cache: DPD's component ranking and the
+/// built-in default senses), and each component row's ID is compared with
+/// DPD's, under tokens whose own row agrees. DPD's component IDs are its AI's
+/// choices. Reports; never fails. Run with
+/// `cargo test --test test_dpd_analysis_conformance measure_component_agreement -- --ignored --nocapture`.
+#[test]
+#[ignore]
+#[serial]
+fn measure_component_agreement() {
+    h::app_data_setup();
+    let dpd_version = get_app_data().dbm.dpd.dpd_release_version().unwrap_or_default();
+    let rate = |a: usize, n: usize| if n == 0 { "-".to_string() } else { format!("{:.1}%", 100.0 * a as f64 / n as f64) };
+    let mut out = format!(
+        "Component agreement, AI off, DPD's token choices replayed (Simsapa dpd.sqlite3 {})\n\
+         report | rows | agree | rate | rows with a choice | agree | rate\n",
+        dpd_version
+    );
+    let mut total = ComponentTally::default();
+    for (name, report) in reports() {
+        let passage = norm(&report.passage).replace('\n', " ");
+        let dpd_tokens = report_tree(&report.rows);
+        let plain = gloss_rows(&passage, None);
+        let a: Vec<String> = dpd_tokens.iter().map(|n| bare(&n.row.word)).collect();
+        let b: Vec<String> = plain.iter().map(|r| bare(&r.word)).collect();
+        let pairs = align(&a, &b);
+        let chooser = TokenOnlyChooser {
+            inner: DpdChooser {
+                tokens: pairs.iter().filter_map(|(i, j)| Some((((*j)?), &dpd_tokens[(*i)?]))).collect(),
+            },
+            quoted_iti_tokens: plain.iter().enumerate().filter(|(_, r)| is_quoted_iti_row(r)).map(|(j, _)| j).collect(),
+        };
+        let rows = gloss_rows(&passage, Some(&chooser));
+
+        let mut t = ComponentTally::default();
+        for (i, j) in pairs {
+            let (Some(i), Some(j)) = (i, j) else { continue };
+            let (d, s) = (&dpd_tokens[i], &rows[j]);
+            let same_token = match d.row.id {
+                Some(id) => s.id == Some(id),
+                None => s.id.is_none() && norm(&s.construction) == norm(&d.row.construction),
+            };
+            if same_token {
+                tally_components(&name, &s.word, d, s, is_quoted_iti_row(s), &mut t);
+            }
+        }
+        out.push_str(&format!(
+            "{} | {} | {} | {} | {} | {} | {}\n",
+            name, t.rows, t.agree, rate(t.agree, t.rows), t.rows_choice, t.agree_choice, rate(t.agree_choice, t.rows_choice)
+        ));
+        total.rows += t.rows;
+        total.agree += t.agree;
+        total.rows_choice += t.rows_choice;
+        total.agree_choice += t.agree_choice;
+        total.disagreements.push_str(&t.disagreements);
+    }
+    out.push_str(&format!(
+        "overall | {} | {} | {} | {} | {} | {}\n\nDisagreements:\n{}",
+        total.rows,
+        total.agree,
+        rate(total.agree, total.rows),
+        total.rows_choice,
+        total.agree_choice,
+        rate(total.agree_choice, total.rows_choice),
+        total.disagreements
+    ));
+    println!("{}", out);
+}
+
+/// A form whose `lookup` row lists its headword but has no grammar triple
+/// (`anajjhagā`) takes its reading from the headword's inflection table, not
+/// the headword's bare `grammar` (`imperf of na adhigacchati`).
+#[test]
+#[serial]
+fn test_form_without_lookup_triples_reads_its_inflection_table() {
+    h::app_data_setup();
+    let rows = gloss_rows("cetosantiṁ anajjhagā", None);
+    let row = rows.iter().find(|r| r.word == "anajjhagā").expect("anajjhagā row");
+    assert_eq!(row.id, Some(76515));
+    assert_eq!(row.grammar, "imperf 3rd sg of anajjhagā");
+}
+
+/// The elision mark `…pe…` (also `… pe …`, `...pe...`) is glossed as
+/// `peyyāla` ("denoting an elided repetition"), read `abbrev of peyyāla`, one
+/// sense with no choice, not as `pa 1.1` "drinking".
+#[test]
+#[serial]
+fn test_elision_mark_pe_is_peyyala() {
+    h::app_data_setup();
+    for passage in [
+        "Sāvatthiyaṁ viharati…pe… “paṭiccasamuppādaṁ vo, bhikkhave, desessāmi.",
+        "Sāvatthiyaṁ viharati … pe … paṭiccasamuppādaṁ vo desessāmi.",
+        "Sāvatthiyaṁ viharati...pe... paṭiccasamuppādaṁ vo desessāmi.",
+    ] {
+        let rows = gloss_rows(passage, None);
+        let row = rows.iter().find(|r| r.word == "pe").expect("pe row");
+        assert_eq!(row.id, Some(47315), "{}: {:?}", passage, row);
+        assert_eq!(row.grammar, "abbrev of peyyāla");
+        assert_eq!(row.candidates.len(), 1);
+        assert_eq!(row.confidence, None);
+        assert!(row.meaning.contains("elided repetition"), "{}", row.meaning);
+    }
+    // A dash is not an elision mark.
+    let rows = gloss_rows("Sāvatthiyaṁ viharati -pe- desessāmi.", None);
+    let row = rows.iter().find(|r| r.word == "pe").expect("pe row");
+    assert_ne!(row.id, Some(47315));
+}
+
+/// Curation aid, not a check: glosses texts in the Word in Sentence format
+/// with AI off and lists the ambiguous component rows (compound and sandhi
+/// parts) by frequency with their default sense and the other senses, to find
+/// parts that need a component rule in `assets/gloss-default-senses.json`.
+/// `SURVEY_REFS` (comma-separated references) replaces the default suttas. Run
+/// with `cargo test --test test_dpd_analysis_conformance survey_component_defaults -- --ignored --nocapture`.
+#[test]
+#[ignore]
+#[serial]
+fn survey_component_defaults() {
+    use simsapa_backend::gloss_source::{resolve_gloss_source, PaliEdition};
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let default_refs = "mn10,dn2,dn16,mn26,mn118,sn56.11,sn22.59,an3.65,mn1,mn2,dn22,sn12.2";
+    let refs_var = std::env::var("SURVEY_REFS").unwrap_or_else(|_| default_refs.to_string());
+    // part word → (count, chosen, others, parent word → count)
+    type Seen = HashMap<String, (usize, String, Vec<String>, HashMap<String, usize>)>;
+    let mut seen: Seen = HashMap::new();
+    fn walk(row: &GlossRow, parent: &str, seen: &mut Seen) {
+        for c in &row.components {
+            if c.candidates.len() > 1 && c.resolution.is_none() {
+                let show = |rc: &RowCandidate| format!("{} {} '{}'", rc.id.map(|i| i.to_string()).unwrap_or_default(), rc.lemma_1, rc.meaning.chars().take(30).collect::<String>());
+                let e = seen.entry(norm(&c.word).to_lowercase()).or_insert_with(|| {
+                    let chosen = c.candidates.get(c.selected_candidate).map(show).unwrap_or_default();
+                    let others = c.candidates.iter().enumerate().filter(|(i, _)| *i != c.selected_candidate).map(|(_, rc)| show(rc)).collect();
+                    (0, chosen, others, HashMap::new())
+                });
+                e.0 += 1;
+                *e.3.entry(norm(parent).to_lowercase()).or_default() += 1;
+            }
+            walk(c, &c.word, seen);
+        }
+    }
+    for r in refs_var.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+        let Ok(src) = resolve_gloss_source(&app_data.dbm.appdata, r, PaliEdition::Default, None) else {
+            println!("skipped {}", r);
+            continue;
+        };
+        for para in &src.paragraphs {
+            for row in gloss_rows(para, None) {
+                walk(&row, &row.word, &mut seen);
+            }
+        }
+    }
+    let mut rows: Vec<_> = seen.into_iter().collect();
+    rows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(&b.0)));
+    for (word, (count, chosen, others, parents)) in rows.iter().take(150) {
+        let mut parents: Vec<_> = parents.iter().collect();
+        parents.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        let parents: Vec<String> = parents.iter().take(6).map(|(p, n)| format!("{} {}", p, n)).collect();
+        println!("{:4} {:14} => {}\n       in: {}\n       others: {}", count, word, chosen, parents.join(", "), others.join(" | "));
+    }
+}
+
+/// Component rules (`assets/gloss-default-senses.json` "components") give
+/// compound and sandhi parts their default without AI, and leave the same
+/// word as a token alone: `tena` in `tenupasaṅkami` is `tena 3` "there",
+/// the token `tena` stays the pronoun `ta 1.1`.
+#[test]
+#[serial]
+fn test_component_rules_apply_to_parts_only() {
+    h::app_data_setup();
+    fn part_ids(row: &GlossRow, out: &mut Vec<(String, Option<i32>)>) {
+        for c in &row.components {
+            out.push((norm(&c.word), c.id));
+            part_ids(c, out);
+        }
+    }
+    let rows = gloss_rows("Atha kho bhagavā yena āyasmā ānando tenupasaṅkami. Tena kho pana samayena bhikkhu kāyānupassī viharati.", None);
+    let mut parts = Vec::new();
+    for r in &rows {
+        part_ids(r, &mut parts);
+    }
+    assert!(parts.contains(&("tena".to_string(), Some(31218))), "{:?}", parts);
+    assert!(parts.contains(&("kāyaṁ".to_string(), Some(21131))), "{:?}", parts);
+    let token = rows.iter().find(|r| r.word == "Tena").expect("token Tena");
+    assert_eq!(token.id, Some(29188));
 }

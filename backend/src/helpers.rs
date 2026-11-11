@@ -4964,6 +4964,22 @@ pub fn parse_word_selection_response(
     Ok(result)
 }
 
+/// The headword DPD gives the elision mark `…pe…` ("denoting an elided
+/// repetition within a text"). DPD's `pe` lookup row does not list it.
+const ELISION_HEADWORD: &str = "peyyāla";
+
+/// Whether the gloss word is the elision mark: `pe` between ellipses, as its
+/// context window marks it. The MS and CST texts write `…pe…`; copied text
+/// may have spaces (`… pe …`) or full stops (`...pe...`), where the sentence
+/// split leaves the window starting at `<b>pe</b>.`, so the window's start
+/// or end also counts as a boundary. A dash (`-pe-`) does not.
+fn is_elision_mark(word_info: &WordInfo) -> bool {
+    lazy_static! {
+        static ref RE_ELISION: Regex = Regex::new(r"(?i)(^|…|\.)\s*<b>pe</b>\s*(…|\.|$)").unwrap();
+    }
+    word_info.word.to_lowercase() == "pe" && RE_ELISION.is_match(&word_info.sentence)
+}
+
 /// The words to look up for a gloss word, in order: the clean word, then, for an
 /// iti-sandhi word, the clean word with its final vowel long, when that is how
 /// the text writes it. The iti-sandhi split shortens the vowel
@@ -4971,9 +4987,14 @@ pub fn parse_word_selection_response(
 /// wrong for a real long ending (`anaññatā’ti` → `anaññata`, which DPD does not
 /// have; it has `anaññatā`). The clean word stays the word's identity (its
 /// cache key and display); only the lookup changes.
+///
+/// The elision mark `…pe…` is looked up as `peyyāla`.
 fn gloss_lookup_words(word_info: &WordInfo) -> Vec<String> {
     lazy_static! {
         static ref RE_QUOTED_TI_END: Regex = Regex::new(r#"[’‘ʼ'"”“]+n?ti$"#).unwrap();
+    }
+    if is_elision_mark(word_info) {
+        return vec![ELISION_HEADWORD.to_string()];
     }
     let word = word_info.word.to_lowercase();
     let mut words = vec![word.clone()];
@@ -5027,7 +5048,27 @@ pub fn process_word_for_glossing(
             break;
         }
     }
-    let (lookup_word, grouped) = grouped.expect("gloss_lookup_words is never empty");
+    let (lookup_word, mut grouped) = grouped.expect("gloss_lookup_words is never empty");
+
+    // The elision mark `…pe…` is the first `peyyāla` sense alone (its
+    // homonyms have the same meaning), read `abbrev of peyyāla`: the lookup
+    // triples of `peyyāla` (`nt voc sg`) are not a reading of `pe`. The one
+    // triple has the headword's `pos` as its class, so the Word in Sentence
+    // rows take it as the reading.
+    if is_elision_mark(word_info) && !grouped.results.is_empty() {
+        grouped.results.truncate(1);
+        grouped.deconstructions.clear();
+        let kept = grouped.results[0].uid.clone();
+        grouped.direct_uids.retain(|u| *u == kept);
+        grouped.lookup_grammar.clear();
+        if let Some(id) = kept.strip_suffix("/dpd").and_then(|i| i.parse::<i32>().ok())
+            && let Ok(mut conn) = dpd.get_conn()
+            && let Ok(found) = crate::db::dpd::headword_row_fields_by_ids(&mut conn, &[id])
+            && let Some(hw) = found.get(&id)
+        {
+            grouped.lookup_grammar.push([hw.lemma_clean.clone(), hw.pos.clone(), "abbrev".to_string()]);
+        }
+    }
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);

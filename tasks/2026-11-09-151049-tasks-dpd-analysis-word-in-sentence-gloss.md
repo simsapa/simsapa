@@ -554,12 +554,22 @@ sub-task, not only after a whole parent task.
   SN 18.1). Tests: `test_gloss_default_senses.rs`. Doc:
   docs/gloss-ai-word-selection.md §1.
 
-- [ ] **Keep extending the built-in default senses.** `survey_default_senses`
+- [x] **Keep extending the built-in default senses.** `survey_default_senses`
   (`backend/tests/test_gloss_default_senses.rs`) lists the ambiguous forms of
   12 long suttas by frequency with their default; the top 250 were reviewed.
-  Not yet ruled, as context-dependent: `dukkhaṁ` / `sukha` (noun or adj),
-  `kappaṁ`, `kālo`, `hi`, `sati`, `meti`, `pe` (no DPD sense for the
-  abbreviation). Survey other collections (verse: Dhp, Sn, Thag) next.
+  Ruled after reading their contexts: `dukkhaṁ` / `dukkhassa` → `dukkha 3`
+  (noun), `kappaṁ` → `kappaṁ` "for an aeon", homonym `sati` → `sati 1.2`;
+  no rule for `sukhaṁ` (mostly the adjective, already the default), `kālo`,
+  `hi`, `meti` (already right). `pe` has no sense to choose (DPD's `pe`
+  lookup row does not list `peyyāla`; report to DPD). `…pe…` (also `… pe …`,
+  `...pe...`) is now looked up as `peyyāla`, read `abbrev of peyyāla`
+  (`is_elision_mark`). The survey takes
+  `SURVEY_REFS` / `SURVEY_WORDS`; the Dhp, Snp, Thag and Thig survey added 18
+  form rules (`ve`, `sammā`, `vāpi`, `dāni`, `passa`, `ahu`, `vijjā`, `care`,
+  `jānāhi`, `jaññā`, `sato`, `paññāya`, `kuto`, `patto`, `therī` …) and
+  homonym rules for `thera`, `sāsana`, `sacca`, `saraṇa`, `bhaya`, `kāma`.
+  A strong DPD example match (four words or more) now beats a rule.
+  Selection agreement 92.0% → 92.3%.
 
 - [ ] **"Ignore for this session" on a compound headword's component.** In
   the Word in Sentence rows, clicking the full shield of a built-in choice
@@ -621,21 +631,29 @@ against example texts before they are settled. Counts are DPD rows, with DPD
   by scanning inflection tables (`masc abl sg of yoga`). Adopted with an
   indexed search (`db::dpd::headwords_inflecting_to`), also for passage words
   with no lookup row (Phase 4b); 0 rows in the category now (doc §3 gap 5).
-- [ ] **Gap 3 corrected: `imperf` headwords.** The rows use a port of DPD's
-  `is_pos_compatible` (`dpd_pos_compatible`), which gives `anajjhagā` its
+- [x] **Gap 3 corrected: `imperf` headwords.** The rows use a port of DPD's
+  `is_pos_compatible` (`dpd_pos_compatible`), which gave `anajjhagaṁ` its
   headword grammar `imperf of na adhigacchati` instead of the triple `imperf
-  1st sg of anajjhagā`. `/lookup_forms` still uses `assign_form_grammar`.
-  Check whether the triple reading is the more useful one.
+  1st sg of anajjhagā`. Decided: the triple reading, as for every other
+  tense; `dpd_pos_compatible` takes `imperf` and `perf` for class `verb`, and
+  the conformance test reports the row in its "gap 3" category. DPD's lookup
+  row for `anajjhagā` itself has no triple (source data, reported).
 - [ ] **Construction parts are filtered by removal.** A part's candidates
   leave out DPD's filtered headwords (`!` stem, `cs`/`letter`/`prefix`/
   `root`/`suffix`/`ve`, `abbrev`, `(gram)`), as DPD does; token candidates
   are demoted instead (task 5.2, `dpd_filtered_headword`). Check on compounds
   whose part has only filtered headwords (they show `in comp`).
 - [ ] **Component rows are replayed in the test.** DPD's component choices
-  were made by its AI, so the test fixes them; Simsapa's own component
-  ranking (DPD's ranks 4–10, no DB-example rank) is not measured yet. In the
-  first DHP23 run without replay, `- ekaṁ` defaulted to `eka 1` (card) where
-  DPD has `eka 2` (adj); `- bhūta` and `- tuṇhī` also differed.
+  were made by its AI, so the test fixes them. Simsapa's own component
+  ranking is now measured by `measure_component_agreement`: 63.4% of rows
+  with a choice with DPD's ranks alone, 64.9% with `component_tier`
+  (filtered and `meaning_2`-only headwords last), 71.8% with component
+  rules (`"components"` in `assets/gloss-default-senses.json`: `api`,
+  `tena`, `pati`, `kathā`, `saññā`, `brahma`, `khippaṁ`, `antaṁ`, `phala`,
+  `kāyaṁ`, `brāhmaṇa`, `sirī`) and the numbered-list letters ranked last;
+  `survey_component_defaults` finds candidates. Left to the AI: `ekaṁ` in
+  `ekamantaṁ` (`eka 1` "one" is fair), `bhūta`, `kāra`, `patta` (senses
+  split by compound). Doc: docs/dpd-analysis-procedure.md §3.
 - [ ] **Break-down rows' Grammar.** Simsapa writes `sandhi/compound` for a
   deconstructor-resolved word and `sandhi` for a quoted iti without a sandhi
   headword; DPD's is its AI's `selected_pos` (`sandhi` / `compound`) or
