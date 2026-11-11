@@ -453,6 +453,16 @@ fn test_grouped_inflection_table_phase() {
     assert!(g.lookup_grammar.contains(&["addasā".to_string(), "verb".to_string(), "imperf 3rd pl".to_string()]));
     assert!(g.lookup_grammar.contains(&["apassi".to_string(), "verb".to_string(), "aor 3rd pl".to_string()]));
 
+    // A grammarian's entry is left out: `sīsu` is not the verbal ending
+    // `si 1.1` (ve).
+    let g = dpd.dpd_lookup_grouped("sīsu", false, true, true, None, None).unwrap();
+    assert!(!g.lookup_headword_ids.contains(&62705), "{:?}", g.lookup_headword_ids);
+
+    // A long pasted query is not searched one prefix per character.
+    let long = "yogasmā".repeat(6000); // 42,000 characters: more than SQLite's 32,766 bind limit
+    dpd.dpd_lookup_grouped(&long, false, true, true, None, None).unwrap();
+    dpd.dpd_lookup(&long, false, true, None, None).unwrap();
+
     // A word with a lookup row is unchanged: the phase does not run.
     let g = dpd.dpd_lookup_grouped("yogā", false, true, true, None, None).unwrap();
     assert!(g.lookup_grammar.iter().any(|t| t[1] == "adj"), "the lookup row's own triples");
@@ -460,13 +470,17 @@ fn test_grouped_inflection_table_phase() {
 
 /// Every form of an irregular-stem headword (`!` / `*`, whose forms need not
 /// start with the stem) that has no `lookup` row is found by Phase 4b, with
-/// that headword among the results.
+/// that headword among the results, except a grammarian's entry (`pos` in
+/// `DPD_EXCLUDED_POS` or `(gram)` in `meaning_1`, e.g. the ending `ī`), which
+/// Phase 4b leaves out.
 #[test]
 #[serial]
 fn test_grouped_inflection_table_phase_finds_every_irregular_form() {
     use diesel::prelude::*;
     use simsapa_backend::db::dpd::irregular_stem_inflections;
+    use simsapa_backend::db::dpd_schema::dpd_headwords::dsl as hd;
     use simsapa_backend::db::dpd_schema::lookup::dsl as lk;
+    use simsapa_backend::gloss_sense_ranking::DPD_EXCLUDED_POS;
 
     h::app_data_setup();
     let app_data = get_app_data();
@@ -474,8 +488,15 @@ fn test_grouped_inflection_table_phase_finds_every_irregular_form() {
     let mut conn = dpd.get_conn().unwrap();
 
     let mut checked = 0;
+    let mut filtered = 0;
     let mut missed: Vec<String> = Vec::new();
     for (id, inflections) in irregular_stem_inflections(&mut conn).unwrap() {
+        let (pos, meaning_1): (String, String) = hd::dpd_headwords
+            .filter(hd::id.eq(id))
+            .select((hd::pos, hd::meaning_1))
+            .first(&mut conn)
+            .unwrap();
+        let is_filtered = DPD_EXCLUDED_POS.contains(&pos.as_str()) || meaning_1.contains("(gram)");
         for form in inflections.split(',').filter(|f| !f.is_empty()) {
             let has_row = lk::lookup
                 .filter(lk::lookup_key.eq(form))
@@ -489,11 +510,17 @@ fn test_grouped_inflection_table_phase_finds_every_irregular_form() {
             }
             checked += 1;
             let g = dpd.dpd_lookup_grouped(form, false, true, true, None, None).unwrap();
+            if is_filtered {
+                filtered += 1;
+                assert!(!g.lookup_headword_ids.contains(&id), "{} ({}): a grammarian's entry", form, id);
+                continue;
+            }
             if !g.lookup_headword_ids.contains(&id) {
                 missed.push(format!("{} ({}): {:?}", form, id, g.lookup_headword_ids));
             }
         }
     }
     assert!(checked > 100, "irregular forms without a lookup row: {}", checked);
+    assert!(filtered < 10, "filtered: {}", filtered);
     assert!(missed.is_empty(), "{} of {} missed: {:?}", missed.len(), checked, missed);
 }

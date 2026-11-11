@@ -585,8 +585,24 @@ pub struct FormLookupResult {
     pub deconstructions: Vec<FormDeconstruction>,
     /// The grammar of the lookup row that supplied `headwords`, verbatim and
     /// in DPD's order. Empty for `iti_rule` results (the base's grammar is on
-    /// its component), `invalid`, and forms with no row.
+    /// its component), `invalid`, and forms with no row. For an
+    /// `inflection_table` result, a triple per inflection-table cell that
+    /// holds the form.
     pub form_grammar_raw: Vec<GrammarTriple>,
+    /// Set when the headwords come from DPD's inflection tables: the form
+    /// has no `lookup` row with headwords or splits, and is a form in the
+    /// `inflections` of these headwords. Omitted for a `lookup` row's answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<FormResultSource>,
+}
+
+/// Where a `found` result's headwords come from, when not DPD's `lookup` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormResultSource {
+    /// DPD's inflection tables (`dpd_headwords.inflections`), searched when
+    /// the form has no `lookup` row (docs/search-snippet-highlight-pipeline.md §9g).
+    InflectionTable,
 }
 
 /// `/gloss_text` exact mode: one token per word of each paragraph, in order,

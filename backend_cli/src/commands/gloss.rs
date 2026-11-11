@@ -28,7 +28,7 @@ use simsapa_backend::lookup_forms::{validate_gloss_exact_options, validate_looku
 use simsapa_backend::text_export::{TextFormat, gloss_export_document};
 use simsapa_backend::types::{
     AllParagraphsProcessingInput, AllParagraphsProcessingResult, AnkiCsvExportInput, AnkiCsvTemplates, ExactGlossResult,
-    FormLookupResult, FormLookupStatus, GlossFormat, ProcessedWord,
+    FormLookupResult, FormLookupStatus, FormResultSource, GlossFormat, ProcessedWord,
 };
 
 use crate::exit::{AI_FAILED, CliError, CliResult};
@@ -624,6 +624,15 @@ fn status_label(status: &FormLookupStatus) -> String {
         .unwrap_or_else(|| format!("{:?}", status))
 }
 
+/// The status, with `(inflection table)` when the headwords come from DPD's
+/// inflection tables rather than its lookup row.
+fn result_status_label(r: &FormLookupResult) -> String {
+    match r.source {
+        Some(FormResultSource::InflectionTable) => format!("{} (inflection table)", status_label(&r.status)),
+        None => status_label(&r.status),
+    }
+}
+
 fn splits_text(r: &FormLookupResult) -> String {
     r.deconstructions.iter().map(|d| d.split.as_str()).collect::<Vec<_>>().join(" | ")
 }
@@ -642,7 +651,7 @@ fn print_exact_text(result: &ExactGlossResult) {
                 "{:>3}  {}  {}  {} headword{}",
                 t.token_index,
                 t.original_word,
-                status_label(&t.lookup.status),
+                result_status_label(&t.lookup),
                 t.lookup.headwords.len(),
                 if t.lookup.headwords.len() == 1 { "" } else { "s" },
             );
@@ -690,7 +699,7 @@ pub fn run_lookup(args: &LookupArgs, json: bool) -> CliResult {
 
     for r in &results {
         let lemmas: Vec<&str> = r.headwords.iter().map(|h| h.lemma_1.as_str()).collect();
-        let mut line = format!("{}  {}  {}", r.input, r.lookup_key, status_label(&r.status));
+        let mut line = format!("{}  {}  {}", r.input, r.lookup_key, result_status_label(r));
         if !lemmas.is_empty() {
             line.push_str(&format!("  {}", lemmas.join(", ")));
         }

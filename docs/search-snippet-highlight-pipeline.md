@@ -692,6 +692,26 @@ otherwise reach the guesses of the stem match and the "starts with" steps, or
   `masc abl sg of yoga`.
 - `dpd_lookup()`: the same, before its stem match, so the two lookups stay
   equal for a word without a break-down.
+- `lookup_forms_exact()` (`/lookup_forms`, `simsapa lookup`, exact
+  `/gloss_text`): the same search, with the same gate, for a key with no
+  `lookup` row with headwords or splits; the result is `found` with
+  `source: inflection_table`. Its copy of the iti rule takes the base the same
+  way as `dpd_lookup_grouped_iti_split()` (below), and the base component then
+  carries the table's headwords.
+
+Phase 4b leaves out DPD's grammarian's entries (`pos` in `DPD_EXCLUDED_POS`,
+`(gram)` in `meaning_1`; not the `!`-stem rule, since irregular forms are what
+it looks for): `sīsu` would otherwise be the verbal ending `si 1.1`, and
+`bruṁ` the root `√brū`. With only such matches the word goes on to the
+guesses as before. A query with a space, or longer than any DPD form
+(`INFLECTION_FORM_MAX_CHARS`), is not searched: the prefix query binds one
+value per character.
+
+A Phase 4b hit ends the lookup's fallbacks, the stem match and "starts with"
+included, as any exact match does. Those guesses were sometimes right where
+the tables are not (`karihi` → the future `karihiti` by "starts with"; the
+tables give `karī 1`, instr pl), but more often noise (`arū` → 28 `arūpa…`
+headwords; the tables give `aru`, nom pl).
 
 A word Phase 4b found gets no "starts with" break-down guess in Phase 7
 (§9e), as a word with a `lookup` row gets none: without this `yogasmā` would

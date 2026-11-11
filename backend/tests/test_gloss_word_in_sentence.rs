@@ -641,6 +641,8 @@ fn test_word_without_lookup_row_resolved_from_inflection_tables() {
     assert_eq!(words(&rows), vec!["yogasmā", "apassuṁ"]);
     assert_eq!(rows[0].grammar, "masc abl sg of yoga");
     assert!(rows[0].candidates.len() > 1);
+    // One reading per table cell, not one per `yoga` homonym.
+    assert_eq!(rows[0].grammar_options, vec!["masc abl sg of yoga".to_string()]);
     // `addasā` (imperf, irregular stem) and `apassi` (aor of passati).
     assert!(matches!(rows[1].id, Some(2975) | Some(84071)), "{:?}", rows[1].id);
     assert_eq!(rows[1].candidates.len(), 2);

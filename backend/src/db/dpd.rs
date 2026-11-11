@@ -24,7 +24,7 @@ use crate::pali_sort::{pali_sort_key, sort_search_results_natural};
 use crate::types::{
     SearchResult, Deconstruction, DeconstructionComponent, GroupedDpdLookup,
     FormLookupResult, FormLookupStatus, FormHeadword, FormDeconstruction, FormComponent, GrammarTriple,
-    FormSplitKind, FormSplitSource,
+    FormSplitKind, FormSplitSource, FormResultSource,
 };
 use crate::logger::{info, warn, error};
 use crate::dpd_form_grammar::{extract_dpd_construction_summary, SummaryExtract};
@@ -2044,6 +2044,8 @@ struct PendingForm {
     deconstructions: Vec<FormDeconstruction>,
     /// The grammar of the row that supplied `headword_ids`.
     form_grammar_raw: Vec<GrammarTriple>,
+    /// `headword_ids` come from the inflection tables, not a lookup row.
+    from_inflection_tables: bool,
 }
 
 impl PendingForm {
@@ -2059,6 +2061,7 @@ impl PendingForm {
                 headwords: Vec::new(),
                 deconstructions: Vec::new(),
                 form_grammar_raw: Vec::new(),
+                source: None,
             };
         }
 
@@ -2093,6 +2096,7 @@ impl PendingForm {
             headwords: form_headwords,
             deconstructions: self.deconstructions,
             form_grammar_raw: self.form_grammar_raw,
+            source: self.from_inflection_tables.then_some(FormResultSource::InflectionTable),
         }
     }
 }
@@ -2188,10 +2192,11 @@ fn resolve_form_exact(
             headword_ids: Vec::new(),
             deconstructions: Vec::new(),
             form_grammar_raw: Vec::new(),
+            from_inflection_tables: false,
         });
     }
 
-    let (headword_ids, splits, has_iti_breakdown, form_grammar_raw) = match cache.get(db_conn, &key)? {
+    let (mut headword_ids, splits, has_iti_breakdown, mut form_grammar_raw) = match cache.get(db_conn, &key)? {
         Some(row) => (
             lookup_row_headword_ids(row),
             lookup_row_splits(row),
@@ -2207,6 +2212,19 @@ fn resolve_form_exact(
         return iti_rule_form(db_conn, cache, form, &key, &base);
     }
 
+    // No lookup row with headwords or splits: the inflection tables, as the
+    // DPD lookups' Phase 4b (docs/search-snippet-highlight-pipeline.md §9g).
+    // An equality match on a form DPD lists, so still exact.
+    let mut from_inflection_tables = false;
+    if headword_ids.is_empty() && splits.is_empty() {
+        let (found, grammar) = inflection_table_headwords(db_conn, &key, None, None)?;
+        if !found.is_empty() {
+            headword_ids = found.iter().map(|h| h.id).collect();
+            form_grammar_raw = grammar;
+            from_inflection_tables = true;
+        }
+    }
+
     let deconstructions = dpd_splits(db_conn, cache, splits)?;
 
     Ok(PendingForm {
@@ -2216,6 +2234,7 @@ fn resolve_form_exact(
         headword_ids,
         deconstructions,
         form_grammar_raw,
+        from_inflection_tables,
     })
 }
 
@@ -2236,18 +2255,32 @@ fn iti_rule_form(
     joined: &str,
     base: &str,
 ) -> Result<PendingForm> {
+    // As `dpd_lookup_grouped_iti_split()`: a base with a lookup row first,
+    // else one found in the inflection tables, else the first candidate.
     let candidates = iti_base_candidates(joined, base);
-    let mut chosen = &candidates[0];
+    let mut chosen: Option<&String> = None;
+    let mut table_base: Option<(&String, Vec<DpdHeadword>, Vec<GrammarTriple>)> = None;
     for candidate in &candidates {
         let known = cache
             .get(db_conn, candidate)?
             .is_some_and(|row| !row.headwords.is_empty() || !row.deconstructor.is_empty());
         if known {
-            chosen = candidate;
+            chosen = Some(candidate);
             break;
         }
+        if table_base.is_none() {
+            let (found, grammar) = inflection_table_headwords(db_conn, candidate, None, None)?;
+            if !found.is_empty() {
+                table_base = Some((candidate, found, grammar));
+            }
+        }
     }
-    let base = chosen.as_str();
+    let table_base = if chosen.is_none() { table_base } else { None };
+    let base = match (&chosen, &table_base) {
+        (Some(c), _) => c.as_str(),
+        (None, Some((c, _, _))) => c.as_str(),
+        (None, None) => candidates[0].as_str(),
+    };
 
     let (base_ids, base_splits) = match cache.get(db_conn, base)? {
         Some(row) => (lookup_row_headword_ids(row), lookup_row_splits(row)),
@@ -2261,7 +2294,17 @@ fn iti_rule_form(
             split: format!("{} + iti", base),
             kind: FormSplitKind::ItiSandhi,
             source: FormSplitSource::ItiRule,
-            components: vec![cache.component(db_conn, base.to_string())?, iti.clone()],
+            components: vec![
+                match &table_base {
+                    Some((_, found, grammar)) => FormComponent {
+                        word: base.to_string(),
+                        uids: dpd_uids(&found.iter().map(|h| h.id).collect::<Vec<_>>()),
+                        form_grammar_raw: grammar.clone(),
+                    },
+                    None => cache.component(db_conn, base.to_string())?,
+                },
+                iti.clone(),
+            ],
         });
     }
     for d in dpd_splits(db_conn, cache, base_splits)? {
@@ -2284,6 +2327,7 @@ fn iti_rule_form(
         // The joined row's grammar is the analysis the iti rule rejected, and
         // the base's is on its component.
         form_grammar_raw: Vec::new(),
+        from_inflection_tables: false,
     })
 }
 
@@ -2512,17 +2556,8 @@ pub fn irregular_stem_inflections_shared(db_conn: &mut SqliteConnection) -> Resu
     Ok(IRREGULAR_STEM_INFLECTIONS.get_or_init(|| rows))
 }
 
-/// DPD's `lookup` grammar class for a headword `pos`, for a triple made from
-/// an inflection table: `noun` for a gender, `verb` for a finite verb, else
-/// the `pos` itself (`adj`, `pp`, `prp`, `ptp`, `pron` …), as the lookup
-/// rows have them.
-pub fn lookup_grammar_class(pos: &str) -> String {
-    match pos {
-        "masc" | "fem" | "nt" => "noun".to_string(),
-        "pr" | "aor" | "fut" | "cond" | "imp" | "opt" | "imperf" | "perf" => "verb".to_string(),
-        _ => pos.to_string(),
-    }
-}
+/// The longest form `headwords_inflecting_to()` searches for.
+const INFLECTION_FORM_MAX_CHARS: usize = 120;
 
 /// The headwords whose inflection tables hold `form` (`headwords_inflecting_to`),
 /// with the uid filters, and the `lookup`-style grammar triples
@@ -2549,13 +2584,30 @@ fn inflection_table_headwords(
     if let Some(s) = uid_suffix_pat {
         q = q.filter(hd::uid.like(s.to_string()));
     }
-    let headwords = q.load::<DpdHeadword>(db_conn)?;
+    // DPD's headword filter without the `!`-stem rule (the irregular forms
+    // are what the in-memory check is for): a grammarian's entry (`si 1.1`,
+    // a verbal ending, for `sīsu`; the root `√brū` for `bruṁ`) is no answer
+    // for a word of a text. With only such matches the guesses run instead.
+    let headwords: Vec<DpdHeadword> = q
+        .load::<DpdHeadword>(db_conn)?
+        .into_iter()
+        .filter(|h| {
+            !crate::gloss_sense_ranking::DPD_EXCLUDED_POS.contains(&h.pos.as_str())
+                && !h.meaning_1.contains("(gram)")
+        })
+        .collect();
     let mut grammar = Vec::new();
     for m in &matches {
         if let Some(hw) = headwords.iter().find(|h| h.id == m.id) {
-            let class = lookup_grammar_class(&hw.pos);
+            // The class as the lookup rows have it (`noun`, `verb`, else the pos).
+            let class = crate::dpd_form_grammar::pos_class(&hw.pos).to_string();
+            // Once per triple, as a lookup row lists it: homonyms share
+            // `lemma_clean`, and each gets the triple by its lemma and class.
             for title in &m.cell_titles {
-                grammar.push([hw.lemma_clean.clone(), class.clone(), title.clone()]);
+                let triple = [hw.lemma_clean.clone(), class.clone(), title.clone()];
+                if !grammar.contains(&triple) {
+                    grammar.push(triple);
+                }
             }
         }
     }
@@ -2584,6 +2636,12 @@ pub fn headwords_inflecting_to(
 ) -> Result<Vec<InflectionMatch>> {
     use crate::db::dpd_schema::dpd_headwords::dsl as hd;
 
+    // No DPD form has a space or is longer than ~110 characters; a long
+    // pasted query would otherwise bind one prefix per character, past
+    // SQLite's limit, and fail the whole lookup.
+    if form.chars().any(char::is_whitespace) || form.chars().count() > INFLECTION_FORM_MAX_CHARS {
+        return Ok(Vec::new());
+    }
     let has_form = |inflections: &str| inflections.split(',').any(|f| f == form);
     let prefixes: Vec<String> = form
         .char_indices()

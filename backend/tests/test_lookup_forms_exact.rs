@@ -68,7 +68,7 @@
 use serial_test::serial;
 use simsapa_backend::get_app_data;
 use simsapa_backend::types::{
-    GrammarTriple, FormLookupResult, FormLookupStatus, FormMatchedAs, FormSplitKind, FormSplitSource,
+    GrammarTriple, FormLookupResult, FormLookupStatus, FormMatchedAs, FormResultSource, FormSplitKind, FormSplitSource,
 };
 
 mod helpers;
@@ -327,7 +327,9 @@ fn test_iti_rule_matches_grouped_lookup() {
     let app_data = get_app_data();
     let dpd = &app_data.dbm.dpd;
 
-    for word in ["magga’’nti", "gopālikā’ti", "idhāhan’ti", "vikālāyan’ti", "sāyan’ti"] {
+    // `sayaṅkatā’ti`: no candidate base has a lookup row (DPD's key is
+    // `sayaṁkatā`); both rules take the base the inflection tables find.
+    for word in ["magga’’nti", "gopālikā’ti", "idhāhan’ti", "vikālāyan’ti", "sāyan’ti", "sayaṅkatā’ti"] {
         let exact = dpd.lookup_forms_exact(&[word.to_string()]).unwrap().remove(0);
         assert!(
             exact.deconstructions.iter().all(|d| d.source == FormSplitSource::ItiRule),
@@ -470,4 +472,32 @@ fn test_form_grammar_serialised_as_arrays() {
     assert_eq!(v["form_grammar_raw"][0], serde_json::json!(["bhagavant", "noun", "masc acc sg"]));
     assert_eq!(v["headwords"][0]["form_grammar"], serde_json::json!(["masc acc sg"]));
     assert_eq!(v["headwords"][0]["root_base"], serde_json::json!(""));
+}
+
+/// A form with no lookup row that is in DPD's inflection tables is `found`,
+/// marked `"source": "inflection_table"`, with grammar from the table cells
+/// (docs/search-snippet-highlight-pipeline.md §9g).
+#[test]
+#[serial]
+fn test_inflection_table_form_found() {
+    h::app_data_setup();
+    let r = lookup_one("yogasmā");
+    assert_eq!(r.status, FormLookupStatus::Found);
+    assert_eq!(r.source, Some(FormResultSource::InflectionTable));
+    assert!(uids(&r).contains(&"54211/dpd"), "{:?}", uids(&r));
+    assert!(r.form_grammar_raw.contains(&triple("yoga", "noun", "masc abl sg")));
+    assert_eq!(form_grammar(&r, "54211/dpd"), ["masc abl sg"]);
+    let v = serde_json::to_value(&r).unwrap();
+    assert_eq!(v["source"], "inflection_table");
+
+    // A `ṅ` spelling whose lookup key has `ṁ` (MN 46).
+    let r = lookup_one("evaṅkāmā");
+    assert_eq!(r.status, FormLookupStatus::Found);
+    assert_eq!(uids(&r), vec!["18056/dpd"]);
+
+    // A lookup row's answer has no `source`; a guess is still not made.
+    let v = serde_json::to_value(lookup_one("bhagavantaṁ")).unwrap();
+    assert!(v.get("source").is_none(), "{}", v);
+    assert_eq!(lookup_one("bhagav").status, FormLookupStatus::NotFound);
+    assert_eq!(lookup_one("vuttan").status, FormLookupStatus::NotFound);
 }

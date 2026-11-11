@@ -321,9 +321,10 @@ $ simsapa gloss "atthaññe dhammā"
 atthaññe  (pr) there is; there exists [√as + ti > atthi] pr  [atthi + aññe]
 dhammā    (fem) name of an arahant nun [√dhar + ma + ā], [dhamma + ā] fem, from dhamma
 
-$ simsapa lookup bhagavantaṁ bhagav
+$ simsapa lookup bhagavantaṁ bhagav evaṅkāmā
 bhagavantaṁ  bhagavantaṁ  found  bhagavant 1, bhagavant 2
 bhagav  bhagav  not_found
+evaṅkāmā  evaṅkāmā  found (inflection table)  evaṅkāma
 ```
 
 The text output shows the first, most useful part of each answer (for `gloss`,
@@ -3198,7 +3199,7 @@ word that was asked about.
 { "dpd_version": "v0.4.20260501",
   "results": [ { "input", "lookup_key", "status", "note"?,
                  "headwords": [ … ], "deconstructions": [ … ],
-                 "form_grammar_raw": [ … ] }, … ] }
+                 "form_grammar_raw": [ … ], "source"? }, … ] }
 ```
 
 - **Batch size:** up to **5,000** forms per call; 5,001 is a `400`. An empty
@@ -3218,12 +3219,24 @@ word that was asked about.
   (lowercase, `ṃ` → `ṁ`, the quote and iti rules of §18) and matched by
   equality on DPD's `lookup` key, shown back as `lookup_key`. No stem match,
   no "starts with", no respelling: `bhagav` and `vuttan` are `not_found`.
+- **Forms missing from DPD's `lookup` table.** That table lists mostly the
+  forms that occur in DPD's texts, while each headword's inflection table
+  lists its whole paradigm. When the key has no `lookup` row with headwords or
+  splits, the headwords whose inflection table holds the key (again by
+  equality) are returned, with `"source": "inflection_table"`: `yogasmā`
+  (found inside the compound *yogakkhema*) gives the *yoga* homonyms with
+  `masc abl sg`, and `evaṅkāmā` (MN 46; DPD's key is `evaṁkāmā`) gives
+  *evaṅkāma*. Grammarians' entries (`pos` `cs`, `letter`, `prefix`, `root`,
+  `suffix`, `ve`, or a meaning marked `(gram)`) are left out. The other DPD
+  lookups (dictionary search, gloss) do the same, so all of them agree.
 - **Iti sandhi** follows the rule of §18.1, over exact rows only: the joined
   form when DPD analyses it as `… + iti` (`cittan'ti` → `cittanti`, with its
   10 headwords **and** the split `cittaṁ + iti`), otherwise `<base> + iti`
   with `"source": "iti_rule"` (`magga’’nti` → `maggaṁ + iti`, never the verb).
 - **Nothing is chosen.** Every headword id and every split of the row is
   returned in DPD's order, with no ranking and no word-selection cache.
+- `source` is present only for an inflection-table answer, and is always
+  `"inflection_table"`; a `lookup` row's answer has no `source` key.
 - `status`: `found` (one or more headwords; splits may be present too),
   `deconstructed` (splits only), `not_found` (no DPD row with headwords or
   splits), `invalid` (empty after normalisation, more than one word, or a
@@ -3249,9 +3262,9 @@ word that was asked about.
 
 | Field | Value | Meaning |
 |---|---|---|
-| `status` | `found` | One or more headwords. `deconstructions` may be non-empty too (`cittan'ti`). |
+| `status` | `found` | One or more headwords. `deconstructions` may be non-empty too (`cittan'ti`). With `"source": "inflection_table"` the headwords come from DPD's inflection tables (`yogasmā`). |
 | | `deconstructed` | No headwords, at least one split (`atthaññe`, `magga’’nti`). |
-| | `not_found` | DPD's lookup table has no row for `lookup_key`, or a row with neither headwords nor splits. |
+| | `not_found` | DPD's lookup table has no row for `lookup_key` (or a row with neither headwords nor splits), and no inflection table holds it. |
 | | `invalid` | Not a single word form. `note` is one of `"empty after normalisation"` (`""`, or only punctuation), `"more than one word"` (`"a b"`), `"a uid query, not a word form"` (`"uid:iti"`). |
 | `matched_as` | `lemma` | `lookup_key` is the headword's citation form (`lemma_clean`): `iti` → `iti`, `bhante` → `bhante`. |
 | | `inflection` | Any other form of the headword. A plain comparison, a hint, not a ranking. |
@@ -3277,7 +3290,9 @@ The lemma has no homonym number and the class is broad (`noun`, `verb`,
   `bhavissanti` (§18.3). An `iti_rule` result (`magga’’nti`) gives `[]`: the joined
   row's grammar is exactly the analysis the rule rejected (`magganti` is the
   verb *maggati*), and the base's grammar is on the base component. `invalid`
-  and "no row" give `[]`.
+  and "no row" give `[]`. An `inflection_table` result lists one triple per
+  inflection-table cell that holds the form, in the same `[lemma, class,
+  parse]` shape (`["yoga","noun","masc abl sg"]`), once each.
 - `form_grammar_raw` (split component) is the component word's **own** exact
   lookup row's list, for `dpd` and `iti_rule` splits alike: `cittan'ti`'s
   `cittaṁ` component lists `["citta","noun","nt nom sg"]` & co.; the `iti`
