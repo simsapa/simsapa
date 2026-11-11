@@ -1,29 +1,76 @@
-use serde::{Serialize, Deserialize};
+//! Anki CSV export of a gloss: one note per vocabulary word (Headwords
+//! format) or per Word in Sentence row with a DPD headword (rows with an id;
+//! "No duplicates" has already left out repeats). The input is the shared
+//! export data (`crate::export_types::GlossExportData`).
+
+use serde::Serialize;
 use serde_json::Value;
 use tinytemplate::TinyTemplate;
 use anyhow::{Result, anyhow};
 
+use crate::export_types::{GlossExportData, GlossExportParagraph};
 use crate::types::{AnkiCsvExportInput, AnkiCsvExportResult, AnkiCsvFile};
 use crate::app_data::AppData;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct VocabItem {
+/// One Anki note's source: a vocabulary item, or a Word in Sentence row.
+#[derive(Debug, Clone, Default)]
+struct NoteItem {
     uid: String,
+    /// The headword (`lemma_1`).
     word: String,
     summary: String,
     context_snippet: String,
+    /// The Word in Sentence row's word, grammar and meaning; empty for a
+    /// Headwords vocabulary item.
+    word_in_sentence: String,
+    grammar: String,
+    meaning: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct ParagraphData {
-    text: String,
-    vocabulary: Vec<VocabItem>,
+/// The notes of a paragraph: its Word in Sentence rows that have a DPD
+/// headword when it has rows, else its vocabulary.
+fn paragraph_notes(paragraph: &GlossExportParagraph) -> Vec<NoteItem> {
+    if paragraph.rows.is_empty() {
+        return paragraph
+            .vocabulary
+            .iter()
+            .map(|v| NoteItem {
+                uid: v.uid.clone(),
+                word: v.word.clone(),
+                summary: v.summary.clone(),
+                context_snippet: v.context_snippet.clone(),
+                ..Default::default()
+            })
+            .collect();
+    }
+    paragraph
+        .rows
+        .iter()
+        .filter(|r| r.id.is_some())
+        .map(|r| NoteItem {
+            uid: r.uid.clone(),
+            word: r.lemma.clone(),
+            summary: if r.summary.is_empty() { r.meaning.clone() } else { r.summary.clone() },
+            context_snippet: r.context_snippet.clone(),
+            word_in_sentence: r.word.clone(),
+            grammar: r.grammar.clone(),
+            meaning: r.meaning.clone(),
+        })
+        .collect()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct GlossData {
-    text: String,
-    paragraphs: Vec<ParagraphData>,
+fn all_notes(data: &GlossExportData) -> Vec<NoteItem> {
+    data.paragraphs.iter().flat_map(paragraph_notes).collect()
+}
+
+/// The back of a Simple note: the summary, with the row's grammar above it
+/// for a Word in Sentence note.
+fn simple_back(note: &NoteItem) -> String {
+    if note.grammar.is_empty() {
+        note.summary.clone()
+    } else {
+        format!("<div><p>{}</p><p>{}</p></div>", note.grammar, note.summary)
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -32,6 +79,11 @@ struct TemplateContext {
     context_snippet: String,
     original_word: String,
     clean_word: String,
+    /// The token as written in the passage, its grammar and its meaning in
+    /// the sentence (Word in Sentence notes; empty otherwise).
+    word_in_sentence: String,
+    grammar: String,
+    meaning: String,
     vocab: VocabContextData,
     dpd: serde_json::Map<String, Value>,
     root: serde_json::Map<String, Value>,
@@ -110,7 +162,7 @@ fn render_template(template_str: &str, context: &TemplateContext) -> Result<Stri
 }
 
 fn build_template_context(
-    vocab: &VocabItem,
+    vocab: &NoteItem,
     dpd_data: &serde_json::Map<String, Value>,
     root_data: &serde_json::Map<String, Value>,
     context_snippet: &str,
@@ -138,6 +190,9 @@ fn build_template_context(
         context_snippet: context_snippet.to_string(),
         original_word: word_stem_value.clone(),
         clean_word: word_stem_value,
+        word_in_sentence: vocab.word_in_sentence.clone(),
+        grammar: vocab.grammar.clone(),
+        meaning: vocab.meaning.clone(),
         vocab: VocabContextData {
             uid: vocab.uid.clone(),
             word: vocab.word.clone(),
@@ -152,7 +207,7 @@ pub fn export_anki_csv(
     input: AnkiCsvExportInput,
     app_data: &AppData,
 ) -> Result<AnkiCsvExportResult> {
-    let gloss_data: GlossData = serde_json::from_str(&input.gloss_data_json)?;
+    let gloss_data: GlossExportData = serde_json::from_str(&input.gloss_data_json)?;
 
     let mut files = Vec::new();
 
@@ -220,44 +275,44 @@ pub fn export_anki_csv(
 }
 
 fn generate_simple_csv(
-    gloss_data: &GlossData,
+    gloss_data: &GlossExportData,
     _input: &AnkiCsvExportInput,
     _app_data: &AppData,
 ) -> Result<String> {
     let mut csv_lines = Vec::new();
 
-    for paragraph in &gloss_data.paragraphs {
-        for vocab in &paragraph.vocabulary {
-            let word_stem = clean_stem(&vocab.word);
-            let front = format!("<div><p>{}</p><p>{}</p></div>", word_stem, vocab.context_snippet);
-            let back = vocab.summary.clone();
-            csv_lines.push(format_csv_row(&front, &back));
-        }
+    for vocab in all_notes(gloss_data) {
+        let shown_word = if vocab.word_in_sentence.is_empty() {
+            clean_stem(&vocab.word)
+        } else {
+            vocab.word_in_sentence.clone()
+        };
+        let front = format!("<div><p>{}</p><p>{}</p></div>", shown_word, vocab.context_snippet);
+        let back = simple_back(&vocab);
+        csv_lines.push(format_csv_row(&front, &back));
     }
 
     Ok(csv_lines.join("\n"))
 }
 
 fn generate_simple_cloze_csv(
-    gloss_data: &GlossData,
+    gloss_data: &GlossExportData,
     _input: &AnkiCsvExportInput,
     _app_data: &AppData,
 ) -> Result<String> {
     let mut csv_lines = Vec::new();
 
-    for paragraph in &gloss_data.paragraphs {
-        for vocab in &paragraph.vocabulary {
-            let front = convert_context_to_cloze(&vocab.context_snippet);
-            let back = vocab.summary.clone();
-            csv_lines.push(format_csv_row(&front, &back));
-        }
+    for vocab in all_notes(gloss_data) {
+        let front = convert_context_to_cloze(&vocab.context_snippet);
+        let back = simple_back(&vocab);
+        csv_lines.push(format_csv_row(&front, &back));
     }
 
     Ok(csv_lines.join("\n"))
 }
 
 fn generate_templated_csv(
-    gloss_data: &GlossData,
+    gloss_data: &GlossExportData,
     front_template: &str,
     back_template: &str,
     app_data: &AppData,
@@ -265,52 +320,50 @@ fn generate_templated_csv(
 ) -> Result<String> {
     let mut csv_lines = Vec::new();
 
-    for paragraph in &gloss_data.paragraphs {
-        for vocab in &paragraph.vocabulary {
-            let dpd_data = match app_data.get_dpd_headword_by_uid(&vocab.uid) {
-                Some(json) => serde_json::from_str::<serde_json::Map<String, Value>>(&json).unwrap_or_default(),
-                None => serde_json::Map::new(),
-            };
+    for vocab in &all_notes(gloss_data) {
+        let dpd_data = match app_data.get_dpd_headword_by_uid(&vocab.uid) {
+            Some(json) => serde_json::from_str::<serde_json::Map<String, Value>>(&json).unwrap_or_default(),
+            None => serde_json::Map::new(),
+        };
 
-            let root_key = dpd_data.get("root_key")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+        let root_key = dpd_data.get("root_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
-            let root_data = if !root_key.is_empty() {
-                match app_data.get_dpd_root_by_root_key(root_key) {
-                    Some(json) => serde_json::from_str::<serde_json::Map<String, Value>>(&json).unwrap_or_else(|_| create_empty_root_data()),
-                    None => create_empty_root_data(),
-                }
-            } else {
-                create_empty_root_data()
-            };
+        let root_data = if !root_key.is_empty() {
+            match app_data.get_dpd_root_by_root_key(root_key) {
+                Some(json) => serde_json::from_str::<serde_json::Map<String, Value>>(&json).unwrap_or_else(|_| create_empty_root_data()),
+                None => create_empty_root_data(),
+            }
+        } else {
+            create_empty_root_data()
+        };
 
-            let context_snippet = if is_cloze {
-                convert_context_to_cloze(&vocab.context_snippet)
-            } else {
-                vocab.context_snippet.clone()
-            };
+        let context_snippet = if is_cloze {
+            convert_context_to_cloze(&vocab.context_snippet)
+        } else {
+            vocab.context_snippet.clone()
+        };
 
-            let context = build_template_context(vocab, &dpd_data, &root_data, &context_snippet);
+        let context = build_template_context(vocab, &dpd_data, &root_data, &context_snippet);
 
-            let front = render_template(front_template, &context)?;
-            let back = render_template(back_template, &context)?;
+        let front = render_template(front_template, &context)?;
+        let back = render_template(back_template, &context)?;
 
-            csv_lines.push(format_csv_row(&front, &back));
-        }
+        csv_lines.push(format_csv_row(&front, &back));
     }
 
     Ok(csv_lines.join("\n"))
 }
 
 fn generate_data_csv(
-    gloss_data: &GlossData,
+    gloss_data: &GlossExportData,
     _input: &AnkiCsvExportInput,
     app_data: &AppData,
 ) -> Result<String> {
     let mut csv_lines = Vec::new();
 
-    let header = vec![
+    let mut header = vec![
         "word_stem",
         "context_snippet",
         "word",
@@ -368,97 +421,105 @@ fn generate_data_csv(
         "lemma_clean",
         "summary",
     ];
+    let notes = all_notes(gloss_data);
+    // Word in Sentence notes add the token as written and its grammar.
+    let word_in_sentence = gloss_data.paragraphs.iter().any(|p| !p.rows.is_empty());
+    if word_in_sentence {
+        header.extend(["word_in_sentence", "grammar_in_sentence"]);
+    }
     csv_lines.push(header.join(","));
 
-    for paragraph in &gloss_data.paragraphs {
-        for vocab in &paragraph.vocabulary {
-            let word_stem = clean_stem(&vocab.word);
+    for vocab in &notes {
+        let word_stem = clean_stem(&vocab.word);
 
-            let dpd_json = app_data.get_dpd_headword_by_uid(&vocab.uid).unwrap_or_else(|| "{}".to_string());
-            let dpd_data: serde_json::Map<String, Value> = serde_json::from_str(&dpd_json).unwrap_or_default();
+        let dpd_json = app_data.get_dpd_headword_by_uid(&vocab.uid).unwrap_or_else(|| "{}".to_string());
+        let dpd_data: serde_json::Map<String, Value> = serde_json::from_str(&dpd_json).unwrap_or_default();
 
-            let get_field = |key: &str| -> String {
-                dpd_data.get(key)
-                    .and_then(|v| {
-                        if v.is_string() {
-                            v.as_str().map(|s| s.to_string())
-                        } else if v.is_i64() {
-                            Some(v.as_i64().unwrap().to_string())
-                        } else if v.is_u64() {
-                            Some(v.as_u64().unwrap().to_string())
-                        } else if v.is_f64() {
-                            Some(v.as_f64().unwrap().to_string())
-                        } else if v.is_boolean() {
-                            Some(v.as_bool().unwrap().to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default()
-            };
+        let get_field = |key: &str| -> String {
+            dpd_data.get(key)
+                .and_then(|v| {
+                    if v.is_string() {
+                        v.as_str().map(|s| s.to_string())
+                    } else if v.is_i64() {
+                        Some(v.as_i64().unwrap().to_string())
+                    } else if v.is_u64() {
+                        Some(v.as_u64().unwrap().to_string())
+                    } else if v.is_f64() {
+                        Some(v.as_f64().unwrap().to_string())
+                    } else if v.is_boolean() {
+                        Some(v.as_bool().unwrap().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default()
+        };
 
-            let row = vec![
-                word_stem,
-                vocab.context_snippet.clone(),
-                vocab.word.clone(),
-                vocab.uid.clone(),
-                get_field("id"),
-                get_field("lemma_1"),
-                get_field("lemma_2"),
-                get_field("pos"),
-                get_field("grammar"),
-                get_field("derived_from"),
-                get_field("neg"),
-                get_field("verb"),
-                get_field("trans"),
-                get_field("plus_case"),
-                get_field("meaning_1"),
-                get_field("meaning_lit"),
-                get_field("meaning_2"),
-                get_field("non_ia"),
-                get_field("sanskrit"),
-                get_field("root_key"),
-                get_field("root_sign"),
-                get_field("root_base"),
-                get_field("family_root_fk"),
-                get_field("family_word_fk"),
-                get_field("family_compound_fk"),
-                get_field("family_idioms_fk"),
-                get_field("family_set_fk"),
-                get_field("construction"),
-                get_field("derivative"),
-                get_field("suffix"),
-                get_field("phonetic"),
-                get_field("compound_type"),
-                get_field("compound_construction"),
-                get_field("non_root_in_comps"),
-                get_field("source_1"),
-                get_field("sutta_1"),
-                get_field("example_1"),
-                get_field("source_2"),
-                get_field("sutta_2"),
-                get_field("example_2"),
-                get_field("antonym"),
-                get_field("synonym"),
-                get_field("variant"),
-                get_field("var_phonetic"),
-                get_field("var_text"),
-                get_field("commentary"),
-                get_field("notes"),
-                get_field("cognate"),
-                get_field("link"),
-                get_field("origin"),
-                get_field("stem"),
-                get_field("pattern"),
-                get_field("dictionary_id"),
-                get_field("word_ascii"),
-                get_field("lemma_clean"),
-                vocab.summary.clone(),
-            ];
-
-            let escaped_row: Vec<String> = row.iter().map(|f| escape_csv_field(f)).collect();
-            csv_lines.push(escaped_row.join(","));
+        let mut row = vec![
+            word_stem,
+            vocab.context_snippet.clone(),
+            vocab.word.clone(),
+            vocab.uid.clone(),
+            get_field("id"),
+            get_field("lemma_1"),
+            get_field("lemma_2"),
+            get_field("pos"),
+            get_field("grammar"),
+            get_field("derived_from"),
+            get_field("neg"),
+            get_field("verb"),
+            get_field("trans"),
+            get_field("plus_case"),
+            get_field("meaning_1"),
+            get_field("meaning_lit"),
+            get_field("meaning_2"),
+            get_field("non_ia"),
+            get_field("sanskrit"),
+            get_field("root_key"),
+            get_field("root_sign"),
+            get_field("root_base"),
+            get_field("family_root_fk"),
+            get_field("family_word_fk"),
+            get_field("family_compound_fk"),
+            get_field("family_idioms_fk"),
+            get_field("family_set_fk"),
+            get_field("construction"),
+            get_field("derivative"),
+            get_field("suffix"),
+            get_field("phonetic"),
+            get_field("compound_type"),
+            get_field("compound_construction"),
+            get_field("non_root_in_comps"),
+            get_field("source_1"),
+            get_field("sutta_1"),
+            get_field("example_1"),
+            get_field("source_2"),
+            get_field("sutta_2"),
+            get_field("example_2"),
+            get_field("antonym"),
+            get_field("synonym"),
+            get_field("variant"),
+            get_field("var_phonetic"),
+            get_field("var_text"),
+            get_field("commentary"),
+            get_field("notes"),
+            get_field("cognate"),
+            get_field("link"),
+            get_field("origin"),
+            get_field("stem"),
+            get_field("pattern"),
+            get_field("dictionary_id"),
+            get_field("word_ascii"),
+            get_field("lemma_clean"),
+            vocab.summary.clone(),
+        ];
+        if word_in_sentence {
+            row.push(vocab.word_in_sentence.clone());
+            row.push(vocab.grammar.clone());
         }
+
+        let escaped_row: Vec<String> = row.iter().map(|f| escape_csv_field(f)).collect();
+        csv_lines.push(escaped_row.join(","));
     }
 
     Ok(csv_lines.join("\n"))
@@ -499,11 +560,17 @@ pub fn render_anki_preview(
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
-    let vocab = VocabItem {
+    let sample_str = |key: &str| -> String {
+        sample_data.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    };
+    let vocab = NoteItem {
         uid: uid.to_string(),
         word: word.to_string(),
         summary: summary.to_string(),
         context_snippet: context_snippet.to_string(),
+        word_in_sentence: sample_str("word_in_sentence"),
+        grammar: sample_str("grammar"),
+        meaning: sample_str("meaning"),
     };
 
     let context = build_template_context(&vocab, &dpd_data, &root_data, context_snippet);

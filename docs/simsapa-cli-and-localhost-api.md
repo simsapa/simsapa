@@ -80,7 +80,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa search suttas\|dict\|library <query…>` | Search, with `--mode` (the API names of §3: `"Fulltext Match"`, `"Contains Match"`, `"Title Match"`, `"Headword Match"`, `"DPD Lookup"`, …), `--lang`, `--source`, `--page`, `--page-len`, `--all-snippets`, `--snippet-exclude`, `--uid-prefix` (suttas and library only; A.2.2), `--pali-edition ms|cst|both` (A.2.1). Defaults: `Fulltext Match` for suttas and library, `Combined` for dict | `POST /search` (§7) |
 | `simsapa word <uid>` | A dictionary entry; `--html` for the rendered page | `/word.json` (§13.3); `--html`: `/word_html` |
 | `simsapa sutta <uid>` | A sutta's title, uid and plain text; `--html`, `--content-json` (Bilara JSON), `--bilara` (with variants, comments, glosses) | `/sutta_html`, `/sutta.json` (§13.4), `/sutta_bilara.json` (§13.5) |
-| `simsapa gloss <text…\|->` | Every word of a passage with its dictionary options and compound break-downs; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
+| `simsapa gloss <text…\|reference\|->` | A passage (or a sutta reference such as `dhp23`) as a word-by-word analysis document (A.2.4); `--json` for the raw pipeline result; `--exact` for one exact DPD lookup per word | `POST /gloss_text` (§16.1, §19.2) |
 | `simsapa lookup <form…\|->` | Exact DPD form lookup, forms as arguments or one per line on stdin | `POST /lookup_forms` (§19.1) |
 | `simsapa query suttas\|words <text>` | Literal substring match, first page; `--titles`, `--count` | — |
 | `simsapa fulltext-search …` | The fulltext index directly; takes `--pali-edition` too | — |
@@ -89,7 +89,7 @@ The read-only ones, each with the route whose JSON its `--json` prints:
 | `simsapa dpd check` | Whether a newer compatible release of the DPD dictionary is available, its download size and the free space its upgrade needs (A.9) | — |
 | `simsapa stats`, `simsapa paths` | Row counts of `appdata.sqlite3`; the data folder and database paths | — |
 | `simsapa app-assets` | Where the app assets are stored and their sizes (A.1) | — |
-| `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (A.2.3) | — |
+| `simsapa install-skill` | Install the `simsapa` and `gloss-pali-passage` agent skills, and their slash commands, into Claude Code, OpenCode or Pi (A.2.3) | — |
 | `simsapa docs` | This document | — |
 
 The commands that change the data folder: `simsapa setup`, `simsapa
@@ -166,18 +166,36 @@ curl -s localhost:$PORT/get_book_spine_item_html_by_uid/0/bmc.28
 
 `simsapa sutta <uid>` does not read Library chapters.
 
-### A.2.3 Installing the agent skill: `simsapa install-skill`
+### A.2.3 Installing the agent skills: `simsapa install-skill`
 
-`simsapa install-skill` writes a short skill, `simsapa/SKILL.md`, that tells a
-coding agent when and how to use these commands. It is built into the binary,
-so it always matches the installed version, and it needs no databases. It
-points the agent to `simsapa docs` for this full reference.
+`simsapa install-skill` writes two short skills that tell a coding agent when
+and how to use these commands, and makes each of them a slash command:
+
+- `simsapa`: searching the canon, the dictionaries and the library, reading a
+  sutta, looking up a word. It points the agent to `simsapa docs` for this full
+  reference. Slash command: `/simsapa`.
+- `gloss-pali-passage`: making a word-by-word analysis document of a Pāli
+  passage (A.2.4). Slash command:
+  `/gloss-pali-passage [headwords|word-in-sentence] <text or reference>`.
+
+The skills are built into the binary, so they always match the installed
+version, and the command needs no databases.
 
 | Agent | `--global` (every project) | `--local` (the current folder, or `--dir`) |
 |---|---|---|
-| `claude` (Claude Code) | `~/.claude/skills/simsapa/` | `.claude/skills/simsapa/` |
-| `opencode` (OpenCode) | `~/.config/opencode/skills/simsapa/` (`$XDG_CONFIG_HOME/opencode` when set) | `.opencode/skills/simsapa/` |
-| `pi` (Pi) | `~/.pi/agent/skills/simsapa/` | `.pi/skills/simsapa/` |
+| `claude` (Claude Code) | `~/.claude/skills/<name>/` | `.claude/skills/<name>/` |
+| `opencode` (OpenCode) | `~/.config/opencode/skills/<name>/` and `~/.config/opencode/commands/<name>.md` (`$XDG_CONFIG_HOME/opencode` when set) | `.opencode/skills/<name>/` and `.opencode/commands/<name>.md` |
+| `pi` (Pi) | `~/.pi/agent/skills/<name>/` | `.pi/skills/<name>/` |
+
+Slash commands, as each agent expects them:
+
+- **Claude Code** makes `/<name>` from a skill folder by itself, so no extra
+  file is written; the skill is the command, and a command file of the same name
+  would be shadowed by it.
+- **OpenCode** does not turn skills into commands. For each skill the command
+  writes a markdown file in `commands/`, whose text tells the agent to load that
+  skill and passes the words typed after the command (`$ARGUMENTS`).
+- **Pi** gets the skills only.
 
 ``` sh
 simsapa install-skill --agent claude --global      # named: installs, no questions
@@ -194,16 +212,74 @@ those; at a terminal it shows a checklist with every place selected, and with no
 terminal it prints what it found and stops unless `--yes` is given. When nothing
 is found it installs nothing and says how to name a place.
 
-- Running it again is safe: an up-to-date skill is left alone, and one this
-  command wrote earlier is replaced by the current text. A `SKILL.md` it did
-  not write is never replaced without `--force`.
+- Running it again is safe: an up-to-date file is left alone, and one this
+  command wrote earlier is replaced by the current text. A `SKILL.md` or command
+  file it did not write is never replaced without `--force`.
 - OpenCode also reads Claude Code's skill folders. With both selected for the
-  same scope only the Claude Code copy is written, so the agent does not see
-  two skills of one name.
-- `--json` prints one array of `{agent, scope, path, status}`, with `status`
-  `installed`, `updated` or `unchanged`.
-- Start a new agent session afterwards; agents read their skills at start-up.
-- After upgrading simsapa, run it again to refresh the skill.
+  same scope only the Claude Code skill copies are written, so the agent does
+  not see two skills of one name; OpenCode's command files are still written.
+- `--json` prints one array of `{agent, scope, kind, name, path, status}`, with
+  `kind` `skill` or `command` and `status` `installed`, `updated` or
+  `unchanged`.
+- Start a new agent session afterwards; agents read their skills and commands
+  at start-up.
+- After upgrading simsapa, run it again to refresh them.
+
+### A.2.4 Glossing a passage: `simsapa gloss`
+
+`simsapa gloss` makes the analysis document of a passage: every word with its
+grammar, meaning, construction and root.
+
+``` sh
+simsapa gloss --format markdown dhp23            # a sutta reference
+simsapa gloss --no-ai --format markdown "te jhāyino sātatikā"
+simsapa gloss --gloss-format headwords sn1.71
+simsapa gloss --format docx --output dhp23.docx dhp23
+```
+
+| Option | Meaning |
+|---|---|
+| `<text…>` | Pāli text, `-` for stdin, or one sutta reference (`dhp23`, `sn1.71`, `mn4`, `ud1`, `iti1`). Paragraphs are separated by a blank line |
+| `--gloss-format word-in-sentence\|headwords` | `word-in-sentence` (default): one row per word as written in the passage, with the grammar of that form (`masc nom pl of jhāyī`); a compound is followed by its parts. `headwords`: the dictionary entries, a repeat within a paragraph left out |
+| `--edition cst\|ms` | The edition of a reference. Default: CST when the text has one, else Mahāsaṅgīti |
+| `--paragraphs <spec>` | Paragraphs of a reference: `1`, `1-3`, `1-2 4` |
+| `--format markdown\|html\|org\|docx\|anki-csv\|json\|text` | The output. Default: `text` (aligned columns) on a terminal, `markdown` otherwise. `json` is the Gloss tab's session export, which the app opens with "Open JSON" |
+| `--output <path>` | Write the document to a file; required for `docx` |
+| `--json` | The raw pipeline result (the `/gloss_text` response); not together with `--format` |
+| `--no-ai` | Make no AI request. Without `--no-ai`, an AI provider enabled in the app chooses word senses and writes the translations |
+| `--no-translate` | Let the AI choose word senses but make no translation |
+| `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
+| `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
+
+A Word in Sentence document has this structure: `# Gloss of: <reference>`,
+the passage, `### English Translation` (**Translation** and **Literal
+Translation**, only when a translation was made), `### Variants` (only for
+`//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
+table `ID | Word in Sentence | Grammar | Meaning | Construction | Root |
+Conf.`, with the parts of a compound on rows starting `- `. A multi-paragraph
+passage repeats these under `## Paragraph <n>`. The `Conf.` column says how
+a word with several dictionary senses was decided, and a legend under the table
+explains it:
+
+- `N`: Not checked. No saved selection; the first of several meanings was
+  chosen, and it may need review.
+- `A`: AI-checked. Picked by a machine (an AI request, or data built into the
+  app).
+- `H`: Human-checked. Confirmed by the user, or by selections and set phrases
+  built into the app.
+
+A word with one possible sense has an empty `Conf.`. While an AI response is
+awaited, a progress line is printed on stderr; stdout holds the document only.
+When an AI request fails, the document is still made (senses `N`, no
+translation), the failure is on stderr, and the exit code is 5. When the Simsapa
+app is running, the command does not write the AI's choices into the app's
+selection cache, and says so on stderr.
+
+The `gloss-pali-passage` skill (A.2.3) has an agent do the AI's part itself:
+it runs `simsapa gloss --no-ai`, chooses the senses of the `N` rows from their
+candidates (and marks them `A`), writes the Translation and the Literal
+Translation, and saves the document as `<reference>-gloss.md`, without making
+any LLM request of its own.
 
 ## A.3 Output: clean text, or `--json`
 
@@ -245,9 +321,10 @@ $ simsapa gloss "atthaññe dhammā"
 atthaññe  (pr) there is; there exists [√as + ti > atthi] pr  [atthi + aññe]
 dhammā    (fem) name of an arahant nun [√dhar + ma + ā], [dhamma + ā] fem, from dhamma
 
-$ simsapa lookup bhagavantaṁ bhagav
+$ simsapa lookup bhagavantaṁ bhagav evaṅkāmā
 bhagavantaṁ  bhagavantaṁ  found  bhagavant 1, bhagavant 2
 bhagav  bhagav  not_found
+evaṅkāmā  evaṅkāmā  found (inflection table)  evaṅkāma
 ```
 
 The text output shows the first, most useful part of each answer (for `gloss`,
@@ -290,6 +367,7 @@ partial match use `--mode "Contains Match"`.
 | 2 | the databases are not set up (run `simsapa setup`) |
 | 3 | the data folder is in use by the Simsapa app or another `simsapa` command |
 | 4 | not found (an unknown uid or reference; a `lookup` form that is `not_found` is a result, not exit 4) |
+| 5 | `gloss` only: the document was made, but an AI request failed; its senses are marked `N` and its translations are missing, and the failures are on stderr |
 | 130 | interrupted |
 
 ## A.5 Alongside the GUI app
@@ -1735,7 +1813,7 @@ views, not for headless data retrieval.
 | `GET /words/<uid>.json` | Full dictionary-word record as JSON (path form; raw `/` only); 404 + `[]` on miss | §13.3 |
 | `GET /word.json?uid=<uid>&[verbose=1]` | Full dictionary-word record as JSON (query form; uid encoding-agnostic). Default bare array, 404 + `[]` on miss; `verbose=1` → diagnostic envelope. A DPD headword (`<id>/dpd`) also carries `construction_summary` | §13.3 |
 | `POST /lookup_forms` | Exact DPD form lookup: up to 5,000 forms → one result per form, in input order, with every headword and split of the form's DPD `lookup` row and nothing chosen, DPD's parses of the form (`form_grammar_raw`, per headword `form_grammar`, per split component its own row's) and each headword's `root_base` / `root_sign` / `construction_summary`; `dpd_version`. 400 / 500 with JSON `{ "error" }` | §19.1 |
-| `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, incl. grouped deconstruction fields). With `options.exact: true`, every token in order with its exact lookup instead. 400 on bad body; empty text → 200 empty paragraphs | §16.1, §19.2 |
+| `POST /gloss_text` | Synchronously gloss `\n\n`-separated paragraphs, or a sutta `reference` → `AllParagraphsProcessingResult` JSON (full `ProcessedWord` per word, and in the default Word in Sentence format a `rows` list, one per token), or the analysis document (`output_format`: markdown, html, org). `"ai": true` uses the server's AI provider (GUI and `simsapa serve`). With `options.exact: true`, every token in order with its exact lookup instead. 400 on bad body or options; empty text → 200 empty paragraphs | §16.1, §19.2 |
 | `GET /word_selection_ws` | *GUI only (AI).* WebSocket word-selection run over glossed paragraphs; streams `status` / `error` / final `result` messages; accepts `cancel` | §16.2 |
 | `POST /set_ai_provider_key` | *GUI only (AI).* Set a provider's API key + enable it (and optionally a model), so the WebSocket engine — which uses the app's **saved** settings — can reach it. Never echoes the key | §16.4 |
 | `GET /ai_provider_key?provider=Gemini` | *GUI only (AI).* Read a provider's saved API key + enabled state (localhost demo prefill). Returns the key value | §16.4 |
@@ -1949,33 +2027,109 @@ calling agent makes the selections itself (§16.5).
 
 ### 16.1 `POST /gloss_text`
 
-Synchronous JSON glossing of one or more `\n\n`-separated paragraphs.
+Synchronous glossing of one or more `\n\n`-separated paragraphs, or of the
+Pāli text of a sutta reference.
 
-- **Request:** `{ "text": "<paragraphs, \n\n separated>", "options"?: {…} }`.
-  `options` (all optional): `no_duplicates_globally` (bool, default `false`),
-  `skip_common` (bool, default `false`), `common_words` (string[], default `[]`),
-  `exact` (bool, default `false`).
+- **Request:** `{ "text": "<paragraphs, \n\n separated>", "options"?: {…} }`,
+  or `{ "reference": "dhp23", "edition"?: "cst"|"ms", "paragraphs"?: "1-2 4", "options"?: {…} }`.
+  Give `text` or `reference`, never both.
+- **`options`** (all optional):
+
+  | Option | Default | Meaning |
+  |---|---|---|
+  | `gloss_format` | `"word_in_sentence"` | `"word_in_sentence"`: every token of the passage, in order, with its grammar (§16.1.1). `"headwords"`: the dictionary entries, a repeat within a paragraph left out; no `rows`. |
+  | `no_duplicates_globally` | `false` | Leave out a word already glossed earlier in the text (by lemma). |
+  | `skip_common` | `false` | Leave out the words of `common_words`. |
+  | `common_words` | `[]` | The words `skip_common` leaves out. |
+  | `exact` | `false` | One exact DPD lookup per token instead (§19.2). |
+  | `ai` | `false` | Ask the server's AI provider to choose the senses of ambiguous words (§16.1.2). |
+  | `translate` | `false` | Also translate each paragraph; only with `ai`. |
+  | `output_format` | `"json"` | `"json"`, or the analysis document as `"markdown"` (`text/markdown`), `"html"` (`text/html`) or `"org"` (`text/plain`), the same document the app's Gloss tab exports. |
+
+- **Reference input.** `reference` takes a sutta uid or reference (`dhp23`,
+  `sn1.71`, `SN 18.1`, `mn4/pli/ms`). The text is the CST edition when the
+  app has it, else the Mahāsaṅgīti (`ms`) one; `edition` asks for one of them
+  and is a `404` when that edition is missing (there is no CST Dhammapada, so
+  `dhp23` is always `ms`). A verse inside a range record is that verse only
+  (`dhp23` is the `dhp23` segments of `dhp21-32/pli/ms`); a Theragāthā or
+  Therīgāthā verse number (`th215`) is SuttaCentral's numbering and selects
+  that verse. `UD<n>` with no dot counts the Udāna's suttas through (`UD12`
+  is `ud2.2`), as the DPD passage analysis tool does; its `TH` numbers are
+  not SuttaCentral's. Headings are left out, and CST paragraph numbers too.
+  A paragraph is one CST paragraph, or one verse or paragraph of the `ms`
+  text; `paragraphs` selects some of them (`"1"`, `"1-3"`, `"1-2 4"`). The
+  document title names the reference and the record:
+  `Gloss of: dhp23 (dhp21-32/pli/ms)`.
 - **`exact: true`** switches to a different response, `ExactGlossResult`: one
   token per word of each paragraph, in order, each with its exact DPD lookup,
   and nothing deduplicated, skipped or chosen. Its shape, tokenisation and an
-  example are §19.2. The other three options do not apply to it, and setting
-  any of them to a non-default value with `exact: true` is a `400`. Without
-  `exact`, or with `false`, the response below is unchanged.
+  example are §19.2. `no_duplicates_globally`, `skip_common`, `common_words`,
+  `ai` and a non-JSON `output_format` do not apply to it, nor does
+  `gloss_format` `"word_in_sentence"` given explicitly; setting any of them
+  with `exact: true` is a `400`.
 - **Stateless per call.** Unlike in-app incremental glossing, the route keeps no
   cross-call dedup state; `no_duplicates_globally` applies **within the one
-  submitted text only** (the `existing_global_*` carry fields are zeroed).
-- **Response:** `AllParagraphsProcessingResult` —
-  `{ success, paragraphs[], global_unrecognized_words[], updated_global_stems{} }`.
-  Each `paragraphs[]` is `{ paragraph_index, unrecognized_words[], words_data[] }`;
-  each `words_data[]` is a full `ProcessedWord`.
-- **Errors:** 400 on an unparseable body, with Rocket's own HTML error page
-  (the mode is not known until the body parses); empty text → 200 with
-  `paragraphs: []`. A body over the server's 2 MiB `string` limit is also
-  Rocket's own non-JSON `400`. A database error in the default mode is a `200`
-  with `success: false`. In exact mode the errors found after parsing carry a
-  JSON `{ "error": "…" }` body: `400` for an option it rejects
-  (`"exact mode does not support these options: skip_common"`), `500` for a
-  database error.
+  submitted text only** (the `existing_global_*` carry fields are zeroed). It
+  writes nothing to the app's databases, AI choices included.
+- **Response (JSON):** `AllParagraphsProcessingResult` —
+  `{ success, paragraphs[], global_unrecognized_words[], updated_global_stems{} }`,
+  plus `ai_errors[]` when an AI run failed in part (§16.1.2).
+  Each `paragraphs[]` is `{ paragraph_index, words_data[], unrecognized_words[] }`;
+  each `words_data[]` is a full `ProcessedWord`. In the Word in Sentence
+  format each paragraph also has `rows[]` (§16.1.1), `variants[]` when the
+  text has `//` spelling alternatives, and `ai_translations[]` after an AI
+  translation. A field that would be empty is left out, so a Headwords
+  response has exactly the fields above.
+- **Errors:** 400 on an unparseable body, with Rocket's own HTML error page;
+  empty text → 200 with `paragraphs: []`. A body over the server's 2 MiB
+  `string` limit is also Rocket's own non-JSON `400`. A database error in the
+  default mode is a `200` with `success: false`. The errors found after
+  parsing carry a JSON `{ "error": "…" }` body: `400` for a bad combination
+  (`text` and `reference` together, neither, `translate` without `ai`,
+  `edition` or `paragraphs` without `reference`, an option exact mode rejects,
+  an unknown `gloss_format` / `output_format` / `edition`, a paragraph out of
+  range, `ai` on a server without AI: `"ai not available in this server"`),
+  `404` for a reference with no Pāli text, `500` for a database error in
+  exact mode.
+
+#### 16.1.1 Word in Sentence rows
+
+`rows[]` has one entry per token of the paragraph, in passage order, repeats
+included (unless `no_duplicates_globally` or `skip_common` leaves one out).
+Each row:
+
+| Field | Meaning |
+|---|---|
+| `word` | The token as written, with `ṁ` for the niggahīta; for a component row, the component. |
+| `depth` | 0 for a token; 1, 2, … for the components of a compound or sandhi word, which follow their token. |
+| `word_index` | The token's entry in `words_data`, which holds its sense choice; `null` for a token that was not found (it has no `words_data` entry) and for the components of a compound headword. |
+| `id` | The DPD headword id of the chosen sense; `null` when not found. |
+| `grammar` | The grammar of the token's form (`masc nom pl of jhāyī`), else the headword's grammar (`sandhi, ind + adj`), else, for a component, its part of speech (`pp`). |
+| `grammar_options`, `grammar_index` | The readings of the chosen sense when the form has several (`nt acc sg of ta`, `nt nom sg of ta`); `grammar` is the chosen one. |
+| `meaning` | The AI's contextual meaning when it gave one, else the headword's meaning (`meaning_1`, `; lit. …`); `"not found"` for a token that was not found. |
+| `construction`, `root` | The headword's construction and root (`√tan 7 o (stretch, extend)`), empty when it has none. |
+| `confidence` | `"N"` (not checked), `"A"` (AI-checked), `"H"` (human-checked), or `null` when there was only one sense to choose. |
+| `candidates[]`, `selected_candidate` | Every sense of the token with its own id, readings, meaning, construction and root, and the chosen one. |
+| `components[]` | The component rows (also flattened after the token, with `depth`, in the documents). |
+
+#### 16.1.2 `"ai": true`
+
+The server asks its AI provider, with the app's Fallback sequence and saved
+keys, to choose the senses of the ambiguous words (and, in the Word in
+Sentence format, their grammar readings, contextual meanings and the
+components of compound headwords); with `translate` it then asks for each
+paragraph's two translations, a readable Translation and a Literal
+Translation (`ai_translations[]`: `{ model_name, response, literal_translation }`,
+`response` being the Translation). The AI's choices are marked `A`. It is
+off by default: an agent calling the API normally chooses senses and writes
+translations itself, and the route never starts a paid request unasked.
+
+The GUI's server and `simsapa serve` can do this; another server gives `400`.
+An AI failure does not fail the request: the response is the result without
+the AI's choices (marked `N`) or translation, with each failure in
+`ai_errors[]`. With no AI provider enabled in the app, `ai_errors` says so.
+The request waits for the AI's answers, which can take minutes for a long
+text.
 
 **`ProcessedWord` — the grouped deconstruction fields.** The key fields for a compound-aware client:
 
@@ -2044,7 +2198,7 @@ a dedicated thread; the handler is a pure protocol adapter.
 
 | Message | Meaning |
 |---------|---------|
-| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>"},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. |
+| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>","rows_json"?:"<serialized rows>"},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. `rows_json`, a Word in Sentence paragraph's `rows` serialized the same way, is optional: with it the items also ask for grammar readings, contextual meanings and the components of compound headwords. A Headwords-format `words_data` is the usual input. |
 | `{"type":"cancel"}` | Abandon the in-flight run. |
 
 **Server → client messages:**
@@ -2605,7 +2759,9 @@ async function gloss() {
   try {
     const r = await fetch(base() + "/gloss_text", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      // This page renders the Headwords layout (one entry per word, repeats
+      // left out); the route's default is the Word in Sentence format.
+      body: JSON.stringify({ text, options: { gloss_format: "headwords" } }),
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
     DATA = await r.json();
@@ -2650,6 +2806,11 @@ provider key and no WebSocket are involved. Everything it needs is in the
 4. The chosen `uid`s are ordinary word uids: render or export them with §13.
    The numbers in `selected_index` and `selected_deconstruction_index` are the
    pipeline's defaults (the first option), not a judgement.
+5. In the Word in Sentence format (the default) `words_data` has one entry per
+   token, so a repeated word is listed once per occurrence, and `rows[]`
+   (§16.1.1) carries the same choices as a table: a row with `confidence`
+   `"N"` is one to choose for, among its `candidates[]`. Send
+   `"gloss_format": "headwords"` for one entry per word.
 
 A jq program that reduces the response to the choices, with each option's
 meaning as plain text:
@@ -3038,7 +3199,7 @@ word that was asked about.
 { "dpd_version": "v0.4.20260501",
   "results": [ { "input", "lookup_key", "status", "note"?,
                  "headwords": [ … ], "deconstructions": [ … ],
-                 "form_grammar_raw": [ … ] }, … ] }
+                 "form_grammar_raw": [ … ], "source"? }, … ] }
 ```
 
 - **Batch size:** up to **5,000** forms per call; 5,001 is a `400`. An empty
@@ -3058,12 +3219,24 @@ word that was asked about.
   (lowercase, `ṃ` → `ṁ`, the quote and iti rules of §18) and matched by
   equality on DPD's `lookup` key, shown back as `lookup_key`. No stem match,
   no "starts with", no respelling: `bhagav` and `vuttan` are `not_found`.
+- **Forms missing from DPD's `lookup` table.** That table lists mostly the
+  forms that occur in DPD's texts, while each headword's inflection table
+  lists its whole paradigm. When the key has no `lookup` row with headwords or
+  splits, the headwords whose inflection table holds the key (again by
+  equality) are returned, with `"source": "inflection_table"`: `yogasmā`
+  (found inside the compound *yogakkhema*) gives the *yoga* homonyms with
+  `masc abl sg`, and `evaṅkāmā` (MN 46; DPD's key is `evaṁkāmā`) gives
+  *evaṅkāma*. Grammarians' entries (`pos` `cs`, `letter`, `prefix`, `root`,
+  `suffix`, `ve`, or a meaning marked `(gram)`) are left out. The other DPD
+  lookups (dictionary search, gloss) do the same, so all of them agree.
 - **Iti sandhi** follows the rule of §18.1, over exact rows only: the joined
   form when DPD analyses it as `… + iti` (`cittan'ti` → `cittanti`, with its
   10 headwords **and** the split `cittaṁ + iti`), otherwise `<base> + iti`
   with `"source": "iti_rule"` (`magga’’nti` → `maggaṁ + iti`, never the verb).
 - **Nothing is chosen.** Every headword id and every split of the row is
   returned in DPD's order, with no ranking and no word-selection cache.
+- `source` is present only for an inflection-table answer, and is always
+  `"inflection_table"`; a `lookup` row's answer has no `source` key.
 - `status`: `found` (one or more headwords; splits may be present too),
   `deconstructed` (splits only), `not_found` (no DPD row with headwords or
   splits), `invalid` (empty after normalisation, more than one word, or a
@@ -3089,9 +3262,9 @@ word that was asked about.
 
 | Field | Value | Meaning |
 |---|---|---|
-| `status` | `found` | One or more headwords. `deconstructions` may be non-empty too (`cittan'ti`). |
+| `status` | `found` | One or more headwords. `deconstructions` may be non-empty too (`cittan'ti`). With `"source": "inflection_table"` the headwords come from DPD's inflection tables (`yogasmā`). |
 | | `deconstructed` | No headwords, at least one split (`atthaññe`, `magga’’nti`). |
-| | `not_found` | DPD's lookup table has no row for `lookup_key`, or a row with neither headwords nor splits. |
+| | `not_found` | DPD's lookup table has no row for `lookup_key` (or a row with neither headwords nor splits), and no inflection table holds it. |
 | | `invalid` | Not a single word form. `note` is one of `"empty after normalisation"` (`""`, or only punctuation), `"more than one word"` (`"a b"`), `"a uid query, not a word form"` (`"uid:iti"`). |
 | `matched_as` | `lemma` | `lookup_key` is the headword's citation form (`lemma_clean`): `iti` → `iti`, `bhante` → `bhante`. |
 | | `inflection` | Any other form of the headword. A plain comparison, a hint, not a ranking. |
@@ -3117,7 +3290,9 @@ The lemma has no homonym number and the class is broad (`noun`, `verb`,
   `bhavissanti` (§18.3). An `iti_rule` result (`magga’’nti`) gives `[]`: the joined
   row's grammar is exactly the analysis the rule rejected (`magganti` is the
   verb *maggati*), and the base's grammar is on the base component. `invalid`
-  and "no row" give `[]`.
+  and "no row" give `[]`. An `inflection_table` result lists one triple per
+  inflection-table cell that holds the form, in the same `[lemma, class,
+  parse]` shape (`["yoga","noun","masc abl sg"]`), once each.
 - `form_grammar_raw` (split component) is the component word's **own** exact
   lookup row's list, for `dpd` and `iti_rule` splits alike: `cittan'ti`'s
   `cittaṁ` component lists `["citta","noun","nt nom sg"]` & co.; the `iti`
@@ -3327,7 +3502,8 @@ rows that follow the DPD rows (`vuttan`: 10 DPD rows, 503 hits); the DPD rows
 are the ones whose `uid` ends in `/dpd`.
 
 The default `/gloss_text` uses the same lookup for each word, and also
-**chooses**: it drops repeats and, with `skip_common`, common words; it applies
+**chooses**: in the Headwords format it drops repeats, and with `skip_common`
+it drops common words; it applies
 the app's cached sense selections (`selected_index`); and it cuts a quoted iti
 form to its base (`vuttan’ti` → `vuttaṁ`), so the split is not shown (§18.2).
 Use it to build a reading aid, not to check forms.

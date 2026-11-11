@@ -153,6 +153,9 @@ fn mk_grouped() -> GroupedDpdLookup {
             },
         ],
         direct_uids: vec!["d1".to_string(), "d2".to_string()],
+        lookup_grammar: Vec::new(),
+        lookup_headword_ids: Vec::new(),
+        from_inflection_tables: false,
     }
 }
 
@@ -242,8 +245,9 @@ fn grouped_equals_flat_for_non_deconstructing_words() {
     // i2h-only inflection, a stem-only hit, and a "starts with" fallback. The
     // fallback word must get no break-down guess either (no key starting with
     // `abbhokirat` or `abbhokira` has a break-down), since a guess fills the
-    // results and Phase 8 never runs.
-    let words = ["sabbaso", "√akkh", "gacchati", "dhammassa", "abbhokirat"];
+    // results and Phase 8 never runs. `yogasmā` has no lookup row and is
+    // found in the inflection tables (Phase 4b).
+    let words = ["sabbaso", "√akkh", "gacchati", "dhammassa", "abbhokirat", "yogasmā"];
 
     for word in words {
         let grouped = app_data

@@ -36,6 +36,11 @@ Item {
     property string bg_color_darker: root.is_dark ? "#1C2025" : "#F8DA8E"
 
     property string border_color: root.is_dark ? "#0a0a0a" : "#ccc"
+    // Background of the AI word-selection status rows, distinct from the
+    // tab's own background so "Selecting words..." / "Request sent to ..."
+    // stand out.
+    property string ws_status_bg_color: root.is_dark ? "#1E3A55" : "#D6E8F7"
+    property string ws_status_border_color: root.is_dark ? "#3A6A99" : "#7FAAD3"
 
     // Signals
     signal requestWordSummary(string word)
@@ -46,6 +51,7 @@ Item {
     AiErrorUtils { id: ai_error_utils }
     PromptManager { id: pm }
     ClipboardManager { id: clipboard_manager }
+    AssetManager { id: screen_manager }
 
     // Shared AI-translation request/response bookkeeping (entry construction,
     // request_id fencing, retry, cancellation). The word-selection flow keeps
@@ -62,17 +68,37 @@ Item {
             paragraph_model.setProperty(ctx.paragraph_idx, "translations_json", json);
             root.session_needs_saving = true;
         }
+        // The gloss_translation requests check that the answer is the
+        // two-part translation JSON, and retry / fall back when it is not.
         send_request: function(ctx, entry_idx, entry, payload) {
             if (entry.send_mode === "parallel") {
-                pm.prompt_request(entry.request_id, ctx.paragraph_idx, entry_idx, entry.provider, entry.model_name, payload);
+                pm.gloss_translation_request(entry.request_id, ctx.paragraph_idx, entry_idx, entry.provider, entry.model_name, payload);
             } else {
-                pm.sequential_prompt_request(entry.request_id, ctx.paragraph_idx, entry_idx, payload);
+                pm.sequential_gloss_translation_request(entry.request_id, ctx.paragraph_idx, entry_idx, payload);
             }
         }
         build_payload: function(ctx, entry) {
             let paragraph = paragraph_model.get(ctx.paragraph_idx);
             if (!paragraph) return "";
-            return root.translation_prompt_for(paragraph, entry.with_vocab);
+            return root.translation_prompt_for(paragraph);
+        }
+        // The answer is {"translation", "literal_translation"}; the entry
+        // keeps the Translation in `response`, as older sessions do.
+        parse_response: function(ctx, response) {
+            let parsed_json = SuttaBridge.parse_gloss_translation(response);
+            if (ai_error_utils.is_error(parsed_json)) {
+                return { error: parsed_json };
+            }
+            try {
+                let t = JSON.parse(parsed_json);
+                return { response: t.translation || "", literal_translation: t.literal_translation || "" };
+            } catch (e) {
+                logger.error("parse_gloss_translation: invalid JSON: " + e);
+                return null;
+            }
+        }
+        on_entry_finished: function(ctx, entry) {
+            root.auto_translate_entry_finished(ctx.paragraph_idx);
         }
     }
 
@@ -206,6 +232,126 @@ Item {
         root.ai_translate_mode = SuttaBridge.get_gloss_ai_translate_mode();
     }
 
+    // The gloss layout of the session: "word_in_sentence" (a row per token,
+    // GlossWordInSentenceRow) or "headwords" (a vocabulary list). New
+    // sessions take the saved setting; a restored session keeps its own.
+    // See docs/gloss-ai-word-selection.md.
+    property string gloss_format: "word_in_sentence"
+    readonly property bool is_word_in_sentence: root.gloss_format === "word_in_sentence"
+
+    // A restored session or a new one changes the format; a user choice in
+    // the ComboBox may have replaced its binding.
+    onGloss_formatChanged: gloss_format_combo.currentIndex = root.gloss_format === "headwords" ? 1 : 0
+
+    // Translate each paragraph as soon as its gloss (and its AI word
+    // selection) is complete.
+    property bool auto_translate: false
+
+    // Set by switch_gloss_format() for the re-gloss it starts: paragraph
+    // index -> {text, words_data_json, translations_json, selected_ai_tab}.
+    property var format_switch_carry: null
+
+    // Whether the current dispatch mode has a model to send to. Refreshed on
+    // load, when the tab is shown and when the options are hovered: the
+    // models are edited in another window.
+    property bool has_translate_model: false
+
+    function refresh_has_translate_model() {
+        root.has_translate_model = root.ai_translate_mode === "sequential_retry"
+            ? coordinator.has_enabled_sequence_model()
+            : coordinator.enabled_parallel_models().length > 0;
+    }
+
+    function load_gloss_settings() {
+        root.gloss_format = SuttaBridge.get_gloss_format();
+        root.auto_translate = SuttaBridge.get_gloss_auto_translate();
+        root.refresh_has_translate_model();
+    }
+
+    onVisibleChanged: {
+        if (root.visible) root.refresh_has_translate_model();
+    }
+
+    // === Auto-translate ===
+    //
+    // Paragraphs waiting for their AI word selection before they are
+    // translated (index -> true), and paragraphs with an auto-translate
+    // request in flight (index -> true). The screen is kept on from the
+    // first request until the last one finishes or fails.
+    property var auto_translate_after_ws: ({})
+    property var auto_translate_in_flight: ({})
+
+    function auto_translate_update_screen_hold() {
+        let busy = Object.keys(root.auto_translate_in_flight).length > 0;
+        screen_manager.set_keep_screen_on("gloss-auto-translate", busy);
+    }
+
+    // Whether a translation of this paragraph is still waiting for a response.
+    function has_waiting_translation(paragraph_idx): bool {
+        let paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.translations_json) return false;
+        try {
+            for (let e of JSON.parse(paragraph.translations_json)) {
+                if (e.status === "waiting") return true;
+            }
+        } catch (e) {
+            logger.error("has_waiting_translation: " + e);
+        }
+        return false;
+    }
+
+    // Translate a glossed paragraph when Auto-translate is on: now, or after
+    // its word selection when one covers it. A paragraph whose translation
+    // is still in flight (an "Update Gloss" re-run) is not sent again.
+    function auto_translate_paragraph(paragraph_idx) {
+        if (!root.auto_translate) return;
+        root.refresh_has_translate_model();
+        if (!root.has_translate_model) return;
+        if (root.is_ws_paragraph_active(paragraph_idx)) {
+            let w = root.auto_translate_after_ws;
+            w[paragraph_idx] = true;
+            root.auto_translate_after_ws = Object.assign({}, w);
+            return;
+        }
+        if (root.has_waiting_translation(paragraph_idx)) return;
+        let entries = root.handle_ai_translate_request(paragraph_idx, true);
+        if (entries.length > 0) {
+            let f = root.auto_translate_in_flight;
+            f[paragraph_idx] = true;
+            root.auto_translate_in_flight = Object.assign({}, f);
+            root.auto_translate_update_screen_hold();
+        }
+    }
+
+    // The word selection of a paragraph finished (or failed): translate it
+    // if it was waiting for that.
+    function auto_translate_after_word_selection(paragraph_idx) {
+        let w = root.auto_translate_after_ws;
+        if (w[paragraph_idx] === undefined) return;
+        delete w[paragraph_idx];
+        root.auto_translate_after_ws = Object.assign({}, w);
+        root.auto_translate_paragraph(paragraph_idx);
+    }
+
+    // A translation entry of the paragraph reached its final state.
+    function auto_translate_entry_finished(paragraph_idx) {
+        if (root.auto_translate_in_flight[paragraph_idx] === undefined) return;
+        if (root.has_waiting_translation(paragraph_idx)) return;
+        let f = root.auto_translate_in_flight;
+        delete f[paragraph_idx];
+        root.auto_translate_in_flight = Object.assign({}, f);
+        root.auto_translate_update_screen_hold();
+    }
+
+    // Forget the pending auto-translations (the paragraphs were glossed
+    // again or the session changed): the entries they would answer are gone,
+    // so their answers are discarded and the screen hold is released.
+    function auto_translate_reset() {
+        root.auto_translate_after_ws = ({});
+        root.auto_translate_in_flight = ({});
+        root.auto_translate_update_screen_hold();
+    }
+
     // Whether the Fallback sequence has at least one enabled model (the
     // sequential engine has something to try).
     function has_enabled_sequence_model(): bool {
@@ -325,8 +471,10 @@ Item {
 
         for (let pi of dropped) {
             root.ws_clear_status(pi);
+            root.auto_translate_after_word_selection(pi);
         }
         root.ws_clear_status(paragraph_idx);
+        root.auto_translate_after_word_selection(paragraph_idx);
 
         // Keep the sequential queue moving: the dropped request's response is
         // now stale and no longer schedules the next request.
@@ -336,6 +484,7 @@ Item {
     // Drop all pipeline state (queued requests, statuses, request maps). A
     // response for a dropped request id is ignored by the response handler.
     function ws_reset() {
+        root.auto_translate_after_ws = ({});
         pm.cancel_sequential_requests();
         ws_pacing_timer.stop();
         root.ws_queue = [];
@@ -357,10 +506,16 @@ Item {
             if (pi >= paragraph_model.count) continue;
             let paragraph = paragraph_model.get(pi);
             if (!paragraph || !paragraph.words_data_json) continue;
-            paragraphs.push({
+            let input = {
                 paragraph_index: pi,
                 words_json: paragraph.words_data_json,
-            });
+            };
+            // With Word in Sentence rows the items also ask for grammar
+            // readings and for the components of compound headwords.
+            if (paragraph.rows_json && paragraph.rows_json !== "[]") {
+                input.rows_json = paragraph.rows_json;
+            }
+            paragraphs.push(input);
         }
         let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
         try {
@@ -371,18 +526,11 @@ Item {
         }
     }
 
-    // Assemble the combined prompt following the AI Translate convention:
-    // system prompt + "\n\n" + request template with the payload substituted.
+    // The combined prompt (system prompt + request template with the payload
+    // substituted), assembled in Rust so the CLI and the API send the same
+    // text (simsapa_backend::helpers::build_word_selection_prompt).
     function build_word_selection_prompt(items) {
-        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection System Prompt");
-        let template = SuttaBridge.get_system_prompt("Gloss Tab: Word Selection Request");
-        let payload = { task: "pali_word_selection", items: items };
-        let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", JSON.stringify(payload));
-        let combined_prompt = user_prompt;
-        if (system_prompt && system_prompt.trim() !== "") {
-            combined_prompt = system_prompt + "\n\n" + user_prompt;
-        }
-        return combined_prompt;
+        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items));
     }
 
     // Entry point: run AI word selection for the given paragraphs. Batched
@@ -541,7 +689,12 @@ Item {
                 let m = sel.id.match(/^p(\d+)w(\d+)(d|c\d+)?$/);
                 if (!m) continue;
                 let pi = parseInt(m[1], 10);
-                let entry = { word_idx: parseInt(m[2], 10), uid: sel.uid };
+                let entry = {
+                    word_idx: parseInt(m[2], 10),
+                    uid: sel.uid,
+                    grammar_index: sel.grammar_index,
+                    contextual_meaning: sel.contextual_meaning,
+                };
                 let suffix = m[3] || "";
                 if (suffix === "d") {
                     entry.kind = "d";
@@ -555,6 +708,9 @@ Item {
                     }
                 } else {
                     entry.kind = "sense";
+                    // An item with one option asks only for the reading.
+                    let it = items_by_id[sel.id];
+                    entry.option_count = (it && it.options) ? it.options.length : 0;
                 }
                 if (by_para[pi] === undefined) by_para[pi] = [];
                 by_para[pi].push(entry);
@@ -564,6 +720,11 @@ Item {
                 let noun = applied === 1 ? "word" : "words";
                 root.ws_set_status(pi, "success", `Word selections updated (${applied} ${noun})`);
             }
+        }
+
+        // Auto-translate waits for the word selection, successful or not.
+        for (let pi of covered) {
+            root.auto_translate_after_word_selection(pi);
         }
 
         // Sequential mode: schedule the next queued request.
@@ -677,6 +838,7 @@ Item {
         load_common_words();
         load_word_selection_settings();
         load_ai_translate_mode();
+        load_gloss_settings();
         if (root.is_qml_preview) {
             qml_preview_state();
         }
@@ -904,10 +1066,54 @@ Item {
         onAccepted: accept_fn() // qmllint disable use-proper-function
     }
 
+    // One-time explanation of the Word in Sentence format, opened before the
+    // first gloss in that format. Only OK records it as seen; closing it any
+    // other way shows it again on the next gloss.
+    Dialog {
+        id: word_in_sentence_info_dialog
+        title: "Word in Sentence Format"
+        modal: true
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        standardButtons: Dialog.Ok
+        header: DialogHeader { text: word_in_sentence_info_dialog.title }
+
+        // Width from the dialog, height from the label (the StorageDialog
+        // pattern): a RichText Label set as the contentItem with
+        // `width: parent.width` makes the Fusion implicitHeight binding loop.
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                textFormat: Text.RichText
+                text: "<p>The Gloss format: <b>Word in Sentence</b> setting shows more grammar details than the <b>Headwords</b> setting.</p>" +
+                    "<p>Both work best with <b>AI word selection</b>, which selects the specific meaning from the dictionary's results for the glossed word.</p>" +
+                    "<p>E.g. which of the many meanings of 'kamma' fits the given sentence context.</p>" +
+                    "<p>Enable an AI provider service in Prompts &gt; AI Models... by adding an API key.</p>" +
+                    "<p>Without AI, the first dictionary meaning is shown.</p>"
+            }
+        }
+
+        onAccepted: SuttaBridge.set_gloss_word_in_sentence_info_shown(true)
+    }
+
+    // Opens the Word in Sentence info dialog once, until the user dismisses it
+    // with OK.
+    function maybe_show_word_in_sentence_info() {
+        if (!root.is_word_in_sentence) return;
+        if (word_in_sentence_info_dialog.opened) return;
+        if (SuttaBridge.get_gloss_word_in_sentence_info_shown()) return;
+        word_in_sentence_info_dialog.open();
+    }
+
     MessageDialog {
         id: no_models_dialog
         title: "No AI Models"
-        text: "There are no enabled models. See Prompts menu > AI Models"
+        text: "There are no enabled models. See Prompts > AI Models"
         buttons: MessageDialog.Ok
     }
 
@@ -948,20 +1154,23 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         target_scroll_view: main_scroll_view
     }
 
-    // The full AI-translation prompt (system prompt + substituted template) for
-    // one paragraph.
-    function translation_prompt_for(paragraph, with_vocab): string {
-        let system_prompt = SuttaBridge.get_system_prompt("Gloss Tab: System Prompt");
-        let template_key = with_vocab ? "Gloss Tab: AI Translation with Vocabulary" : "Gloss Tab: AI Translation without Vocabulary";
-        let template = SuttaBridge.get_system_prompt(template_key);
-        let user_prompt = template
-            .replace("<<PALI_PASSAGE>>", paragraph.text)
-            .replace("<<DICTIONARY_DEFINITIONS>>", root.dictionary_definitions_from_paragraph(paragraph));
-
-        if (system_prompt && system_prompt.trim() !== "") {
-            return system_prompt + "\n\n" + user_prompt;
+    // The full two-part translation prompt for one paragraph: the system
+    // prompt and the "Gloss Tab: AI Translation" template with the passage
+    // and its chosen senses, assembled in Rust so the CLI sends the same text
+    // (simsapa_backend::gloss_translation).
+    function translation_prompt_for(paragraph): string {
+        let data = { text: paragraph.text };
+        try {
+            let rows = paragraph.rows_json ? JSON.parse(paragraph.rows_json) : [];
+            if (rows.length > 0) {
+                data.rows = rows;
+            } else {
+                data.words_data = paragraph.words_data_json ? JSON.parse(paragraph.words_data_json) : [];
+            }
+        } catch (e) {
+            logger.error("translation_prompt_for: " + e);
         }
-        return user_prompt;
+        return SuttaBridge.gloss_translation_prompt(JSON.stringify(data));
     }
 
     // Manual (user-clicked) re-send of one translation request. Automatic
@@ -980,34 +1189,38 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         coordinator.cancel({ paragraph_idx: paragraph_idx }, entry_idx);
     }
 
-    function handle_ai_translate_request(paragraph_index: int, with_vocab = true) {
-        logger.info(`AI Translate requested for paragraph ${paragraph_index}, with_vocab=${with_vocab}, mode=${root.ai_translate_mode}`);
+    // Send the AI Translate request(s) of a paragraph. `is_auto`: started by
+    // Auto-translate, which shows no dialog when there is no model. Returns
+    // the new entries (empty when nothing was sent).
+    function handle_ai_translate_request(paragraph_index: int, is_auto = false) {
+        logger.info(`AI Translate requested for paragraph ${paragraph_index}, mode=${root.ai_translate_mode}, auto=${is_auto}`);
 
         let paragraph = paragraph_model.get(paragraph_index);
         if (!paragraph) {
             logger.error(`handle_ai_translate_request: no paragraph at index ${paragraph_index}`);
-            return;
+            return [];
         }
 
         let mode = root.ai_translate_mode;
         let enabled_models = [];
         if (mode === "sequential_retry") {
             if (!coordinator.has_enabled_sequence_model()) {
-                no_models_dialog.open();
-                return;
+                if (!is_auto) no_models_dialog.open();
+                return [];
             }
         } else {
             // Parallel mode: one request per enabled Parallel-prompts model.
             enabled_models = coordinator.enabled_parallel_models();
             if (enabled_models.length === 0) {
-                no_models_dialog.open();
-                return;
+                if (!is_auto) no_models_dialog.open();
+                return [];
             }
         }
 
-        let combined_prompt = root.translation_prompt_for(paragraph, with_vocab);
-        let entries = coordinator.send_new({ paragraph_idx: paragraph_index }, mode, enabled_models, combined_prompt, { with_vocab: with_vocab });
+        let combined_prompt = root.translation_prompt_for(paragraph);
+        let entries = coordinator.send_new({ paragraph_idx: paragraph_index }, mode, enabled_models, combined_prompt, {});
         logger.info(`Created ${entries.length} translation entries`);
+        return entries;
     }
 
     function update_tab_selection(paragraph_idx, tab_index) {
@@ -1041,6 +1254,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     function session_data_json(): string {
         var gloss_data = {
             text: gloss_text_input.text,
+            gloss_format: root.gloss_format,
             paragraphs: [],
             no_duplicates_globally: root.no_duplicates_globally,
             skip_common: root.skip_common,
@@ -1069,9 +1283,20 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 }
             }
 
+            var rows = [];
+            var variants = [];
+            try {
+                rows = JSON.parse(paragraph.rows_json || "[]");
+                variants = JSON.parse(paragraph.variants_json || "[]");
+            } catch (e) {
+                logger.error("Failed to parse rows_json / variants_json: " + e);
+            }
+
             gloss_data.paragraphs.push({
                 text: paragraph.text,
                 words: words_data,
+                rows: rows,
+                variants: variants,
                 translations: translations,
                 selected_ai_tab: paragraph.selected_ai_tab || 0,
             });
@@ -1144,6 +1369,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     function new_session() {
         root.flush_if_needed();
         root.ws_reset();
+        root.auto_translate_reset();
+        root.gloss_format = SuttaBridge.get_gloss_format();
         root.current_session_id = "";
         gloss_text_input.text = "";
         root.current_text = "";
@@ -1326,64 +1553,23 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return previous_stems;
     }
 
-    function dictionary_definitions_from_paragraph(paragraph): string {
-        if (!paragraph || !paragraph.words_data_json) return "";
-
-        try {
-            var words_data = JSON.parse(paragraph.words_data_json);
-            let out = "";
-            for (var i = 0; i < words_data.length; i++) {
-                var w = words_data[i];
-                if (!w || !w.results || !w.results.length) continue;
-
-                // Deconstructor-resolved words (FR-A5 cases (c)/(d)): emit one
-                // line per visible component with its selected sense, so the AI
-                // translation context sees every sub-word of the compound.
-                var w_direct_uids = w.direct_uids || [];
-                var w_decs = w.deconstructions || [];
-                if (w_direct_uids.length === 0 && w_decs.length > 0) {
-                    var si = (w.selected_deconstruction_index !== null && w.selected_deconstruction_index !== undefined)
-                        ? w.selected_deconstruction_index : 0;
-                    var locked = w.deconstruction_locked || false;
-                    var comps = dec_utils.visible_components(w, si, locked);
-                    var comp_sel = w.component_selected_uids || ({});
-                    for (var ci = 0; ci < comps.length; ci++) {
-                        var cres = dec_utils.component_results(w, comps[ci]);
-                        if (cres.length === 0) continue;
-                        var cidx = 0;
-                        var csel_uid = comp_sel[comps[ci].word];
-                        if (csel_uid) {
-                            for (var ck = 0; ck < cres.length; ck++) {
-                                if (cres[ck].uid === csel_uid) { cidx = ck; break; }
-                            }
-                        }
-                        var csummary = summary_strip_html(cres[cidx].summary);
-                        out += `- ${comps[ci].word}: ${csummary}\n`;
-                    }
-                    continue;
-                }
-
-                var selected_idx = w.selected_index || 0;
-                if (selected_idx >= w.results.length) selected_idx = 0;
-
-                var summary = summary_strip_html(w.results[selected_idx].summary);
-                var def = `- ${w.original_word}: stem '${clean_stem(w.stem)}', ${summary}\n`;
-                out += def;
-            }
-            return out;
-        } catch (e) {
-            logger.error("Failed to parse words_data_json: " + e);
-            return "";
-        }
-    }
-
     // Handle results from background processing of all paragraphs
     function handle_all_paragraphs_results(results) {
         logger.debug(`🔄 Processing results for ${results.paragraphs.length} paragraphs`);
 
+        // A format switch re-glosses the same text and carries the session
+        // over (choices, readings, translations); it makes no AI request.
+        let carry = root.format_switch_carry;
+        root.format_switch_carry = null;
+
         // The paragraph list is rebuilt: any in-flight/queued word-selection
         // request now refers to stale content.
         root.ws_reset();
+        // A format switch keeps the translations, and with them the
+        // auto-translate requests in flight: their answers still land, so the
+        // screen stays on for them (checked again below). A new gloss drops
+        // the translations, and answers to them are discarded.
+        if (carry === null) root.auto_translate_reset();
 
         // Clear the paragraph model
         paragraph_model.clear();
@@ -1400,19 +1586,38 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             // Update paragraph unrecognized words
             root.paragraph_unrecognized_words[paragraph_result.paragraph_index] = paragraph_result.unrecognized_words || [];
 
+            let old = (carry !== null && carry[i] !== undefined && carry[i].text === paragraph_text) ? carry[i] : null;
+
             // Create model item
             let model_item = {
                 text: paragraph_text,
                 words_data_json: JSON.stringify(paragraph_result.words_data),
-                translations_json: "[]", // TODO: Preserve existing translations if any
-                selected_ai_tab: 0
+                rows_json: JSON.stringify(paragraph_result.rows || []),
+                variants_json: JSON.stringify(paragraph_result.variants || []),
+                translations_json: old !== null ? old.translations_json : "[]",
+                selected_ai_tab: old !== null ? old.selected_ai_tab : 0
             };
 
             paragraph_model.append(model_item);
+
+            if (old !== null) {
+                try {
+                    root.set_paragraph_words(i, paragraph_result.words_data, JSON.parse(old.words_data_json));
+                } catch (e) {
+                    logger.error("Format switch carry-over: " + e);
+                }
+            }
         }
 
         logger.debug(`✅ Successfully processed ${results.paragraphs.length} paragraphs`);
         root.session_needs_saving = true;
+        if (carry !== null) {
+            // Release the auto-translate requests that are no longer waiting.
+            for (let k of Object.keys(root.auto_translate_in_flight)) {
+                root.auto_translate_entry_finished(parseInt(k, 10));
+            }
+            return;
+        }
 
         // Auto-run AI word selection over all glossed paragraphs.
         if (root.is_word_selection_enabled() && paragraph_model.count > 0) {
@@ -1422,6 +1627,32 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             }
             root.start_word_selection(all_indexes, false);
         }
+
+        for (var ti = 0; ti < paragraph_model.count; ti++) {
+            root.auto_translate_paragraph(ti);
+        }
+    }
+
+    // Switch the gloss format (E7): re-gloss the paragraphs in the new format
+    // (the lookups are local) without an AI request, carrying the session's
+    // choices, readings and translations over by context.
+    function switch_gloss_format(format) {
+        if (format === root.gloss_format) return;
+        root.gloss_format = format;
+        SuttaBridge.set_gloss_format(format);
+        if (paragraph_model.count === 0) return;
+        let carry = {};
+        for (var i = 0; i < paragraph_model.count; i++) {
+            let p = paragraph_model.get(i);
+            carry[i] = {
+                text: p.text,
+                words_data_json: p.words_data_json,
+                translations_json: p.translations_json,
+                selected_ai_tab: p.selected_ai_tab,
+            };
+        }
+        root.format_switch_carry = carry;
+        root.start_background_all_glosses();
     }
 
     // Handle results from background processing of a single paragraph
@@ -1451,6 +1682,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         // Update the paragraph model
         paragraph_model.setProperty(paragraph_index, "words_data_json", JSON.stringify(results.words_data));
+        paragraph_model.setProperty(paragraph_index, "rows_json", JSON.stringify(results.rows || []));
+        paragraph_model.setProperty(paragraph_index, "variants_json", JSON.stringify(results.variants || []));
 
         logger.debug(`✅ Successfully processed paragraph ${paragraph_index}`);
         root.session_needs_saving = true;
@@ -1459,6 +1692,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         if (root.is_word_selection_enabled()) {
             root.start_word_selection([paragraph_index], false);
         }
+        root.auto_translate_paragraph(paragraph_index);
     }
 
     // Start background processing for all paragraphs
@@ -1476,6 +1710,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         logger.debug(`🚀 Starting background processing for ${paragraphs.length} paragraphs`);
 
+        root.maybe_show_word_in_sentence_info();
+
         // Set processing state
         root.is_processing_all = true;
         root.current_text = gloss_text_input.text;
@@ -1492,6 +1728,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 no_duplicates_globally: root.no_duplicates_globally,
                 skip_common: root.skip_common,
                 common_words: root.common_words,
+                gloss_format: root.gloss_format,
                 existing_global_stems: {},
                 existing_paragraph_unrecognized: {},
                 existing_global_unrecognized: []
@@ -1530,6 +1767,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 no_duplicates_globally: root.no_duplicates_globally,
                 skip_common: root.skip_common,
                 common_words: root.common_words,
+                gloss_format: root.gloss_format,
                 existing_global_stems: existing_global_stems,
                 existing_paragraph_unrecognized: root.paragraph_unrecognized_words,
                 existing_global_unrecognized: root.global_unrecognized_words
@@ -1545,8 +1783,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             var session_data = JSON.parse(gloss_data_json);
 
             root.ws_reset();
+            root.auto_translate_reset();
             paragraph_model.clear();
             root.current_text = session_data.text || "";
+            // A session saved before the format option is a Headwords
+            // session, and opens as it was saved.
+            root.gloss_format = session_data.gloss_format === "word_in_sentence" ? "word_in_sentence" : "headwords";
             root.no_duplicates_globally = session_data.no_duplicates_globally !== undefined ?
                                          session_data.no_duplicates_globally : true;
             root.skip_common = session_data.skip_common !== undefined ?
@@ -1564,6 +1806,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (session_data.paragraphs) {
                 for (var i = 0; i < session_data.paragraphs.length; i++) {
                     var para_data = session_data.paragraphs[i];
+                    var rows = para_data.rows || [];
                     var model_item = {
                         text: para_data.text || "",
                         // Re-derive resolution / checked state from the current
@@ -1571,11 +1814,19 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         // session's annotations (the cache may have changed, and
                         // pre-feature sessions lack context_hash).
                         words_data_json: SuttaBridge.annotate_gloss_words_json(JSON.stringify(para_data.words || [])),
+                        rows_json: JSON.stringify(rows),
+                        variants_json: JSON.stringify(para_data.variants || []),
                         translations_json: JSON.stringify(para_data.translations || []),
                         selected_ai_tab: para_data.selected_ai_tab || 0
                     };
 
                     paragraph_model.append(model_item);
+
+                    // The rows follow the re-derived words (resolutions,
+                    // component choices from the cache).
+                    if (rows.length > 0) {
+                        root.set_paragraph_words(i, JSON.parse(model_item.words_data_json));
+                    }
                 }
             }
 
@@ -1622,7 +1873,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         // Update model with new JSON
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
 
         root.session_needs_saving = true;
     }
@@ -1637,6 +1888,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // enforced per field: a late AI answer never overrides anything but an
     // earlier AI resolution — checked independently for the word sense, the
     // break-down and each component. Returns the number of applied selections.
+    //
+    // The grammar reading (`grammar_index`) and contextual meaning of an
+    // answer go into the session only (`reading` / `component_readings`),
+    // never into the cache; a sense item with one option asked only for the
+    // reading and writes no cache row. The Rust port of these rules,
+    // gloss_word_selection_apply.rs, must change together with this function
+    // (docs/gloss-ai-word-selection.md).
     function apply_word_selections(paragraph_idx, selections) {
         if (paragraph_idx >= paragraph_model.count) return 0;
 
@@ -1699,7 +1957,21 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 if (comp_saved) {
                     w.component_resolutions[cw] = "ai-selected";
                 }
+                if (!w.component_readings) w.component_readings = ({});
+                let comp_reading = root.ai_answer_reading(w.component_readings[cw] || null, sel);
+                if (comp_reading !== null) w.component_readings[cw] = comp_reading;
                 words_data[wi] = w;
+                applied += 1;
+                continue;
+            }
+
+            // A sense item with one option asked only for the reading: the
+            // sense is no choice, so no cache row and no resolution.
+            if (sel.option_count !== undefined && sel.option_count <= 1) {
+                if (!w.results.some(r => r.uid === sel.uid)) continue;
+                let only_reading = root.ai_answer_reading(w.reading || null, sel);
+                if (only_reading === null) continue;
+                words_data[wi].reading = only_reading;
                 applied += 1;
                 continue;
             }
@@ -1732,14 +2004,60 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (saved) {
                 words_data[wi].resolution = "ai-selected";
             }
+            let sense_reading = root.ai_answer_reading(w.reading || null, sel);
+            if (sense_reading !== null) words_data[wi].reading = sense_reading;
             applied += 1;
         }
 
         if (applied > 0) {
-            paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+            root.set_paragraph_words(paragraph_idx, words_data);
             root.session_needs_saving = true;
         }
         return applied;
+    }
+
+    // Store a paragraph's changed words, and rebuild its Word in Sentence rows
+    // from them (a sense, reading or break-down change also changes the
+    // row's grammar, meaning and components). A Headwords paragraph has no
+    // rows. `old_words` (optional): words whose session choices are carried
+    // over first (the format switch).
+    function set_paragraph_words(paragraph_idx, words_data, old_words) {
+        let words_json = JSON.stringify(words_data);
+        let paragraph = paragraph_model.get(paragraph_idx);
+        let rows_json = paragraph ? (paragraph.rows_json || "[]") : "[]";
+        if (rows_json !== "[]" || old_words !== undefined) {
+            let refreshed_json = SuttaBridge.refresh_gloss_paragraph_json(
+                JSON.stringify({ words_data: words_data, rows: JSON.parse(rows_json) }),
+                old_words !== undefined ? JSON.stringify(old_words) : "");
+            if (refreshed_json) {
+                try {
+                    let refreshed = JSON.parse(refreshed_json);
+                    words_json = JSON.stringify(refreshed.words_data);
+                    paragraph_model.setProperty(paragraph_idx, "rows_json", JSON.stringify(refreshed.rows));
+                } catch (e) {
+                    logger.error("set_paragraph_words: " + e);
+                }
+            }
+        }
+        paragraph_model.setProperty(paragraph_idx, "words_data_json", words_json);
+        root.session_needs_saving = true;
+    }
+
+    // The session reading of an AI answer: {uid, grammar_index?,
+    // contextual_meaning?, origin}, or null when the answer gives neither or
+    // the user already chose a reading for the same sense.
+    function ai_answer_reading(old_reading, sel) {
+        let has_index = sel.grammar_index !== undefined && sel.grammar_index !== null;
+        let has_meaning = sel.contextual_meaning !== undefined && sel.contextual_meaning !== null;
+        if (!has_index && !has_meaning) return null;
+        if (old_reading !== null && old_reading.uid === sel.uid
+            && old_reading.origin && old_reading.origin !== "ai-selected") {
+            return null;
+        }
+        let reading = { uid: sel.uid, origin: "ai-selected" };
+        if (has_index) reading.grammar_index = sel.grammar_index;
+        if (has_meaning) reading.contextual_meaning = sel.contextual_meaning;
+        return reading;
     }
 
     // Set or clear (null) a word's resolution annotation in words_data_json.
@@ -1758,7 +2076,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
         if (word_idx >= words_data.length) return;
         words_data[word_idx].resolution = resolution;
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
     }
 
@@ -1806,7 +2124,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             logger.error("update_deconstruction_selection: failed to save break-down for '" + w.original_word + "'");
         }
 
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
     }
 
@@ -1826,7 +2144,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
         if (word_idx >= words_data.length) return;
         words_data[word_idx].deconstruction_locked = locked;
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
     }
 
@@ -1863,7 +2181,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         words_data[word_idx] = w;
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
     }
 
@@ -1890,8 +2208,172 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             w.component_resolutions[component_word] = resolution;
         }
         words_data[word_idx] = w;
-        paragraph_model.setProperty(paragraph_idx, "words_data_json", JSON.stringify(words_data));
+        root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
+    }
+
+    // --- Word in Sentence rows (GlossWordInSentenceRow) ---
+    //
+    // A row's choice lives on a word of words_data (`ProcessedWord`), as in
+    // the Headwords list: a row with a word_index is that word's own choice
+    // (its sense, or its break-down when the deconstructor resolved it); a
+    // component row is a component choice of its token's word, keyed by the
+    // component word. See gloss_rows.rs and docs/gloss-ai-word-selection.md.
+
+    // The rows in table order, each token row followed by its components:
+    // [{ row, depth, kind: "sense"|"breakdown"|"component"|"none", key,
+    //    owner (word index), alt (token number) }].
+    function flatten_paragraph_rows(rows_json, words_json) {
+        let rows = [];
+        let words = [];
+        try {
+            rows = JSON.parse(rows_json || "[]");
+            words = JSON.parse(words_json || "[]");
+        } catch (e) {
+            logger.error("flatten_paragraph_rows: " + e);
+            return [];
+        }
+        let out = [];
+        let visit = function(row, owner, alt) {
+            let wi = row.word_index;
+            let kind = "none";
+            let key = "";
+            // A quoted iti token (`vā'ti`) wraps its base word: the base row
+            // below it holds the word's choice, the wrapper has none.
+            let wraps_word = (row.components || []).some(c => c.word_index === wi);
+            if (wi !== null && wi !== undefined && wraps_word) {
+                owner = wi;
+            } else if (wi !== null && wi !== undefined) {
+                owner = wi;
+                let w = words[wi];
+                let is_dec = w && (w.direct_uids || []).length === 0 && (w.deconstructions || []).length > 0;
+                kind = is_dec ? "breakdown" : "sense";
+            } else if (row.depth > 0 && owner !== null) {
+                kind = "component";
+                key = row.word;
+            }
+            let flat = Object.assign({}, row);
+            delete flat.components;
+            out.push({ row: flat, depth: row.depth, kind: kind, key: key, owner: owner, alt: alt });
+            for (let c of (row.components || [])) {
+                visit(c, owner, alt);
+            }
+        };
+        for (let i = 0; i < rows.length; i++) {
+            visit(rows[i], null, i);
+        }
+        return out;
+    }
+
+    function paragraph_words(paragraph_idx) {
+        let paragraph = paragraph_model.get(paragraph_idx);
+        if (!paragraph || !paragraph.words_data_json) return null;
+        try {
+            return JSON.parse(paragraph.words_data_json);
+        } catch (e) {
+            logger.error("paragraph_words: " + e);
+            return null;
+        }
+    }
+
+    // The uid of the row's chosen candidate.
+    function row_chosen_uid(item): string {
+        let c = item.row.candidates[item.row.selected_candidate];
+        return c ? c.uid : "";
+    }
+
+    // The user picked another sense (or break-down) in a row's ComboBox:
+    // saved as a "user-selected" row, as in the Headwords list.
+    function update_row_choice(paragraph_idx, item, candidate_idx) {
+        let cand = item.row.candidates[candidate_idx];
+        if (!cand || item.owner === null) return;
+        let words = root.paragraph_words(paragraph_idx);
+        if (words === null || item.owner >= words.length) return;
+        let w = words[item.owner];
+        if (item.kind === "sense") {
+            let idx = w.results.findIndex(r => r.uid === cand.uid);
+            if (idx >= 0) root.update_word_selection(paragraph_idx, item.owner, idx);
+        } else if (item.kind === "breakdown") {
+            let idx = (w.deconstructions || []).findIndex(d => d.words_joined === cand.uid);
+            if (idx >= 0) root.update_deconstruction_selection(paragraph_idx, item.owner, idx);
+        } else if (item.kind === "component") {
+            root.update_component_selection(paragraph_idx, item.owner, item.key, cand.uid);
+        }
+    }
+
+    // The user picked another grammar reading: kept in the session only
+    // (never cached), with the reading's contextual meaning.
+    function update_row_reading(paragraph_idx, item, grammar_index) {
+        if (item.owner === null) return;
+        let words = root.paragraph_words(paragraph_idx);
+        if (words === null || item.owner >= words.length) return;
+        let w = words[item.owner];
+        let uid = root.row_chosen_uid(item);
+        let old = item.kind === "component" ? (w.component_readings || {})[item.key] : w.reading;
+        let reading = { uid: uid, grammar_index: grammar_index, origin: "user-selected" };
+        if (old && old.uid === uid && old.contextual_meaning) {
+            reading.contextual_meaning = old.contextual_meaning;
+        }
+        if (item.kind === "component") {
+            if (!w.component_readings) w.component_readings = ({});
+            w.component_readings[item.key] = reading;
+        } else {
+            w.reading = reading;
+        }
+        root.set_paragraph_words(paragraph_idx, words);
+    }
+
+    // Set or clear (null) the resolution of a row's choice (session state;
+    // the caller writes or deletes the cache row).
+    function set_row_resolution(paragraph_idx, item, resolution) {
+        if (item.kind === "sense") {
+            root.set_word_resolution(paragraph_idx, item.owner, resolution);
+        } else if (item.kind === "component") {
+            root.set_component_resolution(paragraph_idx, item.owner, item.key, resolution);
+        } else if (item.kind === "breakdown") {
+            let words = root.paragraph_words(paragraph_idx);
+            if (words === null || item.owner >= words.length) return;
+            words[item.owner].deconstruction_resolution = resolution;
+            root.set_paragraph_words(paragraph_idx, words);
+        }
+    }
+
+    // A row's shield, with the Headwords list's click cycle: outline / half →
+    // the shown sense saved as "user-selected"; the user's own row → confirm
+    // and delete it; a built-in row → ignored for this session.
+    function row_shield_clicked(paragraph_idx, item) {
+        if (item.owner === null) return;
+        let words = root.paragraph_words(paragraph_idx);
+        if (words === null || item.owner >= words.length) return;
+        let w = words[item.owner];
+        let sh = root.shield_state(item.row.resolution || null);
+        if (sh.state === "human") {
+            if (sh.owned) {
+                unsave_word_dialog.paragraph_idx = paragraph_idx;
+                unsave_word_dialog.word_idx = item.owner;
+                unsave_word_dialog.word = item.kind === "component" ? item.key : w.original_word;
+                unsave_word_dialog.word_context_hash = w.context_hash || "";
+                unsave_word_dialog.component_word = item.kind === "component" ? item.key : "";
+                unsave_word_dialog.is_breakdown = item.kind === "breakdown";
+                unsave_word_dialog.open();
+            } else {
+                root.set_row_resolution(paragraph_idx, item, null);
+            }
+            return;
+        }
+        let uid = root.row_chosen_uid(item);
+        let ok = false;
+        if (item.kind === "breakdown") {
+            ok = SuttaBridge.save_gloss_word_deconstruction_cache(w.original_word, w.example_sentence || "", uid, "user-selected");
+        } else {
+            let word = item.kind === "component" ? item.key : w.original_word;
+            ok = SuttaBridge.save_gloss_word_cache(word, w.example_sentence || "", uid, "user-selected");
+        }
+        if (ok) {
+            root.set_row_resolution(paragraph_idx, item, "user-selected");
+        } else {
+            logger.error("Failed to save the selection for '" + item.row.word + "'");
+        }
     }
 
     // Map a word's resolution value to its shield confidence indicator: the
@@ -1946,7 +2428,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return {
             state: "none", owned: false,
             icon: "icons/32x32/famicons--shield-outline.png",
-            tooltip: "Not checked — plain dictionary lookup. Click to confirm the shown sense as Human-checked."
+            tooltip: "Not checked (plain dictionary lookup). Click to confirm the shown sense as Human-checked."
         };
     }
 
@@ -1964,47 +2446,19 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return text;
     }
 
+    // The export data (`GlossExportData`, backend/src/export_types.rs) of
+    // the session. Each paragraph is built in Rust by the same builder as
+    // the CLI's (SuttaBridge.gloss_export_paragraph_json →
+    // gloss_export_builder::build_export_paragraph), so the GUI and the CLI
+    // write the same document for the same gloss; here only the
+    // translations are put in export order (the selected tab first).
     function gloss_export_data(): var {
-        // paragraph_model_export:
-        // {
-        //     text: paragraphs[i],
-        //     words_data_json: JSON.stringify(glossed_words),
-        // }
-        //
-        // words_data:
-        // {
-        //     original_word: word,
-        //     results: lookup_results,
-        //     selected_index: 0,
-        //     stem: lookup_results[0].word,
-        //     example_sentence: sentence || "",
-        // }
-        //
-        // results (Vec<LookupResult>):
-        // {
-        //     uid: String,
-        //     word: String,
-        //     summary: String,
-        // }
-        //
-        // Returns:
-        // {
-        //     text: "...",
-        //     paragraphs: [
-        //         {
-        //             text: "...",
-        //             vocabulary: [
-        //                 {
-        //                     word: "...",
-        //                     summary: "...",
-        //                 }
-        //             ]
-        //         }
-        //     ]
-        // }
-
+        root.refresh_has_translate_model();
         let gloss_data = {
             text: gloss_text_input.text.trim(),
+            gloss_format: root.gloss_format,
+            title: "",
+            no_ai_provider: !root.has_translate_model && !root.is_word_selection_enabled(),
             paragraphs: [],
         };
 
@@ -2012,104 +2466,64 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             var paragraph = paragraph_model.get(i);
             if (!paragraph) continue;
 
-            var para_data = {
-                text: paragraph.text ? paragraph.text.trim() : "",
-                vocabulary: [],
-                ai_translations: [],
+            var input = {
+                text: paragraph.text ? paragraph.text : "",
+                words_data: [],
+                rows: [],
+                variants: [],
+                ai_translations: root.export_translations(paragraph),
             };
-
-            if (paragraph.words_data_json) {
-                try {
-                    var words_data = JSON.parse(paragraph.words_data_json);
-                    for (var j = 0; j < words_data.length; j++) {
-                        var w_data = words_data[j];
-                        if (!w_data || !w_data.results || w_data.results.length == 0) continue;
-
-                        // Deconstructor-resolved words (FR-A5 cases (c)/(d)):
-                        // export one line per VISIBLE component (lock filtering
-                        // applied) with that component's selected sense.
-                        var w_direct_uids = w_data.direct_uids || [];
-                        var w_decs = w_data.deconstructions || [];
-                        if (w_direct_uids.length === 0 && w_decs.length > 0) {
-                            var si = (w_data.selected_deconstruction_index !== null && w_data.selected_deconstruction_index !== undefined)
-                                ? w_data.selected_deconstruction_index : 0;
-                            var locked = w_data.deconstruction_locked || false;
-                            var comps = dec_utils.visible_components(w_data, si, locked);
-                            var comp_sel = w_data.component_selected_uids || ({});
-                            for (var c = 0; c < comps.length; c++) {
-                                var cres = dec_utils.component_results(w_data, comps[c]);
-                                if (cres.length === 0) continue;
-                                var cidx = 0;
-                                var csel_uid = comp_sel[comps[c].word];
-                                if (csel_uid) {
-                                    for (var ck = 0; ck < cres.length; ck++) {
-                                        if (cres[ck].uid === csel_uid) { cidx = ck; break; }
-                                    }
-                                }
-                                var citem = Object.assign({}, cres[cidx]);
-                                citem.context_snippet = w_data.example_sentence || "";
-                                para_data.vocabulary.push(citem);
-                            }
-                            continue;
-                        }
-
-                        var selected_index = w_data.selected_index || 0;
-                        if (selected_index >= w_data.results.length) selected_index = 0;
-
-                        // Add one line of word vocabulary info.
-                        // For each word, export only the selected result.
-                        var vocab_item = Object.assign({}, w_data.results[selected_index]);
-                        vocab_item.context_snippet = w_data.example_sentence || "";
-                        para_data.vocabulary.push(vocab_item);
-                    }
-                } catch (e) {
-                    logger.error("Failed to parse words_data_json: " + e);
-                }
+            try {
+                input.words_data = JSON.parse(paragraph.words_data_json || "[]");
+                input.rows = JSON.parse(paragraph.rows_json || "[]");
+                input.variants = JSON.parse(paragraph.variants_json || "[]");
+            } catch (e) {
+                logger.error("gloss_export_data: " + e);
             }
 
-            // Add AI translations if they exist
-            if (paragraph.translations_json) {
+            var para_json = SuttaBridge.gloss_export_paragraph_json(JSON.stringify(input), root.gloss_format);
+            var para_data = { text: input.text.trim(), vocabulary: [], ai_translations: input.ai_translations, variants: [], rows: [] };
+            if (para_json) {
                 try {
-                    var translations = JSON.parse(paragraph.translations_json);
-                    var selected_tab_index = paragraph.selected_ai_tab || 0;
-                    var selected_translation = null;
-                    var other_translations = [];
-
-                    for (var k = 0; k < translations.length; k++) {
-                        var trans = translations[k];
-                        if (trans.status === "completed" && trans.response && trans.response.trim()) {
-                            var isSelected = (k === selected_tab_index);
-                            if (isSelected) {
-                                selected_translation = {
-                                    model_name: trans.model_name,
-                                    response: trans.response,
-                                    is_selected: true
-                                };
-                            } else {
-                                other_translations.push({
-                                    model_name: trans.model_name,
-                                    response: trans.response,
-                                    is_selected: false
-                                });
-                            }
-                        }
-                    }
-
-                    // Add selected translation first, then others
-                    if (selected_translation) {
-                        para_data.ai_translations.push(selected_translation);
-                    }
-                    para_data.ai_translations = para_data.ai_translations.concat(other_translations);
-
+                    para_data = JSON.parse(para_json);
                 } catch (e) {
-                    logger.error("Failed to parse translations_json: " + e);
+                    logger.error("gloss_export_data: invalid paragraph JSON: " + e);
                 }
             }
-
             gloss_data.paragraphs.push(para_data);
         }
 
         return gloss_data;
+    }
+
+    // A paragraph's completed translations, the selected tab first.
+    function export_translations(paragraph) {
+        let out = [];
+        if (!paragraph.translations_json) return out;
+        try {
+            let translations = JSON.parse(paragraph.translations_json);
+            let selected_tab_index = paragraph.selected_ai_tab || 0;
+            let others = [];
+            for (var k = 0; k < translations.length; k++) {
+                let trans = translations[k];
+                if (trans.status !== "completed" || !trans.response || !trans.response.trim()) continue;
+                let t = {
+                    model_name: trans.model_name,
+                    response: trans.response,
+                    literal_translation: trans.literal_translation || "",
+                    is_selected: k === selected_tab_index,
+                };
+                if (t.is_selected) {
+                    out.push(t);
+                } else {
+                    others.push(t);
+                }
+            }
+            out = out.concat(others);
+        } catch (e) {
+            logger.error("Failed to parse translations_json: " + e);
+        }
+        return out;
     }
 
     // The HTML / Markdown / Org-Mode formatting is done in Rust (text_export.rs)
@@ -2163,7 +2577,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         let gloss_data = root.gloss_export_data();
         let note_count = 0;
         for (var i = 0; i < gloss_data.paragraphs.length; i++) {
-            note_count += gloss_data.paragraphs[i].vocabulary.length;
+            let p = gloss_data.paragraphs[i];
+            note_count += (p.vocabulary || []).length;
+            note_count += (p.rows || []).filter(r => r.id !== null && r.id !== undefined).length;
         }
 
         root.exporting_note_count = note_count;
@@ -2335,32 +2751,43 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         // selection request is in flight or queued; Cancel drops
                         // the whole run (in-flight responses arrive stale and
                         // are ignored).
-                        RowLayout {
+                        Rectangle {
                             Layout.fillWidth: true
                             visible: root.is_ws_any_active()
-                            spacing: 8
+                            implicitHeight: ws_global_row.implicitHeight + 12
+                            color: root.ws_status_bg_color
+                            border.color: root.ws_status_border_color
+                            border.width: 1
+                            radius: 4
 
-                            BusyIndicator {
-                                running: parent.visible
-                                Layout.preferredHeight: 24
-                                Layout.preferredWidth: 24
-                            }
+                            RowLayout {
+                                id: ws_global_row
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                spacing: 8
 
-                            Text {
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                                font.pointSize: root.vocab_font_point_size
-                                color: root.text_color
-                                text: {
-                                    let n = root.ws_pending_count();
-                                    let noun = n === 1 ? "paragraph" : "paragraphs";
-                                    return `Selecting words... ${n} ${noun} remaining.`;
+                                BusyIndicator {
+                                    running: parent.visible
+                                    Layout.preferredHeight: 24
+                                    Layout.preferredWidth: 24
                                 }
-                            }
 
-                            Button {
-                                text: "Cancel"
-                                onClicked: root.ws_reset()
+                                Text {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                    text: {
+                                        let n = root.ws_pending_count();
+                                        let noun = n === 1 ? "paragraph" : "paragraphs";
+                                        return `Selecting words... ${n} ${noun} remaining.`;
+                                    }
+                                }
+
+                                Button {
+                                    text: "Cancel"
+                                    onClicked: root.ws_reset()
+                                }
                             }
                         }
 
@@ -2422,7 +2849,27 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 spacing: 5
 
                                 Text {
-                                    text: "AI translation:"
+                                    text: "Gloss format:"
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                }
+
+                                ComboBox {
+                                    id: gloss_format_combo
+                                    model: ["Word in Sentence", "Headwords"]
+                                    currentIndex: root.gloss_format === "headwords" ? 1 : 0
+                                    enabled: !root.is_processing_all && !root.is_ws_any_active()
+                                    onActivated: function(index) {
+                                        root.switch_gloss_format(index === 1 ? "headwords" : "word_in_sentence");
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                spacing: 5
+
+                                Text {
+                                    text: "Dispatch mode:"
                                     font.pointSize: root.vocab_font_point_size
                                     color: root.text_color
                                 }
@@ -2434,15 +2881,65 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                     onActivated: function(index) {
                                         root.ai_translate_mode = index === 1 ? "parallel" : "sequential_retry";
                                         SuttaBridge.set_gloss_ai_translate_mode(root.ai_translate_mode);
+                                        root.refresh_has_translate_model();
                                     }
                                 }
                             }
 
-                            Button {
-                                text: "Word Selection..."
-                                icon.source: "icons/32x32/famicons--shield-half-outline.png"
-                                icon.color: "transparent"
-                                onClicked: word_selection_dialog.open()
+                            // Disabled without a model for the dispatch mode. A
+                            // disabled control gets no hover, so the tooltip
+                            // hangs on a wrapper.
+                            Item {
+                                implicitWidth: auto_translate_check.implicitWidth
+                                implicitHeight: auto_translate_check.implicitHeight
+
+                                HoverHandler {
+                                    id: auto_translate_hover
+                                    onHoveredChanged: if (hovered) root.refresh_has_translate_model()
+                                }
+
+                                CheckBox {
+                                    id: auto_translate_check
+                                    text: "Auto-translate"
+                                    checked: root.auto_translate
+                                    enabled: root.has_translate_model
+                                    onToggled: {
+                                        root.auto_translate = auto_translate_check.checked;
+                                        SuttaBridge.set_gloss_auto_translate(root.auto_translate);
+                                    }
+                                }
+
+                                ToolTip.visible: auto_translate_hover.hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: root.has_translate_model
+                                    ? "Translate each paragraph when its gloss is complete."
+                                    : "No AI model is enabled for the dispatch mode. See Prompts > AI Models."
+                            }
+
+                            // On/off for AI word selection, persisted through the
+                            // dialog's persist_selection() (one writer of the
+                            // setting). The info button opens the dialog with the
+                            // shield legend and the cache maintenance.
+                            RowLayout {
+                                spacing: 0
+
+                                CheckBox {
+                                    id: word_selection_check
+                                    text: "AI word selection"
+                                    checked: root.word_selection_setting_enabled
+                                    onToggled: word_selection_dialog.persist_selection(word_selection_check.checked)
+                                }
+
+                                Button {
+                                    flat: true
+                                    icon.source: "icons/32x32/fa_circle-info-solid.png"
+                                    Layout.preferredWidth: word_selection_check.implicitHeight
+                                    Layout.preferredHeight: word_selection_check.implicitHeight
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 500
+                                    ToolTip.text: "About AI word selection"
+                                    onClicked: word_selection_dialog.open()
+                                }
                             }
 
                             Button {
@@ -2577,6 +3074,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             required property int index
             required property string text
             required property string words_data_json
+            required property string rows_json
             required property string translations_json
             required property int selected_ai_tab
 
@@ -2649,14 +3147,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
                             Button {
                                 id: ai_translate_btn
-                                text: "AI Translate w/ Vocab"
-                                onClicked: root.handle_ai_translate_request(paragraph_item.index, true)
-                            }
-
-                            Button {
-                                id: ai_translate_no_vocab_btn
-                                text: "w/o Vocab"
-                                onClicked: root.handle_ai_translate_request(paragraph_item.index, false)
+                                text: "AI Translate"
+                                onClicked: root.handle_ai_translate_request(paragraph_item.index)
                             }
 
                             Button {
@@ -2680,61 +3172,71 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
                 // AI word-selection status: waiting / busy / auto-hiding
                 // success / persistent error, under the paragraph text input.
-                RowLayout {
-                    id: ws_status_row
+                Rectangle {
                     Layout.fillWidth: true
                     Layout.leftMargin: 10
                     Layout.rightMargin: 10
-                    spacing: 8
+                    visible: ws_status_row.ws_state !== undefined
+                    implicitHeight: ws_status_row.implicitHeight + 12
+                    color: root.ws_status_bg_color
+                    border.color: root.ws_status_border_color
+                    border.width: 1
+                    radius: 4
 
-                    property var ws_state: root.ws_status[paragraph_item.index]
-                    visible: ws_state !== undefined
+                    RowLayout {
+                        id: ws_status_row
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 8
 
-                    onWs_stateChanged: {
-                        if (ws_state !== undefined && ws_state.state === "success") {
-                            ws_success_hide_timer.restart();
+                        property var ws_state: root.ws_status[paragraph_item.index]
+
+                        onWs_stateChanged: {
+                            if (ws_state !== undefined && ws_state.state === "success") {
+                                ws_success_hide_timer.restart();
+                            }
                         }
-                    }
 
-                    Timer {
-                        id: ws_success_hide_timer
-                        interval: 4000
-                        onTriggered: root.ws_clear_status(paragraph_item.index, "success")
-                    }
-
-                    BusyIndicator {
-                        visible: ws_status_row.ws_state !== undefined && ws_status_row.ws_state.state === "busy"
-                        running: visible
-                        Layout.preferredHeight: 24
-                        Layout.preferredWidth: 24
-                    }
-
-                    Text {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        font.pointSize: root.vocab_font_point_size
-                        text: {
-                            let s = ws_status_row.ws_state;
-                            if (s === undefined) return "";
-                            if (s.state === "waiting") return "Waiting for word selection...";
-                            return s.message || "";
+                        Timer {
+                            id: ws_success_hide_timer
+                            interval: 4000
+                            onTriggered: root.ws_clear_status(paragraph_item.index, "success")
                         }
-                        color: {
-                            let s = ws_status_row.ws_state;
-                            if (s !== undefined && s.state === "error") return "#E53935";
-                            if (s !== undefined && s.state === "success") return "#4CAF50";
-                            return root.text_color;
-                        }
-                    }
 
-                    // Cancel waiting for this paragraph's selection (drops the
-                    // whole covering request in batched mode).
-                    Button {
-                        text: "Cancel"
-                        visible: ws_status_row.ws_state !== undefined &&
-                                 (ws_status_row.ws_state.state === "waiting" ||
-                                  ws_status_row.ws_state.state === "busy")
-                        onClicked: root.ws_cancel_paragraph(paragraph_item.index)
+                        BusyIndicator {
+                            visible: ws_status_row.ws_state !== undefined && ws_status_row.ws_state.state === "busy"
+                            running: visible
+                            Layout.preferredHeight: 24
+                            Layout.preferredWidth: 24
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            font.pointSize: root.vocab_font_point_size
+                            text: {
+                                let s = ws_status_row.ws_state;
+                                if (s === undefined) return "";
+                                if (s.state === "waiting") return "Waiting for word selection...";
+                                return s.message || "";
+                            }
+                            color: {
+                                let s = ws_status_row.ws_state;
+                                if (s !== undefined && s.state === "error") return "#E53935";
+                                if (s !== undefined && s.state === "success") return "#4CAF50";
+                                return root.text_color;
+                            }
+                        }
+
+                        // Cancel waiting for this paragraph's selection (drops the
+                        // whole covering request in batched mode).
+                        Button {
+                            text: "Cancel"
+                            visible: ws_status_row.ws_state !== undefined &&
+                                     (ws_status_row.ws_state.state === "waiting" ||
+                                      ws_status_row.ws_state.state === "busy")
+                            onClicked: root.ws_cancel_paragraph(paragraph_item.index)
+                        }
                     }
                 }
 
@@ -2768,14 +3270,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                     }
 
                     Text {
-                        text: {
-                            let translations = assistant_responses_component.translations_data;
-                            if (translations && translations.length > 0) {
-                                // The first translation determines whether the run was with or without vocab.
-                                return translations[0].with_vocab ? "AI Translations w/ Vocab:" : "AI Translations w/o Vocab:";
-                            }
-                            return "AI Translations:";
-                        }
+                        text: "AI Translation:"
                         color: root.text_color
                         font.bold: true
                         font.pointSize: root.vocab_font_point_size
@@ -2855,7 +3350,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         }
 
                         Text {
-                            text: "Dictionary definitions from DPD:"
+                            text: root.is_word_in_sentence ? "Word in Sentence:" : "Dictionary definitions from DPD:"
                             color: root.text_color
                             font.bold: true
                             font.pointSize: root.vocab_font_point_size
@@ -2945,16 +3440,53 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                         }
                     }
 
+                    // Word in Sentence: a row per token, components indented.
+                    ColumnLayout {
+                        id: word_in_sentence_gloss
+                        Layout.fillWidth: true
+                        spacing: 2
+                        visible: root.is_word_in_sentence && !vocab_collapse_btn.checked
+
+                        Repeater {
+                            model: root.is_word_in_sentence
+                                ? root.flatten_paragraph_rows(paragraph_item.rows_json, paragraph_item.words_data_json)
+                                : []
+
+                            delegate: GlossWordInSentenceRow {
+                                id: wis_row
+                                required property var modelData
+                                item: wis_row.modelData
+                                shield: root.shield_state(wis_row.modelData.row.resolution || null)
+                                is_mobile: root.is_mobile
+                                font_point_size: root.vocab_font_point_size
+                                text_color: root.text_color
+                                bg_color: root.bg_color
+                                bg_color_lighter: root.bg_color_lighter
+                                onSense_activated: (candidate_index) => {
+                                    root.update_row_choice(paragraph_item.index, wis_row.modelData, candidate_index);
+                                }
+                                onGrammar_activated: (grammar_index) => {
+                                    root.update_row_reading(paragraph_item.index, wis_row.modelData, grammar_index);
+                                }
+                                onShield_clicked: root.row_shield_clicked(paragraph_item.index, wis_row.modelData)
+                                onDict_clicked: (uid) => {
+                                    root.handle_open_dict_tab_fn(uid); // qmllint disable use-proper-function
+                                }
+                            }
+                        }
+                    }
+
                     ColumnLayout {
                         id: vocabulary_gloss
                         Layout.fillWidth: true
                         spacing: 5
-                        visible: !vocab_collapse_btn.checked
+                        visible: !root.is_word_in_sentence && !vocab_collapse_btn.checked
 
                         property int paragraph_index: paragraph_item.index
 
                         Repeater {
                             model: {
+                                if (root.is_word_in_sentence) return [];
                                 try {
                                     return JSON.parse(paragraph_item.words_data_json);
                                 } catch (e) {
@@ -3105,6 +3637,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                                     unsave_word_dialog.word = wordItem.modelData.original_word;
                                                     unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
                                                     unsave_word_dialog.component_word = "";
+                                                    unsave_word_dialog.is_breakdown = false;
                                                     unsave_word_dialog.open();
                                                 } else {
                                                     // Built-in row or set phrase: nothing of the
@@ -3301,6 +3834,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                                                 unsave_word_dialog.word = compRow.comp_word;
                                                                 unsave_word_dialog.word_context_hash = wordItem.modelData.context_hash || "";
                                                                 unsave_word_dialog.component_word = compRow.comp_word;
+                                                                unsave_word_dialog.is_breakdown = false;
                                                                 unsave_word_dialog.open();
                                                             } else {
                                                                 root.set_component_resolution(wordItem.paragraph_index, wordItem.index, compRow.comp_word, null);
@@ -3390,6 +3924,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         // Callers set `component_word` explicitly before open() (empty for a
         // plain word row, the component surface word for a component sub-row).
         property string component_word: ""
+        // The shield click was on a break-down row: the cleared resolution is
+        // the break-down's.
+        property bool is_breakdown: false
 
         Label {
             text: "<p>Remove your saved selection for '" + unsave_word_dialog.word + "' in this context?<br>The word returns to the unchecked state.<br>Any built-in selection for it is kept and applies again in a new session.</p>"
@@ -3401,6 +3938,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (SuttaBridge.delete_gloss_word_cache(unsave_word_dialog.word, unsave_word_dialog.word_context_hash)) {
                 if (unsave_word_dialog.component_word.length > 0) {
                     root.set_component_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, unsave_word_dialog.component_word, null);
+                } else if (unsave_word_dialog.is_breakdown) {
+                    root.set_row_resolution(unsave_word_dialog.paragraph_idx,
+                                            { kind: "breakdown", owner: unsave_word_dialog.word_idx }, null);
                 } else {
                     root.set_word_resolution(unsave_word_dialog.paragraph_idx, unsave_word_dialog.word_idx, null);
                 }
@@ -3408,6 +3948,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 logger.error("Failed to delete word selection cache row for '" + unsave_word_dialog.word + "'");
             }
             unsave_word_dialog.component_word = "";
+            unsave_word_dialog.is_breakdown = false;
         }
     }
 

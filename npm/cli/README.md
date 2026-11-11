@@ -94,18 +94,23 @@ import` is running.
 | `simsapa stats` | Row and content-source counts of `appdata.sqlite3` |
 | `simsapa paths` | The data folder and database paths |
 | `simsapa health` | What `GET /health` returns, including the DPD and SuttaCentral data versions |
-| `simsapa install-skill` | Install the `simsapa` agent skill into Claude Code, OpenCode or Pi (`--agent`, `--global`/`--local`, `--yes`, `--force`) |
+| `simsapa install-skill` | Install the `simsapa` and `gloss-pali-passage` agent skills and slash commands into Claude Code, OpenCode or Pi (`--agent`, `--global`/`--local`, `--yes`, `--force`) |
 | `simsapa docs` | The full CLI and API reference (Markdown); `--output <file>` saves it |
 | `simsapa serve` | Serve the localhost API |
 
 `simsapa <command> --help` lists each command's options. `-v` and `-vv` show
 more log output on stderr. The full log is `log.txt` in the data folder.
 
-### Installing the agent skill
+### Installing the agent skills
 
-`simsapa install-skill` writes a short skill that tells a coding agent when and
-how to use these commands. It is built into the binary, matches the installed
-version and needs no databases.
+`simsapa install-skill` writes two short skills: `simsapa`, which tells a coding
+agent when and how to use these commands, and `gloss-pali-passage`, with which
+the agent makes a word-by-word analysis document of a Pāli passage. Both are
+also installed as slash commands, `/simsapa` and
+`/gloss-pali-passage [headwords|word-in-sentence] <text or reference>`: Claude
+Code makes them from the skills, and for OpenCode the command writes a command
+file for each. They are built into the binary, match the installed version and
+need no databases.
 
 ```sh
 simsapa install-skill --agent claude --global   # ~/.claude/skills/simsapa/

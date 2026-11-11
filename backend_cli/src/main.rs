@@ -99,8 +99,11 @@ enum Commands {
     #[command(arg_required_else_help = true)]
     Sutta(commands::sutta::SuttaArgs),
 
-    /// Gloss Pāli text: dictionary options and compound break-downs for every
-    /// word, as `POST /gloss_text` returns them
+    /// Gloss Pāli text or a sutta reference: every word with its grammar,
+    /// meaning, construction and root, as an analysis document (Markdown,
+    /// HTML, Org, DOCX, Anki CSV, session JSON) or as `POST /gloss_text`
+    /// returns it (--json). Uses the app's AI provider, when one is enabled,
+    /// to choose word senses and translate (--no-ai: never)
     #[command(arg_required_else_help = true)]
     Gloss(commands::gloss::GlossArgs),
 
@@ -248,8 +251,18 @@ fn run(cli: &Cli) -> CliResult {
             commands::sutta::run(args, cli.json)
         }
         Commands::Gloss(args) => {
-            read_only_preamble()?;
-            commands::gloss::run_gloss(args, cli.json)
+            // With AI word selection the lock, when taken, is held for the
+            // whole command: the AI's sense choices are written to the
+            // word-selection cache. Without it (`--no-ai`, `--exact`) gloss
+            // writes nothing and runs as the other read-only commands do.
+            if args.no_ai || args.exact {
+                read_only_preamble()?;
+                commands::gloss::run_gloss(args, cli.json, false)
+            } else {
+                let (_lock, can_write) = preamble_keeping_write_lock()?;
+                startup::check_db_compatible(IncompatibleDb::Warn)?;
+                commands::gloss::run_gloss(args, cli.json, can_write)
+            }
         }
         Commands::Lookup(args) => {
             read_only_preamble()?;
@@ -316,18 +329,39 @@ fn read_only_preamble() -> CliResult {
 }
 
 fn run_read_only_preamble() -> CliResult {
+    // The lock is released here, before the command's own work.
+    preamble_keeping_write_lock().map(|_| ())
+}
+
+/// The read-only command preamble, keeping the write lock it took. Returns
+/// the lock (`None` when not taken, or the volume cannot lock files) and
+/// whether the command may write to the databases: false while a server or
+/// another `simsapa` command is using the folder. For `gloss`, which writes
+/// cache rows when it can and carries on read-only when it cannot.
+fn preamble_keeping_write_lock() -> Result<(Option<WriteLock>, bool), CliError> {
     if let InUse::Serving { .. } = check_in_use() {
-        return startup::run_headless_preamble(PreambleMode::ReadOnly);
+        startup::run_headless_preamble(PreambleMode::ReadOnly)?;
+        return Ok((None, false));
     }
     match try_acquire_write_lock(&data_folder()) {
-        Ok(WriteLockOutcome::Held) => startup::run_headless_preamble(PreambleMode::ReadOnly),
-        Ok(WriteLockOutcome::Acquired(_lock)) => startup::run_headless_preamble(PreambleMode::Full),
-        Ok(WriteLockOutcome::Unsupported) => startup::run_headless_preamble(PreambleMode::Full),
+        Ok(WriteLockOutcome::Held) => {
+            startup::run_headless_preamble(PreambleMode::ReadOnly)?;
+            Ok((None, false))
+        }
+        Ok(WriteLockOutcome::Acquired(lock)) => {
+            startup::run_headless_preamble(PreambleMode::Full)?;
+            Ok((Some(lock), true))
+        }
+        Ok(WriteLockOutcome::Unsupported) => {
+            startup::run_headless_preamble(PreambleMode::Full)?;
+            Ok((None, true))
+        }
         // The lock file cannot be created (e.g. a read-only folder). A query
         // can still run; only the steps that write are skipped.
         Err(e) => {
             logger::warn(&format!("{} Running without the startup steps that write.", e.message));
-            startup::run_headless_preamble(PreambleMode::ReadOnly)
+            startup::run_headless_preamble(PreambleMode::ReadOnly)?;
+            Ok((None, false))
         }
     }
 }

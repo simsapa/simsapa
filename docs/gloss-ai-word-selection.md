@@ -63,9 +63,116 @@ The resolved index is written to `ProcessedWord.selected_index` and the origin t
 fields are `#[serde(default)]` — pre-feature
 `gloss_prompts_history` sessions have neither and must still deserialize.
 
+**Unresolved words still get a default sense.** When no cache row or set phrase
+resolves a direct / mixed word, `rank_paragraph_default_senses()`
+(`backend/src/gloss_sense_ranking.rs`) sets `selected_index` with DPD's ranking
+(docs/dpd-analysis-procedure.md §3 gap 9), per paragraph, in both gloss formats;
+`resolution` stays `None` (shield: Not checked). It also fills
+`ProcessedWord.demoted_uids`: the senses DPD's headword and particle filters
+leave out (`!`-stem irregular forms such as `ime`, letters, `(gram)` entries).
+They are never the default and `build_word_selection_items()` does not offer
+them to the AI (unless nothing else is left), but they stay in `results` and in
+the ComboBox, and cache rows still resolve to them. `results` is never
+reordered.
+
+**Built-in default senses** then correct the ranking where it is known to be
+poor for a common word (`ahaṁ` → `aha 1.1` "day", `nibbānaṁ` → `nibba`
+"eaves", `yena` → the pronoun `ya`). They are curated rules in
+`assets/gloss-default-senses.json` (`include_str!`, read by
+`backend/src/gloss_default_senses.rs`), of two kinds:
+
+- a **form rule** names the sense of one surface form, of any lemma
+  (`ahaṁ` → `10868/dpd`, `ahaṁ`);
+- a **homonym rule** names the sense to take among the numbered homonyms of
+  one lemma, whatever the form (`dhamma 1.03`, not `dhamma 1.01`). It acts
+  only when the ranked default is a homonym of that lemma, and only when the
+  rule's sense fits the form at least as well (same tier, and a grammar-triple
+  reading if the ranked one has one), so it never trades an adjective reading
+  for a noun without one. A form rule beats a homonym rule;
+- a **component rule** is a form rule for compound and sandhi component rows
+  only (`tena` in `tenupasaṅkami` → `tena 3` "there", `api` in `'pi` →
+  `api 1.7` "too; also", `kāyaṁ` in `kāyānupassī` → `kāya 1.1`), where it
+  beats the other two; the word written alone keeps its own default (the
+  token `tena` stays the pronoun). Components are ranked first by
+  `component_tier` (`gloss_rows.rs`), which puts grammarians' entries,
+  unfinished entries and the letters as numbered-list items (`cha 1.1` "7th
+  item in a numerical list") last, so these never default.
+
+A rule whose sense is not among the word's senses, or is demoted, is skipped.
+No rule overrides a **strong DPD example match**: when a sense's `example_1`
+or `example_2` overlaps the paragraph and the shorter of the two texts has at
+least four words (`STRONG_EXAMPLE_OVERLAP_WORDS`, `gloss_sense_ranking.rs`),
+the passage is the DPD editor's example for that sense (`dukkhaṁ` in MN 10's
+"katamañca, bhikkhave, dukkhaṁ?" stays `dukkha 4`, though the form rule says
+`dukkha 3`). The ranking's own example rank uses DPD's overlap test as is,
+which for a one-word passage matches almost any example.
+The form and homonym rules apply to compound and sandhi component rows too
+(`gloss_rows.rs`, `built_in_component_option`), after the component rules. A built-in default is **not a
+resolution**: it is context-free, so `resolution` stays `None`, the shield and
+the exports show Not checked (`N`), and the word is still sent to the AI. That
+is what keeps them apart from set phrases (a context rule, Human-checked) and
+from the cache rows; nothing is written to the database, and no cached
+selection or `context_hash` changes. Unlike the phrase rules they are not
+seeded at bootstrap: they ship in the binary, so the CLI, the API and the GUI
+of one build give the same defaults.
+
+Each rule gives the numeric `selected_uid` and its `selected_lemma`.
+`backend/tests/test_gloss_default_senses.rs` checks every rule against the
+installed `dpd.sqlite3` (the headword exists, `lemma_1` still equals
+`selected_lemma`, and each form rule is the gloss default of its form); a
+failure after a DPD upgrade is a rule to review, not to delete unread. Write
+a rule only for a sense that is right in most contexts: `dukkhaṁ` is the noun
+`dukkha 3` (about four in five uses; the adjective is in `dukkhaṁ vedanaṁ`),
+while `sukhaṁ` stays the adjective `sukha 1` (mostly `sukhaṁ vedanaṁ`). A word
+whose ranked default is already right, or whose common senses are evenly split
+(`kālo`, `hi`), gets no rule. The elision mark `…pe…` is handled at lookup,
+not by a rule (below). To find candidates, run the `#[ignore]`d `survey_default_senses` in the same test
+file: it glosses long suttas with AI off and lists the ambiguous forms by
+frequency with their default and the other senses; `survey_component_defaults`
+in `test_dpd_analysis_conformance.rs` does the same for component rows, with
+the parent words each part occurs in (a part rule is right only when most
+parents agree: `ahaṁ` gets none, being "I" in `sohaṁ` and "day" in `ekāha`). `SURVEY_REFS`
+(comma-separated references, such as `dhp1-20/pli/ms`) surveys other texts,
+and `SURVEY_WORDS` prints every occurrence of the named words with its
+sentence. The rules come from 12 long prose suttas and the Dhammapada, Sutta
+Nipāta, Theragāthā and Therīgāthā, whose verse showed defaults that prose
+never does (`ve` → `vāti` "blows", `sammā` → `samma` "cymbal", `vāpi` → "reservoir"). A rule must name a sense
+that is not demoted: for a `!`-stem form (`satthā`, `dassanāya 1`) name its
+paradigm headword (`satthar 1`, `dassana 2`, `passa` → `passati 1`, `care` →
+`carati 2.2`). Measure a change with
+`measure_selection_agreement` (docs/dpd-analysis-procedure.md §3) and
+regenerate the Headwords snapshot, whose `selected_index` values follow the
+defaults.
+
 An entry whose `selected_uid` matches none of the word's current lookup options
 (dictionary data changed under it) is **ignored**, falling through to the next
 level rather than failing.
+
+### The elision mark `…pe…`
+
+`pe` is the abbreviation of *peyyāla*, the mark of an elided repetition
+(`Sāvatthiyaṁ viharati…pe… paṭiccasamuppādaṁ vo…`). DPD's `pe` lookup row
+does not list `peyyāla` (a source-data gap, reported, not repaired), so a
+default-sense rule cannot reach it: by the ranking, `pe` would be `pa 1.1`
+"drinking". Instead `process_word_for_glossing` (`helpers.rs`) recognises the
+mark and looks it up as `peyyāla`:
+
+- **What counts as the mark** (`is_elision_mark`): the token `pe` with an
+  ellipsis or a full stop, or the edge of its context window, on each side,
+  spaces allowed: `…pe…` (how the MS and CST texts write it), `… pe …`, and
+  `...pe...` (the sentence split ends the window at the full stops, so it
+  reads `<b>pe</b>.`). A dash (`-pe-`) is not the mark.
+- **What the row shows:** the first `peyyāla` sense alone (`peyyāla 1`; its
+  homonym has the same meaning), so no choice, no N / A / H mark and no AI
+  item. Its one reading is `abbrev of peyyāla`: the lookup triples of
+  `peyyāla` (`nt voc sg`, `masc voc sg`) are not readings of `pe`, so they
+  are replaced by one triple with the headword's `pos` as its class. Meaning:
+  "denoting an elided repetition within a text". The Word in Sentence column
+  keeps `pe` as written; the Headwords format lists `peyyāla 1`.
+- **Identity:** the word stays `pe` (its cache key and display), as a quoted
+  iti base keeps the written word while the lookup changes.
+
+Test: `test_elision_mark_pe_is_peyyala` (`test_dpd_analysis_conformance.rs`).
 
 ### The two cache tiers coexist
 
@@ -179,7 +286,11 @@ The context window is **not new**: it is the ±50-char, sentence-bounded window
 `extract_words_with_context()` already computes per word and hands to QML as
 `ProcessedWord.example_sentence` (with the target marked `<b>word</b>`). The
 displayed context, the AI request's `context` field and the hash input are
-therefore identical by construction.
+therefore identical by construction. The text is converted to `ṁ` first
+(`gloss_niggahita()`, also `Ṃ` → `Ṁ`): the tokeniser finds each clean word
+(`ṁ`) in the text as written, and a `ṃ` text would not match, losing the
+written form (`pan'āniccaṃ` → `panāniccaṁ`) and the sentence window. Every
+gloss output therefore writes `ṁ`.
 
 Because the key is only the word plus its **local** window — not the sutta — a
 formulaic pericope produces the **same row in every sutta that contains it**. One
@@ -261,11 +372,13 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 > are kept only as the one-time seed for the sequence. See
 > [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).
 
-**Word Selection...** in the Gloss toolbar (before "Common Words...") opens
-`bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a **"Use AI word
-selection"** checkbox (persisting `gloss_word_selection_enabled`), a warning when
-the Fallback sequence has no enabled model, and a
-**Clear Word-Selection Cache...** button (confirm dialog shows the row count).
+The Gloss toolbar (before "Common Words...") has an **"AI word selection"**
+checkbox, which persists `gloss_word_selection_enabled` through the dialog's
+`persist_selection()`, and an info button next to it that opens
+`bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a note that
+selections are saved, the **Clear Word-Selection Cache...** button (confirm
+dialog shows the row count), a warning when the feature is on but the Fallback
+sequence has no enabled model, and the shield legend.
 The clear deletes the **local tier** only (`built_in = 0`, i.e. the
 `ai-selected` / `user-selected` rows) — the shipped rows and the phrase table
 survive, since they are shipped data, not user state. Every built-in selection
@@ -284,7 +397,12 @@ Prompts...** like any other:
   and the response shape.
 
 Existing installs get the new keys via **default-key merging on settings load**
-(missing default keys are inserted; user edits are never overwritten). The
+(`merge_default_system_prompts()`: missing default keys are inserted; user edits
+are never overwritten). A prompt whose stored text still equals an **earlier
+default** (listed in `superseded_default_system_prompts()`, `app_settings.rs`)
+was never edited, so it is replaced with the current default. When you change
+a default prompt's text, add the old text to that list, or existing installs
+keep the old instructions. The
 System Prompts dialog gained a **Reset to Default** button for *every* prompt,
 backed by `SuttaBridge.get_default_system_prompt(key)` (empty string → button
 disabled, e.g. for user-created keys).
@@ -295,7 +413,10 @@ The request items are built by the shared backend builder
 `build_word_selection_items()` in `backend/src/helpers.rs` (exposed to QML as
 `SuttaBridge.build_word_selection_items_json(paragraphs_json, forced)`; the CLI
 agent workflow calls the same builder in include-resolved mode), assembled into
-the prompt in `GlossTab.qml` and sent through `PromptManager.sequential_word_selection_request(request_id, prompt)`
+the prompt by `build_word_selection_prompt()` in the same file (exposed as
+`SuttaBridge.build_word_selection_prompt(items_json)`, and used by
+`/word_selection_ws` and the CLI, so every caller sends the same text) and sent
+through `PromptManager.sequential_word_selection_request(request_id, prompt)`
 → `word_selection_response(request_id, model, response)` — a dedicated
 invokable/signal pair mirroring `prompt_request`, so it never collides with AI
 Translate's indices. The engine picks the model by walking the Fallback sequence
@@ -429,7 +550,7 @@ origins:
 
 | icon | state | resolution values | meaning |
 |---|---|---|---|
-| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it — a plain dictionary lookup |
+| `famicons--shield-outline.png` | Not checked | `null` | nothing resolved it, a plain dictionary lookup |
 | `famicons--shield-half-outline.png` | AI-checked | `ai-selected`, `built-in-agent-checked` | a machine chose it: a runtime AI response, or the shipped agent pipeline (§7) |
 | `famicons--shield.png` | Human-checked | `user-selected`, `built-in-human-checked`, `built-in-phrase-match` | a person confirmed it: the reader here, or a curator |
 
@@ -605,12 +726,84 @@ Those three text formats are **also generated in Rust** now
 (`backend/src/text_export.rs`, via `SuttaBridge.gloss_export` /
 `gloss_paragraph_export` / `chat_export` / `chat_message_export`) so the
 formatting is unit-tested against fixed JSON; the shared serde structs live in
-`backend/src/export_types.rs`. The QML side only collects the JSON
-(`gloss_export_data()` / `chat_export_data()`).
+`backend/src/export_types.rs`. The QML side only assembles the JSON
+(`gloss_export_data()` / `chat_export_data()`); a gloss paragraph's part of
+it is built in Rust too (next section).
 Output goes through `save_bytes_to_folder(folder_url, filename, bytes)` — the
 bytes-taking sibling of `save_file`, which keeps the desktop-path vs Android-SAF
 scheme dispatch in one place (`mime_from_filename` gained `.docx` and `.json`).
 See [android-file-saving-saf.md](./android-file-saving-saf.md).
+
+### The export data, one builder, and the two document layouts
+
+Every gloss export (HTML, Markdown, Org-Mode, DOCX, Anki CSV) reads one struct,
+`GlossExportData` (`backend/src/export_types.rs`). Its paragraphs are built in
+one place, `build_export_paragraph()` in `backend/src/gloss_export_builder.rs`,
+for every caller: the CLI and `POST /gloss_text` through
+`build_gloss_export_data()`, and the Gloss tab through
+`SuttaBridge.gloss_export_paragraph_json()`, called per paragraph by
+`GlossTab.gloss_export_data()`. The QML side only puts each paragraph's
+translations in export order (the selected tab first,
+`GlossTab.export_translations()`) and sets the top-level fields. The Headwords
+vocabulary follows `DeconstructorUtils.visible_components()` /
+`component_results()` for a break-down, as the vocabulary list on screen does.
+
+The contract test `backend/tests/test_gloss_export_contract.rs` builds both
+formats from a stored gloss (`backend/tests/data/gloss_export_contract/`) and
+compares them with the expected files there.
+
+Fields added after the first version are `#[serde(default)]`, so export data
+from an older Gloss tab still renders: `gloss_format` (absent = Headwords),
+`title`, `no_ai_provider`, per paragraph `variants` and `rows`, per vocabulary
+item `uid`, `context_snippet` and `confidence`, and per translation
+`literal_translation`. `rows` are the Word in Sentence rows flattened in table
+order (`depth` 1+ for components), each with the chosen sense's `uid`,
+`lemma`, `summary` and the token's `context_snippet` for the Anki notes.
+
+Every gloss document, in both formats, is titled `Gloss of: <title, or the
+leading words of the text that fit in 40 characters, cut between words with
+`…`>` (`Gloss` when empty; `GlossExportData::document_title`). DPD's own
+reports say `Analysis of:`; the Gloss tab and `simsapa gloss` name theirs
+after the feature. The **Word in Sentence** document otherwise follows DPD's
+analysis report ([dpd-analysis-procedure.md](./dpd-analysis-procedure.md)
+§1.7): the title, then per paragraph (under
+`## Paragraph <n>` when there are several) the passage with the glossed
+spelling of each `//` group, `### English Translation` with `**Translation:**`
+and `**Literal Translation:**` (a model heading only when there are several;
+no Literal line for a translation saved before the two-part translation),
+`### Variants` (one `a//b` line per group, only when there are groups),
+`### Word-by-Word Analysis` and the table
+`ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf.`.
+Component rows carry `- ` per depth (DOCX also indents the word); a passage's
+line breaks stay line breaks inside one DOCX paragraph; the `⧫` marker of the
+rendered Gloss text is dropped from the passage text on import; cells
+escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend, introduced by
+`Confidence marks:`, closes the document, followed by the no-AI note when `no_ai_provider`.
+
+The **Headwords** document keeps its layout. It gains the Conf. column and the
+legend only when some word carries a confidence value, so an export of an
+older session is unchanged; a translation with a Literal Translation shows both
+under labels. A per-paragraph "Copy As…" fragment uses the Word in Sentence
+layout when the paragraph has rows.
+
+The legend sentences are `CONFIDENCE_LEGEND` and `NO_AI_PROVIDER_NOTE` in
+`backend/src/gloss_rows.rs`; the Word Selection dialog
+(`GlossWordSelectionDialog.qml`) shows the same three sentences. Change them
+together.
+
+**Anki CSV** makes one note per vocabulary item, or, for a paragraph with rows,
+one per row that has a DPD headword (token and component rows; unresolved and
+break-down rows have none, and "No duplicates" has already left out repeats).
+A Simple / cloze note's front shows the word as written, its back the row's
+grammar above the sense's summary (the meaning when there is no summary).
+Templates get `{word_in_sentence}`, `{grammar}` and `{meaning}` (empty for a
+Headwords note); the data CSV gains `word_in_sentence` and
+`grammar_in_sentence` columns when the gloss has rows.
+
+The **session JSON** (`build_gloss_session_json()` in the builder, and the
+Gloss tab's `session_data_json()`) carries `gloss_format`, and per paragraph
+`rows`, `variants` and translations with `literal_translation`; a session
+without them still opens.
 
 ### Surviving an appdata re-download (the upgrade export/import cycle)
 
@@ -906,13 +1099,18 @@ closed; it prints each stored rule with its lemma.
 | Cache/phrase CRUD, origin ranks, precedence | `backend/src/db/appdata.rs` |
 | Migration | `backend/migrations/appdata/2026-07-23-000000_initial_schema/` (the 1.0.0 baseline; the tables and the `deconstruction` column arrived pre-1.0.0 as `2026-07-09-160000_create_gloss_word_selection` / `2026-07-16-120000_gloss_cache_built_in_tier` / `2026-07-21-173000_gloss_cache_deconstruction`, since squashed) |
 | Grouped DPD lookup | `backend/src/db/dpd.rs` (`dpd_lookup_grouped()`), structs in `backend/src/types.rs` (`GroupedDpdLookup` / `Deconstruction` / `DeconstructionComponent`) — see §9 |
-| AI fallback engine (Qt-free) | `bridges/src/ai_engine.rs` (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
+| AI fallback engine (Qt-free) | `backend/src/ai_engine.rs`, behind the backend's `ai` feature (request layer + walk glue + pacing constants), shared by `prompt_manager.rs` and the `/word_selection_ws` route |
+| Word-selection run (Qt-free) | `backend/src/gloss_word_selection_run.rs` `run_word_selection()` (batching, pacing, walk per batch, Lenient parse; reports `WordSelectionRunEvent`s), behind the `ai` feature; `/word_selection_ws` turns its events into the WebSocket protocol |
+| Applying answers without Qt | `backend/src/gloss_word_selection_apply.rs` `apply_word_selection_answers()` — a port of the QML apply path, see §10 |
+| Two-part translation | `backend/src/gloss_translation.rs` (prompt, word table, answer parsing), see §10 |
 | DOCX | `backend/src/docx_export.rs` (fully code-generated package, no binary template) |
 | Markdown → Org/DOCX conversion | `backend/src/markdown_convert.rs` (`markdown_to_orgmode`, `markdown_to_docx_body`) |
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
-| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`) |
+| Export data and session JSON built in Rust (CLI, API, and the Gloss tab's export paragraphs) | `backend/src/gloss_export_builder.rs`; contract test `backend/tests/test_gloss_export_contract.rs` |
+| Word in Sentence rows, session carry-over | `backend/src/gloss_rows.rs` (`GlossRowBuilder`, `carry_over_session_choices()`); rows rebuilt against the cache: `gloss_word_selection_apply::rebuild_rows_with_cache()` |
+| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`, `get_gloss_format` / `set_gloss_format`, `get_gloss_auto_translate` / `set_gloss_auto_translate`, `get_gloss_word_in_sentence_info_shown` / `set_gloss_word_in_sentence_info_shown`, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
-| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
+| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordInSentenceRow.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `bootstrap_cli/src/import_gloss_data.rs`, `bootstrap_cli/src/gloss_corpus_explore.rs`, `bootstrap_cli/src/gloss_ngrams.rs`, `bootstrap_cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
@@ -1012,7 +1210,8 @@ state resets on a **new query only** (keyed on query-text change in
 The flat-suffix scheme reuses the existing `build_word_selection_items()` /
 `parse_word_selection_response()` option-validation machinery unchanged:
 
-- **`p<pi>w<wi>`** — sense item over the direct results (case (b) only).
+- **`p<pi>w<wi>`** — sense item over the direct results less `demoted_uids`
+  (case (b) only; §1).
 - **`p<pi>w<wi>d`** — break-down choice, emitted **only for ≥ 2 break-downs**.
   Options reuse the standard shape with pseudo-uids
   `{"uid":"d:<n>","word":"<words_joined>","summary":""}`. Applying `d:<n>` sets
@@ -1084,3 +1283,190 @@ and an AI-word-selection checkbox that renders the same sense dropdowns and
 compound component sub-rows as the QML tab. Full protocol + the demo source:
 [simsapa-cli-and-localhost-api.md](./simsapa-cli-and-localhost-api.md)
 §16.
+
+## 10. Word in Sentence: readings, contextual meanings, compound components, the two-part translation
+
+The Word in Sentence format (`backend/src/gloss_rows.rs`,
+[dpd-analysis-procedure.md](./dpd-analysis-procedure.md)) asks the AI for more
+than a sense. Everything here applies only when the request is built **with the
+paragraph's rows** (`WordSelectionParagraphInput::rows_json`); without them, as
+for the Headwords format and the agent workflow, the items are what §4 and §9
+describe.
+
+### Where a row's grammar comes from
+
+A token's or a part's readings are the `lookup` row's grammar triples that fit
+its headword (`inflected_readings`, a port of DPD's `is_pos_compatible`, which
+here also accepts `imperf` and `perf` headwords:
+[dpd-analysis-procedure.md](./dpd-analysis-procedure.md) gap 3). When none
+fits, `GlossRowBuilder::form_readings` reads the cells of the headword's own
+inflection table that hold the form before falling back to the headword's
+bare `grammar` (gap 20 there): `anajjhagā`, whose lookup row has no triple,
+reads `imperf 3rd sg of anajjhagā`, not `imperf of na adhigacchati`.
+
+### Request items with rows
+
+- **Grammar readings.** An option whose sense has several readings (`taṁ` is
+  `nt acc sg of ta` or `nt nom sg of ta`) carries them as `grammar_options`,
+  and the answer may give `grammar_index`. A word with **one** sense but
+  several readings gets a sense item with that one option, which asks only for
+  the reading.
+- **Components of a compound or sandhi headword** (`daḷhaparakkama`, source
+  (ii) in `gloss_rows.rs`): one `p<pi>w<wi>c<k>` item per component row with
+  ≥ 2 senses, in the same shape as a break-down component's item (§9), with
+  `component_word` and the token's construction as the `deconstructions`
+  annotation. `k` indexes the token's component rows (tree order, deduplicated
+  by word, all of them), so skipping one never shifts later ids. A word with a
+  direct match never has break-down component items, so the two kinds of `c`
+  item never meet on one word. The items are the components of the sense
+  **shown when the request is built**: when the same answer picks another
+  sense for the token, the component answers are still stored by component
+  word, and only those the new sense also has show in its rows.
+- **Contextual meaning.** Every answer may give `contextual_meaning`, the
+  dictionary meaning fitted to the sentence (DPD's field of that name).
+
+The skip rules of §4 apply to these too: a component row with a `resolution`,
+and a reading-only item whose word already has a `reading` (re-included on a
+forced pass only when that reading's origin is `ai-selected`).
+
+The default request prompt describes the fields. Both are optional in
+`parse_word_selection_response()`: `grammar_index` must index the chosen
+option's `grammar_options` (0 is accepted for an option without them),
+`contextual_meaning` must be a string; an entry breaking either is invalid like
+any other.
+
+### Where readings and contextual meanings are kept
+
+**In the session only, never in `gloss_word_context_cache`** (changing the
+cache would need a migration and a new data-bank format):
+`ProcessedWord::reading` and `ProcessedWord::component_readings` (by component
+word), each a `SenseReading { uid, grammar_index, contextual_meaning, origin }`.
+The row builder applies a reading only while its `uid` is still the chosen
+sense, so a later sense change leaves it inert instead of wrong. A session
+that resolves a word from the cache later shows `meaning_combo` until the AI is
+asked again.
+
+A component choice of a compound headword is kept like a break-down
+component's: `component_selected_uids` / `component_resolutions` on the
+token's word, and an ordinary cache row keyed on the token's `context_hash`
+(§9). The row builder takes the session choice first, then the cache row, then
+DPD's component ranking. Rows carry their choice's `resolution`, for the skip
+rules above.
+
+### Applying the answers: QML and Rust — change both together
+
+The Gloss tab applies answers in QML (`GlossTab.apply_word_selections()` and
+its response handler). The CLI and the `/gloss_text` AI runner, which have no
+QML, use `apply_word_selection_answers()` in
+`backend/src/gloss_word_selection_apply.rs`, a **port of the same rules**:
+answers route by item id and `component_word`; an answer never replaces a
+choice whose origin is not `ai-selected` (checked per field: sense, break-down,
+each component); a break-down answer locks the break-down; the same
+`ai-selected` cache rows are written; a reading-only item (one option) sets
+only the reading, with no cache row and no resolution, since the sense was not
+a choice; an answer's `grammar_index` / `contextual_meaning` become the
+`reading` unless the user chose a reading for the same sense
+(`GlossTab.ai_answer_reading()` / `set_reading()`). Afterwards the
+paragraph's rows are rebuilt from its `words_data` (Rust:
+`rebuild_rows_with_cache()`; QML: `GlossTab.set_paragraph_words()` →
+`SuttaBridge.refresh_gloss_paragraph_json()`, the same function), so they show
+the answers with confidence `A`. **A change to the apply rules goes into
+both.** The differences, because a Rust run is one-shot:
+
+- no late-response guard (nothing changes the result while the request is in
+  flight);
+- with `write_cache` off (the stateless API; the CLI while the GUI holds the
+  database) no row is written, and the choice is still marked `ai-selected`.
+
+### The two-part translation
+
+One template, `"Gloss Tab: AI Translation"`, with `<<PALI_PASSAGE>>` and
+`<<WORD_TABLE>>`, sent after `"Gloss Tab: System Prompt"`, asks for
+`{"translation": "…", "literal_translation": "…"}`: a readable translation and
+a close, word-by-word one, using the chosen senses (DPD's grounded translation,
+[dpd-analysis-procedure.md](./dpd-analysis-procedure.md) §1.5).
+`backend/src/gloss_translation.rs` builds the prompt
+(`build_translation_prompt`; the word table is Word / Grammar / Meaning, from
+the rows with components as `- ` rows, or for the Headwords format from the
+chosen senses' summaries) and parses the answer (`parse_translation_response`:
+the first JSON object, code fences ignored, both fields non-empty strings;
+anything else is `invalid_response`). For QML they are
+`SuttaBridge.gloss_translation_prompt(paragraph_json)` and
+`SuttaBridge.parse_gloss_translation(response)`, and the request goes through
+`PromptManager.gloss_translation_request` /
+`sequential_gloss_translation_request`, which pass
+`validate_translation_response_shape()` to the engine, so an answer that is not
+that JSON is retried and falls back like a truncated body. The stored
+translation (`AiResponse` in `export_types.rs`) keeps the Translation in
+`response` and the Literal Translation in `literal_translation`; a session
+saved with one translation reads it as the Translation.
+
+In the Gloss tab, `AiResponseCoordinator`'s `parse_response` hook turns the
+answer into those two fields (an answer that still does not parse marks the
+entry failed), and `AssistantResponses.qml` shows a completed entry with a
+Literal Translation as `**Translation:** … **Literal Translation:** …`.
+
+### The Gloss tab in the Word in Sentence format
+
+The **Gloss format** option (`gloss_format` in `AppSettings`, default
+`word_in_sentence`; `SuttaBridge.get_gloss_format()` / `set_gloss_format()`)
+is the format of new sessions. A session keeps its own (`gloss_format` in the
+session JSON); a session saved without one is a Headwords session and opens as
+saved. The gloss request passes it as `options.gloss_format`.
+
+Before the first gloss in this format, `start_background_all_glosses()` opens
+a one-time info dialog (`maybe_show_word_in_sentence_info()`): the format shows
+more detail than Headwords and works best with AI word selection, which picks
+the meanings for their context. Its rich-text message sits in a `ColumnLayout`,
+not in a `contentItem` Label, which would make the Fusion `Dialog` binding loop
+(`docs/qml-dialog-sizing.md`). Only its OK button sets
+`gloss_word_in_sentence_info_shown` in `AppSettings`; closing it any other
+way shows it again on the next gloss. The `qmllint` stub returns `true`, so
+QML tests never open it.
+
+Each paragraph holds `rows_json` and `variants_json` next to
+`words_data_json`, and shows a `GlossWordInSentenceRow.qml` per row:
+`GlossTab.flatten_paragraph_rows()` lists the rows in table order, each with
+the word that holds its choice (`owner`: the token's `word_index`) and what
+the choice is: `sense` (a row with a `word_index`), `breakdown` (the same, for
+a deconstructor-resolved word, whose candidates are break-downs), `component`
+(keyed by the component word on its token's word) or `none`. A sense, break-down
+or component choice goes through the same functions as the Headwords list
+(`update_word_selection()`, `update_deconstruction_selection()`,
+`update_component_selection()`: a `user-selected` cache row); a grammar
+reading is a session `reading` with origin `user-selected`. The shield has the
+§5 click cycle; a break-down row's shield writes the compound's break-down row.
+Every change of a paragraph's words goes through
+`GlossTab.set_paragraph_words()`, which rebuilds the rows with the backend
+(`SuttaBridge.refresh_gloss_paragraph_json()`), so the row's grammar, meaning
+and components follow the new choice. A restored session's rows are rebuilt the
+same way after the words are re-annotated.
+
+**Switching the format** re-glosses the text and makes no AI request:
+`switch_gloss_format()` keeps each paragraph's words and translations in
+`format_switch_carry`, and the results handler carries them over to the
+paragraphs with unchanged text. Saved choices resolve from the cache;
+session-only ones (readings, contextual meanings, an unsaved choice) move by
+context hash and word (`gloss_rows::carry_over_session_choices()`).
+
+**Auto-translate** (`gloss_auto_translate`, default off; disabled with a
+tooltip when the dispatch mode has no model) sends "AI Translate" for each
+paragraph when its gloss is complete — after its AI word selection when one
+covers it (`auto_translate_after_ws`), never twice while a translation of the
+paragraph is waiting, and not after a format switch or a session restore. The
+screen is kept on under the holder `"gloss-auto-translate"` while any
+auto-translation is in flight (`auto_translate_in_flight`).
+
+### The agent skill: an agent is the AI
+
+`backend_cli/skills/gloss-pali-passage/SKILL.md` (installed by
+`simsapa install-skill`, as a skill for every agent and as a slash command file
+for OpenCode; Claude Code makes `/gloss-pali-passage` from the skill folder)
+lets a coding agent do the AI part of this chapter itself: `simsapa gloss
+--no-ai` gives the rows with their candidates and `N` marks, the agent chooses
+the senses (marking the rows `A`) and writes the Translation and the Literal
+Translation from the same instructions as the `"Gloss Tab: AI Translation"`
+template, and writes the document in the structure of §10's Word in Sentence
+export. It makes no LLM request through the app. When the translation template
+or the document structure changes, change the skill's quoted text with it
+(`test_skill_commands_exist` checks only the flags it names).

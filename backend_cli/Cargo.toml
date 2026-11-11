@@ -7,7 +7,7 @@ license = "Apache-2.0"
 description = "Simsapa from the command line: set up the databases, search suttas and dictionaries, gloss Pāli text, and serve the localhost API."
 
 # The public `simsapa` CLI, published to npm as `@simsapa/cli`. Qt-free, with no
-# audio, no AI provider and no bootstrap tooling (that is `bootstrap_cli`).
+# audio and no bootstrap tooling (that is `bootstrap_cli`).
 # See docs/backend-cli-and-npm-package.md.
 
 [[bin]]
@@ -15,8 +15,9 @@ name = "simsapa"
 path = "src/main.rs"
 
 [dependencies]
-# No `audio`: the backend's only default feature.
-simsapa_backend = { path = "../backend", default-features = false }
+# No `audio` (a backend default feature); `ai` for AI word selection and
+# translation in `simsapa gloss`.
+simsapa_backend = { path = "../backend", default-features = false, features = ["ai"] }
 simsapa_api = { path = "../api" }
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "env", "string"] }

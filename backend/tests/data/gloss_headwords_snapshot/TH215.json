@@ -1,0 +1,314 @@
+{
+  "success": true,
+  "paragraphs": [
+    {
+      "paragraph_index": 0,
+      "words_data": [
+        {
+          "original_word": "paṇṇavīsativassāni",
+          "results": [
+            {
+              "uid": "41672/dpd",
+              "word": "paṇṇavīsativassa",
+              "summary": "<i>(nt)</i> twenty-five years  <b>[paṇṇavīsati + vassa]</b>  <i>nt, comp</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "paṇṇavīsativassa",
+          "example_sentence": "<b>paṇṇavīsativassāni</b>, yato pabbajito ahaṁ, accharā-saṅghāta-mattam'pi,",
+          "context_hash": "554854b104379870696a7085709f60bff1b5e4afde38b3015f048b3c3b0306a4",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "41672/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "yato",
+          "results": [
+            {
+              "uid": "53535/dpd",
+              "word": "yato 1",
+              "summary": "<i>(ind)</i> from where; from which; wherever  <b>[ya + to]</b>  <i>ind, adv, abl sg of ya</i>"
+            },
+            {
+              "uid": "53536/dpd",
+              "word": "yato 2",
+              "summary": "<i>(ind)</i> since; because; due to the fact that; on account of which  <b>[ya + to]</b>  <i>ind, adv, abl sg of ya</i>"
+            },
+            {
+              "uid": "53537/dpd",
+              "word": "yato 3",
+              "summary": "<i>(ind)</i> when; from when; since  <b>[ya + to]</b>  <i>ind, adv, abl sg of ya</i>"
+            },
+            {
+              "uid": "53445/dpd",
+              "word": "ya 1.1",
+              "summary": "<i>(letter)</i> (gram) letter y; 34th letter of the alphabet; palatal semi-vowel   <i>letter, masc</i>"
+            },
+            {
+              "uid": "53444/dpd",
+              "word": "ya 2.1",
+              "summary": "<i>(pron)</i> whoever; whatever; whichever   <i>pron, base</i>"
+            },
+            {
+              "uid": "53446/dpd",
+              "word": "ya 3.1",
+              "summary": "<i>(cs)</i> (gram) ya; suffix used to form impersonal and passive verbs   <i>cs, masc</i>"
+            },
+            {
+              "uid": "53447/dpd",
+              "word": "ya 3.2",
+              "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
+            },
+            {
+              "uid": "53523/dpd",
+              "word": "yata",
+              "summary": "<i>(pp)</i> controlled (wrt); restrained (in); in check  <b>[√yam + ta]</b>  <i>pp of yamati</i>"
+            },
+            {
+              "uid": "53528/dpd",
+              "word": "yati 1",
+              "summary": "<i>(aor)</i> exerted oneself, strived   <i>aor of yatati</i>"
+            }
+          ],
+          "selected_index": 2,
+          "stem": "yato 1",
+          "example_sentence": "paṇṇavīsativassāni, <b>yato</b> pabbajito ahaṁ, accharā-saṅghāta-mattam'pi,",
+          "context_hash": "554854b104379870696a7085709f60bff1b5e4afde38b3015f048b3c3b0306a4",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "53535/dpd",
+            "53536/dpd",
+            "53537/dpd",
+            "53444/dpd",
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd",
+            "53523/dpd",
+            "53528/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null,
+          "demoted_uids": [
+            "53445/dpd",
+            "53446/dpd",
+            "53447/dpd"
+          ]
+        },
+        {
+          "original_word": "pabbajito",
+          "results": [
+            {
+              "uid": "42476/dpd",
+              "word": "pabbajita 1",
+              "summary": "<i>(masc)</i> monk; monastic; renunciant; renunciate  <b>[pa + √vaj > baj + ita]</b>  <i>masc, pp of pabbajati</i>"
+            },
+            {
+              "uid": "42477/dpd",
+              "word": "pabbajita 2",
+              "summary": "<i>(pp)</i> ordained; renounced (from)  <b>[pa + √vaj > baj + ita]</b>  <i>pp of pabbajati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "pabbajita 1",
+          "example_sentence": "paṇṇavīsativassāni, yato <b>pabbajito</b> ahaṁ, accharā-saṅghāta-mattam'pi, cetosantim'",
+          "context_hash": "77632a2d82294aa824e1f959ca06983af003afb6b5951c7a37a80aff4dbf6914",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "42476/dpd",
+            "42477/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "ahaṁ",
+          "results": [
+            {
+              "uid": "10868/dpd",
+              "word": "ahaṁ",
+              "summary": "<i>(pron)</i> I   <i>pron</i>"
+            },
+            {
+              "uid": "10832/dpd",
+              "word": "aha 1.1",
+              "summary": "<i>(nt)</i> day   <i>nt, in comps</i>"
+            },
+            {
+              "uid": "10833/dpd",
+              "word": "aha 1.2",
+              "summary": "<i>(masc)</i> day   <i>masc, in comps</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "ahaṁ",
+          "example_sentence": "paṇṇavīsativassāni, yato pabbajito <b>ahaṁ</b>, accharā-saṅghāta-mattam'pi, cetosantim'",
+          "context_hash": "77632a2d82294aa824e1f959ca06983af003afb6b5951c7a37a80aff4dbf6914",
+          "resolution": null,
+          "deconstructions": [],
+          "direct_uids": [
+            "10868/dpd",
+            "10832/dpd",
+            "10833/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "accharāsaṅghātamattampi",
+          "results": [
+            {
+              "uid": "1039/dpd",
+              "word": "accharāsaṅghātamattaṁ",
+              "summary": "<i>(ind)</i> for the time it takes to click the fingers; for a finger snap  <b>[accharāsaṅghāta + matta + aṁ], [accharāsaṅghātamatta + aṁ]</b>  <i>ind, adv, comp</i>"
+            },
+            {
+              "uid": "6657/dpd",
+              "word": "api 1.1",
+              "summary": "<i>(ind)</i> just; only   <i>ind</i>"
+            },
+            {
+              "uid": "6658/dpd",
+              "word": "api 1.2",
+              "summary": "<i>(ind)</i> even; even then   <i>ind</i>"
+            },
+            {
+              "uid": "6659/dpd",
+              "word": "api 1.3",
+              "summary": "<i>(ind)</i> if; even if   <i>ind</i>"
+            },
+            {
+              "uid": "6660/dpd",
+              "word": "api 1.4",
+              "summary": "<i>(ind)</i> have?; did?; was?; perhaps?   <i>ind, interr</i>"
+            },
+            {
+              "uid": "6661/dpd",
+              "word": "api 1.5",
+              "summary": "<i>(ind)</i> but; however; yet   <i>ind</i>"
+            },
+            {
+              "uid": "6662/dpd",
+              "word": "api 1.6",
+              "summary": "<i>(ind)</i> yes; surely; indeed   <i>ind, emph</i>"
+            },
+            {
+              "uid": "6663/dpd",
+              "word": "api 1.7",
+              "summary": "<i>(ind)</i> too; also; as well   <i>ind</i>"
+            },
+            {
+              "uid": "6664/dpd",
+              "word": "api 2.1",
+              "summary": "<i>(prefix)</i> on; onto   <i>prefix</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "accharāsaṅghātamattaṁ",
+          "example_sentence": "paṇṇavīsativassāni, yato pabbajito ahaṁ, <b>accharā-saṅghāta-mattam'pi</b>, cetosantim'anajjhagaṁ.",
+          "context_hash": "e8b10e5ca174dcdd87488c9018de83cd27f5119debf58a55c88dd5dc344d25cc",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "accharāsaṅghātamattaṁ + api",
+              "components": [
+                {
+                  "word": "accharāsaṅghātamattaṁ",
+                  "result_uids": [
+                    "1039/dpd"
+                  ]
+                },
+                {
+                  "word": "api",
+                  "result_uids": [
+                    "6657/dpd",
+                    "6658/dpd",
+                    "6659/dpd",
+                    "6660/dpd",
+                    "6661/dpd",
+                    "6662/dpd",
+                    "6663/dpd",
+                    "6664/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [
+            "1039/dpd"
+          ],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        },
+        {
+          "original_word": "cetosantimanajjhagaṁ",
+          "results": [
+            {
+              "uid": "76517/dpd",
+              "word": "cetosanti",
+              "summary": "<i>(fem)</i> peace of mind; tranquillity of heart  <b>[ceto + santi]</b>  <i>fem, comp</i>"
+            },
+            {
+              "uid": "76515/dpd",
+              "word": "anajjhagā",
+              "summary": "<i>(imperf)</i> did not get; did not obtain; did not achieve; did not experience  <b>[na > an + adhi > adhy > ajjh + a + √gam + ā], [na + ajjhagā]</b>  <i>imperf of na adhigacchati</i>"
+            }
+          ],
+          "selected_index": 0,
+          "stem": "cetosanti",
+          "example_sentence": "yato pabbajito ahaṁ, accharā-saṅghāta-mattam'pi, <b>cetosantim'anajjhagaṁ</b>.",
+          "context_hash": "aaebfa74b666a99275c042fba972f8fa065c102cec4e39a4c3fc397b71319aa8",
+          "resolution": null,
+          "deconstructions": [
+            {
+              "words_joined": "cetosantiṁ + anajjhagaṁ",
+              "components": [
+                {
+                  "word": "cetosantiṁ",
+                  "result_uids": [
+                    "76517/dpd"
+                  ]
+                },
+                {
+                  "word": "anajjhagaṁ",
+                  "result_uids": [
+                    "76515/dpd"
+                  ]
+                }
+              ]
+            }
+          ],
+          "direct_uids": [],
+          "selected_deconstruction_index": null,
+          "deconstruction_locked": false,
+          "component_selected_uids": {},
+          "component_resolutions": {},
+          "deconstruction_resolution": null
+        }
+      ],
+      "unrecognized_words": []
+    }
+  ],
+  "global_unrecognized_words": [],
+  "updated_global_stems": {}
+}

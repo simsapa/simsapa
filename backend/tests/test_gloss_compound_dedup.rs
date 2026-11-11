@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use serial_test::serial;
 use simsapa_backend::get_app_data;
-use simsapa_backend::helpers::{gloss_dedup_key, process_word_for_glossing};
+use simsapa_backend::helpers::{gloss_dedup_key, headwords_dedup_word, process_word_for_glossing};
 use simsapa_backend::types::{WordInfo, WordProcessingOptions, WordProcessingResult};
 
 mod helpers;
@@ -29,6 +29,7 @@ fn default_options() -> WordProcessingOptions {
         existing_global_stems: HashMap::new(),
         existing_paragraph_unrecognized: HashMap::new(),
         existing_global_unrecognized: Vec::new(),
+        gloss_format: simsapa_backend::types::GlossFormat::Headwords,
     }
 }
 
@@ -92,46 +93,34 @@ fn assert_compound_survives_component(component: &str, compound: &str) {
     let mut paragraph_shown_stems: HashMap<String, bool> = HashMap::new();
     let mut global_stems: HashMap<String, bool> = HashMap::new();
 
-    let comp = process_word_for_glossing(
-        &word_info(component),
+    let comp = headwords_dedup_word(
+        process_word_for_glossing(&word_info(component), &options, dpd, None).unwrap(),
         &mut paragraph_shown_stems,
         &mut global_stems,
         true,
-        &options,
-        dpd,
-        None,
-    )
-    .unwrap();
+    );
     assert!(
         matches!(comp, Some(WordProcessingResult::Recognized(_))),
         "{component} should be glossed"
     );
 
-    let compound_res = process_word_for_glossing(
-        &word_info(compound),
+    let compound_res = headwords_dedup_word(
+        process_word_for_glossing(&word_info(compound), &options, dpd, None).unwrap(),
         &mut paragraph_shown_stems,
         &mut global_stems,
         true,
-        &options,
-        dpd,
-        None,
-    )
-    .unwrap();
+    );
     assert!(
         matches!(compound_res, Some(WordProcessingResult::Recognized(_))),
         "{compound} must NOT be dropped as a duplicate of its component {component}"
     );
 
-    let comp_again = process_word_for_glossing(
-        &word_info(component),
+    let comp_again = headwords_dedup_word(
+        process_word_for_glossing(&word_info(component), &options, dpd, None).unwrap(),
         &mut paragraph_shown_stems,
         &mut global_stems,
         true,
-        &options,
-        dpd,
-        None,
-    )
-    .unwrap();
+    );
     assert!(
         matches!(comp_again, Some(WordProcessingResult::Skipped)),
         "a second '{component}' should still be deduplicated"

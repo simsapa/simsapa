@@ -1432,6 +1432,39 @@ impl AppData {
         };
     }
 
+    /// Changes the cached settings with `change` and writes them to the db.
+    fn update_app_settings(&self, change: impl FnOnce(&mut AppSettings)) {
+        use crate::db::appdata_schema::app_settings;
+
+        let mut app_settings = self.app_settings_cache.write().expect("Failed to write app settings");
+        change(&mut app_settings);
+        let settings_json = serde_json::to_string(&*app_settings).expect("Can't encode JSON");
+
+        let db_conn = &mut self.dbm.appdata.get_conn().expect("Can't get db conn");
+        if let Err(e) = diesel::update(app_settings::table)
+            .filter(app_settings::key.eq("app_settings"))
+            .set(app_settings::value.eq(Some(settings_json)))
+            .execute(db_conn)
+        {
+            error(&format!("{}", e));
+        }
+    }
+
+    /// Saves the Gloss tab's gloss format.
+    pub fn set_gloss_format(&self, format: crate::types::GlossFormat) {
+        self.update_app_settings(|s| s.gloss_format = format);
+    }
+
+    /// Saves the Gloss tab's Auto-translate option.
+    pub fn set_gloss_auto_translate(&self, on: bool) {
+        self.update_app_settings(|s| s.gloss_auto_translate = on);
+    }
+
+    /// Records that the Word in Sentence info dialog was dismissed with OK.
+    pub fn set_gloss_word_in_sentence_info_shown(&self, shown: bool) {
+        self.update_app_settings(|s| s.gloss_word_in_sentence_info_shown = shown);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 
@@ -1761,6 +1794,14 @@ impl AppData {
         self.refresh_model_usage_lists();
         let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
         app_settings.ai_fallback_sequence.clone()
+    }
+
+    /// Whether the Fallback sequence has an enabled model: what a sequential
+    /// AI request (the CLI's and `/gloss_text`'s gloss runs) can try. The
+    /// engine skips disabled entries (`ai_fallback.rs`), so a sequence whose
+    /// models are all switched off is no AI provider.
+    pub fn has_enabled_ai_model(&self) -> bool {
+        self.get_ai_fallback_sequence().iter().any(|e| e.enabled)
     }
 
     pub fn get_ai_fallback_sequence_json(&self) -> String {

@@ -45,6 +45,15 @@ ALSA/CoreAudio/WASAPI (`ldd` on a glibc build shows no `libasound`). A new
 default feature added to the backend must be re-enabled explicitly in those two
 `Cargo.toml`s.
 
+### The backend's `ai` feature
+
+The AI provider engine (`backend/src/ai_engine.rs`, `rig-core`) and the
+word-selection run built on it (`backend/src/gloss_word_selection_run.rs`) are
+behind the backend's `ai` feature, off by default. `bridges` and `backend_cli`
+enable it; `api` does not, so `cargo tree -p simsapa_api | grep rig` stays
+empty. The reqwest 0.12 / rig-core 0.30 pins and the reason for them are in
+`backend/Cargo.toml`; both are load-bearing on Android.
+
 ## The API routes: shared, GUI, AI, asset
 
 The authoritative inventory is the doc comment at the top of `api/src/lib.rs`;
@@ -62,10 +71,11 @@ that keeps the GUI, AI and asset routes out of it.
   the internal storage path). They stay in `bridges/src/api.rs`, which mounts
   them on top of `build_rocket(ApiConfig::loopback(port))`.
 - **AI** routes (`/word_selection_ws`, `/set_ai_provider_key`,
-  `/ai_provider_key`) stay in `bridges` with `ai_engine.rs` and `rig-core`. The
-  CLI has no provider keys; the agent calling it is the model. `/gloss_text`
-  must never depend on `ai_engine`: if a helper it needs sits next to the AI
-  code, move the helper into `api` or `backend`, not the route into `bridges`.
+  `/ai_provider_key`) stay in `bridges`. The engine they drive is in `backend`
+  behind the `ai` feature (see "The backend's `ai` feature" below). `simsapa_api`
+  never enables it, so `/gloss_text` must never depend on `ai_engine`: if a
+  helper it needs sits next to the AI code, move the helper out of the `ai`
+  feature, not the route into `bridges`.
 - **Asset** routes (`/assets/…`, `/favicon.ico`, `/get_pdf_viewer/…`,
   `/book_resources/…`, `/dict_resources/…`) stay in `bridges` with the
   `include_dir!` of the 48 MB `assets/` folder. HTML from `simsapa serve` still
@@ -202,7 +212,7 @@ Known limitations:
 | `paths` | Data folder and database paths (works without databases) | — |
 | `app-assets [--remove [--yes]]` | The app-assets folder's entries and sizes (works without databases); `--remove` deletes it and `temp-download/` under the write lock, with no preamble (it would open the databases being deleted), after a `dialoguer` confirmation that names the user data lost (and a pending `import-me/` by name). It deletes `appdata.sqlite3` first, so a removal that stops part-way reads as not set up rather than set up with databases missing; it refuses a symlinked folder (removing the link would free nothing) and a relative path (the data folder's `.` fallback). The data folder (`log.txt`, `cli-write.lock`) is kept | — |
 | `health` | The `/health` document, computed in-process, with an inline update check | `GET /health` |
-| `install-skill [--agent claude\|opencode\|pi]… [--global\|--local] [--dir] [--yes] [--force]` | Write `backend_cli/skills/simsapa/SKILL.md` (`include_str!`'d, `{{version}}` filled in) to each agent's skill folder; `commands/install_skill.rs`. Runs before the globals are initialised. Paths and detection live in `SkillEnv` (home, `XDG_CONFIG_HOME`, `--local` base are values, so the tests never touch the real home). Explicit agent + scope installs unasked; otherwise existing config folders are detected and confirmed (`dialoguer::MultiSelect`; no terminal and no `--yes` is an error). The `generator: simsapa-cli` frontmatter marker is what lets a re-run replace its own file but never a user's (`--force`). OpenCode's copy is dropped when Claude's is written for the same scope, since OpenCode reads `.claude/skills` too | — |
+| `install-skill [--agent claude\|opencode\|pi]… [--global\|--local] [--dir] [--yes] [--force]` | Write the embedded skills (`SKILLS` in `commands/install_skill.rs`: `backend_cli/skills/simsapa/SKILL.md` and `backend_cli/skills/gloss-pali-passage/SKILL.md`, `include_str!`'d, `{{version}}` filled in) to each agent's skill folder, and for OpenCode one slash-command file per skill (`<config>/commands/<name>.md`, `$ARGUMENTS` passed on; Claude Code makes `/<name>` from a skill folder itself, so it gets no command file; Pi gets skills only). Runs before the globals are initialised. Paths and detection live in `SkillEnv` (home, `XDG_CONFIG_HOME`, `--local` base are values, so the tests never touch the real home). A `Target` is one agent and scope with its `FileTarget`s, each with its own state. Explicit agent + scope installs unasked; otherwise existing config folders are detected and confirmed (`dialoguer::MultiSelect`; no terminal and no `--yes` is an error). The `generator: simsapa-cli` marker (frontmatter of a skill, an HTML comment in a command file) is what lets a re-run replace its own file but never a user's (`--force`). OpenCode's skill copies are dropped when Claude's are written for the same scope, since OpenCode reads `.claude/skills` too; its command files are not | — |
 | `docs [--output <file>]` | Print or save `docs/simsapa-cli-and-localhost-api.md`, `include_str!`'d into the binary (`commands/docs.rs`); runs before the globals are initialised, so it needs no data folder | — |
 
 **The bundled doc is read outside this repository**, by agents that have only
@@ -227,7 +237,8 @@ it).
 Exit codes (also in `--help`): 0 success, 1 error (including a usage error:
 clap's own 2 would read as "databases missing"), 2 databases missing, 3 folder
 in use, 4 not found (unknown uid; a `not_found` form from `lookup` is a result,
-not exit 4), 130 interrupted.
+not exit 4), 5 `gloss` made its document but an AI request failed, 130
+interrupted.
 
 `main` stays synchronous: `reqwest::blocking` (setup, db-upgrade, the in-use
 check, the releases lookup, the update check) panics when created or dropped
@@ -564,27 +575,30 @@ Windows builds keep the system allocator.
 
 ### What the binary contains
 
-Stripped sizes at `1.1.0-alpha.3`:
+Stripped sizes at `1.2.0-alpha.3`, with the backend `ai` feature (the AI
+provider client for `simsapa gloss`) and the DOCX-export fonts:
 
 | Target | Size |
 |---|---|
-| linux-x64 (musl) | 25.3 MiB |
-| linux-arm64 (musl) | 22.8 MiB |
+| linux-x64 (musl) | 32.6 MiB |
+| linux-arm64 (musl) | 29.3 MiB |
 | darwin-arm64 | not yet measured |
 | win32-x64 | not yet measured |
 
 The CLI embeds only what `backend` compiles in with `include_str!` /
 `include_bytes!` (HTML templates, the inline reader CSS, the JSON/TOML data
-files). Two things it must **not** contain:
+files).
 
-- **The `assets/` folder.** The `include_dir!` of `assets/` lives in `bridges`
-  only. Check: `grep -ac pdf.worker dist/cli/linux-x64/simsapa` prints `0`.
-- **The DOCX-export fonts.** `docx_export.rs` `include_bytes!`s six TTF files,
-  but only `bridges` calls it, so the linker drops them from the CLI. **Do not
+- **The `assets/` folder must not be in it.** The `include_dir!` of `assets/`
+  lives in `bridges` only. Check: `grep -ac pdf.worker dist/cli/linux-x64/simsapa`
+  prints `0`.
+- **The DOCX-export fonts are in it, on purpose.** `docx_export.rs`
+  `include_bytes!`s six TTF files (about 1 MB) and embeds them in each `.docx`;
+  `simsapa gloss --format docx` calls it, so the CLI carries them. **Do not
   check this by grepping for the font names**: `Crimson Pro` and `Abhaya Libre`
   also occur as CSS `font-family` names in the inline reader CSS, so a name grep
-  is never 0. Check for the font *data* instead — a 64-byte slice from the
-  middle of each TTF must not occur in the binary:
+  always matches. Check for the font *data* instead — a 64-byte slice from the
+  middle of each TTF:
 
   ``` sh
   python3 -I -c "
@@ -595,7 +609,8 @@ files). Two things it must **not** contain:
       if d[len(d)//2:len(d)//2+64] in b: print('EMBEDDED', f)"
   ```
 
-  No output means no font is embedded.
+  It lists the six fonts `docx_export.rs` names (two Abhaya Libre, four
+  Crimson Pro) and no other.
 
 The linux-x64 binary links no `libasound` (the backend's `audio` feature is
 off); being static, it links nothing at all.
@@ -636,6 +651,10 @@ adding an exception. The rule and its replacements are also in `AGENTS.md`,
 > would apply to every socket in the process as well, and it would kill an
 > `import`, `index` or `setup` mid-write when its stdout went away. Finishing
 > the work matters more than the output.
+
+The behaviour is covered by `backend_cli/tests/read_only_commands.rs`
+(`test_closed_stdout_is_not_a_panic`, `test_closed_stderr_is_not_a_panic`,
+`test_failed_stdout_write_exits_1`).
 
 ## The npm packages
 
@@ -701,8 +720,8 @@ packed.
 2. Writes that version into the tracked `npm/*/package.json` files, in
    `version` and in the main package's `optionalDependencies` pins, if any of
    them differs, and names each file it changed. `scripts/set-version.py --app`
-   already sets them with every other app-version place (AGENTS.md,
-   "Versions"), so this is a backstop for a version changed by hand; a file it
+   already sets them with every other app-version place ([versions.md](./versions.md)),
+   so this is a backstop for a version changed by hand; a file it
    names belongs in the version commit. The files are written in
    `JSON.stringify(…, null, 2)` form, so keep them in that form or the script
    rewrites them.
@@ -723,13 +742,13 @@ win32 binaries are built on their own machines (`make cli-darwin-arm64`,
 > tracked launcher. The ignore entries are `npm/cli-*/bin/` and `npm/**/*.tgz`;
 > `dist/` is ignored as a whole.
 
-Packed sizes for 1.1.0-alpha.3:
+Packed sizes for 1.2.0-alpha.3:
 
 | Tarball | Packed | Binary unpacked |
 |---|---|---|
-| `simsapa-cli-1.1.0-alpha.3.tgz` | 9,393 B | — |
-| `simsapa-cli-linux-x64-1.1.0-alpha.3.tgz` | 9,855,437 B (9.4 MiB) | 26,577,032 B |
-| `simsapa-cli-linux-arm64-1.1.0-alpha.3.tgz` | 9,414,547 B (9.0 MiB) | 23,913,464 B |
+| `simsapa-cli-1.2.0-alpha.3.tgz` | 9,866 B | — |
+| `simsapa-cli-linux-x64-1.2.0-alpha.3.tgz` | 13,092,629 B (12.5 MiB) | 34,227,272 B |
+| `simsapa-cli-linux-arm64-1.2.0-alpha.3.tgz` | 12,530,688 B (12.0 MiB) | 30,671,544 B |
 | `simsapa-cli-darwin-arm64-…` | not yet measured | |
 | `simsapa-cli-win32-x64-…` | not yet measured | |
 

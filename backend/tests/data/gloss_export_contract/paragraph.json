@@ -1,0 +1,2506 @@
+{
+  "text": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā te xyzqw.",
+  "paragraph": {
+    "paragraph_index": 0,
+    "words_data": [
+      {
+        "original_word": "te",
+        "results": [
+          {
+            "uid": "31134/dpd",
+            "word": "te 1.1",
+            "summary": "<i>(pron)</i> they; those   <i>pron, masc nom pl of ta</i>"
+          },
+          {
+            "uid": "31135/dpd",
+            "word": "te 1.2",
+            "summary": "<i>(pron)</i> them; those   <i>pron, masc acc pl of ta</i>"
+          },
+          {
+            "uid": "31136/dpd",
+            "word": "te 2.1",
+            "summary": "<i>(pron)</i> you; to you (object)   <i>pron, 2nd acc sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31137/dpd",
+            "word": "te 2.2",
+            "summary": "<i>(pron)</i> by you   <i>pron, 2nd instr sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31138/dpd",
+            "word": "te 2.3",
+            "summary": "<i>(pron)</i> for you; to you   <i>pron, 2nd dat sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31139/dpd",
+            "word": "te 2.4",
+            "summary": "<i>(pron)</i> your; of you   <i>pron, 2nd gen sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31140/dpd",
+            "word": "te 2.5",
+            "summary": "<i>(pron)</i> when you   <i>pron, 2nd gen sg of tvaṁ, gen abs</i>"
+          },
+          {
+            "uid": "31141/dpd",
+            "word": "te 3",
+            "summary": "<i>(card)</i> three (3)  <b>[ti > te]</b>  <i>card, in comps, from ti</i>"
+          },
+          {
+            "uid": "29188/dpd",
+            "word": "ta 1.1",
+            "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+          },
+          {
+            "uid": "29189/dpd",
+            "word": "ta 2.1",
+            "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
+          },
+          {
+            "uid": "30430/dpd",
+            "word": "ti 1",
+            "summary": "<i>(card)</i> three (3)   <i>card, masc fem & nt pl</i>"
+          },
+          {
+            "uid": "30432/dpd",
+            "word": "ti 3",
+            "summary": "<i>(ve)</i> (gram) ti; verbal ending of the present tense 3rd person singular   <i>ve, masc</i>"
+          },
+          {
+            "uid": "31017/dpd",
+            "word": "tumha",
+            "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>"
+          },
+          {
+            "uid": "31383/dpd",
+            "word": "tvaṁ 1",
+            "summary": "<i>(pron)</i> you (subject)  <b>[tumha + aṁ > tuvaṁ > tvaṁ]</b>  <i>pron, 2nd nom sg of tumha</i>"
+          }
+        ],
+        "selected_index": 12,
+        "stem": "te 1.1",
+        "example_sentence": "<b>te</b> jhāyino sātatikā, niccaṁ daḷhaparakkamā,",
+        "context_hash": "e785ecbe1cf86ed0fce40b9271999945175c35a901e77c7d5640fe7ad91e4693",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "31134/dpd",
+          "31135/dpd",
+          "31136/dpd",
+          "31137/dpd",
+          "31138/dpd",
+          "31139/dpd",
+          "31140/dpd",
+          "31141/dpd",
+          "29188/dpd",
+          "29189/dpd",
+          "30430/dpd",
+          "30432/dpd",
+          "31017/dpd",
+          "31383/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "ta",
+            "pron",
+            "masc nom pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "nt nom pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "masc acc pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "nt acc pl"
+          ],
+          [
+            "ta",
+            "letter",
+            "masc acc pl"
+          ],
+          [
+            "ta",
+            "letter",
+            "masc loc sg"
+          ],
+          [
+            "ti",
+            "ve",
+            "masc voc sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd acc sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd instr sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd dat sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd gen sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd acc sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd instr sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd dat sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd gen sg"
+          ]
+        ],
+        "lookup_word": "te",
+        "demoted_uids": [
+          "31134/dpd",
+          "31135/dpd",
+          "31136/dpd",
+          "31137/dpd",
+          "31138/dpd",
+          "31139/dpd",
+          "31140/dpd",
+          "31141/dpd",
+          "29189/dpd",
+          "30432/dpd"
+        ]
+      },
+      {
+        "original_word": "jhāyino",
+        "results": [
+          {
+            "uid": "28822/dpd",
+            "word": "jhāyi 1.1",
+            "summary": "<i>(masc)</i> meditator; yogi  <b>[√jhā + [y] + i]</b>  <i>masc, agent, from jhāyati</i>"
+          },
+          {
+            "uid": "28829/dpd",
+            "word": "jhāyī 1",
+            "summary": "<i>(masc)</i> meditator; yogi  <b>[√jhā + [y] + ī]</b>  <i>masc, agent, from jhāyati</i>"
+          },
+          {
+            "uid": "28830/dpd",
+            "word": "jhāyī 2",
+            "summary": "<i>(adj)</i> meditating; contemplating  <b>[√jhā + [y] + ī]</b>  <i>adj, from jhāyati</i>"
+          }
+        ],
+        "selected_index": 0,
+        "stem": "jhāyi 1.1",
+        "example_sentence": "te <b>jhāyino</b> sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ",
+        "context_hash": "e1ea307af1de3a656323454c87e919164cc617bf39fa04d4d2449fda0337ba13",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "28822/dpd",
+          "28829/dpd",
+          "28830/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "jhāyi",
+            "noun",
+            "masc dat sg"
+          ],
+          [
+            "jhāyi",
+            "noun",
+            "masc gen sg"
+          ],
+          [
+            "jhāyī",
+            "noun",
+            "masc nom pl"
+          ],
+          [
+            "jhāyī",
+            "noun",
+            "masc acc pl"
+          ],
+          [
+            "jhāyī",
+            "noun",
+            "masc dat sg"
+          ],
+          [
+            "jhāyī",
+            "noun",
+            "masc gen sg"
+          ],
+          [
+            "jhāyī",
+            "noun",
+            "masc voc pl"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "masc nom pl"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "masc acc pl"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "masc dat sg"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "nt dat sg"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "masc gen sg"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "nt gen sg"
+          ],
+          [
+            "jhāyī",
+            "adj",
+            "masc voc pl"
+          ]
+        ],
+        "lookup_word": "jhāyino"
+      },
+      {
+        "original_word": "sātatikā",
+        "results": [
+          {
+            "uid": "62145/dpd",
+            "word": "sātatika",
+            "summary": "<i>(adj)</i> diligent; persevering; consistent; practising continuously  <b>[sa > sā + √tan + ta + *ika], [satata + *ika]</b>  <i>adj, from satata</i>"
+          }
+        ],
+        "selected_index": 0,
+        "stem": "sātatika",
+        "example_sentence": "te jhāyino <b>sātatikā</b>, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā te",
+        "context_hash": "62ee9a322388e5735fe8a1186c1b94e1a8ed8979639cebb35df5d1ebec5b23f0",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "62145/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "sātatika",
+            "adj",
+            "masc nom pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "fem nom sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "fem nom pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "nt nom pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "fem acc pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "masc instr sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "nt instr sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "masc abl sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "nt abl sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "masc voc sg"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "masc voc pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "fem voc pl"
+          ],
+          [
+            "sātatika",
+            "adj",
+            "nt voc sg"
+          ]
+        ],
+        "lookup_word": "sātatikā"
+      },
+      {
+        "original_word": "niccaṁ",
+        "results": [
+          {
+            "uid": "37008/dpd",
+            "word": "niccaṁ 1",
+            "summary": "<i>(ind)</i> continuously; always; permanently; perpetually  <b>[nicca + aṁ]</b>  <i>ind, adv, acc sg of nicca</i>"
+          },
+          {
+            "uid": "37009/dpd",
+            "word": "niccaṁ 2",
+            "summary": "<i>(ind)</i> always; in every case  <b>[nicca + aṁ]</b>  <i>ind, adv, acc sg of nicca</i>"
+          },
+          {
+            "uid": "37010/dpd",
+            "word": "niccaṁ 3",
+            "summary": "<i>(ind)</i> (gram) mandatory; always  <b>[nicca + aṁ]</b>  <i>ind, adv, acc sg of nicca</i>"
+          },
+          {
+            "uid": "36976/dpd",
+            "word": "nicca 1",
+            "summary": "<i>(adj)</i> permanent; lasting; ordered; stable; reliable; immutable  <b>[ni + tya]</b>  <i>adj</i>"
+          },
+          {
+            "uid": "80607/dpd",
+            "word": "nicca 2",
+            "summary": "<i>(adj)</i> regular; consistent; continuous; ongoing  <b>[ni + tya]</b>  <i>adj</i>"
+          },
+          {
+            "uid": "74592/dpd",
+            "word": "nicca 3",
+            "summary": "<i>(adj)</i> (gram) (of a rule) not optional; mandatory; necessary  <b>[ni + tya]</b>  <i>adj, from ni</i>"
+          }
+        ],
+        "selected_index": 3,
+        "stem": "niccaṁ 1",
+        "example_sentence": "te jhāyino sātatikā, <b>niccaṁ</b> daḷhaparakkamā, evaṁhetaṁ yenāyasmā te xyzqw.",
+        "context_hash": "6f833a62fb0fb822c8984cd5b1d0aa08018d135bfbe3da327a7273f69ba6eb9e",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "37008/dpd",
+          "37009/dpd",
+          "37010/dpd",
+          "36976/dpd",
+          "74592/dpd",
+          "80607/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "nicca",
+            "adj",
+            "nt nom sg"
+          ],
+          [
+            "nicca",
+            "adj",
+            "masc acc sg"
+          ],
+          [
+            "nicca",
+            "adj",
+            "fem acc sg"
+          ],
+          [
+            "nicca",
+            "adj",
+            "nt acc sg"
+          ]
+        ],
+        "lookup_word": "niccaṁ",
+        "demoted_uids": [
+          "37010/dpd",
+          "74592/dpd"
+        ]
+      },
+      {
+        "original_word": "daḷhaparakkamā",
+        "results": [
+          {
+            "uid": "32215/dpd",
+            "word": "daḷhaparakkama",
+            "summary": "<i>(adj)</i> having persistent effort; making continuous effort; striving diligently  <b>[daḷha + parakkama]</b>  <i>adj, comp</i>"
+          }
+        ],
+        "selected_index": 0,
+        "stem": "daḷhaparakkama",
+        "example_sentence": "te jhāyino sātatikā, niccaṁ <b>daḷhaparakkamā</b>, evaṁhetaṁ yenāyasmā te xyzqw.",
+        "context_hash": "6f833a62fb0fb822c8984cd5b1d0aa08018d135bfbe3da327a7273f69ba6eb9e",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "32215/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "daḷhaparakkama",
+            "adj",
+            "masc nom pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "fem nom sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "fem nom pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "nt nom pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "fem acc pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "masc instr sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "nt instr sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "masc abl sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "nt abl sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "masc voc sg"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "masc voc pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "fem voc pl"
+          ],
+          [
+            "daḷhaparakkama",
+            "adj",
+            "nt voc sg"
+          ]
+        ],
+        "lookup_word": "daḷhaparakkamā"
+      },
+      {
+        "original_word": "evaṁhetaṁ",
+        "results": [
+          {
+            "uid": "18134/dpd",
+            "word": "evaṁ 1",
+            "summary": "<i>(ind)</i> thus; this; like this; similarly; in the same manner; just as; such  <b>[eva + aṁ]</b>  <i>ind, adv</i>"
+          },
+          {
+            "uid": "18135/dpd",
+            "word": "evaṁ 2",
+            "summary": "<i>(ind)</i> yes!; that is right!; correct!  <b>[eva + aṁ]</b>  <i>ind, excl</i>"
+          },
+          {
+            "uid": "10832/dpd",
+            "word": "aha 1.1",
+            "summary": "<i>(nt)</i> day   <i>nt, in comps</i>"
+          },
+          {
+            "uid": "10833/dpd",
+            "word": "aha 1.2",
+            "summary": "<i>(masc)</i> day   <i>masc, in comps</i>"
+          },
+          {
+            "uid": "10931/dpd",
+            "word": "ahe",
+            "summary": "<i>(ind)</i> (used to address equals) friend; love; dear   <i>ind, excl</i>"
+          },
+          {
+            "uid": "10884/dpd",
+            "word": "ahi",
+            "summary": "<i>(masc)</i> snake; serpent   <i>masc</i>"
+          },
+          {
+            "uid": "29188/dpd",
+            "word": "ta 1.1",
+            "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+          },
+          {
+            "uid": "29189/dpd",
+            "word": "ta 2.1",
+            "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
+          },
+          {
+            "uid": "30215/dpd",
+            "word": "taṁ 1.1",
+            "summary": "<i>(pron)</i> it; that  <b>[ta + aṁ]</b>  <i>pron, nt nom sg of ta</i>"
+          },
+          {
+            "uid": "30216/dpd",
+            "word": "taṁ 1.2",
+            "summary": "<i>(pron)</i> him; her; one; that person; that thing  <b>[ta + aṁ]</b>  <i>pron, masc fem & nt acc sg of ta</i>"
+          },
+          {
+            "uid": "30217/dpd",
+            "word": "taṁ 2.1",
+            "summary": "<i>(pron)</i> you (object)  <b>[tvaṁ + aṁ]</b>  <i>pron, 2nd acc sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31017/dpd",
+            "word": "tumha",
+            "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>"
+          },
+          {
+            "uid": "31383/dpd",
+            "word": "tvaṁ 1",
+            "summary": "<i>(pron)</i> you (subject)  <b>[tumha + aṁ > tuvaṁ > tvaṁ]</b>  <i>pron, 2nd nom sg of tumha</i>"
+          },
+          {
+            "uid": "71212/dpd",
+            "word": "hi 1",
+            "summary": "<i>(ind)</i> indeed; certainly; truly; definitely   <i>ind, emph</i>"
+          },
+          {
+            "uid": "71213/dpd",
+            "word": "hi 2",
+            "summary": "<i>(ind)</i> because; for   <i>ind</i>"
+          },
+          {
+            "uid": "71214/dpd",
+            "word": "hi 3",
+            "summary": "<i>(ve)</i> (gram) hi; verbal ending of imperative 2nd person singular   <i>ve, masc</i>"
+          },
+          {
+            "uid": "17970/dpd",
+            "word": "enta",
+            "summary": "<i>(prp)</i> coming  <b>[e + nta]</b>  <i>prp of eti</i>"
+          },
+          {
+            "uid": "17847/dpd",
+            "word": "eta",
+            "summary": "<i>(pron)</i> this   <i>pron, base</i>"
+          },
+          {
+            "uid": "17896/dpd",
+            "word": "etaṁ 1",
+            "summary": "<i>(pron)</i> this; this thing (subject)  <b>[eta + aṁ]</b>  <i>pron, nt nom sg of eta</i>"
+          },
+          {
+            "uid": "17897/dpd",
+            "word": "etaṁ 2",
+            "summary": "<i>(pron)</i> this; this man; this thing (object)  <b>[eta + aṁ]</b>  <i>pron, masc fem & nt acc sg of eta</i>"
+          },
+          {
+            "uid": "17914/dpd",
+            "word": "eti 1",
+            "summary": "<i>(pr)</i> comes (to)  <b>[e + ti]</b>  <i>pr</i>"
+          },
+          {
+            "uid": "17915/dpd",
+            "word": "eti 2",
+            "summary": "<i>(pr)</i> goes (to)  <b>[e + ti]</b>  <i>pr</i>"
+          },
+          {
+            "uid": "80558/dpd",
+            "word": "eti 3",
+            "summary": "<i>(pr)</i> becomes  <b>[e + ti]</b>  <i>pr</i>"
+          },
+          {
+            "uid": "70762/dpd",
+            "word": "ha 1.1",
+            "summary": "<i>(letter)</i> (gram) letter h; 39th letter of the alphabet; guttural semi-vowel   <i>letter, masc</i>"
+          },
+          {
+            "uid": "75890/dpd",
+            "word": "ha 3.1",
+            "summary": "<i>(adj)</i> leaving behind; giving up; abandoning  <b>[√hā + a]</b>  <i>adj, in comps, from jahati</i>"
+          },
+          {
+            "uid": "10868/dpd",
+            "word": "ahaṁ",
+            "summary": "<i>(pron)</i> I   <i>pron</i>"
+          }
+        ],
+        "selected_index": 0,
+        "stem": "evaṁ 1",
+        "example_sentence": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
+        "context_hash": "6f833a62fb0fb822c8984cd5b1d0aa08018d135bfbe3da327a7273f69ba6eb9e",
+        "resolution": null,
+        "deconstructions": [
+          {
+            "words_joined": "evaṁ + ahe + taṁ",
+            "components": [
+              {
+                "word": "evaṁ",
+                "result_uids": [
+                  "18134/dpd",
+                  "18135/dpd"
+                ]
+              },
+              {
+                "word": "ahe",
+                "result_uids": [
+                  "10832/dpd",
+                  "10833/dpd",
+                  "10884/dpd",
+                  "10931/dpd"
+                ]
+              },
+              {
+                "word": "taṁ",
+                "result_uids": [
+                  "29188/dpd",
+                  "29189/dpd",
+                  "30215/dpd",
+                  "30216/dpd",
+                  "30217/dpd",
+                  "31017/dpd",
+                  "31383/dpd"
+                ]
+              }
+            ]
+          },
+          {
+            "words_joined": "evaṁ + hi + etaṁ",
+            "components": [
+              {
+                "word": "evaṁ",
+                "result_uids": [
+                  "18134/dpd",
+                  "18135/dpd"
+                ]
+              },
+              {
+                "word": "hi",
+                "result_uids": [
+                  "71212/dpd",
+                  "71213/dpd",
+                  "71214/dpd"
+                ]
+              },
+              {
+                "word": "etaṁ",
+                "result_uids": [
+                  "17847/dpd",
+                  "17896/dpd",
+                  "17897/dpd",
+                  "17914/dpd",
+                  "17915/dpd",
+                  "17970/dpd",
+                  "80558/dpd"
+                ]
+              }
+            ]
+          },
+          {
+            "words_joined": "evaṁ + ho + etaṁ",
+            "components": [
+              {
+                "word": "evaṁ",
+                "result_uids": [
+                  "18134/dpd",
+                  "18135/dpd"
+                ]
+              },
+              {
+                "word": "ho",
+                "result_uids": [
+                  "70762/dpd",
+                  "75890/dpd"
+                ]
+              },
+              {
+                "word": "etaṁ",
+                "result_uids": [
+                  "17847/dpd",
+                  "17896/dpd",
+                  "17897/dpd",
+                  "17914/dpd",
+                  "17915/dpd",
+                  "17970/dpd",
+                  "80558/dpd"
+                ]
+              }
+            ]
+          },
+          {
+            "words_joined": "evaṁ + ahaṁ + etaṁ",
+            "components": [
+              {
+                "word": "evaṁ",
+                "result_uids": [
+                  "18134/dpd",
+                  "18135/dpd"
+                ]
+              },
+              {
+                "word": "ahaṁ",
+                "result_uids": [
+                  "10832/dpd",
+                  "10833/dpd",
+                  "10868/dpd"
+                ]
+              },
+              {
+                "word": "etaṁ",
+                "result_uids": [
+                  "17847/dpd",
+                  "17896/dpd",
+                  "17897/dpd",
+                  "17914/dpd",
+                  "17915/dpd",
+                  "17970/dpd",
+                  "80558/dpd"
+                ]
+              }
+            ]
+          }
+        ],
+        "direct_uids": [],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "lookup_word": "evaṁhetaṁ"
+      },
+      {
+        "original_word": "yenāyasmā",
+        "results": [
+          {
+            "uid": "54177/dpd",
+            "word": "yenāyasmā",
+            "summary": "<i>(sandhi)</i> where venerable  <b>[yena + āyasmā]</b>  <i>sandhi, adv + masc</i>"
+          },
+          {
+            "uid": "53445/dpd",
+            "word": "ya 1.1",
+            "summary": "<i>(letter)</i> (gram) letter y; 34th letter of the alphabet; palatal semi-vowel   <i>letter, masc</i>"
+          },
+          {
+            "uid": "53444/dpd",
+            "word": "ya 2.1",
+            "summary": "<i>(pron)</i> whoever; whatever; whichever   <i>pron, base</i>"
+          },
+          {
+            "uid": "53446/dpd",
+            "word": "ya 3.1",
+            "summary": "<i>(cs)</i> (gram) ya; suffix used to form impersonal and passive verbs   <i>cs, masc</i>"
+          },
+          {
+            "uid": "53447/dpd",
+            "word": "ya 3.2",
+            "summary": "<i>(cs)</i> (gram) ya; conjugational sign of group 3 divādigaṇa verbs   <i>cs, masc</i>"
+          },
+          {
+            "uid": "54167/dpd",
+            "word": "yena 1",
+            "summary": "<i>(pron)</i> by which; with whichever  <b>[ya + ena]</b>  <i>pron, masc & nt instr sg of ya</i>"
+          },
+          {
+            "uid": "54168/dpd",
+            "word": "yena 2",
+            "summary": "<i>(ind)</i> because of; because of which  <b>[ya + ena]</b>  <i>ind, adv, instr sg of ya</i>"
+          },
+          {
+            "uid": "54169/dpd",
+            "word": "yena 3",
+            "summary": "<i>(ind)</i> where; wherever; in which direction; to; towards  <b>[ya + ena]</b>  <i>ind, adv, instr sg of ya</i>"
+          },
+          {
+            "uid": "12182/dpd",
+            "word": "āya 1.1",
+            "summary": "<i>(masc)</i> coming in; income; entrance  <b>[ā + √i > ay + *a]</b>  <i>masc, in comps</i>"
+          },
+          {
+            "uid": "12183/dpd",
+            "word": "āya 1.2",
+            "summary": "<i>(masc)</i> income; revenue; profit  <b>[ā + √i > ay + *a]</b>  <i>masc</i>"
+          },
+          {
+            "uid": "71901/dpd",
+            "word": "āya 1.3",
+            "summary": "<i>(masc)</i> (of water) inlet  <b>[ā + √i > ay + *a]</b>  <i>masc, in comps</i>"
+          },
+          {
+            "uid": "12185/dpd",
+            "word": "āya 1.4",
+            "summary": "<i>(masc)</i> improvement  <b>[ā + √i > ay + *a]</b>  <i>masc</i>"
+          },
+          {
+            "uid": "12236/dpd",
+            "word": "āyas",
+            "summary": "<i>(masc)</i> life; health; power  <b>[ā + √i > ay + *as]</b>  <i>masc, in comps, mano group</i>"
+          },
+          {
+            "uid": "12241/dpd",
+            "word": "āyasmant 1",
+            "summary": "<i>(masc)</i> sir; venerable; reverend  <b>[ā + √i > ay + *as + mant], [āyas + mant]</b>  <i>masc, from āyas</i>"
+          },
+          {
+            "uid": "12242/dpd",
+            "word": "āyasmant 2",
+            "summary": "<i>(adj)</i> venerable; respectable  <b>[ā + √i > ay + *as + mant], [āyas + mant]</b>  <i>adj, from āyas</i>"
+          },
+          {
+            "uid": "12243/dpd",
+            "word": "āyasmā",
+            "summary": "<i>(masc)</i> venerable  <b>[ā + √i > ay + *as + mant + ā], [āyas + mā]</b>  <i>masc, nom sg of āyasmant</i>"
+          }
+        ],
+        "selected_index": 0,
+        "stem": "yenāyasmā",
+        "example_sentence": "jhāyino sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ <b>yenāyasmā</b> te xyzqw.",
+        "context_hash": "639be5847dc925c00ee7fa03c0d375d9940aa7227b83f9faada1ecd16900df27",
+        "resolution": null,
+        "deconstructions": [
+          {
+            "words_joined": "yena + āyasmā",
+            "components": [
+              {
+                "word": "yena",
+                "result_uids": [
+                  "53444/dpd",
+                  "53445/dpd",
+                  "53446/dpd",
+                  "53447/dpd",
+                  "54167/dpd",
+                  "54168/dpd",
+                  "54169/dpd"
+                ]
+              },
+              {
+                "word": "āyasmā",
+                "result_uids": [
+                  "12182/dpd",
+                  "12183/dpd",
+                  "12185/dpd",
+                  "12236/dpd",
+                  "12241/dpd",
+                  "12242/dpd",
+                  "12243/dpd",
+                  "71901/dpd"
+                ]
+              }
+            ]
+          }
+        ],
+        "direct_uids": [
+          "54177/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "lookup_word": "yenāyasmā"
+      },
+      {
+        "original_word": "te",
+        "results": [
+          {
+            "uid": "31134/dpd",
+            "word": "te 1.1",
+            "summary": "<i>(pron)</i> they; those   <i>pron, masc nom pl of ta</i>"
+          },
+          {
+            "uid": "31135/dpd",
+            "word": "te 1.2",
+            "summary": "<i>(pron)</i> them; those   <i>pron, masc acc pl of ta</i>"
+          },
+          {
+            "uid": "31136/dpd",
+            "word": "te 2.1",
+            "summary": "<i>(pron)</i> you; to you (object)   <i>pron, 2nd acc sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31137/dpd",
+            "word": "te 2.2",
+            "summary": "<i>(pron)</i> by you   <i>pron, 2nd instr sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31138/dpd",
+            "word": "te 2.3",
+            "summary": "<i>(pron)</i> for you; to you   <i>pron, 2nd dat sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31139/dpd",
+            "word": "te 2.4",
+            "summary": "<i>(pron)</i> your; of you   <i>pron, 2nd gen sg of tvaṁ</i>"
+          },
+          {
+            "uid": "31140/dpd",
+            "word": "te 2.5",
+            "summary": "<i>(pron)</i> when you   <i>pron, 2nd gen sg of tvaṁ, gen abs</i>"
+          },
+          {
+            "uid": "31141/dpd",
+            "word": "te 3",
+            "summary": "<i>(card)</i> three (3)  <b>[ti > te]</b>  <i>card, in comps, from ti</i>"
+          },
+          {
+            "uid": "29188/dpd",
+            "word": "ta 1.1",
+            "summary": "<i>(pron)</i> that   <i>pron, base</i>"
+          },
+          {
+            "uid": "29189/dpd",
+            "word": "ta 2.1",
+            "summary": "<i>(letter)</i> (gram) letter t; 24th letter of the alphabet; dental sibilant   <i>letter, masc</i>"
+          },
+          {
+            "uid": "30430/dpd",
+            "word": "ti 1",
+            "summary": "<i>(card)</i> three (3)   <i>card, masc fem & nt pl</i>"
+          },
+          {
+            "uid": "30432/dpd",
+            "word": "ti 3",
+            "summary": "<i>(ve)</i> (gram) ti; verbal ending of the present tense 3rd person singular   <i>ve, masc</i>"
+          },
+          {
+            "uid": "31017/dpd",
+            "word": "tumha",
+            "summary": "<i>(pron)</i> you   <i>pron, base of tvaṁ</i>"
+          },
+          {
+            "uid": "31383/dpd",
+            "word": "tvaṁ 1",
+            "summary": "<i>(pron)</i> you (subject)  <b>[tumha + aṁ > tuvaṁ > tvaṁ]</b>  <i>pron, 2nd nom sg of tumha</i>"
+          }
+        ],
+        "selected_index": 12,
+        "stem": "te 1.1",
+        "example_sentence": "sātatikā, niccaṁ daḷhaparakkamā, evaṁhetaṁ yenāyasmā <b>te</b> xyzqw.",
+        "context_hash": "61c639c3867f95d0a2ac8c578220a5c9d0c03f974f7acde6fe4702109bf0c9c3",
+        "resolution": null,
+        "deconstructions": [],
+        "direct_uids": [
+          "31134/dpd",
+          "31135/dpd",
+          "31136/dpd",
+          "31137/dpd",
+          "31138/dpd",
+          "31139/dpd",
+          "31140/dpd",
+          "31141/dpd",
+          "29188/dpd",
+          "29189/dpd",
+          "30430/dpd",
+          "30432/dpd",
+          "31017/dpd",
+          "31383/dpd"
+        ],
+        "selected_deconstruction_index": null,
+        "deconstruction_locked": false,
+        "component_selected_uids": {},
+        "component_resolutions": {},
+        "deconstruction_resolution": null,
+        "form_grammar_raw": [
+          [
+            "ta",
+            "pron",
+            "masc nom pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "nt nom pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "masc acc pl"
+          ],
+          [
+            "ta",
+            "pron",
+            "nt acc pl"
+          ],
+          [
+            "ta",
+            "letter",
+            "masc acc pl"
+          ],
+          [
+            "ta",
+            "letter",
+            "masc loc sg"
+          ],
+          [
+            "ti",
+            "ve",
+            "masc voc sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd acc sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd instr sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd dat sg"
+          ],
+          [
+            "tumha",
+            "pron",
+            "2nd gen sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd acc sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd instr sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd dat sg"
+          ],
+          [
+            "tvaṁ",
+            "pron",
+            "2nd gen sg"
+          ]
+        ],
+        "lookup_word": "te",
+        "demoted_uids": [
+          "31134/dpd",
+          "31135/dpd",
+          "31136/dpd",
+          "31137/dpd",
+          "31138/dpd",
+          "31139/dpd",
+          "31140/dpd",
+          "31141/dpd",
+          "29189/dpd",
+          "30432/dpd"
+        ]
+      }
+    ],
+    "unrecognized_words": [
+      "xyzqw"
+    ],
+    "rows": [
+      {
+        "word": "te",
+        "depth": 0,
+        "word_index": 0,
+        "id": 31017,
+        "grammar": "2nd gen sg of tumha",
+        "grammar_options": [
+          "2nd acc sg of tumha",
+          "2nd instr sg of tumha",
+          "2nd dat sg of tumha",
+          "2nd gen sg of tumha"
+        ],
+        "grammar_index": 3,
+        "meaning": "you",
+        "construction": "",
+        "root": "",
+        "confidence": "N",
+        "candidates": [
+          {
+            "id": 31134,
+            "uid": "31134/dpd",
+            "lemma_1": "te 1.1",
+            "grammar_options": [
+              "pron, masc nom pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "they; those",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31135,
+            "uid": "31135/dpd",
+            "lemma_1": "te 1.2",
+            "grammar_options": [
+              "pron, masc acc pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "them; those",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31136,
+            "uid": "31136/dpd",
+            "lemma_1": "te 2.1",
+            "grammar_options": [
+              "pron, 2nd acc sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "you; to you (object)",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31137,
+            "uid": "31137/dpd",
+            "lemma_1": "te 2.2",
+            "grammar_options": [
+              "pron, 2nd instr sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "by you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31138,
+            "uid": "31138/dpd",
+            "lemma_1": "te 2.3",
+            "grammar_options": [
+              "pron, 2nd dat sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "for you; to you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31139,
+            "uid": "31139/dpd",
+            "lemma_1": "te 2.4",
+            "grammar_options": [
+              "pron, 2nd gen sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "your; of you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31140,
+            "uid": "31140/dpd",
+            "lemma_1": "te 2.5",
+            "grammar_options": [
+              "pron, 2nd gen sg of tvaṁ, gen abs"
+            ],
+            "grammar_index": 0,
+            "meaning": "when you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31141,
+            "uid": "31141/dpd",
+            "lemma_1": "te 3",
+            "grammar_options": [
+              "card, in comps, from ti"
+            ],
+            "grammar_index": 0,
+            "meaning": "three (3)",
+            "construction": "ti",
+            "root": ""
+          },
+          {
+            "id": 29188,
+            "uid": "29188/dpd",
+            "lemma_1": "ta 1.1",
+            "grammar_options": [
+              "masc nom pl of ta",
+              "nt nom pl of ta",
+              "masc acc pl of ta",
+              "nt acc pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "that",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 29189,
+            "uid": "29189/dpd",
+            "lemma_1": "ta 2.1",
+            "grammar_options": [
+              "masc acc pl of ta",
+              "masc loc sg of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) letter t; 24th letter of the alphabet; dental sibilant",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 30430,
+            "uid": "30430/dpd",
+            "lemma_1": "ti 1",
+            "grammar_options": [
+              "card, masc fem & nt pl"
+            ],
+            "grammar_index": 0,
+            "meaning": "three (3)",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 30432,
+            "uid": "30432/dpd",
+            "lemma_1": "ti 3",
+            "grammar_options": [
+              "masc voc sg of ti"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) ti; verbal ending of the present tense 3rd person singular",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31017,
+            "uid": "31017/dpd",
+            "lemma_1": "tumha",
+            "grammar_options": [
+              "2nd acc sg of tumha",
+              "2nd instr sg of tumha",
+              "2nd dat sg of tumha",
+              "2nd gen sg of tumha"
+            ],
+            "grammar_index": 3,
+            "meaning": "you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31383,
+            "uid": "31383/dpd",
+            "lemma_1": "tvaṁ 1",
+            "grammar_options": [
+              "2nd acc sg of tvaṁ",
+              "2nd instr sg of tvaṁ",
+              "2nd dat sg of tvaṁ",
+              "2nd gen sg of tvaṁ"
+            ],
+            "grammar_index": 3,
+            "meaning": "you (subject)",
+            "construction": "tumha + aṁ",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 12,
+        "components": []
+      },
+      {
+        "word": "jhāyino",
+        "depth": 0,
+        "word_index": 1,
+        "id": 28822,
+        "grammar": "masc gen sg of jhāyi",
+        "grammar_options": [
+          "masc dat sg of jhāyi",
+          "masc gen sg of jhāyi"
+        ],
+        "grammar_index": 1,
+        "meaning": "meditator; yogi",
+        "construction": "√jhā + i",
+        "root": "√jhā 3 ya (think, meditate)",
+        "confidence": "N",
+        "candidates": [
+          {
+            "id": 28822,
+            "uid": "28822/dpd",
+            "lemma_1": "jhāyi 1.1",
+            "grammar_options": [
+              "masc dat sg of jhāyi",
+              "masc gen sg of jhāyi"
+            ],
+            "grammar_index": 1,
+            "meaning": "meditator; yogi",
+            "construction": "√jhā + i",
+            "root": "√jhā 3 ya (think, meditate)"
+          },
+          {
+            "id": 28829,
+            "uid": "28829/dpd",
+            "lemma_1": "jhāyī 1",
+            "grammar_options": [
+              "masc nom pl of jhāyī",
+              "masc acc pl of jhāyī",
+              "masc dat sg of jhāyī",
+              "masc gen sg of jhāyī",
+              "masc voc pl of jhāyī"
+            ],
+            "grammar_index": 3,
+            "meaning": "meditator; yogi",
+            "construction": "√jhā + ī",
+            "root": "√jhā 3 ya (think, meditate)"
+          },
+          {
+            "id": 28830,
+            "uid": "28830/dpd",
+            "lemma_1": "jhāyī 2",
+            "grammar_options": [
+              "adj, masc nom pl of jhāyī",
+              "adj, masc acc pl of jhāyī",
+              "adj, masc dat sg of jhāyī",
+              "adj, nt dat sg of jhāyī",
+              "adj, masc gen sg of jhāyī",
+              "adj, nt gen sg of jhāyī",
+              "adj, masc voc pl of jhāyī"
+            ],
+            "grammar_index": 4,
+            "meaning": "meditating; contemplating",
+            "construction": "√jhā + ī",
+            "root": "√jhā 3 ya (think, meditate)"
+          }
+        ],
+        "selected_candidate": 0,
+        "components": []
+      },
+      {
+        "word": "sātatikā",
+        "depth": 0,
+        "word_index": 2,
+        "id": 62145,
+        "grammar": "adj, masc nom pl of sātatika",
+        "grammar_options": [
+          "adj, masc nom pl of sātatika",
+          "adj, fem nom sg of sātatika",
+          "adj, fem nom pl of sātatika",
+          "adj, nt nom pl of sātatika",
+          "adj, fem acc pl of sātatika",
+          "adj, masc instr sg of sātatika",
+          "adj, nt instr sg of sātatika",
+          "adj, masc abl sg of sātatika",
+          "adj, nt abl sg of sātatika",
+          "adj, masc voc sg of sātatika",
+          "adj, masc voc pl of sātatika",
+          "adj, fem voc pl of sātatika",
+          "adj, nt voc sg of sātatika"
+        ],
+        "grammar_index": 0,
+        "meaning": "diligent; persevering; consistent; practising continuously",
+        "construction": "sa + √tan + ta + *ika",
+        "root": "√tan 7 o (stretch, extend)",
+        "confidence": null,
+        "candidates": [
+          {
+            "id": 62145,
+            "uid": "62145/dpd",
+            "lemma_1": "sātatika",
+            "grammar_options": [
+              "adj, masc nom pl of sātatika",
+              "adj, fem nom sg of sātatika",
+              "adj, fem nom pl of sātatika",
+              "adj, nt nom pl of sātatika",
+              "adj, fem acc pl of sātatika",
+              "adj, masc instr sg of sātatika",
+              "adj, nt instr sg of sātatika",
+              "adj, masc abl sg of sātatika",
+              "adj, nt abl sg of sātatika",
+              "adj, masc voc sg of sātatika",
+              "adj, masc voc pl of sātatika",
+              "adj, fem voc pl of sātatika",
+              "adj, nt voc sg of sātatika"
+            ],
+            "grammar_index": 0,
+            "meaning": "diligent; persevering; consistent; practising continuously",
+            "construction": "sa + √tan + ta + *ika",
+            "root": "√tan 7 o (stretch, extend)"
+          }
+        ],
+        "selected_candidate": 0,
+        "components": []
+      },
+      {
+        "word": "niccaṁ",
+        "depth": 0,
+        "word_index": 3,
+        "id": 36976,
+        "grammar": "adj, nt nom sg of nicca",
+        "grammar_options": [
+          "adj, nt nom sg of nicca",
+          "adj, masc acc sg of nicca",
+          "adj, fem acc sg of nicca",
+          "adj, nt acc sg of nicca"
+        ],
+        "grammar_index": 0,
+        "meaning": "permanent; lasting; ordered; stable; reliable; immutable",
+        "construction": "ni + tya",
+        "root": "",
+        "confidence": "N",
+        "candidates": [
+          {
+            "id": 37008,
+            "uid": "37008/dpd",
+            "lemma_1": "niccaṁ 1",
+            "grammar_options": [
+              "ind, adv, acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "continuously; always; permanently; perpetually",
+            "construction": "nicca + aṁ",
+            "root": ""
+          },
+          {
+            "id": 37009,
+            "uid": "37009/dpd",
+            "lemma_1": "niccaṁ 2",
+            "grammar_options": [
+              "ind, adv, acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "always; in every case",
+            "construction": "nicca + aṁ",
+            "root": ""
+          },
+          {
+            "id": 37010,
+            "uid": "37010/dpd",
+            "lemma_1": "niccaṁ 3",
+            "grammar_options": [
+              "ind, adv, acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) mandatory; always",
+            "construction": "nicca + aṁ",
+            "root": ""
+          },
+          {
+            "id": 36976,
+            "uid": "36976/dpd",
+            "lemma_1": "nicca 1",
+            "grammar_options": [
+              "adj, nt nom sg of nicca",
+              "adj, masc acc sg of nicca",
+              "adj, fem acc sg of nicca",
+              "adj, nt acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "permanent; lasting; ordered; stable; reliable; immutable",
+            "construction": "ni + tya",
+            "root": ""
+          },
+          {
+            "id": 80607,
+            "uid": "80607/dpd",
+            "lemma_1": "nicca 2",
+            "grammar_options": [
+              "adj, nt nom sg of nicca",
+              "adj, masc acc sg of nicca",
+              "adj, fem acc sg of nicca",
+              "adj, nt acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "regular; consistent; continuous; ongoing",
+            "construction": "ni + tya",
+            "root": ""
+          },
+          {
+            "id": 74592,
+            "uid": "74592/dpd",
+            "lemma_1": "nicca 3",
+            "grammar_options": [
+              "adj, nt nom sg of nicca",
+              "adj, masc acc sg of nicca",
+              "adj, fem acc sg of nicca",
+              "adj, nt acc sg of nicca"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) (of a rule) not optional; mandatory; necessary",
+            "construction": "ni + tya",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 3,
+        "components": []
+      },
+      {
+        "word": "daḷhaparakkamā",
+        "depth": 0,
+        "word_index": 4,
+        "id": 32215,
+        "grammar": "adj, masc nom pl of daḷhaparakkama",
+        "grammar_options": [
+          "adj, masc nom pl of daḷhaparakkama",
+          "adj, fem nom sg of daḷhaparakkama",
+          "adj, fem nom pl of daḷhaparakkama",
+          "adj, nt nom pl of daḷhaparakkama",
+          "adj, fem acc pl of daḷhaparakkama",
+          "adj, masc instr sg of daḷhaparakkama",
+          "adj, nt instr sg of daḷhaparakkama",
+          "adj, masc abl sg of daḷhaparakkama",
+          "adj, nt abl sg of daḷhaparakkama",
+          "adj, masc voc sg of daḷhaparakkama",
+          "adj, masc voc pl of daḷhaparakkama",
+          "adj, fem voc pl of daḷhaparakkama",
+          "adj, nt voc sg of daḷhaparakkama"
+        ],
+        "grammar_index": 0,
+        "meaning": "having persistent effort; making continuous effort; striving diligently",
+        "construction": "daḷha + parakkama",
+        "root": "",
+        "confidence": null,
+        "candidates": [
+          {
+            "id": 32215,
+            "uid": "32215/dpd",
+            "lemma_1": "daḷhaparakkama",
+            "grammar_options": [
+              "adj, masc nom pl of daḷhaparakkama",
+              "adj, fem nom sg of daḷhaparakkama",
+              "adj, fem nom pl of daḷhaparakkama",
+              "adj, nt nom pl of daḷhaparakkama",
+              "adj, fem acc pl of daḷhaparakkama",
+              "adj, masc instr sg of daḷhaparakkama",
+              "adj, nt instr sg of daḷhaparakkama",
+              "adj, masc abl sg of daḷhaparakkama",
+              "adj, nt abl sg of daḷhaparakkama",
+              "adj, masc voc sg of daḷhaparakkama",
+              "adj, masc voc pl of daḷhaparakkama",
+              "adj, fem voc pl of daḷhaparakkama",
+              "adj, nt voc sg of daḷhaparakkama"
+            ],
+            "grammar_index": 0,
+            "meaning": "having persistent effort; making continuous effort; striving diligently",
+            "construction": "daḷha + parakkama",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 0,
+        "components": [
+          {
+            "word": "daḷha",
+            "depth": 1,
+            "word_index": null,
+            "id": 32201,
+            "grammar": "pp",
+            "grammar_options": [
+              "pp"
+            ],
+            "grammar_index": 0,
+            "meaning": "strong; firm; steady; lit. become strong",
+            "construction": "√dah + ta",
+            "root": "√dah 1 a (be strong)",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 32201,
+                "uid": "32201/dpd",
+                "lemma_1": "daḷha 1",
+                "grammar_options": [
+                  "pp"
+                ],
+                "grammar_index": 0,
+                "meaning": "strong; firm; steady; lit. become strong",
+                "construction": "√dah + ta",
+                "root": "√dah 1 a (be strong)"
+              },
+              {
+                "id": 32202,
+                "uid": "32202/dpd",
+                "lemma_1": "daḷha 2",
+                "grammar_options": [
+                  "pp"
+                ],
+                "grammar_index": 0,
+                "meaning": "strenuous; hard; tough; lit. become strong",
+                "construction": "√dah + ta",
+                "root": "√dah 1 a (be strong)"
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          },
+          {
+            "word": "parakkama",
+            "depth": 1,
+            "word_index": null,
+            "id": 42873,
+            "grammar": "masc",
+            "grammar_options": [
+              "masc"
+            ],
+            "grammar_index": 0,
+            "meaning": "continued effort; striving; perseverance; persistence; lit. going over",
+            "construction": "parā + √kam + a",
+            "root": "√kam 1 a (go)",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 42873,
+                "uid": "42873/dpd",
+                "lemma_1": "parakkama",
+                "grammar_options": [
+                  "masc"
+                ],
+                "grammar_index": 0,
+                "meaning": "continued effort; striving; perseverance; persistence; lit. going over",
+                "construction": "parā + √kam + a",
+                "root": "√kam 1 a (go)"
+              },
+              {
+                "id": 42879,
+                "uid": "42879/dpd",
+                "lemma_1": "parakkamanta",
+                "grammar_options": [
+                  "prp"
+                ],
+                "grammar_index": 0,
+                "meaning": "making an effort; trying (to)",
+                "construction": "parā + √kam + a + nta",
+                "root": "√kam 1 a (go)"
+              },
+              {
+                "id": 42874,
+                "uid": "42874/dpd",
+                "lemma_1": "parakkamati 1",
+                "grammar_options": [
+                  "pr"
+                ],
+                "grammar_index": 0,
+                "meaning": "makes an effort; undertakes; goes for; lit. advances",
+                "construction": "parā + √kam + a + ti",
+                "root": "√kam 1 a (go)"
+              },
+              {
+                "id": 42875,
+                "uid": "42875/dpd",
+                "lemma_1": "parakkamati 2",
+                "grammar_options": [
+                  "pr"
+                ],
+                "grammar_index": 0,
+                "meaning": "tries; strives; makes effort; endeavours (to); lit. advances",
+                "construction": "parā + √kam + a + ti",
+                "root": "√kam 1 a (go)"
+              },
+              {
+                "id": 42876,
+                "uid": "42876/dpd",
+                "lemma_1": "parakkamati 3",
+                "grammar_options": [
+                  "pr"
+                ],
+                "grammar_index": 0,
+                "meaning": "advances; goes forward (with)",
+                "construction": "parā + √kam + a + ti",
+                "root": "√kam 1 a (go)"
+              },
+              {
+                "id": 42880,
+                "uid": "42880/dpd",
+                "lemma_1": "parakkami",
+                "grammar_options": [
+                  "aor"
+                ],
+                "grammar_index": 0,
+                "meaning": "tried; strove; made an effort; endeavoured (to); lit. advanced",
+                "construction": "parā + √kam + i",
+                "root": "√kam 1 a (go)"
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          }
+        ]
+      },
+      {
+        "word": "evaṁhetaṁ",
+        "depth": 0,
+        "word_index": 5,
+        "id": null,
+        "grammar": "sandhi/compound",
+        "grammar_options": [
+          "sandhi/compound"
+        ],
+        "grammar_index": 0,
+        "meaning": "thus + day + that",
+        "construction": "evaṁ + ahe + taṁ",
+        "root": "",
+        "confidence": "N",
+        "candidates": [
+          {
+            "id": null,
+            "uid": "evaṁ + ahe + taṁ",
+            "lemma_1": "evaṁ + ahe + taṁ",
+            "grammar_options": [
+              "sandhi/compound"
+            ],
+            "grammar_index": 0,
+            "meaning": "thus + day + that",
+            "construction": "evaṁ + ahe + taṁ",
+            "root": ""
+          },
+          {
+            "id": null,
+            "uid": "evaṁ + hi + etaṁ",
+            "lemma_1": "evaṁ + hi + etaṁ",
+            "grammar_options": [
+              "sandhi/compound"
+            ],
+            "grammar_index": 0,
+            "meaning": "",
+            "construction": "evaṁ + hi + etaṁ",
+            "root": ""
+          },
+          {
+            "id": null,
+            "uid": "evaṁ + ho + etaṁ",
+            "lemma_1": "evaṁ + ho + etaṁ",
+            "grammar_options": [
+              "sandhi/compound"
+            ],
+            "grammar_index": 0,
+            "meaning": "",
+            "construction": "evaṁ + ho + etaṁ",
+            "root": ""
+          },
+          {
+            "id": null,
+            "uid": "evaṁ + ahaṁ + etaṁ",
+            "lemma_1": "evaṁ + ahaṁ + etaṁ",
+            "grammar_options": [
+              "sandhi/compound"
+            ],
+            "grammar_index": 0,
+            "meaning": "",
+            "construction": "evaṁ + ahaṁ + etaṁ",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 0,
+        "components": [
+          {
+            "word": "evaṁ",
+            "depth": 1,
+            "word_index": null,
+            "id": 18134,
+            "grammar": "ind, adv",
+            "grammar_options": [
+              "ind, adv"
+            ],
+            "grammar_index": 0,
+            "meaning": "thus; this; like this; similarly; in the same manner; just as; such",
+            "construction": "eva + aṁ",
+            "root": "",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 18134,
+                "uid": "18134/dpd",
+                "lemma_1": "evaṁ 1",
+                "grammar_options": [
+                  "ind, adv"
+                ],
+                "grammar_index": 0,
+                "meaning": "thus; this; like this; similarly; in the same manner; just as; such",
+                "construction": "eva + aṁ",
+                "root": ""
+              },
+              {
+                "id": 18135,
+                "uid": "18135/dpd",
+                "lemma_1": "evaṁ 2",
+                "grammar_options": [
+                  "ind, excl"
+                ],
+                "grammar_index": 0,
+                "meaning": "yes!; that is right!; correct!",
+                "construction": "eva + aṁ",
+                "root": ""
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          },
+          {
+            "word": "ahe",
+            "depth": 1,
+            "word_index": null,
+            "id": 10832,
+            "grammar": "nt acc pl of aha",
+            "grammar_options": [
+              "nt acc pl of aha",
+              "nt loc sg of aha"
+            ],
+            "grammar_index": 0,
+            "meaning": "day",
+            "construction": "",
+            "root": "",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 10832,
+                "uid": "10832/dpd",
+                "lemma_1": "aha 1.1",
+                "grammar_options": [
+                  "nt acc pl of aha",
+                  "nt loc sg of aha"
+                ],
+                "grammar_index": 0,
+                "meaning": "day",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 10833,
+                "uid": "10833/dpd",
+                "lemma_1": "aha 1.2",
+                "grammar_options": [
+                  "masc acc pl of aha",
+                  "masc loc sg of aha"
+                ],
+                "grammar_index": 0,
+                "meaning": "day",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 10931,
+                "uid": "10931/dpd",
+                "lemma_1": "ahe",
+                "grammar_options": [
+                  "ind, excl"
+                ],
+                "grammar_index": 0,
+                "meaning": "(used to address equals) friend; love; dear",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 10884,
+                "uid": "10884/dpd",
+                "lemma_1": "ahi",
+                "grammar_options": [
+                  "masc voc sg of ahi"
+                ],
+                "grammar_index": 0,
+                "meaning": "snake; serpent",
+                "construction": "",
+                "root": ""
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          },
+          {
+            "word": "taṁ",
+            "depth": 1,
+            "word_index": null,
+            "id": 29188,
+            "grammar": "nt nom sg of ta",
+            "grammar_options": [
+              "nt nom sg of ta",
+              "masc acc sg of ta",
+              "fem acc sg of ta",
+              "nt acc sg of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "that",
+            "construction": "",
+            "root": "",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 29188,
+                "uid": "29188/dpd",
+                "lemma_1": "ta 1.1",
+                "grammar_options": [
+                  "nt nom sg of ta",
+                  "masc acc sg of ta",
+                  "fem acc sg of ta",
+                  "nt acc sg of ta"
+                ],
+                "grammar_index": 0,
+                "meaning": "that",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 29189,
+                "uid": "29189/dpd",
+                "lemma_1": "ta 2.1",
+                "grammar_options": [
+                  "masc acc sg of ta"
+                ],
+                "grammar_index": 0,
+                "meaning": "(gram) letter t; 24th letter of the alphabet; dental sibilant",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 30215,
+                "uid": "30215/dpd",
+                "lemma_1": "taṁ 1.1",
+                "grammar_options": [
+                  "pron, nt nom sg of ta"
+                ],
+                "grammar_index": 0,
+                "meaning": "it; that",
+                "construction": "ta + aṁ",
+                "root": ""
+              },
+              {
+                "id": 30216,
+                "uid": "30216/dpd",
+                "lemma_1": "taṁ 1.2",
+                "grammar_options": [
+                  "pron, masc fem & nt acc sg of ta"
+                ],
+                "grammar_index": 0,
+                "meaning": "him; her; one; that person; that thing",
+                "construction": "ta + aṁ",
+                "root": ""
+              },
+              {
+                "id": 30217,
+                "uid": "30217/dpd",
+                "lemma_1": "taṁ 2.1",
+                "grammar_options": [
+                  "pron, 2nd acc sg of tvaṁ"
+                ],
+                "grammar_index": 0,
+                "meaning": "you (object)",
+                "construction": "tvaṁ + aṁ",
+                "root": ""
+              },
+              {
+                "id": 31017,
+                "uid": "31017/dpd",
+                "lemma_1": "tumha",
+                "grammar_options": [
+                  "2nd acc sg of tumha"
+                ],
+                "grammar_index": 0,
+                "meaning": "you",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 31383,
+                "uid": "31383/dpd",
+                "lemma_1": "tvaṁ 1",
+                "grammar_options": [
+                  "2nd acc sg of tvaṁ"
+                ],
+                "grammar_index": 0,
+                "meaning": "you (subject)",
+                "construction": "tumha + aṁ",
+                "root": ""
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          }
+        ]
+      },
+      {
+        "word": "yenāyasmā",
+        "depth": 0,
+        "word_index": 6,
+        "id": 54177,
+        "grammar": "sandhi, adv + masc",
+        "grammar_options": [
+          "sandhi, adv + masc"
+        ],
+        "grammar_index": 0,
+        "meaning": "where venerable",
+        "construction": "yena + āyasmā",
+        "root": "",
+        "confidence": null,
+        "candidates": [
+          {
+            "id": 54177,
+            "uid": "54177/dpd",
+            "lemma_1": "yenāyasmā",
+            "grammar_options": [
+              "sandhi, adv + masc"
+            ],
+            "grammar_index": 0,
+            "meaning": "where venerable",
+            "construction": "yena + āyasmā",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 0,
+        "components": [
+          {
+            "word": "yena",
+            "depth": 1,
+            "word_index": null,
+            "id": 53444,
+            "grammar": "masc instr sg of ya",
+            "grammar_options": [
+              "masc instr sg of ya",
+              "nt instr sg of ya"
+            ],
+            "grammar_index": 0,
+            "meaning": "whoever; whatever; whichever",
+            "construction": "",
+            "root": "",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 53444,
+                "uid": "53444/dpd",
+                "lemma_1": "ya 2.1",
+                "grammar_options": [
+                  "masc instr sg of ya",
+                  "nt instr sg of ya"
+                ],
+                "grammar_index": 0,
+                "meaning": "whoever; whatever; whichever",
+                "construction": "",
+                "root": ""
+              },
+              {
+                "id": 54168,
+                "uid": "54168/dpd",
+                "lemma_1": "yena 2",
+                "grammar_options": [
+                  "ind, adv, instr sg of ya"
+                ],
+                "grammar_index": 0,
+                "meaning": "because of; because of which",
+                "construction": "ya + ena",
+                "root": ""
+              },
+              {
+                "id": 54169,
+                "uid": "54169/dpd",
+                "lemma_1": "yena 3",
+                "grammar_options": [
+                  "ind, adv, instr sg of ya"
+                ],
+                "grammar_index": 0,
+                "meaning": "where; wherever; in which direction; to; towards",
+                "construction": "ya + ena",
+                "root": ""
+              }
+            ],
+            "selected_candidate": 0,
+            "components": []
+          },
+          {
+            "word": "āyasmā",
+            "depth": 1,
+            "word_index": null,
+            "id": 12241,
+            "grammar": "masc nom sg of āyasmant",
+            "grammar_options": [
+              "masc nom sg of āyasmant",
+              "masc nom pl of āyasmant",
+              "masc voc sg of āyasmant"
+            ],
+            "grammar_index": 0,
+            "meaning": "sir; venerable; reverend; lit. having age quality",
+            "construction": "ā + √i + *as + mant",
+            "root": "√i 1 a (come, go)",
+            "confidence": "N",
+            "candidates": [
+              {
+                "id": 12182,
+                "uid": "12182/dpd",
+                "lemma_1": "āya 1.1",
+                "grammar_options": [
+                  "masc abl sg of āya"
+                ],
+                "grammar_index": 0,
+                "meaning": "coming in; income; entrance",
+                "construction": "ā + √i + *a",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 12183,
+                "uid": "12183/dpd",
+                "lemma_1": "āya 1.2",
+                "grammar_options": [
+                  "masc abl sg of āya"
+                ],
+                "grammar_index": 0,
+                "meaning": "income; revenue; profit; lit. coming in",
+                "construction": "ā + √i + *a",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 71901,
+                "uid": "71901/dpd",
+                "lemma_1": "āya 1.3",
+                "grammar_options": [
+                  "masc abl sg of āya"
+                ],
+                "grammar_index": 0,
+                "meaning": "(of water) inlet; lit. income",
+                "construction": "ā + √i + *a",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 12236,
+                "uid": "12236/dpd",
+                "lemma_1": "āyas",
+                "grammar_options": [
+                  "masc abl sg of āyas"
+                ],
+                "grammar_index": 0,
+                "meaning": "life; health; power",
+                "construction": "ā + √i + *as",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 12241,
+                "uid": "12241/dpd",
+                "lemma_1": "āyasmant 1",
+                "grammar_options": [
+                  "masc nom sg of āyasmant",
+                  "masc nom pl of āyasmant",
+                  "masc voc sg of āyasmant"
+                ],
+                "grammar_index": 0,
+                "meaning": "sir; venerable; reverend; lit. having age quality",
+                "construction": "ā + √i + *as + mant",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 12242,
+                "uid": "12242/dpd",
+                "lemma_1": "āyasmant 2",
+                "grammar_options": [
+                  "masc nom sg of āyasmant",
+                  "masc nom pl of āyasmant",
+                  "masc voc sg of āyasmant"
+                ],
+                "grammar_index": 0,
+                "meaning": "venerable; respectable; lit. having long life quality",
+                "construction": "ā + √i + *as + mant",
+                "root": "√i 1 a (come, go)"
+              },
+              {
+                "id": 12185,
+                "uid": "12185/dpd",
+                "lemma_1": "āya 1.4",
+                "grammar_options": [
+                  "masc abl sg of āya"
+                ],
+                "grammar_index": 0,
+                "meaning": "improvement",
+                "construction": "ā + √i",
+                "root": "√i 1 a (come, go)"
+              }
+            ],
+            "selected_candidate": 4,
+            "components": []
+          }
+        ]
+      },
+      {
+        "word": "te",
+        "depth": 0,
+        "word_index": 7,
+        "id": 31017,
+        "grammar": "2nd gen sg of tumha",
+        "grammar_options": [
+          "2nd acc sg of tumha",
+          "2nd instr sg of tumha",
+          "2nd dat sg of tumha",
+          "2nd gen sg of tumha"
+        ],
+        "grammar_index": 3,
+        "meaning": "you",
+        "construction": "",
+        "root": "",
+        "confidence": "N",
+        "candidates": [
+          {
+            "id": 31134,
+            "uid": "31134/dpd",
+            "lemma_1": "te 1.1",
+            "grammar_options": [
+              "pron, masc nom pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "they; those",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31135,
+            "uid": "31135/dpd",
+            "lemma_1": "te 1.2",
+            "grammar_options": [
+              "pron, masc acc pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "them; those",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31136,
+            "uid": "31136/dpd",
+            "lemma_1": "te 2.1",
+            "grammar_options": [
+              "pron, 2nd acc sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "you; to you (object)",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31137,
+            "uid": "31137/dpd",
+            "lemma_1": "te 2.2",
+            "grammar_options": [
+              "pron, 2nd instr sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "by you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31138,
+            "uid": "31138/dpd",
+            "lemma_1": "te 2.3",
+            "grammar_options": [
+              "pron, 2nd dat sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "for you; to you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31139,
+            "uid": "31139/dpd",
+            "lemma_1": "te 2.4",
+            "grammar_options": [
+              "pron, 2nd gen sg of tvaṁ"
+            ],
+            "grammar_index": 0,
+            "meaning": "your; of you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31140,
+            "uid": "31140/dpd",
+            "lemma_1": "te 2.5",
+            "grammar_options": [
+              "pron, 2nd gen sg of tvaṁ, gen abs"
+            ],
+            "grammar_index": 0,
+            "meaning": "when you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31141,
+            "uid": "31141/dpd",
+            "lemma_1": "te 3",
+            "grammar_options": [
+              "card, in comps, from ti"
+            ],
+            "grammar_index": 0,
+            "meaning": "three (3)",
+            "construction": "ti",
+            "root": ""
+          },
+          {
+            "id": 29188,
+            "uid": "29188/dpd",
+            "lemma_1": "ta 1.1",
+            "grammar_options": [
+              "masc nom pl of ta",
+              "nt nom pl of ta",
+              "masc acc pl of ta",
+              "nt acc pl of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "that",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 29189,
+            "uid": "29189/dpd",
+            "lemma_1": "ta 2.1",
+            "grammar_options": [
+              "masc acc pl of ta",
+              "masc loc sg of ta"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) letter t; 24th letter of the alphabet; dental sibilant",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 30430,
+            "uid": "30430/dpd",
+            "lemma_1": "ti 1",
+            "grammar_options": [
+              "card, masc fem & nt pl"
+            ],
+            "grammar_index": 0,
+            "meaning": "three (3)",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 30432,
+            "uid": "30432/dpd",
+            "lemma_1": "ti 3",
+            "grammar_options": [
+              "masc voc sg of ti"
+            ],
+            "grammar_index": 0,
+            "meaning": "(gram) ti; verbal ending of the present tense 3rd person singular",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31017,
+            "uid": "31017/dpd",
+            "lemma_1": "tumha",
+            "grammar_options": [
+              "2nd acc sg of tumha",
+              "2nd instr sg of tumha",
+              "2nd dat sg of tumha",
+              "2nd gen sg of tumha"
+            ],
+            "grammar_index": 3,
+            "meaning": "you",
+            "construction": "",
+            "root": ""
+          },
+          {
+            "id": 31383,
+            "uid": "31383/dpd",
+            "lemma_1": "tvaṁ 1",
+            "grammar_options": [
+              "2nd acc sg of tvaṁ",
+              "2nd instr sg of tvaṁ",
+              "2nd dat sg of tvaṁ",
+              "2nd gen sg of tvaṁ"
+            ],
+            "grammar_index": 3,
+            "meaning": "you (subject)",
+            "construction": "tumha + aṁ",
+            "root": ""
+          }
+        ],
+        "selected_candidate": 12,
+        "components": []
+      },
+      {
+        "word": "xyzqw",
+        "depth": 0,
+        "word_index": null,
+        "id": null,
+        "grammar": "",
+        "grammar_options": [],
+        "grammar_index": 0,
+        "meaning": "not found",
+        "construction": "",
+        "root": "",
+        "confidence": null,
+        "candidates": [],
+        "selected_candidate": 0,
+        "components": []
+      }
+    ]
+  },
+  "ai_translations": [
+    {
+      "model_name": "test-model",
+      "response": "Those meditators, persevering, constantly of firm effort.",
+      "literal_translation": "Those meditating ones, persevering, constant, firm-effort ones.",
+      "is_selected": true
+    }
+  ]
+}

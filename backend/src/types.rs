@@ -391,6 +391,20 @@ pub struct GroupedDpdLookup {
     pub results: Vec<SearchResult>,
     pub deconstructions: Vec<Deconstruction>,
     pub direct_uids: Vec<String>,
+    /// The grammar triples of the `lookup` row of the word as looked up (the
+    /// Phase 4 row), for the Word in Sentence gloss rows. Not serialized: the
+    /// JSON of this type is a route response.
+    #[serde(skip)]
+    pub lookup_grammar: Vec<GrammarTriple>,
+    /// The headword ids of that `lookup` row: the senses DPD's analysis tool
+    /// offers (the default-sense ranking prefers them). Not serialized.
+    #[serde(skip)]
+    pub lookup_headword_ids: Vec<i32>,
+    /// The results come from the inflection tables (Phase 4b of
+    /// `dpd_lookup_grouped()`): the word has no `lookup` row. The iti rule
+    /// prefers a base with a `lookup` row. Not serialized.
+    #[serde(skip)]
+    pub from_inflection_tables: bool,
 }
 
 impl GroupedDpdLookup {
@@ -571,8 +585,24 @@ pub struct FormLookupResult {
     pub deconstructions: Vec<FormDeconstruction>,
     /// The grammar of the lookup row that supplied `headwords`, verbatim and
     /// in DPD's order. Empty for `iti_rule` results (the base's grammar is on
-    /// its component), `invalid`, and forms with no row.
+    /// its component), `invalid`, and forms with no row. For an
+    /// `inflection_table` result, a triple per inflection-table cell that
+    /// holds the form.
     pub form_grammar_raw: Vec<GrammarTriple>,
+    /// Set when the headwords come from DPD's inflection tables: the form
+    /// has no `lookup` row with headwords or splits, and is a form in the
+    /// `inflections` of these headwords. Omitted for a `lookup` row's answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<FormResultSource>,
+}
+
+/// Where a `found` result's headwords come from, when not DPD's `lookup` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormResultSource {
+    /// DPD's inflection tables (`dpd_headwords.inflections`), searched when
+    /// the form has no `lookup` row (docs/search-snippet-highlight-pipeline.md §9g).
+    InflectionTable,
 }
 
 /// `/gloss_text` exact mode: one token per word of each paragraph, in order,
@@ -620,6 +650,18 @@ pub struct SearchResultPage {
     pub direct_uids: Vec<String>,
 }
 
+/// How a gloss is laid out. `Headwords` is one entry per dictionary word, a
+/// repeat within a paragraph left out; `WordInSentence` is one entry per token
+/// of the passage, in passage order, repeats included. See
+/// docs/gloss-ai-word-selection.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlossFormat {
+    WordInSentence,
+    #[default]
+    Headwords,
+}
+
 /// Options for word processing in gloss operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordProcessingOptions {
@@ -629,6 +671,9 @@ pub struct WordProcessingOptions {
     pub existing_global_stems: std::collections::HashMap<String, bool>,
     pub existing_paragraph_unrecognized: std::collections::HashMap<String, Vec<String>>,
     pub existing_global_unrecognized: Vec<String>,
+    /// Absent in the GUI's processing input JSON, which predates the option.
+    #[serde(default)]
+    pub gloss_format: GlossFormat,
 }
 
 /// Information about a word for processing
@@ -702,6 +747,60 @@ pub struct ProcessedWord {
     /// pass) and the apply path enforce user-override-wins for break-downs.
     #[serde(default)]
     pub deconstruction_resolution: Option<String>,
+    /// The `lookup.grammar` triples of the word as looked up, for the Word
+    /// in Sentence rows (`gloss_rows.rs`). Set only in that format, so the
+    /// Headwords JSON is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form_grammar_raw: Vec<GrammarTriple>,
+    /// The word the lookup found results for: the clean word, or for an
+    /// iti-sandhi word possibly its long-vowel spelling (see
+    /// `gloss_lookup_words`). Word in Sentence only, like `form_grammar_raw`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lookup_word: String,
+    /// The `lookup.grammar` triples of the word as looked up, in both
+    /// formats, for the default-sense ranking (`gloss_sense_ranking.rs`).
+    /// Not serialized.
+    #[serde(skip)]
+    pub lookup_grammar: Vec<GrammarTriple>,
+    /// The headword ids of the word's `lookup` row, for the same ranking.
+    /// Not serialized.
+    #[serde(skip)]
+    pub lookup_headword_ids: Vec<i32>,
+    /// The direct senses DPD's headword and particle filters leave out
+    /// (docs/dpd-analysis-procedure.md §3 gaps 7, 8): never the default
+    /// sense and not offered to the AI, but still selectable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub demoted_uids: Vec<String>,
+    /// The grammar reading and contextual meaning chosen for the selected
+    /// sense (by the AI, or by the user in the Word in Sentence rows).
+    /// Session only, never cached (docs/gloss-ai-word-selection.md).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading: Option<SenseReading>,
+    /// As `reading`, per component word (the components of a break-down,
+    /// and of a compound or sandhi headword).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub component_readings: std::collections::BTreeMap<String, SenseReading>,
+}
+
+/// A grammar reading and a contextual meaning chosen for one sense of a
+/// word. The Word in Sentence rows apply it only while `uid` is still the
+/// chosen sense, so a later sense change makes it inert. Kept in the session,
+/// never in `gloss_word_context_cache`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenseReading {
+    /// The sense (result uid) the reading belongs to.
+    pub uid: String,
+    /// An index into that sense's `grammar_options`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grammar_index: Option<usize>,
+    /// The dictionary meaning fitted to the sentence (DPD's
+    /// `contextual_meaning`); shown in place of `meaning_combo`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contextual_meaning: Option<String>,
+    /// Who chose it, with the resolution origin names: `"ai-selected"` or
+    /// `"user-selected"`.
+    #[serde(default)]
+    pub origin: String,
 }
 
 /// Result indicating an unrecognized word
@@ -740,6 +839,21 @@ pub struct ParagraphProcessingResult {
     pub paragraph_index: usize,
     pub words_data: Vec<ProcessedWord>,
     pub unrecognized_words: Vec<String>,
+    /// The Word in Sentence rows, one per token in passage order (empty in
+    /// the Headwords format, and then not serialized).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<crate::gloss_rows::GlossRow>,
+    /// The `//` spelling alternatives of the paragraph (`["vā'ti", "vāti"]`),
+    /// Word in Sentence only; the first spelling is the one glossed
+    /// (`gloss_variants.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Vec<String>>,
+    /// The two-part AI translations of the paragraph, made by a run without
+    /// Qt (`gloss_ai_run`) for `POST /gloss_text` and `simsapa gloss`; the
+    /// Gloss tab keeps its translations in the session instead. Empty, and
+    /// then not serialized, without one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_translations: Vec<crate::export_types::AiResponse>,
 }
 
 /// Result data for all paragraphs processing
@@ -749,6 +863,11 @@ pub struct AllParagraphsProcessingResult {
     pub paragraphs: Vec<ParagraphProcessingResult>,
     pub global_unrecognized_words: Vec<String>,
     pub updated_global_stems: std::collections::HashMap<String, bool>,
+    /// The failures of an AI run (`gloss_ai_run`): the result is complete
+    /// without the AI's choices or translations they name. Empty, and then
+    /// not serialized, when no AI ran or it succeeded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_errors: Vec<String>,
 }
 
 /// Result data for single paragraph processing
@@ -759,6 +878,14 @@ pub struct SingleParagraphProcessingResult {
     pub words_data: Vec<ProcessedWord>,
     pub unrecognized_words: Vec<String>,
     pub updated_global_stems: std::collections::HashMap<String, bool>,
+    /// As `ParagraphProcessingResult::rows`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<crate::gloss_rows::GlossRow>,
+    /// The `//` spelling alternatives of the paragraph (`["vā'ti", "vāti"]`),
+    /// Word in Sentence only; the first spelling is the one glossed
+    /// (`gloss_variants.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<Vec<String>>,
 }
 
 /// Error response for background processing operations

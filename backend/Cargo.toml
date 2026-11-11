@@ -15,6 +15,10 @@ default = ["audio"]
 # Chanting-practice recording, playback and waveforms (`audio`, `waveform`).
 # Without it a recording's duration reads as unknown (0).
 audio = ["dep:cpal", "dep:symphonia", "dep:flacenc", "dep:rubato"]
+# The AI provider engine (`ai_engine`) and the runs built on it
+# (`gloss_word_selection_run`). On for `bridges` and `backend_cli`; off for
+# `simsapa_api`, which must build without `rig-core`.
+ai = ["dep:rig-core", "dep:tokio"]
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
@@ -52,7 +56,16 @@ scraper = "0.21.0"
 markup5ever_rcdom = "0.3"
 markup5ever = "0.12"
 base64 = "0.22"
+# Stay on reqwest 0.12 and rig-core 0.30.x. reqwest 0.13's blocking client
+# stalls indefinitely on Android after the TLS handshake completes (observed
+# against both github.com and pythonanywhere endpoints, with ALPN negotiating
+# either h2 or http/1.1), and configured timeouts never fire. rig-core 0.31+
+# forces reqwest 0.13 transitively, so the rig-core pin is load-bearing too.
+# Retest before bumping either version.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+# The `ai` feature's provider engine (see the reqwest pin above).
+rig-core = { version = "0.30.0", default-features = false, features = ["reqwest-rustls"], optional = true }
+tokio = { version = "1.0", features = ["full"], optional = true }
 tantivy = "0.25"
 # Advisory file locking (flock(2)) and memory mapping, used by the storage
 # diagnostics probes and by the lenient Directory wrapper. Both are already in

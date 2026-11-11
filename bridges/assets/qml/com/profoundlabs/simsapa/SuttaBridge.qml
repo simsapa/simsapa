@@ -437,6 +437,26 @@ Item {
         return '[]';
     }
 
+    function build_word_selection_prompt(items_json: string): string {
+        return '';
+    }
+
+    function gloss_translation_prompt(paragraph_json: string): string {
+        return '';
+    }
+
+    function parse_gloss_translation(response: string): string {
+        return '{"translation": "", "literal_translation": ""}';
+    }
+
+    function refresh_gloss_paragraph_json(paragraph_json: string, old_words_json: string): string {
+        return '';
+    }
+
+    function gloss_export_paragraph_json(paragraph_json: string, gloss_format: string): string {
+        return '';
+    }
+
     function annotate_gloss_words_json(words_data_json: string): string {
         return words_data_json;
     }
@@ -570,6 +590,28 @@ Item {
         console.log("set_ai_auto_fallback():", auto_fallback);
     }
 
+    function get_gloss_format(): string {
+        return 'word_in_sentence';
+    }
+
+    function set_gloss_format(format: string) {
+    }
+
+    function get_gloss_auto_translate(): bool {
+        return false;
+    }
+
+    function set_gloss_auto_translate(on: bool) {
+    }
+
+    // true in the stub, so QML tests never open the one-time info dialog.
+    function get_gloss_word_in_sentence_info_shown(): bool {
+        return true;
+    }
+
+    function set_gloss_word_in_sentence_info_shown(shown: bool) {
+    }
+
     function get_gloss_ai_translate_mode(): string {
         return 'sequential_retry';
     }
@@ -630,7 +672,7 @@ Item {
     }
 
     function gloss_export(gloss_json: string, format: string): string {
-        return "# Gloss Export";
+        return "# Gloss of: …";
     }
 
     function gloss_paragraph_export(paragraph_json: string, paragraph_number: int, format: string): string {

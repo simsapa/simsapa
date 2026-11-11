@@ -1,5 +1,6 @@
 //! Qt-free AI request/engine layer shared by the in-app PromptManager bridge
-//! and the localhost word-selection WebSocket route.
+//! and the word-selection run (`crate::gloss_word_selection_run`), behind the
+//! backend's `ai` feature (`simsapa_api` builds without it).
 //!
 //! This module holds the **per-provider request layer** (`make_api_request` +
 //! the rig-core agent builders + `classify_rig_error`) and the
@@ -9,7 +10,7 @@
 //! consumers. See `docs/ai-model-management-and-fallback.md` and PRD §8.
 //!
 //! The pure decision logic (retry schedule, provider-skip, cancel points)
-//! lives Qt-free in `simsapa_backend::ai_fallback`; this module only injects
+//! lives Qt-free in `crate::ai_fallback`; this module only injects
 //! real requests, sleeps and a caller-supplied cancel closure. Cancellation is
 //! a plain `&mut dyn FnMut() -> bool`, so PromptManager's generation-counter
 //! `CancelState` and the WS route's `Arc<AtomicBool>` both plug in unchanged.
@@ -25,12 +26,12 @@ use tokio::runtime::Runtime;
 use rig::completion::request::{CompletionError, PromptError};
 use rig::http_client;
 
-use simsapa_backend::get_app_data;
-use simsapa_backend::app_settings::{ModelUsageEntry, ProviderName};
-use simsapa_backend::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
-use simsapa_backend::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
-use simsapa_backend::prompt_utils::clean_prompt;
-use simsapa_backend::anthropic_messages::{self, ChatTurn};
+use crate::get_app_data;
+use crate::app_settings::{ModelUsageEntry, ProviderName};
+use crate::ai_error::{AiErrorKind, AiRequestError, classify_provider_error, classify_transport_error};
+use crate::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY_ROUNDS};
+use crate::prompt_utils::clean_prompt;
+use crate::anthropic_messages::{self, ChatTurn};
 
 /// Single batched request when the substituted prompt is under this length,
 /// otherwise sequential per-paragraph requests. Single source of truth for
@@ -71,7 +72,7 @@ fn create_http_client() -> Result<reqwest::Client, String> {
 ///
 /// `rig` discards the HTTP status on provider errors and hands us the raw
 /// response body instead, so most of the work happens in the body-parsing
-/// classifier in `simsapa_backend::ai_error` (see its module docs). Transport
+/// classifier in `crate::ai_error` (see its module docs). Transport
 /// failures are the exception: the original `reqwest::Error` survives inside
 /// `http_client::Error::Instance` and still knows whether it timed out.
 fn classify_rig_error(provider: &str, model: &str, err: PromptError) -> AiRequestError {
@@ -538,7 +539,7 @@ async fn handle_anthropic_request(
 ) -> Result<String, AiRequestError> {
     // Sent with plain reqwest, not rig-core: the reply's stop_reason decides
     // whether it is usable (refusal, cut-off), and rig 0.30 hides it. See
-    // `simsapa_backend::anthropic_messages`.
+    // `crate::anthropic_messages`.
 
     // Same message convention as `get_response!`: a lone message is the user
     // prompt (any system prompt is already prepended to it); otherwise the

@@ -179,7 +179,7 @@ ApplicationWindow {
         standardButtons: Dialog.Cancel | Dialog.Ok
         // A title plus wrapping content is the combination that can produce an
         // implicitHeight binding loop with Fusion's default header; see
-        // CLAUDE.md, "`Dialog` with a title and wrapping text".
+        // docs/qml-dialog-sizing.md, "`Dialog` with a title and wrapping text".
         header: DialogHeader { text: confirm_delete_all_dialog.title }
 
         contentItem: Label {

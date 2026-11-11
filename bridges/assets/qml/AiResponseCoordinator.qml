@@ -14,7 +14,7 @@ import com.profoundlabs.simsapa
 // Response entry shape (persisted; additive only, old sessions may lack the
 // newer fields):
 //   { model_name, provider, status, response, progress, request_id,
-//     last_updated, user_selected, send_mode, ...tab extras (e.g. with_vocab) }
+//     last_updated, user_selected, send_mode, literal_translation (Gloss two-part translations), ...tab extras }
 //
 // `send_mode` ("sequential_retry" | "parallel") is stamped at send time so a
 // retry follows the mode the entry was created under, not the combobox's
@@ -56,6 +56,17 @@ Item {
     // resend (Gloss re-substitutes the prompt template, Prompts re-composes
     // the chat history).
     property var build_payload
+
+    // function(ctx, response): object — optional. Turns a successful answer
+    // into the entry's stored fields, e.g. Gloss's two-part translation:
+    // {response: <translation>, literal_translation: …}. Returning
+    // {error: <envelope>} marks the entry failed with that error. Unset: the
+    // answer is stored as `response`.
+    property var parse_response: null
+
+    // function(ctx, entry) — optional. Called when an entry reaches a final
+    // state (completed or error), after it is written.
+    property var on_entry_finished: null
 
     // function(model_name): string — provider lookup for old entries saved
     // without a `provider` field.
@@ -130,7 +141,7 @@ Item {
 
     // One waiting entry in sequential mode (the engine picks the model), one
     // per enabled Parallel-prompts model in parallel mode. `extra_fields` are
-    // tab extras stamped on every entry (e.g. Gloss's with_vocab).
+    // tab extras stamped on every entry.
     function build_entries(mode, enabled_models, extra_fields) {
         let entries = [];
         if (mode === "sequential_retry") {
@@ -213,6 +224,7 @@ Item {
         entry.request_id = root.generate_request_id();
         entry.status = "waiting";
         entry.response = "";
+        if (entry.literal_translation !== undefined) entry.literal_translation = "";
         entry.progress = "";
         entry.continuing = false;
         entry.last_updated = Date.now();
@@ -281,6 +293,15 @@ Item {
 
         entries[idx].response = response;
         entries[idx].status = root.is_error_response(response) ? "error" : "completed";
+        if (entries[idx].status === "completed" && root.parse_response) {
+            let fields = root.parse_response(ctx, response); // qmllint disable use-proper-function
+            if (fields && fields.error !== undefined) {
+                entries[idx].response = fields.error;
+                entries[idx].status = "error";
+            } else if (fields) {
+                Object.assign(entries[idx], fields);
+            }
+        }
         entries[idx].last_updated = Date.now();
         // Sequential mode: the entry learns its model from the response.
         if (model_name !== "") {
@@ -288,6 +309,9 @@ Item {
         }
 
         root.write_entries(ctx, entries);
+        if (root.on_entry_finished) {
+            root.on_entry_finished(ctx, entries[idx]); // qmllint disable use-proper-function
+        }
     }
 
     // Engine progress ("Trying X…", "Rate limited by Y…", retry-round notes)

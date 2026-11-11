@@ -981,3 +981,109 @@ fn test_word_without_root_uses_empty_values() {
     
     assert!(!back.contains("√"), "Back should not contain root sign when no root exists");
 }
+
+/// A Word in Sentence gloss: a token row, its component row, and an
+/// unresolved token (no headword, so no note).
+fn create_word_in_sentence_gloss_data() -> String {
+    r#"{
+        "text": "te jhāyino xyz",
+        "gloss_format": "word_in_sentence",
+        "paragraphs": [{
+            "text": "te jhāyino xyz",
+            "rows": [
+                {
+                    "word": "jhāyino", "depth": 0, "id": 28829, "uid": "28829/dpd", "lemma": "jhāyī 1",
+                    "grammar": "masc nom pl of jhāyī", "meaning": "meditators",
+                    "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)",
+                    "summary": "<b>jhāyī 1</b> <i>(masc)</i> meditator",
+                    "context_snippet": "te <b>jhāyino</b> xyz", "confidence": "A"
+                },
+                {
+                    "word": "daḷha", "depth": 1, "id": 32201, "uid": "32201/dpd", "lemma": "daḷha 1",
+                    "grammar": "pp", "meaning": "firm", "construction": "√dah + ta", "root": "",
+                    "summary": "", "context_snippet": "te <b>jhāyino</b> xyz", "confidence": null
+                },
+                {
+                    "word": "xyz", "depth": 0, "id": null, "uid": "", "lemma": "",
+                    "grammar": "", "meaning": "not found", "construction": "", "root": "",
+                    "summary": "", "context_snippet": "", "confidence": null
+                }
+            ]
+        }]
+    }"#.to_string()
+}
+
+fn word_in_sentence_input(export_format: &str, front: &str, back: &str) -> AnkiCsvExportInput {
+    AnkiCsvExportInput {
+        gloss_data_json: create_word_in_sentence_gloss_data(),
+        export_format: export_format.to_string(),
+        include_cloze: false,
+        templates: AnkiCsvTemplates {
+            front: front.to_string(),
+            back: back.to_string(),
+            cloze_front: "".to_string(),
+            cloze_back: "".to_string(),
+        },
+    }
+}
+
+#[test]
+#[serial]
+fn test_word_in_sentence_simple_notes_per_row() {
+    helpers::app_data_setup();
+    let app_data = simsapa_backend::get_app_data();
+
+    let result = export_anki_csv(word_in_sentence_input("Simple", "", ""), &app_data).unwrap();
+    let csv = &result.files[0].content;
+    let lines: Vec<&str> = csv.lines().collect();
+    // One note per row with a headword: the token and its component.
+    assert_eq!(lines.len(), 2, "{}", csv);
+    // The front shows the word as written; the back its grammar and summary.
+    assert!(lines[0].starts_with("<div><p>jhāyino</p><p>te <b>jhāyino</b> xyz</p></div>,"));
+    assert!(lines[0].contains("<p>masc nom pl of jhāyī</p><p><b>jhāyī 1</b> <i>(masc)</i> meditator</p>"));
+    // A row without a summary falls back to its meaning.
+    assert!(lines[1].contains("<p>pp</p><p>firm</p>"));
+    assert!(!csv.contains("xyz</p></div>,\"<div><p></p>"));
+}
+
+#[test]
+#[serial]
+fn test_word_in_sentence_templated_variables() {
+    helpers::app_data_setup();
+    let app_data = simsapa_backend::get_app_data();
+
+    let input = word_in_sentence_input(
+        "Templated",
+        "{word_in_sentence} ({word_stem})",
+        "{grammar}: {meaning}; {dpd.lemma_1}",
+    );
+    let result = export_anki_csv(input, &app_data).unwrap();
+    let lines: Vec<&str> = result.files[0].content.lines().collect();
+    assert_eq!(lines[0], "jhāyino (jhāyī),masc nom pl of jhāyī: meditators; jhāyī 1");
+    assert_eq!(lines[1], "daḷha (daḷha),pp: firm; daḷha 1");
+}
+
+#[test]
+#[serial]
+fn test_word_in_sentence_data_csv_columns() {
+    helpers::app_data_setup();
+    let app_data = simsapa_backend::get_app_data();
+
+    let result = export_anki_csv(word_in_sentence_input("DataCsv", "", ""), &app_data).unwrap();
+    // DPD's example fields hold newlines inside quoted cells, so the CSV is
+    // searched, not split into lines.
+    let csv = &result.files[0].content;
+    assert!(csv.lines().next().unwrap().ends_with(",summary,word_in_sentence,grammar_in_sentence"));
+    assert!(csv.contains(",jhāyino,masc nom pl of jhāyī\n"), "{}", csv);
+    assert!(csv.contains(",28829,jhāyī 1,"));
+    assert!(csv.ends_with(",daḷha,pp"));
+    assert!(!csv.contains(",xyz,"));
+
+    // A Headwords export keeps its columns.
+    let input = AnkiCsvExportInput {
+        gloss_data_json: create_test_gloss_data(),
+        ..word_in_sentence_input("DataCsv", "", "")
+    };
+    let result = export_anki_csv(input, &app_data).unwrap();
+    assert!(result.files[0].content.lines().next().unwrap().ends_with(",lemma_clean,summary"));
+}

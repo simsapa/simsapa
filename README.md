@@ -34,8 +34,10 @@ as the desktop app, so if the app is already set up, there is no need to run
 localhost API reference. See [npm/cli/README.md](npm/cli/README.md) for more.
 
 To let a coding agent (Claude Code, OpenCode or Pi) use the CLI, install the
-`simsapa` agent skill. It tells the agent when and how to search the suttas and
-look up Pāli words, and needs no databases:
+agent skills. `simsapa` tells the agent when and how to search the suttas and
+look up Pāli words; `gloss-pali-passage` makes a word-by-word analysis document
+(`/gloss-pali-passage dhp23`). They are also installed as slash commands for
+Claude Code and OpenCode, and need no databases:
 
 ```sh
 simsapa install-skill --agent claude --global   # every project

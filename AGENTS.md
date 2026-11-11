@@ -36,1719 +36,336 @@ grep -rl "<term>" tasks/ tasks/archive/
 
 Documentation is in the `docs/` folder. Keep it updated for relevant features.
 
-Notable feature docs:
-- [Language filter query logic](./docs/language-filter-query-logic.md) — how the
-  search bar's per-area language filter is persisted, how the dropdown options
-  are loaded from distinct DB values, and where the filter is applied in the
-  Suttas / Dictionary / Library query paths (including the "no filter" gate and
-  the DPD `language = "pli"` gotcha).
-- [Startup sequence and caches](./docs/startup-sequence-and-caches.md) — what
-  runs synchronously vs. on a background thread vs. deferred to first QML use,
-  the five `AppSettings` caches and their refresh hooks, why background warming
-  lives in `init_app_data()` (not `AppData::new()`), the
-  `Loader` vs. `Component + createObject` rule for QML wrapping based on root
-  element type (`Dialog`/`Popup` vs `ApplicationWindow`), the eager-binding
-  pre-flight required before deferring components, and the **pre-exec stall
-  forensics (§6)**: the window paints nothing until `app.exec()`, and every
-  eager child's `Component.onCompleted` runs inside the engine load — a ~9 s
-  invisible-window stall turned out to be per-dictionary `count(*)` scans
-  missing the `dict_words.dictionary_id` index (fixed by a dictionaries
-  migration), NOT the plausible-looking WebEngineView/Chromium bring-up.
-  Bracket silent stalls with `STARTUP-TRACE` logs before blaming. The webview
-  deferrals are kept as structural hygiene: blank tab `Qt.callLater`-deferred,
-  session restore `singleShot(0)`-posted (ordering is load-bearing), webview
-  `Loader`s `asynchronous` on desktop only — never create a webview before
-  `app.exec()`.
-- [Database migrations](./docs/database-migrations.md) — **one** runtime
-  mechanism for both migrated databases: Diesel `run_pending_migrations()`.
-  Records why two mechanisms existed until 1.0.0 (`upgrade_appdata_schema()`, a
-  hand-maintained array of `include_str!`'d `up.sql` files replayed with errors
-  swallowed — a leftover from when `APPDATA_MIGRATIONS` built a separate
-  `userdata.sqlite3`), the bugs it caused, and why the 1.0.0 clean-break release
-  was the moment to **squash** 13 appdata + 4 dictionaries migrations into one
-  `2026-07-23-000000_initial_schema` baseline each and delete it. Covers the
-  **non-fatal migration failure** rule and the startup ordering that forces it
-  (Database Validation is only reachable if `DbManager::new()` succeeded, so a
-  fatal migration error would destroy the exact recovery UI the user needs), the
-  rejected `db_version` pre-check, why no ledger-stamping pre-pass is needed, and
-  the **missing-database recovery** behaviour — including the trap that a
-  *fabricated* empty database is **not** zero bytes, so `ensure_no_empty_db_files()`
-  never reclaims it (which is why `initialize_dictionaries()` was deleted rather
-  than fixed), and the `StartupDbReport` process-global that makes "Database file
-  was missing" an honest diagnosis instead of "Query returned 0 results".
-- [User data imports and SQLite `ANALYZE`](./docs/user-data-and-sqlite-analyze.md) —
-  every code path that grows a shipped DB at runtime (StarDict zip/dir,
-  EPUB/PDF/HTML books, sutta language downloads) and where the matching
-  post-write `ANALYZE` lives. Shipped DBs are `ANALYZE`d at bootstrap;
-  `DatabaseHandle::analyze` is the runtime hook. **If you add a new import
-  path, add an `ANALYZE` call and update the table in that doc.** Background:
-  missing `sqlite_stat1` made the Headword Match query 170 s instead of 17 ms
-  (see `tasks/prd-fixing-headword-match-slow-query.md`).
-- [Windows portable install](./docs/windows-portable-install.md) — the Standard
-  vs Portable installer modes, the relocatable folder layout, how the portable
-  `config.txt` sets a relative `SIMSAPA_DIR` resolved against the **exe
-  directory** (`exe_dir()` / `resolve_simsapa_dir()` / `normalize_lexically()`
-  in `backend/src/lib.rs`, not `canonicalize()`), the `.lnk` vs `.cmd` launcher
-  choice, and USB drive-letter robustness.
-- [Android / ChromeOS soft keyboard](./docs/android-soft-keyboard.md) — why a
-  Qt `TextField`/`TextArea` needs two taps (or never raises) the on-screen
-  keyboard on Android/ChromeOS, the reusable `MobileKeyboardHelper.qml`
-  (focus-in + tap + retry `Timer` until `Qt.inputMethod.visible`), the
-  `EnterKey.type` rules (`EnterKeySearch` for search fields needs a matching
-  `onAccepted`; `EnterKeyDone` for form fields; omit for multi-line), the
-  `focus: root.is_desktop` gate for pre-focused persistent fields, and the
-  `Qt.ImhNoAutoUppercase`-only hint rule (never `Qt.ImhPreferLowercase`, which
-  is inert on Android but forces the lowercase layer under Qt Virtual Keyboard).
-  **§4, the Gboard/Thai mid-word Shift bug — an upstream Qt bug with no app-side
-  fix**: Shift reverts to the base layer mid-word in *both* the search field and
-  the Gloss `TextArea` (which share no configuration), while a US layout in the
-  same field and Firefox with Thai both work; shift-lock is the user workaround.
-  Ruled out on device: `inputMethodHints` (removing `ImhNoAutoUppercase` changed
-  nothing and cost the lowercase look, so it was **restored**), Qt's
-  keyboard-height probe (`android:windowSoftInputMode="adjustResize"`, no effect,
-  reverted), and `MobileKeyboardHelper`. Fixed upstream by qtbase `f5c0296fdaad`
-  (`Fixes: QTBUG-140694`), which cuts `restartImmInput()` from **12** call sites
-  in 6.9.3 to **2** in 6.10.1 — it landed 8 days after 6.9.3 shipped, so only a
-  **Qt upgrade** fixes it (now the top functional reason in
-  [android-qt-upgrade-considerations.md](./docs/android-qt-upgrade-considerations.md)).
-  **Apply this technique to every new text input.**
-- [Mobile rendering troubleshooting](./docs/mobile-rendering-troubleshooting.md) —
-  the three mobile-only **Settings → Rendering** tab toggles that work around
-  GPU framebuffer / scene-graph corruption on flaky Android drivers (flat result
-  backgrounds, disable list clip, `QSG_RENDER_LOOP=basic`; `QSG_RHI_BACKEND=vulkan`
-  and `QT_QUICK_BACKEND=software` toggles were removed — the first crashed the
-  app, the second produced an unusable UI). Explains why the `render_loop_basic`
-  env-var toggle is read from the DB in `gui.cpp` before `QApplication`
-  (standalone `db::get_app_settings()` + `render_loop_basic_c()` FFI, cached,
-  restart-only) vs. the two QML toggles passed down to `FulltextResults.qml`.
-- [Mobile webview visibility management](./docs/mobile-webview-visibility-management.md) —
-  why anything Qt draws over the mobile reader is covered by the native
-  `QtWebView`, and the five layers that hide it. **Overlays are detected, never
-  enumerated**: `MobileOverlayTracker` reads `Overlay.overlay.children` (Qt
-  reparents a popup's `popupItem` in on show, out at the *end* of the exit
-  transition) and walks the object tree for in-tree child `ApplicationWindow`s —
-  the hand-maintained id chain it replaced was missing nine overlays. Covers why
-  **ChromeOS is the same Android binary** and gets no exemption (so a spurious
-  hide/show there is a *blocking* defect, not cosmetic), the shared `ToolTip`
-  excluded **by identity** never by arithmetic, the runtime-created-window
-  limitation, and why a `MobileComboBox` choice dialog was designed and
-  **deliberately not built** — the native drop-down is an overlay child like any
-  other, with width and height measured adequate.
-- [Investigation: stuck bottom bar on mobile](./docs/mobile-stuck-bottom-bar-investigation.md) —
-  **open, root cause not determined.** After the WordSummary pane closes on
-  Android, the page's bottom-anchored fixed chrome (the column bar) can stay
-  pinned mid-screen. **Not a CSS fault** — do not "fix" `.column-bar`. A
-  candidate two-part fix (a 1px webview geometry jiggle + an in-page relayout)
-  and its `VIEWPORT-NUDGE:` logging are in the tree; the doc holds the symptom,
-  the reasoning, the log format, and the rule for deciding which half to keep.
-  Delete or fold it into the two docs it names once a device reproduction is
-  read.
-- [WebEngineView stale black frame workaround](./docs/webengine-stale-black-frame-workaround.md) —
-  why the desktop HTML reader panels turned solid black after switching away
-  from and back to the app window on Linux (Chromium stops compositing while
-  the window is inactive; the scene graph is left with a stale texture —
-  [QTBUG-54127](https://bugreports.qt.io/browse/QTBUG-54127) /
-  [QTBUG-51892](https://bugreports.qt.io/browse/QTBUG-51892)), and the fix:
-  `WebEngineRepaintNudge.qml`, a **1px `anchors.bottomMargin` resize jiggle**
-  (two deferred 50 ms timers) on window re-activation. A JS-only repaint nudge
-  was tried first and does **not** work. Instantiate the helper next to every
-  new desktop `WebEngineView`.
-- [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
-  **read this before adding any new top-level window; §7 is the checklist.**
-  There are **three lifecycle families and they need different code** (§0): the
-  **pooled** `SuttaSearchWindow`, which is only *hidden* on close and stays in
-  its `WindowManager` list so the next open revives it instead of loading
-  another `QQmlApplicationEngine` (the expensive part, and these host
-  `WebEngineView`s); the **single-instance** secondary windows, which are
-  **destroyed on close**; and the one **kept** window, `SuttaNavigationWindow`
-  (§5d), single-instance but never destroyed, so the state the user left in it
-  is still there on reopen — its `onClosing` must **accept** the close and
-  notify nothing, because rejecting it skips Qt's quit-on-last-window check and
-  strands a live app with no windows. The reuse predicate differs accordingly —
-  `visible` (`window_is_open()`) for the pool, **`m_root != nullptr`** for the
-  rest — and each predicate is a bug in the other family. **Never bring a window
-  forward with a bare `show()`**: in Qt 6.9.3 it is `showNormal()` on every
-  desktop platform and un-maximizes the window; use
-  `show_window_preserving_state()` (§8 rule 6). Covers, for the pool: the revive
-  path in `create_sutta_search_window()` (`clear_all_tabs()` because callers
-  assume a blank window, keep the `window_id`, move to the end of the list,
-  `show_and_activate_window()`), the two places that must filter on `visible`
-  (the **`window_id`-less dispatch fallbacks** —
-  `last_open_sutta_search_window()` / `first_open_sutta_search_window()`, never
-  bare `last()`/`first()`, since they call `show` + `raise` and so silently
-  **re-open a window the user closed**, exactly the Topic Index "Open in new
-  window looks stuck on" bug — and the **session save** in `gui.cpp`'s
-  `aboutToQuit`, whose array length is the restored window count), and why
-  mobile never pools. And for the seven single-instance windows: the shared
-  `reuse_or_evict<T>()` shape, why reuse must go through
-  `show_and_activate_window()` and not the raw `show`/`raise`/`requestActivate`
-  triple, the **null-`m_root` eviction** rule (a failed engine load is otherwise
-  never reused *and* never removed — one leaked wrapper per open), the
-  **re-applied constructor parameters** for the two parameterised ones (and why
-  setting `current_section_uid` *is* the chanting-review re-init, so an added
-  `invokeMethod` would load the section twice), the close route QML `onClosing`
-  → `notify_window_closed` → `callback_window_closed` → `on_window_closed` with
-  **`deleteLater()`, never a direct `delete`**, and **§5b's table of which
-  window must defer its destruction until which completion signal** — including
-  that `SuttaLanguagesWindow`'s refuse-to-close stays **mobile-only** and that
-  the chanting recording case is *data loss*, not truncation (the file is
-  finalised in Rust but the row that makes it visible is written by QML in
-  `onRecording_completed`). §5c is the standing rule for all new bridge code:
-  **`crate::queue_or_log()`, never `.unwrap()` or `let _ =` on
-  `qt_thread.queue()`** — destroy-on-close makes `ObjectDestroyed` a live path,
-  and `is_destroyed()` is racy and is not the fix. §6 records why
-  `~WindowManager` is dead code and must stay empty.
-- [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the browsable
-  hierarchy behind the Sutta Navigation window, built **at bootstrap** into
-  `navigation_nodes` (nothing populates it at runtime). **Two spines, never
-  reconciled**: Sutta / Vinaya / Abhidhamma from the local `sc-data` checkout
-  (Theravāda Pāli scope only) and Aṭṭhakathā / Ṭīkā / Añña from the
-  tipitaka.org toc files. Covers node-uid stability, the materialized
-  `search_text` / `path` / `sort_path` columns (**changing how one is derived
-  means rebuilding the tree** — a stale one fails silently), the edition an SC
-  leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
-  the Summaries toggle, **which records the reader's translation tabs list**
-  (§2a: `related_sutta_uids()` relates two references when their spans
-  *overlap*, in both directions, so `an5.91` lists `an5.91-100.tik` and the
-  reverse — never match on the reference string; multi-dot refs such as
-  `mil5.2.1` have no comparable span and match as strings only), and the
-  window's own quiet-failure
-  rules (§2g: a `ListModel` edited in place, per-row state keyed by `node_uid`
-  in the window, uncached per-level translation counts, which include
-  OpenTipitaka). On the CST side: **`VERIFIED_CST_FILES` is a verification gate
-  that cannot be replaced by a computed predicate**, the coverage classes
-  applied within it, **§3.5, what a CST record holds** (segmented text from the
-  OpenTipitaka export in `fragments.sqlite3`, an `/en/opentipitaka` record for
-  every Pāli record, and missing input an error with no fallback to the XML),
-  the toc-driven division split on `cst_segments` rows, and the four rebuild
-  commands that must be run together (`import-cst`, `build-navigation-tree`,
-  `index rebuild --area suttas --lang pli` and `--lang en` — the Tantivy index
-  does not heal itself). **§2f: the summaries and
-  context notes are not in the table** — they are three TOML files in `assets/`
-  embedded in the app (`backend/src/navigation_texts.rs`, parsed on
-  the window's first query and never at startup), so a text fix ships with an
-  app update. `navigation-blurb-suttacentral.toml` is **generated** by every SC
-  spine build (`blurb_export.rs`) and never hand-edited; corrections go in
-  `navigation-blurb-overrides.toml` (replace / add / suppress with `""`), which
-  like `navigation-context-notes.toml` the CLI never writes. To apply an edit,
-  **rebuild the app** — no bootstrap run. A key that names no node is reported
-  by the tree build of the spine that owns it, never repaired; the skip lists
-  and the re-keying table are fixed data, and a stale row is a reported defect. The context notes are **one table per
-  node** with optional `from` / `to` / `circa` origin dates (BCE negative, no
-  year 0), never derived from the note text. **§2h is the Timeline page** those
-  dates feed (`GET /navigation_timeline`, a reader tab with `table_name:
-  "navigation_timeline"`): clustering and period text in Rust
-  (`backend/src/navigation_timeline.rs`), a markup contract with
-  `src-ts/timeline.ts`, cluster blocks that **stay in document flow**, d3 in its
-  own bundle (`timeline.min.js`) so sutta pages do not load it, a layout module
-  that must **never import d3** (jest cannot load it), re-layout on a width
-  change only, and **no text nodes added by the script** — the find bar would
-  wrap and erase an SVG label. Also there: the minimap (page y mapped linearly
-  to a fixed strip; a child of `<body>` so it inherits the theme background),
-  the per-entry button that opens the navigation window at a node (`GET
-  /open_sutta_navigation`, through a `WindowManager` signal because the request
-  is on a worker thread), and why the controls are `position: relative` (the
-  template's empty message strip otherwise takes their clicks).
-- [CIPS index updates](./docs/cips-index-updates.md) — how the Topic Index gets
-  its data, and the in-app **Update** / **Reset** actions that replace it without
-  a Simsapa release. The parser moved from the CLI to
-  `backend/src/cips_parse.rs` (pure — no file access, no printing, **all**
-  diagnostics returned; the regression check was **byte-identical** CLI output,
-  and the file was `git mv`'d so the untouched logic is provably untouched), and
-  the index now resolves from **two** sources. **The newer of the two wins**:
-  the single-row `topic_index_data` table is used only when its `updated_at` is
-  *strictly* newer than `assets/general-index-date.txt`, which is why a
-  downloaded index does not silently shadow every future shipped one — a plain
-  string compare, so both stamps must stay fixed-width UTC ISO 8601 to the
-  second. Covers why the stored index is a **separate single-row** table, empty
-  until the user updates, and why
-  every read must tolerate it being absent (a migration failure is non-fatal by
-  design); the **minified-JSON** rule (`to_string`, never `to_string_pretty` —
-  `appdata.sqlite3` is kept across app updates); the swappable
-  `RwLock<Option<Arc<TopicIndex>>>` cache and its three rules (clone the `Arc`
-  out and **drop the guard**, build outside the write lock, double-check under
-  it), plus why reset **replaces and never clears**; the fetch's
-  **`status_is_retryable()`** policy (429 + 5xx retry, 4xx does not — the
-  `asset_manager.rs` loop this was modelled on retries transport errors *only*,
-  so a 500 read as success) and the **50 MB ceiling enforced twice**, which is
-  the only guard against an OOM on Android since the plausibility *floor* does
-  not cover size at all; the truthful stage ordering via a lazily-loaded title
-  map; `known_uids` built from **all** Pāli rows including NULL titles; the
-  "before" counts taken at the **top** of the run; and the QML rules — the
-  update window's **split model** (layout from `DictionaryIndexProgressWindow`,
-  lifecycle from `TopicIndexInfoDialog`, start from `StorageDiagnosticsDialog`),
-  why it must **not** start the run in `Component.onCompleted`, and the three
-  flows sharing one completion signal. The standing source-data rule applies
-  throughout: **report defects, never repair them** (duplicated xrefs preserved,
-  misspellings verbatim; `BTreeMap` not `HashMap`, `sorted_xref_targets` returns
-  a `Vec` not a `BTreeSet`).
-- [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
-  shipped `assets/fonts/crimson-pro/*.ttf` are **patched, not stock**: stock
-  Crimson Pro lacks ṁ (U+1E41), so plain browsers fell back to a mismatched
-  system-font dot (Qt WebEngine masked it in-app). The fix
-  (`scripts/patch_crimson_pro_pali_glyphs.py`, idempotent) adds **both** ṁ and
-  Ṁ (U+1E40) as composites modeled on the font's own ṅ/Ṅ — the uppercase is
-  load-bearing because the font has no `smcp` feature, so browsers synthesize
-  `font-variant: small-caps` ("Evaṁ me sutaṁ") from scaled *uppercase* glyphs;
-  adding only the lowercase breaks the small caps. Re-run the script + `make
-  build -B` if the font files are ever refreshed from upstream (they are
-  embedded via `include_dir` in `bridges/src/api.rs`).
-- [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md) — the chanting
-  recorder/player stack (`cpal` + `flacenc` + `rubato` + `symphonia`) that
-  replaced Qt Multimedia / FFmpeg for 16 KB compliance. cpal 0.18's Android
-  backend is **AAudio via the `ndk` crate** (no `oboe`, no bundled audio lib).
-  **Do NOT use NDK r28** (incompatible with Qt 6.9.3 at this project's minSdk —
-  `pthread_cond_clockwait` needs bionic API 30+, so the exclusion holds at
-  minSdk 28 just as it did at 27, and breaks the `cxx` C++ build); stay on
-  r26b/r27 and
-  16 KB-align the main app `.so` with `-Wl,-z,max-page-size=16384` in
-  `CMakeLists.txt`. Also the **per-platform table of what the final link must
-  name** (the Rust staticlib carries no `#[link]` directives) and the **macOS
-  14.2 floor** (cpal's strongly-imported CoreAudio ProcessTap symbols), which
-  cargo must also be told via `MACOSX_DEPLOYMENT_TARGET`.
-- [Search snippet & highlight pipeline](./docs/search-snippet-highlight-pipeline.md) —
-  how ContainsMatch (FTS5) and FulltextMatch (Tantivy) produce result snippets
-  and highlight them. Highlighting is **producer-owned and range-based**
-  (`backend/src/highlight.rs`: `merge_ranges`/`wrap_ranges`/`literal_ranges`),
-  **non-nested by construction**; the central `highlight_row` pass is only a
-  **fallback** for plain-snippet modes (TitleMatch/UidMatch/non-DPD dict) —
-  guarded by `snippet.contains("class='match'")` so it never double-wraps (the
-  old Fulltext double pass produced nested `<span class='match'>`). Covers
-  per-mode highlight semantics (Contains = literal only; Fulltext = stemmed ∪
-  literal), the "Show All Snippets" per-occurrence expansion (record-based
-  pagination with post-slice expansion, `is_snippet`, focal-only highlight,
-  `fragment_around_offset`), the `snippet_exclude` filter, and the `show_header`
-  / `find_query` QML render. Also covers the **snippet-aware find-bar jump**
-  (clicking a snippet opens the sutta and jumps the find bar to *that* snippet's
-  text — including the same-sutta "already open, no reload" immediate re-run, and
-  the punctuation-tolerant inter-word matching in `src-ts/find.ts`
-  `makeInterWordFlexible` that bridges punctuation-stripped `content_plain` vs.
-  the punctuation-bearing rendered HTML). **§9 the three-stream Dictionary
-  result page:** regular DPD → bold definitions → (Combined) Fulltext Match,
-  spliced by `split_page_across_streams`; only stream 1 is deconstructor-derived,
-  and on `Dictionary + DpdLookup` it is built from `dpd_lookup_grouped()` (rows in
-  break-down order) and **lock-filtered in Rust before pagination**
-  (`GroupedDpdLookup::ordered_filtered_results()`, `direct_uids ∪ selected
-  break-down`), which is what removed the blank interior pages the old
-  client-side filter produced. Streams 2 and 3 query the **compound as typed**
-  and are never lock-filtered — so bold rows are visible under lock and the
-  counter is exact; the grouped lookup replaces the flat one **unconditionally**
-  on that path (equivalence proof + the `grouped_equals_flat_…` guard test), both
-  call sites sharing `dpd_lookup_grouped_memo()`. **§9d: DPD queries normalize
-  with `normalize_dpd_query_text()`, never `normalize_query_text()` alone** —
-  the latter splits iti sandhi (`dhārayāmī’ti` → `dhārayāmi ti`), which no DPD
-  `lookup` key matches; the DPD form rejoins it (`dhārayāmīti`). A caller that
-  hands the query on (`SearchQueryTask::dpd_query_text`, the break-down
-  selector) passes `normalize_dpd_query_split()`, never `normalize_query_text`
-  output (it splits `manopubbaṅ’gamā`) nor the rejoined form. The
-  joined key is used only when DPD analyses it as `… + iti`; otherwise the word
-  is `<base> + iti` (`magga’’nti` is maggaṁ + iti, never the verb `magganti`).
-  **§9e: the deconstructor's "starts with" break-down guesses** read candidate
-  keys from the `lookup` primary-key index and check rows one by one until one
-  has a break-down (shortest key, capped at 500) — never `LIKE` (a 430 MB table
-  scan), never a `deconstructor` filter in the key query, and no partial index
-  (STAT4 plans per bound value, so `EXPLAIN` with `?` placeholders is not the
-  running plan). Run the `#[ignore]`d cap-headroom test after a DPD data update.
-  Pairs with the bootstrap-time
-  normalization in
-  [text-processing-for-contains-match-and-fulltext-match-search.md](./docs/text-processing-for-contains-match-and-fulltext-match-search.md).
-- [Pāli sandhi break-down and quote marks](./docs/pali-sandhi-and-quote-marks.md) —
-  the map of every place that takes apart iti sandhi (`dhārayāmī’ti` =
-  dhārayāmi + iti) and how each handles `'` `"` `‘` `’` `“` `”`: which
-  component recognises which mark (§2 table — a straight quote between letters
-  **joins** a word, a smart one **splits** it), the shared split in
-  `normalize_iti_sandhi` that stored text and queries both take (it must run
-  **before** quotes become spaces), the DPD lookups' **rejoin**
-  (`normalize_dpd_query_text`) and the rule that the joined key is used only
-  when DPD breaks it down as `… + iti` — otherwise `<base> + iti`, so
-  `magga’’nti` is never the verb `magganti`; the Gloss tab looking up the base
-  word; and the page side, `src-ts/pali_word.ts`, whose word regex continues
-  across a quote run into `ti`/`nti` for tap and double-click (Windows
-  double-click also selects the trailing space), and the find bar's iti-sandhi
-  boundary marking. Every iti rule matches only at a **word end** (else
-  `until`, `anaññātaññassāmītindriyaṁ` and `maraṇā’tipi` split), and
-  **any change to these rules changes `content_plain` and the indexes: it ships
-  with a re-bootstrap**. In the dictionary and the Gloss tab a word written
-  with quote marks inside it is joined (`manopubbaṅ’gamā`, `so’pi`, `cā”tipi`)
-  by `join_mid_word_apostrophes`, after the iti split has taken its quotes.
-- [The `simsapa` CLI and the localhost API](./docs/simsapa-cli-and-localhost-api.md) —
-  **compiled into the `simsapa` binary** (`simsapa docs` prints it, `--output`
-  saves it) and read by agents outside this repo, so it must stay
-  **self-contained**: no links to other docs, no source paths, no `CLAUDE.md`
-  (`test_bundled_doc_has_no_repo_references` in `backend_cli/src/commands/docs.rs`
-  enforces it). Implementation notes — where each route's code lives, the shared
-  helpers, the lazy searcher init — go in
-  [localhost-api-implementation.md](./docs/localhost-api-implementation.md).
-  Part A is the CLI for users and agents: commands, clean text output vs.
-  `--json` (an agent wanting another shape writes its own formatter over the
-  JSON; there is no formatter script), exit codes, and **`simsapa install-skill`
-  (A.2.3)**, which writes the built-in `simsapa` agent skill
-  (`backend_cli/skills/simsapa/SKILL.md`) into the Claude Code / OpenCode / Pi
-  skill folders — `--agent claude|opencode|pi` (repeatable), `--global` or
-  `--local` (`--dir`), `--yes`, `--force`; with both agent and scope it installs
-  unasked, otherwise it detects existing config folders and asks; no databases
-  needed; a re-run replaces only a `SKILL.md` carrying the
-  `generator: simsapa-cli` marker. Implementation notes are in
-  [backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md). Part B is
-  the **whole Rocket route surface** (search, word/sutta retrieval,
-  GUI-navigation, assets) — the shared data routes in `api/src/` (`simsapa_api`,
-  also served by `simsapa serve`, with npm install instructions), the GUI-only,
-  AI and asset routes in `bridges/src/api.rs` — plus the **agent quick-start** (§0: search →
-  copy `uid` → fetch full HTML/JSON). The four search routes: general `POST /search`
-  (area-specific default mode, exact `SearchMode`/`SearchArea` serde names,
-  HTTP 400 on unknown mode/area), `POST /suttas_fulltext_search` (FulltextMatch),
-  `POST /suttas_contains_search` (ContainsMatch), and `POST /dict_combined_search`
-  (DpdLookup + deconstructor). Covers the request/response JSON, the shared
-  helpers (`parse_search_mode`/`parse_search_area`, `build_search_params`,
-  `run_search`, `run_suttas_search`), pagination + `show_all_snippets` /
-  `snippet_exclude` pass-through, the named-route sutta-reference → `UidMatch`
-  auto-detect (and why `/search` is strict), the **Dictionary `Combined` →
-  `DpdLookup` remap** (query_task rejects `Combined + Dictionary`), and the
-  **lazy, idempotent, mode-gated `init_fulltext_searcher()`** in `run_search`
-  (shared process-global searcher; not eager at `start_webserver()` to avoid
-  reconcile-write contention). **Tolerance layer (2026-06):** one shared
-  `AppData::resolve_word_uid` resolver behind both the JSON (`/words/<uid>.json`,
-  `get_word_json`) and HTML (`render_word_html_by_uid`) word routes — tolerant of
-  human/display (`dhamma 1.01`), numeric (`34626/dpd`) and hyphenated
-  (`dhamma-1-01/dpd`) forms via `normalize_human_word_uid`, preserving the
-  **two-lane invariant** (numeric → `dpd_headwords` row, hyphenated → `dict_words`
-  row); **encoding-agnostic query-param twins** `/word.json?uid=` / `/word_html?…`
-  / `/sutta_html?…` (accept `%2F`, unlike the `<uid..>` path routes which 422);
-  **404-on-miss** with the body preserved (`[]` for JSON) + opt-in `?verbose=1`
-  envelope; the **self-correcting UID auto-detect** (`run_dict_combined_with_fallback`
-  / `run_search_with_uid_fallback`: a 0-hit auto-`UidMatch` re-runs as normalized
-  `UidMatch` → `DpdLookup` for dict, or the route's fallback mode for suttas — no
-  silent 0-hit); and the **`GET /health`** readiness snapshot (version, port,
-  db_paths, `fulltext_searcher_ready`, counts, languages, dict_sources, and
-  **`dpd_version`** — DPD's own release, the cache key for DPD-derived answers,
-  never `app_version`; and **`sc_data_version`** `{date, commit}` — the
-  `sc-data` checkout the bootstrap imported, `null` on an older database).
-  **Gloss
-  pipeline routes (§16):** `POST /gloss_text` (synchronous multi-paragraph
-  glossing → `AllParagraphsProcessingResult`, full `ProcessedWord` incl. the
-  grouped deconstruction fields; stateless per call) and `GET /word_selection_ws`
-  (WebSocket AI Word Selection over glossed paragraphs; streams
-  `status`/`error`/terminal `result`, accepts `cancel`, one run per connection,
-  `d:<n>` break-down + `c<k>` component answers), with request/response examples,
-  the full message protocol, a live transcript and a two-step agent quick-start —
-  for external clients building a vocabulary-table UI. The WS uses the app's
-  **saved** provider keys, so **`POST /set_ai_provider_key`** (set key + enable
-  provider + prioritize it in the fallback sequence; never echoes the key)
-  configures a provider first; a self-contained **`scripts/gloss_demo.html`**
-  (textarea → Gloss → vocab list, Gemini key field, AI-selection checkbox
-  disabled while the key is empty) demonstrates all three routes end-to-end
-  (§16.4). **Iti sandhi (§18):** which route resolves `vuttan'ti`,
-  `satipaṭṭhānāti` and spaced `vuttan ti` — send the whole form, `ti`
-  included, to `/dict_combined_search` and read `deconstructor`; a default
-  gloss entry never shows the iti split (an exact one does). A final `n` with no exact match is looked up as
-  its `ṁ` spelling before any guess (`vuttan` → `vuttaṁ`, never `vuttanaya`;
-  search-snippet doc §9f). **Tiers of exactness (§19):** exact
-  `/lookup_forms` and `/gloss_text` `"exact": true` (a `not_found` is
-  trustworthy) → `/dict_combined_search` and default `/gloss_text` (adds the
-  `ṁ` respelling, stem match and "starts with" guesses; nothing says which step
-  answered) → `/search` Dictionary `Headword Match` / `Contains Match`
-  (candidates only); widen only the forms the narrower tier could not answer.
-  **Exact DPD form lookup (§19.1–§19.2, §18.3):** `POST /lookup_forms` takes up
-  to 5,000 forms and returns one result per form **in input order** — an
-  equality match on DPD's `lookup` key after `normalize_dpd_query_text()`,
-  every headword and split of the row with nothing ranked or chosen, statuses
-  `found` / `deconstructed` / `not_found` / `invalid`, numeric `<id>/dpd` uids;
-  an iti form is the joined row when DPD splits it `… + iti`, else an exact
-  `<base> + iti` (`source: "iti_rule"`). Each result also carries
-  `form_grammar_raw` (the lookup row's `[lemma, class, parse]` triples,
-  verbatim; `[]` for an `iti_rule` result, whose base component carries them),
-  each split component its own row's `form_grammar_raw`, and each headword
-  `root_base`, `root_sign`, `construction_summary` (DPD's displayed
-  construction; `null` on a `dpd.sqlite3` without the column) and
-  `form_grammar` (the triples matching its `lemma_clean`, its `pos` class and,
-  for nouns, its gender; every matching homonym gets one). `/gloss_text` with `"exact": true`
-  gives one such lookup per token, in order, on the whole `original_word`
-  (rejecting `skip_common` & co. with a JSON `400`); its default output is
-  unchanged because the route returns an untagged enum, **never a
-  `serde_json::Value`** (key order). The Rocket `string` body limit is 2 MiB;
-  over it is Rocket's own non-JSON `400`.
-  **Sutta Bilara JSON (§13.4):** `GET /sutta.json?uid=` returns the
-  `content_json` column (SuttaCentral segment id → text) **verbatim**. **Never
-  re-sort `content_json`**: its key order is the paragraph order of the text,
-  and sorted segment ids scramble it (`mn1:10.1` lands after `mn1:1.6`), so
-  never pass it through `serde_json::Value` (no `preserve_order`), with the resolved
-  uid in `X-Simsapa-Sutta-Uid`; its uid resolution (`backend/src/sutta_json.rs`)
-  never falls back from a translation to the Pāli, unlike the HTML routes, and
-  an HTML-only sutta is a `404` with `reason: "no_content_json"`.
-  **`GET /sutta_bilara.json?uid=` (§13.5)** returns the same text with its
-  HTML template, variant readings, comments and glosses in one object, each
-  segment object embedded verbatim as a `RawValue`; for a translation the
-  variant readings are those of the Pāli of its family (`<ref>/pli/ms`, or
-  `<ref>/pli/cst` for `/en/opentipitaka`), named by `variants.uid`.
-  **Reference conversion (§17):** `POST /reference_search` is the
-  Reference Search window's lookup (PTS volume/page → SuttaCentral reference and
-  back) over the bundled reference table; the sutta routes' reference
-  auto-detect does **not** understand PTS references. Pairs with
-  [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md)
-  and [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md).
-- [DPD `construction_summary`](./docs/dpd-construction-summary.md) — the
-  `dpd_headwords` column behind `/lookup_forms`' and `/word.json`'s
-  `construction_summary` (`√car + a + ti` where `construction` is
-  `cara + ti`). It is **cut out of DPD's own rendered entry** (the bracket at
-  the end of the summary line of the `dict_words` page, `word = lemma_1`), not
-  computed with a port of DPD's Python rule, so it is what DPD shows its
-  readers for that release. `populate_dpd_construction_summaries()` runs in
-  `import_migrate_dpd()` (and alone as `populate-dpd-construction-summary
-  <dpd.sqlite3>`, app closed, `SIMSAPA_DIR` naming the matching
-  `dictionaries.sqlite3`); it cuts the line out **in SQL** (never loads the
-  840 MB of HTML), writes every headword, and logs a report whose malformed
-  count is the signal that DPD changed its template — report, never repair.
-  **Never add the column to `dpd_schema.rs` or `DpdHeadword`**: Diesel selects
-  every `table!` column, so every headword query would fail on an installed
-  `dpd.sqlite3` without it. The runtime read checks presence once per process
-  (`OnceLock`, `PRAGMA table_info`, never the error text) and answers `null`
-  when absent; `/word.json` adds it in `word_json_with_extras()`, never in
-  `resolve_word_uid()` (the word-page renderer calls that).
-- [DPD releases and the `dpd_res` table](./docs/dpd-upgrades.md) — DPD's
-  structured data, rendered pages and page files (`res/`: CSS, fonts, scripts,
-  `family_*_json.js`) must come from the **same release**, so the `res/` files
-  are a table in `dpd.sqlite3` (`dpd_res`), not files compiled into the app.
-  Covers the manual bootstrap preparation (extract `dpd.db.tar.xz` and the
-  `dpd/` folder of `dpd-goldendict.zip` into `dpd-db-for-bootstrap/<date>/`,
-  point `current` at it; the bootstrap never extracts), the import order in
-  `import_migrate_dpd()` (explicit paths, no global app data), the `res/`
-  conversions (niggahīta in text files only; the stylesheet's relative font
-  `url()`s kept, **never a port in the table**), the `<link href>` check
-  (report, never repair), the DPD row's `version` = `dpd_release_version`, and
-  `GET /dpd_res/<path..>` in `simsapa_api`, served from a process-wide
-  **in-memory copy** warmed off the GUI thread after startup — a DPD headword
-  or root page loads ~13 MB of them, so they are never read from SQLite per
-  page, and the copy is never reloaded: never replace `dpd.sqlite3` in a
-  process that has loaded it.
-- [Segmented translations from suttas-core](./docs/suttas-core-import.md) — the
-  bootstrap step that replaces HTML-only Bodhi / PTS records with suttas-core's
-  segmented text and imports **all** of Ṭhānissaro's under **SuttaCentral
-  numbering**. **The decision is made from the data, never from translator
-  names**: an HTML-only record is replaced in place, one with `content_json` is
-  skipped, a sutta Simsapa lacks is not added. Covers the insertion point (after
-  the dhammatalks.org import, before the navigation tree and library imports),
-  `content_json` keys in **template order, never sorted**, `source_info` and why
-  it keeps Sujato the default English beside a Pāli text, the Ṭhānissaro uid map
-  (override → raw match → range containment → single-poem chapter → split page),
-  **delete-before-insert** because the two numberings collide, the
-  `sutta_uid_renames` table applied at entry points only (book links, footnote
-  references) and never as a general fallback, his introductions carried over
-  from the old records, the **footnote stored form and rendering** (word-index
-  placement, SuttaCentral comments as numbered notes, markers drawn by CSS from
-  `data-n`, a bottom bar that updates incrementally so a selection survives), and
-  the `survey-suttas-core` report. A version bump of the appdata DB is needed
-  before release.
-- [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md) —
-  how the app obtains **releases info** (the `github_repo` / `version_tag` used
-  to build GitHub asset download URLs for setup and language downloads). The live
-  source is the pythonanywhere `POST /releases` endpoint
-  (`fetch_releases_info()`, strict — `Err` on any failure); the bundled
-  `assets/releases-fallback.json` (`FALLBACK_RELEASES_INFO_JSON` /
-  `get_fallback_releases_info()`, `include_str!`, mirrors `PROVIDERS_JSON`) is
-  used only when the live fetch fails. Covers the `check_for_updates()` decision
-  flow (live → fallback-silent → `update_check_error` only if the fallback itself
-  won't parse), the **independent asset-URL fallback** in
-  `compatible_assets_release()` (`get_compatible_asset_*` prefer the live global
-  but fall back to the embedded snapshot, so `SuttaLanguagesWindow` language
-  downloads resolve URLs offline even when no update check ran),
-  **why a pythonanywhere outage is not a user-facing error** (the
-  fallback covers it; the real user-facing failure is the **asset download**,
-  surfaced by `AssetManager`'s retry loop + `cleanup_on_failure` and
-  `DownloadAppdataWindow.run_download()`'s `error_dialog`), and the manual
-  refresh CLI command `update-releases-fallback` (`bootstrap_cli/src/update_releases_fallback.rs`;
-  `GET …?channel=…&no_stats=true`, validates before writing, rebuild needed to
-  re-embed). The channel comes from `get_release_channel()`
-  (`RELEASE_CHANNEL` env → `AppSettings` → default `main`).
-- [App packaging and identifiers](./docs/app-packaging-and-identifiers.md) — the
-  per-platform packaging identifiers and the crucial distinction between the
-  **application identifier** (`io.github.simsapa.app` — the store/OS package id,
-  set in `android/AndroidManifest.xml` `package=`, macOS
-  `MACOSX_BUNDLE_GUI_IDENTIFIER` in `CMakeLists.txt` + `BUNDLE_ID` in
-  `build-macos.sh`; Windows `AppId` is a GUID, Linux has none) and the **QML
-  module URI** (`com.profoundlabs.simsapa` — an internal Qt namespace used by
-  `import com.profoundlabs.simsapa`, the `bridges/assets/qml/com/profoundlabs/simsapa/`
-  stubs, `bridges/build.rs` / `cxx_qt_import_qml_module` URI, and the
-  `:/qt/qml/com/profoundlabs/simsapa/…` resource paths). **The two are unrelated
-  and must NOT be conflated** — the Android applicationId was changed for Google
-  Play without touching the QML URI (a ~70-site, no-benefit refactor). Covers why
-  the Android FileProvider authority and `/data/user/0/<pkg>/` data dir derive
-  automatically from the package, and the change checklist.
-- [Apple App Store readiness](./docs/apple-app-store-readiness.md) — whether
-  the app would pass App Review on iOS and the Mac App Store, and what blocks
-  it: **Qt WebEngine is incompatible with the Mac App Store** (private APIs,
-  App Sandbox) so a store build needs the QtWebView reader views, and **iOS
-  uploads require Xcode 26 / iOS 26 SDK**, which Qt 6.9.3 does not document.
-  Also the shared work: privacy manifest, AI-provider consent (5.1.2(i)),
-  store-gated update notice (2.4.5(vii)), iCloud-backup exclusion of the
-  downloaded databases, and the sandbox's effect on `SIMSAPA_DIR` and the
-  global hotkey's synthetic ⌘C.
-- [macOS: distributing without a Developer ID](./docs/macos-unsigned-distribution.md) —
-  why a downloaded DMG said **"Simsapa is damaged and can't be opened"**: the
-  bundle was effectively unsigned (main executable `linker-signed`,
-  `Info.plist=not bound`, no seal), because **the Qt 6.9.3 `macdeployqt` signs
-  nothing by default**. A quarantined bundle that fails
-  `codesign --verify --deep --strict` gets "damaged" with no way through; a
-  verified ad-hoc one gets "Apple could not verify…" plus **Open Anyway** in
-  Privacy & Security. `build-macos.sh`'s `code_sign()` ad-hoc signs after the
-  last change to the bundle and fails the build if it does not verify, and
-  `verify_dmg_app()` verifies the copy **inside the finished DMG** (the DMG's
-  license agreement makes `hdiutil attach` cancel unless fed `Y`). **No
-  hardened runtime** on the ad-hoc build — measured on macOS 26 to give the
-  same prompt with and without it. Never judge Gatekeeper from a local build
-  (no quarantine attribute); the page has the hand-set-quarantine test, the
-  user's first-launch steps, and the `xattr -dr` fallback (on the app, not the
-  DMG).
-- [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
-  why the app's top-margin setting is only *extra* space: Qt's
-  `ApplicationWindow` already binds its four padding properties to the window
-  safe area (`qquickapplicationwindow.cpp:802-805`), which is why the old 24 dp
-  default produced a **doubled top gap** on every Android 15+ device and had to
-  become `0`. Three rules stated as rules: **never assign `topPadding`/`padding` on
-  an `ApplicationWindow` root** (the binding is installed with
-  `binding.installOn()` at `:793`, so an assignment silently replaces it and the
-  inset vanishes); **anchor a window's root content item to its parent — never
-  size it from `root.width`/`root.height`** (a direct child is reparented to the
-  already-inset `contentItem`, so sizing from the window overflows the bottom by
-  ~70 px; four dialogs did this and a redundant mobile-only
-  `Layout.bottomMargin: 60` was masking it); and **the `Popup` family gets no
-  padding** — `Popup`/`Dialog`/
-  `Menu`/`Drawer` live in the window overlay, with `DrawerMenu.qml`
-  (`topPadding: SafeArea.margins.top`) as the worked example and a watch-list of
-  tall centered dialogs. Also: why `status_bar_height` is **not** the safe area
-  (no cutout, no nav bar, not per-window — informational display only), the
-  three-site serde migration that carries old `CustomValue(v)` settings over,
-  the **predictive-back opt-out** (targetSdk 36 enables it; Qt 6.9.3 registers no
-  `OnBackInvokedCallback` and neither does the app, so back **closed the whole
-  app** from every dialog and secondary window), the three deprecated
-  bar-colour APIs in Play's report that live in Qt's own Java and are no-ops at
-  API 36, and the device test plan (an Android 15 phone **cannot** validate any
-  of this).
-- [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
-  work deliberately deferred to the eventual Qt upgrade, with the reasons and the
-  pitfalls. Covers removing the predictive-back opt-out (and why Qt implementing
-  the callback may still not be sufficient for Qt Quick popups), the **`minSdkVersion`
-  raise to 28 — done on 2026-08-26 and deliberately decoupled from the upgrade**
-  (a binary scan found `libQt6Core` importing `getentropy` as a GLOBAL undefined
-  symbol, first provided by bionic at API 28, so the app could never `dlopen` on
-  an API 27 device and the override was a correctness defect rather than a
-  distribution trade-off — see
-  [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md)),
-  the deprecated Java APIs,
-  the AGP / Gradle-wrapper / JDK coupling (**the wrapper is ours at 8.10, not
-  Qt's at 8.12** — correcting an earlier note), the 16 KB link flag Qt 6.10 makes
-  redundant, and that the x86_64 and armeabi-v7a slices have still never been
-  *run*. Pitfalls include the measured Qt 6.10.1 AppImage breakage (libtiff
-  SONAME, WebEngine-on-FUSE SIGSEGV) that is why 6.10.1 was not adopted.
-- [Android API levels and feature dependencies](./docs/android-api-levels-and-feature-dependencies.md) —
-  which Android API level each feature actually needs, measured rather than
-  assumed, plus the crash-triage playbook for *"does this user's Android version
-  have the API this feature relies on?"*. The headline finding is that
-  **`libQt6Core` imports `getentropy` as a GLOBAL (non-weak) undefined symbol**,
-  which bionic first provides at API 28 — so below 28 `dlopen` fails before any
-  app code runs, and `minSdkVersion 27` was a correctness defect, not a
-  distribution choice (raised to **28** on 2026-08-26). Symbols above the floor
-  that are **WEAK** are *not* a floor: they resolve to null and the caller falls
-  back (`copy_file_range` 34, `memfd_create` 30). Also records the two Qt floors
-  (6.9.3 and 6.11 both declare 28), the per-feature inventory — cpal/AAudio 26,
-  storage-volume enumeration 24, SAF 21 — and that **no `Build.VERSION`-gated
-  code exists** anywhere in `cpp/`, `bridges/` or `backend/`.
-  `scripts/android-api-scan.sh` regenerates every measurement in it; **re-run it
-  after a Qt upgrade, an NDK change, a new native crate or a new JNI call
-  site**, and pass `--abi` — it scans one ABI at a time and defaults to arm64.
-- [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md) —
-  how the signed release AAB is built (`make android-aab` → `build-android.sh`,
-  `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release
-  packages from the Qt Creator interface** — its kits are single-ABI, and an
-  arm64-only bundle is filtered off Intel/AMD Chromebooks (ARCVM is x86_64).
-  Records the July 2026 "not compatible on Chromebook" incident and its **two
-  independent causes**: the missing x86_64 ABI, *and* the
-  `<!-- %%INSERT_PERMISSIONS -->` marker, which androiddeployqt filled from the
-  linked Qt modules' `Qt6*-android-dependencies.xml` files with CAMERA
-  (Qt6WebView), ACCESS_FINE_LOCATION and BLUETOOTH — from which **Play derives
-  *required* hardware features** (`CAMERA` ⇒ `android.hardware.camera` +
-  `.autofocus`; `ACCESS_FINE_LOCATION` ⇒ `.location.gps`), all on Google's
-  excludes-ChromeOS list. The fix **deletes both androiddeployqt markers** and
-  declares permissions explicitly + every `<uses-feature>` as
-  `required="false"` (a bare `<uses-feature>` defaults to *required*), with the
-  trade-off that **a new Qt module's permissions must now be added by hand**.
-  Covers the ExternalProject-per-ABI mechanism and why the project's
-  `if(NOT CMAKE_PREFIX_PATH)` per-ABI Qt-path guard is safe (Qt does not forward
-  the parent's `CMAKE_PREFIX_PATH` to sub-builds), the **`armeabi-v7a` →
-  `armv7-linux-androideabi`** corrosion mapping gotcha (*not* thumbv7neon — Qt's
-  toolchain sets `CMAKE_ANDROID_ARM_MODE`), why `QT_ANDROID_BUILD_ALL_ABIS` is
-  deliberately avoided, keystore signing via `android/signing.env` (gitignored)
-  + `QT_ANDROID_SIGN_AAB`, and the **strictly-increasing `ANDROID_VERSION_CODE`**
-  Play requires. Also two traps found while getting the first multi-ABI bundle
-  out: (1) **the JDK must be 17–21** — AGP 8.6.0's bundled lint cannot parse a
-  Java 26 version string, and the failure is a `lintVitalAnalyzeRelease` crash
-  whose *entire* error message is the JDK version number, after all three ABIs
-  have already compiled and signed; `build-android.sh` therefore picks a JDK
-  explicitly instead of inheriting `java`. (2) **androiddeployqt stages the
-  primary ABI's Qt plugins into the other ABIs' `lib/` folders** (28 aarch64
-  `.so` files in `base/lib/x86_64/`, reproducible from a clean tree, its own
-  `checkArchitecture` guard firing in some phases but not others) — excluded in
-  `android/build.gradle` via `packagingOptions.jniLibs.excludes` and
-  independently re-checked against the finished artifact by the script. Plus the
-  **never hand-delete `android-build/`** rule (it wedges the tree: the per-ABI
-  ExternalProject copy stamps then consider themselves up to date and never
-  repopulate the staging dir — use `make android-clean`), and the `aapt2 dump
-  badging` / Play device-catalog verification steps. Also **why R8/ProGuard
-  stays off** and the Play Console's *"no deobfuscation file"* warning is
-  expected forever: dex is 4.25 MB against 521 MB of native `.so`, so there is
-  no size win, while almost all of it is **Qt's reflection-driven Android Java**
-  for which Qt ships **no keep-rules** — and the useful half is already covered,
-  since the AAB **already carries native debug symbols** (AGP's
-  `extractReleaseNativeSymbolTables` runs implicitly; nothing sets
-  `debugSymbolLevel`).
-- [Android beta package, on-device debugging, and the Play update policy](./docs/android-beta-distribution-and-play-policy.md) —
-  how to get a local build onto a phone that already has the released app, and
-  what the in-app update notice is allowed to offer. Starts from the fact that
-  forces everything else: a **Play install is signed by Play App Signing**
-  (Google's key, `fdf35925…`, not our upload key `fef4991a…`), Android has no
-  key-swap path, so **no local build can ever replace it** — and Play does *not*
-  rename the package for a testing track (the id really is
-  `io.github.simsapa.app`; what differs is the split install and
-  `installerPackageName=com.android.vending`). Hence the **beta package**
-  `io.github.simsapa.app.beta` / "Simsapa (beta)", which installs alongside it:
-  the two variants (`make android-beta-dist`, not debuggable, for GitHub
-  Releases vs. `make android-beta-debug`, debuggable, **never** distributed),
-  why the dist beta is the *release* build type plus an
-  `ORG_GRADLE_PROJECT_simsapaBeta` property (androiddeployqt only ever invokes
-  `assembleDebug`/`assembleRelease`, so a third build type would never build),
-  the `--sign` post-build `apksigner` re-sign, and the
-  **`.simsapa-package-identity` guard** — ninja's `apk` target does not depend on
-  a Gradle property, so switching beta↔non-beta in one build directory silently
-  reported the *previous* artifact until the script learned to force a
-  re-package. Also the `adb logcat` tag set (`simsapa` for the Rust backend,
-  `Qt`/`QtCore`/`QtQml` for Qt and the QML `Logger`) and why it filters by tag
-  rather than pid, and the **Play update-policy gating**: an app distributed
-  through Play must update only through Play, so
-  `SuttaBridge.is_installed_from_play_store()` (installer package, a property of
-  the *install*, not the build) switches `UpdateNotificationDialog` between a
-  `market://` button and the usual release-page link.
-- [Gloss / Prompts session history](./docs/gloss-prompts-history.md) — the shared,
-  `item_type`-parameterised history feature for the **Gloss** and **Prompts** tabs
-  (table `gloss_prompts_history`, the shared bridge fns + signals, the
-  `HistoryListItem`/`HistoryUtils` QML, and the per-tab serialize/restore). Covers
-  the **shared session-lifecycle state machine** (`session_needs_saving` /
-  `save_in_flight` / `save_again_pending` / `refresh_list_on_save` /
-  `current_session_id`) and the **load-bearing gotchas both tabs must keep in
-  sync**: the stale-`current_session_id` INSERT-fallback (`update_history` →
-  affected-row count), the empty-id = failure contract, single-writer + coalesce,
-  the **blocking** flush for Open/New/close (vs background autosave),
-  spurious-dirty-on-load guards, external-entry confirm/detach, the Prompts
-  in-flight-response normalization, and the **RichText height** fix in
-  `AssistantResponses.qml` (a one-shot `itemAt()` height binding truncated restored
-  multi-line responses; the height is now pushed up via
-  `Layout.onPreferredHeightChanged`). **No per-save `ANALYZE`** (see
-  [user-data-and-sqlite-analyze.md](./docs/user-data-and-sqlite-analyze.md)).
-- [WordSummary lookups](./docs/word-summary-lookups.md) — the latest lookup
-  always runs and wins: outside callers use `lookup_from_outside()` (never
-  `search_btn.click()`, which does nothing on a disabled button), a word under
-  4 characters starts nothing, one tap runs one lookup (the search-as-you-type
-  timer is stopped), `current_query_id` is the only acceptance gate, and the
-  backend's `LookupCancel` generation token stops a superseded grouped lookup
-  at its next check point. The Dictionary tab cancels the same way but bumps
-  its counter **only when the query changes**, never on a page turn.
-- [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
-  the N-column sutta reading view (Lines / Columns / Solo layouts, Repeat Pāli),
-  the in-page cogwheel settings menu and the bottom column bar. Covers the
-  **CSS-on-cells rendering rule** (both layouts emit the same per-segment
-  `colcell` markup, only CSS differs — **never** split the Bilara document into
-  per-row DOM blocks; the template is not self-contained per segment), the
-  `sbs-blocks` fallback for non-segmented texts (whose `.sbs-col` divs must
-  carry the `pali`/`translated` font-var classes), options resolution &
-  precedence (`SuttaDisplayOptions` resolved once at the call boundary —
-  render tests pass explicit options, never read the settings cache), the
-  route surface (`/sutta_content_block`, `/translations_for_sutta`,
-  `POST /save_sutta_display_settings`, display params on the full-page sutta
-  routes), the settings-panel scope semantics, the **post-swap re-init
-  contract** (`reinit_sutta_content()` + `window.ssp_rebind_content_handlers()`
-  + the `ssp-content-swapped` event), and why the column bar uses custom
-  upward-opening dropdowns (WebEngineView clips native select popups at the
-  window edge). **§8 the anchor jump** — opening a sutta at a paragraph from a
-  Topic Index segment id (`dn33:1.11.0`): the result-data `anchor` key (the
-  old `segment_id` key nothing read was the whole bug), why the anchor being
-  *part of the URL* means a different location of an open sutta already
-  reloads and only "same uid **and** same anchor" needs a direct
-  `scroll_to_anchor()` (keying it on the uid alone runs against the outgoing
-  DOM), the candidate walk in `src-ts/anchor_jump.ts` and its deliberate
-  stopping rule (decrement the last component, then the parent once, then
-  **stop** — never a sibling of the parent, which may be an unrelated
-  chapter), the two in-page notice forms and why the message is real
-  selectable text the find bar is allowed to match, and the **`show_references`
-  three-level precedence** (explicit param > `anchor` on the request > the
-  persisted default). Two placement rules that break layouts if ignored: the
-  reference anchor goes **inside the `col-0` cell** and the notice goes
-  **outside `span.segment`** — that span is the flex container in the
-  multi-column layouts, so any extra direct child becomes a phantom grid item.
-  **§9 CST texts and text families:** segment keys compare only within one
-  family, so `columns_can_align()`, with the opened uid as a member because its
-  template is the one used, decides every alignment and makes `has_content_json`
-  relative to the opened text. With no `columns`, a Pāli text opens with an
-  English: `/en/opentipitaka` for a `/pli/cst` text, otherwise the first segmented
-  English.
-- [Android file saving via SAF](./docs/android-file-saving-saf.md) — how
-  `SuttaBridge.save_file` writes user-chosen files. On Android `FolderDialog`
-  returns a **Storage Access Framework `content://` tree URI** (not a path) and
-  `targetSdkVersion 35` scoped storage forbids `std::fs` writes, so `save_file`
-  **dispatches on the URL scheme**: `content://` → `backend/src/android_saf.rs`
-  (JNI `ContentResolver`/`DocumentsContract` writer reusing the already-initialized
-  `ndk_context` from the audio backend), otherwise the desktop `qurl_to_local_path`
-  + `std::fs` path. Covers the **`to_encoded()` trap** (pass the fully-encoded URI;
-  `.path()` drops scheme/authority, `toString()` pretty-decodes `%3A`/`%2F` and
-  breaks `Uri.parse`), the create/**overwrite-truncate** parity via the shared
-  `find_child_doc_uri`, why `jni` is pinned to **0.21** (reuse app_dirs2's
-  Android-compiled copy; cpal's 0.22.4 is an experimental redesign), the
-  `check_file_exists_in_folder` SAF branch, and the **Issue-A silent-success bug**
-  (`save_file` discarded the write result and always returned `true`) that made the
-  failures invisible. Cross-links [pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
-  **The `to_encoded()` rule applies identically to the read path**, which is
-  where it was missing: `probe_document_uri` (`ContentResolver.openInputStream`,
-  never `QFile(content_uri)` — that works only for `content://`) is the read-side
-  twin, and `attach()` was split into `attach_resolver` + `attach_tree` because
-  a plain document URI has no tree document id. See
-  [file-selection-test.md](./docs/file-selection-test.md).
-- [File Selection Test](./docs/file-selection-test.md) — the phase-1 diagnostic
-  behind the Chromebook StarDict import failure, whose whole deliverable is a
-  greppable `FILE-SELECTION-TEST:` block in `log.txt` (there is deliberately no
-  results window). It exists because the user's log showed `Path not found:`
-  with an **empty** path — so none of the four catalogued URL defects is
-  demonstrated by the report, and the shipped error message could not answer the
-  question by email. Records the source-level mechanism
-  (`qandroidplatformfiledialoghelper.cpp:48` hands the picker's URI to
-  `QUrl(QString)` and emits `accept()` regardless, so an unparseable URI reaches
-  QML as an **empty** `QUrl`; `currentFile`/`currentFiles`/`selectedFiles` all
-  come from the same list and are empty *together*), which is why **Android
-  bypasses Qt's `FileDialog`** and launches its own `ACTION_OPEN_DOCUMENT`
-  (request code `51305`, never Qt's `1305`) to capture the raw Java
-  `Uri.toString()` before any `QUrl` exists — **one press opens one picker**,
-  chosen by platform. Covers the Qt-free classifier
-  (`backend/src/picker_url.rs`), the block's line-by-line meaning, both
-  decision-gate tables (**read the raw-intent rows first**), the private-Qt
-  include confined to `cpp/android_raw_pick.cpp` and the terms confining it, and
-  the `qInstallMessageHandler` in `cpp/gui.cpp` that finally routes Qt's own
-  warnings into `log.txt` (`QtDebugMsg` dropped, chains to the previous handler)
-  — **which does not catch this bug**, since Qt's dialog helper emits zero
-  `qWarning`s. **§6 lists four measured states that are normal and must not be
-  "fixed"** — notably `encoding_differs: no` (Qt's `toString()` is
-  `PrettyDecoded`, which does *not* decode a delimiter inside a path, so Defect
-  B may be milder than the PRD asserts) and `staging_roots_differ: no` (on an
-  Android 16 device `QStandardPaths::TempLocation` and `std::env::temp_dir()`
-  resolve to the **same** directory, contradicting the PRD's "very likely a
-  silent no-op" claim). **The fix that diagnostic led to is the next entry.**
-- [Dictionary import pipeline](./docs/dictionary-import-pipeline.md) — pick →
-  stage → probe → choose → import for a user-supplied StarDict/GoldenDict
-  dictionary: which stage runs on which thread, the signal surface, and who owns
-  each temporary file. Records the **`readAll()`-on-the-UI-thread defect as
-  fixed** (the whole 180 MB archive into one `QByteArray` on the GUI thread, from
-  `FileDialog.onAccepted`) and its replacement, `backend/src/import_staging.rs` —
-  Qt-free, 1 MB chunks, cancel between chunks, `f64` byte counts, progress
-  throttled to 100 ms, and a `StagingError` whose `code` + `step` make an
-  unattributed failure unrepresentable. Covers the **two readers chosen by
-  scheme** (`std::fs` for a desktop pick, which is the user's own file and is
-  **never copied**; `ContentResolver.openInputStream` for `content://`, never
-  `QFile`) and that scheme detection splits on **`://`, never a bare `:`**. §4 is
-  the **Android picker fallback** — Qt's `FileDialog` returns an *empty URL* on
-  ChromeOS/ARC while a bare `ACTION_OPEN_DOCUMENT` works, so the import tries
-  Qt's dialog, guards the empty URL, announces itself in one sentence and retries
-  with the raw intent, **and the fallback firing is the measurement**; the
-  recovered URI is staged as a **string**, never re-wrapped in the `QUrl`
-  conversion it was recovered from, and the shared raw-pick slot carries a
-  `RawPickConsumer` discriminator stored *with* the thread handle. It also covers
-  the one-shape `DICTIONARY-IMPORT-PICK:` block (the `Block` struct makes a
-  prefixless line inexpressible; the import block never does the diagnostic's
-  4 MB read) and why `outcome_line()` had to take the **result** — every Android
-  success is `PickerBranch::Provider`, whose only cheerful arm was unreachable,
-  so the user reported the *success* message as "the error". §5: the probe
-  **extracts nothing** (central directory + the `.ifo` only — `stardict::no_cache`
-  needs the `.dict`, so the `.idx` route was never cheap), the displayed count is
-  the `.ifo`'s declared `wordcount`, and **a bundle `.zip` is N dictionaries**:
-  `probe_zip_candidates` returns one outcome per member, the member is **decided
-  once by the probe and handed back at import time** (re-deriving it is the
-  defect — the probe read the central directory while the import took whatever
-  `read_dir` listed, so the checklist could offer A and insert B under A's
-  label), ordering is lexicographic, and an empty member means the whole archive.
-  **A bundle has two shapes**: a folder per dictionary, or — the
-  `all-dictionaries-gd.zip` case, which the folder-only probe rejected outright —
-  a **`.zip` per dictionary**, opened **in place** through `FileSlice` (a
-  `Read + Seek` view of a byte range of the outer file) when the entry is stored
-  uncompressed, copied out only when deflated, and carried jar-style in the
-  member string (`abt.zip!/`, split on the **last** `!/`).
-  §6: `ScanReport { candidates, rejections }` is a **struct not an enum** because
-  a folder yields both at once; key QML off the stable `reason`, never the
-  message text; and the UI says **"StarDict/GoldenDict"**, never "StarDict"
-  alone. §7 is the three temporaries and their owners — staging is **per-feature**
-  and `cleanup_staged_file` decides ownership **by location, not by the caller's
-  word**, the feature name is one constant (a mismatch fails *silently*), both
-  startup sweeps are age-gated at an hour and treat an unreadable timestamp as
-  "too young", and `delete_temp_import_folder` wipes the **shared root** and is
-  deliberately not on this path. §8 the four keep-screen-on holders, §9 why the
-  scanning frame's Cancel *abandons* rather than cancels, §11 the
-  `cargo check --target aarch64-linux-android` hole that is the only check
-  `android_saf.rs` ever gets. **§12 is the second entry point, the Available
-  dictionaries list**: ten curated dictionaries downloaded from
-  `digitalpalidictionary/other-dictionaries` and handed to the *existing* batch
-  as `{ kind: "zip", member: "" }` — `scan_source` is never called. Covers the
-  catalogue traps (`label` vs `asset_stem`, which differ only for `nyana`;
-  `abt` is the CPED and its name is deliberately not its `bookname`; `peu`'s
-  `pa-en` means Pali; `si` has no tokenizer and that is expected), the
-  **pinned series** `(1, 0)` with its fallback tag — raising the pin is a code
-  change and must **not** become a setting — and that this is **not** the app's
-  own release lookup (only `to_version()` / `compare_versions()` are shared).
-  The download lands in the dictionaries staging folder so the existing cleanup
-  owns it; the progress frame is `views_stack` index **6, appended** because the
-  indices are literals at every call site; download failures keep their own list
-  because `start_batch()` resets `batch_failed`; and the selection is read
-  through `checked_offered()`, never `checked_labels`.
-- [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
-  what happens when the storage location the user chose is no longer where it was
-  (a microSD card moved to another socket, a volume back under a different path).
-  Built on the **four-state predicate** `storage_path_state()`
-  (`absent`/`unreachable`/`reachable_empty`/`ok`), which is **read-only, stable
-  across launches and `is_mobile()`-gated internally** — the three properties that
-  let it run *before* `init_app_globals()`. Covers the **two path notions** that
-  must never be conflated (the **recorded** path the user chose vs. the
-  **resolved** path, which falls back to the internal app root and is *not* a user
-  choice) — conflating them is the original bug: an internal copy plus an
-  unreachable recorded path made `appdata_db_exists()` true, so the app either
-  booted against a database the user never chose or let the startup sweeps
-  **delete** it. Hence the `gui.cpp` **sweep gating** on a deliberate *pre-sweep*
-  state snapshot, `ensure_no_empty_db_files(sweep: bool)` (with `sweep = false` a
-  zero-byte file is recorded as missing but **not** deleted), and the invariant
-  that no `unreachable` session ever reaches `init_app_data()`. Also the **two
-  classification tiers** — tier 1 (enumeration + `scan_storage_candidates()`,
-  cheap, all *policy* in Rust so it is unit-testable off-device: emulated-duplicate
-  de-duplication, the recorded path as an extra candidate, `same_path()` never
-  `canonicalize()`, null-not-zero figures) and tier 2 (the Diesel write/SQLite
-  probe, **dialog-only**, demote-only, with a `Drop`-guard cleanup of the
-  `-wal`/`-shm`/`-journal` set and two-halves cancellation) — the recovery flow's
-  branch order and endings, the **`auto_start_download` marker's three traps**
-  (peek vs. consume; suppression only in `reachable_empty`; initial properties
-  because `Component.onCompleted` consumes), FR-37 **verified writes**, the four
-  screens sharing `StorageCandidatesList.qml` and the QML rendering rules that are
-  easy to break (required properties not function calls, demoted rows move to the
-  end, a pending probe blocks *confirming* not selecting, `Dialog` content
-  anchored left/right only), the diagnostics (`storage_path` in the startup
-  report, per-volume `by=` logging, the `log-storage-scan.txt` marker), and the
-  **`adb` state-simulation recipes** with their traps (`printf '%s'` not `echo`,
-  `run-as … sh -c` blocked by SELinux, two candidates on a device with no card
-  slot).
-- [Run Storage Diagnostics](./docs/storage-diagnostics.md) — the user-initiated
-  report (a button in **About** and in **Database Validation**) written to answer
-  why fulltext search returns nothing on an **SD card** while ContainsMatch works:
-  `MmapDirectory::acquire_lock` calls `flock(2)`, the volume answers `ENOSYS`, and
-  **every** index fails to open. Phase 1 of two — it **changes no app behaviour**
-  and only measures, but `backend/src/search/lenient_directory.rs`
-  (`LenientLockMmapDirectory`, a `Directory` that falls back to a process-internal
-  mutex when the volume cannot lock) is the **real phase-2 code in its final
-  location**, wired here only into section E. Covers the six sections and what each
-  is for: the **`mmap` go/no-go probe** (maps a real segment file and reads first /
-  **middle** / **last** byte, because only a fault past page 0 catches a
-  `direct_io` FUSE mount; the file is chosen **by size, never by extension**), the
-  fallback probe-directory chain when no per-language index dir exists, the
-  step-attributed open sequences (D = today's, E = through the wrapper, with
-  `num_docs` and both hard-coded query terms run against **every** index), and the
-  four **routes** `acquire_lock` can take — the "fell back after some *other*
-  `IoError`" one exists so section E can tell "the fix works" from "the fix hid the
-  failure". Also the **verdict** rules (no jargon; four measured states that are
-  normal and must never read as a fault — uninitialised searcher, zero hits from an
-  empty index, stale `.tantivy-*.lock` files, and `storage_path_state()` = `absent`
-  on **desktop**, which it always is), the `Drop`-guard probe cleanup, the one
-  unavoidable write (section D's reader *creates* `.tantivy-meta.lock`, hence
-  section C's lock reading is taken **before** D runs), and the three load-bearing
-  UI facts — `Qt.ApplicationModal` (or the window opens dead to clicks from
-  Database Validation), the bound `extra_top_margin`, and the results window owning
-  the whole run. **Phase 2 shipped** — see the next entry.
-- [Fulltext index storage and file locking](./docs/fulltext-index-storage-and-file-locking.md) —
-  phase 2, the fix: why fulltext search returned **zero results, silently**, on
-  storage that does not implement `flock(2)`, and what makes it work. Framed
-  around **filesystems without `flock`** — ChromeOS/ARCVM `fuse` volumes and
-  portable SD cards are two instances of one class, so **never say "SD card"**
-  in user-facing text; say "this storage location". Starts from the split that
-  explains why every existing check passed: **SQLite locks with `fcntl`, Tantivy
-  with `flock`**, so the tier-2 storage probe (a real SQLite database) passes on
-  a volume where every index fails — the general lesson being that *a probe
-  proves only the primitive it used*. Covers the **two** Tantivy lock sites and
-  their asymmetric failures (blocking `META_LOCK` at `reader/mod.rs:194` keeps
-  the errno; non-blocking `INDEX_WRITER_LOCK` at `index/index.rs:545` maps
-  everything to `LockBusy` and **discards** it, which is why a probe is needed
-  and not just an error check), and that **`Index::open` takes no lock at all**
-  — the failure is precisely and only at the reader. Then
-  `LenientLockMmapDirectory`'s four `acquire_lock` routes and why the "fell back
-  after some *other* `IoError`" one exists (an unwritable directory also yields
-  `IoError`, so absorbing it would turn a broken volume into "the fix works");
-  why the fallback must be a **real** mutual exclusion (the GC takes `META_LOCK`
-  after every commit and merge while the previous searcher is still alive), a
-  **hand-rolled guard** (`DirectoryLock` is `Send`, every `MutexGuard` is not),
-  and **not** the trait's default `acquire_lock` (it locks by file *existence*
-  and deletes on drop, but `MmapDirectory` never deletes its lock files — it
-  would find a stale one and return `LockBusy` forever); the **single-process
-  invariant** the process-internal lock rests on; the once-per-directory probe
-  and the shared `normalize_lock_key` that must **never** skip an entry and must
-  avoid `canonicalize()` (it fails on exactly these volumes). §5 records the
-  **`mmap` measurement that deleted a planned second PRD** — it works, at an
-  18 MB fault past page 0 — and that the affected volume is *fast*, which
-  retired the SD-card performance notice. §6 is the other half of the fix,
-  **honest reporting**: `fulltext_status.rs` as the single place every
-  user-facing string is written (so one test enforces the no-jargon rule),
-  `FulltextState`'s four variants, why `state` and `is_valid` answer **different**
-  questions, per-area messages where an **empty message is the instruction to
-  stay silent**, and the **search-mode allowlist** that stops Contains/Title/
-  Headword/DPD-Lookup searches inheriting "the index could not be opened". §7
-  names the two dependencies this created: `ReloadPolicy::Manual` makes an
-  explicit `reinit_fulltext_searcher()` **mandatory** after every in-app index
-  mutation, and opening the searcher is serialised because
-  `begin_open_session()` clears the failure list. §9 is the benchmark proving the
-  wrapper costs nothing (aggregate 1.00× / 1.02× / 0.97×).
-- [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
-  how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
-  **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
-  → set phrase (`built-in-phrase-match`) → `built-in-agent-checked` row →
-  `ai-selected` row → AI request → unresolved) and the **uid two-lane gotcha** (gloss options carry the
-  numeric `12463/dpd` headword uid, curated data stores the lemma form
-  `ārāma-4/dpd`; `gloss_option_uid_matches` accepts both). The chain walks **two
-  coexisting rows** per key — `gloss_word_context_cache` is keyed
-  `(word, context_hash, built_in)`, so a local `-selected` row *shadows* the
-  shipped `built-in-*` row instead of overwriting it; deleting the local row
-  (shield click, Clear Word-Selection Cache) hands the word back to the curated
-  selection, and the rank guards in the upsert/import apply **within a tier**
-  only. The **cache key** is
-  `(word, context_hash)` over the *existing* ±50-char gloss context window
-  (`ProcessedWord.example_sentence`), normalized by `normalize_gloss_context()` —
-  covers why each step is there (verse line-wrap `\s+` collapse, ṁ/ṃ, the
-  **iti-sandhi quote-variant** rejoin `ṁ ti` → `nti` so smart/straight/bare
-  editions share one hash) and the **annotation stripping** that runs before word
-  extraction. Tables `gloss_word_context_cache` (origins `ai-selected` /
-  `user-selected` / `built-in-human-checked` / `built-in-agent-checked`,
-  precedence-guarded upsert) + `gloss_phrase_selections`. Also: the
-  settings/dialog + the two editable system prompts, the request format,
-  **batching/pacing constants** (char limit, ≥ 6.5 s sequential spacing, 180 s
-  timeout, client-side cancel), the three load-bearing rules when applying
-  selections (ComboBox `onActivated` not `onCurrentIndexChanged`; a manual change
-  auto-saves a `user-selected` row; late AI responses must not clobber a fresh user
-  choice), the **JSON session export / Open JSON** round-trip and its
-  strictly-higher-precedence import, **DOCX export** (hand-built OOXML around an
-  embedded template), and the **built-in data-bank pipeline**
-  (`gloss-corpus-explore` → `candidates/` → reviewed on two paths: human in the
-  Gloss UI → `human-checked/`, or the **`gloss-agent-check` agent workflow**
-  (CLI `prepare`/`apply`/`status` + the `/gloss-agent-check` project skill) →
-  `agent-checked/` → `import-gloss-data` → bootstrap), the review-skip +
-  human-over-agent import precedence, the naming scheme (folders / `confidence`
-  / origins / shield), and the Rust-vs-Python-API decision. **§9 compound
-  deconstructor selection:** `dpd_lookup_grouped()` (`GroupedDpdLookup` with
-  many-to-many break-down membership; fetches component results even when direct
-  results exist), the **FR-A5 case partition** (mixed words like *sādhūti* stay
-  compact — no compound UI, no extra AI items; only deconstructor-resolved words
-  get per-component sub-rows and a break-down selector for ≥ 2 break-downs), the
-  new `ProcessedWord` fields, the shared `DeconstructorSelector.qml` /
-  `DeconstructorUtils.qml` (lock = `direct_uids` ∪ selected break-down), the AI
-  item id scheme (`p<pi>w<wi>` sense / `d` break-down with `d:<n>` pseudo-uids /
-  `c<k>` component with an explicit `component_word` field), the **compound-row
-  (`deconstruction` string, empty uid) + component-row cache** keyed on the
-  compound's context hash with the `fetch_for_context_hashes` batch fetch, the
-  shared `resolve_compound_selections()` used by both live glossing and session
-  restore, and the Qt-free `bridges/src/ai_engine.rs` engine shared with the
-  `/word_selection_ws` route.
-- [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
-  how the provider/model lists keep themselves current and how a model is chosen
-  per request. The **shared update procedure**
-  (`backend/src/provider_models_update.rs`: models.dev + OpenRouter/SambaNova
-  native endpoints, all keyless; chat-model filter/denylist; merge semantics;
-  the zero-cost/budget-family **default-enable heuristic** applied by the CLI but
-  not in-app), the `ModelEntry` schema (`origin: fetched|user` replacing
-  `removable`, `stale`, `reasoning`) and the canonical `ProviderName` string form
-  (never `format!("{:?}")` — the lists and engine key on it). The two **global
-  usage lists** (ordered "Fallback sequence" + "Parallel prompts") and their
-  invariant — *only enabled models of enabled providers* — kept by the sync
-  helpers in `app_data.rs` plus `reconcile_model_usage_lists()` (which also runs
-  on every read, so whole-config writes like the updater self-heal), and the
-  one-time seeding from `gloss_word_selection_model`. **Error classification**
-  (`backend/src/ai_error.rs`; rig-core 0.30 **drops the HTTP status**, so it is
-  recovered by parsing the body; the `{"ai_error": …}` envelope + `AiErrorUtils.qml`;
-  the Gemini "quota" wording gotcha). The **sequential engine**
-  (`backend/src/ai_fallback.rs` pure walk + `prompt_manager.rs` Qt side): fallback
-  first, then 5 retry rounds at 10/20/30/40/50 s, provider-skip on `auth`/
-  `quota_exceeded`, the `invalid_response` validate hook for truncated bodies, and
-  the generation-counter cancellation. Parallel branches use the single-model walk
-  and **never switch models**. Feature wiring: the Gloss "AI translation" and
-  Prompts "Prompts" mode comboboxes, and the model-picker-free Word Selection
-  dialog.
+## Standing rules
 
+Each rule is stated in full in the linked doc. These are the ones easiest to
+break without noticing.
+
+**Data and stored text**
+
+- **Source data: report defects, never repair them** (CIPS, DPD, sc-data, the
+  DPD reference reports). Keep misspellings and duplicates verbatim.
+- **Never sort `content_json` or pass it through `serde_json::Value`**: its key
+  order is the order of the text. A route that returns an untagged enum keeps it
+  for the same reason (key order). — [suttas-core-import.md](./docs/suttas-core-import.md),
+  [simsapa-cli-and-localhost-api.md](./docs/simsapa-cli-and-localhost-api.md) §13.4
+- **DPD queries use `normalize_dpd_query_text()`** (to pass a query on, use
+  `normalize_dpd_query_split()`), never `normalize_query_text()` alone, which
+  splits iti sandhi. Never `LIKE` on the DPD `lookup` table. —
+  [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md) §9d–§9e
+- **Iti-sandhi rule changes change `content_plain` and the indexes**: they ship
+  with a re-bootstrap. — [pali-sandhi-and-quote-marks.md](./docs/pali-sandhi-and-quote-marks.md)
+- **Check SQLite plans with real values**: STAT4 plans per bound value, so
+  `EXPLAIN` with `?` is not the running plan.
+- **JSON stored in `appdata.sqlite3` is minified** (`to_string`, never
+  `to_string_pretty`); the database is kept across app updates.
+- **AI provider names use the canonical `ProviderName` string**, never
+  `format!("{:?}")`. — [ai-model-management-and-fallback.md](./docs/ai-model-management-and-fallback.md)
+- **Never hand-edit `assets/navigation-blurb-suttacentral.toml`** (generated);
+  corrections go in `navigation-blurb-overrides.toml`. An edit to these TOML
+  files needs an app rebuild, not a bootstrap. Changing how `search_text` /
+  `path` / `sort_path` is derived means rebuilding the tree. —
+  [sutta-navigation-tree.md](./docs/sutta-navigation-tree.md) §2f
+
+**Paths, storage and indexes**
+
+- **Never `canonicalize()` a user or storage path**: it fails on the Android
+  FUSE volumes and breaks the Windows portable layout. Use `same_path()` /
+  `normalize_lexically()`.
+- **On Android a picked file is a `content://` URI**: pass `to_encoded()`
+  (never `.path()` or `toString()`), read it with `ContentResolver`, never
+  `QFile`, and detect a scheme by `://`, never a bare `:`. —
+  [android-file-saving-saf.md](./docs/android-file-saving-saf.md),
+  [dictionary-import-pipeline.md](./docs/dictionary-import-pipeline.md)
+- **After any in-app change to a Tantivy index, call
+  `reinit_fulltext_searcher()`** (`ReloadPolicy::Manual`). User-facing fulltext
+  status text is written only in `fulltext_status.rs`, and it says "this storage
+  location", never "SD card". —
+  [fulltext-index-storage-and-file-locking.md](./docs/fulltext-index-storage-and-file-locking.md)
+
+**QML and the reader page**
+
+- **React to a user's ComboBox choice in `onActivated`**, never
+  `onCurrentIndexChanged`. — [gloss-ai-word-selection.md](./docs/gloss-ai-word-selection.md)
+- **Start a WordSummary lookup from outside with `lookup_from_outside()`**,
+  never `search_btn.click()`. — [word-summary-lookups.md](./docs/word-summary-lookups.md)
+- **Gloss results are demoted, never removed**: the ComboBox index, AI item
+  options and saved sessions refer to their order. —
+  [dpd-analysis-procedure.md](./docs/dpd-analysis-procedure.md)
+- **The Gloss and Prompts tabs share one session lifecycle**: change both
+  together. — [gloss-prompts-history.md](./docs/gloss-prompts-history.md)
+- **Never split the Bilara document into per-row DOM blocks, and never add a
+  direct child to `span.segment`** (it is the flex container). —
+  [sutta-display-settings-and-multi-column-view.md](./docs/sutta-display-settings-and-multi-column-view.md)
+
+## Feature docs
+
+**Read the doc for the area you are changing before you change it.** The list
+below names each doc and when to read it; the longer summary of each, with the
+rules it holds, is in [docs/README.md](./docs/README.md). When you add a doc,
+add a line here and an entry there.
+
+### App structure, windows and QML
+
+- [Startup sequence and caches](./docs/startup-sequence-and-caches.md) — what
+  runs when, the `AppSettings` caches, `Loader` vs. `Component + createObject`.
+  Bracket a silent stall with `STARTUP-TRACE` logs before blaming anything;
+  never create a webview before `app.exec()`.
+- [Window lifecycle: closing, hiding, reuse](./docs/window-lifecycle-and-reuse.md) —
+  **read before adding any top-level window**; §7 is the checklist.
 - [QML AOT staleness and the qmltypes guard](./docs/qmltypes-aot-staleness.md) —
-  why adding or removing a `#[qinvokable]` / `#[qsignal]` on a bridge and
-  building **once** produces a binary that segfaults on startup in
-  `QMetaObject::methodOffset()`, before the first window paints, with a
-  backtrace naming a QML file you did not touch. `qmlcachegen` bakes a
-  **hard-coded `QMetaObject` method index** into every AOT binding that calls a
-  bridge singleton, and reads it from a `plugin.qmltypes` that
-  `qmltyperegistrar` rewrites **nine seconds later in the same build** — so the
-  index always describes the *previous* build's bridge API. Records the measured
-  step ordering (moc's JSON and `qmldir` are both already correct before
-  `qmlcachegen` runs; **`qmldir` does not lag**, so adding a QML component is
-  safe), and that `qmlcachegen` regenerates the *whole* QML tree per
-  build-script run. The fix is `scripts/qmltypes-guard.sh`, which every
-  `Makefile` build target now goes through: hash every `plugin.qmltypes` under
-  the build dir, build, re-hash, and on a change touch the QML tree and build
-  once more — **the touch is load-bearing**, because cargo skips the build
-  script when no source changed, which is why "just build twice" by hand does
-  nothing. Covers the two fixes that look right and are not: a **pre-build
-  touch** (conditional or not) cannot help, since `qmltypes` is still stale when
-  `qmlcachegen` reads it; and **cleaning before a release** is safe but ships a
-  degraded binary — with no `qmltypes` at all `qmlcachegen` silently drops
-  **38% of singleton lookups and 30% of object-property lookups** to interpreted
-  bindings, measured tree-wide, and a clean tree's only build is its first one.
+  why every build goes through the `Makefile`.
+- [QML `Dialog` sizing and headers](./docs/qml-dialog-sizing.md) — width clamp
+  and `DialogHeader`, with the binding-loop test rig.
+- [Keep the screen awake](./docs/keep-screen-awake.md) — named holders for
+  `set_keep_screen_on()` around long operations.
+- [Rich-text link colours](./docs/rich-text-link-colors.md) — set by the
+  application palette before the QML engine loads, never by `linkColor`.
+- [Logging](./docs/logging.md) — QML `Logger`, C++ `log_info_c()`, and how the
+  Android log level is chosen.
+- [WebEngineView stale black frame workaround](./docs/webengine-stale-black-frame-workaround.md) —
+  put `WebEngineRepaintNudge.qml` next to every new desktop `WebEngineView`.
+- [Mobile webview visibility management](./docs/mobile-webview-visibility-management.md) —
+  overlays over the native mobile webview are detected, never enumerated.
+- [Mobile rendering troubleshooting](./docs/mobile-rendering-troubleshooting.md) —
+  the Settings → Rendering toggles for flaky Android GPU drivers.
+- [Investigation: stuck bottom bar on mobile](./docs/mobile-stuck-bottom-bar-investigation.md) —
+  **open**; not a CSS fault, do not "fix" `.column-bar`.
+- [Android / ChromeOS soft keyboard](./docs/android-soft-keyboard.md) —
+  **apply its technique to every new text input**; the Gboard/Thai Shift bug
+  is upstream and needs a Qt upgrade.
+- [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
+  never assign `topPadding`/`padding` on an `ApplicationWindow` root; anchor a
+  window's root item to its parent.
+- [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
+  the column layouts, the settings menu, the anchor jump, CST text families.
+- [WordSummary lookups](./docs/word-summary-lookups.md) — the latest lookup
+  always runs and wins.
+
+### Databases, search and storage
+
+- [Database migrations](./docs/database-migrations.md) — Diesel migrations,
+  the non-fatal failure rule, missing-database recovery.
+- [User data imports and SQLite `ANALYZE`](./docs/user-data-and-sqlite-analyze.md) —
+  **a new import path needs an `ANALYZE` call and a row in that doc's table.**
+- [Dictionary FTS5 implementation](./docs/dict-words-fts5-implementation.md) —
+  the external-content trigram tables and `fts_bench`.
+- [Text processing for Contains / Fulltext search](./docs/text-processing-for-contains-match-and-fulltext-match-search.md) —
+  bootstrap-time normalization.
+- [Search snippet & highlight pipeline](./docs/search-snippet-highlight-pipeline.md) —
+  snippets, highlighting, the three-stream Dictionary page, DPD query
+  normalization.
+- [Language filter query logic](./docs/language-filter-query-logic.md) — the
+  per-area language filter and the DPD `language = "pli"` gotcha.
+- [Pāli sandhi break-down and quote marks](./docs/pali-sandhi-and-quote-marks.md) —
+  every iti-sandhi rule; **a change to them ships with a re-bootstrap.**
+- [Fulltext index storage and file locking](./docs/fulltext-index-storage-and-file-locking.md) —
+  Tantivy on volumes without `flock`, and honest fulltext status reporting.
+- [Run Storage Diagnostics](./docs/storage-diagnostics.md) — the
+  user-initiated storage report.
+- [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
+  `storage_path_state()`, recorded vs. resolved paths, sweep gating.
+- [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the navigation
+  hierarchy, its TOML texts, the Timeline page, the CST rebuild commands.
+- [CIPS index updates](./docs/cips-index-updates.md) — the Topic Index and its
+  in-app Update / Reset.
+- [Segmented translations from suttas-core](./docs/suttas-core-import.md) —
+  the suttas-core bootstrap step.
+- [New bootstrap import sources go into the preflight check](./docs/bootstrap-preflight.md).
+
+### DPD, gloss and AI
+
+- [DPD records correlate to `dict_words`](./docs/dpd-and-dict-words-correlation.md) —
+  structured rows vs. rendered HTML, and why the uids differ.
+- [DPD releases and the `dpd_res` table](./docs/dpd-upgrades.md) — preparing a
+  DPD release for the bootstrap.
+- [DPD `construction_summary`](./docs/dpd-construction-summary.md) — never add
+  the column to `dpd_schema.rs` or `DpdHeadword`.
+- [DPD passage analysis procedure](./docs/dpd-analysis-procedure.md) — the
+  Word in Sentence gloss format and its gap list.
+- [Gloss AI word selection, context cache, exports](./docs/gloss-ai-word-selection.md) —
+  the sense resolution chain, the cache key, the built-in data bank.
+- [Gloss / Prompts session history](./docs/gloss-prompts-history.md) — the
+  shared session-lifecycle state machine.
+- [AI model management and fallback](./docs/ai-model-management-and-fallback.md) —
+  model lists, usage lists, error classification, the fallback engine.
+
+### Files and imports
+
+- [Dictionary import pipeline](./docs/dictionary-import-pipeline.md) — pick →
+  stage → probe → choose → import, and the Available dictionaries list.
+- [File Selection Test](./docs/file-selection-test.md) — the Android picker
+  diagnostic and the states that are normal.
+- [Android file saving via SAF](./docs/android-file-saving-saf.md) —
+  `content://` URIs, the `to_encoded()` rule.
+
+### CLI and localhost API
+
+- [The `simsapa` CLI and the localhost API](./docs/simsapa-cli-and-localhost-api.md) —
+  compiled into the binary and read outside this repo, so it must stay
+  **self-contained** (no links, no source paths; a test enforces it).
+- [Localhost API implementation](./docs/localhost-api-implementation.md) —
+  where each route's code lives.
 - [The `simsapa` CLI and the `@simsapa/cli` npm package](./docs/backend-cli-and-npm-package.md) —
-  the Qt-free command-line program (`backend_cli/`, binary `simsapa`) and the
-  crates around it: **`simsapa_api` (`api/`) holds the shared data routes** that
-  both the GUI and `simsapa serve` mount via `build_rocket()`; the GUI-driving,
-  **AI** (`/word_selection_ws` & co., with `rig-core`) and static-asset routes
-  stay in `bridges`; `bootstrap_cli/` is the maintainer's tool. The backend's
-  default-on **`audio` feature** is off in `api` and `backend_cli`.
-  **`simsapa setup` is a second implementation of the GUI's first-run download**
-  (`DownloadAppdataWindow.qml` + `asset_manager.rs`) — change both together;
-  the doc lists every step and what the CLI does differently on purpose (no
-  Retry button, failures are fatal, upgrade markers consumed only after
-  success). It is also the second implementation of the GUI's **upgrade of an
-  incompatible database** (`is_local_db_obsolete()` →
-  `prepare_for_database_upgrade()`): the same export and markers, then the
-  deletion and download in the same run. Its version check reads `db_version`
-  through one plain connection (`read_appdata_db_version()`), **never the full
-  `DbManager`**, whose pool retries a damaged file until its timeout; the
-  other commands warn (read-only, `serve`) or refuse (`import`, `index`). The
-  setup integration tests use temporary folders only: an upgrade deletes the
-  databases it replaces. The **startup preamble** (`backend_cli/src/startup.rs`) mirrors
-  `gui.cpp`'s startup and has a **read-only mode** for when the folder is in
-  use; **in-use detection** (`api-port.txt` + `/health`) plus the
-  `cli-write.lock` protect the single-process invariant of the Tantivy lock
-  fallback; only `serve` writes `api-port.txt`. Also: commands, exit codes,
-  `--json`, the stdout/stderr rules, musl builds via cargo-zigbuild (musl is
-  slower to *start*, not to search), binary and package sizes, the npm
-  optional-dependency layout, `make npm-packages`, the dry run and the
-  **publish checklist** (`--tag latest` while versions are prereleases;
-  platform packages first).
+  the crates, `simsapa setup` (a second implementation of the GUI's first-run
+  download: change both together), output rules, publishing.
+
+### Builds, packaging and platforms
+
+- [Versions](./docs/versions.md) — set with `scripts/set-version.py`.
+- [Qt kit selection](./docs/qt-kit-selection.md) — the per-platform Qt version.
+- [cxx-qt fork](./docs/cxx-qt-fork.md) — including §5, the `qml_files` path rule.
+- [Releases info lookup and the embedded fallback JSON](./docs/releases-info-and-fallback.md).
+- [App packaging and identifiers](./docs/app-packaging-and-identifiers.md) —
+  the application id and the QML module URI are unrelated.
+- [Pure-Rust audio backend](./docs/pure-rust-audio-backend.md) — the chanting
+  audio stack, what the final link must name per platform, the macOS floor.
+- [Crimson Pro Pāli glyph patch](./docs/crimson-pro-pali-glyph-patch.md) — the
+  shipped fonts are patched; re-run the script if they are refreshed.
+- [Android "isn't 16 KB compatible" warning](./docs/android-16kb-compatibility-warning.md).
+- [Android Gradle Plugin pin](./docs/android-gradle-plugin-pin.md).
+- [Android multi-ABI packaging and ChromeOS compatibility](./docs/android-multi-abi-and-chromeos.md).
+- [Android beta package, on-device debugging, and the Play update policy](./docs/android-beta-distribution-and-play-policy.md).
+- [Android API levels and feature dependencies](./docs/android-api-levels-and-feature-dependencies.md) —
+  re-run `scripts/android-api-scan.sh` after a Qt, NDK, native crate or JNI change.
+- [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
+  work deferred to the Qt upgrade.
+- [macOS: distributing without a Developer ID](./docs/macos-unsigned-distribution.md).
+- [Apple App Store readiness](./docs/apple-app-store-readiness.md).
+- [Windows portable install](./docs/windows-portable-install.md).
 
 ## Qt version per platform — never invoke a bare `qmake6`
 
 **`CMakeLists.txt` is the single source of the Qt version**, declared per
-platform in the `QT_*` variables at the top: `QT_LINUX` / `QT_MACOS` /
-`QT_WINDOWS` / `QT_ANDROID` / `QT_IOS`.
-
-**All five are `6.9.3` today, but never assume that.** The variables are
-per-platform precisely so one platform can move alone, and that has been done for
-real: Android was moved to 6.10.3 in August 2026 and reverted after device
-testing (see
-[docs/android-qt-upgrade-considerations.md §0](./docs/android-qt-upgrade-considerations.md)).
-So **read the version you need from `CMakeLists.txt`** — via
-`qt_version_for <PLATFORM>` from `scripts/qt-env.sh`, the `Makefile`'s
-`$(call qt_version_for,…)`, or `Get-QtVersion` in `build-windows.ps1` — and never
-hardcode it a second time. A repo-wide check (`scripts/qt-env-verify.sh --all`)
-fails the build on a re-acquired hardcode.
+platform in the `QT_*` variables at the top (`QT_LINUX` / `QT_MACOS` /
+`QT_WINDOWS` / `QT_ANDROID` / `QT_IOS`). They can differ, so **read the version
+you need** — `qt_version_for <PLATFORM>` from `scripts/qt-env.sh`, the
+`Makefile`'s `$(call qt_version_for,…)`, or `Get-QtVersion` in
+`build-windows.ps1` — and never hardcode it a second time
+(`scripts/qt-env-verify.sh --all` fails the build on one).
 
 **A bare `qmake6`, `rcc`, `moc` or `qmllint` resolves to the *system* Qt**
-(`/usr/bin/qmake6` — Arch's `qt6-base`, currently **6.11.1**), which the project
-does not target on any platform. Do not invoke them unqualified. Instead:
+(`/usr/bin/qmake6`, Arch's `qt6-base`), which the project does not target. Do
+not invoke them unqualified:
 
 ``` sh
 source scripts/qt-env.sh   # puts the desktop kit's bin/ first on PATH
-qmake6 -query QT_VERSION   # now the project's Qt
-
-# or address it directly, without changing PATH:
-"$QMAKE" -query QT_VERSION
+"$QMAKE" -query QT_VERSION # or address it directly
 ```
 
-For Android tooling use `build-android.sh`, which derives its own Qt version
-from `QT_ANDROID` — do **not** reuse the desktop kit for Android work.
-
-**A binary from a *different* Qt kit run by hand in a direnv/agent shell dies
-with `libQt6Core.so.6: version 'Qt_6.x' not found`** — that is the *desktop* kit
-being loaded via `LD_LIBRARY_PATH`, not a broken install. (Seen constantly while
-6.10.3 kits were installed alongside 6.9.3: every 6.10.3 tool failed with
-`undefined symbol: _ZN9QtPrivate9sizedFreeEPvm`, which reads as "kit not
-installed".) Prefix such commands with `env -u LD_LIBRARY_PATH`. `build-android.sh` scrubs this itself; the rule
-behind it, and why `build-appimage.sh` is safe by a different mechanism while
-`PATH` is **not** merely advisory on Windows, is
-[docs/qt-kit-selection.md §8.1](./docs/qt-kit-selection.md).
-
-Three conveniences exist so this is mostly automatic, and **none of them is
-load-bearing**: `.envrc` (direnv, interactive shells — needs a one-time
-`direnv allow`), `.claude/settings.json`'s `env` block (agent shells; it carries
-literal paths, so `make qt-env-check` fails if they drift from `QT_LINUX`), and
-`scripts/qt-env.sh` itself. **The build must be correct with an empty
-Qt-related environment** — CMake resolves its own `CMAKE_PREFIX_PATH` and
-asserts the found Qt matches the declared version, failing the configure on a
-mismatch. If deleting all three ever breaks `make build`, that is a CMake bug,
-not a reason to make them required.
-
-See [docs/qt-kit-selection.md](./docs/qt-kit-selection.md).
+For Android tooling use `build-android.sh`; do **not** reuse the desktop kit.
+A binary from a *different* Qt kit run by hand dies with
+`libQt6Core.so.6: version 'Qt_6.x' not found` — prefix it with
+`env -u LD_LIBRARY_PATH`. The build must be correct with an empty Qt-related
+environment. See [docs/qt-kit-selection.md](./docs/qt-kit-selection.md).
 
 ## Specific coding procedures
 
-### Shell redirection: `>|` and `>>|` (zsh `noclobber`)
+### Shell: `>|` / `>>|` (`noclobber`) and unmatched globs (`nomatch`)
 
-Agent shells here are zsh with `noclobber`: `> file` will not overwrite an
-existing file, and `>> file` will not create a missing one. Both fail with a
-message the rest of the command buries, and the command exits 1. This bites
-most often in long test and benchmark runs (`cargo test … >| log`,
-`fts_bench … >| results/x.tsv`, a per-crate summary appended in a loop), where
-the exit status then looks like a test failure. Write `>|` and `>>|`, and when
-such a command exits non-zero, look for `file exists:` or `no such file or
-directory:` before reading it as a failed run. (Global rule in
-`~/.claude/CLAUDE.md`; repeated here because this project's runs are long.)
+Agent shells are zsh with `noclobber`: write `>|` and `>>|`. When a command that
+writes a file exits non-zero, look for `file exists:` or
+`no such file or directory:` before reading it as a failed run — this bites
+most in long `cargo test … >| log` and benchmark runs.
 
-### Unmatched globs abort the whole command (zsh `nomatch`)
+A glob that matches nothing aborts the **whole** command
+(`no matches found: …`), so `rm -rf build/x Simsapa-*.dmg` deletes nothing when
+no `.dmg` exists. `(N)` does not work here either. Delete optional matches with
+`find . -maxdepth 1 -name 'Simsapa-*.dmg' -delete`.
 
-In the same shells a glob that matches nothing is an error
-(`no matches found: Simsapa-*.dmg`) and the **whole command is skipped**, not
-just the pattern. So `rm -rf build/simsapadhammareader dist Simsapa-*.dmg`
-deletes *nothing* when no `.dmg` exists, and the "clean" build that follows
-silently reuses the stale tree. The `(N)` null-glob qualifier also failed in
-the agent shell, so do not rely on it. Never put an optional glob in a command
-that must run: delete optional matches with a quoted pattern instead,
-`find . -maxdepth 1 -name 'Simsapa-*.dmg' -delete`, and look for
-`no matches found:` in the output before trusting a cleanup step.
+### Android: use `try_exists()`, never `.exists()`
 
+`.exists()` can crash with a permission error on Android. Match on
+`try_exists()` (`Ok(true)` / `Ok(false)` / `Err(_)`); see `backend/src/logger.rs`.
 
-### Android compatibility: File existence checks
+### Android platform rules
 
-**IMPORTANT:** Always use `try_exists()` instead of `.exists()` when checking if files or directories exist. The `.exists()` method can cause permission crashes on Android.
-
-Example:
-```rust
-// ❌ BAD - can crash on Android
-if log_file.exists() {
-    // ...
-}
-
-// ✅ GOOD - safe on all platforms including Android
-match log_file.try_exists() {
-    Ok(true) => {
-        // File exists
-    }
-    Ok(false) => {
-        // File doesn't exist
-    }
-    Err(_) => {
-        // Permission error or other issue
-    }
-}
-```
-
-See `backend/src/logger.rs` for examples of this pattern in practice.
-
-### Android "isn't 16 KB compatible" warning (test-deploy only)
-
-If the Android app shows the dialog **"This app isn't 16 KB compatible"** listing
-libraries with "Unknown error", **do not assume the build is broken.** This
-warning is gated on the **install path**, not the APK contents. The dialog text
-says it outright: *"because this is a debuggable app which is currently being
-tested."*
-
-- Installing via **Qt Creator deploy** (`adb install` / `pm install` marks it a
-  test deployment) → the dialog appears.
-- **Sideloading the byte-identical APK** (copy to phone, tap to install in a
-  file manager) → no dialog.
-
-Confirmed empirically: APK sideload → no warning; Qt Creator deploy of the same
-build → warning; sideload again → no warning. End users (and any normal
-sideload/Play install) never see it.
-
-"Unknown error" next to a library does **not** mean it is misaligned — it means
-the on-device checker couldn't verify a library that is stored **compressed**
-(`Defl:N`, `extractNativeLibs=true`) in the APK. To prove a given build is fine,
-verify the libs directly instead of trusting the dialog:
-
-```sh
-# ELF LOAD-segment alignment of a flagged lib (want 0x4000 = 16 KB)
-unzip -p app.apk lib/arm64-v8a/libQt6Widgets_arm64-v8a.so > /tmp/x.so
-readelf -lW /tmp/x.so | grep LOAD          # last column is p_align
-# APK-level 16 KB page alignment
-$ANDROID_SDK/build-tools/<ver>/zipalign -c -P 16 4 app.apk && echo PASS
-```
-
-(June 2026 forensics: a warning build and a known-good no-warning build were
-identical on every 16 KB axis — lib md5s, ELF p_align (Qt libs 0x4000), all 148
-libs `Defl:N`, `zipalign -P16` PASS, compileSdk 36 / targetSdk 35 / debuggable.
-The only variable was the install path.)
-
-**Separate gap — now resolved:** the app *used to* not be truly 16 KB-compatible
-because Qt's 5 bundled FFmpeg prebuilts (`libavcodec`, `libavformat`,
-`libavutil`, `libswresample`, `libswscale`) were 4 KB-aligned (0x1000), pulled in
-by Qt Multimedia for chanting-practice recording/playback. This was fixed by
-replacing Qt Multimedia with a **pure-Rust audio stack** (`cpal` + `flacenc` +
-`rubato` + `symphonia`); cpal's Android backend is AAudio (a system lib), so no
-audio native library is bundled at all. See
-[Pure-Rust audio backend](./docs/pure-rust-audio-backend.md).
-
-**Android NDK — do NOT use r28.** It is incompatible with Qt 6.9.3 at this
-project's `minSdkVersion` (libc++ `pthread_cond_clockwait` needs API 30+,
-breaking the `cxx` C++ build). **The exclusion is about API 30, not about 27 vs
-28** — raising the floor to 28 did not lapse it and does not re-open the
-question. Stay on the Qt-supported NDK (r26b/r27); 16 KB alignment of the
-main app `.so` is achieved with `target_link_options(... "-Wl,-z,max-page-size=16384")`
-in `CMakeLists.txt`, not by relying on r28's default. Details in the doc above.
+- The **"isn't 16 KB compatible"** dialog appears only for a test deployment
+  (Qt Creator / `adb install`); it does not mean the build is broken. Verify the
+  libraries directly: [docs/android-16kb-compatibility-warning.md](./docs/android-16kb-compatibility-warning.md).
+- **Do NOT use NDK r28** — incompatible with Qt 6.9.3 at this minSdk
+  (`pthread_cond_clockwait` needs API 30+). Stay on r26b/r27.
+- **Never hand-delete `android-build/`** — it wedges the tree; use
+  `make android-clean`.
+- **AGP is pinned at 8.6.0 and the JDK at 17–21.** The compileSdk 36 warning is
+  expected and suppressed; do not bump AGP outside a Qt upgrade (change one
+  variable at a time):
+  [docs/android-gradle-plugin-pin.md](./docs/android-gradle-plugin-pin.md).
+- **Permissions are no longer injected from linked Qt modules.** A new Qt module
+  that needs one is added to `android/AndroidManifest.xml` by hand, and every
+  `<uses-feature>` is `android:required="false"` unless the app cannot work
+  without the hardware: [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
 
 ### A Rust dependency that needs a native library: name it in `CMakeLists.txt`
 
-The Rust code reaches the app as a **staticlib** (`libsimsapa_bridges.a`)
-linked by CMake, and a Mach-O or ELF `.a` does not carry the crates'
-`#[link(name = …)]` / `#[link(kind = "framework")]` directives. So when a crate
-needs a system library or framework, the final link in `CMakeLists.txt` must
-name it — **per platform**, since a crate like cpal uses a different backend
-module on each. Worked examples: the Linux ALSA block (`asound`), the Android
-`android nativewindow aaudio` line, and the macOS `-framework CoreAudio` /
-`-framework AudioToolbox` entries, whose absence broke the macOS build for
-months unnoticed. There is no macOS CI: run `make macos -B` on the Mac before a
-release. Table in
+The Rust code is linked as a staticlib, which does not carry `#[link]`
+directives, so the final link in `CMakeLists.txt` must name each system library
+or framework, **per platform** (the ALSA, Android `aaudio` and macOS
+CoreAudio/AudioToolbox entries are the examples). There is no macOS CI: run
+`make macos -B` on the Mac before a release. The macOS deployment target lives
+only in `CMAKE_OSX_DEPLOYMENT_TARGET` and is forwarded to cargo. Table in
 [docs/pure-rust-audio-backend.md](./docs/pure-rust-audio-backend.md).
 
-On macOS the deployment target lives in **one** place,
-`CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt` (14.2): it is forwarded to
-cargo with `corrosion_set_env_vars(… MACOSX_DEPLOYMENT_TARGET=…)` and read by
-`build-macos.sh` for `LSMinimumSystemVersion`. If cargo builds for a different
-target than CMake, the link fails with duplicate `gui.cpp` symbols (cc-rs
-compiles a second copy of `cpp/gui.cpp` into the staticlib).
+### QML rules
 
-### Adding a Qt module that needs an Android permission
-
-`android/AndroidManifest.xml` no longer carries androiddeployqt's
-`<!-- %%INSERT_PERMISSIONS -->` / `<!-- %%INSERT_FEATURES -->` markers, so
-permissions are **no longer injected automatically** from the linked Qt modules.
-They were removed because that injection pulled in CAMERA, ACCESS_FINE_LOCATION
-and BLUETOOTH, from which Google Play derives *required* hardware features that
-filtered the app off Chromebooks.
-
-If you link a new Qt module and something fails on device with a
-permission-denied error, look up what that module declares:
-
-```sh
-grep -o '<permission name="[^"]*"' \
-  ~/Qt/6.9.3/android_arm64_v8a/lib/Qt6<Module>_arm64-v8a-android-dependencies.xml
-```
-
-and add the entry by hand to `android/AndroidManifest.xml`. Any accompanying
-`<uses-feature>` must be declared `android:required="false"` unless the app
-genuinely cannot function without the hardware — a bare `<uses-feature>`
-defaults to **required** and removes the app from the Play Store on every device
-lacking it. See
-[docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
-
-### Android Gradle Plugin — pinned at 8.6.0, do NOT upgrade opportunistically
-
-`android/build.gradle` pins AGP **8.6.0** and `build-android.sh` pins the JDK to
-17–21 (`MAX_JDK_MAJOR=21`). Both are deliberate. Every Android build prints
-
-> WARNING: We recommend using a newer Android Gradle plugin to use compileSdk = 36
-> This Android Gradle plugin (8.6.0) was tested up to compileSdk = 35.
-
-**That warning is expected and suppressed** via
-`android.suppressUnsupportedCompileSdk=36` in `android/gradle.properties` (added
-2026-07-28 — before that the suppression was documented here but was **not**
-actually in the file, so the warning really did print on every build). Do not
-"fix" it by bumping AGP.
-
-**Targeting a newer API level does not require a newer AGP.**
-`targetSdkVersion` is just a value written into the manifest; AGP does not gate
-it. `compileSdk` is what AGP validates against, and androiddeployqt writes
-`androidCompileSdkVersion=android-36` on its own (it picks the newest installed
-platform). AGP 8.6.0 accepts that with the warning above and builds fine.
-
-An AGP upgrade touches three coupled things, each of which fails late and
-unhelpfully:
-
-1. **The Gradle wrapper version.** AGP 8.10 needs Gradle ≥ 8.11.1; AGP **8.11+
-   needs Gradle 8.13**. The wrapper in use is **ours**, checked into
-   `android/gradle/wrapper/` at **8.10**, and androiddeployqt copies it into
-   `android-build/` with the rest of `android/`. Qt's kits do ship a wrapper —
-   at 8.12, in `~/Qt/6.9.3/android_*/src/3rdparty/gradle/gradle/wrapper/` — but
-   **that copy is never used** (verified 2026-07-28 by reading the generated
-   `android-build/gradle/wrapper/gradle-wrapper.properties`).
-
-   > An earlier version of this note claimed the wrapper was Qt's and that
-   > bumping it would mean diverging from Qt. **That is wrong** — the wrapper is
-   > ours to bump. This weakens reason 1, but reasons 2 and 3 still stand, so the
-   > pin remains.
-2. **The JDK pin exists because of AGP's bundled lint.** AGP 8.6.0's lint cannot
-   parse a Java 26 version string; `lintVitalAnalyzeRelease` dies with `> 26.0.1`
-   as its *entire* error message, **after** all three ABIs have compiled and
-   signed. The system default `java` on this machine is 26, which is why
-   `build-android.sh` selects a JDK itself instead of inheriting one. Any AGP
-   change must re-verify this pin — and the pin should stay regardless.
-3. **`android/build.gradle` is a Qt-provided template** using `lintOptions`,
-   `aaptOptions` and `packagingOptions` — deprecated through AGP 8.x and
-   **removed in AGP 9.x**. Moving to AGP 9 means rewriting a file that has to be
-   re-merged on every Qt upgrade.
-
-**Rule: change one variable at a time.** The AGP/Gradle-wrapper bump belongs
-with the eventual **Qt upgrade**, when the Qt-provided template and wrapper
-change anyway — not with an SDK or targetSdk bump. See
-[docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md)
-and `tasks/2026-07-27-131601-prd---android-api-36-compliance-and-packaging-follow-ups.md`.
-
-### `Dialog` width — clamp it to the window overlay
-
-**Every `Dialog` must state its own width, clamped against the overlay it lives
-in**, rather than letting it size itself from its content:
-
-``` qml
-Dialog {
-    id: my_dialog
-
-    modal: true
-    // Clamped to the window overlay: a fixed 480 is wider than a phone screen.
-    parent: Overlay.overlay
-    anchors.centerIn: parent
-    width: Math.min(parent.width - 40, 480)
-
-    contentItem: Label {
-        text: "…a sentence long enough to need wrapping…"
-        wrapMode: Text.WordWrap
-    }
-}
-```
-
-A content-sized dialog with a long unwrapped string grows past the window edge
-on a narrow desktop window and off-screen on a phone, where there is no window
-manager to pull it back. The `Math.min(parent.width - 40, <max>)` form gives the
-comfortable desktop width *and* the phone fit from one binding; `parent:
-Overlay.overlay` is what makes `parent.width` the window's width regardless of
-where the dialog is declared, and it is also what keeps `anchors.centerIn`
-meaningful.
-
-The clamp only works if the content wraps to it, so pair it with
-`wrapMode: Text.WordWrap` on every text item inside — and that combination is
-exactly what the next section is about.
-
-`DictionaryEditDialog.qml` and `DictionariesWindow.qml`'s
-`confirm_delete_all_dialog` are the worked examples. Native `MessageDialog`
-(from `QtQuick.Dialogs`) is sized by the platform and needs none of this — but
-it also cannot carry custom content, so a confirmation with more than one line
-of text belongs in a `QtQuick.Controls` `Dialog` written this way.
-
-### `Dialog` with a title and wrapping text — use `DialogHeader`
-
-**Any `Dialog` that has a `title` *and* content that wraps
-(`wrapMode: Text.WordWrap`) must set `header: DialogHeader { text: <dialog_id>.title }`
-(`bridges/assets/qml/DialogHeader.qml`) instead of using Fusion's default header.**
-
-Fusion's `Dialog` computes
-`implicitHeight: … + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0) + …`
-(`Fusion/Dialog.qml:17-20`) and its default header is a `Label` whose own
-implicitHeight is resolved through that same layout pass. Combine that with
-content whose height depends on its width, inside a component that is itself
-re-laying out, and the dialog's `implicitHeight` oscillates:
-
-```
-QML Dialog: Binding loop detected for property "implicitHeight":
-qrc:/qt-project.org/imports/QtQuick/Controls/Fusion/Dialog.qml:17:5
-```
-
-`DialogHeader` is visually identical to Fusion's (same padding, bold, elide,
-same background) but **states its `implicitHeight` outright**, which is the
-value the Label already has — no geometry changes, the feedback path just goes
-away. Its root is an `Item` wrapping a `Label`, because **`implicitHeight` is
-read-only on `Label`**: assigning it there is a load error, not an override, and
-the component silently fails to load with `Type … unavailable`. Do not
-"simplify" the wrapper away.
-
-Three things must coincide to trigger it, which is why most dialogs are fine:
-an unstated header height, width-dependent content height, **and** a declaring
-component whose layout reflows in the same pass. A dialog declared directly in
-an `ApplicationWindow` root is not exposed (a window's size is driven
-externally); one declared inside a `Frame`, `Item` or layout — i.e. any
-component embedded in a resizable parent — is. Setting `header:` costs one line
-and removes the question, so prefer it whenever the title-plus-wrapping
-combination occurs.
-
-Related traps, measured — do **not** reach for these instead: the loop is
-unaffected by the content's sizing (`parent.width` vs `availableWidth`, an
-explicit `contentItem`, an explicit content height), by `standardButtons`,
-`anchors.centerIn`, `parent: Overlay.overlay`, or by the dialog's width clamp.
-And **never** "fix" it by removing `width: parent.width` from a dialog's
-contentItem — that binding is what makes `wrapMode` work (see
-`docs/android-edge-to-edge-and-safe-areas.md`) and is measured to be irrelevant
-here.
-
-**To reproduce or verify one, use the existing rig — do not build your own.**
-`scripts/tst_dialog_loop_harness.qml.keep` instantiates the real
-`SearchBarInput` in a window and drives the four scenarios that isolated the
-cause; you count `Binding loop detected for property "implicitHeight"` lines
-(baseline 3, with `DialogHeader` 0). Copy it into `bridges/assets/qml/` as a `tst_*.qml`
-to resolve project types and **delete it again after use** — `make qml-test`
-walks that tree. Its header comment carries the run command and the three things
-that invalidated six earlier attempts: `QT_QUICK_CONTROLS_STYLE=Fusion` is
-mandatory (the app forces Fusion in `cpp/gui.cpp`, `qmltestrunner` defaults to
-Basic, whose `Dialog` cannot produce the loop at all);
-`QT_QPA_PLATFORM=offscreen` is mandatory (the trigger is a window **resize**, and
-this desktop's WM auto-maximizes windows on X11, silently ignoring every
-`width = …`); and a variant that fails to *load* also logs zero loops, so check
-`Totals: N passed, 0 failed` rather than the grep count alone. Because
-`qmltestrunner` reads QML from disk, `git stash push <file>` → run →
-`git stash pop` A/Bs a suspected cause in seconds with no rebuild.
-
-Twelve titled-and-wrapping dialogs declared inside embedded components are a
-known watch-list, deliberately left unfixed against zero observed defects (all 40
-were enumerated and classified); if one ever logs this loop, the remedy is the
-one `header:` line above, and the rig is how you confirm it.
+- **Every `Dialog` states its width, clamped to the overlay**
+  (`parent: Overlay.overlay`, `width: Math.min(parent.width - 40, 480)`), with
+  `wrapMode: Text.WordWrap` on its text. A titled dialog with wrapping text sets
+  `header: DialogHeader { text: <id>.title }`. Never remove
+  `width: parent.width` from a dialog's contentItem. To reproduce a binding
+  loop, use the existing rig `scripts/tst_dialog_loop_harness.qml.keep`, not
+  one of your own. See
+  [docs/qml-dialog-sizing.md](./docs/qml-dialog-sizing.md).
+- **A long operation brackets itself with
+  `AssetManager.set_keep_screen_on("<holder>", true/false)`**, with a distinct
+  holder name per independent caller, released in the completion handler on
+  success and failure, never in `onClosed`. When the completion signal is
+  global, guard its handlers with an "initiated here" boolean. See
+  [docs/keep-screen-awake.md](./docs/keep-screen-awake.md).
+- **Rich-text link colour comes from the application palette** — per-item
+  `linkColor` does nothing. Edit the theme JSONs. See
+  [docs/rich-text-link-colors.md](./docs/rich-text-link-colors.md).
+- **No `console` API in `bridges/assets/qml/`** (except the
+  `com/profoundlabs/simsapa/` type stubs). Declare `Logger { id: logger }` and
+  call `logger.debug/info/warn/error(message)` with **one** concatenated string
+  argument. See [docs/logging.md](./docs/logging.md).
 
 ### New QML components
 
-The QML tree lives at **`bridges/assets/qml/`**, not at the repo root. When you
-create a new QML component such as `SearchBarInput.qml`, the file has to be added
-to the `qml_files` list in `bridges/build.rs`.
+The QML tree lives at **`bridges/assets/qml/`**. Add a new component to the
+`qml_files` list in `bridges/build.rs` as `"assets/qml/<Name>.qml"` exactly —
+relative to `bridges/`, never containing `..` (the build asserts it; a `..`
+path builds green and fails at runtime). See
+[docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
 
-``` rust
-let qml_files = vec![
-    // ...
-    "assets/qml/SearchBarInput.qml",
-];
-```
+### Logging in C++: `log_info_c()`, not `qInfo()`
 
-**Keep the `"assets/qml/<Name>.qml"` form exactly — relative to `bridges/`, and
-never containing `..`.** The path string is used verbatim as the rcc alias, so
-this is what makes the resource path
-`:/qt/qml/com/profoundlabs/simsapa/assets/qml/<Name>.qml`, matching the `qrc:`
-literals in `cpp/`. **`bridges/build.rs` asserts this over every entry and fails
-the build with the offending path** — because otherwise a `../`-prefixed path
-*builds green*: rcc folds the `..` away but the generated `qmldir` and
-qmlcachegen do not, so the type fails to resolve when that screen is first shown
-and the AOT cache silently misses (falling back to parsing QML from source,
-which looks exactly like success). That trap is why the tree was moved under
-`bridges/` — see [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
-
-### Long operations in QML must keep the screen awake
-
-**Any UI that starts a long-running operation — download, search-index rebuild,
-bulk import — must bracket it with
-`AssetManager.set_keep_screen_on("<holder>", true)` /
-`set_keep_screen_on("<holder>", false)`.** On Android this sets
-`FLAG_KEEP_SCREEN_ON` (`cpp/screen.cpp`); elsewhere it is a no-op. Without it
-the device suspends part-way through and the operation is interrupted.
-
-``` qml
-AssetManager { id: manager }
-// ...
-manager.set_keep_screen_on("search-index-rebuild-settings", true);
-SuttaBridge.rebuild_search_index();
-```
-
-**The first argument names the holder, and it is not decoration.**
-`FLAG_KEEP_SCREEN_ON` is a single boolean on the one Android Activity window,
-shared by every caller — and callers overlap routinely (a language download runs
-*inside* `SuttaLanguagesWindow`, which holds it for the window's whole
-lifetime). `screen.cpp` therefore keeps a **set of named holders** and only
-clears the flag once the last one has released it. Pass the **same name** to
-acquire and release, and use a distinct name per independent holder — two
-screens that can each start the same job get two names, e.g.
-`search-index-rebuild-settings` vs `search-index-rebuild-validation`.
-
-Acquiring twice under one name is idempotent, and releasing a name you do not
-hold is a logged no-op rather than a theft of someone else's hold — which is why
-this is a named set and not a reference count. Every transition logs the
-surviving holders, so an unreleased hold is identifiable from a user's `log.txt`
-without a reproduction.
-
-Two rules for the release:
-
-- **Release when the operation actually ends** — in its completion signal
-  handler, on **both** success and failure. Do **not** release in a dialog's
-  `onClosed` / `onRejected`: the backend job runs on a spawned thread and
-  continues after the dialog closes, so closing would drop the lock mid-operation.
-- **If the completion signal is global** (e.g. `rebuildSearchIndexProgress` /
-  `rebuildSearchIndexCompleted` on `SuttaBridge`, which several windows listen
-  to), guard the handlers with an "initiated here" boolean so only the window
-  that started the operation updates its state and releases its own lock.
-
-### Rich-text `<a href>` links are coloured by the *application* palette
-
-Setting `Text.linkColor`, or the window's `palette.link`, does **nothing** for a
-link inside `Text { textFormat: Text.RichText }`. Qt's HTML parser injects
-`color: palette(link)` for every `<a href>` (`qtexthtmlparser.cpp:2062-2065`),
-resolving it against a default-constructed `QPalette` — `QGuiApplication`'s, not
-the window's (`qtexthtmlparser.cpp:1182`) — and the resulting explicit foreground
-then **overrides** `linkColor`, which `QQuickTextNodeEngine` applies only when
-the char format has none (`qquicktextnodeengine.cpp:1098-1101`).
-
-The colour is therefore pushed into the application palette by
-`set_app_palette_link_colors()` (`cpp/system_palette.cpp`). That is the **only**
-knob; do not add per-item `linkColor` bindings expecting them to work. If a link
-renders in the wrong colour, the theme JSONs
-(`backend/src/theme_colors_{light,dark}.json`) are what to edit.
-
-**It is applied in `gui.cpp` right after `QApplication` and before the QML engine
-loads**, via `theme_link_colors_c()` (`backend/src/lib.rs`, a standalone settings
-read sharing `render_loop_basic_c()`'s cache). That ordering is load-bearing: the
-anchor colour is baked into the char format when the HTML is **parsed**, so any
-window whose QML is parsed during the engine load — `SearchHelpWindow` and
-`DhammaTextSourcesDialog` are inline children of `SuttaSearchWindow` — keeps the
-platform default if the palette is only fixed afterwards from
-`ThemeHelper.apply()`. (That call is kept too, for windows created after a
-runtime theme change; already-parsed rich text needs a restart to recolour.)
-
-### Logging in QML (no console API)
-
-In the QML files under `bridges/assets/qml/`, do **not** use the `console` API
-(`console.log()`, `console.error()`, etc.). Use the `Logger { id: logger }`
-module's functions for logging instead.
-
-The one exception is the folder
-`bridges/assets/qml/com/profoundlabs/simsapa/`: the `console` API is allowed there
-because those files are type stubs for `qmllint`.
-
-#### Using the Logger module
-
-`Logger.qml` lives in `bridges/assets/qml/`, so it is automatically available to any
-other component in that directory — no `import` statement is needed. Declare an
-instance once in the component's root element, conventionally with `id: logger`:
-
-``` qml
-Item {
-    id: root
-
-    Logger { id: logger }
-
-    // ...
-}
-```
-
-The available functions map to log levels: `logger.debug(message)`,
-`logger.info(message)`, `logger.warn(message)`, `logger.error(message)`.
-
-**IMPORTANT — each function takes a single `message` argument, unlike the
-variadic `console` API.** Do not pass multiple comma-separated arguments;
-build one string with concatenation instead:
-
-``` qml
-// ❌ BAD - console-style multiple arguments; extra args are dropped/ignored
-logger.error("Failed to parse data_json:", e, "data_json:", root.data_json);
-
-// ✅ GOOD - a single concatenated string
-logger.error("Failed to parse data_json: " + e + " data_json: " + root.data_json);
-```
-
-When migrating from `console`, map the methods by severity rather than
-mechanically: `console.error` → `logger.error`, `console.warn` → `logger.warn`,
-and `console.log` → `logger.info` (or `logger.error` when the message actually
-reports a failure).
-
-### Logging in C++ (`log_info_c()`, not `qInfo()`)
-
-In the C++ files under `cpp/`, log through the app's own logger — the Rust FFI
-functions `log_info_c()` / `log_error_c()` — and **not** Qt's `qInfo()` /
-`qWarning()` / `qDebug()`:
-
-``` cpp
-extern "C" void log_info_c(const char* msg);
-extern "C" void log_error_c(const char* msg);
-
-log_info_c("start(): storage scan requested");
-log_info_c(QString("Found %1 volume(s)").arg(count).toUtf8().constData());
-```
-
-**Why: on Android, Qt tags its own messages with the *application name*, not
-with `Qt`.** The documented way to watch the app's log is
-
-``` sh
-adb logcat -s simsapa Qt QtCore QtQml
-```
-
-(see [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md)),
-where `simsapa` is the Rust logger's tag. A `qInfo()` call therefore lands under
-*neither* `simsapa` nor `Qt` and is filtered out entirely — the message looks
-like code that never ran. This has already produced one wasted device-debugging
-round trip: a storage-enumeration diagnostic added specifically to prove a JNI
-pass had executed was invisible in the log, which is indistinguishable from the
-failure it was added to detect.
-
-`log_info_c()` output goes to the same `simsapa` tag as the Rust backend's, and
-also into the app's own `log.txt`, so it is available when a user sends logs.
-
-#### The Android log level comes from the event metadata
-
-`AndroidMakeWriter` (`backend/src/logger.rs`) implements
-`MakeWriter::make_writer_for`, which receives the event's `Metadata`, so the
-writer carries the mapped `log::Level` and `write` is a plain
-`log::log!(self.level, …)`. Message text plays no part in levelling, so `TRACE`,
-`ERROR`, `WARN` and `DEBUG` are safe words to use inside a log message.
-
-> **Trap: never level by inspecting the formatted line, and never reduce the
-> writer to a closure.** The line handed to the writer contains the message body
-> as well as the level, so a `line.contains("TRACE")` test classifies on user
-> content — and since `android_logger` runs at `LevelFilter::Debug`, anything
-> routed to `log::trace!` is *discarded*, not merely mis-levelled. That silently
-> erased the entire `STARTUP-TRACE` convention from logcat, C++ and QML alike.
->
-> The reason the writer is a **named type** rather than `move || writer.clone()`
-> is that `MakeWriter`'s blanket impl for `Fn() -> W` cannot see the event and
-> only ever gets the default `make_writer_for`, which discards the metadata —
-> making the real level unreachable. Simplifying it back to a closure
-> reintroduces the bug.
-
-A genuine `tracing::trace!` event is still filtered out by `LevelFilter::Debug`.
-That is a level decision, not an accident of wording.
-
-**When instrumentation seems not to have run on device, read the app's own
-`log.txt` before concluding anything** — it is what a user sends you, and it
-carries messages regardless of logcat's filtering. On a debuggable build:
-`adb shell run-as io.github.simsapa.app.beta cat files/log.txt`.
-(`run-as PKG sh -c '…'` does **not** work — SELinux denies it, and the shell does
-not inherit the app home as cwd — but `run-as PKG <binary>` does.)
-
-Pre-existing `qWarning()` calls remain in some files (e.g. the file-copy helpers
-in `cpp/utils.cpp`); do not add new ones, and prefer converting them when
-touching that code for another reason.
+In `cpp/`, log through `log_info_c()` / `log_error_c()`. On Android Qt tags its
+messages with the app name, so a `qInfo()` is filtered out of
+`adb logcat -s simsapa Qt QtCore QtQml` and looks like code that never ran.
+Do not add new `qWarning()` calls. When instrumentation seems not to have run
+on device, read the app's `log.txt` first. Never level Android log lines by
+inspecting the formatted text, and keep `AndroidMakeWriter` a named type. See
+[docs/logging.md](./docs/logging.md).
 
 ### No `println!` / `eprintln!` in code the `simsapa` CLI runs
 
-**In `backend_cli/`, `api/` and `backend/`, never write `print!`, `println!`,
-`eprint!` or `eprintln!` outside test code.** These macros **panic** when the
-write fails, and for the CLI that is routine, not exotic: an agent pipes
-output into `head` (stdout closed), or runs the command with stderr closed.
-The result is `thread 'main' panicked … Broken pipe` and exit code 101, in
-place of the command's documented exit code.
-
-Use instead:
-
-| Where | stdout | stderr |
-|---|---|---|
-| `backend_cli/src/` | `outln!` / `out!` (`crate::output`) | `errln!` (`use simsapa_backend::errln;`) |
-| `backend/src/`, `api/src/` | `crate::logger::write_stdout(format_args!(…))` | `crate::errln!` |
-
-Prefer the logger (`info()` / `warn()` / `tracing`) over either in the
-backend; these are for the few messages printed before the logger exists.
-
-The rule is **enforced by a test**:
-`backend_cli/src/output.rs` `test_no_print_macros_in_sources` scans all three
-crates (skipping comment lines and `#[cfg(test)] mod … { … }` blocks) and fails
-on any of the four macros, naming the file and line. Run it with
-`cd backend_cli && cargo test --bin simsapa test_no_print_macros`. **Do not
-silence it with an allow-list**: fix the call site. `bridges/` is GUI-only and
-not scanned.
-
-Two traps:
-
-- **Never "fix" a broken pipe by restoring the default `SIGPIPE` action.**
-  It applies to the whole process: it would also cover `serve`'s sockets and
-  the HTTP client in `setup`, and it would kill an `import`, `index` or `setup`
-  mid-write when its stdout closed. The CLI drops further output and finishes
-  the work instead.
-- **A new crate that writes to stderr can reintroduce the panic without any
-  macro in our code.** tracing-subscriber's own failed-write report is an
-  `eprintln!`, which is why `startup::init_logging()` sets
-  `.log_internal_errors(false)`. When adding a dependency that prints
-  (progress bars, prompts, a logger), check what it does on a write error.
-
-The behaviour is covered by `backend_cli/tests/read_only_commands.rs`
-(`test_closed_stdout_is_not_a_panic`, `test_closed_stderr_is_not_a_panic`,
-`test_failed_stdout_write_exits_1`). See
-[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md),
-"Output on stdout and stderr".
+In `backend_cli/`, `api/` and `backend/`, never write `print!`, `println!`,
+`eprint!` or `eprintln!` outside test code — they panic on a closed pipe. Use
+`outln!` / `out!` / `errln!` in `backend_cli/src/`, and
+`crate::logger::write_stdout(…)` / `crate::errln!` (or the logger) in
+`backend/` and `api/`. `test_no_print_macros_in_sources` enforces it; fix the
+call site, never add an allow-list. Never "fix" a broken pipe by restoring the
+default `SIGPIPE`. A new dependency that prints can bring the panic back, so
+check what it does on a write error. See "Output on stdout and stderr" in
+[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md).
 
 ### New functions on Rust bridge QML components
 
-When adding new functions to Rust bridge QML components such as SuttaBridge, add a corresponding function in the `qmllint` type definition, e.g. SuttaBridge.qml
-
-For example, when implementing the `get_api_key()` method in `sutta_bridge.rs`, add a corresponding function in `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` with the correct function signature and a simple return value. The internal logic doesn't have to be repeated, because this is only for the benefit of `qmllint`.
+When adding a function to a bridge such as `SuttaBridge`, add a matching
+function to its `qmllint` type stub, e.g.
+`bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml`, with the right
+signature and a simple return value:
 
 ``` qml
 function get_api_key(key_name: string): string {
@@ -1759,99 +376,35 @@ function get_api_key(key_name: string): string {
 ### Adding a new top-level window
 
 **Read [docs/window-lifecycle-and-reuse.md](./docs/window-lifecycle-and-reuse.md)
-before writing any of it — §0 for which of the three lifecycle families it
-belongs to, §7 for the step-by-step checklist.** The two a new window will
-normally choose between need opposite code: the **pooled** `SuttaSearchWindow`
-(closing only *hides* it; reuse predicate `visible`) and the
-**single-instance** secondary windows (destroyed on close; reuse predicate
-`m_root != nullptr`). Each predicate is a silent bug in the other family. The
-third, the **kept** `SuttaNavigationWindow` (§5d), has one member and is right
-only when the state left in the window is the feature.
-
-The three things most easily missed, all of which fail quietly:
-
-1. Guard `m_root = m_engine->rootObjects().isEmpty() ? nullptr : …constFirst();`
-   in the wrapper, and evict a null-`m_root` wrapper in `create_*_window()`
-   rather than skipping it — otherwise a failed engine load leaks one wrapper
-   per open.
-2. If the window starts anything long-running — **including a warm-up fired from
-   `Component.onCompleted`** — it must defer its destruction until that
-   operation's completion signal. §5b carries the table of which existing window
-   waits for which signal; add a row for the new one.
-3. Destruction is always `deleteLater()` from `WindowManager::on_window_closed()`,
-   never a direct `delete` from the QML close path.
+first — §0 for which lifecycle family it belongs to, §7 for the checklist.** The
+pooled `SuttaSearchWindow` (reuse predicate `visible`) and the single-instance
+windows (destroyed on close, predicate `m_root != nullptr`) need opposite code.
+Most easily missed: guard and evict a null `m_root`; defer destruction until a
+long-running operation's completion signal (add a row to §5b); destroy with
+`deleteLater()` from `WindowManager::on_window_closed()`. Never bring a window
+forward with a bare `show()` (it un-maximizes); use
+`show_window_preserving_state()`.
 
 ### `qt_thread.queue()` — use `queue_or_log()`, never `.unwrap()`
 
-In `bridges/src/`, never call `qt_thread.queue(…)` with a trailing `.unwrap()`
-or behind a `let _ =`. Use the shared helper in `bridges/src/lib.rs`:
-
-``` rust
-crate::queue_or_log(&qt_thread, "sutta_bridge::load_topic_index", move |mut qo| {
-    qo.as_mut().topic_index_loaded_signal();
-});
-```
-
-`CxxQtThread::queue()` returns `Err(ThreadingQueueError::ObjectDestroyed)` once
-its target `QObject` is gone. Bridge objects are **per-engine**, and the
-secondary windows are destroyed on close, so this is a live path — not a
-theoretical one. `.unwrap()` panics the worker thread; `let _ =` drops the
-completion signal with **no log line at all**, leaving whatever the completion
-handler owned (notably the keep-screen-on lock) unreleased.
-
-Two rules that come with it: **log and continue, not log and return** — an early
-return would skip cleanup that still has to run, e.g.
-`asset_manager::cleanup_on_failure` queues a status message *before* deleting
-its temp folders. And **`is_destroyed()` is not the fix**; cxx-qt documents it
-as racy (the object can be destroyed between the check and the `queue`).
+In `bridges/src/`, never call `qt_thread.queue(…)` with `.unwrap()` or behind
+`let _ =`; use `crate::queue_or_log(&qt_thread, "<context>", move |mut qo| …)`.
+Destroyed bridge objects are a live path. Log and continue, never return early,
+and `is_destroyed()` is not the fix (it is racy).
 
 ### New Rust bridges
 
-**A new localhost API data route is not bridge code.** Put it in `simsapa_api`
-(`api/src/routes/`, registered in `shared_routes()` in `api/src/lib.rs`, whose
-route-count test and inventory comment must be updated), so the GUI and
-`simsapa serve` both get it. It goes in `bridges/src/api.rs` only if it needs Qt
-(window callbacks, clipboard, `open_external_url`, the internal storage path),
-an AI provider, or the embedded `assets/` folder. See
-[docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md).
+**A new localhost API data route is not bridge code**: put it in `simsapa_api`
+(`api/src/routes/`, registered in `shared_routes()` in `api/src/lib.rs`, and
+update its route-count test and inventory comment). It goes in
+`bridges/src/api.rs` only if it needs Qt, an AI provider, or the embedded
+`assets/` folder.
 
-When you create a new Rust bridge such as `bridges/src/prompt_manager.rs`, the
-Rust file name has to be added to the `CxxQtBuilder::files([…])` list in
-`bridges/build.rs`:
-
-``` rust
-CxxQtBuilder::new_qml_module(
-    QmlModule::new("com.profoundlabs.simsapa").qml_files(qml_files),
-)
-    .files([
-        "src/sutta_bridge.rs",
-        "src/asset_manager.rs",
-        "src/storage_manager.rs",
-        "src/prompt_manager.rs",
-        "src/api.rs",
-    ])
-```
-
-**Every path in `qml_files` must be relative to `bridges/` and free of `..`** —
-`"assets/qml/<Name>.qml"`, which is why the QML tree lives at
-`bridges/assets/qml/`. A `../`-prefixed path is folded away by `rcc` but *not* by
-the qmldir writer or by qmlcachegen, so the three disagree and QML type
-resolution fails **at runtime** (`Type Logger unavailable`) while the build stays
-green. See [docs/cxx-qt-fork.md](./docs/cxx-qt-fork.md) §5.
-
-All the bridge sources must live in **one directory** (`bridges/src/`).
-`CxxQtBuilder::files()` panics if they span more than one — a Qt limitation
-(QTBUG-93443), not a cxx-qt choice.
-
-> **This changed with cxx-qt 0.9.** Until then the bridge sources were a
-> `rust_files:` field *inside* the `QmlModule` struct literal, passed to
-> `.qml_module(QmlModule { … ..Default::default() })`. cxx-qt 0.8 removed that
-> field, made `QmlModule`'s fields private, and allowed only one QML module per
-> builder — so a QML module now carries only its QML files, and the Rust
-> sources are declared on the builder. Any older snippet using `rust_files:` or
-> `.qml_module(` is for the pre-0.9 API and will not compile.
-
-`qmllint` requires that the corresponding QML type definition for the Rust bridge has to be created and it should be declared in the `qmldir` file.
+Add a new bridge file to `CxxQtBuilder::files([…])` in `bridges/build.rs`. All
+bridge sources must live in `bridges/src/` (one directory, a Qt limitation).
+Snippets using `rust_files:` or `.qml_module(` are the pre-cxx-qt-0.9 API and
+will not compile. Create the bridge's `qmllint` type definition and declare it
+in `qmldir`:
 
 ```
 bridges/assets/qml/com/profoundlabs/simsapa/PromptManager.qml
@@ -1860,282 +413,67 @@ bridges/assets/qml/com/profoundlabs/simsapa/qmldir
 
 ### Database migrations
 
-Both migrated databases use **one** mechanism at runtime: Diesel
-`run_pending_migrations()`. Creating a dated folder under `backend/migrations/`
-is the **whole** job — there is no second list to register it in.
+Both `appdata.sqlite3` (`backend/migrations/appdata/`) and
+`dictionaries.sqlite3` (`backend/migrations/dictionaries/`) use Diesel
+`run_pending_migrations()` at runtime. Creating a dated folder is the whole job;
+rebuild afterwards. `dpd.sqlite3` has no migrations. The runtime never
+fabricates a missing `dictionaries.sqlite3`.
 
-| DB | Migration folder | Applied at runtime by |
-|---|---|---|
-| `appdata.sqlite3` | `backend/migrations/appdata/` | `run_appdata_migrations()` — Diesel `run_pending_migrations(APPDATA_MIGRATIONS)` |
-| `dictionaries.sqlite3` | `backend/migrations/dictionaries/` | `run_dictionaries_migrations()` — Diesel `run_pending_migrations(DICTIONARIES_MIGRATIONS)` |
-| `dpd.sqlite3` | — | nothing; imported wholesale from upstream DPD, no migration folder |
+- **Never edit a migration that has already shipped**; add a new dated folder.
+  (Folding into the baseline happens only with a major/minor DB version bump.)
+- Folder names stay **date-ordered**; delete superseded folders, never move them
+  to an `archive/` under `backend/migrations/`.
+- A table's column order, its `table!` and its `Queryable` structs must agree
+  (`Queryable` maps by position).
+- FTS5 tables and triggers belong in the `scripts/` SQL, not in a migration.
+- **A migration failure at startup is non-fatal by design**; do not propagate it.
 
-Both runners live in `backend/src/db/mod.rs` and are called from
-`DbManager::new()`. `embed_migrations!` picks up whatever folders exist, so a
-**rebuild** is required after adding or editing one.
-(`backend/diesel.toml`'s `[migrations_directory]` is used only by the diesel
-CLI, never at runtime; it names `migrations/appdata`, so a dictionaries
-migration needs `diesel migration --migration-dir migrations/dictionaries
-generate <name>`.)
-
-The runtime **never fabricates** a missing `dictionaries.sqlite3` — the CLI
-bootstrap creates it explicitly (`init_dictionaries_db()` in
-`bootstrap_cli/src/bootstrap/mod.rs`, mirroring `AppdataBootstrap` for appdata). If you
-ever remove a database's runtime auto-creation, check the bootstrap for a hidden
-dependency on it.
-
-`appdata.sqlite3` is shipped pre-built, downloaded once at first-run setup, and
-then **kept across app updates** because it also holds user data (bookmarks,
-gloss/prompts history, chanting recordings, imported books). It carries a
-populated `__diesel_schema_migrations` ledger (bootstrap wrote it), so at runtime
-Diesel applies exactly the migrations that are new, once, in a transaction, and
-stamps them.
-
-At 1.0.0 the accumulated migrations were **squashed** into a single baseline per
-database (`2026-07-23-000000_initial_schema`), and the old hand-maintained
-`upgrade_appdata_schema()` replay was deleted. See
-[database-migrations.md](./docs/database-migrations.md) for the history, the
-non-fatal-failure rule, and the missing-database recovery behaviour.
-
-Rules for migration `up.sql` files:
-
-- **Never edit a migration that has already shipped**; add a new dated folder
-  instead. The one exception is folding the later folders into the baseline,
-  which keeps its folder name, and that is done only together with a DB version
-  bump that changes the **major or minor** version, so every install downloads
-  new databases. See
-  [database-migrations.md §0](./docs/database-migrations.md), which also has
-  the trap that Diesel's `Queryable` maps fields by `table!` **position**: a
-  table's database column order, its `table!` and its `Queryable` structs must
-  agree.
-- Folder names must remain **date-ordered**.
-- Delete superseded folders outright — never move them to an `archive/`
-  subdirectory under `backend/migrations/`, because `embed_migrations!` walks
-  that tree.
-- Ordinary multi-statement SQL is fine: statements are separated by `;`, and
-  trigger bodies with `BEGIN … END` are allowed (there is no `;`-splitting and no
-  error suppression any more). FTS5 virtual tables and their sync triggers still
-  belong in the `scripts/` SQL, not in a migration — see the next section.
-- Table rewrites are expressible now, but a rewrite still argues for a DB
-  minor-version bump so installs re-download instead.
-
-**A migration failure at startup is non-fatal by design** — it is logged
-(`run_appdata_migrations(): FAILED: …`), recorded in the `StartupDbReport`
-process-global, surfaced in Database Validation, and startup continues. Do not
-"fix" this by propagating the error: Database Validation is only reachable if
-`DbManager::new()` succeeded, so a fatal migration error destroys the recovery UI
-the user needs.
+See [docs/database-migrations.md](./docs/database-migrations.md).
 
 ### FTS5 fulltext search tables (scripts in `scripts/`)
 
-The fulltext search tables are FTS5 virtual tables created by the SQL scripts in
-`scripts/` (`appdata-fts5-indexes.sql`, `books-fts5-indexes.sql`,
-`dictionaries-fts5-indexes.sql`, `dpd-fts5-indexes.sql`,
-`dpd-bold-definitions-fts5-indexes.sql`). There is **no Diesel migration** for
-these — the scripts drop and recreate the FTS table + sync triggers, so any
-schema change requires a **manual re-bootstrap** of the affected DB (run the
-script again). The scripts are embedded in the binary and run through Diesel by
-`db::fts_scripts::run_fts5_script()`, from the bootstrap and from
-`create_dpd_indexes()`; no `sqlite3` program is needed. **Run a multi-statement
-script with `batch_execute`, never `sql_query(…).execute()`**, which runs only
-the first statement and silently leaves the FTS table empty. The scripts do not
-`VACUUM`; the bootstrap calls `vacuum_db()` once per shipped database.
+The FTS5 tables are created by `scripts/*-fts5-indexes.sql`, embedded and run by
+`db::fts_scripts::run_fts5_script()`; a schema change means re-bootstrapping
+the affected DB. Rules:
 
-**IMPORTANT — store the source row id as the FTS5 `rowid`, never as an
-`UNINDEXED` column.** FTS5 has no secondary indexes, so a lookup like
-`WHERE dict_word_id = ?` against an `UNINDEXED` id column is a **full table
-scan**. The `AFTER DELETE` / `AFTER UPDATE` sync triggers run exactly that
-lookup once per affected source row, so a cascade delete of an N-row dictionary
-became N full scans of the entire FTS table — deleting a 2000-entry dictionary
-took ~3 minutes (measured 168 s) against a 198k-row FTS, and ~8 minutes in-app.
+- Run a multi-statement script with `batch_execute`, never
+  `sql_query(…).execute()` (which runs only the first statement).
+- **Store the source row id as the FTS5 `rowid`, never as an `UNINDEXED`
+  column** (an `UNINDEXED` id lookup is a full scan in every trigger), and join
+  on `f.rowid = <table>.id`.
+- The large tables are narrow external-content trigram tables: declare only the
+  searched columns, give a one-column search its own table, index every row with
+  no `WHEN`, route every write through the triggers, order pages by `f.rowid`,
+  count with `<table>_docsize`.
+- A new table of this kind needs `fts_bench` measurements before it ships.
 
-The fix (applied to all FTS scripts) is to carry the source `id` as the FTS5
-`rowid`, which makes the trigger lookups O(log n).
+See [docs/dict-words-fts5-implementation.md](./docs/dict-words-fts5-implementation.md).
 
-**The large tables are narrow external-content tables.** `suttas_fts`,
-`dict_words_fts`, `dict_words_word_fts`, `bold_definitions_fts` and
-`bold_definitions_bold_fts` store no copy of the text (`content='<table>',
-content_rowid='id'`, `tokenize='trigram'`, `detail='none'`); FTS5 reads it from
-the source table. Rules that come with it:
+### DPD records correlate to `dict_words`
 
-- **Declare only the columns the table searches.** For every candidate row FTS5
-  reads *each declared column* from the content table, `UNINDEXED` ones
-  included, and the core rechecks a trigram `LIKE`. So there are no `UNINDEXED`
-  filter columns: queries filter on the joined content row (`+s.language`,
-  `s.nikaya`, `s.source_uid`; the unary plus keeps `idx_suttas_language` from
-  driving the query for a language the statistics do not describe).
-- **A search of one column needs a table over that column alone.** With
-  `detail='none'` an index records no column, so `f.word LIKE ?` on
-  `dict_words_fts(word, definition_plain)` gets as candidates every row with the
-  trigrams in *either* column and reads each from `dict_words` (cold `kamma`:
-  27,159 candidates for 710 results, 1.9 s against 0.06 s). Headword Match
-  therefore uses `dict_words_word_fts(word)`.
-- **Every row is indexed, with no `WHEN` condition**, because `integrity-check`
-  expects an index entry for every row of the content table. A NULL or empty
-  column gives no tokens, only a `_docsize` row.
-- **Every write to an indexed column must go through the triggers, and the index
-  does not report being out of step**: it returns wrong results. The update
-  trigger is `AFTER UPDATE OF <indexed columns>` only (renaming a dictionary
-  re-tokenizes nothing), and uses the `'delete'` command with the old values,
-  which must be exactly what was indexed:
-
-``` sql
-CREATE VIRTUAL TABLE dict_words_word_fts USING fts5(
-    word, content='dict_words', content_rowid='id',
-    tokenize='trigram', detail='none'
-);
-
-CREATE TRIGGER dict_words_word_fts_delete AFTER DELETE ON dict_words
-BEGIN
-    INSERT INTO dict_words_word_fts (dict_words_word_fts, rowid, word)
-    VALUES ('delete', OLD.id, OLD.word);   -- O(log n), no full scan
-END;
-```
-
-- **Order page queries by `f.rowid`**, not the content table's id: FTS5 delivers
-  rows in rowid order, so SQLite does not sort every match before `LIMIT`. See
-  [docs/dict-words-fts5-implementation.md](./docs/dict-words-fts5-implementation.md).
-- **Count with `<table>_docsize`**: `SELECT COUNT(*)` on an external-content
-  table is answered from the content table.
-- **The bootstrap runs `integrity-check` with rank 1** (`db::fts5_integrity_check()`)
-  on each of these tables after the last import, and `import-cst` on
-  `suttas_fts`; an error stops it.
-- **Column order of the source tables matters.** SQLite reads a row's columns in
-  order and follows the overflow chain of a large row from its start, so the
-  baseline declares small, often-read columns first, then `content_plain` /
-  `definition_plain`, then the large columns, `content_html` last (`suttas`,
-  `dict_words`, `book_spine_items`). Diesel's `table!` and the `Queryable`
-  structs follow the database's order, since `Queryable` maps by position.
-- **A new table of this kind needs measurements** before it ships: plans with
-  real values (`fts_bench --explain`), equal counts and uid hashes, and the
-  gate of cold and warm medians at most max(110%, +20 ms) of before, on a slow
-  phone as well as the desktop. Run `fts_bench` (`backend/examples/fts_bench.rs`,
-  `make fts-bench-arm64` for the phone): `fts_bench --dir <SIMSAPA_DIR copy>
-  --label x --runs 5 > x.tsv`, never on a dist database.
-
-Consequences for query code (`backend/src/query_task.rs`): join on the rowid
-(`JOIN dict_words_fts f ON f.rowid = dict_words.id`) and project it with an
-alias when needed (`SELECT rowid AS headword_id`). When adding a new FTS5 table
-or query, follow this convention — do not reintroduce an `UNINDEXED` id column.
-
-### DPD records correlate to dict_words (structured data vs. rendered HTML)
-
-`dpd_headwords` and `dpd_roots` records (in `dpd.sqlite3`) and `dict_words`
-records (in `dictionaries.sqlite3`) are **two views of the same word**:
-
-- The **structured** data (grammar fields, meanings, etc.) lives in the
-  `dpd_headwords` / `dpd_roots` tables.
-- The **rendered HTML** page for that same dpd_headword / dpd_root lives in its
-  correlated `dict_words` record.
-
-This is why `get_word_json` (returns structured rows from
-`dpd_headwords`/`dpd_roots`/`dict_words`) and `render_word_html_by_uid` (resolves
-via `dict_words`) appear to reach different record sets — they are the structured
-and rendered-HTML views of the same word. To render a dpd_headword/dpd_root as
-HTML, resolve to the correlated `dict_words` row (which holds the HTML); **there is
-no separate DPD HTML renderer.**
-
-**Why the uids differ across tables (bootstrap rationale).** During the CLI
-bootstrap we import `dpd.sqlite3` (headword + root **structured** data, no HTML),
-then separately import the **rendered HTML pages from a DPD StarDict export** to
-build `dict_words`. The StarDict export is **keyed by `lemma_1`**, so
-`dict_words.word` mirrors `dpd_headwords.lemma_1` one-to-one (a load-bearing
-invariant — `SearchQueryTask::lemma_1_dpd_headword_match_ids` scans
-`dict_words_word_fts.word` because of it). If `dict_words` used the `<row_id>/dpd` uid
-format, **headword ids and root ids would collide** in the shared `dict_words`
-table — so `dict_words.uid` is instead built from the sanitized lemma/root word
-(`word_uid_sanitize(word) + "/dpd"`), which maps back **unambiguously** to the
-right `dpd.sqlite3` row.
-
-**The two uids are NOT the same string — correlation is `lemma_1` → sanitize, not
-a uid string-equality join.** Real values from the shipped DB:
-
-| `dpd_headwords` | | `dict_words` (HTML) |
-|---|---|---|
-| `id` | `uid` / `lemma_1` | `uid` / `word` |
-| `34626` | `34626/dpd` / `dhamma 1.01` | `dhamma-1-01/dpd` / `dhamma 1.01` |
-
-There is **no** `dict_words` row with uid `34626/dpd`. To reach the HTML row from a
-numeric `<id>/dpd`: fetch the headword by id → `word_uid_sanitize(lemma_1)` +
-`/dpd` → `get_word`. Consequently `34626/dpd` (→ dpd_headword structured row) and
-`dhamma-1-01/dpd` (→ dict_words structured row) are **different structured records
-of the same word**, both valid. Roots follow the same pattern but the disambiguated
-form differs: `dpd_roots.uid` = `√akkh/dpd` (root key) while the `dict_words` row is
-the sanitized root *word* (`√path-1/dpd` for `dpd_roots.root = "√path"` disambiguated
-as `√path 1`).
-
-> **Possible future bootstrap ergonomics improvement (not yet implemented):** add a
-> nullable indexed `dpd_headword_id` / `dpd_root_id` column to `dict_words` (or a
-> `dict_word_uid` column to the dpd tables), populated at bootstrap via the
-> `lemma_1` join, so the cross-table mapping is a direct indexed lookup instead of
-> a runtime `word_uid_sanitize` round-trip. Requires a re-bootstrap + DB version
-> bump; the headword join is clean (`word = lemma_1`) but the root join needs care
-> (disambiguation). See the API-tolerance task list for the trade-off analysis.
+`dpd_headwords` / `dpd_roots` hold the structured data and the correlated
+`dict_words` row holds the rendered HTML; there is no separate DPD HTML
+renderer. The uids are **not** the same string: correlate via
+`word_uid_sanitize(lemma_1) + "/dpd"`, never by uid equality. See
+[docs/dpd-and-dict-words-correlation.md](./docs/dpd-and-dict-words-correlation.md).
 
 ### New bootstrap import sources go into the preflight check
 
-**When a bootstrap step starts reading a new file or folder under
-`bootstrap-assets-resources/` (or a new external service), add it to
+When a bootstrap step starts reading a new source, add it to
 `bootstrap_sources()` in `bootstrap_cli/src/bootstrap/preflight.rs` in the same
-change.** Write the path **once**, as a constant in
-`bootstrap_cli/src/bootstrap/source_paths.rs`, and build it from that constant
-in the import step, the preflight entry, any CLI subcommand that re-runs the
-step, and tests that read the real checkout — never as a string literal in any
-of them, so the preflight checks exactly the path the step reads. A path inside
-a source folder is a `*_SUBDIR` / `*_SUBFILE` constant (or a helper such as
-`cst_toc_dir()`) relative to that folder, because CLI subcommands take the
-folder as an argument. The preflight runs at the start of `bootstrap()`, **before**
-`clean_and_create_folders()` empties `dist/`, and reports every missing source
-at once. A source it does not list is found missing only when its step is
-reached, often an hour in, after the previous build has already been wiped.
+change, with the path written once in `source_paths.rs` and never repeated as a
+literal. `required` means its step fails without it, `optional` means the step
+skips; translations are always `required`. Then run
+`cd bootstrap_cli && cargo test test_full_bootstrap_sources -- --ignored`. See
+[docs/bootstrap-preflight.md](./docs/bootstrap-preflight.md).
 
-- Mark it **`required`** when the step stops the bootstrap without it, and
-  **`optional`** when the step warns and skips. The two must agree: a required
-  source's step must fail, not skip, when the source is missing.
-- **Translations are required.** A source that carries sutta text or English
-  translations (SuttaCentral, CST/OpenTipitaka, suttas-core, dhammatalks.org)
-  is never optional: a skip silently ships a release without that content.
-- List it under the step flag that runs it (`appdata`, `dpd`,
-  `sc_languages`, `hungarian` in `PreflightSteps`), so `--skip-*` /
-  `--only-languages` runs do not demand sources they never read.
-- A new service the bootstrap connects to (like the SuttaCentral ArangoDB,
-  checked in `run_preflight()`) gets a connection check there too.
+### Versions — `scripts/set-version.py`, never by hand
 
-After editing the list, run `cd bootstrap_cli && cargo test
-test_full_bootstrap_sources -- --ignored`: it checks every required path against
-the real `bootstrap-assets-resources` checkout, which catches a misspelled path.
-It is `#[ignore]`d because it tests the local assets folder, not the code.
-
-### Versions — set them with `scripts/set-version.py`, never by hand
-
-Four versions are each stored in more than one place, some with a `v` prefix
-and some without. `scripts/set-version.py` knows every place and its form:
-
-| Option | Places | Form |
-|---|---|---|
-| `--app` | `cpp/gui.cpp` `setApplicationVersion` | `v1.1.0-alpha.3` |
-| | `[package] version` of `backend/`, `bridges/`, `api/`, `backend_cli/` `Cargo.toml`; the `simsapa_*` entries of the five `Cargo.lock`s; the five `npm/*/package.json` `version`s and the main package's four `optionalDependencies` pins | `1.1.0-alpha.3` |
-| `--db` | `bootstrap_cli/src/bootstrap/appdata.rs` `DB_VERSION` | `1.1.0-alpha.3` |
-| `--android-code` | `android/version.txt` | an integer, or `next` |
-| `--dpd-fallback` | `backend/src/dictionary_catalog.rs` `FALLBACK_TAG` | `v1.0.8` |
-
-``` sh
-scripts/set-version.py                          # show every place; exit 1 if a kind disagrees
-scripts/set-version.py --app 1.1.0-alpha.4      # "v1.1.0-alpha.4" works too
-scripts/set-version.py --android-code next --dry-run
-```
-
-The app version is also the `simsapa` CLI's and the npm packages'. The binary
-reports **`backend/Cargo.toml`'s** (`get_app_version()` is the backend crate's
-`CARGO_PKG_VERSION`), and `bridges/Cargo.toml`'s becomes the Android versionName
-and the AppImage / macOS bundle version, so they must never drift apart.
-
-The script refuses, and writes nothing, when a value is not semver, when
-`--android-code` does not increase (Play requires it), when `--dpd-fallback`
-is outside `PINNED_SERIES`, or when a place no longer matches its pattern.
-**If you add a place that stores one of these versions, add it to `PLACES` in
-the script.** Version changes are the maintainer's: an agent runs the script
-only when asked to set a version, and may always run the show mode.
+`scripts/set-version.py` knows every place each version is stored (`--app`,
+`--db`, `--android-code`, `--dpd-fallback`); with no options it shows them all.
+If you add a place that stores a version, add it to `PLACES` in the script.
+Version changes are the maintainer's: run the script only when asked to set a
+version. See [docs/versions.md](./docs/versions.md).
 
 ## Testing with the Database
 
@@ -2168,85 +506,42 @@ are rebuilt by the bootstrap, not versioned.
 ## Build/Test Commands
 
 ### Development Build
-- **Build:** `make build -B` (CMake + Qt6) or `cmake -S . -B ./build/simsapadhammareader/ && cmake --build ./build/simsapadhammareader/`
-  - **Build through the `Makefile`, not by calling `cmake` directly.** Every
-    `Makefile` build target is wrapped in `scripts/qmltypes-guard.sh`, without
-    which a build that changes the bridge API emits QML AOT code indexed against
-    the *previous* metaobject and the binary segfaults on startup. A bare
-    `cmake --build` bypasses the guard. The guard prints
-    `qmltypes-guard: …rebuilding once…` when it fires; that second pass is
-    expected, not a loop. See
-    [docs/qmltypes-aot-staleness.md](./docs/qmltypes-aot-staleness.md).
+- **Build:** `make build -B`. **Build through the `Makefile`, not by calling
+  `cmake` directly**: its targets go through `scripts/qmltypes-guard.sh`, without
+  which a build that changes the bridge API segfaults on startup. The guard's
+  `qmltypes-guard: …rebuilding once…` second pass is expected. See
+  [docs/qmltypes-aot-staleness.md](./docs/qmltypes-aot-staleness.md).
 - **Run:** `make run` or `./build/simsapadhammareader/simsapadhammareader`
 - **TypeScript:** `npx webpack` (builds src-ts/ → assets/js/simsapa.min.js)
 - **Sass:** `make sass` or `sass --no-source-map './assets/sass/:./assets/css/'`
 
 ### Distribution Packages
-- **`simsapa` CLI and npm packages:** `make cli` (debug) / `make cli-release`
-  (host target) build in `backend_cli/target/`. Release binaries per npm
-  platform: `make cli-linux-x64`, `make cli-linux-arm64` (static musl through
-  cargo-zigbuild, on Linux), `make cli-darwin-arm64` (on the Mac),
-  `make cli-win32-x64` (on Windows), each into `dist/cli/<platform>/`.
-  `make npm-packages` packs `dist/npm/*.tgz`; it **never publishes** — that is
-  the maintainer's manual step (checklist in
-  [docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md)).
-- **Linux AppImage:** `make appimage -B` (creates Simsapa-*.AppImage)
-  - Clean rebuild: `make appimage-rebuild`
-  - Clean only: `make appimage-clean`
-- **macOS Bundle & DMG:** `make macos -B` (creates .app and .dmg for macOS)
-  - App bundle only: `make macos-app` (skips DMG creation)
-  - Clean only: `make macos-clean`
-  - Clean rebuild: `make macos-rebuild`
-- **Android App Bundle (Google Play):** `make android-aab` — **no version
-  arguments.** To make a release: `scripts/set-version.py --android-code next`
-  (Play requires a strictly increasing versionCode; the integer is in
-  `android/version.txt`), then run it. The versionName comes from the
-  `[package]` version in `bridges/Cargo.toml` (`--app`, see "Versions").
-  - Signed APK for sideloading: `make android-apk`
-  - Unsigned debug APK: `make android-apk-debug` — note the debug variant now
-    carries the **beta** package id (`io.github.simsapa.app.beta`), so this is
-    an unsigned beta; `make android-beta-debug` is the signed, installable one.
-  - Clean only / clean rebuild: `make android-clean` / `make android-rebuild`
-  - **Beta package** (`io.github.simsapa.app.beta`, label "Simsapa (beta)") —
-    installs *alongside* the released app, because a copy installed from Google
-    Play is signed by Play App Signing and **cannot** be replaced by any local
-    build, whatever key it is signed with:
-    - `make android-beta-dist` — not debuggable, release-signed, copied to
-      `dist/Simsapa-<version>-beta.apk` for GitHub Releases.
-    - `make android-beta-debug` — debuggable, release-signed, for local
-      testing. **Never distribute it.**
-    - `make android-beta-debug-install` — `adb install -r`.
-    - `make android-beta-debug-arm64` (+ `-install`, `-run`) — the same
-      debuggable beta built for **arm64-v8a only**, in its own build directory
-      `build/android-arm64` (`make android-arm64-clean`). Local testing on an
-      arm64 phone only — never distribute an arm64-only package.
-    - `make android-beta-debug-run` — launches it and streams the log messages
-      (Rust `simsapa` tag + Qt/QML tags) to the console; this is the same thing
-      Qt Creator's "Application Output" pane shows.
-
-    Switching a build directory between beta and non-beta is safe: the script
-    keys off `.simsapa-package-identity` and forces a re-package, because ninja
-    would otherwise skip androiddeployqt and report the previous artifact.
-    See
+- **`simsapa` CLI and npm packages:** `make cli` / `make cli-release`; per-platform
+  release binaries `make cli-linux-x64`, `make cli-linux-arm64`,
+  `make cli-darwin-arm64` (on the Mac), `make cli-win32-x64` (on Windows).
+  `make npm-packages` packs `dist/npm/*.tgz` and **never publishes** — that is
+  the maintainer's step. See
+  [docs/backend-cli-and-npm-package.md](./docs/backend-cli-and-npm-package.md).
+- **Linux AppImage:** `make appimage -B` (`appimage-rebuild`, `appimage-clean`).
+- **macOS Bundle & DMG:** `make macos -B` (`macos-app`, `macos-clean`,
+  `macos-rebuild`).
+- **Android App Bundle (Google Play):** `make android-aab`, no version
+  arguments; for a release first run `scripts/set-version.py --android-code next`.
+  Also `make android-apk`, `make android-apk-debug`, `make android-clean`,
+  `make android-rebuild`. **Never build release packages from Qt Creator**
+  (single-ABI kits), and verify a build with `aapt2 dump badging`, not the
+  generated `gradle.properties`. See
+  [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+  - **Beta package** (`io.github.simsapa.app.beta`) installs alongside the Play
+    app, which no local build can replace: `make android-beta-dist` (for GitHub
+    Releases), `make android-beta-debug` (debuggable, **never distribute**),
+    `-install`, `-run` (streams the log), and the arm64-only
+    `make android-beta-debug-arm64` for local testing. See
     [docs/android-beta-distribution-and-play-policy.md](./docs/android-beta-distribution-and-play-policy.md).
-  - `targetSdkVersion 36` / `minSdkVersion 28`. The floor is 28 because
-    `libQt6Core` hard-requires `getentropy` (bionic API 28) — below it the app
-    cannot load at all; see
-    [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md).
-    targetSdk 36 enforces
-    edge-to-edge and predictive back; the app opts out of the latter with
-    `android:enableOnBackInvokedCallback="false"` because Qt 6.9.3 registers no
-    `OnBackInvokedCallback` and back otherwise closes the whole app. See
-    [docs/android-edge-to-edge-and-safe-areas.md](./docs/android-edge-to-edge-and-safe-areas.md).
-  - Verify a build with `aapt2 dump badging`, **not** by reading the generated
-    `gradle.properties` — androiddeployqt writes a stale `qtTargetSdkVersion=35`
-    there that `build.gradle` never reads.
-  - Multi-ABI (`arm64-v8a;x86_64;armeabi-v7a`) via `build-android.sh`. **Do not
-    build release packages from the Qt Creator interface** — its kits are
-    single-ABI and an arm64-only bundle is filtered off Chromebooks. Signing
-    credentials come from the gitignored `android/signing.env` (template:
-    `android/signing.env.example`). See
-    [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+  - `targetSdkVersion 36` / `minSdkVersion 28` (the floor is set by
+    `libQt6Core`'s `getentropy`). Predictive back is opted out. See
+    [docs/android-api-levels-and-feature-dependencies.md](./docs/android-api-levels-and-feature-dependencies.md)
+    and [docs/android-edge-to-edge-and-safe-areas.md](./docs/android-edge-to-edge-and-safe-areas.md).
 
 ### Testing
 - **QML Tests:** `make qml-test` — runs `qmllint` over `bridges/assets/qml/*.qml`
@@ -2291,4 +586,3 @@ Use lowercase snake_case for new functions, variables and id names, E.g:
 - **Naming:** Descriptive names, avoid abbreviations, use domain-specific terms (sutta, pali, dhamma)
 
 - **Errors:** Use Result types in Rust, exceptions in C++, proper error propagation throughout stack
-

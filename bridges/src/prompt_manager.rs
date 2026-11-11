@@ -13,8 +13,13 @@ use simsapa_backend::ai_fallback::WalkOutcome;
 use simsapa_backend::ai_error::AiRequestError;
 use simsapa_backend::prompt_utils::markdown_to_html;
 use simsapa_backend::helpers::validate_word_selection_response_shape;
+use simsapa_backend::gloss_translation::validate_translation_response_shape;
 
-use crate::ai_engine::{
+/// A structural check of a successful response body: an `Err` makes the
+/// engine treat the body as a retryable `invalid_response`.
+type ResponseCheck = fn(&str) -> Result<(), String>;
+
+use simsapa_backend::ai_engine::{
     ChatMessage, fallback_walk_settings, is_provider_enabled, provider_disabled_error,
     run_single_model_walk, run_walk_blocking,
 };
@@ -47,6 +52,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn sequential_prompt_request(self: Pin<&mut PromptManager>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
+
+        #[qinvokable]
+        fn gloss_translation_request(self: Pin<&mut PromptManager>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString);
+
+        #[qinvokable]
+        fn sequential_gloss_translation_request(self: Pin<&mut PromptManager>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
 
         #[qinvokable]
         fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString);
@@ -101,7 +112,7 @@ pub struct PromptManagerRust {
 /// generation token, plus (for the prompt paths) its own `request_id`. The
 /// word-selection paths have no per-request id and pass `cancel_key: None`.
 ///
-/// The engine (`crate::ai_engine`) takes cancellation as a plain
+/// The engine (`simsapa_backend::ai_engine`) takes cancellation as a plain
 /// `FnMut() -> bool` closure; each spawned walk passes `&mut || cancel.is_cancelled()`.
 struct CancelState {
     generation: Arc<AtomicUsize>,
@@ -154,6 +165,19 @@ impl qobject::PromptManager {
     }
 
     fn prompt_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
+        self.spawn_prompt_request(request_id, paragraph_idx, translation_idx, provider_name, model_name, prompt, None);
+    }
+
+    /// As `prompt_request`, for a Gloss tab two-part translation: an answer
+    /// that is not the `{"translation", "literal_translation"}` JSON is
+    /// retried like a truncated body (`gloss_translation.rs`). The answer is
+    /// delivered raw on `promptResponse`, for `SuttaBridge.parse_gloss_translation`.
+    fn gloss_translation_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString) {
+        self.spawn_prompt_request(request_id, paragraph_idx, translation_idx, provider_name, model_name, prompt, Some(validate_translation_response_shape));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_prompt_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, provider_name: &QString, model_name: &QString, prompt: &QString, validate: Option<ResponseCheck>) {
         let qt_thread = self.qt_thread();
         let request_id_text = request_id.to_string();
         let cancel = self.cancel_state(Some(request_id_text.clone()));
@@ -202,10 +226,13 @@ impl qobject::PromptManager {
             // switches models. A failed request travels as an `{"ai_error": …}`
             // JSON envelope in both the plain and the HTML field; QML checks
             // `AiErrorUtils.is_error()` before rendering either.
+            let check = validate.map(|f| move |r: &str| f(r));
             let outcome = run_single_model_walk(
                 &mut || cancel.is_cancelled(),
                 &provider_name_text, &model_name_text,
-                &single_message, None, &mut on_progress);
+                &single_message,
+                check.as_ref().map(|c| c as &dyn Fn(&str) -> Result<(), String>),
+                &mut on_progress);
 
             if cancel.take_cancel_flag() {
                 debug(&format!("prompt_request: request {} cancelled", request_id_text));
@@ -382,6 +409,16 @@ impl qobject::PromptManager {
     /// enabled Fallback-sequence models and delivers the one result through
     /// `promptResponse` (the responding model's name in `model_name`).
     fn sequential_prompt_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString) {
+        self.spawn_sequential_prompt_request(request_id, paragraph_idx, translation_idx, prompt, None);
+    }
+
+    /// As `sequential_prompt_request`, for a Gloss tab two-part translation
+    /// (see `gloss_translation_request`).
+    fn sequential_gloss_translation_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString) {
+        self.spawn_sequential_prompt_request(request_id, paragraph_idx, translation_idx, prompt, Some(validate_translation_response_shape));
+    }
+
+    fn spawn_sequential_prompt_request(self: Pin<&mut Self>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString, validate: Option<ResponseCheck>) {
         let qt_thread = self.qt_thread();
         let request_id_text = request_id.to_string();
         let cancel = self.cancel_state(Some(request_id_text.clone()));
@@ -407,10 +444,13 @@ impl qobject::PromptManager {
                 });
             };
 
+            let check = validate.map(|f| move |r: &str| f(r));
             let outcome = run_walk_blocking(
                 &mut || cancel.is_cancelled(),
                 &entries, auto_fallback, auto_retry,
-                &single_message, None, &mut on_progress);
+                &single_message,
+                check.as_ref().map(|c| c as &dyn Fn(&str) -> Result<(), String>),
+                &mut on_progress);
 
             if cancel.take_cancel_flag() {
                 debug(&format!("sequential_prompt_request: request {} cancelled", request_id_text));

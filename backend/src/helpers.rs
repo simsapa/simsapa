@@ -1138,6 +1138,14 @@ pub fn consistent_niggahita(text: Option<String>) -> String {
     }
 }
 
+/// The gloss's niggahīta: `ṁ` for `ṃ` / `ŋ`, and `Ṁ` for `Ṃ`. Every gloss
+/// input is converted before it is tokenised, so the words, their context
+/// snippets and context hashes, and every output column use `ṁ` whatever
+/// spelling the passage was written in.
+pub fn gloss_niggahita(text: &str) -> String {
+    text.replace('ṃ', "ṁ").replace('ŋ', "ṁ").replace('Ṃ', "Ṁ")
+}
+
 lazy_static! {
     // The quoted iti-sandhi forms (see normalize_iti_sandhi). The quote mark
     // may be before or after the n / long vowel. Only at the end of a word: a
@@ -2223,7 +2231,10 @@ pub fn extract_words_with_context(text: &str) -> Vec<GlossWordContext> {
     // "... SN 56.11", verse numbers, PTS pages) are not part of the passage:
     // strip them so they are not glossed and cannot pollute the surrounding
     // context windows / hashes.
-    let (text, _sutta_refs) = strip_gloss_annotations(text);
+    // `ṃ` would not match the clean words (`ṁ`), losing the written form and
+    // the sentence context of the word.
+    let text = gloss_niggahita(text);
+    let (text, _sutta_refs) = strip_gloss_annotations(&text);
     let original_text = text.trim();
     if original_text.is_empty() {
         return Vec::new();
@@ -3618,8 +3629,8 @@ pub fn annotate_gloss_words_json(
 /// options carry the `dpd_lookup` uid — **numeric** `<row_id>/dpd` for DPD
 /// headwords — while curated data (the set-phrase JSON, shipped built-in cache
 /// rows) stores the stable, human-readable dict_words form built from the
-/// lemma (`ārāma-4/dpd`; see "DPD records correlate to dict_words" in
-/// AGENTS.md). Match the uid directly, or via the sanitized lemma form of the
+/// lemma (`ārāma-4/dpd`; see docs/dpd-and-dict-words-correlation.md).
+/// Match the uid directly, or via the sanitized lemma form of the
 /// option's word (`word_uid_sanitize("ārāma 4") == "ārāma-4"`).
 pub fn gloss_option_uid_matches(result: &crate::db::dpd::LookupResult, selected_uid: &str) -> bool {
     if result.uid == selected_uid {
@@ -4127,7 +4138,7 @@ pub fn import_gloss_word_cache_entries(
 /// Extract the first top-level JSON object from a text, tolerating markdown
 /// code fences and surrounding prose. Scans for a balanced `{...}` while
 /// respecting string literals and escapes.
-fn extract_first_json_object(text: &str) -> Option<String> {
+pub fn extract_first_json_object(text: &str) -> Option<String> {
     let start = text.find('{')?;
     let mut depth = 0usize;
     let mut in_string = false;
@@ -4170,6 +4181,90 @@ pub struct WordSelectionParagraphInput {
     pub words_json: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_uid: Option<String>,
+    /// The paragraph's serialized Word in Sentence rows
+    /// (`ParagraphProcessingResult::rows`), when glossed in that format. With
+    /// rows, the items also ask for grammar readings and for the components
+    /// of compound and sandhi headwords (see `build_word_selection_items`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows_json: Option<String>,
+}
+
+impl WordSelectionParagraphInput {
+    /// The inputs for the paragraphs of a gloss result, numbered by their
+    /// `paragraph_index`, with their rows when they have any.
+    pub fn from_result(result: &crate::types::AllParagraphsProcessingResult) -> Result<Vec<Self>, String> {
+        result
+            .paragraphs
+            .iter()
+            .map(|p| {
+                let words_json = serde_json::to_string(&p.words_data)
+                    .map_err(|e| format!("Failed to serialize words_data: {}", e))?;
+                let rows_json = if p.rows.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::to_string(&p.rows).map_err(|e| format!("Failed to serialize rows: {}", e))?)
+                };
+                Ok(WordSelectionParagraphInput { paragraph_index: p.paragraph_index, words_json, source_uid: None, rows_json })
+            })
+            .collect()
+    }
+}
+
+/// The rows of a paragraph that hold the sense choice of each `words_data`
+/// entry, by its index: the token row, or for a quoted iti token the base-word
+/// component row under it (the last row in the tree with that `word_index`).
+fn choice_rows_by_word_index(rows: &[crate::gloss_rows::GlossRow]) -> HashMap<usize, (&crate::gloss_rows::GlossRow, &crate::gloss_rows::GlossRow)> {
+    fn walk<'a>(
+        top: &'a crate::gloss_rows::GlossRow,
+        row: &'a crate::gloss_rows::GlossRow,
+        out: &mut HashMap<usize, (&'a crate::gloss_rows::GlossRow, &'a crate::gloss_rows::GlossRow)>,
+    ) {
+        if let Some(wi) = row.word_index {
+            out.insert(wi, (top, row));
+        }
+        for c in &row.components {
+            walk(top, c, out);
+        }
+    }
+    let mut out = HashMap::new();
+    for top in rows {
+        walk(top, top, &mut out);
+    }
+    out
+}
+
+/// The component rows under a token row that carry no `ProcessedWord` of
+/// their own (the components of a compound or sandhi headword), in tree
+/// order, deduplicated by word: the source of the `c<k>` items of a word with
+/// a direct match.
+fn headword_component_rows(top: &crate::gloss_rows::GlossRow) -> Vec<&crate::gloss_rows::GlossRow> {
+    fn walk<'a>(row: &'a crate::gloss_rows::GlossRow, seen: &mut HashSet<&'a str>, out: &mut Vec<&'a crate::gloss_rows::GlossRow>) {
+        for c in &row.components {
+            if c.word_index.is_none() && !c.candidates.is_empty() && seen.insert(c.word.as_str()) {
+                out.push(c);
+            }
+            walk(c, seen, out);
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    walk(top, &mut seen, &mut out);
+    out
+}
+
+/// Adds `grammar_options` to an option when the row candidate with its uid
+/// has more than one reading.
+fn add_grammar_options(option: &mut serde_json::Value, row: Option<&crate::gloss_rows::GlossRow>) {
+    let Some(row) = row else { return };
+    let uid = option.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
+    if let Some(c) = row.candidates.iter().find(|c| c.uid == uid)
+        && c.grammar_options.len() > 1
+    {
+        option
+            .as_object_mut()
+            .expect("option is an object")
+            .insert("grammar_options".to_string(), serde_json::json!(c.grammar_options));
+    }
 }
 
 /// Which ambiguous words `build_word_selection_items` includes.
@@ -4192,7 +4287,8 @@ pub enum WordSelectionBuildMode {
 ///
 /// - **Direct / mixed words** (cases (a)/(b); `direct_uids` non-empty, or no
 ///   break-downs at all): one sense item `p<pi>w<wi>` when the word has ≥ 2
-///   **direct** senses (options over the direct results only — a mixed word's
+///   **direct** senses (options over the direct results only, less the
+///   `demoted_uids` that DPD's filters leave out — a mixed word's
 ///   deconstructor-derived component results are not sense options and no
 ///   break-down/component items are emitted for it).
 /// - **Deconstructor-resolved words** (cases (c)/(d); `direct_uids` empty,
@@ -4213,6 +4309,21 @@ pub enum WordSelectionBuildMode {
 ///   when it belongs to a strict subset of the break-downs. Both annotations
 ///   are word-based — no numeric-index joins for the model to reason over
 ///   (PRD §11 FR-F3); nothing in the apply path reads them.
+///
+/// With the paragraph's Word in Sentence rows (`rows_json`), three additions:
+///
+/// - an option whose sense has several grammar readings carries them as
+///   `grammar_options`, and the answer may give a `grammar_index` (B4b);
+/// - a word with one sense but several readings gets a sense item with that
+///   one option, which asks only for the reading (skipped once its
+///   `reading` is set, re-included on a forced pass only when that reading's
+///   origin is `"ai-selected"`);
+/// - a word with a direct match whose headword is a compound or sandhi
+///   (`daḷhaparakkama`) gets a component item `p<pi>w<wi>c<k>` per component
+///   row with ≥ 2 senses, `k` indexing the deduplicated, tree-ordered
+///   component rows of the token (all of them, so skipping one never shifts
+///   later ids), with the token's construction as its `deconstructions`
+///   annotation. A component row with a `resolution` is skipped as above.
 ///
 /// Stable `p<pi>w<wi>` ids (`wi` is the word's position in words_data, so
 /// skipped words never shift later ids), the occurrence-marked
@@ -4268,6 +4379,16 @@ pub fn build_word_selection_items(
                     para.paragraph_index, e
                 )
             })?;
+        let rows: Vec<crate::gloss_rows::GlossRow> = match &para.rows_json {
+            Some(json) => serde_json::from_str(json).map_err(|e| {
+                format!(
+                    "build_word_selection_items: failed to parse rows JSON for paragraph {}: {}",
+                    para.paragraph_index, e
+                )
+            })?,
+            None => Vec::new(),
+        };
+        let choice_rows = choice_rows_by_word_index(&rows);
 
         for (wi, w) in words.iter().enumerate() {
             let Some(results) = w.get("results").and_then(|v| v.as_array()) else {
@@ -4314,21 +4435,87 @@ pub fn build_word_selection_items(
                         })
                         .collect()
                 };
-                if sense_results.len() <= 1 {
-                    continue;
+                // Senses DPD's filters leave out are not offered, unless
+                // nothing else is left (docs/dpd-analysis-procedure.md §3
+                // gaps 7, 8; they stay selectable in the Gloss tab).
+                let demoted: Vec<&str> = w
+                    .get("demoted_uids")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|u| u.as_str()).collect())
+                    .unwrap_or_default();
+                let offered: Vec<&serde_json::Value> = sense_results
+                    .iter()
+                    .copied()
+                    .filter(|r| r.get("uid").and_then(|v| v.as_str()).is_none_or(|u| !demoted.contains(&u)))
+                    .collect();
+                let sense_results = if offered.is_empty() { sense_results } else { offered };
+                let (top_row, choice_row) = match choice_rows.get(&wi) {
+                    Some((top, choice)) => (Some(*top), Some(*choice)),
+                    None => (None, None),
+                };
+
+                let mut options: Vec<serde_json::Value> =
+                    sense_results.iter().map(|r| option_json(r)).collect();
+                for o in options.iter_mut() {
+                    add_grammar_options(o, choice_row);
                 }
-                if skip_resolved(w.get("resolution").and_then(|v| v.as_str())) {
-                    continue;
+                // One sense: an item only to choose among its readings.
+                let reading_only = sense_results.len() == 1 && options[0].get("grammar_options").is_some();
+                let ask = if reading_only {
+                    let reading_origin = w
+                        .get("reading")
+                        .filter(|r| r.get("grammar_index").is_some_and(|g| !g.is_null()))
+                        .and_then(|r| r.get("origin"))
+                        .and_then(|v| v.as_str())
+                        .map(|o| if o.is_empty() { "ai-selected" } else { o });
+                    !skip_resolved(reading_origin)
+                } else {
+                    sense_results.len() > 1 && !skip_resolved(w.get("resolution").and_then(|v| v.as_str()))
+                };
+                if ask {
+                    items.push(with_source_uid(serde_json::json!({
+                        "id": format!("p{}w{}", para.paragraph_index, wi),
+                        "word": original_word,
+                        "context": context,
+                        "options": options,
+                    })));
                 }
 
-                let options: Vec<serde_json::Value> =
-                    sense_results.iter().map(|r| option_json(r)).collect();
-                items.push(with_source_uid(serde_json::json!({
-                    "id": format!("p{}w{}", para.paragraph_index, wi),
-                    "word": original_word,
-                    "context": context,
-                    "options": options,
-                })));
+                // The components of a compound or sandhi headword.
+                if let Some(top) = top_row {
+                    let annotation = serde_json::json!([top.construction]);
+                    for (k, comp) in headword_component_rows(top).into_iter().enumerate() {
+                        if comp.candidates.len() <= 1 || skip_resolved(comp.resolution.as_deref()) {
+                            continue;
+                        }
+                        let options: Vec<serde_json::Value> = comp
+                            .candidates
+                            .iter()
+                            .map(|c| {
+                                let summary = RE_HTML_TAG.replace_all(&c.meaning, "");
+                                let mut o = serde_json::json!({
+                                    "uid": c.uid,
+                                    "word": c.lemma_1,
+                                    "summary": summary.chars().take(200).collect::<String>(),
+                                });
+                                if c.grammar_options.len() > 1 {
+                                    o.as_object_mut()
+                                        .expect("option is an object")
+                                        .insert("grammar_options".to_string(), serde_json::json!(c.grammar_options));
+                                }
+                                o
+                            })
+                            .collect();
+                        items.push(with_source_uid(serde_json::json!({
+                            "id": format!("p{}w{}c{}", para.paragraph_index, wi, k),
+                            "word": original_word,
+                            "component_word": comp.word,
+                            "context": context,
+                            "options": options,
+                            "deconstructions": annotation,
+                        })));
+                    }
+                }
                 continue;
             }
 
@@ -4418,8 +4605,16 @@ pub fn build_word_selection_items(
                     continue;
                 }
 
-                let options: Vec<serde_json::Value> =
+                // The component's row under the selected break-down, for its
+                // readings.
+                let comp_row = choice_rows
+                    .get(&wi)
+                    .and_then(|(_, choice)| choice.components.iter().find(|c| c.word == **comp_word));
+                let mut options: Vec<serde_json::Value> =
                     comp_results.iter().map(|r| option_json(r)).collect();
+                for o in options.iter_mut() {
+                    add_grammar_options(o, comp_row);
+                }
                 let mut item = serde_json::json!({
                     "id": format!("p{}w{}c{}", para.paragraph_index, wi, k),
                     "word": original_word,
@@ -4459,6 +4654,32 @@ pub fn build_word_selection_payload(items: &[serde_json::Value]) -> Result<Strin
     .map_err(|e| format!("Failed to serialize the word-selection payload: {}", e))
 }
 
+/// The word-selection prompt, used by the Gloss tab (through
+/// `SuttaBridge.build_word_selection_prompt`), `/word_selection_ws` and the
+/// CLI: the `"Gloss Tab: Word Selection System Prompt"`, a blank line, and the
+/// `"… Request"` template with the payload substituted for
+/// `<<WORD_SELECTION_JSON>>`.
+pub fn build_word_selection_prompt(items: &[serde_json::Value]) -> String {
+    let app_data = crate::get_app_data();
+    let system_prompt = app_data.get_system_prompt("Gloss Tab: Word Selection System Prompt");
+    let template = app_data.get_system_prompt("Gloss Tab: Word Selection Request");
+    word_selection_prompt_text(&system_prompt, &template, items)
+}
+
+/// `build_word_selection_prompt` with the two prompt texts given. The payload
+/// is `{"task":"pali_word_selection","items":[…]}` in that key order, which
+/// is the order the Gloss tab's QML wrote it in.
+pub fn word_selection_prompt_text(system_prompt: &str, template: &str, items: &[serde_json::Value]) -> String {
+    let items_json = serde_json::to_string(items).unwrap_or_else(|_| "[]".to_string());
+    let payload = format!("{{\"task\":\"pali_word_selection\",\"items\":{}}}", items_json);
+    let user_prompt = template.replace("<<WORD_SELECTION_JSON>>", &payload);
+    if system_prompt.trim().is_empty() {
+        user_prompt
+    } else {
+        format!("{}\n\n{}", system_prompt, user_prompt)
+    }
+}
+
 /// Cheap structural check of an AI word-selection response, used by the
 /// request engine (`bridges/src/prompt_manager.rs`) to classify a truncated or
 /// malformed reply as a retryable `invalid_response` error *before* it is
@@ -4467,8 +4688,9 @@ pub fn build_word_selection_payload(items: &[serde_json::Value]) -> Result<Strin
 /// this check the truncation only surfaced later, in QML, as a final
 /// non-retried parse error.
 ///
-/// Validates shape only (a parseable JSON object with a `selections` array) —
-/// the full per-item validation against the request payload stays in
+/// Validates shape only (a parseable JSON object with a `selections` array,
+/// whose optional `grammar_index` / `contextual_meaning` fields have the right
+/// types) — the full per-item validation against the request payload stays in
 /// `parse_word_selection_response`.
 pub fn validate_word_selection_response_shape(response: &str) -> Result<(), String> {
     let trimmed = response.trim();
@@ -4483,8 +4705,23 @@ pub fn validate_word_selection_response_shape(response: &str) -> Result<(), Stri
     })?;
     let parsed: serde_json::Value = serde_json::from_str(&json_text)
         .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
-    if parsed.get("selections").and_then(|v| v.as_array()).is_none() {
+    let Some(selections) = parsed.get("selections").and_then(|v| v.as_array()) else {
         return Err("Response JSON has no 'selections' array".to_string());
+    };
+    // The optional fields, when present, have their types.
+    for sel in selections {
+        if let Some(g) = sel.get("grammar_index")
+            && !g.is_null()
+            && !g.is_u64()
+        {
+            return Err(format!("A selection's 'grammar_index' is not a non-negative integer: {}", g));
+        }
+        if let Some(m) = sel.get("contextual_meaning")
+            && !m.is_null()
+            && !m.is_string()
+        {
+            return Err(format!("A selection's 'contextual_meaning' is not a string: {}", m));
+        }
     }
     Ok(())
 }
@@ -4512,6 +4749,12 @@ pub struct WordSelectionEntry {
     pub confidence: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The chosen reading among the option's `grammar_options`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grammar_index: Option<usize>,
+    /// The dictionary meaning fitted to the sentence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contextual_meaning: Option<String>,
 }
 
 /// Parse and validate an AI word-selection response (PRD: agent-checked gloss
@@ -4529,7 +4772,10 @@ pub struct WordSelectionEntry {
 /// missing or unknown; neither `word` nor `uid` is given; the lemma is not
 /// among the item's options, or is carried by more than one option (ambiguous);
 /// the uid is not among the options; `word` and `uid` are both given but
-/// disagree; or `confidence` is neither `confident` nor `review`.
+/// disagree; `confidence` is neither `confident` nor `review`; the optional
+/// `grammar_index` is not an index into the chosen option's
+/// `grammar_options` (0 is accepted for an option without them); or the
+/// optional `contextual_meaning` is not a string.
 /// Invalid entries are skipped (`Lenient`) or collected into a hard error
 /// (`Strict`); `Strict` additionally fails on items with no answer.
 pub fn parse_word_selection_response(
@@ -4551,6 +4797,8 @@ pub fn parse_word_selection_response(
     struct ItemOptions {
         uids: HashSet<String>,
         lemma_to_uid: HashMap<String, Option<String>>,
+        /// Per option uid, the number of its `grammar_options`.
+        readings: HashMap<String, usize>,
     }
     let items: serde_json::Value = serde_json::from_str(expected_items_json)
         .map_err(|e| format!("Invalid expected items JSON: {}", e))?;
@@ -4564,6 +4812,7 @@ pub fn parse_word_selection_response(
         }
         let mut uids: HashSet<String> = HashSet::new();
         let mut lemma_to_uid: HashMap<String, Option<String>> = HashMap::new();
+        let mut readings: HashMap<String, usize> = HashMap::new();
         for o in item.get("options").and_then(|v| v.as_array()).into_iter().flatten() {
             let uid = o.get("uid").and_then(|v| v.as_str()).unwrap_or_default();
             let lemma = o.get("word").and_then(|v| v.as_str()).unwrap_or_default();
@@ -4571,6 +4820,8 @@ pub fn parse_word_selection_response(
                 continue;
             }
             uids.insert(uid.to_string());
+            let n = o.get("grammar_options").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+            readings.insert(uid.to_string(), n);
             if !lemma.is_empty() {
                 match lemma_to_uid.entry(lemma.to_string()) {
                     std::collections::hash_map::Entry::Occupied(mut e) => {
@@ -4583,7 +4834,7 @@ pub fn parse_word_selection_response(
             }
         }
         item_ids.push(id.to_string());
-        allowed.insert(id.to_string(), ItemOptions { uids, lemma_to_uid });
+        allowed.insert(id.to_string(), ItemOptions { uids, lemma_to_uid, readings });
     }
 
     let json_text = extract_first_json_object(trimmed)
@@ -4657,6 +4908,28 @@ pub fn parse_word_selection_response(
             .map(|s| s.to_string())
             .filter(|s| !s.is_empty());
 
+        let grammar_index = match sel.get("grammar_index") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(v) => {
+                let n_readings = opts.readings.get(&resolved_uid).copied().unwrap_or(0);
+                match v.as_u64().map(|g| g as usize) {
+                    Some(g) if g < n_readings.max(1) => Some(g),
+                    _ => {
+                        invalid(format!("entry for item '{}' has an invalid grammar_index {}", id, v), &mut problems);
+                        continue;
+                    }
+                }
+            }
+        };
+        let contextual_meaning = match sel.get("contextual_meaning") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(m)) => Some(m.trim().to_string()).filter(|m| !m.is_empty()),
+            Some(v) => {
+                invalid(format!("entry for item '{}' has a non-string contextual_meaning {}", id, v), &mut problems);
+                continue;
+            }
+        };
+
         // Duplicate answers for the same id: keep the first; a disagreeing
         // duplicate is invalid (hard error in Strict mode).
         if let Some(&prev_idx) = by_id.get(id) {
@@ -4671,6 +4944,8 @@ pub fn parse_word_selection_response(
             uid: resolved_uid,
             confidence: confidence.to_string(),
             note,
+            grammar_index,
+            contextual_meaning,
         });
     }
 
@@ -4689,7 +4964,22 @@ pub fn parse_word_selection_response(
     Ok(result)
 }
 
-/// Process a single word for glossing, equivalent to QML process_word_for_glossing function
+/// The headword DPD gives the elision mark `…pe…` ("denoting an elided
+/// repetition within a text"). DPD's `pe` lookup row does not list it.
+const ELISION_HEADWORD: &str = "peyyāla";
+
+/// Whether the gloss word is the elision mark: `pe` between ellipses, as its
+/// context window marks it. The MS and CST texts write `…pe…`; copied text
+/// may have spaces (`… pe …`) or full stops (`...pe...`), where the sentence
+/// split leaves the window starting at `<b>pe</b>.`, so the window's start
+/// or end also counts as a boundary. A dash (`-pe-`) does not.
+fn is_elision_mark(word_info: &WordInfo) -> bool {
+    lazy_static! {
+        static ref RE_ELISION: Regex = Regex::new(r"(?i)(^|…|\.)\s*<b>pe</b>\s*(…|\.|$)").unwrap();
+    }
+    word_info.word.to_lowercase() == "pe" && RE_ELISION.is_match(&word_info.sentence)
+}
+
 /// The words to look up for a gloss word, in order: the clean word, then, for an
 /// iti-sandhi word, the clean word with its final vowel long, when that is how
 /// the text writes it. The iti-sandhi split shortens the vowel
@@ -4697,9 +4987,14 @@ pub fn parse_word_selection_response(
 /// wrong for a real long ending (`anaññatā’ti` → `anaññata`, which DPD does not
 /// have; it has `anaññatā`). The clean word stays the word's identity (its
 /// cache key and display); only the lookup changes.
+///
+/// The elision mark `…pe…` is looked up as `peyyāla`.
 fn gloss_lookup_words(word_info: &WordInfo) -> Vec<String> {
     lazy_static! {
         static ref RE_QUOTED_TI_END: Regex = Regex::new(r#"[’‘ʼ'"”“]+n?ti$"#).unwrap();
+    }
+    if is_elision_mark(word_info) {
+        return vec![ELISION_HEADWORD.to_string()];
     }
     let word = word_info.word.to_lowercase();
     let mut words = vec![word.clone()];
@@ -4725,11 +5020,11 @@ fn gloss_lookup_words(word_info: &WordInfo) -> Vec<String> {
     words
 }
 
+/// Looks up and resolves one token. Every token is returned, repeats included:
+/// leaving out repeats is a step of the gloss format (`apply_gloss_dedup`).
+/// A common word is `Skipped` here when `options.skip_common` is on.
 pub fn process_word_for_glossing(
     word_info: &WordInfo,
-    paragraph_shown_stems: &mut std::collections::HashMap<String, bool>,
-    global_stems: &mut std::collections::HashMap<String, bool>,
-    check_global: bool,
     options: &WordProcessingOptions,
     dpd: &crate::db::dpd::DpdDbHandle,
     resolution_data: Option<&GlossResolutionData>,
@@ -4748,15 +5043,41 @@ pub fn process_word_for_glossing(
             Err(e) => return Err(format!("DPD lookup failed: {}", e)),
         };
         let done = !found.results.is_empty();
-        grouped = Some(found);
+        grouped = Some((lookup_word, found));
         if done {
             break;
         }
     }
-    let grouped = grouped.expect("gloss_lookup_words is never empty");
+    let (lookup_word, mut grouped) = grouped.expect("gloss_lookup_words is never empty");
+
+    // The elision mark `…pe…` is the first `peyyāla` sense alone (its
+    // homonyms have the same meaning), read `abbrev of peyyāla`: the lookup
+    // triples of `peyyāla` (`nt voc sg`) are not a reading of `pe`. The one
+    // triple has the headword's `pos` as its class, so the Word in Sentence
+    // rows take it as the reading.
+    if is_elision_mark(word_info) && !grouped.results.is_empty() {
+        grouped.results.truncate(1);
+        grouped.deconstructions.clear();
+        let kept = grouped.results[0].uid.clone();
+        grouped.direct_uids.retain(|u| *u == kept);
+        grouped.lookup_grammar.clear();
+        if let Some(id) = kept.strip_suffix("/dpd").and_then(|i| i.parse::<i32>().ok())
+            && let Ok(mut conn) = dpd.get_conn()
+            && let Ok(found) = crate::db::dpd::headword_row_fields_by_ids(&mut conn, &[id])
+            && let Some(hw) = found.get(&id)
+        {
+            grouped.lookup_grammar.push([hw.lemma_clean.clone(), hw.pos.clone(), "abbrev".to_string()]);
+        }
+    }
 
     // Convert search results to lookup results
     let results = crate::db::dpd::LookupResult::from_search_results(&grouped.results);
+    let lookup_grammar = grouped.lookup_grammar;
+    let lookup_headword_ids = grouped.lookup_headword_ids;
+    let (form_grammar_raw, lookup_word) = match options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => (lookup_grammar.clone(), lookup_word),
+        crate::types::GlossFormat::Headwords => (Vec::new(), String::new()),
+    };
     let mut deconstructions = grouped.deconstructions;
     let direct_uids = grouped.direct_uids;
 
@@ -4776,11 +5097,6 @@ pub fn process_word_for_glossing(
     // sense selections and a break-down choice; direct / mixed words (cases
     // (a)/(b)) keep the flat `selected_index` sense selection.
     let is_deconstructor_resolved = direct_uids.is_empty() && !deconstructions.is_empty();
-
-    // Dedup key spans every component lemma so a sandhi-compound (e.g.
-    // atthaññe -> atthi + aññe) is not dropped as a duplicate of its first
-    // component (atthi). See gloss_dedup_key().
-    let dedup_key = gloss_dedup_key(&results);
 
     // Skip common words if the option is enabled. For a deconstructor-resolved
     // compound the check is per-component: a common component (e.g. `pañca` in
@@ -4807,22 +5123,6 @@ pub fn process_word_for_glossing(
         } else if is_common_word(&stem, &options.common_words) {
             return Ok(Some(WordProcessingResult::Skipped));
         }
-    }
-
-    // Skip if already shown in this paragraph
-    if paragraph_shown_stems.contains_key(&dedup_key) {
-        return Ok(Some(WordProcessingResult::Skipped));
-    }
-
-    // Skip if global deduplication is on and already shown
-    if check_global && global_stems.contains_key(&dedup_key) {
-        return Ok(Some(WordProcessingResult::Skipped));
-    }
-
-    // Mark as shown
-    paragraph_shown_stems.insert(dedup_key.clone(), true);
-    if check_global {
-        global_stems.insert(dedup_key, true);
     }
 
     let original_word = clean_word_pali(&word_info.word);
@@ -4901,9 +5201,82 @@ pub fn process_word_for_glossing(
         component_selected_uids,
         component_resolutions,
         deconstruction_resolution,
+        form_grammar_raw,
+        lookup_word,
+        lookup_grammar,
+        lookup_headword_ids,
+        demoted_uids: Vec::new(),
+        reading: None,
+        component_readings: std::collections::BTreeMap::new(),
     };
 
     Ok(Some(WordProcessingResult::Recognized(processed_word)))
+}
+
+/// The Headwords format's de-dup of one processed token: a recognized word
+/// whose `gloss_dedup_key` was already shown in this paragraph, or anywhere
+/// when `check_global`, becomes `Skipped`; otherwise its key is marked shown.
+/// Unrecognized and skipped tokens pass through and mark nothing.
+///
+/// The key spans every component lemma, so a sandhi-compound (`atthaññe` →
+/// atthi + aññe) is not dropped as a duplicate of its first component.
+pub fn headwords_dedup_word(
+    result: Option<WordProcessingResult>,
+    paragraph_shown_stems: &mut std::collections::HashMap<String, bool>,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+    check_global: bool,
+) -> Option<WordProcessingResult> {
+    let Some(WordProcessingResult::Recognized(word)) = result else {
+        return result;
+    };
+    let dedup_key = gloss_dedup_key(&word.results);
+    if paragraph_shown_stems.contains_key(&dedup_key)
+        || (check_global && global_stems.contains_key(&dedup_key))
+    {
+        return Some(WordProcessingResult::Skipped);
+    }
+    paragraph_shown_stems.insert(dedup_key.clone(), true);
+    if check_global {
+        global_stems.insert(dedup_key, true);
+    }
+    Some(WordProcessingResult::Recognized(word))
+}
+
+/// `headwords_dedup_word` over one paragraph's tokens, in order, with a fresh
+/// per-paragraph map.
+pub fn apply_headwords_dedup(
+    processed_words: Vec<Option<WordProcessingResult>>,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+    check_global: bool,
+) -> Vec<Option<WordProcessingResult>> {
+    let mut paragraph_shown_stems = std::collections::HashMap::new();
+    processed_words
+        .into_iter()
+        .map(|r| headwords_dedup_word(r, &mut paragraph_shown_stems, global_stems, check_global))
+        .collect()
+}
+
+/// Leaves out repeated tokens as the gloss format says. Headwords: a repeat
+/// within the paragraph always, a repeat of an earlier paragraph when "No
+/// duplicates" is on. Word in Sentence: every token stays, unless "No
+/// duplicates" is on, which leaves out any repeat, by the same key.
+pub fn apply_gloss_dedup(
+    processed_words: Vec<Option<WordProcessingResult>>,
+    options: &WordProcessingOptions,
+    global_stems: &mut std::collections::HashMap<String, bool>,
+) -> Vec<Option<WordProcessingResult>> {
+    match options.gloss_format {
+        crate::types::GlossFormat::Headwords => {
+            apply_headwords_dedup(processed_words, global_stems, options.no_duplicates_globally)
+        }
+        crate::types::GlossFormat::WordInSentence => {
+            if options.no_duplicates_globally {
+                apply_headwords_dedup(processed_words, global_stems, true)
+            } else {
+                processed_words
+            }
+        }
+    }
 }
 
 /// Collect unrecognized words and update global tracking
@@ -4958,36 +5331,38 @@ pub fn process_all_paragraphs(
     let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
     let mut global_stems = input.options.existing_global_stems.clone();
     let mut paragraph_unrecognized_words = input.options.existing_paragraph_unrecognized.clone();
+    let mut row_builder = match input.options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => Some(
+            crate::gloss_rows::GlossRowBuilder::new(dpd).map_err(|e| format!("Gloss rows: {}", e))?,
+        ),
+        crate::types::GlossFormat::Headwords => None,
+    };
 
     for (paragraph_idx, paragraph_text) in input.paragraphs.iter().enumerate() {
         // Extract words with context, then pre-fetch the word-selection cache
         // rows + set-phrase table for this paragraph (process_word_for_glossing
         // takes no appdata handle).
-        let words_with_context = extract_words_with_context(paragraph_text);
+        let (paragraph_text, variants) = gloss_paragraph_variants(paragraph_text, &input.options);
+        let words_with_context = extract_words_with_context(&paragraph_text);
         let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
-        let mut paragraph_shown_stems = std::collections::HashMap::new();
         let mut processed_words = Vec::new();
 
-        for word_context in words_with_context {
+        for word_context in &words_with_context {
             let word_info = WordInfo {
                 word: word_context.clean_word.clone(),
                 sentence: word_context.context_snippet.clone(),
                 original_word: word_context.original_word.clone(),
             };
 
-            match process_word_for_glossing(
-                &word_info,
-                &mut paragraph_shown_stems,
-                &mut global_stems,
-                input.options.no_duplicates_globally,
-                &input.options,
-                dpd,
-                Some(&resolution_data),
-            ) {
+            match process_word_for_glossing(&word_info, &input.options, dpd, Some(&resolution_data)) {
                 Ok(result) => processed_words.push(result),
                 Err(e) => return Err(format!("Word processing error: {}", e)),
             }
         }
+
+        crate::gloss_sense_ranking::rank_paragraph_default_senses(dpd, &mut processed_words, &paragraph_text)
+            .map_err(|e| format!("Default sense ranking: {}", e))?;
+        let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
         collect_unrecognized_words(
             &processed_words,
@@ -4995,6 +5370,11 @@ pub fn process_all_paragraphs(
             &mut paragraph_unrecognized_words,
             &mut global_unrecognized_words,
         );
+
+        let rows = match row_builder.as_mut() {
+            Some(builder) => paragraph_gloss_rows(builder, &words_with_context, &processed_words, &resolution_data)?,
+            None => Vec::new(),
+        };
 
         let words_data: Vec<ProcessedWord> = processed_words
             .into_iter()
@@ -5013,6 +5393,9 @@ pub fn process_all_paragraphs(
             paragraph_index: paragraph_idx,
             words_data,
             unrecognized_words: paragraph_unrecognized,
+            rows,
+            variants,
+            ai_translations: Vec::new(),
         });
     }
 
@@ -5021,6 +5404,7 @@ pub fn process_all_paragraphs(
         paragraphs: paragraph_results,
         global_unrecognized_words,
         updated_global_stems: global_stems,
+        ai_errors: Vec::new(),
     })
 }
 
@@ -5089,32 +5473,28 @@ pub fn process_single_paragraph(
     appdata: &crate::db::appdata::AppdataDbHandle,
     dpd: &crate::db::dpd::DpdDbHandle,
 ) -> Result<crate::types::SingleParagraphProcessingResult, String> {
-    let words_with_context = extract_words_with_context(&input.paragraph_text);
+    let (paragraph_text, variants) = gloss_paragraph_variants(&input.paragraph_text, &input.options);
+    let words_with_context = extract_words_with_context(&paragraph_text);
     let resolution_data = GlossResolutionData::fetch(appdata, &words_with_context);
-    let mut paragraph_shown_stems = std::collections::HashMap::new();
     let mut global_stems = input.options.existing_global_stems.clone();
     let mut processed_words = Vec::new();
 
-    for word_context in words_with_context {
+    for word_context in &words_with_context {
         let word_info = WordInfo {
             word: word_context.clean_word.clone(),
             sentence: word_context.context_snippet.clone(),
             original_word: word_context.original_word.clone(),
         };
 
-        match process_word_for_glossing(
-            &word_info,
-            &mut paragraph_shown_stems,
-            &mut global_stems,
-            input.options.no_duplicates_globally,
-            &input.options,
-            dpd,
-            Some(&resolution_data),
-        ) {
+        match process_word_for_glossing(&word_info, &input.options, dpd, Some(&resolution_data)) {
             Ok(result) => processed_words.push(result),
             Err(e) => return Err(format!("Word processing error: {}", e)),
         }
     }
+
+    crate::gloss_sense_ranking::rank_paragraph_default_senses(dpd, &mut processed_words, &paragraph_text)
+        .map_err(|e| format!("Default sense ranking: {}", e))?;
+    let processed_words = apply_gloss_dedup(processed_words, &input.options, &mut global_stems);
 
     let mut paragraph_unrecognized_words = std::collections::HashMap::new();
     let mut global_unrecognized_words = input.options.existing_global_unrecognized.clone();
@@ -5124,6 +5504,14 @@ pub fn process_single_paragraph(
         &mut paragraph_unrecognized_words,
         &mut global_unrecognized_words,
     );
+
+    let rows = match input.options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => {
+            let mut builder = crate::gloss_rows::GlossRowBuilder::new(dpd).map_err(|e| format!("Gloss rows: {}", e))?;
+            paragraph_gloss_rows(&mut builder, &words_with_context, &processed_words, &resolution_data)?
+        }
+        crate::types::GlossFormat::Headwords => Vec::new(),
+    };
 
     let words_data: Vec<ProcessedWord> = processed_words
         .into_iter()
@@ -5144,7 +5532,42 @@ pub fn process_single_paragraph(
         words_data,
         unrecognized_words: paragraph_unrecognized,
         updated_global_stems: global_stems,
+        rows,
+        variants,
     })
+}
+
+/// The paragraph text to gloss and its `//` spelling alternatives: in the
+/// Word in Sentence format each group is glossed by its first spelling; the
+/// Headwords format glosses the text as it is.
+fn gloss_paragraph_variants(
+    paragraph_text: &str,
+    options: &WordProcessingOptions,
+) -> (String, Vec<Vec<String>>) {
+    match options.gloss_format {
+        crate::types::GlossFormat::WordInSentence => {
+            crate::gloss_variants::extract_spelling_variants(&gloss_niggahita(paragraph_text))
+        }
+        crate::types::GlossFormat::Headwords => (paragraph_text.to_string(), Vec::new()),
+    }
+}
+
+/// The Word in Sentence rows of one paragraph, from its tokens and their
+/// processing results (one per token, after the format's de-dup).
+fn paragraph_gloss_rows(
+    builder: &mut crate::gloss_rows::GlossRowBuilder,
+    words_with_context: &[GlossWordContext],
+    processed_words: &[Option<WordProcessingResult>],
+    resolution_data: &GlossResolutionData,
+) -> Result<Vec<crate::gloss_rows::GlossRow>, String> {
+    let tokens: Vec<crate::gloss_rows::TokenInput> = words_with_context
+        .iter()
+        .zip(processed_words)
+        .map(|(context, result)| crate::gloss_rows::TokenInput { context, result })
+        .collect();
+    builder
+        .paragraph_rows(&tokens, Some(resolution_data), None)
+        .map_err(|e| format!("Gloss rows: {}", e))
 }
 
 /// Create or update Linux desktop launcher file for AppImage
@@ -5859,6 +6282,19 @@ mod tests {
         assert_eq!(normalize_iti_sandhi("hevan’ti"), "hevaṁ ti");
     }
 
+    /// A text written with `ṃ` is glossed as `ṁ`: the written form keeps its
+    /// apostrophe and the context is the sentence, as for the same text in `ṁ`.
+    #[test]
+    fn test_extract_words_converts_niggahita() {
+        let m = extract_words_with_context("Saṁvaro sādhu. Rūpaṁ pan'āniccaṁ, taṁ dukkhaṁ.");
+        let dot = extract_words_with_context("Saṃvaro sādhu. Rūpaṃ pan'āniccaṃ, taṃ dukkhaṃ.");
+        assert_eq!(m, dot);
+        let pan = dot.iter().find(|w| w.clean_word == "panāniccaṁ").unwrap();
+        assert_eq!(pan.original_word, "pan'āniccaṁ");
+        assert!(!pan.context_snippet.contains("sādhu"), "{}", pan.context_snippet);
+        assert_eq!(gloss_niggahita("Ṃ ṃ ŋ"), "Ṁ ṁ ṁ");
+    }
+
     #[test]
     fn test_extract_words_keeps_apostrophe_compounds_whole() {
         let words = extract_words_with_context("Manopubbaṅ’gamā dhammā. So’pi evaṁ dhārayāmī’ti. Kho’ti so. Cā”tipi.");
@@ -6367,6 +6803,70 @@ mod tests {
         let bad_conf = r#"{"selections": [{"id": "p0w4", "word": "ārāma 4", "confidence": "maybe"}]}"#;
         assert!(parse_word_selection_response(bad_conf, items, WordSelectionParseMode::Lenient).unwrap().is_empty());
         assert!(parse_word_selection_response(bad_conf, items, WordSelectionParseMode::Strict).is_err());
+
+        // The old shape has no grammar_index / contextual_meaning.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w4", "word": "ārāma 4"}]}"#,
+            items, WordSelectionParseMode::Strict).unwrap_err();
+        assert!(r.contains("unanswered"), "{}", r);
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w4", "word": "ārāma 4"}]}"#,
+            items, WordSelectionParseMode::Lenient).unwrap();
+        assert_eq!((r[0].grammar_index, r[0].contextual_meaning.as_deref()), (None, None));
+    }
+
+    /// The optional `grammar_index` (an index into the chosen option's
+    /// `grammar_options`; 0 accepted without them) and `contextual_meaning`.
+    #[test]
+    fn test_parse_word_selection_response_grammar_and_contextual_meaning() {
+        let items = r#"[
+            {"id": "p0w1", "word": "taṁ", "context": "", "options": [
+                {"uid": "1/dpd", "word": "ta 1", "summary": "", "grammar_options": ["nt acc sg of ta", "nt nom sg of ta"]},
+                {"uid": "2/dpd", "word": "ta 2", "summary": ""}
+            ]}
+        ]"#;
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w1", "word": "ta 1", "grammar_index": 1, "contextual_meaning": " that "}]}"#,
+            items, WordSelectionParseMode::Strict).unwrap();
+        assert_eq!(r[0].uid, "1/dpd");
+        assert_eq!(r[0].grammar_index, Some(1));
+        assert_eq!(r[0].contextual_meaning.as_deref(), Some("that"));
+
+        // Index 0 on an option without readings; an empty meaning is none.
+        let r = parse_word_selection_response(
+            r#"{"selections": [{"id": "p0w1", "word": "ta 2", "grammar_index": 0, "contextual_meaning": ""}]}"#,
+            items, WordSelectionParseMode::Strict).unwrap();
+        assert_eq!((r[0].grammar_index, r[0].contextual_meaning.as_deref()), (Some(0), None));
+
+        for bad in [
+            r#"{"selections": [{"id": "p0w1", "word": "ta 1", "grammar_index": 2}]}"#,
+            r#"{"selections": [{"id": "p0w1", "word": "ta 2", "grammar_index": 1}]}"#,
+            r#"{"selections": [{"id": "p0w1", "word": "ta 1", "grammar_index": -1}]}"#,
+            r#"{"selections": [{"id": "p0w1", "word": "ta 1", "contextual_meaning": 5}]}"#,
+        ] {
+            assert!(parse_word_selection_response(bad, items, WordSelectionParseMode::Lenient).unwrap().is_empty(), "{}", bad);
+            assert!(parse_word_selection_response(bad, items, WordSelectionParseMode::Strict).is_err(), "{}", bad);
+        }
+        assert!(validate_word_selection_response_shape(r#"{"selections": [{"id": "a", "grammar_index": "1"}]}"#).is_err());
+        assert!(validate_word_selection_response_shape(r#"{"selections": [{"id": "a", "contextual_meaning": []}]}"#).is_err());
+        assert!(validate_word_selection_response_shape(r#"{"selections": [{"id": "a", "grammar_index": 1, "contextual_meaning": "x"}]}"#).is_ok());
+    }
+
+    /// The prompt payload is written with `task` before `items`, as the Gloss
+    /// tab's QML wrote it (`JSON.stringify({task, items})` over the items the
+    /// backend serialized), so moving the assembly to Rust left the GUI's
+    /// prompt text unchanged.
+    #[test]
+    fn test_word_selection_prompt_text_matches_the_gui() {
+        let items: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[{"id": "p0w1", "word": "taṁ", "context": "a \"b\" c", "options": [{"uid": "1/dpd", "word": "ta 1", "summary": "that"}]}]"#,
+        ).unwrap();
+        let p = word_selection_prompt_text("SYS", "Before\n<<WORD_SELECTION_JSON>>\nAfter", &items);
+        assert_eq!(
+            p,
+            "SYS\n\nBefore\n{\"task\":\"pali_word_selection\",\"items\":[{\"context\":\"a \\\"b\\\" c\",\"id\":\"p0w1\",\"options\":[{\"summary\":\"that\",\"uid\":\"1/dpd\",\"word\":\"ta 1\"}],\"word\":\"taṁ\"}]}\nAfter"
+        );
+        assert_eq!(word_selection_prompt_text(" ", "<<WORD_SELECTION_JSON>>", &[]), "{\"task\":\"pali_word_selection\",\"items\":[]}");
     }
 
     #[test]
@@ -6517,7 +7017,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 2,
             words_json: word_selection_words_json().to_string(),
-            source_uid: None,
+            source_uid: None, rows_json: None,
         };
 
         // Network mode, not forced: only the unresolved ambiguous word.
@@ -6565,7 +7065,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: words,
-            source_uid: Some("sn56.11/pli/ms".to_string()),
+            source_uid: Some("sn56.11/pli/ms".to_string()), rows_json: None,
         };
         let items = build_word_selection_items(
             &[para],
@@ -6644,7 +7144,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: compound_words_json(),
-            source_uid: None,
+            source_uid: None, rows_json: None,
         };
         let items = build_word_selection_items(
             &[para],
@@ -6710,7 +7210,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: serde_json::to_string(&words).unwrap(),
-            source_uid: None,
+            source_uid: None, rows_json: None,
         };
 
         // Not forced: every resolved item is skipped, ids of the rest are
@@ -6737,7 +7237,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: compound_words_json(),
-            source_uid: None,
+            source_uid: None, rows_json: None,
         };
         let items = build_word_selection_items(
             &[para],
@@ -6784,12 +7284,12 @@ mod tests {
             WordSelectionParagraphInput {
                 paragraph_index: 0,
                 words_json: word_selection_words_json().to_string(),
-                source_uid: Some("mn1/pli/ms".to_string()),
+                source_uid: Some("mn1/pli/ms".to_string()), rows_json: None,
             },
             WordSelectionParagraphInput {
                 paragraph_index: 1,
                 words_json: word_selection_words_json().to_string(),
-                source_uid: Some("mn2/pli/ms".to_string()),
+                source_uid: Some("mn2/pli/ms".to_string()), rows_json: None,
             },
         ];
         let a = build_word_selection_payload(
@@ -6806,7 +7306,7 @@ mod tests {
         let bad = WordSelectionParagraphInput {
             paragraph_index: 7,
             words_json: "not json".to_string(),
-            source_uid: None,
+            source_uid: None, rows_json: None,
         };
         let err = build_word_selection_items(
             &[bad],

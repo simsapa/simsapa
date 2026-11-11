@@ -77,6 +77,7 @@ fn main() {
         "assets/qml/StorageDialog.qml",
         "assets/qml/StorageRecoveryWindow.qml",
         "assets/qml/GlossTab.qml",
+        "assets/qml/GlossWordInSentenceRow.qml",
         "assets/qml/GlossWordSelectionDialog.qml",
         "assets/qml/PromptsTab.qml",
         "assets/qml/AssistantResponses.qml",

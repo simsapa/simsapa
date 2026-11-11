@@ -19,7 +19,9 @@ Crate layout, builds and npm packaging are in
   `simsapa_api::build_rocket()` mounts them; `simsapa serve` calls it as is.
 - **GUI, AI and static-asset routes:** `bridges/src/api.rs`.
   `start_webserver()` calls `build_rocket()` and mounts these on top. The AI
-  engine behind `/word_selection_ws` is `bridges/src/ai_engine.rs`.
+  engine behind `/word_selection_ws` is `backend/src/ai_engine.rs`, driven
+  through `backend/src/gloss_word_selection_run.rs` (both behind the backend's
+  `ai` feature).
 - **Request and result types:** `SearchMode` / `SearchArea` serde labels and
   `SearchResult` in `backend/src/types.rs`; the smaller request/response
   structs of §15 next to their routes.
@@ -33,7 +35,8 @@ Crate layout, builds and npm packaging are in
 | Verse references | `convert_verse_ref_to_sutta_uid` (backend `helpers`), shared with the sutta routes of §14.4 |
 | Inline variant readings and notes | `bilara_text_to_segments()` in `backend/src/helpers.rs` |
 | Sutta display parameters | `parse_display_overrides` in `backend/src/sutta_display.rs`; defaults from `AppSettings.sutta_display`; errors through `render_error_status`. See [sutta-display-settings-and-multi-column-view.md](./sutta-display-settings-and-multi-column-view.md) |
-| `/gloss_text` | `api/src/routes/gloss.rs`; core `helpers::process_all_paragraphs()` / `process_all_paragraphs_exact()`, shared with the GlossTab and `simsapa gloss`. See [gloss-ai-word-selection.md](./gloss-ai-word-selection.md) |
+| `/gloss_text` | `api/src/routes/gloss.rs`; core `helpers::process_all_paragraphs()` / `process_all_paragraphs_exact()`, shared with the GlossTab and `simsapa gloss`. Reference input: `backend/src/gloss_source.rs`. Documents: `gloss_export_builder::build_gloss_export_data()` → `text_export::gloss_export_document()`, the GUI's exporters. See [gloss-ai-word-selection.md](./gloss-ai-word-selection.md) |
+| `/gloss_text` with `"ai": true` | The route reads an optional managed `GlossAiRunner` (defined in `api/src/routes/gloss.rs`, so `simsapa_api` stays free of `rig-core`) through the `MaybeGlossAiRunner` request guard, **never `Option<&State<…>>`**: Rocket's sentinel refuses to launch a server whose routes name an unmanaged `State`, even inside an `Option`. `bridges`' `start_webserver()` and `simsapa serve` manage one built on `gloss_ai_run::run_gloss_ai_for_api()` (backend `ai` feature); a second `/gloss_text` handler is not possible (Rocket refuses colliding routes). The runner blocks and creates its own tokio runtime per request, so the async handler runs it on a thread of its own and awaits a oneshot channel |
 | `/reference_search` | `pts_reference_search::search()` in `backend/src/pts_reference_search.rs` over the embedded `assets/sutta-reference-converter.json`. The route parses the table on its first call: the window otherwise does that when it opens, and the search panics on an unparsed table |
 | `/navigation_timeline`, `/open_sutta_navigation` | [sutta-navigation-tree.md §2h](./sutta-navigation-tree.md) |
 | `construction_summary` | [dpd-construction-summary.md](./dpd-construction-summary.md) |
@@ -45,7 +48,7 @@ Crate layout, builds and npm packaging are in
 | `/dpd_res/<path..>` | `api/src/routes/dpd_res.rs` → `DpdDbHandle::get_dpd_res()`, which reads the in-memory `DPD_RES_CACHE` (`backend/src/db/dpd_res.rs`), never the database per request: a DPD headword or root page loads ~13 MB of them. The GUI warms it in `SuttaBridge::load_db()`'s thread and `simsapa serve` on a thread before launch; the first request loads it otherwise. See [dpd-upgrades.md](./dpd-upgrades.md) |
 
 The two uid lanes of DPD records (`34626/dpd` vs `dhamma-1-01/dpd`) are
-explained in `CLAUDE.md`, "DPD records correlate to dict_words".
+explained in [dpd-and-dict-words-correlation.md](./dpd-and-dict-words-correlation.md).
 
 ## Shared helpers (`api/src/helpers.rs`)
 

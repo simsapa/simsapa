@@ -25,6 +25,12 @@
 //! - `BodyText` / "Body Text" — Pāli text, chat content and AI responses
 //! - `VocabEntry` / "Vocab Entry" — vocabulary table cells
 //!
+//! A gloss in the Word in Sentence format follows DPD's analysis report:
+//! title, then per paragraph the passage, "English Translation", "Variants"
+//! and the seven-column Word-by-Word table (component words indented), and
+//! the confidence legend last. The Headwords format keeps the vocabulary
+//! table, with a Conf. column and the legend when words carry a confidence.
+//!
 //! The input is the Gloss tab's `gloss_export_data()` JSON or the Prompts tab's
 //! `chat_export_data()` JSON (the same data the HTML / Markdown / Org-Mode
 //! exports derive from). The shared structs live in [`crate::export_types`].
@@ -40,8 +46,12 @@ use zip::ZipArchive;
 use markdown::mdast::{Code, List, Node, Table};
 
 use crate::export_types::{
-    ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph, GlossExportVocabItem,
+    confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
+    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    word_table_row_shades,
 };
+use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
+use crate::types::GlossFormat;
 use crate::markdown_convert::{inline_runs, node_plain_text, parse_response, InlineRun};
 
 /// Generate the DOCX bytes for a gloss export JSON (`gloss_export_data()` shape).
@@ -348,23 +358,184 @@ fn wrap_document_body(body: &str) -> String {
 }
 
 fn generate_document_xml(data: &GlossExportData, numbering: &mut NumberingRegistry) -> String {
+    let body = match data.gloss_format {
+        GlossFormat::WordInSentence => word_in_sentence_body(data, numbering),
+        GlossFormat::Headwords => headwords_body(data, numbering),
+    };
+    wrap_document_body(&body)
+}
+
+fn headwords_body(data: &GlossExportData, numbering: &mut NumberingRegistry) -> String {
+    let show_conf = data.shows_confidence();
     let mut body = String::new();
 
-    body.push_str(&styled_paragraph("Title", &[run(false, false, "Gloss Export")]));
+    body.push_str(&styled_paragraph("Title", &[run(false, false, &data.document_title())]));
 
     // The combined glossed text uses the Vocab Quote Block paragraph style.
-    for line in data.text.lines().filter(|l| !l.trim().is_empty()) {
-        body.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
-    }
+    body.push_str(&quote_block(&data.text));
 
     if !data.paragraphs.is_empty() {
         body.push_str(&styled_paragraph("Heading1", &[run(false, false, "Paragraphs")]));
     }
     for paragraph in &data.paragraphs {
-        body.push_str(&format_paragraph(paragraph, numbering));
+        body.push_str(&format_paragraph(paragraph, show_conf, numbering));
+    }
+    if show_conf {
+        body.push_str(&confidence_legend(data.no_ai_provider));
+    }
+    body
+}
+
+/// A Word in Sentence document, in DPD's report order: title, then per
+/// paragraph the passage, English Translation, Variants and the Word-by-Word
+/// table; the legend last.
+fn word_in_sentence_body(data: &GlossExportData, numbering: &mut NumberingRegistry) -> String {
+    let mut body = String::new();
+    body.push_str(&styled_paragraph("Title", &[run(false, false, &data.document_title())]));
+
+    let several = data.paragraphs.len() > 1;
+    for (i, paragraph) in data.paragraphs.iter().enumerate() {
+        if several {
+            body.push_str(&styled_paragraph("Heading1", &[run(false, false, &format!("Paragraph {}", i + 1))]));
+        }
+        body.push_str(&word_in_sentence_paragraph(paragraph, numbering));
+    }
+    body.push_str(&confidence_legend(data.no_ai_provider));
+    body
+}
+
+fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
+    let mut out = String::new();
+    out.push_str(&quote_block(&paragraph.display_text()));
+
+    let translations: Vec<&AiResponse> = paragraph
+        .ai_translations
+        .iter()
+        .filter(|t| !t.response.trim().is_empty() || !t.literal_translation.trim().is_empty())
+        .collect();
+    if !translations.is_empty() {
+        out.push_str(&styled_paragraph("Heading2", &[run(false, false, "English Translation")]));
+        for t in &translations {
+            if translations.len() > 1 {
+                out.push_str(&styled_paragraph(
+                    "BodyText",
+                    &[run(true, false, &format!("{}{}", t.model_name, t.selected_suffix()))],
+                ));
+            }
+            out.push_str(&labelled_text("Translation", &t.response, numbering));
+            if !t.literal_translation.trim().is_empty() {
+                out.push_str(&labelled_text("Literal Translation", &t.literal_translation, numbering));
+            }
+        }
     }
 
-    wrap_document_body(&body)
+    if !paragraph.variants.is_empty() {
+        out.push_str(&styled_paragraph("Heading2", &[run(false, false, "Variants")]));
+        for group in &paragraph.variants {
+            out.push_str(&styled_paragraph("BodyText", &[run(false, false, &group.join("//"))]));
+        }
+    }
+
+    out.push_str(&styled_paragraph("Heading2", &[run(false, false, "Word-by-Word Analysis")]));
+    out.push_str(&word_table(&paragraph.rows));
+    out
+}
+
+/// `Translation: <text>` on one line, as in DPD's reports; a text of several
+/// lines goes under the label as Markdown.
+fn labelled_text(label: &str, text: &str, numbering: &mut NumberingRegistry) -> String {
+    let text = text.trim();
+    if text.contains('\n') {
+        let mut out = styled_paragraph("BodyText", &[run(true, false, &format!("{}:", label))]);
+        out.push_str(&markdown_to_docx_body_reg(text, numbering));
+        out
+    } else {
+        styled_paragraph("BodyText", &[run(true, false, &format!("{}: ", label)), run(false, false, text)])
+    }
+}
+
+/// Word-by-Word column widths, in `WORD_TABLE_COLUMNS` order; they add up to
+/// `TABLE_TEXT_WIDTH_TWIPS`.
+const WORD_TABLE_COL_TWIPS: [u32; 7] = [750, 1800, 1900, 1900, 1650, 1700, 506];
+
+/// Twips of indent per depth of a component row's word.
+const COMPONENT_INDENT_TWIPS: u32 = 240;
+
+/// The Word-by-Word table: a bold header row, then one row per token and
+/// component, the components' words indented by depth.
+fn word_table(rows: &[GlossExportRow]) -> String {
+    let mut xml_rows = String::new();
+    let header: String = WORD_TABLE_COLUMNS
+        .iter()
+        .zip(WORD_TABLE_COL_TWIPS)
+        .map(|(col, w)| table_cell("VocabEntry", &w.to_string(), "dxa", &[run(true, false, col)]))
+        .collect();
+    xml_rows.push_str(&format!("<w:tr><w:trPr><w:tblHeader/></w:trPr>{}</w:tr>", header));
+
+    for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
+        let mut cells = String::new();
+        let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
+        let texts = [
+            row.id_cell(),
+            row.word_cell(),
+            row.grammar.clone(),
+            row.meaning.clone(),
+            row.construction.clone(),
+            row.root.clone(),
+            confidence_cell(row.confidence).to_string(),
+        ];
+        for (col, (text, w)) in texts.iter().zip(WORD_TABLE_COL_TWIPS).enumerate() {
+            let runs = [run(false, false, text)];
+            let indent = if col == 1 { row.depth as u32 * COMPONENT_INDENT_TWIPS } else { 0 };
+            cells.push_str(&table_cell_indent_fill("VocabEntry", &w.to_string(), indent, fill, &runs));
+        }
+        xml_rows.push_str(&format!("<w:tr>{}</w:tr>", cells));
+    }
+
+    let grid: String = WORD_TABLE_COL_TWIPS
+        .iter()
+        .map(|w| format!(r#"<w:gridCol w:w="{}"/>"#, w))
+        .collect();
+    // A small left cell margin, so the text does not touch the edge of a
+    // shaded row.
+    let table = format!(
+        concat!(
+            r#"<w:tbl><w:tblPr>"#,
+            r#"<w:tblW w:w="0" w:type="auto"/>"#,
+            r#"<w:tblCellMar>"#,
+            r#"<w:top w:w="40" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>"#,
+            r#"<w:bottom w:w="40" w:type="dxa"/><w:right w:w="160" w:type="dxa"/>"#,
+            r#"</w:tblCellMar>"#,
+            r#"</w:tblPr><w:tblGrid>{}</w:tblGrid>{}</w:tbl>"#,
+        ),
+        grid, xml_rows
+    );
+    format!("{}{}", table, table_spacer(454))
+}
+
+/// A passage as one Vocab Quote Block paragraph, its lines kept as line
+/// breaks within the paragraph.
+fn quote_block(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    styled_paragraph("VocabQuoteBlock", &[run(false, false, &lines.join("\n"))])
+}
+
+/// The confidence legend, with the no-AI note under it when no AI provider
+/// was enabled.
+fn confidence_legend(no_ai_provider: bool) -> String {
+    let mut out = styled_paragraph("BodyText", &[run(true, false, CONFIDENCE_LEGEND_LEAD)]);
+    out.extend(
+        CONFIDENCE_LEGEND
+            .iter()
+            .map(|line| styled_paragraph("BodyText", &[run(false, false, line)])),
+    );
+    if no_ai_provider {
+        out.push_str(&styled_paragraph("BodyText", &[run(false, false, NO_AI_PROVIDER_NOTE)]));
+    }
+    out
 }
 
 fn generate_chat_document_xml(data: &ChatExportData, numbering: &mut NumberingRegistry) -> String {
@@ -407,13 +578,11 @@ fn format_message(message: &ChatMessage, numbering: &mut NumberingRegistry) -> S
     out
 }
 
-fn format_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
+fn format_paragraph(paragraph: &GlossExportParagraph, show_conf: bool, numbering: &mut NumberingRegistry) -> String {
     let mut out = String::new();
 
     // The paragraph text (shown above its vocab table) uses Vocab Quote Block.
-    for line in paragraph.text.lines().filter(|l| !l.trim().is_empty()) {
-        out.push_str(&styled_paragraph("VocabQuoteBlock", &[run(false, false, line.trim())]));
-    }
+    out.push_str(&quote_block(&paragraph.text));
 
     if !paragraph.ai_translations.is_empty() {
         out.push_str(&styled_paragraph("BodyText", &[run(true, false, "AI Translations")]));
@@ -422,12 +591,17 @@ fn format_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingR
                 "BodyText",
                 &[run(true, false, &format!("{}{}", trans.model_name, trans.selected_suffix()))],
             ));
-            out.push_str(&markdown_to_docx_body_reg(&trans.response, numbering));
+            if trans.literal_translation.trim().is_empty() {
+                out.push_str(&markdown_to_docx_body_reg(&trans.response, numbering));
+            } else {
+                out.push_str(&labelled_text("Translation", &trans.response, numbering));
+                out.push_str(&labelled_text("Literal Translation", &trans.literal_translation, numbering));
+            }
         }
     }
 
     if !paragraph.vocabulary.is_empty() {
-        out.push_str(&format_vocab_table(&paragraph.vocabulary));
+        out.push_str(&format_vocab_table(&paragraph.vocabulary, show_conf));
     }
 
     out
@@ -437,24 +611,38 @@ fn format_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingR
 /// width (`TABLE_TEXT_WIDTH_TWIPS`).
 const VOCAB_WORD_COL_TWIPS: u32 = 2500;
 
+/// The Conf. column of the vocabulary table, when the document has one.
+const VOCAB_CONF_COL_TWIPS: u32 = 500;
+
 /// Render the vocabulary as a borderless two-column table
 /// (word | definition), per the print design: no borders, no left cell
 /// padding, ~1 em right padding, compact 15 pt cell lines.
-fn format_vocab_table(vocabulary: &[GlossExportVocabItem]) -> String {
-    let def_col = (TABLE_TEXT_WIDTH_TWIPS - VOCAB_WORD_COL_TWIPS).to_string();
+fn format_vocab_table(vocabulary: &[GlossExportVocabItem], show_conf: bool) -> String {
+    let conf_col_twips = if show_conf { VOCAB_CONF_COL_TWIPS } else { 0 };
+    let def_col = (TABLE_TEXT_WIDTH_TWIPS - VOCAB_WORD_COL_TWIPS - conf_col_twips).to_string();
     let word_col = VOCAB_WORD_COL_TWIPS.to_string();
+    let conf_col = conf_col_twips.to_string();
     let mut rows = String::new();
     for vocab in vocabulary {
         let word_cell = table_cell("VocabEntry", &word_col, "dxa", &[run(true, false, &vocab.word)]);
         let summary_cell =
             table_cell("VocabEntry", &def_col, "dxa", &summary_html_to_runs(&vocab.summary));
-        rows.push_str(&format!("<w:tr>{}{}</w:tr>", word_cell, summary_cell));
+        let conf_cell = if show_conf {
+            table_cell("VocabEntry", &conf_col, "dxa", &[run(false, false, confidence_cell(vocab.confidence))])
+        } else {
+            String::new()
+        };
+        rows.push_str(&format!("<w:tr>{}{}{}</w:tr>", word_cell, summary_cell, conf_cell));
     }
 
-    let grid = format!(
-        r#"<w:tblGrid><w:gridCol w:w="{}"/><w:gridCol w:w="{}"/></w:tblGrid>"#,
+    let mut grid = format!(
+        r#"<w:tblGrid><w:gridCol w:w="{}"/><w:gridCol w:w="{}"/>"#,
         word_col, def_col
     );
+    if show_conf {
+        grid.push_str(&format!(r#"<w:gridCol w:w="{}"/>"#, conf_col));
+    }
+    grid.push_str("</w:tblGrid>");
     format!("{}{}", borderless_table(&grid, &rows), table_spacer(454))
 }
 
@@ -513,6 +701,26 @@ fn table_cell(style_id: &str, width_twips: &str, width_type: &str, runs: &[Strin
         width_type,
         style_id,
         runs.concat()
+    )
+}
+
+/// A table cell whose paragraph has a left indent (0: none), with an
+/// optional background fill (RGB hex).
+fn table_cell_indent_fill(
+    style_id: &str,
+    width_twips: &str,
+    indent_twips: u32,
+    fill: Option<&str>,
+    runs: &[String],
+) -> String {
+    let shd = fill
+        .map(|hex| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, hex))
+        .unwrap_or_default();
+    format!(
+        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>{}</w:tcPr>{}</w:tc>"#,
+        width_twips,
+        shd,
+        styled_paragraph_indent(style_id, indent_twips, runs)
     )
 }
 
@@ -1009,7 +1217,7 @@ mod tests {
         // Well-formed XML (parses as a document).
         roxmltree_lite_check(&doc);
 
-        assert!(doc.contains("Gloss Export"));
+        assert!(doc.contains("Gloss of: "));
         // One "Paragraphs" section heading, no per-paragraph "Paragraph N".
         assert!(doc.contains("Paragraphs"));
         assert!(!doc.contains("Paragraph 1"));
@@ -1031,12 +1239,89 @@ mod tests {
         assert!(doc.contains(r#"<w:rPr><w:i/></w:rPr><w:t xml:space="preserve">(loc sg)</w:t>"#));
     }
 
+    /// The text of `document.xml`'s `<w:t>` runs, in document order.
+    fn document_text(doc: &str) -> String {
+        let mut out = String::new();
+        for part in doc.split("<w:t xml:space=\"preserve\">").skip(1) {
+            out.push_str(&part[..part.find("</w:t>").unwrap()]);
+            out.push('|');
+        }
+        out
+    }
+
+    #[test]
+    fn test_word_in_sentence_docx_order() {
+        let json = serde_json::json!({
+            "text": "te jhāyino daḷhaparakkamā",
+            "gloss_format": "word_in_sentence",
+            "title": "DHP23",
+            "no_ai_provider": false,
+            "paragraphs": [{
+                "text": "te jhāyino gacchan'ti//gacchanti",
+                "variants": [["gacchan'ti", "gacchanti"]],
+                "ai_translations": [{"model_name": "m", "response": "Those wise ones.", "literal_translation": "Those meditators.", "is_selected": true}],
+                "rows": [
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "meaning": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "meaning": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
+                ]
+            }]
+        })
+        .to_string();
+        let docx = generate_gloss_docx(&json).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        let text = document_text(&doc);
+        let expected = [
+            "Gloss of: DHP23|",
+            "te jhāyino gacchan'ti|",
+            "English Translation|",
+            "Translation: |Those wise ones.|",
+            "Literal Translation: |Those meditators.|",
+            "Variants|gacchan'ti//gacchanti|",
+            "Word-by-Word Analysis|",
+            "ID|Word in Sentence|Grammar|Meaning|Construction|Root|Conf.|",
+            "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|having firm effort|daḷha + parakkama|N|",
+            "32201|- daḷha|pp|firm &amp; strong|√dah + ta|√dah 1 a (be strong)|",
+            "Confidence marks:|N: Not checked",
+            "H: Human-checked",
+        ];
+        let mut at = 0;
+        for piece in expected {
+            let found = text[at..].find(piece).unwrap_or_else(|| panic!("{:?} not found after {}: {}", piece, at, text));
+            at += found + piece.len();
+        }
+        // The component's word is indented, the token's is not.
+        assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
+        assert!(!text.contains("Paragraph 1"));
+        assert!(!text.contains(NO_AI_PROVIDER_NOTE));
+        // The token and its component share the first (shaded) band: 7 cells each.
+        let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
+        assert_eq!(doc.matches(&shd).count(), 14);
+    }
+
+    #[test]
+    fn test_headwords_docx_conf_column_when_marked() {
+        let mut data: GlossExportData = serde_json::from_str(&sample_json()).unwrap();
+        data.paragraphs[0].vocabulary[0].confidence = Some(crate::gloss_rows::Confidence::H);
+        data.no_ai_provider = true;
+        let docx = generate_gloss_docx(&serde_json::to_string(&data).unwrap()).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        let text = document_text(&doc);
+        assert!(text.contains("monastery |(loc sg)| &amp; more|H|"), "{}", text);
+        assert!(text.contains("H: Human-checked"));
+        assert!(text.contains(NO_AI_PROVIDER_NOTE));
+        // Without marks: two columns, no legend.
+        let plain = read_part(&generate_gloss_docx(&sample_json()).unwrap(), "word/document.xml");
+        assert!(!plain.contains("Not checked"));
+    }
+
     #[test]
     fn test_empty_export() {
         let docx = generate_gloss_docx(r#"{"text": "", "paragraphs": []}"#).unwrap();
         let doc = read_part(&docx, "word/document.xml");
         roxmltree_lite_check(&doc);
-        assert!(doc.contains("Gloss Export"));
+        assert!(doc.contains(">Gloss<"));
     }
 
     fn chat_sample_json() -> String {

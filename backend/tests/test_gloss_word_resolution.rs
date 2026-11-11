@@ -12,7 +12,7 @@ use simsapa_backend::get_app_data;
 use simsapa_backend::db::{DatabaseHandle, APPDATA_MIGRATIONS};
 use simsapa_backend::db::appdata::AppdataDbHandle;
 use simsapa_backend::helpers::{
-    extract_words_with_context, gloss_option_uid_matches, process_word_for_glossing,
+    extract_words_with_context, gloss_option_uid_matches, headwords_dedup_word, process_word_for_glossing,
     GlossResolutionData,
 };
 use simsapa_backend::types::{ProcessedWord, WordInfo, WordProcessingOptions, WordProcessingResult};
@@ -50,6 +50,7 @@ fn default_options() -> WordProcessingOptions {
         existing_global_stems: HashMap::new(),
         existing_paragraph_unrecognized: HashMap::new(),
         existing_global_unrecognized: Vec::new(),
+        gloss_format: simsapa_backend::types::GlossFormat::Headwords,
     }
 }
 
@@ -72,16 +73,13 @@ fn gloss_paragraph(text: &str, appdata: Option<&AppdataDbHandle>) -> Vec<Process
             sentence: wc.context_snippet.clone(),
             original_word: wc.original_word.clone(),
         };
-        let res = process_word_for_glossing(
-            &word_info,
+        let res = headwords_dedup_word(
+            process_word_for_glossing(&word_info, &options, &app_data.dbm.dpd, resolution_data.as_ref())
+                .expect("word processing"),
             &mut paragraph_shown_stems,
             &mut global_stems,
             false,
-            &options,
-            &app_data.dbm.dpd,
-            resolution_data.as_ref(),
-        )
-        .expect("word processing");
+        );
         if let Some(WordProcessingResult::Recognized(pw)) = res {
             out.push(pw);
         }
@@ -760,7 +758,7 @@ fn test_ai_request_carries_lemmas_and_answer_by_lemma_stores_numeric_uid() {
     let paras = vec![WordSelectionParagraphInput {
         paragraph_index: 0,
         words_json: serde_json::to_string(&words).unwrap(),
-        source_uid: None,
+        source_uid: None, rows_json: None,
     }];
 
     for mode in [

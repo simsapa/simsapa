@@ -74,9 +74,14 @@ fn test_json_output_matches_the_routes() {
 
     let text = "Te jānanti atthaññe āvāsikā bhikkhū";
     assert_eq!(
-        cli_stdout(&["gloss", "--json", text]),
+        cli_stdout(&["gloss", "--json", "--no-ai", text]),
         post_json(&client, "/gloss_text", serde_json::json!({ "text": text })),
         "gloss vs /gloss_text",
+    );
+    assert_eq!(
+        cli_stdout(&["gloss", "--json", "--no-ai", "--gloss-format", "headwords", text]),
+        post_json(&client, "/gloss_text", serde_json::json!({ "text": text, "options": { "gloss_format": "headwords" } })),
+        "gloss headwords vs /gloss_text headwords",
     );
     assert_eq!(
         cli_stdout(&["gloss", "--exact", "--json", text]),

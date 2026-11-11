@@ -115,7 +115,7 @@ fn session_paragraph_inputs(
         inputs.push(WordSelectionParagraphInput {
             paragraph_index: pi,
             words_json,
-            source_uid,
+            source_uid, rows_json: None,
         });
     }
     Ok(inputs)
