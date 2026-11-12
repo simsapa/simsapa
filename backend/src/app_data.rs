@@ -320,13 +320,13 @@ impl AppData {
 
     /// The English shown beside a Pāli text when no columns are requested: the
     /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
-    /// aligned with, and for any other Pāli text the first segmented English, or
-    /// failing that the first other one, leaving out the AI English. A
-    /// segmented English imported from suttas-core (`source_info` starting with
-    /// `suttas-core`) comes after the other segmented ones, so Bodhi's or a PTS
-    /// translator's, which sort first by uid, do not displace Sujato's. A column
-    /// that cannot be shown is handled like a requested one: dropped in Lines, a
-    /// block in Columns.
+    /// aligned with, and for any other Pāli text, leaving out the AI English,
+    /// the first segmented English imported from SuttaCentral (`source_info`
+    /// NULL), else the first other segmented one, else the first English. So
+    /// the segmented translations of other sources (suttas-core's Bodhi or PTS
+    /// translators, Munindo, Nyanadipa), which sort first by uid, do not
+    /// displace Sujato's. A column that cannot be shown is handled like a
+    /// requested one: dropped in Lines, a block in Columns.
     ///
     /// Reads uids over an indexed range, never the full rows. All of these have
     /// one base and one language, so uid order is `sort_suttas()` order.
@@ -355,13 +355,10 @@ impl AppData {
         }
 
         let is_segmented = |row: &&(String, Option<bool>, Option<String>)| row.1 == Some(true);
-        let is_suttas_core = |row: &&(String, Option<bool>, Option<String>)| {
-            row.2.as_deref().is_some_and(|info| info.starts_with("suttas-core"))
-        };
         let chosen = human_english
             .iter()
             .filter(is_segmented)
-            .find(|row| !is_suttas_core(row))
+            .find(|row| row.2.is_none())
             .or_else(|| human_english.iter().find(is_segmented))
             .or(human_english.first());
         Ok(chosen.map(|(english_uid, _, _)| english_uid.clone()))

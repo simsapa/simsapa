@@ -320,28 +320,18 @@ RELEASE_CHANNEL=development
             }
         }
 
-        // Import Nyanadipa translations (Sutta Nipata selections)
+        // Nyanadipa's Sutta Nipāta and Munindo's Dhammapada, from their segment
+        // files. Required, as every translation source is; their templates are
+        // the `…/pli/ms` records of the SuttaCentral import.
+        // See docs/munindo-nyanadipa-segmentation.md.
         {
-            let nyanadipa_path = bootstrap_assets_dir.join(source_paths::NYANADIPA_DIR);
-            if nyanadipa_path.exists() {
-                logger::info("Importing suttas from nyanadipa-translations");
-                let mut importer = NyanadipaImporter::new(nyanadipa_path);
-                importer.import(&mut conn)?;
-            } else {
-                logger::warn("Nyanadipa translations resource path not found, skipping");
-            }
-        }
+            logger::info("Importing suttas from nyanadipa-translations/bilara");
+            let mut importer = NyanadipaImporter::new(bootstrap_assets_dir.join(source_paths::NYANADIPA_DIR));
+            importer.import(&mut conn)?;
 
-        // Import Ajahn Munindo's Dhammapada
-        {
-            let dhammapada_munindo_path = bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR);
-            if dhammapada_munindo_path.exists() {
-                logger::info("Importing suttas from dhammapada-munindo");
-                let mut importer = DhammapadaMunindoImporter::new(dhammapada_munindo_path);
-                importer.import(&mut conn)?;
-            } else {
-                logger::warn("Dhammapada Munindo resource path not found, skipping");
-            }
+            logger::info("Importing suttas from dhammapada-munindo/bilara");
+            let mut importer = DhammapadaMunindoImporter::new(bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR));
+            importer.import(&mut conn)?;
         }
 
         // The navigation tree is built after every sutta import, so each

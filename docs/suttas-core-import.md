@@ -74,11 +74,13 @@ segments are joined; do not "clean" it.
 
 ### The default English beside a Pāli text
 
-`default_english_for_pali()` (`backend/src/app_data.rs`) picks "the first
-segmented English" in uid order, so `…/en/bodhi` and `…/en/horner` would sort
-before `…/en/sujato`. It therefore prefers a segmented English whose
-`source_info` does not start with `suttas-core`, then a suttas-core one, then any
-other. This is why `source_info` is written.
+`default_english_for_pali()` (`backend/src/app_data.rs`) picks the default
+English in uid order, where `…/en/bodhi`, `…/en/horner`, `…/en/munindo` and
+`…/en/nyanadipa` sort before `…/en/sujato`. It therefore prefers a segmented
+English imported from SuttaCentral (`source_info` NULL), then any other
+segmented English (suttas-core's, Munindo's, Nyanadipa's), then any English,
+always leaving out the AI English. This is why every other segmented import
+writes `source_info`.
 
 ## 3. Ajahn Ṭhānissaro
 

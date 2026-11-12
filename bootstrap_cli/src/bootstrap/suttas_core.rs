@@ -478,51 +478,83 @@ impl SuttasCoreDb {
         .bind::<Text, _>(language)
         .load(&mut self.conn)?;
 
-        if rows.is_empty() {
-            return Ok((None, 0));
-        }
-
-        let mut by_segment: HashMap<String, Vec<Footnote>> = HashMap::new();
-        let mut count = 0;
+        let context = format!("suttas-core: {} {} {}", sutta_id, translator, language);
+        let mut notes = Vec::with_capacity(rows.len());
         for row in rows {
-            if !template.contains_key(&row.segment_id) {
-                logger::error(&format!(
-                    "suttas-core: {} {} {}: note {} is on segment {}, which is not in the template; skipped",
-                    sutta_id, translator, language, row.number, row.segment_id,
-                ));
-                continue;
-            }
-            let (Ok(number), word_index) = (u32::try_from(row.number), row.word_index) else {
-                logger::error(&format!(
-                    "suttas-core: {} {} {}: invalid note number {}; skipped",
-                    sutta_id, translator, language, row.number,
-                ));
+            let Ok(number) = u32::try_from(row.number) else {
+                logger::error(&format!("{}: invalid note number {}; skipped", context, row.number));
                 continue;
             };
-            let html = consistent_niggahita(Some(note_newlines_to_html(&row.content)));
-            let html = link_fn(&html);
-            by_segment.entry(row.segment_id).or_default().push(Footnote {
+            notes.push(SegmentNote {
+                segment_id: row.segment_id,
                 number,
-                word_index: word_index.and_then(|w| u32::try_from(w).ok()),
+                word_index: row.word_index.and_then(|w| u32::try_from(w).ok()),
+                content: row.content,
                 editor: row.editor != 0,
-                html,
             });
-            count += 1;
         }
-
-        if by_segment.is_empty() {
-            return Ok((None, 0));
-        }
-
-        // Segment order is template order. Notes within a segment are already
-        // in number order, from the query.
-        let value: IndexMap<&str, String> = template
-            .keys()
-            .filter_map(|k| by_segment.get(k).map(|notes| (k.as_str(), encode_footnotes(notes))))
-            .collect();
-
-        Ok((Some(serde_json::to_string(&value)?), count))
+        footnotes_value_from(notes, template, &context, link_fn)
     }
+}
+
+/// One note of a segmented text, as stored by suttas-core's
+/// `segment_footnotes` or a `bilara/footnotes.json` file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SegmentNote {
+    pub segment_id: String,
+    /// 1-based reading order within the text.
+    pub number: u32,
+    /// The word the note follows; `None` for the segment's end.
+    pub word_index: Option<u32>,
+    /// The note's text or HTML; paragraph breaks become `<br>`s.
+    pub content: String,
+    pub editor: bool,
+}
+
+/// The `sutta_comments.content_json` value for a text's notes (segment id →
+/// the encoded notes of that segment, in template order, each segment's notes
+/// in number order), and the number of notes in it. A note on a segment the
+/// template does not have is logged under `context` and left out. `link_fn`
+/// turns the sutta references in a note's HTML into links.
+pub fn footnotes_value_from(
+    mut notes: Vec<SegmentNote>,
+    template: &IndexMap<String, String>,
+    context: &str,
+    link_fn: &dyn Fn(&str) -> String,
+) -> Result<(Option<String>, usize)> {
+    notes.sort_by_key(|n| n.number);
+
+    let mut by_segment: HashMap<String, Vec<Footnote>> = HashMap::new();
+    let mut count = 0;
+    for note in notes {
+        if !template.contains_key(&note.segment_id) {
+            logger::error(&format!(
+                "{}: note {} is on segment {}, which is not in the template; skipped",
+                context, note.number, note.segment_id,
+            ));
+            continue;
+        }
+        let html = consistent_niggahita(Some(note_newlines_to_html(&note.content)));
+        let html = link_fn(&html);
+        by_segment.entry(note.segment_id).or_default().push(Footnote {
+            number: note.number,
+            word_index: note.word_index,
+            editor: note.editor,
+            html,
+        });
+        count += 1;
+    }
+
+    if by_segment.is_empty() {
+        return Ok((None, 0));
+    }
+
+    let value: IndexMap<&str, String> = template
+        .keys()
+        .filter_map(|k| by_segment.get(k).map(|notes| (k.as_str(), encode_footnotes(notes))))
+        .collect();
+
+    Ok((Some(serde_json::to_string(&value)?), count))
 }
 
 /// Ṭhānissaro's Dhammapada chapters: the verse-group range in each heading

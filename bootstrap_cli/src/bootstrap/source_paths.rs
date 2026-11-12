@@ -103,6 +103,22 @@ pub const MUNINDO_TEXTS_SUBDIR: &str = "markdown";
 pub const NYANADIPA_TEXTS_SUBDIR: &str = "texts-sc-numbering";
 /// The footnote file of a segment-file source, inside its folder.
 pub const SEGMENT_FOOTNOTES_SUBFILE: &str = "bilara/footnotes.json";
+
+/// `dhammapada-munindo/bilara`, relative to the bootstrap assets folder.
+pub fn munindo_bilara_dir() -> PathBuf {
+    Path::new(DHAMMAPADA_MUNINDO_DIR).join(MUNINDO_BILARA_SUBDIR)
+}
+
+/// `nyanadipa-translations/bilara`, relative to the bootstrap assets folder.
+pub fn nyanadipa_bilara_dir() -> PathBuf {
+    Path::new(NYANADIPA_DIR).join(NYANADIPA_BILARA_SUBDIR)
+}
+
+/// `nyanadipa-translations/bilara/footnotes.json`, relative to the bootstrap
+/// assets folder.
+pub fn nyanadipa_footnotes_file() -> PathBuf {
+    Path::new(NYANADIPA_DIR).join(SEGMENT_FOOTNOTES_SUBFILE)
+}
 /// Hungarian translations.
 pub const BUDDHA_UJJA_DB: &str = "buddha-ujja-sql/bu.sqlite3";
 

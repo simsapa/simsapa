@@ -4,7 +4,9 @@
 //! text, in suttas-core's segmentation form (every Pāli `ms` segment id, in
 //! Pāli order), and, for Nyanadipa, `bilara/footnotes.json`. This module reads
 //! them, computes suttas-core-compatible hashes, and implements the checks of
-//! the `check-segment-files` command. See docs/munindo-nyanadipa-segmentation.md.
+//! the `check-segment-files` command, and builds and imports the records of
+//! `DhammapadaMunindoImporter` and `NyanadipaImporter`. See
+//! docs/munindo-nyanadipa-segmentation.md.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -19,10 +21,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
+use diesel::prelude::*;
+use simsapa_backend::db::appdata_models::NewSutta;
+use simsapa_backend::db::appdata_schema::suttas;
 use simsapa_backend::footnotes::word_count;
+use simsapa_backend::helpers::{consistent_niggahita, pali_to_ascii, sutta_html_to_plain_text};
 
-use crate::bootstrap::helpers::{dhp_chapter_number, dhp_verse_group_ranges};
+use crate::bootstrap::footnote_sutta_links::{link_sutta_refs, SuttaRefResolver};
+use crate::bootstrap::helpers::{
+    apply_dhp_verse_ranges, dhp_chapter_number, dhp_verse_group_ranges, uid_to_nikaya, uid_to_ref, SuttaData,
+};
 use crate::bootstrap::source_paths;
+use crate::bootstrap::suttacentral::bilara_html_and_plain_text;
+use crate::bootstrap::suttas_core::{footnotes_value_from, pli_ms_uids, write_comments, SegmentNote};
 
 // === File types ===
 
@@ -422,6 +433,245 @@ pub fn joined_segment_text(file: &SegmentFile, skip_id: Option<&str>) -> String 
         .map(|s| format!("{} ", s.text))
         .collect();
     html_plain(&joined)
+}
+
+// === Building and importing records ===
+
+/// A record built from a segment file, ready to insert.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SegmentedRecord {
+    pub uid: String,
+    /// The record title: the page-title segment's text, without Munindo's
+    /// `<chapter>. ` prefix.
+    pub title: String,
+    pub content_json: String,
+    pub content_json_tmpl: String,
+    /// The introduction's plain text (when there is one), then the segments'.
+    pub content_plain: String,
+    /// The introduction, as HTML.
+    pub description: Option<String>,
+    /// `sutta_comments.content_json` for the text's notes; `None` without notes.
+    pub footnotes_value: Option<String>,
+    pub footnote_count: usize,
+}
+
+impl SourceKind {
+    /// The record uid of a text: `dhp179-196/en/munindo`, `snp4.2/en/nyanadipa`.
+    pub fn record_uid(self, sutta_id: &str) -> String {
+        format!("{}/en/{}", sutta_id, self.translator())
+    }
+
+    /// The `source_info` of the records: the folder their text is read from.
+    pub fn source_info(self) -> String {
+        match self {
+            SourceKind::Munindo => format!("{}/{}", source_paths::DHAMMAPADA_MUNINDO_DIR, source_paths::MUNINDO_BILARA_SUBDIR),
+            SourceKind::Nyanadipa => format!("{}/{}", source_paths::NYANADIPA_DIR, source_paths::NYANADIPA_BILARA_SUBDIR),
+        }
+    }
+}
+
+static RE_CHAPTER_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+\.\s+").unwrap());
+
+/// The record title from the page-title segment's text: Nyanadipa's heading
+/// as it is, Munindo's `14. The Buddha` without its chapter number.
+pub fn record_title(kind: SourceKind, title_segment: &str) -> String {
+    let title = html_plain(title_segment);
+    match kind {
+        SourceKind::Munindo => RE_CHAPTER_PREFIX.replace(&title, "").into_owned(),
+        SourceKind::Nyanadipa => title,
+    }
+}
+
+impl From<&FootnoteEntry> for SegmentNote {
+    fn from(e: &FootnoteEntry) -> Self {
+        SegmentNote {
+            segment_id: e.segment_id.clone(),
+            number: e.number,
+            word_index: e.word_index,
+            content: e.content.clone(),
+            editor: e.editor,
+        }
+    }
+}
+
+/// Builds the record of one segment file on `template` (the `<sutta_id>/pli/ms`
+/// record's `content_json_tmpl`): one `content_json` key per template key, in
+/// template order, `""` where the file has no text; the Dhammapada verse-group
+/// ranges for Munindo; the plain text with the introduction first; and the
+/// notes encoded as `sutta_comments` stores them. `link_fn` turns the sutta
+/// references in a note into links. A segment id or a note that the template
+/// does not have is an error.
+pub fn build_segmented_record(
+    kind: SourceKind,
+    file: &SegmentFile,
+    template: &IndexMap<String, String>,
+    notes: &[FootnoteEntry],
+    link_fn: &dyn Fn(&str) -> String,
+) -> Result<SegmentedRecord> {
+    let uid = kind.record_uid(&file.sutta_id);
+    if file.translator != kind.translator() {
+        bail!("{}: translator {:?}, expected {:?}", uid, file.translator, kind.translator());
+    }
+    if let Some(seg) = file.segments.iter().find(|s| !template.contains_key(&s.id)) {
+        bail!("{}: segment {} is not in the Pāli template", uid, seg.id);
+    }
+
+    let mut texts: HashMap<&str, &str> = file.segments.iter().map(|s| (s.id.as_str(), s.text.as_str())).collect();
+    let mut content: IndexMap<String, String> = template
+        .keys()
+        .map(|k| {
+            let text = texts.remove(k.as_str()).unwrap_or("");
+            (k.clone(), consistent_niggahita(Some(text.to_string())))
+        })
+        .collect();
+
+    if kind == SourceKind::Munindo {
+        apply_dhp_verse_ranges(&mut content, false, &uid);
+    }
+
+    let title_key = page_title_key(template).ok_or_else(|| anyhow!("{}: the Pāli template has no <h1> title segment", uid))?;
+    let title = record_title(kind, content.get(title_key).map(String::as_str).unwrap_or(""));
+    if title.is_empty() {
+        bail!("{}: the title segment {} is empty", uid, title_key);
+    }
+
+    let content_json = serde_json::to_string(&content)?;
+    let content_json_tmpl = serde_json::to_string(template)?;
+    let (_html, plain) = bilara_html_and_plain_text(&content_json, &content_json_tmpl)
+        .with_context(|| format!("Rendering {}", uid))?;
+
+    let description = file
+        .introduction
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| consistent_niggahita(Some(s.to_string())));
+    let content_plain = match &description {
+        Some(intro) => format!("{}\n\n{}", sutta_html_to_plain_text(intro), plain),
+        None => plain,
+    };
+
+    let segment_notes: Vec<SegmentNote> = notes.iter().map(SegmentNote::from).collect();
+    let (footnotes_value, footnote_count) = footnotes_value_from(segment_notes, template, &uid, link_fn)?;
+    if footnote_count != notes.len() {
+        bail!("{}: {} of its {} notes could not be placed", uid, notes.len() - footnote_count, notes.len());
+    }
+
+    Ok(SegmentedRecord {
+        uid,
+        title,
+        content_json,
+        content_json_tmpl,
+        content_plain,
+        description,
+        footnotes_value,
+        footnote_count,
+    })
+}
+
+/// The `content_json_tmpl` of Simsapa's own `<sutta_id>/pli/ms` record, in
+/// document order. Its absence is an error naming the uid.
+pub fn pali_template_from_db(conn: &mut SqliteConnection, sutta_id: &str) -> Result<IndexMap<String, String>> {
+    let pli_uid = format!("{}/pli/ms", sutta_id);
+    let tmpl: Option<Option<String>> = suttas::table
+        .filter(suttas::uid.eq(&pli_uid))
+        .select(suttas::content_json_tmpl)
+        .first(conn)
+        .optional()?;
+    let tmpl = tmpl
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| anyhow!("No Pāli template for {}: {} is missing or has no content_json_tmpl", sutta_id, pli_uid))?;
+    serde_json::from_str(&tmpl).with_context(|| format!("Invalid content_json_tmpl in {}", pli_uid))
+}
+
+/// Inserts one built record and its notes.
+fn insert_segmented_record(conn: &mut SqliteConnection, kind: SourceKind, sutta_id: &str, rec: &SegmentedRecord) -> Result<()> {
+    let sutta_ref = uid_to_ref(sutta_id);
+    let nikaya = uid_to_nikaya(sutta_id);
+    let (range_group, range_start, range_end) = SuttaData::parse_range_from_uid(&rec.uid);
+    let title_ascii = pali_to_ascii(Some(&rec.title));
+    let source_info = kind.source_info();
+
+    diesel::insert_into(suttas::table)
+        .values(NewSutta {
+            uid: &rec.uid,
+            sutta_ref: &sutta_ref,
+            nikaya: &nikaya,
+            language: "en",
+            group_path: None,
+            group_index: None,
+            order_index: None,
+            sutta_range_group: range_group.as_deref(),
+            sutta_range_start: range_start,
+            sutta_range_end: range_end,
+            title: Some(&rec.title),
+            title_ascii: Some(&title_ascii),
+            title_pali: None,
+            title_trans: None,
+            description: rec.description.as_deref(),
+            content_plain: Some(&rec.content_plain),
+            content_html: None,
+            content_json: Some(&rec.content_json),
+            content_json_tmpl: Some(&rec.content_json_tmpl),
+            source_uid: Some(kind.translator()),
+            source_info: Some(&source_info),
+            source_language: None,
+            message: None,
+            copyright: None,
+            license: None,
+        })
+        .execute(conn)
+        .with_context(|| format!("Inserting {}", rec.uid))?;
+    let id: i32 = suttas::table.filter(suttas::uid.eq(&rec.uid)).select(suttas::id).first(conn)?;
+    write_comments(conn, id, &rec.uid, "en", kind.translator(), rec.footnotes_value.as_deref())
+}
+
+/// Imports every segment file of `source_folder` (`dhammapada-munindo` or
+/// `nyanadipa-translations`) into appdata, in one transaction, and returns the
+/// uids written. The SuttaCentral import must have run: each text's template
+/// is its `…/pli/ms` record's. A missing or empty `bilara/` folder, a missing
+/// Nyanadipa `footnotes.json`, and any file that fails to build are errors, so
+/// a release cannot ship with a text missing.
+pub fn import_source_folder(conn: &mut SqliteConnection, source_folder: &Path) -> Result<Vec<String>> {
+    let kind = SourceKind::from_source_folder(source_folder)?;
+    let dir = kind.segment_dir(source_folder);
+    match dir.try_exists() {
+        Ok(true) => {}
+        Ok(false) => bail!("Segment file folder not found: {}", dir.display()),
+        Err(e) => bail!("Checking {}: {}", dir.display(), e),
+    }
+    let files = read_segment_dir(&dir)?;
+    if files.is_empty() {
+        bail!("No segment files in {}", dir.display());
+    }
+
+    let footnote_path = source_folder.join(source_paths::SEGMENT_FOOTNOTES_SUBFILE);
+    let footnotes = match (read_footnote_file(&footnote_path)?, kind) {
+        (Some(f), _) => f.footnotes,
+        (None, SourceKind::Nyanadipa) => bail!("Footnote file not found: {}", footnote_path.display()),
+        (None, SourceKind::Munindo) => vec![],
+    };
+    let sutta_ids: HashSet<&str> = files.iter().map(|(_, f)| f.sutta_id.as_str()).collect();
+    if let Some(e) = footnotes.iter().find(|e| !sutta_ids.contains(e.sutta_id.as_str())) {
+        bail!("{}: note {} is for {}, which has no segment file", footnote_path.display(), e.marker, e.sutta_id);
+    }
+
+    let resolver = SuttaRefResolver::new(&pli_ms_uids(conn)?, &[]);
+    let link_fn = |html: &str| link_sutta_refs(html, &|r| resolver.resolve_pli(r));
+
+    conn.transaction::<_, anyhow::Error, _>(|conn| {
+        let mut uids = Vec::with_capacity(files.len());
+        for (path, file) in &files {
+            let notes: Vec<FootnoteEntry> =
+                footnotes.iter().filter(|e| e.sutta_id == file.sutta_id).cloned().collect();
+            let template = pali_template_from_db(conn, &file.sutta_id)?;
+            let rec = build_segmented_record(kind, file, &template, &notes, &link_fn)
+                .with_context(|| format!("Building {}", path.display()))?;
+            insert_segmented_record(conn, kind, &file.sutta_id, &rec)?;
+            uids.push(rec.uid);
+        }
+        Ok(uids)
+    })
 }
 
 // === Checks ===
@@ -1095,5 +1345,273 @@ mod tests {
         assert!(check_headings_and_title(&path, &file, SourceKind::Nyanadipa, &template, &source).is_empty());
         set_text(&mut file, "snp4.2:0.2", "The Octad on the Cave");
         assert_eq!(check_headings_and_title(&path, &file, SourceKind::Nyanadipa, &template, &source).len(), 1);
+    }
+
+    // === Building and importing records ===
+
+    fn identity(s: &str) -> String {
+        s.to_string()
+    }
+
+    fn snp4_2_fixture() -> (SegmentFile, Vec<FootnoteEntry>, IndexMap<String, String>) {
+        let (_, footnotes, texts) = nyanadipa_texts();
+        let file = texts.into_iter().next().unwrap().1;
+        (file, footnotes.footnotes, pali_template(&sc_data(), "snp4.2").unwrap())
+    }
+
+    #[test]
+    fn test_build_record_follows_the_template() {
+        let (_, mut file, _, _, _, template) = munindo_fixture();
+        // A file listing fewer ids than the template still gets every key.
+        file.segments.retain(|s| s.id != "dhp2:5");
+        set_text(&mut file, "dhp2:6", "with a pure heart, saṃsāra.");
+        let rec = build_segmented_record(SourceKind::Munindo, &file, &template, &[], &identity).unwrap();
+
+        assert_eq!(rec.uid, "dhp1-20/en/munindo");
+        assert_eq!(rec.title, "The Pairs");
+        let content: IndexMap<String, String> = serde_json::from_str(&rec.content_json).unwrap();
+        assert!(content.keys().eq(template.keys()));
+        assert_eq!(content["dhp2:5"], "");
+        assert_eq!(content["dhp2:6"], "with a pure heart, saṁsāra.", "niggahita made consistent");
+        // The verse-group ranges are written; the title stays.
+        assert_eq!(content["dhp1:0.4"], "1.");
+        assert_eq!(content["dhp2:0"], "2.");
+        assert_eq!(content["dhp1:0.3"], "1. The Pairs");
+        assert_eq!(rec.content_json_tmpl, serde_json::to_string(&template).unwrap());
+        assert!(rec.content_plain.contains("all states of being are determined by the heart"), "{}", rec.content_plain);
+        assert!(rec.description.is_none());
+        assert!(rec.footnotes_value.is_none());
+    }
+
+    #[test]
+    fn test_build_record_introduction_comes_first_in_the_plain_text() {
+        let (_, mut file, _, _, _, template) = munindo_fixture();
+        file.introduction = Some("<p>A chapter on <i>pairs</i>.</p>".to_string());
+        let rec = build_segmented_record(SourceKind::Munindo, &file, &template, &[], &identity).unwrap();
+        assert_eq!(rec.description.as_deref(), Some("<p>A chapter on <i>pairs</i>.</p>"));
+        let intro_at = rec.content_plain.find("a chapter on pairs").expect(&rec.content_plain);
+        assert!(intro_at < rec.content_plain.find("all states of being").unwrap());
+    }
+
+    #[test]
+    fn test_build_record_rejects_what_the_template_lacks() {
+        let (_, mut file, _, _, _, template) = munindo_fixture();
+        file.segments.push(Segment { id: "dhp3:1".into(), text: "x".into(), source: "manual".into() });
+        let err = build_segmented_record(SourceKind::Munindo, &file, &template, &[], &identity).unwrap_err();
+        assert!(err.to_string().contains("dhp3:1"), "{}", err);
+
+        let (file, mut notes, template) = snp4_2_fixture();
+        notes[0].segment_id = "snp4.2:99.1".into();
+        assert!(build_segmented_record(SourceKind::Nyanadipa, &file, &template, &notes, &identity).is_err());
+
+        let (_, mut file, _, _, _, template) = munindo_fixture();
+        set_text(&mut file, "dhp1:0.3", "");
+        assert!(build_segmented_record(SourceKind::Munindo, &file, &template, &[], &identity).is_err());
+    }
+
+    #[test]
+    fn test_build_record_nyanadipa_notes() {
+        let (file, notes, template) = snp4_2_fixture();
+        let rec = build_segmented_record(SourceKind::Nyanadipa, &file, &template, &notes, &|s: &str| format!("[{}]", s)).unwrap();
+        assert_eq!(rec.uid, "snp4.2/en/nyanadipa");
+        assert_eq!(rec.title, "The Cave");
+        assert_eq!(rec.footnote_count, 1);
+        let value: IndexMap<String, String> = serde_json::from_str(rec.footnotes_value.as_deref().unwrap()).unwrap();
+        let simsapa_backend::footnotes::CommentValue::Footnotes(stored) =
+            simsapa_backend::footnotes::parse_comment_value(&value["snp4.2:3.2"])
+        else {
+            panic!("{}", value["snp4.2:3.2"]);
+        };
+        assert_eq!((stored[0].number, stored[0].word_index), (1, Some(2)));
+        assert!(stored[0].html.starts_with('[') && stored[0].html.contains("avadāniyā"), "link_fn applied");
+        assert!(!rec.content_plain.contains("the root meaning"));
+        // No range in a Sutta Nipāta text.
+        assert!(!rec.content_json.contains('–'));
+    }
+
+    #[test]
+    fn test_record_title() {
+        assert_eq!(record_title(SourceKind::Munindo, "14. The Buddha"), "The Buddha");
+        assert_eq!(record_title(SourceKind::Nyanadipa, "Ajita’s Question"), "Ajita’s Question");
+        assert_eq!(record_title(SourceKind::Nyanadipa, "4. Not a chapter"), "4. Not a chapter");
+    }
+
+    #[test]
+    fn test_import_fixture_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = test_support::scratch_appdata(&dir);
+        for id in ["dhp1-20", "snp4.2"] {
+            test_support::insert_pali(&mut conn, id, &serde_json::to_string(&pali_template(&sc_data(), id).unwrap()).unwrap());
+        }
+        assert_eq!(import_source_folder(&mut conn, &munindo_folder()).unwrap(), ["dhp1-20/en/munindo"]);
+        assert_eq!(import_source_folder(&mut conn, &nyanadipa_folder()).unwrap(), ["snp4.2/en/nyanadipa"]);
+
+        let row = test_support::record_row(&mut conn, "dhp1-20/en/munindo");
+        assert_eq!(row.title, "The Pairs");
+        assert_eq!(row.sutta_ref, "Dhp 1-20");
+        assert_eq!(row.source_info.as_deref(), Some("dhammapada-munindo/bilara"));
+        assert!(row.content_html.is_none());
+        let row = test_support::record_row(&mut conn, "snp4.2/en/nyanadipa");
+        assert_eq!(row.source_info.as_deref(), Some("nyanadipa-translations/bilara"));
+    }
+
+    #[test]
+    fn test_import_without_pali_template_names_the_uid() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = test_support::scratch_appdata(&dir);
+        let err = import_source_folder(&mut conn, &munindo_folder()).unwrap_err();
+        assert!(format!("{:#}", err).contains("dhp1-20/pli/ms"), "{:#}", err);
+        // Nothing was written.
+        let n: i64 = suttas::table.count().get_result(&mut conn).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_import_missing_or_empty_folder_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = test_support::scratch_appdata(&dir);
+        let folder = dir.path().join(source_paths::DHAMMAPADA_MUNINDO_DIR);
+        fs::create_dir(&folder).unwrap();
+        assert!(import_source_folder(&mut conn, &folder).is_err(), "no bilara/ folder");
+        fs::create_dir(folder.join(source_paths::MUNINDO_BILARA_SUBDIR)).unwrap();
+        assert!(import_source_folder(&mut conn, &folder).is_err(), "empty bilara/ folder");
+
+        // Nyanadipa without its footnote file.
+        let folder = dir.path().join(source_paths::NYANADIPA_DIR);
+        fs::create_dir_all(folder.join(source_paths::NYANADIPA_BILARA_SUBDIR)).unwrap();
+        fs::copy(nyanadipa_folder().join("bilara/snp4.2.json"), folder.join("bilara/snp4.2.json")).unwrap();
+        test_support::insert_pali(&mut conn, "snp4.2", &serde_json::to_string(&pali_template(&sc_data(), "snp4.2").unwrap()).unwrap());
+        let err = import_source_folder(&mut conn, &folder).unwrap_err();
+        assert!(err.to_string().contains("footnotes.json"), "{}", err);
+    }
+}
+
+/// A scratch appdata for the importer tests, so they never write to the dist
+/// database.
+#[cfg(test)]
+pub mod test_support {
+    use super::*;
+    use diesel::sql_query;
+    use diesel::sql_types::Text;
+
+    /// A scratch appdata with the real schema, in `dir`.
+    pub fn scratch_appdata(dir: &tempfile::TempDir) -> SqliteConnection {
+        let path = dir.path().join("appdata.sqlite3");
+        let mut conn = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        crate::bootstrap::run_migrations(&mut conn).unwrap();
+        conn
+    }
+
+    /// Inserts a `<sutta_id>/pli/ms` record with only what the importers read.
+    pub fn insert_pali(conn: &mut SqliteConnection, sutta_id: &str, template: &str) {
+        sql_query("INSERT INTO suttas (uid, sutta_ref, nikaya, language, content_json_tmpl, source_uid) VALUES (?, ?, 'kn', 'pli', ?, 'ms')")
+            .bind::<Text, _>(format!("{}/pli/ms", sutta_id))
+            .bind::<Text, _>(sutta_id)
+            .bind::<Text, _>(template)
+            .execute(conn)
+            .unwrap();
+    }
+
+    /// Imports `source_folder` (real bootstrap assets) into a scratch appdata
+    /// seeded with the Dhammapada and Sutta Nipāta Pāli templates of the dist
+    /// database, which is opened read-only. `None` (the test skips) when the
+    /// folder or the dist database is absent.
+    pub fn import_into_scratch(source_folder: &Path) -> Option<(tempfile::TempDir, SqliteConnection, Vec<String>)> {
+        let dist = source_paths::bootstrap_assets_dir_from_crate().join("dist/simsapa/app-assets/appdata.sqlite3");
+        if !matches!(source_folder.join("bilara").try_exists(), Ok(true)) || !matches!(dist.try_exists(), Ok(true)) {
+            simsapa_backend::logger::write_stdout(format_args!("Skipping: {} or {} not found\n", source_folder.display(), dist.display()));
+            return None;
+        }
+        let mut dist_conn =
+            SqliteConnection::establish(&crate::bootstrap::suttas_core::sqlite_readonly_uri(&dist).unwrap()).unwrap();
+        let templates: Vec<(String, Option<String>)> = suttas::table
+            .filter(suttas::uid.like("dhp%/pli/ms").or(suttas::uid.like("snp%/pli/ms")))
+            .select((suttas::uid, suttas::content_json_tmpl))
+            .load(&mut dist_conn)
+            .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = scratch_appdata(&dir);
+        for (uid, tmpl) in templates {
+            if let (Some(sutta_id), Some(tmpl)) = (uid.strip_suffix("/pli/ms"), tmpl) {
+                insert_pali(&mut conn, sutta_id, &tmpl);
+            }
+        }
+        let uids = import_source_folder(&mut conn, source_folder).unwrap();
+        Some((dir, conn, uids))
+    }
+
+    /// The titles of the dist database's records of `source_uid`, by uid.
+    pub fn dist_titles(source_uid: &str) -> HashMap<String, String> {
+        let dist = source_paths::bootstrap_assets_dir_from_crate().join("dist/simsapa/app-assets/appdata.sqlite3");
+        let mut conn =
+            SqliteConnection::establish(&crate::bootstrap::suttas_core::sqlite_readonly_uri(&dist).unwrap()).unwrap();
+        suttas::table
+            .filter(suttas::source_uid.eq(source_uid))
+            .select((suttas::uid, suttas::title))
+            .load::<(String, Option<String>)>(&mut conn)
+            .unwrap()
+            .into_iter()
+            .map(|(uid, title)| (uid, title.unwrap_or_default()))
+            .collect()
+    }
+
+    /// Asserts that every imported record has the title of the same uid in the
+    /// dist database, or of `renamed[uid]` when the dist database still has
+    /// the record under its old uid.
+    pub fn assert_titles_unchanged(conn: &mut SqliteConnection, uids: &[String], source_uid: &str, renamed: &[(&str, &str)]) {
+        let dist = dist_titles(source_uid);
+        let mut differ = Vec::new();
+        for uid in uids {
+            let old_uid = renamed
+                .iter()
+                .find(|(new, _)| new == uid)
+                .map(|(_, old)| *old)
+                .filter(|old| dist.contains_key(*old))
+                .unwrap_or(uid);
+            let title = record_row(conn, uid).title;
+            match dist.get(old_uid) {
+                Some(old) if *old == title => {}
+                old => differ.push(format!("{}: {:?}, the dist database has {:?} under {}", uid, title, old, old_uid)),
+            }
+        }
+        assert!(differ.is_empty(), "{:#?}", differ);
+    }
+
+    pub struct RecordRow {
+        pub title: String,
+        pub sutta_ref: String,
+        pub content_json: String,
+        pub content_json_tmpl: String,
+        pub content_plain: String,
+        pub content_html: Option<String>,
+        pub source_info: Option<String>,
+    }
+
+    pub fn record_row(conn: &mut SqliteConnection, uid: &str) -> RecordRow {
+        let (title, sutta_ref, content_json, content_json_tmpl, content_plain, content_html, source_info): (
+            Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>,
+        ) = suttas::table
+            .filter(suttas::uid.eq(uid))
+            .select((
+                suttas::title, suttas::sutta_ref, suttas::content_json, suttas::content_json_tmpl,
+                suttas::content_plain, suttas::content_html, suttas::source_info,
+            ))
+            .first(conn)
+            .unwrap_or_else(|e| panic!("{}: {}", uid, e));
+        RecordRow {
+            title: title.unwrap_or_default(),
+            sutta_ref,
+            content_json: content_json.unwrap_or_default(),
+            content_json_tmpl: content_json_tmpl.unwrap_or_default(),
+            content_plain: content_plain.unwrap_or_default(),
+            content_html,
+            source_info,
+        }
+    }
+
+    /// A `content_json` or template in document order.
+    pub fn content_map(json: &str) -> IndexMap<String, String> {
+        serde_json::from_str(json).unwrap()
     }
 }

@@ -1,6 +1,6 @@
 // The English opened beside a Pāli text with no columns requested. A segmented
-// English imported from suttas-core sorts first by uid (bodhi < sujato) but
-// must not displace SuttaCentral's segmented English.
+// English of another source (suttas-core's Bodhi, Munindo, Nyanadipa) sorts
+// first by uid but must not displace SuttaCentral's segmented English.
 //
 // The records are `dummy-` rows in the dist database, removed by uid.
 
@@ -26,7 +26,21 @@ const PALI_CORE_ONLY: &str = "dummy-mn6/pli/ms";
 const HTML_CORE_ONLY: &str = "dummy-mn6/en/abc";
 const CORE_CORE_ONLY: &str = "dummy-mn6/en/bodhi";
 
-const ALL_UIDS: [&str; 6] = [PALI_BOTH, CORE_BOTH, SC_BOTH, PALI_CORE_ONLY, HTML_CORE_ONLY, CORE_CORE_ONLY];
+const MUNINDO_INFO: &str = "dhammapada-munindo/bilara";
+const NYANADIPA_INFO: &str = "nyanadipa-translations/bilara";
+
+const PALI_DHP: &str = "dummy-dhp1-20/pli/ms";
+const MUNINDO_DHP: &str = "dummy-dhp1-20/en/munindo";
+const SUJATO_DHP: &str = "dummy-dhp1-20/en/sujato";
+
+const PALI_SNP: &str = "dummy-snp4.2/pli/ms";
+const NYANADIPA_SNP: &str = "dummy-snp4.2/en/nyanadipa";
+const SUJATO_SNP: &str = "dummy-snp4.2/en/sujato";
+
+const ALL_UIDS: [&str; 12] = [
+    PALI_BOTH, CORE_BOTH, SC_BOTH, PALI_CORE_ONLY, HTML_CORE_ONLY, CORE_CORE_ONLY,
+    PALI_DHP, MUNINDO_DHP, SUJATO_DHP, PALI_SNP, NYANADIPA_SNP, SUJATO_SNP,
+];
 
 const JSON: &str = r#"{"k:1.1": "one"}"#;
 const TMPL: &str = r#"{"k:1.1": "<p>{}</p>"}"#;
@@ -95,6 +109,12 @@ fn set_up() -> Fixture {
     insert_text(PALI_CORE_ONLY, "pli", true, None);
     insert_text(HTML_CORE_ONLY, "en", false, None);
     insert_text(CORE_CORE_ONLY, "en", true, Some(SUTTAS_CORE_INFO));
+    insert_text(PALI_DHP, "pli", true, None);
+    insert_text(MUNINDO_DHP, "en", true, Some(MUNINDO_INFO));
+    insert_text(SUJATO_DHP, "en", true, None);
+    insert_text(PALI_SNP, "pli", true, None);
+    insert_text(NYANADIPA_SNP, "en", true, Some(NYANADIPA_INFO));
+    insert_text(SUJATO_SNP, "en", true, None);
     fixture
 }
 
@@ -122,4 +142,12 @@ fn a_suttas_core_english_does_not_displace_the_other_segmented_english() {
 fn a_suttas_core_english_is_preferred_to_an_html_one() {
     let _fixture = set_up();
     assert_eq!(default_columns(PALI_CORE_ONLY), [PALI_CORE_ONLY, CORE_CORE_ONLY]);
+}
+
+#[test]
+#[serial]
+fn munindo_and_nyanadipa_do_not_displace_sujato() {
+    let _fixture = set_up();
+    assert_eq!(default_columns(PALI_DHP), [PALI_DHP, SUJATO_DHP]);
+    assert_eq!(default_columns(PALI_SNP), [PALI_SNP, SUJATO_SNP]);
 }

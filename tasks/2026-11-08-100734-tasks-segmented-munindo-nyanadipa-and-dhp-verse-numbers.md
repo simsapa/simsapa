@@ -6,19 +6,19 @@ Code (`simsapa/`):
 
 - `bootstrap_cli/src/bootstrap/helpers.rs` - Home of the new shared verse-group range function (`dhp_verse_group_ranges()`), the chapter-title helper, and their unit tests.
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - `bilara_text_to_sutta()` (line ~610) builds every Bilara record from ArangoDB; the Pāli `ms` and Sujato Dhammapada ranges are written here, before `bilara_html_and_plain_text()`.
-- `bootstrap_cli/src/bootstrap/suttas_core.rs` - `SuttasCoreDb::build_record()` (line ~383) builds Ṭhānissaro's records; ranges and chapter titles go in here. `footnotes_value()` (line ~456), `write_comments()` (line ~549) and `note_newlines_to_html()` are the footnote code to share with the Nyanadipa importer.
-- `bootstrap_cli/src/bootstrap/segment_files.rs` - **New.** Types and readers for `bilara/<sutta_id>.json` and `bilara/footnotes.json`, `hash()` / `text_hash()` / `id_list_hash()` (equal to suttas-core's), `pali_root_ids()` / `pali_template()` / `page_title_key()`, `normalized_source_text()`, and the five checks behind `check-segment-files` (`check_source_folder()`).
-- `bootstrap_cli/src/bootstrap/dhammapada_munindo.rs` - Munindo importer; rewritten to read `dhammapada-munindo/bilara/`.
-- `bootstrap_cli/src/bootstrap/nyanadipa.rs` - Nyanadipa importer; rewritten to read `nyanadipa-translations/bilara/`.
+- `bootstrap_cli/src/bootstrap/suttas_core.rs` - `SuttasCoreDb::build_record()` builds Ṭhānissaro's records; ranges and chapter titles go in here. `SegmentNote` and `footnotes_value_from()` (grouping and encoding of notes) and `write_comments()` are shared with the Nyanadipa importer.
+- `bootstrap_cli/src/bootstrap/segment_files.rs` - **New.** Types and readers for `bilara/<sutta_id>.json` and `bilara/footnotes.json`, `hash()` / `text_hash()` / `id_list_hash()` (equal to suttas-core's), `pali_root_ids()` / `pali_template()` / `page_title_key()`, `normalized_source_text()`, the checks behind `check-segment-files` (`check_source_folder()`), and the import shared by both importers: `build_segmented_record()`, `record_title()`, `pali_template_from_db()`, `import_source_folder()`; `test_support` builds a scratch appdata for the importer tests.
+- `bootstrap_cli/src/bootstrap/dhammapada_munindo.rs` - Munindo importer: a wrapper over `import_source_folder()` for `dhammapada-munindo/bilara/`, with the real-data test.
+- `bootstrap_cli/src/bootstrap/nyanadipa.rs` - Nyanadipa importer: a wrapper over `import_source_folder()` for `nyanadipa-translations/bilara/` and its `footnotes.json`, with the real-data test.
 - `bootstrap_cli/src/bootstrap/footnote_sutta_links.rs` - `link_sutta_refs()` / `FootnoteLinker` turn sutta references in notes into `ssp://` links; reused for Nyanadipa's notes.
 - `bootstrap_cli/src/bootstrap/mod.rs` - `bootstrap()` (line ~322–345): the Nyanadipa and Munindo steps' `if path.exists()` skips become errors; register the new module.
 - `bootstrap_cli/src/bootstrap/preflight.rs` - `bootstrap_sources()` (line ~120): both sources become `required`, pointing at the `bilara/` folders.
-- `bootstrap_cli/src/bootstrap/source_paths.rs` - New constants `MUNINDO_BILARA_SUBDIR`, `NYANADIPA_BILARA_SUBDIR`, `SEGMENT_FOOTNOTES_SUBFILE`.
+- `bootstrap_cli/src/bootstrap/source_paths.rs` - New constants `MUNINDO_BILARA_SUBDIR`, `NYANADIPA_BILARA_SUBDIR`, `SEGMENT_FOOTNOTES_SUBFILE`, and `munindo_bilara_dir()` / `nyanadipa_bilara_dir()` / `nyanadipa_footnotes_file()` for the preflight.
 - `bootstrap_cli/src/main.rs` - `Commands` enum (line ~665): new `CheckSegmentFiles` subcommand.
 - `bootstrap_cli/Cargo.toml` - Adds `sha2` and `unicode-normalization` (same versions as `backend/`).
 - `backend/src/lookup.rs` - `DHP_CHAPTERS_TO_RANGE` (chapter number → verse range); a reverse lookup (range → chapter number) is needed.
 - `backend/src/footnotes.rs` - `Footnote`, `encode_footnotes()`, `word_count()`; the stored form of footnotes.
-- `bootstrap_cli/tests/data/nyanadipa/snp4.10.html` - Old fixture of the HTML import; deleted in 6.0.
+- `bootstrap_cli/tests/data/nyanadipa/snp4.10.html`, `tests/data/dhammapada-munindo/*_expected.html` - Old fixtures of the HTML/Markdown imports; deleted in 6.0.
 - `bootstrap_cli/tests/data/segment_files/` - **New.** Fixture source folders (`dhammapada-munindo/`: `dhp1-20`, two verses; `nyanadipa-translations/`: `snp4.2`, three verses and its note) and a truncated `sc-data/` with their Pāli root and template. The tests break copies in memory, one per check.
 
 Data (`bootstrap-assets-resources/`, not in this repo):
@@ -34,7 +34,8 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `suttas-core/docs/data-layers.md` - The segmentation-file and footnote rules the new files follow.
 
 - `backend/src/helpers.rs` - `bilara_text_to_segments()` (~2699), `bilara_multi_column_html()` (~2948): where `render_verse_lines()` is applied (7.0).
-- `backend/src/app_data.rs` - `default_english_for_pali()` (~333, FR 15a) and `sutta_to_segments_json()` (7.1).
+- `backend/src/app_data.rs` - `default_english_for_pali()` (FR 15a: SuttaCentral's segmented English first) and `sutta_to_segments_json()` (7.1).
+- `backend/tests/test_default_english.rs` - Default-English tests, including Munindo / Nyanadipa beside Sujato.
 - `backend/src/footnotes.rs` - `insert_markers()` / `word_spans()`: markers go in before lines are split.
 - `assets/sass/_suttacentral.sass` - `.verse-line` rules; new `.ssp-line` / `.ssp-indent-N`.
 - `src-ts/find.ts`, `src-ts/pali_word.ts` - find bar and tap-to-lookup across the new line spans (7.7).
@@ -355,22 +356,22 @@ Depends on: 1.0 (ranges), 2.0 (`dhp_chapter_number`, `range_title_key`), 3.0 (re
   still excluded and `/pli/cst` unchanged. Must land in the same change as
   6.3–6.4, or Munindo / Nyanadipa replace Sujato as the default.
 
-- [ ] 6.0 Switch the Munindo and Nyanadipa importers to the segment files: `content_json` / template / plain text / footnotes / titles / ranges, remove the HTML/Markdown paths, make both sources required in the preflight and in `bootstrap()`, keep Sujato the default English (PRD FR 15–17, 15a, 21 Munindo, 26, 27a part, 28, 29)
-  - [ ] 6.1 Refactor `SuttasCoreDb::footnotes_value()` so the grouping-and-encoding part is a free function used by both; `suttas_core.rs` tests still pass unchanged.
-  - [ ] 6.2 Add a shared `build_segmented_record(file, template, …)` in `segment_files.rs` doing steps 2–5 of the specs, returning the fields the importers insert. Unit-test it with the 3.9 fixtures and a fixture template (key order, empty keys, niggahita, introduction in `content_plain`).
-  - [ ] 6.3 Rewrite `DhammapadaMunindoImporter`: read `bilara/` via `read_segment_dir`, derive the chapter / uid from `sutta_id`, build and insert each record, apply the ranges. Remove `discover_html_files` and the HTML `parse_sutta`.
-  - [ ] 6.4 Rewrite `NyanadipaImporter`: read `bilara/` and `bilara/footnotes.json`, build and insert each record, write its comments. Remove the Markdown parsing and the `mdbook` call; drop the `mdbook` dependency from `bootstrap_cli/Cargo.toml` if nothing else uses it.
-  - [ ] 6.4a Record `title` (both importers): the importers no longer read the Markdown, so derive it from the page-title segment (`page_title_key()`): Nyanadipa the segment's text, Munindo the text with its `<n>. ` prefix removed. The 16 title segments whose Markdown heading has a straight `'` already hold `’` (decided: the book and today's mdbook-made titles are curly; the check applies `curly_apostrophes()`), so the titles come out as today. Test that the 62 record titles equal today's, `snp5.19` taking the old `snp5.18` record's title (`Upasīva’S Question` keeps its capital `S`, a recorded source defect).
-  - [ ] 6.5 Both importers: a missing `bilara/` folder or an empty one is an error; one file failing to import is an error (no silent per-file skip), so a release cannot ship with a chapter missing.
-  - [ ] 6.6 `preflight.rs`: change both entries to `required(…)` with the `bilara/` paths (and the footnote file for Nyanadipa) from `source_paths`.
-  - [ ] 6.7 `mod.rs` `bootstrap()`: replace the two `if path.exists() … else warn` blocks with unconditional imports that propagate errors.
-  - [ ] 6.8 Replace the old tests (`test_parse_dhp1`, `test_snp4_10`, the HTML-regex tests) and delete `tests/data/nyanadipa/snp4.10.html` (PRD FR 28).
-  - [ ] 6.9 New importer tests against the real assets (skip when absent), each inserting under `dummy-` uids or in a transaction rolled back at the end, and cleaning up only what it wrote (PRD FR 26, 29):
-    - [ ] 6.9.1 `dhp179-196` Munindo: `content_json` keys == Pāli template keys in order; `dhp183:0` = `183–185.`; `dhp179:0.3` = `14. The Buddha`; `content_plain` contains *Refrain from doing evil*; `content_html` is NULL.
-    - [ ] 6.9.2 `snp4.2` Nyanadipa: `snp4.2:0.2` = `The Cave`; one `sutta_comments` row whose value parses (via `backend/src/footnotes.rs`) to note 1 on the expected segment; *Incorrigible* is not in `content_plain`.
-  - [ ] 6.9.3 Default English (PRD FR 15a): change `default_english_for_pali()` as in the specs, update its doc comment and `docs/suttas-core-import.md` "The default English beside a Pāli text"; tests in `backend/` that `dhp1-20/pli/ms` and `snp4.2/pli/ms` default to `…/en/sujato` with Munindo / Nyanadipa segmented, and that a Pāli text whose only segmented English is from suttas-core still gets it.
-  - [ ] 6.10 Run the preflight test `cd bootstrap_cli && cargo test test_full_bootstrap_sources -- --ignored` against the real checkout.
-  - [ ] 6.11 `make rust-test` passes.
+- [x] 6.0 Switch the Munindo and Nyanadipa importers to the segment files: `content_json` / template / plain text / footnotes / titles / ranges, remove the HTML/Markdown paths, make both sources required in the preflight and in `bootstrap()`, keep Sujato the default English (PRD FR 15–17, 15a, 21 Munindo, 26, 27a part, 28, 29)
+  - [x] 6.1 Refactor `SuttasCoreDb::footnotes_value()` so the grouping-and-encoding part is a free function used by both; `suttas_core.rs` tests still pass unchanged.
+  - [x] 6.2 Add a shared `build_segmented_record(file, template, …)` in `segment_files.rs` doing steps 2–5 of the specs, returning the fields the importers insert. Unit-test it with the 3.9 fixtures and a fixture template (key order, empty keys, niggahita, introduction in `content_plain`).
+  - [x] 6.3 Rewrite `DhammapadaMunindoImporter`: read `bilara/` via `read_segment_dir`, derive the chapter / uid from `sutta_id`, build and insert each record, apply the ranges. Remove `discover_html_files` and the HTML `parse_sutta`.
+  - [x] 6.4 Rewrite `NyanadipaImporter`: read `bilara/` and `bilara/footnotes.json`, build and insert each record, write its comments. Remove the Markdown parsing and the `mdbook` call; drop the `mdbook` dependency from `bootstrap_cli/Cargo.toml` if nothing else uses it. (Kept: `buddha_ujja.rs` still calls `mdbook::utils::render_markdown`.)
+  - [x] 6.4a Record `title` (both importers): the importers no longer read the Markdown, so derive it from the page-title segment (`page_title_key()`): Nyanadipa the segment's text, Munindo the text with its `<n>. ` prefix removed. The 16 title segments whose Markdown heading has a straight `'` already hold `’` (decided: the book and today's mdbook-made titles are curly; the check applies `curly_apostrophes()`), so the titles come out as today. Test that the 62 record titles equal today's, `snp5.19` taking the old `snp5.18` record's title (`Upasīva’S Question` keeps its capital `S`, a recorded source defect).
+  - [x] 6.5 Both importers: a missing `bilara/` folder or an empty one is an error; one file failing to import is an error (no silent per-file skip), so a release cannot ship with a chapter missing.
+  - [x] 6.6 `preflight.rs`: change both entries to `required(…)` with the `bilara/` paths (and the footnote file for Nyanadipa) from `source_paths`.
+  - [x] 6.7 `mod.rs` `bootstrap()`: replace the two `if path.exists() … else warn` blocks with unconditional imports that propagate errors.
+  - [x] 6.8 Replace the old tests (`test_parse_dhp1`, `test_snp4_10`, the HTML-regex tests) and delete `tests/data/nyanadipa/snp4.10.html` (PRD FR 28). Also deleted the unreferenced `tests/data/dhammapada-munindo/*_expected.html`.
+  - [x] 6.9 New importer tests against the real assets (skip when absent), each inserting under `dummy-` uids or in a transaction rolled back at the end, and cleaning up only what it wrote (PRD FR 26, 29). Done in a scratch appdata (temp dir, real migrations) seeded with the `dhp`/`snp` `pli/ms` templates read from the dist DB opened read-only, so nothing is written to the dist DB (`segment_files::test_support`).
+    - [x] 6.9.1 `dhp179-196` Munindo: `content_json` keys == Pāli template keys in order; `dhp183:0` = `183–185.`; `dhp179:0.3` = `14. The Buddha`; `content_plain` contains *Refrain from doing evil*; `content_html` is NULL.
+    - [x] 6.9.2 `snp4.2` Nyanadipa: `snp4.2:0.2` = `The Cave`; one `sutta_comments` row whose value parses (via `backend/src/footnotes.rs`) to note 1 on the expected segment; *Incorrigible* is not in `content_plain`. (The verse itself has *incorrigible*, the word the note glosses, so the test checks the note-only phrase *the root meaning*; `content_plain` is lowercased search text.)
+  - [x] 6.9.3 Default English (PRD FR 15a): change `default_english_for_pali()` as in the specs, update its doc comment and `docs/suttas-core-import.md` "The default English beside a Pāli text"; tests in `backend/` that `dhp1-20/pli/ms` and `snp4.2/pli/ms` default to `…/en/sujato` with Munindo / Nyanadipa segmented, and that a Pāli text whose only segmented English is from suttas-core still gets it.
+  - [x] 6.10 Run the preflight test `cd bootstrap_cli && cargo test test_full_bootstrap_sources -- --ignored` against the real checkout.
+  - [x] 6.11 `make rust-test` passes.
 
 ### 7.0 specs
 
