@@ -150,3 +150,87 @@ fn an_opened_commentary_lists_its_opentipitaka_english() {
     let without = related_sutta_uids("mn1.att/pli/cst", &candidates, false);
     assert_eq!(without, uids(&["mn1/pli/cst", "mn1.att/en/opentipitaka"]));
 }
+
+/// The Dhammapada records for vaggas 1 and 2, as the bootstrap makes them: the
+/// MS and CST mūla, the English translations, and the commentary in Pāli and
+/// two English translations, all under the SuttaCentral vagga uids.
+fn dhammapada_candidates() -> Vec<String> {
+    uids(&[
+        "dhp1-20/pli/ms",
+        "dhp21-32/pli/ms",
+        "dhp21-32/pli/cst",
+        "dhp21-32/en/opentipitaka",
+        "dhp21-32/en/anandajoti",
+        "dhp21-32/en/daw",
+        "dhp1-20.att/pli/cst",
+        "dhp1-20.att/en/opentipitaka",
+        "dhp1-20.att/en/anandajoti",
+        "dhp21-32.att/pli/cst",
+        "dhp21-32.att/en/opentipitaka",
+        "dhp21-32.att/en/anandajoti",
+    ])
+}
+
+const DHP_21_32_COMMENTARY: [&str; 3] = [
+    "dhp21-32.att/pli/cst",
+    "dhp21-32.att/en/opentipitaka",
+    "dhp21-32.att/en/anandajoti",
+];
+
+#[test]
+fn a_dhammapada_vagga_lists_its_commentary_only_with_the_setting() {
+    let candidates = dhammapada_candidates();
+
+    let with = related_sutta_uids("dhp21-32/pli/ms", &candidates, true);
+    for uid in DHP_21_32_COMMENTARY {
+        assert!(with.contains(&uid.to_string()), "{} missing: {:?}", uid, with);
+    }
+    assert!(!with.iter().any(|uid| uid.starts_with("dhp1-20")), "{:?}", with);
+
+    let without = related_sutta_uids("dhp21-32/pli/ms", &candidates, false);
+    assert!(!without.iter().any(|uid| uid.contains(".att")), "{:?}", without);
+    assert_eq!(
+        without,
+        uids(&[
+            "dhp21-32/pli/cst",
+            "dhp21-32/en/opentipitaka",
+            "dhp21-32/en/anandajoti",
+            "dhp21-32/en/daw",
+        ])
+    );
+}
+
+/// SQL `LIKE` for a pattern whose only wildcard is a trailing `%`.
+fn like_matches(pattern: &str, uid: &str) -> bool {
+    match pattern.strip_suffix('%') {
+        Some(prefix) if !prefix.contains('%') => uid.starts_with(prefix),
+        _ => panic!("unsupported pattern: {}", pattern),
+    }
+}
+
+#[test]
+fn the_dhammapada_candidate_pattern_finds_the_commentary() {
+    let pattern = related_sutta_uids_like_pattern("dhp21-32/pli/ms");
+    assert_eq!(pattern, "dhp%");
+    for uid in dhammapada_candidates().iter().filter(|uid| uid.contains(".att")) {
+        assert!(like_matches(&pattern, uid), "{} does not match {}", uid, pattern);
+    }
+}
+
+#[test]
+fn an_opened_dhammapada_commentary_lists_both_english_translations() {
+    let candidates = dhammapada_candidates();
+    for include_cst_commentary in [true, false] {
+        let listed = related_sutta_uids("dhp21-32.att/pli/cst", &candidates, include_cst_commentary);
+        for uid in ["dhp21-32.att/en/anandajoti", "dhp21-32.att/en/opentipitaka", "dhp21-32/pli/ms"] {
+            assert!(
+                listed.contains(&uid.to_string()),
+                "{} missing (setting {}): {:?}",
+                uid,
+                include_cst_commentary,
+                listed
+            );
+        }
+        assert!(!listed.iter().any(|uid| uid.starts_with("dhp1-20")), "{:?}", listed);
+    }
+}

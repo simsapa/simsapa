@@ -2224,6 +2224,15 @@ mod tests {
     }
 
     #[test]
+    fn a_dhammapada_vagga_is_a_twin_in_both_editions_and_its_commentary_is_not() {
+        let twins = pali_edition_twins(
+            &uids(&["dhp1-20/pli/ms", "dhp21-32/pli/ms"]),
+            &uids(&["dhp21-32/pli/cst", "dhp21-32.att/pli/cst"]),
+        );
+        assert_eq!(twins, uids(&["dhp21-32/pli/cst", "dhp21-32/pli/ms"]));
+    }
+
+    #[test]
     fn a_range_record_is_a_twin_of_every_record_it_overlaps() {
         let twins = pali_edition_twins(
             &uids(&["an5.303/pli/ms", "an5.1153/pli/ms", "an5.302/pli/ms"]),

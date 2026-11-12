@@ -43,6 +43,24 @@ fn sanitize_uid_like_prefix(input: Option<&str>) -> Option<String> {
     }
 }
 
+/// `LIKE` patterns for the uid of a commentary: a record whose reference ends
+/// in `.att` or `.tik`, whatever its source (`mn1.att/pli/cst`,
+/// `mn1.att/en/opentipitaka`, `dhp21-32.att/en/anandajoti`). The `%` after the
+/// suffix also matches the CST division uids that carry it inside the file
+/// name (`s0101a.att0.xml/pli/cst`). The same rule sets the Tantivy
+/// `is_commentary` field (`search/indexer.rs`).
+const COMMENTARY_UID_LIKE_PATTERNS: [&str; 2] = ["%.att%/%", "%.tik%/%"];
+
+/// The Contains Match `extra_where` condition that excludes every commentary,
+/// for the `suttas` table aliased as `table_alias`.
+fn commentary_exclusion_sql(table_alias: &str) -> String {
+    let matches: Vec<String> = COMMENTARY_UID_LIKE_PATTERNS
+        .iter()
+        .map(|pattern| format!("{}.uid LIKE '{}'", table_alias, pattern))
+        .collect();
+    format!("NOT ({})", matches.join(" OR "))
+}
+
 /// Convert a `BoldDefinition` row to a `SearchResult`. The snippet is the
 /// first ~300 chars of `commentary_plain`; final highlighting is applied in
 /// `results_page` via `highlight_query_in_content`.
@@ -655,14 +673,7 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         if !self.include_cst_commentary {
-            query = query.filter(
-                diesel::dsl::not(
-                    uid.like("%.att%/cst")
-                    .or(uid.like("%.tik%/cst"))
-                    .or(uid.like("%.att%/opentipitaka"))
-                    .or(uid.like("%.tik%/opentipitaka"))
-                )
-            );
+            query = Self::filter_out_commentary(query);
         }
 
         if let Some(prefix) = sanitize_uid_like_prefix(self.nikaya_prefix.as_deref()) {
@@ -699,6 +710,16 @@ impl<'a> SearchQueryTask<'a> {
 
     /// Hide the records of the other edition that are in both Pāli editions,
     /// as the preference says. A `suttas` query; see `hidden_pali_edition()`.
+    /// Exclude every commentary record, whatever its source
+    /// ([`COMMENTARY_UID_LIKE_PATTERNS`]).
+    fn filter_out_commentary<'q>(
+        query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
+    ) -> crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite> {
+        use crate::db::appdata_schema::suttas::dsl::*;
+        let [att, tik] = COMMENTARY_UID_LIKE_PATTERNS;
+        query.filter(diesel::dsl::not(uid.like(att).or(uid.like(tik))))
+    }
+
     fn filter_pali_edition<'q>(
         query: crate::db::appdata_schema::suttas::BoxedQuery<'q, diesel::sqlite::Sqlite>,
         hidden: Option<&'static str>,
@@ -1130,12 +1151,8 @@ impl<'a> SearchQueryTask<'a> {
         }
 
         if !self.include_cst_commentary {
-            // There are %.att/pli/cst and %.att.xml/pli/cst. The .att and .tik commentaries
-            // are CST or their OpenTipitaka English, so they end in /cst or /opentipitaka.
-            extra_where.push_str(
-                " AND NOT (s.uid LIKE '%.att%/cst' OR s.uid LIKE '%.tik%/cst' \
-                 OR s.uid LIKE '%.att%/opentipitaka' OR s.uid LIKE '%.tik%/opentipitaka')"
-            );
+            extra_where.push_str(" AND ");
+            extra_where.push_str(&commentary_exclusion_sql("s"));
         }
 
         if let Some(prefix) = sanitize_uid_like_prefix(self.nikaya_prefix.as_deref()) {
@@ -2925,6 +2942,74 @@ impl<'a> SearchQueryTask<'a> {
     /// Returns the total number of hits found in the last database query.
     pub fn total_hits(&self) -> i64 {
         self.db_query_hits_count
+    }
+}
+
+#[cfg(test)]
+mod commentary_filter_tests {
+    use diesel::prelude::*;
+    use diesel::sql_query;
+    use diesel::sqlite::SqliteConnection;
+
+    use super::{commentary_exclusion_sql, SearchQueryTask};
+
+    const SUTTAS: [&str; 9] = [
+        "dhp21-32.att/en/anandajoti",
+        "dhp21-32.att/en/opentipitaka",
+        "dhp21-32.att/pli/cst",
+        "dhp21-32/en/anandajoti",
+        "dhp21-32/pli/cst",
+        "mn1.tik/pli/cst",
+        "mn1/en/opentipitaka",
+        "mn1/pli/ms",
+        "s0101a.att0.xml/pli/cst",
+    ];
+
+    fn fixture() -> SqliteConnection {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        sql_query("CREATE TABLE suttas (id INTEGER PRIMARY KEY, uid TEXT NOT NULL)")
+            .execute(&mut conn)
+            .unwrap();
+        for uid in SUTTAS {
+            sql_query(format!("INSERT INTO suttas (uid) VALUES ('{}')", uid))
+                .execute(&mut conn)
+                .unwrap();
+        }
+        conn
+    }
+
+    #[derive(QueryableByName)]
+    struct UidRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        uid: String,
+    }
+
+    /// Title Match (the Diesel filter) and Contains Match (the `extra_where`
+    /// condition) exclude the same records: every commentary, whatever its
+    /// source, and nothing else.
+    #[test]
+    fn both_paths_exclude_every_commentary_and_only_commentaries() {
+        let mut conn = fixture();
+
+        use crate::db::appdata_schema::suttas::dsl::*;
+        let title_match: Vec<String> = SearchQueryTask::filter_out_commentary(suttas.into_boxed())
+            .select(uid)
+            .order(uid.asc())
+            .load(&mut conn)
+            .unwrap();
+
+        let contains_match: Vec<String> = sql_query(format!(
+            "SELECT s.uid FROM suttas s WHERE 1 AND {} ORDER BY s.uid",
+            commentary_exclusion_sql("s")
+        ))
+        .load::<UidRow>(&mut conn)
+        .unwrap()
+        .into_iter()
+        .map(|row| row.uid)
+        .collect();
+
+        assert_eq!(title_match, contains_match, "Title Match and Contains Match disagree");
+        assert_eq!(title_match, ["dhp21-32/en/anandajoti", "dhp21-32/pli/cst", "mn1/en/opentipitaka", "mn1/pli/ms"]);
     }
 }
 
