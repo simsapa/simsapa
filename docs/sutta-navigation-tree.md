@@ -1034,8 +1034,35 @@ one action on it is the button on each entry that opens the window at that node
    separate "Undated" list below the axis.
 3. `period_text()` writes the heading from the numbers (`500–200 BCE`,
    `c. 100 BCE – 200 CE`, `after 300 BCE`, `before 100 BCE`).
-4. `render_timeline_html()` writes the page content, and
+4. `render_timeline_html_with_intro()` writes the page content, and
    `html_content::timeline_html_page()` wraps it.
+
+### The chart above the timeline
+
+The page opens with the library PDF *Development of Pāli and Sanskrit from
+Indo-Aryan Origins* (`render_timeline_intro_html()`): its title as a heading, an
+**Open PDF** button, a crop of the chart, then the heading of the timeline
+itself. The intro sits first inside `#timeline`, so the margin kept for the
+minimap covers it.
+
+- The button and the image are links to
+  `/book_pages/pali-history/document.pdf`. `handle_link_click()` sends a
+  `/book_pages/…` link to `POST /open_book_page_tab`, which opens the PDF
+  viewer in a new, focused tab. `pali-history` is the book's `uid` in the
+  bootstrap's `library-imports.toml`: change `DEVELOPMENT_OF_PALI_BOOK_UID`
+  with it.
+- With the book not in the library there is no button and the image is not a
+  link (the lookup is one `EXISTS` on `book_spine_items`).
+- The image is `assets/images/development-of-pali-and-sanskrit.webp`, a crop of
+  the PDF's first page. Its `width`/`height` attributes are its pixel size and
+  must stay so: they reserve its space before it loads, and the script
+  measures block positions on load. For a new edition of the PDF, re-crop it:
+
+  ``` sh
+  pdftoppm -r 100 -f 1 -l 1 -png development-of-pali-and-sanskrit.pdf hi
+  magick hi-1.png -crop 1490x745+85+150 +repage -resize 1400x -quality 82 \
+    assets/images/development-of-pali-and-sanskrit.webp
+  ```
 
 The dates are embedded TOML, so a corrected date needs an app rebuild and
 nothing else. With no tree in the database the page shows its controls and "No
@@ -1048,6 +1075,8 @@ spaces the blocks and draws, and reads everything it needs from the markup:
 
 ``` html
 <div id="timeline" class="timeline">
+  <section class="timeline-intro">…</section>
+  <h1 class="timeline-heading">Timeline of the Texts</h1>
   <div class="timeline-controls">
     <div class="timeline-toggles">
       <label><input type="checkbox" id="timeline_scale_toggle"> Scale spacing with time</label>
