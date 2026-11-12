@@ -159,14 +159,14 @@ Depends on: 1.0 (`dhp_verse_group_ranges`, `apply_dhp_verse_ranges`).
   pub fn range_title_key(template: &IndexMap<String, String>) -> Option<&str>
   ```
 
-- [ ] 2.0 Ṭhānissaro's Dhammapada in `SuttasCoreImporter`: verse-group ranges in the heading segments and `<chapter>. <title>` in the chapter-title segment (PRD FR 21 Ṭhānissaro, 24a–24b, 27a part)
-  - [ ] 2.1 Add `dhp_chapter_number()` (reverse of `DHP_CHAPTERS_TO_RANGE`) and `range_title_key()` to `helpers.rs`, with unit tests (`dhp1-20` → 1, `dhp383-423` → 26, `mn1` → `None`).
-  - [ ] 2.2 Make `apply_dhp_verse_ranges` usable on the `IndexMap<&str, String>` in `build_record()` (generic key or a small adapter), keeping order.
-  - [ ] 2.3 In `build_record()`, apply the ranges and the chapter title for `than` Dhammapada texts, as in the specs, before `serde_json::to_string(&content)`.
-  - [ ] 2.4 Tests in `suttas_core.rs`, using the existing in-memory suttas-core fixture pattern (`from_connection`, the `CREATE TABLE sutta_segments …` test setup): a `dhp179-196` `than` text with an empty `0.3` gets `14. Awakened` from the title; a `dhp197-208` text with `0.3` = `"Happy\n\n"` gets `15. Happy`; `dhp183:0` = `183–185.`; a non-empty heading (`235-238*`) is overwritten with a warning; an `mn` text is unchanged.
-  - [ ] 2.5 Real-data test (skips when the suttas-core DB is absent): all 26 `than` Dhammapada records built by `build_record()` have a non-empty range-title segment and a range in every heading segment.
-  - [ ] 2.6 Run `survey-suttas-core` on a few Dhammapada chapters and confirm its report is not thrown off by the added ranges and titles; adjust its comparison if it is.
-  - [ ] 2.7 `cd bootstrap_cli && cargo test` passes.
+- [x] 2.0 Ṭhānissaro's Dhammapada in `SuttasCoreImporter`: verse-group ranges in the heading segments and `<chapter>. <title>` in the chapter-title segment (PRD FR 21 Ṭhānissaro, 24a–24b, 27a part)
+  - [x] 2.1 Add `dhp_chapter_number()` (reverse of `DHP_CHAPTERS_TO_RANGE`) and `range_title_key()` to `helpers.rs`, with unit tests (`dhp1-20` → 1, `dhp383-423` → 26, `mn1` → `None`).
+  - [x] 2.2 Make `apply_dhp_verse_ranges` usable on the `IndexMap<&str, String>` in `build_record()` (generic key or a small adapter), keeping order.
+  - [x] 2.3 In `build_record()`, apply the ranges and the chapter title for `than` Dhammapada texts, as in the specs, before `serde_json::to_string(&content)`.
+  - [x] 2.4 Tests in `suttas_core.rs`, using the existing in-memory suttas-core fixture pattern (`from_connection`, the `CREATE TABLE sutta_segments …` test setup): a `dhp179-196` `than` text with an empty `0.3` gets `14. Awakened` from the title; a `dhp197-208` text with `0.3` = `"Happy\n\n"` gets `15. Happy`; `dhp183:0` = `183–185.`; a non-empty heading (`235-238*`) is overwritten with a warning; an `mn` text is unchanged.
+  - [x] 2.5 Real-data test (skips when the suttas-core DB is absent): all 26 `than` Dhammapada records built by `build_record()` have a non-empty range-title segment and a range in every heading segment.
+  - [x] 2.6 Run `survey-suttas-core` on a few Dhammapada chapters and confirm its report is not thrown off by the added ranges and titles; adjust its comparison if it is.
+  - [x] 2.7 `cd bootstrap_cli && cargo test` passes.
 
 ### 3.0 specs
 

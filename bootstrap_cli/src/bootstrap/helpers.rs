@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use regex::Regex;
 use simsapa_backend::db::appdata_models::NewSutta;
 use simsapa_backend::helpers::sutta_range_from_ref;
+use simsapa_backend::lookup::DHP_CHAPTERS_TO_RANGE;
 use simsapa_backend::logger;
 
 /// Owned version of sutta data for building during parsing.
@@ -219,6 +220,28 @@ where
     }
 }
 
+/// The Dhammapada chapter number of a chapter's range uid, from
+/// `DHP_CHAPTERS_TO_RANGE`: `"dhp179-196"` → `14`. `None` for anything that is
+/// not exactly one chapter's range.
+pub fn dhp_chapter_number(sutta_id: &str) -> Option<u32> {
+    let (start, end) = sutta_id.strip_prefix("dhp")?.split_once('-')?;
+    let range = (start.parse::<u32>().ok()?, end.parse::<u32>().ok()?);
+    DHP_CHAPTERS_TO_RANGE
+        .iter()
+        .find(|(_, r)| **r == range)
+        .map(|(chapter, _)| *chapter)
+}
+
+/// The template key whose markup is the range title
+/// (`<h1 class='range-title'>`): the segment a Dhammapada chapter's title is
+/// rendered in as the page title.
+pub fn range_title_key(template: &IndexMap<String, String>) -> Option<&str> {
+    template
+        .iter()
+        .find(|(_, markup)| markup.contains("class='range-title'") || markup.contains("class=\"range-title\""))
+        .map(|(key, _)| key.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,5 +397,27 @@ mod tests {
             next = end + 1;
         }
         assert_eq!(next, 424);
+    }
+
+    #[test]
+    fn test_dhp_chapter_number() {
+        assert_eq!(dhp_chapter_number("dhp1-20"), Some(1));
+        assert_eq!(dhp_chapter_number("dhp179-196"), Some(14));
+        assert_eq!(dhp_chapter_number("dhp383-423"), Some(26));
+        assert_eq!(dhp_chapter_number("dhp1-21"), None);
+        assert_eq!(dhp_chapter_number("dhp1"), None);
+        assert_eq!(dhp_chapter_number("mn1"), None);
+    }
+
+    #[test]
+    fn test_range_title_key() {
+        let mut t: IndexMap<String, String> = IndexMap::new();
+        t.insert("dhp179:0.1".into(), "<article id='dhp179-196'><header><ul><li class='division'>{}</li>".into());
+        t.insert("dhp179:0.2".into(), "<li class='division'>{}</li></ul>".into());
+        t.insert("dhp179:0.3".into(), "<h1 class='range-title'>{}</h1></header>".into());
+        t.insert("dhp179:0.4".into(), "<h2 class='sutta-title'>{}</h2>".into());
+        assert_eq!(range_title_key(&t), Some("dhp179:0.3"));
+        t.shift_remove("dhp179:0.3");
+        assert_eq!(range_title_key(&t), None);
     }
 }

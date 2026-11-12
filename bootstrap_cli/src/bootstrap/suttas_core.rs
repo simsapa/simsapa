@@ -25,7 +25,9 @@ use simsapa_backend::logger;
 use simsapa_backend::sutta_uid_renames::rename_ssp_sutta_href;
 
 use crate::bootstrap::footnote_sutta_links::{link_sutta_refs, SuttaRefResolver};
-use crate::bootstrap::helpers::{uid_to_nikaya, uid_to_ref, SuttaData};
+use crate::bootstrap::helpers::{
+    apply_dhp_verse_ranges, dhp_chapter_number, range_title_key, uid_to_nikaya, uid_to_ref, SuttaData,
+};
 use crate::bootstrap::suttacentral::bilara_html_and_plain_text;
 use crate::bootstrap::thanissaro_intro::extract_introduction;
 use crate::bootstrap::thanissaro_uid_map::{
@@ -413,7 +415,7 @@ impl SuttasCoreDb {
 
         // One key per template key, in template order: the renderer walks the
         // translation's keys, so a missing key would drop its template markup.
-        let content: IndexMap<&str, String> = template
+        let mut content: IndexMap<&str, String> = template
             .keys()
             .map(|k| {
                 let v = segments
@@ -423,6 +425,12 @@ impl SuttasCoreDb {
                 (k.as_str(), v)
             })
             .collect();
+
+        let title = self.title(sutta_id, translator, language)?;
+
+        if translator == THANISSARO_LABEL && sutta_id.starts_with("dhp") {
+            apply_than_dhp_headings(sutta_id, language, &template, &mut content, title.as_deref());
+        }
 
         let content_json = serde_json::to_string(&content)?;
         let content_json_tmpl = serde_json::to_string(&template)?;
@@ -443,7 +451,7 @@ impl SuttasCoreDb {
             content_plain,
             copyright,
             license,
-            title: self.title(sutta_id, translator, language)?,
+            title,
             footnotes_value,
             footnote_count,
             template_from_core,
@@ -515,6 +523,51 @@ impl SuttasCoreDb {
 
         Ok((Some(serde_json::to_string(&value)?), count))
     }
+}
+
+/// Ṭhānissaro's Dhammapada chapters: the verse-group range in each heading
+/// segment, and `<chapter>. <title>` in the range-title segment. The title is
+/// the segment's own text, trimmed, else the record title; when both exist
+/// and differ, both are logged and the segment's text is used. See
+/// docs/suttas-core-import.md, §3.
+fn apply_than_dhp_headings(
+    sutta_id: &str,
+    language: &str,
+    template: &IndexMap<String, String>,
+    content: &mut IndexMap<&str, String>,
+    record_title: Option<&str>,
+) {
+    let uid = format!("{}/{}/thanissaro", sutta_id, language);
+    apply_dhp_verse_ranges(content, false, &uid);
+
+    let Some(key) = range_title_key(template) else {
+        logger::warn(&format!("suttas-core: {}: no range-title segment in the template", uid));
+        return;
+    };
+    let Some(chapter) = dhp_chapter_number(sutta_id) else {
+        logger::warn(&format!("suttas-core: {}: not a Dhammapada chapter range, no chapter title", uid));
+        return;
+    };
+    let Some(segment) = content.get_mut(key) else { return };
+
+    let segment_title = segment.trim().to_string();
+    let record_title = record_title.map(str::trim).unwrap_or("");
+    let chapter_title = match (segment_title.is_empty(), record_title.is_empty()) {
+        (false, false) if segment_title != record_title => {
+            logger::info(&format!(
+                "suttas-core: {}: chapter title {:?} in {} differs from the record title {:?}; using the segment's",
+                uid, segment_title, key, record_title,
+            ));
+            segment_title
+        }
+        (false, _) => segment_title,
+        (true, false) => record_title.to_string(),
+        (true, true) => {
+            logger::warn(&format!("suttas-core: {}: no chapter title in {} or the record title", uid, key));
+            return;
+        }
+    };
+    *segment = format!("{}. {}", chapter, chapter_title);
 }
 
 /// Writes `rec`'s text over the Simsapa record `sutta_db_id`, which keeps its
@@ -2019,5 +2072,157 @@ mod tests {
             failures.len(), failures,
         ));
         assert!(failures.is_empty());
+    }
+
+    /// A Ṭhānissaro Dhammapada fixture for the chapter that starts at verse
+    /// `s`, with the template in `segment_structure` (no appdata `pli/ms`
+    /// record). Only the first verses are present. Headings: `s:0.4` (s–s+1),
+    /// `s+2:0` (s+2–s+3), `s+4:0` (s+4–s+6), `s+7:0` (s+7).
+    fn add_than_dhp(db: &mut SuttasCoreDb, s: u32, title: Option<&str>, overrides: &[(&str, &str)]) -> String {
+        let (_, (_, end)) = simsapa_backend::lookup::DHP_CHAPTERS_TO_RANGE
+            .iter()
+            .find(|(_, (start, _))| *start == s)
+            .expect("a chapter's first verse");
+        let sutta_id = format!("dhp{}-{}", s, end);
+        let keys_tmpl: Vec<(String, &str)> = vec![
+            (format!("dhp{}:0.1", s), "<section class='range'><header><ul><li class='division'>{}</li>"),
+            (format!("dhp{}:0.2", s), "<li class='subdivision'>{}</li></ul>"),
+            (format!("dhp{}:0.3", s), "<h1 class='range-title'>{}</h1></header>"),
+            (format!("dhp{}:0.4", s), "<article><h2 class='sutta-title'>{}</h2>"),
+            (format!("dhp{}:1", s), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:1", s + 1), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:0", s + 2), "<h2 class='sutta-title'>{}</h2>"),
+            (format!("dhp{}:1", s + 2), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:1", s + 3), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:0", s + 4), "<h2 class='sutta-title'>{}</h2>"),
+            (format!("dhp{}:1", s + 4), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:1", s + 6), "<p><span class='verse-line'>{}</span></p>"),
+            (format!("dhp{}:0", s + 7), "<h2 class='sutta-title'>{}</h2>"),
+            (format!("dhp{}:1", s + 7), "<p><span class='verse-line'>{}</span></p></article></section>"),
+        ];
+        for (i, (k, tmpl)) in keys_tmpl.iter().enumerate() {
+            sql_query("INSERT INTO segment_structure (sutta_id, segment_id, ord, template, parents, starts_block, ends_block) VALUES (?, ?, ?, ?, '[]', 0, 0)")
+                .bind::<Text, _>(&sutta_id).bind::<Text, _>(k).bind::<Integer, _>(i as i32).bind::<Text, _>(*tmpl)
+                .execute(&mut db.conn).unwrap();
+            let default = if k.contains(":0") { String::new() } else { format!("Line {}. ", k) };
+            let text = overrides.iter().find(|(o, _)| o == k).map(|(_, v)| v.to_string()).unwrap_or(default);
+            sql_query("INSERT INTO sutta_segments (sutta_id, segment_id, language, translator, ord, content) VALUES (?, ?, 'en', 'than', ?, ?)")
+                .bind::<Text, _>(&sutta_id).bind::<Text, _>(k).bind::<Integer, _>(i as i32).bind::<Text, _>(text)
+                .execute(&mut db.conn).unwrap();
+        }
+        sql_query("INSERT INTO raw_translations VALUES (?, ?, ?, 'than', 'en', 'kn', ?, '', '', 0)")
+            .bind::<Text, _>(format!("{}:than:en", sutta_id)).bind::<Text, _>(&sutta_id)
+            .bind::<Text, _>(&sutta_id).bind::<Nullable<Text>, _>(title)
+            .execute(&mut db.conn).unwrap();
+        sutta_id
+    }
+
+    fn content_map(json: &str) -> IndexMap<String, String> {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn test_than_dhp_empty_title_segment_takes_record_title() {
+        let mut db = core_db();
+        let mut app = appdata(false);
+        let id = add_than_dhp(&mut db, 179, Some("Awakened"), &[]);
+        let rec = db.build_record(&id, "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        assert_eq!(c["dhp179:0.3"], "14. Awakened");
+        assert_eq!(c["dhp179:0.4"], "179\u{2013}180.");
+        assert_eq!(c["dhp181:0"], "181\u{2013}182.");
+        assert_eq!(c["dhp183:0"], "183\u{2013}185.");
+        assert_eq!(c["dhp186:0"], "186.");
+        assert_eq!(c["dhp179:0.1"], "");
+        // The record title is not changed.
+        assert_eq!(rec.title.as_deref(), Some("Awakened"));
+        assert_eq!(json_keys(&rec.content_json), json_keys(&rec.content_json_tmpl));
+        assert!(rec.content_plain.contains("183 185"), "{}", rec.content_plain);
+    }
+
+    #[test]
+    fn test_than_dhp_title_segment_text_is_trimmed() {
+        let mut db = core_db();
+        let mut app = appdata(false);
+        let id = add_than_dhp(&mut db, 197, Some("Happy"), &[("dhp197:0.3", "Happy\n\n")]);
+        let rec = db.build_record(&id, "than", "en", &mut app, &identity).unwrap();
+        assert_eq!(content_map(&rec.content_json)["dhp197:0.3"], "15. Happy");
+    }
+
+    #[test]
+    fn test_than_dhp_title_segment_wins_over_record_title() {
+        let mut db = core_db();
+        let mut app = appdata(false);
+        let id = add_than_dhp(&mut db, 197, Some("Joy"), &[("dhp197:0.3", "Happy")]);
+        let rec = db.build_record(&id, "than", "en", &mut app, &identity).unwrap();
+        assert_eq!(content_map(&rec.content_json)["dhp197:0.3"], "15. Happy");
+    }
+
+    #[test]
+    fn test_than_dhp_no_title_leaves_segment_empty() {
+        let mut db = core_db();
+        let mut app = appdata(false);
+        let id = add_than_dhp(&mut db, 179, None, &[]);
+        let rec = db.build_record(&id, "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        assert_eq!(c["dhp179:0.3"], "");
+        assert_eq!(c["dhp183:0"], "183\u{2013}185.");
+    }
+
+    #[test]
+    fn test_than_dhp_non_empty_heading_is_overwritten() {
+        let mut db = core_db();
+        let mut app = appdata(false);
+        let id = add_than_dhp(&mut db, 235, Some("Stains"), &[("dhp239:0", "235-238*")]);
+        let rec = db.build_record(&id, "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        assert_eq!(c["dhp239:0"], "239\u{2013}241.");
+        assert_eq!(c["dhp235:0.3"], "18. Stains");
+    }
+
+    #[test]
+    fn test_than_non_dhp_text_unchanged() {
+        let mut db = core_db();
+        let mut app = appdata(true);
+        add_than_text(&mut db, "mn2", "mn2", Some("All the Fermentations"));
+        let rec = db.build_record("mn2", "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        for (i, k) in MN1_KEYS.iter().enumerate() {
+            assert_eq!(c[*k], format!("mn2 text {}. ", i));
+        }
+    }
+
+    /// All 26 of Ṭhānissaro's Dhammapada chapters, built from the real
+    /// suttas-core database with the dist appdata's templates (both
+    /// read-only), have a chapter title and a range in every heading segment.
+    #[test]
+    fn test_real_data_than_dhp_titles_and_ranges() {
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let core_path = base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB);
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        if !matches!(core_path.try_exists(), Ok(true)) || !matches!(appdata_path.try_exists(), Ok(true)) {
+            eprintln!("suttas-core or appdata database not found, skipping");
+            return;
+        }
+        let mut db = SuttasCoreDb::open(&core_path).unwrap().expect("suttas-core database");
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+
+        let mut chapters = 0;
+        for (chapter, (start, end)) in simsapa_backend::lookup::DHP_CHAPTERS_TO_RANGE.iter() {
+            let sutta_id = format!("dhp{}-{}", start, end);
+            let rec = db.build_record(&sutta_id, "than", "en", &mut app, &identity).unwrap();
+            let c = content_map(&rec.content_json);
+            let title = &c[&format!("dhp{}:0.3", start)];
+            assert!(title.starts_with(&format!("{}. ", chapter)) && title.len() > format!("{}. ", chapter).len(),
+                "{}: title {:?}", sutta_id, title);
+            let ids: Vec<&str> = c.keys().map(String::as_str).collect();
+            let ranges = crate::bootstrap::helpers::dhp_verse_group_ranges(&ids);
+            assert!(!ranges.is_empty(), "{}", sutta_id);
+            for (id, range) in &ranges {
+                assert_eq!(c[id], format!("{}.", range), "{} {}", sutta_id, id);
+            }
+            chapters += 1;
+        }
+        assert_eq!(chapters, 26);
     }
 }
