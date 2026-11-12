@@ -268,14 +268,14 @@ Depends on: 3.0 (check command). This task is **data work**, in
   Munindo's number disagrees with the placement, every verse split that could
   not fall on a sentence boundary, every Pāli verse with no translation.
 
-- [ ] 4.0 Write and verify the 26 Munindo segment files (`dhammapada-munindo/bilara/`), with the review report entries; the check command reports no problems (PRD FR 4–8, 11–13)
-  - [ ] 4.1 Create the review report `tasks/2026-11-08-100734-review---munindo-nyanadipa-segmentation.md` with a header, the entry format, a Munindo section, and an "Upstream defects (suttas-core)" section starting with Ṭhānissaro's `dhp239:0` = `235-238*`.
-  - [ ] 4.2 For each chapter `dhp-N.md`, confirm it is the chapter `DHP_CHAPTERS_TO_RANGE[N]` (title ↔ Pāli vagga, first and last verse ↔ first and last Pāli verse of the range) before writing anything (PRD FR 12). Record any mismatch.
-  - [ ] 4.3 Write a small generator, kept out of the repo in the scratchpad, that produces a **skeleton** file per chapter: every Pāli id with `""`, the title segment filled, the hashes computed. The placement itself is done by reading, not by the generator.
-  - [ ] 4.4 Place the lines, chapter by chapter, comparing the Pāli, Sujato's and Ṭhānissaro's segments for each verse. Run `check-segment-files` after each chapter and fix every reported problem before moving on.
-  - [ ] 4.5 Record each case in the review report as you go (see specs).
-  - [ ] 4.6 Spot-check five chapters in full by reading the Pāli and the placed lines side by side (e.g. chapters 1, 5, 14, 18, 26), including every multi-verse Munindo verse in them.
-  - [ ] 4.7 `check-segment-files dhammapada-munindo` reports zero problems for all 26 files.
+- [x] 4.0 Write and verify the 26 Munindo segment files (`dhammapada-munindo/bilara/`), with the review report entries; the check command reports no problems (PRD FR 4–8, 11–13)
+  - [x] 4.1 Create the review report `tasks/2026-11-08-100734-review---munindo-nyanadipa-segmentation.md` with a header, the entry format, a Munindo section, and an "Upstream defects (suttas-core)" section starting with Ṭhānissaro's `dhp239:0` = `235-238*`.
+  - [x] 4.2 For each chapter `dhp-N.md`, confirm it is the chapter `DHP_CHAPTERS_TO_RANGE[N]` (title ↔ Pāli vagga, first and last verse ↔ first and last Pāli verse of the range) before writing anything (PRD FR 12). Record any mismatch.
+  - [x] 4.3 Write a small generator, kept out of the repo in the scratchpad, that produces a **skeleton** file per chapter: every Pāli id with `""`, the title segment filled, the hashes computed. The placement itself is done by reading, not by the generator.
+  - [x] 4.4 Place the lines, chapter by chapter, comparing the Pāli, Sujato's and Ṭhānissaro's segments for each verse. Run `check-segment-files` after each chapter and fix every reported problem before moving on.
+  - [x] 4.5 Record each case in the review report as you go (see specs).
+  - [x] 4.6 Spot-check five chapters in full by reading the Pāli and the placed lines side by side (e.g. chapters 1, 5, 14, 18, 26), including every multi-verse Munindo verse in them.
+  - [x] 4.7 `check-segment-files dhammapada-munindo` reports zero problems for all 26 files.
 
 ### 5.0 specs
 
