@@ -370,6 +370,33 @@ fn fragment_header(nikaya_and_number: &str, title: &str) -> String {
     )
 }
 
+/// The `nikaya_and_number` line of a fragment's header: the first `group_levels`
+/// title and the `sc_code` number, as "Aṅguttaranikāyo 5.91-100".
+///
+/// The Dhammapada is named by its book instead, because its nikāya level is
+/// "Khuddakanikāye", which would not say which book the numbers belong to, or
+/// that they are verse numbers: "Dhammapada 21-32", and for the aṭṭhakathā
+/// file "Dhammapada-aṭṭhakathā 21-32". The kind comes from the file name, as in
+/// `cst_text_code()`; the Book level is not used, since it reads
+/// "Dhammapadapāḷi" in the mūla.
+fn header_nikaya_and_number(cst_file: &str, sc_code: &str, nikaya_name: &str) -> String {
+    let number: String = sc_code.chars().skip_while(|c| c.is_alphabetic()).collect();
+
+    let is_dhammapada = sc_code
+        .strip_prefix("dhp")
+        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
+    if is_dhammapada {
+        let book = if cst_file.ends_with(".att.xml") {
+            "Dhammapada-aṭṭhakathā"
+        } else {
+            "Dhammapada"
+        };
+        return format!("{} {}", book, number);
+    }
+
+    format!("{} {}", with_niggahita(nikaya_name), number)
+}
+
 fn division_header(title: &str) -> String {
     format!("<header><h1>{}</h1></header>", escape_title(title))
 }
@@ -550,17 +577,11 @@ impl TipitakaXmlImporter {
                     Some(group_path)
                 };
 
-                // Extract nikaya name and sutta number for header
                 let nikaya_name = group_levels.first()
                     .map(|level| level.title.clone())
                     .unwrap_or_else(|| row.nikaya.clone());
-
-                let sutta_number = sc_code.chars()
-                    .skip_while(|c| c.is_alphabetic())
-                    .collect::<String>();
-
                 let nikaya_and_number =
-                    format!("{} {}", with_niggahita(&nikaya_name), sutta_number);
+                    header_nikaya_and_number(filename, &sc_code, &nikaya_name);
                 let header = |title: &str| fragment_header(&nikaya_and_number, title);
 
                 let en_title = text.en_title.clone();
@@ -1130,7 +1151,9 @@ pub(crate) mod fixture {
     /// On `VERIFIED_CST_FILES`, and every text-carrying fragment is mapped.
     pub const MAPPED_FILE: &str = "s0201m.mul.xml";
     /// Not on the list, with a head and two chapters, and a toc leaf for each.
-    pub const DIVIDED_FILE: &str = "s0502m.mul.xml";
+    /// The name only has to be an unverified file: the rows are Dhammapada text
+    /// (see [`divided_rows`]), which stays readable in the assertions.
+    pub const DIVIDED_FILE: &str = "s0501m.mul.xml";
     /// One toc leaf against two chapter markers, so it takes the whole-file path.
     pub const WHOLE_FILE: &str = "abh05t.nrf.xml";
 
@@ -1138,8 +1161,9 @@ pub(crate) mod fixture {
     const CENTRED: &str = "<p class='centered'>{}</p>";
     const CHAPTER: &str = "<h2 class='chapter'>{}</h2>";
 
-    /// The only row whose Pāli is nothing but a note, as in `s0502m.mul.xml` row
-    /// 905. The comma is there so a test phrase can cross it.
+    /// A row whose Pāli is nothing but a note. It models `s0502m.mul.xml` row 905
+    /// (the Dhammapada, now a verified file, so it cannot be the divided file
+    /// here). The comma is there so a test phrase can cross it.
     pub const NOTE_ONLY_VARIANT: &str = "Yamakañca appamādo ca, cittaṃ pupphañca bālakaṃ";
     /// A reading on an ordinary row of the mapped file.
     pub const MAPPED_VARIANT: &str = "sutaṃ: suttaṃ (sī. pī.)";
@@ -1439,9 +1463,9 @@ pub(crate) mod fixture {
                     DIVIDED_FILE,
                     "Khuddakanikāye",
                     vec![
-                        ("s0502m.mul0.xml", "Ganthārambhakathā"),
-                        ("s0502m.mul1.xml", "1. Yamakavaggo"),
-                        ("s0502m.mul2.xml", "2. Appamādavaggo"),
+                        ("s0501m.mul0.xml", "Ganthārambhakathā"),
+                        ("s0501m.mul1.xml", "1. Yamakavaggo"),
+                        ("s0501m.mul2.xml", "2. Appamādavaggo"),
                     ],
                 ),
                 (WHOLE_FILE, "Abhidhammapiṭake", vec![("abh05t.nrf0.xml", "Paṭhamo")]),
@@ -1716,9 +1740,9 @@ mod tests {
                 "mn1/pli/cst",
                 "mn2/pli/cst",
                 "mn3/pli/cst",
-                "s0502m.mul0.xml/pli/cst",
-                "s0502m.mul1.xml/pli/cst",
-                "s0502m.mul2.xml/pli/cst",
+                "s0501m.mul0.xml/pli/cst",
+                "s0501m.mul1.xml/pli/cst",
+                "s0501m.mul2.xml/pli/cst",
             ]
         );
 
@@ -1750,8 +1774,8 @@ mod tests {
             "<article id='mn1' class='cst'><header><h3>Majjhimanikāyo 1</h3>\
              <h1>1. Mūlapariyāyasuttaṁ</h1></header><p class='centered'>"
         ));
-        assert!(first(&mut fixture, "s0502m.mul1.xml/pli/cst").starts_with(
-            "<article id='s0502m.mul1' class='cst'><header><h1>1. Yamakavaggo</h1></header><h2 class='chapter'>"
+        assert!(first(&mut fixture, "s0501m.mul1.xml/pli/cst").starts_with(
+            "<article id='s0501m.mul1' class='cst'><header><h1>1. Yamakavaggo</h1></header><h2 class='chapter'>"
         ));
         assert!(first(&mut fixture, "abh05t.nrf.xml/pli/cst").starts_with(
             "<article id='abh05t.nrf' class='cst'><header><h1>abh05t.nrf</h1></header>"
@@ -1762,15 +1786,15 @@ mod tests {
     fn the_division_records_partition_the_rows_with_the_head_as_its_own_division() {
         let mut fixture = imported();
 
-        let head = stored(&mut fixture, "s0502m.mul0.xml/pli/cst");
+        let head = stored(&mut fixture, "s0501m.mul0.xml/pli/cst");
         assert_eq!(head.title.as_deref(), Some("Ganthārambhakathā"));
         let json = head.content_json.unwrap();
         assert!(json.contains("Dhammapadapāḷi") && json.contains("Namo tassa"), "{}", json);
         assert!(!json.contains("Yamakavaggo"), "{}", json);
 
-        let second = stored(&mut fixture, "s0502m.mul2.xml/pli/cst").content_json.unwrap();
+        let second = stored(&mut fixture, "s0501m.mul2.xml/pli/cst").content_json.unwrap();
         assert!(second.contains("Appamādavaggo") && !second.contains("Yamakavaggo"), "{}", second);
-        assert_eq!(stored(&mut fixture, "s0502m.mul2.xml/pli/cst").group_index, Some(2));
+        assert_eq!(stored(&mut fixture, "s0501m.mul2.xml/pli/cst").group_index, Some(2));
     }
 
     #[test]
@@ -1829,7 +1853,7 @@ mod tests {
 
         let mut uids: Vec<&str> = variants.iter().map(|v| v.sutta_uid.as_str()).collect();
         uids.sort();
-        assert_eq!(uids, ["mn1/pli/cst", "s0502m.mul1.xml/pli/cst", "s0502m.mul2.xml/pli/cst"]);
+        assert_eq!(uids, ["mn1/pli/cst", "s0501m.mul1.xml/pli/cst", "s0501m.mul2.xml/pli/cst"]);
 
         for variant in &variants {
             assert_eq!(variant.language.as_deref(), Some("pli"));
@@ -1860,7 +1884,7 @@ mod tests {
 
         // The row whose Pāli is nothing but a note, and a phrase that crosses
         // the comma in it.
-        let note_only = stored(&mut fixture, "s0502m.mul2.xml/pli/cst").content_plain.unwrap();
+        let note_only = stored(&mut fixture, "s0501m.mul2.xml/pli/cst").content_plain.unwrap();
         let query = normalize_query_text(Some("appamādo ca, cittaṃ pupphañca".to_string()));
         assert!(note_only.contains(&query), "{:?} in {}", query, note_only);
         assert!(!query.contains(','), "{}", query);
@@ -1904,6 +1928,26 @@ mod tests {
             r#"[{"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null}]"#;
         assert_eq!(fragment_title(None, nikaya_only), "");
         assert_eq!(fragment_title(None, "not json"), "");
+    }
+
+    #[test]
+    fn the_header_names_the_dhammapada_by_its_book_and_every_other_file_by_its_nikaya() {
+        let khuddaka = "Khuddakanikāye";
+        assert_eq!(header_nikaya_and_number("s0502m.mul.xml", "dhp21-32", khuddaka), "Dhammapada 21-32");
+        assert_eq!(
+            header_nikaya_and_number("s0502a.att.xml", "dhp21-32", khuddaka),
+            "Dhammapada-aṭṭhakathā 21-32"
+        );
+
+        // The headers of `an5.91-92.att/pli/cst` and `sn12.1/pli/cst`.
+        assert_eq!(
+            header_nikaya_and_number("s0403a.att.xml", "an5.91-92", "Aṅguttaranikāye"),
+            "Aṅguttaranikāye 5.91-92"
+        );
+        assert_eq!(
+            header_nikaya_and_number("s0302m.mul.xml", "sn12.1", "Saṃyuttanikāyo"),
+            "Saṁyuttanikāyo 12.1"
+        );
     }
 
     #[test]
@@ -2040,9 +2084,9 @@ mod tests {
         // An empty `en_title`.
         assert_eq!(title(&mut fixture, "mn2/en/opentipitaka"), "2. Sabbāsavasuttaṁ");
         // A division's first chapter row.
-        assert_eq!(title(&mut fixture, "s0502m.mul1.xml/en/opentipitaka"), "1. The Pairs");
+        assert_eq!(title(&mut fixture, "s0501m.mul1.xml/en/opentipitaka"), "1. The Pairs");
         // A head division has no chapter row, because `ot_id` 0 is not a cut.
-        assert_eq!(title(&mut fixture, "s0502m.mul0.xml/en/opentipitaka"), "Ganthārambhakathā");
+        assert_eq!(title(&mut fixture, "s0501m.mul0.xml/en/opentipitaka"), "Ganthārambhakathā");
         // A whole file, though its rows have chapter rows.
         assert_eq!(title(&mut fixture, "abh05t.nrf.xml/en/opentipitaka"), "abh05t.nrf");
 
@@ -2063,11 +2107,11 @@ mod tests {
         let mut fixture = fixture::CstFixture::new().unwrap();
         edit_fragments(
             &fixture,
-            "UPDATE cst_segments SET english = '' WHERE cst_file = 's0502m.mul.xml' AND ot_id = 2",
+            "UPDATE cst_segments SET english = '' WHERE cst_file = 's0501m.mul.xml' AND ot_id = 2",
         );
         fixture.importer().import(&mut fixture.appdata).unwrap();
 
-        let english = stored(&mut fixture, "s0502m.mul1.xml/en/opentipitaka");
+        let english = stored(&mut fixture, "s0501m.mul1.xml/en/opentipitaka");
         assert_eq!(english.title.as_deref(), Some("1. Yamakavaggo"));
     }
 
@@ -2088,7 +2132,7 @@ mod tests {
             )
         );
 
-        let division = stored(&mut fixture, "s0502m.mul1.xml/en/opentipitaka");
+        let division = stored(&mut fixture, "s0501m.mul1.xml/en/opentipitaka");
         assert!(
             division
                 .content_json_tmpl
