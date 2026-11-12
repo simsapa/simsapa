@@ -944,43 +944,51 @@ pub mod qobject {
         #[cxx_name = "showSplitDragHandlesChanged"]
         fn show_split_drag_handles_changed(self: Pin<&mut SuttaBridge>);
 
-        // Update checker signals
+        // Update checker signals. Each carries the `request_id` its
+        // `check_for_updates()` / `check_for_dpd_updates()` call was given, so
+        // that only the window that asked answers (every SuttaSearchWindow
+        // listens to SuttaBridge).
         #[qsignal]
         #[cxx_name = "appUpdateAvailable"]
-        fn app_update_available(self: Pin<&mut SuttaBridge>, update_info_json: QString);
+        fn app_update_available(self: Pin<&mut SuttaBridge>, request_id: QString, update_info_json: QString);
 
         #[qsignal]
         #[cxx_name = "dbUpdateAvailable"]
-        fn db_update_available(self: Pin<&mut SuttaBridge>, update_info_json: QString);
+        fn db_update_available(self: Pin<&mut SuttaBridge>, request_id: QString, update_info_json: QString);
 
         #[qsignal]
         #[cxx_name = "localDbObsolete"]
-        fn local_db_obsolete(self: Pin<&mut SuttaBridge>, update_info_json: QString);
+        fn local_db_obsolete(self: Pin<&mut SuttaBridge>, request_id: QString, update_info_json: QString);
 
         #[qsignal]
         #[cxx_name = "noUpdatesAvailable"]
-        fn no_updates_available(self: Pin<&mut SuttaBridge>);
+        fn no_updates_available(self: Pin<&mut SuttaBridge>, request_id: QString);
 
         #[qsignal]
         #[cxx_name = "updateCheckError"]
-        fn update_check_error(self: Pin<&mut SuttaBridge>, error_message: QString);
+        fn update_check_error(self: Pin<&mut SuttaBridge>, request_id: QString, error_message: QString);
 
         #[qsignal]
         #[cxx_name = "releasesCheckCompleted"]
-        fn releases_check_completed(self: Pin<&mut SuttaBridge>);
+        fn releases_check_completed(self: Pin<&mut SuttaBridge>, request_id: QString);
 
         /// A newer compatible DPD release (a `DpdUpdateOffer` as JSON, the
         /// release notes converted to HTML). See docs/dpd-upgrades.md.
         #[qsignal]
         #[cxx_name = "dpdUpdateAvailable"]
-        fn dpd_update_available(self: Pin<&mut SuttaBridge>, update_info_json: QString);
+        fn dpd_update_available(self: Pin<&mut SuttaBridge>, request_id: QString, update_info_json: QString);
 
         /// GitHub could not be asked about DPD releases. Emitted only on a
         /// manual check that found no other update, just before
         /// `noUpdatesAvailable`.
         #[qsignal]
         #[cxx_name = "dpdUpdateCheckError"]
-        fn dpd_update_check_error(self: Pin<&mut SuttaBridge>, error_message: QString);
+        fn dpd_update_check_error(self: Pin<&mut SuttaBridge>, request_id: QString, error_message: QString);
+
+        /// Emitted once at the end of every `check_for_dpd_updates()`.
+        #[qsignal]
+        #[cxx_name = "dpdCheckCompleted"]
+        fn dpd_check_completed(self: Pin<&mut SuttaBridge>, request_id: QString);
 
         #[qsignal]
         #[cxx_name = "topicIndexLoaded"]
@@ -1697,7 +1705,16 @@ pub mod qobject {
 
         // Update checker functions
         #[qinvokable]
-        fn check_for_updates(self: Pin<&mut SuttaBridge>, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString);
+        fn check_for_updates(self: Pin<&mut SuttaBridge>, request_id: &QString, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString);
+
+        #[qinvokable]
+        fn check_for_dpd_updates(self: Pin<&mut SuttaBridge>, request_id: &QString);
+
+        #[qinvokable]
+        fn get_notify_about_dpd_updates(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_notify_about_dpd_updates(self: Pin<&mut SuttaBridge>, enabled: bool);
 
         #[qinvokable]
         fn get_notify_about_simsapa_updates(self: &SuttaBridge) -> bool;
@@ -5682,15 +5699,20 @@ impl qobject::SuttaBridge {
     ///
     /// # Arguments
     ///
-    /// * `include_no_updates` - If true, emits noUpdatesAvailable signal when no updates found
+    /// * `request_id` - Echoed as the first argument of every signal of this check
+    /// * `include_no_updates` - If true, emits noUpdatesAvailable signal when no updates found.
+    ///   True only for the manual "Check for Updates..." action, which always
+    ///   includes the DPD part; otherwise the DPD part runs only when DPD update
+    ///   notifications are on.
     /// * `screen_size` - Screen resolution string (e.g., "1920 x 1080") for analytics, can be empty
     /// * `save_stats_behaviour` - Controls stats saving: "enabled", "disabled", or "determine"
-    pub fn check_for_updates(self: Pin<&mut Self>, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString) {
+    pub fn check_for_updates(self: Pin<&mut Self>, request_id: &QString, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString) {
         use simsapa_backend::update_checker::{self, SaveStatsBehaviour};
         use simsapa_backend::update_status::{InstalledDb, UpdateStatus};
 
         info("SuttaBridge::check_for_updates() start");
         let qt_thread = self.qt_thread();
+        let request_id = request_id.to_string();
 
         // Convert screen_size to Option<String> for the background thread
         let screen_size_str = screen_size.to_string();
@@ -5725,8 +5747,8 @@ impl qobject::SuttaBridge {
                 ));
                 let json = serde_json::to_string(&obsolete_info).unwrap_or_default();
                 crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
-                    qo.as_mut().local_db_obsolete(QString::from(json));
-                    qo.as_mut().releases_check_completed();
+                    qo.as_mut().local_db_obsolete(QString::from(&request_id), QString::from(json));
+                    qo.as_mut().releases_check_completed(QString::from(&request_id));
                 });
                 info("SuttaBridge::check_for_updates() - local db obsolete");
                 return;
@@ -5736,7 +5758,13 @@ impl qobject::SuttaBridge {
             // so that an outage of one does not hide the other's answer. It is
             // waited for only where its answer is shown: not when a database
             // update is found, since the new databases bring their own DPD.
-            let dpd_check = thread::spawn(check_for_dpd_update);
+            // A manual check always includes it; an automatic one only when
+            // the user turned on DPD update notifications.
+            let dpd_check = if include_no_updates || get_app_data().get_notify_about_dpd_updates() {
+                Some(thread::spawn(check_for_dpd_update))
+            } else {
+                None
+            };
 
             // Try to fetch release information
             let releases_info = match update_checker::fetch_releases_info(screen_size_opt.as_deref(), stats_behaviour) {
@@ -5777,11 +5805,11 @@ impl qobject::SuttaBridge {
                             error(&error_msg);
                             let dpd_offer = join_dpd_check(dpd_check).ok().flatten();
                             crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
-                                qo.as_mut().update_check_error(QString::from(error_msg));
+                                qo.as_mut().update_check_error(QString::from(&request_id), QString::from(error_msg));
                                 if let Some(json) = dpd_offer {
-                                    qo.as_mut().dpd_update_available(QString::from(json));
+                                    qo.as_mut().dpd_update_available(QString::from(&request_id), QString::from(json));
                                 }
-                                qo.as_mut().releases_check_completed();
+                                qo.as_mut().releases_check_completed(QString::from(&request_id));
                             });
                             info("SuttaBridge::check_for_updates() - fetch error, no fallback");
                             return;
@@ -5797,16 +5825,18 @@ impl qobject::SuttaBridge {
                     app_update.release_notes = Some(markdown_to_html(notes));
                 }
                 let json = serde_json::to_string(&app_update).unwrap_or_default();
+                let app_request_id = request_id.clone();
                 crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
-                    qo.as_mut().app_update_available(QString::from(json));
-                    qo.as_mut().releases_check_completed();
+                    let request_id = app_request_id;
+                    qo.as_mut().app_update_available(QString::from(&request_id), QString::from(json));
+                    qo.as_mut().releases_check_completed(QString::from(&request_id));
                 });
                 info("SuttaBridge::check_for_updates() - app update available");
                 // The DPD offer comes after the app update's: QML holds it
                 // until the app update dialog is closed.
                 if let Ok(Some(dpd_json)) = join_dpd_check(dpd_check) {
                     crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
-                        qo.as_mut().dpd_update_available(QString::from(dpd_json));
+                        qo.as_mut().dpd_update_available(QString::from(&request_id), QString::from(dpd_json));
                     });
                 }
                 return;
@@ -5824,8 +5854,8 @@ impl qobject::SuttaBridge {
                 }
                 let json = serde_json::to_string(&db_update).unwrap_or_default();
                 crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
-                    qo.as_mut().db_update_available(QString::from(json));
-                    qo.as_mut().releases_check_completed();
+                    qo.as_mut().db_update_available(QString::from(&request_id), QString::from(json));
+                    qo.as_mut().releases_check_completed(QString::from(&request_id));
                 });
                 info("SuttaBridge::check_for_updates() - db update available");
                 return;
@@ -5837,24 +5867,66 @@ impl qobject::SuttaBridge {
             let dpd_result = join_dpd_check(dpd_check);
             crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_updates", move |mut qo| {
                 match dpd_result {
-                    Ok(Some(json)) => qo.as_mut().dpd_update_available(QString::from(json)),
+                    Ok(Some(json)) => qo.as_mut().dpd_update_available(QString::from(&request_id), QString::from(json)),
                     Ok(None) => {
                         if include_no_updates {
-                            qo.as_mut().no_updates_available();
+                            qo.as_mut().no_updates_available(QString::from(&request_id));
                         }
                     }
                     Err(msg) => {
                         if include_no_updates {
-                            qo.as_mut().dpd_update_check_error(QString::from(msg));
-                            qo.as_mut().no_updates_available();
+                            qo.as_mut().dpd_update_check_error(QString::from(&request_id), QString::from(msg));
+                            qo.as_mut().no_updates_available(QString::from(&request_id));
                         }
                     }
                 }
-                qo.as_mut().releases_check_completed();
+                qo.as_mut().releases_check_completed(QString::from(&request_id));
             });
 
             info("SuttaBridge::check_for_updates() - no app or database updates available");
         });
+    }
+
+    /// The automatic startup check for a newer DPD release alone, when DPD
+    /// update notifications are on and Simsapa ones are off: the releases
+    /// server is not asked. Emits `dpdUpdateAvailable` when there is an
+    /// offer; a GitHub failure is only logged. `dpdCheckCompleted` is emitted
+    /// last, whatever was found.
+    ///
+    /// As in `check_for_updates()`, an obsolete local database gets no DPD
+    /// offer: the new databases it needs bring their own DPD.
+    pub fn check_for_dpd_updates(self: Pin<&mut Self>, request_id: &QString) {
+        use simsapa_backend::update_checker;
+
+        info("SuttaBridge::check_for_dpd_updates() start");
+        let qt_thread = self.qt_thread();
+        let request_id = request_id.to_string();
+        thread::spawn(move || {
+            let app_version = update_checker::get_app_version();
+            let db_version = update_checker::get_db_version();
+            let dpd_offer = if update_checker::is_local_db_obsolete(&app_version, db_version.as_deref()).is_some() {
+                info("SuttaBridge::check_for_dpd_updates() - local db obsolete, no DPD offer");
+                None
+            } else {
+                check_for_dpd_update().ok().flatten()
+            };
+            crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_dpd_updates", move |mut qo| {
+                if let Some(json) = dpd_offer {
+                    qo.as_mut().dpd_update_available(QString::from(&request_id), QString::from(json));
+                }
+                qo.as_mut().dpd_check_completed(QString::from(&request_id));
+            });
+        });
+    }
+
+    /// Get whether the startup update check also checks for DPD releases.
+    pub fn get_notify_about_dpd_updates(&self) -> bool {
+        get_app_data().get_notify_about_dpd_updates()
+    }
+
+    /// Set whether the startup update check also checks for DPD releases.
+    pub fn set_notify_about_dpd_updates(self: Pin<&mut Self>, enabled: bool) {
+        get_app_data().set_notify_about_dpd_updates(enabled);
     }
 
     /// Get whether to notify about Simsapa updates.
@@ -7273,7 +7345,11 @@ fn check_for_dpd_update() -> Result<Option<String>, String> {
     }
 }
 
-fn join_dpd_check(handle: thread::JoinHandle<Result<Option<String>, String>>) -> Result<Option<String>, String> {
+/// The DPD part's answer; `Ok(None)` when it was not started.
+fn join_dpd_check(handle: Option<thread::JoinHandle<Result<Option<String>, String>>>) -> Result<Option<String>, String> {
+    let Some(handle) = handle else {
+        return Ok(None);
+    };
     handle.join().unwrap_or_else(|_| {
         error("check_for_dpd_update(): the thread panicked");
         Err("Could not check for DPD updates.".to_string())

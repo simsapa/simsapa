@@ -16,8 +16,9 @@ Item {
     }
 
     signal updateWindowTitle(item_uid: string, sutta_ref: string, sutta_title: string);
-    signal dpdUpdateAvailable(update_info_json: string);
-    signal dpdUpdateCheckError(error_message: string);
+    signal dpdUpdateAvailable(request_id: string, update_info_json: string);
+    signal dpdUpdateCheckError(request_id: string, error_message: string);
+    signal dpdCheckCompleted(request_id: string);
     signal resultsPageReady(results_json: string);
     signal allParagraphsGlossReady(results_json: string);
     signal paragraphGlossReady(paragraph_index: int, results_json: string);
@@ -37,12 +38,12 @@ Item {
     signal exportSucceeded();
 
     // Update checker signals
-    signal appUpdateAvailable(update_info_json: string);
-    signal dbUpdateAvailable(update_info_json: string);
-    signal localDbObsolete(update_info_json: string);
-    signal noUpdatesAvailable();
-    signal updateCheckError(error_message: string);
-    signal releasesCheckCompleted();
+    signal appUpdateAvailable(request_id: string, update_info_json: string);
+    signal dbUpdateAvailable(request_id: string, update_info_json: string);
+    signal localDbObsolete(request_id: string, update_info_json: string);
+    signal noUpdatesAvailable(request_id: string);
+    signal updateCheckError(request_id: string, error_message: string);
+    signal releasesCheckCompleted(request_id: string);
 
     // Search index signals
     signal rebuildSearchIndexProgress(message: string);
@@ -1045,14 +1046,31 @@ Item {
 
     // Update checker functions
     // save_stats_behaviour: "enabled", "disabled", or "determine"
-    function check_for_updates(include_no_updates: bool, screen_size: string, save_stats_behaviour: string) {
-        console.log("check_for_updates():", include_no_updates, screen_size, save_stats_behaviour);
+    function check_for_updates(request_id: string, include_no_updates: bool, screen_size: string, save_stats_behaviour: string) {
+        console.log("check_for_updates():", request_id, include_no_updates, screen_size, save_stats_behaviour);
         // Simulate async behavior - emit noUpdatesAvailable for testing
         Qt.callLater(function() {
             if (include_no_updates) {
-                noUpdatesAvailable();
+                noUpdatesAvailable(request_id);
             }
+            releasesCheckCompleted(request_id);
         });
+    }
+
+    function check_for_dpd_updates(request_id: string) {
+        console.log("check_for_dpd_updates():", request_id);
+        Qt.callLater(function() {
+            dpdCheckCompleted(request_id);
+        });
+    }
+
+    function get_notify_about_dpd_updates(): bool {
+        console.log("get_notify_about_dpd_updates()");
+        return false;
+    }
+
+    function set_notify_about_dpd_updates(enabled: bool) {
+        console.log("set_notify_about_dpd_updates():", enabled);
     }
 
     function get_notify_about_simsapa_updates(): bool {

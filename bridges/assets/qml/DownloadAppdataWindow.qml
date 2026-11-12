@@ -98,14 +98,19 @@ ApplicationWindow {
         // When the check completes, the Connections handler below will proceed to the selection screen.
         // The screen_size parameter is used for analytics (if enabled).
         // Pass "disabled" for save_stats_behaviour to avoid duplicate stats during initial setup.
-        SuttaBridge.check_for_updates(false, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "disabled");
+        SuttaBridge.check_for_updates(root.update_request_id, false, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "disabled");
     }
+
+    // This window's own check: the SuttaSearchWindows ignore it, so it shows
+    // no update dialogs behind a database download.
+    readonly property string update_request_id: "download-appdata-window"
 
     // Handle releases check completion from SuttaBridge
     Connections {
         target: SuttaBridge
 
-        function onReleasesCheckCompleted() {
+        function onReleasesCheckCompleted(request_id: string) {
+            if (request_id !== root.update_request_id) return;
             root.proceed_after_releases_check();
         }
     }

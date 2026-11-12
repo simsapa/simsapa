@@ -264,11 +264,19 @@ bootstrap for the database release.
 
 ### 7.2 The app
 
-**The offer.** `SuttaBridge::check_for_updates()` (the automatic check at
-startup, gated by the update-notification setting, and the manual **Check for
-updates** action) starts `check_for_dpd_update()` on its own thread before it
-asks the releases server, so an outage of either does not hide the other's
-answer. `dpd_upgrade::offer::check_for_update()` gives a `DpdUpdateOffer`: the
+**The settings.** The two notification settings are about the **automatic**
+check at startup only: `notify_about_simsapa_updates` (app and database, on by
+default) and `notify_about_dpd_updates` (Settings → Updates → **Notify About
+DPD Dictionary Updates**, **off by default**). The manual **Help → Check for
+Updates...** (also a button in Settings) is a deliberate action and always
+checks both, whatever the settings say.
+
+**The check.** `SuttaBridge::check_for_updates()` (the manual action, and the
+automatic check at startup when Simsapa notifications are on) starts
+`check_for_dpd_update()` on its own thread before it asks the releases server,
+so an outage of either does not hide the other's answer. The DPD part runs on
+a manual check (`include_no_updates`) and on the automatic one only when DPD
+notifications are on. `dpd_upgrade::offer::check_for_update()` gives a `DpdUpdateOffer`: the
 two versions, the release notes, the download size, the space estimate and the
 shared `ESTIMATED_MINUTES` / `UPGRADE_OUTLINE` / `UPGRADE_BENEFIT`. It answers
 `None` without asking GitHub when no `dpd.sqlite3` is installed (first-run
@@ -283,6 +291,23 @@ setup calls the same check).
   notice (`dpdUpdateCheckError` just before `noUpdatesAvailable`); the
   automatic check only logs it.
 - `releasesCheckCompleted` is emitted once per check, whatever was found.
+
+**Who answers.** Every `SuttaSearchWindow` listens to `SuttaBridge`, so both
+check functions take a `request_id` and every update signal carries it as its
+first argument. A window passes its own `update_request_id` and ignores the
+signals of any other id: a manual check shows its dialogs in the window it was
+started from (the Settings button asks its owning window through
+`checkForUpdatesRequested`), and `DownloadAppdataWindow`'s check, which only
+fetches the releases info, shows no update or DPD dialog behind a database
+download. A new caller passes an id of its own.
+
+**The DPD-only check.** When Simsapa notifications are off but DPD ones are
+on, the startup check is `SuttaBridge::check_for_dpd_updates()`, which runs
+`check_for_dpd_update()` alone, without asking the releases server, and, like
+the combined check, makes no offer over an obsolete local database. It emits
+`dpdUpdateAvailable` for an offer (a GitHub failure is only logged), then
+`dpdCheckCompleted`, which starts the startup database validation as
+`releasesCheckCompleted` does.
 
 `DpdUpdateDialog.qml` shows the offer, then the confirmation (the time first,
 the steps, the benefit, the space), then **Start update** calls

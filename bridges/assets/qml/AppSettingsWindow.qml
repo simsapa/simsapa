@@ -29,6 +29,8 @@ ApplicationWindow {
     property var database_validation_dialog: null
 
     signal themeChanged(string theme_name)
+    // The window that owns this one runs the check and shows its answer.
+    signal checkForUpdatesRequested()
     signal marginChanged()
     signal keybindingsChanged()
 
@@ -448,10 +450,10 @@ ApplicationWindow {
                         }
 
                         Button {
-                            text: "Check for Simsapa Updates..."
+                            text: "Check for Updates..."
                             font.pointSize: root.pointSize
                             onClicked: {
-                                SuttaBridge.check_for_updates(true, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "determine");
+                                root.checkForUpdatesRequested();
                             }
                         }
 
@@ -501,6 +503,15 @@ ApplicationWindow {
                             font.pointSize: root.pointSize
                             onCheckedChanged: {
                                 SuttaBridge.set_notify_about_simsapa_updates(checked);
+                            }
+                        }
+
+                        CheckBox {
+                            id: notify_dpd_updates_checkbox
+                            text: "Notify About DPD Dictionary Updates"
+                            font.pointSize: root.pointSize
+                            onCheckedChanged: {
+                                SuttaBridge.set_notify_about_dpd_updates(checked);
                             }
                         }
 
@@ -1238,6 +1249,7 @@ ApplicationWindow {
     function reload_settings_from_backend() {
         // Load initial state for General tab settings
         notify_updates_checkbox.checked = SuttaBridge.get_notify_about_simsapa_updates();
+        notify_dpd_updates_checkbox.checked = SuttaBridge.get_notify_about_dpd_updates();
         dont_send_stats_checkbox.checked = SuttaBridge.get_dont_send_stats();
         restore_last_session_checkbox.checked = SuttaBridge.get_restore_last_session();
 

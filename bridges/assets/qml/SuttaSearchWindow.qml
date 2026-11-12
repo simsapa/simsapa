@@ -2650,8 +2650,8 @@ ${query_text}`;
             CMenuItem {
                 action: Action {
                     id: action_check_for_updates
-                    text: "Check for Simsapa Updates..."
-                    onTriggered: SuttaBridge.check_for_updates(true, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "determine")
+                    text: "Check for Updates..."
+                    onTriggered: root.check_for_updates_manually()
                 }
             }
 
@@ -2878,6 +2878,7 @@ ${query_text}`;
         id: app_settings_window
         extra_top_margin: root.extra_top_margin
         database_validation_dialog: database_validation_dialog
+        onCheckForUpdatesRequested: root.check_for_updates_manually()
         onThemeChanged: function(theme_name) {
             SuttaBridge.set_theme_name(theme_name);
             root.apply_theme();
@@ -2912,9 +2913,15 @@ ${query_text}`;
             if (!SuttaBridge.get_updates_checked()) {
                 SuttaBridge.set_updates_checked(true);
                 if (SuttaBridge.get_notify_about_simsapa_updates()) {
-                    SuttaBridge.check_for_updates(false, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "determine");
+                    // The DPD part runs only when DPD notifications are on.
+                    SuttaBridge.check_for_updates(root.update_request_id, false, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "determine");
                     // Validation runs from the update result handlers below
                     // (except for onLocalDbObsolete, which suppresses it).
+                    return;
+                }
+                if (SuttaBridge.get_notify_about_dpd_updates()) {
+                    SuttaBridge.check_for_dpd_updates(root.update_request_id);
+                    // Validation runs from onDpdCheckCompleted.
                     return;
                 }
             }
@@ -2923,28 +2930,44 @@ ${query_text}`;
         }
     }
 
+    // Every SuttaSearchWindow listens to SuttaBridge's update signals, so each
+    // check is tagged with the id of the window that started it, and only that
+    // window answers. Checks started elsewhere (DownloadAppdataWindow) reach no
+    // SuttaSearchWindow.
+    readonly property string update_request_id: "sutta-search-window-" + Math.random().toString(36).slice(2)
+
+    // The manual "Check for Updates...": app, database and DPD, whatever the
+    // notification settings say.
+    function check_for_updates_manually() {
+        SuttaBridge.check_for_updates(root.update_request_id, true, Screen.desktopAvailableWidth + " x " + Screen.desktopAvailableHeight, "determine");
+    }
+
     // Connections for update check signals
     Connections {
         target: SuttaBridge
 
-        function onAppUpdateAvailable(update_info_json: string) {
+        function onAppUpdateAvailable(request_id: string, update_info_json: string) {
+            if (request_id !== root.update_request_id) return;
             update_notification_dialog.show_app_update(update_info_json);
             root.run_startup_validation_once();
         }
 
-        function onDbUpdateAvailable(update_info_json: string) {
+        function onDbUpdateAvailable(request_id: string, update_info_json: string) {
+            if (request_id !== root.update_request_id) return;
             update_notification_dialog.show_db_update(update_info_json);
             root.run_startup_validation_once();
         }
 
-        function onLocalDbObsolete(update_info_json: string) {
+        function onLocalDbObsolete(request_id: string, update_info_json: string) {
+            if (request_id !== root.update_request_id) return;
             // DB upgrade will replace appdata/dpd/dictionaries — skip the
             // validation dialog so the user sees only the obsolete warning.
             root.startup_validation_done = true;
             update_notification_dialog.show_obsolete_warning(update_info_json);
         }
 
-        function onNoUpdatesAvailable() {
+        function onNoUpdatesAvailable(request_id: string) {
+            if (request_id !== root.update_request_id) return;
             // Only a manual check emits this; a DPD check error on it is
             // reported in the same notice.
             const dpd_note = root.dpd_check_error.length > 0 ? root.dpd_check_error : "";
@@ -2953,7 +2976,8 @@ ${query_text}`;
             root.run_startup_validation_once();
         }
 
-        function onDpdUpdateAvailable(update_info_json: string) {
+        function onDpdUpdateAvailable(request_id: string, update_info_json: string) {
+            if (request_id !== root.update_request_id) return;
             if (update_notification_dialog.visible) {
                 root.pending_dpd_update_json = update_info_json;
             } else {
@@ -2962,18 +2986,26 @@ ${query_text}`;
             root.run_startup_validation_once();
         }
 
-        function onDpdUpdateCheckError(error_message: string) {
+        function onDpdCheckCompleted(request_id: string) {
+            if (request_id !== root.update_request_id) return;
+            root.run_startup_validation_once();
+        }
+
+        function onDpdUpdateCheckError(request_id: string, error_message: string) {
+            if (request_id !== root.update_request_id) return;
             logger.info("DPD update check error: " + error_message);
             root.dpd_check_error = error_message;
         }
 
         // Emitted once at the end of every check. When the check found
         // nothing to show, no other handler has run validation yet.
-        function onReleasesCheckCompleted() {
+        function onReleasesCheckCompleted(request_id: string) {
+            if (request_id !== root.update_request_id) return;
             root.run_startup_validation_once();
         }
 
-        function onUpdateCheckError(error_message: string) {
+        function onUpdateCheckError(request_id: string, error_message: string) {
+            if (request_id !== root.update_request_id) return;
             // Log error but don't show dialog on automatic startup check
             // For manual checks, the user will see "no updates" if check succeeds
             logger.info("Update check error: " + error_message);

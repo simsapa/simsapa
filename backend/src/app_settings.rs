@@ -231,8 +231,12 @@ pub struct AppSettings {
     /// `mobile_extra_top_margin` and clears this, and it is never written back.
     #[serde(rename = "mobile_top_bar_margin", skip_serializing)]
     pub(crate) legacy_mobile_top_bar_margin: Option<MobileTopBarMargin>,
-    /// Whether to show update notifications on startup
+    /// Whether to check for app and database updates on startup and offer them.
+    /// The manual "Check for Updates..." always checks.
     pub notify_about_simsapa_updates: bool,
+    /// Whether to check for a newer DPD release on startup and offer it.
+    /// Off by default; the manual "Check for Updates..." always checks.
+    pub notify_about_dpd_updates: bool,
     /// Whether to opt out of sending device info and usage stats when checking
     /// for updates. When true, the releases API request omits the system info
     /// fields entirely and sends no_stats = true.
@@ -876,6 +880,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             mobile_extra_top_margin: 0,
             legacy_mobile_top_bar_margin: None,
             notify_about_simsapa_updates: true,
+            notify_about_dpd_updates: false,
             dont_send_stats: false,
             release_channel: None,
             app_keybindings: AppKeybindings::default(),
@@ -1075,6 +1080,20 @@ impl AppKeybindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DPD update notifications are off by default, also for settings saved
+    /// before the setting existed.
+    #[test]
+    fn notify_about_dpd_updates_defaults_off() {
+        assert!(!AppSettings::default().notify_about_dpd_updates);
+
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert!(json.remove("notify_about_dpd_updates").is_some());
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert!(!settings.notify_about_dpd_updates);
+        assert!(settings.notify_about_simsapa_updates);
+    }
 
     /// Settings saved before the two-part translation template existed gain
     /// it on load; an unedited earlier word-selection request is upgraded, an
