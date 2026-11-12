@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::bootstrap::helpers::{uid_to_ref, uid_to_nikaya};
+use crate::bootstrap::helpers::{uid_to_ref, uid_to_nikaya, apply_dhp_verse_ranges};
+use indexmap::IndexMap;
 use crate::bootstrap::SuttaImporter;
 use simsapa_backend::helpers::{
     consistent_niggahita, pali_to_ascii, sutta_html_to_plain_text,
@@ -626,6 +627,20 @@ fn bilara_text_to_sutta(
 
     // Apply niggahita normalization to JSON content
     let json_text = consistent_niggahita(Some(json_text.to_string()));
+
+    // Dhammapada verse-group ranges in the heading segments, for the Pāli and
+    // Sujato's English only (docs/munindo-nyanadipa-segmentation.md).
+    let is_dhp_pali = lang == "pli" && author == "ms";
+    let is_dhp_sujato = lang == "en" && author == "sujato";
+    let json_text = if uid_base.starts_with("dhp") && (is_dhp_pali || is_dhp_sujato) {
+        let mut content: IndexMap<String, String> = serde_json::from_str(&json_text)
+            .with_context(|| format!("Failed to parse Bilara JSON for {}", full_uid))?;
+        apply_dhp_verse_ranges(&mut content, is_dhp_pali, &full_uid);
+        serde_json::to_string(&content)
+            .with_context(|| format!("Failed to serialise Bilara JSON for {}", full_uid))?
+    } else {
+        json_text
+    };
 
     // Generate HTML and plain text
     let (_content_html, content_plain) = if let Some(template) = tmpl_json {
@@ -1693,5 +1708,79 @@ mod tests {
 
         // Display sample languages
         println!("Sample languages: {:?}", languages.iter().take(10).collect::<Vec<_>>());
+    }
+
+    fn sc_bilara_file(rel: &str) -> Option<String> {
+        let path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate()
+            .join(crate::bootstrap::source_paths::SC_DATA_DIR)
+            .join(crate::bootstrap::source_paths::SC_BILARA_DATA_SUBDIR)
+            .join(rel);
+        match path.try_exists() {
+            Ok(true) => Some(fs::read_to_string(&path).unwrap()),
+            _ => {
+                eprintln!("sc-data file not found, skipping: {:?}", path);
+                None
+            }
+        }
+    }
+
+    fn bilara_doc(uid: &str, lang: &str, muids: &[&str], text: &str) -> Value {
+        serde_json::json!({
+            "uid": uid,
+            "lang": lang,
+            "muids": muids,
+            "file_path": format!("/sc-data/{}/{}", lang, uid),
+            "text": text,
+        })
+    }
+
+    fn json_keys(json: &str) -> Vec<String> {
+        serde_json::from_str::<IndexMap<String, String>>(json).unwrap().into_keys().collect()
+    }
+
+    #[test]
+    fn test_bilara_text_to_sutta_dhp_pali_ranges() {
+        let Some(root) = sc_bilara_file("root/pli/ms/sutta/kn/dhp/dhp179-196_root-pli-ms.json") else { return };
+        let Some(tmpl) = sc_bilara_file("html/pli/ms/sutta/kn/dhp/dhp179-196_html.json") else { return };
+        let doc = bilara_doc("dhp179-196", "pli", &["root", "pli", "ms"], &root);
+        let sutta = bilara_text_to_sutta(&doc, "Buddhavagga", Some(&tmpl)).unwrap();
+        assert_eq!(sutta.uid, "dhp179-196/pli/ms");
+        let json = sutta.content_json.unwrap();
+        let content: IndexMap<String, String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(content["dhp183:0"], "183\u{2013}185. Ānandattherapañhavatthu ");
+        assert_eq!(content["dhp179:0.4"], "179\u{2013}180. Māradhītaravatthu ");
+        assert_eq!(json_keys(&json), json_keys(&root));
+        // content_plain is lowercased with punctuation removed.
+        assert!(sutta.content_plain.contains("183 185 ānandattherapañhavatthu"));
+    }
+
+    #[test]
+    fn test_bilara_text_to_sutta_dhp_sujato_ranges() {
+        let Some(text) = sc_bilara_file("translation/en/sujato/sutta/kn/dhp/dhp179-196_translation-en-sujato.json") else { return };
+        let Some(tmpl) = sc_bilara_file("html/pli/ms/sutta/kn/dhp/dhp179-196_html.json") else { return };
+        let doc = bilara_doc("dhp179-196", "en", &["translation", "en", "sujato"], &text);
+        let sutta = bilara_text_to_sutta(&doc, "The Buddhas", Some(&tmpl)).unwrap();
+        assert_eq!(sutta.uid, "dhp179-196/en/sujato");
+        let json = sutta.content_json.unwrap();
+        let content: IndexMap<String, String> = serde_json::from_str(&json).unwrap();
+        assert_eq!(content["dhp183:0"], "183\u{2013}185.");
+        assert_eq!(content["dhp181:0"], "181.");
+        assert_eq!(content["dhp179:0.3"], "14. The Buddhas ");
+        assert_eq!(json_keys(&json), json_keys(&text));
+    }
+
+    #[test]
+    fn test_bilara_text_to_sutta_other_records_unchanged() {
+        if let Some(root) = sc_bilara_file("root/pli/ms/sutta/mn/mn1_root-pli-ms.json") {
+            let doc = bilara_doc("mn1", "pli", &["root", "pli", "ms"], &root);
+            let sutta = bilara_text_to_sutta(&doc, "Mūlapariyāyasutta", None).unwrap();
+            assert_eq!(sutta.content_json.unwrap(), consistent_niggahita(Some(root)));
+        }
+        if let Some(text) = sc_bilara_file("translation/de/sabbamitta/sutta/kn/dhp/dhp179-196_translation-de-sabbamitta.json") {
+            let doc = bilara_doc("dhp179-196", "de", &["translation", "de", "sabbamitta"], &text);
+            let sutta = bilara_text_to_sutta(&doc, "", None).unwrap();
+            assert_eq!(sutta.uid, "dhp179-196/de/sabbamitta");
+            assert_eq!(sutta.content_json.unwrap(), consistent_niggahita(Some(text)));
+        }
     }
 }

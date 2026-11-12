@@ -113,20 +113,20 @@ Depends on: nothing new. Uses `bilara_text_to_sutta()` and `DHP_CHAPTERS_TO_RANG
 - Only `dhp…/pli/ms` and `dhp…/en/sujato` in the SuttaCentral importer. Every
   other language and author is untouched (PRD FR 24).
 
-- [ ] 1.0 Dhammapada verse-group ranges: the shared range function, and the ranges written into the Pāli `ms` and Sujato records by the SuttaCentral importer (PRD FR 18–20, 21 Sujato, 22–25, 27)
-  - [ ] 1.1 Read `bilara_text_to_sutta()` and `get_suttas()` in `suttacentral.rs` to confirm where `json_text` and the uid are both available, and that Pāli `ms` and Sujato Dhammapada records pass through it (not the `html_text` path).
-  - [ ] 1.2 Add `dhp_verse_group_ranges()` to `helpers.rs` as specified above. Parse ids with a small regex (`^dhp(\d+):(\d+)(?:\.(\d+))?$`); ignore ids that do not match.
-  - [ ] 1.3 Add `apply_dhp_verse_ranges(content: &mut IndexMap<String, String>, is_pali: bool, uid: &str)` next to it, implementing the "Writing a range" rules, with the warning for non-empty translation headings.
-  - [ ] 1.4 Unit tests in `helpers.rs` (PRD FR 25), using id lists, not files:
-    - [ ] 1.4.1 Chapter start: `dhp179:0.1 … 0.4, dhp179:1…, dhp180:1…, dhp181:0` → `dhp179:0.4` = `179–180`.
-    - [ ] 1.4.2 Single-verse group (`dhp181:0` followed by `dhp182:0`) → `181`.
-    - [ ] 1.4.3 Last group of a chapter ends at the chapter's last verse (`dhp194:0` … `dhp196:4` → `194–196`, whatever the real data has).
-    - [ ] 1.4.4 `apply_dhp_verse_ranges`: Pāli prefix keeps the trailing space; translation becomes `"183–185."`; non-`dhp` uid unchanged; key order unchanged.
-    - [ ] 1.4.5 Real-data test (skips when `sc-data` is absent): for all 26 chapters, read the Pāli root files from `sc-data/sc_bilara_data/root/pli/ms/sutta/kn/dhp/`, compute the ranges, and assert they are contiguous and cover 1–423 with no gap or overlap.
-  - [ ] 1.5 In `bilara_text_to_sutta()`, for `uid_base` starting with `dhp` and (`lang == "pli" && author == "ms"`) or (`lang == "en" && author == "sujato"`): parse `json_text` into `IndexMap<String, String>`, call `apply_dhp_verse_ranges`, serialise back with `serde_json::to_string`, then continue to `bilara_html_and_plain_text()`. Leave every other record byte-identical.
-  - [ ] 1.6 Test (PRD FR 27): build a record from a minimal `doc` `Value` (the same shape `bilara_text_to_sutta` receives) for `dhp179-196/pli/ms` with the real root text, and assert `dhp183:0` = `183–185. Ānandattherapañhavatthu ` and the key order equals the input's. Same for a Sujato doc: `dhp183:0` = `183–185.`.
-  - [ ] 1.7 Test that a non-Dhammapada record (`mn1/pli/ms`) and a Dhammapada record of another author (`dhp179-196/de/sabbamitta`) come out unchanged.
-  - [ ] 1.8 `cd bootstrap_cli && cargo test` passes (apart from known timing drift).
+- [x] 1.0 Dhammapada verse-group ranges: the shared range function, and the ranges written into the Pāli `ms` and Sujato records by the SuttaCentral importer (PRD FR 18–20, 21 Sujato, 22–25, 27)
+  - [x] 1.1 Read `bilara_text_to_sutta()` and `get_suttas()` in `suttacentral.rs` to confirm where `json_text` and the uid are both available, and that Pāli `ms` and Sujato Dhammapada records pass through it (not the `html_text` path).
+  - [x] 1.2 Add `dhp_verse_group_ranges()` to `helpers.rs` as specified above. Parse ids with a small regex (`^dhp(\d+):(\d+)(?:\.(\d+))?$`); ignore ids that do not match.
+  - [x] 1.3 Add `apply_dhp_verse_ranges(content: &mut IndexMap<String, String>, is_pali: bool, uid: &str)` next to it, implementing the "Writing a range" rules, with the warning for non-empty translation headings.
+  - [x] 1.4 Unit tests in `helpers.rs` (PRD FR 25), using id lists, not files:
+    - [x] 1.4.1 Chapter start: `dhp179:0.1 … 0.4, dhp179:1…, dhp180:1…, dhp181:0` → `dhp179:0.4` = `179–180`.
+    - [x] 1.4.2 Single-verse group (`dhp181:0` followed by `dhp182:0`) → `181`.
+    - [x] 1.4.3 Last group of a chapter ends at the chapter's last verse (`dhp194:0` … `dhp196:4` → `194–196`, whatever the real data has).
+    - [x] 1.4.4 `apply_dhp_verse_ranges`: Pāli prefix keeps the trailing space; translation becomes `"183–185."`; non-`dhp` uid unchanged; key order unchanged.
+    - [x] 1.4.5 Real-data test (skips when `sc-data` is absent): for all 26 chapters, read the Pāli root files from `sc-data/sc_bilara_data/root/pli/ms/sutta/kn/dhp/`, compute the ranges, and assert they are contiguous and cover 1–423 with no gap or overlap.
+  - [x] 1.5 In `bilara_text_to_sutta()`, for `uid_base` starting with `dhp` and (`lang == "pli" && author == "ms"`) or (`lang == "en" && author == "sujato"`): parse `json_text` into `IndexMap<String, String>`, call `apply_dhp_verse_ranges`, serialise back with `serde_json::to_string`, then continue to `bilara_html_and_plain_text()`. Leave every other record byte-identical.
+  - [x] 1.6 Test (PRD FR 27): build a record from a minimal `doc` `Value` (the same shape `bilara_text_to_sutta` receives) for `dhp179-196/pli/ms` with the real root text, and assert `dhp183:0` = `183–185. Ānandattherapañhavatthu ` and the key order equals the input's. Same for a Sujato doc: `dhp183:0` = `183–185.`.
+  - [x] 1.7 Test that a non-Dhammapada record (`mn1/pli/ms`) and a Dhammapada record of another author (`dhp179-196/de/sabbamitta`) come out unchanged.
+  - [x] 1.8 `cd bootstrap_cli && cargo test` passes (apart from known timing drift).
 
 ### 2.0 specs
 
