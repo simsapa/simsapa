@@ -161,20 +161,21 @@ fn dhammapada_candidates() -> Vec<String> {
         "dhp21-32/pli/cst",
         "dhp21-32/en/opentipitaka",
         "dhp21-32/en/anandajoti",
-        "dhp21-32/en/daw",
         "dhp1-20.att/pli/cst",
         "dhp1-20.att/en/opentipitaka",
         "dhp1-20.att/en/anandajoti",
         "dhp21-32.att/pli/cst",
         "dhp21-32.att/en/opentipitaka",
         "dhp21-32.att/en/anandajoti",
+        "dhp21-32.att/en/daw",
     ])
 }
 
-const DHP_21_32_COMMENTARY: [&str; 3] = [
+const DHP_21_32_COMMENTARY: [&str; 4] = [
     "dhp21-32.att/pli/cst",
     "dhp21-32.att/en/opentipitaka",
     "dhp21-32.att/en/anandajoti",
+    "dhp21-32.att/en/daw",
 ];
 
 #[test]
@@ -195,7 +196,6 @@ fn a_dhammapada_vagga_lists_its_commentary_only_with_the_setting() {
             "dhp21-32/pli/cst",
             "dhp21-32/en/opentipitaka",
             "dhp21-32/en/anandajoti",
-            "dhp21-32/en/daw",
         ])
     );
 }
@@ -218,11 +218,11 @@ fn the_dhammapada_candidate_pattern_finds_the_commentary() {
 }
 
 #[test]
-fn an_opened_dhammapada_commentary_lists_both_english_translations() {
+fn an_opened_dhammapada_commentary_lists_every_english_translation() {
     let candidates = dhammapada_candidates();
     for include_cst_commentary in [true, false] {
         let listed = related_sutta_uids("dhp21-32.att/pli/cst", &candidates, include_cst_commentary);
-        for uid in ["dhp21-32.att/en/anandajoti", "dhp21-32.att/en/opentipitaka", "dhp21-32/pli/ms"] {
+        for uid in ["dhp21-32.att/en/anandajoti", "dhp21-32.att/en/opentipitaka", "dhp21-32.att/en/daw", "dhp21-32/pli/ms"] {
             assert!(
                 listed.contains(&uid.to_string()),
                 "{} missing (setting {}): {:?}",

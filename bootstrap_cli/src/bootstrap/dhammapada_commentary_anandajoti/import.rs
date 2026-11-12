@@ -46,6 +46,7 @@ pub fn page_plain_text(content_html: &str) -> String {
 }
 
 /// The columns copied from the `.att/en/opentipitaka` record of the same vagga.
+/// The Daw Mya Tin import (`dhammapada_tipitaka.rs`) uses them too.
 #[derive(Debug, Clone, PartialEq, Eq, Queryable)]
 pub struct CopiedColumns {
     pub sutta_ref: String,
@@ -59,7 +60,7 @@ pub struct CopiedColumns {
 }
 
 impl CopiedColumns {
-    fn load(conn: &mut SqliteConnection, uid: &str) -> Result<Option<Self>> {
+    pub(crate) fn load(conn: &mut SqliteConnection, uid: &str) -> Result<Option<Self>> {
         Ok(suttas::table
             .filter(suttas::uid.eq(uid))
             .select((
@@ -78,7 +79,7 @@ impl CopiedColumns {
 
     /// As the CST import derives them from the vagga reference
     /// (`dhp21-32.att`), with no grouping.
-    fn derived(reference: &str) -> Self {
+    pub(crate) fn derived(reference: &str) -> Self {
         let sc_code = reference.strip_suffix(".att").unwrap_or(reference);
         let (sutta_range_group, sutta_range_start, sutta_range_end) = SuttaData::parse_range_from_uid(reference);
         CopiedColumns {

@@ -308,8 +308,10 @@ RELEASE_CHANNEL=development
             importer.import(&mut conn)?;
         }
 
-        // Import Dhammapada from Tipitaka.net (Daw Mya Tin translation)
-        // Uses exported database from dhammapada_tipitaka_net_export command
+        // Daw Mya Tin's Dhammapada verses and stories from tipitaka.net, from
+        // the dhammapada-tipitaka-net-export database. Imported as commentary,
+        // `dhp<range>.att/en/daw`, with the grouping copied from the
+        // `dhp….att/en/opentipitaka` records of the CST import above.
         {
             let exported_db_path = bootstrap_assets_dir.join(source_paths::DHAMMAPADA_TIPITAKA_NET_DB);
             if exported_db_path.exists() {

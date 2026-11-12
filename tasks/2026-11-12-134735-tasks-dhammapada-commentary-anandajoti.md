@@ -307,7 +307,9 @@ Update the file after completing each sub-task, not just after completing an ent
     - `dhp21-32/pli/ms` lists the three `.att` uids with commentary on, and none with it off;
     - `dhp21-32.att/pli/cst` lists `…/en/anandajoti` and `…/en/opentipitaka` with either setting (FR 31–32);
     - the Ānandajoti row has `has_content_json` false (FR 33).
+    - the Daw Mya Tin pages (tipitaka.net) are commentary too: 26 `dhp<range>.att/en/daw` rows, titled with the `…/pli/ms` vagga title (`Yamakavagga`), no `dhp<range>/en/daw` left; `dhp21-32.att/en/daw` is listed with the other `.att` uids, and only with commentary on;
   - [ ] 5.7 Search: Contains and Fulltext for "Cakkhupāla", with commentary on, find `dhp1-20.att/pli/cst` and `dhp1-20.att/en/anandajoti`; with it off, neither (§8). Use the `simsapa` CLI or a backend test that runs only against the rebuilt DB. Confirm that the Tantivy `en` index counts the 26 new docs.
+  - [ ] 5.7a **Regenerate the search pins** after the bootstrap: `cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture` (capped; it runs for minutes). On the new database it rewrites `backend/tests/data/search_results_pin.tsv`. Review the rewrite in `git diff`: the "mindfulness" Contains cases named `dhp235-255/en/daw` … in `first_uids`, which are now `.att` uids and hidden with commentary off; the Dhammapada CST and Ānandajoti records also change the totals.
   - [ ] 5.8 Run `make rust-test` (capped). All green apart from the known timed-test drift.
   - [ ] 5.9 Write the GUI checks for the user to do by hand, and give them in the summary:
     - open Dhammapada Aṭṭhakathā vagga 2 from the Sutta Navigation, check its tabs, and open the Ānandajoti tab;
@@ -333,6 +335,7 @@ Update the file after completing each sub-task, not just after completing an ent
     - the `nikaya` of the pages is copied from the `.att/en/opentipitaka` row (`khuddaka`), while the `dhp*/en/anandajoti` verse records have `dhp`, so the search nikāya filter treats the two differently;
     - verses covered by no story (23, 34, 228–230, 255, 400) have no `dhp-vN` anchor, which a later jump-to-verse feature must allow for;
     - the page-marker rule (`split_page_marker()`): the `{M. ii. N}` markers, the dash kept outside the span, the marker split over two spans.
+    - the Daw Mya Tin "Dhammapada Verses and Stories" from tipitaka.net is imported as commentary the same way (`dhammapada_tipitaka.rs`): the export keeps the legacy `dhp<range>/en/daw` uids, and the bootstrap writes `dhp<range>.att/en/daw` with the columns copied from the `.att/en/opentipitaka` row (`CopiedColumns`), and the title from the `dhp<range>/pli/ms` row (the source titles every page "Dhammapada").
   - [ ] 6.2 Add a line for it under "Feature docs" in `CLAUDE.md` (the "Databases, search and storage" or "Files and imports" group), and an entry in `docs/README.md`.
   - [ ] 6.3 Update `docs/sutta-navigation-tree.md`: 54 verified files, and the Dhammapada Aṭṭhakathā as fragment rows.
   - [ ] 6.4 Document the commentary rule from 1.0 (any `.att`/`.tik` uid, whatever the source). No doc describes the search filter today (only `docs/sutta-navigation-tree.md` mentions it), so put the rule in the new feature doc and add a short paragraph to `docs/sutta-display-settings-and-multi-column-view.md`, where the translation tabs are described.
