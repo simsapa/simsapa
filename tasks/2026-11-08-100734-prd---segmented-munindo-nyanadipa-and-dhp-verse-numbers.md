@@ -209,7 +209,7 @@ group is.
    frame of `snp3.6` Sabhiya) and the translator has no translation of them,
    those segments must be `""`. Where the translator does translate them, they
    are placed like verse lines.
-10. **Footnotes (Nyanadipa).** Nyanadipa's 58 `[^n]` notes are the book's
+10. **Footnotes (Nyanadipa).** Nyanadipa's 29 `[^n]` notes are the book's
     endnotes (the *Notes* section, p. 175 of *The Silent Sages of Old*), so
     the Markdown files already hold all of them. Munindo's chapters have none.
     - In suttas-core, footnotes are not stored in segmentation files. They are
