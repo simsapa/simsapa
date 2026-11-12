@@ -116,6 +116,30 @@ impl SourceKind {
             SourceKind::Nyanadipa => source_folder.join(source_paths::NYANADIPA_BILARA_SUBDIR),
         }
     }
+
+    /// The source texts that must each be the `input` of one segment file,
+    /// relative to the source folder and sorted: Munindo's chapters
+    /// (`markdown/dhp-<n>.md`, not the book-wide front matter) and Nyanadipa's
+    /// suttas (`texts-sc-numbering/*.md`).
+    pub fn source_texts(self, source_folder: &Path) -> Result<Vec<String>> {
+        let (subdir, prefix) = match self {
+            SourceKind::Munindo => (source_paths::MUNINDO_TEXTS_SUBDIR, "dhp-"),
+            SourceKind::Nyanadipa => (source_paths::NYANADIPA_TEXTS_SUBDIR, ""),
+        };
+        let dir = source_folder.join(subdir);
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => return Err(anyhow!("Reading {}: {}", dir.display(), e)),
+        };
+        let mut names: Vec<String> = entries
+            .filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
+            .filter(|n| n.starts_with(prefix) && n.ends_with(".md"))
+            .map(|n| format!("{}/{}", subdir, n))
+            .collect();
+        names.sort();
+        Ok(names)
+    }
 }
 
 // === Readers ===
@@ -294,12 +318,30 @@ fn collapse_whitespace(text: &str) -> String {
     RE_WHITESPACE.replace_all(text, " ").trim().to_string()
 }
 
+/// A straight apostrophe after a letter or digit becomes `’`
+/// (`Ajita's` → `Ajita’s`), as the Markdown-to-HTML conversion of these
+/// sources sets it (the book and its HTML print it curly). The only straight
+/// apostrophes in the sources are in sixteen of Nyanadipa's headings.
+pub fn curly_apostrophes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut prev: Option<char> = None;
+    for c in text.chars() {
+        if c == '\'' && prev.is_some_and(char::is_alphanumeric) {
+            out.push('\u{2019}');
+        } else {
+            out.push(c);
+        }
+        prev = Some(c);
+    }
+    out
+}
+
 /// Markdown inline text to plain words: emphasis and escapes removed,
-/// whitespace collapsed.
+/// apostrophes curly, whitespace collapsed.
 fn markdown_inline_plain(text: &str) -> String {
     let text = RE_MD_EMPHASIS.replace_all(text, "$1");
     let text = RE_MD_ESCAPE.replace_all(&text, "$1");
-    collapse_whitespace(&text)
+    collapse_whitespace(&curly_apostrophes(&text))
 }
 
 /// Segment HTML to plain words: tags removed, entities decoded, whitespace
@@ -620,6 +662,33 @@ pub fn check_footnotes(
     problems
 }
 
+/// Check 6: the segment files together cover the whole source. Every source
+/// text (`SourceKind::source_texts()`) is the `input` of exactly one segment
+/// file, and every segment file's `input` is one of them. With check 2 on each
+/// file, this means the segment files join up to the complete original text.
+pub fn check_coverage(
+    segment_dir: &Path,
+    source_texts: &[String],
+    files: &[(PathBuf, String)],
+) -> Vec<Problem> {
+    let mut problems = Vec::new();
+    for text in source_texts {
+        let users: Vec<&(PathBuf, String)> = files.iter().filter(|(_, input)| input == text).collect();
+        match users.as_slice() {
+            [] => problems.push(Problem::new(segment_dir, None, format!("{} is the input of no segment file", text))),
+            [_] => {}
+            many => {
+                let names: Vec<String> = many.iter().map(|(p, _)| p.display().to_string()).collect();
+                problems.push(Problem::new(segment_dir, None, format!("{} is the input of {} segment files: {}", text, many.len(), names.join(", "))));
+            }
+        }
+    }
+    for (path, input) in files.iter().filter(|(_, input)| !source_texts.contains(input)) {
+        problems.push(Problem::new(path, None, format!("input {:?} is not one of the source texts", input)));
+    }
+    problems
+}
+
 /// The result of checking one source folder.
 #[derive(Debug, Default)]
 pub struct CheckReport {
@@ -634,16 +703,25 @@ pub fn check_source_folder(source_folder: &Path, sc_data_dir: &Path) -> Result<C
     let kind = SourceKind::from_source_folder(source_folder)?;
     let dir = kind.segment_dir(source_folder);
     let mut report = CheckReport::default();
+    let source_texts = kind.source_texts(source_folder)?;
 
-    match dir.try_exists() {
-        Ok(true) => {}
-        Ok(false) => return Ok(report),
+    let paths = match dir.try_exists() {
+        Ok(true) => segment_file_paths(&dir)?,
+        Ok(false) => vec![],
         Err(e) => bail!("Checking {}: {}", dir.display(), e),
+    };
+    if paths.is_empty() && source_texts.is_empty() {
+        return Ok(report);
     }
 
     let mut texts: Vec<(PathBuf, SegmentFile, NormalizedSource)> = Vec::new();
-    for path in segment_file_paths(&dir)? {
+    // (path, input) of every file that could be read, for check 6.
+    let mut inputs: Vec<(PathBuf, String)> = Vec::new();
+    for path in paths {
         report.files_checked += 1;
+        if let Ok(file) = read_segment_file(&path) {
+            inputs.push((path.clone(), file.input));
+        }
         match check_one_file(&path, kind, source_folder, sc_data_dir) {
             Ok((problems, file, source)) => {
                 report.problems.extend(problems);
@@ -652,6 +730,7 @@ pub fn check_source_folder(source_folder: &Path, sc_data_dir: &Path) -> Result<C
             Err(e) => report.problems.push(Problem::new(&path, None, format!("{:#}", e))),
         }
     }
+    report.problems.extend(check_coverage(&dir, &source_texts, &inputs));
 
     let footnote_path = source_folder.join(source_paths::SEGMENT_FOOTNOTES_SUBFILE);
     match read_footnote_file(&footnote_path) {
@@ -942,6 +1021,70 @@ mod tests {
         bad.footnotes[0].sutta_id = "snp9.9".into();
         let p = check_footnotes(&fn_path, Some(&bad), &texts);
         assert!(p.iter().any(|p| p.message.contains("no segment file")), "{:#?}", p);
+    }
+
+    #[test]
+    fn test_curly_apostrophes() {
+        assert_eq!(curly_apostrophes("Ajita's Question"), "Ajita\u{2019}s Question");
+        assert_eq!(curly_apostrophes("Jatukaṇṇī's Question"), "Jatukaṇṇī\u{2019}s Question");
+        // A source defect keeps its capital; only the apostrophe changes.
+        assert_eq!(curly_apostrophes("Upasīva'S Question"), "Upasīva\u{2019}S Question");
+        // Not after a letter or digit: left as it is.
+        assert_eq!(curly_apostrophes("'quoted' text"), "'quoted\u{2019} text");
+        assert_eq!(curly_apostrophes("Ajita\u{2019}s"), "Ajita\u{2019}s");
+    }
+
+    #[test]
+    fn test_nyanadipa_title_with_straight_apostrophe() {
+        let n = normalized_source_text("# Ajita's Question\n\n1\\. Line.\n", SourceKind::Nyanadipa);
+        assert_eq!(n.title, "Ajita\u{2019}s Question");
+        assert_eq!(expected_title(SourceKind::Nyanadipa, "snp5.2", &n.title).unwrap(), "Ajita\u{2019}s Question");
+    }
+
+    #[test]
+    fn test_check_coverage() {
+        let dir = Path::new("bilara");
+        let texts = vec!["markdown/dhp-1.md".to_string(), "markdown/dhp-2.md".to_string()];
+        let file = |name: &str, input: &str| (PathBuf::from(name), input.to_string());
+
+        let good = vec![file("dhp1-20.json", "markdown/dhp-1.md"), file("dhp21-32.json", "markdown/dhp-2.md")];
+        assert!(check_coverage(dir, &texts, &good).is_empty());
+
+        // A source text with no segment file.
+        let p = check_coverage(dir, &texts, &good[..1]);
+        assert!(p.len() == 1 && p[0].message.contains("dhp-2.md is the input of no segment file"), "{:#?}", p);
+
+        // Two files cut from the same source, and an input that is not a source text.
+        let bad = vec![
+            file("dhp1-20.json", "markdown/dhp-1.md"),
+            file("dhp21-32.json", "markdown/dhp-1.md"),
+            file("dhp33-43.json", "html/dhp-2.html"),
+        ];
+        let p = check_coverage(dir, &texts, &bad);
+        let messages: Vec<&str> = p.iter().map(|p| p.message.as_str()).collect();
+        assert_eq!(p.len(), 3, "{:#?}", p);
+        assert!(messages[0].contains("dhp-1.md is the input of 2 segment files"));
+        assert!(messages[1].contains("dhp-2.md is the input of no segment file"));
+        assert!(messages[2].contains("is not one of the source texts"));
+    }
+
+    #[test]
+    fn test_source_texts_leave_out_front_matter() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join(source_paths::DHAMMAPADA_MUNINDO_DIR);
+        fs::create_dir_all(folder.join("markdown")).unwrap();
+        for name in ["dhp-1.md", "dhp-2.md", "preface-1st.md", "introduction.md"] {
+            fs::write(folder.join("markdown").join(name), "").unwrap();
+        }
+        assert_eq!(
+            SourceKind::Munindo.source_texts(&folder).unwrap(),
+            vec!["markdown/dhp-1.md", "markdown/dhp-2.md"],
+        );
+
+        // A source text without a segment file is reported, even with no bilara/ folder.
+        let report = check_source_folder(&folder, &sc_data()).unwrap();
+        assert_eq!(report.files_checked, 0);
+        assert_eq!(report.problems.len(), 2, "{:#?}", report.problems);
     }
 
     #[test]

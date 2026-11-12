@@ -94,6 +94,13 @@ pub const DHAMMAPADA_MUNINDO_DIR: &str = "dhammapada-munindo";
 pub const MUNINDO_BILARA_SUBDIR: &str = "bilara";
 /// Segment files and `footnotes.json` inside `NYANADIPA_DIR`.
 pub const NYANADIPA_BILARA_SUBDIR: &str = "bilara";
+/// Munindo's chapter texts (`dhp-<n>.md`, the inputs of the segment files)
+/// inside `DHAMMAPADA_MUNINDO_DIR`. The folder also holds the book-wide front
+/// matter, which is not imported.
+pub const MUNINDO_TEXTS_SUBDIR: &str = "markdown";
+/// Nyanadipa's sutta texts in SuttaCentral numbering (the inputs of the
+/// segment files) inside `NYANADIPA_DIR`.
+pub const NYANADIPA_TEXTS_SUBDIR: &str = "texts-sc-numbering";
 /// The footnote file of a segment-file source, inside its folder.
 pub const SEGMENT_FOOTNOTES_SUBFILE: &str = "bilara/footnotes.json";
 /// Hungarian translations.

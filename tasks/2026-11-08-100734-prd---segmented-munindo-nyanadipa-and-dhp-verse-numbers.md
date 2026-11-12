@@ -140,7 +140,8 @@ group is.
      removed (they are replaced by the verse-group number, part C);
    - book-wide front matter is not included (FR 11);
    - Markdown is converted to the inline HTML the reader uses (italics `<i>` /
-     `<em>`, curly quotes kept as they are);
+     `<em>`, curly quotes kept as they are, a straight apostrophe after a
+     letter set as `’`, as in the book);
    - corrections recorded in the review report (FR 13).
 5. **Placing lines into segments.** The translator's lines must be distributed
    over the segments of the Pāli verse they translate, with `\n` marking a line
@@ -302,7 +303,10 @@ group is.
       removals (FR 4), and prints the first difference when it does not;
     - confirms `input_hash` and `pali_hash` still match the current files, and
       reports the file as stale when they do not;
-    - confirms every footnote number of the source appears exactly once.
+    - confirms every footnote number of the source appears exactly once;
+    - confirms every source text (Munindo's `markdown/dhp-*.md`, Nyanadipa's
+      `texts-sc-numbering/*.md`) is the `input` of exactly one segment file,
+      so the files together give back the whole original text.
     It reports every problem and exits non-zero if there is any. The bootstrap
     does not run it; it is run after writing or editing segment files.
 

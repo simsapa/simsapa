@@ -145,9 +145,12 @@ verse epilogue, *Pārāyanatthutigāthā*) are not in the book.
     in praise of the way to the beyond*; book: `17. Piṅgiya’s Song of Praise
     [1131-49]`.
   - **Pāli**: SC `snp5.18` is *Pārāyanatthutigāthā* (a prose frame and seven
-    verses naming the sixteen brahmins). His text is SC `snp5.19`,
-    *Pārāyanānugītigāthā* (*Pārāyanamanugāyissaṁ …*), whose 19 verses match
-    his one for one. Groups 20–40 of `snp5.19` are the uddāna of the whole
+    verses naming the sixteen brahmins; PTS verses 1124–1130). His text is SC
+    `snp5.19`, *Pārāyanānugītigāthā* (*Pārāyanamanugāyissaṁ …*), whose 19
+    verses match his one for one. The verse numbers settle it: the book's
+    range `[1131-49]` is exactly SC `snp5.19`'s PTS verse numbers
+    (`vnp1131`–`vnp1149` in `sc_bilara_data/reference/`), and Bodhi's and
+    Ṭhānissaro's suttas-core texts give the same `snp5.18` / `snp5.19` split. Groups 20–40 of `snp5.19` are the uddāna of the whole
     Sutta Nipāta and its closing verses.
   - **Done**: the segment file is `bilara/snp5.19.json` (`input`:
     `texts-sc-numbering/snp5.18.md`); verses 1–19 on groups 1–19, groups
@@ -168,6 +171,12 @@ verse epilogue, *Pārāyanatthutigāthā*) are not in the book.
   (`(iccāyasmā ajito)`, `(ajitāti bhagavā)`) and the `endsutta` /
   `endsuttapart` colophons (*Kāmasuttaṁ paṭhamaṁ*) have no translation; they
   are `""`.
+- **Apostrophes.** Sixteen of his Markdown headings (`Ajita's Question`, …,
+  all in the Pārāyanavagga) have a straight `'`; everything else in his text,
+  and the book, has `’`. The title segments have `’`, as the HTML conversion
+  of the Markdown set it before (FR 4), so the record titles stay as they
+  were. The check command applies the same rule (`curly_apostrophes()`)
+  to the source before comparing.
 - **Italics.** He sets a questioner's verses in italics (Pārāyanavagga,
   Sāriputta's questions in `snp4.16`, Sabhiya's in `snp3.6`). Each italic
   line becomes `<i>…</i>` in its segment.
@@ -247,7 +256,7 @@ verse epilogue, *Pārāyanatthutigāthā*) are not in the book.
 - `texts-sc-numbering/snp5.7.md`: the heading is `Upasīva'S Question`, with a
   capital `S`; the book has `UPASĪVA’S QUESTION` and, on the contents page,
   `Upasīva’s Question`. The title segment `snp5.7:0.2` keeps the heading as
-  written (FR 12).
+  written (FR 12), `Upasīva’S Question`, with only its apostrophe curly.
 - `snp5.18.md` verse 2 (and the book): “The men who has abandoned the stain of
   delusion” (*Pahīnamalamohassa*, singular), presumably for “The man who has
   abandoned”. Kept.
