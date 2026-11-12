@@ -35,8 +35,9 @@ use crate::bootstrap::thanissaro_uid_map::{
 };
 use crate::bootstrap::SuttaImporter;
 
-/// The `source_info` prefix of every record written from suttas-core.
-/// `default_english_for_pali()` in the backend reads it.
+/// The `source_info` prefix of every record written from suttas-core. A
+/// non-NULL `source_info` keeps the record behind SuttaCentral's segmented
+/// English in `default_english_for_pali()` in the backend.
 pub const SOURCE_INFO_PREFIX: &str = "suttas-core";
 
 /// Ajahn Ṭhānissaro's suttas-core label. His texts are imported whole, under

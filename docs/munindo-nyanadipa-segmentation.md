@@ -201,9 +201,10 @@ suttas-core steps, in one transaction per source. Per segment file
 Both sources are **required** in the preflight (`bilara/` folders, and
 Nyanadipa's `footnotes.json`), and a missing or empty folder or any file that
 fails to build stops the bootstrap, so a release cannot ship with a text
-missing. The `source_info` keeps Sujato the default English beside the Pāli
-(`default_english_for_pali()`, see [suttas-core-import.md](./suttas-core-import.md)
-§2).
+missing. Sujato stays the default English beside the Pāli, and the
+`source_info` keeps these records behind SuttaCentral's segmented English
+where Sujato has none (`default_english_for_pali()`, see
+[suttas-core-import.md](./suttas-core-import.md) §2).
 
 ## 4. Dhammapada verse groups
 

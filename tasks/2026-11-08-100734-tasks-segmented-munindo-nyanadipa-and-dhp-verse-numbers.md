@@ -34,7 +34,7 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `suttas-core/docs/data-layers.md` - The segmentation-file and footnote rules the new files follow.
 
 - `backend/src/helpers.rs` - `bilara_text_to_segments()` (~2699), `bilara_multi_column_html()` (~2948): where `render_verse_lines()` is applied (7.0).
-- `backend/src/app_data.rs` - `default_english_for_pali()` (FR 15a: SuttaCentral's segmented English first) and `sutta_to_segments_json()`, which now always passes the template (verse detection) with `use_template` as the wrap flag.
+- `backend/src/app_data.rs` - `default_english_for_pali()` (FR 15a: Sujato's segmented English first, then SuttaCentral's) and `sutta_to_segments_json()`, which now always passes the template (verse detection) with `use_template` as the wrap flag.
 - `backend/tests/test_default_english.rs` - Default-English tests, including Munindo / Nyanadipa beside Sujato.
 - `backend/src/footnotes.rs` - `insert_markers()` / `word_spans()`: markers go in before lines are split.
 - `assets/sass/_suttacentral.sass` - `.verse-line` rules; new `.ssp-line` / `.ssp-indent-N`.
@@ -484,7 +484,7 @@ Depends on: 1.0–8.0 (8.0 only for the indentation checks).
     - [ ] 9.5.3 26 Munindo, 26 Ṭhānissaro Dhammapada and 36 Nyanadipa records have a non-empty page-title segment.
     - [ ] 9.5.4 The navigation tree build reports no new missing leaves for these uids.
     - [ ] 9.5.5 `dhp1-20/pli/ms` and `snp4.2/pli/ms` default to `…/en/sujato`.
-      **Open, for the maintainer:** Bhante Suddhāso's segmented SuttaCentral English (`…/en/suddhaso`, `source_info` NULL, 30 records) sorts before `…/en/sujato`, so under FR 15a's rule it is the default beside all 26 Dhp chapters and 2 Snp suttas (28 of 99), as it already was before this feature (the old rule also took the first segmented English). `snp4.2` does default to Sujato. FR 15a's tests used `dummy-` fixtures without a Suddhāso record. The script checks the purpose of FR 15a (no Munindo / Nyanadipa / suttas-core default) and lists the defaults by author; whether Sujato should also win over Suddhāso is the maintainer's decision.
+      Found by the dry run: Bhante Suddhāso's segmented SuttaCentral English (`…/en/suddhaso`, `source_info` NULL, 30 records) sorts before `…/en/sujato` and was the default beside the 26 Dhp chapters and 2 Snp suttas, under the old rule as well. Maintainer's decision: Sujato is the default. `default_english_for_pali()` now takes Sujato's segmented English first, then the FR 15a order; tests `sujato_is_preferred_to_another_suttacentral_english` and `without_sujato_the_suttacentral_english_comes_first` in `backend/tests/test_default_english.rs`.
     - [ ] 9.5.6 `git status` shows no `*.sqlite3` staged.
   - [ ] 9.6 Ask the maintainer to open three Munindo chapters and three Nyanadipa suttas in the Lines and Columns layouts, and check the alignment, the verse numbers, the titles, the line breaks and the footnote markers; and Ṭhānissaro's Dhp 186–187 and Thag 10.5 and Bodhi's SN 1.75 for line breaks and indentation against the published pages (PRD §6, §6a, §8). Include the find-bar and tap-to-lookup checks deferred from 7.7, on desktop and on a mobile device.
     - [ ] 9.6.1 Munindo, Columns and Lines with Pāli + Sujato + Ṭhānissaro + Munindo:
@@ -502,4 +502,4 @@ Depends on: 1.0–8.0 (8.0 only for the indentation checks).
       - Bodhi `sn1.75`: `sn1.75:1.4` as two lines (example C).
       - Sujato and the Pāli look as before (no extra blank lines after verse lines).
     - [ ] 9.6.5 Find bar: in `dhp179-196/en/thanissaro`, *He is one who delights* is found across the line break. Tap-to-lookup: tapping the first word of an indented or broken line selects just that word. Desktop and a mobile device.
-    - [ ] 9.6.6 Opening `dhp1-20/pli/ms` and `snp4.2/pli/ms` with no columns requested: note which English appears beside the Pāli (see 9.5.5).
+    - [ ] 9.6.6 Opening `dhp1-20/pli/ms` and `snp4.2/pli/ms` with no columns requested shows Sujato's English beside the Pāli.

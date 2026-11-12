@@ -1,6 +1,7 @@
-// The English opened beside a Pāli text with no columns requested. A segmented
-// English of another source (suttas-core's Bodhi, Munindo, Nyanadipa) sorts
-// first by uid but must not displace SuttaCentral's segmented English.
+// The English opened beside a Pāli text with no columns requested: Sujato's
+// segmented English, which other segmented English texts (SuttaCentral's
+// Suddhāso, suttas-core's Bodhi, Munindo, Nyanadipa) sort before by uid but
+// must not displace; without it, SuttaCentral's segmented English first.
 //
 // The records are `dummy-` rows in the dist database, removed by uid.
 
@@ -31,15 +32,21 @@ const NYANADIPA_INFO: &str = "nyanadipa-translations/bilara";
 
 const PALI_DHP: &str = "dummy-dhp1-20/pli/ms";
 const MUNINDO_DHP: &str = "dummy-dhp1-20/en/munindo";
+const SUDDHASO_DHP: &str = "dummy-dhp1-20/en/suddhaso";
 const SUJATO_DHP: &str = "dummy-dhp1-20/en/sujato";
 
 const PALI_SNP: &str = "dummy-snp4.2/pli/ms";
 const NYANADIPA_SNP: &str = "dummy-snp4.2/en/nyanadipa";
 const SUJATO_SNP: &str = "dummy-snp4.2/en/sujato";
 
-const ALL_UIDS: [&str; 12] = [
+const PALI_NO_SUJATO: &str = "dummy-snp1.1/pli/ms";
+const NYANADIPA_NO_SUJATO: &str = "dummy-snp1.1/en/nyanadipa";
+const SUDDHASO_NO_SUJATO: &str = "dummy-snp1.1/en/suddhaso";
+
+const ALL_UIDS: [&str; 16] = [
     PALI_BOTH, CORE_BOTH, SC_BOTH, PALI_CORE_ONLY, HTML_CORE_ONLY, CORE_CORE_ONLY,
-    PALI_DHP, MUNINDO_DHP, SUJATO_DHP, PALI_SNP, NYANADIPA_SNP, SUJATO_SNP,
+    PALI_DHP, MUNINDO_DHP, SUDDHASO_DHP, SUJATO_DHP, PALI_SNP, NYANADIPA_SNP, SUJATO_SNP,
+    PALI_NO_SUJATO, NYANADIPA_NO_SUJATO, SUDDHASO_NO_SUJATO,
 ];
 
 const JSON: &str = r#"{"k:1.1": "one"}"#;
@@ -111,10 +118,14 @@ fn set_up() -> Fixture {
     insert_text(CORE_CORE_ONLY, "en", true, Some(SUTTAS_CORE_INFO));
     insert_text(PALI_DHP, "pli", true, None);
     insert_text(MUNINDO_DHP, "en", true, Some(MUNINDO_INFO));
+    insert_text(SUDDHASO_DHP, "en", true, None);
     insert_text(SUJATO_DHP, "en", true, None);
     insert_text(PALI_SNP, "pli", true, None);
     insert_text(NYANADIPA_SNP, "en", true, Some(NYANADIPA_INFO));
     insert_text(SUJATO_SNP, "en", true, None);
+    insert_text(PALI_NO_SUJATO, "pli", true, None);
+    insert_text(NYANADIPA_NO_SUJATO, "en", true, Some(NYANADIPA_INFO));
+    insert_text(SUDDHASO_NO_SUJATO, "en", true, None);
     fixture
 }
 
@@ -150,4 +161,18 @@ fn munindo_and_nyanadipa_do_not_displace_sujato() {
     let _fixture = set_up();
     assert_eq!(default_columns(PALI_DHP), [PALI_DHP, SUJATO_DHP]);
     assert_eq!(default_columns(PALI_SNP), [PALI_SNP, SUJATO_SNP]);
+}
+
+#[test]
+#[serial]
+fn sujato_is_preferred_to_another_suttacentral_english() {
+    let _fixture = set_up();
+    assert_eq!(default_columns(PALI_DHP), [PALI_DHP, SUJATO_DHP]);
+}
+
+#[test]
+#[serial]
+fn without_sujato_the_suttacentral_english_comes_first() {
+    let _fixture = set_up();
+    assert_eq!(default_columns(PALI_NO_SUJATO), [PALI_NO_SUJATO, SUDDHASO_NO_SUJATO]);
 }

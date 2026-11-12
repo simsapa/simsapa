@@ -320,13 +320,14 @@ impl AppData {
 
     /// The English shown beside a Pāli text when no columns are requested: the
     /// OpenTipitaka English of a `/pli/cst` text, which is the only one it can be
-    /// aligned with, and for any other Pāli text, leaving out the AI English,
-    /// the first segmented English imported from SuttaCentral (`source_info`
-    /// NULL), else the first other segmented one, else the first English. So
-    /// the segmented translations of other sources (suttas-core's Bodhi or PTS
-    /// translators, Munindo, Nyanadipa), which sort first by uid, do not
-    /// displace Sujato's. A column that cannot be shown is handled like a
-    /// requested one: dropped in Lines, a block in Columns.
+    /// aligned with, and for any other Pāli text, leaving out the AI English:
+    /// Sujato's segmented English; else the first segmented English imported
+    /// from SuttaCentral (`source_info` NULL); else the first other segmented
+    /// one; else the first English. So the segmented translations that sort
+    /// before `…/en/sujato` by uid (SuttaCentral's Suddhāso, suttas-core's Bodhi
+    /// or PTS translators, Munindo, Nyanadipa) do not displace Sujato's. A
+    /// column that cannot be shown is handled like a requested one: dropped in
+    /// Lines, a block in Columns.
     ///
     /// Reads uids over an indexed range, never the full rows. All of these have
     /// one base and one language, so uid order is `sort_suttas()` order.
@@ -358,7 +359,8 @@ impl AppData {
         let chosen = human_english
             .iter()
             .filter(is_segmented)
-            .find(|row| row.2.is_none())
+            .find(|row| row.0.ends_with("/en/sujato"))
+            .or_else(|| human_english.iter().filter(is_segmented).find(|row| row.2.is_none()))
             .or_else(|| human_english.iter().find(is_segmented))
             .or(human_english.first());
         Ok(chosen.map(|(english_uid, _, _)| english_uid.clone()))

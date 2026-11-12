@@ -614,10 +614,12 @@ uses this function too:
 `default_english_for_pali` picks the column:
 
 - a `/pli/cst` text takes `<base>/en/opentipitaka`, and nothing else;
-- any other Pāli text takes its first segmented English, then its first
-  non-segmented one, in `sort_suttas` order, leaving out `opentipitaka`. A
-  non-segmented English is dropped in Lines and a block in Columns, like a
-  requested one;
+- any other Pāli text takes Sujato's segmented English; without it, in
+  `sort_suttas` order and leaving out `opentipitaka`, the first segmented
+  English imported from SuttaCentral (`source_info` NULL), then any other
+  segmented one, then the first non-segmented one
+  ([suttas-core-import.md](./suttas-core-import.md) §2). A non-segmented
+  English is dropped in Lines and a block in Columns, like a requested one;
 - otherwise the Pāli is shown alone.
 
 Solo renders the opened text alone and keeps the English as page state, so

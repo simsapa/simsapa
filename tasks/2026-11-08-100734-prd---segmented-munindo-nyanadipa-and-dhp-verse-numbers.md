@@ -340,9 +340,12 @@ group is.
      (`source_info` starting with `suttas-core`) to the back. `…/en/munindo` and
      `…/en/nyanadipa` sort before `…/en/sujato`, so once they are segmented they
      would become the default beside the Pāli Dhammapada and 36 Sutta Nipāta
-     suttas. The rule must change to: first a segmented English imported from
-     SuttaCentral (`source_info` is NULL), then any other segmented English,
-     then any English, still leaving out the AI English. Tests:
+     suttas. SuttaCentral's own `…/en/suddhaso` also sorts before
+     `…/en/sujato` (all 26 Dhp chapters, some Snp suttas). The rule must
+     change to: first Sujato's segmented English, then a segmented English
+     imported from SuttaCentral (`source_info` is NULL), then any other
+     segmented English, then any English, still leaving out the AI English.
+     Tests:
      `dhp1-20/pli/ms` and `snp4.2/pli/ms` default to `…/en/sujato`; a Pāli text
      whose only segmented English is from suttas-core still gets it.
 16. The HTML/Markdown import code paths for these two sources must be removed.

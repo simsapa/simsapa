@@ -106,18 +106,15 @@ WHERE (n.sutta_uid GLOB 'dhp*' OR n.sutta_uid GLOB 'snp*')
   AND s.uid IS NULL;
 
 -- 9.5.5 -----------------------------------------------------------------
--- The rule of default_english_for_pali() (backend/src/app_data.rs): in uid
--- order, leaving out the AI English (`/en/opentipitaka`), the first segmented
--- English with source_info NULL, else the first segmented, else the first.
--- FR 15a's purpose: Munindo, Nyanadipa and the suttas-core English never
--- become the default. Bhante Suddhāso's SuttaCentral English (`/en/suddhaso`,
--- segmented, source_info NULL) sorts before `/en/sujato`, so by this rule it
--- is the default where it exists (all 26 Dhp chapters, some Snp suttas), as
--- it was before this feature.
-SELECT '9.5.5a default English beside the Pāli Dhp / Snp texts, by author';
+-- The rule of default_english_for_pali() (backend/src/app_data.rs): leaving
+-- out the AI English (`/en/opentipitaka`), Sujato's segmented English; else,
+-- in uid order, the first segmented English with source_info NULL, else the
+-- first segmented, else the first.
+SELECT '9.5.5a default English beside the Pāli Dhp / Snp texts, by author (expect sujato only)';
 WITH english AS (
-  SELECT p.uid AS pali_uid, e.uid AS en_uid,
+  SELECT p.uid AS pali_uid, e.uid AS en_uid, e.source_info,
          row_number() OVER (PARTITION BY p.uid ORDER BY
+           (coalesce(e.content_json, '') != '' AND e.uid LIKE '%/en/sujato') DESC,
            (coalesce(e.content_json, '') != '' AND e.source_info IS NULL) DESC,
            (coalesce(e.content_json, '') != '') DESC,
            e.uid) AS rank
@@ -129,20 +126,6 @@ WITH english AS (
 )
 SELECT substr(en_uid, instr(en_uid, '/en/') + 4), count(*)
 FROM english WHERE rank = 1 GROUP BY 1 ORDER BY 1;
-SELECT '9.5.5b defaults that are Munindo, Nyanadipa or suttas-core (expect none)';
-WITH english AS (
-  SELECT p.uid AS pali_uid, e.uid AS en_uid, e.source_info,
-         row_number() OVER (PARTITION BY p.uid ORDER BY
-           (coalesce(e.content_json, '') != '' AND e.source_info IS NULL) DESC,
-           (coalesce(e.content_json, '') != '') DESC,
-           e.uid) AS rank
-  FROM suttas p
-  JOIN suttas e ON e.uid >= substr(p.uid, 1, instr(p.uid, '/') - 1) || '/en/'
-               AND e.uid <  substr(p.uid, 1, instr(p.uid, '/') - 1) || '/en0'
-  WHERE (p.uid GLOB 'dhp*/pli/ms' OR p.uid GLOB 'snp*/pli/ms')
-    AND e.uid NOT LIKE '%/en/opentipitaka'
-)
-SELECT pali_uid, en_uid FROM english WHERE rank = 1 AND source_info IS NOT NULL;
 
 -- Nyanadipa notes -------------------------------------------------------
 SELECT 'notes: Nyanadipa suttas with notes, and notes in all (expect 29 notes)';
