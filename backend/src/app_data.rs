@@ -1682,10 +1682,35 @@ impl AppData {
         };
         // Trimmed: a pasted key with a trailing newline is an invalid HTTP
         // header value, which the provider client reports only opaquely.
+        // An empty variable (a `.env` template's `GEMINI_API_KEY=`) is no key:
+        // the stored one is used.
         if let Ok(env_key) = std::env::var(&provider.api_key_env_var_name) {
-            return env_key.trim().to_string();
+            let env_key = env_key.trim();
+            if !env_key.is_empty() {
+                return env_key.to_string();
+            }
         }
         provider.api_key_value.as_deref().unwrap_or_default().trim().to_string()
+    }
+
+    /// The name of the environment variable a provider's API key is read
+    /// from (`GEMINI_API_KEY`), empty for an unknown provider.
+    pub fn get_provider_api_key_env_var_name(&self, provider_name: &str) -> String {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .find(|p| p.name.as_str() == provider_name)
+            .map(|p| p.api_key_env_var_name.clone())
+            .unwrap_or_default()
+    }
+
+    /// The canonical names of the providers whose model list has
+    /// `model_name`, enabled or not, in the settings' provider order.
+    pub fn providers_listing_model(&self, model_name: &str) -> Vec<String> {
+        let app_settings = self.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.providers.iter()
+            .filter(|p| p.models.iter().any(|m| m.model_name == model_name))
+            .map(|p| p.name.as_str().to_string())
+            .collect()
     }
 
     pub fn set_provider_api_key(&self, provider_name: &str, api_key: &str) {

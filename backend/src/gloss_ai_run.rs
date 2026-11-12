@@ -9,7 +9,7 @@
 //! and each failure is listed in `AllParagraphsProcessingResult::ai_errors`.
 
 /// What an AI run does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlossAiOptions {
     /// Ask the AI to choose the senses of ambiguous words.
     pub word_selection: bool,
@@ -18,6 +18,10 @@ pub struct GlossAiOptions {
     /// Write `ai-selected` rows to the word-selection cache. Off for the API
     /// (stateless) and for the CLI while the GUI holds the database.
     pub write_cache: bool,
+    /// The models to ask, in place of the Fallback sequence
+    /// (`simsapa gloss --model-name`). They are asked whether or not their
+    /// provider or model is enabled in the app.
+    pub models: Option<Vec<crate::app_settings::ModelUsageEntry>>,
 }
 
 /// The step an AI run is on, for progress messages.
@@ -55,7 +59,8 @@ pub struct GlossAiSummary {
 #[cfg(feature = "ai")]
 mod run {
     use super::{GlossAiOptions, GlossAiProgress, GlossAiStage, GlossAiSummary};
-    use crate::ai_engine::{fallback_walk_settings, run_walk_blocking, ChatMessage};
+    use crate::ai_engine::{run_walk_blocking, walk_settings_for, ChatMessage};
+    use crate::app_settings::ModelUsageEntry;
     use crate::ai_error::AiRequestError;
     use crate::ai_fallback::WalkOutcome;
     use crate::db::appdata::AppdataDbHandle;
@@ -65,7 +70,7 @@ mod run {
         build_translation_prompt_from_settings, parse_translation_response, translation_vocabulary_from_rows,
         translation_vocabulary_from_words, validate_translation_response_shape,
     };
-    use crate::gloss_word_selection_run::{run_word_selection, WordSelectionRunEvent};
+    use crate::gloss_word_selection_run::{run_word_selection_with_models, WordSelectionRunEvent};
     use crate::helpers::{build_word_selection_items, WordSelectionBuildMode, WordSelectionParagraphInput};
     use crate::types::AllParagraphsProcessingResult;
 
@@ -99,23 +104,30 @@ mod run {
         on_progress: &mut dyn FnMut(GlossAiProgress),
     ) -> GlossAiSummary {
         let mut summary = GlossAiSummary::default();
-        if !ai_available() {
+        let models = options.models.as_deref();
+        let can_ask = match models {
+            Some(models) => models.iter().any(|e| e.enabled),
+            None => ai_available(),
+        };
+        if !can_ask {
             result.ai_errors.push("No AI provider is enabled.".to_string());
             return summary;
         }
 
         if options.word_selection {
-            run_word_selection_step(result, options.write_cache, appdata, dpd, is_cancelled, on_progress, &mut summary);
+            run_word_selection_step(result, options.write_cache, models, appdata, dpd, is_cancelled, on_progress, &mut summary);
         }
         if options.translate && !is_cancelled() {
-            run_translation_step(result, paragraph_texts, is_cancelled, on_progress, &mut summary);
+            run_translation_step(result, paragraph_texts, models, is_cancelled, on_progress, &mut summary);
         }
         summary
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn run_word_selection_step(
         result: &mut AllParagraphsProcessingResult,
         write_cache: bool,
+        models: Option<&[ModelUsageEntry]>,
         appdata: &AppdataDbHandle,
         dpd: &DpdDbHandle,
         is_cancelled: &dyn Fn() -> bool,
@@ -143,7 +155,7 @@ mod run {
         }
 
         let mut errors: Vec<String> = Vec::new();
-        let answers = run_word_selection(&inputs, is_cancelled, &mut |event| match event {
+        let answers = run_word_selection_with_models(&inputs, models, is_cancelled, &mut |event| match event {
             WordSelectionRunEvent::Progress { batch, batch_count, model, message, kind } => on_progress(GlossAiProgress {
                 stage: GlossAiStage::WordSelection { batch, batch_count },
                 model,
@@ -174,11 +186,12 @@ mod run {
     fn run_translation_step(
         result: &mut AllParagraphsProcessingResult,
         paragraph_texts: &[String],
+        models: Option<&[ModelUsageEntry]>,
         is_cancelled: &dyn Fn() -> bool,
         on_progress: &mut dyn FnMut(GlossAiProgress),
         summary: &mut GlossAiSummary,
     ) {
-        let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+        let (entries, auto_fallback, auto_retry) = walk_settings_for(models);
         let paragraph_count = result.paragraphs.len();
         for position in 0..paragraph_count {
             if is_cancelled() {
@@ -245,7 +258,7 @@ pub fn run_gloss_ai_for_api(
     translate: bool,
 ) -> crate::types::AllParagraphsProcessingResult {
     let app_data = crate::get_app_data();
-    let options = GlossAiOptions { word_selection: true, translate, write_cache: false };
+    let options = GlossAiOptions { word_selection: true, translate, write_cache: false, models: None };
     let summary = run_gloss_ai(
         &mut result,
         &paragraph_texts,

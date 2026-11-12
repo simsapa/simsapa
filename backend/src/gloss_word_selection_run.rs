@@ -12,11 +12,12 @@
 use std::time::Duration;
 
 use crate::ai_engine::{
-    fallback_walk_settings, run_walk_blocking, ChatMessage, WORD_SELECTION_BATCH_CHAR_LIMIT,
+    run_walk_blocking, walk_settings_for, ChatMessage, WORD_SELECTION_BATCH_CHAR_LIMIT,
     WORD_SELECTION_REQUEST_SPACING_MS,
 };
 use crate::ai_error::AiRequestError;
 use crate::ai_fallback::WalkOutcome;
+use crate::app_settings::ModelUsageEntry;
 use crate::helpers::{
     build_word_selection_items, build_word_selection_prompt, parse_word_selection_response,
     validate_word_selection_response_shape, WordSelectionBuildMode, WordSelectionEntry,
@@ -60,6 +61,17 @@ pub fn run_word_selection(
     is_cancelled: &dyn Fn() -> bool,
     on_event: &mut dyn FnMut(WordSelectionRunEvent),
 ) -> Vec<WordSelectionEntry> {
+    run_word_selection_with_models(paragraphs, None, is_cancelled, on_event)
+}
+
+/// `run_word_selection()` asking `models` in place of the Fallback sequence
+/// when given (see `ai_engine::walk_settings_for()`).
+pub fn run_word_selection_with_models(
+    paragraphs: &[WordSelectionParagraphInput],
+    models: Option<&[ModelUsageEntry]>,
+    is_cancelled: &dyn Fn() -> bool,
+    on_event: &mut dyn FnMut(WordSelectionRunEvent),
+) -> Vec<WordSelectionEntry> {
     // Build the full item set once to decide batching.
     let all_items = match build_word_selection_items(
         paragraphs, WordSelectionBuildMode::SkipResolved { forced: false }) {
@@ -83,7 +95,7 @@ pub fn run_word_selection(
         };
     let batch_count = batches.len();
 
-    let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
+    let (entries, auto_fallback, auto_retry) = walk_settings_for(models);
     let mut all_selections: Vec<WordSelectionEntry> = Vec::new();
 
     for (batch, batch_paragraphs) in batches.iter().enumerate() {

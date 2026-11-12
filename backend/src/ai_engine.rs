@@ -189,6 +189,19 @@ pub fn fallback_walk_settings() -> (Vec<ModelUsageEntry>, bool, bool) {
     (entries, app_settings.ai_auto_fallback, app_settings.ai_models_auto_retry)
 }
 
+/// The walk settings of a run: `models` in place of the Fallback sequence
+/// when given (`simsapa gloss --model-name`), each tried in turn, with the
+/// app's auto-retry setting; otherwise `fallback_walk_settings()`.
+pub fn walk_settings_for(models: Option<&[ModelUsageEntry]>) -> (Vec<ModelUsageEntry>, bool, bool) {
+    match models {
+        None => fallback_walk_settings(),
+        Some(models) => {
+            let app_settings = get_app_data().app_settings_cache.read().expect("Failed to read app settings");
+            (models.to_vec(), true, app_settings.ai_models_auto_retry)
+        }
+    }
+}
+
 /// Render a walk progress event as `(model_name, status, kind)` for the
 /// `sequentialProgress` signal (FR-D6, FR-F1-style wording). `kind` is a
 /// machine-readable tag ("trying" | "failed" | "retry") the QML side keys on,

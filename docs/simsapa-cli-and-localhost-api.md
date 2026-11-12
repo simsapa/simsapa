@@ -247,6 +247,8 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 | `--output <path>` | Write the document to a file; required for `docx` |
 | `--json` | The raw pipeline result (the `/gloss_text` response); not together with `--format` |
 | `--no-ai` | Make no AI request. Without `--no-ai`, an AI provider enabled in the app chooses word senses and writes the translations |
+| `--model-name <model>` | Ask this AI model (`gemini-3-flash-preview`) instead of the Fallback sequence set in the app, whether or not it is enabled there |
+| `--provider <name>` | The provider of `--model-name` (`Gemini`, `OpenRouter`, …), in any letter case. Needed only for a model no provider in the app lists, or one several list |
 | `--no-translate` | Let the AI choose word senses but make no translation |
 | `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
 | `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
@@ -271,7 +273,36 @@ explains it:
 A word with one possible sense has an empty `Conf.`. While an AI response is
 awaited, a progress line is printed on stderr; stdout holds the document only.
 When an AI request fails, the document is still made (senses `N`, no
-translation), the failure is on stderr, and the exit code is 5. When the Simsapa
+translation), the failure is on stderr, and the exit code is 5.
+
+**API keys.** A provider's key is read from its environment variable, which
+may be exported in the shell or written in a `.env` file in the current folder
+(`GEMINI_API_KEY=…`); otherwise from the key added in the app under
+Prompts > AI Models. `simsapa gloss --help` lists them under `--model-name`:
+
+| Provider | Environment variable |
+|---|---|
+| Gemini | `GEMINI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| Mistral | `MISTRAL_API_KEY` |
+| SambaNova | `SAMBANOVA_API_KEY` |
+| NvidiaNim | `NVIDIA_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| HuggingFace | `HUGGINGFACE_API_KEY` |
+| Perplexity | `PERPLEXITY_API_KEY` |
+
+A variable that is set and not empty wins over the app's key. When no model to
+ask has a key, the command makes no AI request, makes the document without it
+(with the note that no AI provider is enabled), and says on stderr which
+variable to set; when only some have none, it says so on stderr, and the
+requests to those models fail.
+
+``` sh
+GEMINI_API_KEY=… simsapa gloss --model-name gemini-3-flash-preview --format markdown dhp23
+``` When the Simsapa
 app is running, the command does not write the AI's choices into the app's
 selection cache, and says so on stderr.
 

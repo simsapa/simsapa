@@ -14,7 +14,9 @@ use simsapa_api::routes::gloss::{
     GlossTextOptions, GlossTextResponse, LookupFormsResponse, gloss_result_export_data, gloss_word_processing_options,
     result_translations, split_gloss_paragraphs,
 };
+use simsapa_backend::ai_engine::walk_settings_for;
 use simsapa_backend::anki_export::export_anki_csv;
+use simsapa_backend::app_settings::{ModelUsageEntry, ProviderName};
 use simsapa_backend::docx_export::generate_gloss_docx;
 use simsapa_backend::errln;
 use simsapa_backend::export_types::GlossExportData;
@@ -137,6 +139,32 @@ pub struct GlossArgs {
     #[arg(long)]
     pub no_ai: bool,
 
+    /// The AI model to ask (`gemini-3-flash-preview`) instead of the app's Fallback sequence
+    ///
+    /// The model is asked whether or not it is enabled in the app. Its API key
+    /// is read from the provider's environment variable (exported in the shell,
+    /// or in a .env file in the current folder), else from the key added in the
+    /// app under Prompts > AI Models. The variable of each provider:
+    ///
+    /// Gemini: GEMINI_API_KEY
+    /// OpenRouter: OPENROUTER_API_KEY
+    /// Mistral: MISTRAL_API_KEY
+    /// SambaNova: SAMBANOVA_API_KEY
+    /// NvidiaNim: NVIDIA_API_KEY
+    /// Anthropic: ANTHROPIC_API_KEY
+    /// OpenAI: OPENAI_API_KEY
+    /// DeepSeek: DEEPSEEK_API_KEY
+    /// xAI: XAI_API_KEY
+    /// HuggingFace: HUGGINGFACE_API_KEY
+    /// Perplexity: PERPLEXITY_API_KEY
+    #[arg(long, value_name = "MODEL", conflicts_with = "no_ai", verbatim_doc_comment)]
+    pub model_name: Option<String>,
+
+    /// The provider of --model-name (`Gemini`, `OpenRouter`, …); needed only
+    /// for a model not in the app's model lists, or listed by several
+    #[arg(long, value_name = "PROVIDER", requires = "model_name")]
+    pub provider: Option<String>,
+
     /// Let the AI choose word senses, but make no translation
     #[arg(long)]
     pub no_translate: bool,
@@ -202,6 +230,9 @@ impl GlossArgs {
         if json && self.output.is_some() {
             return Err(CliError::error("--json prints to stdout; use --format with --output"));
         }
+        if self.exact && self.model_name.is_some() {
+            return Err(CliError::error("--exact makes no AI request; leave out --model-name"));
+        }
         if self.exact {
             if self.gloss_format == Some(GlossFormatArg::WordInSentence) {
                 return Err(CliError::error("--exact needs --gloss-format headwords"));
@@ -266,6 +297,10 @@ pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
         return Ok(());
     }
 
+    // Before the glossing: a misspelt model name fails at once.
+    let models = if args.no_ai { None } else { resolve_model(args)? };
+    let no_ai_provider = models.is_none() && !get_app_data().has_enabled_ai_model();
+
     let gloss_format = args.gloss_format();
     let input = AllParagraphsProcessingInput {
         paragraphs: paragraphs.clone(),
@@ -274,12 +309,15 @@ pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     let mut result = process_all_paragraphs(&input, &dbm.appdata, &dbm.dpd)
         .map_err(|e| CliError::error(format!("Glossing failed: {}", e)))?;
 
-    let ai_ran = run_ai(args, &mut result, &paragraphs, can_write)?;
+    let ai_run = run_ai(args, models, &mut result, &paragraphs, can_write)?;
+    let ai_ran = ai_run == AiRun::Asked;
+    // A run with no API key made no AI choice either: the document says so.
+    let no_ai_provider = no_ai_provider || ai_run == AiRun::NoApiKey;
 
     if json {
         print_json(&GlossTextResponse::Default(result.clone()))?;
     } else {
-        write_output(args, &result, &paragraphs, &title, gloss_format)?;
+        write_output(args, &result, &paragraphs, &title, gloss_format, no_ai_provider)?;
     }
 
     if ai_ran && !result.ai_errors.is_empty() {
@@ -292,30 +330,159 @@ pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     Ok(())
 }
 
+/// The `--model-name` model as the one entry to ask, `None` without it. Its
+/// provider is `--provider`, or the provider whose model list has it.
+fn resolve_model(args: &GlossArgs) -> Result<Option<Vec<ModelUsageEntry>>, CliError> {
+    let Some(model_name) = args.model_name.as_deref().map(str::trim) else {
+        return Ok(None);
+    };
+    if model_name.is_empty() {
+        return Err(CliError::error("--model-name is empty"));
+    }
+    let app_data = get_app_data();
+    let provider = match args.provider.as_deref() {
+        Some(p) => provider_from_arg(p)?,
+        None => {
+            let listing = app_data.providers_listing_model(model_name);
+            let with_key: Vec<&String> =
+                listing.iter().filter(|p| !app_data.get_provider_api_key(p).is_empty()).collect();
+            match (listing.as_slice(), with_key.as_slice()) {
+                ([], _) => {
+                    return Err(CliError::error(format!(
+                        "No provider in the Simsapa app lists the model '{}'. Name its provider with --provider ({}).",
+                        model_name,
+                        provider_names()
+                    )));
+                }
+                ([one], _) => one.clone(),
+                (_, [one]) => (*one).clone(),
+                (many, _) => {
+                    return Err(CliError::error(format!(
+                        "The model '{}' is listed by several providers ({}). Choose one with --provider.",
+                        model_name,
+                        many.join(", ")
+                    )));
+                }
+            }
+        }
+    };
+    Ok(Some(vec![ModelUsageEntry { provider, model_name: model_name.to_string(), enabled: true }]))
+}
+
+/// The canonical provider name of a `--provider` value, in any letter case.
+fn provider_from_arg(name: &str) -> Result<String, CliError> {
+    let name = name.trim();
+    ProviderName::ALL
+        .iter()
+        .find(|p| p.as_str().eq_ignore_ascii_case(name) || format!("{:?}", p).eq_ignore_ascii_case(name))
+        .map(|p| p.as_str().to_string())
+        .ok_or_else(|| CliError::error(format!("Unknown provider '{}'. One of: {}", name, provider_names())))
+}
+
+fn provider_names() -> String {
+    ProviderName::ALL.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
+}
+
+/// The canonical provider names of `entries`, in order, each once. A saved
+/// entry may hold the legacy (Debug) spelling.
+fn providers_of(entries: &[ModelUsageEntry]) -> Vec<String> {
+    let mut providers: Vec<String> = Vec::new();
+    for e in entries {
+        let provider = ProviderName::from_canonical_or_legacy(&e.provider)
+            .map(|p| p.as_str().to_string())
+            .unwrap_or_else(|| e.provider.clone());
+        if !providers.contains(&provider) {
+            providers.push(provider);
+        }
+    }
+    providers
+}
+
+/// The providers of `entries` that have no API key, in order, each once.
+fn providers_without_key(entries: &[ModelUsageEntry]) -> Vec<String> {
+    let app_data = get_app_data();
+    providers_of(entries).into_iter().filter(|p| app_data.get_provider_api_key(p).is_empty()).collect()
+}
+
+/// Where an API key for `providers` can come from.
+fn api_key_help(providers: &[String]) -> String {
+    let app_data = get_app_data();
+    let vars: Vec<String> = providers
+        .iter()
+        .map(|p| app_data.get_provider_api_key_env_var_name(p))
+        .filter(|v| !v.is_empty())
+        .collect();
+    let env = if vars.is_empty() {
+        "in the provider's API key environment variable".to_string()
+    } else {
+        format!("in the environment variable {}", vars.join(" or "))
+    };
+    format!(
+        "Add the key in the Simsapa app under Prompts > AI Models, or give it {} \
+         (exported in the shell, or in a .env file in the current folder).",
+        env
+    )
+}
+
+/// What `run_ai()` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AiRun {
+    /// The AI was asked.
+    Asked,
+    /// Nothing to ask, or no model to ask.
+    NotAsked,
+    /// No model to try has an API key.
+    NoApiKey,
+}
+
 /// Run the AI steps the flags and the app settings ask for: word selection
 /// when it is turned on in the Gloss tab's Word Selection dialog, and the
-/// translation unless `--no-translate`. Returns whether anything was asked.
+/// translation unless `--no-translate`. `models` (from `--model-name`) are
+/// asked in place of the app's Fallback sequence.
 fn run_ai(
     args: &GlossArgs,
+    models: Option<Vec<ModelUsageEntry>>,
     result: &mut AllParagraphsProcessingResult,
     paragraphs: &[String],
     can_write: bool,
-) -> Result<bool, CliError> {
+) -> Result<AiRun, CliError> {
     if args.no_ai || !result.success || result.paragraphs.is_empty() {
-        return Ok(false);
-    }
-    if !ai_available() {
-        errln!("Note: no AI provider is enabled in the Simsapa app, so no AI request is made (--no-ai skips this check).");
-        return Ok(false);
+        return Ok(AiRun::NotAsked);
     }
     let word_selection = {
         let settings = get_app_data().app_settings_cache.read().expect("Failed to read app settings");
         settings.gloss_word_selection_enabled
     };
-    let options = GlossAiOptions { word_selection, translate: !args.no_translate, write_cache: can_write };
-    if !options.word_selection && !options.translate {
-        return Ok(false);
+    if !word_selection && args.no_translate {
+        return Ok(AiRun::NotAsked);
     }
+    if models.is_none() && !ai_available() {
+        errln!(
+            "Note: no AI model is enabled in the Simsapa app, so no AI request is made. \
+             Enable one in the app under Prompts > AI Models, or name one with --model-name \
+             (e.g. --model-name gemini-3-flash-preview) and give its API key in an environment variable \
+             such as GEMINI_API_KEY (exported in the shell, or in a .env file in the current folder). \
+             --no-ai skips this check."
+        );
+        return Ok(AiRun::NotAsked);
+    }
+    // The models the engine tries: with auto-fallback off, only the first.
+    let (entries, auto_fallback, _) = walk_settings_for(models.as_deref());
+    let mut tried: Vec<ModelUsageEntry> = entries.into_iter().filter(|e| e.enabled).collect();
+    if !auto_fallback {
+        tried.truncate(1);
+    }
+    let missing = providers_without_key(&tried);
+    if !tried.is_empty() && missing.len() == providers_of(&tried).len() {
+        errln!("Note: no API key for {}, so no AI request is made.", missing.join(", "));
+        errln!("{}", api_key_help(&missing));
+        return Ok(AiRun::NoApiKey);
+    }
+    if !missing.is_empty() {
+        errln!("Note: no API key for {}, so the requests to its models fail.", missing.join(", "));
+        errln!("{}", api_key_help(&missing));
+    }
+    let options = GlossAiOptions { word_selection, translate: !args.no_translate, write_cache: can_write, models };
     if options.word_selection && !can_write {
         errln!(
             "Note: the data folder is in use by the Simsapa app or another simsapa command, \
@@ -342,7 +509,7 @@ fn run_ai(
         "AI: {} word sense(s) chosen, {} paragraph(s) translated.",
         summary.senses_applied, summary.paragraphs_translated
     );
-    Ok(true)
+    Ok(AiRun::Asked)
 }
 
 /// A Ctrl-C flag for the AI requests, which can wait for minutes. `None`
@@ -379,6 +546,7 @@ fn write_output(
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    no_ai_provider: bool,
 ) -> CliResult {
     let format = args.output_format(stdout_is_tty());
     let output = args.output.as_deref();
@@ -386,7 +554,7 @@ fn write_output(
         OutputFormatArg::Text => {
             match gloss_format {
                 GlossFormat::Headwords => print_gloss_text(result),
-                GlossFormat::WordInSentence => print_rows_text(result, title),
+                GlossFormat::WordInSentence => print_rows_text(result, title, no_ai_provider),
             }
             Ok(())
         }
@@ -396,24 +564,38 @@ fn write_output(
                 OutputFormatArg::Org => TextFormat::OrgMode,
                 _ => TextFormat::Markdown,
             };
-            let data = gloss_result_export_data(result, paragraphs, title, gloss_format);
+            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
             emit_text(output, &gloss_export_document(&data, text_format))
         }
         OutputFormatArg::Docx => {
             let path = output.ok_or_else(|| CliError::error("--format docx needs --output <path>"))?;
-            let data = gloss_result_export_data(result, paragraphs, title, gloss_format);
+            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
             let bytes = generate_gloss_docx(&serde_json::to_string(&data)?)?;
             write_file(path, &bytes)
         }
         OutputFormatArg::AnkiCsv => {
-            let data = gloss_result_export_data(result, paragraphs, title, gloss_format);
+            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
             write_anki_csv(output, &data)
         }
         OutputFormatArg::Json => {
-            let session = session_export_json(args, result, paragraphs, title, gloss_format)?;
+            let session = session_export_json(args, result, paragraphs, title, gloss_format, no_ai_provider)?;
             emit_text(output, &session)
         }
     }
+}
+
+/// The export data of the result. `no_ai_provider` replaces the app
+/// settings' answer: a `--model-name` run has a model the settings may not.
+fn export_data(
+    result: &AllParagraphsProcessingResult,
+    paragraphs: &[String],
+    title: &str,
+    gloss_format: GlossFormat,
+    no_ai_provider: bool,
+) -> GlossExportData {
+    let mut data = gloss_result_export_data(result, paragraphs, title, gloss_format);
+    data.no_ai_provider = no_ai_provider;
+    data
 }
 
 /// The `simsapa-gloss-session` export of the result, which the app's Gloss
@@ -424,12 +606,13 @@ fn session_export_json(
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    no_ai_provider: bool,
 ) -> Result<String, CliError> {
     let options = GlossExportOptions {
         text: paragraphs.join("\n\n"),
         title: title.to_string(),
         gloss_format,
-        no_ai_provider: !get_app_data().has_enabled_ai_model(),
+        no_ai_provider,
     };
     let translations = result_translations(result, paragraphs.len());
     let session = build_gloss_session_json(
@@ -554,7 +737,7 @@ fn row_cells(row: &GlossRow, out: &mut Vec<[String; 4]>) {
 
 /// The Word in Sentence result as aligned columns: word, confidence mark,
 /// grammar, meaning; then the translations and the legend.
-fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str) {
+fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_provider: bool) {
     if !title.is_empty() {
         outln!("{}", title);
         outln!();
@@ -601,7 +784,7 @@ fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str) {
         for line in CONFIDENCE_LEGEND {
             outln!("{}", line);
         }
-        if !get_app_data().has_enabled_ai_model() {
+        if no_ai_provider {
             outln!("{}", NO_AI_PROVIDER_NOTE);
         }
     }
@@ -759,6 +942,50 @@ mod tests {
         a.no_ai = true;
         a.no_translate = true;
         assert!(a.validate(false).is_ok());
+    }
+
+    #[test]
+    fn test_model_name_flags() {
+        let mut a = args("x");
+        a.model_name = Some("gemini-3-flash-preview".into());
+        assert!(a.validate(false).is_ok());
+        a.exact = true;
+        assert!(a.validate(false).is_err(), "--exact makes no AI request");
+    }
+
+    /// The `--model-name` help and the bundled doc name every provider's API
+    /// key variable.
+    #[test]
+    fn test_model_name_help_lists_api_key_env_vars() {
+        use clap::CommandFactory;
+        #[derive(clap::Parser)]
+        struct Wrapper {
+            #[command(flatten)]
+            gloss: GlossArgs,
+        }
+        let mut cmd = Wrapper::command();
+        let help = cmd.render_long_help().to_string();
+        let providers: serde_json::Value =
+            serde_json::from_str(include_str!("../../../assets/providers.json")).unwrap();
+        let providers = providers.as_array().or_else(|| providers["providers"].as_array()).unwrap();
+        for p in providers {
+            let line = format!("{}: {}", p["name"].as_str().unwrap(), p["api_key_env_var_name"].as_str().unwrap());
+            assert!(help.contains(&line), "--model-name help lacks `{}`", line);
+            let row = format!("| {} | `{}` |", p["name"].as_str().unwrap(), p["api_key_env_var_name"].as_str().unwrap());
+            assert!(
+                crate::commands::docs::DOC_MARKDOWN.contains(&row),
+                "the API keys table of docs/simsapa-cli-and-localhost-api.md lacks `{}`",
+                row
+            );
+        }
+    }
+
+    #[test]
+    fn test_provider_from_arg() {
+        assert_eq!(provider_from_arg("gemini").unwrap(), "Gemini");
+        assert_eq!(provider_from_arg(" OpenRouter ").unwrap(), "OpenRouter");
+        assert_eq!(provider_from_arg("xai").unwrap(), "xAI");
+        assert!(provider_from_arg("nosuch").is_err());
     }
 
     #[test]
