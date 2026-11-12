@@ -176,8 +176,10 @@ export function get_footnote_content(footnote_id: string): string | null {
     // Clone the element to manipulate it without affecting the page
     const clone = footnote_element.cloneNode(true) as HTMLElement;
 
-    // Remove the back reference link (the ↩ or arrow that links back to the reference)
-    const back_links = clone.querySelectorAll('a[href^="#fr-"]');
+    // Remove the back reference link (the ↩ or arrow that links back to the
+    // reference): `#fr-…` in library books, `a.footnote-backref` in the Dhamma
+    // Verses Commentary pages (docs/dhammapada-commentary-anandajoti.md).
+    const back_links = clone.querySelectorAll('a[href^="#fr-"], a.footnote-backref');
     back_links.forEach(link => link.remove());
 
     // For <li> elements, get the inner HTML

@@ -120,6 +120,11 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
             required("Nyanadipa segment files", paths::nyanadipa_bilara_dir(), Dir),
             required("Nyanadipa footnotes", paths::nyanadipa_footnotes_file(), File),
             required("Dhammapada Munindo segment files", paths::munindo_bilara_dir(), Dir),
+            required(
+                "Dhammapada Commentary (Ānandajoti) pages manifest",
+                paths::dhammapada_commentary_anandajoti_dir().join(crate::bootstrap::dhammapada_commentary_anandajoti::MANIFEST_FILE),
+                File,
+            ),
             optional("Library imports TOML", paths::LIBRARY_IMPORTS_TOML, File),
             optional("Library imports books folder", paths::LIBRARY_IMPORTS_BOOKS_DIR, Dir),
             optional("Chanting practice", paths::CHANTING_PRACTICE_DIR, Dir),

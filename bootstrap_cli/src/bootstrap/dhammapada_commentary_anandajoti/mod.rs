@@ -58,6 +58,7 @@
 
 pub mod epub;
 pub mod extract;
+pub mod import;
 pub mod page;
 
 #[cfg(test)]

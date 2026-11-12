@@ -49,6 +49,7 @@ pub use dhammatalks_org::DhammatalksSuttaImporter;
 pub use suttas_core::SuttasCoreImporter;
 pub use dhammapada_munindo::DhammapadaMunindoImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
+pub use dhammapada_commentary_anandajoti::import::DhammapadaCommentaryAnandajotiImporter;
 pub use nyanadipa::NyanadipaImporter;
 pub use suttacentral::SuttaCentralImporter;
 pub use buddha_ujja::BuddhaUjjaImporter;
@@ -332,6 +333,19 @@ RELEASE_CHANNEL=development
 
             logger::info("Importing suttas from dhammapada-munindo/bilara");
             let mut importer = DhammapadaMunindoImporter::new(bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR));
+            importer.import(&mut conn)?;
+        }
+
+        // Ānandajoti's Dhammapada commentary, one page per vagga, from the
+        // dhammapada-commentary-extract output. Its rows copy their grouping
+        // from the `dhp….att/en/opentipitaka` records of the CST import above.
+        // See docs/dhammapada-commentary-anandajoti.md.
+        {
+            logger::info("Importing suttas from dhammapada-commentary-anandajoti");
+            let mut importer = DhammapadaCommentaryAnandajotiImporter::new(
+                bootstrap_assets_dir.join(source_paths::dhammapada_commentary_anandajoti_dir()),
+                bootstrap_assets_dir.join(source_paths::dhammapada_commentary_epub_file()),
+            );
             importer.import(&mut conn)?;
         }
 

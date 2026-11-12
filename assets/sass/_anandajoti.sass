@@ -1,0 +1,85 @@
+// Ānandajoti's Dhamma Verses Commentary pages, `dhp….att/en/anandajoti`. The
+// classes are the ones the dhammapada-commentary-extract command writes; see
+// docs/dhammapada-commentary-anandajoti.md. The colours are translucent or
+// opacity-based, so the same rules read in the light and the dark theme.
+
+$rule_color: rgba(128, 128, 128, 0.4)
+
+.anandajoti-dhp-comm
+  // The page and sub-story tables of contents: compact, and lighter than the
+  // text, so a long list does not push the first story far down.
+  nav.page-toc, nav.substory-toc
+    font-size: 0.8em
+    line-height: 1.35
+    opacity: 0.85
+    ul
+      margin: 0.4em 0 1em 0
+      padding-left: 1.2em
+    li
+      margin: 0.15em 0
+
+  nav.page-toc
+    border-bottom: 1px solid $rule_color
+    padding-bottom: 0.6em
+    margin-bottom: 1.5em
+
+  section.story
+    margin-top: 2.5em
+
+  .story-title-pali
+    font-size: 1em
+    font-style: italic
+    font-weight: normal
+    margin-top: -0.4em
+
+  // Verses, Burlingame's title, summary, cast and keywords: secondary.
+  .story-meta
+    font-size: 0.85em
+    opacity: 0.8
+    border-left: 3px solid $rule_color
+    padding-left: 0.8em
+    margin: 0.6em 0 1em 0
+    p
+      margin: 0.2em 0
+
+  .substory-heading
+    font-size: 1.05em
+    margin-top: 1.8em
+
+  p.verse
+    margin: 0.8em 8%
+    text-indent: 0
+
+  // A story of the past, which the book sets off from the story of the present.
+  p.story-past
+    margin-left: 4%
+
+  // The commentator's own explanations, set apart in the book.
+  p.commentator-note
+    margin-left: 4%
+    margin-right: 4%
+    font-size: 0.9em
+    font-style: italic
+
+  // PTS {1.3} and Harvard Oriental Series [28.146] page markers.
+  span.pts-ref
+    font-size: 0.7em
+    opacity: 0.6
+    white-space: nowrap
+
+  section.notes
+    margin-top: 3em
+    border-top: 1px solid $rule_color
+    font-size: 0.85em
+    h2
+      font-size: 1.1em
+    li p
+      margin: 0.3em 0
+    a.footnote-backref
+      text-decoration: none
+
+// The vagga's Pāli name, under the <h1> in the article header.
+article header p.vagga-title-pali
+  text-align: center
+  font-style: italic
+  margin-top: -0.5em
