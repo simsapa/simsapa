@@ -181,6 +181,26 @@ fn parse_error_body(body: &str) -> ErrorBodyFields {
         fields.message = Some(s.clone());
     }
 
+    // OpenRouter's message for an upstream failure is only "Provider returned
+    // error"; the upstream provider's own text is in `metadata.raw`.
+    if let Some(raw) = err
+        .get("metadata")
+        .and_then(|m| m.get("raw"))
+        .and_then(|r| r.as_str())
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+    {
+        const MAX_CHARS: usize = 300;
+        let mut detail: String = raw.chars().take(MAX_CHARS).collect();
+        if raw.chars().count() > MAX_CHARS {
+            detail.push('…');
+        }
+        fields.message = Some(match fields.message.take() {
+            Some(message) => format!("{}: {}", message, detail),
+            None => detail,
+        });
+    }
+
     fields
 }
 
@@ -352,6 +372,14 @@ mod tests {
         let err = classify_provider_error("OpenRouter", "z-ai/glm-4.5-air:free", None, body);
         assert_eq!(err.kind, AiErrorKind::RateLimited);
         assert_eq!(err.http_status, Some(429));
+    }
+
+    #[test]
+    fn openrouter_upstream_error_message_includes_metadata_raw() {
+        let body = r#"{"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"m:free is temporarily rate-limited upstream.","provider_name":"Google AI Studio"}}}"#;
+        let err = classify_provider_error("OpenRouter", "m:free", None, body);
+        assert_eq!(err.kind, AiErrorKind::RateLimited);
+        assert_eq!(err.message, "Provider returned error: m:free is temporarily rate-limited upstream.");
     }
 
     #[test]

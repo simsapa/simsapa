@@ -267,6 +267,29 @@ Walk semantics:
     incomplete reply, or one with no text → retryable `invalid_response`.
   - NVIDIA NIM and SambaNova still go through rig's OpenAI client, on
     `/chat/completions`.
+- **OpenRouter requests do not go through rig-core either.**
+  `handle_openrouter_request` posts to `/api/v1/chat/completions` with plain
+  `reqwest`; the body and the reply interpretation are in
+  `backend/src/openrouter_chat.rs` (unit-tested). rig's request body was
+  valid, but it misread the replies the OpenRouter errors page describes:
+  - **An error during generation comes back as HTTP 200** with only
+    `{"error": {"code": …, "message": …}}` in the body. It is classified by
+    its numeric `error.code` like an HTTP status (a 502 is a retryable
+    `overloaded`, a 429 `rate_limited`). rig reported a JSON parse error,
+    which was `unknown` and not retried.
+  - A choice with an `error` object or `finish_reason: "error"` is a failed
+    reply even when it carries partial content (an `error` with no usable
+    code is a retryable `invalid_response`).
+  - `finish_reason: "length"` (a reasoning model can spend the whole budget
+    and leave `content` empty or `null`), or a reply with no text, is a
+    retryable `invalid_response`; `content_filter` or a `refusal` is
+    `refused`.
+  - The request sends the optional `HTTP-Referer` (`https://simsapa.github.io/`)
+    and `X-OpenRouter-Title` (`Simsapa`) headers: the app's identity, never
+    the user's.
+  - OpenRouter's upstream errors say only "Provider returned error"; the
+    provider's own text is in `error.metadata.raw`, which
+    `classify_provider_error` appends to the message (up to 300 characters).
 - Provider API keys are trimmed on save and on read (`get_provider_api_key`):
   a pasted key with a trailing newline is not a valid HTTP header value, and
   the provider client reports it only as "Header value outside of legal range".

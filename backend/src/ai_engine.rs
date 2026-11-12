@@ -19,7 +19,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, providers::gemini, providers::xai, providers::openrouter, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
+use rig::{completion::Prompt, completion::request::Chat, providers::deepseek, providers::gemini, providers::xai, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
 use rig::providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig};
 use tokio::runtime::Runtime;
 
@@ -33,6 +33,7 @@ use crate::ai_fallback::{run_fallback_walk, WalkOutcome, WalkProgress, MAX_RETRY
 use crate::prompt_utils::clean_prompt;
 use crate::anthropic_messages::{self, ChatTurn};
 use crate::openai_responses::{self, InputTurn};
+use crate::openrouter_chat;
 
 /// Single batched request when the substituted prompt is under this length,
 /// otherwise sequential per-paragraph requests. Single source of truth for
@@ -662,29 +663,53 @@ async fn handle_openrouter_request(
     api_key: &str,
     http_client: reqwest::Client,
 ) -> Result<String, AiRequestError> {
-    let client = openrouter::Client::<reqwest::Client>::builder()
-        .http_client(http_client)
-        .api_key(api_key)
-        .build()
-        .map_err(|e| request_setup_error(provider, model, format!("Failed to build OpenRouter client: {}", e)))?;
+    // Sent with plain reqwest, not rig-core: rig 0.30 cannot read an error
+    // returned with HTTP 200, and returns partial or empty replies as
+    // successes. See `crate::openrouter_chat`.
 
-    let system_prompt = extract_system_prompt(messages);
-
-    let agent = match system_prompt {
-        Some(system_prompt) => {
-            client.agent(model)
-                  .preamble(&system_prompt)
-                  .temperature(0.7)
-                  .build()
-        }
-        None => {
-            client.agent(model)
-                  .temperature(0.7)
-                  .build()
-        }
+    // Same message convention as `get_response!`: a lone message is the user
+    // prompt (any system prompt is already prepended to it); otherwise the
+    // first system message is the system prompt and the rest are the turns.
+    let (system_prompt, turns): (Option<String>, Vec<openrouter_chat::ChatTurn>) = if messages.len() == 1 {
+        (None, vec![openrouter_chat::ChatTurn { role: "user", content: &messages[0].content }])
+    } else {
+        let turns = messages
+            .iter()
+            .filter(|msg| msg.role.as_str() != "system")
+            .map(|msg| openrouter_chat::ChatTurn {
+                role: if msg.role.as_str() == "assistant" { "assistant" } else { "user" },
+                content: &msg.content,
+            })
+            .collect();
+        (extract_system_prompt(messages), turns)
     };
+    if turns.is_empty() {
+        return Err(request_setup_error(provider, model, "No messages provided"));
+    }
 
-    Ok(get_response!(agent, messages, model, provider))
+    let body = openrouter_chat::request_body(model, system_prompt.as_deref(), &turns);
+
+    let response = http_client
+        .post(openrouter_chat::CHAT_COMPLETIONS_URL)
+        .bearer_auth(api_key)
+        .header("HTTP-Referer", openrouter_chat::APP_REFERER)
+        .header("X-OpenRouter-Title", openrouter_chat::APP_TITLE)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .map_err(|e| classify_transport_error(provider, model, e.is_timeout(), &e.to_string()))?;
+
+    if !status.is_success() {
+        return Err(classify_provider_error(provider, model, Some(status.as_u16()), &text));
+    }
+
+    openrouter_chat::interpret_reply(provider, model, &text).map(|reply| clean_prompt(&reply))
 }
 
 async fn handle_mistral_request(
