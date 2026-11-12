@@ -659,3 +659,15 @@ must be normalised (`normalise_footnote_markers()`) **before** the bar
 re-observes them, which is why both are in the re-init table above. Storage,
 rendering rules and the reader code are in
 [suttas-core-import.md](./suttas-core-import.md) §5.
+
+## 11. Line breaks and indentation in verse
+
+A verse segment (template entry with `class='verse-line'`) that carries `\n`
+line breaks or leading-tab indent levels is rendered as one
+`span.ssp-line.ssp-indent-N` per line by `render_verse_lines()`, called once in
+`bilara_text_to_segments()`, so the Solo, Lines and Columns layouts show the
+same lines. The spans sit inside the segment's text (`span.text` in Solo, the
+`colcell` in the multi-column grid), never as direct children of
+`span.segment`. Segments without line data, and all prose segments, render as
+before. The contract and the CSS are in
+[munindo-nyanadipa-segmentation.md](./munindo-nyanadipa-segmentation.md) §6.

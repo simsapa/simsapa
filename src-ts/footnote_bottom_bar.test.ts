@@ -1,8 +1,8 @@
 /**
  * Footnote markers and the footnote bottom bar, on the three markup sources
  * the reader shows: dhammatalks.org pages (`span.fn` with `<p id>` notes),
- * Nyanadipa pages and library books (`sup.footnote-reference` with `[1]`
- * text), and segmented texts (`span.footnote-reference` with an `<ol>` of
+ * library books (`sup.footnote-reference` with `[1]` text), and segmented
+ * texts, Nyanadipa's included (`span.footnote-reference` with an `<ol>` of
  * notes after the text).
  */
 

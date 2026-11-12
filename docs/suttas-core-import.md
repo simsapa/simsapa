@@ -26,8 +26,11 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
 - To use a new suttas-core build: put its database in a new dated folder, repoint
   `current`, re-run the bootstrap.
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org
-  imports and **before** Dhammapada / Nyanadipa / Munindo, the library imports
-  and the navigation-tree builds. The tree resolves each leaf's `sutta_uid`
+  imports and **before** the Dhammapada (tipitaka.net), Nyanadipa and Munindo
+  steps, the library imports and the navigation-tree builds. The Nyanadipa and
+  Munindo steps read their own segment files
+  ([munindo-nyanadipa-segmentation.md](./munindo-nyanadipa-segmentation.md)),
+  not suttas-core. The tree resolves each leaf's `sutta_uid`
   against rows that exist, so it must see the final uids; the library imports
   convert dhammatalks.org links through the rename table (§4), so the table must
   be filled by then.
@@ -133,6 +136,27 @@ Titles come from `raw_translations.title`; 15 texts (the split `sn43.*`) have
 none and fall back to the mapped record's title, then `title_pali`, and are
 logged.
 
+### Dhammapada verse groups and chapter titles
+
+In his 26 Dhammapada chapters `build_record()` writes:
+
+- the verse range of each group into its heading segment, as exactly
+  `"183–185."` (`apply_dhp_verse_ranges()`), as the SuttaCentral importer does
+  for Sujato and the Pāli. A heading that held text is overwritten and logged:
+  `dhp239:0` holds `235-238*`, his web page's endnote citation for the previous
+  group, carried over by suttas-core;
+- `<chapter>. <title>` into the range-title segment (the template entry with
+  `class='range-title'`, `dhpN:0.3`), e.g. `14. Awakened`, so the title shows
+  in every layout. The title is that segment's text trimmed (22 chapters,
+  `"Happy\n\n"` → `Happy`), else the record title (4 chapters where it is
+  empty); when both exist and differ, both are logged and the segment's text
+  wins; both empty leaves the segment empty, with a warning. The chapter number
+  comes from `DHP_CHAPTERS_TO_RANGE` (`dhp_chapter_number()`). The record's
+  `title` field is unchanged.
+
+Both run before `content_plain` is computed. The rule for the ranges is in
+[munindo-nyanadipa-segmentation.md](./munindo-nyanadipa-segmentation.md) §4.
+
 ### Introductions
 
 suttas-core drops the introduction of each of his pages (its `than/page.ts`
@@ -210,8 +234,8 @@ Variant readings and glosses are untouched. The old `✱` comment mark and its
   from its text into `data-n` (brackets stripped) and empties the text; CSS draws
   `[n]` in superscript. It runs on load before the bar observes, and on swapped
   content before `footnote_bottom_bar.refresh()`. This covers all three markups
-  (`.fn` on the Ṭhānissaro HTML pages, `sup.footnote-reference` on Nyanadipa and
-  library books, the new `span.footnote-reference`), so the find bar matches
+  (`.fn` on the Ṭhānissaro HTML pages, `sup.footnote-reference` in library
+  books, `span.footnote-reference` in segmented texts, Nyanadipa's included), so the find bar matches
   across a marker and copied text has no numbers. `extract_footnote_number()`
   reads `data-n` first.
 - `footnote_bottom_bar.ts` keeps **one DOM item per visible note**, adding and

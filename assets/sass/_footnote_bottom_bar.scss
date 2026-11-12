@@ -246,7 +246,7 @@ $toggle_gap: 6px;
 }
 
 // The segmented texts' markers are plain spans, so they are raised here;
-// `sup.footnote-reference` (books, Nyanadipa) and `span.fn` (dhammatalks.org
+// `sup.footnote-reference` (library books) and `span.fn` (dhammatalks.org
 // pages) are already raised by their element or their own rule.
 span.footnote-reference a[data-n] {
     line-height: 0;

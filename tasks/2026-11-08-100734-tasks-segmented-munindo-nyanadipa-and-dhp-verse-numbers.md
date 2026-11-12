@@ -43,7 +43,10 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - Test that `content_plain` of a segment with `\n` / `\t` has no tab and no joined words (7.6).
 - `bootstrap_cli/src/survey_suttas_core.rs` - Calls `build_record()`; output changes with 2.0.
 - `docs/simsapa-cli-and-localhost-api.md` - Bundled API doc: `\n` / `\t` in segment text, Munindo / Nyanadipa segmented, Nyanadipa notes in `ssp-fn` form (7.8).
-- `docs/sutta-display-settings-and-multi-column-view.md` - Pointer to the line contract (FR 33a).
+- `docs/sutta-display-settings-and-multi-column-view.md` - §11, pointer to the line contract (FR 33a).
+- `docs/README.md` - Entry for the new doc.
+- `tasks/2026-11-08-100734-checks---munindo-nyanadipa-bootstrap.sql` - **New.** The 9.5 success-metric checks, run against the bootstrapped appdata.
+- `assets/sass/_footnote_bottom_bar.scss`, `src-ts/footnote_modal.ts`, `src-ts/footnote_bottom_bar.test.ts` - Comments: Nyanadipa now uses `span.footnote-reference` (9.3a).
 
 suttas-core (separate repository, 8.0; branch `than-verse-indent` from `master`, for a PR upstream):
 
@@ -469,16 +472,34 @@ Depends on: 1.0–8.0 (8.0 only for the indentation checks).
   subcommand allows it. Never commit the resulting databases.
 
 - [ ] 9.0 Documentation and the end-to-end check: new doc, updates to `suttas-core-import.md`, the text-processing doc, `CLAUDE.md`, `PROJECT_MAP.md`, the API doc, and a bootstrap run of the affected steps with the success metrics checked (PRD FR 30–33a, §8)
-  - [ ] 9.1 Write `docs/munindo-nyanadipa-segmentation.md` (including the verse-segment line contract and `render_verse_lines()`, FR 33a), and add the pointer section to `docs/sutta-display-settings-and-multi-column-view.md`: file format and `source` values, hash definitions, the placement rules, title placement and why (the multi-column view shows no record title), the footnote file, the verse-group rule and the three importers that apply it, the check command and when to run it, and the traps (key order, trailing spaces, never derive alignment from Munindo's numbers).
-  - [ ] 9.2 Update `docs/suttas-core-import.md`: §1 position text (the Munindo / Nyanadipa step now reads segment files), §3 Ṭhānissaro Dhammapada ranges and chapter titles, §5 markup list (Nyanadipa now uses `ssp-fn`, not `sup.footnote-reference`).
-  - [ ] 9.3 Update `docs/text-processing-for-contains-match-and-fulltext-match-search.md` where it describes these two sources as HTML.
-  - [ ] 9.3a Update the comments that name Nyanadipa as a user of `sup.footnote-reference`: `assets/sass/_footnote_bottom_bar.scss` (~249), `src-ts/footnote_modal.ts` (~146), `src-ts/footnote_bottom_bar.test.ts` (~4). Library books still use that markup, so only the comments change.
-  - [ ] 9.4 Add the new doc to the notable-docs list in `CLAUDE.md`, and the new module and command to `PROJECT_MAP.md`.
+  - [x] 9.1 Write `docs/munindo-nyanadipa-segmentation.md` (including the verse-segment line contract and `render_verse_lines()`, FR 33a), and add the pointer section to `docs/sutta-display-settings-and-multi-column-view.md`: file format and `source` values, hash definitions, the placement rules, title placement and why (the multi-column view shows no record title), the footnote file, the verse-group rule and the three importers that apply it, the check command and when to run it, and the traps (key order, trailing spaces, never derive alignment from Munindo's numbers).
+  - [x] 9.2 Update `docs/suttas-core-import.md`: §1 position text (the Munindo / Nyanadipa step now reads segment files), §3 Ṭhānissaro Dhammapada ranges and chapter titles, §5 markup list (Nyanadipa now uses `ssp-fn`, not `sup.footnote-reference`).
+  - [x] 9.3 Update `docs/text-processing-for-contains-match-and-fulltext-match-search.md` where it describes these two sources as HTML.
+  - [x] 9.3a Update the comments that name Nyanadipa as a user of `sup.footnote-reference`: `assets/sass/_footnote_bottom_bar.scss` (~249), `src-ts/footnote_modal.ts` (~146), `src-ts/footnote_bottom_bar.test.ts` (~4). Library books still use that markup, so only the comments change.
+  - [x] 9.4 Add the new doc to the notable-docs list in `CLAUDE.md`, and the new module and command to `PROJECT_MAP.md`.
   - [ ] 9.5 With the maintainer's go-ahead, run the bootstrap (or the affected steps) and check the success metrics with SQL against the new `appdata.sqlite3`:
+    The checks are written: `sqlite3 -readonly <dist>/simsapa/app-assets/appdata.sqlite3 < tasks/2026-11-08-100734-checks---munindo-nyanadipa-bootstrap.sql` (each check prints its expectation). Dry-run on the pre-bootstrap DB: it runs, and fails where expected (no segmented records, no ranges, 4 empty Ṭhānissaro titles).
     - [ ] 9.5.1 26 Munindo and 36 Nyanadipa records with `content_json` and NULL `content_html`.
     - [ ] 9.5.2 Every Dhammapada heading segment in the `pli/ms`, `en/sujato`, `en/thanissaro` and `en/munindo` records carries its range, and the ranges cover 1–423. Select the headings by the rule of `dhp_verse_group_ranges()` (`dhpN:0`, and the first verse's `0.4`), not by `LIKE '%:0%'`: `dhp416:5.0` (*Jotikattheravatthu*, the Pāli root's repeat of Dhp 416) is a verse-story heading that by design gets no range. The new doc (9.1) states this exception.
     - [ ] 9.5.3 26 Munindo, 26 Ṭhānissaro Dhammapada and 36 Nyanadipa records have a non-empty page-title segment.
     - [ ] 9.5.4 The navigation tree build reports no new missing leaves for these uids.
     - [ ] 9.5.5 `dhp1-20/pli/ms` and `snp4.2/pli/ms` default to `…/en/sujato`.
+      **Open, for the maintainer:** Bhante Suddhāso's segmented SuttaCentral English (`…/en/suddhaso`, `source_info` NULL, 30 records) sorts before `…/en/sujato`, so under FR 15a's rule it is the default beside all 26 Dhp chapters and 2 Snp suttas (28 of 99), as it already was before this feature (the old rule also took the first segmented English). `snp4.2` does default to Sujato. FR 15a's tests used `dummy-` fixtures without a Suddhāso record. The script checks the purpose of FR 15a (no Munindo / Nyanadipa / suttas-core default) and lists the defaults by author; whether Sujato should also win over Suddhāso is the maintainer's decision.
     - [ ] 9.5.6 `git status` shows no `*.sqlite3` staged.
   - [ ] 9.6 Ask the maintainer to open three Munindo chapters and three Nyanadipa suttas in the Lines and Columns layouts, and check the alignment, the verse numbers, the titles, the line breaks and the footnote markers; and Ṭhānissaro's Dhp 186–187 and Thag 10.5 and Bodhi's SN 1.75 for line breaks and indentation against the published pages (PRD §6, §6a, §8). Include the find-bar and tap-to-lookup checks deferred from 7.7, on desktop and on a mobile device.
+    - [ ] 9.6.1 Munindo, Columns and Lines with Pāli + Sujato + Ṭhānissaro + Munindo:
+      - `dhp179-196` (ch. 14): `14. The Buddha` in Munindo's column, `14. Awakened` in Ṭhānissaro's; `183–185.` above the group in every English column and `183–185. Ānandattherapañhavatthu` in the Pāli; Dhp 184 as seven short lines over four segments (PRD §6a example D); Dhp 186–187 split at the verse boundary.
+      - `dhp1-20` (ch. 1): `1–2.`-style ranges from the first heading (`dhp1:0.4`) on.
+      - `dhp383-423` (ch. 26): the last group ends at 423; `dhp416:5.0` *Jotikattheravatthu* has no range.
+    - [ ] 9.6.2 Nyanadipa, Columns and Lines with Pāli + Sujato + Nyanadipa:
+      - `snp4.2`: `The Cave` as title; the footnote marker on `snp4.2:3.2` after *incorrigible*, the note in the bottom bar and the pop-up, with no number in copied text.
+      - `snp3.6` Sabhiya: the Pāli prose frame beside empty cells, the 38 verses aligned.
+      - `snp5.19`: the song of Piṅgiya opens under its new uid (no longer `snp5.18`).
+    - [ ] 9.6.3 Solo layout: `dhp179-196/en/munindo` shows `14. The Buddha` once, as the page heading, and `183–185.` above its verses; `snp4.2/en/nyanadipa` shows `The Cave` once.
+    - [ ] 9.6.4 Line breaks and indents against the published pages, in Solo, Lines and Columns:
+      - Ṭhānissaro `dhp179-196`: Dhp 186–187 as on dhammatalks.org (*‘Stressful,* / *finds no delight* indented; *He is* flush, the four lines after it indented; PRD §6a example H).
+      - Ṭhānissaro `thag10.5`: two indent levels (*but its attainment ends* / *in ruin.*), footnote markers at the ends of indented lines (example I); a long line wraps with a hanging indent in a narrow column.
+      - Bodhi `sn1.75`: `sn1.75:1.4` as two lines (example C).
+      - Sujato and the Pāli look as before (no extra blank lines after verse lines).
+    - [ ] 9.6.5 Find bar: in `dhp179-196/en/thanissaro`, *He is one who delights* is found across the line break. Tap-to-lookup: tapping the first word of an indented or broken line selects just that word. Desktop and a mobile device.
+    - [ ] 9.6.6 Opening `dhp1-20/pli/ms` and `snp4.2/pli/ms` with no columns requested: note which English appears beside the Pāli (see 9.5.5).

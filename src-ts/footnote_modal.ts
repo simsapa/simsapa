@@ -143,7 +143,7 @@ export function extract_footnote_number(anchor: HTMLAnchorElement): string {
  * (`disappeared:` in `disappeared²:`) and copied sutta text has no numbers.
  *
  * Covers every markup source: `span.fn` (dhammatalks.org pages),
- * `sup.footnote-reference` (Nyanadipa, library books) and
+ * `sup.footnote-reference` (library books) and
  * `span.footnote-reference` (segmented texts). Idempotent: a link that already
  * has `data-n` is left alone. Run it before the footnote bar observes the
  * links, on page load and after every content swap.

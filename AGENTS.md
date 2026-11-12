@@ -171,6 +171,10 @@ add a line here and an entry there.
   in-app Update / Reset.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) —
   the suttas-core bootstrap step.
+- [Munindo and Nyanadipa segment files, Dhammapada verse groups, verse lines](./docs/munindo-nyanadipa-segmentation.md) —
+  the hand-placed `bilara/` files and `check-segment-files` (run it after any
+  edit), the verse-range rule, and `render_verse_lines()`. Never align
+  Munindo by his verse numbers.
 - [New bootstrap import sources go into the preflight check](./docs/bootstrap-preflight.md).
 
 ### DPD, gloss and AI

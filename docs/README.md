@@ -522,6 +522,21 @@ substantially.
   `data-n`, a bottom bar that updates incrementally so a selection survives), and
   the `survey-suttas-core` report. A version bump of the appdata DB is needed
   before release.
+- [Munindo and Nyanadipa segment files, Dhammapada verse groups, verse lines](./munindo-nyanadipa-segmentation.md) —
+  Ajahn Munindo's Dhammapada and Bhante Nyanadipa's Sutta Nipāta as
+  hand-placed segment files (`bilara/<sutta_id>.json` in suttas-core's
+  segmentation form, every Pāli id in Pāli order, suttas-core-compatible
+  hashes; Nyanadipa's notes in `bilara/footnotes.json`). The placement rules:
+  the author's lines in the author's order, every line in exactly one segment,
+  **never aligned by Munindo's verse numbers**; the title in the page-title
+  segment because the multi-column view shows no record title. The
+  `check-segment-files` command (run after any edit; the bootstrap does not).
+  The Dhammapada verse-group rule (`dhpN:0` and the first verse's `0.4`; en
+  dash; `dhp416:5.0` excluded) and the three importers that write the ranges
+  (SuttaCentral for Pāli and Sujato, suttas-core for Ṭhānissaro, the Munindo
+  import). The verse-segment line contract (`\n` = line, leading tabs =
+  indent level) and `render_verse_lines()`, which leaves every segment
+  without line data byte-identical.
 - [Releases info lookup and the embedded fallback JSON](./releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live
