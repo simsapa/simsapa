@@ -123,6 +123,16 @@ again. `VACUUM` cannot run inside a transaction.
 
 ## Testing Recommendations
 
+**The results pin test is ignored by default.**
+`backend/tests/test_search_results_pin.rs` pins the totals, uids, titles and
+snippets of the Dictionary Contains / Headword Match and Suttas Contains
+searches against `backend/tests/data/search_results_pin.tsv`, and takes minutes
+on the dist databases. Run it after any change to that search code:
+
+``` sh
+cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture
+```
+
 1. **Functional Testing:**
    - Test dictionary searches with various query patterns
    - Verify pagination works correctly

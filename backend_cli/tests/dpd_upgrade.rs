@@ -7,7 +7,9 @@
 //! v0.4.20261026 `dpd.db` (the first rows of each table) and the real `dpd/`
 //! StarDict folder, with a hidden entry limit, over installed databases built
 //! here with an older DPD. They are skipped when the bootstrap sources are
-//! missing.
+//! missing, and ignored by default because they take minutes:
+//!
+//!     cargo test --test dpd_upgrade -- --ignored
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -150,9 +152,9 @@ fn fake_dpd_dir(path: &Path) {
     fs::write(path.join("res/a.css"), "body {}").unwrap();
 }
 
-/// Hashes of a file, or of every file under a folder, keyed by path.
-fn hashes(path: &Path) -> BTreeMap<PathBuf, String> {
-    let mut out = BTreeMap::new();
+/// A file, or every file under a folder.
+fn files(path: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
     let mut stack = vec![path.to_path_buf()];
     while let Some(p) = stack.pop() {
         if p.is_dir() {
@@ -160,10 +162,35 @@ fn hashes(path: &Path) -> BTreeMap<PathBuf, String> {
                 stack.push(e.path());
             }
         } else {
-            out.insert(p.clone(), format!("{:x}", Sha256::digest(fs::read(&p).unwrap())));
+            out.push(p);
         }
     }
+    out.sort();
     out
+}
+
+/// Hashes of a file, or of every file under a folder, keyed by path.
+fn hashes(path: &Path) -> BTreeMap<PathBuf, String> {
+    files(path)
+        .into_iter()
+        .map(|p| {
+            let hash = format!("{:x}", Sha256::digest(fs::read(&p).unwrap()));
+            (p, hash)
+        })
+        .collect()
+}
+
+/// Size and modification time of a file, or of every file under a folder,
+/// keyed by path: enough to show the large inputs were not written to,
+/// without reading the 150 MB `dpd/` folder.
+fn stamps(path: &Path) -> BTreeMap<PathBuf, (u64, std::time::SystemTime)> {
+    files(path)
+        .into_iter()
+        .map(|p| {
+            let m = fs::metadata(&p).unwrap();
+            (p, (m.len(), m.modified().unwrap()))
+        })
+        .collect()
 }
 
 fn staging_dir(dir: &Path) -> PathBuf {
@@ -464,7 +491,7 @@ fn goldendict_zip(dpd_dir: &Path, out: &Path) {
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .large_file(true);
-    for (path, _) in hashes(dpd_dir) {
+    for path in files(dpd_dir) {
         let rel = path.strip_prefix(dpd_dir).unwrap().to_string_lossy().replace('\\', "/");
         zw.start_file(format!("dpd/{rel}"), opts).unwrap();
         std::io::copy(&mut File::open(&path).unwrap(), &mut zw).unwrap();
@@ -534,6 +561,7 @@ fn installed(dir: &Path, new_db: &Path) {
 }
 
 #[test]
+#[ignore = "slow (minutes): nine upgrades from the real DPD sources; run with --ignored"]
 fn test_local_upgrade_from_each_combination_of_archives_and_extracted_files() {
     let Some((real_db, real_dir)) = sources() else {
         return;
@@ -548,8 +576,8 @@ fn test_local_upgrade_from_each_combination_of_archives_and_extracted_files() {
     let user_zip = user.join("dpd-goldendict.zip");
     goldendict_zip(&real_dir, &user_zip);
 
-    let user_before = hashes(&user);
-    let dir_before = hashes(&real_dir);
+    let user_before = stamps(&user);
+    let dir_before = stamps(&real_dir);
     let s = |p: &Path| p.to_str().unwrap().to_string();
     let combinations = [
         ("--dpd-db", s(&user_db), "--goldendict-dir", s(&real_dir)),
@@ -586,24 +614,28 @@ fn test_local_upgrade_from_each_combination_of_archives_and_extracted_files() {
         assert_eq!(out.status.code(), Some(1), "the same release again is not an upgrade");
         assert!(stderr(&out).contains("not newer"), "{}", stderr(&out));
     }
-    assert_eq!(hashes(&user), user_before, "the user's archives and dpd.db are unchanged");
-    assert_eq!(hashes(&real_dir), dir_before, "the dpd/ folder is unchanged");
+    assert_eq!(stamps(&user), user_before, "the user's archives and dpd.db are unchanged");
+    assert_eq!(stamps(&real_dir), dir_before, "the dpd/ folder is unchanged");
 
     // A failure after staging has begun: a dpd/ folder whose index is missing
-    // fails while the pages are prepared, and changes nothing.
+    // fails while the pages are prepared, and changes nothing. Its files are
+    // links to the real ones, not copies.
     let broken = tmp.path().join("dpd-no-idx");
-    for (path, _) in hashes(&real_dir) {
+    for path in files(&real_dir) {
         let rel = path.strip_prefix(&real_dir).unwrap();
         if rel == Path::new("dpd.idx") {
             continue;
         }
         fs::create_dir_all(broken.join(rel).parent().unwrap()).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(std::path::absolute(&path).unwrap(), broken.join(rel)).unwrap();
+        #[cfg(not(unix))]
         fs::copy(&path, broken.join(rel)).unwrap();
     }
     let simsapa_dir = tmp.path().join("simsapa-broken");
     installed(&simsapa_dir, &user_db);
     let assets_before = hashes(&simsapa_dir.join("app-assets"));
-    let broken_before = hashes(&broken);
+    let broken_before = stamps(&broken);
     let out = simsapa(
         &simsapa_dir,
         &["dpd", "upgrade", "--yes", "--json", "--test-limit", LIMIT, "--dpd-db", &s(&user_db), "--goldendict-dir", &s(&broken)],
@@ -613,7 +645,7 @@ fn test_local_upgrade_from_each_combination_of_archives_and_extracted_files() {
     assert_eq!(doc["step"], "prepare_html", "{doc}");
     assert!(doc["error"].as_str().unwrap().contains("unchanged"), "{doc}");
     assert_eq!(hashes(&simsapa_dir.join("app-assets")), assets_before, "the installed databases are unchanged");
-    assert_eq!(hashes(&broken), broken_before);
-    assert_eq!(hashes(&user), user_before);
+    assert_eq!(stamps(&broken), broken_before);
+    assert_eq!(stamps(&user), user_before);
     assert!(!staging_dir(&simsapa_dir).try_exists().unwrap());
 }

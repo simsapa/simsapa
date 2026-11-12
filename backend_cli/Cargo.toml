@@ -60,3 +60,16 @@ lzma-rust2 = { version = "=0.23.0", default-features = false, features = ["std",
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# Dependencies are built optimised in dev and test builds: SQLite (compiled C),
+# regex and sha2 at opt-level 0 made the tests on the dist databases several
+# times slower. The project's own crates stay unoptimised, so they rebuild fast
+# after an edit and step cleanly in a debugger.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.simsapa_backend]
+opt-level = 0
+
+[profile.dev.package.simsapa_api]
+opt-level = 0

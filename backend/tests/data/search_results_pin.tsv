@@ -5,26 +5,41 @@ dict.contains+bold|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akar
 dict.contains+bold|-|kamma|all	46930	46930	d6431c1c87fe1213	575242a46608f086	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
 dict.contains+bold|-|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
 dict.contains+bold|-|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
-dict.contains+bold|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|dicts=dpd|kamma|all	46815	46815	15b4f5efe31ebf0d	d165ffc1945040a0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|dicts=dpd|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
-dict.contains+bold|dicts=dpd|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
-dict.contains+bold|dicts=dppn|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
-dict.contains+bold|dicts=dppn|kamma|all	28128	28128	ff5c7785f8d83282	b9f8f27f3e97aab1	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
-dict.contains+bold|dicts=dppn|ssa|all	201252	201252	49be5c32526c93ca	b68bec43972bb707	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
-dict.contains+bold|dicts=dppn|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|lang=en|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
-dict.contains+bold|lang=en|kamma|all	115	115	da666801e58dcab1	6a1873eeac98509e	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
-dict.contains+bold|lang=en|ssa|all	2261	2261	fd605254bdf010ef	079a84fdd571efbb	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
-dict.contains+bold|lang=en|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
-dict.contains+bold|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|lang=pli|kamma|all	46815	46815	15b4f5efe31ebf0d	d165ffc1945040a0	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|lang=pli|ssa|all	250154	250154	b0f58458293d236e	9612f8f6d363a5ce	ssa-1/dpd,ssa-2/dpd,issa/dpd
-dict.contains+bold|lang=pli|sutthu|all	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
-dict.contains+bold|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.contains+bold|uid_prefix=kamma|kamma|all	1257	1257	ae1d0ab80aeff9f9	43cd2299fe8eb858	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
-dict.contains+bold|uid_prefix=kamma|ssa|all	788	788	5805957a2e90dc80	48ee5da6ce4e3957	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
-dict.contains+bold|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.contains+bold|dicts=dpd|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.contains+bold|dicts=dpd|kamma|head	46815	18812	0097f0126b68d40b	b4b5bd063cc6d981	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|dicts=dpd|kamma|plast	46815	5	76d059e17bceb8b2	2fc91b2cfb2ac081	gayhākāre/apt,yena 2/apt,kittiyā/apt
+dict.contains+bold|dicts=dpd|ssa|head	250154	51173	61c50f4c2b1d5986	5438dd47e872c3fe	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains+bold|dicts=dpd|ssa|plast	250154	4	086bc3e116142792	f54a958e39088359	vasatā/apt,santavuttinā/apt,dhīmatā/apt
+dict.contains+bold|dicts=dpd|sutthu|head	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|dicts=dpd|sutthu|plast	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|dicts=dppn|ceylon|head	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
+dict.contains+bold|dicts=dppn|ceylon|plast	1242	2	20f57533e8090786	595dfdfb9c14b82a	hemā-2/dppn,helloligāma/dppn
+dict.contains+bold|dicts=dppn|kamma|head	28128	125	90866fbda040e7e8	467f99a50d3376c8	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
+dict.contains+bold|dicts=dppn|kamma|plast	28128	8	7c5f33164240b77d	5bed3dde5a88a8c9	ā 38/apt,ādhikye/apt,pubbakammani/apt
+dict.contains+bold|dicts=dppn|ssa|head	201252	2271	3851c01638e12665	a39e9696594667d8	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
+dict.contains+bold|dicts=dppn|ssa|plast	201252	2	2d8e66dbde9236aa	022d2710b3d927e0	dhīmatā/apt,moggallānena/apt
+dict.contains+bold|dicts=dppn|sutthu|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.contains+bold|lang=en|ceylon|head	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
+dict.contains+bold|lang=en|ceylon|plast	1242	2	20f57533e8090786	595dfdfb9c14b82a	hemā-2/dppn,helloligāma/dppn
+dict.contains+bold|lang=en|kamma|head	115	115	da666801e58dcab1	6a1873eeac98509e	aṅgulimāla/dppn,ajagara/dppn,ajātasattu/dppn
+dict.contains+bold|lang=en|kamma|plast	115	5	c3d4dd8b6c904c95	95ba44809635f2d8	surucijātaka/dppn,seyyasaka/dppn,sobhana-4/dppn
+dict.contains+bold|lang=en|ssa|head	2261	2261	fd605254bdf010ef	079a84fdd571efbb	akālarāvijātaka/dppn,akitti/dppn,akittijātaka/dppn
+dict.contains+bold|lang=en|ssa|plast	2261	1	cd290edd4edfea77	f79f582e81cd944a	heḷigāma-2/dppn
+dict.contains+bold|lang=en|sutthu|head	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|lang=en|sutthu|plast	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|lang=pli|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.contains+bold|lang=pli|kamma|head	46815	18812	0097f0126b68d40b	b4b5bd063cc6d981	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|lang=pli|kamma|plast	46815	5	76d059e17bceb8b2	2fc91b2cfb2ac081	gayhākāre/apt,yena 2/apt,kittiyā/apt
+dict.contains+bold|lang=pli|ssa|head	250154	51173	61c50f4c2b1d5986	5438dd47e872c3fe	ssa-1/dpd,ssa-2/dpd,issa/dpd
+dict.contains+bold|lang=pli|ssa|plast	250154	4	086bc3e116142792	f54a958e39088359	vasatā/apt,santavuttinā/apt,dhīmatā/apt
+dict.contains+bold|lang=pli|sutthu|head	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|lang=pli|sutthu|plast	1	1	f6ffdb391aa4aabe	03776e1f45e4da89	suṭṭhu/dpd
+dict.contains+bold|uid_prefix=kamma|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.contains+bold|uid_prefix=kamma|kamma|head	1257	197	da07bcffcdd125ed	686ea46f8afd5457	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
+dict.contains+bold|uid_prefix=kamma|kamma|plast	1257	7	b49c454218e07cc0	4b2a711f07d3d261	kammani 21/prs,kammani 22/prs,kammani 23/prs
+dict.contains+bold|uid_prefix=kamma|ssa|head	788	169	bbd6be4c276eb517	0580b000a811aa4d	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
+dict.contains+bold|uid_prefix=kamma|ssa|plast	788	8	7e7f75ecbe0c21fe	e1c6008ad67ba1d8	kammani 13/prs,kammani-ya 4/prs,kammani 14/prs
+dict.contains+bold|uid_prefix=kamma|sutthu|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 dict.contains|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
 dict.contains|-|kamma|all	18917	18917	fcac4dd8b0b5e6d4	7fefd53739db7d06	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
 dict.contains|-|ssa|all	51163	51163	cd397696f3a3925c	7d2dd039fb05ee27	ssa-1/dpd,ssa-2/dpd,issa/dpd
@@ -53,26 +68,42 @@ dict.headword+bold|-|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ce
 dict.headword+bold|-|kamma|all	4200	4200	ec220ba48f6373a7	f1f3155166925718	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
 dict.headword+bold|-|ssa|all	33004	33004	88b20314d9ce3b54	4ce3e39ae8c671a7	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
 dict.headword+bold|-|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
-dict.headword+bold|dicts=dpd|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|dicts=dpd|kamma|all	4174	4174	bbe226c340914f1b	f075b1860bd135a0	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
-dict.headword+bold|dicts=dpd|ssa|all	32460	32460	9099451418f7b97b	00461fc866459b82	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
-dict.headword+bold|dicts=dpd|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
-dict.headword+bold|dicts=dppn|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
-dict.headword+bold|dicts=dppn|kamma|all	3512	3512	8a17a497b2d04aa2	a6ad8cb75de3ce54	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
-dict.headword+bold|dicts=dppn|ssa|all	29518	29518	a126a1d7a74fe811	ba1a8ed05619cd28	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
-dict.headword+bold|dicts=dppn|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
-dict.headword+bold|lang=en|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
-dict.headword+bold|lang=en|kamma|all	26	26	c02fa9328f5795ea	9b4ef1e51757fd35	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
-dict.headword+bold|lang=en|ssa|all	544	544	1356f135eded0436	111406ae4d5a23f2	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
-dict.headword+bold|lang=en|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|lang=pli|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|lang=pli|kamma|all	4174	4174	bbe226c340914f1b	f075b1860bd135a0	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
-dict.headword+bold|lang=pli|ssa|all	32460	32460	9099451418f7b97b	00461fc866459b82	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
-dict.headword+bold|lang=pli|sutthu|all	135	135	6b7c936631a94544	16cca7aa8d2712df	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
-dict.headword+bold|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-dict.headword+bold|uid_prefix=kamma|kamma|all	1257	1257	6f12fe0706578c74	672597d4d17deedf	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
-dict.headword+bold|uid_prefix=kamma|ssa|all	95	95	22c18085e4ea91f8	c897250d09bf59fd	kammassakomhi/dpd,kammassakatā/dpd,kammassaka/dpd
-dict.headword+bold|uid_prefix=kamma|sutthu|all	1	1	2e2ae64ac852ac13	a3c19d07100f7c55	kammaṭṭhānavimuttiyā-suṭṭhu-vimutta/snt
+dict.headword+bold|dicts=dpd|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.headword+bold|dicts=dpd|kamma|head	4174	698	0a4edcdf84f1ba94	b3410c1c41f8cb02	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|dicts=dpd|kamma|plast	4174	4	e0d4e4525e22ba9b	75551e91e11999ce	lepyādikammani 3/apt,kammādike/apt,kammārabhaṇḍabhede/apt
+dict.headword+bold|dicts=dpd|ssa|head	32460	3496	7be96a353c82ef5b	46ee2c77733f747d	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
+dict.headword+bold|dicts=dpd|ssa|plast	32460	10	ba43f34b641288af	051d4600afcdb19e	kaserussa-phale/apt,assāsappatte/apt,nissaye/apt
+dict.headword+bold|dicts=dpd|sutthu|head	135	10	d47dfa28e2523aaf	7b3f9ae1a4f90b73	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
+dict.headword+bold|dicts=dpd|sutthu|plast	135	5	d734b9d50320805a	d3f93d26ea9d02cd	suṭṭhusammādatthesu/prs,sādhu-suṭṭhu-evameta/prs,sammā-suṭṭhu/ap
+dict.headword+bold|dicts=dppn|ceylon|head	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
+dict.headword+bold|dicts=dppn|ceylon|plast	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
+dict.headword+bold|dicts=dppn|kamma|head	3512	36	024dd12dbe248476	73fd49239b9c1546	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
+dict.headword+bold|dicts=dppn|kamma|plast	3512	2	a770931a23b1e9e1	a36dba572c928959	kammārabhaṇḍabhede/apt,pubbakammani/apt
+dict.headword+bold|dicts=dppn|ssa|head	29518	554	e0385dfdde068e35	37591da67ae34e6c	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
+dict.headword+bold|dicts=dppn|ssa|plast	29518	8	69b666754cdea4ce	bfd467a061978dc7	nissaye/apt,assādilome/apt,cirassā/apt
+dict.headword+bold|dicts=dppn|sutthu|head	135	10	d47dfa28e2523aaf	7b3f9ae1a4f90b73	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
+dict.headword+bold|dicts=dppn|sutthu|plast	135	5	d734b9d50320805a	d3f93d26ea9d02cd	suṭṭhusammādatthesu/prs,sādhu-suṭṭhu-evameta/prs,sammā-suṭṭhu/ap
+dict.headword+bold|lang=en|ceylon|head	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
+dict.headword+bold|lang=en|ceylon|plast	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
+dict.headword+bold|lang=en|kamma|head	26	26	c02fa9328f5795ea	9b4ef1e51757fd35	apaccakkhakammasuttā/dppn,kammakathā/dppn,kammakāraṇavagga/dppn
+dict.headword+bold|lang=en|kamma|plast	26	6	6c5756c85ded9670	4b81766ee55bdc77	pattakammasutta/dppn,pilotikakamma/dppn,pubbakammapiloti/dppn
+dict.headword+bold|lang=en|ssa|head	544	544	1356f135eded0436	111406ae4d5a23f2	aggivessa/dppn,aggivessana/dppn,acela-kassapa-1/dppn
+dict.headword+bold|lang=en|ssa|plast	544	4	178822ffc5d6ca13	aab2357ba7f1d677	somanassa-2/dppn,somanassa-3/dppn,somanassajātaka/dppn
+dict.headword+bold|lang=en|sutthu|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.headword+bold|lang=pli|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.headword+bold|lang=pli|kamma|head	4174	698	0a4edcdf84f1ba94	b3410c1c41f8cb02	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|lang=pli|kamma|plast	4174	4	e0d4e4525e22ba9b	75551e91e11999ce	lepyādikammani 3/apt,kammādike/apt,kammārabhaṇḍabhede/apt
+dict.headword+bold|lang=pli|ssa|head	32460	3496	7be96a353c82ef5b	46ee2c77733f747d	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd
+dict.headword+bold|lang=pli|ssa|plast	32460	10	ba43f34b641288af	051d4600afcdb19e	kaserussa-phale/apt,assāsappatte/apt,nissaye/apt
+dict.headword+bold|lang=pli|sutthu|head	135	10	d47dfa28e2523aaf	7b3f9ae1a4f90b73	saṅghasuṭṭhutāyā/vina,saṅghasuṭṭhutā/vina,yaṁ-saṅghasuṭṭhu-taṁ-saṅghaphāsū/vina
+dict.headword+bold|lang=pli|sutthu|plast	135	5	d734b9d50320805a	d3f93d26ea9d02cd	suṭṭhusammādatthesu/prs,sādhu-suṭṭhu-evameta/prs,sammā-suṭṭhu/ap
+dict.headword+bold|uid_prefix=kamma|ceylon|head	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
+dict.headword+bold|uid_prefix=kamma|kamma|head	1257	197	6d4070d994ab049a	17191272523fe1d9	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
+dict.headword+bold|uid_prefix=kamma|kamma|plast	1257	7	b49c454218e07cc0	4b2a711f07d3d261	kammani 21/prs,kammani 22/prs,kammani 23/prs
+dict.headword+bold|uid_prefix=kamma|ssa|head	95	14	0e9d61c1b3558d85	760ccc0adc3ef0d3	kammassakomhi/dpd,kammassakatā/dpd,kammassaka/dpd
+dict.headword+bold|uid_prefix=kamma|ssa|plast	95	5	bb60717c2b782952	5a79d30d5e7f94c7	kammassakatā/visma,kammassakata/visma,kammaṁ-rūpassa/visma
+dict.headword+bold|uid_prefix=kamma|sutthu|head	1	1	2e2ae64ac852ac13	a3c19d07100f7c55	kammaṭṭhānavimuttiyā-suṭṭhu-vimutta/snt
+dict.headword+bold|uid_prefix=kamma|sutthu|plast	1	1	2e2ae64ac852ac13	a3c19d07100f7c55	kammaṭṭhānavimuttiyā-suṭṭhu-vimutta/snt
 dict.headword|-|ceylon|all	2	2	81ec32e9c11149d6	1c8074b0280890cc	jayanta-ceylon/dppn,bhayasīva-ceylon/dppn
 dict.headword|-|kamma|all	714	714	5be2e426b725e94c	227b11de1fc2f866	kammanirodhasutta/dpd,kammadāyāda/dpd,kammaṭṭhānakathana/dpd
 dict.headword|-|ssa|all	4030	4030	b05a471ce48b43a1	fe731f439e5f8cb7	ssa-1/dpd,ssabbattha/dpd,ssa-2/dpd

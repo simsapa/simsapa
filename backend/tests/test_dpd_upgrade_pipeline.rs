@@ -7,6 +7,11 @@
 //! built here: a dictionaries database with an old DPD (v0.4.20260501) and a
 //! user dictionary, a minimal old `dpd.sqlite3`, and an appdata database with
 //! stored gloss selections. Skipped when the bootstrap sources are missing.
+//!
+//! The tests that run an upgrade are ignored by default because they take
+//! about a minute and a half together:
+//!
+//!     cargo test --test test_dpd_upgrade_pipeline -- --ignored
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -266,6 +271,7 @@ enum Term {
 }
 
 #[test]
+#[ignore = "slow: runs the upgrade on the real DPD sources; run with --ignored"]
 #[serial]
 fn an_upgrade_replaces_pages_data_and_index_and_converts_selections() {
     let Some((real_db, dpd_dir)) = sources() else { return };
@@ -341,6 +347,7 @@ fn an_upgrade_replaces_pages_data_and_index_and_converts_selections() {
 }
 
 #[test]
+#[ignore = "slow: runs the upgrade on the real DPD sources; run with --ignored"]
 #[serial]
 fn a_cancel_at_any_step_before_apply_changes_nothing() {
     let Some((real_db, dpd_dir)) = sources() else { return };
@@ -356,6 +363,7 @@ fn a_cancel_at_any_step_before_apply_changes_nothing() {
 }
 
 #[test]
+#[ignore = "slow: runs the upgrade on the real DPD sources; run with --ignored"]
 #[serial]
 fn failures_before_apply_change_nothing_and_name_the_input() {
     let Some((real_db, dpd_dir)) = sources() else { return };
@@ -410,6 +418,7 @@ fn dpd_dir_without(f: &Fixture, name: &str, skip: &[&str]) -> PathBuf {
 }
 
 #[test]
+#[ignore = "slow: runs the upgrade on the real DPD sources; run with --ignored"]
 #[serial]
 fn failures_while_preparing_change_nothing() {
     let Some((real_db, dpd_dir)) = sources() else { return };

@@ -226,6 +226,15 @@ installed DPD pages.
 `dpd_release_version` differ when a run was killed between steps 2 and 3 of
 the apply. Reported, never repaired. An empty `version` is not a mismatch.
 
+**Tests.** The end-to-end tests that run an upgrade from the real DPD sources
+take minutes and are ignored by default. Run them after a change to the
+pipeline or to `simsapa dpd upgrade`:
+
+``` sh
+cd backend && cargo test --test test_dpd_upgrade_pipeline -- --ignored
+cd backend_cli && cargo test --test dpd_upgrade -- --ignored
+```
+
 ## 7. Entry points
 
 ### 7.1 `bootstrap_cli rebuild-dpd`

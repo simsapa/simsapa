@@ -6,7 +6,16 @@
 //!
 //! Dictionary cases pin the whole result list, read as one page, and check
 //! that the first and last pages at the normal page length are its slices.
-//! Suttas cases pin the first and the last page.
+//! With the bold definitions and a filter, only the regular results are
+//! pinned whole: the bold-definition stream follows them unfiltered, so its
+//! whole list is pinned once, by the case without a filter, and the filtered
+//! cases pin its first and last pages. Suttas cases pin the first and the last
+//! page.
+//!
+//! Both tests are ignored: they search the dist databases for minutes. Run
+//! them after a change to the Contains Match or Headword Match search code:
+//!
+//!     cargo test --test test_search_results_pin -- --ignored --nocapture
 //!
 //! The pins describe one database, so each section of the golden file starts
 //! with a fingerprint of the rows its searches read (`dict.@db`, `suttas.@db`:
@@ -17,11 +26,11 @@
 //! that rewrite in `git diff` against the source data before committing it.
 //! To rewrite every pin regardless of the fingerprint:
 //!
-//!     SIMSAPA_PIN_WRITE=1 cargo test --test test_search_results_pin -- --nocapture
+//!     SIMSAPA_PIN_WRITE=1 cargo test --test test_search_results_pin -- --ignored --nocapture
 //!
 //! See docs/dict-words-fts5-implementation.md.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -139,7 +148,9 @@ fn mode_name(mode: &SearchMode) -> &'static str {
 }
 
 /// Pins of the Dictionary cases: the whole list, with the first and last
-/// pages checked against it.
+/// pages checked against it. A case with the bold definitions and a filter
+/// pins the regular results whole and the bold stream's first and last pages
+/// (see the module docs).
 fn dictionary_pins(out: &mut BTreeMap<String, String>) {
     let page_len = get_app_globals().page_len;
 
@@ -158,9 +169,17 @@ fn dictionary_pins(out: &mut BTreeMap<String, String>) {
     let words = ["kamma", "ssa", "sutthu", "ceylon"];
 
     for mode in [SearchMode::ContainsMatch, SearchMode::HeadwordMatch] {
+        // The uids of each case without the bold definitions, by
+        // (word, filters): the regular part of the same case with them.
+        let mut regular_uids: HashMap<(&str, String), Vec<String>> = HashMap::new();
         for bold in [false, true] {
             for word in words {
                 for f in &filter_sets {
+                    if bold && f.name() != none.name() {
+                        let regular = &regular_uids[&(word, f.name())];
+                        bold_case_pins(out, &mode, f, word, regular, page_len);
+                        continue;
+                    }
                     let name = format!("dict.{}{}|{}|{}|all",
                                        mode_name(&mode), if bold { "+bold" } else { "" }, f.name(), word);
                     let started = std::time::Instant::now();
@@ -186,9 +205,36 @@ fn dictionary_pins(out: &mut BTreeMap<String, String>) {
                     }
 
                     out.insert(name, pin_line(total, &all));
+                    if !bold {
+                        regular_uids.insert((word, f.name()), all.into_iter().map(|r| r.uid).collect());
+                    }
                 }
             }
         }
+    }
+}
+
+/// A case with the bold definitions and a filter: the regular results whole,
+/// with the first page of the bold stream after them (`|head`), and the last
+/// page at the normal page length (`|plast`). The regular part must equal the
+/// whole list of the same case without the bold definitions.
+fn bold_case_pins(out: &mut BTreeMap<String, String>, mode: &SearchMode, f: &Filters, word: &str,
+                  regular: &[String], page_len: usize) {
+    let name = format!("dict.{}+bold|{}|{}", mode_name(mode), f.name(), word);
+    let started = std::time::Instant::now();
+    let (head, total) = run_page(&SearchArea::Dictionary, mode, true, f, word,
+                                 Some(regular.len() + page_len), 0);
+    eprintln!("{}: {} results, head in {:?}", name, total, started.elapsed());
+    let head_regular: Vec<&str> = head.iter().take(regular.len()).map(|r| r.uid.as_str()).collect();
+    let expected: Vec<&str> = regular.iter().map(String::as_str).collect();
+    assert_eq!(head_regular, expected, "{}: the regular results are not those of the case without the bold definitions", name);
+    out.insert(format!("{}|head", name), pin_line(total, &head));
+
+    if total > 0 {
+        let last = (total as usize - 1) / page_len;
+        let (page, page_total) = run_page(&SearchArea::Dictionary, mode, true, f, word, Some(page_len), last);
+        assert_eq!(page_total, total, "{}: last page total", name);
+        out.insert(format!("{}|plast", name), pin_line(total, &page));
     }
 }
 
@@ -349,6 +395,7 @@ fn check_or_write(got: BTreeMap<String, String>, prefix: &str) {
 }
 
 #[test]
+#[ignore = "slow (minutes): run with --ignored after changing the Dictionary search code"]
 #[serial]
 fn test_dictionary_results_pinned() {
     h::app_data_setup();
@@ -359,6 +406,7 @@ fn test_dictionary_results_pinned() {
 }
 
 #[test]
+#[ignore = "slow: run with --ignored after changing the Suttas Contains search code"]
 #[serial]
 fn test_suttas_contains_results_pinned() {
     h::app_data_setup();
