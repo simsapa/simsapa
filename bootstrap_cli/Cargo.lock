@@ -4622,6 +4622,7 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "unicode-normalization",
  "urlencoding",
+ "zip 2.4.2",
 ]
 
 [[package]]

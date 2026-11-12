@@ -1,0 +1,16 @@
+{
+  "epub_file": "Fixture-Comm.epub",
+  "epub_sha256": "e0ed7520244e457b7dbbf2057e35dd0d612a299266052c1b7c1b914532a385c4",
+  "vaggas": [
+    {
+      "uid": "dhp1-20.att/en/anandajoti",
+      "file": "dhp1-20.html",
+      "vagga_number": 1,
+      "title": "1. The Chapter about the Pairs",
+      "title_pali": "Yamakavagga",
+      "verse_start": 1,
+      "verse_end": 20,
+      "story_count": 2
+    }
+  ]
+}

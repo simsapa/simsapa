@@ -1,0 +1,11 @@
+Dhamma Verses Commentary: extraction report
+epub: Fixture-Comm.epub (SHA-256 e0ed7520244e457b7dbbf2057e35dd0d612a299266052c1b7c1b914532a385c4)
+
+Defects in the source (reported, not repaired):
+- Verses covered by no story: Dhp 3-423
+- 002.html: the stories of vagga 1 cover Dhp 1-2, which is not its SuttaCentral range (1-20)
+
+Markup the extraction does not map (rendered as its text):
+(none)
+
+Summary: 1 vaggas, 2 stories, 2 sub-stories, 3 note references to 2 notes, 2 defects, 0 unmapped

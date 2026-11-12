@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+<manifest>
+<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+<item id="id001" href="001.html" media-type="application/xhtml+xml"/>
+<item id="id002" href="002.html" media-type="application/xhtml+xml"/>
+<item id="id003" href="003.html" media-type="application/xhtml+xml"/>
+<item id="id004" href="004.html" media-type="application/xhtml+xml"/>
+<item id="id005" href="005.html" media-type="application/xhtml+xml"/>
+<item id="idnotes" href="notes.html" media-type="application/xhtml+xml"/>
+</manifest>
+<spine toc="ncx">
+<itemref idref="id001"/>
+<itemref idref="id002"/>
+<itemref idref="id003"/>
+<itemref idref="id004"/>
+<itemref idref="id005"/>
+<itemref idref="idnotes"/>
+</spine>
+</package>

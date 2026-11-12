@@ -1046,6 +1046,24 @@ enum Commands {
         sc_data: Option<PathBuf>,
     },
 
+    /// Extract Ānandajoti's Dhamma Verses Commentary from its epub into one
+    /// HTML page per Dhammapada vagga, with manifest.json and
+    /// extract-report.txt, for the bootstrap to import. Run it again only
+    /// when the epub changes. Source defects are reported, never repaired,
+    /// and do not fail the command. See
+    /// docs/dhammapada-commentary-anandajoti.md.
+    DhammapadaCommentaryExtract {
+        /// The epub (default: library-imports/books/Dhamma-Verses-Comm.epub
+        /// in bootstrap-assets-resources)
+        #[arg(long, value_name = "EPUB_PATH")]
+        epub: Option<PathBuf>,
+
+        /// The output folder (default: dhammapada-commentary-anandajoti in
+        /// bootstrap-assets-resources)
+        #[arg(long, value_name = "OUTPUT_DIR")]
+        output: Option<PathBuf>,
+    },
+
     /// Compare the dhammatalks.org and SuttaCentral records with suttas-core
     /// and write a JSON report of the differences, for porting fixes back to
     /// suttas-core. Reads both databases read-only. The appdata database must
@@ -1119,7 +1137,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1285,6 +1303,10 @@ fn main() {
             check_segment_files(&source_folder, sc_data.as_deref())
         }
 
+        Commands::DhammapadaCommentaryExtract { epub, output } => {
+            dhammapada_commentary_extract(epub, output)
+        }
+
         Commands::SurveySuttasCore { appdata, suttas_core, output } => {
             let suttas_core = suttas_core.unwrap_or_else(survey_suttas_core::default_suttas_core_path);
             let output = output.unwrap_or_else(survey_suttas_core::default_output_path);
@@ -1309,6 +1331,25 @@ fn main() {
 
 /// `check-segment-files`: prints every problem and a summary line; an error
 /// (exit code 1) when there is any problem.
+fn dhammapada_commentary_extract(epub: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), String> {
+    use bootstrap::dhammapada_commentary_anandajoti::{extract, REPORT_FILE};
+    use bootstrap::source_paths as paths;
+    let assets = paths::bootstrap_assets_dir_from_crate();
+    let epub = epub.unwrap_or_else(|| assets.join(paths::dhammapada_commentary_epub_file()));
+    let output = output.unwrap_or_else(|| assets.join(paths::dhammapada_commentary_anandajoti_dir()));
+
+    let extraction = extract::run(&epub, &output).map_err(|e| format!("{:#}", e))?;
+    print!("{}", extraction.report_text);
+    println!(
+        "Wrote {} pages, {} stories, to {} (report: {})",
+        extraction.pages.len(),
+        extraction.story_count,
+        output.display(),
+        REPORT_FILE
+    );
+    Ok(())
+}
+
 fn check_segment_files(source_folder: &Path, sc_data: Option<&Path>) -> Result<(), String> {
     use bootstrap::segment_files as sf;
     let assets = bootstrap::source_paths::bootstrap_assets_dir_from_crate();

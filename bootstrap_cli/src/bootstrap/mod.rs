@@ -8,6 +8,7 @@ pub mod thanissaro_intro;
 pub mod footnote_sutta_links;
 pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
+pub mod dhammapada_commentary_anandajoti;
 pub mod nyanadipa;
 pub mod segment_files;
 pub mod buddha_ujja;

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+<navMap>
+<navPoint id="navpoint-1" playOrder="1"><navLabel><text>Prologue, Ganthārambhakathā</text></navLabel><content src="001.html"/></navPoint>
+<navPoint id="navpoint-2" playOrder="2"><navLabel><text>1. The Chapter about the Pairs, Yamakavagga</text></navLabel><content src="002.html"/>
+<navPoint id="navpoint-3" playOrder="3"><navLabel><text>1.1 The Story about the Elder Cakkhupāla</text></navLabel><content src="002.html#ncx1"/>
+<navPoint id="navpoint-4" playOrder="4"><navLabel><text>Cakkhupālattheravatthu</text></navLabel><content src="002.html#ncx2"/>
+<navPoint id="navpoint-5" playOrder="5"><navLabel><text>1a Story of the Past: The Wicked Physician</text></navLabel><content src="002.html#ncx3"/></navPoint>
+<navPoint id="navpoint-6" playOrder="6"><navLabel><text>1b The Physician Is Reborn</text></navLabel><content src="003.html"/></navPoint>
+</navPoint>
+</navPoint>
+<navPoint id="navpoint-7" playOrder="7"><navLabel><text>1.2 The Story about Maṭṭhakuṇḍalī</text></navLabel><content src="003.html#ncx4"/>
+<navPoint id="navpoint-8" playOrder="8"><navLabel><text>Maṭṭhakuṇḍalivatthu</text></navLabel><content src="003.html#ncx5"/></navPoint>
+</navPoint>
+</navPoint>
+<navPoint id="navpoint-9" playOrder="9"><navLabel><text>Conclusion, Nigamanakathā</text></navLabel><content src="005.html"/></navPoint>
+</navMap>
+</ncx>
