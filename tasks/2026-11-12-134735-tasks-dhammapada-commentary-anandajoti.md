@@ -196,13 +196,15 @@ Update the file after completing each sub-task, not just after completing an ent
     - **Note refs** use the app's `sup.footnote-reference > a` markup, so the footnote pop-up and bottom bar work on them; the pop-up strips back-links only by `a[href^="#fr-"]`, hence task 4.11.
     - **Page frame:** the stored file is the whole `content_html` (`div.suttacentral.html-text > article > header`), as the reader shows `content_html` unchanged.
     - **Survey results** (2.2) are in the module doc of `dhammapada_commentary_anandajoti/mod.rs`: no images, tables, inline styles or non-note links in the vagga files; `p8` story of the past, `p9`/`p12`/`p15` the commentator's notes (green), `p6`/`p10`/`p11` verse; gray `t10`/`t17`/`t21`/`t25` page markers; italic `t6`/`t18`/`t23`/`th43` the translator's additions; `t22` superscript; metadata ends at a star-rating line, not always `****`.
-  - **Extraction report on the real epub (for the commit message, §8):** 26 vaggas, 305 stories, 185 sub-stories, 408 note references to 408 notes, 0 unmapped markup, 11 defects. Every heading matches `toc.ncx`, and every vagga's story count matches the Conclusion.
+  - **Page markers:** the `pts-ref` span covers only the text from the first `{`/`[` to the last `}`/`]` (`split_page_marker()`). The source's grey span sometimes also covers a dialogue dash (`[28.167] –`, 4 cases), which is written after the span; the text is unchanged. `{M. ii. 97}` … `{M. ii. 105}` are real markers (PTS Majjhima vol. ii, in the quoted Aṅgulimāla Sutta), and `{3.` + `465}` is one marker split over two spans in the source.
+  - **Extraction report on the real epub (for the commit message, §8):** 26 vaggas, 305 stories, 185 sub-stories, 408 note references to 408 notes, 0 unmapped markup, 15 defects (11 + the 4 sub-story label lines added after the review). Every heading matches `toc.ncx`, and every vagga's story count matches the Conclusion.
     - Verses covered by no story: Dhp 23, 34, 228-230, 255, 400 (the neighbouring `Dhp` lines stop short, e.g. 2.1 `Dhp 21-22`, 17.8 `Dhp 231-234` after 17.7 `Dhp 227`).
     - Dhp 40 covered by 3.6 and 26.17: 26.17 (Sāriputta) reads `Dhp 40`, outside vagga 26's range 383-423 (probably 400).
     - Dhp 416 covered by 26.33 (Jaṭila) and 26.34 (Jotika); the Pāli commentary also gives both stories to this verse.
     - The stories of vagga 18 cover Dhp 235-254 (SC 235-255); of vagga 26, Dhp 40-423 (SC 383-423).
     - Vagga headings 8, 23, 25, 26 have no `<br/>` between the English and the Pāli name (split at the last ", ").
     - The Conclusion's count line for vagga 25 names "Chapter about Monastics"; the heading is "The Chapter about Bhikkhus".
+    - Sub-story labels that name another story (a check added after the review): "14a Birth Story about (the King) Mandhātā" in story 14.5, and "9a"–"9c" in story 26.29 (the Revata story). Their anchors keep the label (`story-26-29-9a`).
     - Largest page: `dhp1-20.html`, 329 KB.
 
 ### 3.0 — specs and dependencies
@@ -328,6 +330,9 @@ Update the file after completing each sub-task, not just after completing an ent
     - the class mapping;
     - the defect report, and the rule that defects are reported, never repaired;
     - the deliberate front-matter and Conclusion difference from the Pāli records.
+    - the `nikaya` of the pages is copied from the `.att/en/opentipitaka` row (`khuddaka`), while the `dhp*/en/anandajoti` verse records have `dhp`, so the search nikāya filter treats the two differently;
+    - verses covered by no story (23, 34, 228–230, 255, 400) have no `dhp-vN` anchor, which a later jump-to-verse feature must allow for;
+    - the page-marker rule (`split_page_marker()`): the `{M. ii. N}` markers, the dash kept outside the span, the marker split over two spans.
   - [ ] 6.2 Add a line for it under "Feature docs" in `CLAUDE.md` (the "Databases, search and storage" or "Files and imports" group), and an entry in `docs/README.md`.
   - [ ] 6.3 Update `docs/sutta-navigation-tree.md`: 54 verified files, and the Dhammapada Aṭṭhakathā as fragment rows.
   - [ ] 6.4 Document the commentary rule from 1.0 (any `.att`/`.tik` uid, whatever the source). No doc describes the search filter today (only `docs/sutta-navigation-tree.md` mentions it), so put the rule in the new feature doc and add a short paragraph to `docs/sutta-display-settings-and-multi-column-view.md`, where the translation tabs are described.

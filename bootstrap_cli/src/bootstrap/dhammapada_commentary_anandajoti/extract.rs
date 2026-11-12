@@ -708,6 +708,27 @@ pub fn check_book(book: &Book, toc: &[TocEntry], report: &mut Report) {
         }
     }
 
+    // A sub-story label ("1a", "33c") names its story's number.
+    for vagga in &book.vaggas {
+        for story in &vagga.stories {
+            for sub in story.substories() {
+                let Some(label) = super::page::substory_label(&sub.title) else { continue };
+                let digits: String = label.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = digits.parse::<u32>()
+                    && n != story.number
+                {
+                    report.defect(format!(
+                        "{}: sub-story \"{}\" in story {} is labelled for story {}",
+                        sub.heading.file,
+                        sub.title,
+                        story.label(),
+                        n
+                    ));
+                }
+            }
+        }
+    }
+
     // Story counts against the Conclusion.
     let counts = conclusion_counts(&book.after);
     if counts.vaggas.len() != book.vaggas.len() {

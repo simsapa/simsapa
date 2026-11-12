@@ -50,6 +50,33 @@ fn escape(text: &str) -> String {
     html_escape::encode_text(text).into_owned()
 }
 
+/// The text of a page-marker span as (before, marker, after). The marker runs
+/// from the first `{` or `[` to the last `}` or `]`; the source's grey span
+/// sometimes also covers the text around it (`[28.167] –`, a dialogue dash),
+/// which stays outside the `pts-ref` span. A marker split over two spans
+/// (`{3.` and `465}`) has a bracket on one side only, and that side runs to
+/// the end of the text. Whitespace at either end stays outside too.
+pub fn split_page_marker(text: &str) -> (&str, &str, &str) {
+    let trimmed = text.trim();
+    let start_offset = text.len() - text.trim_start().len();
+    let mut start = 0;
+    let mut end = trimmed.len();
+    if let Some(i) = trimmed.find(['{', '[']) {
+        start = i;
+    }
+    if let Some(i) = trimmed.rfind(['}', ']']) {
+        end = i + 1;
+    }
+    if start >= end {
+        // No bracket pair in order: keep the whole text as the marker.
+        start = 0;
+        end = trimmed.len();
+    }
+    let lead_end = start_offset + start;
+    let marker_end = start_offset + end;
+    (&text[..lead_end], &text[lead_end..marker_end], &text[marker_end..])
+}
+
 /// The label of a sub-story heading, for its anchor: "1a Story of …" →
 /// `1a`, "Part 5. Rejection …" → `part-5`.
 pub fn substory_label(title: &str) -> Option<String> {
@@ -138,17 +165,13 @@ impl Writer<'_, '_> {
             },
             "span" if is_page_marker(&el) => {
                 let text: String = el.text().collect();
-                let trimmed = text.trim();
-                if trimmed.is_empty() {
-                    out.push_str(&escape(&text));
-                    return;
-                }
-                let lead = &text[..text.len() - text.trim_start().len()];
-                let trail = &text[text.trim_end().len()..];
+                let (lead, marker, trail) = split_page_marker(&text);
                 out.push_str(&escape(lead));
-                out.push_str("<span class=\"pts-ref\">");
-                out.push_str(&escape(trimmed));
-                out.push_str("</span>");
+                if !marker.is_empty() {
+                    out.push_str("<span class=\"pts-ref\">");
+                    out.push_str(&escape(marker));
+                    out.push_str("</span>");
+                }
                 out.push_str(&escape(trail));
             }
             "span" => match class {
