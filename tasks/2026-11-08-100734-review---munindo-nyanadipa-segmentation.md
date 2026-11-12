@@ -105,6 +105,155 @@ outside it. No chapter is missing a verse by number.
 
 ## Nyanadipa, *The Silent Sages of Old*
 
+### Sutta check (FR 12)
+
+Each of the 36 `texts-sc-numbering/` files was compared with the Pāli `ms`
+text of its number, verse by verse (his first line of each verse beside the
+Pāli and Sujato's), and with the book's contents page, which gives every
+sutta's Sutta Nipāta verse range. 35 files are the sutta their name says:
+the heading names the Pāli sutta (`The Cave` ↔ *Guhaṭṭhakasutta*,
+`Quickly` ↔ *Tuvaṭakasutta*, `Ajita's Question` ↔ *Ajitamāṇavapucchā*, …),
+the verse count equals the book's range (`Sensual Pleasures [766–771]` = 6
+verses), and each of his verses translates the Pāli verse in the same
+position. `snp5.18.md` is not (first entry below). SC `snp5.1` (the
+introductory verses of the Pārāyanavagga) and SC `snp5.18` (the prose and
+verse epilogue, *Pārāyanatthutigāthā*) are not in the book.
+
+### The four suttas with a different verse count
+
+- **File / segments**: `snp1.12.json`, `snp1.12:16.*`–`17.*`.
+  - **Source**: 15 verses (book: `Sn 1:12, 207–221`).
+  - **Pāli**: 17 verse groups. Groups 16–17 are the *Uragavagga*'s uddāna
+    (*Tassuddānaṁ / Urago dhaniyo ceva, …*), the summary of the vagga's
+    sutta names; groups 1–15 are the sutta.
+  - **Done**: verses 1–15 on groups 1–15; the uddāna and the colophon
+    (`15.5`–`15.6`) are `""`.
+- **File / segments**: `snp3.6.json`, the prose segments of groups 1–7, 11,
+  17, 23, 29, 35, 41 and 52–54.
+  - **Source**: 38 verses (book: `Sn 3:6, 510–547`, 38 verses), no prose.
+  - **Pāli**: 54 groups: the 38 verses and 16 prose groups (the narrative
+    frame: the deity's questions, Sabhiya's visits to the six teachers, his
+    reflections, the going forth).
+  - **Done**: verse *n* on the *n*-th verse group (groups 8–51); every prose
+    segment and every speaker tag (`(iti sabhiyo)`, …) is `""` (FR 9).
+- **File / segments**: `snp4.16.json`, `snp4.16:22.*`–`23.*`.
+  - **Source**: 21 verses (book: `[955–975]`).
+  - **Pāli**: 23 groups; 22–23 are the *Aṭṭhakavagga*'s uddāna.
+  - **Done**: verses 1–21 on groups 1–21; the uddāna is `""`.
+- **File / segments**: `snp5.18.md` → `snp5.19.json` (all segments).
+  - **Source**: `Piṅgiya's Song of Praise`, 19 verses beginning *I shall sing
+    in praise of the way to the beyond*; book: `17. Piṅgiya’s Song of Praise
+    [1131-49]`.
+  - **Pāli**: SC `snp5.18` is *Pārāyanatthutigāthā* (a prose frame and seven
+    verses naming the sixteen brahmins). His text is SC `snp5.19`,
+    *Pārāyanānugītigāthā* (*Pārāyanamanugāyissaṁ …*), whose 19 verses match
+    his one for one. Groups 20–40 of `snp5.19` are the uddāna of the whole
+    Sutta Nipāta and its closing verses.
+  - **Done**: the segment file is `bilara/snp5.19.json` (`input`:
+    `texts-sc-numbering/snp5.18.md`); verses 1–19 on groups 1–19, groups
+    20–40 `""`. The record's uid becomes `snp5.19/en/nyanadipa` (it was
+    `snp5.18/en/nyanadipa`, beside the wrong Pāli text). Nothing in the code
+    or the navigation data names the old uid. The source file name is a
+    numbering error in `texts-sc-numbering/`, to be reported.
+
+### General findings
+
+- **One line per segment.** In 32 of the 36 suttas every verse has exactly as
+  many lines as the Pāli verse has `verse-line` segments, and his lines follow
+  the Pāli lines in order, so each line is placed on its Pāli line (FR 5). The
+  four others (`snp1.12`, `snp4.15`, `snp5.4`, `snp5.8`) are the entries
+  below; every other verse of theirs is placed the same way. No segment holds
+  more than one of his lines.
+- **Speaker tags and colophons.** The Pāli `speaker` segments
+  (`(iccāyasmā ajito)`, `(ajitāti bhagavā)`) and the `endsutta` /
+  `endsuttapart` colophons (*Kāmasuttaṁ paṭhamaṁ*) have no translation; they
+  are `""`.
+- **Italics.** He sets a questioner's verses in italics (Pārāyanavagga,
+  Sāriputta's questions in `snp4.16`, Sabhiya's in `snp3.6`). Each italic
+  line becomes `<i>…</i>` in its segment.
+- **Footnotes.** All 29 notes (`[^1]`–`[^29]`, the book's *Notes* 1–29, none
+  missing) are in `footnotes.json`, each on the word its marker follows. In
+  `snp4.13:14.4` the marker is inside a bracket, `[themselves[^14]]`; the
+  note follows the word `[themselves]`, and the renderer puts the marker
+  before the closing bracket, as in the source. The literal `<` of note 16
+  (`kappaṃ < kappyaṃ`) is escaped as `&lt;`.
+
+### Placement entries
+
+- **File / segments**: `snp4.15.json`, `snp4.15:6.1`.
+  - **Source**: an unnumbered italic line between verses 5 and 6, “*At this
+    point the training rules are recited:*”; his verse 6 has four lines.
+  - **Pāli**: verse 6 has five lines; the first, *Tattha sikkhānugīyanti*,
+    is that sentence.
+  - **Done**: the italic line in `6.1`, his four lines of verse 6 in
+    `6.2`–`6.5`.
+- **File / segments**: `snp5.19.json`, `snp5.19:1.1`–`1.2`.
+  - **Source**: his first line ends with the speaker attribution in
+    brackets: “I shall sing in praise of the way to the beyond, [this the
+    Venerable Piṅgiya said.]”
+  - **Pāli**: the attribution is a separate speaker segment,
+    `1.2` *(iccāyasmā piṅgiyo)*.
+  - **Done**: the whole line in `1.1`, as he wrote it; `1.2` is `""`.
+- **File / segments**: `snp5.4.json`, `snp5.4:2.1`–`2.6`, `3.1`–`3.7`.
+  - **Source**: verses 2 and 3 open with the same two lines, “All these human
+    sages, warriors and brāhmaṇas / who make sacrifices to the gods in
+    manyfold ways here in the world”; verse 3 has four lines in all.
+  - **Pāli**: three lines, *Ye kecime isayo manujā / Khattiyā brāhmaṇā
+    devatānaṁ / Yaññamakappayiṁsu puthūdha loke*; verse 3 ends with
+    *Pucchāmi taṁ bhagavā brūhi me taṁ* (“I ask you, Blessed One; please tell
+    me this”).
+  - **Done**: his first line (sages, men, warriors, brāhmaṇas) in `2.1` /
+    `3.1`, his second (sacrifices to the gods in the world) in `2.4` /
+    `3.4`; `2.3` and `3.3` are `""`. Verse 3's last two lines in `3.5`–`3.6`;
+    `3.7`, which he does not translate, is `""`.
+- **File / segments**: `snp5.8.json`, `snp5.8:3.1`–`3.8`.
+  - **Source**: six lines, ending “have crossed birth and old age, Venerable
+    Sir.”
+  - **Pāli**: seven verse lines; the last, *Pucchāmi taṁ bhagavā brūhi me
+    taṁ*, has no counterpart in his verse.
+  - **Done**: his lines in `3.1`, `3.3`–`3.7`; `3.8` is `""`.
+- **File / segments**: `snp5.8.json`, `snp5.8:7.1`–`7.7`.
+  - **Source**: five lines: “In that I do delight, in the word of the great
+    sage. / Those who have abandoned the seen, the heard, / thought, as well
+    as virtue and practice, / and who have fully known craving and are taint
+    free, / I too say, “They have crossed the flood.””
+  - **Pāli**: seven lines; `7.2` *Sukittitaṁ gotamanūpadhīkaṁ* (well
+    proclaimed, Gotama, free of attachment) and `7.5` *Anekarūpampi pahāya
+    sabbaṁ* (having abandoned the manifold too) have no counterpart.
+  - **Done**: his lines in `7.1`, `7.3`, `7.4`, `7.6`, `7.7`; `7.2` and `7.5`
+    are `""`.
+
+### Corrections
+
+- **File / segments**: `snp1.12.json`, `snp1.12:14.2`.
+  - **Source**: verse 14's second line is broken in two, “the householder who
+    feeds a family and the possessionless one of good / practice.”, the
+    Markdown following the book's page layout, which wraps this over-long
+    line.
+  - **Pāli**: one line, *Gihī dāraposī amamo ca subbato*.
+  - **Done**: one line in `14.2`, “… the possessionless one of good
+    practice.”, so the reader does not show “practice.” as a verse line of
+    its own.
+- **File / segments**: `snp4.7.json`, `snp4.7:6.2`–`6.3`.
+  - **Source**: `[in defence] when blamed by others.` has no Markdown line
+    break before `And that is his big blunder:`, so the Markdown joins the
+    two lines; the book prints them as two lines.
+  - **Pāli**: two lines, `6.2` and `6.3`.
+  - **Done**: one line in each, as in the book.
+
+### Source defects (kept as written, to report)
+
+- `texts-sc-numbering/snp5.18.md` holds SC `snp5.19` (entry above).
+- `texts-sc-numbering/snp5.7.md`: the heading is `Upasīva'S Question`, with a
+  capital `S`; the book has `UPASĪVA’S QUESTION` and, on the contents page,
+  `Upasīva’s Question`. The title segment `snp5.7:0.2` keeps the heading as
+  written (FR 12).
+- `snp5.18.md` verse 2 (and the book): “The men who has abandoned the stain of
+  delusion” (*Pahīnamalamohassa*, singular), presumably for “The man who has
+  abandoned”. Kept.
+- `texts-sc-numbering/snp4.7.md` line 29: a missing hard line break (entry
+  above).
+
 ## Upstream defects (suttas-core)
 
 - **File / segments**: suttas-core `segmentations/than/dhp235-255.json`,

@@ -27,7 +27,7 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `dhammapada-munindo/bilara/dhp*.json` - **New.** 26 segment files.
 - `nyanadipa-translations/texts-sc-numbering/snp*.md` - Nyanadipa source text (read-only input).
 - `nyanadipa-translations/docs/The_Silent_Sages_of_Old22.pdftotext.txt` - The book: contents page (Sn verse ranges per sutta) and the *Notes* section, for checking.
-- `nyanadipa-translations/bilara/snp*.json`, `bilara/footnotes.json` - **New.** 36 segment files and the footnote file.
+- `nyanadipa-translations/bilara/snp*.json`, `bilara/footnotes.json` - **New.** 36 segment files and the footnote file (29 notes). `texts-sc-numbering/snp5.18.md` is SC `snp5.19`, so its file is `bilara/snp5.19.json`.
 - `sc-data/sc_bilara_data/root/pli/ms/sutta/kn/{dhp,snp}/…` - Pāli root and `html/` template files the segments align to.
 - `sc-data/sc_bilara_data/translation/en/sujato/…`, `suttas-core/data/segmentations/than/…` - Reference translations for deciding line placement.
 - `suttas-core/src/lib/hash.ts` - The `hash` / `textHash` definitions to match.
@@ -303,15 +303,15 @@ Additions:
   `editor: false`. The book's *Notes* section (pdftotext, p. 175) is the
   cross-check that none is missing.
 
-- [ ] 5.0 Write and verify the 36 Nyanadipa segment files and `footnotes.json` (`nyanadipa-translations/bilara/`), with the review report entries; the check command reports no problems (PRD FR 4–6, 8–13)
-  - [ ] 5.1 Add a Nyanadipa section to the review report.
-  - [ ] 5.2 For each of the 36 files, confirm title, verse count and content match the Pāli sutta of its SC number, using the contents page as the second check (PRD FR 12). Examine the four flagged suttas first and record the explanation for each.
-  - [ ] 5.3 Generate skeletons as in 4.3 (title in `0.2`).
-  - [ ] 5.4 Place the lines sutta by sutta (Pāli, Sujato and, for the Aṭṭhakavagga and Pārāyanavagga, Ṭhānissaro's segments as references), running the check after each sutta.
-  - [ ] 5.5 Build `footnotes.json`, removing each marker from the segment text and recording its segment and word index. Compare the notes with the book's *Notes* section.
-  - [ ] 5.6 Record every case in the report.
-  - [ ] 5.7 Spot-check five suttas in full, including `snp3.6` and `snp5.18`, and every footnote position in them.
-  - [ ] 5.8 `check-segment-files nyanadipa-translations` reports zero problems for all 36 files and the footnote file.
+- [x] 5.0 Write and verify the 36 Nyanadipa segment files and `footnotes.json` (`nyanadipa-translations/bilara/`), with the review report entries; the check command reports no problems (PRD FR 4–6, 8–13)
+  - [x] 5.1 Add a Nyanadipa section to the review report.
+  - [x] 5.2 For each of the 36 files, confirm title, verse count and content match the Pāli sutta of its SC number, using the contents page as the second check (PRD FR 12). Examine the four flagged suttas first and record the explanation for each.
+  - [x] 5.3 Generate skeletons as in 4.3 (title in `0.2`).
+  - [x] 5.4 Place the lines sutta by sutta (Pāli, Sujato and, for the Aṭṭhakavagga and Pārāyanavagga, Ṭhānissaro's segments as references), running the check after each sutta.
+  - [x] 5.5 Build `footnotes.json`, removing each marker from the segment text and recording its segment and word index. Compare the notes with the book's *Notes* section.
+  - [x] 5.6 Record every case in the report.
+  - [x] 5.7 Spot-check five suttas in full, including `snp3.6` and `snp5.18`, and every footnote position in them.
+  - [x] 5.8 `check-segment-files nyanadipa-translations` reports zero problems for all 36 files and the footnote file.
 
 ### 6.0 specs
 
@@ -338,6 +338,9 @@ Depends on: 1.0 (ranges), 2.0 (`dhp_chapter_number`, `range_title_key`), 3.0 (re
   7. `uid`, `title` (record title = source title, unchanged: `The Buddha`,
      `The Cave`), `sutta_ref`, `nikaya`, `source_uid`, range fields as today.
 - Uids unchanged: `dhp179-196/en/munindo`, `snp4.2/en/nyanadipa`.
+  One exception: the song of Piṅgiya is SC `snp5.19` (review report), so
+  its record becomes `snp5.19/en/nyanadipa`, no longer `snp5.18/en/nyanadipa`.
+  Derive the uid from the file's `sutta_id`, never from the `input` file name.
 - Link resolution for notes: build a `SuttaRefResolver`
   (`footnote_sutta_links.rs`) from the Pāli `ms` uids in the DB, with an empty
   Ṭhānissaro mapping slice, and pass
