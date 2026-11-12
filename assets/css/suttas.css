@@ -390,6 +390,35 @@ div.btn a, span.btn a {
 .suttacentral blockquote.gatha .verse-line {
   display: block;
 }
+.suttacentral span.ssp-line {
+  display: block;
+  padding-left: 2em;
+  text-indent: -2em;
+}
+.suttacentral span.ssp-line.ssp-indent-1 {
+  padding-left: 4em;
+}
+.suttacentral span.ssp-line.ssp-indent-2 {
+  padding-left: 6em;
+}
+.suttacentral span.ssp-line.ssp-indent-3 {
+  padding-left: 8em;
+}
+.suttacentral span.ssp-line.ssp-indent-4 {
+  padding-left: 10em;
+}
+.suttacentral span.ssp-line.ssp-indent-5 {
+  padding-left: 12em;
+}
+.suttacentral span.ssp-line.ssp-indent-6 {
+  padding-left: 14em;
+}
+.suttacentral span.ssp-line.ssp-indent-7 {
+  padding-left: 16em;
+}
+.suttacentral span.ssp-line.ssp-indent-8 {
+  padding-left: 18em;
+}
 .suttacentral .endsutta {
   font-style: italic;
 }

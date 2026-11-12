@@ -1676,9 +1676,25 @@ translation can be zipped by key.
   must read it with a parser that keeps key order (`jq` without `-S` or
   `keys`, Python's `json`, JavaScript's `JSON.parse`) and must not pass it
   through a sorted or unordered map.
+- **Line breaks and indents inside a segment.** A segment is one Pāli line
+  or clause, and a translator often needs more or fewer lines, so a
+  translation's segment text can carry its own verse lines:
+  - `\n` separates two lines. A `\n` at the end of a segment, with any
+    whitespace after it, only ends the last line.
+  - A line may start with tab characters (`\t`); their number is the line's
+    indent level, 0 being flush. A tab anywhere else is ordinary whitespace.
+
+  `dhp179-196/en/thanissaro`, segment `dhp187:3`, is
+  `"He is\none who delights\nin the ending of craving,\n"`: three lines.
+  The reader shows these lines in verse segments (where the HTML template has
+  `class='verse-line'`); in a prose segment a `\n` is shown as a space. For
+  plain text, treat both characters as whitespace. The SuttaCentral texts
+  (e.g. the Pāli and `/en/sujato`) have none.
 - **Which texts have it.** Only segmented texts: the SuttaCentral Pāli
-  (`/pli/ms`), the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`), and
-  the CST Pāli with its OpenTipitaka English (`/pli/cst`, `/en/opentipitaka`).
+  (`/pli/ms`), the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`),
+  the segmented Bodhi, PTS, Ṭhānissaro, Munindo (Dhammapada) and Nyanadipa
+  (Sutta Nipāta) translations (§13.5), and the CST Pāli with its OpenTipitaka
+  English (`/pli/cst`, `/en/opentipitaka`).
   Most other translations are stored as HTML; for those use `/sutta_html` (§13).
   The segment ids of a CST text are not SuttaCentral's: `mn1:1.1` in
   `mn1/pli/cst` is not the passage `mn1:1.1` in `mn1/pli/ms`, so never match
@@ -1781,7 +1797,7 @@ only the segments that have an entry, so look it up by the segment ids of
   (Bhante Sujato's, Bhante Brahmali's), so a Pāli text has `comments: null`.
   A segment's value is one of two forms, returned exactly as stored. A
   SuttaCentral comment is a plain HTML string. A note imported with the
-  segmented Bodhi, PTS and Ṭhānissaro translations is one or more elements in
+  segmented Bodhi, PTS, Ṭhānissaro and Nyanadipa translations is one or more elements in
   number order, `<span class='ssp-fn' data-n='2' data-w='6'>note HTML</span>`:
   `data-n` is the note number, `data-w` the zero-based index of the word the
   note follows (counted on the segment text split on whitespace, punctuation-only
@@ -1799,6 +1815,13 @@ only the segments that have an entry, so look it up by the segment ids of
 - **Glosses**: the `sutta_glosses` table is in the schema and the reader
   displays it, but no gloss records are in the shipped database today, so
   `glosses` is `null`.
+- **Munindo and Nyanadipa are segmented.** Ajahn Munindo's Dhammapada
+  (`dhp179-196/en/munindo`, one record per chapter) and Bhante Nyanadipa's
+  Sutta Nipāta verses (`snp4.2/en/nyanadipa`) have `content_json` with the
+  segment ids of the Pāli. Their segments keep the translator's verse lines as
+  `\n` (§13.4). Nyanadipa's song of Piṅgiya is `snp5.19/en/nyanadipa`.
+- **Line breaks.** The text of every record may contain `\n` and leading `\t`,
+  with the meaning given in §13.4.
 - **Order.** Every segment object is the stored column **verbatim**, embedded
   unparsed (as a `serde_json` `RawValue`), so the segment order is the file's,
   as with `/sutta.json`. The rules of §13.4 for reading it apply to each one.

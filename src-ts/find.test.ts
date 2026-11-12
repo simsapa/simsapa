@@ -280,3 +280,44 @@ describe('Find functionality', () => {
         });
     });
 });
+
+describe('Find across the lines of a verse segment', () => {
+    // render_verse_lines() (backend/src/helpers.rs) puts each line of a verse
+    // segment in its own block span, with the segment's `\n` kept between
+    // the spans, so the page text still has a space between two lines.
+    let findManager: FindManager;
+
+    beforeEach(() => {
+        createMockDOM();
+        document.getElementById('ssp_content')!.innerHTML =
+            "<span class='verse-line'><span class='segment' id='dhp187:3'><span class='root'><span class='text'>" +
+            "<span class='ssp-line ssp-indent-0'>He is</span>\n" +
+            "<span class='ssp-line ssp-indent-1'>one who delights</span>\n" +
+            "<span class='ssp-line ssp-indent-1'>in the ending of craving,</span>\n" +
+            "</span></span></span></span>" +
+            "<span class='verse-line'><span class='segment' id='dhp187:4'><span class='root'><span class='text'>" +
+            "<span class='ssp-line ssp-indent-1'>a disciple of the Rightly</span>\n" +
+            "<span class='ssp-line ssp-indent-1'>Self-Awakened One.</span>" +
+            "</span></span></span></span>";
+        findManager = new FindManager();
+        return new Promise(resolve => setTimeout(resolve, 10));
+    });
+
+    test('matches a phrase that crosses two lines of one segment', () => {
+        findManager.search('is one who');
+        const highlights = document.querySelectorAll('.ssp-find-highlight');
+        expect(highlights.length).toBeGreaterThan(0);
+        const matched = Array.from(highlights).map(h => h.textContent).join('');
+        expect(matched.replace(/\s+/g, ' ')).toBe('is one who');
+    });
+
+    test('matches a phrase across a punctuated line end', () => {
+        findManager.search('craving a disciple');
+        expect(document.querySelectorAll('.ssp-find-highlight').length).toBeGreaterThan(0);
+    });
+
+    test('does not join the last word of a line with the next', () => {
+        findManager.search('isone');
+        expect(document.querySelectorAll('.ssp-find-highlight').length).toBe(0);
+    });
+});

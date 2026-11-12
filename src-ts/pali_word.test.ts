@@ -126,3 +126,29 @@ describe("expand_selection_to_word", () => {
     expect(selection.toString()).toBe(before);
   });
 });
+
+describe("a word at the start of a verse line", () => {
+  // A verse segment with line breaks is rendered as one block span per line
+  // (render_verse_lines() in backend/src/helpers.rs), so a line's first word
+  // starts its own text node.
+  beforeEach(() => {
+    document.body.innerHTML =
+      "<span class='verse-line'><span class='text'>" +
+      "<span class='ssp-line ssp-indent-0'>Sabbapāpassa</span>\n" +
+      "<span class='ssp-line ssp-indent-1'>akaraṇaṁ kusalassa”ti</span>\n" +
+      "</span></span>";
+  });
+
+  test("is found at offset 0 of its line", () => {
+    const line = document.querySelectorAll(".ssp-line")[1].firstChild as Text;
+    expect(word_at_offset(line.nodeValue!, 0)).toEqual({ word: "akaraṇaṁ", start: 0, end: 8 });
+  });
+
+  test("a selection of part of it widens to the whole word", () => {
+    const line = document.querySelectorAll(".ssp-line")[1].firstChild as Text;
+    const selection = document.getSelection()!;
+    selection.setBaseAndExtent(line, 0, line, 3);
+    expand_selection_to_word();
+    expect(selection.toString()).toBe("akaraṇaṁ");
+  });
+});

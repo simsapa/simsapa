@@ -34,13 +34,15 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `suttas-core/docs/data-layers.md` - The segmentation-file and footnote rules the new files follow.
 
 - `backend/src/helpers.rs` - `bilara_text_to_segments()` (~2699), `bilara_multi_column_html()` (~2948): where `render_verse_lines()` is applied (7.0).
-- `backend/src/app_data.rs` - `default_english_for_pali()` (FR 15a: SuttaCentral's segmented English first) and `sutta_to_segments_json()` (7.1).
+- `backend/src/app_data.rs` - `default_english_for_pali()` (FR 15a: SuttaCentral's segmented English first) and `sutta_to_segments_json()`, which now always passes the template (verse detection) with `use_template` as the wrap flag.
 - `backend/tests/test_default_english.rs` - Default-English tests, including Munindo / Nyanadipa beside Sujato.
 - `backend/src/footnotes.rs` - `insert_markers()` / `word_spans()`: markers go in before lines are split.
 - `assets/sass/_suttacentral.sass` - `.verse-line` rules; new `.ssp-line` / `.ssp-indent-N`.
-- `src-ts/find.ts`, `src-ts/pali_word.ts` - find bar and tap-to-lookup across the new line spans (7.7).
+- `src-ts/find.test.ts`, `src-ts/pali_word.test.ts` - Find across verse lines, tap-to-lookup at a line start (7.7).
+- `assets/css/suttas.css` - Rebuilt by `make sass`.
+- `bootstrap_cli/src/bootstrap/suttacentral.rs` - Test that `content_plain` of a segment with `\n` / `\t` has no tab and no joined words (7.6).
 - `bootstrap_cli/src/survey_suttas_core.rs` - Calls `build_record()`; output changes with 2.0.
-- `docs/simsapa-cli-and-localhost-api.md` - Bundled API doc: `\n` / `\t` in segment text (7.8).
+- `docs/simsapa-cli-and-localhost-api.md` - Bundled API doc: `\n` / `\t` in segment text, Munindo / Nyanadipa segmented, Nyanadipa notes in `ssp-fn` form (7.8).
 - `docs/sutta-display-settings-and-multi-column-view.md` - Pointer to the line contract (FR 33a).
 
 suttas-core (separate repository, 8.0):
@@ -403,16 +405,16 @@ Depends on: nothing in 1.0–6.0 (can be done in parallel). PRD FR 34–40, 33a�
   (Dhp 186–187, Thag 10.5) and the screenshots in the PRD's §6a. `make sass`.
 - No change to stored data, `content_plain`, or the API output.
 
-- [ ] 7.0 Render line breaks and indentation in verse segments (Rust renderer + CSS), in the Solo, Lines and Columns layouts (PRD FR 34–40, 33a–33c)
-  - [ ] 7.1 Read `bilara_text_to_segments()`, `bilara_multi_column_html()` and `AppData::sutta_to_segments_json()` and list where a segment's final HTML is produced on each path; pick the single point per path where `render_verse_lines()` is applied.
-  - [ ] 7.2 Implement `render_verse_lines()` as specified.
-  - [ ] 7.3 Apply it on both paths at the points from 7.1.
-  - [ ] 7.4 Add the CSS and rebuild the stylesheets (`make sass`).
-  - [ ] 7.5 Unit tests (PRD FR 33c): Ṭhānissaro's `dhp187:3` text gives three spans; a test string with tabs gives the right `ssp-indent-N`; a trailing `\n` adds nothing; Sujato-style and Pāli segments are byte-identical to today; a footnote marker inserted at a word in line 2 stays in line 2's span; a prose segment (`<p>{}` template) is unchanged; Solo and multi-column output contain the same line spans.
-  - [ ] 7.6 Test that `content_plain` produced by `bilara_html_and_plain_text()` for a segment with `\n` and `\t` holds no tab and no newline-joined words.
-  - [ ] 7.7 Check that the find bar (`src-ts/find.ts`) still matches a phrase that crosses two lines of one segment, and that tap-to-lookup (`src-ts/pali_word.ts`) still selects a word at a line start; add a jest test where the existing suites make that practical, otherwise list it for the manual check in 9.6.
-  - [ ] 7.8 Update `docs/simsapa-cli-and-localhost-api.md` §13.4 / §13.5 (`\n` = line break, leading `\t` = indent level; self-contained wording), and run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
-  - [ ] 7.9 `make build -B` and `cd backend && cargo test` pass.
+- [x] 7.0 Render line breaks and indentation in verse segments (Rust renderer + CSS), in the Solo, Lines and Columns layouts (PRD FR 34–40, 33a–33c)
+  - [x] 7.1 Read `bilara_text_to_segments()`, `bilara_multi_column_html()` and `AppData::sutta_to_segments_json()` and list where a segment's final HTML is produced on each path; pick the single point per path where `render_verse_lines()` is applied. Both paths go through `bilara_text_to_segments()` (Solo wraps in the template, the multi-column path does not), so the one point is there, after `insert_markers()` and before the variant / gloss marks. It now always receives the record's template (to tell verse segments) and a new `wrap_in_template` flag.
+  - [x] 7.2 Implement `render_verse_lines()` as specified.
+  - [x] 7.3 Apply it on both paths at the points from 7.1.
+  - [x] 7.4 Add the CSS and rebuild the stylesheets (`make sass`).
+  - [x] 7.5 Unit tests (PRD FR 33c): Ṭhānissaro's `dhp187:3` text gives three spans; a test string with tabs gives the right `ssp-indent-N`; a trailing `\n` adds nothing; Sujato-style and Pāli segments are byte-identical to today; a footnote marker inserted at a word in line 2 stays in line 2's span; a prose segment (`<p>{}` template) is unchanged; Solo and multi-column output contain the same line spans.
+  - [x] 7.6 Test that `content_plain` produced by `bilara_html_and_plain_text()` for a segment with `\n` and `\t` holds no tab and no newline-joined words.
+  - [x] 7.7 Check that the find bar (`src-ts/find.ts`) still matches a phrase that crosses two lines of one segment, and that tap-to-lookup (`src-ts/pali_word.ts`) still selects a word at a line start; add a jest test where the existing suites make that practical, otherwise list it for the manual check in 9.6. Found and fixed: the spans must keep the `\n` between them, or the page text reads `He isone who`. Jest tests in `find.test.ts` and `pali_word.test.ts`; the on-device tap check stays in 9.6.
+  - [x] 7.8 Update `docs/simsapa-cli-and-localhost-api.md` §13.4 / §13.5 (`\n` = line break, leading `\t` = indent level; self-contained wording), and run `cd backend_cli && cargo test test_bundled_doc_has_no_repo_references`.
+  - [x] 7.9 `make build -B` and `cd backend && cargo test` pass.
 
 ### 8.0 specs
 

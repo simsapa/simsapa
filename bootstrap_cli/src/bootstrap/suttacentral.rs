@@ -1783,4 +1783,17 @@ mod tests {
             assert_eq!(sutta.content_json.unwrap(), consistent_niggahita(Some(text)));
         }
     }
+
+    #[test]
+    fn test_plain_text_of_verse_lines_has_no_tab_and_no_joined_words() {
+        let content = r#"{"dhp187:3":"He is\n\tone who delights\n\t\tin the ending of craving,\n","dhp187:4":"a disciple of the Rightly\nSelf-Awakened One."}"#;
+        let tmpl = r#"{"dhp187:3":"<blockquote class='gatha'><p><span class='verse-line'>{}</span>","dhp187:4":"<span class='verse-line'>{}</span></p></blockquote>"}"#;
+        let (html, plain) = bilara_html_and_plain_text(content, tmpl).unwrap();
+        assert!(html.contains("ssp-indent-2"), "{html}");
+        assert!(!plain.contains('\t'), "{plain:?}");
+        // content_plain drops punctuation: "Self-Awakened" is "selfawakened".
+        for words in ["he is one who delights in the ending of craving a disciple", "rightly selfawakened one"] {
+            assert!(plain.to_lowercase().contains(words), "{plain:?}");
+        }
+    }
 }

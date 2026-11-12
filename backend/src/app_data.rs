@@ -404,11 +404,10 @@ impl AppData {
             .context("Database query failed for SuttaGloss")?;
         let gloss_json_str: Option<String> = gloss_record.and_then(|g| g.content_json);
 
-        let tmpl_str = if use_template {
-            sutta.content_json_tmpl.as_deref()
-        } else {
-            None
-        };
+        // The template is passed either way: it tells which segments are
+        // verse, whose line breaks are rendered. `use_template` decides only
+        // whether the segments are wrapped in it.
+        let tmpl_str = sutta.content_json_tmpl.as_deref();
 
         let content_str = sutta.content_json.as_deref()
             .ok_or_else(|| anyhow!("Sutta {} is missing content_json", sutta.uid))?;
@@ -423,6 +422,7 @@ impl AppData {
         bilara_text_to_segments(
             content_str,
             tmpl_str,
+            use_template,
             variant_json_str.as_deref(),
             comment_json_str.as_deref(),
             gloss_json_str.as_deref(),

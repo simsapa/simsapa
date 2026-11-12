@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashSet, HashMap};
 use std::env;
 use std::path::PathBuf;
@@ -2691,6 +2692,50 @@ fn generate_reference_anchor(segment_key: &str) -> String {
     }
 }
 
+/// Renders a verse segment's line breaks and indent levels. `template_entry`
+/// decides whether the segment is verse (`class='verse-line'`).
+///
+/// The segment text contract: `\n` separates lines, and a `\n` at the end with
+/// any whitespace after it ends the last line and renders nothing; a line may
+/// start with tabs, whose number is its indent level. Each line becomes
+/// `<span class='ssp-line ssp-indent-N'>…</span>` (`display: block`), the
+/// spans separated by the `\n`, and the whitespace after the last line is kept
+/// after the last span, since it joins the segment to the next.
+///
+/// Returns the input unchanged when the segment is not verse, or has no `\n`
+/// inside it and no leading tab. Footnote markers must be inserted before this
+/// is called, so a marker stays inside the line of its word. See
+/// docs/munindo-nyanadipa-segmentation.md.
+pub fn render_verse_lines<'a>(segment_html: &'a str, template_entry: &str) -> Cow<'a, str> {
+    if !(template_entry.contains("class='verse-line'") || template_entry.contains("class=\"verse-line\"")) {
+        return Cow::Borrowed(segment_html);
+    }
+    let body = segment_html.trim_end();
+    if !body.contains('\n') && !body.starts_with('\t') {
+        return Cow::Borrowed(segment_html);
+    }
+    let trailing = &segment_html[body.len()..];
+
+    let mut out = String::with_capacity(segment_html.len() + 48 * (body.matches('\n').count() + 1));
+    for (n, line) in body.split('\n').enumerate() {
+        // The `\n` stays between the spans: it renders nothing between two
+        // blocks, and keeps the last word of a line apart from the first word
+        // of the next in the page text (the find bar, copied text).
+        if n > 0 {
+            out.push('\n');
+        }
+        let text = line.trim_start_matches('\t');
+        let level = line.len() - text.len();
+        out.push_str("<span class='ssp-line ssp-indent-");
+        out.push_str(&level.to_string());
+        out.push_str("'>");
+        out.push_str(text);
+        out.push_str("</span>");
+    }
+    out.push_str(trailing);
+    Cow::Owned(out)
+}
+
 /// The processed segments of a Bilara text, and the footnotes whose
 /// references were placed in them, in reading order.
 #[derive(Debug, Clone, Default)]
@@ -2706,10 +2751,16 @@ pub struct BilaraSegments {
 /// the note is returned in `footnotes` for the caller to list after the text.
 /// A plain SuttaCentral comment is numbered 1, 2, 3… in segment order and
 /// placed at the end of its segment.
+///
+/// The template decides which segments are verse, whose line breaks and indent
+/// levels are rendered (`render_verse_lines()`). With `wrap_in_template` each
+/// segment is also wrapped in its template markup; the multi-column view
+/// passes `false` and applies the opened text's template to the row.
 #[allow(clippy::too_many_arguments)]
 pub fn bilara_text_to_segments(
     content_json_str: &str,
     tmpl_json_str: Option<&str>,
+    wrap_in_template: bool,
     variant_json_str: Option<&str>,
     comment_json_str: Option<&str>,
     gloss_json_str: Option<&str>,
@@ -2774,6 +2825,14 @@ pub fn bilara_text_to_segments(
                     footnotes.extend(notes);
                 }
 
+            // Line breaks and indents of a verse segment, after the footnote
+            // references are in (a reference stays in its word's line) and
+            // before the variant and gloss marks are appended.
+            if let Some(template_entry) = tmpl_json.as_ref().and_then(|tmpl| tmpl.get(&i))
+                && let Cow::Owned(lines) = render_verse_lines(&original_content, template_entry) {
+                    original_content = lines;
+                }
+
             // Append Variant HTML
             if let Some(ref variants) = variant_json
                 && let Some(txt) = variants.get(&i).map(|s| s.trim()).filter(|s| !s.is_empty()) {
@@ -2822,7 +2881,7 @@ pub fn bilara_text_to_segments(
             };
 
             // Apply template if available
-            let final_segment = if let Some(ref tmpl) = tmpl_json {
+            let final_segment = if let Some(tmpl) = tmpl_json.as_ref().filter(|_| wrap_in_template) {
                 if let Some(template_str) = tmpl.get(&i) {
                     // Wrap the combined content in SuttaCentral format with reference anchor
                     let wrapped_content = format!(
@@ -3109,6 +3168,7 @@ pub fn bilara_text_to_html(
     let rendered = bilara_text_to_segments(
         content_json_str,
         Some(tmpl_json_str),
+        true,
         variant_json_str,
         comment_json_str,
         gloss_json_str,
@@ -8309,5 +8369,109 @@ mod tests {
         // keeps its number and follows word 1.
         assert!(article.contains("So I have heard.<span class='footnote-reference'><a href='#fn-1' id='fr-1'>1</a></span> "));
         assert!(article.contains("At one<span class='footnote-reference'><a href='#fn-4' id='fr-4'>4</a></span> time."));
+    }
+
+    const VERSE_TMPL: &str = "<span class='verse-line'>{}</span>";
+
+    #[test]
+    fn test_render_verse_lines_thanissaro_dhp187_3() {
+        let out = render_verse_lines("He is\none who delights\nin the ending of craving,\n", VERSE_TMPL);
+        assert_eq!(
+            out,
+            "<span class='ssp-line ssp-indent-0'>He is</span>\n\
+             <span class='ssp-line ssp-indent-0'>one who delights</span>\n\
+             <span class='ssp-line ssp-indent-0'>in the ending of craving,</span>\n"
+        );
+    }
+
+    #[test]
+    fn test_render_verse_lines_indent_levels_from_leading_tabs() {
+        let out = render_verse_lines("He is\n\tone who delights\n\t\tin the ending\tof craving, ", VERSE_TMPL);
+        assert_eq!(
+            out,
+            "<span class='ssp-line ssp-indent-0'>He is</span>\n\
+             <span class='ssp-line ssp-indent-1'>one who delights</span>\n\
+             <span class='ssp-line ssp-indent-2'>in the ending\tof craving,</span> "
+        );
+        // A single line with a leading tab is indented too.
+        assert_eq!(
+            render_verse_lines("\tfinds no delight\n", VERSE_TMPL),
+            "<span class='ssp-line ssp-indent-1'>finds no delight</span>\n"
+        );
+    }
+
+    #[test]
+    fn test_render_verse_lines_unchanged_without_line_data() {
+        // A trailing newline alone adds nothing, Sujato- and Pāli-style
+        // segments come back as they are, and so does a prose segment.
+        for text in [
+            "“After a long time at last I see\n",
+            "The non-doing of any evil, ",
+            "Sabbapāpassa akaraṇaṁ, ",
+            "",
+        ] {
+            assert!(matches!(render_verse_lines(text, VERSE_TMPL), Cow::Borrowed(t) if t == text));
+        }
+        let prose = "he sat to one side.\nAs he was sitting there, he said to the Blessed One,";
+        assert!(matches!(render_verse_lines(prose, "<p>{}"), Cow::Borrowed(t) if t == prose));
+        assert!(matches!(render_verse_lines(prose, "{}</p>"), Cow::Borrowed(t) if t == prose));
+    }
+
+    fn segments_of(content: &str, tmpl: &str, comments: Option<&str>, wrap: bool) -> IndexMap<String, String> {
+        bilara_text_to_segments(content, Some(tmpl), wrap, None, comments, None, false, false, false, "").unwrap().segments
+    }
+
+    #[test]
+    fn test_bilara_text_to_segments_without_line_data_is_unchanged() {
+        let content = r#"{"dhp183:1":"Sabbapāpassa akaraṇaṁ, ","dhp183:2":"kusalassa upasampadā; "}"#;
+        let tmpl = r#"{"dhp183:1":"<blockquote class='gatha'><p><span class='verse-line'>{}</span>","dhp183:2":"<span class='verse-line'>{}</span>"}"#;
+        let segments = segments_of(content, tmpl, None, true);
+        assert_eq!(
+            segments["dhp183:1"],
+            "<blockquote class='gatha'><p><span class='verse-line'><span class=\"segment\" id=\"dhp183:1\"><span class=\"root\" lang=\"pli\" translate=\"no\"><span class=\"text\" lang=\"la\">Sabbapāpassa akaraṇaṁ, </span></span></span></span>"
+        );
+        assert_eq!(segments_of(content, tmpl, None, false)["dhp183:2"], "kusalassa upasampadā; ");
+    }
+
+    #[test]
+    fn test_bilara_text_to_segments_footnote_marker_stays_in_its_line() {
+        // Word 4 (0-based) is "delights", in the second line.
+        let content = r#"{"dhp187:3":"He is\none who delights\nin the ending of craving,\n"}"#;
+        let tmpl = r#"{"dhp187:3":"<span class='verse-line'>{}</span>"}"#;
+        let notes = [Footnote { number: 1, word_index: Some(4), editor: false, html: "A note.".to_string() }];
+        let comments = serde_json::to_string(&IndexMap::from([("dhp187:3", crate::footnotes::encode_footnotes(&notes))])).unwrap();
+        let segment = &segments_of(content, tmpl, Some(&comments), false)["dhp187:3"];
+        assert!(
+            segment.contains("<span class='ssp-line ssp-indent-0'>one who delights<span class='footnote-reference'><a href='#fn-1' id='fr-1'>1</a></span></span>"),
+            "{segment}"
+        );
+        assert_eq!(segment.matches("class='ssp-line").count(), 3, "{segment}");
+    }
+
+    #[test]
+    fn test_verse_lines_same_in_solo_and_multi_column() {
+        let content = r#"{"dhp187:3":"He is\n\tone who delights\nin the ending of craving,\n","dhp187:4":"a disciple of the Rightly\nSelf-Awakened One."}"#;
+        let tmpl_str = r#"{"dhp187:3":"<p><span class='verse-line'>{}</span>","dhp187:4":"<span class='verse-line'>{}</span></p>"}"#;
+        let solo = bilara_text_to_html(content, tmpl_str, None, None, None, false, false, false).unwrap();
+
+        let column = ColumnSource {
+            uid: "dhp179-196/en/thanissaro".to_string(),
+            label: "Ṭhānissaro".to_string(),
+            is_pali: false,
+            segments: segments_of(content, tmpl_str, None, false),
+            footnotes: Vec::new(),
+            footnote_id_prefix: String::new(),
+            introduction: None,
+        };
+        let tmpl: IndexMap<String, String> = serde_json::from_str(tmpl_str).unwrap();
+        let lines_re = Regex::new(r"<span class='ssp-line[^']*'>[^<]*</span>").unwrap();
+        let solo_lines: Vec<&str> = lines_re.find_iter(&solo).map(|m| m.as_str()).collect();
+        assert_eq!(solo_lines.len(), 5, "{solo}");
+        assert!(solo_lines[1].contains("ssp-indent-1"));
+        for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+            let multi = bilara_multi_column_html(std::slice::from_ref(&column), &tmpl, false, layout).unwrap();
+            let multi_lines: Vec<&str> = lines_re.find_iter(&multi).map(|m| m.as_str()).collect();
+            assert_eq!(solo_lines, multi_lines, "{multi}");
+        }
     }
 }
