@@ -1,0 +1,23 @@
+{
+  "sutta_id": "snp4.2",
+  "translator": "nyanadipa",
+  "input": "texts-sc-numbering/snp4.2.md",
+  "input_hash": "fb240b926b13130f",
+  "pali_hash": "cf515f3b3228fd90",
+  "segments": [
+    {"id":"snp4.2:0.1","text":"","source":"copy"},
+    {"id":"snp4.2:0.2","text":"The Cave","source":"manual"},
+    {"id":"snp4.2:1.1","text":"Imprisoned in a cave, covered over by much, ","source":"manual"},
+    {"id":"snp4.2:1.2","text":"the man stands who is immersed in delusion. ","source":"manual"},
+    {"id":"snp4.2:1.3","text":"Such a one is far indeed from seclusion ","source":"manual"},
+    {"id":"snp4.2:1.4","text":"for sensual pleasures in the world are not easy to abandon. ","source":"manual"},
+    {"id":"snp4.2:2.1","text":"Tied down to want, bound to the pleasure of existing, ","source":"manual"},
+    {"id":"snp4.2:2.2","text":"they are hard to free, not freeable by others. ","source":"manual"},
+    {"id":"snp4.2:2.3","text":"Now looking behind, now looking ahead, ","source":"manual"},
+    {"id":"snp4.2:2.4","text":"they hanker now after these, now after the former pleasures. ","source":"manual"},
+    {"id":"snp4.2:3.1","text":"Greedy, engrossed, infatuated with pleasures ","source":"manual"},
+    {"id":"snp4.2:3.2","text":"they are incorrigible, entered upon an uneven path. ","source":"manual"},
+    {"id":"snp4.2:3.3","text":"Brought into misery they lament: ","source":"manual"},
+    {"id":"snp4.2:3.4","text":"“What shall we become when we fall away from this.” ","source":"manual"}
+  ]
+}

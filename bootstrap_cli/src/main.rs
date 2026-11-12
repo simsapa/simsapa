@@ -1029,6 +1029,23 @@ enum Commands {
         output: PathBuf,
     },
 
+    /// Check the segment files (bilara/*.json, bilara/footnotes.json) of the
+    /// Munindo or Nyanadipa translation against their source text and the Pāli:
+    /// segment ids, the joined text, the hashes, the title and heading
+    /// segments, and the footnotes. Read-only. Prints every problem and exits
+    /// with 1 if there is any. See docs/munindo-nyanadipa-segmentation.md.
+    CheckSegmentFiles {
+        /// The source folder: dhammapada-munindo or nyanadipa-translations. A
+        /// path that does not exist is looked up in bootstrap-assets-resources.
+        #[arg(value_name = "SOURCE_FOLDER")]
+        source_folder: PathBuf,
+
+        /// The sc-data folder with the Pāli root and template files (default:
+        /// sc-data in bootstrap-assets-resources)
+        #[arg(long, value_name = "SC_DATA_DIR")]
+        sc_data: Option<PathBuf>,
+    },
+
     /// Compare the dhammatalks.org and SuttaCentral records with suttas-core
     /// and write a JSON report of the differences, for porting fixes back to
     /// suttas-core. Reads both databases read-only. The appdata database must
@@ -1102,7 +1119,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1264,6 +1281,10 @@ fn main() {
                 .map_err(|e| e.to_string())
         }
 
+        Commands::CheckSegmentFiles { source_folder, sc_data } => {
+            check_segment_files(&source_folder, sc_data.as_deref())
+        }
+
         Commands::SurveySuttasCore { appdata, suttas_core, output } => {
             let suttas_core = suttas_core.unwrap_or_else(survey_suttas_core::default_suttas_core_path);
             let output = output.unwrap_or_else(survey_suttas_core::default_output_path);
@@ -1283,5 +1304,35 @@ fn main() {
     if let Err(e) = command_result {
         eprintln!("Error executing command: {}", e);
         exit(1);
+    }
+}
+
+/// `check-segment-files`: prints every problem and a summary line; an error
+/// (exit code 1) when there is any problem.
+fn check_segment_files(source_folder: &Path, sc_data: Option<&Path>) -> Result<(), String> {
+    use bootstrap::segment_files as sf;
+    let assets = bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+    let source_folder = match source_folder.try_exists() {
+        Ok(true) => source_folder.to_path_buf(),
+        _ => assets.join(source_folder),
+    };
+    let sc_data = sc_data
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| assets.join(bootstrap::source_paths::SC_DATA_DIR));
+
+    let report = sf::check_source_folder(&source_folder, &sc_data).map_err(|e| format!("{:#}", e))?;
+    if report.files_checked == 0 {
+        println!("No segment files in {}", sf::SourceKind::from_source_folder(&source_folder)
+            .map(|k| k.segment_dir(&source_folder).display().to_string())
+            .unwrap_or_default());
+    }
+    for problem in &report.problems {
+        println!("{}", problem);
+    }
+    println!("{} files checked, {} problems", report.files_checked, report.problems.len());
+    if report.problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} problems in the segment files of {}", report.problems.len(), source_folder.display()))
     }
 }

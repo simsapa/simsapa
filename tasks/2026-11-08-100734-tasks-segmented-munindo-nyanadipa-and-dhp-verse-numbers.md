@@ -7,7 +7,7 @@ Code (`simsapa/`):
 - `bootstrap_cli/src/bootstrap/helpers.rs` - Home of the new shared verse-group range function (`dhp_verse_group_ranges()`), the chapter-title helper, and their unit tests.
 - `bootstrap_cli/src/bootstrap/suttacentral.rs` - `bilara_text_to_sutta()` (line ~610) builds every Bilara record from ArangoDB; the Pāli `ms` and Sujato Dhammapada ranges are written here, before `bilara_html_and_plain_text()`.
 - `bootstrap_cli/src/bootstrap/suttas_core.rs` - `SuttasCoreDb::build_record()` (line ~383) builds Ṭhānissaro's records; ranges and chapter titles go in here. `footnotes_value()` (line ~456), `write_comments()` (line ~549) and `note_newlines_to_html()` are the footnote code to share with the Nyanadipa importer.
-- `bootstrap_cli/src/bootstrap/segment_files.rs` - **New.** Types and readers for `bilara/<sutta_id>.json` and `bilara/footnotes.json`, `text_hash()` / `id_list_hash()`, and the checks behind `check-segment-files`.
+- `bootstrap_cli/src/bootstrap/segment_files.rs` - **New.** Types and readers for `bilara/<sutta_id>.json` and `bilara/footnotes.json`, `hash()` / `text_hash()` / `id_list_hash()` (equal to suttas-core's), `pali_root_ids()` / `pali_template()` / `page_title_key()`, `normalized_source_text()`, and the five checks behind `check-segment-files` (`check_source_folder()`).
 - `bootstrap_cli/src/bootstrap/dhammapada_munindo.rs` - Munindo importer; rewritten to read `dhammapada-munindo/bilara/`.
 - `bootstrap_cli/src/bootstrap/nyanadipa.rs` - Nyanadipa importer; rewritten to read `nyanadipa-translations/bilara/`.
 - `bootstrap_cli/src/bootstrap/footnote_sutta_links.rs` - `link_sutta_refs()` / `FootnoteLinker` turn sutta references in notes into `ssp://` links; reused for Nyanadipa's notes.
@@ -15,11 +15,11 @@ Code (`simsapa/`):
 - `bootstrap_cli/src/bootstrap/preflight.rs` - `bootstrap_sources()` (line ~120): both sources become `required`, pointing at the `bilara/` folders.
 - `bootstrap_cli/src/bootstrap/source_paths.rs` - New constants `MUNINDO_BILARA_SUBDIR`, `NYANADIPA_BILARA_SUBDIR`, `SEGMENT_FOOTNOTES_SUBFILE`.
 - `bootstrap_cli/src/main.rs` - `Commands` enum (line ~665): new `CheckSegmentFiles` subcommand.
-- `bootstrap_cli/Cargo.toml` - May need `sha2` and `unicode-normalization` (both already used by `backend/`).
+- `bootstrap_cli/Cargo.toml` - Adds `sha2` and `unicode-normalization` (same versions as `backend/`).
 - `backend/src/lookup.rs` - `DHP_CHAPTERS_TO_RANGE` (chapter number → verse range); a reverse lookup (range → chapter number) is needed.
 - `backend/src/footnotes.rs` - `Footnote`, `encode_footnotes()`, `word_count()`; the stored form of footnotes.
 - `bootstrap_cli/tests/data/nyanadipa/snp4.10.html` - Old fixture of the HTML import; deleted in 6.0.
-- `bootstrap_cli/tests/data/segment_files/` - **New.** Small fixture segment files and sources for the reader and check-command tests.
+- `bootstrap_cli/tests/data/segment_files/` - **New.** Fixture source folders (`dhammapada-munindo/`: `dhp1-20`, two verses; `nyanadipa-translations/`: `snp4.2`, three verses and its note) and a truncated `sc-data/` with their Pāli root and template. The tests break copies in memory, one per check.
 
 Data (`bootstrap-assets-resources/`, not in this repo):
 
@@ -237,17 +237,17 @@ Depends on: 1.0 (ranges are *not* in the files — headings are `""`, FR 8). Ind
      renderer can never disagree.
   Prints every problem, a summary line, exits 1 on any problem. Read-only.
 
-- [ ] 3.0 Segment-file support in `bootstrap_cli`: the file and footnote-file types and readers, suttas-core-compatible `textHash` / `pali_hash`, and the `check-segment-files` command (PRD FR 1–3, 10 format, 14)
-  - [ ] 3.1 Add `MUNINDO_BILARA_SUBDIR = "bilara"`, `NYANADIPA_BILARA_SUBDIR = "bilara"`, `SEGMENT_FOOTNOTES_SUBFILE = "bilara/footnotes.json"` (and any path helper) to `source_paths.rs`.
-  - [ ] 3.2 Create `bootstrap_cli/src/bootstrap/segment_files.rs` with the `SegmentFile`, `Segment`, `FootnoteFile`, `FootnoteEntry` types and `read_segment_file(path)`, `read_segment_dir(dir) -> Vec<(PathBuf, SegmentFile)>` (sorted by file name), `read_footnote_file(path) -> Option<FootnoteFile>` (absent file = `None`). Register the module in `bootstrap/mod.rs`.
-  - [ ] 3.3 Add `hash()`, `text_hash()`, `id_list_hash()`; add `sha2` / `unicode-normalization` to `bootstrap_cli/Cargo.toml` if not already reachable.
-  - [ ] 3.4 Test the hashes against suttas-core's own values: take `input_hash` and `pali_hash` from a real `suttas-core/data/segmentations/than/*.json` and recompute `pali_hash` from that file's ids (skip when absent). For `text_hash`, compute the expected value once with `bun -e` from `suttas-core/src/lib/hash.ts` on a short string with a `[^1]` marker and multi-line whitespace, and hard-code it in the test.
-  - [ ] 3.5 Add `pali_root_ids(sc_data_dir, sutta_id) -> Vec<String>` (ordered, read with `IndexMap` from the `root/pli/ms` file, found by walking `root/pli/ms/sutta/kn/{dhp,snp}`) and `pali_template(sc_data_dir, sutta_id)` for the `html/` file.
-  - [ ] 3.6 Add `normalized_source_text()` and `joined_segment_text()` per the specs, with unit tests on short Munindo- and Nyanadipa-style snippets (verse numbers, `\\`, two-space breaks, `*italics*`, `[^1]`, footnote definitions).
-  - [ ] 3.7 Implement the five checks as functions returning `Vec<Problem>` (`Problem { file, segment_id: Option<String>, message }`), so tests can call them without the CLI.
-  - [ ] 3.8 Add the `CheckSegmentFiles { source_folder, sc_data }` subcommand to `main.rs`, printing problems and the summary, exit code 1 on any problem.
-  - [ ] 3.9 Fixtures in `bootstrap_cli/tests/data/segment_files/` (a two-verse fake source, a matching segment file, a broken copy for each check) and tests that each check reports its problem and the good file reports none.
-  - [ ] 3.10 `cd bootstrap_cli && cargo test` passes; `cargo run -- check-segment-files <munindo folder>` runs and reports that there are no files yet (not a crash).
+- [x] 3.0 Segment-file support in `bootstrap_cli`: the file and footnote-file types and readers, suttas-core-compatible `textHash` / `pali_hash`, and the `check-segment-files` command (PRD FR 1–3, 10 format, 14)
+  - [x] 3.1 Add `MUNINDO_BILARA_SUBDIR = "bilara"`, `NYANADIPA_BILARA_SUBDIR = "bilara"`, `SEGMENT_FOOTNOTES_SUBFILE = "bilara/footnotes.json"` (and any path helper) to `source_paths.rs`.
+  - [x] 3.2 Create `bootstrap_cli/src/bootstrap/segment_files.rs` with the `SegmentFile`, `Segment`, `FootnoteFile`, `FootnoteEntry` types and `read_segment_file(path)`, `read_segment_dir(dir) -> Vec<(PathBuf, SegmentFile)>` (sorted by file name), `read_footnote_file(path) -> Option<FootnoteFile>` (absent file = `None`). Register the module in `bootstrap/mod.rs`.
+  - [x] 3.3 Add `hash()`, `text_hash()`, `id_list_hash()`; add `sha2` / `unicode-normalization` to `bootstrap_cli/Cargo.toml` if not already reachable.
+  - [x] 3.4 Test the hashes against suttas-core's own values: take `input_hash` and `pali_hash` from a real `suttas-core/data/segmentations/than/*.json` and recompute `pali_hash` from that file's ids (skip when absent). For `text_hash`, compute the expected value once with `bun -e` from `suttas-core/src/lib/hash.ts` on a short string with a `[^1]` marker and multi-line whitespace, and hard-code it in the test.
+  - [x] 3.5 Add `pali_root_ids(sc_data_dir, sutta_id) -> Vec<String>` (ordered, read with `IndexMap` from the `root/pli/ms` file, found by walking `root/pli/ms/sutta/kn/{dhp,snp}`) and `pali_template(sc_data_dir, sutta_id)` for the `html/` file.
+  - [x] 3.6 Add `normalized_source_text()` and `joined_segment_text()` per the specs, with unit tests on short Munindo- and Nyanadipa-style snippets (verse numbers, `\\`, two-space breaks, `*italics*`, `[^1]`, footnote definitions).
+  - [x] 3.7 Implement the five checks as functions returning `Vec<Problem>` (`Problem { file, segment_id: Option<String>, message }`), so tests can call them without the CLI.
+  - [x] 3.8 Add the `CheckSegmentFiles { source_folder, sc_data }` subcommand to `main.rs`, printing problems and the summary, exit code 1 on any problem.
+  - [x] 3.9 Fixtures in `bootstrap_cli/tests/data/segment_files/` (a two-verse fake source, a matching segment file, a broken copy for each check) and tests that each check reports its problem and the good file reports none.
+  - [x] 3.10 `cd bootstrap_cli && cargo test` passes; `cargo run -- check-segment-files <munindo folder>` runs and reports that there are no files yet (not a crash).
 
 ### 4.0 specs
 

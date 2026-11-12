@@ -1,0 +1,19 @@
+{
+  "dhp1:0.1": "<section class='range'  id='dhp1-20'><header><ul><li class='division'>{}</li>",
+  "dhp1:0.2": "<li class='subdivision'>{}</li></ul>",
+  "dhp1:0.3": "<h1 class='range-title'>{}</h1></header>",
+  "dhp1:0.4": "<article id='dhp1'><h2 class='sutta-title'>{}</h2>",
+  "dhp1:1": "<blockquote class='gatha'><p><span class='verse-line'>{}</span>",
+  "dhp1:2": "<span class='verse-line'>{}</span>",
+  "dhp1:3": "<span class='verse-line'>{}</span>",
+  "dhp1:4": "<span class='verse-line'>{}</span>",
+  "dhp1:5": "<span class='verse-line'>{}</span>",
+  "dhp1:6": "<span class='verse-line'>{}</span></p></blockquote></article>",
+  "dhp2:0": "<article id='dhp2'><h2 class='sutta-title'>{}</h2>",
+  "dhp2:1": "<blockquote class='gatha'><p><span class='verse-line'>{}</span>",
+  "dhp2:2": "<span class='verse-line'>{}</span>",
+  "dhp2:3": "<span class='verse-line'>{}</span>",
+  "dhp2:4": "<span class='verse-line'>{}</span>",
+  "dhp2:5": "<span class='verse-line'>{}</span>",
+  "dhp2:6": "<span class='verse-line'>{}</span></p></blockquote></article></section>"
+}

@@ -1,0 +1,26 @@
+{
+  "sutta_id": "dhp1-20",
+  "translator": "munindo",
+  "input": "markdown/dhp-1.md",
+  "input_hash": "c084a6664970793c",
+  "pali_hash": "e5b402427eb2344a",
+  "segments": [
+    {"id":"dhp1:0.1","text":"","source":"copy"},
+    {"id":"dhp1:0.2","text":"","source":"copy"},
+    {"id":"dhp1:0.3","text":"1. The Pairs","source":"manual"},
+    {"id":"dhp1:0.4","text":"","source":"copy"},
+    {"id":"dhp1:1","text":"All states of being are determined by the heart.\n","source":"manual"},
+    {"id":"dhp1:2","text":"It is the heart that leads the way.\n","source":"manual"},
+    {"id":"dhp1:3","text":"Just as the wheel of the oxcart follows\nthe hoof print of the animal that draws it,\n","source":"manual"},
+    {"id":"dhp1:4","text":"so suffering will surely follow\n","source":"manual"},
+    {"id":"dhp1:5","text":"when we speak or act impulsively\n","source":"manual"},
+    {"id":"dhp1:6","text":"from an impure heart.","source":"manual"},
+    {"id":"dhp2:0","text":"","source":"copy"},
+    {"id":"dhp2:1","text":"All states of being are determined by the heart.\n","source":"manual"},
+    {"id":"dhp2:2","text":"It is the heart that leads the way.\n","source":"manual"},
+    {"id":"dhp2:3","text":"As surely as our shadow never leaves us,\n","source":"manual"},
+    {"id":"dhp2:4","text":"so well-being will follow\n","source":"manual"},
+    {"id":"dhp2:5","text":"when we speak or act\n","source":"manual"},
+    {"id":"dhp2:6","text":"with a pure heart.","source":"manual"}
+  ]
+}

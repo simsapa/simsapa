@@ -89,6 +89,13 @@ pub const SUTTAS_CORE_DB: &str = "suttas-core-db/current/suttas.sqlite";
 pub const DHAMMAPADA_TIPITAKA_NET_DB: &str = "dhammapada-tipitaka-net/dhammapada-tipitaka-net.sqlite3";
 pub const NYANADIPA_DIR: &str = "nyanadipa-translations";
 pub const DHAMMAPADA_MUNINDO_DIR: &str = "dhammapada-munindo";
+/// Segment files (`<sutta_id>.json`) inside `DHAMMAPADA_MUNINDO_DIR`. See
+/// docs/munindo-nyanadipa-segmentation.md.
+pub const MUNINDO_BILARA_SUBDIR: &str = "bilara";
+/// Segment files and `footnotes.json` inside `NYANADIPA_DIR`.
+pub const NYANADIPA_BILARA_SUBDIR: &str = "bilara";
+/// The footnote file of a segment-file source, inside its folder.
+pub const SEGMENT_FOOTNOTES_SUBFILE: &str = "bilara/footnotes.json";
 /// Hungarian translations.
 pub const BUDDHA_UJJA_DB: &str = "buddha-ujja-sql/bu.sqlite3";
 

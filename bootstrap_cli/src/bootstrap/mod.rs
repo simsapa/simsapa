@@ -9,6 +9,7 @@ pub mod footnote_sutta_links;
 pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
 pub mod nyanadipa;
+pub mod segment_files;
 pub mod buddha_ujja;
 pub mod cst_coverage;
 pub mod tipitaka_xml;

@@ -4613,12 +4613,14 @@ dependencies = [
  "scraper",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "simsapa_backend",
  "tempfile",
  "thiserror 2.0.17",
  "tipitaka_xml_parser",
  "tokio",
  "toml 1.1.6+spec-1.1.0",
+ "unicode-normalization",
  "urlencoding",
 ]
 
