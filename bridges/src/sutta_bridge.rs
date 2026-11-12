@@ -1222,10 +1222,10 @@ pub mod qobject {
         fn set_gloss_auto_translate(self: Pin<&mut SuttaBridge>, on: bool);
 
         #[qinvokable]
-        fn get_gloss_word_in_sentence_info_shown(self: &SuttaBridge) -> bool;
+        fn get_gloss_format_info_shown(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
-        fn set_gloss_word_in_sentence_info_shown(self: Pin<&mut SuttaBridge>, shown: bool);
+        fn set_gloss_format_info_shown(self: Pin<&mut SuttaBridge>, shown: bool);
 
         #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
@@ -3320,16 +3320,16 @@ impl qobject::SuttaBridge {
         get_app_data().set_gloss_auto_translate(on);
     }
 
-    /// Whether the one-time Word in Sentence info dialog was dismissed with OK.
-    pub fn get_gloss_word_in_sentence_info_shown(&self) -> bool {
+    /// Whether the one-time gloss format info dialog was closed.
+    pub fn get_gloss_format_info_shown(&self) -> bool {
         let app_data = get_app_data();
         let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
-        app_settings.gloss_word_in_sentence_info_shown
+        app_settings.gloss_format_info_shown
     }
 
-    /// Record that the Word in Sentence info dialog was dismissed with OK.
-    pub fn set_gloss_word_in_sentence_info_shown(self: Pin<&mut Self>, shown: bool) {
-        get_app_data().set_gloss_word_in_sentence_info_shown(shown);
+    /// Record that the gloss format info dialog was closed.
+    pub fn set_gloss_format_info_shown(self: Pin<&mut Self>, shown: bool) {
+        get_app_data().set_gloss_format_info_shown(shown);
     }
 
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")

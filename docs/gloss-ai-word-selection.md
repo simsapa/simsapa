@@ -1108,7 +1108,7 @@ closed; it prints each stored rule with its lemma.
 | Text exports (HTML/MD/Org) + shared types | `backend/src/text_export.rs`, `backend/src/export_types.rs` |
 | Export data and session JSON built in Rust (CLI, API, and the Gloss tab's export paragraphs) | `backend/src/gloss_export_builder.rs`; contract test `backend/tests/test_gloss_export_contract.rs` |
 | Word in Sentence rows, session carry-over | `backend/src/gloss_rows.rs` (`GlossRowBuilder`, `carry_over_session_choices()`); rows rebuilt against the cache: `gloss_word_selection_apply::rebuild_rows_with_cache()` |
-| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`, `get_gloss_format` / `set_gloss_format`, `get_gloss_auto_translate` / `set_gloss_auto_translate`, `get_gloss_word_in_sentence_info_shown` / `set_gloss_word_in_sentence_info_shown`, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`) |
+| Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`, `get_gloss_format` / `set_gloss_format`, `get_gloss_auto_translate` / `set_gloss_auto_translate`, `get_gloss_format_info_shown` / `set_gloss_format_info_shown`, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
 | UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordInSentenceRow.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `bootstrap_cli/src/import_gloss_data.rs`, `bootstrap_cli/src/gloss_corpus_explore.rs`, `bootstrap_cli/src/gloss_ngrams.rs`, `bootstrap_cli/src/gloss_agent_check.rs` |
@@ -1414,14 +1414,15 @@ is the format of new sessions. A session keeps its own (`gloss_format` in the
 session JSON); a session saved without one is a Headwords session and opens as
 saved. The gloss request passes it as `options.gloss_format`.
 
-Before the first gloss in this format, `start_background_all_glosses()` opens
-a one-time info dialog (`maybe_show_word_in_sentence_info()`): the format shows
-more detail than Headwords and works best with AI word selection, which picks
-the meanings for their context. Its rich-text message sits in a `ColumnLayout`,
+Before the first gloss run in the GUI, in either format,
+`start_background_all_glosses()` and `start_background_paragraph_gloss()` open
+a one-time info dialog (`maybe_show_gloss_format_info()`): the Word in
+Sentence format shows more detail than Headwords, and both work best with AI
+word selection, which picks the meanings for their context. Its rich-text message sits in a `ColumnLayout`,
 not in a `contentItem` Label, which would make the Fusion `Dialog` binding loop
-(`docs/qml-dialog-sizing.md`). Only its OK button sets
-`gloss_word_in_sentence_info_shown` in `AppSettings`; closing it any other
-way shows it again on the next gloss. The `qmllint` stub returns `true`, so
+(`docs/qml-dialog-sizing.md`). Its `onClosed` sets
+`gloss_format_info_shown` in `AppSettings`, so OK, the Android back
+button, Escape and a click outside all count as seen. The `qmllint` stub returns `true`, so
 QML tests never open it.
 
 Each paragraph holds `rows_json` and `variants_json` next to

@@ -86,7 +86,7 @@ here.
 
 **A `RichText` `Label` set as the `contentItem` (with `width: parent.width`)
 loops even with `DialogHeader`**; the same text as plain text does not
-(GlossTab's `word_in_sentence_info_dialog`, measured A/B in `tst_GlossTab.qml`
+(GlossTab's `gloss_format_info_dialog`, measured A/B in `tst_GlossTab.qml`
 under Fusion). For a rich-text message, put the `Label` in a `ColumnLayout`
 anchored left and right, with `Layout.fillWidth: true`, as `StorageDialog.qml`
 does: width from the dialog, height from the label, no loop.

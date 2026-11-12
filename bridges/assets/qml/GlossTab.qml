@@ -1066,18 +1066,18 @@ Item {
         onAccepted: accept_fn() // qmllint disable use-proper-function
     }
 
-    // One-time explanation of the Word in Sentence format, opened before the
-    // first gloss in that format. Only OK records it as seen; closing it any
-    // other way shows it again on the next gloss.
+    // One-time explanation of glossing and the Word in Sentence format, opened
+    // before the first gloss run in the GUI, in any format. Any way of closing it
+    // (OK, the Android back button, Escape, a click outside) records it as seen.
     Dialog {
-        id: word_in_sentence_info_dialog
-        title: "Word in Sentence Format"
+        id: gloss_format_info_dialog
+        title: "Gloss Format"
         modal: true
         parent: Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(parent.width - 40, 480)
         standardButtons: Dialog.Ok
-        header: DialogHeader { text: word_in_sentence_info_dialog.title }
+        header: DialogHeader { text: gloss_format_info_dialog.title }
 
         // Width from the dialog, height from the label (the StorageDialog
         // pattern): a RichText Label set as the contentItem with
@@ -1090,24 +1090,22 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 textFormat: Text.RichText
-                text: "<p>The Gloss format: <b>Word in Sentence</b> setting shows more grammar details than the <b>Headwords</b> setting.</p>" +
-                    "<p>Both work best with <b>AI word selection</b>, which selects the specific meaning from the dictionary's results for the glossed word.</p>" +
+                text: "<p>The 'Gloss format: <b>Word in Sentence</b>' setting shows more grammar details than the <b>Headwords</b> setting.</p>" +
+                    "<p>In offline mode (without AI selection), the first dictionary meaning is shown.</p>" +
+                    "<p>Both can be used with <b>AI word selection</b>, which selects the specific meaning from the dictionary's results for the glossed word.</p>" +
                     "<p>E.g. which of the many meanings of 'kamma' fits the given sentence context.</p>" +
-                    "<p>Enable an AI provider service in Prompts &gt; AI Models... by adding an API key.</p>" +
-                    "<p>Without AI, the first dictionary meaning is shown.</p>"
+                    "<p>Enable an AI provider service in Prompts &gt; AI Models... by adding an API key.</p>"
             }
         }
 
-        onAccepted: SuttaBridge.set_gloss_word_in_sentence_info_shown(true)
+        onClosed: SuttaBridge.set_gloss_format_info_shown(true)
     }
 
-    // Opens the Word in Sentence info dialog once, until the user dismisses it
-    // with OK.
-    function maybe_show_word_in_sentence_info() {
-        if (!root.is_word_in_sentence) return;
-        if (word_in_sentence_info_dialog.opened) return;
-        if (SuttaBridge.get_gloss_word_in_sentence_info_shown()) return;
-        word_in_sentence_info_dialog.open();
+    // Opens the info dialog once, until the user closes it in any way.
+    function maybe_show_gloss_format_info() {
+        if (gloss_format_info_dialog.opened) return;
+        if (SuttaBridge.get_gloss_format_info_shown()) return;
+        gloss_format_info_dialog.open();
     }
 
     MessageDialog {
@@ -1710,7 +1708,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
         logger.debug(`🚀 Starting background processing for ${paragraphs.length} paragraphs`);
 
-        root.maybe_show_word_in_sentence_info();
+        root.maybe_show_gloss_format_info();
 
         // Set processing state
         root.is_processing_all = true;
@@ -1753,6 +1751,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         logger.debug(`🚀 Starting background processing for paragraph ${paragraph_index}`);
+
+        root.maybe_show_gloss_format_info();
 
         // Set processing state
         root.is_processing_single = true;
