@@ -12,13 +12,17 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
 ## 1. Input and position
 
 - Input: `<bootstrap assets>/suttas-core-db/current/suttas.sqlite`. `current` is
-  a symlink to a dated folder (`2026-10-31`); the step logs the resolved path,
+  a symlink to a dated folder (`2026-11-12`); the step logs the resolved path,
   and every record it writes gets `source_info = "suttas-core <dated folder>"`.
   The database is opened read-only. It is **required**: a missing file stops the
   bootstrap, checked up front by the preflight
   (`bootstrap_cli/src/bootstrap/preflight.rs`) before anything is written,
   because without it the release would silently lose its segmented English
   translations.
+- Build the database with `bun run src/build/build.ts --verse-indent` in
+  suttas-core: without the flag it carries no Ṭhānissaro line layout (indent
+  tabs, restored verse line breaks), and `test_real_data_than_verse_indent_survives_import`
+  fails.
 - To use a new suttas-core build: put its database in a new dated folder, repoint
   `current`, re-run the bootstrap.
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org

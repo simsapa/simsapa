@@ -161,15 +161,17 @@ $evam_font_scale: 1.15
   // The lines of a verse segment that carries line breaks or indents
   // (render_verse_lines() in backend/src/helpers.rs; the contract is in
   // docs/munindo-nyanadipa-segmentation.md). Measured against
-  // dhammatalks.org's verse: each indent level shifts the line by one 2em
-  // step, and a line too long for the column wraps with a 2em hanging indent.
+  // dhammatalks.org's verse: its p.vN is level N, each level a 4% step of the
+  // column. Here a level is a fixed 1em, so v2 lines sit 2em in and v4 lines
+  // 4em, also in a narrow column; a line too long for the column wraps with a
+  // 2em hanging indent.
   span.ssp-line
     display: block
     padding-left: 2em
     text-indent: -2em
   @for $n from 1 through 8
     span.ssp-line.ssp-indent-#{$n}
-      padding-left: #{2 + 2 * $n}em
+      padding-left: #{2 + $n}em
 
   .endsutta
     font-style: italic

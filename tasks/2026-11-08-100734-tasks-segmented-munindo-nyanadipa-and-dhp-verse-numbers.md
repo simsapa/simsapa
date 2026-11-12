@@ -45,12 +45,21 @@ Data (`bootstrap-assets-resources/`, not in this repo):
 - `docs/simsapa-cli-and-localhost-api.md` - Bundled API doc: `\n` / `\t` in segment text, Munindo / Nyanadipa segmented, Nyanadipa notes in `ssp-fn` form (7.8).
 - `docs/sutta-display-settings-and-multi-column-view.md` - Pointer to the line contract (FR 33a).
 
-suttas-core (separate repository, 8.0):
+suttas-core (separate repository, 8.0; branch `than-verse-indent` from `master`, for a PR upstream):
 
-- `suttas-core/src/sources/than/page.ts` - Than parser; keep verse indentation.
-- `suttas-core/src/segment/footnotes.ts` - The anchoring approach to copy for line matching.
-- `suttas-core/docs/parsers/than.md` - Class → indent-level mapping.
-- `bootstrap-assets-resources/suttas-core-db/` - New dated DB folder, `current` symlink.
+- `suttas-core/src/sources/types.ts` - `ParseOptions { verseIndent }`, passed to `Source.parse()`; off by default.
+- `suttas-core/src/sources/than/page.ts`, `index.ts` - Than parser: with `verseIndent`, `p.vN` → N leading tabs, `<pre>` leading tabs kept; tests in `page.test.ts`.
+- `suttas-core/src/raw/load.ts` - `loadRaws(translator, options)`.
+- `suttas-core/src/raw/patches.ts` - `replace` / `split` / `move` work on a raw with line-start tabs (patches stay written against the plain text); tests in `patches.test.ts`.
+- `suttas-core/src/segment/indent.ts` - **New.** Build step: tabs onto stored segment lines, joined verse line breaks restored; tests in `indent.test.ts`.
+- `suttas-core/src/segment/footnotes.ts` - `key()` / `normalize()` exported for `indent.ts`.
+- `suttas-core/src/build/build.ts` - `--verse-indent` flag, report counts (`indented_lines`, `restored_breaks`, `indent_inside_lines`).
+- `suttas-core/scripts/bootstrap/compare-raws.ts` - `--verse-indent` flag.
+- `suttas-core/data/sc-data.lock.json` - Re-pinned to `2d9ca8da858` (`sync.ts --write`; no changes to remap).
+- `suttas-core/docs/parsers/than.md`, `docs/patching.md`, `docs/data-layers.md`, `AGENTS.md` - The mapping, the option, the patch rule.
+- `bootstrap-assets-resources/suttas-core-db/2026-11-12/` - New DB built with `--verse-indent`; `current` repointed (the `2026-10-31` folder is kept).
+- `bootstrap_cli/src/bootstrap/suttas_core.rs` - `test_real_data_than_verse_indent_survives_import`.
+- `assets/sass/_suttacentral.sass`, `assets/css/suttas.css` - Indent step 1em per level (`vN` is level N, so `v2` = 2em).
 
 Docs and reports:
 
@@ -439,15 +448,15 @@ approval, systematic rules in the parser. PRD FR 41–43.
 - Output: `sutta_segments.content` carries the tabs. A new dated DB folder in
   Simsapa's `bootstrap-assets-resources/suttas-core-db/`, `current` repointed.
 
-- [ ] 8.0 Carry Ṭhānissaro's verse indentation through suttas-core into its segment text, regenerate the suttas-core database, and confirm Simsapa imports it (PRD FR 41–43)
-  - [ ] 8.1 Read `suttas-core/AGENTS.md`, `docs/parsers/than.md`, `docs/data-layers.md` and `src/sources/than/page.ts`; confirm with the maintainer how changes to that repo are committed (it has its own remote).
-  - [ ] 8.2 Establish the class → level mapping for `v1`–`v8` from the vendored pages (and, with approval, dhammatalks.org's stylesheet); record it in `docs/parsers/than.md`.
-  - [ ] 8.3 Change the parser to emit leading tabs per verse line; add a parser test on Dhp 186–187 and Thag 10.5.
-  - [ ] 8.4 Run `src/check/stale.ts` and `compare-raws.ts --translator than`: no segmentation newly stale; the 139 `whitespace_only` rows are now explained by the indentation.
-  - [ ] 8.5 Implement the build step that applies the tabs to segment lines, with a test that a continuation line gets none and an unmatched line is reported.
-  - [ ] 8.6 `bunx tsc --noEmit -p .` and the suttas-core tests pass; run the build and read its report of unmatched lines.
-  - [ ] 8.7 Copy the new database into `suttas-core-db/<date>/` and repoint `current`.
-  - [ ] 8.8 In Simsapa, add a test (skips when the DB is absent) that `SuttasCoreImporter::build_record()` keeps leading tabs: `dhp179-196` `than` has `dhp187:3` starting a line with `\t` before *one who delights*.
+- [x] 8.0 Carry Ṭhānissaro's verse indentation through suttas-core into its segment text, regenerate the suttas-core database, and confirm Simsapa imports it (PRD FR 41–43)
+  - [x] 8.1 Read `suttas-core/AGENTS.md`, `docs/parsers/than.md`, `docs/data-layers.md` and `src/sources/than/page.ts`; confirm with the maintainer how changes to that repo are committed (it has its own remote).
+  - [x] 8.2 Establish the class → level mapping for `v1`–`v8` from the vendored pages (and, with approval, dhammatalks.org's stylesheet); record it in `docs/parsers/than.md`. Mapping from dhammatalks.org's stylesheet: `p.vN` padding `(2 + 4N)%`, so `vN` = level N (v2 is level 2, not 1); `<pre>` verse: one level per leading tab. The stylesheet copy is kept in the ignored `out/than-css/` (suttas-core keeps only parser inputs in `data/sources/`). Behind `--verse-indent`, off by default (maintainer's decision), so upstream output is byte-identical without it.
+  - [x] 8.3 Change the parser to emit leading tabs per verse line; add a parser test on Dhp 186–187 and Thag 10.5.
+  - [x] 8.4 Run `src/check/stale.ts` and `compare-raws.ts --translator than`: no segmentation newly stale; the 139 `whitespace_only` rows are now explained by the indentation. `stale.ts`: 0 stale; no raw's `textHash` changes with the option. Not done: re-classifying the 139 `whitespace_only` rows needs the legacy DB (`htmx-astro-experiment/suttas.sqlite`), which is only on the suttas-core author's machine; not pursued, since only Simsapa uses `--verse-indent`.
+  - [x] 8.5 Implement the build step that applies the tabs to segment lines, with a test that a continuation line gets none and an unmatched line is reported. Also restores a raw verse line break that legacy segmentation joined with a space, in verse segments only (maintainer's decision: keep his line layout), and only for sources that honour the option (`Source.verseIndent`: than); 3,801 restored, 6,830 lines indented, 23 indented lines still joined, 8 lines in 7 segments not found (reported).
+  - [x] 8.6 `bunx tsc --noEmit -p .` and the suttas-core tests pass; run the build and read its report of unmatched lines. 75 tests pass.
+  - [x] 8.7 Copy the new database into `suttas-core-db/<date>/` and repoint `current`.
+  - [x] 8.8 In Simsapa, add a test (skips when the DB is absent) that `SuttasCoreImporter::build_record()` keeps leading tabs: `dhp179-196` `than` has `dhp187:3` starting a line with `\t` before *one who delights*.
 
 ### 9.0 specs
 

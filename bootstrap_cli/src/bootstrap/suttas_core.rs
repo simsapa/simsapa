@@ -2257,4 +2257,25 @@ mod tests {
         }
         assert_eq!(chapters, 26);
     }
+
+    /// The suttas-core build (`--verse-indent`) carries Ṭhānissaro's verse
+    /// layout as `\n` and leading tabs; `build_record()` keeps both. Dhp
+    /// 186–187 as dhammatalks.org prints it: the `v2` lines are level 2.
+    #[test]
+    fn test_real_data_than_verse_indent_survives_import() {
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let core_path = base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB);
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        if !matches!(core_path.try_exists(), Ok(true)) || !matches!(appdata_path.try_exists(), Ok(true)) {
+            eprintln!("suttas-core or appdata database not found, skipping");
+            return;
+        }
+        let mut db = SuttasCoreDb::open(&core_path).unwrap().expect("suttas-core database");
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+        let rec = db.build_record("dhp179-196", "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        assert_eq!(c["dhp187:3"], "He is\n\t\tone who delights\n\t\tin the ending of craving,\n");
+        assert!(c["dhp186:3"].contains("Stressful,\n\t\tthey give little enjoyment"), "{:?}", c["dhp186:3"]);
+        assert!(c["dhp187:1"].starts_with("\t\tfinds no delight\n"), "{:?}", c["dhp187:1"]);
+    }
 }

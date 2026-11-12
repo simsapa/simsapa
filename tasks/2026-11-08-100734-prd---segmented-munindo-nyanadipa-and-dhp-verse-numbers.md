@@ -511,15 +511,23 @@ The decision and the examples behind it are in §6a.
       indent from the class of its `<p>` (`v1`…`v8`; an unclassed `<p>` is the
       base level) as leading tabs on that line of the raw text. Today it trims
       the indentation (`docs/parsers/than.md`, "Status"). The class-to-level
-      mapping is fixed by comparing with dhammatalks.org's rendering (in Thag
-      10.5 the `v2` lines are one step in and the `v4` lines two), and is
-      written into `docs/parsers/than.md`.
+      mapping comes from dhammatalks.org's stylesheet: `p.vN` is shifted by N
+      equal steps, so `vN` is level N (in Thag 10.5 the `v2` lines are level 2
+      and the `v4` lines level 4); `<pre>` verse has one level per leading tab.
+      It is written into `docs/parsers/than.md`.
+    - It is an option, `build.ts --verse-indent`, off by default, so the
+      suttas-core author can take the feature and keep the plain output.
+      Simsapa's database is built with it.
     - `textHash` collapses whitespace, so adding tabs to the raw text makes no
       segmentation stale and needs no model run.
     - The build gives each segment line that **starts** a raw verse line that
       line's tabs, matching on letters and digits, as footnote placement does.
       A segment that starts in the middle of a raw line gets none. Lines that
       cannot be matched are reported by the build, not guessed.
+    - In verse segments, a raw line break that the stored segmentation joined
+      with a space is restored (`\n` plus the next line's tabs), where the
+      letters agree with the raw's on both sides, so his line layout is kept
+      and no word changes.
     - It applies to every Ṭhānissaro text with verse (Dhp, Thag, Thig, Snp, Ud,
       Iti, and the verses inside suttas).
 42. In Simsapa, the new suttas-core database goes into a new dated folder
