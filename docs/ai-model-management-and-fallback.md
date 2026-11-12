@@ -276,6 +276,17 @@ Walk semantics:
     incomplete reply, or one with no text → retryable `invalid_response`.
   - NVIDIA NIM and SambaNova still go through rig's OpenAI client, on
     `/chat/completions`.
+- **xAI requests use the same Responses code**, posting to
+  `https://api.x.ai/v1/responses` through `send_responses_request` (shared
+  with OpenAI). rig 0.30's xAI provider tagged every input item
+  `"type": "Message"` (its serde attribute is `rename`, not `rename_all`),
+  never read `status`, so a truncated reply passed as complete, and left
+  `store` at xAI's default of keeping the conversation for 30 days.
+  `temperature` is always sent: xAI's reasoning models accept it and reject
+  only `presencePenalty`, `frequencyPenalty` and `stop`. Reasoning items
+  (empty `id`, `encrypted_content`, always present on `grok-4.7`) are
+  skipped like OpenAI's. Untested against the live API (no key); the unit
+  tests follow the request and reply shapes in docs.x.ai.
 - **OpenRouter and DeepSeek requests do not go through rig-core either.**
   `handle_openrouter_request` and `handle_deepseek_request` post to
   `/chat/completions` with plain `reqwest` through `send_chat_completions`;

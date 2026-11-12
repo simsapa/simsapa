@@ -19,7 +19,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use rig::{completion::Prompt, completion::request::Chat, providers::gemini, providers::xai, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
+use rig::{completion::Prompt, completion::request::Chat, providers::gemini, providers::openai, providers::mistral, providers::huggingface, providers::perplexity, client::CompletionClient, message::Message};
 use rig::providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig};
 use tokio::runtime::Runtime;
 
@@ -475,29 +475,14 @@ async fn handle_xai_request(
     api_key: &str,
     http_client: reqwest::Client,
 ) -> Result<String, AiRequestError> {
-    let client = xai::Client::<reqwest::Client>::builder()
-        .http_client(http_client)
-        .api_key(api_key)
-        .build()
-        .map_err(|e| request_setup_error(provider, model, format!("Failed to build xAI client: {}", e)))?;
-
-    let system_prompt = extract_system_prompt(messages);
-
-    let agent = match system_prompt {
-        Some(system_prompt) => {
-            client.agent(model)
-                  .preamble(&system_prompt)
-                  .temperature(0.7)
-                  .build()
-        }
-        None => {
-            client.agent(model)
-                  .temperature(0.7)
-                  .build()
-        }
-    };
-
-    Ok(get_response!(agent, messages, model, provider))
+    // Sent with plain reqwest, not rig-core: rig 0.30's xAI provider tags
+    // every input item `"type": "Message"` (its enum uses `rename` where it
+    // means `rename_all`), never reads the reply's `status`, so a truncated
+    // reply passes as complete, and leaves `store` at xAI's default of
+    // keeping the conversation for 30 days. xAI accepts `temperature` on its
+    // reasoning models (only the penalties and `stop` are rejected), so it is
+    // always sent.
+    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::XAI_RESPONSES_URL, true).await
 }
 
 async fn handle_anthropic_request(
@@ -566,7 +551,22 @@ async fn handle_openai_request(
     // `temperature`, which the GPT-5 family rejects, and sends earlier
     // assistant turns without the `id` an output message needs. See
     // `crate::openai_responses`.
+    let with_temperature = openai_responses::sends_temperature(model, model_reasoning_flag(provider, model));
+    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::RESPONSES_URL, with_temperature).await
+}
 
+/// Send a Responses API (`POST …/responses`) request with plain reqwest and
+/// interpret the reply. Used for OpenAI and xAI, whose Responses APIs take the
+/// same body. See `crate::openai_responses`.
+async fn send_responses_request(
+    messages: &[ChatMessage],
+    model: &str,
+    provider: &str,
+    api_key: &str,
+    http_client: reqwest::Client,
+    url: &str,
+    with_temperature: bool,
+) -> Result<String, AiRequestError> {
     // Same message convention as `get_response!`: a lone message is the user
     // prompt (any system prompt is already prepended to it); otherwise the
     // first system message is the system prompt and the rest are the turns.
@@ -587,11 +587,10 @@ async fn handle_openai_request(
         return Err(request_setup_error(provider, model, "No messages provided"));
     }
 
-    let with_temperature = openai_responses::sends_temperature(model, model_reasoning_flag(provider, model));
     let body = openai_responses::request_body(model, instructions.as_deref(), &turns, with_temperature);
 
     let response = http_client
-        .post(openai_responses::RESPONSES_URL)
+        .post(url)
         .bearer_auth(api_key)
         .json(&body)
         .send()

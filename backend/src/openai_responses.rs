@@ -1,5 +1,7 @@
 //! The OpenAI Responses API (`POST /v1/responses`) request body and reply
-//! interpretation.
+//! interpretation. xAI's Responses API takes the same body and replies in the
+//! same shape, so xAI requests use this module too, with `temperature` always
+//! sent (xAI accepts it on reasoning models).
 //!
 //! The request itself is sent by `backend/src/ai_engine.rs` with plain
 //! `reqwest`, not through rig-core, because rig 0.30's body does not match the
@@ -24,6 +26,7 @@ use serde::Deserialize;
 use crate::ai_error::{AiErrorKind, AiRequestError, classify_provider_error};
 
 pub const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+pub const XAI_RESPONSES_URL: &str = "https://api.x.ai/v1/responses";
 
 /// The temperature sent to models which accept one.
 pub const TEMPERATURE: f64 = 0.7;
@@ -303,5 +306,51 @@ mod tests {
         let body = r#"{"status":"failed","error":{"code":"server_error","message":"The server had an error"},"output":[]}"#;
         let err = interpret_reply("OpenAI", "m", body).unwrap_err();
         assert_ne!(err.kind, AiErrorKind::Refused);
+    }
+
+    /// The xAI request: input items tagged `"type": "message"` (lowercase,
+    /// as in xAI's examples), the system prompt as `instructions`, nothing
+    /// stored, `temperature` sent to a reasoning model.
+    #[test]
+    fn xai_request_body_shape() {
+        let turns = [InputTurn { role: "user", content: "Gloss this." }];
+        let body = request_body("grok-4.7", Some("You are a Pāli tutor."), &turns, true);
+        assert_eq!(body["model"], "grok-4.7");
+        assert_eq!(body["instructions"], "You are a Pāli tutor.");
+        assert_eq!(body["store"], false);
+        assert_eq!(body["temperature"], TEMPERATURE);
+        assert_eq!(body["input"][0]["type"], "message");
+        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["input"][0]["content"], "Gloss this.");
+        for key in ["presence_penalty", "frequency_penalty", "stop"] {
+            assert!(body.get(key).is_none(), "{}", key);
+        }
+    }
+
+    /// An xAI reply as in docs.x.ai: a reasoning item with an empty `id` and
+    /// `encrypted_content` (grok-4.7 always returns it), then the message.
+    #[test]
+    fn xai_reply_with_encrypted_reasoning() {
+        let body = r#"{"id":"0f6c0a2e-1c1e-4b38-9b1f-8d6f1f2c3a4b","object":"response",
+            "created_at":1760000000,"completed_at":1760000003,"model":"grok-4.7",
+            "status":"completed","incomplete_details":null,"error":null,"temperature":0.7,"top_p":0.95,
+            "output":[
+              {"id":"","type":"reasoning","summary":[{"type":"summary_text","text":"Thinking."}],
+               "encrypted_content":"gAAAAB...","status":"completed"},
+              {"id":"msg_ad5663da-63e6-86c6-e0be-ff15effa8357","type":"message","role":"assistant",
+               "status":"completed","content":[{"type":"output_text","text":"101 multiplied by 3 is 303.",
+               "logprobs":null,"annotations":[]}]}],
+            "usage":{"input_tokens":12,"output_tokens":9,"total_tokens":21,
+               "input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":40}}}"#;
+        assert_eq!(interpret_reply("xAI", "grok-4.7", body).unwrap(), "101 multiplied by 3 is 303.");
+    }
+
+    #[test]
+    fn xai_incomplete_reply_is_not_accepted() {
+        let body = r#"{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},
+            "output":[{"id":"msg_1","type":"message","role":"assistant","status":"incomplete",
+              "content":[{"type":"output_text","text":"{\"p0w1\": "}]}]}"#;
+        let err = interpret_reply("xAI", "grok-4.7", body).unwrap_err();
+        assert_eq!(err.kind, AiErrorKind::InvalidResponse);
     }
 }
