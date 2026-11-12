@@ -352,8 +352,12 @@ fn rewrite_resource_links(html: &str, book_uid: &str, base_dir: &str) -> String 
 
             // Check if this is an HTML page link (for navigation between chapters)
             // Remove fragment identifier before checking extension
-            let path_without_fragment = path.split('#').next().unwrap_or(path);
-            let is_html_link = path_without_fragment.to_lowercase().ends_with(".html") || path_without_fragment.to_lowercase().ends_with(".htm");
+            // EPUB 3 chapters are usually .xhtml: a link to one must be a page link, or it is
+            // served from /book_resources and the click handler reports an invalid link.
+            let path_without_fragment = path.split('#').next().unwrap_or(path).to_lowercase();
+            let is_html_link = path_without_fragment.ends_with(".html")
+                || path_without_fragment.ends_with(".htm")
+                || path_without_fragment.ends_with(".xhtml");
 
             // Rewrite to appropriate API endpoint
             if is_html_link {
@@ -459,6 +463,20 @@ mod tests {
         // With base_dir "OEBPS" and path "styles/main.css"
         // Combined: "OEBPS/styles/main.css"
         assert!(result.contains("href=\"/book_resources/testbook/OEBPS/styles/main.css\""));
+    }
+
+    #[test]
+    fn test_rewrite_resource_links_xhtml_page_link() {
+        // nav.xhtml at EPUB/ links to the chapters under EPUB/text/
+        let html = r#"<a href="text/ch005.xhtml#parajika">Pārājika</a><link href="styles/stylesheet1.css">"#;
+        let result = rewrite_resource_links(html, "bhikkhu-patimokkha", "EPUB");
+        assert!(result.contains(r#"href="/book_pages/bhikkhu-patimokkha/EPUB/text/ch005.xhtml#parajika""#));
+        assert!(result.contains(r#"href="/book_resources/bhikkhu-patimokkha/EPUB/styles/stylesheet1.css""#));
+
+        // A chapter linking to a sibling chapter
+        let html = r#"<a href="ch006.xhtml#sanghadisesa">Saṅghādisesa</a>"#;
+        let result = rewrite_resource_links(html, "bhikkhu-patimokkha", "EPUB/text");
+        assert!(result.contains(r#"href="/book_pages/bhikkhu-patimokkha/EPUB/text/ch006.xhtml#sanghadisesa""#));
     }
 
     #[test]
