@@ -1,34 +1,42 @@
-//! The OpenRouter Chat Completions request body and reply interpretation
-//! (`POST https://openrouter.ai/api/v1/chat/completions`).
+//! The OpenAI-style Chat Completions request body and reply interpretation,
+//! for the providers whose requests `backend/src/ai_engine.rs` sends with
+//! plain `reqwest` on `/chat/completions`: OpenRouter and DeepSeek.
 //!
-//! The request itself is sent by `backend/src/ai_engine.rs` with plain
-//! `reqwest`, not through rig-core. rig 0.30's request body is valid, but it
-//! reads the reply wrongly in the cases the OpenRouter errors page describes:
+//! rig 0.30's request bodies for these providers were valid, but its reply
+//! handling misread the cases both providers document:
 //!
-//! - **An error during generation arrives as HTTP 200** whose body holds only
-//!   `{"error": {"code": 502, "message": …}}`. rig fails to parse it and
-//!   reports a JSON error, losing the code, so the walk did not retry it.
-//!   Here the body goes to `classify_provider_error`, which reads the numeric
-//!   `error.code` as the status.
-//! - **A provider error after some tokens** comes back as a choice with
-//!   `finish_reason: "error"`, an `error` object and partial `content`. rig
-//!   returned the partial text as the reply.
-//! - **A reasoning model can use up the token budget** and reply with
-//!   `finish_reason: "length"` and empty or `null` content. rig returned "".
+//! - **OpenRouter: an error during generation arrives as HTTP 200** whose
+//!   body holds only `{"error": {"code": 502, "message": …}}`. rig failed to
+//!   parse it and reported a JSON error, losing the code, so the walk did not
+//!   retry it. Here the body goes to `classify_provider_error`, which reads
+//!   the numeric `error.code` as the status.
+//! - **A reply cut short is not an answer.** A choice with an `error` object,
+//!   or `finish_reason` `error` (OpenRouter), `insufficient_system_resource`
+//!   or `aborted` (DeepSeek), or `length`, is a failed reply even when it
+//!   carries partial content. rig returned the partial text.
+//! - **`content` may be `null`** (DeepSeek's schema marks it nullable; a
+//!   reasoning model can spend the whole budget on reasoning). rig's DeepSeek
+//!   client failed to parse it, its OpenRouter client returned "".
+//! - rig's DeepSeek client also required the `prompt_cache_*` usage fields;
+//!   nothing here reads `usage`.
 //!
-//! The optional `HTTP-Referer` / `X-OpenRouter-Title` headers name the app
-//! (`APP_REFERER`, `APP_TITLE`), never the user.
+//! Both providers may send whitespace before the JSON body to keep the
+//! connection open; serde skips it.
+//!
+//! The optional OpenRouter `HTTP-Referer` / `X-OpenRouter-Title` headers name
+//! the app (`OPENROUTER_APP_REFERER`, `OPENROUTER_APP_TITLE`), never the user.
 
 use serde::Deserialize;
 
 use crate::ai_error::{AiErrorKind, AiRequestError, classify_provider_error};
 
-pub const CHAT_COMPLETIONS_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+pub const DEEPSEEK_URL: &str = "https://api.deepseek.com/chat/completions";
 
 /// App attribution headers. Optional for OpenRouter; they identify the app on
 /// openrouter.ai, not the person using it.
-pub const APP_REFERER: &str = "https://simsapa.github.io/";
-pub const APP_TITLE: &str = "Simsapa";
+pub const OPENROUTER_APP_REFERER: &str = "https://simsapa.github.io/";
+pub const OPENROUTER_APP_TITLE: &str = "Simsapa";
 
 pub const TEMPERATURE: f64 = 0.7;
 
@@ -91,6 +99,10 @@ fn content_text(content: Option<&serde_json::Value>) -> String {
     }
 }
 
+/// `finish_reason` values that mean the reply was cut short. Any other value
+/// (`stop`, a provider's own spelling of it) with text is an answer.
+const CUT_SHORT_FINISH_REASONS: [&str; 4] = ["error", "length", "insufficient_system_resource", "aborted"];
+
 /// Interpret the body of an HTTP 2xx reply: the reply text, or the reason it
 /// is unusable.
 pub fn interpret_reply(provider: &str, model: &str, body: &str) -> Result<String, AiRequestError> {
@@ -128,12 +140,6 @@ pub fn interpret_reply(provider: &str, model: &str, body: &str) -> Result<String
         err.raw = body.to_string();
         return Err(err);
     }
-    if finish_reason == "error" {
-        return Err(unusable(
-            AiErrorKind::InvalidResponse,
-            "The reply ended with an error.".to_string(),
-        ));
-    }
 
     let message = choice.message.as_ref();
 
@@ -149,10 +155,10 @@ pub fn interpret_reply(provider: &str, model: &str, body: &str) -> Result<String
             "The reply is incomplete (reason: content_filter).".to_string(),
         ));
     }
-    if finish_reason == "length" {
+    if CUT_SHORT_FINISH_REASONS.contains(&finish_reason) {
         return Err(unusable(
             AiErrorKind::InvalidResponse,
-            "The reply is incomplete (reason: length).".to_string(),
+            format!("The reply is incomplete (reason: {}).", finish_reason),
         ));
     }
 
@@ -287,6 +293,31 @@ mod tests {
         let body = reply("length", r#"{"role":"assistant","content":"{\"p0w1\": "}"#);
         let err = interpret_reply("OpenRouter", "m", &body).unwrap_err();
         assert_eq!(err.kind, AiErrorKind::InvalidResponse);
+    }
+
+    #[test]
+    fn deepseek_reply_with_reasoning_content() {
+        let body = format!(
+            "\n\n{}",
+            reply("stop", r#"{"role":"assistant","content":"Hello.","reasoning_content":"thinking"}"#)
+        );
+        assert_eq!(interpret_reply("DeepSeek", "deepseek-flash", &body).unwrap(), "Hello.");
+    }
+
+    #[test]
+    fn deepseek_cut_short_replies_are_retryable() {
+        for reason in ["insufficient_system_resource", "aborted"] {
+            let body = reply(reason, r#"{"role":"assistant","content":"Partial","reasoning_content":"t"}"#);
+            let err = interpret_reply("DeepSeek", "m", &body).unwrap_err();
+            assert_eq!(err.kind, AiErrorKind::InvalidResponse, "{}", reason);
+            assert!(err.message.contains(reason), "{}", err.message);
+        }
+    }
+
+    #[test]
+    fn reply_without_usage_is_read() {
+        let body = r#"{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi"}}]}"#;
+        assert_eq!(interpret_reply("DeepSeek", "m", body).unwrap(), "Hi");
     }
 
     #[test]

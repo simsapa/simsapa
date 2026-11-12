@@ -118,8 +118,9 @@ pub struct FetchedModel {
     /// Whether the source marks this as a reasoning/thinking model.
     /// `None` when the source doesn't say (SambaNova).
     pub reasoning: Option<bool>,
-    /// models.dev `status: "deprecated"`. Kept in the list (it still answers)
-    /// but never chosen as the default.
+    /// models.dev `status: "deprecated"`. Never added to a list and never
+    /// chosen as the default; a model already in the list stays (it still
+    /// answers, and the user may have enabled it).
     #[serde(default)]
     pub deprecated: bool,
 }
@@ -426,7 +427,8 @@ pub fn fetch_sambanova_native() -> Result<Vec<FetchedModel>> {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MergeStats {
-    /// Fetched models not previously in the list, appended disabled.
+    /// Fetched models not previously in the list, appended disabled
+    /// (deprecated models are not added).
     pub added: usize,
     /// `Fetched`-origin models no longer found upstream, removed.
     pub removed: usize,
@@ -436,7 +438,8 @@ pub struct MergeStats {
 
 /// Merge a provider's fetched model list into its existing one (FR-A6):
 ///
-/// - fetched models not present are appended `{enabled: false, origin: fetched}`;
+/// - fetched models not present are appended `{enabled: false, origin: fetched}`,
+///   except deprecated ones, which are never added;
 /// - `fetched`-origin models absent upstream are removed;
 /// - `user`-origin models are never removed — absent upstream flags them
 ///   `stale: true`, found again clears the flag;
@@ -478,7 +481,7 @@ pub fn merge_provider_models(
     let present: std::collections::HashSet<String> =
         out.iter().map(|m| m.model_name.clone()).collect();
     for f in fetched {
-        if present.contains(&f.id) {
+        if present.contains(&f.id) || f.deprecated {
             continue;
         }
         stats.added += 1;

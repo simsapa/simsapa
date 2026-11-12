@@ -210,6 +210,26 @@ fn merge_add_remove_stale_and_enabled_preserved() {
 }
 
 #[test]
+fn merge_never_adds_deprecated_but_keeps_listed_ones() {
+    let mut old_listed = fetched("old-listed");
+    old_listed.deprecated = true;
+    let mut old_new = fetched("old-new");
+    old_new.deprecated = true;
+    let existing = vec![entry("old-listed", true, ModelOrigin::Fetched, false)];
+    let upstream = vec![old_listed, old_new, fetched("current")];
+
+    let (merged, stats) = merge_provider_models(&existing, &upstream);
+
+    let names: Vec<&str> = merged.iter().map(|m| m.model_name.as_str()).collect();
+    // A deprecated model already in the list stays (enabled preserved); a
+    // deprecated model not yet listed is not added.
+    assert_eq!(names, vec!["old-listed", "current"]);
+    assert!(merged[0].enabled);
+    assert_eq!(stats.added, 1);
+    assert_eq!(stats.removed, 0);
+}
+
+#[test]
 fn merge_with_empty_existing_appends_all_disabled() {
     let (merged, stats) = merge_provider_models(&[], &[fetched("m1"), fetched("m2")]);
     assert_eq!(merged.len(), 2);
@@ -456,8 +476,8 @@ fn models_dev_type_and_deprecated_status() {
     // The music model and the typed speech model are filtered out; an unknown
     // `type` value is let through.
     assert_eq!(ids, ["gemini-chat-future-type", "gemini-chat-new", "gemini-chat-old"]);
-    // The deprecated model stays in the list but is never the default, even
-    // though it is the newest zero-cost model.
+    // The deprecated model is parsed (the merge decides what to do with it)
+    // but is never the default, even though it is the newest zero-cost model.
     assert!(models.iter().find(|m| m.id == "gemini-chat-new").unwrap().deprecated);
     assert_eq!(pick_default_model(&models).as_deref(), Some("gemini-chat-old"));
 }

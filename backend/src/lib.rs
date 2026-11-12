@@ -38,7 +38,7 @@ pub mod ai_engine;
 pub mod gloss_word_selection_run;
 pub mod anthropic_messages;
 pub mod openai_responses;
-pub mod openrouter_chat;
+pub mod chat_completions;
 pub mod lookup;
 pub mod lookup_forms;
 pub mod dpd_form_grammar;

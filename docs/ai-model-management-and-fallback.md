@@ -82,6 +82,8 @@ classifier …).
 | Case | Result |
 |---|---|
 | fetched, not in the stored list | appended as `{enabled: false, origin: "fetched"}` |
+| fetched, not in the stored list, models.dev `status: "deprecated"` | not added |
+| in the stored list, now deprecated upstream | kept (it still answers, and may be enabled) |
 | `origin: fetched`, absent upstream | removed |
 | `origin: user`, absent upstream | kept, `stale: true` |
 | present in both | `enabled` preserved; `reasoning` refreshed (a known value is not erased by a silent source) |
@@ -103,12 +105,19 @@ under 20B), the larger stated size (`70b`, the `550b` of `550b-a55b`; a stated
 size beats none), then newest and longest context. The id is matched by
 **word** (split on `-` `_` `/` `:`), so `mini` does not match inside
 `gemini`.
-A models.dev `status: "deprecated"` model stays in the list but is never the
-pick. The heuristic runs **only for a provider with no enabled model** after
+A models.dev `status: "deprecated"` model is never the pick. The heuristic runs **only for a provider with no enabled model** after
 the merge — typically because the previous default was removed upstream — and
 it never disables anything. Without that check every regen enabled the newest
 pick next to the previous one, so the bundled list gained an enabled model per
 provider per run.
+
+So `update-provider-models` never moves an existing default, even when
+models.dev marks that model deprecated, and it never removes a model that is
+already listed while the source still lists it — including one the provider
+itself no longer serves. Both are fixed by hand in `assets/providers.json`
+(which only seeds new settings): move the default, and delete ids the
+provider's own `/models` endpoint no longer returns. A dead id that models.dev
+still lists as current comes back on the next run.
 
 **Callers.**
 
@@ -267,29 +276,39 @@ Walk semantics:
     incomplete reply, or one with no text → retryable `invalid_response`.
   - NVIDIA NIM and SambaNova still go through rig's OpenAI client, on
     `/chat/completions`.
-- **OpenRouter requests do not go through rig-core either.**
-  `handle_openrouter_request` posts to `/api/v1/chat/completions` with plain
-  `reqwest`; the body and the reply interpretation are in
-  `backend/src/openrouter_chat.rs` (unit-tested). rig's request body was
-  valid, but it misread the replies the OpenRouter errors page describes:
-  - **An error during generation comes back as HTTP 200** with only
+- **OpenRouter and DeepSeek requests do not go through rig-core either.**
+  `handle_openrouter_request` and `handle_deepseek_request` post to
+  `/chat/completions` with plain `reqwest` through `send_chat_completions`;
+  the body and the reply interpretation are in
+  `backend/src/chat_completions.rs` (unit-tested). rig's request bodies were
+  valid, but it misread the replies both providers document:
+  - **An OpenRouter error during generation comes back as HTTP 200** with only
     `{"error": {"code": …, "message": …}}` in the body. It is classified by
     its numeric `error.code` like an HTTP status (a 502 is a retryable
     `overloaded`, a 429 `rate_limited`). rig reported a JSON parse error,
     which was `unknown` and not retried.
-  - A choice with an `error` object or `finish_reason: "error"` is a failed
-    reply even when it carries partial content (an `error` with no usable
-    code is a retryable `invalid_response`).
-  - `finish_reason: "length"` (a reasoning model can spend the whole budget
-    and leave `content` empty or `null`), or a reply with no text, is a
-    retryable `invalid_response`; `content_filter` or a `refusal` is
-    `refused`.
-  - The request sends the optional `HTTP-Referer` (`https://simsapa.github.io/`)
-    and `X-OpenRouter-Title` (`Simsapa`) headers: the app's identity, never
-    the user's.
+  - **A reply cut short is a failure, even with partial content:** a choice
+    with an `error` object (an `error` with no usable code is a retryable
+    `invalid_response`), or `finish_reason` `error` (OpenRouter),
+    `insufficient_system_resource` or `aborted` (DeepSeek), or `length` (a
+    reasoning model can spend the whole budget and leave `content` empty or
+    `null`) → retryable `invalid_response`. So is a reply with no text.
+    `content_filter` or a `refusal` is `refused`.
+  - `content` may be `null` (DeepSeek's schema marks it nullable); rig's
+    DeepSeek client failed to parse it, and also required the
+    `prompt_cache_*` usage fields. Nothing here reads `usage`.
+  - Both providers may send blank lines before the JSON body to keep the
+    connection open; serde skips them.
+  - OpenRouter requests send the optional `HTTP-Referer`
+    (`https://simsapa.github.io/`) and `X-OpenRouter-Title` (`Simsapa`)
+    headers: the app's identity, never the user's.
   - OpenRouter's upstream errors say only "Provider returned error"; the
     provider's own text is in `error.metadata.raw`, which
     `classify_provider_error` appends to the message (up to 300 characters).
+  - **DeepSeek runs in thinking mode.** With neither `thinking` nor
+    `reasoning_effort` in the request, DeepSeek enables thinking at `high`
+    effort; `temperature` then has no effect, and the default `max_tokens` is
+    64K, so a long reply can reach the 180 s timeout.
 - Provider API keys are trimmed on save and on read (`get_provider_api_key`):
   a pasted key with a trailing newline is not a valid HTTP header value, and
   the provider client reports it only as "Header value outside of legal range".
