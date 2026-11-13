@@ -441,6 +441,15 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   "off")` collapses Repeat-Pāli duplicates; the server re-applies the
   arrangement. `SUTTA_DISPLAY.columns` is the single source of truth shared
   with the settings panel; a failed fetch reverts it.
+- The options are the related records of the opened text
+  (`get_translations_data_json_for_sutta_uid()`, rule in
+  [sutta-navigation-tree.md](./sutta-navigation-tree.md)). **A commentary is any
+  record whose reference ends in `.att` or `.tik`, whatever its source**, so
+  `dhp21-32.att/en/anandajoti` is offered on `dhp21-32/pli/ms` only with
+  *Include commentary in translations*, like `dhp21-32.att/pli/cst`
+  ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2).
+  Labels name the author and edition only ("anandajoti (en)"), so a vagga's
+  verses and its commentary by one author read alike.
 - Rules: minimum one column (last "×" disabled); "+" suggests the Pāli
   first, then the next unshown translation; options displayed in another
   column are disabled; in Lines mode `has_content_json == false` entries,

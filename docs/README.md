@@ -537,6 +537,19 @@ substantially.
   import). The verse-segment line contract (`\n` = line, leading tabs =
   indent level) and `render_verse_lines()`, which leaves every segment
   without line data byte-identical.
+- [Dhammapada commentary: Ānandajoti's pages, and the commentary records of a vagga](./dhammapada-commentary-anandajoti.md) —
+  Ānandajoti's *Dhamma Verses Commentary* as one page per vagga,
+  `dhp<range>.att/en/anandajoti`, beside the CST aṭṭhakathā
+  (`dhp<range>.att/pli/cst`, from the verified CST Dhammapada files), its
+  OpenTipitaka English and Daw Mya Tin's tipitaka.net pages
+  (`dhp<range>.att/en/daw`). The **commentary rule**: any `.att` / `.tik` uid
+  is a commentary whatever its source, in the translation tabs and in all
+  three search paths. The extract → import stages
+  (`dhammapada-commentary-extract`, the manifest's SHA-256 warning), the epub
+  facts, the anchor scheme (`story-1-1`, `dhp-v5`, `note-4`), the class
+  mapping, and the defect report (**reported, never repaired**). A Dhammapada
+  verse is glossed from the MS record, since the CST records are keyed by
+  vagga.
 - [Releases info lookup and the embedded fallback JSON](./releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live

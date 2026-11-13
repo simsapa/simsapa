@@ -40,7 +40,7 @@ row points at — 463 of them today. That is deliberate and is not a gap to clos
 by building a Mūla root.
 
 Those records exist so that **no text is missing from the app** while the parser
-catches up. `tipitaka-xml-parser` has mapped 52 of the 217 source files to
+catches up. `tipitaka-xml-parser` has mapped 54 of the 217 source files to
 verified sutta-fragment uids (§3.1); until a file is on that list its suttas have
 no mapped uid, and the division records are what keep its text present and
 findable by search. As more files are verified, their suttas become mapped
@@ -332,6 +332,12 @@ Which *kinds* are listed is decided separately, by the two settings:
 | a ṭīkā | always | with `include_cst_commentary` | always |
 
 `include_cst_mula` then removes the `…/pli/cst` mūla rows, as above.
+
+**The kind is read from the uid, never the source.** A reference ending in
+`.att` is an aṭṭhakathā and one ending in `.tik` a ṭīkā, whoever made it:
+`dhp21-32.att/en/anandajoti` and `dhp21-32.att/en/daw` follow
+`include_cst_commentary` exactly as `dhp21-32.att/pli/cst` does, here and in
+search ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2).
 
 The lookup runs in two steps. A `LIKE` on the group prefix
 (`related_sutta_uids_like_pattern()`: `an5.%`, `mn%`) reads **uids only**, the
@@ -1267,7 +1273,7 @@ be conflated. `bootstrap_cli/src/bootstrap/cst_coverage.rs` holds both.
 
 ### 3.1 Is the parse trustworthy? — `VERIFIED_CST_FILES`
 
-A hand-maintained list of 52 source file names. **Only a listed file
+A hand-maintained list of 54 source file names. **Only a listed file
 contributes fragment records.** Everything else is imported as divisions of the
 file, which do not depend on the parser's sutta splitting at all.
 
@@ -1292,8 +1298,8 @@ whether its fragments are sound.
 > a stuck or edge-case state; its **absence** means the fragment never needed
 > scrutiny, not that it is wrong. The other values are no verdict either:
 > `agent-checked` is the same pass made by an agent, and `moved` marks an empty
-> record (§3.2). Measured over the fragments database: 511 of 7,104 Sutta
-> fragments carry any review value, across 32 of the 52 files, and **no file**
+> record (§3.2). Measured over the fragments database: 517 of 7,161 Sutta
+> fragments carry any review value, across 32 of the 54 files, and **no file**
 > has all of its fragments marked. The validation verdict is never written back
 > into `fragments.sqlite3`, so the list is the only record of it.
 
@@ -1350,7 +1356,7 @@ that matches it.
 
 The accepted exception is the partially mapped class, whose mapped portion is
 stored twice — as a division and as a fragment — so that the *unmapped*
-remainder stays findable. No file is in that class today: all 52 verified
+remainder stays findable. No file is in that class today: all 54 verified
 files are fully mapped.
 
 ### 3.4 Dual identity, in the partially mapped class only
@@ -1458,7 +1464,9 @@ preamble, the previous leaf's last fragment for a postamble.
 
 Worked example: `s0301a.att.xml` lists `Ganthārambhakathā` as its first toc
 leaf, and the `sn1.1` fragment begins with that section before running on into
-the sn1.1 commentary. The leaf therefore opens `sn1.1.att/pli/cst`. These are
+the sn1.1 commentary. The leaf therefore opens `sn1.1.att/pli/cst`, and the
+Dhammapada-aṭṭhakathā's `Ganthārambhakathā` leaf (`cst:s0502a.att0.xml`) opens
+`dhp1-20.att/pli/cst` the same way. These are
 counted in the coverage report as "merged into an adjacent record" — they are
 **not** unassigned leaves and **not** a defect.
 
@@ -1485,7 +1493,11 @@ also reading `1. Mahāpadānasuttavaṇṇanā` — and cost a tap for nothing.
 all; it is one the fragment join above invents, and a one-element group is not a
 level. The equivalence test is what keeps that true: a leaf whose single
 fragment has a *different* name is a real containment and keeps its branch.
-Today 164 leaves collapse and 18 do not — `4. Okkantasaṁyuttaṁ` over
+Today 194 leaves collapse and 19 do not. The 26 Dhammapada-aṭṭhakathā vaggas
+are among those that collapse: each toc leaf (`cst:s0502a.att2.xml`,
+"2. Appamādavaggo") matches one fragment of the same title and opens
+`dhp21-32.att/pli/cst` directly, so there are no `cst:frag:dhp…` rows. Those
+that do not include `4. Okkantasaṁyuttaṁ` over
 `1-10. Cakkhusuttādivaṇṇanā`, in the aṭṭhakathā and its ṭīkā, where the saṁyutta
 really does contain one ranged commentary record, and Aṅguttara vaggas such as
 `(10) 5. Kakudhavaggo` over `1-10. Paṭhamasampadāsuttādivaṇṇanā`.
