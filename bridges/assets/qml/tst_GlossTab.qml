@@ -13,6 +13,14 @@ Item {
         anchors.centerIn: parent
     }
 
+    Component {
+        id: wis_row_component
+        GlossWordInSentenceRow {
+            width: 400
+            shield: ({ icon: "", tooltip: "" })
+        }
+    }
+
     // Signal spy for testing background processing
     SignalSpy {
         id: allParagraphsSpy
@@ -799,6 +807,144 @@ Item {
             compare(done.status, "completed");
             compare(Object.keys(gloss_tab.auto_translate_in_flight).length, 0);
             gloss_tab.auto_translate = false;
+        }
+
+
+        // --- GlossWordInSentenceRow ---
+
+        function make_wis_row(row, two_lines) {
+            var obj = createTemporaryObject(wis_row_component, gloss_tab, {
+                item: { row: row, depth: 0, kind: "sense", alt: 0 },
+                two_lines: two_lines === undefined ? true : two_lines,
+            });
+            verify(obj !== null);
+            wait(0);
+            return obj;
+        }
+
+        function wis_row_data(extra) {
+            var row = { word: "uppannaṁ", id: 1, confidence: null, grammar: "nt nom sg of uppanna",
+                        grammar_options: [], grammar_index: 0, construction: "ud + √pad + na",
+                        root: "√pad 3 ya (go, step)", definition: "arisen; appeared; come into being (in)",
+                        contextual: "arisen", selected_candidate: 0,
+                        candidates: [{ uid: "1/dpd", lemma_1: "uppanna 1", meaning: "arisen; appeared; come into being (in)" },
+                                     { uid: "2/dpd", lemma_1: "uppanna 2", meaning: "born (in); lit. gone up" }] };
+            for (var k in extra) row[k] = extra[k];
+            return row;
+        }
+
+        function first_item_with_text(item, text) {
+            var found = find_items_by_text(item, text);
+            return found.length > 0 ? found[0] : null;
+        }
+
+        function test_sense_labels_rule() {
+            var r = make_wis_row(wis_row_data({}));
+            // Same base, every candidate numbered: shortened.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" },
+                                    { uid: "b", lemma_1: "uppanna 2", meaning: "born (in)" }]),
+                    ["1: arisen", "2: born (in)"]);
+            compare(r.sense_labels([{ uid: "a", lemma_1: "citta 1.1", meaning: "mind" },
+                                    { uid: "b", lemma_1: "citta 1.2", meaning: "thought" }]),
+                    ["1.1: mind", "1.2: thought"]);
+            // Different bases: full names.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "ta 1", meaning: "that" },
+                                    { uid: "b", lemma_1: "so", meaning: "he" }]),
+                    ["ta 1: that", "so: he"]);
+            // A base without a number among numbered ones: full names.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna", meaning: "arisen" },
+                                    { uid: "b", lemma_1: "uppanna 2", meaning: "born" }]),
+                    ["uppanna: arisen", "uppanna 2: born"]);
+            // No lemma_1: the uid, full names.
+            compare(r.sense_labels([{ uid: "x/dpd", meaning: "m" },
+                                    { uid: "b", lemma_1: "x 2", meaning: "n" }]),
+                    ["x/dpd: m", "x 2: n"]);
+            // A single candidate keeps its name.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" }]),
+                    ["uppanna 1: arisen"]);
+            compare(r.sense_labels([]), []);
+        }
+
+        function test_wis_row_contextual_cell() {
+            var r = make_wis_row(wis_row_data({}));
+            var ctx = first_item_with_text(r, "arisen");
+            verify(ctx !== null);
+            verify(ctx.visible);
+            verify(ctx.font.italic);
+            compare(r.definition_col, 3);
+            compare(r.definition_span, 2);
+
+            var empty = make_wis_row(wis_row_data({ contextual: "  " }));
+            verify(!empty.has_contextual);
+            // The Definition takes the Contextual's column.
+            compare(empty.definition_col, 2);
+            compare(empty.definition_span, 3);
+        }
+
+        function test_wis_row_closed_sense_combo_shows_definition() {
+            var r = make_wis_row(wis_row_data({}));
+            var combos = find_combo_boxes(r);
+            var sense = null;
+            for (var i = 0; i < combos.length; i++) {
+                if (combos[i].visible && combos[i].displayText === "arisen; appeared; come into being (in)") sense = combos[i];
+            }
+            verify(sense !== null);
+            compare(sense.model, ["1: arisen; appeared; come into being (in)", "2: born (in); lit. gone up"]);
+        }
+
+        function test_wis_row_line2_and_brackets() {
+            var r = make_wis_row(wis_row_data({}));
+            verify(r.has_line2);
+            compare(r.line2_row, 1);
+            var c = first_item_with_text(r, "[ud + √pad + na]");
+            verify(c !== null);
+            verify(c.visible);
+
+            var bare = make_wis_row(wis_row_data({ grammar: "", construction: "", root: "" }));
+            verify(!bare.has_line2);
+            verify(!bare.show_line2_cells);
+            compare(bare.construction_text, "");
+        }
+
+        function test_wis_row_one_line() {
+            var r = make_wis_row(wis_row_data({}), false);
+            compare(r.line2_row, 0);
+            compare(r.contextual_col, 3);
+            compare(r.definition_col, 4);
+            compare(r.definition_span, 1);
+            verify(r.show_line2_cells);
+            // All cells on one line: Construction at the top, like the word.
+            wait(0);
+            compare(first_item_with_text(r, "[ud + √pad + na]").y, 0);
+            var two = make_wis_row(wis_row_data({}), true);
+            wait(0);
+            verify(first_item_with_text(two, "[ud + √pad + na]").y > 0);
+        }
+
+        function test_lines_per_word_toggle() {
+            verify(find_items_by_text(gloss_tab, "Lines per word:").length > 0);
+            var saved = gloss_tab.gloss_lines_per_word;
+            gloss_tab.gloss_lines_per_word = 1;
+            var combos = find_combo_boxes(gloss_tab).filter((c) => c.model && c.model.length === 2 && c.model[0] === "One line");
+            compare(combos.length, 1);
+            compare(combos[0].currentIndex, 0);
+            gloss_tab.gloss_lines_per_word = 2;
+            compare(combos[0].currentIndex, 1);
+            gloss_tab.gloss_lines_per_word = saved;
+        }
+
+        function find_combo_boxes(item) {
+            var found = [];
+            if (!item) return found;
+            if (item.displayText !== undefined && item.popup !== undefined && item.currentIndex !== undefined) found.push(item);
+            var kids = item.children || [];
+            for (var i = 0; i < kids.length; i++) {
+                found = found.concat(find_combo_boxes(kids[i]));
+            }
+            if (item.contentItem && kids.indexOf(item.contentItem) < 0) {
+                found = found.concat(find_combo_boxes(item.contentItem));
+            }
+            return found;
         }
 
     }

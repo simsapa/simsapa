@@ -256,6 +256,8 @@ Item {
     // setting shared with the Export window, which sets it here too when it
     // saves (onExport_requested).
     property int gloss_lines_per_word: 2
+    // A user choice in the ComboBox may have replaced its binding.
+    onGloss_lines_per_wordChanged: lines_per_word_combo.currentIndex = root.gloss_lines_per_word === 1 ? 0 : 1
 
     // Translate each paragraph as soon as its gloss (and its AI word
     // selection) is complete.
@@ -3023,6 +3025,30 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 }
                             }
 
+                            // Shared with the Export window's choice (one app
+                            // setting), so both start from the same layout.
+                            RowLayout {
+                                spacing: 5
+
+                                Text {
+                                    text: "Lines per word:"
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                    opacity: lines_per_word_combo.enabled ? 1.0 : 0.5
+                                }
+
+                                ComboBox {
+                                    id: lines_per_word_combo
+                                    model: ["One line", "Two lines"]
+                                    currentIndex: root.gloss_lines_per_word === 1 ? 0 : 1
+                                    enabled: root.is_word_in_sentence
+                                    onActivated: function(index) {
+                                        root.gloss_lines_per_word = index === 0 ? 1 : 2;
+                                        SuttaBridge.set_gloss_lines_per_word(root.gloss_lines_per_word);
+                                    }
+                                }
+                            }
+
                             RowLayout {
                                 spacing: 5
 
@@ -3615,7 +3641,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 required property var modelData
                                 item: wis_row.modelData
                                 shield: root.shield_state(wis_row.modelData.row.resolution || null)
-                                is_mobile: root.is_mobile
+                                two_lines: root.gloss_lines_per_word === 2
                                 font_point_size: root.vocab_font_point_size
                                 text_color: root.text_color
                                 bg_color: root.bg_color
