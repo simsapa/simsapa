@@ -780,6 +780,43 @@ Item {
             compare(w.resolution === undefined || w.resolution === null, true);
         }
 
+        // A reading chosen by hand takes the AI's meaning for that reading,
+        // or none: never the meaning fitted to the old reading.
+        function test_update_row_reading_follows_contextual_meanings() {
+            gloss_tab.current_text = "rājaññassa";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([{
+                original_word: "rājaññassa", results: [{ uid: "1/dpd", word: "rājañña 1", summary: "" }],
+                selected_index: 0, stem: "rājañña 1", example_sentence: "rājaññassa",
+                direct_uids: ["1/dpd"], deconstructions: [],
+                reading: { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman",
+                           contextual_meanings: ["of the nobleman", "for the nobleman", ""], origin: "ai-selected" }
+            }]));
+            var item = { owner: 0, kind: "sense", key: "",
+                         row: { candidates: [{ uid: "1/dpd" }], selected_candidate: 0 } };
+            var reading = function() {
+                return JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0].reading;
+            };
+
+            gloss_tab.update_row_reading(0, item, 1);
+            compare(reading().grammar_index, 1);
+            compare(reading().origin, "user-selected");
+            compare(reading().contextual_meaning, "for the nobleman");
+            compare(reading().contextual_meanings.length, 3);
+
+            // No entry for this reading: the contextual meaning is cleared.
+            gloss_tab.update_row_reading(0, item, 2);
+            compare(reading().contextual_meaning, undefined);
+            compare(reading().contextual_meanings.length, 3);
+
+            // Without a list, the old reading's meaning is not carried over.
+            var words = gloss_tab.paragraph_words(0);
+            words[0].reading = { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman", origin: "ai-selected" };
+            gloss_tab.set_paragraph_words(0, words);
+            gloss_tab.update_row_reading(0, item, 1);
+            compare(reading().contextual_meaning, undefined);
+            compare(reading().contextual_meanings, undefined);
+        }
+
         function test_auto_translate_waits_for_word_selection() {
             gloss_tab.current_text = "Idha";
             gloss_tab.handle_all_paragraphs_results(mock_paragraph([]));
@@ -904,6 +941,11 @@ Item {
             verify(!bare.has_line2);
             verify(!bare.show_line2_cells);
             compare(bare.construction_text, "");
+
+            // A whitespace construction is empty: no brackets, no line 2.
+            var blank = make_wis_row(wis_row_data({ grammar: "", construction: "  ", root: "" }));
+            compare(blank.construction_text, "");
+            verify(!blank.has_line2);
         }
 
         function test_wis_row_one_line() {

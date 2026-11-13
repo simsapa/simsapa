@@ -853,9 +853,10 @@ grammar and contextual meaning (in italic) above the sense's summary (the
 definition when there is no summary). Templates get `{word_in_sentence}`,
 `{grammar}`, `{definition}` and `{contextual}` (empty for a Headwords note); a
 template naming an unknown variable fails the export with an error naming the
-template and the note's word. The data CSV gains `word_in_sentence`,
-`grammar_in_sentence` and `contextual_in_sentence` columns when the gloss has
-rows.
+template and the note's word. The data CSV ends with the columns
+`word_in_sentence`, `grammar_in_sentence`, `contextual_in_sentence` and
+`definition_in_sentence`, filled for a Word in Sentence note and empty for a
+Headwords one, so both formats import into one note type.
 
 The **session JSON** (`build_gloss_session_json()` in the builder, and the
 Gloss tab's `session_data_json()`) carries `gloss_format`, and per paragraph

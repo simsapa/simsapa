@@ -442,12 +442,15 @@ fn generate_data_csv(
         "summary",
     ];
     let notes = all_notes(gloss_data);
-    // Word in Sentence notes add the token as written, its grammar and the
-    // AI's contextual meaning.
-    let word_in_sentence = gloss_data.paragraphs.iter().any(|p| !p.rows.is_empty());
-    if word_in_sentence {
-        header.extend(["word_in_sentence", "grammar_in_sentence", "contextual_in_sentence"]);
-    }
+    // The token as written, its grammar, the AI's contextual meaning and the
+    // dictionary definition of its sense: filled for a Word in Sentence note,
+    // empty for a Headwords one, so both formats import into one note type.
+    header.extend([
+        "word_in_sentence",
+        "grammar_in_sentence",
+        "contextual_in_sentence",
+        "definition_in_sentence",
+    ]);
     csv_lines.push(header.join(","));
 
     for vocab in &notes {
@@ -534,11 +537,10 @@ fn generate_data_csv(
             get_field("lemma_clean"),
             vocab.summary.clone(),
         ];
-        if word_in_sentence {
-            row.push(vocab.word_in_sentence.clone());
-            row.push(vocab.grammar.clone());
-            row.push(vocab.contextual.clone());
-        }
+        row.push(vocab.word_in_sentence.clone());
+        row.push(vocab.grammar.clone());
+        row.push(vocab.contextual.clone());
+        row.push(vocab.definition.clone());
 
         let escaped_row: Vec<String> = row.iter().map(|f| escape_csv_field(f)).collect();
         csv_lines.push(escaped_row.join(","));

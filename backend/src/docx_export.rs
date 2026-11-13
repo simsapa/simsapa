@@ -502,7 +502,9 @@ fn word_table(rows: &[GlossExportRow]) -> String {
 /// The two-line Word-by-Word table (`WORD_TABLE_2L_COLUMNS`): each word on
 /// two table rows sharing its shade, the meanings over the grammar and
 /// derivation, as in the Gloss tab's two-line row. Line 1's Definition spans
-/// the Construction and Root columns (`w:gridSpan`).
+/// the Construction and Root columns (`w:gridSpan`). A word's two rows stay
+/// on one page: no row splits (`w:cantSplit`), and line 1's paragraphs keep
+/// with the next row (`w:keepNext`).
 fn word_table_two_lines(rows: &[GlossExportRow]) -> String {
     let mut xml_rows = String::new();
     let header: String = WORD_TABLE_2L_COLUMNS
@@ -527,14 +529,16 @@ fn word_table_two_lines(rows: &[GlossExportRow]) -> String {
             cell(&conf, w[5], 1, 0),
         ]
         .concat();
-        xml_rows.push_str(&format!("<w:tr>{}</w:tr>", line1));
+        let style = r#"<w:pStyle w:val="VocabEntry"/>"#;
+        let line1 = line1.replace(style, &format!("{style}<w:keepNext/>"));
+        xml_rows.push_str(&format!("<w:tr><w:trPr><w:cantSplit/></w:trPr>{}</w:tr>", line1));
         let line2: String = row
             .line2_cells()
             .iter()
             .zip(w)
             .map(|(text, width)| cell(text, width, 1, 0))
             .collect();
-        xml_rows.push_str(&format!("<w:tr>{}</w:tr>", line2));
+        xml_rows.push_str(&format!("<w:tr><w:trPr><w:cantSplit/></w:trPr>{}</w:tr>", line2));
     }
     word_table_xml(&WORD_TABLE_2L_COL_TWIPS, &xml_rows)
 }
@@ -1355,6 +1359,10 @@ mod tests {
         // A header row, then two rows per word.
         let table = &doc[doc.find("<w:tbl>").unwrap()..doc.find("</w:tbl>").unwrap()];
         assert_eq!(table.matches("<w:tr>").count(), 1 + 2 * 2);
+        // A word's two rows stay together: no row splits, and each of line
+        // 1's five cells keeps with the next row.
+        assert_eq!(table.matches("<w:trPr><w:cantSplit/></w:trPr>").count(), 2 * 2);
+        assert_eq!(table.matches("<w:keepNext/>").count(), 2 * 5);
         // Line 1's Definition spans Construction + Root, once per word.
         let span = format!(r#"<w:tcW w:w="{}" w:type="dxa"/><w:gridSpan w:val="2"/>"#, WORD_TABLE_2L_COL_TWIPS[3] + WORD_TABLE_2L_COL_TWIPS[4]);
         assert_eq!(table.matches(&span).count(), 2);

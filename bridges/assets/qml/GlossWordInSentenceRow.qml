@@ -58,10 +58,11 @@ Frame {
     readonly property bool has_id: root.row.id !== null && root.row.id !== undefined
     readonly property string contextual_text: (root.row.contextual || "").trim()
     readonly property bool has_contextual: root.contextual_text !== ""
-    readonly property string construction_text: root.row.construction ? "[" + root.row.construction + "]" : ""
+    readonly property string construction_text: (root.row.construction || "").trim() !== ""
+        ? "[" + root.row.construction.trim() + "]" : ""
     readonly property bool has_line2: root.has_grammar_choice
         || (root.row.grammar || "") !== ""
-        || (root.row.construction || "") !== ""
+        || root.construction_text !== ""
         || (root.row.root || "") !== ""
     // The line-2 cells take part in the layout: always on one line, and on
     // two lines only when one of them has a value.
@@ -249,9 +250,10 @@ Frame {
             Layout.alignment: Qt.AlignTop
             font.pointSize: root.font_point_size
             // The list is as wide as its widest label, up to the row's width,
-            // and opens leftwards from the ComboBox's right edge.
+            // and opens leftwards from the ComboBox's right edge, but not past
+            // the row's left edge (one line puts the Definition mid-row).
             popup.width: Math.max(sense_select.width, Math.min(root.availableWidth, sense_select.widest_label_width))
-            popup.x: sense_select.width - sense_select.popup.width
+            popup.x: Math.max(sense_select.width - sense_select.popup.width, -(sense_select.x + cells_grid.x))
 
             readonly property real widest_label_width: {
                 let labels = sense_select.model || [];

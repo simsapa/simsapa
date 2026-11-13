@@ -456,7 +456,12 @@ fn test_data_csv_all_dpd_fields() {
     let header = lines[0];
     let header_fields: Vec<&str> = header.split(',').collect();
     
-    assert_eq!(header_fields.len(), 56, "Should have 56 fields (4 vocab fields + 51 DPD fields + 1 summary), got {}", header_fields.len());
+    assert_eq!(
+        header_fields.len(),
+        60,
+        "Should have 60 fields (4 vocab fields + 51 DPD fields + 1 summary + 4 Word in Sentence fields), got {}",
+        header_fields.len()
+    );
     
     assert!(!header.contains("inflections_html"), "Should NOT include inflections_html field");
     assert!(!header.contains("freq_data"), "Should NOT include freq_data field");
@@ -1089,17 +1094,22 @@ fn test_word_in_sentence_data_csv_columns() {
     // DPD's example fields hold newlines inside quoted cells, so the CSV is
     // searched, not split into lines.
     let csv = &result.files[0].content;
-    assert!(csv.lines().next().unwrap().ends_with(",summary,word_in_sentence,grammar_in_sentence,contextual_in_sentence"));
-    assert!(csv.contains(",jhāyino,masc nom pl of jhāyī,those meditators\n"), "{}", csv);
+    assert!(csv.lines().next().unwrap().ends_with(
+        ",summary,word_in_sentence,grammar_in_sentence,contextual_in_sentence,definition_in_sentence"
+    ));
+    assert!(csv.contains(",jhāyino,masc nom pl of jhāyī,those meditators,meditators\n"), "{}", csv);
     assert!(csv.contains(",28829,jhāyī 1,"));
-    assert!(csv.ends_with(",daḷha,pp,"));
+    assert!(csv.ends_with(",daḷha,pp,,firm"));
     assert!(!csv.contains(",xyz,"));
 
-    // A Headwords export keeps its columns.
+    // A Headwords export has the same columns, the Word in Sentence ones
+    // empty, so both import into one note type.
     let input = AnkiCsvExportInput {
         gloss_data_json: create_test_gloss_data(),
         ..word_in_sentence_input("DataCsv", "", "")
     };
     let result = export_anki_csv(input, &app_data).unwrap();
-    assert!(result.files[0].content.lines().next().unwrap().ends_with(",lemma_clean,summary"));
+    let headwords_csv = &result.files[0].content;
+    assert_eq!(headwords_csv.lines().next(), csv.lines().next());
+    assert!(headwords_csv.trim_end().ends_with(",,,,"), "{}", headwords_csv);
 }

@@ -228,7 +228,7 @@ is found it installs nothing and says how to name a place.
 ### A.2.4 Glossing a passage: `simsapa gloss`
 
 `simsapa gloss` makes the analysis document of a passage: every word with its
-grammar, meaning, construction and root.
+grammar, dictionary definition, contextual meaning, construction and root.
 
 ``` sh
 simsapa gloss --format markdown dhp23            # a sutta reference
@@ -2175,7 +2175,8 @@ Each row:
 | `id` | The DPD headword id of the chosen sense; `null` when not found. |
 | `grammar` | The grammar of the token's form (`masc nom pl of jhāyī`), else the headword's grammar (`sandhi, ind + adj`), else, for a component, its part of speech (`pp`). |
 | `grammar_options`, `grammar_index` | The readings of the chosen sense when the form has several (`nt acc sg of ta`, `nt nom sg of ta`); `grammar` is the chosen one. |
-| `meaning` | The AI's contextual meaning when it gave one, else the headword's meaning (`meaning_1`, `; lit. …`); `"not found"` for a token that was not found. |
+| `definition` | The dictionary definition of the chosen sense (`meaning_1`, `; lit. …`); for a sandhi or compound break-down, its components' first senses joined with ` + `; `"not found"` for a token that was not found. |
+| `contextual` | The AI's rendering of the word in this sentence (`of the nobleman`), shown beside the definition, never in its place; `""` when there is none. |
 | `construction`, `root` | The headword's construction and root (`√tan 7 o (stretch, extend)`), empty when it has none. |
 | `confidence` | `"N"` (not checked), `"A"` (AI-checked), `"H"` (human-checked), or `null` when there was only one sense to choose. |
 | `candidates[]`, `selected_candidate` | Every sense of the token with its own id, readings, meaning, construction and root, and the chosen one. |

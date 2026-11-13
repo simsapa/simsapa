@@ -2465,9 +2465,15 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         let w = words[item.owner];
         let uid = root.row_chosen_uid(item);
         let old = item.kind === "component" ? (w.component_readings || {})[item.key] : w.reading;
+        // The contextual meaning follows the reading: the AI's meaning for
+        // this reading (`contextual_meanings`) when it gave one, else none,
+        // never a meaning fitted to another case.
         let reading = { uid: uid, grammar_index: grammar_index, origin: "user-selected" };
-        if (old && old.uid === uid && old.contextual_meaning) {
-            reading.contextual_meaning = old.contextual_meaning;
+        if (old && old.uid === uid) {
+            let meanings = old.contextual_meanings || [];
+            if (meanings.length > 0) reading.contextual_meanings = meanings;
+            let meaning = (meanings[grammar_index] || "").trim();
+            if (meaning !== "") reading.contextual_meaning = meaning;
         }
         if (item.kind === "component") {
             if (!w.component_readings) w.component_readings = ({});
