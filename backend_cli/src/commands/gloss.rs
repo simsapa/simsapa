@@ -725,18 +725,38 @@ fn print_gloss_text(result: &AllParagraphsProcessingResult) {
 }
 
 /// One text line per row, with its components indented under it:
-/// `[word, conf, grammar, meaning]`.
-fn row_cells(row: &GlossRow, out: &mut Vec<[String; 4]>) {
+/// `[word, conf, grammar, contextual, definition]`.
+fn row_cells(row: &GlossRow, out: &mut Vec<[String; 5]>) {
     let word = format!("{}{}", "- ".repeat(row.depth as usize), row.word);
     let conf = row.confidence.map(|c| c.as_str().to_string()).unwrap_or_default();
-    out.push([word, conf, row.grammar.clone(), row.definition.clone()]);
+    out.push([word, conf, row.grammar.clone(), row.contextual.clone(), row.definition.clone()]);
     for c in &row.components {
         row_cells(c, out);
     }
 }
 
-/// The Word in Sentence result as aligned columns: word, confidence mark,
-/// grammar, meaning; then the translations and the legend.
+/// The cells of `row_cells()` as aligned text lines: word, confidence mark,
+/// grammar, the contextual meaning, the definition. The contextual column is
+/// left out when no row has a value in it.
+fn rows_text_lines(cells: &[[String; 5]]) -> Vec<String> {
+    let width = |i: usize| cells.iter().map(|c| c[i].chars().count()).max().unwrap_or(0);
+    let pad = |text: &str, w: usize| format!("{}{}", text, " ".repeat(w - text.chars().count()));
+    let (word_w, grammar_w, contextual_w) = (width(0), width(2), width(3));
+    cells
+        .iter()
+        .map(|c| {
+            let mut line = format!("{}  {:1}  {}  ", pad(&c[0], word_w), c[1], pad(&c[2], grammar_w));
+            if contextual_w > 0 {
+                line.push_str(&format!("{}  ", pad(&c[3], contextual_w)));
+            }
+            line.push_str(&c[4]);
+            line.trim_end().to_string()
+        })
+        .collect()
+}
+
+/// The Word in Sentence result as aligned columns (`rows_text_lines()`);
+/// then the translations and the legend.
 fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_provider: bool) {
     if !title.is_empty() {
         outln!("{}", title);
@@ -756,19 +776,8 @@ fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_pr
             row_cells(row, &mut cells);
         }
         any_conf |= cells.iter().any(|c| !c[1].is_empty());
-        let word_w = cells.iter().map(|c| c[0].chars().count()).max().unwrap_or(0);
-        let grammar_w = cells.iter().map(|c| c[2].chars().count()).max().unwrap_or(0);
-        for c in &cells {
-            let line = format!(
-                "{}{}  {:1}  {}{}  {}",
-                c[0],
-                " ".repeat(word_w - c[0].chars().count()),
-                c[1],
-                c[2],
-                " ".repeat(grammar_w - c[2].chars().count()),
-                c[3],
-            );
-            outln!("{}", line.trim_end());
+        for line in rows_text_lines(&cells) {
+            outln!("{}", line);
         }
         if !p.variants.is_empty() {
             let variants: Vec<String> = p.variants.iter().map(|v| v.join("//")).collect();
@@ -898,6 +907,37 @@ pub fn run_lookup(args: &LookupArgs, json: bool) -> CliResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn text_cells(rows: &[[&str; 5]]) -> Vec<[String; 5]> {
+        rows.iter().map(|r| r.map(String::from)).collect()
+    }
+
+    #[test]
+    fn test_rows_text_lines_align_the_contextual_column() {
+        let cells = text_cells(&[
+            ["uppannaṁ", "A", "nt nom sg of uppanna", "arisen", "arisen; appeared"],
+            ["te", "", "masc nom pl of ta", "", "those"],
+        ]);
+        assert_eq!(
+            rows_text_lines(&cells),
+            vec![
+                "uppannaṁ  A  nt nom sg of uppanna  arisen  arisen; appeared".to_string(),
+                format!("te{}masc nom pl of ta{}those", " ".repeat(6 + 2 + 1 + 2), " ".repeat(3 + 2 + 6 + 2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rows_text_lines_without_contextual_values_leave_the_column_out() {
+        let cells = text_cells(&[
+            ["te", "N", "masc nom pl of ta", "", "those"],
+            ["xyz", "", "", "", "not found"],
+        ]);
+        assert_eq!(
+            rows_text_lines(&cells),
+            vec!["te   N  masc nom pl of ta  those".to_string(), format!("xyz{}not found", " ".repeat(2 + 1 + 2 + 17 + 2))]
+        );
+    }
 
     #[test]
     fn test_flags_left_off_are_none() {

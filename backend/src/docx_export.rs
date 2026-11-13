@@ -456,7 +456,7 @@ fn labelled_text(label: &str, text: &str, numbering: &mut NumberingRegistry) -> 
 
 /// Word-by-Word column widths, in `WORD_TABLE_COLUMNS` order; they add up to
 /// `TABLE_TEXT_WIDTH_TWIPS`.
-const WORD_TABLE_COL_TWIPS: [u32; 7] = [750, 1800, 1900, 1900, 1650, 1700, 506];
+const WORD_TABLE_COL_TWIPS: [u32; 8] = [750, 1600, 1600, 1300, 2100, 1200, 1150, 506];
 
 /// Twips of indent per depth of a component row's word.
 const COMPONENT_INDENT_TWIPS: u32 = 240;
@@ -475,15 +475,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
     for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
         let mut cells = String::new();
         let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
-        let texts = [
-            row.id_cell(),
-            row.word_cell(),
-            row.grammar.clone(),
-            row.definition.clone(),
-            row.construction.clone(),
-            row.root.clone(),
-            confidence_cell(row.confidence).to_string(),
-        ];
+        let texts = row.cells();
         for (col, (text, w)) in texts.iter().zip(WORD_TABLE_COL_TWIPS).enumerate() {
             let runs = [run(false, false, text)];
             let indent = if col == 1 { row.depth as u32 * COMPONENT_INDENT_TWIPS } else { 0 };
@@ -1250,6 +1242,12 @@ mod tests {
     }
 
     #[test]
+    fn word_table_widths_fill_the_text_width() {
+        assert_eq!(WORD_TABLE_COL_TWIPS.len(), WORD_TABLE_COLUMNS.len());
+        assert_eq!(WORD_TABLE_COL_TWIPS.iter().sum::<u32>(), TABLE_TEXT_WIDTH_TWIPS);
+    }
+
+    #[test]
     fn test_word_in_sentence_docx_order() {
         let json = serde_json::json!({
             "text": "te jhāyino daḷhaparakkamā",
@@ -1261,7 +1259,7 @@ mod tests {
                 "variants": [["gacchan'ti", "gacchanti"]],
                 "ai_translations": [{"model_name": "m", "response": "Those wise ones.", "literal_translation": "Those meditators.", "is_selected": true}],
                 "rows": [
-                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "contextual": "of firm effort", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
                     {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
                 ]
             }]
@@ -1279,9 +1277,9 @@ mod tests {
             "Literal Translation: |Those meditators.|",
             "Variants|gacchan'ti//gacchanti|",
             "Word-by-Word Analysis|",
-            "ID|Word in Sentence|Grammar|Meaning|Construction|Root|Conf.|",
-            "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|having firm effort|daḷha + parakkama|N|",
-            "32201|- daḷha|pp|firm &amp; strong|√dah + ta|√dah 1 a (be strong)|",
+            "ID|Word in Sentence|Grammar|Contextual|Definition|Construction|Root|Conf.|",
+            "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|of firm effort|having firm effort|[daḷha + parakkama]|N|",
+            "32201|- daḷha|pp|firm &amp; strong|[√dah + ta]|√dah 1 a (be strong)|",
             "Confidence marks:|N: Not checked",
             "H: Human-checked",
         ];
@@ -1294,9 +1292,9 @@ mod tests {
         assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
         assert!(!text.contains("Paragraph 1"));
         assert!(!text.contains(NO_AI_PROVIDER_NOTE));
-        // The token and its component share the first (shaded) band: 7 cells each.
+        // The token and its component share the first (shaded) band: 8 cells each.
         let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
-        assert_eq!(doc.matches(&shd).count(), 14);
+        assert_eq!(doc.matches(&shd).count(), 16);
     }
 
     #[test]

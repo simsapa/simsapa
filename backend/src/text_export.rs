@@ -789,7 +789,7 @@ mod tests {
                     "is_selected": true
                 }],
                 "rows": [
-                    {"word": "te", "depth": 0, "id": 29188, "grammar": "masc nom pl of ta", "definition": "those", "construction": "", "root": "", "confidence": "A"},
+                    {"word": "te", "depth": 0, "id": 29188, "grammar": "masc nom pl of ta", "contextual": "they", "definition": "those", "construction": "", "root": "", "confidence": "A"},
                     {"word": "jhāyino", "depth": 0, "id": 28829, "grammar": "masc nom pl of jhāyī", "definition": "meditators", "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)", "confidence": null},
                     {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
                     {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm | strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": "H"},
@@ -810,13 +810,13 @@ mod tests {
             "**Translation:** Those wise ones, meditative, persevering.\n\n",
             "**Literal Translation:** Those meditators, persevering.\n\n",
             "### Word-by-Word Analysis\n\n",
-            "| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |\n",
-            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n",
-            "| 29188 | te | masc nom pl of ta | those |  |  | A |\n",
-            "| 28829 | jhāyino | masc nom pl of jhāyī | meditators | √jhā + ī | √jhā 3 ya (think, meditate) |  |\n",
-            "| 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort | daḷha + parakkama |  | N |\n",
-            "| 32201 | - daḷha | pp | firm \\| strong | √dah + ta | √dah 1 a (be strong) | H |\n",
-            "|  | xyz |  | not found |  |  |  |\n\n",
+            "| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |\n",
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n",
+            "| 29188 | te | masc nom pl of ta | they | those |  |  | A |\n",
+            "| 28829 | jhāyino | masc nom pl of jhāyī |  | meditators | [√jhā + ī] | √jhā 3 ya (think, meditate) |  |\n",
+            "| 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama |  | having firm effort | [daḷha + parakkama] |  | N |\n",
+            "| 32201 | - daḷha | pp |  | firm \\| strong | [√dah + ta] | √dah 1 a (be strong) | H |\n",
+            "|  | xyz |  |  | not found |  |  |  |\n\n",
             "Confidence marks:\n\n",
             "- N: Not checked",
         );
@@ -864,7 +864,10 @@ mod tests {
         assert!(html.contains("<h1>Gloss of: DHP23</h1>"));
         assert!(html.contains("<h3>English Translation</h3>"));
         assert!(html.contains("<th>Conf.</th>"));
-        assert!(html.contains("<td>- daḷha</td><td>pp</td><td>firm | strong</td>"));
+        assert!(html.contains("<th>Contextual</th><th>Definition</th>"));
+        // A row with a contextual meaning, and one without (an empty cell).
+        assert!(html.contains("<td>te</td><td>masc nom pl of ta</td><td>they</td><td>those</td><td></td>"));
+        assert!(html.contains("<td>- daḷha</td><td>pp</td><td></td><td>firm | strong</td><td>[√dah + ta]</td>"));
         // te: shaded; jhāyino: plain; daḷhaparakkamā and its component: shaded; xyz: plain.
         let shaded = format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">");
         assert_eq!(html.matches(&shaded).count(), 3);
@@ -876,8 +879,9 @@ mod tests {
         assert!(org.starts_with("* Gloss of: DHP23\n"));
         assert!(org.contains("*** English Translation"));
         assert!(org.contains("*Translation:* Those wise ones"));
-        assert!(org.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |\n|---+---+---+---+---+---+---|\n"));
-        assert!(org.contains("| 32201 | - daḷha | pp | firm \\vert{} strong |"));
+        assert!(org.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |\n|---+---+---+---+---+---+---+---|\n"));
+        assert!(org.contains("| 29188 | te | masc nom pl of ta | they | those |  |  | A |"));
+        assert!(org.contains("| 32201 | - daḷha | pp |  | firm \\vert{} strong | [√dah + ta] |"));
     }
 
     #[test]

@@ -993,7 +993,7 @@ fn create_word_in_sentence_gloss_data() -> String {
             "rows": [
                 {
                     "word": "jhāyino", "depth": 0, "id": 28829, "uid": "28829/dpd", "lemma": "jhāyī 1",
-                    "grammar": "masc nom pl of jhāyī", "definition": "meditators",
+                    "grammar": "masc nom pl of jhāyī", "contextual": "those meditators", "definition": "meditators",
                     "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)",
                     "summary": "<b>jhāyī 1</b> <i>(masc)</i> meditator",
                     "context_snippet": "te <b>jhāyino</b> xyz", "confidence": "A"
@@ -1040,8 +1040,10 @@ fn test_word_in_sentence_simple_notes_per_row() {
     assert_eq!(lines.len(), 2, "{}", csv);
     // The front shows the word as written; the back its grammar and summary.
     assert!(lines[0].starts_with("<div><p>jhāyino</p><p>te <b>jhāyino</b> xyz</p></div>,"));
-    assert!(lines[0].contains("<p>masc nom pl of jhāyī</p><p><b>jhāyī 1</b> <i>(masc)</i> meditator</p>"));
-    // A row without a summary falls back to its meaning.
+    // The back: grammar, the contextual meaning in italic, the summary.
+    assert!(lines[0].contains("<p>masc nom pl of jhāyī</p><p><i>those meditators</i></p><p><b>jhāyī 1</b> <i>(masc)</i> meditator</p>"));
+    // A row without a summary falls back to its definition, and one without
+    // a contextual meaning has no italic line.
     assert!(lines[1].contains("<p>pp</p><p>firm</p>"));
     assert!(!csv.contains("xyz</p></div>,\"<div><p></p>"));
 }
@@ -1055,12 +1057,26 @@ fn test_word_in_sentence_templated_variables() {
     let input = word_in_sentence_input(
         "Templated",
         "{word_in_sentence} ({word_stem})",
-        "{grammar}: {meaning}; {dpd.lemma_1}",
+        "{grammar}: {definition} / {contextual}; {dpd.lemma_1}",
     );
     let result = export_anki_csv(input, &app_data).unwrap();
     let lines: Vec<&str> = result.files[0].content.lines().collect();
-    assert_eq!(lines[0], "jhāyino (jhāyī),masc nom pl of jhāyī: meditators; jhāyī 1");
-    assert_eq!(lines[1], "daḷha (daḷha),pp: firm; daḷha 1");
+    assert_eq!(lines[0], "jhāyino (jhāyī),masc nom pl of jhāyī: meditators / those meditators; jhāyī 1");
+    assert_eq!(lines[1], "daḷha (daḷha),pp: firm / ; daḷha 1");
+}
+
+#[test]
+#[serial]
+fn test_templated_unknown_variable_names_the_template_and_note() {
+    helpers::app_data_setup();
+    let app_data = simsapa_backend::get_app_data();
+
+    // A user template still using the variable `{meaning}`, renamed to
+    // `{definition}`.
+    let input = word_in_sentence_input("Templated", "{word_in_sentence}", "{grammar}: {meaning}");
+    let err = export_anki_csv(input, &app_data).unwrap_err().to_string();
+    assert!(err.contains("The Anki back template failed for the note of 'jhāyī 1'"), "{}", err);
+    assert!(err.contains("meaning"), "{}", err);
 }
 
 #[test]
@@ -1073,10 +1089,10 @@ fn test_word_in_sentence_data_csv_columns() {
     // DPD's example fields hold newlines inside quoted cells, so the CSV is
     // searched, not split into lines.
     let csv = &result.files[0].content;
-    assert!(csv.lines().next().unwrap().ends_with(",summary,word_in_sentence,grammar_in_sentence"));
-    assert!(csv.contains(",jhāyino,masc nom pl of jhāyī\n"), "{}", csv);
+    assert!(csv.lines().next().unwrap().ends_with(",summary,word_in_sentence,grammar_in_sentence,contextual_in_sentence"));
+    assert!(csv.contains(",jhāyino,masc nom pl of jhāyī,those meditators\n"), "{}", csv);
     assert!(csv.contains(",28829,jhāyī 1,"));
-    assert!(csv.ends_with(",daḷha,pp"));
+    assert!(csv.ends_with(",daḷha,pp,"));
     assert!(!csv.contains(",xyz,"));
 
     // A Headwords export keeps its columns.

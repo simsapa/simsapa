@@ -257,8 +257,11 @@ A Word in Sentence document has this structure: `# Gloss of: <reference>`,
 the passage, `### English Translation` (**Translation** and **Literal
 Translation**, only when a translation was made), `### Variants` (only for
 `//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
-table `ID | Word in Sentence | Grammar | Meaning | Construction | Root |
-Conf.`, with the parts of a compound on rows starting `- `. A multi-paragraph
+table `ID | Word in Sentence | Grammar | Contextual | Definition |
+Construction | Root | Conf.`, with the parts of a compound on rows starting
+`- `. Definition is the dictionary's meaning of the chosen sense; Contextual
+is the AI's rendering of the word in this sentence, empty when there is none.
+The construction is written in square brackets (`[ud + √pad + na]`). A multi-paragraph
 passage repeats these under `## Paragraph <n>`. The `Conf.` column says how
 a word with several dictionary senses was decided, and a legend under the table
 explains it:

@@ -62,7 +62,7 @@ fn test_dhp23_markdown_without_ai() {
     let doc = stdout(&out);
     assert!(doc.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{doc}");
     assert!(doc.contains("### Word-by-Word Analysis"), "{doc}");
-    assert!(doc.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |"), "{doc}");
+    assert!(doc.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |"), "{doc}");
     assert!(doc.contains("| 62145 | sātatikā | adj, masc nom pl of sātatika |"), "{doc}");
     assert!(doc.contains("| 32201 | - daḷha | pp |"), "{doc}");
     assert!(doc.contains("- N: Not checked"), "{doc}");

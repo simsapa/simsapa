@@ -10,14 +10,14 @@ PRD: [2026-11-13-135127-prd---word-in-sentence-two-line-layout-and-contextual-co
 - `backend/src/gloss_export_builder.rs` - `flatten_row()` fills `GlossExportRow` from `GlossRow`; tests (`rows[2].meaning`).
 - `backend/src/text_export.rs` - the Word-by-Word table in HTML / Markdown / Org (`word_table…` around l. 200), the header-asserting tests (l. 813, l. 879); the Headwords writers stay unchanged.
 - `backend/src/docx_export.rs` - `word_table()`, `WORD_TABLE_COL_TWIPS`, the header test (l. 1282).
-- `backend/src/anki_export.rs` - `NoteItem` / `TemplateContext` `meaning` fields, the Simple note back, the template sample data (l. 573).
+- `backend/src/anki_export.rs` - `NoteItem` / `TemplateContext` `definition` + `contextual`, the Simple note back (contextual in italic), the data CSV `contextual_in_sentence` column, `render_note_template()` (a render error names the template and the note's word).
 - `backend/src/gloss_translation.rs` - `TranslationVocabRow`, `translation_vocabulary_from_rows()`, `word_table_markdown()`, tests.
 - `backend/src/app_settings.rs` - the new settings (`gloss_lines_per_word`, `gloss_contextual_all`), the default prompts `"Gloss Tab: Word Selection Request"` and `"Gloss Tab: AI Translation"`, the settings tests.
 - `backend/src/helpers.rs` - `build_word_selection_items()` (contextual-only items), `WordSelectionParagraphInput`, `parse_word_selection_response()`, their tests (around l. 6860–7300).
 - `backend/src/gloss_word_selection_apply.rs` - the Rust apply path for answers (reading-only rule).
 - `backend/src/gloss_word_selection_run.rs`, `backend/src/gloss_ai_run.rs` - callers of `build_word_selection_items()`; pass the new option.
 - `api/src/routes/gloss.rs` - `GlossTextOptions` (`lines_per_word`, `contextual_all`), `GlossTextPlan`, validation, route tests; the route-count test is unaffected (no new route).
-- `backend_cli/src/commands/gloss.rs` - `--lines-per-word`, `--contextual-all` / `--no-contextual-all`, `validate()`, `row_cells()` / `print_rows_text()`, the CLI tests.
+- `backend_cli/src/commands/gloss.rs` - `rows_text_lines()` (the aligned text columns, the Contextual column left out when empty), `--lines-per-word`, `--contextual-all` / `--no-contextual-all`, `validate()`, `row_cells()` / `print_rows_text()`, the CLI tests.
 - `bridges/src/sutta_bridge.rs` - getters/setters for the two new settings; any function that builds the word-selection request or the export JSON from QML.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - `qmllint` stubs for the new bridge functions.
 - `bridges/assets/qml/GlossWordInSentenceRow.qml` - the two-line / one-line row, the Contextual cell, the closed sense ComboBox text, the label shortening.
@@ -30,7 +30,8 @@ PRD: [2026-11-13-135127-prd---word-in-sentence-two-line-layout-and-contextual-co
 - `PROJECT_MAP.md` - only if files are added.
 - `backend/tests/test_gloss_word_in_sentence.rs` - the row builder tests: Definition and Contextual kept apart, per-reading meanings, sense change, component readings, old `meaning`-only rows rebuilt on load.
 - `backend/tests/data/gloss_export_contract/paragraph.json`, `expected_word_in_sentence.json` - contract fixtures, row `meaning` → `definition` + `contextual`.
-- `backend/tests/test_anki_export.rs`, `test_gloss_export_contract.rs`, `test_dpd_analysis_conformance.rs` - fixtures and asserts on the renamed field.
+- `backend/tests/test_anki_export.rs`, `test_gloss_export_contract.rs`, `test_dpd_analysis_conformance.rs` - fixtures and asserts on the renamed field; the Anki `{definition}` / `{contextual}` variables, the unknown-variable error, the data CSV column.
+- `backend_cli/tests/gloss_command.rs`, `api/tests/gloss_text.rs` - the Markdown table header asserts.
 
 ### Notes
 
@@ -102,14 +103,14 @@ the Headwords DOCX table) are **not** changed.
 
 **Depends on:** 1.0.
 
-- [ ] 2.0 Exports and CLI text, one-line: rename "Meaning" → "Definition", add the "Contextual" column (Word in Sentence only; Headwords unchanged)
-  - [ ] 2.1 `export_types.rs`: change `WORD_TABLE_COLUMNS` to the 8 columns above. Change `cells()` to return `[String; 8]` in that order. Add `construction_cell()` returning `[…]` or `""`. Update the doc comment ("DPD's six, then Conf." no longer holds).
-  - [ ] 2.2 `text_export.rs`: the HTML, Markdown and Org word tables take the new column count from `WORD_TABLE_COLUMNS.len()` (they already do, so check the Markdown alignment row and the Org separator). Update the header tests at l. 813 and l. 879, and add a test where a row has a contextual value and one where it has none.
-  - [ ] 2.3 `docx_export.rs`: `word_table()` builds its texts from `row.cells()` instead of its own array, so the order lives in one place. Change `WORD_TABLE_COL_TWIPS` to 8 widths that add up to the current table width (split the old Meaning width between Contextual and Definition, Definition wider). Update the header test at l. 1282.
-  - [ ] 2.4 `anki_export.rs`: rename the `meaning` fields in `NoteItem` and `TemplateContext` to `definition` and add `contextual`. Fill them from the Word in Sentence rows, and leave `contextual` empty for Headwords vocab. Update the Simple note back, the template variables and the sample data (`sample_str("meaning")` → `definition`, plus `contextual`). The default templates (`anki_template_front/back` in `app_settings.rs`) do not use `{meaning}`. A user's own template that does would fail to render after the rename (tinytemplate errors on an unknown field). Make sure `export_anki` reports that render error per note, as it does for other template errors, rather than failing silently. If `AnkiExportDialog.qml` or the docs list the template variables, list `{definition}` and `{contextual}`.
-  - [ ] 2.5 CLI `row_cells()` / `print_rows_text()`: five cells `[word, conf, grammar, contextual, definition]`, with the contextual column padded to its widest value. When no row in the paragraph has a contextual value, leave that column out. Update the CLI tests that assert the text layout.
-  - [ ] 2.6 Search the Rust sources and the docs' examples for the string `"Meaning"` and the field name `meaning` in Word in Sentence contexts (the Org/Markdown templates, JSON test fixtures). Rename only the Word in Sentence ones.
-  - [ ] 2.7 Run `cd backend && cargo test export`, `cd backend && cargo test anki`, `cd backend_cli && cargo test`.
+- [x] 2.0 Exports and CLI text, one-line: rename "Meaning" → "Definition", add the "Contextual" column (Word in Sentence only; Headwords unchanged)
+  - [x] 2.1 `export_types.rs`: change `WORD_TABLE_COLUMNS` to the 8 columns above. Change `cells()` to return `[String; 8]` in that order. Add `construction_cell()` returning `[…]` or `""`. Update the doc comment ("DPD's six, then Conf." no longer holds).
+  - [x] 2.2 `text_export.rs`: the HTML, Markdown and Org word tables take the new column count from `WORD_TABLE_COLUMNS.len()` (they already do, so check the Markdown alignment row and the Org separator). Update the header tests at l. 813 and l. 879, and add a test where a row has a contextual value and one where it has none.
+  - [x] 2.3 `docx_export.rs`: `word_table()` builds its texts from `row.cells()` instead of its own array, so the order lives in one place. Change `WORD_TABLE_COL_TWIPS` to 8 widths that add up to the current table width (split the old Meaning width between Contextual and Definition, Definition wider). Update the header test at l. 1282.
+  - [x] 2.4 `anki_export.rs`: rename the `meaning` fields in `NoteItem` and `TemplateContext` to `definition` and add `contextual`. Fill them from the Word in Sentence rows, and leave `contextual` empty for Headwords vocab. Update the Simple note back, the template variables and the sample data (`sample_str("meaning")` → `definition`, plus `contextual`). The default templates (`anki_template_front/back` in `app_settings.rs`) do not use `{meaning}`. A user's own template that does would fail to render after the rename (tinytemplate errors on an unknown field). Make sure `export_anki` reports that render error per note, as it does for other template errors, rather than failing silently. If `AnkiExportDialog.qml` or the docs list the template variables, list `{definition}` and `{contextual}`.
+  - [x] 2.5 CLI `row_cells()` / `print_rows_text()`: five cells `[word, conf, grammar, contextual, definition]`, with the contextual column padded to its widest value. When no row in the paragraph has a contextual value, leave that column out. Update the CLI tests that assert the text layout.
+  - [x] 2.6 Search the Rust sources and the docs' examples for the string `"Meaning"` and the field name `meaning` in Word in Sentence contexts (the Org/Markdown templates, JSON test fixtures). Rename only the Word in Sentence ones.
+  - [x] 2.7 Run `cd backend && cargo test export`, `cd backend && cargo test anki`, `cd backend_cli && cargo test`.
 
 ### 3.0 One / two lines per word
 

@@ -806,8 +806,11 @@ and `**Literal Translation:**` (a model heading only when there are several;
 no Literal line for a translation saved before the two-part translation),
 `### Variants` (one `a//b` line per group, only when there are groups),
 `### Word-by-Word Analysis` and the table
-`ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf.`.
-Component rows carry `- ` per depth (DOCX also indents the word); a passage's
+`ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf.`:
+Contextual is the AI's contextual meaning (empty when there is none),
+Definition the dictionary's, and the construction is written in square
+brackets (`[ud + √pad + na]`, nothing when empty). The Headwords tables have
+no Contextual column. Component rows carry `- ` per depth (DOCX also indents the word); a passage's
 line breaks stay line breaks inside one DOCX paragraph; the `⧫` marker of the
 rendered Gloss text is dropped from the passage text on import; cells
 escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend, introduced by
@@ -828,10 +831,13 @@ together.
 one per row that has a DPD headword (token and component rows; unresolved and
 break-down rows have none, and "No duplicates" has already left out repeats).
 A Simple / cloze note's front shows the word as written, its back the row's
-grammar above the sense's summary (the meaning when there is no summary).
-Templates get `{word_in_sentence}`, `{grammar}` and `{meaning}` (empty for a
-Headwords note); the data CSV gains `word_in_sentence` and
-`grammar_in_sentence` columns when the gloss has rows.
+grammar and contextual meaning (in italic) above the sense's summary (the
+definition when there is no summary). Templates get `{word_in_sentence}`,
+`{grammar}`, `{definition}` and `{contextual}` (empty for a Headwords note); a
+template naming an unknown variable fails the export with an error naming the
+template and the note's word. The data CSV gains `word_in_sentence`,
+`grammar_in_sentence` and `contextual_in_sentence` columns when the gloss has
+rows.
 
 The **session JSON** (`build_gloss_session_json()` in the builder, and the
 Gloss tab's `session_data_json()`) carries `gloss_format`, and per paragraph

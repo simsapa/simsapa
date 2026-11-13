@@ -156,7 +156,7 @@ fn test_gloss_text_route() {
     assert_eq!(ct.map(|c| c.to_string()), Some("text/markdown; charset=utf-8".to_string()));
     assert!(md.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{md}");
     assert!(md.contains("### Word-by-Word Analysis"), "{md}");
-    assert!(md.contains("| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |"), "{md}");
+    assert!(md.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |"), "{md}");
     assert!(md.contains("N: Not checked"), "{md}");
     assert!(!md.contains("### English Translation"), "{md}");
     let (s, ct, html) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "output_format": "html" } }));

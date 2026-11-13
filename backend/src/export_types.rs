@@ -115,9 +115,10 @@ pub struct GlossExportRow {
     pub confidence: Option<Confidence>,
 }
 
-/// The Word-by-Word table's columns: DPD's six, then Conf.
-pub const WORD_TABLE_COLUMNS: [&str; 7] =
-    ["ID", "Word in Sentence", "Grammar", "Meaning", "Construction", "Root", "Conf."];
+/// The Word-by-Word table's columns, one line per word: DPD's six, with the
+/// AI's Contextual meaning before the dictionary's Definition, then Conf.
+pub const WORD_TABLE_COLUMNS: [&str; 8] =
+    ["ID", "Word in Sentence", "Grammar", "Contextual", "Definition", "Construction", "Root", "Conf."];
 
 /// Background shade of a Word-by-Word table row, as in the Gloss tab:
 /// alternating per token, and a compound's component rows share their
@@ -145,13 +146,14 @@ pub const WORD_TABLE_SHADE_HEX: &str = "F2F2F2";
 
 impl GlossExportRow {
     /// The row's cells, in `WORD_TABLE_COLUMNS` order, as plain text.
-    pub fn cells(&self) -> [String; 7] {
+    pub fn cells(&self) -> [String; 8] {
         [
             self.id_cell(),
             self.word_cell(),
             self.grammar.clone(),
+            self.contextual.clone(),
             self.definition.clone(),
-            self.construction.clone(),
+            self.construction_cell(),
             self.root.clone(),
             confidence_cell(self.confidence).to_string(),
         ]
@@ -161,6 +163,18 @@ impl GlossExportRow {
     /// DPD's reports (`- daḷha`).
     pub fn word_cell(&self) -> String {
         format!("{}{}", "- ".repeat(self.depth as usize), self.word)
+    }
+
+    /// The Construction cell of the table formats: the construction in
+    /// square brackets (`[ud + √pad + na]`), or empty. CSV and Anki keep the
+    /// plain value.
+    pub fn construction_cell(&self) -> String {
+        let construction = self.construction.trim();
+        if construction.is_empty() {
+            String::new()
+        } else {
+            format!("[{}]", construction)
+        }
     }
 
     /// The ID cell: the id, or empty.
@@ -344,6 +358,31 @@ mod tests {
             vec![true, false, false, false, false, true, false, false]
         );
         assert!(word_table_row_shades(&[]).is_empty());
+    }
+
+    #[test]
+    fn cells_put_contextual_before_definition_and_bracket_the_construction() {
+        let row = GlossExportRow {
+            word: "uppannaṁ".to_string(),
+            id: Some(1),
+            grammar: "nt nom sg of uppanna".to_string(),
+            contextual: "arisen".to_string(),
+            definition: "arisen; appeared".to_string(),
+            construction: "ud + √pad + na".to_string(),
+            root: "√pad 3 ya (go, step)".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            row.cells(),
+            [
+                "1", "uppannaṁ", "nt nom sg of uppanna", "arisen", "arisen; appeared",
+                "[ud + √pad + na]", "√pad 3 ya (go, step)", "",
+            ]
+            .map(String::from)
+        );
+        let bare = GlossExportRow { construction: "  ".to_string(), ..Default::default() };
+        assert_eq!(bare.construction_cell(), "");
+        assert_eq!(WORD_TABLE_COLUMNS.len(), bare.cells().len());
     }
 
     /// A session saved before the two-part translation (one translation per
