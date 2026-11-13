@@ -263,6 +263,11 @@ Item {
     // selection) is complete.
     property bool auto_translate: false
 
+    // "Contextual meaning for every word": the AI word selection also asks
+    // for the contextual meaning of the Word in Sentence words that have no
+    // choice to make (docs/gloss-ai-word-selection.md).
+    property bool gloss_contextual_all: false
+
     // Set by switch_gloss_format() for the re-gloss it starts: paragraph
     // index -> {text, words_data_json, translations_json, selected_ai_tab}.
     property var format_switch_carry: null
@@ -282,6 +287,7 @@ Item {
         root.gloss_format = SuttaBridge.get_gloss_format();
         root.gloss_lines_per_word = SuttaBridge.get_gloss_lines_per_word();
         root.auto_translate = SuttaBridge.get_gloss_auto_translate();
+        root.gloss_contextual_all = SuttaBridge.get_gloss_contextual_all();
         root.refresh_has_translate_model();
     }
 
@@ -528,9 +534,12 @@ Item {
                 words_json: paragraph.words_data_json,
             };
             // With Word in Sentence rows the items also ask for grammar
-            // readings and for the components of compound headwords.
+            // readings and for the components of compound headwords, and,
+            // with "Contextual meaning for every word", for the contextual
+            // meaning of the words that have no choice to make.
             if (paragraph.rows_json && paragraph.rows_json !== "[]") {
                 input.rows_json = paragraph.rows_json;
+                input.contextual_all = root.gloss_contextual_all;
             }
             paragraphs.push(input);
         }
@@ -711,13 +720,18 @@ Item {
                     uid: sel.uid,
                     grammar_index: sel.grammar_index,
                     contextual_meaning: sel.contextual_meaning,
+                    contextual_meanings: sel.contextual_meanings,
                 };
+                // An item with one option asks only for the reading and the
+                // contextual meaning.
+                let it = items_by_id[sel.id];
+                let option_count = (it && it.options) ? it.options.length : 0;
                 let suffix = m[3] || "";
                 if (suffix === "d") {
                     entry.kind = "d";
                 } else if (suffix.length > 0) {
                     entry.kind = "c";
-                    let it = items_by_id[sel.id];
+                    entry.option_count = option_count;
                     entry.component_word = (it && it.component_word) ? it.component_word : "";
                     if (entry.component_word === "") {
                         logger.error("Word selection " + sel.id + ": no component_word on the request item, skipping");
@@ -725,9 +739,7 @@ Item {
                     }
                 } else {
                     entry.kind = "sense";
-                    // An item with one option asks only for the reading.
-                    let it = items_by_id[sel.id];
-                    entry.option_count = (it && it.options) ? it.options.length : 0;
+                    entry.option_count = option_count;
                 }
                 if (by_para[pi] === undefined) by_para[pi] = [];
                 by_para[pi].push(entry);
@@ -2099,6 +2111,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 // the chosen break-down are stored too (harmless — they only
                 // display when unlocked or after a break-down switch).
                 let cw = sel.component_word;
+                if (!w.component_readings) w.component_readings = ({});
+                // A component item with one option asked only for the
+                // reading: no sense choice, no cache row, no resolution.
+                if (sel.option_count !== undefined && sel.option_count <= 1) {
+                    let only_comp_reading = root.ai_answer_reading(w.component_readings[cw] || null, sel);
+                    if (only_comp_reading === null) continue;
+                    w.component_readings[cw] = only_comp_reading;
+                    words_data[wi] = w;
+                    applied += 1;
+                    continue;
+                }
                 if (!w.component_resolutions) w.component_resolutions = ({});
                 let comp_resolution = w.component_resolutions[cw] || null;
                 if (comp_resolution !== null && comp_resolution !== "ai-selected") continue;
@@ -2112,7 +2135,6 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 if (comp_saved) {
                     w.component_resolutions[cw] = "ai-selected";
                 }
-                if (!w.component_readings) w.component_readings = ({});
                 let comp_reading = root.ai_answer_reading(w.component_readings[cw] || null, sel);
                 if (comp_reading !== null) w.component_readings[cw] = comp_reading;
                 words_data[wi] = w;
@@ -2199,12 +2221,14 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     }
 
     // The session reading of an AI answer: {uid, grammar_index?,
-    // contextual_meaning?, origin}, or null when the answer gives neither or
-    // the user already chose a reading for the same sense.
+    // contextual_meaning?, contextual_meanings?, origin}, or null when the
+    // answer gives none of them or the user already chose a reading for the
+    // same sense.
     function ai_answer_reading(old_reading, sel) {
         let has_index = sel.grammar_index !== undefined && sel.grammar_index !== null;
         let has_meaning = sel.contextual_meaning !== undefined && sel.contextual_meaning !== null;
-        if (!has_index && !has_meaning) return null;
+        let has_meanings = Array.isArray(sel.contextual_meanings) && sel.contextual_meanings.length > 0;
+        if (!has_index && !has_meaning && !has_meanings) return null;
         if (old_reading !== null && old_reading.uid === sel.uid
             && old_reading.origin && old_reading.origin !== "ai-selected") {
             return null;
@@ -2212,6 +2236,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         let reading = { uid: sel.uid, origin: "ai-selected" };
         if (has_index) reading.grammar_index = sel.grammar_index;
         if (has_meaning) reading.contextual_meaning = sel.contextual_meaning;
+        if (has_meanings) reading.contextual_meanings = sel.contextual_meanings;
         return reading;
     }
 
@@ -3130,6 +3155,22 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                     ToolTip.text: "About AI word selection"
                                     onClicked: word_selection_dialog.open()
                                 }
+                            }
+
+                            CheckBox {
+                                id: contextual_all_check
+                                text: "Contextual meaning for every word"
+                                checked: root.gloss_contextual_all
+                                enabled: root.is_word_in_sentence
+                                onToggled: {
+                                    root.gloss_contextual_all = contextual_all_check.checked;
+                                    SuttaBridge.set_gloss_contextual_all(root.gloss_contextual_all);
+                                }
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "The AI word selection also gives a contextual meaning for the words "
+                                    + "with only one sense or an already chosen sense, not only for the ambiguous ones. "
+                                    + "Uses more tokens per request."
                             }
 
                             Button {

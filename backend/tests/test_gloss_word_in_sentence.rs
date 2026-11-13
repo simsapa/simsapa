@@ -366,7 +366,7 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
 
     let words_json = serde_json::to_string(&result.paragraphs[0].words_data).unwrap();
     let items = simsapa_backend::helpers::build_word_selection_items(
-        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None, rows_json: None }],
+        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None, rows_json: None, contextual_all: false }],
         simsapa_backend::helpers::WordSelectionBuildMode::IncludeResolved,
     )
     .unwrap();
@@ -392,7 +392,7 @@ use simsapa_backend::helpers::{
 const DUMMY_DHP23: &str = "dummyword te jhāyino sātatikā, niccaṁ daḷhaparakkamā, phusanti dhīrā nibbānaṁ.";
 
 fn items_of(result: &AllParagraphsProcessingResult) -> Vec<serde_json::Value> {
-    let inputs = WordSelectionParagraphInput::from_result(result).unwrap();
+    let inputs = WordSelectionParagraphInput::from_result(result, false).unwrap();
     build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap()
 }
 
@@ -404,6 +404,7 @@ fn answer(id: &str, uid: &str, grammar_index: Option<usize>, contextual_meaning:
         note: None,
         grammar_index,
         contextual_meaning: contextual_meaning.map(str::to_string),
+        contextual_meanings: None,
     }
 }
 
@@ -570,7 +571,7 @@ fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
     };
     let items = vec![
         serde_json::json!({"id": format!("p0w{}d", wi), "options": []}),
-        serde_json::json!({"id": format!("p0w{}c0", wi), "component_word": comp_word, "options": []}),
+        serde_json::json!({"id": format!("p0w{}c0", wi), "component_word": comp_word, "options": [{"uid": "a"}, {"uid": "b"}]}),
         serde_json::json!({"id": format!("p0w{}c1", wi), "options": []}),
     ];
     let answers = vec![
@@ -605,6 +606,132 @@ fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
     let pw = &result.paragraphs[0].words_data[wi];
     assert_eq!(pw.selected_deconstruction_index, Some(decs - 1));
     assert_eq!(pw.component_selected_uids[&comp_word], comp_uid);
+}
+
+/// Contextual-only items ("Contextual meaning for every word"): an answer
+/// sets only the session reading. No sense, resolution or cache row changes,
+/// for a word and for a component, also when a person chose the sense; a
+/// reading a person chose stays.
+#[test]
+#[serial]
+fn test_apply_contextual_only_answers() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let rows = result.paragraphs[0].rows.clone();
+
+    // An ambiguous word the user resolved, and the compound's first component
+    // resolved by the user too.
+    let ambiguous = rows
+        .iter()
+        .find(|r| r.depth == 0 && r.word_index.is_some() && r.candidates.len() > 1)
+        .expect("DHP23 has an ambiguous word");
+    let amb_wi = ambiguous.word_index.unwrap();
+    let token = rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap();
+    let comp_wi = token.word_index.unwrap();
+    let daḷha = token.components[0].clone();
+    {
+        let words = &mut result.paragraphs[0].words_data;
+        words[amb_wi].resolution = Some("user-selected".to_string());
+        words[comp_wi].component_resolutions.insert("daḷha".to_string(), "user-selected".to_string());
+        words[comp_wi]
+            .component_selected_uids
+            .insert("daḷha".to_string(), daḷha.candidates[daḷha.selected_candidate].uid.clone());
+    }
+    result.paragraphs[0].rows = rebuilt_rows(&result);
+    let inputs = WordSelectionParagraphInput::from_result(&result, true).unwrap();
+    let items = build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap();
+    let item = |id: &str| items.iter().find(|i| i["id"] == id).unwrap_or_else(|| panic!("no item {id}")).clone();
+
+    let amb_item = item(&format!("p0w{}", amb_wi));
+    let amb_options = amb_item["options"].as_array().unwrap();
+    assert_eq!(amb_options.len(), 1);
+    let amb_uid = ambiguous.candidates[ambiguous.selected_candidate].uid.clone();
+    assert_eq!(amb_options[0]["uid"], amb_uid.as_str());
+    let n_readings = amb_options[0].get("grammar_options").map(|g| g.as_array().unwrap().len()).unwrap_or(0);
+
+    let comp_item = item(&format!("p0w{}c0", comp_wi));
+    assert_eq!(comp_item["component_word"], "daḷha");
+    let comp_options = comp_item["options"].as_array().unwrap();
+    assert_eq!(comp_options.len(), 1);
+    let daḷha_uid = daḷha.candidates[daḷha.selected_candidate].uid.clone();
+    assert_eq!(comp_options[0]["uid"], daḷha_uid.as_str());
+
+    // Every word with a dictionary sense and no other item has one.
+    for r in rows.iter().filter(|r| r.depth == 0 && r.id.is_some()) {
+        let wi = r.word_index.unwrap();
+        assert!(items.iter().any(|i| i["id"] == format!("p0w{}", wi).as_str()), "{}: asked", r.word);
+    }
+
+    let before = result.paragraphs[0].words_data.clone();
+    let mut amb_answer = answer(&format!("p0w{}", amb_wi), &amb_uid, None, Some("in context"));
+    if n_readings >= 2 {
+        amb_answer.grammar_index = Some(1);
+        amb_answer.contextual_meanings = Some((0..n_readings).map(|i| format!("meaning {}", i)).collect());
+    }
+    let answers = vec![amb_answer, answer(&format!("p0w{}c0", comp_wi), &daḷha_uid, None, Some("steady"))];
+    let summary = apply_word_selection_answers(
+        &mut result, &items, &answers, &app_data.dbm.appdata, &app_data.dbm.dpd, true,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped, summary.cache_rows_written), (2, 0, 0));
+
+    let words = &result.paragraphs[0].words_data;
+    let pw = &words[amb_wi];
+    assert_eq!(pw.selected_index, before[amb_wi].selected_index);
+    assert_eq!(pw.resolution.as_deref(), Some("user-selected"));
+    let r = pw.reading.as_ref().unwrap();
+    assert_eq!((r.uid.as_str(), r.contextual_meaning.as_deref(), r.origin.as_str()), (amb_uid.as_str(), Some("in context"), "ai-selected"));
+    if n_readings >= 2 {
+        assert_eq!(r.contextual_meanings.len(), n_readings);
+    }
+    let cw = &words[comp_wi];
+    assert_eq!(cw.component_selected_uids, before[comp_wi].component_selected_uids);
+    assert_eq!(cw.component_resolutions, before[comp_wi].component_resolutions);
+    assert_eq!(cw.component_readings["daḷha"].contextual_meaning.as_deref(), Some("steady"));
+
+    // The rows show the contextual meanings beside the unchanged definitions.
+    let rows = &result.paragraphs[0].rows;
+    let amb_row = rows.iter().find(|r| r.word_index == Some(amb_wi) && r.depth == 0).unwrap();
+    let expected = if n_readings >= 2 { "meaning 1" } else { "in context" };
+    assert_eq!(amb_row.contextual, expected);
+    assert_eq!(amb_row.definition, amb_row.candidates[amb_row.selected_candidate].meaning);
+    let comp_row = &rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().components[0];
+    assert_eq!(comp_row.contextual, "steady");
+    assert_eq!(comp_row.selected_candidate, daḷha.selected_candidate);
+
+    // Answered words are not asked again; a reading a person chose stays.
+    let again = build_word_selection_items(
+        &WordSelectionParagraphInput::from_result(&result, true).unwrap(),
+        WordSelectionBuildMode::SkipResolved { forced: false },
+    )
+    .unwrap();
+    assert!(!again.iter().any(|i| i["id"] == format!("p0w{}", amb_wi).as_str()));
+    result.paragraphs[0].words_data[amb_wi].reading.as_mut().unwrap().origin = "user-selected".to_string();
+    result.paragraphs[0].words_data[comp_wi].component_readings.get_mut("daḷha").unwrap().origin = "user-selected".to_string();
+    let summary = apply_word_selection_answers(
+        &mut result,
+        &items,
+        &[
+            answer(&format!("p0w{}", amb_wi), &amb_uid, None, Some("other")),
+            answer(&format!("p0w{}c0", comp_wi), &daḷha_uid, None, Some("other")),
+        ],
+        &app_data.dbm.appdata,
+        &app_data.dbm.dpd,
+        false,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped), (0, 2));
+    let words = &result.paragraphs[0].words_data;
+    assert_eq!(words[amb_wi].reading.as_ref().unwrap().contextual_meaning.as_deref(), Some("in context"));
+    assert_eq!(words[comp_wi].component_readings["daḷha"].contextual_meaning.as_deref(), Some("steady"));
+    // A user-selected reading is never asked about, even on a forced pass.
+    let forced = build_word_selection_items(
+        &WordSelectionParagraphInput::from_result(&result, true).unwrap(),
+        WordSelectionBuildMode::SkipResolved { forced: true },
+    )
+    .unwrap();
+    assert!(!forced.iter().any(|i| i["id"] == format!("p0w{}", amb_wi).as_str() || i["id"] == format!("p0w{}c0", comp_wi).as_str()));
 }
 
 /// The rows of the first paragraph rebuilt after its `words_data` changed.

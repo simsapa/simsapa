@@ -38,8 +38,17 @@ fn client(with_runner: bool) -> Client {
     Client::untracked(rocket).expect("rocket client")
 }
 
-/// Stands in for the AI: one translation per paragraph when `translate`.
-fn stub_runner(mut result: AllParagraphsProcessingResult, texts: Vec<String>, translate: bool) -> AllParagraphsProcessingResult {
+/// Stands in for the AI: one translation per paragraph when `translate`, and
+/// a note in `ai_errors` when `contextual_all`.
+fn stub_runner(
+    mut result: AllParagraphsProcessingResult,
+    texts: Vec<String>,
+    translate: bool,
+    contextual_all: bool,
+) -> AllParagraphsProcessingResult {
+    if contextual_all {
+        result.ai_errors.push("stub contextual_all".to_string());
+    }
     if translate {
         for p in &mut result.paragraphs {
             p.ai_translations.push(AiResponse {
@@ -191,6 +200,9 @@ fn test_gloss_text_route() {
     assert_error(&c, serde_json::json!({ "reference": "dhp23", "edition": "pts" }), bad, "edition");
     assert_error(&c, serde_json::json!({ "reference": "dhp23", "paragraphs": "2" }), bad, "out of range");
     assert_error(&c, serde_json::json!({ "reference": "zz999" }), Status::NotFound, "no Pāli text");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "contextual_all": true } }), bad, "contextual_all needs ai");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "ai": true, "contextual_all": true, "gloss_format": "headwords" } }), bad, "word_in_sentence");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "exact": true, "contextual_all": false } }), bad, "exact");
     // No runner in this server.
     assert_error(&c, serde_json::json!({ "text": "te", "options": { "ai": true } }), bad, "ai not available in this server");
 
@@ -198,6 +210,13 @@ fn test_gloss_text_route() {
     // the document.
     let c = client(true);
     let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true } }));
+    assert_eq!(s, Status::Ok);
+    assert!(body.ends_with(r#""ai_errors":["stub ran without translate"]}"#), "{body}");
+    // `contextual_all` reaches the runner.
+    let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true, "contextual_all": true } }));
+    assert_eq!(s, Status::Ok);
+    assert!(body.ends_with(r#""ai_errors":["stub contextual_all","stub ran without translate"]}"#), "{body}");
+    let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true, "contextual_all": false } }));
     assert_eq!(s, Status::Ok);
     assert!(body.ends_with(r#""ai_errors":["stub ran without translate"]}"#), "{body}");
     let (s, _, md) = post(&c, serde_json::json!({

@@ -635,6 +635,13 @@ Item {
     function set_gloss_lines_per_word(lines: int) {
     }
 
+    function get_gloss_contextual_all(): bool {
+        return false;
+    }
+
+    function set_gloss_contextual_all(enabled: bool) {
+    }
+
     function get_gloss_ai_translate_mode(): string {
         return 'sequential_retry';
     }

@@ -175,6 +175,17 @@ pub struct GlossArgs {
     #[arg(long)]
     pub no_translate: bool,
 
+    /// Ask the AI for a contextual meaning for every word, not only for the
+    /// words with several senses or readings (more tokens per request);
+    /// default: the app's "Contextual meaning for every word" setting.
+    /// Word in Sentence only
+    #[arg(long, overrides_with = "no_contextual_all")]
+    pub contextual_all: bool,
+
+    /// Ask for contextual meanings only for the words with a choice to make
+    #[arg(long, overrides_with = "contextual_all")]
+    pub no_contextual_all: bool,
+
     /// One exact DPD form lookup per word, in order, instead of the
     /// dictionary options (`/gloss_text` with `"exact": true`); Headwords only
     #[arg(long)]
@@ -209,6 +220,18 @@ impl GlossArgs {
     /// The lines per word of the Word in Sentence tables: 1 or 2 (default).
     fn lines_per_word(&self) -> u8 {
         self.lines_per_word.unwrap_or(2)
+    }
+
+    /// `--contextual-all` / `--no-contextual-all` when given, the last one
+    /// winning; `None` means the app setting.
+    fn contextual_all_flag(&self) -> Option<bool> {
+        if self.contextual_all {
+            Some(true)
+        } else if self.no_contextual_all {
+            Some(false)
+        } else {
+            None
+        }
     }
 
     fn gloss_format(&self) -> GlossFormat {
@@ -264,6 +287,16 @@ impl GlossArgs {
                 return Err(CliError::error(
                     "--lines-per-word applies to --format text, markdown, html, org and docx; anki-csv and json have one record per word",
                 ));
+            }
+        }
+        if self.contextual_all_flag().is_some() {
+            if self.no_ai || self.exact {
+                return Err(CliError::error(
+                    "--contextual-all and --no-contextual-all choose what the AI is asked; leave them out with --no-ai and --exact",
+                ));
+            }
+            if self.gloss_format == Some(GlossFormatArg::Headwords) {
+                return Err(CliError::error("--contextual-all and --no-contextual-all need --gloss-format word-in-sentence"));
             }
         }
         if self.format == Some(OutputFormatArg::Text) && self.output.is_some() {
@@ -474,10 +507,11 @@ fn run_ai(
     if args.no_ai || !result.success || result.paragraphs.is_empty() {
         return Ok(AiRun::NotAsked);
     }
-    let word_selection = {
+    let (word_selection, contextual_all_setting) = {
         let settings = get_app_data().app_settings_cache.read().expect("Failed to read app settings");
-        settings.gloss_word_selection_enabled
+        (settings.gloss_word_selection_enabled, settings.gloss_contextual_all)
     };
+    let contextual_all = args.contextual_all_flag().unwrap_or(contextual_all_setting);
     if !word_selection && args.no_translate {
         return Ok(AiRun::NotAsked);
     }
@@ -507,7 +541,13 @@ fn run_ai(
         errln!("Note: no API key for {}, so the requests to its models fail.", missing.join(", "));
         errln!("{}", api_key_help(&missing));
     }
-    let options = GlossAiOptions { word_selection, translate: !args.no_translate, write_cache: can_write, models };
+    let options = GlossAiOptions {
+        word_selection,
+        translate: !args.no_translate,
+        write_cache: can_write,
+        models,
+        contextual_all,
+    };
     if options.word_selection && !can_write {
         errln!(
             "Note: the data folder is in use by the Simsapa app or another simsapa command, \
@@ -1016,6 +1056,39 @@ mod tests {
         a.gloss_format = None;
         a.exact = true;
         assert!(a.validate(false).is_err(), "--exact");
+    }
+
+    #[test]
+    fn test_contextual_all_validation_and_parsing() {
+        use clap::Parser;
+        #[derive(clap::Parser)]
+        struct Wrapper {
+            #[command(flatten)]
+            gloss: GlossArgs,
+        }
+        let flag = |argv: &[&str]| Wrapper::try_parse_from(argv).unwrap().gloss.contextual_all_flag();
+        assert_eq!(flag(&["gloss", "x"]), None);
+        assert_eq!(flag(&["gloss", "--contextual-all", "x"]), Some(true));
+        assert_eq!(flag(&["gloss", "--no-contextual-all", "x"]), Some(false));
+        // The last one wins.
+        assert_eq!(flag(&["gloss", "--contextual-all", "--no-contextual-all", "x"]), Some(false));
+        assert_eq!(flag(&["gloss", "--no-contextual-all", "--contextual-all", "x"]), Some(true));
+
+        let mut a = args("x");
+        a.contextual_all = true;
+        assert!(a.validate(false).is_ok());
+        assert!(a.validate(true).is_ok(), "--json shows the AI's answers too");
+        a.no_ai = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("--no-ai"));
+        a.no_ai = false;
+        a.exact = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("--exact"));
+        a.exact = false;
+        a.gloss_format = Some(GlossFormatArg::Headwords);
+        assert!(a.validate(false).unwrap_err().to_string().contains("word-in-sentence"));
+        a.contextual_all = false;
+        a.no_contextual_all = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("word-in-sentence"));
     }
 
     #[test]

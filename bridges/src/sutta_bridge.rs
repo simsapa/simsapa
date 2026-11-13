@@ -1254,6 +1254,12 @@ pub mod qobject {
         fn set_gloss_lines_per_word(self: Pin<&mut SuttaBridge>, lines: i32);
 
         #[qinvokable]
+        fn get_gloss_contextual_all(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_gloss_contextual_all(self: Pin<&mut SuttaBridge>, enabled: bool);
+
+        #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -3407,6 +3413,19 @@ impl qobject::SuttaBridge {
     /// Save the lines per word; anything but 1 is 2.
     pub fn set_gloss_lines_per_word(self: Pin<&mut Self>, lines: i32) {
         get_app_data().set_gloss_lines_per_word(lines as i64);
+    }
+
+    /// Whether the AI word selection asks for a contextual meaning for every
+    /// word ("Contextual meaning for every word").
+    pub fn get_gloss_contextual_all(&self) -> bool {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.gloss_contextual_all
+    }
+
+    /// Save the "Contextual meaning for every word" option.
+    pub fn set_gloss_contextual_all(self: Pin<&mut Self>, enabled: bool) {
+        get_app_data().set_gloss_contextual_all(enabled);
     }
 
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")

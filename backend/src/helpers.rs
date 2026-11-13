@@ -17,7 +17,7 @@ use serde::{Serialize, Deserialize};
 use crate::app_settings::SuttaLayout;
 use crate::types::{SearchArea, SearchResult, WordInfo, WordProcessingOptions, WordProcessingResult, ProcessedWord, UnrecognizedWord};
 use crate::lookup::*;
-use crate::logger::{error, info};
+use crate::logger::{error, info, warn};
 
 lazy_static! {
     // MN44; MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
@@ -4247,12 +4247,21 @@ pub struct WordSelectionParagraphInput {
     /// of compound and sandhi headwords (see `build_word_selection_items`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows_json: Option<String>,
+    /// "Contextual meaning for every word": with `rows_json`, also ask for
+    /// the reading and contextual meaning of every word and component row
+    /// that has a dictionary sense but no other item (see
+    /// `build_word_selection_items`). Ignored without rows.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contextual_all: bool,
 }
 
 impl WordSelectionParagraphInput {
     /// The inputs for the paragraphs of a gloss result, numbered by their
     /// `paragraph_index`, with their rows when they have any.
-    pub fn from_result(result: &crate::types::AllParagraphsProcessingResult) -> Result<Vec<Self>, String> {
+    pub fn from_result(
+        result: &crate::types::AllParagraphsProcessingResult,
+        contextual_all: bool,
+    ) -> Result<Vec<Self>, String> {
         result
             .paragraphs
             .iter()
@@ -4264,7 +4273,13 @@ impl WordSelectionParagraphInput {
                 } else {
                     Some(serde_json::to_string(&p.rows).map_err(|e| format!("Failed to serialize rows: {}", e))?)
                 };
-                Ok(WordSelectionParagraphInput { paragraph_index: p.paragraph_index, words_json, source_uid: None, rows_json })
+                Ok(WordSelectionParagraphInput {
+                    paragraph_index: p.paragraph_index,
+                    words_json,
+                    source_uid: None,
+                    rows_json,
+                    contextual_all,
+                })
             })
             .collect()
     }
@@ -4385,6 +4400,20 @@ pub enum WordSelectionBuildMode {
 ///   later ids), with the token's construction as its `deconstructions`
 ///   annotation. A component row with a `resolution` is skipped as above.
 ///
+/// With rows and `contextual_all` ("Contextual meaning for every word"), a
+/// **contextual-only item** for every word and component row that has a
+/// dictionary sense but gets no other item: words with one sense, words
+/// resolved from the cache, by the user or by the built-in data, unambiguous
+/// or resolved components (of a compound headword, and of the chosen
+/// break-down of a deconstructor-resolved word). It has the chosen sense as
+/// its one option (with its `grammar_options`), uses the id the word or
+/// component would have as an ambiguous item, and asks only for the reading
+/// and the contextual meaning; the apply paths treat any one-option item as
+/// reading-only. It is skipped when the session reading for the chosen sense
+/// already has a contextual meaning (re-included on a forced pass when that
+/// reading is `"ai-selected"`), and always when that reading is
+/// `"user-selected"`, since both apply paths drop an AI reading over it.
+///
 /// Stable `p<pi>w<wi>` ids (`wi` is the word's position in words_data, so
 /// skipped words never shift later ids), the occurrence-marked
 /// `example_sentence` as `context`, and option summaries HTML-stripped and
@@ -4428,6 +4457,33 @@ pub fn build_word_selection_items(
             "word": r.get("word").and_then(|v| v.as_str()).unwrap_or(""),
             "summary": summary,
         })
+    };
+
+    // Whether a contextual-only item is skipped for the session `reading`
+    // (a `SenseReading` object) of the chosen sense `uid`.
+    let skip_contextual = |reading: Option<&serde_json::Value>, uid: &str| -> bool {
+        let Some(r) = reading.filter(|r| r.get("uid").and_then(|v| v.as_str()) == Some(uid)) else {
+            return false;
+        };
+        let origin = r
+            .get("origin")
+            .and_then(|v| v.as_str())
+            .filter(|o| !o.is_empty())
+            .unwrap_or("ai-selected");
+        if origin == "user-selected" {
+            return true;
+        }
+        let has_meaning = r
+            .get("contextual_meaning")
+            .and_then(|v| v.as_str())
+            .is_some_and(|m| !m.trim().is_empty());
+        has_meaning && skip_resolved(Some(origin))
+    };
+
+    // The chosen DPD sense of a row, when it has one.
+    let chosen_sense = |row: &crate::gloss_rows::GlossRow| -> Option<crate::gloss_rows::RowCandidate> {
+        row.id?;
+        row.candidates.get(row.selected_candidate).filter(|c| c.id.is_some()).cloned()
     };
 
     let mut items: Vec<serde_json::Value> = Vec::new();
@@ -4539,33 +4595,55 @@ pub fn build_word_selection_items(
                         "context": context,
                         "options": options,
                     })));
+                } else if para.contextual_all
+                    && let Some(choice) = choice_row
+                    && let Some(chosen) = chosen_sense(choice)
+                    && let Some(r) = results.iter().find(|r| r.get("uid").and_then(|v| v.as_str()) == Some(chosen.uid.as_str()))
+                    && !skip_contextual(w.get("reading"), &chosen.uid)
+                {
+                    let mut option = option_json(r);
+                    add_grammar_options(&mut option, Some(choice));
+                    items.push(with_source_uid(serde_json::json!({
+                        "id": format!("p{}w{}", para.paragraph_index, wi),
+                        "word": original_word,
+                        "context": context,
+                        "options": [option],
+                    })));
                 }
+                let component_readings = w.get("component_readings");
 
                 // The components of a compound or sandhi headword.
                 if let Some(top) = top_row {
                     let annotation = serde_json::json!([top.construction]);
-                    for (k, comp) in headword_component_rows(top).into_iter().enumerate() {
-                        if comp.candidates.len() <= 1 || skip_resolved(comp.resolution.as_deref()) {
-                            continue;
+                    let candidate_option = |c: &crate::gloss_rows::RowCandidate| -> serde_json::Value {
+                        let summary = RE_HTML_TAG.replace_all(&c.meaning, "");
+                        let mut o = serde_json::json!({
+                            "uid": c.uid,
+                            "word": c.lemma_1,
+                            "summary": summary.chars().take(200).collect::<String>(),
+                        });
+                        if c.grammar_options.len() > 1 {
+                            o.as_object_mut()
+                                .expect("option is an object")
+                                .insert("grammar_options".to_string(), serde_json::json!(c.grammar_options));
                         }
-                        let options: Vec<serde_json::Value> = comp
-                            .candidates
-                            .iter()
-                            .map(|c| {
-                                let summary = RE_HTML_TAG.replace_all(&c.meaning, "");
-                                let mut o = serde_json::json!({
-                                    "uid": c.uid,
-                                    "word": c.lemma_1,
-                                    "summary": summary.chars().take(200).collect::<String>(),
-                                });
-                                if c.grammar_options.len() > 1 {
-                                    o.as_object_mut()
-                                        .expect("option is an object")
-                                        .insert("grammar_options".to_string(), serde_json::json!(c.grammar_options));
-                                }
-                                o
-                            })
-                            .collect();
+                        o
+                    };
+                    for (k, comp) in headword_component_rows(top).into_iter().enumerate() {
+                        let options: Vec<serde_json::Value> =
+                            if comp.candidates.len() > 1 && !skip_resolved(comp.resolution.as_deref()) {
+                                comp.candidates.iter().map(candidate_option).collect()
+                            } else if para.contextual_all
+                                && let Some(chosen) = chosen_sense(comp)
+                                && !skip_contextual(
+                                    component_readings.and_then(|m| m.get(comp.word.as_str())),
+                                    &chosen.uid,
+                                )
+                            {
+                                vec![candidate_option(&chosen)]
+                            } else {
+                                continue;
+                            };
                         items.push(with_source_uid(serde_json::json!({
                             "id": format!("p{}w{}c{}", para.paragraph_index, wi, k),
                             "word": original_word,
@@ -4655,21 +4733,41 @@ pub fn build_word_selection_items(
                             .unwrap_or(false)
                     })
                     .collect();
-                if comp_results.len() <= 1 {
-                    continue;
-                }
                 let comp_resolution = component_resolutions
                     .and_then(|m| m.get(*comp_word))
                     .and_then(|v| v.as_str());
-                if skip_resolved(comp_resolution) {
-                    continue;
-                }
-
                 // The component's row under the selected break-down, for its
                 // readings.
                 let comp_row = choice_rows
                     .get(&wi)
                     .and_then(|(_, choice)| choice.components.iter().find(|c| c.word == **comp_word));
+                let ambiguous = comp_results.len() > 1 && !skip_resolved(comp_resolution);
+                if !ambiguous {
+                    // A contextual-only item for a component of the chosen
+                    // break-down.
+                    if para.contextual_all
+                        && let Some(row) = comp_row
+                        && let Some(chosen) = chosen_sense(row)
+                        && let Some(r) = results.iter().find(|r| r.get("uid").and_then(|v| v.as_str()) == Some(chosen.uid.as_str()))
+                        && !skip_contextual(
+                            w.get("component_readings").and_then(|m| m.get(*comp_word)),
+                            &chosen.uid,
+                        )
+                    {
+                        let mut option = option_json(r);
+                        add_grammar_options(&mut option, Some(row));
+                        items.push(with_source_uid(serde_json::json!({
+                            "id": format!("p{}w{}c{}", para.paragraph_index, wi, k),
+                            "word": original_word,
+                            "component_word": comp_word,
+                            "context": context,
+                            "options": [option],
+                            "deconstructions": decs_annotation,
+                        })));
+                    }
+                    continue;
+                }
+
                 let mut options: Vec<serde_json::Value> =
                     comp_results.iter().map(|r| option_json(r)).collect();
                 for o in options.iter_mut() {
@@ -4815,6 +4913,11 @@ pub struct WordSelectionEntry {
     /// The dictionary meaning fitted to the sentence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contextual_meaning: Option<String>,
+    /// One contextual meaning per reading in the chosen option's
+    /// `grammar_options`, in the same order (kept only when the length
+    /// matches).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contextual_meanings: Option<Vec<String>>,
 }
 
 /// Parse and validate an AI word-selection response (PRD: agent-checked gloss
@@ -4836,6 +4939,9 @@ pub struct WordSelectionEntry {
 /// `grammar_index` is not an index into the chosen option's
 /// `grammar_options` (0 is accepted for an option without them); or the
 /// optional `contextual_meaning` is not a string.
+/// The optional `contextual_meanings` (one per reading of the chosen option)
+/// never makes an entry invalid: a value that is not an array of strings as
+/// long as the option's `grammar_options` is dropped with a log line.
 /// Invalid entries are skipped (`Lenient`) or collected into a hard error
 /// (`Strict`); `Strict` additionally fails on items with no answer.
 pub fn parse_word_selection_response(
@@ -4990,6 +5096,26 @@ pub fn parse_word_selection_response(
             }
         };
 
+        let contextual_meanings = match sel.get("contextual_meanings") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(v) => {
+                let n_readings = opts.readings.get(&resolved_uid).copied().unwrap_or(0);
+                let list: Option<Vec<String>> = v
+                    .as_array()
+                    .and_then(|a| a.iter().map(|m| m.as_str().map(|m| m.trim().to_string())).collect());
+                match list {
+                    Some(list) if n_readings >= 2 && list.len() == n_readings => Some(list),
+                    _ => {
+                        warn(&format!(
+                            "parse_word_selection_response(): item '{}': contextual_meanings {} is not {} strings, dropping it",
+                            id, v, n_readings
+                        ));
+                        None
+                    }
+                }
+            }
+        };
+
         // Duplicate answers for the same id: keep the first; a disagreeing
         // duplicate is invalid (hard error in Strict mode).
         if let Some(&prev_idx) = by_id.get(id) {
@@ -5006,6 +5132,7 @@ pub fn parse_word_selection_response(
             note,
             grammar_index,
             contextual_meaning,
+            contextual_meanings,
         });
     }
 
@@ -7077,7 +7204,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 2,
             words_json: word_selection_words_json().to_string(),
-            source_uid: None, rows_json: None,
+            source_uid: None, rows_json: None, contextual_all: false,
         };
 
         // Network mode, not forced: only the unresolved ambiguous word.
@@ -7125,7 +7252,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: words,
-            source_uid: Some("sn56.11/pli/ms".to_string()), rows_json: None,
+            source_uid: Some("sn56.11/pli/ms".to_string()), rows_json: None, contextual_all: false,
         };
         let items = build_word_selection_items(
             &[para],
@@ -7204,7 +7331,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: compound_words_json(),
-            source_uid: None, rows_json: None,
+            source_uid: None, rows_json: None, contextual_all: false,
         };
         let items = build_word_selection_items(
             &[para],
@@ -7270,7 +7397,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: serde_json::to_string(&words).unwrap(),
-            source_uid: None, rows_json: None,
+            source_uid: None, rows_json: None, contextual_all: false,
         };
 
         // Not forced: every resolved item is skipped, ids of the rest are
@@ -7297,7 +7424,7 @@ mod tests {
         let para = WordSelectionParagraphInput {
             paragraph_index: 0,
             words_json: compound_words_json(),
-            source_uid: None, rows_json: None,
+            source_uid: None, rows_json: None, contextual_all: false,
         };
         let items = build_word_selection_items(
             &[para],
@@ -7344,12 +7471,12 @@ mod tests {
             WordSelectionParagraphInput {
                 paragraph_index: 0,
                 words_json: word_selection_words_json().to_string(),
-                source_uid: Some("mn1/pli/ms".to_string()), rows_json: None,
+                source_uid: Some("mn1/pli/ms".to_string()), rows_json: None, contextual_all: false,
             },
             WordSelectionParagraphInput {
                 paragraph_index: 1,
                 words_json: word_selection_words_json().to_string(),
-                source_uid: Some("mn2/pli/ms".to_string()), rows_json: None,
+                source_uid: Some("mn2/pli/ms".to_string()), rows_json: None, contextual_all: false,
             },
         ];
         let a = build_word_selection_payload(
@@ -7366,13 +7493,215 @@ mod tests {
         let bad = WordSelectionParagraphInput {
             paragraph_index: 7,
             words_json: "not json".to_string(),
-            source_uid: None, rows_json: None,
+            source_uid: None, rows_json: None, contextual_all: false,
         };
         let err = build_word_selection_items(
             &[bad],
             WordSelectionBuildMode::IncludeResolved,
         ).unwrap_err();
         assert!(err.contains("paragraph 7"), "unexpected error: {}", err);
+    }
+
+    /// A row with one chosen DPD sense among `uids` (the first is chosen).
+    fn ctx_row(word: &str, word_index: Option<usize>, uids: &[&str], grammar_options: &[&str]) -> crate::gloss_rows::GlossRow {
+        crate::gloss_rows::GlossRow {
+            word: word.to_string(),
+            word_index,
+            id: Some(1),
+            candidates: uids
+                .iter()
+                .enumerate()
+                .map(|(i, u)| crate::gloss_rows::RowCandidate {
+                    id: Some(i as i32 + 1),
+                    uid: u.to_string(),
+                    lemma_1: u.trim_end_matches("/dpd").replace('-', " "),
+                    grammar_options: grammar_options.iter().map(|g| g.to_string()).collect(),
+                    meaning: format!("<b>{}</b> meaning", u),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    /// Words for the contextual-only items: w0 one sense, w1 ambiguous and
+    /// unresolved, w2 ambiguous and `ai-selected`, w3 `user-selected` with an
+    /// AI reading that has a contextual meaning, w4 one sense with a
+    /// `user-selected` reading, w5 one sense whose headword is a compound
+    /// (`daḷha` with one sense, `parakkama` with two), w6 one sense with an
+    /// inert reading (for another sense).
+    fn contextual_words_and_rows() -> (String, String) {
+        let words = serde_json::json!([
+            {"original_word": "Evaṁ", "example_sentence": "<b>Evaṁ</b> me.",
+             "results": [{"uid": "evaṁ/dpd", "word": "evaṁ", "summary": "(ind) thus"}]},
+            {"original_word": "me", "example_sentence": "Evaṁ <b>me</b>.",
+             "results": [
+                {"uid": "ma-2/dpd", "word": "ma 2", "summary": "by me"},
+                {"uid": "ma-3/dpd", "word": "ma 3", "summary": "my"}]},
+            {"original_word": "sutaṁ", "example_sentence": "me <b>sutaṁ</b>.",
+             "resolution": "ai-selected",
+             "results": [
+                {"uid": "suta-1.1/dpd", "word": "suta 1.1", "summary": "heard"},
+                {"uid": "suta-1.3/dpd", "word": "suta 1.3", "summary": "what is heard"}]},
+            {"original_word": "samayaṁ", "example_sentence": "ekaṁ <b>samayaṁ</b>.",
+             "resolution": "user-selected",
+             "reading": {"uid": "samaya-1.1/dpd", "contextual_meaning": "time", "origin": "ai-selected"},
+             "results": [
+                {"uid": "samaya-1.1/dpd", "word": "samaya 1.1", "summary": "time"},
+                {"uid": "samaya-1.4/dpd", "word": "samaya 1.4", "summary": "occasion"}]},
+            {"original_word": "bhagavā", "example_sentence": "<b>bhagavā</b> viharati.",
+             "reading": {"uid": "bhagavant/dpd", "grammar_index": 0, "origin": "user-selected"},
+             "results": [{"uid": "bhagavant/dpd", "word": "bhagavant", "summary": "the Blessed One"}]},
+            {"original_word": "daḷhaparakkamā", "example_sentence": "niccaṁ <b>daḷhaparakkamā</b>.",
+             "component_readings": {"parakkama": {"uid": "parakkama-1/dpd", "contextual_meaning": "effort", "origin": "ai-selected"}},
+             "results": [{"uid": "daḷhaparakkama/dpd", "word": "daḷhaparakkama", "summary": "of firm effort"}]},
+            {"original_word": "viharati", "example_sentence": "bhagavā <b>viharati</b>.",
+             "reading": {"uid": "other/dpd", "contextual_meaning": "lives", "origin": "ai-selected"},
+             "results": [{"uid": "viharati/dpd", "word": "viharati", "summary": "lives"}]}
+        ])
+        .to_string();
+        let mut compound = ctx_row("daḷhaparakkamā", Some(5), &["daḷhaparakkama/dpd"], &[]);
+        compound.components = vec![
+            ctx_row("daḷha", None, &["daḷha/dpd"], &["adj", "masc"]),
+            ctx_row("parakkama", None, &["parakkama-1/dpd", "parakkama-2/dpd"], &[]),
+        ];
+        let rows = vec![
+            ctx_row("Evaṁ", Some(0), &["evaṁ/dpd"], &[]),
+            ctx_row("me", Some(1), &["ma-2/dpd", "ma-3/dpd"], &[]),
+            ctx_row("sutaṁ", Some(2), &["suta-1.1/dpd", "suta-1.3/dpd"], &["pp", "nt nom sg"]),
+            ctx_row("samayaṁ", Some(3), &["samaya-1.1/dpd", "samaya-1.4/dpd"], &[]),
+            ctx_row("bhagavā", Some(4), &["bhagavant/dpd"], &[]),
+            compound,
+            ctx_row("viharati", Some(6), &["viharati/dpd"], &[]),
+        ];
+        (words, serde_json::to_string(&rows).unwrap())
+    }
+
+    fn item_ids(items: &[serde_json::Value]) -> Vec<&str> {
+        items.iter().map(|i| i["id"].as_str().unwrap()).collect()
+    }
+
+    fn option_uids(item: &serde_json::Value) -> Vec<&str> {
+        item["options"].as_array().unwrap().iter().map(|o| o["uid"].as_str().unwrap()).collect()
+    }
+
+    #[test]
+    fn test_build_word_selection_items_contextual_all() {
+        let (words, rows) = contextual_words_and_rows();
+        let para = |rows_json: Option<String>, contextual_all: bool| WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: words.clone(),
+            source_uid: None,
+            rows_json,
+            contextual_all,
+        };
+        let build = |p: WordSelectionParagraphInput, forced: bool| {
+            build_word_selection_items(&[p], WordSelectionBuildMode::SkipResolved { forced }).unwrap()
+        };
+
+        // Off: only the unresolved ambiguous word and component.
+        let off = build(para(Some(rows.clone()), false), false);
+        assert_eq!(item_ids(&off), vec!["p0w1", "p0w5c1"]);
+        // Without rows the option does nothing.
+        assert_eq!(build(para(None, true), false), build(para(None, false), false));
+
+        let on = build(para(Some(rows.clone()), true), false);
+        // w3 has an AI contextual meaning, w4 a user-selected reading; w6's
+        // reading belongs to another sense, so it does not count.
+        assert_eq!(item_ids(&on), vec!["p0w0", "p0w1", "p0w2", "p0w5", "p0w5c0", "p0w5c1", "p0w6"]);
+        let by_id = |id: &str| on.iter().find(|i| i["id"] == id).unwrap().clone();
+        // One option, the chosen sense, in the standard option shape.
+        assert_eq!(by_id("p0w0")["options"], serde_json::json!([{"uid": "evaṁ/dpd", "word": "evaṁ", "summary": "(ind) thus"}]));
+        // The cache-resolved word: its chosen sense, with its readings.
+        let w2 = by_id("p0w2");
+        assert_eq!(option_uids(&w2), vec!["suta-1.1/dpd"]);
+        assert_eq!(w2["options"][0]["grammar_options"], serde_json::json!(["pp", "nt nom sg"]));
+        // The one-sense component of the compound: the same `k` as an
+        // ambiguous one, its readings, and the compound's annotation.
+        let c0 = by_id("p0w5c0");
+        assert_eq!(c0["component_word"], "daḷha");
+        assert_eq!(option_uids(&c0), vec!["daḷha/dpd"]);
+        assert_eq!(c0["options"][0]["grammar_options"], serde_json::json!(["adj", "masc"]));
+        assert_eq!(c0["options"][0]["summary"], "daḷha/dpd meaning");
+        // The ambiguous component keeps its full item, though its reading has
+        // a meaning.
+        assert_eq!(option_uids(&by_id("p0w5c1")).len(), 2);
+
+        // Forced: `sutaṁ` is a sense item again, and `samayaṁ` (an
+        // ai-selected reading) is asked again; the user-selected reading never.
+        let forced = build(para(Some(rows.clone()), true), true);
+        assert_eq!(item_ids(&forced), vec!["p0w0", "p0w1", "p0w2", "p0w3", "p0w5", "p0w5c0", "p0w5c1", "p0w6"]);
+        assert_eq!(option_uids(&forced[2]).len(), 2);
+        assert_eq!(option_uids(&forced[3]), vec!["samaya-1.1/dpd"]);
+
+        // The include-resolved agent path never sets the option, and with it
+        // off its items are unchanged.
+        let agent = build_word_selection_items(&[para(Some(rows), false)], WordSelectionBuildMode::IncludeResolved).unwrap();
+        assert_eq!(item_ids(&agent), vec!["p0w1", "p0w2", "p0w3", "p0w5c1"]);
+    }
+
+    /// A component of the chosen break-down of a deconstructor-resolved word
+    /// with one sense gets a contextual-only item with its `k`.
+    #[test]
+    fn test_build_word_selection_items_contextual_all_breakdown_components() {
+        let mut token = ctx_row("atthaññe", Some(2), &["atthi + aññe"], &[]);
+        token.id = None;
+        token.candidates[0].id = None;
+        token.components = vec![
+            ctx_row("atthi", None, &["atthi/dpd"], &[]),
+            ctx_row("aññe", None, &["añña-1/dpd", "añña-2/dpd"], &[]),
+        ];
+        let rows = serde_json::to_string(&vec![token]).unwrap();
+        let para = WordSelectionParagraphInput {
+            paragraph_index: 0,
+            words_json: compound_words_json(),
+            source_uid: None,
+            rows_json: Some(rows),
+            contextual_all: true,
+        };
+        let items = build_word_selection_items(&[para], WordSelectionBuildMode::SkipResolved { forced: false }).unwrap();
+        let w2: Vec<&serde_json::Value> = items.iter().filter(|i| i["id"].as_str().unwrap().starts_with("p0w2")).collect();
+        assert_eq!(item_ids(&w2.iter().map(|v| (*v).clone()).collect::<Vec<_>>()), vec!["p0w2c0", "p0w2c1"]);
+        assert_eq!(w2[0]["component_word"], "atthi");
+        assert_eq!(option_uids(w2[0]), vec!["atthi/dpd"]);
+        assert_eq!(w2[0]["deconstructions"], serde_json::json!(["atthi + aññe"]));
+    }
+
+    #[test]
+    fn test_parse_word_selection_response_contextual_meanings() {
+        let items = serde_json::json!([
+            {"id": "p0w3", "word": "rājaññassa", "options": [
+                {"uid": "rājañña-1/dpd", "word": "rājañña 1", "summary": "", "grammar_options": ["masc gen sg", "masc dat sg"]},
+                {"uid": "rājañña-2/dpd", "word": "rājañña 2", "summary": ""}
+            ]}
+        ])
+        .to_string();
+        let parse = |sel: &str| {
+            parse_word_selection_response(&format!(r#"{{"selections": [{}]}}"#, sel), &items, WordSelectionParseMode::Lenient)
+                .unwrap()
+        };
+        let r = parse(
+            r#"{"id": "p0w3", "word": "rājañña 1", "grammar_index": 0, "contextual_meaning": "of the nobleman", "contextual_meanings": [" of the nobleman ", "for the nobleman"]}"#,
+        );
+        assert_eq!(r[0].contextual_meanings, Some(vec!["of the nobleman".to_string(), "for the nobleman".to_string()]));
+        assert_eq!(r[0].contextual_meaning.as_deref(), Some("of the nobleman"));
+        // A wrong length, a non-string entry, a list for an option without
+        // readings: the list is dropped, the entry stays.
+        for sel in [
+            r#"{"id": "p0w3", "word": "rājañña 1", "contextual_meaning": "x", "contextual_meanings": ["of the nobleman"]}"#,
+            r#"{"id": "p0w3", "word": "rājañña 1", "contextual_meaning": "x", "contextual_meanings": ["of the nobleman", 5]}"#,
+            r#"{"id": "p0w3", "word": "rājañña 1", "contextual_meaning": "x", "contextual_meanings": "of the nobleman"}"#,
+            r#"{"id": "p0w3", "word": "rājañña 2", "contextual_meaning": "x", "contextual_meanings": ["a", "b"]}"#,
+        ] {
+            let r = parse(sel);
+            assert_eq!(r.len(), 1, "{sel}");
+            assert_eq!((r[0].contextual_meanings.as_ref(), r[0].contextual_meaning.as_deref()), (None, Some("x")), "{sel}");
+        }
+        // An answer without a contextual meaning is still valid.
+        let r = parse(r#"{"id": "p0w3", "word": "rājañña 2"}"#);
+        assert_eq!((r[0].uid.as_str(), r[0].contextual_meaning.as_ref()), ("rājañña-2/dpd", None));
+        // The shape check does not refuse a bad list either.
+        assert!(validate_word_selection_response_shape(r#"{"selections": [{"id": "a", "contextual_meanings": 5}]}"#).is_ok());
     }
 
     #[test]

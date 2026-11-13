@@ -762,6 +762,14 @@ Item {
             var user = { uid: "1/dpd", grammar_index: 0, origin: "user-selected" };
             compare(gloss_tab.ai_answer_reading(user, { uid: "1/dpd", grammar_index: 1 }), null);
             verify(gloss_tab.ai_answer_reading(user, { uid: "2/dpd", grammar_index: 1 }) !== null);
+            // The per-reading meanings are kept, and alone count as a reading.
+            r = gloss_tab.ai_answer_reading(null, { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman",
+                                                    contextual_meanings: ["of the nobleman", "for the nobleman"] });
+            compare(r.contextual_meanings, ["of the nobleman", "for the nobleman"]);
+            r = gloss_tab.ai_answer_reading(null, { uid: "1/dpd", contextual_meanings: ["a", "b"] });
+            compare(r.contextual_meanings, ["a", "b"]);
+            compare(r.contextual_meaning, undefined);
+            compare(gloss_tab.ai_answer_reading(null, { uid: "1/dpd", contextual_meanings: [] }), null);
         }
 
         function test_reading_only_answer_writes_no_choice() {
@@ -778,6 +786,41 @@ Item {
             compare(w.reading.grammar_index, 2);
             compare(w.reading.contextual_meaning, "they");
             compare(w.resolution === undefined || w.resolution === null, true);
+        }
+
+        // A component item with one option ("Contextual meaning for every
+        // word") sets only the component's reading, also over a component
+        // sense the user chose.
+        function test_one_option_component_answer_sets_only_the_reading() {
+            gloss_tab.current_text = "daḷhaparakkamā";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([{
+                original_word: "daḷhaparakkamā", results: [{ uid: "1/dpd", word: "daḷhaparakkama", summary: "" }],
+                selected_index: 0, stem: "daḷhaparakkama", example_sentence: "daḷhaparakkamā",
+                direct_uids: ["1/dpd"], deconstructions: [],
+                component_selected_uids: { "daḷha": "2/dpd" },
+                component_resolutions: { "daḷha": "user-selected" }
+            }]));
+            var applied = gloss_tab.apply_word_selections(0, [
+                { word_idx: 0, uid: "2/dpd", kind: "c", component_word: "daḷha", option_count: 1,
+                  contextual_meaning: "steady" }
+            ]);
+            compare(applied, 1);
+            var w = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0];
+            compare(w.component_readings["daḷha"].contextual_meaning, "steady");
+            compare(w.component_readings["daḷha"].origin, "ai-selected");
+            compare(w.component_selected_uids["daḷha"], "2/dpd");
+            compare(w.component_resolutions["daḷha"], "user-selected");
+
+            // A component reading the user chose stays.
+            w.component_readings["daḷha"].origin = "user-selected";
+            gloss_tab.set_paragraph_words(0, [w]);
+            applied = gloss_tab.apply_word_selections(0, [
+                { word_idx: 0, uid: "2/dpd", kind: "c", component_word: "daḷha", option_count: 1,
+                  contextual_meaning: "other" }
+            ]);
+            compare(applied, 0);
+            w = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0];
+            compare(w.component_readings["daḷha"].contextual_meaning, "steady");
         }
 
         // A reading chosen by hand takes the AI's meaning for that reading,

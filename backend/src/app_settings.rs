@@ -425,6 +425,11 @@ pub struct AppSettings {
     /// per word" and the Export window's choice start from the same value.
     #[serde(default = "default_gloss_lines_per_word")]
     pub gloss_lines_per_word: u8,
+    /// Word in Sentence: the AI word selection also asks for a contextual
+    /// meaning for every word with a dictionary sense, not only for the
+    /// ambiguous ones (docs/gloss-ai-word-selection.md).
+    #[serde(default)]
+    pub gloss_contextual_all: bool,
 }
 
 /// Two lines per word: the meanings on the first, grammar and derivation on
@@ -651,15 +656,17 @@ There are three kinds of items, distinguished by their "id" suffix:
 - Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
 - Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
 
-Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context. An item with a single option asks only for this reading.
+A sense or component item with a single option has no entry to choose: it asks only for the reading and the contextual meaning described below. Return that option's "word" with them.
 
-For every selection, also return "contextual_meaning": the selected entry's dictionary meaning adjusted to fit the grammar and the context (e.g. "dwells" -> "I would dwell"), in a few words. Give only the core meaning; do not append grammatical case notes in parentheses.
+Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context; and "contextual_meanings": one short contextual meaning for each reading, in the order of "grammar_options" (e.g. ["of the nobleman", "for the nobleman"] for "masc gen sg" and "masc dat sg"). Readings that come out the same in English may repeat the same meaning.
+
+Every selection of a sense or component item must also have "contextual_meaning": a short English rendering of the word as used in this sentence (e.g. "arisen", "of the nobleman", "I would dwell"), drawn from the selected entry's dictionary meaning and following the case, number and person of the reading that fits. It is shown to the reader next to the dictionary definition, not in place of it. Give only the core meaning in a few words; do not append grammatical case notes in parentheses.
 
 <<WORD_SELECTION_JSON>>
 
 Respond with JSON in exactly this format, one selection per item:
 
-{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>"}]}
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>", "contextual_meanings": ["<meaning for each reading, when the option has grammar_options>"]}]}
 
 A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
 "#.trim().to_string());
@@ -679,6 +686,27 @@ Respond with GFM-Markdown formatted text.
 /// replaces it with the current default; an edited prompt is kept.
 fn superseded_default_system_prompts() -> Vec<(&'static str, &'static str)> {
     vec![
+        ("Gloss Tab: Word Selection Request", r#"
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
+
+There are three kinds of items, distinguished by their "id" suffix:
+
+- Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
+
+Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context. An item with a single option asks only for this reading.
+
+For every selection, also return "contextual_meaning": the selected entry's dictionary meaning adjusted to fit the grammar and the context (e.g. "dwells" -> "I would dwell"), in a few words. Give only the core meaning; do not append grammatical case notes in parentheses.
+
+<<WORD_SELECTION_JSON>>
+
+Respond with JSON in exactly this format, one selection per item:
+
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>"}]}
+
+A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
+"#),
         ("Gloss Tab: Word Selection Request", r#"
 Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
 
@@ -956,6 +984,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_export_formats: default_gloss_export_formats(),
             gloss_export_gloss_format: default_gloss_format(),
             gloss_lines_per_word: default_gloss_lines_per_word(),
+            gloss_contextual_all: false,
         }
     }
 }
@@ -1173,6 +1202,17 @@ mod tests {
         assert_eq!(clamp_gloss_lines_per_word(3), 2);
     }
 
+    /// Settings saved before the "Contextual meaning for every word" option
+    /// existed read with it off.
+    #[test]
+    fn gloss_contextual_all_defaults_to_off() {
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert_eq!(json.remove("gloss_contextual_all"), Some(serde_json::json!(false)));
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert!(!settings.gloss_contextual_all);
+    }
+
     /// Settings saved before the two-part translation template existed gain
     /// it on load; an unedited earlier word-selection request is upgraded, an
     /// edited one is kept.
@@ -1180,20 +1220,26 @@ mod tests {
     fn merge_default_system_prompts_adds_and_upgrades() {
         let translation_key = crate::gloss_translation::TRANSLATION_TEMPLATE_KEY;
         let request_key = "Gloss Tab: Word Selection Request";
-        let (_, old_request) = superseded_default_system_prompts()
+        let old_requests: Vec<&str> = superseded_default_system_prompts()
             .into_iter()
-            .find(|(k, _)| *k == request_key)
-            .unwrap();
+            .filter(|(k, _)| *k == request_key)
+            .map(|(_, text)| text)
+            .collect();
+        // The one with grammar readings, and the one before it.
+        assert_eq!(old_requests.len(), 2);
+        let defaults = default_system_prompts();
+        assert!(old_requests.iter().all(|old| old.trim() != defaults[request_key]));
 
         let mut settings = AppSettings::default();
-        settings.system_prompts.shift_remove(translation_key);
-        settings.system_prompts.insert(request_key.to_string(), old_request.trim().to_string());
-        assert!(settings.merge_default_system_prompts());
-        let defaults = default_system_prompts();
-        assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
-        assert!(settings.system_prompts[translation_key].contains("<<WORD_TABLE>>"));
-        assert_eq!(settings.system_prompts[request_key], defaults[request_key]);
-        assert!(settings.system_prompts[request_key].contains("grammar_index"));
+        for old_request in old_requests {
+            settings.system_prompts.shift_remove(translation_key);
+            settings.system_prompts.insert(request_key.to_string(), old_request.trim().to_string());
+            assert!(settings.merge_default_system_prompts());
+            assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
+            assert!(settings.system_prompts[translation_key].contains("<<WORD_TABLE>>"));
+            assert_eq!(settings.system_prompts[request_key], defaults[request_key]);
+            assert!(settings.system_prompts[request_key].contains("\"contextual_meanings\""));
+        }
 
         settings.system_prompts.insert(request_key.to_string(), "my own request".to_string());
         assert!(!settings.merge_default_system_prompts());

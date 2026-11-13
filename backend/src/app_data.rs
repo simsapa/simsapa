@@ -1498,6 +1498,11 @@ impl AppData {
         self.update_app_settings(|s| s.gloss_lines_per_word = lines);
     }
 
+    /// Saves the "Contextual meaning for every word" AI option.
+    pub fn set_gloss_contextual_all(&self, enabled: bool) {
+        self.update_app_settings(|s| s.gloss_contextual_all = enabled);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 
