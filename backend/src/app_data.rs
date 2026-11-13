@@ -1481,6 +1481,16 @@ impl AppData {
         self.update_app_settings(|s| s.gloss_format_info_shown = shown);
     }
 
+    /// Saves the document formats checked in the Gloss tab's Export dialog.
+    pub fn set_gloss_export_formats(&self, formats: Vec<String>) {
+        self.update_app_settings(|s| s.gloss_export_formats = formats);
+    }
+
+    /// Saves the gloss format chosen in the Gloss tab's Export dialog.
+    pub fn set_gloss_export_gloss_format(&self, format: crate::types::GlossFormat) {
+        self.update_app_settings(|s| s.gloss_export_gloss_format = format);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 

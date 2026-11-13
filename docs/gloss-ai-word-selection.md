@@ -639,9 +639,42 @@ rows coexist and the chain ranks them.
 
 ## 6. Exports
 
+The **Export...** button opens `GlossExportWindow.qml` (an `ApplicationWindow`
+with a scrolling body and a fixed button bar): checkboxes for the document
+formats (HTML, Markdown, Org-Mode, Word (.docx), Anki CSV, JSON) and radio
+buttons for the gloss format (Word in Sentence / Headwords). One folder is
+picked for all the checked formats, existing files are confirmed for
+overwrite once, and one message lists what was written
+(`GlossTab.run_export()` / `write_export_files()`; the Anki CSV still runs in
+the background and its result completes the message).
+
+The window's choices are **app settings of their own**, saved when Export...
+is pressed and loaded each time the window opens: `gloss_export_formats`
+(`SuttaBridge.get/set_gloss_export_formats_json`) and
+`gloss_export_gloss_format` (`get/set_gloss_export_gloss_format`). They are
+kept apart from the tab's `gloss_format`, so a gloss can be read in one
+format and exported in the other; exporting never changes the tab.
+
+The export data of a gloss format comes from a gloss **in that format** — the
+dedup, the `//` variants and the rows differ; a Headwords gloss has no rows —
+so never build the other format's export from the tab's paragraphs. When the
+export's format is not the tab's, `start_export_gloss()` glosses the tab's
+paragraph texts in the export's format with the tab's options, and
+`handle_export_gloss_results()` carries the tab's word choices over by
+context (`refresh_gloss_paragraph_json` with the tab's words, as a format
+switch does) and takes the tab's translations. That gloss answers on the same
+`allParagraphsGlossReady` signal as the tab's own, so `is_export_glossing`
+routes its result to the export, never to the paragraph model, and a gloss
+of the tab asked for meanwhile waits for it (`is_gloss_after_export`). A
+session opened meanwhile (history, Open JSON) replaces the paragraphs without
+that signal, so the result is used only when the tab's paragraph texts are
+still the ones the export's gloss started with (`export_gloss_texts`). A
+failed gloss exports nothing. JSON is the session as it is in the tab, in the
+tab's format, whatever the radio says.
+
 ### JSON — the whole session (`simsapa-gloss-session`)
 
-`Export As... > JSON` → `SuttaBridge.export_gloss_session_json(session_json)` →
+`Export... > JSON` → `SuttaBridge.export_gloss_session_json(session_json)` →
 `build_gloss_session_export_json()`. The envelope is built entirely in Rust from
 the **existing Gloss history session serialization** — there is no second session
 format:
@@ -670,7 +703,7 @@ stored `context_hash` only as a fallback — so sessions saved before this featu
 `selected_uid` gets its `selected_lemma` from the installed `dpd.sqlite3`; the
 field is optional, so files without it still load.
 
-**Open JSON** (button next to Export As...) restores such a file:
+**Open JSON** (button next to Export...) restores such a file:
 `open_gloss_session_export(file_path)` does read → `parse_gloss_session_export()`
 validation → cache import, returning `{ok, session, imported, skipped}` or
 `{error}`. Before the import, every entry's `selected_uid` is normalised
@@ -858,7 +891,7 @@ gloss-corpus-explore  →  gloss-data-cache/candidates/*.json
    human path │                                             │ agent path
               ▼                                             ▼
   [Gloss UI: Open JSON → AI select →          gloss-agent-check prepare → agent
-   correct → confirm → Export As JSON]        decides → answers file in
+   correct → confirm → Export... JSON]        decides → answers file in
               │                               agent-answers/ → gloss-agent-check apply
               ▼                                             │
   human-checked/*.json  (committed)           agent-checked/*.json  (committed)

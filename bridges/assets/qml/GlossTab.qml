@@ -160,6 +160,17 @@ Item {
         function onAllParagraphsGlossReady(results_json: string) {
             logger.debug(`📥 onAllParagraphsGlossReady received: ${results_json.substring(0, 100)}...`);
 
+            if (root.is_export_glossing) {
+                // The export's gloss, in its own format: never the tab's.
+                root.is_export_glossing = false;
+                root.handle_export_gloss_results(results_json);
+                if (root.is_gloss_after_export) {
+                    root.is_gloss_after_export = false;
+                    root.start_background_all_glosses();
+                }
+                return;
+            }
+
             // Always reset processing state
             root.is_processing_all = false;
 
@@ -209,13 +220,11 @@ Item {
                     root.handle_anki_export_results(results);
                 } else {
                     logger.error(`❌ Anki export failed: ${results.error || 'Unknown error'}`);
-                    msg_dialog_ok.text = `Export failed: ${results.error || 'Unknown error'}`;
-                    msg_dialog_ok.open();
+                    root.show_anki_export_error(results.error || 'Unknown error');
                 }
             } catch (e) {
                 logger.error("Failed to parse Anki export results: " + e);
-                msg_dialog_ok.text = `Export failed: ${e}`;
-                msg_dialog_ok.open();
+                root.show_anki_export_error("" + e);
             }
         }
     }
@@ -851,119 +860,250 @@ Item {
         pm.cancel_sequential_requests();
     }
 
+    GlossExportWindow {
+        id: gloss_export_window
+        onExport_requested: function(formats, gloss_format) {
+            root.export_formats = formats;
+            root.export_gloss_format = gloss_format;
+            export_folder_dialog.open();
+        }
+    }
+
     FolderDialog {
         id: export_folder_dialog
         acceptLabel: "Export to Folder"
         onAccepted: root.export_dialog_accepted()
     }
 
+    // The choices of the last Export window, used once the folder is picked.
+    property var export_formats: []
+    property string export_gloss_format: "word_in_sentence"
+    // The export data of the running export, in export_gloss_format.
+    property var export_gloss_data: null
+    // Set while the paragraphs are glossed in the export's gloss format,
+    // which is not the tab's: the results go to the export, never to the
+    // paragraph model (onAllParagraphsGlossReady).
+    property bool is_export_glossing: false
+    // The paragraph texts the export's gloss was started with: a session
+    // opened meanwhile (history, Open JSON) replaces the paragraphs without
+    // going through that gloss, and its words must not be mixed into it.
+    property var export_gloss_texts: []
+    // A gloss of the tab asked for during the export's gloss; started when
+    // that finishes, as the two share the result signal.
+    property bool is_gloss_after_export: false
+    // The files the non-Anki formats wrote, reported together with the Anki
+    // files when an Anki export is running in the background.
+    property var export_saved_files: []
+    property var export_failed_formats: []
+
+    function open_export_window() {
+        gloss_export_window.show_export_window(root.gloss_format);
+    }
+
     function export_dialog_accepted() {
-        if (export_btn.currentIndex === 0) return;
-        let save_file_name = null;
-        let save_content = null;
-        let is_anki_csv = false;
-        let is_docx = false;
-
-        if (export_btn.currentValue === "Word (.docx)") {
-            save_file_name = "gloss_export.docx";
-            is_docx = true;
-
-        } else if (export_btn.currentValue === "HTML") {
-            save_file_name = "gloss_export.html";
-            save_content = root.gloss_as_html();
-
-        } else if (export_btn.currentValue === "Markdown") {
-            save_file_name = "gloss_export.md";
-            save_content = root.gloss_as_markdown();
-
-        } else if (export_btn.currentValue === "Org-Mode") {
-            save_file_name = "gloss_export.org";
-            save_content = root.gloss_as_orgmode();
-
-        } else if (export_btn.currentValue === "JSON") {
-            // Full session export (PRD §4.9 req 38): the history-session
-            // serialization wrapped in the versioned envelope, plus the
-            // word-selection cache rows referenced by the session's words.
-            save_file_name = "gloss_export.json";
-            save_content = SuttaBridge.export_gloss_session_json(root.session_data_json());
-            if (!save_content) {
-                msg_dialog_ok.text = "Export failed.";
-                msg_dialog_ok.open();
-                export_btn.currentIndex = 0;
-                return;
-            }
-
-        } else if (export_btn.currentValue === "Anki CSV") {
-            is_anki_csv = true;
+        if (root.export_formats.length === 0) return;
+        if (root.is_processing_all || root.is_export_glossing) {
+            msg_dialog_ok.text = "The text is being glossed. Export again when it has finished.";
+            msg_dialog_ok.open();
+            return;
         }
+        if (root.export_gloss_format === root.gloss_format) {
+            root.export_gloss_data = root.gloss_export_data();
+            root.run_export();
+        } else {
+            root.start_export_gloss();
+        }
+    }
 
-        let save_fn = function() {
-            if (is_anki_csv) {
-                root.start_anki_export_background(export_folder_dialog.selectedFolder);
-            } else {
-                let ok = false;
-                if (is_docx) {
-                    // The DOCX bytes are generated in Rust from the export data JSON.
-                    let gloss_json = JSON.stringify(root.gloss_export_data());
-                    ok = SuttaBridge.export_gloss_docx(export_folder_dialog.selectedFolder, save_file_name, gloss_json);
-                } else {
-                    ok = SuttaBridge.save_file(export_folder_dialog.selectedFolder, save_file_name, save_content);
-                }
-                if (ok) {
-                    msg_dialog_ok.text = "Exported as: " + save_file_name;
-                    msg_dialog_ok.open();
-                } else {
-                    msg_dialog_ok.text = "Export failed."
-                    msg_dialog_ok.open();
-                }
+    // Gloss the tab's paragraphs in the export's gloss format, with the
+    // tab's options. The tab's own gloss is not changed.
+    function start_export_gloss() {
+        let paragraphs = [];
+        for (var i = 0; i < paragraph_model.count; i++) {
+            paragraphs.push(paragraph_model.get(i).text || "");
+        }
+        if (paragraphs.length === 0) return;
+        root.export_gloss_texts = paragraphs;
+        root.is_export_glossing = true;
+        let input_data = {
+            paragraphs: paragraphs,
+            options: {
+                no_duplicates_globally: root.no_duplicates_globally,
+                skip_common: root.skip_common,
+                common_words: root.common_words,
+                gloss_format: root.export_gloss_format,
+                existing_global_stems: {},
+                existing_paragraph_unrecognized: {},
+                existing_global_unrecognized: []
             }
         };
+        SuttaBridge.process_all_paragraphs_background(JSON.stringify(input_data));
+    }
 
-        if (is_anki_csv) {
-            // AnkiExportFormat
-            let export_format = SuttaBridge.get_anki_export_format().toLowerCase();
-            let include_cloze = SuttaBridge.get_anki_include_cloze();
+    // The export's gloss is ready: carry the tab's word choices over to it
+    // by context (as a format switch does) and export it.
+    function handle_export_gloss_results(results_json: string) {
+        let results = null;
+        try {
+            results = JSON.parse(results_json);
+        } catch (e) {
+            logger.error("Failed to parse export gloss results: " + e);
+        }
+        if (!results || !results.success || !results.paragraphs || results.paragraphs.length !== root.export_gloss_texts.length) {
+            logger.error("Export gloss failed: " + (results && results.error ? results.error : "invalid results"));
+            let label = root.export_gloss_format === "headwords" ? "Headwords" : "Word in Sentence";
+            msg_dialog_ok.text = `Nothing was exported: glossing the text in the ${label} format failed.`;
+            msg_dialog_ok.open();
+            return;
+        }
+        let texts = [];
+        for (var ti = 0; ti < paragraph_model.count; ti++) {
+            texts.push(paragraph_model.get(ti).text || "");
+        }
+        if (JSON.stringify(texts) !== JSON.stringify(root.export_gloss_texts)) {
+            msg_dialog_ok.text = "Nothing was exported: the Gloss tab's text changed while it was being glossed for the export. Export again.";
+            msg_dialog_ok.open();
+            return;
+        }
 
-            let existing_save_files = [];
-
-            // AnkiExportFormat
-            if (export_format) {
-                var name = `gloss_export_anki_${export_format}.csv`;
-                var exists = SuttaBridge.check_file_exists_in_folder(export_folder_dialog.selectedFolder, name);
-                if (exists) {
-                    existing_save_files.push(name);
-                }
-                if (include_cloze) {
-                    var name = `gloss_export_anki_${export_format}_cloze.csv`;
-                    var exists = SuttaBridge.check_file_exists_in_folder(export_folder_dialog.selectedFolder, name);
-                    if (exists) {
-                        existing_save_files.push(name);
-                    }
+        let inputs = [];
+        for (var i = 0; i < results.paragraphs.length; i++) {
+            let r = results.paragraphs[i];
+            let p = paragraph_model.get(i);
+            let words_data = r.words_data || [];
+            let rows = r.rows || [];
+            let refreshed_json = SuttaBridge.refresh_gloss_paragraph_json(
+                JSON.stringify({ words_data: words_data, rows: rows }),
+                p.words_data_json || "");
+            if (refreshed_json) {
+                try {
+                    let refreshed = JSON.parse(refreshed_json);
+                    words_data = refreshed.words_data;
+                    rows = refreshed.rows;
+                } catch (e) {
+                    logger.error("handle_export_gloss_results: " + e);
                 }
             }
+            inputs.push({
+                text: p.text || "",
+                words_data: words_data,
+                rows: rows,
+                variants: r.variants || [],
+                ai_translations: root.export_translations(p),
+            });
+        }
+        root.export_gloss_data = root.build_gloss_export_data(inputs, root.export_gloss_format);
+        root.run_export();
+    }
 
-            if (existing_save_files.length > 0) {
-                let file_names = existing_save_files.join(", ");
-                msg_dialog_cancel_ok.text = `Already exists: ${file_names}. Overwrite?`;
-                msg_dialog_cancel_ok.accept_fn = save_fn;
-                msg_dialog_cancel_ok.open();
-            } else {
-                save_fn();
+    // File name of each checked format, Anki CSV giving one or two names.
+    function export_file_names(format: string): var {
+        switch (format) {
+        case "html": return ["gloss_export.html"];
+        case "markdown": return ["gloss_export.md"];
+        case "orgmode": return ["gloss_export.org"];
+        case "docx": return ["gloss_export.docx"];
+        case "json": return ["gloss_export.json"];
+        case "anki": {
+            // AnkiExportFormat
+            let anki_format = SuttaBridge.get_anki_export_format().toLowerCase();
+            if (!anki_format) return [];
+            let names = [`gloss_export_anki_${anki_format}.csv`];
+            if (SuttaBridge.get_anki_include_cloze()) {
+                names.push(`gloss_export_anki_${anki_format}_cloze.csv`);
             }
-        } else {
-            if (save_file_name) {
-                let exists = SuttaBridge.check_file_exists_in_folder(export_folder_dialog.selectedFolder, save_file_name);
-                if (exists) {
-                    msg_dialog_cancel_ok.text = `Already exists: ${save_file_name}. Overwrite?`;
-                    msg_dialog_cancel_ok.accept_fn = save_fn;
-                    msg_dialog_cancel_ok.open();
-                } else {
-                    save_fn();
+            return names;
+        }
+        }
+        return [];
+    }
+
+    function run_export() {
+        let folder = export_folder_dialog.selectedFolder;
+        let formats = root.export_formats.slice();
+
+        let existing = [];
+        for (let f of formats) {
+            for (let name of root.export_file_names(f)) {
+                if (SuttaBridge.check_file_exists_in_folder(folder, name)) {
+                    existing.push(name);
                 }
             }
         }
 
-        export_btn.currentIndex = 0;
+        let save_fn = function() { root.write_export_files(folder, formats); };
+
+        if (existing.length > 0) {
+            msg_dialog_cancel_ok.text = `Already exists: ${existing.join(", ")}. Overwrite?`;
+            msg_dialog_cancel_ok.accept_fn = save_fn;
+            msg_dialog_cancel_ok.open();
+        } else {
+            save_fn();
+        }
+    }
+
+    function write_export_files(folder, formats) {
+        let saved = [];
+        let failed = [];
+        // One export data for all the documents.
+        let gloss_json = JSON.stringify(root.export_gloss_data);
+
+        for (let f of formats) {
+            if (f === "anki") continue;
+            let name = root.export_file_names(f)[0];
+            let ok = false;
+            if (f === "docx") {
+                // The DOCX bytes are generated in Rust from the export data JSON.
+                ok = SuttaBridge.export_gloss_docx(folder, name, gloss_json);
+            } else {
+                let content = "";
+                if (f === "json") {
+                    // Full session export (PRD §4.9 req 38): the history-session
+                    // serialization wrapped in the versioned envelope, plus the
+                    // word-selection cache rows referenced by the session's words.
+                    content = SuttaBridge.export_gloss_session_json(root.session_data_json());
+                } else {
+                    // The HTML / Markdown / Org-Mode formatting is done in Rust (text_export.rs).
+                    content = SuttaBridge.gloss_export(gloss_json, f);
+                }
+                ok = content ? SuttaBridge.save_file(folder, name, content) : false;
+            }
+            if (ok) {
+                saved.push(name);
+            } else {
+                failed.push(name);
+            }
+        }
+
+        if (formats.indexOf("anki") >= 0) {
+            // The Anki notes are built in the background; the message for all
+            // the files is shown by handle_anki_export_results().
+            root.export_saved_files = saved;
+            root.export_failed_formats = failed;
+            root.start_anki_export_background(folder, root.export_gloss_data);
+            return;
+        }
+        root.show_export_result(saved, failed);
+    }
+
+    // The Anki CSV failed; the other formats of the same export may have been saved.
+    function show_anki_export_error(error: string) {
+        let saved = root.export_saved_files;
+        let failed = root.export_failed_formats.concat([`Anki CSV (${error})`]);
+        root.export_saved_files = [];
+        root.export_failed_formats = [];
+        root.show_export_result(saved, failed);
+    }
+
+    function show_export_result(saved, failed) {
+        let lines = [];
+        if (saved.length > 0) lines.push("Exported as: " + saved.join(", "));
+        if (failed.length > 0) lines.push("Export failed: " + failed.join(", "));
+        if (lines.length === 0) lines.push("Export failed: No files saved");
+        // The export is over; the data can be large.
+        root.export_gloss_data = null;
+        msg_dialog_ok.text = lines.join("\n\n");
+        msg_dialog_ok.open();
     }
 
     FileDialog {
@@ -1697,6 +1837,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     function start_background_all_glosses() {
         if (root.is_processing_all) {
             logger.warn("Background processing already in progress");
+            return;
+        }
+        if (root.is_export_glossing) {
+            // Both glosses answer on one signal; this one runs after the export's.
+            root.is_gloss_after_export = true;
             return;
         }
 
@@ -2453,15 +2598,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // write the same document for the same gloss; here only the
     // translations are put in export order (the selected tab first).
     function gloss_export_data(): var {
-        root.refresh_has_translate_model();
-        let gloss_data = {
-            text: gloss_text_input.text.trim(),
-            gloss_format: root.gloss_format,
-            title: "",
-            no_ai_provider: !root.has_translate_model && !root.is_word_selection_enabled(),
-            paragraphs: [],
-        };
-
+        let inputs = [];
         for (var i = 0; i < paragraph_model.count; i++) {
             var paragraph = paragraph_model.get(i);
             if (!paragraph) continue;
@@ -2480,14 +2617,32 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             } catch (e) {
                 logger.error("gloss_export_data: " + e);
             }
+            inputs.push(input);
+        }
+        return root.build_gloss_export_data(inputs, root.gloss_format);
+    }
 
-            var para_json = SuttaBridge.gloss_export_paragraph_json(JSON.stringify(input), root.gloss_format);
+    // The export data from paragraph inputs ({text, words_data, rows,
+    // variants, ai_translations}) glossed in gloss_format: the tab's own
+    // paragraphs, or the export's gloss in the other format.
+    function build_gloss_export_data(inputs, gloss_format: string): var {
+        root.refresh_has_translate_model();
+        let gloss_data = {
+            text: gloss_text_input.text.trim(),
+            gloss_format: gloss_format,
+            title: "",
+            no_ai_provider: !root.has_translate_model && !root.is_word_selection_enabled(),
+            paragraphs: [],
+        };
+
+        for (let input of inputs) {
+            var para_json = SuttaBridge.gloss_export_paragraph_json(JSON.stringify(input), gloss_format);
             var para_data = { text: input.text.trim(), vocabulary: [], ai_translations: input.ai_translations, variants: [], rows: [] };
             if (para_json) {
                 try {
                     para_data = JSON.parse(para_json);
                 } catch (e) {
-                    logger.error("gloss_export_data: invalid paragraph JSON: " + e);
+                    logger.error("build_gloss_export_data: invalid paragraph JSON: " + e);
                 }
             }
             gloss_data.paragraphs.push(para_data);
@@ -2568,13 +2723,12 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         return root.paragraph_gloss_as(paragraph_index, "orgmode");
     }
 
-    function start_anki_export_background(folder_url) {
+    function start_anki_export_background(folder_url, gloss_data) {
         if (root.is_exporting_anki) {
             logger.warn("Anki export already in progress");
             return;
         }
 
-        let gloss_data = root.gloss_export_data();
         let note_count = 0;
         for (var i = 0; i < gloss_data.paragraphs.length; i++) {
             let p = gloss_data.paragraphs[i];
@@ -2618,13 +2772,11 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             }
         }
 
-        if (files_saved.length > 0) {
-            msg_dialog_ok.text = "Exported as: " + files_saved.join(", ");
-            msg_dialog_ok.open();
-        } else {
-            msg_dialog_ok.text = "Export failed: No files saved";
-            msg_dialog_ok.open();
-        }
+        let failed = root.export_failed_formats.slice();
+        if (files_saved.length === 0) failed.push("Anki CSV");
+        root.show_export_result(root.export_saved_files.concat(files_saved), failed);
+        root.export_saved_files = [];
+        root.export_failed_formats = [];
     }
 
     TabBar {
@@ -2821,22 +2973,18 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
 
                             Text {
                                 id: exporting_message
-                                text: `Exporting ${root.exporting_note_count} notes...`
+                                text: root.is_export_glossing ? "Glossing for the export..." : `Exporting ${root.exporting_note_count} notes...`
                                 font.pointSize: root.vocab_font_point_size
                                 color: "#4CAF50"
-                                visible: root.is_exporting_anki
+                                visible: root.is_exporting_anki || root.is_export_glossing
                                 /* anchors.verticalCenter: parent.verticalCenter */
                             }
 
-                            ComboBox {
+                            Button {
                                 id: export_btn
-                                model: ["Export As...", "HTML", "Markdown", "Org-Mode", "Anki CSV", "Word (.docx)", "JSON"]
-                                enabled: paragraph_model.count > 0 && !root.is_exporting_anki
-                                onCurrentIndexChanged: {
-                                    if (export_btn.currentIndex !== 0) {
-                                        export_folder_dialog.open();
-                                    }
-                                }
+                                text: "Export..."
+                                enabled: paragraph_model.count > 0 && !root.is_exporting_anki && !root.is_export_glossing && !root.is_processing_all
+                                onClicked: root.open_export_window()
                             }
 
                             Button {

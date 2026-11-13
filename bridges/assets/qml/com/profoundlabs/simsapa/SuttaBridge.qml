@@ -614,6 +614,20 @@ Item {
     function set_gloss_format_info_shown(shown: bool) {
     }
 
+    function get_gloss_export_formats_json(): string {
+        return '["docx"]';
+    }
+
+    function set_gloss_export_formats_json(formats_json: string) {
+    }
+
+    function get_gloss_export_gloss_format(): string {
+        return 'word_in_sentence';
+    }
+
+    function set_gloss_export_gloss_format(format: string) {
+    }
+
     function get_gloss_ai_translate_mode(): string {
         return 'sequential_retry';
     }

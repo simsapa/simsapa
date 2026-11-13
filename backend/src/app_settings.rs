@@ -411,6 +411,19 @@ pub struct AppSettings {
     /// formats, shown before the first gloss run.
     #[serde(default)]
     pub gloss_format_info_shown: bool,
+    /// Gloss tab: the document formats checked in the Export dialog
+    /// (`html`, `markdown`, `orgmode`, `docx`, `anki`, `json`).
+    #[serde(default = "default_gloss_export_formats")]
+    pub gloss_export_formats: Vec<String>,
+    /// Gloss tab: the gloss format chosen in the Export dialog, kept apart
+    /// from `gloss_format` so the gloss can be read in one format and
+    /// exported in the other.
+    #[serde(default = "default_gloss_format")]
+    pub gloss_export_gloss_format: crate::types::GlossFormat,
+}
+
+fn default_gloss_export_formats() -> Vec<String> {
+    vec!["docx".to_string()]
 }
 
 fn default_gloss_format() -> crate::types::GlossFormat {
@@ -924,6 +937,8 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_format: default_gloss_format(),
             gloss_auto_translate: false,
             gloss_format_info_shown: false,
+            gloss_export_formats: default_gloss_export_formats(),
+            gloss_export_gloss_format: default_gloss_format(),
         }
     }
 }
@@ -1093,6 +1108,38 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
         assert!(!settings.notify_about_dpd_updates);
         assert!(settings.notify_about_simsapa_updates);
+    }
+
+    /// The Gloss Export dialog's formats default to DOCX, also for settings
+    /// saved before the setting existed, and an empty choice is kept.
+    #[test]
+    fn gloss_export_formats_default_and_round_trip() {
+        assert_eq!(AppSettings::default().gloss_export_formats, vec!["docx".to_string()]);
+
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert!(json.remove("gloss_export_formats").is_some());
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert_eq!(settings.gloss_export_formats, vec!["docx".to_string()]);
+
+        let mut settings = AppSettings::default();
+        settings.gloss_export_formats = vec!["html".to_string(), "anki".to_string()];
+        let loaded: AppSettings = serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(loaded.gloss_export_formats, vec!["html".to_string(), "anki".to_string()]);
+    }
+
+    /// The Export dialog's gloss format is its own setting: it defaults to
+    /// Word in Sentence, also for settings saved before it existed, and does
+    /// not follow the Gloss tab's format.
+    #[test]
+    fn gloss_export_gloss_format_is_separate() {
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert!(json.remove("gloss_export_gloss_format").is_some());
+        json.insert("gloss_format".to_string(), serde_json::json!("headwords"));
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert_eq!(settings.gloss_format, crate::types::GlossFormat::Headwords);
+        assert_eq!(settings.gloss_export_gloss_format, crate::types::GlossFormat::WordInSentence);
     }
 
     /// Settings saved before the two-part translation template existed gain

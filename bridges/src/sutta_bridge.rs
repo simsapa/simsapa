@@ -1236,6 +1236,18 @@ pub mod qobject {
         fn set_gloss_format_info_shown(self: Pin<&mut SuttaBridge>, shown: bool);
 
         #[qinvokable]
+        fn get_gloss_export_formats_json(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_export_formats_json(self: Pin<&mut SuttaBridge>, formats_json: &QString);
+
+        #[qinvokable]
+        fn get_gloss_export_gloss_format(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn set_gloss_export_gloss_format(self: Pin<&mut SuttaBridge>, format: &QString);
+
+        #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -3347,6 +3359,35 @@ impl qobject::SuttaBridge {
     /// Record that the gloss format info dialog was closed.
     pub fn set_gloss_format_info_shown(self: Pin<&mut Self>, shown: bool) {
         get_app_data().set_gloss_format_info_shown(shown);
+    }
+
+    /// The document formats checked in the Gloss tab's Export dialog, as a
+    /// JSON array of format keys.
+    pub fn get_gloss_export_formats_json(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(serde_json::to_string(&app_settings.gloss_export_formats).unwrap_or_else(|_| "[]".to_string()))
+    }
+
+    /// Save the document formats checked in the Gloss tab's Export dialog.
+    pub fn set_gloss_export_formats_json(self: Pin<&mut Self>, formats_json: &QString) {
+        match serde_json::from_str::<Vec<String>>(&formats_json.to_string()) {
+            Ok(formats) => get_app_data().set_gloss_export_formats(formats),
+            Err(e) => error(&format!("set_gloss_export_formats_json: {}", e)),
+        }
+    }
+
+    /// The gloss format chosen in the Gloss tab's Export dialog, apart from
+    /// the tab's own format.
+    pub fn get_gloss_export_gloss_format(&self) -> QString {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        QString::from(gloss_format_str(app_settings.gloss_export_gloss_format))
+    }
+
+    /// Save the Export dialog's gloss format; an unknown value is Word in Sentence.
+    pub fn set_gloss_export_gloss_format(self: Pin<&mut Self>, format: &QString) {
+        get_app_data().set_gloss_export_gloss_format(parse_gloss_format(&format.to_string()));
     }
 
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")

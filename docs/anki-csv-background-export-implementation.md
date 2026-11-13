@@ -76,7 +76,7 @@ function start_anki_export_background(folder_url) {
 ```
 
 #### UI Feedback
-Added "Exporting x notes..." message next to "Export As..." ComboBox:
+Added "Exporting x notes..." message next to the "Export..." button:
 ```qml
 Text {
     id: exporting_message
@@ -147,7 +147,7 @@ Templates receive a context with:
 
 ### Background Processing Flow
 
-1. User clicks "Export As..." → "Anki CSV"
+1. User clicks "Export...", checks "Anki CSV" (possibly with other formats) and picks a folder
 2. GlossTab checks for existing files
 3. If user confirms, calls `start_anki_export_background()`
 4. Function:
