@@ -57,6 +57,7 @@ extern "C" bool peek_auto_start_dpd_upgrade_c();
 extern "C" void log_storage_scan_c(const char* enumeration_json);
 extern "C" void check_delete_files_for_upgrade();
 extern "C" void check_remove_lang_index_dirs();
+extern "C" void check_remove_app_assets();
 extern "C" void remove_download_temp_folder();
 extern "C" void init_app_globals();
 extern "C" void init_app_data();
@@ -531,6 +532,15 @@ int start(int argc, char* argv[]) {
   // unreachable recorded path would destroy it. remove_download_temp_folder()
   // above is non-destructive to installed data and always runs.
   const bool storage_unreachable = (storage_state == StoragePathState::Unreachable);
+
+  // Remove the whole app-assets folder if the user asked for it in Settings
+  // (the remove_app_assets.txt marker). Runs before ensure_no_empty_db_files()
+  // so the per-database presence record sees the databases as missing, and
+  // before anything opens a database or the fulltext index. Gated like the
+  // other destructive sweeps below.
+  if (!storage_unreachable) {
+    check_remove_app_assets();
+  }
 
   // There may be a 0-byte size db file remaining from a failed
   // install attempt.

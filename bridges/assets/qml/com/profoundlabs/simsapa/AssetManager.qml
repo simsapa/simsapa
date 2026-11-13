@@ -48,6 +48,22 @@ Item {
         console.log("remove_sutta_languages():", language_codes);
     }
 
+    function schedule_remove_app_assets(keep_user_data_export: bool): bool {
+        console.log("schedule_remove_app_assets():", keep_user_data_export);
+        return true;
+    }
+
+    function export_user_data_for_removal() {
+        console.log("export_user_data_for_removal()");
+    }
+
+    function cancel_remove_app_assets(): bool {
+        console.log("cancel_remove_app_assets()");
+        return true;
+    }
+
+    signal userDataExportFinished(success: bool, error_msg: string);
+
     signal downloadProgressChanged(op_msg: string, downloaded_bytes: int, total_bytes: int);
     signal downloadShowMsg(message: string);
     signal downloadsCompleted(message: string);

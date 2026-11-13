@@ -29,7 +29,8 @@ process start
 │
 ├─ cpp/main.cpp::main()
 │   ├─ dotenv_c, find_port_set_env_c, init_app_globals
-│   ├─ remove_download_temp_folder, ensure_no_empty_db_files
+│   ├─ remove_download_temp_folder, check_remove_app_assets,
+│   │  ensure_no_empty_db_files
 │   ├─ check_delete_files_for_upgrade, desktop file refresh
 │   ├─ QApplication construction, system tray, icon load
 │   │
@@ -77,7 +78,7 @@ this design protects.
 The `simsapa` CLI runs the same steps, through the same backend functions and
 in the same order, in `backend_cli/src/startup.rs` `run_headless_preamble()`:
 `dotenv_c` / `init_app_globals`, `remove_download_temp_folder`,
-`ensure_no_empty_db_files`, `check_delete_files_for_upgrade`,
+`check_remove_app_assets`, `ensure_no_empty_db_files`, `check_delete_files_for_upgrade`,
 `check_remove_lang_index_dirs`, the `appdata_db_exists()` gate (exit code 2
 instead of the download window), `init_app_data()`,
 `import_user_data_after_upgrade`, `check_and_configure_for_first_start`, and

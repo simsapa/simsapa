@@ -245,6 +245,280 @@ ApplicationWindow {
         }
     }
 
+    // Remove App Database and Assets. The folder is removed on the next start
+    // (the open databases and search index hold its files), so the flow ends
+    // by quitting the app. With the export checkbox, the user's data is first
+    // exported to app-assets/import-me/, which the removal keeps and the next
+    // start imports after the databases are downloaded again.
+    //
+    // The removal is scheduled BEFORE the export starts. The next start
+    // imports any import-me/ folder, so an export left behind without a
+    // scheduled removal (the app quit or killed mid-export) would be imported
+    // into the current databases, duplicating the user's data. Cancel after a
+    // failed export undoes both.
+
+    // "none", "exported" or "partial": what the done dialog reports.
+    property string remove_app_assets_export_status: "none"
+    property bool remove_app_assets_exporting: false
+
+    // The export's result dialogs must not open in a hidden window: the done
+    // dialog is what quits the app.
+    onClosing: (close) => {
+        if (root.remove_app_assets_exporting) close.accepted = false;
+    }
+
+    function show_remove_app_assets_dialog(dialog: Dialog) {
+        if (!root.visible) {
+            root.show();
+            root.raise();
+        }
+        dialog.open();
+    }
+
+    Connections {
+        target: manager
+
+        function onUserDataExportFinished(success: bool, error_msg: string) {
+            root.remove_app_assets_exporting = false;
+            manager.set_keep_screen_on("remove-app-assets-export", false);
+            remove_app_assets_export_progress_dialog.close();
+            if (success) {
+                root.remove_app_assets_export_status = "exported";
+                root.show_remove_app_assets_dialog(remove_app_assets_done_dialog);
+            } else {
+                remove_app_assets_export_failed_dialog.error_msg = error_msg;
+                root.show_remove_app_assets_dialog(remove_app_assets_export_failed_dialog);
+            }
+        }
+    }
+
+    Dialog {
+        id: remove_app_assets_confirm_dialog
+        title: "Remove App Database and Assets"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        header: DialogHeader { text: remove_app_assets_confirm_dialog.title }
+
+        onAboutToShow: export_user_data_checkbox.checked = true
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: "This removes the app-assets folder: the sutta and dictionary databases, the search index, and your own data stored in them (bookmarks, notes, history, imported dictionaries and books, chanting recordings and app settings)."
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "The files can't be removed while Simsapa is running, because the open databases and search index lock them. Simsapa will quit, and the folder is removed the next time it starts. It then downloads the databases again, as on first install."
+                wrapMode: Text.WordWrap
+            }
+
+            CheckBox {
+                id: export_user_data_checkbox
+                Layout.fillWidth: true
+                checked: true
+                font.pointSize: root.pointSize
+                text: "Export my data first, and import it after the new download"
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "Remove the app database and assets?"
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        onAccepted: {
+            const keep_export = export_user_data_checkbox.checked;
+            if (!manager.schedule_remove_app_assets(keep_export)) {
+                remove_app_assets_error_dialog.open();
+                return;
+            }
+            if (keep_export) {
+                root.remove_app_assets_exporting = true;
+                remove_app_assets_export_progress_dialog.open();
+                // Long operation: keep the screen awake until it ends.
+                manager.set_keep_screen_on("remove-app-assets-export", true);
+                manager.export_user_data_for_removal();
+            } else {
+                root.remove_app_assets_export_status = "none";
+                remove_app_assets_done_dialog.open();
+            }
+        }
+    }
+
+    Dialog {
+        id: remove_app_assets_export_progress_dialog
+        title: "Exporting Your Data"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        standardButtons: Dialog.NoButton
+        header: DialogHeader { text: remove_app_assets_export_progress_dialog.title }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: "Exporting your data before the removal…"
+                wrapMode: Text.WordWrap
+            }
+
+            BusyIndicator {
+                running: remove_app_assets_export_progress_dialog.visible
+                Layout.alignment: Qt.AlignHCenter
+            }
+        }
+    }
+
+    Dialog {
+        id: remove_app_assets_export_failed_dialog
+        title: "Export Failed"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        header: DialogHeader { text: remove_app_assets_export_failed_dialog.title }
+
+        property string error_msg: ""
+
+        footer: DialogButtonBox {
+            Button {
+                text: "Remove Anyway"
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: "Cancel"
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: "Some of your data could not be exported:"
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: remove_app_assets_export_failed_dialog.error_msg
+                wrapMode: Text.WrapAnywhere
+                font.pointSize: root.pointSize - 2
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "Remove Anyway keeps the part that was exported and imports it after the new download; the rest is lost. Cancel keeps the app database and assets as they are."
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        onAccepted: {
+            root.remove_app_assets_export_status = "partial";
+            remove_app_assets_done_dialog.open();
+        }
+        onRejected: {
+            if (!manager.cancel_remove_app_assets()) {
+                remove_app_assets_cancel_failed_dialog.open();
+            }
+        }
+    }
+
+    Dialog {
+        id: remove_app_assets_cancel_failed_dialog
+        title: "Cancel Failed"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        standardButtons: Dialog.Ok
+        header: DialogHeader { text: remove_app_assets_cancel_failed_dialog.title }
+
+        Label {
+            width: parent.width
+            text: "The removal could not be cancelled: the app database and assets will still be removed the next time Simsapa starts, keeping the part of your data that was exported. See the log for details. Simsapa will now quit."
+            wrapMode: Text.WordWrap
+        }
+
+        onAccepted: Qt.quit()
+    }
+
+    Dialog {
+        id: remove_app_assets_done_dialog
+        title: "Simsapa Will Quit"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        standardButtons: Dialog.Ok
+        header: DialogHeader { text: remove_app_assets_done_dialog.title }
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                visible: root.remove_app_assets_export_status !== "none"
+                text: root.remove_app_assets_export_status === "exported"
+                    ? "Your data was exported."
+                    : "Your data was exported only in part. The log lists what failed."
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "The app database and assets are not removed yet: their files are locked while Simsapa is running. Simsapa will now quit."
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: root.remove_app_assets_export_status === "none"
+                    ? "The next time you start Simsapa, it removes the app database and assets, then downloads the databases again, as on first install."
+                    : "The next time you start Simsapa, it removes the app database and assets, then downloads the databases again, as on first install, and imports your exported data."
+                wrapMode: Text.WordWrap
+            }
+        }
+
+        onAccepted: Qt.quit()
+    }
+
+    Dialog {
+        id: remove_app_assets_error_dialog
+        title: "Removal Failed"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 480)
+        modal: true
+        standardButtons: Dialog.Ok
+        header: DialogHeader { text: remove_app_assets_error_dialog.title }
+
+        Label {
+            width: parent.width
+            text: "Could not schedule the removal of the app database and assets, so nothing will be removed. See the log for details."
+            wrapMode: Text.WordWrap
+        }
+    }
+
     Dialog {
         id: rebuild_index_dialog
         title: "Rebuild Search Index"
@@ -487,6 +761,13 @@ ApplicationWindow {
                             text: "Rebuild Search Index..."
                             font.pointSize: root.pointSize
                             onClicked: rebuild_index_dialog.open()
+                        }
+
+                        Button {
+                            id: action_remove_app_assets
+                            text: "Remove App Database and Assets..."
+                            font.pointSize: root.pointSize
+                            onClicked: remove_app_assets_confirm_dialog.open()
                         }
 
                         // Updates section

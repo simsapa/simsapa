@@ -705,6 +705,11 @@ pub struct AppGlobalPaths {
     // next start runs the DPD upgrade window in place of the main app. See
     // docs/dpd-upgrades.md.
     pub auto_start_dpd_upgrade_marker: PathBuf,
+
+    // Marker file asking the next app start to remove the whole app-assets
+    // folder. It lives in simsapa_dir, outside the folder it removes. See
+    // `check_remove_app_assets()`.
+    pub remove_app_assets_marker: PathBuf,
 }
 
 impl AppGlobals {
@@ -849,6 +854,7 @@ impl AppGlobalPaths {
         let download_select_sanskrit_bundle_marker = app_assets_dir.join("download_select_sanskrit_bundle.txt");
         let remove_lang_index_dirs_marker = app_assets_dir.join("remove_lang_index_dirs.txt");
         let auto_start_dpd_upgrade_marker = app_assets_dir.join(crate::dpd_upgrade::marker::MARKER_FILE_NAME);
+        let remove_app_assets_marker = simsapa_dir.join("remove_app_assets.txt");
 
         AppGlobalPaths {
             simsapa_dir,
@@ -880,6 +886,7 @@ impl AppGlobalPaths {
             download_select_sanskrit_bundle_marker,
             remove_lang_index_dirs_marker,
             auto_start_dpd_upgrade_marker,
+            remove_app_assets_marker,
         }
     }
 }
@@ -1907,6 +1914,193 @@ pub extern "C" fn check_remove_lang_index_dirs() {
         }
     } else {
         warn("Keeping remove_lang_index_dirs.txt marker file for retry on next start");
+    }
+}
+
+/// Marker file content asking `check_remove_app_assets()` to keep the user
+/// data export (`import-me/` and the language selection files).
+const REMOVE_APP_ASSETS_KEEP_EXPORT: &str = "keep-user-data-export";
+
+/// The entries of app-assets that make up a user data export written by
+/// `AppData::export_user_data_to_assets()`: the `import-me/` folder and the
+/// two language selection files the first-run download window reads.
+fn user_data_export_entry_names(g: &AppGlobals) -> Vec<std::ffi::OsString> {
+    let mut names = vec![std::ffi::OsString::from("import-me")];
+    for p in [&g.paths.download_languages_marker, &g.paths.download_select_sanskrit_bundle_marker] {
+        if let Some(n) = p.file_name() {
+            names.push(n.to_os_string());
+        }
+    }
+    names
+}
+
+/// Write the remove_app_assets.txt marker file, asking the next app start to
+/// remove the app-assets folder (databases, fulltext index, audio and every
+/// other asset). With `keep_user_data_export`, the user data export is kept,
+/// and imported after the databases are downloaded again.
+///
+/// Called from Settings → General → Database → "Remove App Database and
+/// Assets". The folder cannot be removed while the app runs: the database
+/// connections and the fulltext searcher hold its files open, and on Windows
+/// removing them fails (or partially succeeds). `check_remove_app_assets()`
+/// removes it on the next start, before anything opens those files, and the
+/// app then starts with the first-run download screen.
+pub fn write_remove_app_assets_marker(keep_user_data_export: bool) -> std::io::Result<()> {
+    let g = get_app_globals();
+    let marker_path = &g.paths.remove_app_assets_marker;
+    let content = if keep_user_data_export { REMOVE_APP_ASSETS_KEEP_EXPORT } else { "" };
+    fs::write(marker_path, content)?;
+    info(&format!("Created marker file: {} ({})", marker_path.display(),
+                  if keep_user_data_export { "keeping the user data export" } else { "removing everything" }));
+    Ok(())
+}
+
+/// Cancel a removal scheduled by `write_remove_app_assets_marker()`: remove the
+/// marker file. A missing marker is not an error.
+pub fn remove_remove_app_assets_marker() -> std::io::Result<()> {
+    let g = get_app_globals();
+    let marker_path = &g.paths.remove_app_assets_marker;
+    match fs::remove_file(marker_path) {
+        Ok(()) => {
+            info(&format!("Removed marker file: {}", marker_path.display()));
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Remove a user data export that will not be used, because the removal it
+/// was made for was cancelled. Without this, the next start would import
+/// `import-me/` into the existing databases.
+///
+/// `keep_dict_snapshot`: keep `import-me/user_dictionaries.sqlite3`, because
+/// it was there before this export started (a pending dictionary import the
+/// startup reconciliation has yet to consume) and so was not written by it.
+pub fn discard_user_data_export(keep_dict_snapshot: bool) {
+    let g = get_app_globals();
+    let import_dir = g.paths.app_assets_dir.join("import-me");
+
+    if let Ok(true) = import_dir.try_exists() {
+        match fs::read_dir(&import_dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if keep_dict_snapshot
+                        && p.file_name().is_some_and(|n| n == crate::app_data::USER_DICTIONARIES_SNAPSHOT_FILE) {
+                        continue;
+                    }
+                    let res = if p.is_dir() { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
+                    if let Err(e) = res {
+                        error(&format!("Failed to remove import-me entry {}: {}", p.display(), e));
+                    }
+                }
+            }
+            Err(e) => error(&format!("Failed to read import-me folder {}: {}", import_dir.display(), e)),
+        }
+        if !keep_dict_snapshot && let Err(e) = fs::remove_dir(&import_dir) {
+            error(&format!("Failed to remove import-me folder {}: {}", import_dir.display(), e));
+        }
+    }
+
+    for p in [&g.paths.download_languages_marker, &g.paths.download_select_sanskrit_bundle_marker] {
+        if let Ok(true) = p.try_exists() && let Err(e) = fs::remove_file(p) {
+            error(&format!("Failed to remove {}: {}", p.display(), e));
+        }
+    }
+
+    info("discard_user_data_export(): removed the unused user data export");
+}
+
+/// Check for the remove_app_assets.txt marker file and remove the app-assets
+/// folder if found. When the marker asks to keep the user data export, every
+/// entry of app-assets except the export is removed, and the export is
+/// imported after the databases are downloaded again, as after a database
+/// upgrade.
+///
+/// Called during app startup, before the per-database presence is recorded
+/// and before any database or fulltext searcher is opened. The marker file is
+/// removed only when the removal succeeded (or the folder was already
+/// absent); on failure it is kept so the removal is retried on the next start.
+#[unsafe(no_mangle)]
+pub extern "C" fn check_remove_app_assets() {
+    let g = get_app_globals();
+    let marker_path = &g.paths.remove_app_assets_marker;
+
+    match marker_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => {
+            error(&format!("Failed to check for marker file {:?}: {}", marker_path, e));
+            return;
+        }
+    }
+
+    info(&format!("Found remove app-assets marker file: {}", marker_path.display()));
+
+    let keep_export = match fs::read_to_string(marker_path) {
+        Ok(c) => c.trim() == REMOVE_APP_ASSETS_KEEP_EXPORT,
+        Err(e) => {
+            // Keeping the export is the safe reading: it removes less.
+            error(&format!("Failed to read marker file {:?}, keeping the user data export: {}", marker_path, e));
+            true
+        }
+    };
+
+    let app_assets_dir = &g.paths.app_assets_dir;
+    let removed = match app_assets_dir.try_exists() {
+        Ok(true) if keep_export => {
+            let keep = user_data_export_entry_names(g);
+            match fs::read_dir(app_assets_dir) {
+                Ok(entries) => {
+                    let mut all_ok = true;
+                    for entry in entries.flatten() {
+                        if keep.contains(&entry.file_name()) {
+                            continue;
+                        }
+                        let p = entry.path();
+                        let res = if p.is_dir() { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
+                        if let Err(e) = res {
+                            error(&format!("Failed to remove app-assets entry {}: {}", p.display(), e));
+                            all_ok = false;
+                        }
+                    }
+                    if all_ok {
+                        info(&format!("Removed app-assets folder contents, kept the user data export: {}", app_assets_dir.display()));
+                    }
+                    all_ok
+                }
+                Err(e) => {
+                    error(&format!("Failed to read app-assets folder {}: {}", app_assets_dir.display(), e));
+                    false
+                }
+            }
+        }
+        Ok(true) => match fs::remove_dir_all(app_assets_dir) {
+            Ok(()) => {
+                info(&format!("Removed app-assets folder: {}", app_assets_dir.display()));
+                true
+            }
+            Err(e) => {
+                error(&format!("Failed to remove app-assets folder {}: {}", app_assets_dir.display(), e));
+                false
+            }
+        },
+        Ok(false) => true,
+        Err(e) => {
+            error(&format!("Failed to check app-assets folder {}: {}", app_assets_dir.display(), e));
+            false
+        }
+    };
+
+    if removed {
+        if let Err(e) = fs::remove_file(marker_path) {
+            error(&format!("Failed to remove marker file {:?}: {}", marker_path, e));
+        } else {
+            info("Removed remove_app_assets.txt marker file");
+        }
+    } else {
+        warn("Keeping remove_app_assets.txt marker file for retry on next start");
     }
 }
 

@@ -99,6 +99,9 @@ record_storage_path_state(state, recorded)    //         or creates a path
 init_app_globals()                            // freezes APP_GLOBALS from the resolved path
 remove_download_temp_folder()                 // non-destructive: always
 
+if state != Unreachable:
+    check_remove_app_assets()                 // DELETES app-assets/ (Settings marker)
+
 ensure_no_empty_db_files(sweep = state != Unreachable)   // FR-36a
 
 if state == Unreachable:

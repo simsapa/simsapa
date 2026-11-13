@@ -339,6 +339,7 @@ fn create_test_indexes(base_name: &str) -> (PathBuf, AppGlobalPaths) {
         download_select_sanskrit_bundle_marker: base.join("download_select_sanskrit_bundle.txt"),
         remove_lang_index_dirs_marker: base.join("remove_lang_index_dirs.txt"),
         auto_start_dpd_upgrade_marker: base.join("auto_start_dpd_upgrade.txt"),
+        remove_app_assets_marker: base.join("remove_app_assets.txt"),
     };
 
     (base, paths)
@@ -475,6 +476,7 @@ fn test_fulltext_searcher_empty_indexes() {
         download_select_sanskrit_bundle_marker: base.join("download_select_sanskrit_bundle.txt"),
         remove_lang_index_dirs_marker: base.join("remove_lang_index_dirs.txt"),
         auto_start_dpd_upgrade_marker: base.join("auto_start_dpd_upgrade.txt"),
+        remove_app_assets_marker: base.join("remove_app_assets.txt"),
     };
 
     let searcher = FulltextSearcher::open(&paths).expect("Should handle missing dirs gracefully");

@@ -21,7 +21,7 @@ use simsapa_backend::logger::{self, LoggerHostOptions};
 use simsapa_backend::update_checker::{db_version_of, get_app_version, is_local_db_obsolete};
 use simsapa_backend::{
     appdata_db_exists, check_and_configure_for_first_start, check_delete_files_for_upgrade,
-    check_remove_lang_index_dirs, dotenv_c, ensure_no_empty_db_files, get_app_globals,
+    check_remove_app_assets, check_remove_lang_index_dirs, dotenv_c, ensure_no_empty_db_files, get_app_globals,
     get_app_data, import_user_data_after_upgrade, init_app_data, init_app_globals,
     remove_download_temp_folder,
 };
@@ -125,6 +125,9 @@ pub fn run_headless_preamble(mode: PreambleMode) -> CliResult {
     if full {
         // gui.cpp: remove_download_temp_folder()
         remove_download_temp_folder();
+
+        // gui.cpp: check_remove_app_assets(), before the presence record
+        check_remove_app_assets();
     }
 
     // gui.cpp: ensure_no_empty_db_files(sweep). Read-only still records the
@@ -167,12 +170,13 @@ pub fn run_headless_preamble(mode: PreambleMode) -> CliResult {
 
 /// The work the read-only preamble skips and the full one does before the
 /// databases are opened: an upgrade marker, a pending language-index removal,
-/// or user data waiting in `import-me/`.
+/// a pending app-assets removal, or user data waiting in `import-me/`.
 fn has_pending_upgrade_work() -> bool {
     let paths = &get_app_globals().paths;
     [
         paths.delete_files_for_upgrade_marker.clone(),
         paths.remove_lang_index_dirs_marker.clone(),
+        paths.remove_app_assets_marker.clone(),
         paths.app_assets_dir.join("import-me"),
     ]
     .iter()

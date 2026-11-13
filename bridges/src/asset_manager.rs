@@ -13,6 +13,11 @@ use bzip2::read::BzDecoder;
 use tar::Archive;
 
 use simsapa_backend::{move_folder_contents, AppGlobalPaths};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether import-me/user_dictionaries.sqlite3 existed before the last
+/// `export_user_data_for_removal()` started. See `discard_user_data_export()`.
+static DICT_SNAPSHOT_PREDATES_EXPORT: AtomicBool = AtomicBool::new(false);
 use simsapa_backend::asset_helpers::import_suttas_lang_to_appdata;
 use simsapa_backend::logger::{info, error};
 use simsapa_backend::app_settings::LANGUAGES_JSON;
@@ -84,6 +89,30 @@ pub mod qobject {
 
         #[qinvokable]
         fn remove_sutta_languages(self: Pin<&mut AssetManager>, language_codes: QStringList);
+
+        /// Ask the next app start to remove the app-assets folder, keeping
+        /// the user data export when `keep_user_data_export`. Returns false
+        /// if the marker file could not be written.
+        #[qinvokable]
+        fn schedule_remove_app_assets(self: Pin<&mut AssetManager>, keep_user_data_export: bool) -> bool;
+
+        /// Export the user's data to app-assets/import-me/ on a background
+        /// thread, for "Remove App Database and Assets". Emits
+        /// `userDataExportFinished`.
+        #[qinvokable]
+        fn export_user_data_for_removal(self: Pin<&mut AssetManager>);
+
+        /// Cancel a scheduled removal: remove the marker file, then the
+        /// export written by `export_user_data_for_removal()`, so the next
+        /// start neither removes app-assets nor imports the export. Returns
+        /// false if the marker could not be removed (the removal still
+        /// happens at the next start, and the export is kept for it).
+        #[qinvokable]
+        fn cancel_remove_app_assets(self: Pin<&mut AssetManager>) -> bool;
+
+        #[qsignal]
+        #[cxx_name = "userDataExportFinished"]
+        fn user_data_export_finished(self: Pin<&mut AssetManager>, success: bool, error_msg: QString);
 
         #[qsignal]
         #[cxx_name = "downloadProgressChanged"]
@@ -185,6 +214,54 @@ impl qobject::AssetManager {
 
     fn request_microphone_permission(&self) {
         qobject::request_microphone_permission_impl();
+    }
+
+    fn schedule_remove_app_assets(self: Pin<&mut Self>, keep_user_data_export: bool) -> bool {
+        match simsapa_backend::write_remove_app_assets_marker(keep_user_data_export) {
+            Ok(()) => true,
+            Err(e) => {
+                error(&format!("schedule_remove_app_assets(): failed to write marker file: {}", e));
+                false
+            }
+        }
+    }
+
+    fn export_user_data_for_removal(self: Pin<&mut Self>) {
+        let qt_thread = self.qt_thread();
+
+        thread::spawn(move || {
+            // A user_dictionaries.sqlite3 already in import-me/ is a pending
+            // dictionary import, not part of this export: a discard keeps it.
+            let snapshot = AppGlobalPaths::new().app_assets_dir
+                .join("import-me")
+                .join(simsapa_backend::app_data::USER_DICTIONARIES_SNAPSHOT_FILE);
+            DICT_SNAPSHOT_PREDATES_EXPORT.store(matches!(snapshot.try_exists(), Ok(true)), Ordering::SeqCst);
+
+            let (success, error_msg) = match simsapa_backend::get_app_data().export_user_data_to_assets() {
+                Ok(()) => (true, String::new()),
+                Err(errs) => {
+                    let msg = errs.iter()
+                        .map(|(cat, msg)| format!("{}: {}", cat, msg))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    error(&format!("export_user_data_for_removal(): export failed:\n{}", msg));
+                    (false, msg)
+                }
+            };
+
+            crate::queue_or_log(&qt_thread, "asset_manager::export_user_data_for_removal", move |mut qo| {
+                qo.as_mut().user_data_export_finished(success, QString::from(&error_msg));
+            });
+        });
+    }
+
+    fn cancel_remove_app_assets(self: Pin<&mut Self>) -> bool {
+        if let Err(e) = simsapa_backend::remove_remove_app_assets_marker() {
+            error(&format!("cancel_remove_app_assets(): failed to remove marker file: {}", e));
+            return false;
+        }
+        simsapa_backend::discard_user_data_export(DICT_SNAPSHOT_PREDATES_EXPORT.load(Ordering::SeqCst));
+        true
     }
 
     /// Get list of available language codes that can be downloaded
