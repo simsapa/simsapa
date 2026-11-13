@@ -132,7 +132,7 @@ body.dark {
     --text-shadow-dark: rgba(0, 0, 0, 0.8);
 }
 
-.menu-button, .menu-dropdown {
+.menu-button, .gloss-selection-button, .menu-dropdown {
     * {
         margin: 0;
         padding: 0;
@@ -141,8 +141,8 @@ body.dark {
     }
 }
 
-// Menu Button - Qt Fusion Style
-.menu-button {
+// Menu Button and Gloss Selection Button - Qt Fusion Style
+.menu-button, .gloss-selection-button {
     position: fixed;
     top: $edge_margin;
     right: $edge_margin;
@@ -162,7 +162,7 @@ body.dark {
         0 1px 2px rgba(0, 0, 0, 0.15);
     transform: translateZ(0);
 
-    .menu-icon {
+    .menu-icon, .gloss-selection-icon {
         width: 15px;
         height: 15px;
         opacity: 0.8;
@@ -182,6 +182,12 @@ body.dark {
             inset 0 0 5px rgba(0, 0, 0, 0.1);
         transform: translateY(1px);
     }
+}
+
+// Gloss Selection button: first in the top-right row, left of the find
+// button (_find.scss), which is left of the display settings button.
+.gloss-selection-button {
+    right: ($edge_margin + 3 * ($button_size + $button_spacing));
 }
 
 // Menu Dropdown - Qt Fusion Style

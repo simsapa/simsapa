@@ -138,7 +138,8 @@ add a line here and an entry there.
   never assign `topPadding`/`padding` on an `ApplicationWindow` root; anchor a
   window's root item to its parent.
 - [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
-  the column layouts, the settings menu, the anchor jump, CST text families.
+  the column layouts, the settings menu, the text size in one- and
+  two-language reading, the anchor jump, CST text families.
 - [WordSummary lookups](./docs/word-summary-lookups.md) — the latest lookup
   always runs and wins.
 

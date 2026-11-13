@@ -35,6 +35,59 @@ stays `Eq`. Missing fields deserialize via serde defaults, so existing user
 DBs load cleanly; there is no migration from the removed
 `show_translation_and_pali_line_by_line` boolean.
 
+### Text size: two reading modes
+
+The Pāli and Translation size settings serve two ways of reading, and the
+stylesheet applies them differently in each:
+
+- **One language** (Solo, or a single column in Lines/Columns): the text is
+  the main text. At the default sizes it reads at the normal body size, and
+  the setting scales it from there.
+- **Two languages** (Lines, Columns, the `sbs-blocks` fallback): one language
+  can be made smaller so that the other has emphasis. The 80% Pāli default
+  does exactly that.
+
+The sizes are layered, each relative to the one before:
+
+1. `html { font-size: <sutta_font_size>px }`, the app setting (default 22px),
+   injected as `css_extra` by `render_sutta_content()`. Everything below is in
+   `em`, so this is the base for all of it.
+2. `#ssp_content { font-size: 0.8em }` on narrow screens (≤ 768px,
+   `suttas.sass`).
+3. The display-settings sizes, set as `em` values on `html` by
+   `apply_css_vars()` in `display_settings.ts`: `--pali-font-size` (default
+   `0.8em`) and `--tr-font-size` (default `1em`). The CSS fallbacks are those
+   same defaults, so a page renders the same before the script has run.
+
+How step 3 applies (`_suttacentral.sass`):
+
+| Reading mode | Element | Pāli | Translation |
+|---|---|---|---|
+| Two languages | `span.colcell.pali` / `.translated`, `.sbs-col.pali` / `.translated` | `--pali-font-size` | `--tr-font-size` |
+| One language | `div.ssp-solo-pali` / `.ssp-solo-translated` | `--pali-font-size × 1.25` | `--tr-font-size` |
+
+Read alone, Pāli is scaled by 1.25 = 1 / 0.8, so that the 80% default gives
+1em, the body size. Applied as-is, the default would shrink every one-language
+Pāli page to 80%. A size other than the default changes the text in
+proportion (100% → 1.25em). The two modes share the settings, so a size chosen
+in one carries over to the other.
+
+The renderer chooses the one-language wrapper from the text's `language`
+(`render_single_text_body()` in `app_data.rs`; see §3 for why the CSS cannot
+tell from the markup).
+
+Not covered by the size settings:
+
+- Font family, line height and bold/italic apply only in the two-language
+  mode. Read alone, a text keeps the stylesheet's own fonts.
+- Variant readings are sized in `rem` (`.variant-wrap` / `.variant`), so they
+  follow the base in step 1, not the sliders, in every layout.
+- The page's message dialog (`show_message()`, e.g. Gloss Selection with
+  nothing selected) uses `--tr-font-size`, so its text matches the
+  translation text (`_invalid_link_modal.scss`).
+
+Any new rule that applies a size variable belongs in the table above.
+
 **Show references** renders the SuttaCentral-style per-segment reference
 numbers (`1.11.0`, …) beside each paragraph — `generate_reference_anchor` in
 `helpers.rs`, emitting
@@ -180,6 +233,14 @@ CSS (`assets/sass/_suttacentral.sass`):
   weight/style vars (`--pali-font-weight`, `--tr-font-style`, …) are set by
   JS **only while the Bold/Italic toggle is on** — the CSS fallback is
   `inherit`, which keeps template headings bold.
+- **A text read alone has no cells** (Solo, or a single column in
+  Lines/Columns): `render_single_text_body()` wraps the standard body in
+  `div.ssp-solo.ssp-solo-pali` / `.ssp-solo-translated`, chosen from the
+  text's `language`, and only the size vars apply to it. The CSS cannot tell
+  the language from the content: the standard markup marks every segment
+  `span.root lang="pli"`, translations included, and a non-segmented text is
+  arbitrary HTML. How the sizes apply in each reading mode: §1
+  "Text size: two reading modes".
 - Per-column colors: `--col-<n>-ink` / `--col-<n>-bg` (enumerated for
   col-0..col-11), mapped from the author-keyed maps at apply time. In
   Columns mode the per-cell backgrounds are replaced by full-height

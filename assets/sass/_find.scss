@@ -65,7 +65,7 @@ $animation_duration: 1s;
 .find-bar {
     position: fixed;
     top: $edge_margin;
-    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing + $find_button_size + 8px);  // Start from search button position
+    right: ($edge_margin + 4 * ($find_button_size + $button_spacing) + 3px);  // Left of the gloss selection button, which stays visible
     height: $find_bar_height;
     width: 380px;
     background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);

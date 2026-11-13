@@ -554,6 +554,14 @@ div.btn a, span.btn a {
   background-color: var(--col-11-bg, transparent);
 }
 
+.ssp-solo-translated {
+  font-size: var(--tr-font-size, 1em);
+}
+
+.ssp-solo-pali {
+  font-size: calc(var(--pali-font-size, 0.8em) * 1.25);
+}
+
 .suttacentral.layout-lines .cst .hangnum {
   margin-bottom: 0;
 }
@@ -1157,14 +1165,14 @@ body.dark {
   --text-shadow-dark: rgba(0, 0, 0, 0.8);
 }
 
-.menu-button *, .menu-dropdown * {
+.menu-button *, .gloss-selection-button *, .menu-dropdown * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   font-family: sans-serif;
 }
 
-.menu-button {
+.menu-button, .gloss-selection-button {
   position: fixed;
   top: 10px;
   right: 10px;
@@ -1183,22 +1191,26 @@ body.dark {
   transform: translateZ(0);
 }
 
-.menu-button .menu-icon {
+.menu-button .menu-icon, .menu-button .gloss-selection-icon, .gloss-selection-button .menu-icon, .gloss-selection-button .gloss-selection-icon {
   width: 15px;
   height: 15px;
   opacity: 0.8;
 }
 
-.menu-button:hover {
+.menu-button:hover, .gloss-selection-button:hover {
   background: linear-gradient(to bottom, var(--btn-bg-hover-start) 0%, var(--btn-bg-hover-end) 100%);
   border-color: var(--btn-border-hover);
 }
 
-.menu-button:active, .menu-button.active {
+.menu-button:active, .menu-button.active, .gloss-selection-button:active, .gloss-selection-button.active {
   background: linear-gradient(to bottom, var(--btn-bg-active-start) 0%, var(--btn-bg-active-end) 100%);
   border-color: var(--btn-border-active);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 0 5px rgba(0, 0, 0, 0.1);
   transform: translateY(1px);
+}
+
+.gloss-selection-button {
+  right: 115px;
 }
 
 .menu-dropdown {
@@ -2702,6 +2714,10 @@ body.dark {
   font-size: 0.9em;
 }
 
+.invalid-link-modal-content.ssp-message-text {
+  font-size: var(--tr-font-size, 1em);
+}
+
 @media (max-width: 768px) {
   .invalid-link-modal {
     width: 95%;
@@ -2710,6 +2726,9 @@ body.dark {
   }
   .invalid-link-modal-content {
     font-size: 13px;
+  }
+  .invalid-link-modal-content.ssp-message-text {
+    font-size: calc(0.8 * var(--tr-font-size, 1em));
   }
 }
 .find-container * {
@@ -2759,7 +2778,7 @@ body.dark {
 .find-bar {
   position: fixed;
   top: 10px;
-  right: 118px;
+  right: 153px;
   height: 40px;
   width: 380px;
   background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);

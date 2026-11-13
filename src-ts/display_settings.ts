@@ -47,7 +47,9 @@ export interface SuttaDisplayColumn {
 
 // Mirrors SuttaDisplayDefaults::default() in backend/src/app_settings.rs and
 // the un-overridden stylesheet look (_suttacentral.sass): Pāli cells sans at
-// 0.8em, translation cells the serif body font at 1em, line height 1.5.
+// 0.8em, translation cells the serif body font at 1em, line height 1.5. How
+// the sizes apply when a text is read alone versus with another:
+// docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
 export function built_in_defaults(): SuttaDisplaySettings {
   return {
     layout: "linebyline",

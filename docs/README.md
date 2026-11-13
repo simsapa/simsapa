@@ -756,7 +756,10 @@ substantially.
   `colcell` markup, only CSS differs — **never** split the Bilara document into
   per-row DOM blocks; the template is not self-contained per segment), the
   `sbs-blocks` fallback for non-segmented texts (whose `.sbs-col` divs must
-  carry the `pali`/`translated` font-var classes), options resolution &
+  carry the `pali`/`translated` font-var classes), the **text size in the two
+  reading modes** (one language reads at the body size by default, Pāli
+  × 1.25; two languages apply the sizes as-is so Pāli can be the lesser
+  text), options resolution &
   precedence (`SuttaDisplayOptions` resolved once at the call boundary —
   render tests pass explicit options, never read the settings cache), the
   route surface (`/sutta_content_block`, `/translations_for_sutta`,

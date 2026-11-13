@@ -252,6 +252,10 @@ $evam_font_scale: 1.15
     span.colcell
       display: block
       padding-top: 0.5em
+    // Text size, two-language reading mode: the size vars apply as-is, so the
+    // 80% Pāli default makes Pāli the lesser text. See
+    // docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
+    //
     // The weight/style vars are only set by JS while the Bold/Italic toggle
     // is on; unset they fall back to inherit so template headings (h1 etc.
     // wrapping a segment) keep their own weight.
@@ -281,6 +285,20 @@ $evam_font_scale: 1.15
     .sbs-col.col-#{$n}
       color: var(--col-#{$n}-ink, inherit)
       background-color: var(--col-#{$n}-bg, transparent)
+
+// Text size, one-language reading mode (Solo, or a single column). The text
+// logic and the table of every rule that applies a size variable are in
+// docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
+//
+// Standard markup, wrapped by the renderer in .ssp-solo-pali /
+// .ssp-solo-translated (app_data.rs render_single_text_body). The text is the
+// main text, so at the default sizes it reads at the body size: Pāli is scaled
+// by 1.25 (= 1 / 0.8), so that its 80% default gives 1em, and a slider change
+// scales it in proportion.
+.ssp-solo-translated
+  font-size: var(--tr-font-size, 1em)
+.ssp-solo-pali
+  font-size: calc(var(--pali-font-size, 0.8em) * 1.25)
 
 // A CST paragraph number hangs: the negative margin draws the next row up
 // beside it. In Lines a row is two lines tall, so the next row would cover the
@@ -401,7 +419,8 @@ body:has(.suttacentral.layout-columns)
       background-color: var(--sbs-scrollbar-track, rgba(0, 0, 0, 0.06))
   // The same font-group custom properties as the segmented builder's
   // colcells: the display-settings typography must keep applying when a
-  // non-segmented column switches the render to this fallback.
+  // non-segmented column switches the render to this fallback. Text size:
+  // docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
   .sbs-col.translated
     font-family: var(--tr-font-family, inherit)
     font-size: var(--tr-font-size, 1em)

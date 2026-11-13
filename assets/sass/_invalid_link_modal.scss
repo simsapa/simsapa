@@ -163,6 +163,15 @@ body.dark {
     }
 }
 
+// Plain-text messages (show_message(), e.g. Gloss Selection with no
+// selection) read at the sutta translation text size: the html font-size from
+// the app settings times the display-settings translation size. The modal body
+// inherits the html size, so 1em here is that base. See
+// docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
+.invalid-link-modal-content.ssp-message-text {
+    font-size: var(--tr-font-size, 1em);
+}
+
 // Mobile responsiveness
 @media (max-width: 768px) {
     .invalid-link-modal {
@@ -173,5 +182,10 @@ body.dark {
 
     .invalid-link-modal-content {
         font-size: 13px;
+    }
+
+    // Matches the smaller mobile #ssp_content size (suttas.sass).
+    .invalid-link-modal-content.ssp-message-text {
+        font-size: calc(0.8 * var(--tr-font-size, 1em));
     }
 }

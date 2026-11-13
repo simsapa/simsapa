@@ -82,6 +82,27 @@ class InvalidLinkModal {
         this.overlay.classList.add('show');
     }
 
+    /**
+     * Show the modal with a plain-text message, e.g. the Gloss Selection
+     * action's "no Pāli text selected" notice. The text is not parsed as HTML.
+     */
+    public show_message(title: string, message: string): void {
+        this.init();
+
+        if (!this.overlay || !this.title_element || !this.body_element) {
+            console.error('[InvalidLinkModal] Modal not initialized');
+            return;
+        }
+
+        this.title_element.textContent = title;
+        const p = document.createElement('p');
+        p.className = 'invalid-link-modal-content ssp-message-text';
+        p.textContent = message;
+        this.body_element.replaceChildren(p);
+
+        this.overlay.classList.add('show');
+    }
+
     private handle_overlay_click(e: MouseEvent): void {
         // Close modal if clicking directly on overlay (not on modal content)
         if (e.target === this.overlay) {

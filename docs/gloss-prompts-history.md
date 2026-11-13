@@ -109,8 +109,10 @@ Key functions (same shape in both tabs): `save_session(blocking)`,
    (`gloss_text_input.onTextChanged`; the Prompts message editors, response
    received, retry/regenerate, tab-select, send) all mark the session dirty.
 7. **External entry points must not overwrite the active session.** The sutta
-   HTML menu's "Gloss Selection" (`SuttaSearchWindow.gloss_text` →
-   `GlossTab.gloss_selected_text`) and "Summarize/Translate/Analyse"
+   HTML menu's "Gloss Selection" and its top-right icon button
+   (`SuttaSearchWindow.gloss_text` → `GlossTab.gloss_selected_text`; with no
+   selection the page shows a "no Pāli text selected" dialog in `suttas.js`
+   and nothing is sent) and "Summarize/Translate/Analyse"
    (`SuttaSearchWindow.new_prompt` → `PromptsTab.new_prompt`): if a non-empty
    session is in progress, **confirm** then `new_session()` + load the selection;
    if the session is empty **but still carries a `current_session_id`** (a loaded
