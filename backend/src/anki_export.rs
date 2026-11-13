@@ -50,11 +50,11 @@ fn paragraph_notes(paragraph: &GlossExportParagraph) -> Vec<NoteItem> {
         .map(|r| NoteItem {
             uid: r.uid.clone(),
             word: r.lemma.clone(),
-            summary: if r.summary.is_empty() { r.meaning.clone() } else { r.summary.clone() },
+            summary: if r.summary.is_empty() { r.definition.clone() } else { r.summary.clone() },
             context_snippet: r.context_snippet.clone(),
             word_in_sentence: r.word.clone(),
             grammar: r.grammar.clone(),
-            meaning: r.meaning.clone(),
+            meaning: r.definition.clone(),
         })
         .collect()
 }

@@ -479,7 +479,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
             row.id_cell(),
             row.word_cell(),
             row.grammar.clone(),
-            row.meaning.clone(),
+            row.definition.clone(),
             row.construction.clone(),
             row.root.clone(),
             confidence_cell(row.confidence).to_string(),
@@ -1261,8 +1261,8 @@ mod tests {
                 "variants": [["gacchan'ti", "gacchanti"]],
                 "ai_translations": [{"model_name": "m", "response": "Those wise ones.", "literal_translation": "Those meditators.", "is_selected": true}],
                 "rows": [
-                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "meaning": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
-                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "meaning": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
                 ]
             }]
         })

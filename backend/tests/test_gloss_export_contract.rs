@@ -131,7 +131,7 @@ fn test_export_paragraph_contract() {
         wis.rows.iter().any(|r| r.depth == 0 && r.id.is_none() && r.grammar == "sandhi/compound"),
         "no break-down row"
     );
-    assert!(wis.rows.iter().any(|r| r.id.is_none() && r.meaning == "not found"), "no unresolved row");
+    assert!(wis.rows.iter().any(|r| r.id.is_none() && r.definition == "not found"), "no unresolved row");
     assert!(wis.rows.iter().any(|r| r.confidence.is_some()), "no row with a confidence mark");
     assert_eq!(wis.rows.iter().filter(|r| r.depth == 0 && r.word == "te").count(), 2, "the repeat is kept");
     check("expected_word_in_sentence.json", &wis);

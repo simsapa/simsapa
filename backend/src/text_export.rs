@@ -789,11 +789,11 @@ mod tests {
                     "is_selected": true
                 }],
                 "rows": [
-                    {"word": "te", "depth": 0, "id": 29188, "grammar": "masc nom pl of ta", "meaning": "those", "construction": "", "root": "", "confidence": "A"},
-                    {"word": "jhāyino", "depth": 0, "id": 28829, "grammar": "masc nom pl of jhāyī", "meaning": "meditators", "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)", "confidence": null},
-                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "meaning": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
-                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "meaning": "firm | strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": "H"},
-                    {"word": "xyz", "depth": 0, "id": null, "grammar": "", "meaning": "not found", "construction": "", "root": "", "confidence": null}
+                    {"word": "te", "depth": 0, "id": 29188, "grammar": "masc nom pl of ta", "definition": "those", "construction": "", "root": "", "confidence": "A"},
+                    {"word": "jhāyino", "depth": 0, "id": 28829, "grammar": "masc nom pl of jhāyī", "definition": "meditators", "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)", "confidence": null},
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm | strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": "H"},
+                    {"word": "xyz", "depth": 0, "id": null, "grammar": "", "definition": "not found", "construction": "", "root": "", "confidence": null}
                 ]
             }]
         })

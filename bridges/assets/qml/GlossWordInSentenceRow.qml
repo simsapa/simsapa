@@ -130,7 +130,7 @@ Frame {
                     return c.meaning ? name + ": " + c.meaning : name;
                 })
                 currentIndex: root.row.selected_candidate || 0
-                displayText: root.row.meaning || ""
+                displayText: root.row.definition || ""
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 font.pointSize: root.font_point_size
@@ -140,7 +140,7 @@ Frame {
             }
             Text {
                 visible: !root.has_choice
-                text: root.row.meaning || ""
+                text: root.row.definition || ""
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 color: root.text_color

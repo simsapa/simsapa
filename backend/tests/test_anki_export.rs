@@ -993,19 +993,19 @@ fn create_word_in_sentence_gloss_data() -> String {
             "rows": [
                 {
                     "word": "jhāyino", "depth": 0, "id": 28829, "uid": "28829/dpd", "lemma": "jhāyī 1",
-                    "grammar": "masc nom pl of jhāyī", "meaning": "meditators",
+                    "grammar": "masc nom pl of jhāyī", "definition": "meditators",
                     "construction": "√jhā + ī", "root": "√jhā 3 ya (think, meditate)",
                     "summary": "<b>jhāyī 1</b> <i>(masc)</i> meditator",
                     "context_snippet": "te <b>jhāyino</b> xyz", "confidence": "A"
                 },
                 {
                     "word": "daḷha", "depth": 1, "id": 32201, "uid": "32201/dpd", "lemma": "daḷha 1",
-                    "grammar": "pp", "meaning": "firm", "construction": "√dah + ta", "root": "",
+                    "grammar": "pp", "definition": "firm", "construction": "√dah + ta", "root": "",
                     "summary": "", "context_snippet": "te <b>jhāyino</b> xyz", "confidence": null
                 },
                 {
                     "word": "xyz", "depth": 0, "id": null, "uid": "", "lemma": "",
-                    "grammar": "", "meaning": "not found", "construction": "", "root": "",
+                    "grammar": "", "definition": "not found", "construction": "", "root": "",
                     "summary": "", "context_snippet": "", "confidence": null
                 }
             ]

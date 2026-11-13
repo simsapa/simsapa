@@ -794,9 +794,14 @@ pub struct SenseReading {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grammar_index: Option<usize>,
     /// The dictionary meaning fitted to the sentence (DPD's
-    /// `contextual_meaning`); shown in place of `meaning_combo`.
+    /// `contextual_meaning`); shown beside `meaning_combo`, never in its place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contextual_meaning: Option<String>,
+    /// One contextual meaning per reading in `uid`'s `grammar_options`, in
+    /// the same order, `""` where there is none. A reading chosen by hand
+    /// takes its entry from here. Session only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contextual_meanings: Vec<String>,
     /// Who chose it, with the resolution origin names: `"ai-selected"` or
     /// `"user-selected"`.
     #[serde(default)]

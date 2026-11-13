@@ -45,7 +45,7 @@ pub fn translation_vocabulary_from_rows(rows: &[GlossRow]) -> Vec<TranslationVoc
         out.push(TranslationVocabRow {
             word: format!("{}{}", "- ".repeat(row.depth as usize), row.word),
             grammar: row.grammar.clone(),
-            meaning: row.meaning.clone(),
+            meaning: if row.contextual.is_empty() { row.definition.clone() } else { row.contextual.clone() },
         });
         for c in &row.components {
             walk(c, out);
@@ -203,6 +203,16 @@ mod tests {
             TranslationVocabRow { word: "daḷhaparakkamā".into(), grammar: "adj, masc nom pl of daḷhaparakkama".into(), meaning: "having firm effort".into() },
             TranslationVocabRow { word: "- daḷha".into(), grammar: "pp".into(), meaning: "firm | strong".into() },
         ]
+    }
+
+    #[test]
+    fn vocabulary_from_rows_prefers_the_contextual_meaning() {
+        let with = GlossRow { word: "te".into(), grammar: "g".into(), definition: "that; those".into(), contextual: "they".into(), ..Default::default() };
+        let without = GlossRow { word: "kho".into(), definition: "indeed".into(), depth: 1, ..Default::default() };
+        let v = translation_vocabulary_from_rows(&[with, without]);
+        assert_eq!(v[0].meaning, "they");
+        assert_eq!(v[1].meaning, "indeed");
+        assert_eq!(v[1].word, "- kho");
     }
 
     #[test]

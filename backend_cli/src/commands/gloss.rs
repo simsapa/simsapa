@@ -729,7 +729,7 @@ fn print_gloss_text(result: &AllParagraphsProcessingResult) {
 fn row_cells(row: &GlossRow, out: &mut Vec<[String; 4]>) {
     let word = format!("{}{}", "- ".repeat(row.depth as usize), row.word);
     let conf = row.confidence.map(|c| c.as_str().to_string()).unwrap_or_default();
-    out.push([word, conf, row.grammar.clone(), row.meaning.clone()]);
+    out.push([word, conf, row.grammar.clone(), row.definition.clone()]);
     for c in &row.components {
         row_cells(c, out);
     }

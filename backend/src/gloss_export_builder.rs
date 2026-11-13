@@ -198,7 +198,8 @@ fn flatten_row(row: &GlossRow, word: Option<&ProcessedWord>, out: &mut Vec<Gloss
         uid,
         lemma: candidate.map(|c| c.lemma_1.clone()).unwrap_or_default(),
         grammar: row.grammar.clone(),
-        meaning: row.meaning.clone(),
+        definition: row.definition.clone(),
+        contextual: row.contextual.clone(),
         construction: row.construction.clone(),
         root: row.root.clone(),
         summary,
@@ -376,6 +377,6 @@ mod tests {
         assert_eq!(rows[1].confidence, Some(Confidence::N));
         assert_eq!(rows[2].id, None);
         assert_eq!(rows[2].uid, "");
-        assert_eq!(rows[2].meaning, "not found");
+        assert_eq!(rows[2].definition, "not found");
     }
 }

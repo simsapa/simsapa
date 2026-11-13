@@ -723,7 +723,7 @@ fn test_elision_mark_pe_is_peyyala() {
         assert_eq!(row.grammar, "abbrev of peyyāla");
         assert_eq!(row.candidates.len(), 1);
         assert_eq!(row.confidence, None);
-        assert!(row.meaning.contains("elided repetition"), "{}", row.meaning);
+        assert!(row.definition.contains("elided repetition"), "{}", row.definition);
     }
     // A dash is not an elision mark.
     let rows = gloss_rows("Sāvatthiyaṁ viharati -pe- desessāmi.", None);

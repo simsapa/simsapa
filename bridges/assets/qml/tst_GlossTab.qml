@@ -650,7 +650,7 @@ Item {
             gloss_tab.handle_all_paragraphs_results({
                 success: true,
                 paragraphs: [{ paragraph_index: 0, words_data: [], unrecognized_words: [],
-                               rows: [{ word: "xyz", depth: 0, word_index: null, meaning: "not found", candidates: [], components: [] }],
+                               rows: [{ word: "xyz", depth: 0, word_index: null, definition: "not found", candidates: [], components: [] }],
                                variants: [["vā'ti", "vāti"]] }],
                 updated_global_stems: {},
                 global_unrecognized_words: []

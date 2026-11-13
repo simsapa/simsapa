@@ -93,8 +93,13 @@ pub struct GlossExportRow {
     pub lemma: String,
     #[serde(default)]
     pub grammar: String,
+    /// The dictionary definition of the chosen sense.
     #[serde(default)]
-    pub meaning: String,
+    pub definition: String,
+    /// The AI's contextual meaning for the word in this sentence; empty when
+    /// there is none.
+    #[serde(default)]
+    pub contextual: String,
     #[serde(default)]
     pub construction: String,
     #[serde(default)]
@@ -145,7 +150,7 @@ impl GlossExportRow {
             self.id_cell(),
             self.word_cell(),
             self.grammar.clone(),
-            self.meaning.clone(),
+            self.definition.clone(),
             self.construction.clone(),
             self.root.clone(),
             confidence_cell(self.confidence).to_string(),

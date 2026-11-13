@@ -84,6 +84,7 @@ fn answer_reading(answer: &WordSelectionEntry) -> Option<SenseReading> {
         uid: answer.uid.clone(),
         grammar_index: answer.grammar_index,
         contextual_meaning: answer.contextual_meaning.clone(),
+        contextual_meanings: Vec::new(),
         origin: AI_SELECTED.to_string(),
     })
 }
