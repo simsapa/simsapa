@@ -7,6 +7,9 @@
 //!   verse number (`th215` is `thag2.48`), which is not DPD's `TH215`.
 //! - The edition is `/pli/cst` when that record exists, else `/pli/ms`
 //!   ([`PaliEdition::Default`]); an explicit edition is not substituted.
+//!   A reference inside a CST range record (`dhp23` in `dhp21-32/pli/cst`)
+//!   reads `/pli/ms` by default, because the CST segments are keyed by the
+//!   range and cannot be narrowed to the verse.
 //! - A verse or sutta stored inside a range record (`dhp23` in
 //!   `dhp21-32/pli/ms`, `sn45.92` in `sn45.92-95/pli/ms`) is the segments of
 //!   that record whose key starts with the requested code. A Theragāthā or
@@ -203,7 +206,23 @@ pub fn resolve_gloss_source(
 
     let sutta = match &suffix {
         Some(s) => find_record(appdata, &record_code, &code, &[s.as_str()]),
-        None => find_record(appdata, &record_code, &code, edition.suffixes()),
+        None => {
+            let found = find_record(appdata, &record_code, &code, edition.suffixes());
+            // A CST range record (`dhp21-32/pli/cst`) cannot be narrowed to a
+            // verse or sutta inside it: its segments are keyed by the range,
+            // not by the verse. The default edition then reads the MS record,
+            // whose segments are keyed by verse.
+            match found {
+                Some(s)
+                    if edition == PaliEdition::Default
+                        && s.uid.ends_with("/pli/cst")
+                        && !s.uid.starts_with(&format!("{}/", code)) =>
+                {
+                    find_record(appdata, &record_code, &code, &["/pli/ms"]).or(Some(s))
+                }
+                other => other,
+            }
+        }
     }
     .ok_or_else(|| {
         let edition_note = match (&suffix, edition) {

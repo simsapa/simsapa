@@ -2,7 +2,7 @@ import * as h from "./helpers";
 import { findManager } from "./find";
 import "./confirm_modal";
 import { normalise_footnote_markers } from "./footnote_modal";
-import "./invalid_link_modal";
+import { invalid_link_modal } from "./invalid_link_modal";
 import { footnote_bottom_bar } from "./footnote_bottom_bar";
 import * as display_settings from "./display_settings";
 import * as content_reload from "./content_reload";
@@ -129,6 +129,8 @@ document.SSP = {
     attach_link_handlers: attach_link_handlers,
     show_bottom_footnotes: true, // Default to true, will be updated from QML
     scroll: scrollManager,
+    // Plain-text message dialog in the page, used by suttas.js.
+    show_message: (title: string, message: string): void => invalid_link_modal.show_message(title, message),
 };
 
 /**

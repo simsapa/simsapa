@@ -675,7 +675,7 @@ impl AppData {
             // Solo: only the opened translation, via the standard
             // whole-document path — the resolved columns are page state for
             // switching back to Columns/Lines, not render input.
-            self.render_sutta_standard_body(sutta, show_references, None)?
+            self.render_single_text_body(sutta, show_references)?
 
         } else if column_suttas.len() >= 2 && all_segmented && columns_can_align(&sutta.uid, &column_uids) {
             // Per-segment aligned multi-column view: each column's segments
@@ -729,10 +729,27 @@ impl AppData {
             multi_column_html_blocks(&cols)
 
         } else {
-            self.render_sutta_standard_body(column_suttas.first().unwrap_or(sutta), show_references, None)?
+            // One text in Lines/Columns: read alone, as in Solo.
+            self.render_single_text_body(column_suttas.first().unwrap_or(sutta), show_references)?
         };
 
         Ok(content_html_body)
+    }
+
+    /// The standard whole-document rendering of a text read alone (Solo, or a
+    /// single column), wrapped in the class that names its font group for the
+    /// display-settings size (`.ssp-solo-pali` / `.ssp-solo-translated` in
+    /// _suttacentral.sass). The CSS cannot tell the language from the content:
+    /// the standard markup marks every segment `span.root lang="pli"`
+    /// whatever its language, and a non-segmented text is arbitrary HTML.
+    /// The size logic: docs/sutta-display-settings-and-multi-column-view.md §1 "Text size".
+    fn render_single_text_body(&self, sutta: &Sutta, show_references: bool) -> Result<String> {
+        let group = if sutta.language == "pli" { "pali" } else { "translated" };
+        Ok(format!(
+            "<div class='ssp-solo ssp-solo-{}'>{}</div>",
+            group,
+            self.render_sutta_standard_body(sutta, show_references, None)?,
+        ))
     }
 
     /// Builds the `SUTTA_DISPLAY` JS object injected into the page next to

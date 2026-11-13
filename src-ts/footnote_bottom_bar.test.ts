@@ -122,6 +122,18 @@ describe("get_footnote_content", () => {
     expect(get_footnote_content("snp4-11note02")).toContain("A note on");
     expect(get_footnote_content("snp4-11note02")).not.toMatch(/^2\./);
   });
+
+  test("returns a Dhamma Verses Commentary note without its back-link", () => {
+    document.body.innerHTML = `
+      <p>body.<sup class="footnote-reference"><a id="note-ref-2" href="#note-2">2</a></sup></p>
+      <section class="notes"><ol>
+        <li id="note-2" value="2"><p>BG: the note runs on</p><p>into a second paragraph. <a class="footnote-backref" href="#note-ref-2">↩</a></p></li>
+      </ol></section>`;
+    const content = get_footnote_content("note-2")!;
+    expect(content).toContain("into a second paragraph.");
+    expect(content).not.toContain("footnote-backref");
+    expect(content).not.toContain("↩");
+  });
 });
 
 describe("footnote bottom bar", () => {

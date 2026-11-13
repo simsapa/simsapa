@@ -398,6 +398,37 @@ fn the_footer_shows_in_solo_on_the_english_only() {
     assert_eq!(footer_count(&html), 0, "{}", html);
 }
 
+/// A text read alone (Solo, or a single column) is wrapped in the font-group
+/// class that the display-settings size applies to (`.ssp-solo-pali` /
+/// `.ssp-solo-translated` in _suttacentral.sass), for segmented and
+/// HTML-only texts alike.
+#[test]
+#[serial]
+fn solo_names_the_font_group_of_the_opened_text() {
+    let _fixture = set_up();
+
+    for (opened, columns, group) in [
+        (PALI_CST, &[PALI_CST, ENGLISH_OT][..], "pali"),
+        (PALI_MS, &[PALI_MS, ENGLISH_SUJATO][..], "pali"),
+        (ENGLISH_SUJATO, &[ENGLISH_SUJATO, PALI_MS][..], "translated"),
+        (ENGLISH_HTML_ONLY, &[ENGLISH_HTML_ONLY][..], "translated"),
+    ] {
+        let html = render(opened, SuttaLayout::Solo, columns);
+        let wrapper = format!("<div class='ssp-solo ssp-solo-{}'>", group);
+        assert!(html.starts_with(&wrapper), "{}: {}", opened, html);
+    }
+
+    // A single column is read alone too.
+    for layout in [SuttaLayout::LineByLine, SuttaLayout::SideBySide] {
+        let html = render(PALI_CST, layout, &[PALI_CST]);
+        assert!(html.starts_with("<div class='ssp-solo ssp-solo-pali'>"), "{:?}: {}", layout, html);
+    }
+
+    // Two languages: the per-cell sizes apply, not the read-alone wrapper.
+    let html = render(PALI_MS, SuttaLayout::LineByLine, &[PALI_MS, ENGLISH_SUJATO]);
+    assert!(!html.contains("ssp-solo"), "{}", html);
+}
+
 #[test]
 #[serial]
 fn the_footer_is_absent_with_no_ot_column() {

@@ -42,7 +42,7 @@
 //! ## The verified list names source files; the toc names divisions
 //!
 //! [`VERIFIED_CST_FILES`] carries the file names the **parser** read, which are
-//! the `romn/` source names and the `cst_file` values (measured: all 52 entries
+//! the `romn/` source names and the `cst_file` values (measured: all 54 entries
 //! appear in all three of `cst_file`, `romn/` and the toc set, with no
 //! mismatch in either direction). The navigation tree, by contrast, works in the
 //! **division** files the CST toc links -- `s0101a.att0.xml`,
@@ -105,7 +105,7 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// Adding an entry is a deliberate act: run `tipitaka-xml-parser`'s validations
 /// over the file, review the result, then add it here and re-run the CST import
 /// and the Pāli fulltext index rebuild.
-static VERIFIED_CST_FILES: [&str; 52] = [
+static VERIFIED_CST_FILES: [&str; 54] = [
     // Dīgha Nikāya
     "s0101a.att.xml",
     "s0101m.mul.xml",
@@ -165,6 +165,10 @@ static VERIFIED_CST_FILES: [&str; 52] = [
     "s0402t.tik.xml",
     "s0403t.tik.xml",
     "s0404t.tik.xml",
+
+    // Khuddaka Nikāya
+    "s0502m.mul.xml",
+    "s0502a.att.xml",
 ];
 
 

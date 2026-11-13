@@ -554,6 +554,14 @@ div.btn a, span.btn a {
   background-color: var(--col-11-bg, transparent);
 }
 
+.ssp-solo-translated {
+  font-size: var(--tr-font-size, 1em);
+}
+
+.ssp-solo-pali {
+  font-size: calc(var(--pali-font-size, 0.8em) * 1.25);
+}
+
 .suttacentral.layout-lines .cst .hangnum {
   margin-bottom: 0;
 }
@@ -887,6 +895,85 @@ body.dark .suttacentral.sbs-blocks .sbs-col {
   font-size: 0.8em;
 }
 
+.anandajoti-dhp-comm nav.page-toc, .anandajoti-dhp-comm nav.substory-toc {
+  font-size: 0.8em;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+.anandajoti-dhp-comm nav.page-toc ul, .anandajoti-dhp-comm nav.substory-toc ul {
+  margin: 0.4em 0 1em 0;
+  padding-left: 1.2em;
+}
+.anandajoti-dhp-comm nav.page-toc li, .anandajoti-dhp-comm nav.substory-toc li {
+  margin: 0.15em 0;
+}
+.anandajoti-dhp-comm nav.page-toc {
+  border-bottom: 1px solid rgba(128, 128, 128, 0.4);
+  padding-bottom: 0.6em;
+  margin-bottom: 1.5em;
+}
+.anandajoti-dhp-comm section.story {
+  margin-top: 2.5em;
+}
+.anandajoti-dhp-comm .story-title-pali {
+  font-size: 1em;
+  font-style: italic;
+  font-weight: normal;
+  margin-top: -0.4em;
+}
+.anandajoti-dhp-comm .story-meta {
+  font-size: 0.85em;
+  opacity: 0.8;
+  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  padding-left: 0.8em;
+  margin: 0.6em 0 1em 0;
+}
+.anandajoti-dhp-comm .story-meta p {
+  margin: 0.2em 0;
+}
+.anandajoti-dhp-comm .substory-heading {
+  font-size: 1.05em;
+  margin-top: 1.8em;
+}
+.anandajoti-dhp-comm p.verse {
+  margin: 0.8em 8%;
+  text-indent: 0;
+}
+.anandajoti-dhp-comm p.story-past {
+  margin-left: 4%;
+}
+.anandajoti-dhp-comm p.commentator-note {
+  margin-left: 4%;
+  margin-right: 4%;
+  font-size: 0.9em;
+  font-style: italic;
+}
+.anandajoti-dhp-comm span.pts-ref {
+  font-size: 0.7em;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+.anandajoti-dhp-comm section.notes {
+  margin-top: 3em;
+  border-top: 1px solid rgba(128, 128, 128, 0.4);
+  font-size: 0.85em;
+}
+.anandajoti-dhp-comm section.notes h2 {
+  font-size: 1.1em;
+}
+.anandajoti-dhp-comm section.notes li p {
+  margin: 0.3em 0;
+}
+.anandajoti-dhp-comm section.notes a.footnote-backref {
+  text-decoration: none;
+}
+
+article header p.vagga-title-pali {
+  text-align: center;
+  font-style: italic;
+  margin-top: -0.5em;
+}
+
 html {
   overflow-x: hidden;
   overflow-wrap: break-word;
@@ -1078,14 +1165,14 @@ body.dark {
   --text-shadow-dark: rgba(0, 0, 0, 0.8);
 }
 
-.menu-button *, .menu-dropdown * {
+.menu-button *, .gloss-selection-button *, .menu-dropdown * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   font-family: sans-serif;
 }
 
-.menu-button {
+.menu-button, .gloss-selection-button {
   position: fixed;
   top: 10px;
   right: 10px;
@@ -1104,22 +1191,26 @@ body.dark {
   transform: translateZ(0);
 }
 
-.menu-button .menu-icon {
+.menu-button .menu-icon, .menu-button .gloss-selection-icon, .gloss-selection-button .menu-icon, .gloss-selection-button .gloss-selection-icon {
   width: 15px;
   height: 15px;
   opacity: 0.8;
 }
 
-.menu-button:hover {
+.menu-button:hover, .gloss-selection-button:hover {
   background: linear-gradient(to bottom, var(--btn-bg-hover-start) 0%, var(--btn-bg-hover-end) 100%);
   border-color: var(--btn-border-hover);
 }
 
-.menu-button:active, .menu-button.active {
+.menu-button:active, .menu-button.active, .gloss-selection-button:active, .gloss-selection-button.active {
   background: linear-gradient(to bottom, var(--btn-bg-active-start) 0%, var(--btn-bg-active-end) 100%);
   border-color: var(--btn-border-active);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), inset 0 0 5px rgba(0, 0, 0, 0.1);
   transform: translateY(1px);
+}
+
+.gloss-selection-button {
+  right: 115px;
 }
 
 .menu-dropdown {
@@ -2623,6 +2714,10 @@ body.dark {
   font-size: 0.9em;
 }
 
+.invalid-link-modal-content.ssp-message-text {
+  font-size: var(--tr-font-size, 1em);
+}
+
 @media (max-width: 768px) {
   .invalid-link-modal {
     width: 95%;
@@ -2631,6 +2726,9 @@ body.dark {
   }
   .invalid-link-modal-content {
     font-size: 13px;
+  }
+  .invalid-link-modal-content.ssp-message-text {
+    font-size: calc(0.8 * var(--tr-font-size, 1em));
   }
 }
 .find-container * {
@@ -2680,7 +2778,7 @@ body.dark {
 .find-bar {
   position: fixed;
   top: 10px;
-  right: 118px;
+  right: 153px;
   height: 40px;
   width: 380px;
   background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);

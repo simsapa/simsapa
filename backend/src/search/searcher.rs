@@ -12,7 +12,6 @@ use crate::logger::{info, warn};
 use crate::types::SearchResult;
 use crate::highlight::{literal_ranges, wrap_ranges};
 use crate::helpers::normalize_plain_text;
-use crate::opentipitaka::OT_AUTHOR_UID;
 use crate::query_task::SearchQueryTask;
 use crate::AppGlobalPaths;
 
@@ -844,20 +843,15 @@ impl FulltextSearcher {
             }
         }
 
-        // A commentary is CST, or the OpenTipitaka English of a CST commentary.
-        // The mūla exclusion above stays CST only: `mn1/en/opentipitaka` is listed
-        // like any other English translation.
+        // A commentary is any record whose reference ends in `.att` or `.tik`,
+        // whatever its source: the CST Pāli, the OpenTipitaka English, or another
+        // translation such as `dhp21-32.att/en/anandajoti`. The mūla exclusion
+        // above stays CST only: `mn1/en/opentipitaka` is listed like any other
+        // English translation.
         if !filters.include_cst_commentary {
             let is_commentary_field = schema.get_field("is_commentary")?;
-            let source_field = schema.get_field("source_uid")?;
-            for source in ["cst", OT_AUTHOR_UID] {
-                // Build: is_commentary=true AND source_uid=<source>
-                let commentary_query = BooleanQuery::new(vec![
-                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic)) as Box<dyn tantivy::query::Query>),
-                    (Occur::Must, Box::new(TermQuery::new(Term::from_field_text(source_field, source), IndexRecordOption::Basic))),
-                ]);
-                subqueries.push((Occur::MustNot, Box::new(commentary_query)));
-            }
+            let commentary_query = TermQuery::new(Term::from_field_bool(is_commentary_field, true), IndexRecordOption::Basic);
+            subqueries.push((Occur::MustNot, Box::new(commentary_query)));
         }
 
         Ok(())
@@ -2003,6 +1997,33 @@ mod tests {
     fn test_commentary_filter_covers_the_opentipitaka_english() {
         let uids = uids_after_sutta_filters(&CST_FILTER_DOCS, &cst_filters(true, false));
         assert_eq!(uids, ["mn1/en/opentipitaka", "mn1/en/sujato", "mn1/pli/cst"]);
+    }
+
+    /// A Dhammapada vagga and its commentary, each in CST Pāli and in a
+    /// translation whose source is neither `cst` nor `opentipitaka`.
+    const DHP_FILTER_DOCS: [(&str, &str); 4] = [
+        ("dhp21-32.att/en/anandajoti", "anandajoti"),
+        ("dhp21-32.att/pli/cst", "cst"),
+        ("dhp21-32/en/anandajoti", "anandajoti"),
+        ("dhp21-32/pli/cst", "cst"),
+    ];
+
+    #[test]
+    fn test_commentary_filter_covers_every_source() {
+        let uids = uids_after_sutta_filters(&DHP_FILTER_DOCS, &cst_filters(true, false));
+        assert_eq!(uids, ["dhp21-32/en/anandajoti", "dhp21-32/pli/cst"]);
+    }
+
+    #[test]
+    fn test_commentary_filter_on_keeps_every_dhammapada_record() {
+        let uids = uids_after_sutta_filters(&DHP_FILTER_DOCS, &cst_filters(true, true));
+        assert_eq!(uids.len(), DHP_FILTER_DOCS.len());
+    }
+
+    #[test]
+    fn test_mula_filter_hides_only_the_cst_dhammapada_vagga() {
+        let uids = uids_after_sutta_filters(&DHP_FILTER_DOCS, &cst_filters(false, true));
+        assert_eq!(uids, ["dhp21-32.att/en/anandajoti", "dhp21-32.att/pli/cst", "dhp21-32/en/anandajoti"]);
     }
 
     #[test]

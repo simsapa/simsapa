@@ -119,6 +119,27 @@ pub fn nyanadipa_bilara_dir() -> PathBuf {
 pub fn nyanadipa_footnotes_file() -> PathBuf {
     Path::new(NYANADIPA_DIR).join(SEGMENT_FOOTNOTES_SUBFILE)
 }
+/// Ānandajoti's Dhamma Verses Commentary, one page per Dhammapada vagga with
+/// `manifest.json` and `extract-report.txt`. Written by the
+/// `dhammapada-commentary-extract` command from
+/// [`dhammapada_commentary_epub_file()`]. See
+/// docs/dhammapada-commentary-anandajoti.md.
+pub const DHAMMAPADA_COMMENTARY_ANANDAJOTI_DIR: &str = "dhammapada-commentary-anandajoti";
+/// The epub the Ānandajoti pages are extracted from, inside
+/// [`LIBRARY_IMPORTS_BOOKS_DIR`]. The same file is the `dhp-comm` library book.
+pub const DHAMMAPADA_COMMENTARY_EPUB_NAME: &str = "Dhamma-Verses-Comm.epub";
+
+/// `dhammapada-commentary-anandajoti`, relative to the bootstrap assets folder.
+pub fn dhammapada_commentary_anandajoti_dir() -> PathBuf {
+    PathBuf::from(DHAMMAPADA_COMMENTARY_ANANDAJOTI_DIR)
+}
+
+/// `library-imports/books/Dhamma-Verses-Comm.epub`, relative to the bootstrap
+/// assets folder.
+pub fn dhammapada_commentary_epub_file() -> PathBuf {
+    Path::new(LIBRARY_IMPORTS_BOOKS_DIR).join(DHAMMAPADA_COMMENTARY_EPUB_NAME)
+}
+
 /// Hungarian translations.
 pub const BUDDHA_UJJA_DB: &str = "buddha-ujja-sql/bu.sqlite3";
 

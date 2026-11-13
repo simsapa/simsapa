@@ -237,7 +237,7 @@ pub fn render_dppn_entry(
 static TIMELINE_CSS: &str = include_str!("../../assets/css/timeline.css");
 
 /// The Timeline page of the Sutta Navigation window: `content` is the output of
-/// `navigation_timeline::render_timeline_html()`.
+/// `navigation_timeline::timeline_content_html()`.
 ///
 /// On the sutta page template, so it has the app's fonts, theme and find bar,
 /// with no sutta display chrome.

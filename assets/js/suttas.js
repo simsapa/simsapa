@@ -100,6 +100,16 @@ function summary_selection(explicit_text) {
     }
 }
 
+function show_no_selection_for_gloss_message() {
+    const title = "Gloss Selection";
+    const message = "There is no Pāli text selected for glossing. Select (highlight) a passage first, then use Gloss Selection.";
+    if (document.SSP && typeof document.SSP.show_message === "function") {
+        document.SSP.show_message(title, message);
+    } else {
+        alert(message);
+    }
+}
+
 class HamburgerMenu {
     constructor() {
         this.menuButton = document.getElementById('menuButton');
@@ -114,6 +124,18 @@ class HamburgerMenu {
     init() {
         // Menu button click
         this.menuButton.addEventListener('click', () => this.toggleMenu());
+
+        // Gloss Selection button: the same action as the menu item.
+        this.glossButton = document.getElementById('glossSelectionButton');
+        if (this.glossButton) {
+            this.glossButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.runAction('gloss-selection');
+            });
+            // Prevent text selection clearing
+            this.glossButton.addEventListener('mousedown', (e) => e.preventDefault());
+        }
 
         // Group header clicks
         this.groupHeaders.forEach(header => {
@@ -194,7 +216,10 @@ class HamburgerMenu {
         e.stopPropagation();
 
         const action = e.currentTarget.dataset.action;
+        await this.runAction(action);
+    }
 
+    async runAction(action) {
         // Clearing the selection is a pure webview/DOM operation, so it's
         // handled entirely on the client without a backend round-trip.
         if (action === "clear-selection") {
@@ -208,6 +233,12 @@ class HamburgerMenu {
             query_text = this.getAllContentText();
         } else {
             query_text = this.getSelectedText();
+        }
+
+        if (action === "gloss-selection" && query_text.trim() === "") {
+            this.closeMenu();
+            show_no_selection_for_gloss_message();
+            return;
         }
 
         try {

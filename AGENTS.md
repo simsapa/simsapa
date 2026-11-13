@@ -138,7 +138,8 @@ add a line here and an entry there.
   never assign `topPadding`/`padding` on an `ApplicationWindow` root; anchor a
   window's root item to its parent.
 - [Sutta display settings & multi-column view](./docs/sutta-display-settings-and-multi-column-view.md) —
-  the column layouts, the settings menu, the anchor jump, CST text families.
+  the column layouts, the settings menu, the text size in one- and
+  two-language reading, the anchor jump, CST text families.
 - [WordSummary lookups](./docs/word-summary-lookups.md) — the latest lookup
   always runs and wins.
 
@@ -175,6 +176,10 @@ add a line here and an entry there.
   the hand-placed `bilara/` files and `check-segment-files` (run it after any
   edit), the verse-range rule, and `render_verse_lines()`. Never align
   Munindo by his verse numbers.
+- [Dhammapada commentary: Ānandajoti's pages](./docs/dhammapada-commentary-anandajoti.md) —
+  the `dhp<range>.att` records (CST, OpenTipitaka, Ānandajoti, Daw Mya Tin),
+  `dhammapada-commentary-extract` and its import. A commentary is any `.att` /
+  `.tik` uid, whatever its source; epub defects are reported, never repaired.
 - [New bootstrap import sources go into the preflight check](./docs/bootstrap-preflight.md).
 
 ### DPD, gloss and AI

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use diesel::prelude::*;
 
-use crate::db::appdata_schema::navigation_nodes;
+use crate::db::appdata_schema::{book_spine_items, navigation_nodes};
 use crate::logger::warn;
 use crate::navigation_texts::{navigation_texts, NavigationTexts};
 use crate::navigation_tree::{with_appdata, NavigationNode};
@@ -283,8 +283,15 @@ fn render_cluster(html: &mut String, cluster: &TimelineCluster) {
 /// which is what the find bar searches. With nothing to show, the controls are
 /// followed by a one-line message.
 pub fn render_timeline_html(timeline: &Timeline) -> String {
+    render_timeline_html_with_intro(timeline, "")
+}
+
+/// [`render_timeline_html`] with `intro` first inside `#timeline`, before the
+/// controls. Inside, so the margin the page keeps for the minimap covers it too.
+pub fn render_timeline_html_with_intro(timeline: &Timeline, intro: &str) -> String {
     let mut html = String::new();
     html.push_str("<div id=\"timeline\" class=\"timeline\">\n");
+    html.push_str(intro);
     html.push_str("<div class=\"timeline-controls\">\n");
     html.push_str(
         "<div class=\"timeline-toggles\">\n\
@@ -321,6 +328,67 @@ pub fn render_timeline_html(timeline: &Timeline) -> String {
     html
 }
 
+/// The library book of the chart shown above the timeline: its `uid` in the
+/// bootstrap's `library-imports.toml`, and the one spine item of a PDF book.
+pub const DEVELOPMENT_OF_PALI_BOOK_UID: &str = "pali-history";
+const PDF_RESOURCE_PATH: &str = "document.pdf";
+
+/// A crop of the chart's first page, in the embedded `assets/` folder, with
+/// its pixel size, so the page reserves its space before it loads and the
+/// script's measurements are not thrown off.
+const DEVELOPMENT_OF_PALI_IMAGE: &str = "assets/images/development-of-pali-and-sanskrit.webp";
+const DEVELOPMENT_OF_PALI_IMAGE_SIZE: (u32, u32) = (1400, 700);
+
+const DEVELOPMENT_OF_PALI_TITLE: &str = "Development of Pāli and Sanskrit from Indo-Aryan Origins";
+const TIMELINE_TITLE: &str = "Timeline of the Texts";
+
+/// The headings, the chart's "Open PDF" button and its image, and the heading
+/// of the timeline itself.
+///
+/// `has_pdf`: the book is in the library. Without it there is no button and the
+/// image is not a link, since `/book_pages/…` would find nothing to open.
+pub fn render_timeline_intro_html(api_url: &str, has_pdf: bool) -> String {
+    let pdf_href = format!("/book_pages/{}/{}", DEVELOPMENT_OF_PALI_BOOK_UID, PDF_RESOURCE_PATH);
+    let (width, height) = DEVELOPMENT_OF_PALI_IMAGE_SIZE;
+    let img = format!(
+        "<img class=\"timeline-intro-image\" src=\"{}/{}\" width=\"{}\" height=\"{}\" alt=\"{}\">",
+        api_url,
+        DEVELOPMENT_OF_PALI_IMAGE,
+        width,
+        height,
+        escape("Part of the chart: the Sanskrit and Prakrit branches from Proto-Indo-Aryan"),
+    );
+
+    let mut html = String::new();
+    html.push_str("<section class=\"timeline-intro\">\n");
+    html.push_str(&format!("<h1 class=\"timeline-heading\">{}</h1>\n", escape(DEVELOPMENT_OF_PALI_TITLE)));
+    if has_pdf {
+        html.push_str(&format!(
+            "<p class=\"timeline-intro-actions\"><a class=\"timeline-open-pdf\" href=\"{}\">Open PDF</a></p>\n",
+            pdf_href
+        ));
+        html.push_str(&format!("<a class=\"timeline-intro-image-link\" href=\"{}\">{}</a>\n", pdf_href, img));
+    } else {
+        html.push_str(&img);
+        html.push('\n');
+    }
+    html.push_str("</section>\n");
+    html.push_str(&format!("<h1 class=\"timeline-heading\">{}</h1>\n", escape(TIMELINE_TITLE)));
+    html
+}
+
+/// Whether the chart's PDF is in the library, as the spine item that
+/// `/open_book_page_tab` looks up.
+fn development_of_pali_pdf_exists_conn(db_conn: &mut SqliteConnection) -> QueryResult<bool> {
+    use diesel::dsl::{exists, select};
+    select(exists(
+        book_spine_items::table
+            .filter(book_spine_items::book_uid.eq(DEVELOPMENT_OF_PALI_BOOK_UID))
+            .filter(book_spine_items::resource_path.eq(PDF_RESOURCE_PATH)),
+    ))
+    .get_result(db_conn)
+}
+
 /// The page content for the app's own tree and embedded texts.
 ///
 /// A missing or unreadable tree gives the "No timeline data" content, never an
@@ -330,7 +398,9 @@ pub fn timeline_content_html() -> String {
     let entries = with_appdata("timeline_entries", Vec::new(), |db_conn| {
         timeline_entries_conn(db_conn, navigation_texts())
     });
-    render_timeline_html(&build_timeline(entries))
+    let has_pdf = with_appdata("development_of_pali_pdf_exists", false, development_of_pali_pdf_exists_conn);
+    let intro = render_timeline_intro_html(&crate::get_app_globals().api_url, has_pdf);
+    render_timeline_html_with_intro(&build_timeline(entries), &intro)
 }
 
 #[cfg(test)]
@@ -668,6 +738,33 @@ note = "Origin: nowhere."
         e.title_en = None;
         let html = render_timeline_html(&build_timeline(vec![e]));
         assert!(!html.contains("timeline-title-en"));
+    }
+
+    #[test]
+    fn intro_links_the_pdf_only_when_it_is_in_the_library() {
+        let html = render_timeline_intro_html("http://localhost:4848", true);
+        assert_eq!(html.matches("href=\"/book_pages/pali-history/document.pdf\"").count(), 2);
+        assert!(html.contains(">Open PDF</a>"));
+        assert!(html.contains("src=\"http://localhost:4848/assets/images/development-of-pali-and-sanskrit.webp\""));
+        assert_eq!(html.matches("<h1").count(), 2);
+
+        let html = render_timeline_intro_html("http://localhost:4848", false);
+        assert!(!html.contains("href="));
+        assert!(html.contains("<img class=\"timeline-intro-image\""));
+    }
+
+    #[test]
+    fn intro_image_is_in_the_embedded_assets() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(DEVELOPMENT_OF_PALI_IMAGE);
+        let bytes = std::fs::read(&path).expect("intro image");
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn intro_comes_first_inside_the_timeline() {
+        let html = render_timeline_html_with_intro(&Timeline::default(), "<section class=\"timeline-intro\"></section>\n");
+        assert!(html.starts_with("<div id=\"timeline\" class=\"timeline\">\n<section class=\"timeline-intro\">"));
     }
 
     #[test]

@@ -34,6 +34,9 @@ html-escape = "0.2"
 indexmap = { version = "2.0", features = ["serde"] }
 # suttas-core-compatible hashes of segment files (segment_files.rs).
 sha2 = "0.10"
+# Reads the Dhamma Verses Commentary epub (dhammapada_commentary_anandajoti.rs).
+# Same spec as simsapa_backend, so it adds no crate to the build.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 unicode-normalization = "0.1"
 urlencoding = "2.1"
 toml = "1.1.6"

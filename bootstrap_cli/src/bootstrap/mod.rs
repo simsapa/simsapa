@@ -8,6 +8,7 @@ pub mod thanissaro_intro;
 pub mod footnote_sutta_links;
 pub mod dhammapada_munindo;
 pub mod dhammapada_tipitaka;
+pub mod dhammapada_commentary_anandajoti;
 pub mod nyanadipa;
 pub mod segment_files;
 pub mod buddha_ujja;
@@ -48,6 +49,7 @@ pub use dhammatalks_org::DhammatalksSuttaImporter;
 pub use suttas_core::SuttasCoreImporter;
 pub use dhammapada_munindo::DhammapadaMunindoImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
+pub use dhammapada_commentary_anandajoti::import::DhammapadaCommentaryAnandajotiImporter;
 pub use nyanadipa::NyanadipaImporter;
 pub use suttacentral::SuttaCentralImporter;
 pub use buddha_ujja::BuddhaUjjaImporter;
@@ -306,8 +308,10 @@ RELEASE_CHANNEL=development
             importer.import(&mut conn)?;
         }
 
-        // Import Dhammapada from Tipitaka.net (Daw Mya Tin translation)
-        // Uses exported database from dhammapada_tipitaka_net_export command
+        // Daw Mya Tin's Dhammapada verses and stories from tipitaka.net, from
+        // the dhammapada-tipitaka-net-export database. Imported as commentary,
+        // `dhp<range>.att/en/daw`, with the grouping copied from the
+        // `dhp….att/en/opentipitaka` records of the CST import above.
         {
             let exported_db_path = bootstrap_assets_dir.join(source_paths::DHAMMAPADA_TIPITAKA_NET_DB);
             if exported_db_path.exists() {
@@ -331,6 +335,19 @@ RELEASE_CHANNEL=development
 
             logger::info("Importing suttas from dhammapada-munindo/bilara");
             let mut importer = DhammapadaMunindoImporter::new(bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR));
+            importer.import(&mut conn)?;
+        }
+
+        // Ānandajoti's Dhammapada commentary, one page per vagga, from the
+        // dhammapada-commentary-extract output. Its rows copy their grouping
+        // from the `dhp….att/en/opentipitaka` records of the CST import above.
+        // See docs/dhammapada-commentary-anandajoti.md.
+        {
+            logger::info("Importing suttas from dhammapada-commentary-anandajoti");
+            let mut importer = DhammapadaCommentaryAnandajotiImporter::new(
+                bootstrap_assets_dir.join(source_paths::dhammapada_commentary_anandajoti_dir()),
+                bootstrap_assets_dir.join(source_paths::dhammapada_commentary_epub_file()),
+            );
             importer.import(&mut conn)?;
         }
 

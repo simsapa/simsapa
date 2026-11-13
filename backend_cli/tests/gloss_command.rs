@@ -89,7 +89,7 @@ fn test_ai_off_without_a_provider() {
     }
     let out = simsapa(&["gloss", "--format", "markdown", "dhp23"]);
     assert_ok(&out);
-    assert!(stderr(&out).contains("no AI provider is enabled"), "stderr: {}", stderr(&out));
+    assert!(stderr(&out).contains("no AI model is enabled"), "stderr: {}", stderr(&out));
     let doc = stdout(&out);
     assert!(doc.contains("No AI provider is enabled, so senses marked N were not checked"), "{doc}");
     assert!(!doc.contains("### English Translation"));
