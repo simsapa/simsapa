@@ -34,8 +34,20 @@ pub struct GlossExportData {
     /// were not checked and why there is no translation.
     #[serde(default)]
     pub no_ai_provider: bool,
+    /// Word in Sentence tables (HTML, Markdown, Org, DOCX): 1 writes a word
+    /// on one table row, 2 on two (`line1_cells()` / `line2_cells()`). Anki
+    /// and JSON ignore it.
+    #[serde(default = "crate::app_settings::default_gloss_lines_per_word")]
+    pub lines_per_word: u8,
     #[serde(default)]
     pub paragraphs: Vec<GlossExportParagraph>,
+}
+
+impl GlossExportData {
+    /// Whether the Word in Sentence tables put each word on two rows.
+    pub fn two_lines(&self) -> bool {
+        self.lines_per_word != 1
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
@@ -120,6 +132,13 @@ pub struct GlossExportRow {
 pub const WORD_TABLE_COLUMNS: [&str; 8] =
     ["ID", "Word in Sentence", "Grammar", "Contextual", "Definition", "Construction", "Root", "Conf."];
 
+/// The Word-by-Word table's columns, two lines per word: each column holds a
+/// line-1 value over a line-2 value, as the Gloss tab's two-line row does.
+/// The Definition spans Construction and Root on line 1 where the format
+/// has cell spans (HTML, DOCX); elsewhere the Root column is empty there.
+pub const WORD_TABLE_2L_COLUMNS: [&str; 6] =
+    ["ID", "Word in Sentence", "Contextual / Grammar", "Definition / Construction", "Root", "Conf."];
+
 /// Background shade of a Word-by-Word table row, as in the Gloss tab:
 /// alternating per token, and a compound's component rows share their
 /// token's shade. `true` is the shaded band (the first token's, like the
@@ -156,6 +175,32 @@ impl GlossExportRow {
             self.construction_cell(),
             self.root.clone(),
             confidence_cell(self.confidence).to_string(),
+        ]
+    }
+
+    /// Line 1 of a two-line row, in `WORD_TABLE_2L_COLUMNS` order: ID, word,
+    /// Contextual, Definition, (empty Root), Conf.
+    pub fn line1_cells(&self) -> [String; 6] {
+        [
+            self.id_cell(),
+            self.word_cell(),
+            self.contextual.clone(),
+            self.definition.clone(),
+            String::new(),
+            confidence_cell(self.confidence).to_string(),
+        ]
+    }
+
+    /// Line 2 of a two-line row, in `WORD_TABLE_2L_COLUMNS` order: two empty
+    /// cells, Grammar, `[Construction]`, Root, an empty Conf.
+    pub fn line2_cells(&self) -> [String; 6] {
+        [
+            String::new(),
+            String::new(),
+            self.grammar.clone(),
+            self.construction_cell(),
+            self.root.clone(),
+            String::new(),
         ]
     }
 
@@ -383,6 +428,24 @@ mod tests {
         let bare = GlossExportRow { construction: "  ".to_string(), ..Default::default() };
         assert_eq!(bare.construction_cell(), "");
         assert_eq!(WORD_TABLE_COLUMNS.len(), bare.cells().len());
+
+        assert_eq!(
+            row.line1_cells(),
+            ["1", "uppannaṁ", "arisen", "arisen; appeared", "", ""].map(String::from)
+        );
+        assert_eq!(
+            row.line2_cells(),
+            ["", "", "nt nom sg of uppanna", "[ud + √pad + na]", "√pad 3 ya (go, step)", ""].map(String::from)
+        );
+    }
+
+    #[test]
+    fn lines_per_word_defaults_to_two() {
+        let data: GlossExportData = serde_json::from_str(r#"{"paragraphs": []}"#).unwrap();
+        assert_eq!(data.lines_per_word, 2);
+        assert!(data.two_lines());
+        let data: GlossExportData = serde_json::from_str(r#"{"lines_per_word": 1}"#).unwrap();
+        assert!(!data.two_lines());
     }
 
     /// A session saved before the two-part translation (one translation per

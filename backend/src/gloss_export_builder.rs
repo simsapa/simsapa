@@ -32,6 +32,9 @@ pub struct GlossExportOptions {
     pub gloss_format: GlossFormat,
     /// No AI provider was enabled (the legend says so).
     pub no_ai_provider: bool,
+    /// Word in Sentence tables: 1 or 2 lines per word; anything else
+    /// (0, the `Default`) is 2.
+    pub lines_per_word: u8,
 }
 
 /// The export data of a gloss result. `paragraph_texts` and `translations`
@@ -60,6 +63,7 @@ pub fn build_gloss_export_data(
         gloss_format: options.gloss_format,
         title: options.title.clone(),
         no_ai_provider: options.no_ai_provider,
+        lines_per_word: crate::app_settings::clamp_gloss_lines_per_word(options.lines_per_word as i64),
         paragraphs,
     }
 }

@@ -51,7 +51,7 @@ pub struct GlossTextRequest {
 /// Per-call gloss options. All fields optional; defaults: `no_duplicates_globally`
 /// = false, `skip_common` = false, `common_words` = [], `exact` = false,
 /// `gloss_format` = `"word_in_sentence"`, `ai` = false, `translate` = false,
-/// `output_format` = `"json"`. The route is **stateless** — there is no
+/// `output_format` = `"json"`, `lines_per_word` = 2. The route is **stateless** — there is no
 /// cross-call dedup state (unlike in-app incremental glossing), so
 /// `no_duplicates_globally` applies within the single submitted text only.
 ///
@@ -72,6 +72,9 @@ pub struct GlossTextOptions {
     pub translate: Option<bool>,
     /// `"json"` (default), `"markdown"`, `"html"` or `"org"`.
     pub output_format: Option<String>,
+    /// Word in Sentence document tables: 1 or 2 (default) lines per word.
+    /// Only with `output_format` markdown, html or org.
+    pub lines_per_word: Option<u8>,
 }
 
 /// The `/gloss_text` output formats.
@@ -210,11 +213,14 @@ pub struct GlossTextPlan {
     pub translate: bool,
     pub output_format: GlossOutputFormat,
     pub edition: PaliEdition,
+    /// 1 or 2 lines per word in the document tables.
+    pub lines_per_word: u8,
 }
 
 /// Check the request's combinations: `text` xor `reference`; `edition` and
 /// `paragraphs` only with `reference`; `translate` only with `ai`; exact mode
-/// with none of the Word in Sentence, AI or document options.
+/// with none of the Word in Sentence, AI or document options; `lines_per_word`
+/// 1 or 2, only for a Word in Sentence document.
 pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptions) -> Result<GlossTextPlan, String> {
     match (&req.text, &req.reference) {
         (Some(_), Some(_)) => return Err("give either text or reference, not both".to_string()),
@@ -242,6 +248,19 @@ pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptio
         Some(f) => parse_gloss_format(f)?,
         None => GlossFormat::WordInSentence,
     };
+    let lines_per_word = match opts.lines_per_word {
+        None => 2,
+        Some(n @ (1 | 2)) => {
+            if gloss_format == GlossFormat::Headwords {
+                return Err("lines_per_word applies only to gloss_format word_in_sentence".to_string());
+            }
+            if output_format == GlossOutputFormat::Json {
+                return Err("lines_per_word applies only to output_format markdown, html or org".to_string());
+            }
+            n
+        }
+        Some(n) => return Err(format!("lines_per_word must be 1 or 2, not {}", n)),
+    };
     if exact {
         if opts.gloss_format.as_deref() == Some("word_in_sentence") {
             return Err("exact cannot be combined with gloss_format word_in_sentence".to_string());
@@ -254,7 +273,7 @@ pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptio
         }
         validate_gloss_exact_options(opts.no_duplicates_globally, opts.skip_common, opts.common_words.as_ref())?;
     }
-    Ok(GlossTextPlan { gloss_format, exact, ai, translate, output_format, edition })
+    Ok(GlossTextPlan { gloss_format, exact, ai, translate, output_format, edition, lines_per_word })
 }
 
 /// POST /gloss_text
@@ -347,7 +366,7 @@ pub async fn gloss_text(
     match plan.output_format {
         GlossOutputFormat::Json => Ok(GlossTextOk::Json(Json(GlossTextResponse::Default(result)))),
         GlossOutputFormat::Document(format) => {
-            let doc = gloss_document(&result, &paragraphs, &title, plan.gloss_format, format);
+            let doc = gloss_document(&result, &paragraphs, &title, plan.gloss_format, plan.lines_per_word, format);
             Ok(GlossTextOk::Document((plan.output_format.content_type(), doc)))
         }
     }
@@ -384,19 +403,22 @@ pub fn gloss_document(
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    lines_per_word: u8,
     format: TextFormat,
 ) -> String {
-    gloss_export_document(&gloss_result_export_data(result, paragraphs, title, gloss_format), format)
+    gloss_export_document(&gloss_result_export_data(result, paragraphs, title, gloss_format, lines_per_word), format)
 }
 
 /// The export data of a gloss result whose translations, if any, are in its
 /// paragraphs' `ai_translations` (a run without Qt). `paragraphs` are the
-/// glossed texts, indexed by `paragraph_index`.
+/// glossed texts, indexed by `paragraph_index`; `lines_per_word` is 1 or 2
+/// for the Word in Sentence tables.
 pub fn gloss_result_export_data(
     result: &AllParagraphsProcessingResult,
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    lines_per_word: u8,
 ) -> simsapa_backend::export_types::GlossExportData {
     let translations = result_translations(result, paragraphs.len());
     let options = GlossExportOptions {
@@ -404,6 +426,7 @@ pub fn gloss_result_export_data(
         title: title.to_string(),
         gloss_format,
         no_ai_provider: !get_app_data().has_enabled_ai_model(),
+        lines_per_word,
     };
     build_gloss_export_data(result, paragraphs, &translations, &options)
 }

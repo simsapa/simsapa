@@ -245,6 +245,7 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 | `--paragraphs <spec>` | Paragraphs of a reference: `1`, `1-3`, `1-2 4` |
 | `--format markdown\|html\|org\|docx\|anki-csv\|json\|text` | The output. Default: `text` (aligned columns) on a terminal, `markdown` otherwise. `json` is the Gloss tab's session export, which the app opens with "Open JSON" |
 | `--output <path>` | Write the document to a file; required for `docx` |
+| `--lines-per-word 1\|2` | Word in Sentence tables: `2` (default) puts each word's Contextual and Definition on one line and its Grammar, Construction and Root on the line under it; `1` puts all of them on one line. For `--format text`, `markdown`, `html`, `org` and `docx`; refused with `--gloss-format headwords`, `anki-csv`, `json`, `--json` and `--exact`, which have one record per word |
 | `--json` | The raw pipeline result (the `/gloss_text` response); not together with `--format` |
 | `--no-ai` | Make no AI request. Without `--no-ai`, an AI provider enabled in the app chooses word senses and writes the translations |
 | `--model-name <model>` | Ask this AI model (`gemini-3-flash-preview`) instead of the Fallback sequence set in the app, whether or not it is enabled there |
@@ -256,12 +257,19 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 A Word in Sentence document has this structure: `# Gloss of: <reference>`,
 the passage, `### English Translation` (**Translation** and **Literal
 Translation**, only when a translation was made), `### Variants` (only for
-`//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
-table `ID | Word in Sentence | Grammar | Contextual | Definition |
-Construction | Root | Conf.`, with the parts of a compound on rows starting
-`- `. Definition is the dictionary's meaning of the chosen sense; Contextual
-is the AI's rendering of the word in this sentence, empty when there is none.
-The construction is written in square brackets (`[ud + √pad + na]`). A multi-paragraph
+`//` spelling alternatives in the text), then `### Word-by-Word Analysis` and
+the table, with the parts of a compound on rows starting `- `. Definition is
+the dictionary's meaning of the chosen sense; Contextual is the AI's rendering
+of the word in this sentence, empty when there is none. The construction is
+written in square brackets (`[ud + √pad + na]`).
+
+With two lines per word (the default) the table is `ID | Word in Sentence |
+Contextual / Grammar | Definition / Construction | Root | Conf.`: a word's
+first row has its ID, the word, the Contextual and the Definition (in HTML
+and Word the Definition spans the Construction and Root columns) and the
+Conf. mark; the row under it has the Grammar, the Construction and the Root.
+With one line per word it is `ID | Word in Sentence | Grammar | Contextual |
+Definition | Construction | Root | Conf.`, one row per word. A multi-paragraph
 passage repeats these under `## Paragraph <n>`. The `Conf.` column says how
 a word with several dictionary senses was decided, and a legend under the table
 explains it:
@@ -2102,6 +2110,7 @@ Pāli text of a sutta reference.
   | `ai` | `false` | Ask the server's AI provider to choose the senses of ambiguous words (§16.1.2). |
   | `translate` | `false` | Also translate each paragraph; only with `ai`. |
   | `output_format` | `"json"` | `"json"`, or the analysis document as `"markdown"` (`text/markdown`), `"html"` (`text/html`) or `"org"` (`text/plain`), the same document the app's Gloss tab exports. |
+  | `lines_per_word` | `2` | The Word in Sentence document table: `2` puts each word on two table rows, `1` on one (as `simsapa gloss --lines-per-word`). Only with a `"markdown"`, `"html"` or `"org"` `output_format` and the Word in Sentence format; another value, or the option with JSON output or `"headwords"`, is a `400`. |
 
 - **Reference input.** `reference` takes a sutta uid or reference (`dhp23`,
   `sn1.71`, `SN 18.1`, `mn4/pli/ms`). The text is the CST edition when the
@@ -2146,7 +2155,8 @@ Pāli text of a sutta reference.
   parsing carry a JSON `{ "error": "…" }` body: `400` for a bad combination
   (`text` and `reference` together, neither, `translate` without `ai`,
   `edition` or `paragraphs` without `reference`, an option exact mode rejects,
-  an unknown `gloss_format` / `output_format` / `edition`, a paragraph out of
+  an unknown `gloss_format` / `output_format` / `edition`, a `lines_per_word`
+  other than 1 or 2 or one given with JSON output or `"headwords"`, a paragraph out of
   range, `ai` on a server without AI: `"ai not available in this server"`),
   `404` for a reference with no Pāli text, `500` for a database error in
   exact mode.

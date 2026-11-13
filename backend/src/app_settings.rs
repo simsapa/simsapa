@@ -420,6 +420,22 @@ pub struct AppSettings {
     /// exported in the other.
     #[serde(default = "default_gloss_format")]
     pub gloss_export_gloss_format: crate::types::GlossFormat,
+    /// Word in Sentence: the lines per word (1 or 2) of the Gloss tab's rows
+    /// and of the export tables. One setting for both, so the tab's "Lines
+    /// per word" and the Export window's choice start from the same value.
+    #[serde(default = "default_gloss_lines_per_word")]
+    pub gloss_lines_per_word: u8,
+}
+
+/// Two lines per word: the meanings on the first, grammar and derivation on
+/// the second.
+pub fn default_gloss_lines_per_word() -> u8 {
+    2
+}
+
+/// `lines` as a valid lines-per-word value: 1 stays 1, anything else is 2.
+pub fn clamp_gloss_lines_per_word(lines: i64) -> u8 {
+    if lines == 1 { 1 } else { 2 }
 }
 
 fn default_gloss_export_formats() -> Vec<String> {
@@ -939,6 +955,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_format_info_shown: false,
             gloss_export_formats: default_gloss_export_formats(),
             gloss_export_gloss_format: default_gloss_format(),
+            gloss_lines_per_word: default_gloss_lines_per_word(),
         }
     }
 }
@@ -1140,6 +1157,20 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
         assert_eq!(settings.gloss_format, crate::types::GlossFormat::Headwords);
         assert_eq!(settings.gloss_export_gloss_format, crate::types::GlossFormat::WordInSentence);
+    }
+
+    /// Settings saved before the lines-per-word choice existed read as two
+    /// lines.
+    #[test]
+    fn gloss_lines_per_word_defaults_to_two() {
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert_eq!(json.remove("gloss_lines_per_word"), Some(serde_json::json!(2)));
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert_eq!(settings.gloss_lines_per_word, 2);
+        assert_eq!(clamp_gloss_lines_per_word(1), 1);
+        assert_eq!(clamp_gloss_lines_per_word(0), 2);
+        assert_eq!(clamp_gloss_lines_per_word(3), 2);
     }
 
     /// Settings saved before the two-part translation template existed gain

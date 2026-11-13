@@ -156,7 +156,14 @@ fn test_gloss_text_route() {
     assert_eq!(ct.map(|c| c.to_string()), Some("text/markdown; charset=utf-8".to_string()));
     assert!(md.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{md}");
     assert!(md.contains("### Word-by-Word Analysis"), "{md}");
-    assert!(md.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |"), "{md}");
+    // Two lines per word by default; `lines_per_word: 1` gives the one-line table.
+    assert!(md.contains("| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |"), "{md}");
+    let (s, _, md1) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "output_format": "markdown", "lines_per_word": 1 } }));
+    assert_eq!(s, Status::Ok);
+    assert!(md1.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |"), "{md1}");
+    let (s, _, md2) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "output_format": "markdown", "lines_per_word": 2 } }));
+    assert_eq!(s, Status::Ok);
+    assert_eq!(md2, md);
     assert!(md.contains("N: Not checked"), "{md}");
     assert!(!md.contains("### English Translation"), "{md}");
     let (s, ct, html) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "output_format": "html" } }));
@@ -178,6 +185,9 @@ fn test_gloss_text_route() {
     assert_error(&c, serde_json::json!({ "text": "te", "options": { "exact": true, "output_format": "markdown" } }), bad, "exact");
     assert_error(&c, serde_json::json!({ "text": "te", "options": { "gloss_format": "x" } }), bad, "gloss_format");
     assert_error(&c, serde_json::json!({ "text": "te", "options": { "output_format": "docx" } }), bad, "output_format");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "output_format": "markdown", "lines_per_word": 3 } }), bad, "lines_per_word must be 1 or 2");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "output_format": "markdown", "gloss_format": "headwords", "lines_per_word": 1 } }), bad, "word_in_sentence");
+    assert_error(&c, serde_json::json!({ "text": "te", "options": { "lines_per_word": 1 } }), bad, "output_format markdown, html or org");
     assert_error(&c, serde_json::json!({ "reference": "dhp23", "edition": "pts" }), bad, "edition");
     assert_error(&c, serde_json::json!({ "reference": "dhp23", "paragraphs": "2" }), bad, "out of range");
     assert_error(&c, serde_json::json!({ "reference": "zz999" }), Status::NotFound, "no Pāli text");

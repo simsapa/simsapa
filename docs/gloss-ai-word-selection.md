@@ -805,12 +805,30 @@ spelling of each `//` group, `### English Translation` with `**Translation:**`
 and `**Literal Translation:**` (a model heading only when there are several;
 no Literal line for a translation saved before the two-part translation),
 `### Variants` (one `a//b` line per group, only when there are groups),
-`### Word-by-Word Analysis` and the table
-`ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf.`:
-Contextual is the AI's contextual meaning (empty when there is none),
-Definition the dictionary's, and the construction is written in square
-brackets (`[ud + √pad + na]`, nothing when empty). The Headwords tables have
-no Contextual column. Component rows carry `- ` per depth (DOCX also indents the word); a passage's
+`### Word-by-Word Analysis` and the table. Contextual is the AI's contextual
+meaning (empty when there is none), Definition the dictionary's, and the
+construction is written in square brackets (`[ud + √pad + na]`, nothing when
+empty). The Headwords tables have no Contextual column.
+
+The table has one or two table rows per word, by `GlossExportData::lines_per_word`
+(the app setting `gloss_lines_per_word`, shared by the Gloss tab's "Lines per
+word" and the Export window's radio buttons; `--lines-per-word` in the CLI,
+`lines_per_word` in `/gloss_text`; default 2):
+
+- One line: `ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf.`
+  (`WORD_TABLE_COLUMNS`, `GlossExportRow::cells()`).
+- Two lines: `ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf.`
+  (`WORD_TABLE_2L_COLUMNS`). Line 1 (`line1_cells()`) has the ID, the word,
+  the Contextual, the Definition and Conf.; line 2 (`line2_cells()`) the
+  Grammar, the Construction and the Root, under them. In HTML and DOCX line
+  1's Definition spans the Construction and Root columns (`colspan` /
+  `w:gridSpan`); Markdown and Org have no spans and leave the Root cell of
+  line 1 empty. Line 2 is written even when it is empty, so the grid stays
+  regular, and both rows share the word's shade.
+
+Anki and JSON always keep one record per word, and "Copy As…" passes the
+tab's setting to `gloss_paragraph_export()`. Component rows carry `- ` per
+depth on line 1 (DOCX also indents the word); a passage's
 line breaks stay line breaks inside one DOCX paragraph; the `⧫` marker of the
 rendered Gloss text is dropped from the passage text on import; cells
 escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend, introduced by

@@ -1248,6 +1248,12 @@ pub mod qobject {
         fn set_gloss_export_gloss_format(self: Pin<&mut SuttaBridge>, format: &QString);
 
         #[qinvokable]
+        fn get_gloss_lines_per_word(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn set_gloss_lines_per_word(self: Pin<&mut SuttaBridge>, lines: i32);
+
+        #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -1593,7 +1599,7 @@ pub mod qobject {
         fn gloss_export(self: &SuttaBridge, gloss_json: &QString, format: &QString) -> QString;
 
         #[qinvokable]
-        fn gloss_paragraph_export(self: &SuttaBridge, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString;
+        fn gloss_paragraph_export(self: &SuttaBridge, paragraph_json: &QString, paragraph_number: i32, format: &QString, lines_per_word: i32) -> QString;
 
         #[qinvokable]
         fn chat_export(self: &SuttaBridge, chat_json: &QString, format: &QString) -> QString;
@@ -3390,6 +3396,19 @@ impl qobject::SuttaBridge {
         get_app_data().set_gloss_export_gloss_format(parse_gloss_format(&format.to_string()));
     }
 
+    /// Word in Sentence lines per word (1 or 2), shared by the Gloss tab's
+    /// rows and the Export window.
+    pub fn get_gloss_lines_per_word(&self) -> i32 {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.gloss_lines_per_word as i32
+    }
+
+    /// Save the lines per word; anything but 1 is 2.
+    pub fn set_gloss_lines_per_word(self: Pin<&mut Self>, lines: i32) {
+        get_app_data().set_gloss_lines_per_word(lines as i64);
+    }
+
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")
     pub fn get_prompts_request_mode(&self) -> QString {
         let app_data = get_app_data();
@@ -4273,10 +4292,13 @@ impl qobject::SuttaBridge {
     }
 
     /// Render a single gloss paragraph fragment as text (for per-paragraph
-    /// "Copy As..."). Returns an empty string on error.
-    pub fn gloss_paragraph_export(&self, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString {
+    /// "Copy As..."), its Word in Sentence table on `lines_per_word` lines
+    /// per word (1 or 2, as the Gloss tab shows it). Returns an empty string
+    /// on error.
+    pub fn gloss_paragraph_export(&self, paragraph_json: &QString, paragraph_number: i32, format: &QString, lines_per_word: i32) -> QString {
         let number = paragraph_number.max(0) as usize;
-        match simsapa_backend::text_export::gloss_paragraph_export(&paragraph_json.to_string(), number, &format.to_string()) {
+        let lines = simsapa_backend::app_settings::clamp_gloss_lines_per_word(lines_per_word as i64);
+        match simsapa_backend::text_export::gloss_paragraph_export(&paragraph_json.to_string(), number, &format.to_string(), lines) {
             Ok(text) => QString::from(text),
             Err(e) => {
                 error(&format!("gloss_paragraph_export failed: {}", e));

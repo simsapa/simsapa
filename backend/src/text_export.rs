@@ -12,7 +12,7 @@ use regex::Regex;
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    GlossExportRow, GlossExportVocabItem, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
     word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
@@ -186,8 +186,84 @@ fn table_cell_text(text: &str, format: TextFormat) -> String {
     }
 }
 
-/// The Word-by-Word table (`ID | Word in Sentence | … | Conf.`).
-fn word_table(rows: &[GlossExportRow], format: TextFormat) -> String {
+/// The Word-by-Word table, one or two table rows per word.
+fn word_table(rows: &[GlossExportRow], format: TextFormat, two_lines: bool) -> String {
+    if two_lines {
+        word_table_two_lines(rows, format)
+    } else {
+        word_table_one_line(rows, format)
+    }
+}
+
+/// The `<tr>` opening tag of a Word-by-Word row, shaded or not.
+fn html_row_start(shaded: bool) -> String {
+    if shaded {
+        format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">")
+    } else {
+        "<tr>".to_string()
+    }
+}
+
+/// A Markdown / Org table row of `cells`.
+fn text_table_row(cells: &[String], format: TextFormat) -> String {
+    let cells: Vec<String> = cells.iter().map(|c| table_cell_text(c, format)).collect();
+    format!("| {} |\n", cells.join(" | "))
+}
+
+/// A Markdown / Org header row and its separator line.
+fn text_table_header(columns: &[&str], format: TextFormat) -> String {
+    let mut out = format!("| {} |\n", columns.join(" | "));
+    match format {
+        TextFormat::OrgMode => out.push_str(&format!("|{}|\n", vec!["---"; columns.len()].join("+"))),
+        _ => out.push_str(&format!("|{}\n", " :--- |".repeat(columns.len()))),
+    }
+    out
+}
+
+/// The two-line Word-by-Word table (`WORD_TABLE_2L_COLUMNS`): each word on
+/// two table rows sharing its shade, the meanings (`line1_cells()`) over the
+/// grammar and derivation (`line2_cells()`), as in the Gloss tab's two-line
+/// row. In HTML the Definition spans the Construction and Root columns; in
+/// Markdown and Org, which have no spans, the Root column is empty on line 1.
+/// Line 2 is written even when it is empty, to keep the grid regular.
+fn word_table_two_lines(rows: &[GlossExportRow], format: TextFormat) -> String {
+    let mut out = String::from("\n");
+    match format {
+        TextFormat::Html => {
+            out.push_str("<table>\n<thead><tr>");
+            for col in WORD_TABLE_2L_COLUMNS {
+                out.push_str(&format!("<th>{}</th>", escape_html(col)));
+            }
+            out.push_str("</tr></thead>\n<tbody>\n");
+            for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
+                let [id, word, contextual, definition, _, conf] = row.line1_cells();
+                out.push_str(&html_row_start(shaded));
+                for cell in [&id, &word, &contextual] {
+                    out.push_str(&format!("<td>{}</td>", table_cell_text(cell, format)));
+                }
+                out.push_str(&format!("<td colspan=\"2\">{}</td>", table_cell_text(&definition, format)));
+                out.push_str(&format!("<td>{}</td></tr>\n", table_cell_text(&conf, format)));
+                out.push_str(&html_row_start(shaded));
+                for cell in row.line2_cells() {
+                    out.push_str(&format!("<td>{}</td>", table_cell_text(&cell, format)));
+                }
+                out.push_str("</tr>\n");
+            }
+            out.push_str("</tbody></table>\n");
+        }
+        TextFormat::Markdown | TextFormat::OrgMode => {
+            out.push_str(&text_table_header(&WORD_TABLE_2L_COLUMNS, format));
+            for row in rows {
+                out.push_str(&text_table_row(&row.line1_cells(), format));
+                out.push_str(&text_table_row(&row.line2_cells(), format));
+            }
+        }
+    }
+    out
+}
+
+/// The one-line Word-by-Word table (`WORD_TABLE_COLUMNS`).
+fn word_table_one_line(rows: &[GlossExportRow], format: TextFormat) -> String {
     let mut out = String::from("\n");
     match format {
         TextFormat::Html => {
@@ -197,11 +273,7 @@ fn word_table(rows: &[GlossExportRow], format: TextFormat) -> String {
             }
             out.push_str("</tr></thead>\n<tbody>\n");
             for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
-                if shaded {
-                    out.push_str(&format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">"));
-                } else {
-                    out.push_str("<tr>");
-                }
+                out.push_str(&html_row_start(shaded));
                 for cell in row.cells() {
                     out.push_str(&format!("<td>{}</td>", table_cell_text(&cell, format)));
                 }
@@ -209,20 +281,10 @@ fn word_table(rows: &[GlossExportRow], format: TextFormat) -> String {
             }
             out.push_str("</tbody></table>\n");
         }
-        TextFormat::Markdown => {
-            out.push_str(&format!("| {} |\n", WORD_TABLE_COLUMNS.join(" | ")));
-            out.push_str(&format!("|{}\n", " :--- |".repeat(WORD_TABLE_COLUMNS.len())));
+        TextFormat::Markdown | TextFormat::OrgMode => {
+            out.push_str(&text_table_header(&WORD_TABLE_COLUMNS, format));
             for row in rows {
-                let cells: Vec<String> = row.cells().iter().map(|c| table_cell_text(c, format)).collect();
-                out.push_str(&format!("| {} |\n", cells.join(" | ")));
-            }
-        }
-        TextFormat::OrgMode => {
-            out.push_str(&format!("| {} |\n", WORD_TABLE_COLUMNS.join(" | ")));
-            out.push_str(&format!("|{}|\n", vec!["---"; WORD_TABLE_COLUMNS.len()].join("+")));
-            for row in rows {
-                let cells: Vec<String> = row.cells().iter().map(|c| table_cell_text(c, format)).collect();
-                out.push_str(&format!("| {} |\n", cells.join(" | ")));
+                out.push_str(&text_table_row(&row.cells(), format));
             }
         }
     }
@@ -232,12 +294,12 @@ fn word_table(rows: &[GlossExportRow], format: TextFormat) -> String {
 /// One paragraph of a Word in Sentence document: passage, translations,
 /// variants, the table (DPD's report order, docs/dpd-analysis-procedure.md
 /// §1.7).
-fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, format: TextFormat) -> String {
+fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, format: TextFormat, two_lines: bool) -> String {
     let mut out = passage_text(paragraph, format);
     out.push_str(&word_in_sentence_translations(paragraph, format));
     out.push_str(&word_in_sentence_variants(paragraph, format));
     out.push_str(&heading(format, 3, "Word-by-Word Analysis"));
-    out.push_str(&word_table(&paragraph.rows, format));
+    out.push_str(&word_table(&paragraph.rows, format, two_lines));
     out
 }
 
@@ -250,7 +312,7 @@ fn word_in_sentence_document_body(data: &GlossExportData, format: TextFormat) ->
         if several {
             out.push_str(&heading(format, 2, &format!("Paragraph {}", i + 1)));
         }
-        out.push_str(&word_in_sentence_paragraph(paragraph, format));
+        out.push_str(&word_in_sentence_paragraph(paragraph, format, data.two_lines()));
     }
     out.push_str(&confidence_legend(format, data.no_ai_provider));
     out
@@ -465,7 +527,8 @@ pub fn gloss_export_document(data: &GlossExportData, format: TextFormat) -> Stri
 
 /// Render a single gloss paragraph fragment (for per-paragraph "Copy As...").
 /// A paragraph with Word in Sentence rows gets that layout, without the
-/// title; the legend follows a table with confidence values.
+/// title, its table on `lines_per_word` lines per word (1 or 2, as the Gloss
+/// tab shows it); the legend follows a table with confidence values.
 ///
 /// `_paragraph_number` is retained for bridge/API compatibility but no longer
 /// drives a "Paragraph N" heading (the fragment is now just the content).
@@ -473,12 +536,13 @@ pub fn gloss_paragraph_export(
     paragraph_json: &str,
     _paragraph_number: usize,
     format: &str,
+    lines_per_word: u8,
 ) -> Result<String> {
     let format = TextFormat::parse(format)?;
     let paragraph: GlossExportParagraph =
         serde_json::from_str(paragraph_json).context("Failed to parse gloss paragraph JSON")?;
     let out = if !paragraph.rows.is_empty() {
-        let mut out = word_in_sentence_paragraph(&paragraph, format);
+        let mut out = word_in_sentence_paragraph(&paragraph, format, lines_per_word != 1);
         out.push_str(&confidence_legend(format, false));
         out
     } else {
@@ -722,7 +786,7 @@ mod tests {
             "ai_translations": []
         }))
         .unwrap();
-        let out = gloss_paragraph_export(&para_json, 3, "markdown").unwrap();
+        let out = gloss_paragraph_export(&para_json, 3, "markdown", 2).unwrap();
         // The per-paragraph fragment no longer carries a "Paragraph N" heading.
         assert!(!out.contains("Paragraph 3"));
         assert!(out.contains("| **evaṁ** | thus |"));
@@ -780,6 +844,7 @@ mod tests {
             "text": "te jhāyino sātatikā,\nniccaṁ daḷhaparakkamā,",
             "gloss_format": "word_in_sentence",
             "title": "DHP23",
+            "lines_per_word": 1,
             "paragraphs": [{
                 "text": "te jhāyino sātatikā,\nniccaṁ daḷhaparakkamā,",
                 "ai_translations": [{
@@ -885,10 +950,72 @@ mod tests {
     }
 
     #[test]
+    fn word_in_sentence_two_lines_markdown_and_org() {
+        let mut data: GlossExportData = serde_json::from_str(&word_in_sentence_json()).unwrap();
+        data.lines_per_word = 2;
+        let md = gloss_export_document(&data, TextFormat::Markdown);
+        let expected = concat!(
+            "### Word-by-Word Analysis\n\n",
+            "| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |\n",
+            "| :--- | :--- | :--- | :--- | :--- | :--- |\n",
+            // A token with a contextual meaning.
+            "| 29188 | te | they | those |  | A |\n",
+            "|  |  | masc nom pl of ta |  |  |  |\n",
+            // A token without one.
+            "| 28829 | jhāyino |  | meditators |  |  |\n",
+            "|  |  | masc nom pl of jhāyī | [√jhā + ī] | √jhā 3 ya (think, meditate) |  |\n",
+            "| 32215 | daḷhaparakkamā |  | having firm effort |  | N |\n",
+            "|  |  | adj, masc nom pl of daḷhaparakkama | [daḷha + parakkama] |  |  |\n",
+            // A component: the depth prefix on line 1 only.
+            "| 32201 | - daḷha |  | firm \\| strong |  | H |\n",
+            "|  |  | pp | [√dah + ta] | √dah 1 a (be strong) |  |\n",
+            // No grammar, construction or root: line 2 is still written.
+            "|  | xyz |  | not found |  |  |\n",
+            "|  |  |  |  |  |  |\n\n",
+        );
+        assert!(md.contains(expected), "got:\n{}", md);
+
+        let org = gloss_export_document(&data, TextFormat::OrgMode);
+        assert!(org.contains(concat!(
+            "| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |\n",
+            "|---+---+---+---+---+---|\n",
+            "| 29188 | te | they | those |  | A |\n",
+            "|  |  | masc nom pl of ta |  |  |  |\n",
+        )), "got:\n{}", org);
+    }
+
+    #[test]
+    fn word_in_sentence_two_lines_html_spans_and_shades_both_rows() {
+        let mut data: GlossExportData = serde_json::from_str(&word_in_sentence_json()).unwrap();
+        data.lines_per_word = 2;
+        let html = gloss_export_document(&data, TextFormat::Html);
+        assert!(html.contains("<th>Contextual / Grammar</th><th>Definition / Construction</th><th>Root</th><th>Conf.</th>"));
+        let shaded = format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">");
+        assert!(html.contains(&format!(
+            "{shaded}<td>29188</td><td>te</td><td>they</td><td colspan=\"2\">those</td><td>A</td></tr>\n\
+             {shaded}<td></td><td></td><td>masc nom pl of ta</td><td></td><td></td><td></td></tr>\n"
+        )), "{}", html);
+        assert!(html.contains(
+            "<tr><td>28829</td><td>jhāyino</td><td></td><td colspan=\"2\">meditators</td><td></td></tr>\n\
+             <tr><td></td><td></td><td>masc nom pl of jhāyī</td><td>[√jhā + ī]</td><td>√jhā 3 ya (think, meditate)</td><td></td></tr>\n"
+        ), "{}", html);
+        // Three shaded words (te, daḷhaparakkamā and its component), two rows each.
+        assert_eq!(html.matches(&shaded).count(), 6);
+    }
+
+    #[test]
+    fn word_in_sentence_paragraph_fragment_two_lines() {
+        let data: GlossExportData = serde_json::from_str(&word_in_sentence_json()).unwrap();
+        let para_json = serde_json::to_string(&data.paragraphs[0]).unwrap();
+        let out = gloss_paragraph_export(&para_json, 1, "markdown", 2).unwrap();
+        assert!(out.contains("| 29188 | te | they | those |  | A |\n|  |  | masc nom pl of ta |"), "{}", out);
+    }
+
+    #[test]
     fn word_in_sentence_paragraph_fragment() {
         let data: GlossExportData = serde_json::from_str(&word_in_sentence_json()).unwrap();
         let para_json = serde_json::to_string(&data.paragraphs[0]).unwrap();
-        let out = gloss_paragraph_export(&para_json, 1, "markdown").unwrap();
+        let out = gloss_paragraph_export(&para_json, 1, "markdown", 1).unwrap();
         assert!(out.starts_with("te jhāyino"));
         assert!(out.contains("| 29188 | te |"));
         assert!(out.contains("- N: Not checked"));

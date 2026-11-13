@@ -57,7 +57,7 @@ fn dist_has_ai_model() -> bool {
 #[test]
 fn test_dhp23_markdown_without_ai() {
     if !have_dist() { return; }
-    let out = simsapa(&["gloss", "--no-ai", "--format", "markdown", "dhp23"]);
+    let out = simsapa(&["gloss", "--no-ai", "--format", "markdown", "--lines-per-word", "1", "dhp23"]);
     assert_ok(&out);
     let doc = stdout(&out);
     assert!(doc.starts_with("# Gloss of: dhp23 (dhp21-32/pli/ms)\n"), "{doc}");
@@ -70,6 +70,19 @@ fn test_dhp23_markdown_without_ai() {
     assert!(!doc.contains("Appamādo"), "{doc}");
     assert!(!doc.contains("### English Translation"), "{doc}");
     assert!(!stderr(&out).contains("Waiting for AI response"));
+}
+
+#[test]
+fn test_two_lines_per_word_is_the_default() {
+    if !have_dist() { return; }
+    let out = simsapa(&["gloss", "--no-ai", "--format", "markdown", "dhp23"]);
+    assert_ok(&out);
+    let doc = stdout(&out);
+    assert!(doc.contains("| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |"), "{doc}");
+    // The word's grammar is on the table row under it.
+    let lines: Vec<&str> = doc.lines().collect();
+    let at = lines.iter().position(|l| l.starts_with("| 62145 | sātatikā |")).unwrap();
+    assert!(lines[at + 1].starts_with("|  |  | adj, masc nom pl of sātatika |"), "{}", lines[at + 1]);
 }
 
 #[test]
@@ -102,7 +115,15 @@ fn test_text_format_has_grammar_and_legend() {
     assert_ok(&out);
     let text = stdout(&out);
     assert!(text.starts_with("dhp23 (dhp21-32/pli/ms)\n"), "{text}");
-    let line = text.lines().find(|l| l.starts_with("sātatikā")).unwrap();
+    // Two lines per word: the grammar under the word's first line.
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines.iter().position(|l| l.starts_with("sātatikā")).unwrap();
+    assert!(lines[at + 1].trim_start().starts_with("adj, masc nom pl of sātatika"), "{}", lines[at + 1]);
+    // One line per word: the grammar on the word's line.
+    let out = simsapa(&["gloss", "--no-ai", "--format", "text", "--lines-per-word", "1", "dhp23"]);
+    assert_ok(&out);
+    let text1 = stdout(&out);
+    let line = text1.lines().find(|l| l.starts_with("sātatikā")).unwrap();
     assert!(line.contains("adj, masc nom pl of sātatika"), "{line}");
     assert!(text.lines().any(|l| l.starts_with("- daḷha")), "{text}");
     assert!(text.contains("N: Not checked"), "{text}");
@@ -164,6 +185,8 @@ fn test_refused_combinations() {
         &["gloss", "--no-ai", "--json", "--format", "json", "dhp23"][..],
         &["gloss", "--no-ai", "--exact", "--gloss-format", "word-in-sentence", "evaṁ"][..],
         &["gloss", "--no-ai", "--paragraphs", "1", "evaṁ me sutaṁ"][..],
+        &["gloss", "--no-ai", "--lines-per-word", "1", "--format", "anki-csv", "dhp23"][..],
+        &["gloss", "--no-ai", "--lines-per-word", "1", "--gloss-format", "headwords", "dhp23"][..],
     ] {
         let out = simsapa(args);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stderr(&out));

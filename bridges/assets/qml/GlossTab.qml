@@ -252,6 +252,11 @@ Item {
     // the ComboBox may have replaced its binding.
     onGloss_formatChanged: gloss_format_combo.currentIndex = root.gloss_format === "headwords" ? 1 : 0
 
+    // Word in Sentence rows and tables: 1 or 2 lines per word. One app
+    // setting shared with the Export window, which sets it here too when it
+    // saves (onExport_requested).
+    property int gloss_lines_per_word: 2
+
     // Translate each paragraph as soon as its gloss (and its AI word
     // selection) is complete.
     property bool auto_translate: false
@@ -273,6 +278,7 @@ Item {
 
     function load_gloss_settings() {
         root.gloss_format = SuttaBridge.get_gloss_format();
+        root.gloss_lines_per_word = SuttaBridge.get_gloss_lines_per_word();
         root.auto_translate = SuttaBridge.get_gloss_auto_translate();
         root.refresh_has_translate_model();
     }
@@ -862,9 +868,11 @@ Item {
 
     GlossExportWindow {
         id: gloss_export_window
-        onExport_requested: function(formats, gloss_format) {
+        onExport_requested: function(formats, gloss_format, lines_per_word) {
             root.export_formats = formats;
             root.export_gloss_format = gloss_format;
+            // The window saved the shared setting: the tab's rows follow it.
+            root.gloss_lines_per_word = lines_per_word;
             export_folder_dialog.open();
         }
     }
@@ -2632,6 +2640,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             gloss_format: gloss_format,
             title: "",
             no_ai_provider: !root.has_translate_model && !root.is_word_selection_enabled(),
+            // The shared setting; an export has just set it from its window.
+            lines_per_word: root.gloss_lines_per_word,
             paragraphs: [],
         };
 
@@ -2708,7 +2718,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         var paragraph = gloss_data.paragraphs[paragraph_index];
-        return SuttaBridge.gloss_paragraph_export(JSON.stringify(paragraph), paragraph_index + 1, format);
+        return SuttaBridge.gloss_paragraph_export(JSON.stringify(paragraph), paragraph_index + 1, format, root.gloss_lines_per_word);
     }
 
     function paragraph_gloss_as_html(paragraph_index: int): string {

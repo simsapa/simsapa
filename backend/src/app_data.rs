@@ -1491,6 +1491,13 @@ impl AppData {
         self.update_app_settings(|s| s.gloss_export_gloss_format = format);
     }
 
+    /// Saves the Word in Sentence lines per word (1 or 2; anything else is 2),
+    /// shared by the Gloss tab and the Export window.
+    pub fn set_gloss_lines_per_word(&self, lines: i64) {
+        let lines = crate::app_settings::clamp_gloss_lines_per_word(lines);
+        self.update_app_settings(|s| s.gloss_lines_per_word = lines);
+    }
+
     pub fn set_prompts_request_mode(&self, mode: AiRequestMode) {
         use crate::db::appdata_schema::app_settings;
 
