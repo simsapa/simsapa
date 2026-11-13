@@ -2103,9 +2103,11 @@ Pāli text of a sutta reference.
 - **Reference input.** `reference` takes a sutta uid or reference (`dhp23`,
   `sn1.71`, `SN 18.1`, `mn4/pli/ms`). The text is the CST edition when the
   app has it, else the Mahāsaṅgīti (`ms`) one; `edition` asks for one of them
-  and is a `404` when that edition is missing (there is no CST Dhammapada, so
-  `dhp23` is always `ms`). A verse inside a range record is that verse only
-  (`dhp23` is the `dhp23` segments of `dhp21-32/pli/ms`); a Theragāthā or
+  and is a `404` when that edition is missing. A verse inside a range record
+  is that verse only (`dhp23` is the `dhp23` segments of `dhp21-32/pli/ms`).
+  The CST Dhammapada is stored by vagga (`dhp21-32/pli/cst`) and cannot be
+  narrowed to one verse, so a Dhammapada verse is `ms` unless `edition` is
+  `cst`, which gives the whole vagga; a Theragāthā or
   Therīgāthā verse number (`th215`) is SuttaCentral's numbering and selects
   that verse. `UD<n>` with no dot counts the Udāna's suttas through (`UD12`
   is `ud2.2`), as the DPD passage analysis tool does; its `TH` numbers are

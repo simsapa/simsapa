@@ -10,6 +10,10 @@ PRD: `tasks/2026-11-12-134735-prd---dhammapada-commentary-anandajoti.md`
 - `backend/src/search/searcher.rs` - Tantivy `add_sutta_filters()`: excludes every `is_commentary` doc, whatever its source; `DHP_FILTER_DOCS` tests.
 - `backend/src/search/indexer.rs` - Sets `is_commentary` from `.att` / `.tik` in the uid (no change expected; read to confirm).
 - `backend/tests/test_search_filter_pagination.rs`, `backend/tests/helpers/mod.rs` - Existing search-filter tests and helpers (FR 9).
+- `backend/src/gloss_source.rs`, `backend/tests/test_gloss_source.rs` - A reference inside a CST range record reads `/pli/ms` by default.
+- `backend/tests/data/dhp290-305_*` - Regenerated sutta / variant / rendered fixtures; `backend/tests/data/search_results_pin.tsv` - regenerated pins.
+- `backend_cli/tests/gloss_command.rs` - The AI-off stderr wording.
+- `docs/simsapa-cli-and-localhost-api.md` - §16.1 reference input: the CST Dhammapada verse rule.
 - `backend/src/db/appdata.rs` - `get_translations_data_json_for_sutta_uid()`: the tab list, CST mūla retain filter.
 - `api/src/routes/suttas.rs` - Route that feeds the column-bar dropdowns (`item_uid`, `sutta_title`, `sutta_ref`), for the §6 check.
 - `bootstrap_cli/src/bootstrap/helpers.rs` - `SuttaData` / `to_new_sutta()`: fills `sutta_range_*` from the uid.
@@ -291,33 +295,40 @@ Update the file after completing each sub-task, not just after completing an ent
 - 26 each of `dhp*/pli/cst`, `dhp*/en/opentipitaka`, `dhp*.att/pli/cst`, `dhp*.att/en/opentipitaka` and `dhp*.att/en/anandajoti` (count with `uid GLOB 'dhp[0-9]*'` patterns, so that the `.att` and mūla counts do not mix).
 - Zero `s0502%` uids.
 
-- [ ] 5.0 Re-bootstrap and verify: record counts, twins, navigation tree, `s0502` file-name search, translation tabs and search in both settings; hand the GUI checks to the user (PRD A.2, B.5, §8, FR 5–6, FR 11, FR 32–33)
-  - [ ] 5.1 Pre-flight: check for a language server, run `free -h` and `df -h .` in `bootstrap-assets-resources/dist`, and tell the user the memory cap and the parallelism. Wait for their go-ahead. Then run the bootstrap in a `systemd-run --user --scope` with `MemoryMax`/`CARGO_BUILD_JOBS`/`RAYON_NUM_THREADS` set, in the background, with the log written via `>|`.
-  - [ ] 5.2 Count the records from the specs with `sqlite3` against the dist `appdata.sqlite3`. Spot-check `dhp21-32/pli/cst` (title "2. Appamādavaggo", header "Dhammapada 21-32") and `dhp21-32.att/pli/cst` (header "Dhammapada-aṭṭhakathā 21-32").
-  - [ ] 5.3 `pali_edition_twins`: confirm that the `dhp21-32/pli/ms` ↔ `dhp21-32/pli/cst` rows exist for all 26 vaggas, and that no `.att` uid is in the table.
-  - [ ] 5.4 The bootstrap builds both navigation trees (`mod.rs` ~l. 340–350). Confirm in the tree table:
+- [x] 5.0 Re-bootstrap and verify: record counts, twins, navigation tree, `s0502` file-name search, translation tabs and search in both settings; hand the GUI checks to the user (PRD A.2, B.5, §8, FR 5–6, FR 11, FR 32–33)
+  - [x] 5.1 Pre-flight: check for a language server, run `free -h` and `df -h .` in `bootstrap-assets-resources/dist`, and tell the user the memory cap and the parallelism. Wait for their go-ahead. Then run the bootstrap in a `systemd-run --user --scope` with `MemoryMax`/`CARGO_BUILD_JOBS`/`RAYON_NUM_THREADS` set, in the background, with the log written via `>|`.
+  - [x] 5.2 Count the records from the specs with `sqlite3` against the dist `appdata.sqlite3`. Spot-check `dhp21-32/pli/cst` (title "2. Appamādavaggo", header "Dhammapada 21-32") and `dhp21-32.att/pli/cst` (header "Dhammapada-aṭṭhakathā 21-32").
+  - [x] 5.3 `pali_edition_twins`: confirm that the `dhp21-32/pli/ms` ↔ `dhp21-32/pli/cst` rows exist for all 26 vaggas, and that no `.att` uid is in the table.
+  - [x] 5.4 The bootstrap builds both navigation trees (`mod.rs` ~l. 340–350). Confirm in the tree table:
     - the nodes `cst:s0502a.att1.xml` … `cst:s0502a.att26.xml` open `dhp1-20.att/pli/cst` … `dhp383-423.att/pli/cst` in vagga order;
-    - `cst:s0502m.mul1.xml` … open `dhp1-20/pli/cst` …;
+    - (corrected) there are no `cst:s0502m.mul*` nodes: the CST tree has no mūla root by design (`docs/sutta-navigation-tree.md` §1.1); the mūla is reached through the SC spine;
     - there are no `cst:frag:dhp…` rows (the leaves are collapsed, PRD FR 5);
     - the `Ganthārambhakathā` leaf opens `dhp1-20.att/pli/cst` and is in the merged-leaves list;
     - the defects report has no new entry for `s0502*`;
     - the SC spine's `dhp` leaves are unchanged.
-  - [ ] 5.5 File-name search: run the `cst_files.rs` query for `s0502` and confirm no results and no error (FR 6). Add a test only if the existing tests do not cover an unmatched name.
-  - [ ] 5.6 Translation tabs, through the backend (`get_translations_data_json_for_sutta_uid`, or `simsapa` CLI / API if they expose it):
+  - [x] 5.5 File-name search: run the `cst_files.rs` query for `s0502` and confirm no results and no error (FR 6). Add a test only if the existing tests do not cover an unmatched name.
+  - [x] 5.6 Translation tabs, through the backend (`get_translations_data_json_for_sutta_uid`, or `simsapa` CLI / API if they expose it):
     - `dhp21-32/pli/ms` lists the three `.att` uids with commentary on, and none with it off;
     - `dhp21-32.att/pli/cst` lists `…/en/anandajoti` and `…/en/opentipitaka` with either setting (FR 31–32);
     - the Ānandajoti row has `has_content_json` false (FR 33).
     - the Daw Mya Tin pages (tipitaka.net) are commentary too: 26 `dhp<range>.att/en/daw` rows, titled with the `…/pli/ms` vagga title (`Yamakavagga`), no `dhp<range>/en/daw` left; `dhp21-32.att/en/daw` is listed with the other `.att` uids, and only with commentary on;
-  - [ ] 5.7 Search: Contains and Fulltext for "Cakkhupāla", with commentary on, find `dhp1-20.att/pli/cst` and `dhp1-20.att/en/anandajoti`; with it off, neither (§8). Use the `simsapa` CLI or a backend test that runs only against the rebuilt DB. Confirm that the Tantivy `en` index counts the 26 new docs.
-  - [ ] 5.7a **Regenerate the search pins** after the bootstrap: `cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture` (capped; it runs for minutes). On the new database it rewrites `backend/tests/data/search_results_pin.tsv`. Review the rewrite in `git diff`: the "mindfulness" Contains cases named `dhp235-255/en/daw` … in `first_uids`, which are now `.att` uids and hidden with commentary off; the Dhammapada CST and Ānandajoti records also change the totals.
-  - [ ] 5.8 Run `make rust-test` (capped). All green apart from the known timed-test drift.
-  - [ ] 5.9 Write the GUI checks for the user to do by hand, and give them in the summary:
+  - [x] 5.7 Search (the CLI hardcodes commentary on, so the *off* state is covered by the unit tests of 1.0 and by checking the `'%.att%/%'` filter on the 26 real rows): Contains and Fulltext for "Cakkhupāla", with commentary on, find `dhp1-20.att/pli/cst` and `dhp1-20.att/en/anandajoti`; with it off, neither (§8). Use the `simsapa` CLI or a backend test that runs only against the rebuilt DB. Confirm that the Tantivy `en` index counts the 26 new docs.
+  - [x] 5.7a **Regenerate the search pins** after the bootstrap: `cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture` (capped; it runs for minutes). On the new database it rewrites `backend/tests/data/search_results_pin.tsv`. Review the rewrite in `git diff`: the "mindfulness" Contains cases named `dhp235-255/en/daw` … in `first_uids`, which are now `.att` uids and hidden with commentary off; the Dhammapada CST and Ānandajoti records also change the totals.
+  - [x] 5.8 Run `make rust-test` (capped). All green apart from the known timed-test drift.
+  - [x] 5.9 Write the GUI checks for the user to do by hand, and give them in the summary:
     - open Dhammapada Aṭṭhakathā vagga 2 from the Sutta Navigation, check its tabs, and open the Ānandajoti tab;
     - use the page TOC, a sub-story link ("2.1 … Part 5") and a footnote link and back-link;
     - check light and dark themes;
     - turn commentary in translations off and on, on `dhp21-32/pli/ms`;
     - open vagga 1 on Android and check the load time (§7).
-  - [ ] 5.10 `git status`: confirm no `*.sqlite3` files and no generated tree files are staged by mistake. Do not commit without the user's go-ahead.
+  - [x] 5.10 `git status`: confirm no `*.sqlite3` files and no generated tree files are staged by mistake. Do not commit without the user's go-ahead.
+
+  - Results of 5.0:
+    - Counts, headers, twins, the tree and the tabs as specified; the `cst:s0502m.mul*` nodes do not exist (no mūla root in the CST tree), so 5.4's second bullet was corrected.
+    - **Gloss reference `dhp23`:** once `dhp21-32/pli/cst` existed, the default edition (CST first) resolved `dhp23` to the whole CST vagga, because CST segments are keyed by the range. `gloss_source.rs` now reads `/pli/ms` by default for a reference inside a CST range record; an explicit `cst` edition still gives the CST vagga (user's decision). Test and `docs/simsapa-cli-and-localhost-api.md` §16.1 updated.
+    - **Stale fixtures, not caused by this work:** `dhp290-305` (Pāli MS and Sujato) sutta, variant and rendered-HTML fixtures predated `30794d44` (verse ranges in Dhammapada headings) and were regenerated; the other suttas' regenerated fixtures differed only in row ids and were restored. `gloss_command.rs` `test_ai_off_without_a_provider` asserted the stderr wording from before `181308ab` ("no AI model is enabled").
+    - `make rust-test` equivalent (`cargo test --no-fail-fast` in the four crates): all green apart from the timed `contains_match_suttas_dhamma_suffix_bodhi` (known drift).
+    - Search pins regenerated; the diff also moves the DPD dict pins (dictionary data, not this work).
 
 ### 6.0 — specs and dependencies
 

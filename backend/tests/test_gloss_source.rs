@@ -16,7 +16,8 @@ fn resolve(reference: &str, edition: PaliEdition, paragraphs: Option<&str>) -> R
 #[test]
 #[serial]
 fn test_dhp_verse_inside_its_range_record() {
-    // No CST Dhammapada: the default edition falls back to /pli/ms.
+    // The CST Dhammapada record `dhp21-32/pli/cst` is keyed by the vagga, so it
+    // cannot be narrowed to verse 23: the default edition reads /pli/ms.
     let s = resolve("dhp23", PaliEdition::Default, None).unwrap();
     assert_eq!(s.uid, "dhp21-32/pli/ms");
     assert_eq!(s.paragraphs.len(), 1);
@@ -26,7 +27,10 @@ fn test_dhp_verse_inside_its_range_record() {
     assert!(!p.contains("Appamādo"), "{p}");
     assert_eq!(s.title(), "dhp23 (dhp21-32/pli/ms)");
 
-    assert!(matches!(resolve("dhp23", PaliEdition::Cst, None), Err(GlossSourceError::NotFound(_))));
+    // An explicit CST edition is not substituted: it reads the whole vagga.
+    let cst = resolve("dhp23", PaliEdition::Cst, None).unwrap();
+    assert_eq!(cst.uid, "dhp21-32/pli/cst");
+    assert!(cst.paragraph_count > 1);
 }
 
 #[test]

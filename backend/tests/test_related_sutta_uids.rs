@@ -127,6 +127,37 @@ fn the_lookup_relates_a_sutta_and_the_span_that_covers_it() {
     assert!(position("an5.91/pli/ms") < position("an5.100/pli/ms"));
 }
 
+/// Against the shipped database: the Dhammapada vagga 2 tabs, in both directions.
+#[test]
+#[serial]
+fn the_shipped_dhammapada_vagga_lists_its_commentary_tabs() {
+    h::app_data_setup();
+
+    let with = listed_uids("dhp21-32/pli/ms", true);
+    for uid in DHP_21_32_COMMENTARY {
+        assert!(with.contains(&uid.to_string()), "{} missing: {:?}", uid, with);
+    }
+    let without = listed_uids("dhp21-32/pli/ms", false);
+    assert!(!without.iter().any(|uid| uid.contains(".att")), "{:?}", without);
+
+    for setting in [true, false] {
+        let from_commentary = listed_uids("dhp21-32.att/pli/cst", setting);
+        assert!(from_commentary.contains(&"dhp21-32.att/en/anandajoti".to_string()), "{:?}", from_commentary);
+        assert!(from_commentary.contains(&"dhp21-32.att/en/opentipitaka".to_string()), "{:?}", from_commentary);
+    }
+
+    let json = get_app_data()
+        .dbm
+        .appdata
+        .get_translations_data_json_for_sutta_uid("dhp21-32.att/pli/cst", true, false);
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("translations JSON");
+    let row = rows
+        .iter()
+        .find(|r| r["item_uid"] == "dhp21-32.att/en/anandajoti")
+        .expect("anandajoti row");
+    assert_eq!(row["has_content_json"], serde_json::Value::Bool(false), "{}", row);
+}
+
 #[test]
 fn the_opentipitaka_commentary_follows_the_commentary_setting() {
     let candidates = uids(&[
