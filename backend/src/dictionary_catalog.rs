@@ -64,7 +64,7 @@ pub const PINNED_SERIES: (u32, u32) = (1, 0);
 /// The tag used when the GitHub query fails for any reason. Must be a real
 /// published tag in [`PINNED_SERIES`]. See [`PINNED_SERIES`] for why this is a
 /// constant.
-pub const FALLBACK_TAG: &str = "v1.0.8";
+pub const FALLBACK_TAG: &str = "v1.0.11";
 
 /// The upstream repository. See [`PINNED_SERIES`] for why the catalogue is one
 /// hard-coded list from one repo and not a configurable source.
