@@ -504,6 +504,14 @@ impl qobject::PromptManager {
                 return;
             }
         };
+        // Every request gets an answer: with no prompt the Gloss tab would
+        // wait on it for ever.
+        if chunks.is_empty() {
+            error(&format!("sequential_word_selection_requests: request {} has no prompts", request_id));
+            let error_msg = request_setup_error("", "", "The word-selection request has no prompts").to_envelope_json();
+            self.word_selection_response(request_id, QString::from(""), QString::from(error_msg));
+            return;
+        }
         let cancel = self.cancel_state(None);
 
         thread::spawn(move || {

@@ -4889,8 +4889,9 @@ pub fn build_word_selection_prompt(items: &[serde_json::Value], paragraphs: &[Wo
 
 /// The payload's `paragraphs` list: `{"p": <index>, "source": <uid>, "text":
 /// <text>}` for each paragraph that has an item and a text, in paragraph
-/// order, with `ṁ` for the niggahīta as in the item contexts. `source` is
-/// left out when unknown.
+/// order, as the items' contexts give it: `ṁ` for the niggahīta, and the
+/// first spelling of each `a//b` group (`gloss_variants`). `source` is left
+/// out when unknown.
 pub fn word_selection_paragraph_entries(
     items: &[serde_json::Value],
     paragraphs: &[WordSelectionParagraphInput],
@@ -4908,7 +4909,8 @@ pub fn word_selection_paragraph_entries(
         .filter(|p| with_items.contains(&p.paragraph_index))
         .filter_map(|p| {
             let text = p.text.as_deref().map(str::trim).filter(|t| !t.is_empty())?;
-            let mut entry = serde_json::json!({ "p": p.paragraph_index, "text": gloss_niggahita(text) });
+            let (glossed, _) = crate::gloss_variants::extract_spelling_variants(&gloss_niggahita(text));
+            let mut entry = serde_json::json!({ "p": p.paragraph_index, "text": glossed });
             if let Some(source) = p.source_uid.as_deref().filter(|s| !s.is_empty()) {
                 entry.as_object_mut().expect("entry is an object").insert("source".to_string(), serde_json::json!(source));
             }
@@ -7479,6 +7481,9 @@ mod tests {
         assert!(p.starts_with(r#"{"task":"pali_word_selection","paragraphs":[{"p":2,"source":"dn23/pli/ms","text":"taṁ kho"}],"items":[{"#), "{}", p);
         // No texts: the payload is as before.
         assert!(word_selection_paragraph_entries(&items, &[input(0, None, None)]).is_empty());
+        // `//` spelling groups: the first spelling, as glossed.
+        let variants = word_selection_paragraph_entries(&items, &[input(0, Some("evaṃ vā'ti//vāti."), None)]);
+        assert_eq!(variants[0]["text"], "evaṁ vā'ti.");
     }
 
     /// An option whose DPD example is the passage carries `dpd_example`.
