@@ -12,8 +12,8 @@ PRD: [2026-11-13-135127-prd---word-in-sentence-two-line-layout-and-contextual-co
 - `backend/src/text_export.rs` - `word_table_one_line()` / `word_table_two_lines()` (HTML colspan, Markdown/Org grid), `gloss_paragraph_export(…, lines_per_word)`; the Headwords writers stay unchanged.
 - `backend/src/docx_export.rs` - `word_table()`, `word_table_two_lines()` (`w:gridSpan`), `WORD_TABLE_COL_TWIPS` / `WORD_TABLE_2L_COL_TWIPS`, `table_cell_span_fill()`.
 - `backend/src/anki_export.rs` - `NoteItem` / `TemplateContext` `definition` + `contextual`, the Simple note back (contextual in italic), the data CSV `contextual_in_sentence` column, `render_note_template()` (a render error names the template and the note's word).
-- `backend/src/gloss_translation.rs` - `TranslationVocabRow`, `translation_vocabulary_from_rows()`, `word_table_markdown()`, tests.
-- `backend/src/app_settings.rs` - the new settings (`gloss_lines_per_word` with `default_gloss_lines_per_word()` / `clamp_gloss_lines_per_word()`, `gloss_contextual_all`), the default prompts `"Gloss Tab: Word Selection Request"` and `"Gloss Tab: AI Translation"`, the settings tests.
+- `backend/src/gloss_translation.rs` - `TranslationVocabRow` (`contextual`, `definition`), both vocabulary builders, `word_table_markdown()` (four columns with a Contextual value, else three), tests.
+- `backend/src/app_settings.rs` - the new settings (`gloss_lines_per_word` with `default_gloss_lines_per_word()` / `clamp_gloss_lines_per_word()`, `gloss_contextual_all`), the default prompts `"Gloss Tab: Word Selection Request"` and `"Gloss Tab: AI Translation"` (their earlier defaults in `superseded_default_system_prompts()`), the settings tests.
 - `backend/src/helpers.rs` - `build_word_selection_items()` (contextual-only items), `WordSelectionParagraphInput`, `parse_word_selection_response()`, their tests (around l. 6860–7300).
 - `backend/src/gloss_word_selection_apply.rs` - the Rust apply path for answers (reading-only rule).
 - `backend/src/gloss_word_selection_run.rs`, `backend/src/gloss_ai_run.rs` - callers of `build_word_selection_items()`; `GlossAiOptions::contextual_all`, `run_gloss_ai_for_api(…, contextual_all)`.
@@ -33,6 +33,7 @@ PRD: [2026-11-13-135127-prd---word-in-sentence-two-line-layout-and-contextual-co
 - `backend/tests/test_gloss_word_in_sentence.rs` - the row builder tests: Definition and Contextual kept apart, per-reading meanings, sense change, component readings, old `meaning`-only rows rebuilt on load.
 - `backend/tests/data/gloss_export_contract/paragraph.json`, `expected_word_in_sentence.json` - contract fixtures, row `meaning` → `definition` + `contextual`.
 - `backend/tests/test_anki_export.rs`, `test_gloss_export_contract.rs`, `test_dpd_analysis_conformance.rs` - fixtures and asserts on the renamed field; the Anki `{definition}` / `{contextual}` variables, the unknown-variable error, the data CSV column.
+- `backend_cli/skills/gloss-pali-passage/SKILL.md` - the example Word in Sentence table header.
 - `backend_cli/tests/gloss_command.rs`, `api/tests/gloss_text.rs` - the Markdown table header asserts.
 
 ### Notes
@@ -269,12 +270,12 @@ explains the two columns (FR-J2).
 
 **Depends on:** 1.0. Ideally after 5.0, so the Contextual column is full.
 
-- [ ] 6.0 Translation word table with Contextual and Definition, and the updated translation prompt
-  - [ ] 6.1 Change `TranslationVocabRow` and both builders. Remove the 1.7 "contextual else definition" fallback.
-  - [ ] 6.2 `word_table_markdown()` (header now `| Word | Grammar | Meaning |`): four columns, `| Word | Grammar | Contextual | Definition |`, when any row has a contextual value; otherwise three, `| Word | Grammar | Definition |`. The Headwords prompt keeps its shape, with the header renamed to Definition.
-  - [ ] 6.3 Update the default `"Gloss Tab: AI Translation"` prompt (`app_settings.rs` around l. 606): Contextual is the suggested rendering in this sentence, preferred for the literal translation; Definition is the dictionary's range of senses, and the fluent translation may choose other wording from within it and should correct a Contextual value that does not fit it; "do not introduce senses that are not listed" refers to the Definition. Keep `<<PALI_PASSAGE>>` and `<<WORD_TABLE>>`, and the settings test at l. 1163. As in 5.7, first add the current default to `superseded_default_system_prompts()`.
-  - [ ] 6.4 Update the tests in `gloss_translation.rs` (`vocab()`, `prompt_substitutes_passage_and_table`): a four-column table with contextual values, and a three-column table without.
-  - [ ] 6.5 Run `cd backend && cargo test gloss_translation` and `cd backend && cargo test app_settings`.
+- [x] 6.0 Translation word table with Contextual and Definition, and the updated translation prompt
+  - [x] 6.1 Change `TranslationVocabRow` and both builders. Remove the 1.7 "contextual else definition" fallback.
+  - [x] 6.2 `word_table_markdown()` (header now `| Word | Grammar | Meaning |`): four columns, `| Word | Grammar | Contextual | Definition |`, when any row has a contextual value; otherwise three, `| Word | Grammar | Definition |`. The Headwords prompt keeps its shape, with the header renamed to Definition.
+  - [x] 6.3 Update the default `"Gloss Tab: AI Translation"` prompt (`app_settings.rs` around l. 606): Contextual is the suggested rendering in this sentence, preferred for the literal translation; Definition is the dictionary's range of senses, and the fluent translation may choose other wording from within it and should correct a Contextual value that does not fit it; "do not introduce senses that are not listed" refers to the Definition. Keep `<<PALI_PASSAGE>>` and `<<WORD_TABLE>>`, and the settings test at l. 1163. As in 5.7, first add the current default to `superseded_default_system_prompts()`.
+  - [x] 6.4 Update the tests in `gloss_translation.rs` (`vocab()`, `prompt_substitutes_passage_and_table`): a four-column table with contextual values, and a three-column table without.
+  - [x] 6.5 Run `cd backend && cargo test gloss_translation` and `cd backend && cargo test app_settings`.
 
 ### 7.0 Planned measurements
 
@@ -308,6 +309,7 @@ references into the review file.
   - [ ] 8.1 `docs/gloss-ai-word-selection.md`: §10 "Where readings and contextual meanings are kept" (Contextual is shown beside the Definition, never in its place); a new subsection on contextual-only items and the option; `contextual_meanings` (one meaning per reading, how a hand-chosen reading picks its entry or clears the meaning, the lenient parse); §6 Exports (the column set, one/two lines, which formats, the Headwords format unchanged); the translation word table in §10's "two-part translation". Describe current behaviour only, without history.
   - [ ] 8.2 `docs/dpd-analysis-procedure.md`: §1.5 (the translation table now has Contextual and Definition) and §1.7 Rendering / §2 step table, where they describe Simsapa's columns.
   - [ ] 8.3 `docs/simsapa-cli-and-localhost-api.md`: `--lines-per-word`, `--contextual-all` / `--no-contextual-all`, the API options `lines_per_word` and `contextual_all`, the row fields `definition` / `contextual`. Keep it self-contained (no links, no source paths). Run its self-containment test.
+  - [ ] 8.3a `backend_cli/skills/gloss-pali-passage/SKILL.md` (l. 88): the example Word in Sentence table header still has the old `Grammar | Meaning` columns; update it to the current one-/two-line headers.
   - [ ] 8.4 `PROJECT_MAP.md`: update only if a file was added or a file's role changed (e.g. `GlossWordInSentenceRow.qml`'s description).
   - [ ] 8.5 Final runs: `make rust-test` and `make qml-test` (memory-capped, per `CLAUDE.md`), and `make build -B`. Record the results in this file.
   - [ ] 8.6 Ask the user to do the manual GUI checks (phone and tablet widths, dark mode, the export window radios, an export in each format in both modes), then ask before committing.

@@ -624,7 +624,7 @@ Respond with GFM-Markdown formatted text.
 
     prompts.insert(crate::gloss_translation::TRANSLATION_TEMPLATE_KEY.to_string(),
         r#"
-You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. Do not introduce senses that are not listed; a word without a sense in the table you may translate as you see fit. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
+You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. The "Definition" column is the dictionary's range of senses for each word. Do not introduce senses that are not listed in the Definition; a word without a Definition in the table you may translate as you see fit. When the table has a "Contextual" column, it is the suggested rendering of the word in this sentence: prefer it for the literal translation. The natural translation may choose other wording from within the Definition, and where a Contextual value does not fit its Definition, follow the Definition instead. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
 
 Pāli passage:
 
@@ -686,6 +686,23 @@ Respond with GFM-Markdown formatted text.
 /// replaces it with the current default; an edited prompt is kept.
 fn superseded_default_system_prompts() -> Vec<(&'static str, &'static str)> {
     vec![
+        ("Gloss Tab: AI Translation", r#"
+You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. Do not introduce senses that are not listed; a word without a sense in the table you may translate as you see fit. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
+
+Pāli passage:
+
+<<PALI_PASSAGE>>
+
+Chosen word senses:
+
+<<WORD_TABLE>>
+
+Return two translations: "translation", in natural, readable English; and "literal_translation", close to word-by-word, following the Pāli word order and grammar where English allows.
+
+Respond with a JSON object with exactly these two keys, and nothing else (no prose, no markdown code fences):
+
+{"translation": "<natural English>", "literal_translation": "<word-by-word English>"}
+"#),
         ("Gloss Tab: Word Selection Request", r#"
 Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
 
@@ -1244,6 +1261,24 @@ mod tests {
         settings.system_prompts.insert(request_key.to_string(), "my own request".to_string());
         assert!(!settings.merge_default_system_prompts());
         assert_eq!(settings.system_prompts[request_key], "my own request");
+
+        // The translation template from before the Contextual column.
+        let old_translations: Vec<&str> = superseded_default_system_prompts()
+            .into_iter()
+            .filter(|(k, _)| *k == translation_key)
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(old_translations.len(), 1);
+        assert_ne!(old_translations[0].trim(), defaults[translation_key]);
+        settings.system_prompts.insert(translation_key.to_string(), old_translations[0].trim().to_string());
+        assert!(settings.merge_default_system_prompts());
+        assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
+        assert!(settings.system_prompts[translation_key].contains("\"Contextual\""));
+        assert!(settings.system_prompts[translation_key].contains("<<PALI_PASSAGE>>"));
+
+        settings.system_prompts.insert(translation_key.to_string(), "my own translation".to_string());
+        assert!(!settings.merge_default_system_prompts());
+        assert_eq!(settings.system_prompts[translation_key], "my own translation");
     }
 
     /// The canonical string must be the serde spelling for every variant, so that
