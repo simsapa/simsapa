@@ -372,12 +372,14 @@ Three `AppSettings` fields (`gloss_word_selection_enabled` (default `false`),
 > are kept only as the one-time seed for the sequence. See
 > [ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md).
 
-The Gloss toolbar (before "Common Words...") has an **"AI word selection"**
-checkbox, which persists `gloss_word_selection_enabled` through the dialog's
-`persist_selection()`, and an info button next to it that opens
+The Gloss Settings window (§3a) has an **"AI word selection"**
+checkbox, and the option row under the input its **AiW** button; both persist
+`gloss_word_selection_enabled` through the word selection dialog's
+`persist_selection()`. The info button next to the checkbox opens
 `bridges/assets/qml/GlossWordSelectionDialog.qml`: an explanation, a note that
-selections are saved, the **Clear Word-Selection Cache...** button (confirm
-dialog shows the row count), a warning when the feature is on but the Fallback
+selections are saved, the **Clear Word-Selection Cache...** button (also in
+the Gloss Settings window; both use `GlossClearCacheDialog.qml`, whose
+confirmation shows the row count), a warning when the feature is on but the Fallback
 sequence has no enabled model, and the shield legend.
 The clear deletes the **local tier** only (`built_in = 0`, i.e. the
 `ai-selected` / `user-selected` rows) — the shipped rows and the phrase table
@@ -406,6 +408,51 @@ keep the old instructions. The
 System Prompts dialog gained a **Reset to Default** button for *every* prompt,
 backed by `SuttaBridge.get_default_system_prompt(key)` (empty string → button
 disabled, e.g. for user-created keys).
+
+### 3a. The option row and the Gloss Settings window
+
+Under the main input of the Gloss tab (`GlossTab.qml`, `gloss_options_row`)
+is one row: **Update All Glosses**, **Export...**, the option buttons and the
+cogwheel. (**Open JSON** is in the session toolbar above the input, after New
+Session.) The cogwheel (and the menu bar's Gloss > Gloss Settings...) opens
+`GlossSettingsWindow.qml`, an in-tree child `ApplicationWindow` like the
+Export window, with every option in full, each with a short explanation, and
+a second **Clear Word-Selection Cache...** button under AI word selection. The option buttons
+(`GlossOptionButton`, an inline `ToolButton`: icon plus abbreviation) show the
+state of the most used ones:
+
+| Button | Option | Shows |
+|---|---|---|
+| WiS / HW | Gloss format | the current value; a click switches (`switch_gloss_format()`) |
+| 1L / 2L | Lines per word (Word in Sentence only) | the current value; a click switches |
+| NoDup | No duplicates | checked when on |
+| ScW | Skip common words | checked when on |
+| AiW | AI word selection | checked when on |
+| Tr | Auto-translate (disabled without a model) | checked when on |
+
+Dispatch mode, "Contextual meaning for every word", "Common Words..." and
+"Clear Word-Selection Cache..." are in the window only.
+
+Rules:
+
+- **The window holds no state.** The tab binds the window's option properties
+  to its own and handles its `*_chosen` signals. **Every change goes through
+  one `set_<option>()` function** on the tab (`set_no_duplicates()`,
+  `set_lines_per_word()`, …), called from the buttons and the window on a user
+  action only. A restored session sets the properties directly and never
+  re-glosses through them.
+- **The option buttons are not `checkable`**: `checked` is bound to the
+  tab's property, and a checkable click would replace that binding. The
+  window's CheckBoxes and ComboBoxes are bound too, and bind again after each
+  user change (`Qt.binding`), so the window always shows what the buttons show.
+- **Each option button sets `implicitHeight` to the Export button's.** A
+  `Flow` aligns its items at the top, and Fusion's `ToolButton` (padding 6) is
+  taller than its `Button` (padding 4); the font size differs too, so padding
+  alone does not even them out on every platform.
+- The window **closes before** Common Words and the AI word selection info:
+  those open in the Gloss tab's window, which the settings window would
+  cover. The cache confirmation is declared in the window itself, so it
+  stays open over it.
 
 ## 4. The request
 
@@ -784,7 +831,7 @@ stored `context_hash` only as a fallback — so sessions saved before this featu
 `selected_uid` gets its `selected_lemma` from the installed `dpd.sqlite3`; the
 field is optional, so files without it still load.
 
-**Open JSON** (button next to Export...) restores such a file:
+**Open JSON** (session toolbar, after New Session) restores such a file:
 `open_gloss_session_export(file_path)` does read → `parse_gloss_session_export()`
 validation → cache import, returning `{ok, session, imported, skipped}` or
 `{error}`. Before the import, every entry's `selected_uid` is normalised
@@ -1490,8 +1537,8 @@ array of strings as long as the option's `grammar_options` is dropped with a
 
 The option `gloss_contextual_all` (`AppSettings`, default on;
 `SuttaBridge.get/set_gloss_contextual_all()`; the Gloss tab's AI settings
-CheckBox "Contextual meaning for every word", disabled in the Headwords
-format; `--contextual-all` / `--no-contextual-all` in `simsapa gloss`,
+Gloss Settings CheckBox "Contextual meaning for every word", disabled in the
+Headwords format; `--contextual-all` / `--no-contextual-all` in `simsapa gloss`,
 defaulting to the setting; `contextual_all` in `/gloss_text`) asks for a
 contextual meaning for every word, not only for the ones with a choice. It
 reaches the builder as `WordSelectionParagraphInput::contextual_all` and
@@ -1678,8 +1725,8 @@ base (`uppanna 1`, `uppanna 2`), each label is `<number>: <meaning>`;
 otherwise `<lemma_1>: <meaning>`. The popup is widened to the widest label,
 up to the row width.
 
-The **"Lines per word:"** ComboBox, after "Gloss format:", enabled only in
-the Word in Sentence format, sets `gloss_lines_per_word` (`AppSettings`,
+The **"Lines per word:"** option (the Gloss Settings ComboBox and the
+**1L / 2L** button, §3a), enabled only in the Word in Sentence format, sets `gloss_lines_per_word` (`AppSettings`,
 1 or 2, default 2; `SuttaBridge.get/set_gloss_lines_per_word()`). The Export
 window's "One line / Two lines per word" radios read and write the same
 setting and update `GlossTab.gloss_lines_per_word`, so the tab, "Copy As…"

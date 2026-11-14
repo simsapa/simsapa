@@ -446,7 +446,7 @@ reset only on a length / id-sequence change) so delegates are never rebuilt by
 a response landing, and emits `tabSelectionChanged` only from a real tab-button
 click — never from `TabBar.currentIndex` churn.
 
-**Gloss tab — "Dispatch mode:" combobox** (`gloss_ai_translate_mode`, default
+**Gloss tab — "Dispatch mode:" combobox** (in the Gloss Settings window) (`gloss_ai_translate_mode`, default
 *Sequential retry*). A translation request checks that the answer is the
 two-part translation JSON (`validate_translation_response_shape`), so a
 malformed answer retries and falls back like a truncated body:
