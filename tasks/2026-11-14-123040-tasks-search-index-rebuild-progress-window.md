@@ -9,7 +9,8 @@ Source PRD: `tasks/2026-11-14-123040-prd---search-index-rebuild-progress-window.
 - `backend_cli/src/commands/index.rs` - `simsapa index` command: prints the step lines and the summary, and adds `summary` to `--json`.
 - `backend_cli/tests/write_commands.rs` - CLI write-command tests; `test_index_rebuild_reports_steps_and_summary` builds the `en` library index into a temp folder linked to the dist databases and checks the step lines and the JSON `summary`.
 - `bootstrap_cli/src/main.rs` - `simsapa_bootstrap_cli index` also calls `cli_support::build_indexes()`; prints the summary lines.
-- `backend/src/fulltext_status.rs` - the only place for user-facing fulltext status wording; gets the `Incomplete` state. Has the test that a closed searcher reads as `NotOpenedYet`.
+- `backend/src/fulltext_status.rs` - the only place for user-facing fulltext status wording; `Incomplete` state, `INCOMPLETE_MESSAGE`, `build_status(…, incomplete)`, `area_message(…, incomplete)`, the `incomplete` field on `FulltextStatus`. Has the test that a closed searcher reads as `NotOpenedYet`.
+- `api/src/helpers.rs` - `/health` fulltext block: passes `incomplete` to the per-area messages; `incomplete` listed in the state doc comment.
 - `backend/src/lib.rs` - `fulltext_status_json()`, `reinit_fulltext_searcher()`; `AppGlobalPaths` (`index_dir`, `suttas_index_dir`, `dict_words_index_dir`, `library_index_dir`). Gets `INDEX_WRITE_LOCK` and `close_fulltext_searcher()`.
 - `bridges/src/sutta_bridge.rs` - `rebuild_search_index()`, its signals, `check_search_index_status()`; gets cancel, the running guard and the new signals.
 - `bridges/src/api.rs` - the `extern "C++"` callback declarations (`callback_open_dictionaries_window()` is the model).
@@ -134,13 +135,13 @@ pub enum FulltextState { NotOpenedYet, FilesNotFound, CouldNotOpen, Incomplete, 
 pub const INCOMPLETE_MESSAGE: &str = "The search index is incomplete, so fulltext search will not find everything. Use Rebuild Search Index to do a full re-index.";
 ```
 
-- [ ] 3.0 Fulltext status: report an index left incomplete by a cancelled rebuild (`INCOMPLETE` marker) as `incomplete`, with the wording written only in `fulltext_status.rs`
-  - [ ] 3.1 Add `FulltextState::Incomplete`, its `as_str()` string `"incomplete"` and the message constant.
-  - [ ] 3.2 Pass the marker fact into `build_status()` as a new `incomplete: bool` parameter (keep `build_status` pure for its tests). `current_status()` reads it with `indexer::is_index_incomplete(&get_app_globals().paths.index_dir)`. When `incomplete` is true and the index exists: `state: Incomplete`, `is_valid: false`, the incomplete message, counts kept.
-  - [ ] 3.3 Decide `area_state()` / `area_message()`: when the whole index is incomplete, an empty area shows the incomplete message rather than "No results found". Add the parameter there too if needed.
-  - [ ] 3.4 Update every `build_status()` caller and the existing tests. Add tests: `incomplete` with some indexes open gives `Incomplete`/`is_valid: false`; `incomplete` with nothing open and no dirs is still `FilesNotFound`.
-  - [ ] 3.5 Check the consumers of the state string: `DatabaseValidationDialog.qml` `refresh_fulltext_status()`, `FulltextResults.qml`, the `/health` route in `api/`, and the CLI. Each must handle `"incomplete"`, showing the message from the JSON and never its own wording.
-  - [ ] 3.6 `cd backend && cargo test fulltext_status` and `cd api && cargo test` pass.
+- [x] 3.0 Fulltext status: report an index left incomplete by a cancelled rebuild (`INCOMPLETE` marker) as `incomplete`, with the wording written only in `fulltext_status.rs`
+  - [x] 3.1 Add `FulltextState::Incomplete`, its `as_str()` string `"incomplete"` and the message constant.
+  - [x] 3.2 Pass the marker fact into `build_status()` as a new `incomplete: bool` parameter (keep `build_status` pure for its tests). `current_status()` reads it with `indexer::is_index_incomplete(&get_app_globals().paths.index_dir)`. When `incomplete` is true and the index exists: `state: Incomplete`, `is_valid: false`, the incomplete message, counts kept.
+  - [x] 3.3 Decide `area_state()` / `area_message()`: when the whole index is incomplete, an empty area shows the incomplete message rather than "No results found". Add the parameter there too if needed.
+  - [x] 3.4 Update every `build_status()` caller and the existing tests. Add tests: `incomplete` with some indexes open gives `Incomplete`/`is_valid: false`; `incomplete` with nothing open and no dirs is still `FilesNotFound`.
+  - [x] 3.5 Check the consumers of the state string: `DatabaseValidationDialog.qml` `refresh_fulltext_status()`, `FulltextResults.qml`, the `/health` route in `api/`, and the CLI. Each must handle `"incomplete"`, showing the message from the JSON and never its own wording.
+  - [x] 3.6 `cd backend && cargo test fulltext_status` and `cd api && cargo test` pass.
 
 ### 4.0 specs
 

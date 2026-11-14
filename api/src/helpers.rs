@@ -652,7 +652,8 @@ pub struct HealthFulltextArea {
 /// The fulltext block of `/health`.
 #[derive(Debug, Clone, Serialize)]
 pub struct HealthFulltext {
-    /// One of `not_opened_yet`, `files_not_found`, `could_not_open`, `ready`.
+    /// One of `not_opened_yet`, `files_not_found`, `could_not_open`,
+    /// `incomplete`, `ready`.
     pub state: String,
     /// Plain-language summary, safe to display.
     pub message: String,
@@ -668,6 +669,7 @@ pub struct HealthFulltext {
 fn health_area(
     area: &simsapa_backend::search::searcher::FulltextAreaStatus,
     reason: &str,
+    incomplete: bool,
 ) -> HealthFulltextArea {
     HealthFulltextArea {
         opened: area.opened,
@@ -676,7 +678,7 @@ fn health_area(
         state: simsapa_backend::fulltext_status::area_state(area)
             .as_str()
             .to_string(),
-        message: simsapa_backend::fulltext_status::area_message(area, reason),
+        message: simsapa_backend::fulltext_status::area_message(area, reason, incomplete),
     }
 }
 
@@ -724,9 +726,9 @@ pub fn health_info(dbm: &DbManager) -> HealthInfo {
                 state: status.state.as_str().to_string(),
                 message: status.message.clone(),
                 failure_count: status.failure_count,
-                sutta: health_area(&status.counts.sutta, status.reason),
-                dict: health_area(&status.counts.dict, status.reason),
-                library: health_area(&status.counts.library, status.reason),
+                sutta: health_area(&status.counts.sutta, status.reason, status.incomplete),
+                dict: health_area(&status.counts.dict, status.reason, status.incomplete),
+                library: health_area(&status.counts.library, status.reason, status.incomplete),
             }
         },
         // A count error -> None -> null; a real empty DB -> Some(0).
