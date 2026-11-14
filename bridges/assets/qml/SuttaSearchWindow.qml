@@ -2611,6 +2611,14 @@ ${query_text}`;
 
             CMenuItem {
                 action: Action {
+                    id: action_gloss_settings
+                    text: "Gloss &Settings..."
+                    onTriggered: gloss_tab.gloss_settings_window.show_settings_window()
+                }
+            }
+
+            CMenuItem {
+                action: Action {
                     id: action_common_words
                     text: "&Common Words..."
                     onTriggered: gloss_tab.commonWordsDialog.open()

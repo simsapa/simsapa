@@ -619,6 +619,11 @@ Item {
             return found;
         }
 
+        // The buttons only, not the labels inside them.
+        function find_buttons_by_text(item, text) {
+            return find_items_by_text(item, text).filter((b) => b.checked !== undefined);
+        }
+
         function mock_paragraph(words) {
             return {
                 success: true,
@@ -636,9 +641,11 @@ Item {
         }
 
         function test_options_row_labels() {
-            verify(find_items_by_text(gloss_tab, "Gloss format:").length > 0);
-            verify(find_items_by_text(gloss_tab, "Dispatch mode:").length > 0);
-            verify(find_items_by_text(gloss_tab, "Auto-translate").length > 0);
+            var dialog_content = gloss_tab.gloss_settings_window.contentItem;
+            verify(find_items_by_text(dialog_content, "Gloss format:").length > 0);
+            verify(find_items_by_text(dialog_content, "Dispatch mode:").length > 0);
+            verify(find_items_by_text(dialog_content, "Auto-translate").length > 0);
+            compare(find_items_by_text(dialog_content, "AI translation:").length, 0);
             compare(find_items_by_text(gloss_tab, "AI translation:").length, 0);
         }
 
@@ -1006,16 +1013,52 @@ Item {
             verify(first_item_with_text(two, "[ud + √pad + na]").y > 0);
         }
 
+        // The option button under the input and the Gloss Settings window's
+        // ComboBox both follow gloss_lines_per_word.
         function test_lines_per_word_toggle() {
-            verify(find_items_by_text(gloss_tab, "Lines per word:").length > 0);
+            var dialog_content = gloss_tab.gloss_settings_window.contentItem;
+            verify(find_items_by_text(dialog_content, "Lines per word:").length > 0);
             var saved = gloss_tab.gloss_lines_per_word;
             gloss_tab.gloss_lines_per_word = 1;
-            var combos = find_combo_boxes(gloss_tab).filter((c) => c.model && c.model.length === 2 && c.model[0] === "One line");
+            var combos = find_combo_boxes(dialog_content).filter((c) => c.model && c.model.length === 2 && c.model[0] === "One line");
             compare(combos.length, 1);
             compare(combos[0].currentIndex, 0);
+            compare(find_buttons_by_text(gloss_tab, "1L").length, 1);
             gloss_tab.gloss_lines_per_word = 2;
             compare(combos[0].currentIndex, 1);
+            compare(find_buttons_by_text(gloss_tab, "2L").length, 1);
             gloss_tab.gloss_lines_per_word = saved;
+        }
+
+        // The option buttons are as tall as the push buttons of the row (a
+        // Flow aligns its items at the top).
+        function test_option_buttons_match_button_height() {
+            var export_btns = find_buttons_by_text(gloss_tab, "Export...");
+            compare(export_btns.length, 1);
+            var labels = ["NoDup", "ScW", "AiW", "Tr", gloss_tab.is_word_in_sentence ? "WiS" : "HW"];
+            for (var i = 0; i < labels.length; i++) {
+                var b = find_buttons_by_text(gloss_tab, labels[i]);
+                compare(b.length, 1, labels[i]);
+                compare(b[0].height, export_btns[0].height, labels[i]);
+            }
+        }
+
+        // Each on/off option button shows the option's state as `checked`.
+        function test_option_buttons_follow_settings() {
+            var saved_nd = gloss_tab.no_duplicates_globally;
+            var saved_sc = gloss_tab.skip_common;
+            var nd = find_buttons_by_text(gloss_tab, "NoDup");
+            var sc = find_buttons_by_text(gloss_tab, "ScW");
+            compare(nd.length, 1);
+            compare(sc.length, 1);
+            gloss_tab.no_duplicates_globally = false;
+            gloss_tab.skip_common = true;
+            compare(nd[0].checked, false);
+            compare(sc[0].checked, true);
+            gloss_tab.no_duplicates_globally = true;
+            compare(nd[0].checked, true);
+            gloss_tab.no_duplicates_globally = saved_nd;
+            gloss_tab.skip_common = saved_sc;
         }
 
         function find_combo_boxes(item) {

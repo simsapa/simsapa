@@ -23,6 +23,7 @@ Item {
     property alias gloss_text_input: gloss_text_input
     property alias paragraph_model: paragraph_model
     property alias commonWordsDialog: commonWordsDialog
+    property alias gloss_settings_window: gloss_settings_window
 
     property var handle_open_dict_tab_fn
 
@@ -248,16 +249,10 @@ Item {
     property string gloss_format: "word_in_sentence"
     readonly property bool is_word_in_sentence: root.gloss_format === "word_in_sentence"
 
-    // A restored session or a new one changes the format; a user choice in
-    // the ComboBox may have replaced its binding.
-    onGloss_formatChanged: gloss_format_combo.currentIndex = root.gloss_format === "headwords" ? 1 : 0
-
     // Word in Sentence rows and tables: 1 or 2 lines per word. One app
     // setting shared with the Export window, which sets it here too when it
     // saves (onExport_requested).
     property int gloss_lines_per_word: 2
-    // A user choice in the ComboBox may have replaced its binding.
-    onGloss_lines_per_wordChanged: lines_per_word_combo.currentIndex = root.gloss_lines_per_word === 1 ? 0 : 1
 
     // Translate each paragraph as soon as its gloss (and its AI word
     // selection) is complete.
@@ -281,6 +276,52 @@ Item {
         root.has_translate_model = root.ai_translate_mode === "sequential_retry"
             ? coordinator.has_enabled_sequence_model()
             : coordinator.enabled_parallel_models().length > 0;
+    }
+
+    // The gloss options, each set from both the option buttons under the
+    // input and the Gloss Settings dialog. Called on a user action only, so
+    // a restored session never re-glosses through them.
+    function set_no_duplicates(is_on: bool) {
+        root.no_duplicates_globally = is_on;
+        if (paragraph_model.count > 0) root.start_background_all_glosses();
+    }
+
+    function set_skip_common(is_on: bool) {
+        root.skip_common = is_on;
+        if (paragraph_model.count > 0) root.start_background_all_glosses();
+    }
+
+    function set_lines_per_word(lines: int) {
+        root.gloss_lines_per_word = lines === 1 ? 1 : 2;
+        SuttaBridge.set_gloss_lines_per_word(root.gloss_lines_per_word);
+    }
+
+    function set_ai_translate_mode(mode: string) {
+        root.ai_translate_mode = mode === "parallel" ? "parallel" : "sequential_retry";
+        SuttaBridge.set_gloss_ai_translate_mode(root.ai_translate_mode);
+        root.refresh_has_translate_model();
+    }
+
+    function set_auto_translate(is_on: bool) {
+        root.auto_translate = is_on;
+        SuttaBridge.set_gloss_auto_translate(root.auto_translate);
+    }
+
+    function set_contextual_all(is_on: bool) {
+        root.gloss_contextual_all = is_on;
+        SuttaBridge.set_gloss_contextual_all(root.gloss_contextual_all);
+    }
+
+    // Persisted through the dialog's persist_selection() (one writer of the
+    // setting), which updates word_selection_setting_enabled.
+    function set_word_selection(is_on: bool) {
+        word_selection_dialog.persist_selection(is_on);
+    }
+
+    // The format switch and "Update All Glosses" are refused while the text
+    // is being glossed or an AI word selection is running.
+    function can_regloss(): bool {
+        return !root.is_processing_all && !root.is_ws_any_active();
     }
 
     function load_gloss_settings() {
@@ -2909,6 +2950,13 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                     }
 
                     Button {
+                        id: open_json_btn
+                        text: "Open JSON"
+                        enabled: !root.is_exporting_anki
+                        onClicked: root.open_json_session()
+                    }
+
+                    Button {
                         id: save_session_btn
                         text: "Save"
                         enabled: root.session_needs_saving
@@ -3009,33 +3057,15 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                             }
                         }
 
+                        // The actions, and one button per gloss option showing
+                        // its state: checked for an on/off option, the current
+                        // value's abbreviation for a choice. The cogwheel opens
+                        // the Gloss Settings window with every option in full,
+                        // including those without a button here.
                         Flow {
+                            id: gloss_options_row
                             Layout.fillWidth: true
-                            spacing: 10
-
-                            CheckBox {
-                                id: globalDedupeCheckBox
-                                text: "No duplicates"
-                                checked: root.no_duplicates_globally
-                                onCheckedChanged: {
-                                    root.no_duplicates_globally = globalDedupeCheckBox.checked;
-                                    if (paragraph_model.count > 0) {
-                                        root.start_background_all_glosses();
-                                    }
-                                }
-                            }
-
-                            CheckBox {
-                                id: skip_common_check
-                                text: "Skip common"
-                                checked: root.skip_common
-                                onCheckedChanged: {
-                                    root.skip_common = skip_common_check.checked;
-                                    if (paragraph_model.count > 0) {
-                                        root.start_background_all_glosses();
-                                    }
-                                }
-                            }
+                            spacing: 6
 
                             Text {
                                 id: exporting_message
@@ -3043,7 +3073,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 font.pointSize: root.vocab_font_point_size
                                 color: "#4CAF50"
                                 visible: root.is_exporting_anki || root.is_export_glossing
-                                /* anchors.verticalCenter: parent.verticalCenter */
+                            }
+
+                            Button {
+                                id: update_all_glosses_btn
+                                text: "Update All Glosses"
+                                // Also disabled while an AI word-selection request is in
+                                // flight or queued (re-glossing would rebuild the paragraph
+                                // list under it).
+                                enabled: root.can_regloss()
+                                icon.source: root.is_processing_all ? "icons/32x32/fa_stopwatch-solid.png" : ""
+                                onClicked: root.start_background_all_glosses()
                             }
 
                             Button {
@@ -3053,163 +3093,99 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 onClicked: root.open_export_window()
                             }
 
-                            Button {
-                                text: "Open JSON"
-                                enabled: !root.is_exporting_anki
-                                onClicked: root.open_json_session()
+                            GlossOptionButton {
+                                id: gloss_format_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/fa_book-open-reader-solid.png"
+                                text: root.is_word_in_sentence ? "WiS" : "HW"
+                                enabled: root.can_regloss()
+                                tip: root.is_word_in_sentence
+                                    ? "Gloss format: Word in Sentence. Click for Headwords."
+                                    : "Gloss format: Headwords. Click for Word in Sentence."
+                                onClicked: root.switch_gloss_format(root.is_word_in_sentence ? "headwords" : "word_in_sentence")
                             }
 
-                            RowLayout {
-                                spacing: 5
-
-                                Text {
-                                    text: "Gloss format:"
-                                    font.pointSize: root.vocab_font_point_size
-                                    color: root.text_color
-                                }
-
-                                ComboBox {
-                                    id: gloss_format_combo
-                                    model: ["Word in Sentence", "Headwords"]
-                                    currentIndex: root.gloss_format === "headwords" ? 1 : 0
-                                    enabled: !root.is_processing_all && !root.is_ws_any_active()
-                                    onActivated: function(index) {
-                                        root.switch_gloss_format(index === 1 ? "headwords" : "word_in_sentence");
-                                    }
-                                }
+                            GlossOptionButton {
+                                id: lines_per_word_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/fa_bars-solid.png"
+                                text: root.gloss_lines_per_word === 1 ? "1L" : "2L"
+                                enabled: root.is_word_in_sentence
+                                tip: root.gloss_lines_per_word === 1
+                                    ? "Lines per word: one line. Click for two lines."
+                                    : "Lines per word: two lines. Click for one line."
+                                onClicked: root.set_lines_per_word(root.gloss_lines_per_word === 1 ? 2 : 1)
                             }
 
-                            // Shared with the Export window's choice (one app
-                            // setting), so both start from the same layout.
-                            RowLayout {
-                                spacing: 5
-
-                                Text {
-                                    text: "Lines per word:"
-                                    font.pointSize: root.vocab_font_point_size
-                                    color: root.text_color
-                                    opacity: lines_per_word_combo.enabled ? 1.0 : 0.5
-                                }
-
-                                ComboBox {
-                                    id: lines_per_word_combo
-                                    model: ["One line", "Two lines"]
-                                    currentIndex: root.gloss_lines_per_word === 1 ? 0 : 1
-                                    enabled: root.is_word_in_sentence
-                                    onActivated: function(index) {
-                                        root.gloss_lines_per_word = index === 0 ? 1 : 2;
-                                        SuttaBridge.set_gloss_lines_per_word(root.gloss_lines_per_word);
-                                    }
-                                }
+                            GlossOptionButton {
+                                id: no_duplicates_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/lucide-lab--copy-text.png"
+                                text: "NoDup"
+                                checked: root.no_duplicates_globally
+                                tip: "No duplicates: " + (root.no_duplicates_globally ? "on" : "off")
+                                onClicked: root.set_no_duplicates(!root.no_duplicates_globally)
                             }
 
-                            RowLayout {
-                                spacing: 5
+                            GlossOptionButton {
+                                id: skip_common_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/fa_forward-fast-solid.png"
+                                text: "ScW"
+                                checked: root.skip_common
+                                tip: "Skip common words: " + (root.skip_common ? "on" : "off")
+                                onClicked: root.set_skip_common(!root.skip_common)
+                            }
 
-                                Text {
-                                    text: "Dispatch mode:"
-                                    font.pointSize: root.vocab_font_point_size
-                                    color: root.text_color
-                                }
-
-                                ComboBox {
-                                    id: ai_translate_mode_combo
-                                    model: ["Sequential retry", "Parallel"]
-                                    currentIndex: root.ai_translate_mode === "parallel" ? 1 : 0
-                                    onActivated: function(index) {
-                                        root.ai_translate_mode = index === 1 ? "parallel" : "sequential_retry";
-                                        SuttaBridge.set_gloss_ai_translate_mode(root.ai_translate_mode);
-                                        root.refresh_has_translate_model();
-                                    }
-                                }
+                            GlossOptionButton {
+                                id: word_selection_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/pixel--robot-solid.png"
+                                text: "AiW"
+                                checked: root.word_selection_setting_enabled
+                                tip: "AI word selection: " + (root.word_selection_setting_enabled ? "on" : "off")
+                                onClicked: root.set_word_selection(!root.word_selection_setting_enabled)
                             }
 
                             // Disabled without a model for the dispatch mode. A
                             // disabled control gets no hover, so the tooltip
                             // hangs on a wrapper.
                             Item {
-                                implicitWidth: auto_translate_check.implicitWidth
-                                implicitHeight: auto_translate_check.implicitHeight
+                                implicitWidth: auto_translate_btn.implicitWidth
+                                implicitHeight: export_btn.implicitHeight
 
                                 HoverHandler {
                                     id: auto_translate_hover
                                     onHoveredChanged: if (hovered) root.refresh_has_translate_model()
                                 }
 
-                                CheckBox {
-                                    id: auto_translate_check
-                                    text: "Auto-translate"
+                                GlossOptionButton {
+                                    id: auto_translate_btn
+                                    anchors.fill: parent
+                                    icon.source: "icons/32x32/grommet-icons--chat.png"
+                                    text: "Tr"
                                     checked: root.auto_translate
                                     enabled: root.has_translate_model
-                                    onToggled: {
-                                        root.auto_translate = auto_translate_check.checked;
-                                        SuttaBridge.set_gloss_auto_translate(root.auto_translate);
-                                    }
+                                    // The wrapper shows the tooltip.
+                                    tip: ""
+                                    onClicked: root.set_auto_translate(!root.auto_translate)
                                 }
 
                                 ToolTip.visible: auto_translate_hover.hovered
                                 ToolTip.delay: 500
                                 ToolTip.text: root.has_translate_model
-                                    ? "Translate each paragraph when its gloss is complete."
-                                    : "No AI model is enabled for the dispatch mode. See Prompts > AI Models."
+                                    ? "Auto-translate: " + (root.auto_translate ? "on" : "off")
+                                        + ". Translate each paragraph when its gloss is complete."
+                                    : "Auto-translate: no AI model is enabled for the dispatch mode. See Prompts > AI Models."
                             }
 
-                            // On/off for AI word selection, persisted through the
-                            // dialog's persist_selection() (one writer of the
-                            // setting). The info button opens the dialog with the
-                            // shield legend and the cache maintenance.
-                            RowLayout {
-                                spacing: 0
-
-                                CheckBox {
-                                    id: word_selection_check
-                                    text: "AI word selection"
-                                    checked: root.word_selection_setting_enabled
-                                    onToggled: word_selection_dialog.persist_selection(word_selection_check.checked)
-                                }
-
-                                Button {
-                                    flat: true
-                                    icon.source: "icons/32x32/fa_circle-info-solid.png"
-                                    Layout.preferredWidth: word_selection_check.implicitHeight
-                                    Layout.preferredHeight: word_selection_check.implicitHeight
-                                    ToolTip.visible: hovered
-                                    ToolTip.delay: 500
-                                    ToolTip.text: "About AI word selection"
-                                    onClicked: word_selection_dialog.open()
-                                }
-                            }
-
-                            CheckBox {
-                                id: contextual_all_check
-                                text: "Contextual meaning for every word"
-                                checked: root.gloss_contextual_all
-                                enabled: root.is_word_in_sentence
-                                onToggled: {
-                                    root.gloss_contextual_all = contextual_all_check.checked;
-                                    SuttaBridge.set_gloss_contextual_all(root.gloss_contextual_all);
-                                }
-                                ToolTip.visible: hovered
-                                ToolTip.delay: 500
-                                ToolTip.text: "The AI word selection also gives a contextual meaning for the words "
-                                    + "with only one sense or an already chosen sense, not only for the ambiguous ones. "
-                                    + "Uses more tokens per request."
-                            }
-
-                            Button {
-                                text: "Common Words..."
-                                onClicked: commonWordsDialog.open()
-                            }
-
-                            Button {
-                                id: update_all_glosses_btn
-                                text: "Update All Glosses"
-                                // Also disabled while an AI word-selection request is in
-                                // flight or queued (re-glossing would rebuild the paragraph
-                                // list under it).
-                                enabled: !root.is_processing_all && !root.is_ws_any_active()
-                                icon.source: root.is_processing_all ? "icons/32x32/fa_stopwatch-solid.png" : ""
-                                onClicked: root.start_background_all_glosses()
+                            GlossOptionButton {
+                                id: gloss_settings_btn
+                                implicitHeight: export_btn.implicitHeight
+                                icon.source: "icons/32x32/fa_gear-solid.png"
+                                display: AbstractButton.IconOnly
+                                tip: "Gloss settings"
+                                onClicked: gloss_settings_window.show_settings_window()
                             }
                         }
                     }
@@ -4204,6 +4180,50 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             unsave_word_dialog.component_word = "";
             unsave_word_dialog.is_breakdown = false;
         }
+    }
+
+    // A gloss option button under the main input: an icon and a short
+    // abbreviation, `checked` bound to the option's state. Not `checkable`, so
+    // a click never replaces the binding; the click handler sets the option.
+    // Each one sets `implicitHeight` to the Export button's: a Flow aligns its
+    // items at the top, and Fusion's ToolButton is taller than its Button.
+    component GlossOptionButton: ToolButton {
+        property string tip: ""
+        display: AbstractButton.TextBesideIcon
+        font.pointSize: 10
+        topPadding: 3
+        bottomPadding: 3
+        icon.width: 16
+        icon.height: 16
+        ToolTip.visible: hovered && tip.length > 0
+        ToolTip.delay: 500
+        ToolTip.text: tip
+    }
+
+    GlossSettingsWindow {
+        id: gloss_settings_window
+        gloss_format: root.gloss_format
+        lines_per_word: root.gloss_lines_per_word
+        ai_translate_mode: root.ai_translate_mode
+        no_duplicates: root.no_duplicates_globally
+        skip_common: root.skip_common
+        word_selection: root.word_selection_setting_enabled
+        contextual_all: root.gloss_contextual_all
+        auto_translate: root.auto_translate
+        has_translate_model: root.has_translate_model
+        can_regloss: root.can_regloss()
+
+        onShown: root.refresh_has_translate_model()
+        onGloss_format_chosen: function(gloss_format) { root.switch_gloss_format(gloss_format); }
+        onLines_per_word_chosen: function(lines) { root.set_lines_per_word(lines); }
+        onAi_translate_mode_chosen: function(mode) { root.set_ai_translate_mode(mode); }
+        onNo_duplicates_chosen: function(is_on) { root.set_no_duplicates(is_on); }
+        onSkip_common_chosen: function(is_on) { root.set_skip_common(is_on); }
+        onWord_selection_chosen: function(is_on) { root.set_word_selection(is_on); }
+        onContextual_all_chosen: function(is_on) { root.set_contextual_all(is_on); }
+        onAuto_translate_chosen: function(is_on) { root.set_auto_translate(is_on); }
+        onCommon_words_requested: commonWordsDialog.open()
+        onWord_selection_info_requested: word_selection_dialog.open()
     }
 
     GlossWordSelectionDialog {

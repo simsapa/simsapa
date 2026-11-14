@@ -3,7 +3,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import QtQuick.Dialogs
 
 import com.profoundlabs.simsapa
 
@@ -102,10 +101,7 @@ Dialog {
 
         Button {
             text: "Clear Word-Selection Cache..."
-            onClicked: {
-                clear_cache_confirm_dialog.cache_count = SuttaBridge.gloss_word_cache_count();
-                clear_cache_confirm_dialog.open();
-            }
+            onClicked: clear_cache_confirm_dialog.ask()
         }
 
         Label {
@@ -189,16 +185,7 @@ Dialog {
         Item { Layout.fillHeight: true }
     }
 
-    MessageDialog {
+    GlossClearCacheDialog {
         id: clear_cache_confirm_dialog
-        property int cache_count: 0
-        title: "Clear Word-Selection Cache"
-        text: "Delete all " + clear_cache_confirm_dialog.cache_count + " cached word selections (AI-selected and user-confirmed)? Built-in entries shipped with the app are kept."
-        buttons: MessageDialog.Cancel | MessageDialog.Ok
-        onAccepted: {
-            if (!SuttaBridge.clear_gloss_word_cache()) {
-                logger.error("Failed to clear the gloss word-selection cache");
-            }
-        }
     }
 }
