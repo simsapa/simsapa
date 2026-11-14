@@ -200,6 +200,15 @@ string).
 > wrongly skip the whole provider. An explicit rate-limit signal outranks the
 > quota markers.
 
+> **Credentials are redacted from `message` and `raw`.** A transport error's
+> text is the `reqwest::Error`, which carries the request URL, and Gemini sends
+> the API key in it as `?key=…`. Both constructors (`AiRequestError::new()` and
+> `classify_provider_error()`) pass the text through `redact_credentials()`,
+> which replaces the value of a `key` / `api_key` / `access_token` / `token`
+> query parameter with `<redacted>`. A new way of building an `AiRequestError`
+> must do the same: the error is shown in the Gloss tab, printed by the CLI and
+> returned by the localhost API.
+
 **Wire format.** A failed request is delivered through the *existing* response
 signals as a JSON envelope `{"ai_error": {…}}`; a successful response is
 unchanged. QML detects and formats it with `bridges/assets/qml/AiErrorUtils.qml`

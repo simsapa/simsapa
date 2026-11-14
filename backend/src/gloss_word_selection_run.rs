@@ -117,6 +117,15 @@ pub fn run_word_selection_with_models(
 
         let items_json = serde_json::json!(items).to_string();
         let prompt = build_word_selection_prompt(&items);
+        let single_option_items = items
+            .iter()
+            .filter(|it| it.get("options").and_then(|o| o.as_array()).is_some_and(|o| o.len() == 1))
+            .count();
+        crate::logger::debug(&format!(
+            "word selection batch {}/{}: items={} single_option_items={} prompt_chars={}",
+            batch + 1, batch_count, items.len(), single_option_items, prompt.chars().count()
+        ));
+        let started = std::time::Instant::now();
         let messages = vec![ChatMessage { role: "user".to_string(), content: prompt }];
 
         let outcome = {
@@ -131,6 +140,11 @@ pub fn run_word_selection_with_models(
                 &mut on_progress,
             )
         };
+
+        crate::logger::debug(&format!(
+            "word selection batch {}/{}: finished in {} ms",
+            batch + 1, batch_count, started.elapsed().as_millis()
+        ));
 
         match outcome {
             WalkOutcome::Success { response, .. } => {

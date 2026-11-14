@@ -134,10 +134,13 @@ macro_rules! get_response {
             // Single message - handle as prompt.
             // In the single message case (GlossTab.qml) the system prompt is already prepended to the message content.
             let prompt_content = &$messages[0].content;
-            $agent
+            let extended = $agent
                 .prompt(prompt_content)
+                .extended_details()
                 .await
-                .map_err(|e| classify_rig_error($provider, $model, e))?
+                .map_err(|e| classify_rig_error($provider, $model, e))?;
+            log_token_usage($provider, $model, prompt_content.chars().count(), &extended.total_usage);
+            extended.output
         } else {
             // Multiple messages - handle as chat.
             //
@@ -166,6 +169,17 @@ macro_rules! get_response {
 
         clean_prompt(&response)
     }};
+}
+
+/// A debug line with the provider's reported token counts for one request.
+/// `thinking` is what the total counts beyond input and output (Gemini's
+/// thinking tokens; 0 for providers whose total is just the sum).
+fn log_token_usage(provider: &str, model: &str, prompt_chars: usize, usage: &rig::completion::Usage) {
+    let thinking = usage.total_tokens.saturating_sub(usage.input_tokens + usage.output_tokens);
+    crate::logger::debug(&format!(
+        "ai usage: provider={} model={} prompt_chars={} input_tokens={} output_tokens={} thinking_tokens={} total_tokens={}",
+        provider, model, prompt_chars, usage.input_tokens, usage.output_tokens, thinking, usage.total_tokens
+    ));
 }
 
 // Helper function to extract system prompt from ChatMessage array
