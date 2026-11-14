@@ -1295,6 +1295,37 @@ ${query_text}`;
         root.nav_history_paused = false;
     }
 
+    // Close every tab except the active one, which stays active. Closing the
+    // last results tab resets it to a blank "Sutta" tab instead of removing it.
+    function close_other_tabs() {
+        let keep_id_key = root.get_active_tab_id_key();
+        if (!keep_id_key) return;
+
+        root.nav_history_paused = true;
+
+        let repeaters = [tabs_pinned, tabs_translations, tabs_results];
+        for (let r = 0; r < repeaters.length; r++) {
+            let rep = repeaters[r];
+            for (let i = rep.count - 1; i >= 0; i--) {
+                let tab = rep.itemAt(i) as SuttaTabButton;
+                if (tab && tab.id_key !== keep_id_key) {
+                    tab.closeClicked();
+                }
+            }
+        }
+
+        // Closing a tab moves the focus to a neighbour; give it back.
+        let kept_tab = root.get_tab_with_id_key(keep_id_key);
+        if (kept_tab) {
+            kept_tab.click();
+            if (kept_tab.web_item_key !== "") {
+                sutta_html_view_layout.current_key = kept_tab.web_item_key;
+            }
+        }
+
+        root.nav_history_paused = false;
+    }
+
     function show_result_in_html_view_with_json(result_data_json: string, new_tab) {
         if (new_tab === undefined) new_tab = false;
         let result_data = JSON.parse(result_data_json);
@@ -2379,6 +2410,22 @@ ${query_text}`;
                     onTriggered: {
                         suttas_tab_bar.close_current_tab();
                     }
+                }
+            }
+
+            CMenuItem {
+                action: Action {
+                    id: action_close_other_tabs
+                    text: "Close Other Tabs"
+                    onTriggered: root.close_other_tabs()
+                }
+            }
+
+            CMenuItem {
+                action: Action {
+                    id: action_close_all_tabs
+                    text: "Close All Tabs"
+                    onTriggered: root.clear_all_tabs()
                 }
             }
 
