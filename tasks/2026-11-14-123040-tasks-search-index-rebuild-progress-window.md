@@ -20,7 +20,7 @@ Source PRD: `tasks/2026-11-14-123040-prd---search-index-rebuild-progress-window.
 - `bridges/assets/qml/DictionariesWindow.qml` - model for the `StackLayout` frames and the close refusal in `onClosing`.
 - `bridges/assets/qml/DictionaryIndexProgressWindow.qml` - model for the window's size and `ProgressBar` handling.
 - `bridges/assets/qml/AppSettingsWindow.qml` - Settings entry point: `rebuild_index_dialog` is a plain Yes / No confirmation that opens the rebuild window.
-- `bridges/assets/qml/DatabaseValidationDialog.qml` - second entry point: opens the rebuild window, re-checks the index in `onActiveChanged` once the rebuild has ended (`rebuild_window_opened`), shows the `incomplete` message from the bridge.
+- `bridges/assets/qml/DatabaseValidationDialog.qml` - second entry point: opens the rebuild window, re-checks the index once the rebuild has ended (`rebuild_end_poll` timer, while `rebuild_window_opened`), shows the `incomplete` message from the bridge.
 - `bridges/assets/qml/SuttaSearchWindow.qml` - startup "index not found / outdated" notice; gets the incomplete case.
 - `cpp/search_index_rebuild_window.h`, `cpp/search_index_rebuild_window.cpp` - **new**: C++ wrapper (copy of `cpp/dictionaries_window.*`, guarded `m_root`).
 - `cpp/window_manager.h`, `cpp/window_manager.cpp` - `create_search_index_rebuild_window()`, its list, the `on_window_closed()` branch.
@@ -230,7 +230,7 @@ Depends on: 1.0–6.0.
   - [ ] 7.2 `docs/simsapa-cli-and-localhost-api.md`: the `[N/M]` step lines, the summary lines, the `--json` `summary` object, and the `incomplete` state in the fulltext status / `/health`. No links or source paths; run its self-contained test.
   - [ ] 7.3 `docs/window-lifecycle-and-reuse.md`: add the window to the single-instance members in §0. Add the §5b row: "none needed — `onClosing` refuses the close while frames 0/1 are showing".
   - [ ] 7.3a `docs/keep-screen-awake.md`: replace the `search-index-rebuild-settings` / `search-index-rebuild-validation` holder examples (lines ~13, ~25) with the single `search-index-rebuild` holder held by the rebuild window.
-  - [ ] 7.3b `docs/fulltext-index-storage-and-file-locking.md` (with 7.1): `INDEX_WRITE_LOCK` and why the searcher is closed before the deletion.
+  - [ ] 7.3b `docs/fulltext-index-storage-and-file-locking.md` (with 7.1): `INDEX_WRITE_LOCK` (the library builds hold it through their `reinit_fulltext_searcher()`) and why the searcher is closed before the deletion; the searcher stays closed until `reinit_fulltext_searcher()` (`init_fulltext_searcher()`, which the localhost API calls before each fulltext query, does not reopen it); `VERSION` is removed before the folder, and a failed deletion writes `INCOMPLETE`; a filtered CLI build leaves an `INCOMPLETE` marker it found (only a full build clears it).
   - [ ] 7.4 `PROJECT_MAP.md`: the new QML window, the C++ wrapper, and the indexer's progress function.
   - [ ] 7.5 Check for language servers you started and kill them; check `free -h` and `df -h .`. Then run, memory-capped: `make build -B`, `make rust-test`, `make qml-test`. Report any failures with their output. Timing-assertion failures are known drift.
   - [ ] 7.6 `git status`: no `*.sqlite3` and no index files are staged or untracked from the work.

@@ -252,7 +252,8 @@ pub fn summary_lines(summary: &indexer::IndexBuildSummary) -> Vec<String> {
 ///
 /// Returns the build summary. Runs through
 /// [`indexer::build_steps_with_progress`], so the `INCOMPLETE` marker stays
-/// in the index folder if the build fails part way.
+/// in the index folder if the build fails part way, and a filtered build
+/// leaves a marker it found in place.
 pub fn build_indexes(
     dbm: &DbManager,
     paths: &AppGlobalPaths,
@@ -270,8 +271,12 @@ pub fn build_indexes(
 
     // The CLI has no cancel (Ctrl-C ends the process).
     let never = std::sync::atomic::AtomicBool::new(false);
+    // Only an unfiltered build completes an index an earlier build left
+    // unfinished (the INCOMPLETE marker).
+    let full_plan = area.is_none() && lang.is_none();
     let outcome = indexer::build_steps_with_progress(
         &steps,
+        full_plan,
         &dbm.appdata,
         &dbm.dictionaries,
         &dbm.dpd,

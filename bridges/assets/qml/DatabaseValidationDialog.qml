@@ -342,26 +342,34 @@ ApplicationWindow {
     property bool export_in_progress: false
 
     // Set when this dialog opened the rebuild window. The rebuild's signals go
-    // only to that window's engine, so this dialog re-checks the index when it
-    // is active again: the rebuild window is application-modal, so that is
-    // after it has closed.
+    // only to that window's engine, so this dialog polls the bridge's running
+    // flag and re-checks the index once the rebuild has ended. Polling, not
+    // onActiveChanged: which window gets the focus back when the rebuild
+    // window closes is up to the platform.
     property bool rebuild_window_opened: false
 
     function start_search_index_rebuild() {
         logger.info("start_search_index_rebuild(): opening the rebuild window");
         root.rebuild_window_opened = true;
+        // The window starts the rebuild while it is created, so the running
+        // flag is already set when this returns (unless the start was refused).
         SuttaBridge.open_search_index_rebuild_window();
     }
 
-    onActiveChanged: {
-        if (!root.active || !root.rebuild_window_opened) return;
-        if (SuttaBridge.is_rebuilding_search_index()) return;
-        root.rebuild_window_opened = false;
-        logger.info("DatabaseValidationDialog: re-checking the search index after a rebuild");
-        // The rebuild also reopens the searcher, so the fulltext row can
-        // change with it.
-        root.refresh_search_index_status();
-        root.refresh_fulltext_status();
+    Timer {
+        id: rebuild_end_poll
+        interval: 1000
+        repeat: true
+        running: root.rebuild_window_opened
+        onTriggered: {
+            if (SuttaBridge.is_rebuilding_search_index()) return;
+            root.rebuild_window_opened = false;
+            logger.info("DatabaseValidationDialog: re-checking the search index after a rebuild");
+            // The rebuild also reopens the searcher, so the fulltext row can
+            // change with it.
+            root.refresh_search_index_status();
+            root.refresh_fulltext_status();
+        }
     }
 
     // Both UpdateNotificationDialog and DatabaseValidationDialog are siblings

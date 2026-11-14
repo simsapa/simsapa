@@ -2270,9 +2270,21 @@ fn run_search_index_rebuild(
     simsapa_backend::close_fulltext_searcher();
 
     if let Ok(true) = paths.index_dir.try_exists() {
+        // VERSION goes first: if remove_dir_all stops part way, what is left
+        // reads as outdated, never as a current index.
+        if let Err(e) = simsapa_backend::search::indexer::remove_version_file(&paths.index_dir) {
+            let error_msg = format!("Failed to remove old index: {}", e);
+            error(&error_msg);
+            simsapa_backend::reinit_fulltext_searcher();
+            return ("error", String::new(), error_msg);
+        }
         if let Err(e) = std::fs::remove_dir_all(&paths.index_dir) {
             let error_msg = format!("Failed to remove old index: {}", e);
             error(&error_msg);
+            // What is left is part of an index: say so in the fulltext status.
+            if let Err(e) = simsapa_backend::search::indexer::write_incomplete_marker(&paths.index_dir) {
+                warn(&format!("rebuild_search_index: could not write the INCOMPLETE marker: {}", e));
+            }
             simsapa_backend::reinit_fulltext_searcher();
             return ("error", String::new(), error_msg);
         }
@@ -4953,7 +4965,9 @@ impl qobject::SuttaBridge {
 
                     {
                         // Wait for a running Rebuild Search Index rather than
-                        // writing into the folder it deletes.
+                        // writing into the folder it deletes. The reinit stays
+                        // under the lock too: a rebuild starting in between
+                        // would have its closed searcher reopened mid-deletion.
                         let _index_write = simsapa_backend::INDEX_WRITE_LOCK
                             .lock()
                             .unwrap_or_else(|p| p.into_inner());
@@ -4962,9 +4976,9 @@ impl qobject::SuttaBridge {
                         ) {
                             warn(&format!("Failed to build library index for language {}: {}", effective_lang, e));
                         }
-                    }
 
-                    simsapa_backend::reinit_fulltext_searcher();
+                        simsapa_backend::reinit_fulltext_searcher();
+                    }
 
                     let success_msg = QString::from(format!("Successfully imported '{}'", &title_str));
                     crate::queue_or_log(&qt_thread, "sutta_bridge::import_document", move |mut qo| {
@@ -5379,8 +5393,10 @@ impl qobject::SuttaBridge {
                         let library_index_dir = &globals.paths.library_index_dir;
 
                         // Wait for a running Rebuild Search Index rather than
-                        // writing into the folder it deletes.
-                        let index_write = simsapa_backend::INDEX_WRITE_LOCK
+                        // writing into the folder it deletes. Held until the
+                        // reinit below has run, so a rebuild cannot start in
+                        // between and have its closed searcher reopened.
+                        let _index_write = simsapa_backend::INDEX_WRITE_LOCK
                             .lock()
                             .unwrap_or_else(|p| p.into_inner());
 
@@ -5395,7 +5411,6 @@ impl qobject::SuttaBridge {
                         ) {
                             warn(&format!("Failed to rebuild library index for new language {}: {}", new_lang, e));
                         }
-                        drop(index_write);
 
                         // Reload the fulltext searcher
                         simsapa_backend::reinit_fulltext_searcher();

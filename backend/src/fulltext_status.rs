@@ -494,6 +494,11 @@ mod tests {
         assert!(!crate::is_fulltext_searcher_ready());
         let status = build_status(crate::fulltext_index_counts(), &[], false);
         assert_eq!(status.state, FulltextState::NotOpenedYet);
+
+        // The localhost API calls init_fulltext_searcher() before every
+        // fulltext query: it must not reopen a searcher closed for a rebuild.
+        crate::init_fulltext_searcher();
+        assert!(crate::fulltext_index_counts().is_none(), "init must not reopen a closed searcher");
     }
 
     #[test]

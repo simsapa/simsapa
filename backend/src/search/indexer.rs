@@ -800,9 +800,14 @@ fn run_index_step(
 /// and, on success, writes `VERSION` and then removes the marker. A cancel or
 /// an error leaves the marker, so the fulltext status reports the index as
 /// incomplete. Used for the full build and for the CLI's filtered builds.
+///
+/// `full_plan` says whether `steps` is every step of the build. A filtered
+/// build that finishes leaves a marker it found in place: building one area or
+/// language does not complete an index that an earlier build left unfinished.
 #[allow(clippy::too_many_arguments)]
 pub fn build_steps_with_progress(
     steps: &[IndexStep],
+    full_plan: bool,
     appdata_db: &DatabaseHandle,
     dict_db: &DatabaseHandle,
     dpd_db: &DatabaseHandle,
@@ -813,6 +818,7 @@ pub fn build_steps_with_progress(
     let started = Instant::now();
     let total = steps.len();
 
+    let was_incomplete = is_index_incomplete(&paths.index_dir);
     write_incomplete_marker(&paths.index_dir)?;
 
     let mut areas: Vec<IndexBuildAreaSummary> = IndexStepArea::ALL
@@ -843,7 +849,11 @@ pub fn build_steps_with_progress(
     }
 
     write_version_file(&paths.index_dir)?;
-    remove_incomplete_marker(&paths.index_dir)?;
+    if full_plan || !was_incomplete {
+        remove_incomplete_marker(&paths.index_dir)?;
+    } else {
+        info("Filtered index build finished; the index was already incomplete, so the INCOMPLETE marker stays");
+    }
 
     Ok(IndexBuildOutcome::Completed(IndexBuildSummary {
         elapsed_secs: started.elapsed().as_secs(),
@@ -876,7 +886,7 @@ pub fn build_all_indexes_with_progress(
 
     let steps = plan_index_steps(&sutta_langs, &dict_langs, &library_langs);
 
-    let outcome = build_steps_with_progress(&steps, appdata_db, dict_db, dpd_db, paths, on_step, cancel)?;
+    let outcome = build_steps_with_progress(&steps, true, appdata_db, dict_db, dpd_db, paths, on_step, cancel)?;
     match &outcome {
         IndexBuildOutcome::Completed(summary) => {
             info(&format!("All fulltext indexes built successfully in {}s.", summary.elapsed_secs));
@@ -959,6 +969,17 @@ pub fn write_version_file(index_dir: &Path) -> Result<()> {
     std::fs::write(&version_path, INDEX_VERSION)?;
 
     info(&format!("Wrote index VERSION file: {}", version_path.display()));
+    Ok(())
+}
+
+/// Remove the VERSION file, if there is one. The rebuild does this before it
+/// deletes the index folder, so a deletion that stops part way leaves an index
+/// that reads as outdated rather than current.
+pub fn remove_version_file(index_dir: &Path) -> Result<()> {
+    let version_path = index_dir.join("VERSION");
+    if let Ok(true) = version_path.try_exists() {
+        std::fs::remove_file(&version_path)?;
+    }
     Ok(())
 }
 
@@ -1334,6 +1355,19 @@ mod tests {
         remove_incomplete_marker(&index_dir).unwrap();
     }
 
+    #[test]
+    fn remove_version_file_makes_the_index_not_current() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let index_dir = tmp.path().join("index");
+        write_version_file(&index_dir).unwrap();
+        assert!(is_index_current(&index_dir));
+
+        remove_version_file(&index_dir).unwrap();
+        assert!(!is_index_current(&index_dir));
+        // Removing a missing VERSION is not an error.
+        remove_version_file(&index_dir).unwrap();
+    }
+
     /// Paths from the dist `SIMSAPA_DIR` (see `backend/.env`) with every index
     /// folder moved into `tmp`, and handles for the three dist databases.
     /// `None` when the dist databases are absent.
@@ -1392,7 +1426,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let mut started: Vec<(usize, usize)> = Vec::new();
         let outcome = build_steps_with_progress(
-            &steps, &appdata, &dict, &dpd, &paths,
+            &steps, false, &appdata, &dict, &dpd, &paths,
             &mut |i, total, _step| {
                 started.push((i, total));
                 cancel.store(true, Ordering::Relaxed);
@@ -1416,7 +1450,7 @@ mod tests {
 
         let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
         let cancel = AtomicBool::new(false);
-        let outcome = build_steps_with_progress(&steps, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
 
         let IndexBuildOutcome::Completed(summary) = outcome else { panic!("expected Completed") };
         let names: Vec<&str> = summary.areas.iter().map(|a| a.area.as_str()).collect();
@@ -1426,5 +1460,28 @@ mod tests {
         assert!(summary.areas[0].languages.is_empty());
         assert!(!is_index_incomplete(&paths.index_dir));
         assert!(is_index_current(&paths.index_dir));
+    }
+
+    #[test]
+    fn a_filtered_build_keeps_the_marker_of_an_unfinished_build() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        // An earlier full build stopped part way.
+        write_incomplete_marker(&paths.index_dir).unwrap();
+
+        let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
+        let cancel = AtomicBool::new(false);
+
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
+        assert!(is_index_incomplete(&paths.index_dir), "a filtered build must not clear the marker");
+
+        // A build of the whole plan does clear it.
+        let outcome = build_steps_with_progress(&steps, true, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
+        assert!(!is_index_incomplete(&paths.index_dir), "a full build clears the marker");
     }
 }
