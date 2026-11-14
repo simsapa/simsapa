@@ -12,19 +12,32 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
 ## 1. Input and position
 
 - Input: `<bootstrap assets>/suttas-core-db/current/suttas.sqlite`. `current` is
-  a symlink to a dated folder (`2026-11-12`); the step logs the resolved path,
+  a symlink to a dated folder (`2026-11-14`); the step logs the resolved path,
   and every record it writes gets `source_info = "suttas-core <dated folder>"`.
   The database is opened read-only. It is **required**: a missing file stops the
   bootstrap, checked up front by the preflight
   (`bootstrap_cli/src/bootstrap/preflight.rs`) before anything is written,
   because without it the release would silently lose its segmented English
   translations.
-- Build the database with `bun run src/build/build.ts --verse-indent` in
-  suttas-core: without the flag it carries no Ṭhānissaro line layout (indent
-  tabs, restored verse line breaks), and `test_real_data_than_verse_indent_survives_import`
-  fails.
-- To use a new suttas-core build: put its database in a new dated folder, repoint
-  `current`, re-run the bootstrap.
+- Build the database in suttas-core on its local `simsapa` branch with
+  `bun run src/build/build.ts --verse-indent --emphasis`. Without
+  `--verse-indent` it carries no Ṭhānissaro line layout (indent tabs, restored
+  verse line breaks), and `test_real_data_than_verse_indent_survives_import`
+  fails. Without `--emphasis` his italics are lost (`<em>` in the segment text,
+  rendered as is; `content_plain` drops the tags), and
+  `test_real_data_than_emphasis_and_opening_dash_survive_import` fails; it also
+  fails on a build without `glue-opening-punctuation`.
+- `simsapa` is `master` with the feature branches merged that upstream has not
+  merged yet: `than-verse-indent`, `glue-opening-punctuation` (opening
+  punctuation the model cut onto the previous line), `than-emphasis`. It is
+  never pushed. A fix goes on its feature branch, then
+  `git switch simsapa && git merge <branch>`. `rerere` is on in that clone
+  (`autoupdate` off), so a conflict resolved there before is replayed into the
+  working tree, unstaged: check it, then `git add` and commit. A branch upstream has merged drops
+  out of the list.
+- To use a new suttas-core build: put its database in a new dated folder with
+  its `build.log` and a `BUILT-FROM.txt` (the `simsapa` commit, each merged
+  branch's commit, the build command), repoint `current`, re-run the bootstrap.
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org
   imports and **before** the Dhammapada (tipitaka.net), Nyanadipa and Munindo
   steps, the library imports and the navigation-tree builds. The Nyanadipa and

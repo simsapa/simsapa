@@ -2279,4 +2279,27 @@ mod tests {
         assert!(c["dhp186:3"].contains("Stressful,\n\t\tthey give little enjoyment"), "{:?}", c["dhp186:3"]);
         assert!(c["dhp187:1"].starts_with("\t\tfinds no delight\n"), "{:?}", c["dhp187:1"]);
     }
+
+    /// The suttas-core build (`--emphasis`, branch `simsapa`) carries
+    /// Ṭhānissaro's italics as `<em>`, and its opening dashes on the line they
+    /// open; `build_record()` keeps both. Thag 10:5 as dhammatalks.org prints
+    /// it: "as *mine* / —blind fools, …".
+    #[test]
+    fn test_real_data_than_emphasis_and_opening_dash_survive_import() {
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let core_path = base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB);
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        if !matches!(core_path.try_exists(), Ok(true)) || !matches!(appdata_path.try_exists(), Ok(true)) {
+            eprintln!("suttas-core or appdata database not found, skipping");
+            return;
+        }
+        let mut db = SuttasCoreDb::open(&core_path).unwrap().expect("suttas-core database");
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+        let rec = db.build_record("thag10.5", "than", "en", &mut app, &identity).unwrap();
+        let c = content_map(&rec.content_json);
+        assert_eq!(c["thag10.5:9.1"], "These who hold to this body as <em>mine</em>\n");
+        assert!(c["thag10.5:9.2"].starts_with("—blind fools"), "{:?}", c["thag10.5:9.2"]);
+        assert!(c["thag10.5:10.2"].starts_with("—as they would with a serpent\n"), "{:?}", c["thag10.5:10.2"]);
+        assert!(!rec.content_plain.contains("<em>"), "{:?}", rec.content_plain);
+    }
 }
