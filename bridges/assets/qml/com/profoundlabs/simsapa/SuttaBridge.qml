@@ -443,6 +443,10 @@ Item {
         return '';
     }
 
+    function build_word_selection_prompts(items_json: string, paragraphs_json: string): string {
+        return '[]';
+    }
+
     function gloss_translation_prompt(paragraph_json: string): string {
         return '';
     }

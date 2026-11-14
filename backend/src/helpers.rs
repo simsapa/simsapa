@@ -4920,6 +4920,75 @@ pub fn word_selection_paragraph_entries(
     entries.into_iter().map(|(_, e)| e).collect()
 }
 
+/// The most items one word-selection request carries. Each item costs the
+/// model about 150 output and thinking tokens (`gemini-3.6-flash`), so 80
+/// items stay well inside every provider's output limit, while larger
+/// requests were cut off (docs/gloss-ai-word-selection.md §4).
+pub const WORD_SELECTION_MAX_ITEMS_PER_REQUEST: usize = 80;
+
+/// The items of a request split into chunks of at most `max_items` items and
+/// about `max_chars` characters of item JSON, in order. All items of one
+/// word (its sense, break-down and component items: the same `p<pi>w<wi>`
+/// id prefix) stay in one chunk, and a word whose items alone exceed a limit
+/// is a chunk of its own. Items of several paragraphs share a chunk while
+/// they fit, so small paragraphs go in one request and a long one is split.
+pub fn word_selection_item_chunks(
+    items: &[serde_json::Value],
+    max_items: usize,
+    max_chars: usize,
+) -> Vec<Vec<serde_json::Value>> {
+    lazy_static! {
+        static ref RE_WORD_KEY: Regex = Regex::new(r"^p\d+w\d+").unwrap();
+    }
+    // Consecutive items of one word, in order.
+    let mut groups: Vec<(Vec<serde_json::Value>, usize)> = Vec::new();
+    let mut last_key: Option<String> = None;
+    for item in items {
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let key = RE_WORD_KEY.find(id).map(|m| m.as_str().to_string()).unwrap_or_else(|| id.to_string());
+        let chars = serde_json::to_string(item).map(|t| t.chars().count()).unwrap_or(0);
+        match groups.last_mut() {
+            Some((group, size)) if last_key.as_deref() == Some(key.as_str()) => {
+                group.push(item.clone());
+                *size += chars;
+            }
+            _ => groups.push((vec![item.clone()], chars)),
+        }
+        last_key = Some(key);
+    }
+    let mut chunks: Vec<Vec<serde_json::Value>> = Vec::new();
+    let mut chunk: Vec<serde_json::Value> = Vec::new();
+    let mut chunk_chars = 0;
+    for (group, chars) in groups {
+        if !chunk.is_empty() && (chunk.len() + group.len() > max_items || chunk_chars + chars > max_chars) {
+            chunks.push(std::mem::take(&mut chunk));
+            chunk_chars = 0;
+        }
+        chunk_chars += chars;
+        chunk.extend(group);
+    }
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+    chunks
+}
+
+/// The answers to the chunks of one request as one answer:
+/// `{"selections": [...]}` with every chunk's selections in order. A
+/// response with no `selections` array adds nothing.
+pub fn merge_word_selection_responses(responses: &[String]) -> String {
+    let mut selections: Vec<serde_json::Value> = Vec::new();
+    for response in responses {
+        let Some(json) = extract_json_object_with_array(response.trim(), "selections") else { continue };
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json)
+            && let Some(a) = v.get("selections").and_then(|a| a.as_array())
+        {
+            selections.extend(a.iter().cloned());
+        }
+    }
+    serde_json::json!({ "selections": selections }).to_string()
+}
+
 /// The items as the prompt sends them: an option's `uid` is left out when
 /// the item's options all have distinct `word`s, since the answer names the
 /// option by its `word` (docs/gloss-ai-word-selection.md §4). Options that
@@ -7293,6 +7362,51 @@ mod tests {
             "SYS\n\nBefore\n{\"task\":\"pali_word_selection\",\"items\":[{\"context\":\"a \\\"b\\\" c\",\"id\":\"p0w1\",\"options\":[{\"summary\":\"that\",\"word\":\"ta 1\"}],\"word\":\"taṁ\"}]}\nAfter"
         );
         assert_eq!(word_selection_prompt_text(" ", "<<WORD_SELECTION_JSON>>", &[], &[]), "{\"task\":\"pali_word_selection\",\"items\":[]}");
+    }
+
+    /// Chunks keep a word's items together, respect both limits, keep the
+    /// order, and give an oversized word a chunk of its own.
+    #[test]
+    fn test_word_selection_item_chunks() {
+        let item = |id: &str, pad: usize| serde_json::json!({"id": id, "context": "x".repeat(pad), "options": []});
+        let items = vec![
+            item("p0w0", 0), item("p0w1d", 0), item("p0w1c0", 0), item("p0w1c2", 0),
+            item("p0w2", 0), item("p1w0", 0), item("p1w3", 0),
+        ];
+        let ids = |chunks: &[Vec<serde_json::Value>]| -> Vec<Vec<String>> {
+            chunks.iter().map(|c| c.iter().map(|i| i["id"].as_str().unwrap().to_string()).collect()).collect()
+        };
+        // By items: p0w1's three items never split.
+        assert_eq!(
+            ids(&word_selection_item_chunks(&items, 3, usize::MAX)),
+            vec![vec!["p0w0"], vec!["p0w1d", "p0w1c0", "p0w1c2"], vec!["p0w2", "p1w0", "p1w3"]]
+        );
+        // Everything fits: one chunk, across paragraphs.
+        assert_eq!(word_selection_item_chunks(&items, 80, usize::MAX).len(), 1);
+        // A word larger than the limit is a chunk of its own.
+        assert_eq!(
+            ids(&word_selection_item_chunks(&items, 2, usize::MAX))[1],
+            vec!["p0w1d", "p0w1c0", "p0w1c2"]
+        );
+        // By characters.
+        let big = vec![item("p0w0", 100), item("p0w1", 100), item("p0w2", 100)];
+        assert_eq!(word_selection_item_chunks(&big, 80, 250).len(), 3);
+        assert_eq!(word_selection_item_chunks(&big, 80, 300).len(), 2);
+        assert!(word_selection_item_chunks(&[], 80, 100).is_empty());
+    }
+
+    /// The chunks' answers merge into one, in order; a broken one adds nothing.
+    #[test]
+    fn test_merge_word_selection_responses() {
+        let merged = merge_word_selection_responses(&[
+            "```json\n{\"selections\": [{\"id\": \"p0w0\", \"word\": \"a\"}]}\n```".to_string(),
+            "not json".to_string(),
+            r#"{"selections": [{"id": "p0w1", "word": "b"}, {"id": "p0w2", "word": "c"}]}"#.to_string(),
+        ]);
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        let ids: Vec<&str> = v["selections"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, vec!["p0w0", "p0w1", "p0w2"]);
+        assert!(validate_word_selection_response_shape(&merged).is_ok());
     }
 
     /// The prompt drops the uids of options with distinct words and keeps

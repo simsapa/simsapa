@@ -637,12 +637,22 @@ Item {
             root.ws_set_status(pi, "busy", "Selecting words...");
         }
 
-        let prompt = root.build_word_selection_prompt(items, covered);
+        // A long paragraph's items go in several requests, as in the CLI
+        // (simsapa_backend::helpers::word_selection_item_chunks); PromptManager
+        // sends them in turn and returns one merged answer.
+        let paragraphs_json = JSON.stringify(root.build_word_selection_inputs(covered));
+        let prompts_json = SuttaBridge.build_word_selection_prompts(JSON.stringify(items), paragraphs_json);
         root.ws_last_start_time = Date.now();
-        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}]`);
+        let parts = 0;
+        try {
+            parts = JSON.parse(prompts_json).length;
+        } catch (e) {
+            logger.error("ws_send_request: failed to parse the prompts JSON: " + e);
+        }
+        logger.info(`Word selection request ${request_id}: ${items.length} words in ${parts} part(s), paragraphs [${covered.join(", ")}]`);
         // The engine walks the Fallback sequence; the model which answered is
         // reported in the progress events and the response signal.
-        pm.sequential_word_selection_request(request_id, prompt, items.length);
+        pm.sequential_word_selection_requests(request_id, prompts_json);
         return true;
     }
 

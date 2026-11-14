@@ -1,12 +1,13 @@
-//! Qt-free AI word-selection run over glossed paragraphs: batching, pacing,
-//! the fallback walk per batch, and response parsing. Shared by the
+//! Qt-free AI word-selection run over glossed paragraphs: the items split
+//! into requests (`word_selection_item_chunks`), pacing, the fallback walk
+//! per request, and response parsing. Shared by the
 //! `/word_selection_ws` WebSocket route (`bridges`), which turns the events
 //! into its JSON protocol, and by the callers without Qt (the CLI and the
 //! `/gloss_text` AI runner).
 //!
 //! The in-app Gloss tab drives its own requests through `PromptManager` and
-//! does not use this module; the batching constants are shared with it
-//! through `crate::ai_engine`. See docs/gloss-ai-word-selection.md and
+//! does not use this module; it splits its requests with the same
+//! `word_selection_item_chunks` and constants. See docs/gloss-ai-word-selection.md and
 //! docs/ai-model-management-and-fallback.md.
 
 use std::time::Duration;
@@ -20,8 +21,8 @@ use crate::ai_fallback::WalkOutcome;
 use crate::app_settings::ModelUsageEntry;
 use crate::helpers::{
     build_word_selection_items, build_word_selection_prompt, parse_word_selection_response,
-    validate_word_selection_response_shape, WordSelectionBuildMode, WordSelectionEntry,
-    WordSelectionParagraphInput, WordSelectionParseMode,
+    validate_word_selection_response_shape, word_selection_item_chunks, WordSelectionBuildMode, WordSelectionEntry,
+    WordSelectionParagraphInput, WordSelectionParseMode, WORD_SELECTION_MAX_ITEMS_PER_REQUEST,
 };
 
 /// What a run reports while it works. None of these ends the run: the final
@@ -49,9 +50,10 @@ pub enum WordSelectionRunEvent {
 /// `paragraphs`, and return the parsed selections of every batch that
 /// succeeded (Lenient parsing).
 ///
-/// One batched request when there is one paragraph or the combined prompt is
-/// under `WORD_SELECTION_BATCH_CHAR_LIMIT`, otherwise one request per
-/// paragraph, `WORD_SELECTION_REQUEST_SPACING_MS` apart. Runs on the calling
+/// The items go in requests of at most `WORD_SELECTION_MAX_ITEMS_PER_REQUEST`
+/// items and `WORD_SELECTION_BATCH_CHAR_LIMIT` characters, a word's items
+/// always in one (`word_selection_item_chunks`), `WORD_SELECTION_REQUEST_SPACING_MS`
+/// apart; each request is a "batch" in the events. Runs on the calling
 /// thread and blocks: `run_walk_blocking()` creates its own tokio runtime, so
 /// never call this from inside an async runtime. `is_cancelled` is polled
 /// between batches, between attempts and within a second of a backoff sleep;
@@ -72,7 +74,7 @@ pub fn run_word_selection_with_models(
     is_cancelled: &dyn Fn() -> bool,
     on_event: &mut dyn FnMut(WordSelectionRunEvent),
 ) -> Vec<WordSelectionEntry> {
-    // Build the full item set once to decide batching.
+    // Build the full item set once; the requests are chunks of it.
     let all_items = match build_word_selection_items(
         paragraphs, WordSelectionBuildMode::SkipResolved { forced: false }) {
         Ok(v) => v,
@@ -86,37 +88,23 @@ pub fn run_word_selection_with_models(
         return Vec::new();
     }
 
-    let combined_prompt = build_word_selection_prompt(&all_items, paragraphs);
-    let batches: Vec<Vec<WordSelectionParagraphInput>> =
-        if paragraphs.len() <= 1 || combined_prompt.len() < WORD_SELECTION_BATCH_CHAR_LIMIT {
-            vec![paragraphs.to_vec()]
-        } else {
-            paragraphs.iter().map(|p| vec![p.clone()]).collect()
-        };
+    // The requests: the items in chunks small enough for every provider's
+    // output limit, a word's items always together. Small paragraphs share
+    // a request; a long one is split. Each prompt carries the texts of the
+    // paragraphs its items come from.
+    let batches = word_selection_item_chunks(&all_items, WORD_SELECTION_MAX_ITEMS_PER_REQUEST, WORD_SELECTION_BATCH_CHAR_LIMIT);
     let batch_count = batches.len();
 
     let (entries, auto_fallback, auto_retry) = walk_settings_for(models);
     let mut all_selections: Vec<WordSelectionEntry> = Vec::new();
 
-    for (batch, batch_paragraphs) in batches.iter().enumerate() {
+    for (batch, items) in batches.iter().enumerate() {
         if is_cancelled() {
             break;
         }
 
-        let items = match build_word_selection_items(
-            batch_paragraphs, WordSelectionBuildMode::SkipResolved { forced: false }) {
-            Ok(v) => v,
-            Err(e) => {
-                on_event(WordSelectionRunEvent::Error(e));
-                continue;
-            }
-        };
-        if items.is_empty() {
-            continue;
-        }
-
         let items_json = serde_json::json!(items).to_string();
-        let prompt = build_word_selection_prompt(&items, batch_paragraphs);
+        let prompt = build_word_selection_prompt(items, paragraphs);
         let single_option_items = items
             .iter()
             .filter(|it| it.get("options").and_then(|o| o.as_array()).is_some_and(|o| o.len() == 1))

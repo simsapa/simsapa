@@ -1314,6 +1314,9 @@ pub mod qobject {
         fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString, paragraphs_json: &QString) -> QString;
 
         #[qinvokable]
+        fn build_word_selection_prompts(self: &SuttaBridge, items_json: &QString, paragraphs_json: &QString) -> QString;
+
+        #[qinvokable]
         fn gloss_translation_prompt(self: &SuttaBridge, paragraph_json: &QString) -> QString;
 
         #[qinvokable]
@@ -3859,6 +3862,41 @@ impl qobject::SuttaBridge {
                 }
             };
         QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items, &paragraphs))
+    }
+
+    /// The word-selection request for the items, split as the CLI splits it
+    /// (`simsapa_backend::helpers::word_selection_item_chunks`): a JSON array
+    /// of `{"prompt", "item_count"}`, one per chunk, for
+    /// `PromptManager.sequential_word_selection_requests`.
+    pub fn build_word_selection_prompts(&self, items_json: &QString, paragraphs_json: &QString) -> QString {
+        use simsapa_backend::helpers::{
+            build_word_selection_prompt, word_selection_item_chunks, WordSelectionParagraphInput,
+            WORD_SELECTION_MAX_ITEMS_PER_REQUEST,
+        };
+        let items: Vec<serde_json::Value> = match serde_json::from_str(&items_json.to_string()) {
+            Ok(items) => items,
+            Err(e) => {
+                error(&format!("build_word_selection_prompts(): invalid items JSON: {}", e));
+                Vec::new()
+            }
+        };
+        let paragraphs: Vec<WordSelectionParagraphInput> = match serde_json::from_str(&paragraphs_json.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                error(&format!("build_word_selection_prompts(): invalid paragraphs JSON: {}", e));
+                Vec::new()
+            }
+        };
+        let chunks = word_selection_item_chunks(
+            &items,
+            WORD_SELECTION_MAX_ITEMS_PER_REQUEST,
+            simsapa_backend::ai_engine::WORD_SELECTION_BATCH_CHAR_LIMIT,
+        );
+        let prompts: Vec<serde_json::Value> = chunks
+            .iter()
+            .map(|chunk| serde_json::json!({ "prompt": build_word_selection_prompt(chunk, &paragraphs), "item_count": chunk.len() }))
+            .collect();
+        QString::from(serde_json::Value::Array(prompts).to_string())
     }
 
     /// The two-part translation prompt for one paragraph
