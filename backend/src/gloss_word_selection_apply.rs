@@ -54,6 +54,15 @@ enum ItemKind {
     Component,
 }
 
+/// The number of options of a request item: an item with one option asked
+/// only for the reading and the contextual meaning.
+fn option_count(item: Option<&&serde_json::Value>) -> usize {
+    item.and_then(|it| it.get("options"))
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0)
+}
+
 fn parse_item_id(id: &str) -> Option<(usize, usize, ItemKind)> {
     lazy_static! {
         static ref RE_ID: Regex = Regex::new(r"^p(\d+)w(\d+)(d|c\d+)?$").unwrap();
@@ -80,12 +89,16 @@ fn ai_may_replace(origin: Option<&str>) -> bool {
 
 /// The session reading of an answer, when it gives one.
 fn answer_reading(answer: &WordSelectionEntry) -> Option<SenseReading> {
-    (answer.grammar_index.is_some() || answer.contextual_meaning.is_some()).then(|| SenseReading {
-        uid: answer.uid.clone(),
-        grammar_index: answer.grammar_index,
-        contextual_meaning: answer.contextual_meaning.clone(),
-        origin: AI_SELECTED.to_string(),
-    })
+    let contextual_meanings = answer.contextual_meanings.clone().unwrap_or_default();
+    (answer.grammar_index.is_some() || answer.contextual_meaning.is_some() || !contextual_meanings.is_empty()).then(
+        || SenseReading {
+            uid: answer.uid.clone(),
+            grammar_index: answer.grammar_index,
+            contextual_meaning: answer.contextual_meaning.clone(),
+            contextual_meanings,
+            origin: AI_SELECTED.to_string(),
+        },
+    )
 }
 
 /// Sets a reading unless a person chose one for the same sense.
@@ -157,17 +170,10 @@ pub fn apply_word_selection_answers(
                     ));
                     false
                 } else {
-                    apply_component(w, component_word, answer, appdata, write_cache, &mut cache_written)
+                    apply_component(w, component_word, answer, option_count(item), appdata, write_cache, &mut cache_written)
                 }
             }
-            ItemKind::Sense => {
-                let option_count = item
-                    .and_then(|it| it.get("options"))
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                apply_sense(w, answer, option_count, appdata, write_cache, &mut cache_written)
-            }
+            ItemKind::Sense => apply_sense(w, answer, option_count(item), appdata, write_cache, &mut cache_written),
         };
         summary.cache_rows_written += cache_written;
         if applied {
@@ -350,15 +356,30 @@ fn apply_breakdown(
 /// compound or sandhi headword alike: the choice is kept on the token's word
 /// by component word, and its cache row is keyed on the token's context.
 /// Answers for components outside the chosen break-down are kept too, as the
-/// Gloss tab does (they show after a break-down switch).
+/// Gloss tab does (they show after a break-down switch). An item with one
+/// option asked only for the reading, as for a sense item: only the
+/// component's reading is set.
 fn apply_component(
     w: &mut ProcessedWord,
     component_word: &str,
     answer: &WordSelectionEntry,
+    option_count: usize,
     appdata: &AppdataDbHandle,
     write_cache: bool,
     cache_written: &mut usize,
 ) -> bool {
+    if option_count <= 1 {
+        let Some(reading) = answer_reading(answer) else {
+            return false;
+        };
+        return match set_reading(w.component_readings.get(component_word), reading) {
+            Some(r) => {
+                w.component_readings.insert(component_word.to_string(), r);
+                true
+            }
+            None => false,
+        };
+    }
     if !ai_may_replace(w.component_resolutions.get(component_word).map(String::as_str)) {
         return false;
     }

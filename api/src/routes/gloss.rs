@@ -51,7 +51,8 @@ pub struct GlossTextRequest {
 /// Per-call gloss options. All fields optional; defaults: `no_duplicates_globally`
 /// = false, `skip_common` = false, `common_words` = [], `exact` = false,
 /// `gloss_format` = `"word_in_sentence"`, `ai` = false, `translate` = false,
-/// `output_format` = `"json"`. The route is **stateless** — there is no
+/// `output_format` = `"json"`, `lines_per_word` = 2, `contextual_all` = the
+/// app setting. The route is **stateless** — there is no
 /// cross-call dedup state (unlike in-app incremental glossing), so
 /// `no_duplicates_globally` applies within the single submitted text only.
 ///
@@ -72,6 +73,13 @@ pub struct GlossTextOptions {
     pub translate: Option<bool>,
     /// `"json"` (default), `"markdown"`, `"html"` or `"org"`.
     pub output_format: Option<String>,
+    /// Word in Sentence document tables: 1 or 2 (default) lines per word.
+    /// Only with `output_format` markdown, html or org.
+    pub lines_per_word: Option<u8>,
+    /// With `ai`, also ask for a contextual meaning for every word, not only
+    /// the ambiguous ones (default: the app's "Contextual meaning for every
+    /// word" setting). Only with `ai` and `gloss_format` word_in_sentence.
+    pub contextual_all: Option<bool>,
 }
 
 /// The `/gloss_text` output formats.
@@ -122,13 +130,25 @@ pub fn parse_gloss_format(name: &str) -> Result<GlossFormat, String> {
 ///
 /// Managed by a server that has an AI provider (`.manage(GlossAiRunner::new(…))`);
 /// without one, `"ai": true` is a `400`.
-pub type GlossAiRunFn = dyn Fn(AllParagraphsProcessingResult, Vec<String>, bool) -> AllParagraphsProcessingResult + Send + Sync;
+///
+/// The arguments: the result, the paragraph texts, `translate`,
+/// `contextual_all` (a contextual meaning for every word), and the record a
+/// `reference` resolved to (sent with the paragraphs in the word-selection
+/// request).
+pub type GlossAiRunFn = dyn Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool, Option<String>) -> AllParagraphsProcessingResult
+    + Send
+    + Sync;
 
 #[derive(Clone)]
 pub struct GlossAiRunner(pub Arc<GlossAiRunFn>);
 
 impl GlossAiRunner {
-    pub fn new(f: impl Fn(AllParagraphsProcessingResult, Vec<String>, bool) -> AllParagraphsProcessingResult + Send + Sync + 'static) -> Self {
+    pub fn new(
+        f: impl Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool, Option<String>) -> AllParagraphsProcessingResult
+            + Send
+            + Sync
+            + 'static,
+    ) -> Self {
         GlossAiRunner(Arc::new(f))
     }
 }
@@ -210,11 +230,17 @@ pub struct GlossTextPlan {
     pub translate: bool,
     pub output_format: GlossOutputFormat,
     pub edition: PaliEdition,
+    /// 1 or 2 lines per word in the document tables.
+    pub lines_per_word: u8,
+    /// The `contextual_all` option as given; `None` means the app setting.
+    pub contextual_all: Option<bool>,
 }
 
 /// Check the request's combinations: `text` xor `reference`; `edition` and
 /// `paragraphs` only with `reference`; `translate` only with `ai`; exact mode
-/// with none of the Word in Sentence, AI or document options.
+/// with none of the Word in Sentence, AI or document options; `lines_per_word`
+/// 1 or 2, only for a Word in Sentence document; `contextual_all` only with
+/// `ai` in the Word in Sentence format.
 pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptions) -> Result<GlossTextPlan, String> {
     match (&req.text, &req.reference) {
         (Some(_), Some(_)) => return Err("give either text or reference, not both".to_string()),
@@ -242,6 +268,30 @@ pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptio
         Some(f) => parse_gloss_format(f)?,
         None => GlossFormat::WordInSentence,
     };
+    let lines_per_word = match opts.lines_per_word {
+        None => 2,
+        Some(n @ (1 | 2)) => {
+            if gloss_format == GlossFormat::Headwords {
+                return Err("lines_per_word applies only to gloss_format word_in_sentence".to_string());
+            }
+            if output_format == GlossOutputFormat::Json {
+                return Err("lines_per_word applies only to output_format markdown, html or org".to_string());
+            }
+            n
+        }
+        Some(n) => return Err(format!("lines_per_word must be 1 or 2, not {}", n)),
+    };
+    if opts.contextual_all.is_some() {
+        if exact {
+            return Err("contextual_all cannot be combined with exact".to_string());
+        }
+        if !ai {
+            return Err("contextual_all needs ai".to_string());
+        }
+        if gloss_format == GlossFormat::Headwords {
+            return Err("contextual_all applies only to gloss_format word_in_sentence".to_string());
+        }
+    }
     if exact {
         if opts.gloss_format.as_deref() == Some("word_in_sentence") {
             return Err("exact cannot be combined with gloss_format word_in_sentence".to_string());
@@ -254,7 +304,16 @@ pub fn validate_gloss_text_request(req: &GlossTextRequest, opts: &GlossTextOptio
         }
         validate_gloss_exact_options(opts.no_duplicates_globally, opts.skip_common, opts.common_words.as_ref())?;
     }
-    Ok(GlossTextPlan { gloss_format, exact, ai, translate, output_format, edition })
+    Ok(GlossTextPlan {
+        gloss_format,
+        exact,
+        ai,
+        translate,
+        output_format,
+        edition,
+        lines_per_word,
+        contextual_all: opts.contextual_all,
+    })
 }
 
 /// POST /gloss_text
@@ -284,7 +343,7 @@ pub async fn gloss_text(
     let opts = req.options.clone().unwrap_or_default();
     let plan = validate_gloss_text_request(&req, &opts).map_err(|m| bad_request(&m))?;
 
-    let (paragraphs, title) = match &req.reference {
+    let (paragraphs, title, source_uid) = match &req.reference {
         Some(reference) => {
             let source = resolve_gloss_source(&dbm.appdata, reference, plan.edition, req.paragraphs.as_deref())
                 .map_err(|e| {
@@ -296,9 +355,9 @@ pub async fn gloss_text(
                     GlossTextError::Json(json_error(status, &e.to_string()))
                 })?;
             let title = source.title();
-            (source.paragraphs, title)
+            (source.paragraphs, title, Some(source.uid))
         }
-        None => (split_gloss_paragraphs(req.text.as_deref().unwrap_or("")), String::new()),
+        None => (split_gloss_paragraphs(req.text.as_deref().unwrap_or("")), String::new(), None),
     };
 
     if plan.exact {
@@ -341,13 +400,16 @@ pub async fn gloss_text(
     if let Some(runner) = runner
         && result.success
     {
-        result = run_ai_off_runtime(runner, result, paragraphs.clone(), plan.translate).await?;
+        let contextual_all = plan.contextual_all.unwrap_or_else(|| {
+            get_app_data().app_settings_cache.read().map(|s| s.gloss_contextual_all).unwrap_or(true)
+        });
+        result = run_ai_off_runtime(runner, result, paragraphs.clone(), plan.translate, contextual_all, source_uid).await?;
     }
 
     match plan.output_format {
         GlossOutputFormat::Json => Ok(GlossTextOk::Json(Json(GlossTextResponse::Default(result)))),
         GlossOutputFormat::Document(format) => {
-            let doc = gloss_document(&result, &paragraphs, &title, plan.gloss_format, format);
+            let doc = gloss_document(&result, &paragraphs, &title, plan.gloss_format, plan.lines_per_word, format);
             Ok(GlossTextOk::Document((plan.output_format.content_type(), doc)))
         }
     }
@@ -361,12 +423,14 @@ async fn run_ai_off_runtime(
     result: AllParagraphsProcessingResult,
     paragraphs: Vec<String>,
     translate: bool,
+    contextual_all: bool,
+    source_uid: Option<String>,
 ) -> Result<AllParagraphsProcessingResult, GlossTextError> {
     let (tx, rx) = rocket::tokio::sync::oneshot::channel();
     let spawned = std::thread::Builder::new()
         .name("gloss_text-ai".to_string())
         .spawn(move || {
-            let _ = tx.send((runner.0)(result, paragraphs, translate));
+            let _ = tx.send((runner.0)(result, paragraphs, translate, contextual_all, source_uid));
         });
     if let Err(e) = spawned {
         error(&format!("gloss_text(): cannot start the AI thread: {}", e));
@@ -384,19 +448,22 @@ pub fn gloss_document(
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    lines_per_word: u8,
     format: TextFormat,
 ) -> String {
-    gloss_export_document(&gloss_result_export_data(result, paragraphs, title, gloss_format), format)
+    gloss_export_document(&gloss_result_export_data(result, paragraphs, title, gloss_format, lines_per_word), format)
 }
 
 /// The export data of a gloss result whose translations, if any, are in its
 /// paragraphs' `ai_translations` (a run without Qt). `paragraphs` are the
-/// glossed texts, indexed by `paragraph_index`.
+/// glossed texts, indexed by `paragraph_index`; `lines_per_word` is 1 or 2
+/// for the Word in Sentence tables.
 pub fn gloss_result_export_data(
     result: &AllParagraphsProcessingResult,
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
+    lines_per_word: u8,
 ) -> simsapa_backend::export_types::GlossExportData {
     let translations = result_translations(result, paragraphs.len());
     let options = GlossExportOptions {
@@ -404,6 +471,7 @@ pub fn gloss_result_export_data(
         title: title.to_string(),
         gloss_format,
         no_ai_provider: !get_app_data().has_enabled_ai_model(),
+        lines_per_word,
     };
     build_gloss_export_data(result, paragraphs, &translations, &options)
 }

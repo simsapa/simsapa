@@ -228,7 +228,7 @@ is found it installs nothing and says how to name a place.
 ### A.2.4 Glossing a passage: `simsapa gloss`
 
 `simsapa gloss` makes the analysis document of a passage: every word with its
-grammar, meaning, construction and root.
+grammar, dictionary definition, contextual meaning, construction and root.
 
 ``` sh
 simsapa gloss --format markdown dhp23            # a sutta reference
@@ -245,20 +245,32 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 | `--paragraphs <spec>` | Paragraphs of a reference: `1`, `1-3`, `1-2 4` |
 | `--format markdown\|html\|org\|docx\|anki-csv\|json\|text` | The output. Default: `text` (aligned columns) on a terminal, `markdown` otherwise. `json` is the Gloss tab's session export, which the app opens with "Open JSON" |
 | `--output <path>` | Write the document to a file; required for `docx` |
+| `--lines-per-word 1\|2` | Word in Sentence tables: `2` (default) puts each word's Contextual and Definition on one line and its Grammar, Construction and Root on the line under it; `1` puts all of them on one line. For `--format text`, `markdown`, `html`, `org` and `docx`; refused with `--gloss-format headwords`, `anki-csv`, `json`, `--json` and `--exact`, which have one record per word |
 | `--json` | The raw pipeline result (the `/gloss_text` response); not together with `--format` |
 | `--no-ai` | Make no AI request. Without `--no-ai`, an AI provider enabled in the app chooses word senses and writes the translations |
 | `--model-name <model>` | Ask this AI model (`gemini-3-flash-preview`) instead of the Fallback sequence set in the app, whether or not it is enabled there |
 | `--provider <name>` | The provider of `--model-name` (`Gemini`, `OpenRouter`, …), in any letter case. Needed only for a model no provider in the app lists, or one several list |
 | `--no-translate` | Let the AI choose word senses but make no translation |
+| `--contextual-all`, `--no-contextual-all` | Ask the AI for a contextual meaning for every word (`--contextual-all`), or only for the words with a sense or a reading to choose (`--no-contextual-all`). Default: the app's "Contextual meaning for every word" setting, which is on unless changed. Word in Sentence only; refused with `--no-ai`, `--exact` and `--gloss-format headwords` |
 | `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
 | `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
 
 A Word in Sentence document has this structure: `# Gloss of: <reference>`,
 the passage, `### English Translation` (**Translation** and **Literal
 Translation**, only when a translation was made), `### Variants` (only for
-`//` spelling alternatives in the text), then `### Word-by-Word Analysis`, a
-table `ID | Word in Sentence | Grammar | Meaning | Construction | Root |
-Conf.`, with the parts of a compound on rows starting `- `. A multi-paragraph
+`//` spelling alternatives in the text), then `### Word-by-Word Analysis` and
+the table, with the parts of a compound on rows starting `- `. Definition is
+the dictionary's meaning of the chosen sense; Contextual is the AI's rendering
+of the word in this sentence, empty when there is none. The construction is
+written in square brackets (`[ud + √pad + na]`).
+
+With two lines per word (the default) the table is `ID | Word in Sentence |
+Contextual / Grammar | Definition / Construction | Root | Conf.`: a word's
+first row has its ID, the word, the Contextual and the Definition (in HTML
+and Word the Definition spans the Construction and Root columns) and the
+Conf. mark; the row under it has the Grammar, the Construction and the Root.
+With one line per word it is `ID | Word in Sentence | Grammar | Contextual |
+Definition | Construction | Root | Conf.`, one row per word. A multi-paragraph
 passage repeats these under `## Paragraph <n>`. The `Conf.` column says how
 a word with several dictionary senses was decided, and a legend under the table
 explains it:
@@ -2099,6 +2111,8 @@ Pāli text of a sutta reference.
   | `ai` | `false` | Ask the server's AI provider to choose the senses of ambiguous words (§16.1.2). |
   | `translate` | `false` | Also translate each paragraph; only with `ai`. |
   | `output_format` | `"json"` | `"json"`, or the analysis document as `"markdown"` (`text/markdown`), `"html"` (`text/html`) or `"org"` (`text/plain`), the same document the app's Gloss tab exports. |
+  | `contextual_all` | the app setting | Ask the AI for a contextual meaning for every word, not only for the words with a sense or a reading to choose (as `simsapa gloss --contextual-all`). Only with `ai` in the Word in Sentence format; with `exact`, without `ai` or with `"headwords"` it is a `400`. |
+  | `lines_per_word` | `2` | The Word in Sentence document table: `2` puts each word on two table rows, `1` on one (as `simsapa gloss --lines-per-word`). Only with a `"markdown"`, `"html"` or `"org"` `output_format` and the Word in Sentence format; another value, or the option with JSON output or `"headwords"`, is a `400`. |
 
 - **Reference input.** `reference` takes a sutta uid or reference (`dhp23`,
   `sn1.71`, `SN 18.1`, `mn4/pli/ms`). The text is the CST edition when the
@@ -2143,7 +2157,8 @@ Pāli text of a sutta reference.
   parsing carry a JSON `{ "error": "…" }` body: `400` for a bad combination
   (`text` and `reference` together, neither, `translate` without `ai`,
   `edition` or `paragraphs` without `reference`, an option exact mode rejects,
-  an unknown `gloss_format` / `output_format` / `edition`, a paragraph out of
+  an unknown `gloss_format` / `output_format` / `edition`, a `lines_per_word`
+  other than 1 or 2 or one given with JSON output or `"headwords"`, a paragraph out of
   range, `ai` on a server without AI: `"ai not available in this server"`),
   `404` for a reference with no Pāli text, `500` for a database error in
   exact mode.
@@ -2162,7 +2177,8 @@ Each row:
 | `id` | The DPD headword id of the chosen sense; `null` when not found. |
 | `grammar` | The grammar of the token's form (`masc nom pl of jhāyī`), else the headword's grammar (`sandhi, ind + adj`), else, for a component, its part of speech (`pp`). |
 | `grammar_options`, `grammar_index` | The readings of the chosen sense when the form has several (`nt acc sg of ta`, `nt nom sg of ta`); `grammar` is the chosen one. |
-| `meaning` | The AI's contextual meaning when it gave one, else the headword's meaning (`meaning_1`, `; lit. …`); `"not found"` for a token that was not found. |
+| `definition` | The dictionary definition of the chosen sense (`meaning_1`, `; lit. …`); for a sandhi or compound break-down, its components' first senses joined with ` + `; `"not found"` for a token that was not found. |
+| `contextual` | The AI's rendering of the word in this sentence (`of the nobleman`), shown beside the definition, never in its place; `""` when there is none. |
 | `construction`, `root` | The headword's construction and root (`√tan 7 o (stretch, extend)`), empty when it has none. |
 | `confidence` | `"N"` (not checked), `"A"` (AI-checked), `"H"` (human-checked), or `null` when there was only one sense to choose. |
 | `candidates[]`, `selected_candidate` | Every sense of the token with its own id, readings, meaning, construction and root, and the chosen one. |
@@ -2176,7 +2192,12 @@ Sentence format, their grammar readings, contextual meanings and the
 components of compound headwords); with `translate` it then asks for each
 paragraph's two translations, a readable Translation and a Literal
 Translation (`ai_translations[]`: `{ model_name, response, literal_translation }`,
-`response` being the Translation). The AI's choices are marked `A`. It is
+`response` being the Translation). With `contextual_all` (on unless the app
+setting is changed) every word gets a `contextual` value, not only the words
+with a choice to make. The request carries each paragraph's text, and the
+record's uid when the passage was given as a `reference`; a long paragraph's
+words are asked for in several requests of at most 80 words. The AI's choices
+are marked `A`. It is
 off by default: an agent calling the API normally chooses senses and writes
 translations itself, and the route never starts a paid request unasked.
 
@@ -2254,7 +2275,7 @@ a dedicated thread; the handler is a pure protocol adapter.
 
 | Message | Meaning |
 |---------|---------|
-| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>","rows_json"?:"<serialized rows>"},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. `rows_json`, a Word in Sentence paragraph's `rows` serialized the same way, is optional: with it the items also ask for grammar readings, contextual meanings and the components of compound headwords. A Headwords-format `words_data` is the usual input. |
+| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>","rows_json"?:"<serialized rows>","text"?:"<paragraph>","source_uid"?:"<uid>","contextual_all"?:true},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. `rows_json`, a Word in Sentence paragraph's `rows` serialized the same way, is optional: with it the items also ask for grammar readings, contextual meanings and the components of compound headwords, and with `contextual_all` also for a contextual meaning of every word. `text` and `source_uid`, also optional, give the model the whole paragraph and the record it is from. A Headwords-format `words_data` is the usual input. |
 | `{"type":"cancel"}` | Abandon the in-flight run. |
 
 **Server → client messages:**

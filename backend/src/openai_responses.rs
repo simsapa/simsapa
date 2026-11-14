@@ -28,7 +28,8 @@ use crate::ai_error::{AiErrorKind, AiRequestError, classify_provider_error};
 pub const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 pub const XAI_RESPONSES_URL: &str = "https://api.x.ai/v1/responses";
 
-/// The temperature sent to models which accept one.
+/// The temperature of a general request, for models which accept one
+/// (`ai_engine::RequestPurpose::temperature`).
 pub const TEMPERATURE: f64 = 0.7;
 
 /// A conversation message for the request: `role` is `user` or `assistant`.
@@ -59,12 +60,13 @@ fn is_reasoning_model_id(model: &str) -> bool {
 }
 
 /// The JSON request body. `instructions` is the system prompt; `turns` must
-/// not contain system messages.
+/// not contain system messages. `temperature` is left out when `None` (a
+/// reasoning model, see `sends_temperature`).
 pub fn request_body(
     model: &str,
     instructions: Option<&str>,
     turns: &[InputTurn],
-    with_temperature: bool,
+    temperature: Option<f64>,
 ) -> serde_json::Value {
     let input: Vec<serde_json::Value> = turns
         .iter()
@@ -80,8 +82,8 @@ pub fn request_body(
     if let Some(instructions) = instructions.filter(|s| !s.is_empty()) {
         body["instructions"] = serde_json::Value::String(instructions.to_string());
     }
-    if with_temperature {
-        body["temperature"] = serde_json::json!(TEMPERATURE);
+    if let Some(temperature) = temperature {
+        body["temperature"] = serde_json::json!(temperature);
     }
     body
 }
@@ -212,7 +214,7 @@ mod tests {
             InputTurn { role: "assistant", content: "Hi." },
             InputTurn { role: "user", content: "Again" },
         ];
-        let body = request_body("gpt-5-mini", Some("Be brief."), &turns, false);
+        let body = request_body("gpt-5-mini", Some("Be brief."), &turns, None);
         assert_eq!(body["model"], "gpt-5-mini");
         assert_eq!(body["instructions"], "Be brief.");
         assert_eq!(body["store"], false);
@@ -231,10 +233,10 @@ mod tests {
     #[test]
     fn request_body_temperature_and_empty_instructions() {
         let turns = [InputTurn { role: "user", content: "Hello" }];
-        let body = request_body("gpt-4o", Some(""), &turns, true);
+        let body = request_body("gpt-4o", Some(""), &turns, Some(TEMPERATURE));
         assert_eq!(body["temperature"], TEMPERATURE);
         assert!(body.get("instructions").is_none());
-        assert!(request_body("gpt-4o", None, &turns, true).get("instructions").is_none());
+        assert!(request_body("gpt-4o", None, &turns, Some(TEMPERATURE)).get("instructions").is_none());
     }
 
     #[test]
@@ -314,7 +316,7 @@ mod tests {
     #[test]
     fn xai_request_body_shape() {
         let turns = [InputTurn { role: "user", content: "Gloss this." }];
-        let body = request_body("grok-4.7", Some("You are a Pāli tutor."), &turns, true);
+        let body = request_body("grok-4.7", Some("You are a Pāli tutor."), &turns, Some(TEMPERATURE));
         assert_eq!(body["model"], "grok-4.7");
         assert_eq!(body["instructions"], "You are a Pāli tutor.");
         assert_eq!(body["store"], false);

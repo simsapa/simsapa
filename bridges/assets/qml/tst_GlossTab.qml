@@ -13,6 +13,14 @@ Item {
         anchors.centerIn: parent
     }
 
+    Component {
+        id: wis_row_component
+        GlossWordInSentenceRow {
+            width: 400
+            shield: ({ icon: "", tooltip: "" })
+        }
+    }
+
     // Signal spy for testing background processing
     SignalSpy {
         id: allParagraphsSpy
@@ -650,7 +658,7 @@ Item {
             gloss_tab.handle_all_paragraphs_results({
                 success: true,
                 paragraphs: [{ paragraph_index: 0, words_data: [], unrecognized_words: [],
-                               rows: [{ word: "xyz", depth: 0, word_index: null, meaning: "not found", candidates: [], components: [] }],
+                               rows: [{ word: "xyz", depth: 0, word_index: null, definition: "not found", candidates: [], components: [] }],
                                variants: [["vā'ti", "vāti"]] }],
                 updated_global_stems: {},
                 global_unrecognized_words: []
@@ -754,6 +762,14 @@ Item {
             var user = { uid: "1/dpd", grammar_index: 0, origin: "user-selected" };
             compare(gloss_tab.ai_answer_reading(user, { uid: "1/dpd", grammar_index: 1 }), null);
             verify(gloss_tab.ai_answer_reading(user, { uid: "2/dpd", grammar_index: 1 }) !== null);
+            // The per-reading meanings are kept, and alone count as a reading.
+            r = gloss_tab.ai_answer_reading(null, { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman",
+                                                    contextual_meanings: ["of the nobleman", "for the nobleman"] });
+            compare(r.contextual_meanings, ["of the nobleman", "for the nobleman"]);
+            r = gloss_tab.ai_answer_reading(null, { uid: "1/dpd", contextual_meanings: ["a", "b"] });
+            compare(r.contextual_meanings, ["a", "b"]);
+            compare(r.contextual_meaning, undefined);
+            compare(gloss_tab.ai_answer_reading(null, { uid: "1/dpd", contextual_meanings: [] }), null);
         }
 
         function test_reading_only_answer_writes_no_choice() {
@@ -770,6 +786,78 @@ Item {
             compare(w.reading.grammar_index, 2);
             compare(w.reading.contextual_meaning, "they");
             compare(w.resolution === undefined || w.resolution === null, true);
+        }
+
+        // A component item with one option ("Contextual meaning for every
+        // word") sets only the component's reading, also over a component
+        // sense the user chose.
+        function test_one_option_component_answer_sets_only_the_reading() {
+            gloss_tab.current_text = "daḷhaparakkamā";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([{
+                original_word: "daḷhaparakkamā", results: [{ uid: "1/dpd", word: "daḷhaparakkama", summary: "" }],
+                selected_index: 0, stem: "daḷhaparakkama", example_sentence: "daḷhaparakkamā",
+                direct_uids: ["1/dpd"], deconstructions: [],
+                component_selected_uids: { "daḷha": "2/dpd" },
+                component_resolutions: { "daḷha": "user-selected" }
+            }]));
+            var applied = gloss_tab.apply_word_selections(0, [
+                { word_idx: 0, uid: "2/dpd", kind: "c", component_word: "daḷha", option_count: 1,
+                  contextual_meaning: "steady" }
+            ]);
+            compare(applied, 1);
+            var w = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0];
+            compare(w.component_readings["daḷha"].contextual_meaning, "steady");
+            compare(w.component_readings["daḷha"].origin, "ai-selected");
+            compare(w.component_selected_uids["daḷha"], "2/dpd");
+            compare(w.component_resolutions["daḷha"], "user-selected");
+
+            // A component reading the user chose stays.
+            w.component_readings["daḷha"].origin = "user-selected";
+            gloss_tab.set_paragraph_words(0, [w]);
+            applied = gloss_tab.apply_word_selections(0, [
+                { word_idx: 0, uid: "2/dpd", kind: "c", component_word: "daḷha", option_count: 1,
+                  contextual_meaning: "other" }
+            ]);
+            compare(applied, 0);
+            w = JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0];
+            compare(w.component_readings["daḷha"].contextual_meaning, "steady");
+        }
+
+        // A reading chosen by hand takes the AI's meaning for that reading,
+        // or none: never the meaning fitted to the old reading.
+        function test_update_row_reading_follows_contextual_meanings() {
+            gloss_tab.current_text = "rājaññassa";
+            gloss_tab.handle_all_paragraphs_results(mock_paragraph([{
+                original_word: "rājaññassa", results: [{ uid: "1/dpd", word: "rājañña 1", summary: "" }],
+                selected_index: 0, stem: "rājañña 1", example_sentence: "rājaññassa",
+                direct_uids: ["1/dpd"], deconstructions: [],
+                reading: { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman",
+                           contextual_meanings: ["of the nobleman", "for the nobleman", ""], origin: "ai-selected" }
+            }]));
+            var item = { owner: 0, kind: "sense", key: "",
+                         row: { candidates: [{ uid: "1/dpd" }], selected_candidate: 0 } };
+            var reading = function() {
+                return JSON.parse(gloss_tab.paragraph_model.get(0).words_data_json)[0].reading;
+            };
+
+            gloss_tab.update_row_reading(0, item, 1);
+            compare(reading().grammar_index, 1);
+            compare(reading().origin, "user-selected");
+            compare(reading().contextual_meaning, "for the nobleman");
+            compare(reading().contextual_meanings.length, 3);
+
+            // No entry for this reading: the contextual meaning is cleared.
+            gloss_tab.update_row_reading(0, item, 2);
+            compare(reading().contextual_meaning, undefined);
+            compare(reading().contextual_meanings.length, 3);
+
+            // Without a list, the old reading's meaning is not carried over.
+            var words = gloss_tab.paragraph_words(0);
+            words[0].reading = { uid: "1/dpd", grammar_index: 0, contextual_meaning: "of the nobleman", origin: "ai-selected" };
+            gloss_tab.set_paragraph_words(0, words);
+            gloss_tab.update_row_reading(0, item, 1);
+            compare(reading().contextual_meaning, undefined);
+            compare(reading().contextual_meanings, undefined);
         }
 
         function test_auto_translate_waits_for_word_selection() {
@@ -799,6 +887,149 @@ Item {
             compare(done.status, "completed");
             compare(Object.keys(gloss_tab.auto_translate_in_flight).length, 0);
             gloss_tab.auto_translate = false;
+        }
+
+
+        // --- GlossWordInSentenceRow ---
+
+        function make_wis_row(row, two_lines) {
+            var obj = createTemporaryObject(wis_row_component, gloss_tab, {
+                item: { row: row, depth: 0, kind: "sense", alt: 0 },
+                two_lines: two_lines === undefined ? true : two_lines,
+            });
+            verify(obj !== null);
+            wait(0);
+            return obj;
+        }
+
+        function wis_row_data(extra) {
+            var row = { word: "uppannaṁ", id: 1, confidence: null, grammar: "nt nom sg of uppanna",
+                        grammar_options: [], grammar_index: 0, construction: "ud + √pad + na",
+                        root: "√pad 3 ya (go, step)", definition: "arisen; appeared; come into being (in)",
+                        contextual: "arisen", selected_candidate: 0,
+                        candidates: [{ uid: "1/dpd", lemma_1: "uppanna 1", meaning: "arisen; appeared; come into being (in)" },
+                                     { uid: "2/dpd", lemma_1: "uppanna 2", meaning: "born (in); lit. gone up" }] };
+            for (var k in extra) row[k] = extra[k];
+            return row;
+        }
+
+        function first_item_with_text(item, text) {
+            var found = find_items_by_text(item, text);
+            return found.length > 0 ? found[0] : null;
+        }
+
+        function test_sense_labels_rule() {
+            var r = make_wis_row(wis_row_data({}));
+            // Same base, every candidate numbered: shortened.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" },
+                                    { uid: "b", lemma_1: "uppanna 2", meaning: "born (in)" }]),
+                    ["1: arisen", "2: born (in)"]);
+            compare(r.sense_labels([{ uid: "a", lemma_1: "citta 1.1", meaning: "mind" },
+                                    { uid: "b", lemma_1: "citta 1.2", meaning: "thought" }]),
+                    ["1.1: mind", "1.2: thought"]);
+            // Different bases: full names.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "ta 1", meaning: "that" },
+                                    { uid: "b", lemma_1: "so", meaning: "he" }]),
+                    ["ta 1: that", "so: he"]);
+            // A base without a number among numbered ones: full names.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna", meaning: "arisen" },
+                                    { uid: "b", lemma_1: "uppanna 2", meaning: "born" }]),
+                    ["uppanna: arisen", "uppanna 2: born"]);
+            // No lemma_1: the uid, full names.
+            compare(r.sense_labels([{ uid: "x/dpd", meaning: "m" },
+                                    { uid: "b", lemma_1: "x 2", meaning: "n" }]),
+                    ["x/dpd: m", "x 2: n"]);
+            // A single candidate keeps its name.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" }]),
+                    ["uppanna 1: arisen"]);
+            compare(r.sense_labels([]), []);
+        }
+
+        function test_wis_row_contextual_cell() {
+            var r = make_wis_row(wis_row_data({}));
+            var ctx = first_item_with_text(r, "arisen");
+            verify(ctx !== null);
+            verify(ctx.visible);
+            verify(ctx.font.italic);
+            compare(r.definition_col, 3);
+            compare(r.definition_span, 2);
+
+            var empty = make_wis_row(wis_row_data({ contextual: "  " }));
+            verify(!empty.has_contextual);
+            // The Definition takes the Contextual's column.
+            compare(empty.definition_col, 2);
+            compare(empty.definition_span, 3);
+        }
+
+        function test_wis_row_closed_sense_combo_shows_definition() {
+            var r = make_wis_row(wis_row_data({}));
+            var combos = find_combo_boxes(r);
+            var sense = null;
+            for (var i = 0; i < combos.length; i++) {
+                if (combos[i].visible && combos[i].displayText === "arisen; appeared; come into being (in)") sense = combos[i];
+            }
+            verify(sense !== null);
+            compare(sense.model, ["1: arisen; appeared; come into being (in)", "2: born (in); lit. gone up"]);
+        }
+
+        function test_wis_row_line2_and_brackets() {
+            var r = make_wis_row(wis_row_data({}));
+            verify(r.has_line2);
+            compare(r.line2_row, 1);
+            var c = first_item_with_text(r, "[ud + √pad + na]");
+            verify(c !== null);
+            verify(c.visible);
+
+            var bare = make_wis_row(wis_row_data({ grammar: "", construction: "", root: "" }));
+            verify(!bare.has_line2);
+            verify(!bare.show_line2_cells);
+            compare(bare.construction_text, "");
+
+            // A whitespace construction is empty: no brackets, no line 2.
+            var blank = make_wis_row(wis_row_data({ grammar: "", construction: "  ", root: "" }));
+            compare(blank.construction_text, "");
+            verify(!blank.has_line2);
+        }
+
+        function test_wis_row_one_line() {
+            var r = make_wis_row(wis_row_data({}), false);
+            compare(r.line2_row, 0);
+            compare(r.contextual_col, 3);
+            compare(r.definition_col, 4);
+            compare(r.definition_span, 1);
+            verify(r.show_line2_cells);
+            // All cells on one line: Construction at the top, like the word.
+            wait(0);
+            compare(first_item_with_text(r, "[ud + √pad + na]").y, 0);
+            var two = make_wis_row(wis_row_data({}), true);
+            wait(0);
+            verify(first_item_with_text(two, "[ud + √pad + na]").y > 0);
+        }
+
+        function test_lines_per_word_toggle() {
+            verify(find_items_by_text(gloss_tab, "Lines per word:").length > 0);
+            var saved = gloss_tab.gloss_lines_per_word;
+            gloss_tab.gloss_lines_per_word = 1;
+            var combos = find_combo_boxes(gloss_tab).filter((c) => c.model && c.model.length === 2 && c.model[0] === "One line");
+            compare(combos.length, 1);
+            compare(combos[0].currentIndex, 0);
+            gloss_tab.gloss_lines_per_word = 2;
+            compare(combos[0].currentIndex, 1);
+            gloss_tab.gloss_lines_per_word = saved;
+        }
+
+        function find_combo_boxes(item) {
+            var found = [];
+            if (!item) return found;
+            if (item.displayText !== undefined && item.popup !== undefined && item.currentIndex !== undefined) found.push(item);
+            var kids = item.children || [];
+            for (var i = 0; i < kids.length; i++) {
+                found = found.concat(find_combo_boxes(kids[i]));
+            }
+            if (item.contentItem && kids.indexOf(item.contentItem) < 0) {
+                found = found.concat(find_combo_boxes(item.contentItem));
+            }
+            return found;
         }
 
     }

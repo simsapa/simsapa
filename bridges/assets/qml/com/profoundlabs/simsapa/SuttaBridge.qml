@@ -439,8 +439,12 @@ Item {
         return '[]';
     }
 
-    function build_word_selection_prompt(items_json: string): string {
+    function build_word_selection_prompt(items_json: string, paragraphs_json: string): string {
         return '';
+    }
+
+    function build_word_selection_prompts(items_json: string, paragraphs_json: string): string {
+        return '[]';
     }
 
     function gloss_translation_prompt(paragraph_json: string): string {
@@ -628,6 +632,20 @@ Item {
     function set_gloss_export_gloss_format(format: string) {
     }
 
+    function get_gloss_lines_per_word(): int {
+        return 2;
+    }
+
+    function set_gloss_lines_per_word(lines: int) {
+    }
+
+    function get_gloss_contextual_all(): bool {
+        return false;
+    }
+
+    function set_gloss_contextual_all(enabled: bool) {
+    }
+
     function get_gloss_ai_translate_mode(): string {
         return 'sequential_retry';
     }
@@ -691,7 +709,7 @@ Item {
         return "# Gloss of: …";
     }
 
-    function gloss_paragraph_export(paragraph_json: string, paragraph_number: int, format: string): string {
+    function gloss_paragraph_export(paragraph_json: string, paragraph_number: int, format: string, lines_per_word: int): string {
         return "## Paragraph 1";
     }
 

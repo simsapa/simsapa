@@ -20,11 +20,12 @@ struct NoteItem {
     word: String,
     summary: String,
     context_snippet: String,
-    /// The Word in Sentence row's word, grammar and meaning; empty for a
-    /// Headwords vocabulary item.
+    /// The Word in Sentence row's word, grammar, dictionary definition and
+    /// the AI's contextual meaning; empty for a Headwords vocabulary item.
     word_in_sentence: String,
     grammar: String,
-    meaning: String,
+    definition: String,
+    contextual: String,
 }
 
 /// The notes of a paragraph: its Word in Sentence rows that have a DPD
@@ -50,11 +51,12 @@ fn paragraph_notes(paragraph: &GlossExportParagraph) -> Vec<NoteItem> {
         .map(|r| NoteItem {
             uid: r.uid.clone(),
             word: r.lemma.clone(),
-            summary: if r.summary.is_empty() { r.meaning.clone() } else { r.summary.clone() },
+            summary: if r.summary.is_empty() { r.definition.clone() } else { r.summary.clone() },
             context_snippet: r.context_snippet.clone(),
             word_in_sentence: r.word.clone(),
             grammar: r.grammar.clone(),
-            meaning: r.meaning.clone(),
+            definition: r.definition.clone(),
+            contextual: r.contextual.clone(),
         })
         .collect()
 }
@@ -63,14 +65,21 @@ fn all_notes(data: &GlossExportData) -> Vec<NoteItem> {
     data.paragraphs.iter().flat_map(paragraph_notes).collect()
 }
 
-/// The back of a Simple note: the summary, with the row's grammar above it
-/// for a Word in Sentence note.
+/// The back of a Simple note: the summary, with the row's grammar and its
+/// contextual meaning (in italic) above it for a Word in Sentence note.
 fn simple_back(note: &NoteItem) -> String {
-    if note.grammar.is_empty() {
-        note.summary.clone()
-    } else {
-        format!("<div><p>{}</p><p>{}</p></div>", note.grammar, note.summary)
+    if note.grammar.is_empty() && note.contextual.is_empty() {
+        return note.summary.clone();
     }
+    let mut out = String::from("<div>");
+    if !note.grammar.is_empty() {
+        out.push_str(&format!("<p>{}</p>", note.grammar));
+    }
+    if !note.contextual.is_empty() {
+        out.push_str(&format!("<p><i>{}</i></p>", note.contextual));
+    }
+    out.push_str(&format!("<p>{}</p></div>", note.summary));
+    out
 }
 
 #[derive(Serialize, Debug)]
@@ -79,11 +88,13 @@ struct TemplateContext {
     context_snippet: String,
     original_word: String,
     clean_word: String,
-    /// The token as written in the passage, its grammar and its meaning in
-    /// the sentence (Word in Sentence notes; empty otherwise).
+    /// The token as written in the passage, its grammar, the dictionary
+    /// definition of its sense and the AI's contextual meaning in the
+    /// sentence (Word in Sentence notes; empty otherwise).
     word_in_sentence: String,
     grammar: String,
-    meaning: String,
+    definition: String,
+    contextual: String,
     vocab: VocabContextData,
     dpd: serde_json::Map<String, Value>,
     root: serde_json::Map<String, Value>,
@@ -161,6 +172,14 @@ fn render_template(template_str: &str, context: &TemplateContext) -> Result<Stri
     Ok(tt.render("tmpl", context)?)
 }
 
+/// `render_template()` for one note, with an error that names the template
+/// and the note's word, so a template using an unknown variable (e.g. an old
+/// `{meaning}`) says where it failed.
+fn render_note_template(which: &str, template_str: &str, context: &TemplateContext, word: &str) -> Result<String> {
+    render_template(template_str, context)
+        .map_err(|e| anyhow!("The Anki {} template failed for the note of '{}': {}", which, word, e))
+}
+
 fn build_template_context(
     vocab: &NoteItem,
     dpd_data: &serde_json::Map<String, Value>,
@@ -192,7 +211,8 @@ fn build_template_context(
         clean_word: word_stem_value,
         word_in_sentence: vocab.word_in_sentence.clone(),
         grammar: vocab.grammar.clone(),
-        meaning: vocab.meaning.clone(),
+        definition: vocab.definition.clone(),
+        contextual: vocab.contextual.clone(),
         vocab: VocabContextData {
             uid: vocab.uid.clone(),
             word: vocab.word.clone(),
@@ -347,8 +367,8 @@ fn generate_templated_csv(
 
         let context = build_template_context(vocab, &dpd_data, &root_data, &context_snippet);
 
-        let front = render_template(front_template, &context)?;
-        let back = render_template(back_template, &context)?;
+        let front = render_note_template("front", front_template, &context, &vocab.word)?;
+        let back = render_note_template("back", back_template, &context, &vocab.word)?;
 
         csv_lines.push(format_csv_row(&front, &back));
     }
@@ -422,11 +442,15 @@ fn generate_data_csv(
         "summary",
     ];
     let notes = all_notes(gloss_data);
-    // Word in Sentence notes add the token as written and its grammar.
-    let word_in_sentence = gloss_data.paragraphs.iter().any(|p| !p.rows.is_empty());
-    if word_in_sentence {
-        header.extend(["word_in_sentence", "grammar_in_sentence"]);
-    }
+    // The token as written, its grammar, the AI's contextual meaning and the
+    // dictionary definition of its sense: filled for a Word in Sentence note,
+    // empty for a Headwords one, so both formats import into one note type.
+    header.extend([
+        "word_in_sentence",
+        "grammar_in_sentence",
+        "contextual_in_sentence",
+        "definition_in_sentence",
+    ]);
     csv_lines.push(header.join(","));
 
     for vocab in &notes {
@@ -513,10 +537,10 @@ fn generate_data_csv(
             get_field("lemma_clean"),
             vocab.summary.clone(),
         ];
-        if word_in_sentence {
-            row.push(vocab.word_in_sentence.clone());
-            row.push(vocab.grammar.clone());
-        }
+        row.push(vocab.word_in_sentence.clone());
+        row.push(vocab.grammar.clone());
+        row.push(vocab.contextual.clone());
+        row.push(vocab.definition.clone());
 
         let escaped_row: Vec<String> = row.iter().map(|f| escape_csv_field(f)).collect();
         csv_lines.push(escaped_row.join(","));
@@ -570,7 +594,8 @@ pub fn render_anki_preview(
         context_snippet: context_snippet.to_string(),
         word_in_sentence: sample_str("word_in_sentence"),
         grammar: sample_str("grammar"),
-        meaning: sample_str("meaning"),
+        definition: sample_str("definition"),
+        contextual: sample_str("contextual"),
     };
 
     let context = build_template_context(&vocab, &dpd_data, &root_data, context_snippet);

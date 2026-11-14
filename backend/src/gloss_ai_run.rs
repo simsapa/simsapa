@@ -22,6 +22,14 @@ pub struct GlossAiOptions {
     /// (`simsapa gloss --model-name`). They are asked whether or not their
     /// provider or model is enabled in the app.
     pub models: Option<Vec<crate::app_settings::ModelUsageEntry>>,
+    /// "Contextual meaning for every word": also ask for the reading and
+    /// contextual meaning of the words that have no choice to make (Word in
+    /// Sentence only).
+    pub contextual_all: bool,
+    /// The record the passage came from (`dn23/pli/ms`), when it was given as
+    /// a sutta reference: sent with the paragraph texts in the word-selection
+    /// request.
+    pub source_uid: Option<String>,
 }
 
 /// The step an AI run is on, for progress messages.
@@ -115,7 +123,19 @@ mod run {
         }
 
         if options.word_selection {
-            run_word_selection_step(result, options.write_cache, models, appdata, dpd, is_cancelled, on_progress, &mut summary);
+            run_word_selection_step(
+                result,
+                options.write_cache,
+                options.contextual_all,
+                paragraph_texts,
+                options.source_uid.as_deref(),
+                models,
+                appdata,
+                dpd,
+                is_cancelled,
+                on_progress,
+                &mut summary,
+            );
         }
         if options.translate && !is_cancelled() {
             run_translation_step(result, paragraph_texts, models, is_cancelled, on_progress, &mut summary);
@@ -127,6 +147,9 @@ mod run {
     fn run_word_selection_step(
         result: &mut AllParagraphsProcessingResult,
         write_cache: bool,
+        contextual_all: bool,
+        paragraph_texts: &[String],
+        source_uid: Option<&str>,
         models: Option<&[ModelUsageEntry]>,
         appdata: &AppdataDbHandle,
         dpd: &DpdDbHandle,
@@ -134,7 +157,7 @@ mod run {
         on_progress: &mut dyn FnMut(GlossAiProgress),
         summary: &mut GlossAiSummary,
     ) {
-        let inputs = match WordSelectionParagraphInput::from_result(result) {
+        let inputs = match WordSelectionParagraphInput::from_result(result, paragraph_texts, source_uid, contextual_all) {
             Ok(v) => v,
             Err(e) => {
                 result.ai_errors.push(format!("Word selection: {}", e));
@@ -256,9 +279,12 @@ pub fn run_gloss_ai_for_api(
     mut result: crate::types::AllParagraphsProcessingResult,
     paragraph_texts: Vec<String>,
     translate: bool,
+    contextual_all: bool,
+    source_uid: Option<String>,
 ) -> crate::types::AllParagraphsProcessingResult {
     let app_data = crate::get_app_data();
-    let options = GlossAiOptions { word_selection: true, translate, write_cache: false, models: None };
+    let options =
+        GlossAiOptions { word_selection: true, translate, write_cache: false, models: None, contextual_all, source_uid };
     let summary = run_gloss_ai(
         &mut result,
         &paragraph_texts,

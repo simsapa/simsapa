@@ -114,7 +114,17 @@ pub struct GlossRow {
     /// `grammar_options[grammar_index]`).
     pub grammar_options: Vec<String>,
     pub grammar_index: usize,
-    pub meaning: String,
+    /// The dictionary definition of the chosen sense (`meaning_combo`), or
+    /// for a break-down / iti row, its components' first senses joined.
+    /// `default` so that a saved session's stored rows (which a session load
+    /// rebuilds from the words) still parse when written with another field
+    /// set.
+    #[serde(default)]
+    pub definition: String,
+    /// The session reading's contextual meaning for the chosen sense and
+    /// reading; empty when there is none. Shown beside `definition`.
+    #[serde(default)]
+    pub contextual: String,
     pub construction: String,
     pub root: String,
     /// `None` when there was nothing to choose (one candidate).
@@ -982,8 +992,8 @@ impl GlossRowBuilder {
     }
 
     /// The rows of a glossed paragraph again, after its `words_data` changed
-    /// (an applied AI answer): each token row is rebuilt from its
-    /// `ProcessedWord`, an unresolved token row is kept.
+    /// (an applied AI answer, a restored session): each token row is rebuilt
+    /// from its `ProcessedWord`, an unresolved token row from its word.
     pub fn rebuild_paragraph_rows(
         &mut self,
         paragraph: &ParagraphProcessingResult,
@@ -992,7 +1002,7 @@ impl GlossRowBuilder {
         let mut rows = Vec::with_capacity(paragraph.rows.len());
         for (token_index, old) in paragraph.rows.iter().enumerate() {
             let Some(pw) = old.word_index.and_then(|wi| paragraph.words_data.get(wi)) else {
-                rows.push(old.clone());
+                rows.push(unresolved_token_row(&old.word));
                 continue;
             };
             let word_index = old.word_index.unwrap_or_default();
@@ -1076,7 +1086,7 @@ impl GlossRowBuilder {
         };
         let mut row = make_row(word, depth, Some(word_index), cand, reading, top_level, confidence, row_cands, selected, components);
         row.resolution = pw.resolution.clone();
-        apply_contextual_meaning(&mut row, reading_for(pw.reading.as_ref(), cand));
+        apply_contextual(&mut row, reading_for(pw.reading.as_ref(), cand));
         Ok(row)
     }
 
@@ -1123,7 +1133,7 @@ impl GlossRowBuilder {
 
         let meaning = components
             .iter()
-            .map(|c| first_sense(&c.meaning))
+            .map(|c| first_sense(&c.definition))
             .filter(|m| !m.is_empty())
             .collect::<Vec<_>>()
             .join(" + ");
@@ -1138,7 +1148,8 @@ impl GlossRowBuilder {
             grammar: DECONSTRUCTION_GRAMMAR.to_string(),
             grammar_options: vec![DECONSTRUCTION_GRAMMAR.to_string()],
             grammar_index: 0,
-            meaning,
+            definition: meaning,
+            contextual: String::new(),
             construction: dec.words_joined.clone(),
             root: String::new(),
             confidence,
@@ -1200,7 +1211,7 @@ impl GlossRowBuilder {
                 let construction = format!("{} + iti", base_word);
                 let meaning = components
                     .iter()
-                    .map(|c| first_sense(&c.meaning))
+                    .map(|c| first_sense(&c.definition))
                     .filter(|m| !m.is_empty())
                     .collect::<Vec<_>>()
                     .join(" + ");
@@ -1212,7 +1223,8 @@ impl GlossRowBuilder {
                     grammar: ITI_SANDHI_GRAMMAR.to_string(),
                     grammar_options: vec![ITI_SANDHI_GRAMMAR.to_string()],
                     grammar_index: 0,
-                    meaning: meaning.clone(),
+                    definition: meaning.clone(),
+                    contextual: String::new(),
                     construction: construction.clone(),
                     root: String::new(),
                     confidence: None,
@@ -1328,7 +1340,7 @@ impl GlossRowBuilder {
         let confidence = Confidence::for_choice(resolution, cands.len());
         let mut row = make_row(word, depth, None, cand, ri, false, confidence, row_cands, ci, components);
         row.resolution = resolution.map(str::to_string);
-        apply_contextual_meaning(&mut row, reading_for(reading, cand));
+        apply_contextual(&mut row, reading_for(reading, cand));
         Ok(row)
     }
 }
@@ -1338,10 +1350,16 @@ fn reading_for<'a>(reading: Option<&'a SenseReading>, cand: &Cand) -> Option<&'a
     reading.filter(|r| r.uid == cand.uid)
 }
 
-/// Shows a session reading's contextual meaning in place of `meaning_combo`.
-fn apply_contextual_meaning(row: &mut GlossRow, reading: Option<&SenseReading>) {
-    if let Some(m) = reading.and_then(|r| r.contextual_meaning.as_deref()).map(str::trim).filter(|m| !m.is_empty()) {
-        row.meaning = m.to_string();
+/// Sets the row's contextual meaning from a session reading of its chosen
+/// sense: the entry of `contextual_meanings` for the row's grammar reading
+/// when it is non-empty, else `contextual_meaning`. The definition is never
+/// touched.
+fn apply_contextual(row: &mut GlossRow, reading: Option<&SenseReading>) {
+    let Some(r) = reading else { return };
+    let per_reading = r.contextual_meanings.get(row.grammar_index).map(|m| m.trim()).filter(|m| !m.is_empty());
+    let single = r.contextual_meaning.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    if let Some(m) = per_reading.or(single) {
+        row.contextual = m.to_string();
     }
 }
 
@@ -1377,7 +1395,8 @@ fn make_row(
         grammar: grammar_options.get(reading).cloned().unwrap_or_default(),
         grammar_options,
         grammar_index: reading,
-        meaning: clean_meaning(&cand.meaning),
+        definition: clean_meaning(&cand.meaning),
+        contextual: String::new(),
         construction: cand.construction.clone(),
         root: cand.root.clone(),
         confidence,
@@ -1392,7 +1411,7 @@ fn make_row(
 pub fn unresolved_token_row(original_word: &str) -> GlossRow {
     GlossRow {
         word: written_word(original_word),
-        meaning: NOT_FOUND_MEANING.to_string(),
+        definition: NOT_FOUND_MEANING.to_string(),
         ..Default::default()
     }
 }
@@ -1524,6 +1543,7 @@ mod tests {
             lookup_grammar: Vec::new(),
             lookup_headword_ids: Vec::new(),
             demoted_uids: Vec::new(),
+            example_match_uids: Vec::new(),
             reading: None,
             component_readings: Default::default(),
         }
@@ -1538,6 +1558,7 @@ mod tests {
             uid: "2/dpd".into(),
             grammar_index: Some(1),
             contextual_meaning: Some("they".into()),
+            contextual_meanings: Vec::new(),
             origin: "ai-selected".into(),
         });
         old_te.component_selected_uids.insert("ta".into(), "9/dpd".into());

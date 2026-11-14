@@ -252,9 +252,21 @@ Item {
     // the ComboBox may have replaced its binding.
     onGloss_formatChanged: gloss_format_combo.currentIndex = root.gloss_format === "headwords" ? 1 : 0
 
+    // Word in Sentence rows and tables: 1 or 2 lines per word. One app
+    // setting shared with the Export window, which sets it here too when it
+    // saves (onExport_requested).
+    property int gloss_lines_per_word: 2
+    // A user choice in the ComboBox may have replaced its binding.
+    onGloss_lines_per_wordChanged: lines_per_word_combo.currentIndex = root.gloss_lines_per_word === 1 ? 0 : 1
+
     // Translate each paragraph as soon as its gloss (and its AI word
     // selection) is complete.
     property bool auto_translate: false
+
+    // "Contextual meaning for every word": the AI word selection also asks
+    // for the contextual meaning of the Word in Sentence words that have no
+    // choice to make (docs/gloss-ai-word-selection.md).
+    property bool gloss_contextual_all: true
 
     // Set by switch_gloss_format() for the re-gloss it starts: paragraph
     // index -> {text, words_data_json, translations_json, selected_ai_tab}.
@@ -273,7 +285,9 @@ Item {
 
     function load_gloss_settings() {
         root.gloss_format = SuttaBridge.get_gloss_format();
+        root.gloss_lines_per_word = SuttaBridge.get_gloss_lines_per_word();
         root.auto_translate = SuttaBridge.get_gloss_auto_translate();
+        root.gloss_contextual_all = SuttaBridge.get_gloss_contextual_all();
         root.refresh_has_translate_model();
     }
 
@@ -510,22 +524,7 @@ Item {
     // pass re-includes "ai-selected"-resolved words but never
     // "user-selected"/"built-in-phrase-match"/"built-in-human-checked".
     function build_word_selection_items(paragraph_indexes, forced) {
-        let paragraphs = [];
-        for (let pi of paragraph_indexes) {
-            if (pi >= paragraph_model.count) continue;
-            let paragraph = paragraph_model.get(pi);
-            if (!paragraph || !paragraph.words_data_json) continue;
-            let input = {
-                paragraph_index: pi,
-                words_json: paragraph.words_data_json,
-            };
-            // With Word in Sentence rows the items also ask for grammar
-            // readings and for the components of compound headwords.
-            if (paragraph.rows_json && paragraph.rows_json !== "[]") {
-                input.rows_json = paragraph.rows_json;
-            }
-            paragraphs.push(input);
-        }
+        let paragraphs = root.build_word_selection_inputs(paragraph_indexes);
         let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
         try {
             return JSON.parse(items_json);
@@ -535,11 +534,42 @@ Item {
         }
     }
 
+    // The paragraph inputs of the shared builder (WordSelectionParagraphInput):
+    // words, rows and the paragraph text, which the prompt sends once per
+    // paragraph as the context of its items.
+    function build_word_selection_inputs(paragraph_indexes) {
+        let paragraphs = [];
+        for (let pi of paragraph_indexes) {
+            if (pi >= paragraph_model.count) continue;
+            let paragraph = paragraph_model.get(pi);
+            if (!paragraph || !paragraph.words_data_json) continue;
+            let input = {
+                paragraph_index: pi,
+                words_json: paragraph.words_data_json,
+            };
+            if (paragraph.text && paragraph.text.trim() !== "") {
+                input.text = paragraph.text;
+            }
+            // With Word in Sentence rows the items also ask for grammar
+            // readings and for the components of compound headwords, and,
+            // with "Contextual meaning for every word", for the contextual
+            // meaning of the words that have no choice to make.
+            if (paragraph.rows_json && paragraph.rows_json !== "[]") {
+                input.rows_json = paragraph.rows_json;
+                input.contextual_all = root.gloss_contextual_all;
+            }
+            paragraphs.push(input);
+        }
+        return paragraphs;
+    }
+
     // The combined prompt (system prompt + request template with the payload
     // substituted), assembled in Rust so the CLI and the API send the same
-    // text (simsapa_backend::helpers::build_word_selection_prompt).
-    function build_word_selection_prompt(items) {
-        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items));
+    // text (simsapa_backend::helpers::build_word_selection_prompt). The
+    // paragraph inputs give the texts of the items' paragraphs.
+    function build_word_selection_prompt(items, paragraph_indexes) {
+        let paragraphs = root.build_word_selection_inputs(paragraph_indexes);
+        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items), JSON.stringify(paragraphs));
     }
 
     // Entry point: run AI word selection for the given paragraphs. Batched
@@ -556,7 +586,7 @@ Item {
         let items = root.build_word_selection_items(indexes, forced);
         if (items.length === 0) return;
 
-        let prompt = root.build_word_selection_prompt(items);
+        let prompt = root.build_word_selection_prompt(items, indexes);
         if (indexes.length === 1 || prompt.length < root.word_selection_batch_char_limit) {
             root.ws_send_request(indexes, forced);
         } else {
@@ -607,12 +637,22 @@ Item {
             root.ws_set_status(pi, "busy", "Selecting words...");
         }
 
-        let prompt = root.build_word_selection_prompt(items);
+        // A long paragraph's items go in several requests, as in the CLI
+        // (simsapa_backend::helpers::word_selection_item_chunks); PromptManager
+        // sends them in turn and returns one merged answer.
+        let paragraphs_json = JSON.stringify(root.build_word_selection_inputs(covered));
+        let prompts_json = SuttaBridge.build_word_selection_prompts(JSON.stringify(items), paragraphs_json);
         root.ws_last_start_time = Date.now();
-        logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}]`);
+        let parts = 0;
+        try {
+            parts = JSON.parse(prompts_json).length;
+        } catch (e) {
+            logger.error("ws_send_request: failed to parse the prompts JSON: " + e);
+        }
+        logger.info(`Word selection request ${request_id}: ${items.length} words in ${parts} part(s), paragraphs [${covered.join(", ")}]`);
         // The engine walks the Fallback sequence; the model which answered is
         // reported in the progress events and the response signal.
-        pm.sequential_word_selection_request(request_id, prompt);
+        pm.sequential_word_selection_requests(request_id, prompts_json);
         return true;
     }
 
@@ -703,13 +743,18 @@ Item {
                     uid: sel.uid,
                     grammar_index: sel.grammar_index,
                     contextual_meaning: sel.contextual_meaning,
+                    contextual_meanings: sel.contextual_meanings,
                 };
+                // An item with one option asks only for the reading and the
+                // contextual meaning.
+                let it = items_by_id[sel.id];
+                let option_count = (it && it.options) ? it.options.length : 0;
                 let suffix = m[3] || "";
                 if (suffix === "d") {
                     entry.kind = "d";
                 } else if (suffix.length > 0) {
                     entry.kind = "c";
-                    let it = items_by_id[sel.id];
+                    entry.option_count = option_count;
                     entry.component_word = (it && it.component_word) ? it.component_word : "";
                     if (entry.component_word === "") {
                         logger.error("Word selection " + sel.id + ": no component_word on the request item, skipping");
@@ -717,9 +762,7 @@ Item {
                     }
                 } else {
                     entry.kind = "sense";
-                    // An item with one option asks only for the reading.
-                    let it = items_by_id[sel.id];
-                    entry.option_count = (it && it.options) ? it.options.length : 0;
+                    entry.option_count = option_count;
                 }
                 if (by_para[pi] === undefined) by_para[pi] = [];
                 by_para[pi].push(entry);
@@ -862,9 +905,11 @@ Item {
 
     GlossExportWindow {
         id: gloss_export_window
-        onExport_requested: function(formats, gloss_format) {
+        onExport_requested: function(formats, gloss_format, lines_per_word) {
             root.export_formats = formats;
             root.export_gloss_format = gloss_format;
+            // The window saved the shared setting: the tab's rows follow it.
+            root.gloss_lines_per_word = lines_per_word;
             export_folder_dialog.open();
         }
     }
@@ -2089,6 +2134,17 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 // the chosen break-down are stored too (harmless — they only
                 // display when unlocked or after a break-down switch).
                 let cw = sel.component_word;
+                if (!w.component_readings) w.component_readings = ({});
+                // A component item with one option asked only for the
+                // reading: no sense choice, no cache row, no resolution.
+                if (sel.option_count !== undefined && sel.option_count <= 1) {
+                    let only_comp_reading = root.ai_answer_reading(w.component_readings[cw] || null, sel);
+                    if (only_comp_reading === null) continue;
+                    w.component_readings[cw] = only_comp_reading;
+                    words_data[wi] = w;
+                    applied += 1;
+                    continue;
+                }
                 if (!w.component_resolutions) w.component_resolutions = ({});
                 let comp_resolution = w.component_resolutions[cw] || null;
                 if (comp_resolution !== null && comp_resolution !== "ai-selected") continue;
@@ -2102,7 +2158,6 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                 if (comp_saved) {
                     w.component_resolutions[cw] = "ai-selected";
                 }
-                if (!w.component_readings) w.component_readings = ({});
                 let comp_reading = root.ai_answer_reading(w.component_readings[cw] || null, sel);
                 if (comp_reading !== null) w.component_readings[cw] = comp_reading;
                 words_data[wi] = w;
@@ -2189,12 +2244,14 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     }
 
     // The session reading of an AI answer: {uid, grammar_index?,
-    // contextual_meaning?, origin}, or null when the answer gives neither or
-    // the user already chose a reading for the same sense.
+    // contextual_meaning?, contextual_meanings?, origin}, or null when the
+    // answer gives none of them or the user already chose a reading for the
+    // same sense.
     function ai_answer_reading(old_reading, sel) {
         let has_index = sel.grammar_index !== undefined && sel.grammar_index !== null;
         let has_meaning = sel.contextual_meaning !== undefined && sel.contextual_meaning !== null;
-        if (!has_index && !has_meaning) return null;
+        let has_meanings = Array.isArray(sel.contextual_meanings) && sel.contextual_meanings.length > 0;
+        if (!has_index && !has_meaning && !has_meanings) return null;
         if (old_reading !== null && old_reading.uid === sel.uid
             && old_reading.origin && old_reading.origin !== "ai-selected") {
             return null;
@@ -2202,6 +2259,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         let reading = { uid: sel.uid, origin: "ai-selected" };
         if (has_index) reading.grammar_index = sel.grammar_index;
         if (has_meaning) reading.contextual_meaning = sel.contextual_meaning;
+        if (has_meanings) reading.contextual_meanings = sel.contextual_meanings;
         return reading;
     }
 
@@ -2455,9 +2513,15 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         let w = words[item.owner];
         let uid = root.row_chosen_uid(item);
         let old = item.kind === "component" ? (w.component_readings || {})[item.key] : w.reading;
+        // The contextual meaning follows the reading: the AI's meaning for
+        // this reading (`contextual_meanings`) when it gave one, else none,
+        // never a meaning fitted to another case.
         let reading = { uid: uid, grammar_index: grammar_index, origin: "user-selected" };
-        if (old && old.uid === uid && old.contextual_meaning) {
-            reading.contextual_meaning = old.contextual_meaning;
+        if (old && old.uid === uid) {
+            let meanings = old.contextual_meanings || [];
+            if (meanings.length > 0) reading.contextual_meanings = meanings;
+            let meaning = (meanings[grammar_index] || "").trim();
+            if (meaning !== "") reading.contextual_meaning = meaning;
         }
         if (item.kind === "component") {
             if (!w.component_readings) w.component_readings = ({});
@@ -2632,6 +2696,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             gloss_format: gloss_format,
             title: "",
             no_ai_provider: !root.has_translate_model && !root.is_word_selection_enabled(),
+            // The shared setting; an export has just set it from its window.
+            lines_per_word: root.gloss_lines_per_word,
             paragraphs: [],
         };
 
@@ -2708,7 +2774,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
         }
 
         var paragraph = gloss_data.paragraphs[paragraph_index];
-        return SuttaBridge.gloss_paragraph_export(JSON.stringify(paragraph), paragraph_index + 1, format);
+        return SuttaBridge.gloss_paragraph_export(JSON.stringify(paragraph), paragraph_index + 1, format, root.gloss_lines_per_word);
     }
 
     function paragraph_gloss_as_html(paragraph_index: int): string {
@@ -3013,6 +3079,30 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 }
                             }
 
+                            // Shared with the Export window's choice (one app
+                            // setting), so both start from the same layout.
+                            RowLayout {
+                                spacing: 5
+
+                                Text {
+                                    text: "Lines per word:"
+                                    font.pointSize: root.vocab_font_point_size
+                                    color: root.text_color
+                                    opacity: lines_per_word_combo.enabled ? 1.0 : 0.5
+                                }
+
+                                ComboBox {
+                                    id: lines_per_word_combo
+                                    model: ["One line", "Two lines"]
+                                    currentIndex: root.gloss_lines_per_word === 1 ? 0 : 1
+                                    enabled: root.is_word_in_sentence
+                                    onActivated: function(index) {
+                                        root.gloss_lines_per_word = index === 0 ? 1 : 2;
+                                        SuttaBridge.set_gloss_lines_per_word(root.gloss_lines_per_word);
+                                    }
+                                }
+                            }
+
                             RowLayout {
                                 spacing: 5
 
@@ -3088,6 +3178,22 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                     ToolTip.text: "About AI word selection"
                                     onClicked: word_selection_dialog.open()
                                 }
+                            }
+
+                            CheckBox {
+                                id: contextual_all_check
+                                text: "Contextual meaning for every word"
+                                checked: root.gloss_contextual_all
+                                enabled: root.is_word_in_sentence
+                                onToggled: {
+                                    root.gloss_contextual_all = contextual_all_check.checked;
+                                    SuttaBridge.set_gloss_contextual_all(root.gloss_contextual_all);
+                                }
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "The AI word selection also gives a contextual meaning for the words "
+                                    + "with only one sense or an already chosen sense, not only for the ambiguous ones. "
+                                    + "Uses more tokens per request."
                             }
 
                             Button {
@@ -3605,7 +3711,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                 required property var modelData
                                 item: wis_row.modelData
                                 shield: root.shield_state(wis_row.modelData.row.resolution || null)
-                                is_mobile: root.is_mobile
+                                two_lines: root.gloss_lines_per_word === 2
                                 font_point_size: root.vocab_font_point_size
                                 text_color: root.text_color
                                 bg_color: root.bg_color

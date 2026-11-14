@@ -1248,6 +1248,18 @@ pub mod qobject {
         fn set_gloss_export_gloss_format(self: Pin<&mut SuttaBridge>, format: &QString);
 
         #[qinvokable]
+        fn get_gloss_lines_per_word(self: &SuttaBridge) -> i32;
+
+        #[qinvokable]
+        fn set_gloss_lines_per_word(self: Pin<&mut SuttaBridge>, lines: i32);
+
+        #[qinvokable]
+        fn get_gloss_contextual_all(self: &SuttaBridge) -> bool;
+
+        #[qinvokable]
+        fn set_gloss_contextual_all(self: Pin<&mut SuttaBridge>, enabled: bool);
+
+        #[qinvokable]
         fn get_prompts_request_mode(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
@@ -1299,7 +1311,10 @@ pub mod qobject {
         fn build_word_selection_items_json(self: &SuttaBridge, paragraphs_json: &QString, forced: bool) -> QString;
 
         #[qinvokable]
-        fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString) -> QString;
+        fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString, paragraphs_json: &QString) -> QString;
+
+        #[qinvokable]
+        fn build_word_selection_prompts(self: &SuttaBridge, items_json: &QString, paragraphs_json: &QString) -> QString;
 
         #[qinvokable]
         fn gloss_translation_prompt(self: &SuttaBridge, paragraph_json: &QString) -> QString;
@@ -1593,7 +1608,7 @@ pub mod qobject {
         fn gloss_export(self: &SuttaBridge, gloss_json: &QString, format: &QString) -> QString;
 
         #[qinvokable]
-        fn gloss_paragraph_export(self: &SuttaBridge, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString;
+        fn gloss_paragraph_export(self: &SuttaBridge, paragraph_json: &QString, paragraph_number: i32, format: &QString, lines_per_word: i32) -> QString;
 
         #[qinvokable]
         fn chat_export(self: &SuttaBridge, chat_json: &QString, format: &QString) -> QString;
@@ -3390,6 +3405,32 @@ impl qobject::SuttaBridge {
         get_app_data().set_gloss_export_gloss_format(parse_gloss_format(&format.to_string()));
     }
 
+    /// Word in Sentence lines per word (1 or 2), shared by the Gloss tab's
+    /// rows and the Export window.
+    pub fn get_gloss_lines_per_word(&self) -> i32 {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.gloss_lines_per_word as i32
+    }
+
+    /// Save the lines per word; anything but 1 is 2.
+    pub fn set_gloss_lines_per_word(self: Pin<&mut Self>, lines: i32) {
+        get_app_data().set_gloss_lines_per_word(lines as i64);
+    }
+
+    /// Whether the AI word selection asks for a contextual meaning for every
+    /// word ("Contextual meaning for every word").
+    pub fn get_gloss_contextual_all(&self) -> bool {
+        let app_data = get_app_data();
+        let app_settings = app_data.app_settings_cache.read().expect("Failed to read app settings");
+        app_settings.gloss_contextual_all
+    }
+
+    /// Save the "Contextual meaning for every word" option.
+    pub fn set_gloss_contextual_all(self: Pin<&mut Self>, enabled: bool) {
+        get_app_data().set_gloss_contextual_all(enabled);
+    }
+
     /// Get the Prompts tab request mode ("sequential_retry" | "parallel")
     pub fn get_prompts_request_mode(&self) -> QString {
         let app_data = get_app_data();
@@ -3798,9 +3839,11 @@ impl qobject::SuttaBridge {
     }
 
     /// The word-selection prompt for request items (an items JSON array from
-    /// `build_word_selection_items_json`), with the saved system prompt and
-    /// request template (`simsapa_backend::helpers::build_word_selection_prompt`).
-    pub fn build_word_selection_prompt(&self, items_json: &QString) -> QString {
+    /// `build_word_selection_items_json`) and the paragraph inputs they were
+    /// built from (`paragraphs_json`, as given to it), with the saved system
+    /// prompt and request template
+    /// (`simsapa_backend::helpers::build_word_selection_prompt`).
+    pub fn build_word_selection_prompt(&self, items_json: &QString, paragraphs_json: &QString) -> QString {
         let items: Vec<serde_json::Value> = match serde_json::from_str(&items_json.to_string()) {
             Ok(items) => items,
             Err(e) => {
@@ -3808,7 +3851,52 @@ impl qobject::SuttaBridge {
                 Vec::new()
             }
         };
-        QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items))
+        // The same paragraph inputs the items were built from; their texts
+        // go into the payload's `paragraphs` list.
+        let paragraphs: Vec<simsapa_backend::helpers::WordSelectionParagraphInput> =
+            match serde_json::from_str(&paragraphs_json.to_string()) {
+                Ok(p) => p,
+                Err(e) => {
+                    error(&format!("build_word_selection_prompt(): invalid paragraphs JSON: {}", e));
+                    Vec::new()
+                }
+            };
+        QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items, &paragraphs))
+    }
+
+    /// The word-selection request for the items, split as the CLI splits it
+    /// (`simsapa_backend::helpers::word_selection_item_chunks`): a JSON array
+    /// of `{"prompt", "item_count"}`, one per chunk, for
+    /// `PromptManager.sequential_word_selection_requests`.
+    pub fn build_word_selection_prompts(&self, items_json: &QString, paragraphs_json: &QString) -> QString {
+        use simsapa_backend::helpers::{
+            build_word_selection_prompt, word_selection_item_chunks, WordSelectionParagraphInput,
+            WORD_SELECTION_MAX_ITEMS_PER_REQUEST,
+        };
+        let items: Vec<serde_json::Value> = match serde_json::from_str(&items_json.to_string()) {
+            Ok(items) => items,
+            Err(e) => {
+                error(&format!("build_word_selection_prompts(): invalid items JSON: {}", e));
+                Vec::new()
+            }
+        };
+        let paragraphs: Vec<WordSelectionParagraphInput> = match serde_json::from_str(&paragraphs_json.to_string()) {
+            Ok(p) => p,
+            Err(e) => {
+                error(&format!("build_word_selection_prompts(): invalid paragraphs JSON: {}", e));
+                Vec::new()
+            }
+        };
+        let chunks = word_selection_item_chunks(
+            &items,
+            WORD_SELECTION_MAX_ITEMS_PER_REQUEST,
+            simsapa_backend::ai_engine::WORD_SELECTION_BATCH_CHAR_LIMIT,
+        );
+        let prompts: Vec<serde_json::Value> = chunks
+            .iter()
+            .map(|chunk| serde_json::json!({ "prompt": build_word_selection_prompt(chunk, &paragraphs), "item_count": chunk.len() }))
+            .collect();
+        QString::from(serde_json::Value::Array(prompts).to_string())
     }
 
     /// The two-part translation prompt for one paragraph
@@ -4273,10 +4361,13 @@ impl qobject::SuttaBridge {
     }
 
     /// Render a single gloss paragraph fragment as text (for per-paragraph
-    /// "Copy As..."). Returns an empty string on error.
-    pub fn gloss_paragraph_export(&self, paragraph_json: &QString, paragraph_number: i32, format: &QString) -> QString {
+    /// "Copy As..."), its Word in Sentence table on `lines_per_word` lines
+    /// per word (1 or 2, as the Gloss tab shows it). Returns an empty string
+    /// on error.
+    pub fn gloss_paragraph_export(&self, paragraph_json: &QString, paragraph_number: i32, format: &QString, lines_per_word: i32) -> QString {
         let number = paragraph_number.max(0) as usize;
-        match simsapa_backend::text_export::gloss_paragraph_export(&paragraph_json.to_string(), number, &format.to_string()) {
+        let lines = simsapa_backend::app_settings::clamp_gloss_lines_per_word(lines_per_word as i64);
+        match simsapa_backend::text_export::gloss_paragraph_export(&paragraph_json.to_string(), number, &format.to_string(), lines) {
             Ok(text) => QString::from(text),
             Err(e) => {
                 error(&format!("gloss_paragraph_export failed: {}", e));

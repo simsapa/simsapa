@@ -12,8 +12,10 @@ import com.profoundlabs.simsapa
 // documents. The choices are app settings of their own
 // (`gloss_export_formats`, `gloss_export_gloss_format`), apart from the Gloss
 // tab's format, so a gloss can be read in one format and exported in the
-// other. "Export..." emits export_requested(); the Gloss tab then asks for
-// the folder.
+// other. The lines per word of the Word in Sentence tables is the setting the
+// Gloss tab's "Lines per word" also uses (`gloss_lines_per_word`).
+// "Export..." emits export_requested(); the Gloss tab then asks for the
+// folder.
 ApplicationWindow {
     id: root
 
@@ -50,8 +52,9 @@ ApplicationWindow {
 
     readonly property string chosen_gloss_format: headwords_radio.checked ? "headwords" : "word_in_sentence"
     readonly property bool is_other_format: root.chosen_gloss_format !== root.tab_gloss_format
+    readonly property int chosen_lines_per_word: one_line_radio.checked ? 1 : 2
 
-    signal export_requested(var formats, string gloss_format)
+    signal export_requested(var formats, string gloss_format, int lines_per_word)
 
     ThemeHelper {
         id: theme_helper
@@ -82,6 +85,10 @@ ApplicationWindow {
         let gloss_format = SuttaBridge.get_gloss_export_gloss_format();
         word_in_sentence_radio.checked = gloss_format !== "headwords";
         headwords_radio.checked = gloss_format === "headwords";
+
+        let lines_per_word = SuttaBridge.get_gloss_lines_per_word();
+        one_line_radio.checked = lines_per_word === 1;
+        two_lines_radio.checked = lines_per_word !== 1;
     }
 
     function set_format_checked(key: string, checked: bool) {
@@ -96,8 +103,9 @@ ApplicationWindow {
         if (formats.length === 0) return;
         SuttaBridge.set_gloss_export_formats_json(JSON.stringify(formats));
         SuttaBridge.set_gloss_export_gloss_format(root.chosen_gloss_format);
+        SuttaBridge.set_gloss_lines_per_word(root.chosen_lines_per_word);
         root.close();
-        root.export_requested(formats, root.chosen_gloss_format);
+        root.export_requested(formats, root.chosen_gloss_format, root.chosen_lines_per_word);
     }
 
     Frame {
@@ -197,6 +205,38 @@ ApplicationWindow {
                         font.pointSize: root.pointSize - 1
                         visible: root.is_other_format
                         text: "The Gloss tab shows the other format. For the export the text is glossed again in this format, with the word choices and translations of the Gloss tab; the Gloss tab is not changed."
+                    }
+
+                    // Word in Sentence tables only: Headwords has no such
+                    // table, and Anki and JSON keep one record per word.
+                    ButtonGroup { id: lines_per_word_group }
+
+                    RadioButton {
+                        id: one_line_radio
+                        Layout.fillWidth: true
+                        Layout.topMargin: 6
+                        font.pointSize: root.pointSize
+                        text: "One line per word"
+                        enabled: word_in_sentence_radio.checked
+                        ButtonGroup.group: lines_per_word_group
+                    }
+
+                    RadioButton {
+                        id: two_lines_radio
+                        Layout.fillWidth: true
+                        font.pointSize: root.pointSize
+                        text: "Two lines per word"
+                        enabled: word_in_sentence_radio.checked
+                        ButtonGroup.group: lines_per_word_group
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 10
+                        wrapMode: Text.WordWrap
+                        font.pointSize: root.pointSize - 1
+                        enabled: word_in_sentence_radio.checked
+                        text: "For the HTML, Markdown, Org-Mode and Word tables. Two lines put the meanings on the first line and the grammar, construction and root on the second. Anki and JSON keep one record per word."
                     }
                 }
             }

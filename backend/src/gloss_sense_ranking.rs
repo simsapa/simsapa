@@ -234,6 +234,12 @@ pub fn rank_paragraph_default_senses(
             .filter(|(_, s)| s.tier == 0)
             .map(|(r, _)| r.uid.clone())
             .collect();
+        pw.example_match_uids = pw.results[..n]
+            .iter()
+            .zip(&ranked)
+            .filter(|(_, s)| s.db_example_strong && s.tier > 0)
+            .map(|(r, _)| r.uid.clone())
+            .collect();
 
         if pw.resolution.is_none() {
             let mut best = 0;

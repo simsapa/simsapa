@@ -28,7 +28,13 @@ pub struct TranslationVocabRow {
     /// The word, with a `- ` per depth for a component (`- daḷha`).
     pub word: String,
     pub grammar: String,
-    pub meaning: String,
+    /// The rendering of the word in this sentence, from the AI's word
+    /// selection; empty when there is none, and always for Headwords. The
+    /// table's Meaning when set (`word_table_markdown`).
+    pub contextual: String,
+    /// The dictionary's meaning of the chosen sense (Headwords: its summary):
+    /// the table's Meaning when there is no contextual one.
+    pub definition: String,
 }
 
 /// A parsed translation answer.
@@ -45,7 +51,8 @@ pub fn translation_vocabulary_from_rows(rows: &[GlossRow]) -> Vec<TranslationVoc
         out.push(TranslationVocabRow {
             word: format!("{}{}", "- ".repeat(row.depth as usize), row.word),
             grammar: row.grammar.clone(),
-            meaning: row.meaning.clone(),
+            contextual: row.contextual.clone(),
+            definition: row.definition.clone(),
         });
         for c in &row.components {
             walk(c, out);
@@ -73,7 +80,7 @@ pub fn translation_vocabulary_from_words(words: &[ProcessedWord]) -> Vec<Transla
             out.push(TranslationVocabRow {
                 word: w.original_word.clone(),
                 grammar: crate::gloss_rows::DECONSTRUCTION_GRAMMAR.to_string(),
-                meaning: String::new(),
+                ..Default::default()
             });
             for comp in &w.deconstructions[si].components {
                 let results: Vec<_> = w.results.iter().filter(|r| comp.result_uids.contains(&r.uid)).collect();
@@ -87,8 +94,8 @@ pub fn translation_vocabulary_from_words(words: &[ProcessedWord]) -> Vec<Transla
                     .unwrap_or(&results[0]);
                 out.push(TranslationVocabRow {
                     word: format!("- {}", comp.word),
-                    grammar: String::new(),
-                    meaning: strip_html(&chosen.summary),
+                    definition: strip_html(&chosen.summary),
+                    ..Default::default()
                 });
             }
             continue;
@@ -96,8 +103,8 @@ pub fn translation_vocabulary_from_words(words: &[ProcessedWord]) -> Vec<Transla
         let idx = usize::try_from(w.selected_index).unwrap_or(0).min(w.results.len() - 1);
         out.push(TranslationVocabRow {
             word: w.original_word.clone(),
-            grammar: String::new(),
-            meaning: strip_html(&w.results[idx].summary),
+            definition: strip_html(&w.results[idx].summary),
+            ..Default::default()
         });
     }
     out
@@ -118,11 +125,15 @@ fn cell(text: &str) -> String {
     text.replace('|', "\\|").replace(['\n', '\r'], " ")
 }
 
-/// The word table as Markdown, as in DPD's grounded translation prompt.
+/// The word table as Markdown, as in DPD's grounded translation prompt:
+/// `| Word | Grammar | Meaning |`, the Meaning being the row's contextual
+/// meaning, or its definition when it has none. (Sending both in two columns
+/// gave nearly the same translations with a 20–38 % larger prompt.)
 pub fn word_table_markdown(vocab: &[TranslationVocabRow]) -> String {
     let mut out = String::from("| Word | Grammar | Meaning |\n| :--- | :--- | :--- |\n");
     for v in vocab {
-        out.push_str(&format!("| {} | {} | {} |\n", cell(&v.word), cell(&v.grammar), cell(&v.meaning)));
+        let meaning = if v.contextual.trim().is_empty() { &v.definition } else { &v.contextual };
+        out.push_str(&format!("| {} | {} | {} |\n", cell(&v.word), cell(&v.grammar), cell(meaning)));
     }
     out.trim_end().to_string()
 }
@@ -199,10 +210,35 @@ mod tests {
 
     fn vocab() -> Vec<TranslationVocabRow> {
         vec![
-            TranslationVocabRow { word: "te".into(), grammar: "pron, masc nom pl of ta".into(), meaning: "they".into() },
-            TranslationVocabRow { word: "daḷhaparakkamā".into(), grammar: "adj, masc nom pl of daḷhaparakkama".into(), meaning: "having firm effort".into() },
-            TranslationVocabRow { word: "- daḷha".into(), grammar: "pp".into(), meaning: "firm | strong".into() },
+            TranslationVocabRow { word: "te".into(), grammar: "pron, masc nom pl of ta".into(), contextual: "they".into(), definition: "that; those".into() },
+            TranslationVocabRow { word: "daḷhaparakkamā".into(), grammar: "adj, masc nom pl of daḷhaparakkama".into(), contextual: String::new(), definition: "having firm effort".into() },
+            TranslationVocabRow { word: "- daḷha".into(), grammar: "pp".into(), contextual: String::new(), definition: "firm | strong".into() },
         ]
+    }
+
+    #[test]
+    fn vocabulary_from_rows_keeps_contextual_and_definition_apart() {
+        let with = GlossRow { word: "te".into(), grammar: "g".into(), definition: "that; those".into(), contextual: "they".into(), ..Default::default() };
+        let without = GlossRow { word: "kho".into(), definition: "indeed".into(), depth: 1, ..Default::default() };
+        let v = translation_vocabulary_from_rows(&[with, without]);
+        assert_eq!(v[0].contextual, "they");
+        assert_eq!(v[0].definition, "that; those");
+        assert_eq!(v[1].contextual, "");
+        assert_eq!(v[1].definition, "indeed");
+        assert_eq!(v[1].word, "- kho");
+    }
+
+    #[test]
+    fn word_table_meaning_is_the_contextual_else_the_definition() {
+        let t = word_table_markdown(&vocab());
+        assert!(t.starts_with("| Word | Grammar | Meaning |\n| :--- | :--- | :--- |\n"));
+        assert!(t.contains("| te | pron, masc nom pl of ta | they |\n"));
+        assert!(t.contains("| daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort |\n"));
+        assert!(t.ends_with("| - daḷha | pp | firm \\| strong |"));
+        // A blank contextual meaning falls back to the definition.
+        let mut v = vocab();
+        v[0].contextual = "  ".into();
+        assert!(word_table_markdown(&v).contains("| te | pron, masc nom pl of ta | that; those |\n"));
     }
 
     #[test]

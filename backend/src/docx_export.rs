@@ -47,7 +47,7 @@ use markdown::mdast::{Code, List, Node, Table};
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    GlossExportRow, GlossExportVocabItem, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
     word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
@@ -398,13 +398,17 @@ fn word_in_sentence_body(data: &GlossExportData, numbering: &mut NumberingRegist
         if several {
             body.push_str(&styled_paragraph("Heading1", &[run(false, false, &format!("Paragraph {}", i + 1))]));
         }
-        body.push_str(&word_in_sentence_paragraph(paragraph, numbering));
+        body.push_str(&word_in_sentence_paragraph(paragraph, data.two_lines(), numbering));
     }
     body.push_str(&confidence_legend(data.no_ai_provider));
     body
 }
 
-fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, numbering: &mut NumberingRegistry) -> String {
+fn word_in_sentence_paragraph(
+    paragraph: &GlossExportParagraph,
+    two_lines: bool,
+    numbering: &mut NumberingRegistry,
+) -> String {
     let mut out = String::new();
     out.push_str(&quote_block(&paragraph.display_text()));
 
@@ -437,7 +441,11 @@ fn word_in_sentence_paragraph(paragraph: &GlossExportParagraph, numbering: &mut 
     }
 
     out.push_str(&styled_paragraph("Heading2", &[run(false, false, "Word-by-Word Analysis")]));
-    out.push_str(&word_table(&paragraph.rows));
+    if two_lines {
+        out.push_str(&word_table_two_lines(&paragraph.rows));
+    } else {
+        out.push_str(&word_table(&paragraph.rows));
+    }
     out
 }
 
@@ -456,7 +464,11 @@ fn labelled_text(label: &str, text: &str, numbering: &mut NumberingRegistry) -> 
 
 /// Word-by-Word column widths, in `WORD_TABLE_COLUMNS` order; they add up to
 /// `TABLE_TEXT_WIDTH_TWIPS`.
-const WORD_TABLE_COL_TWIPS: [u32; 7] = [750, 1800, 1900, 1900, 1650, 1700, 506];
+const WORD_TABLE_COL_TWIPS: [u32; 8] = [750, 1600, 1600, 1300, 2100, 1200, 1150, 506];
+
+/// Two-line Word-by-Word column widths, in `WORD_TABLE_2L_COLUMNS` order;
+/// they add up to `TABLE_TEXT_WIDTH_TWIPS`.
+const WORD_TABLE_2L_COL_TWIPS: [u32; 6] = [750, 1800, 2400, 2350, 2400, 506];
 
 /// Twips of indent per depth of a component row's word.
 const COMPONENT_INDENT_TWIPS: u32 = 240;
@@ -475,15 +487,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
     for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
         let mut cells = String::new();
         let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
-        let texts = [
-            row.id_cell(),
-            row.word_cell(),
-            row.grammar.clone(),
-            row.meaning.clone(),
-            row.construction.clone(),
-            row.root.clone(),
-            confidence_cell(row.confidence).to_string(),
-        ];
+        let texts = row.cells();
         for (col, (text, w)) in texts.iter().zip(WORD_TABLE_COL_TWIPS).enumerate() {
             let runs = [run(false, false, text)];
             let indent = if col == 1 { row.depth as u32 * COMPONENT_INDENT_TWIPS } else { 0 };
@@ -492,7 +496,57 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         xml_rows.push_str(&format!("<w:tr>{}</w:tr>", cells));
     }
 
-    let grid: String = WORD_TABLE_COL_TWIPS
+    word_table_xml(&WORD_TABLE_COL_TWIPS, &xml_rows)
+}
+
+/// The two-line Word-by-Word table (`WORD_TABLE_2L_COLUMNS`): each word on
+/// two table rows sharing its shade, the meanings over the grammar and
+/// derivation, as in the Gloss tab's two-line row. Line 1's Definition spans
+/// the Construction and Root columns (`w:gridSpan`). A word's two rows stay
+/// on one page: no row splits (`w:cantSplit`), and line 1's paragraphs keep
+/// with the next row (`w:keepNext`).
+fn word_table_two_lines(rows: &[GlossExportRow]) -> String {
+    let mut xml_rows = String::new();
+    let header: String = WORD_TABLE_2L_COLUMNS
+        .iter()
+        .zip(WORD_TABLE_2L_COL_TWIPS)
+        .map(|(col, w)| table_cell("VocabEntry", &w.to_string(), "dxa", &[run(true, false, col)]))
+        .collect();
+    xml_rows.push_str(&format!("<w:tr><w:trPr><w:tblHeader/></w:trPr>{}</w:tr>", header));
+
+    let w = WORD_TABLE_2L_COL_TWIPS;
+    for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
+        let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
+        let cell = |text: &str, width: u32, span: u32, indent: u32| {
+            table_cell_span_fill("VocabEntry", &width.to_string(), span, indent, fill, &[run(false, false, text)])
+        };
+        let [id, word, contextual, definition, _, conf] = row.line1_cells();
+        let line1 = [
+            cell(&id, w[0], 1, 0),
+            cell(&word, w[1], 1, row.depth as u32 * COMPONENT_INDENT_TWIPS),
+            cell(&contextual, w[2], 1, 0),
+            cell(&definition, w[3] + w[4], 2, 0),
+            cell(&conf, w[5], 1, 0),
+        ]
+        .concat();
+        let style = r#"<w:pStyle w:val="VocabEntry"/>"#;
+        let line1 = line1.replace(style, &format!("{style}<w:keepNext/>"));
+        xml_rows.push_str(&format!("<w:tr><w:trPr><w:cantSplit/></w:trPr>{}</w:tr>", line1));
+        let line2: String = row
+            .line2_cells()
+            .iter()
+            .zip(w)
+            .map(|(text, width)| cell(text, width, 1, 0))
+            .collect();
+        xml_rows.push_str(&format!("<w:tr><w:trPr><w:cantSplit/></w:trPr>{}</w:tr>", line2));
+    }
+    word_table_xml(&WORD_TABLE_2L_COL_TWIPS, &xml_rows)
+}
+
+/// A Word-by-Word `w:tbl` of `xml_rows` over a grid of `col_twips`, and the
+/// spacer paragraph after it.
+fn word_table_xml(col_twips: &[u32], xml_rows: &str) -> String {
+    let grid: String = col_twips
         .iter()
         .map(|w| format!(r#"<w:gridCol w:w="{}"/>"#, w))
         .collect();
@@ -713,12 +767,27 @@ fn table_cell_indent_fill(
     fill: Option<&str>,
     runs: &[String],
 ) -> String {
+    table_cell_span_fill(style_id, width_twips, 1, indent_twips, fill, runs)
+}
+
+/// `table_cell_indent_fill()` spanning `span` grid columns (`w:gridSpan`,
+/// which must follow `w:tcW` in `w:tcPr`).
+fn table_cell_span_fill(
+    style_id: &str,
+    width_twips: &str,
+    span: u32,
+    indent_twips: u32,
+    fill: Option<&str>,
+    runs: &[String],
+) -> String {
+    let grid_span = if span > 1 { format!(r#"<w:gridSpan w:val="{}"/>"#, span) } else { String::new() };
     let shd = fill
         .map(|hex| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, hex))
         .unwrap_or_default();
     format!(
-        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>{}</w:tcPr>{}</w:tc>"#,
+        r#"<w:tc><w:tcPr><w:tcW w:w="{}" w:type="dxa"/>{}{}</w:tcPr>{}</w:tc>"#,
         width_twips,
+        grid_span,
         shd,
         styled_paragraph_indent(style_id, indent_twips, runs)
     )
@@ -1250,19 +1319,73 @@ mod tests {
     }
 
     #[test]
+    fn word_table_widths_fill_the_text_width() {
+        assert_eq!(WORD_TABLE_COL_TWIPS.len(), WORD_TABLE_COLUMNS.len());
+        assert_eq!(WORD_TABLE_COL_TWIPS.iter().sum::<u32>(), TABLE_TEXT_WIDTH_TWIPS);
+        assert_eq!(WORD_TABLE_2L_COL_TWIPS.len(), WORD_TABLE_2L_COLUMNS.len());
+        assert_eq!(WORD_TABLE_2L_COL_TWIPS.iter().sum::<u32>(), TABLE_TEXT_WIDTH_TWIPS);
+    }
+
+    #[test]
+    fn test_word_in_sentence_docx_two_lines() {
+        let json = serde_json::json!({
+            "gloss_format": "word_in_sentence",
+            "title": "DHP23",
+            "paragraphs": [{
+                "text": "daḷhaparakkamā",
+                "rows": [
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "contextual": "of firm effort", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
+                ]
+            }]
+        })
+        .to_string();
+        let docx = generate_gloss_docx(&json).unwrap();
+        let doc = read_part(&docx, "word/document.xml");
+        roxmltree_lite_check(&doc);
+        let text = document_text(&doc);
+        let expected = [
+            "ID|Word in Sentence|Contextual / Grammar|Definition / Construction|Root|Conf.|",
+            "32215|daḷhaparakkamā|of firm effort|having firm effort|N|",
+            "adj, masc nom pl of daḷhaparakkama|[daḷha + parakkama]|",
+            "32201|- daḷha|firm|",
+            "pp|[√dah + ta]|√dah 1 a (be strong)|",
+        ];
+        let mut at = 0;
+        for piece in expected {
+            let found = text[at..].find(piece).unwrap_or_else(|| panic!("{:?} not found after {}: {}", piece, at, text));
+            at += found + piece.len();
+        }
+        // A header row, then two rows per word.
+        let table = &doc[doc.find("<w:tbl>").unwrap()..doc.find("</w:tbl>").unwrap()];
+        assert_eq!(table.matches("<w:tr>").count(), 1 + 2 * 2);
+        // A word's two rows stay together: no row splits, and each of line
+        // 1's five cells keeps with the next row.
+        assert_eq!(table.matches("<w:trPr><w:cantSplit/></w:trPr>").count(), 2 * 2);
+        assert_eq!(table.matches("<w:keepNext/>").count(), 2 * 5);
+        // Line 1's Definition spans Construction + Root, once per word.
+        let span = format!(r#"<w:tcW w:w="{}" w:type="dxa"/><w:gridSpan w:val="2"/>"#, WORD_TABLE_2L_COL_TWIPS[3] + WORD_TABLE_2L_COL_TWIPS[4]);
+        assert_eq!(table.matches(&span).count(), 2);
+        // Both words are in the first (shaded) band: 5 + 6 cells each.
+        let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
+        assert_eq!(table.matches(&shd).count(), 2 * 11);
+    }
+
+    #[test]
     fn test_word_in_sentence_docx_order() {
         let json = serde_json::json!({
             "text": "te jhāyino daḷhaparakkamā",
             "gloss_format": "word_in_sentence",
             "title": "DHP23",
             "no_ai_provider": false,
+            "lines_per_word": 1,
             "paragraphs": [{
                 "text": "te jhāyino gacchan'ti//gacchanti",
                 "variants": [["gacchan'ti", "gacchanti"]],
                 "ai_translations": [{"model_name": "m", "response": "Those wise ones.", "literal_translation": "Those meditators.", "is_selected": true}],
                 "rows": [
-                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "meaning": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
-                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "meaning": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
+                    {"word": "daḷhaparakkamā", "depth": 0, "id": 32215, "grammar": "adj, masc nom pl of daḷhaparakkama", "contextual": "of firm effort", "definition": "having firm effort", "construction": "daḷha + parakkama", "root": "", "confidence": "N"},
+                    {"word": "daḷha", "depth": 1, "id": 32201, "grammar": "pp", "definition": "firm & strong", "construction": "√dah + ta", "root": "√dah 1 a (be strong)", "confidence": null}
                 ]
             }]
         })
@@ -1279,9 +1402,9 @@ mod tests {
             "Literal Translation: |Those meditators.|",
             "Variants|gacchan'ti//gacchanti|",
             "Word-by-Word Analysis|",
-            "ID|Word in Sentence|Grammar|Meaning|Construction|Root|Conf.|",
-            "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|having firm effort|daḷha + parakkama|N|",
-            "32201|- daḷha|pp|firm &amp; strong|√dah + ta|√dah 1 a (be strong)|",
+            "ID|Word in Sentence|Grammar|Contextual|Definition|Construction|Root|Conf.|",
+            "32215|daḷhaparakkamā|adj, masc nom pl of daḷhaparakkama|of firm effort|having firm effort|[daḷha + parakkama]|N|",
+            "32201|- daḷha|pp|firm &amp; strong|[√dah + ta]|√dah 1 a (be strong)|",
             "Confidence marks:|N: Not checked",
             "H: Human-checked",
         ];
@@ -1294,9 +1417,9 @@ mod tests {
         assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
         assert!(!text.contains("Paragraph 1"));
         assert!(!text.contains(NO_AI_PROVIDER_NOTE));
-        // The token and its component share the first (shaded) band: 7 cells each.
+        // The token and its component share the first (shaded) band: 8 cells each.
         let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
-        assert_eq!(doc.matches(&shd).count(), 14);
+        assert_eq!(doc.matches(&shd).count(), 16);
     }
 
     #[test]

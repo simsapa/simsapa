@@ -1,6 +1,6 @@
 ---
 name: gloss-pali-passage
-description: Make a word-by-word analysis document of a Pāli passage or sutta reference (such as dhp23, sn1.71 or pasted Pāli text) with the `simsapa` command line program - every word with its grammar, meaning, construction and root, checked word senses, and a Translation and a Literal Translation. Use when the user asks to gloss, analyse or translate a Pāli passage.
+description: Make a word-by-word analysis document of a Pāli passage or sutta reference (such as dhp23, sn1.71 or pasted Pāli text) with the `simsapa` command line program - every word with its grammar, contextual meaning, definition, construction and root, checked word senses, and a Translation and a Literal Translation. Use when the user asks to gloss, analyse or translate a Pāli passage.
 argument-hint: "[headwords|word-in-sentence] <Pāli text or reference>"
 metadata:
   generator: simsapa-cli
@@ -47,8 +47,9 @@ yourself, from the data `simsapa` prints.
    sense that fits, and mark the row `A`. Take the row's ID, Grammar,
    Construction and Root from the chosen candidate, as written there. A row
    with an empty confidence had one candidate: leave it. Component rows
-   (a leading `- `) are chosen the same way. You may write a short contextual
-   Meaning for a row, fitted to the sentence, instead of the dictionary meaning.
+   (a leading `- `) are chosen the same way. Write a short Contextual value
+   for every row with a sense (see the notes under the document structure),
+   and keep the Definition as printed.
 4. Write the **Translation** (natural, readable English) and the **Literal
    Translation** (close to word-by-word, following the Pāli word order and
    grammar where English allows), for each paragraph, from the chosen senses.
@@ -56,8 +57,10 @@ yourself, from the data `simsapa` prints.
    them:
 
    > You are a Pāli translator. Using the word senses in the table below,
-   > translate the Pāli passage into English. Do not introduce senses that are
-   > not listed; a word without a sense in the table you may translate as you
+   > translate the Pāli passage into English. Each word's sense in this
+   > passage is its Contextual value, a rendering fitted to the sentence, or
+   > its Definition when it has none. Do not introduce senses that are not
+   > listed; a word without a meaning in the table you may translate as you
    > see fit. Component rows (starting with "- ") give the parts of the
    > compound or sandhi word above them.
    >
@@ -85,11 +88,14 @@ yourself, from the data `simsapa` prints.
 
 ### Word-by-Word Analysis
 
-| ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf. |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 62145 | sātatikā | adj, masc nom pl of sātatika | persevering | sa + √tan + ta + *ika | √tan 7 o (stretch, extend) | |
-| 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort | daḷha + parakkama | | |
-| 32201 | - daḷha | pp | firm | √dah + ta | √dah 1 a (be strong) | A |
+| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 62145 | sātatikā | persevering | diligent; persevering; consistent; practising continuously |  |  |
+|  |  | adj, masc nom pl of sātatika | [sa + √tan + ta + *ika] | √tan 7 o (stretch, extend) |  |
+| 32215 | daḷhaparakkamā | of firm effort | having persistent effort; making continuous effort; striving diligently |  |  |
+|  |  | adj, masc nom pl of daḷhaparakkama | [daḷha + parakkama] |  |  |
+| 32201 | - daḷha | firm | strong; firm; steady; lit. become strong |  | A |
+|  |  | pp | [√dah + ta] | √dah 1 a (be strong) |  |
 
 - N: Not checked, plain dictionary lookup, no saved selection. The first of several meanings was chosen; may need manual review.
 - A: AI-checked, picked by a machine (runtime AI request, or built-in data).
@@ -98,9 +104,20 @@ yourself, from the data `simsapa` prints.
 
 - Keep `simsapa`'s own table and legend text as printed; the example above
   only shows the shape. The `ṁ` (niggahīta) is used in every column.
+- Each word takes two table rows (the default, `--lines-per-word 2`): the
+  first has the Contextual and the Definition, the second the Grammar, the
+  Construction (in square brackets) and the Root. With `--lines-per-word 1`
+  the header is `| ID | Word in Sentence | Grammar | Contextual | Definition |
+  Construction | Root | Conf. |`, one row per word.
+- Definition is the dictionary's text as `simsapa` printed it; never change
+  it. Contextual is yours to fill: a short English rendering of the word as
+  used in this sentence, following the case, number and person of its
+  grammar (`of the nobleman`, `I would dwell`). It stands beside the
+  definition, never in its place.
 - Under a multi-paragraph passage, repeat the translation, variants and table
   for each paragraph under a `## Paragraph <n>` heading.
-- A word that could not be found has an empty ID and "not found" as its meaning.
+- A word that could not be found has an empty ID and "not found" as its
+  Definition.
 - Mark `A` only the rows you chose yourself. Leave `N` on a row you did not
   check, and `H` where `simsapa` printed it.
 - Because you made the choices, do not write the sentence "No AI provider is

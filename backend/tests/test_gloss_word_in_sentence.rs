@@ -247,7 +247,8 @@ fn test_rows_unresolved_token() {
     let (result, rows) = wis_rows("evaṁ me qqqzzz sutaṁ");
     let r = rows.iter().find(|r| r.word == "qqqzzz").unwrap();
     assert_eq!(r.id, None);
-    assert_eq!(r.meaning, "not found");
+    assert_eq!(r.definition, "not found");
+    assert_eq!(r.contextual, "");
     assert_eq!(r.word_index, None);
     assert!(result.paragraphs[0].unrecognized_words.contains(&"qqqzzz".to_string()));
     assert_eq!(words(&rows), vec!["evaṁ", "me", "qqqzzz", "sutaṁ"], "rows stay in passage order");
@@ -335,6 +336,12 @@ fn test_default_sense_db_example_and_same_in_both_formats() {
     let headwords = gloss(&[DHP23], options(GlossFormat::Headwords, false));
     assert_eq!(selected_uid(unresolved_word(&wis, "niccaṁ")), "37008/dpd");
     assert_eq!(selected_uid(unresolved_word(&headwords, "niccaṁ")), "37008/dpd");
+    // The match is kept for the word-selection request (`dpd_example`).
+    assert_eq!(unresolved_word(&wis, "niccaṁ").example_match_uids, vec!["37008/dpd".to_string()]);
+    // A one-word passage matches no example: DPD's overlap alone would match
+    // almost any example that contains the word.
+    let one_word = gloss(&["niccaṁ"], options(GlossFormat::WordInSentence, false));
+    assert!(unresolved_word(&one_word, "niccaṁ").example_match_uids.is_empty());
 
     // The same results order and the same choice for every word (B7).
     // DHP23 has no repeated word, so the two formats gloss the same tokens.
@@ -365,7 +372,7 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
 
     let words_json = serde_json::to_string(&result.paragraphs[0].words_data).unwrap();
     let items = simsapa_backend::helpers::build_word_selection_items(
-        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None, rows_json: None }],
+        &[simsapa_backend::helpers::WordSelectionParagraphInput { text: None, paragraph_index: 0, words_json, source_uid: None, rows_json: None, contextual_all: false }],
         simsapa_backend::helpers::WordSelectionBuildMode::IncludeResolved,
     )
     .unwrap();
@@ -378,7 +385,9 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
 // -- AI word selection over the rows (grammar readings, components of
 // compound headwords) and applying the answers in Rust ----------------------
 
-use simsapa_backend::gloss_word_selection_apply::apply_word_selection_answers;
+use simsapa_backend::gloss_rows::GlossRowBuilder;
+use simsapa_backend::gloss_word_selection_apply::{apply_word_selection_answers, rebuild_rows_with_cache};
+use simsapa_backend::types::SenseReading;
 use simsapa_backend::helpers::{
     build_word_selection_items, gloss_cache_word_key, WordSelectionBuildMode, WordSelectionEntry,
     WordSelectionParagraphInput,
@@ -389,7 +398,7 @@ use simsapa_backend::helpers::{
 const DUMMY_DHP23: &str = "dummyword te jhāyino sātatikā, niccaṁ daḷhaparakkamā, phusanti dhīrā nibbānaṁ.";
 
 fn items_of(result: &AllParagraphsProcessingResult) -> Vec<serde_json::Value> {
-    let inputs = WordSelectionParagraphInput::from_result(result).unwrap();
+    let inputs = WordSelectionParagraphInput::from_result(result, &[], None, false).unwrap();
     build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap()
 }
 
@@ -401,6 +410,7 @@ fn answer(id: &str, uid: &str, grammar_index: Option<usize>, contextual_meaning:
         note: None,
         grammar_index,
         contextual_meaning: contextual_meaning.map(str::to_string),
+        contextual_meanings: None,
     }
 }
 
@@ -494,14 +504,16 @@ fn test_apply_word_selection_answers_without_cache() {
     assert_eq!(comp.selected_candidate, other);
     assert_eq!(comp.id, daḷha.candidates[other].id);
     assert_eq!(comp.confidence, Some(Confidence::A));
-    assert_eq!(comp.meaning, "steady");
+    assert_eq!(comp.contextual, "steady");
+    assert_eq!(comp.definition, comp.candidates[other].meaning, "the definition stays the dictionary's");
 
     let sense_pw = &result.paragraphs[0].words_data[sense_wi];
     assert_eq!(sense_pw.results[sense_pw.selected_index as usize].uid, sense_uid);
     assert_eq!(sense_pw.resolution.as_deref(), Some("ai-selected"));
     let sense_row = rows.iter().find(|r| r.word_index == Some(sense_wi) && r.depth == 0).unwrap();
     assert_eq!(sense_row.confidence, Some(Confidence::A));
-    assert_eq!(sense_row.meaning, "in context");
+    assert_eq!(sense_row.contextual, "in context");
+    assert_eq!(sense_row.definition, sense_row.candidates[sense_row.selected_candidate].meaning);
     if let Some(gi) = sense_gi {
         assert_eq!(sense_row.grammar_index, gi);
         assert_eq!(sense_row.grammar, sense_row.grammar_options[gi]);
@@ -535,14 +547,14 @@ fn test_apply_word_selection_answers_writes_component_cache_row() {
     // row, keyed on the token's context; the contextual meaning is not cached.
     let again = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
     let comp = &again.paragraphs[0].rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().components[1];
-    let cache_resolved = (comp.selected_candidate, comp.confidence, comp.resolution.clone(), comp.meaning.clone());
+    let cache_resolved = (comp.selected_candidate, comp.confidence, comp.resolution.clone(), comp.contextual.clone());
 
     appdata.delete_gloss_word_cache(&gloss_cache_word_key("parakkama"), &context_hash).unwrap();
     assert_eq!(written, 1);
     assert_eq!(cache_resolved.0, other);
     assert_eq!(cache_resolved.1, Some(Confidence::A));
     assert_eq!(cache_resolved.2.as_deref(), Some("ai-selected"));
-    assert_ne!(cache_resolved.3, "exertion");
+    assert_eq!(cache_resolved.3, "");
 }
 
 /// The Gloss tab's rules for a deconstructor-resolved word (break-down item
@@ -565,7 +577,7 @@ fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
     };
     let items = vec![
         serde_json::json!({"id": format!("p0w{}d", wi), "options": []}),
-        serde_json::json!({"id": format!("p0w{}c0", wi), "component_word": comp_word, "options": []}),
+        serde_json::json!({"id": format!("p0w{}c0", wi), "component_word": comp_word, "options": [{"uid": "a"}, {"uid": "b"}]}),
         serde_json::json!({"id": format!("p0w{}c1", wi), "options": []}),
     ];
     let answers = vec![
@@ -600,6 +612,270 @@ fn test_apply_word_selection_answers_breakdown_rules_and_guard() {
     let pw = &result.paragraphs[0].words_data[wi];
     assert_eq!(pw.selected_deconstruction_index, Some(decs - 1));
     assert_eq!(pw.component_selected_uids[&comp_word], comp_uid);
+}
+
+/// Contextual-only items ("Contextual meaning for every word"): an answer
+/// sets only the session reading. No sense, resolution or cache row changes,
+/// for a word and for a component, also when a person chose the sense; a
+/// reading a person chose stays.
+#[test]
+#[serial]
+fn test_apply_contextual_only_answers() {
+    h::app_data_setup();
+    let app_data = get_app_data();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let rows = result.paragraphs[0].rows.clone();
+
+    // An ambiguous word the user resolved, and the compound's first component
+    // resolved by the user too.
+    let ambiguous = rows
+        .iter()
+        .find(|r| r.depth == 0 && r.word_index.is_some() && r.candidates.len() > 1)
+        .expect("DHP23 has an ambiguous word");
+    let amb_wi = ambiguous.word_index.unwrap();
+    let token = rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap();
+    let comp_wi = token.word_index.unwrap();
+    let daḷha = token.components[0].clone();
+    {
+        let words = &mut result.paragraphs[0].words_data;
+        words[amb_wi].resolution = Some("user-selected".to_string());
+        words[comp_wi].component_resolutions.insert("daḷha".to_string(), "user-selected".to_string());
+        words[comp_wi]
+            .component_selected_uids
+            .insert("daḷha".to_string(), daḷha.candidates[daḷha.selected_candidate].uid.clone());
+    }
+    result.paragraphs[0].rows = rebuilt_rows(&result);
+    let inputs = WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap();
+    let items = build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap();
+    let item = |id: &str| items.iter().find(|i| i["id"] == id).unwrap_or_else(|| panic!("no item {id}")).clone();
+
+    let amb_item = item(&format!("p0w{}", amb_wi));
+    let amb_options = amb_item["options"].as_array().unwrap();
+    assert_eq!(amb_options.len(), 1);
+    let amb_uid = ambiguous.candidates[ambiguous.selected_candidate].uid.clone();
+    assert_eq!(amb_options[0]["uid"], amb_uid.as_str());
+    let n_readings = amb_options[0].get("grammar_options").map(|g| g.as_array().unwrap().len()).unwrap_or(0);
+
+    let comp_item = item(&format!("p0w{}c0", comp_wi));
+    assert_eq!(comp_item["component_word"], "daḷha");
+    let comp_options = comp_item["options"].as_array().unwrap();
+    assert_eq!(comp_options.len(), 1);
+    let daḷha_uid = daḷha.candidates[daḷha.selected_candidate].uid.clone();
+    assert_eq!(comp_options[0]["uid"], daḷha_uid.as_str());
+
+    // Every word with a dictionary sense and no other item has one.
+    for r in rows.iter().filter(|r| r.depth == 0 && r.id.is_some()) {
+        let wi = r.word_index.unwrap();
+        assert!(items.iter().any(|i| i["id"] == format!("p0w{}", wi).as_str()), "{}: asked", r.word);
+    }
+
+    let before = result.paragraphs[0].words_data.clone();
+    let mut amb_answer = answer(&format!("p0w{}", amb_wi), &amb_uid, None, Some("in context"));
+    if n_readings >= 2 {
+        amb_answer.grammar_index = Some(1);
+        amb_answer.contextual_meanings = Some((0..n_readings).map(|i| format!("meaning {}", i)).collect());
+    }
+    let answers = vec![amb_answer, answer(&format!("p0w{}c0", comp_wi), &daḷha_uid, None, Some("steady"))];
+    let summary = apply_word_selection_answers(
+        &mut result, &items, &answers, &app_data.dbm.appdata, &app_data.dbm.dpd, true,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped, summary.cache_rows_written), (2, 0, 0));
+
+    let words = &result.paragraphs[0].words_data;
+    let pw = &words[amb_wi];
+    assert_eq!(pw.selected_index, before[amb_wi].selected_index);
+    assert_eq!(pw.resolution.as_deref(), Some("user-selected"));
+    let r = pw.reading.as_ref().unwrap();
+    assert_eq!((r.uid.as_str(), r.contextual_meaning.as_deref(), r.origin.as_str()), (amb_uid.as_str(), Some("in context"), "ai-selected"));
+    if n_readings >= 2 {
+        assert_eq!(r.contextual_meanings.len(), n_readings);
+    }
+    let cw = &words[comp_wi];
+    assert_eq!(cw.component_selected_uids, before[comp_wi].component_selected_uids);
+    assert_eq!(cw.component_resolutions, before[comp_wi].component_resolutions);
+    assert_eq!(cw.component_readings["daḷha"].contextual_meaning.as_deref(), Some("steady"));
+
+    // The rows show the contextual meanings beside the unchanged definitions.
+    let rows = &result.paragraphs[0].rows;
+    let amb_row = rows.iter().find(|r| r.word_index == Some(amb_wi) && r.depth == 0).unwrap();
+    let expected = if n_readings >= 2 { "meaning 1" } else { "in context" };
+    assert_eq!(amb_row.contextual, expected);
+    assert_eq!(amb_row.definition, amb_row.candidates[amb_row.selected_candidate].meaning);
+    let comp_row = &rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().components[0];
+    assert_eq!(comp_row.contextual, "steady");
+    assert_eq!(comp_row.selected_candidate, daḷha.selected_candidate);
+
+    // Answered words are not asked again; a reading a person chose stays.
+    let again = build_word_selection_items(
+        &WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap(),
+        WordSelectionBuildMode::SkipResolved { forced: false },
+    )
+    .unwrap();
+    assert!(!again.iter().any(|i| i["id"] == format!("p0w{}", amb_wi).as_str()));
+    result.paragraphs[0].words_data[amb_wi].reading.as_mut().unwrap().origin = "user-selected".to_string();
+    result.paragraphs[0].words_data[comp_wi].component_readings.get_mut("daḷha").unwrap().origin = "user-selected".to_string();
+    let summary = apply_word_selection_answers(
+        &mut result,
+        &items,
+        &[
+            answer(&format!("p0w{}", amb_wi), &amb_uid, None, Some("other")),
+            answer(&format!("p0w{}c0", comp_wi), &daḷha_uid, None, Some("other")),
+        ],
+        &app_data.dbm.appdata,
+        &app_data.dbm.dpd,
+        false,
+    )
+    .unwrap();
+    assert_eq!((summary.applied, summary.skipped), (0, 2));
+    let words = &result.paragraphs[0].words_data;
+    assert_eq!(words[amb_wi].reading.as_ref().unwrap().contextual_meaning.as_deref(), Some("in context"));
+    assert_eq!(words[comp_wi].component_readings["daḷha"].contextual_meaning.as_deref(), Some("steady"));
+    // A user-selected reading is never asked about, even on a forced pass.
+    let forced = build_word_selection_items(
+        &WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap(),
+        WordSelectionBuildMode::SkipResolved { forced: true },
+    )
+    .unwrap();
+    assert!(!forced.iter().any(|i| i["id"] == format!("p0w{}", amb_wi).as_str() || i["id"] == format!("p0w{}c0", comp_wi).as_str()));
+}
+
+/// The rows of the first paragraph rebuilt after its `words_data` changed.
+fn rebuilt_rows(result: &AllParagraphsProcessingResult) -> Vec<GlossRow> {
+    let app_data = get_app_data();
+    let mut builder = GlossRowBuilder::new(&app_data.dbm.dpd).unwrap();
+    rebuild_rows_with_cache(&mut builder, &result.paragraphs[0], &app_data.dbm.appdata).unwrap()
+}
+
+fn reading(uid: &str, grammar_index: Option<usize>, contextual: Option<&str>, per_reading: &[&str]) -> SenseReading {
+    SenseReading {
+        uid: uid.to_string(),
+        grammar_index,
+        contextual_meaning: contextual.map(str::to_string),
+        contextual_meanings: per_reading.iter().map(|m| m.to_string()).collect(),
+        origin: "ai-selected".to_string(),
+    }
+}
+
+/// The Definition and the Contextual meaning are kept apart: a session
+/// reading sets the contextual value, the definition stays the chosen
+/// sense's dictionary text, and a reading for another sense is inert.
+#[test]
+#[serial]
+fn test_rows_keep_definition_and_contextual_apart() {
+    h::app_data_setup();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let rows = result.paragraphs[0].rows.clone();
+    let multi = rows
+        .iter()
+        .find(|r| r.depth == 0 && r.word_index.is_some() && r.grammar_options.len() >= 2)
+        .expect("DHP23 has a token with several readings")
+        .clone();
+    let wi = multi.word_index.unwrap();
+    let uid = multi.candidates[multi.selected_candidate].uid.clone();
+    let definition = multi.definition.clone();
+    assert_eq!(multi.contextual, "");
+    assert_eq!(definition, multi.candidates[multi.selected_candidate].meaning);
+
+    let row_of = |rows: &[GlossRow]| rows.iter().find(|r| r.word_index == Some(wi) && r.depth == 0).unwrap().clone();
+    let mut set = |r: SenseReading| -> GlossRow {
+        result.paragraphs[0].words_data[wi].reading = Some(r);
+        row_of(&rebuilt_rows(&result))
+    };
+
+    // A contextual meaning goes into `contextual`, never into `definition`.
+    let row = set(reading(&uid, None, Some(" they "), &[]));
+    assert_eq!(row.contextual, "they");
+    assert_eq!(row.definition, definition);
+
+    // An empty or whitespace contextual meaning gives no contextual value.
+    assert_eq!(set(reading(&uid, None, Some("  "), &[])).contextual, "");
+
+    // Per-reading meanings: the entry for the row's grammar reading.
+    let row = set(reading(&uid, Some(1), Some("of the nobleman"), &["of the nobleman", "for the nobleman"]));
+    assert_eq!(row.grammar_index, 1);
+    assert_eq!(row.contextual, "for the nobleman");
+    assert_eq!(row.definition, definition);
+
+    // An empty entry falls back to `contextual_meaning`.
+    assert_eq!(set(reading(&uid, Some(1), Some("fallback"), &["of the nobleman", ""])).contextual, "fallback");
+
+    // An index past the end of the list falls back too.
+    assert_eq!(set(reading(&uid, Some(1), Some("fallback"), &["only one"])).contextual, "fallback");
+
+    // A reading for a sense that is no longer chosen is inert.
+    let row = set(reading("not-the-chosen-sense/dpd", None, Some("they"), &[]));
+    assert_eq!(row.contextual, "");
+    assert_eq!(row.definition, definition);
+}
+
+/// After a sense change, a reading for the old sense leaves the contextual
+/// value empty, and the definition follows the new sense.
+#[test]
+#[serial]
+fn test_rows_sense_change_clears_contextual() {
+    h::app_data_setup();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let rows = result.paragraphs[0].rows.clone();
+    let row = rows
+        .iter()
+        .find(|r| r.depth == 0 && r.word_index.is_some() && r.candidates.len() >= 2)
+        .expect("DHP23 has a token with several senses")
+        .clone();
+    let wi = row.word_index.unwrap();
+    let old_uid = row.candidates[row.selected_candidate].uid.clone();
+    let other = (row.selected_candidate + 1) % row.candidates.len();
+    let pw = &mut result.paragraphs[0].words_data[wi];
+    pw.reading = Some(reading(&old_uid, None, Some("they"), &[]));
+    pw.selected_index = pw.results.iter().position(|r| r.uid == row.candidates[other].uid).unwrap() as i32;
+
+    let rebuilt = rebuilt_rows(&result);
+    let new_row = rebuilt.iter().find(|r| r.word_index == Some(wi) && r.depth == 0).unwrap();
+    assert_eq!(new_row.selected_candidate, other);
+    assert_eq!(new_row.contextual, "");
+    assert_eq!(new_row.definition, row.candidates[other].meaning);
+}
+
+/// A component row takes its contextual meaning from `component_readings`.
+#[test]
+#[serial]
+fn test_rows_component_contextual_from_component_readings() {
+    h::app_data_setup();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let token = result.paragraphs[0].rows.iter().find(|r| r.word == "daḷhaparakkamā").unwrap().clone();
+    let wi = token.word_index.unwrap();
+    let comp = &token.components[0];
+    let comp_uid = comp.candidates[comp.selected_candidate].uid.clone();
+    result.paragraphs[0].words_data[wi]
+        .component_readings
+        .insert(comp.word.clone(), reading(&comp_uid, None, Some("firm"), &[]));
+
+    let rebuilt = rebuilt_rows(&result);
+    let new_token = rebuilt.iter().find(|r| r.word == "daḷhaparakkamā").unwrap();
+    assert_eq!(new_token.components[0].contextual, "firm");
+    assert_eq!(new_token.components[0].definition, comp.definition);
+    assert_eq!(new_token.contextual, "", "the token row has no reading of its own");
+    assert_eq!(new_token.components[1].contextual, "");
+}
+
+/// A saved session's rows, written before the `definition` field existed
+/// (with `meaning`), still parse, and loading rebuilds them from the words.
+#[test]
+#[serial]
+fn test_rows_saved_with_old_meaning_field_rebuild_on_load() {
+    h::app_data_setup();
+    let mut result = gloss(&[DUMMY_DHP23], options(GlossFormat::WordInSentence, false));
+    let expected: Vec<String> = result.paragraphs[0].rows.iter().map(|r| r.definition.clone()).collect();
+    let old_json = serde_json::to_string(&result.paragraphs[0].rows)
+        .unwrap()
+        .replace("\"definition\":", "\"meaning\":")
+        .replace(",\"contextual\":\"\"", "");
+    assert!(!old_json.contains("\"definition\""));
+    let old_rows: Vec<GlossRow> = serde_json::from_str(&old_json).expect("old rows parse");
+    assert!(old_rows.iter().all(|r| r.definition.is_empty()));
+    result.paragraphs[0].rows = old_rows;
+    let rebuilt: Vec<String> = rebuilt_rows(&result).iter().map(|r| r.definition.clone()).collect();
+    assert_eq!(rebuilt, expected);
 }
 
 // --- Inflection-table fallback (gap 5) --------------------------------------
@@ -646,7 +922,7 @@ fn test_word_without_lookup_row_resolved_from_inflection_tables() {
     // `addasā` (imperf, irregular stem) and `apassi` (aor of passati).
     assert!(matches!(rows[1].id, Some(2975) | Some(84071)), "{:?}", rows[1].id);
     assert_eq!(rows[1].candidates.len(), 2);
-    assert_ne!(rows[1].meaning, "not found");
+    assert_ne!(rows[1].definition, "not found");
 
     let result = gloss(&["yogasmā apassuṁ"], options(GlossFormat::Headwords, false));
     let p = &result.paragraphs[0];

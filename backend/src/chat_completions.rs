@@ -38,6 +38,7 @@ pub const DEEPSEEK_URL: &str = "https://api.deepseek.com/chat/completions";
 pub const OPENROUTER_APP_REFERER: &str = "https://simsapa.github.io/";
 pub const OPENROUTER_APP_TITLE: &str = "Simsapa";
 
+/// The temperature of a general request (`ai_engine::RequestPurpose::temperature`).
 pub const TEMPERATURE: f64 = 0.7;
 
 /// A conversation message for the request: `role` is `user` or `assistant`.
@@ -48,7 +49,7 @@ pub struct ChatTurn<'a> {
 
 /// The JSON request body. `system` becomes the first message; `turns` must not
 /// contain system messages.
-pub fn request_body(model: &str, system: Option<&str>, turns: &[ChatTurn]) -> serde_json::Value {
+pub fn request_body(model: &str, system: Option<&str>, turns: &[ChatTurn], temperature: f64) -> serde_json::Value {
     let mut messages: Vec<serde_json::Value> = Vec::with_capacity(turns.len() + 1);
     if let Some(system) = system.filter(|s| !s.is_empty()) {
         messages.push(serde_json::json!({ "role": "system", "content": system }));
@@ -62,7 +63,7 @@ pub fn request_body(model: &str, system: Option<&str>, turns: &[ChatTurn]) -> se
     serde_json::json!({
         "model": model,
         "messages": messages,
-        "temperature": TEMPERATURE,
+        "temperature": temperature,
     })
 }
 
@@ -194,7 +195,7 @@ mod tests {
             ChatTurn { role: "assistant", content: "Hi." },
             ChatTurn { role: "user", content: "Again" },
         ];
-        let body = request_body("nvidia/x:free", Some("Be brief."), &turns);
+        let body = request_body("nvidia/x:free", Some("Be brief."), &turns, TEMPERATURE);
         assert_eq!(body["model"], "nvidia/x:free");
         assert_eq!(body["temperature"], TEMPERATURE);
         let messages = body["messages"].as_array().unwrap();
@@ -209,7 +210,9 @@ mod tests {
     fn request_body_without_system() {
         let turns = [ChatTurn { role: "user", content: "Hello" }];
         for system in [None, Some("")] {
-            let body = request_body("m", system, &turns);
+            let body = request_body("m", system, &turns, 0.2);
+            // A word-selection request's temperature.
+            assert_eq!(body["temperature"], 0.2);
             let messages = body["messages"].as_array().unwrap();
             assert_eq!(messages.len(), 1);
             assert_eq!(messages[0]["role"], "user");

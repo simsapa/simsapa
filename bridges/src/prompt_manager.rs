@@ -9,6 +9,7 @@ use cxx_qt::Threading;
 
 use simsapa_backend::logger::debug;
 use simsapa_backend::logger::error;
+use simsapa_backend::logger::warn;
 use simsapa_backend::ai_fallback::WalkOutcome;
 use simsapa_backend::ai_error::AiRequestError;
 use simsapa_backend::prompt_utils::markdown_to_html;
@@ -60,7 +61,7 @@ pub mod qobject {
         fn sequential_gloss_translation_request(self: Pin<&mut PromptManager>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
 
         #[qinvokable]
-        fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString);
+        fn sequential_word_selection_requests(self: Pin<&mut PromptManager>, request_id: usize, prompts_json: &QString);
 
         #[qinvokable]
         fn sequential_prompt_request_with_messages(self: Pin<&mut PromptManager>, request_id: &QString, sender_message_idx: usize, messages_json: &QString);
@@ -480,45 +481,105 @@ impl qobject::PromptManager {
         });
     }
 
-    /// Sequential fallback run for Gloss word selection; the result arrives on
-    /// `wordSelectionResponse` keyed by the caller's `request_id`.
-    fn sequential_word_selection_request(self: Pin<&mut Self>, request_id: usize, prompt: &QString) {
+    /// Sequential fallback runs for Gloss word selection: `prompts_json` is
+    /// `[{"prompt", "item_count"}, …]`, the chunks of one request
+    /// (`SuttaBridge.build_word_selection_prompts`). They are sent in turn,
+    /// `WORD_SELECTION_REQUEST_SPACING_MS` apart, and their answers arrive as
+    /// one on `wordSelectionResponse`, keyed by the caller's `request_id`. A
+    /// chunk that fails loses only its own items (logged); when every chunk
+    /// fails, the first error is the response.
+    fn sequential_word_selection_requests(self: Pin<&mut Self>, request_id: usize, prompts_json: &QString) {
+        #[derive(serde::Deserialize)]
+        struct ChunkPrompt {
+            prompt: String,
+            item_count: usize,
+        }
         let qt_thread = self.qt_thread();
+        let chunks: Vec<ChunkPrompt> = match serde_json::from_str(&prompts_json.to_string()) {
+            Ok(c) => c,
+            Err(e) => {
+                error(&format!("sequential_word_selection_requests: {}", e));
+                let error_msg = request_setup_error("", "", e.to_string()).to_envelope_json();
+                self.word_selection_response(request_id, QString::from(""), QString::from(error_msg));
+                return;
+            }
+        };
+        // Every request gets an answer: with no prompt the Gloss tab would
+        // wait on it for ever.
+        if chunks.is_empty() {
+            error(&format!("sequential_word_selection_requests: request {} has no prompts", request_id));
+            let error_msg = request_setup_error("", "", "The word-selection request has no prompts").to_envelope_json();
+            self.word_selection_response(request_id, QString::from(""), QString::from(error_msg));
+            return;
+        }
         let cancel = self.cancel_state(None);
-        let prompt_text = prompt.to_string();
 
         thread::spawn(move || {
             let (entries, auto_fallback, auto_retry) = fallback_walk_settings();
-            let single_message = vec![ChatMessage {
-                role: "user".to_string(),
-                content: prompt_text,
-            }];
-
             let context_json = serde_json::json!({ "request_id": request_id }).to_string();
             let progress_thread = qt_thread.clone();
             let mut on_progress = move |model: String, status: String, kind: String| {
                 let ctx = context_json.clone();
-                crate::queue_or_log(&progress_thread, "prompt_manager::sequential_word_selection_request", move |mut qo| {
+                crate::queue_or_log(&progress_thread, "prompt_manager::sequential_word_selection_requests", move |mut qo| {
                     qo.as_mut().sequential_progress(QString::from(ctx), QString::from(model), QString::from(status), QString::from(kind));
                 });
             };
 
-            // A word-selection reply must contain a complete selections JSON
-            // object; a truncated body re-tries as `invalid_response`.
-            let outcome = run_walk_blocking(
-                &mut || cancel.is_cancelled(),
-                &entries, auto_fallback, auto_retry,
-                &single_message,
-                Some(&|response: &str| validate_word_selection_response_shape(response)),
-                &mut on_progress);
+            let mut responses: Vec<String> = Vec::new();
+            let mut answered_by = String::new();
+            let mut first_error: Option<simsapa_backend::ai_error::AiRequestError> = None;
+            let chunk_count = chunks.len();
+            for (i, chunk) in chunks.into_iter().enumerate() {
+                if i > 0 {
+                    // Pace the chunks, sliced so a cancel takes effect promptly.
+                    let mut slept = 0;
+                    while slept < simsapa_backend::ai_engine::WORD_SELECTION_REQUEST_SPACING_MS {
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+                        thread::sleep(std::time::Duration::from_millis(100));
+                        slept += 100;
+                    }
+                }
+                if cancel.is_cancelled() {
+                    return;
+                }
+                let messages = vec![ChatMessage { role: "user".to_string(), content: chunk.prompt }];
+                // A word-selection reply must contain a complete selections
+                // JSON object; a truncated body re-tries as `invalid_response`.
+                // Sent with the word-selection temperature, and an output
+                // limit sized to the chunk's items.
+                let outcome = simsapa_backend::ai_engine::run_walk_blocking_for(
+                    simsapa_backend::ai_engine::RequestPurpose::WordSelection { items: chunk.item_count },
+                    &mut || cancel.is_cancelled(),
+                    &entries, auto_fallback, auto_retry,
+                    &messages,
+                    Some(&|response: &str| validate_word_selection_response_shape(response)),
+                    &mut on_progress);
+                match outcome {
+                    WalkOutcome::Success { model, response, .. } => {
+                        responses.push(response);
+                        answered_by = model;
+                    }
+                    WalkOutcome::Failed(e) => {
+                        warn(&format!(
+                            "sequential_word_selection_requests: request {} part {} of {} failed: {}",
+                            request_id, i + 1, chunk_count, e.message
+                        ));
+                        first_error.get_or_insert(e);
+                    }
+                    WalkOutcome::Cancelled => return,
+                }
+            }
 
-            let (model, response_content) = match outcome {
-                WalkOutcome::Success { model, response, .. } => (model, response),
-                WalkOutcome::Failed(e) => (e.model.clone(), e.to_envelope_json()),
-                WalkOutcome::Cancelled => return,
+            let (model, response_content) = match (responses.len(), first_error) {
+                (0, Some(e)) => (e.model.clone(), e.to_envelope_json()),
+                (0, None) => return,
+                (1, _) => (answered_by, responses.remove(0)),
+                _ => (answered_by, simsapa_backend::helpers::merge_word_selection_responses(&responses)),
             };
 
-            crate::queue_or_log(&qt_thread, "prompt_manager::sequential_word_selection_request", move |mut qo| {
+            crate::queue_or_log(&qt_thread, "prompt_manager::sequential_word_selection_requests", move |mut qo| {
                 qo.as_mut().word_selection_response(
                     request_id,
                     QString::from(model),

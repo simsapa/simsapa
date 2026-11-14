@@ -112,10 +112,10 @@ fn session_paragraph_inputs(
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
-        inputs.push(WordSelectionParagraphInput {
+        inputs.push(WordSelectionParagraphInput { text: None,
             paragraph_index: pi,
             words_json,
-            source_uid, rows_json: None,
+            source_uid, rows_json: None, contextual_all: false,
         });
     }
     Ok(inputs)

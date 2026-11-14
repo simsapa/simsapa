@@ -597,7 +597,11 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "46230/dpd",
+            "46231/dpd"
+          ]
         }
       ],
       "unrecognized_words": []

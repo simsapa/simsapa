@@ -1127,7 +1127,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "33796/dpd"
+          ]
         },
         {
           "original_word": "etassa",

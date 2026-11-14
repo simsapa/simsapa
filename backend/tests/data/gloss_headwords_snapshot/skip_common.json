@@ -328,7 +328,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "10531/dpd"
+          ]
         },
         {
           "original_word": "sattānaṁ",
@@ -406,7 +409,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "29404/dpd"
+          ]
         },
         {
           "original_word": "sandhāvataṁ",
@@ -436,7 +442,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "58457/dpd"
+          ]
         },
         {
           "original_word": "saṁsarataṁ",
@@ -466,7 +475,10 @@
           "deconstruction_locked": false,
           "component_selected_uids": {},
           "component_resolutions": {},
-          "deconstruction_resolution": null
+          "deconstruction_resolution": null,
+          "example_match_uids": [
+            "61773/dpd"
+          ]
         },
         {
           "original_word": "seyyathāpi",
@@ -2606,6 +2618,9 @@
             "9201/dpd",
             "9202/dpd",
             "9203/dpd"
+          ],
+          "example_match_uids": [
+            "9183/dpd"
           ]
         },
         {

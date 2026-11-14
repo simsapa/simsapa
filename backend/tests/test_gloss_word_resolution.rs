@@ -755,10 +755,10 @@ fn test_ai_request_carries_lemmas_and_answer_by_lemma_stores_numeric_uid() {
     let arame = find_word(&words, "ārāme");
     assert!(arame.results.len() > 1, "ārāme should be ambiguous");
 
-    let paras = vec![WordSelectionParagraphInput {
+    let paras = vec![WordSelectionParagraphInput { text: None,
         paragraph_index: 0,
         words_json: serde_json::to_string(&words).unwrap(),
-        source_uid: None, rows_json: None,
+        source_uid: None, rows_json: None, contextual_all: false,
     }];
 
     for mode in [

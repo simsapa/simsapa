@@ -98,7 +98,7 @@ impl AiRequestError {
         model: &str,
         message: impl Into<String>,
     ) -> AiRequestError {
-        let message = message.into();
+        let message = redact_credentials(&message.into());
         AiRequestError {
             kind,
             http_status: None,
@@ -303,9 +303,21 @@ pub fn classify_provider_error(
         http_status: status,
         provider: provider.to_string(),
         model: model.to_string(),
-        message,
-        raw: body.trim().to_string(),
+        message: redact_credentials(&message),
+        raw: redact_credentials(body.trim()),
     }
+}
+
+/// `text` with the value of every credential query parameter in a URL
+/// replaced by `<redacted>`. A transport error's text carries the request
+/// URL, and Gemini sends the API key as `?key=…`; the error is shown in the
+/// Gloss tab, printed by the CLI and returned by the API.
+pub fn redact_credentials(text: &str) -> String {
+    lazy_static::lazy_static! {
+        static ref RE_CREDENTIAL_PARAM: regex::Regex =
+            regex::Regex::new(r"(?i)([?&](?:key|api_key|apikey|api-key|access_token|token)=)[^&\s)\]\x22'<>]+").unwrap();
+    }
+    RE_CREDENTIAL_PARAM.replace_all(text, "${1}<redacted>").into_owned()
 }
 
 /// Classify a transport-level failure (no HTTP response was received).
@@ -326,6 +338,26 @@ pub fn classify_transport_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_error_text_has_no_api_key() {
+        let text = "error sending request for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=AIzaSyDUMMY-key_123)";
+        let err = classify_transport_error("Gemini", "gemini-3.6-flash", false, text);
+        assert!(!err.message.contains("AIzaSyDUMMY"));
+        assert!(!err.raw.contains("AIzaSyDUMMY"));
+        assert!(err.message.ends_with(":generateContent?key=<redacted>)"));
+    }
+
+    #[test]
+    fn redacts_every_credential_parameter_and_keeps_the_rest() {
+        assert_eq!(
+            redact_credentials("https://x.test/a?alt=sse&KEY=abc&b=1 and https://y.test/?access_token=t0k\"x"),
+            "https://x.test/a?alt=sse&KEY=<redacted>&b=1 and https://y.test/?access_token=<redacted>\"x"
+        );
+        assert_eq!(redact_credentials("monkey=1 no url"), "monkey=1 no url");
+        let err = classify_provider_error("Gemini", "m", None, r#"{"error": {"code": 400, "message": "bad url ...?key=SECRET"}}"#);
+        assert!(!err.message.contains("SECRET") && !err.raw.contains("SECRET"));
+    }
 
     fn classify(body: &str) -> AiRequestError {
         classify_provider_error("Gemini", "gemini-flash-latest", None, body)

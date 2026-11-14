@@ -135,6 +135,12 @@ pub struct GlossArgs {
     #[arg(long, short = 'o', value_name = "PATH")]
     pub output: Option<PathBuf>,
 
+    /// Word in Sentence tables: 1 puts each word on one line; 2 (default)
+    /// puts the meanings on the first line and the grammar, construction and
+    /// root on the second. For --format text, markdown, html, org and docx
+    #[arg(long, value_name = "1|2", value_parser = clap::value_parser!(u8).range(1..=2))]
+    pub lines_per_word: Option<u8>,
+
     /// Make no AI request, even when an AI provider is enabled in the app
     #[arg(long)]
     pub no_ai: bool,
@@ -169,6 +175,17 @@ pub struct GlossArgs {
     #[arg(long)]
     pub no_translate: bool,
 
+    /// Ask the AI for a contextual meaning for every word, not only for the
+    /// words with several senses or readings (more tokens per request);
+    /// default: the app's "Contextual meaning for every word" setting.
+    /// Word in Sentence only
+    #[arg(long, overrides_with = "no_contextual_all")]
+    pub contextual_all: bool,
+
+    /// Ask for contextual meanings only for the words with a choice to make
+    #[arg(long, overrides_with = "contextual_all")]
+    pub no_contextual_all: bool,
+
     /// One exact DPD form lookup per word, in order, instead of the
     /// dictionary options (`/gloss_text` with `"exact": true`); Headwords only
     #[arg(long)]
@@ -197,6 +214,23 @@ impl GlossArgs {
             common_words: self.common_words.clone(),
             exact: self.exact.then_some(true),
             ..Default::default()
+        }
+    }
+
+    /// The lines per word of the Word in Sentence tables: 1 or 2 (default).
+    fn lines_per_word(&self) -> u8 {
+        self.lines_per_word.unwrap_or(2)
+    }
+
+    /// `--contextual-all` / `--no-contextual-all` when given, the last one
+    /// winning; `None` means the app setting.
+    fn contextual_all_flag(&self) -> Option<bool> {
+        if self.contextual_all {
+            Some(true)
+        } else if self.no_contextual_all {
+            Some(false)
+        } else {
+            None
         }
     }
 
@@ -241,6 +275,30 @@ impl GlossArgs {
                 return Err(CliError::error("--exact prints text or --json only"));
             }
         }
+        if self.lines_per_word.is_some() {
+            if json || self.exact {
+                return Err(CliError::error("--lines-per-word is for the Word in Sentence tables; leave it out with --json and --exact"));
+            }
+            if self.gloss_format == Some(GlossFormatArg::Headwords) {
+                return Err(CliError::error("--lines-per-word needs --gloss-format word-in-sentence"));
+            }
+            let format = self.format.or_else(|| self.output.as_deref().and_then(OutputFormatArg::from_extension));
+            if matches!(format, Some(OutputFormatArg::AnkiCsv | OutputFormatArg::Json)) {
+                return Err(CliError::error(
+                    "--lines-per-word applies to --format text, markdown, html, org and docx; anki-csv and json have one record per word",
+                ));
+            }
+        }
+        if self.contextual_all_flag().is_some() {
+            if self.no_ai || self.exact {
+                return Err(CliError::error(
+                    "--contextual-all and --no-contextual-all choose what the AI is asked; leave them out with --no-ai and --exact",
+                ));
+            }
+            if self.gloss_format == Some(GlossFormatArg::Headwords) {
+                return Err(CliError::error("--contextual-all and --no-contextual-all need --gloss-format word-in-sentence"));
+            }
+        }
         if self.format == Some(OutputFormatArg::Text) && self.output.is_some() {
             return Err(CliError::error("--format text is for the terminal; write a file with --format markdown"));
         }
@@ -251,9 +309,10 @@ impl GlossArgs {
     }
 }
 
-/// The paragraphs to gloss and the document title: a reference's passage, or
-/// the text given.
-fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
+/// The paragraphs to gloss, the document title, and the record a reference
+/// resolved to (`None` for text given directly): a reference's passage, or the
+/// text given.
+fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String, Option<String>), CliError> {
     let joined = args.text.join(" ");
     let is_reference = !(args.text.len() == 1 && args.text[0] == "-") && is_sutta_reference(&joined);
     if !is_reference {
@@ -261,7 +320,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
             return Err(CliError::error("--edition and --paragraphs need a sutta reference"));
         }
         let text = text_or_stdin(&args.text)?;
-        return Ok((split_gloss_paragraphs(&text), String::new()));
+        return Ok((split_gloss_paragraphs(&text), String::new(), None));
     }
     let edition = match args.edition {
         Some(EditionArg::Cst) => PaliEdition::Cst,
@@ -274,7 +333,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
             GlossSourceError::NotFound(m) => CliError::not_found(m),
         })?;
     let title = source.title();
-    Ok((source.paragraphs, title))
+    Ok((source.paragraphs, title, Some(source.uid)))
 }
 
 /// Requires the preamble to have run. `can_write` is false while the GUI or
@@ -282,7 +341,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
 /// choices are then used but not saved.
 pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     args.validate(json)?;
-    let (paragraphs, title) = gloss_input(args)?;
+    let (paragraphs, title, source_uid) = gloss_input(args)?;
     let opts = args.options();
     let dbm = &get_app_data().dbm;
 
@@ -309,7 +368,7 @@ pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     let mut result = process_all_paragraphs(&input, &dbm.appdata, &dbm.dpd)
         .map_err(|e| CliError::error(format!("Glossing failed: {}", e)))?;
 
-    let ai_run = run_ai(args, models, &mut result, &paragraphs, can_write)?;
+    let ai_run = run_ai(args, models, &mut result, &paragraphs, source_uid, can_write)?;
     let ai_ran = ai_run == AiRun::Asked;
     // A run with no API key made no AI choice either: the document says so.
     let no_ai_provider = no_ai_provider || ai_run == AiRun::NoApiKey;
@@ -444,15 +503,17 @@ fn run_ai(
     models: Option<Vec<ModelUsageEntry>>,
     result: &mut AllParagraphsProcessingResult,
     paragraphs: &[String],
+    source_uid: Option<String>,
     can_write: bool,
 ) -> Result<AiRun, CliError> {
     if args.no_ai || !result.success || result.paragraphs.is_empty() {
         return Ok(AiRun::NotAsked);
     }
-    let word_selection = {
+    let (word_selection, contextual_all_setting) = {
         let settings = get_app_data().app_settings_cache.read().expect("Failed to read app settings");
-        settings.gloss_word_selection_enabled
+        (settings.gloss_word_selection_enabled, settings.gloss_contextual_all)
     };
+    let contextual_all = args.contextual_all_flag().unwrap_or(contextual_all_setting);
     if !word_selection && args.no_translate {
         return Ok(AiRun::NotAsked);
     }
@@ -482,7 +543,14 @@ fn run_ai(
         errln!("Note: no API key for {}, so the requests to its models fail.", missing.join(", "));
         errln!("{}", api_key_help(&missing));
     }
-    let options = GlossAiOptions { word_selection, translate: !args.no_translate, write_cache: can_write, models };
+    let options = GlossAiOptions {
+        word_selection,
+        translate: !args.no_translate,
+        write_cache: can_write,
+        models,
+        contextual_all,
+        source_uid,
+    };
     if options.word_selection && !can_write {
         errln!(
             "Note: the data folder is in use by the Simsapa app or another simsapa command, \
@@ -554,7 +622,7 @@ fn write_output(
         OutputFormatArg::Text => {
             match gloss_format {
                 GlossFormat::Headwords => print_gloss_text(result),
-                GlossFormat::WordInSentence => print_rows_text(result, title, no_ai_provider),
+                GlossFormat::WordInSentence => print_rows_text(result, title, no_ai_provider, args.lines_per_word() == 2),
             }
             Ok(())
         }
@@ -564,17 +632,17 @@ fn write_output(
                 OutputFormatArg::Org => TextFormat::OrgMode,
                 _ => TextFormat::Markdown,
             };
-            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
+            let data = export_data(args, result, paragraphs, title, gloss_format, no_ai_provider);
             emit_text(output, &gloss_export_document(&data, text_format))
         }
         OutputFormatArg::Docx => {
             let path = output.ok_or_else(|| CliError::error("--format docx needs --output <path>"))?;
-            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
+            let data = export_data(args, result, paragraphs, title, gloss_format, no_ai_provider);
             let bytes = generate_gloss_docx(&serde_json::to_string(&data)?)?;
             write_file(path, &bytes)
         }
         OutputFormatArg::AnkiCsv => {
-            let data = export_data(result, paragraphs, title, gloss_format, no_ai_provider);
+            let data = export_data(args, result, paragraphs, title, gloss_format, no_ai_provider);
             write_anki_csv(output, &data)
         }
         OutputFormatArg::Json => {
@@ -587,13 +655,14 @@ fn write_output(
 /// The export data of the result. `no_ai_provider` replaces the app
 /// settings' answer: a `--model-name` run has a model the settings may not.
 fn export_data(
+    args: &GlossArgs,
     result: &AllParagraphsProcessingResult,
     paragraphs: &[String],
     title: &str,
     gloss_format: GlossFormat,
     no_ai_provider: bool,
 ) -> GlossExportData {
-    let mut data = gloss_result_export_data(result, paragraphs, title, gloss_format);
+    let mut data = gloss_result_export_data(result, paragraphs, title, gloss_format, args.lines_per_word());
     data.no_ai_provider = no_ai_provider;
     data
 }
@@ -613,6 +682,7 @@ fn session_export_json(
         title: title.to_string(),
         gloss_format,
         no_ai_provider,
+        lines_per_word: args.lines_per_word(),
     };
     let translations = result_translations(result, paragraphs.len());
     let session = build_gloss_session_json(
@@ -724,20 +794,74 @@ fn print_gloss_text(result: &AllParagraphsProcessingResult) {
     }
 }
 
-/// One text line per row, with its components indented under it:
-/// `[word, conf, grammar, meaning]`.
-fn row_cells(row: &GlossRow, out: &mut Vec<[String; 4]>) {
+/// The text cells of a row and of its components, in order:
+/// `[word, conf, grammar, contextual, definition, construction, root]`, the
+/// construction in square brackets.
+fn row_cells(row: &GlossRow, out: &mut Vec<[String; 7]>) {
     let word = format!("{}{}", "- ".repeat(row.depth as usize), row.word);
     let conf = row.confidence.map(|c| c.as_str().to_string()).unwrap_or_default();
-    out.push([word, conf, row.grammar.clone(), row.meaning.clone()]);
+    let construction = row.construction.trim();
+    let construction = if construction.is_empty() { String::new() } else { format!("[{}]", construction) };
+    out.push([
+        word,
+        conf,
+        row.grammar.clone(),
+        row.contextual.clone(),
+        row.definition.clone(),
+        construction,
+        row.root.clone(),
+    ]);
     for c in &row.components {
         row_cells(c, out);
     }
 }
 
-/// The Word in Sentence result as aligned columns: word, confidence mark,
-/// grammar, meaning; then the translations and the legend.
-fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_provider: bool) {
+/// The cells of `row_cells()` as aligned text lines.
+///
+/// One line per word: word, confidence mark, grammar, the contextual
+/// meaning, the definition; the contextual column is left out when no row
+/// has a value in it.
+///
+/// Two lines per word: word, mark, the contextual meaning and the
+/// definition; under them the grammar (under the contextual column) and the
+/// construction and root (under the definition). A second line with nothing
+/// on it is left out.
+fn rows_text_lines(cells: &[[String; 7]], two_lines: bool) -> Vec<String> {
+    let width = |i: usize| cells.iter().map(|c| c[i].chars().count()).max().unwrap_or(0);
+    let pad = |text: &str, w: usize| format!("{}{}", text, " ".repeat(w - text.chars().count()));
+    let word_w = width(0);
+    let mut lines = Vec::new();
+    if !two_lines {
+        let (grammar_w, contextual_w) = (width(2), width(3));
+        for c in cells {
+            let mut line = format!("{}  {:1}  {}  ", pad(&c[0], word_w), c[1], pad(&c[2], grammar_w));
+            if contextual_w > 0 {
+                line.push_str(&format!("{}  ", pad(&c[3], contextual_w)));
+            }
+            line.push_str(&c[4]);
+            lines.push(line.trim_end().to_string());
+        }
+        return lines;
+    }
+    // The column of the contextual meaning over the grammar.
+    let middle_w = width(2).max(width(3));
+    let middle = |text: &str| if middle_w > 0 { format!("{}  ", pad(text, middle_w)) } else { String::new() };
+    for c in cells {
+        let line1 = format!("{}  {:1}  {}{}", pad(&c[0], word_w), c[1], middle(&c[3]), c[4]);
+        lines.push(line1.trim_end().to_string());
+        let derivation: Vec<&str> = [c[5].as_str(), c[6].as_str()].into_iter().filter(|s| !s.is_empty()).collect();
+        if c[2].is_empty() && derivation.is_empty() {
+            continue;
+        }
+        let line2 = format!("{}  {:1}  {}{}", pad("", word_w), "", middle(&c[2]), derivation.join("  "));
+        lines.push(line2.trim_end().to_string());
+    }
+    lines
+}
+
+/// The Word in Sentence result as aligned columns (`rows_text_lines()`), on
+/// one or two lines per word; then the translations and the legend.
+fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_provider: bool, two_lines: bool) {
     if !title.is_empty() {
         outln!("{}", title);
         outln!();
@@ -756,19 +880,8 @@ fn print_rows_text(result: &AllParagraphsProcessingResult, title: &str, no_ai_pr
             row_cells(row, &mut cells);
         }
         any_conf |= cells.iter().any(|c| !c[1].is_empty());
-        let word_w = cells.iter().map(|c| c[0].chars().count()).max().unwrap_or(0);
-        let grammar_w = cells.iter().map(|c| c[2].chars().count()).max().unwrap_or(0);
-        for c in &cells {
-            let line = format!(
-                "{}{}  {:1}  {}{}  {}",
-                c[0],
-                " ".repeat(word_w - c[0].chars().count()),
-                c[1],
-                c[2],
-                " ".repeat(grammar_w - c[2].chars().count()),
-                c[3],
-            );
-            outln!("{}", line.trim_end());
+        for line in rows_text_lines(&cells, two_lines) {
+            outln!("{}", line);
         }
         if !p.variants.is_empty() {
             let variants: Vec<String> = p.variants.iter().map(|v| v.join("//")).collect();
@@ -898,6 +1011,130 @@ pub fn run_lookup(args: &LookupArgs, json: bool) -> CliResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn text_cells(rows: &[[&str; 7]]) -> Vec<[String; 7]> {
+        rows.iter().map(|r| r.map(String::from)).collect()
+    }
+
+    #[test]
+    fn test_rows_text_lines_two_lines() {
+        let cells = text_cells(&[
+            ["uppannaṁ", "A", "nt nom sg of uppanna", "arisen", "arisen; appeared", "[ud + √pad + na]", "√pad 3 ya"],
+            ["- ud", "", "prefix", "", "up", "", ""],
+            ["xyz", "", "", "", "not found", "", ""],
+        ]);
+        let middle = "nt nom sg of uppanna".len() + 2;
+        assert_eq!(
+            rows_text_lines(&cells, true),
+            vec![
+                format!("uppannaṁ  A  {}arisen; appeared", format!("{:middle$}", "arisen")),
+                format!("{}nt nom sg of uppanna  [ud + √pad + na]  √pad 3 ya", " ".repeat(8 + 2 + 1 + 2)),
+                format!("- ud{}up", " ".repeat(4 + 2 + 1 + 2 + middle)),
+                format!("{}prefix", " ".repeat(8 + 2 + 1 + 2)),
+                // No grammar, construction or root: no second line.
+                format!("xyz{}not found", " ".repeat(5 + 2 + 1 + 2 + middle)),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_lines_per_word_validation() {
+        let mut a = args("x");
+        a.lines_per_word = Some(1);
+        assert!(a.validate(false).is_ok());
+        assert!(a.validate(true).is_err(), "--json");
+        for format in [OutputFormatArg::AnkiCsv, OutputFormatArg::Json] {
+            a.format = Some(format);
+            let err = a.validate(false).unwrap_err().to_string();
+            assert!(err.contains("one record per word"), "{err}");
+        }
+        a.format = None;
+        a.output = Some("gloss.csv".into());
+        assert!(a.validate(false).is_err(), "a .csv output is the Anki CSV");
+        a.output = Some("gloss.docx".into());
+        assert!(a.validate(false).is_ok());
+        a.output = None;
+        a.gloss_format = Some(GlossFormatArg::Headwords);
+        assert!(a.validate(false).unwrap_err().to_string().contains("word-in-sentence"));
+        a.gloss_format = None;
+        a.exact = true;
+        assert!(a.validate(false).is_err(), "--exact");
+    }
+
+    #[test]
+    fn test_contextual_all_validation_and_parsing() {
+        use clap::Parser;
+        #[derive(clap::Parser)]
+        struct Wrapper {
+            #[command(flatten)]
+            gloss: GlossArgs,
+        }
+        let flag = |argv: &[&str]| Wrapper::try_parse_from(argv).unwrap().gloss.contextual_all_flag();
+        assert_eq!(flag(&["gloss", "x"]), None);
+        assert_eq!(flag(&["gloss", "--contextual-all", "x"]), Some(true));
+        assert_eq!(flag(&["gloss", "--no-contextual-all", "x"]), Some(false));
+        // The last one wins.
+        assert_eq!(flag(&["gloss", "--contextual-all", "--no-contextual-all", "x"]), Some(false));
+        assert_eq!(flag(&["gloss", "--no-contextual-all", "--contextual-all", "x"]), Some(true));
+
+        let mut a = args("x");
+        a.contextual_all = true;
+        assert!(a.validate(false).is_ok());
+        assert!(a.validate(true).is_ok(), "--json shows the AI's answers too");
+        a.no_ai = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("--no-ai"));
+        a.no_ai = false;
+        a.exact = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("--exact"));
+        a.exact = false;
+        a.gloss_format = Some(GlossFormatArg::Headwords);
+        assert!(a.validate(false).unwrap_err().to_string().contains("word-in-sentence"));
+        a.contextual_all = false;
+        a.no_contextual_all = true;
+        assert!(a.validate(false).unwrap_err().to_string().contains("word-in-sentence"));
+    }
+
+    #[test]
+    fn test_lines_per_word_parses_one_or_two() {
+        use clap::Parser;
+        #[derive(clap::Parser)]
+        struct Wrapper {
+            #[command(flatten)]
+            gloss: GlossArgs,
+        }
+        let parsed = Wrapper::try_parse_from(["gloss", "--lines-per-word", "1", "x"]).unwrap();
+        assert_eq!(parsed.gloss.lines_per_word(), 1);
+        let parsed = Wrapper::try_parse_from(["gloss", "x"]).unwrap();
+        assert_eq!(parsed.gloss.lines_per_word(), 2);
+        assert!(Wrapper::try_parse_from(["gloss", "--lines-per-word", "3", "x"]).is_err());
+    }
+
+    #[test]
+    fn test_rows_text_lines_align_the_contextual_column() {
+        let cells = text_cells(&[
+            ["uppannaṁ", "A", "nt nom sg of uppanna", "arisen", "arisen; appeared", "", ""],
+            ["te", "", "masc nom pl of ta", "", "those", "", ""],
+        ]);
+        assert_eq!(
+            rows_text_lines(&cells, false),
+            vec![
+                "uppannaṁ  A  nt nom sg of uppanna  arisen  arisen; appeared".to_string(),
+                format!("te{}masc nom pl of ta{}those", " ".repeat(6 + 2 + 1 + 2), " ".repeat(3 + 2 + 6 + 2)),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rows_text_lines_without_contextual_values_leave_the_column_out() {
+        let cells = text_cells(&[
+            ["te", "N", "masc nom pl of ta", "", "those", "", ""],
+            ["xyz", "", "", "", "not found", "", ""],
+        ]);
+        assert_eq!(
+            rows_text_lines(&cells, false),
+            vec!["te   N  masc nom pl of ta  those".to_string(), format!("xyz{}not found", " ".repeat(2 + 1 + 2 + 17 + 2))]
+        );
+    }
 
     #[test]
     fn test_flags_left_off_are_none() {

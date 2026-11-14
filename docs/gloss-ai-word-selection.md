@@ -412,20 +412,26 @@ disabled, e.g. for user-created keys).
 The request items are built by the shared backend builder
 `build_word_selection_items()` in `backend/src/helpers.rs` (exposed to QML as
 `SuttaBridge.build_word_selection_items_json(paragraphs_json, forced)`; the CLI
-agent workflow calls the same builder in include-resolved mode), assembled into
-the prompt by `build_word_selection_prompt()` in the same file (exposed as
-`SuttaBridge.build_word_selection_prompt(items_json)`, and used by
-`/word_selection_ws` and the CLI, so every caller sends the same text) and sent
-through `PromptManager.sequential_word_selection_request(request_id, prompt)`
+agent workflow calls the same builder in include-resolved mode). Each
+paragraph input (`WordSelectionParagraphInput`) carries its words, and
+optionally its `text`, its `source_uid`, its Word in Sentence `rows_json` and
+`contextual_all` (§10). The items are split into chunks
+(`word_selection_item_chunks()`, below) and each chunk is assembled into a
+prompt by `build_word_selection_prompt(items, paragraphs)` in the same file
+(exposed as `SuttaBridge.build_word_selection_prompts(items_json,
+paragraphs_json)`, which returns `[{"prompt", "item_count"}, …]`, and used by
+`/word_selection_ws` and the CLI, so every caller sends the same text). The
+Gloss tab sends the chunks through
+`PromptManager.sequential_word_selection_requests(request_id, prompts_json)`
 → `word_selection_response(request_id, model, response)` — a dedicated
 invokable/signal pair mirroring `prompt_request`, so it never collides with AI
 Translate's indices. The engine picks the model by walking the Fallback sequence
 and reports progress on `sequentialProgress`. It reuses `make_api_request`, so the
 same conventions apply: system prompt and request template are **concatenated into
-one user message**, and provider errors arrive **in-band** — now as an
+one user message**, and provider errors arrive **in-band** as an
 `{"ai_error": …}` JSON envelope (see
-[ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md)),
-not the old `Error: …` prefix. A reply truncated mid-JSON is caught by
+[ai-model-management-and-fallback.md](./ai-model-management-and-fallback.md)).
+A reply truncated mid-JSON is caught by
 `validate_word_selection_response_shape()` and re-tried by the engine as
 `invalid_response`.
 
@@ -434,12 +440,16 @@ Payload (substituted for `<<WORD_SELECTION_JSON>>`):
 ```json
 {
   "task": "pali_word_selection",
+  "paragraphs": [
+    { "p": 0, "source": "an3.33/pli/ms",
+      "text": "… jetavane anāthapiṇḍikassa ārāme. …" }
+  ],
   "items": [
     { "id": "p0w4", "word": "ārāme",
       "context": "jetavane anāthapiṇḍikassa <b>ārāme</b>.",
       "options": [
-        { "uid": "12460/dpd", "word": "ārāma 1", "summary": "(adj) enjoying; taking pleasure (in) ..." },
-        { "uid": "12463/dpd", "word": "ārāma 4", "summary": "(masc) monastery; park ..." }
+        { "word": "ārāma 1", "summary": "(adj) enjoying; taking pleasure (in) ..." },
+        { "word": "ārāma 4", "summary": "(masc) monastery; park ...", "dpd_example": true }
       ] }
   ]
 }
@@ -448,15 +458,58 @@ Payload (substituted for `<<WORD_SELECTION_JSON>>`):
 `id` is `p<paragraph>w<word>` — stable within the session, so a response cannot be
 mis-aligned by position. `summary` is HTML-stripped and truncated to 200 chars.
 The `<b>` marker stays in the `context` (it pinpoints the target occurrence for
-the model; the hash strips it).
+the model, which tells repeated words apart; the hash strips it).
+
+- **`paragraphs`** (`word_selection_paragraph_entries()`): one entry per
+  paragraph that has an item in this chunk and a text, in paragraph order,
+  before the items. The text is the paragraph as glossed: `ṁ` for the
+  niggahīta, and the first spelling of each `a//b` group. `source` is the
+  text's uid, sent once per paragraph and only when the caller knows it (a
+  sutta reference given to `simsapa gloss` or `/gloss_text`); the Gloss tab
+  has no per-paragraph source and sends none. With no texts the list is left
+  out. The agent path (include-resolved mode) puts a `source_uid` on each item
+  instead.
+- **`dpd_example: true`**: the option's DPD example overlaps the paragraph by
+  at least `STRONG_EXAMPLE_OVERLAP_WORDS` (4) words, so the passage is, or
+  holds, the example the DPD editor gave for this sense. The matches are
+  stored on the word (`ProcessedWord::example_match_uids`, set by
+  `rank_paragraph_default_senses()`), so saved sessions carry them. Component
+  options never have it.
+- **No `uid`** on an option when the item's options all have distinct `word`s
+  (`items_for_prompt()`): the answer names the option by its lemma. Options
+  that share a `word` keep their uids, and only then is the uid asked for. The
+  item list the answer is checked against keeps every uid.
+
+The default `"Gloss Tab: Word Selection Request"` prompt describes these
+fields and the item kinds, and carries a short list of common disambiguation
+rules adapted from DPD (`kāyassa bhedā paraṁ maraṇā`; the short final vowel
+before quotative `'ti`; `yena … tena` as "where … there"; a comma-set-off
+address in direct speech as vocative; counted time spans as accusative of
+duration; genitive over dative unless a recipient, purpose or benefit is
+meant).
+
+**Sampling.** A word-selection request goes with
+`RequestPurpose::WordSelection { items }` (`ai_engine.rs`,
+`run_walk_blocking_for()` / `make_api_request_for()`): temperature 0.2 where
+the provider takes one, 0.7 for every other request. Gemini keeps 0.7 with
+`top_k` 1 (already nearly greedy; Google advises against lowering the
+temperature of Gemini 3 models, which can make them loop), Anthropic gets no
+sampling parameters, and OpenAI's reasoning models no `temperature`
+(`openai_responses::sends_temperature()`). Gemini's `max_output_tokens` is
+`RequestPurpose::max_output_tokens()`: 8 192 + 300 per item, clamped to
+16 384..=65 536, since its thinking tokens count against the limit. The limit
+is a cap: a reply is as long as it needs. Anthropic keeps 16 384, and the
+Chat Completions providers are sent no limit (their defaults hold an 80-item
+answer).
 
 Expected response — a selection identifies the chosen option by its **`word`
 lemma**, with optional `confidence` (`confident` (default) | `review`) and
-`note`:
+`note`, and, for the Word in Sentence fields, `grammar_index`,
+`contextual_meaning` and `contextual_meanings` (§10):
 
 ```json
 { "selections": [
-    { "id": "p0w4", "word": "ārāma 4" },
+    { "id": "p0w4", "word": "ārāma 4", "contextual_meaning": "in the monastery" },
     { "id": "p1w2", "word": "suta 1.3", "confidence": "review",
       "note": "formula 'evaṁ me sutaṁ' favours the nt sense" }
 ] }
@@ -464,21 +517,37 @@ lemma**, with optional `confidence` (`confident` (default) | `review`) and
 
 The lemma is text the model has just reasoned about, so a copying error almost
 certainly fails validation instead of silently selecting a wrong sense (a
-numeric index or an opaque uid fails silently). An `{"id", "uid"}` entry form
-is also accepted as robustness (the response shape lives in the user-editable
-request prompt, so a model following an edited prompt may answer with uids);
-when both `word` and `uid` are present they must agree.
+numeric index or an opaque uid fails silently). An entry with a `uid` is also
+accepted (the response shape lives in the user-editable request prompt, so a
+model following an edited prompt may answer with uids).
 
 JSON was chosen over table/CSV because every integrated provider emits it
 reliably for small schemas (several have native JSON modes), and column drift in
 a table is a *silent* misalignment. Parsing is validating with two strictness
 modes — `parse_word_selection_response()` in Rust (exposed as a `SuttaBridge`
 invokable returning `{selections: [...]}` or `{error: "..."}`): strips code
-fences, extracts the first balanced top-level `{...}` from surrounding prose,
-treats a leading `Error:` as failure, resolves each entry's lemma to the uid
-*within that item's option list*, and rejects entries with unknown `id`s, a
-lemma/uid that is not among that item's options (or a lemma carried by more
-than one option), disagreeing `word`+`uid`, or an invalid `confidence` value.
+fences, takes the first balanced JSON object that has a `selections` array
+(`extract_json_object_with_array()`, so a preceding object in the prose is
+passed over), treats a leading `Error:` as failure, and resolves each entry
+*within that item's option list*, in this order:
+
+1. the `word` names one option exactly: that option;
+2. *(lenient only)* the `uid` names an option: that option, with a `warn` log
+   line naming the misspelt lemma;
+3. *(lenient only)* the `word` names exactly one option after normalising both
+   (Unicode NFC, `ṃ` → `ṁ`, lower case, trimmed, whitespace runs folded):
+   that option, with a log line;
+4. otherwise the entry is invalid.
+
+When the `word` and the `uid` name different options, strict mode rejects the
+entry and lenient mode takes the lemma's option with a `warn` line: the lemma
+carries the meaning, a uid is easy to copy from the wrong option. A lemma
+shared by two options needs a uid that picks one. Entries are also invalid
+for an unknown `id` or an invalid `confidence`. An out-of-range
+`grammar_index` is invalid in strict mode; in lenient mode the index and the
+entry's `contextual_meaning` (which fits the reading the model meant) are
+dropped, and the sense is kept.
+
 The **network path is lenient**: invalid entries are logged and skipped, and
 missing entries' ComboBoxes stay unchanged; `confidence`/`note` are logged,
 never displayed. The **CLI agent path is strict** (`gloss-agent-check apply`):
@@ -486,30 +555,40 @@ any invalid entry, disagreeing duplicate, or unanswered item is a hard error.
 A wholly unparseable response becomes a persistent error in the paragraph's
 status area and changes nothing.
 
-> **Note — existing installs keep their stored prompt text.** The default
-> `"Gloss Tab: Word Selection Request"` prompt now instructs the lemma-based
-> response, but the prompts are user-editable settings: an install that already
-> has the old uid-based text keeps it (default-key merging never overwrites
-> user-visible values). The uid entry form remains accepted, so nothing breaks;
-> to get the new instructions, use **Reset to Default** on that prompt in
-> **Prompts > System Prompts...**.
+### Batching, chunks, pacing, timeouts
 
-### Batching, pacing, timeouts
+A request carries at most `WORD_SELECTION_MAX_ITEMS_PER_REQUEST` (80) items
+and about `WORD_SELECTION_BATCH_CHAR_LIMIT` (40 000) characters of item JSON.
+`word_selection_item_chunks()` splits the items in order and keeps all items
+of one word (its sense, break-down and component items: one `p<pi>w<wi>`
+prefix) in one chunk; a word whose items alone exceed a limit is a chunk of
+its own. Small paragraphs share a chunk, a long one is split. Each chunk's
+prompt carries the texts of its own paragraphs. Each item costs the model
+about 150 output and thinking tokens, and larger requests were cut off at the
+output limit.
+
+The chunks of one request are sent in turn,
+`WORD_SELECTION_REQUEST_SPACING_MS` (6 500 ms) apart, and their answers are
+merged into one `{"selections": […]}` (`merge_word_selection_responses()`). A
+chunk that fails loses only its own items (logged); when every chunk fails,
+the first error is the response. The Rust run (`gloss_word_selection_run.rs`:
+CLI, `/gloss_text`, `/word_selection_ws`) does this itself and applies all
+answers together; for the Gloss tab `PromptManager.sequential_word_selection_requests()`
+does it, so the tab sees one answer per request and its queue and status
+handling are unchanged.
 
 Constants in `GlossTab.qml`:
 
 | | |
 |---|---|
-| `word_selection_batch_char_limit` | `40000` — payloads under this go as **one batched request** for all paragraphs |
+| `word_selection_batch_char_limit` | `40000` — paragraphs whose prompt together is under this go as **one request**, otherwise one request per paragraph |
 | `word_selection_request_spacing_ms` | `6500` — minimum gap between sequential request *starts* (≤ ~10 rpm) |
-| HTTP timeout | `180 s`, fixed in `prompt_manager.rs` (hence the "(3min timeout)" in the busy text) |
+| HTTP timeout | `180 s`, fixed in `ai_engine.rs` (hence the "(3min timeout)" in the busy text) |
 
 The binding free-tier constraint is **requests per minute, not tokens** (Gemini
-Flash: ~10–15 rpm, 250K–1M tpm), so one batched request is strongly preferred and
-the 40K-char limit is a conservative structured-output-quality guard, not a token
-limit. Over the limit, paragraphs are sent **sequentially**, one in flight at a
-time, paced by a Timer. A single paragraph that exceeds the limit on its own is
-still sent as one request (no intra-paragraph splitting).
+Flash: ~10–15 rpm, 250K–1M tpm), so few, full requests are preferred. Over the
+limit, paragraphs are sent **sequentially**, one in flight at a time, paced by
+a Timer; a long paragraph's request is split into chunks as above.
 
 Triggers: automatically after **Update Gloss** (that paragraph) and after **Update
 All Glosses** (all glossed paragraphs), when a model is enabled; and manually via
@@ -642,7 +721,8 @@ rows coexist and the chain ranks them.
 The **Export...** button opens `GlossExportWindow.qml` (an `ApplicationWindow`
 with a scrolling body and a fixed button bar): checkboxes for the document
 formats (HTML, Markdown, Org-Mode, Word (.docx), Anki CSV, JSON) and radio
-buttons for the gloss format (Word in Sentence / Headwords). One folder is
+buttons for the gloss format (Word in Sentence / Headwords) and, enabled only
+for Word in Sentence, for one or two lines per word (below). One folder is
 picked for all the checked formats, existing files are confirmed for
 overwrite once, and one message lists what was written
 (`GlossTab.run_export()` / `write_export_files()`; the Anki CSV still runs in
@@ -651,7 +731,8 @@ the background and its result completes the message).
 The window's choices are **app settings of their own**, saved when Export...
 is pressed and loaded each time the window opens: `gloss_export_formats`
 (`SuttaBridge.get/set_gloss_export_formats_json`) and
-`gloss_export_gloss_format` (`get/set_gloss_export_gloss_format`). They are
+`gloss_export_gloss_format` (`get/set_gloss_export_gloss_format`); the lines
+per word are the tab's own `gloss_lines_per_word`, shared on purpose. They are
 kept apart from the tab's `gloss_format`, so a gloss can be read in one
 format and exported in the other; exporting never changes the tab.
 
@@ -805,9 +886,30 @@ spelling of each `//` group, `### English Translation` with `**Translation:**`
 and `**Literal Translation:**` (a model heading only when there are several;
 no Literal line for a translation saved before the two-part translation),
 `### Variants` (one `a//b` line per group, only when there are groups),
-`### Word-by-Word Analysis` and the table
-`ID | Word in Sentence | Grammar | Meaning | Construction | Root | Conf.`.
-Component rows carry `- ` per depth (DOCX also indents the word); a passage's
+`### Word-by-Word Analysis` and the table. Contextual is the AI's contextual
+meaning (empty when there is none), Definition the dictionary's, and the
+construction is written in square brackets (`[ud + √pad + na]`, nothing when
+empty). The Headwords tables have no Contextual column.
+
+The table has one or two table rows per word, by `GlossExportData::lines_per_word`
+(the app setting `gloss_lines_per_word`, shared by the Gloss tab's "Lines per
+word" and the Export window's radio buttons; `--lines-per-word` in the CLI,
+`lines_per_word` in `/gloss_text`; default 2):
+
+- One line: `ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf.`
+  (`WORD_TABLE_COLUMNS`, `GlossExportRow::cells()`).
+- Two lines: `ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf.`
+  (`WORD_TABLE_2L_COLUMNS`). Line 1 (`line1_cells()`) has the ID, the word,
+  the Contextual, the Definition and Conf.; line 2 (`line2_cells()`) the
+  Grammar, the Construction and the Root, under them. In HTML and DOCX line
+  1's Definition spans the Construction and Root columns (`colspan` /
+  `w:gridSpan`); Markdown and Org have no spans and leave the Root cell of
+  line 1 empty. Line 2 is written even when it is empty, so the grid stays
+  regular, and both rows share the word's shade.
+
+Anki and JSON always keep one record per word, and "Copy As…" passes the
+tab's setting to `gloss_paragraph_export()`. Component rows carry `- ` per
+depth on line 1 (DOCX also indents the word); a passage's
 line breaks stay line breaks inside one DOCX paragraph; the `⧫` marker of the
 rendered Gloss text is dropped from the passage text on import; cells
 escape `|` (`\|` in Markdown, `\vert{}` in Org). The legend, introduced by
@@ -828,10 +930,14 @@ together.
 one per row that has a DPD headword (token and component rows; unresolved and
 break-down rows have none, and "No duplicates" has already left out repeats).
 A Simple / cloze note's front shows the word as written, its back the row's
-grammar above the sense's summary (the meaning when there is no summary).
-Templates get `{word_in_sentence}`, `{grammar}` and `{meaning}` (empty for a
-Headwords note); the data CSV gains `word_in_sentence` and
-`grammar_in_sentence` columns when the gloss has rows.
+grammar and contextual meaning (in italic) above the sense's summary (the
+definition when there is no summary). Templates get `{word_in_sentence}`,
+`{grammar}`, `{definition}` and `{contextual}` (empty for a Headwords note); a
+template naming an unknown variable fails the export with an error naming the
+template and the note's word. The data CSV ends with the columns
+`word_in_sentence`, `grammar_in_sentence`, `contextual_in_sentence` and
+`definition_in_sentence`, filled for a Word in Sentence note and empty for a
+Headwords one, so both formats import into one note type.
 
 The **session JSON** (`build_gloss_session_json()` in the builder, and the
 Gloss tab's `session_data_json()`) carries `gloss_format`, and per paragraph
@@ -1355,29 +1461,93 @@ reads `imperf 3rd sg of anajjhagā`, not `imperf of na adhigacchati`.
   **shown when the request is built**: when the same answer picks another
   sense for the token, the component answers are still stored by component
   word, and only those the new sense also has show in its rows.
-- **Contextual meaning.** Every answer may give `contextual_meaning`, the
-  dictionary meaning fitted to the sentence (DPD's field of that name).
+- **Contextual meaning.** Every answer gives `contextual_meaning`, a short
+  English rendering of the word as used in this sentence (`arisen`, `of the
+  nobleman`, `I would dwell`), drawn from the chosen sense's meaning and
+  following the case, number and person of the chosen reading (DPD's field of
+  that name). The prompt requires it; the parser accepts an answer without it
+  (the row then has no Contextual value).
+- **One contextual meaning per reading.** When the chosen option has
+  `grammar_options`, the answer also gives `contextual_meanings`, one per
+  reading in the same order (`["of the nobleman", "for the nobleman"]` for
+  `masc gen sg` / `masc dat sg`); readings that come out the same in English
+  repeat it. `contextual_meaning` stays the meaning of the reading picked
+  (`grammar_index`).
 
 The skip rules of §4 apply to these too: a component row with a `resolution`,
 and a reading-only item whose word already has a `reading` (re-included on a
 forced pass only when that reading's origin is `ai-selected`).
 
-The default request prompt describes the fields. Both are optional in
+The default request prompt describes the fields. All three are optional in
 `parse_word_selection_response()`: `grammar_index` must index the chosen
-option's `grammar_options` (0 is accepted for an option without them),
-`contextual_meaning` must be a string; an entry breaking either is invalid like
-any other.
+option's `grammar_options` (0 is accepted for an option without them; lenient
+mode drops an index out of range, §4), `contextual_meaning` must be a string.
+`contextual_meanings` never makes an entry invalid: a value that is not an
+array of strings as long as the option's `grammar_options` is dropped with a
+`warn` line, and the entry is kept. Each meaning is trimmed.
+
+### Contextual-only items: "Contextual meaning for every word"
+
+The option `gloss_contextual_all` (`AppSettings`, default on;
+`SuttaBridge.get/set_gloss_contextual_all()`; the Gloss tab's AI settings
+CheckBox "Contextual meaning for every word", disabled in the Headwords
+format; `--contextual-all` / `--no-contextual-all` in `simsapa gloss`,
+defaulting to the setting; `contextual_all` in `/gloss_text`) asks for a
+contextual meaning for every word, not only for the ones with a choice. It
+reaches the builder as `WordSelectionParagraphInput::contextual_all` and
+works only with rows. The agent path (`gloss-agent-check`) passes `false`.
+
+With it on, every word and component row that has a dictionary sense but gets
+no other item gets a **contextual-only item**: words with one sense, words
+resolved from the cache, by the user or by the built-in data, and unambiguous
+or resolved components (of a compound headword, and of the chosen break-down
+of a deconstructor-resolved word). The item has the chosen sense as its one
+option (with its `grammar_options`) and the id the word or component would
+have as an ambiguous item (`p<pi>w<wi>`, `p<pi>w<wi>c<k>` with the same `k`).
+A one-option item asks only for the reading and the contextual meaning, and
+both apply paths treat it as reading-only (below).
+
+Skips: a word or component whose session reading for the chosen sense already
+has a contextual meaning (re-included on a forced pass when that reading is
+`ai-selected`); and **always** one whose reading for the chosen sense is
+`user-selected`, since both apply paths drop an AI reading over it and the
+item would cost tokens on every pass for an answer thrown away.
+
+Measured with `gemini-3.6-flash` on three passages, the option adds about 15 %
+to the total tokens of word selection and changes none of the senses chosen
+beyond run-to-run noise.
 
 ### Where readings and contextual meanings are kept
 
 **In the session only, never in `gloss_word_context_cache`** (changing the
 cache would need a migration and a new data-bank format):
 `ProcessedWord::reading` and `ProcessedWord::component_readings` (by component
-word), each a `SenseReading { uid, grammar_index, contextual_meaning, origin }`.
-The row builder applies a reading only while its `uid` is still the chosen
-sense, so a later sense change leaves it inert instead of wrong. A session
-that resolves a word from the cache later shows `meaning_combo` until the AI is
-asked again.
+word), each a `SenseReading { uid, grammar_index, contextual_meaning,
+contextual_meanings, origin }`. The row builder applies a reading only while
+its `uid` is still the chosen sense, so a later sense change leaves it inert
+instead of wrong.
+
+A row keeps the two meanings apart: `GlossRow::definition` is always the
+dictionary's (`meaning_combo` of the chosen sense, or for a compound or sandhi
+token row the joined first senses of its components), and
+`GlossRow::contextual` the reading's contextual meaning, empty when there is
+none (`apply_contextual()` in `gloss_rows.rs`). The contextual value is
+`contextual_meanings[grammar_index]` when that entry is non-empty (the row's
+effective index: the reading's, else the default), else `contextual_meaning`.
+**The UI and the exports show Contextual beside the Definition, never in its
+place**, so an AI rendering is never taken for the dictionary's. Component
+rows take theirs from `component_readings`. The serialized row (QML, the
+localhost API, `GlossExportRow`) has `definition` and `contextual`; a stored
+row from before has `meaning`, and is rebuilt from the words on load.
+
+A grammar reading chosen by hand (`GlossTab.update_row_reading()`) keeps
+`contextual_meanings` when the sense is unchanged, and takes
+`contextual_meaning` from the list's entry for the new index; with no entry
+the contextual meaning is left unset, so the cell is empty and never shows a
+meaning fitted to another case. The list covers only the readings of the
+sense the AI was asked about: after a sense change by hand, the new sense has
+none until the AI is asked again. A session that resolves a word from the
+cache later shows no Contextual until the AI is asked again.
 
 A component choice of a compound headword is kept like a break-down
 component's: `component_selected_uids` / `component_resolutions` on the
@@ -1397,7 +1567,12 @@ choice whose origin is not `ai-selected` (checked per field: sense, break-down,
 each component); a break-down answer locks the break-down; the same
 `ai-selected` cache rows are written; a reading-only item (one option) sets
 only the reading, with no cache row and no resolution, since the sense was not
-a choice; an answer's `grammar_index` / `contextual_meaning` become the
+a choice; a component item with one option is reading-only too: it sets only
+`component_readings[component_word]`, leaving `component_selected_uids`,
+`component_resolutions` and the cache untouched, even under a `user-selected`
+component choice (Rust `apply_component(…, option_count)`; QML sets
+`entry.option_count` for `c` entries as for sense items); an answer's
+`grammar_index` / `contextual_meaning` / `contextual_meanings` become the
 `reading` unless the user chose a reading for the same sense
 (`GlossTab.ai_answer_reading()` / `set_reading()`). Afterwards the
 paragraph's rows are rebuilt from its `words_data` (Rust:
@@ -1419,9 +1594,14 @@ One template, `"Gloss Tab: AI Translation"`, with `<<PALI_PASSAGE>>` and
 a close, word-by-word one, using the chosen senses (DPD's grounded translation,
 [dpd-analysis-procedure.md](./dpd-analysis-procedure.md) §1.5).
 `backend/src/gloss_translation.rs` builds the prompt
-(`build_translation_prompt`; the word table is Word / Grammar / Meaning, from
-the rows with components as `- ` rows, or for the Headwords format from the
-chosen senses' summaries) and parses the answer (`parse_translation_response`:
+(`build_translation_prompt`; the word table, `word_table_markdown()`, is
+`| Word | Grammar | Meaning |`, from the rows with components as `- ` rows,
+where Meaning is the row's Contextual, or its Definition when it has none; for
+the Headwords format Meaning is the chosen sense's summary). The default
+prompt says that Meaning is each word's sense in this passage, and its "do not
+introduce senses that are not listed" refers to it. A table with separate
+Contextual and Definition columns gave nearly the same translations for a
+prompt 20–38 % larger and parses the answer (`parse_translation_response`:
 the first JSON object, code fences ignored, both fields non-empty strings;
 anything else is `invalid_response`). For QML they are
 `SuttaBridge.gloss_translation_prompt(paragraph_json)` and
@@ -1475,6 +1655,35 @@ Every change of a paragraph's words goes through
 (`SuttaBridge.refresh_gloss_paragraph_json()`), so the row's grammar, meaning
 and components follow the new choice. A restored session's rows are rebuilt the
 same way after the words are re-annotated.
+
+**The row layout** (`GlossWordInSentenceRow.qml`) is one `GridLayout` with one
+set of items, whose `Layout.row` / `column` / `columnSpan` follow
+`two_lines` and whether the row has a Contextual value: a paragraph has
+hundreds of rows, and two alternative layouts would create every ComboBox
+twice. Two lines (the default):
+
+```
+| word     | shield | Contextual         | Definition (sense ComboBox)       | dict |
+|          |        | Grammar (ComboBox) | [Construction]    | Root          |      |
+```
+
+One line: word, shield, Grammar, Contextual, Definition, `[Construction]`,
+Root, dict. The Contextual is italic; when it is empty its cell collapses and
+the Definition takes its width (line 2 keeps its grid). Line 2 is hidden when
+Grammar, Construction and Root are all empty. The construction is in square
+brackets, nothing when empty. The closed sense ComboBox shows the chosen
+sense's Definition. Its dropdown labels come from `sense_labels(candidates)`:
+when every candidate's `lemma_1` has a trailing sense number and the same
+base (`uppanna 1`, `uppanna 2`), each label is `<number>: <meaning>`;
+otherwise `<lemma_1>: <meaning>`. The popup is widened to the widest label,
+up to the row width.
+
+The **"Lines per word:"** ComboBox, after "Gloss format:", enabled only in
+the Word in Sentence format, sets `gloss_lines_per_word` (`AppSettings`,
+1 or 2, default 2; `SuttaBridge.get/set_gloss_lines_per_word()`). The Export
+window's "One line / Two lines per word" radios read and write the same
+setting and update `GlossTab.gloss_lines_per_word`, so the tab, "Copy As…"
+and the export never disagree (§6).
 
 **Switching the format** re-glosses the text and makes no AI request:
 `switch_gloss_format()` keeps each paragraph's words and translations in

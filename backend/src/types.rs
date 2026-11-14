@@ -771,6 +771,12 @@ pub struct ProcessedWord {
     /// sense and not offered to the AI, but still selectable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub demoted_uids: Vec<String>,
+    /// The direct senses whose DPD example the paragraph contains, or is
+    /// contained in, by at least `STRONG_EXAMPLE_OVERLAP_WORDS` words
+    /// (`gloss_sense_ranking`): the DPD editor's sense for this passage. The
+    /// word-selection request marks these options `"dpd_example": true`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub example_match_uids: Vec<String>,
     /// The grammar reading and contextual meaning chosen for the selected
     /// sense (by the AI, or by the user in the Word in Sentence rows).
     /// Session only, never cached (docs/gloss-ai-word-selection.md).
@@ -794,9 +800,14 @@ pub struct SenseReading {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grammar_index: Option<usize>,
     /// The dictionary meaning fitted to the sentence (DPD's
-    /// `contextual_meaning`); shown in place of `meaning_combo`.
+    /// `contextual_meaning`); shown beside `meaning_combo`, never in its place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contextual_meaning: Option<String>,
+    /// One contextual meaning per reading in `uid`'s `grammar_options`, in
+    /// the same order, `""` where there is none. A reading chosen by hand
+    /// takes its entry from here. Session only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contextual_meanings: Vec<String>,
     /// Who chose it, with the resolution origin names: `"ai-selected"` or
     /// `"user-selected"`.
     #[serde(default)]
