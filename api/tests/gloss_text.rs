@@ -45,7 +45,11 @@ fn stub_runner(
     texts: Vec<String>,
     translate: bool,
     contextual_all: bool,
+    source_uid: Option<String>,
 ) -> AllParagraphsProcessingResult {
+    if let Some(uid) = source_uid {
+        result.ai_errors.push(format!("stub source {}", uid));
+    }
     if contextual_all {
         result.ai_errors.push("stub contextual_all".to_string());
     }
@@ -219,6 +223,10 @@ fn test_gloss_text_route() {
     let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true, "contextual_all": false } }));
     assert_eq!(s, Status::Ok);
     assert!(body.ends_with(r#""ai_errors":["stub ran without translate"]}"#), "{body}");
+    // A reference's record reaches the runner; text given directly has none.
+    let (s, _, body) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "ai": true } }));
+    assert_eq!(s, Status::Ok);
+    assert!(body.ends_with(r#""ai_errors":["stub source dhp21-32/pli/ms","stub ran without translate"]}"#), "{body}");
     let (s, _, md) = post(&c, serde_json::json!({
         "text": "te jhāyino", "options": { "ai": true, "translate": true, "output_format": "markdown" },
     }));

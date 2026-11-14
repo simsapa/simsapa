@@ -1311,7 +1311,7 @@ pub mod qobject {
         fn build_word_selection_items_json(self: &SuttaBridge, paragraphs_json: &QString, forced: bool) -> QString;
 
         #[qinvokable]
-        fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString) -> QString;
+        fn build_word_selection_prompt(self: &SuttaBridge, items_json: &QString, paragraphs_json: &QString) -> QString;
 
         #[qinvokable]
         fn gloss_translation_prompt(self: &SuttaBridge, paragraph_json: &QString) -> QString;
@@ -3836,9 +3836,11 @@ impl qobject::SuttaBridge {
     }
 
     /// The word-selection prompt for request items (an items JSON array from
-    /// `build_word_selection_items_json`), with the saved system prompt and
-    /// request template (`simsapa_backend::helpers::build_word_selection_prompt`).
-    pub fn build_word_selection_prompt(&self, items_json: &QString) -> QString {
+    /// `build_word_selection_items_json`) and the paragraph inputs they were
+    /// built from (`paragraphs_json`, as given to it), with the saved system
+    /// prompt and request template
+    /// (`simsapa_backend::helpers::build_word_selection_prompt`).
+    pub fn build_word_selection_prompt(&self, items_json: &QString, paragraphs_json: &QString) -> QString {
         let items: Vec<serde_json::Value> = match serde_json::from_str(&items_json.to_string()) {
             Ok(items) => items,
             Err(e) => {
@@ -3846,7 +3848,17 @@ impl qobject::SuttaBridge {
                 Vec::new()
             }
         };
-        QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items))
+        // The same paragraph inputs the items were built from; their texts
+        // go into the payload's `paragraphs` list.
+        let paragraphs: Vec<simsapa_backend::helpers::WordSelectionParagraphInput> =
+            match serde_json::from_str(&paragraphs_json.to_string()) {
+                Ok(p) => p,
+                Err(e) => {
+                    error(&format!("build_word_selection_prompt(): invalid paragraphs JSON: {}", e));
+                    Vec::new()
+                }
+            };
+        QString::from(simsapa_backend::helpers::build_word_selection_prompt(&items, &paragraphs))
     }
 
     /// The two-part translation prompt for one paragraph

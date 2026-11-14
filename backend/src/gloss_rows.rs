@@ -1543,6 +1543,7 @@ mod tests {
             lookup_grammar: Vec::new(),
             lookup_headword_ids: Vec::new(),
             demoted_uids: Vec::new(),
+            example_match_uids: Vec::new(),
             reading: None,
             component_readings: Default::default(),
         }

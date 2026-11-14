@@ -60,7 +60,7 @@ pub mod qobject {
         fn sequential_gloss_translation_request(self: Pin<&mut PromptManager>, request_id: &QString, paragraph_idx: usize, translation_idx: usize, prompt: &QString);
 
         #[qinvokable]
-        fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString);
+        fn sequential_word_selection_request(self: Pin<&mut PromptManager>, request_id: usize, prompt: &QString, item_count: usize);
 
         #[qinvokable]
         fn sequential_prompt_request_with_messages(self: Pin<&mut PromptManager>, request_id: &QString, sender_message_idx: usize, messages_json: &QString);
@@ -482,7 +482,7 @@ impl qobject::PromptManager {
 
     /// Sequential fallback run for Gloss word selection; the result arrives on
     /// `wordSelectionResponse` keyed by the caller's `request_id`.
-    fn sequential_word_selection_request(self: Pin<&mut Self>, request_id: usize, prompt: &QString) {
+    fn sequential_word_selection_request(self: Pin<&mut Self>, request_id: usize, prompt: &QString, item_count: usize) {
         let qt_thread = self.qt_thread();
         let cancel = self.cancel_state(None);
         let prompt_text = prompt.to_string();
@@ -504,8 +504,11 @@ impl qobject::PromptManager {
             };
 
             // A word-selection reply must contain a complete selections JSON
-            // object; a truncated body re-tries as `invalid_response`.
-            let outcome = run_walk_blocking(
+            // object; a truncated body re-tries as `invalid_response`. Sent
+            // with the word-selection temperature, and an output limit sized
+            // to the request's items.
+            let outcome = simsapa_backend::ai_engine::run_walk_blocking_for(
+                simsapa_backend::ai_engine::RequestPurpose::WordSelection { items: item_count },
                 &mut || cancel.is_cancelled(),
                 &entries, auto_fallback, auto_retry,
                 &single_message,

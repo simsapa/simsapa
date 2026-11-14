@@ -12,7 +12,7 @@
 use std::time::Duration;
 
 use crate::ai_engine::{
-    run_walk_blocking, walk_settings_for, ChatMessage, WORD_SELECTION_BATCH_CHAR_LIMIT,
+    run_walk_blocking_for, walk_settings_for, ChatMessage, RequestPurpose, WORD_SELECTION_BATCH_CHAR_LIMIT,
     WORD_SELECTION_REQUEST_SPACING_MS,
 };
 use crate::ai_error::AiRequestError;
@@ -86,7 +86,7 @@ pub fn run_word_selection_with_models(
         return Vec::new();
     }
 
-    let combined_prompt = build_word_selection_prompt(&all_items);
+    let combined_prompt = build_word_selection_prompt(&all_items, paragraphs);
     let batches: Vec<Vec<WordSelectionParagraphInput>> =
         if paragraphs.len() <= 1 || combined_prompt.len() < WORD_SELECTION_BATCH_CHAR_LIMIT {
             vec![paragraphs.to_vec()]
@@ -116,7 +116,7 @@ pub fn run_word_selection_with_models(
         }
 
         let items_json = serde_json::json!(items).to_string();
-        let prompt = build_word_selection_prompt(&items);
+        let prompt = build_word_selection_prompt(&items, batch_paragraphs);
         let single_option_items = items
             .iter()
             .filter(|it| it.get("options").and_then(|o| o.as_array()).is_some_and(|o| o.len() == 1))
@@ -132,7 +132,8 @@ pub fn run_word_selection_with_models(
             let mut on_progress = |model: String, message: String, kind: String| {
                 on_event(WordSelectionRunEvent::Progress { batch, batch_count, model, message, kind });
             };
-            run_walk_blocking(
+            run_walk_blocking_for(
+                RequestPurpose::WordSelection { items: items.len() },
                 &mut || is_cancelled(),
                 &entries, auto_fallback, auto_retry,
                 &messages,

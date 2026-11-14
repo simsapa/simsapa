@@ -309,9 +309,10 @@ impl GlossArgs {
     }
 }
 
-/// The paragraphs to gloss and the document title: a reference's passage, or
-/// the text given.
-fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
+/// The paragraphs to gloss, the document title, and the record a reference
+/// resolved to (`None` for text given directly): a reference's passage, or the
+/// text given.
+fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String, Option<String>), CliError> {
     let joined = args.text.join(" ");
     let is_reference = !(args.text.len() == 1 && args.text[0] == "-") && is_sutta_reference(&joined);
     if !is_reference {
@@ -319,7 +320,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
             return Err(CliError::error("--edition and --paragraphs need a sutta reference"));
         }
         let text = text_or_stdin(&args.text)?;
-        return Ok((split_gloss_paragraphs(&text), String::new()));
+        return Ok((split_gloss_paragraphs(&text), String::new(), None));
     }
     let edition = match args.edition {
         Some(EditionArg::Cst) => PaliEdition::Cst,
@@ -332,7 +333,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
             GlossSourceError::NotFound(m) => CliError::not_found(m),
         })?;
     let title = source.title();
-    Ok((source.paragraphs, title))
+    Ok((source.paragraphs, title, Some(source.uid)))
 }
 
 /// Requires the preamble to have run. `can_write` is false while the GUI or
@@ -340,7 +341,7 @@ fn gloss_input(args: &GlossArgs) -> Result<(Vec<String>, String), CliError> {
 /// choices are then used but not saved.
 pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     args.validate(json)?;
-    let (paragraphs, title) = gloss_input(args)?;
+    let (paragraphs, title, source_uid) = gloss_input(args)?;
     let opts = args.options();
     let dbm = &get_app_data().dbm;
 
@@ -367,7 +368,7 @@ pub fn run_gloss(args: &GlossArgs, json: bool, can_write: bool) -> CliResult {
     let mut result = process_all_paragraphs(&input, &dbm.appdata, &dbm.dpd)
         .map_err(|e| CliError::error(format!("Glossing failed: {}", e)))?;
 
-    let ai_run = run_ai(args, models, &mut result, &paragraphs, can_write)?;
+    let ai_run = run_ai(args, models, &mut result, &paragraphs, source_uid, can_write)?;
     let ai_ran = ai_run == AiRun::Asked;
     // A run with no API key made no AI choice either: the document says so.
     let no_ai_provider = no_ai_provider || ai_run == AiRun::NoApiKey;
@@ -502,6 +503,7 @@ fn run_ai(
     models: Option<Vec<ModelUsageEntry>>,
     result: &mut AllParagraphsProcessingResult,
     paragraphs: &[String],
+    source_uid: Option<String>,
     can_write: bool,
 ) -> Result<AiRun, CliError> {
     if args.no_ai || !result.success || result.paragraphs.is_empty() {
@@ -547,6 +549,7 @@ fn run_ai(
         write_cache: can_write,
         models,
         contextual_all,
+        source_uid,
     };
     if options.word_selection && !can_write {
         errln!(

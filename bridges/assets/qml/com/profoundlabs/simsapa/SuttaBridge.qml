@@ -439,7 +439,7 @@ Item {
         return '[]';
     }
 
-    function build_word_selection_prompt(items_json: string): string {
+    function build_word_selection_prompt(items_json: string, paragraphs_json: string): string {
         return '';
     }
 

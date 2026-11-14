@@ -266,7 +266,7 @@ Item {
     // "Contextual meaning for every word": the AI word selection also asks
     // for the contextual meaning of the Word in Sentence words that have no
     // choice to make (docs/gloss-ai-word-selection.md).
-    property bool gloss_contextual_all: false
+    property bool gloss_contextual_all: true
 
     // Set by switch_gloss_format() for the re-gloss it starts: paragraph
     // index -> {text, words_data_json, translations_json, selected_ai_tab}.
@@ -524,6 +524,20 @@ Item {
     // pass re-includes "ai-selected"-resolved words but never
     // "user-selected"/"built-in-phrase-match"/"built-in-human-checked".
     function build_word_selection_items(paragraph_indexes, forced) {
+        let paragraphs = root.build_word_selection_inputs(paragraph_indexes);
+        let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
+        try {
+            return JSON.parse(items_json);
+        } catch (e) {
+            logger.error("build_word_selection_items: failed to parse items JSON: " + e);
+            return [];
+        }
+    }
+
+    // The paragraph inputs of the shared builder (WordSelectionParagraphInput):
+    // words, rows and the paragraph text, which the prompt sends once per
+    // paragraph as the context of its items.
+    function build_word_selection_inputs(paragraph_indexes) {
         let paragraphs = [];
         for (let pi of paragraph_indexes) {
             if (pi >= paragraph_model.count) continue;
@@ -533,6 +547,9 @@ Item {
                 paragraph_index: pi,
                 words_json: paragraph.words_data_json,
             };
+            if (paragraph.text && paragraph.text.trim() !== "") {
+                input.text = paragraph.text;
+            }
             // With Word in Sentence rows the items also ask for grammar
             // readings and for the components of compound headwords, and,
             // with "Contextual meaning for every word", for the contextual
@@ -543,20 +560,16 @@ Item {
             }
             paragraphs.push(input);
         }
-        let items_json = SuttaBridge.build_word_selection_items_json(JSON.stringify(paragraphs), forced);
-        try {
-            return JSON.parse(items_json);
-        } catch (e) {
-            logger.error("build_word_selection_items: failed to parse items JSON: " + e);
-            return [];
-        }
+        return paragraphs;
     }
 
     // The combined prompt (system prompt + request template with the payload
     // substituted), assembled in Rust so the CLI and the API send the same
-    // text (simsapa_backend::helpers::build_word_selection_prompt).
-    function build_word_selection_prompt(items) {
-        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items));
+    // text (simsapa_backend::helpers::build_word_selection_prompt). The
+    // paragraph inputs give the texts of the items' paragraphs.
+    function build_word_selection_prompt(items, paragraph_indexes) {
+        let paragraphs = root.build_word_selection_inputs(paragraph_indexes);
+        return SuttaBridge.build_word_selection_prompt(JSON.stringify(items), JSON.stringify(paragraphs));
     }
 
     // Entry point: run AI word selection for the given paragraphs. Batched
@@ -573,7 +586,7 @@ Item {
         let items = root.build_word_selection_items(indexes, forced);
         if (items.length === 0) return;
 
-        let prompt = root.build_word_selection_prompt(items);
+        let prompt = root.build_word_selection_prompt(items, indexes);
         if (indexes.length === 1 || prompt.length < root.word_selection_batch_char_limit) {
             root.ws_send_request(indexes, forced);
         } else {
@@ -624,12 +637,12 @@ Item {
             root.ws_set_status(pi, "busy", "Selecting words...");
         }
 
-        let prompt = root.build_word_selection_prompt(items);
+        let prompt = root.build_word_selection_prompt(items, covered);
         root.ws_last_start_time = Date.now();
         logger.info(`Word selection request ${request_id}: ${items.length} words, paragraphs [${covered.join(", ")}]`);
         // The engine walks the Fallback sequence; the model which answered is
         // reported in the progress events and the response signal.
-        pm.sequential_word_selection_request(request_id, prompt);
+        pm.sequential_word_selection_request(request_id, prompt, items.length);
         return true;
     }
 

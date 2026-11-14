@@ -336,6 +336,12 @@ fn test_default_sense_db_example_and_same_in_both_formats() {
     let headwords = gloss(&[DHP23], options(GlossFormat::Headwords, false));
     assert_eq!(selected_uid(unresolved_word(&wis, "niccaṁ")), "37008/dpd");
     assert_eq!(selected_uid(unresolved_word(&headwords, "niccaṁ")), "37008/dpd");
+    // The match is kept for the word-selection request (`dpd_example`).
+    assert_eq!(unresolved_word(&wis, "niccaṁ").example_match_uids, vec!["37008/dpd".to_string()]);
+    // A one-word passage matches no example: DPD's overlap alone would match
+    // almost any example that contains the word.
+    let one_word = gloss(&["niccaṁ"], options(GlossFormat::WordInSentence, false));
+    assert!(unresolved_word(&one_word, "niccaṁ").example_match_uids.is_empty());
 
     // The same results order and the same choice for every word (B7).
     // DHP23 has no repeated word, so the two formats gloss the same tokens.
@@ -366,7 +372,7 @@ fn test_default_sense_prefers_the_lookup_row_and_demotes_filtered() {
 
     let words_json = serde_json::to_string(&result.paragraphs[0].words_data).unwrap();
     let items = simsapa_backend::helpers::build_word_selection_items(
-        &[simsapa_backend::helpers::WordSelectionParagraphInput { paragraph_index: 0, words_json, source_uid: None, rows_json: None, contextual_all: false }],
+        &[simsapa_backend::helpers::WordSelectionParagraphInput { text: None, paragraph_index: 0, words_json, source_uid: None, rows_json: None, contextual_all: false }],
         simsapa_backend::helpers::WordSelectionBuildMode::IncludeResolved,
     )
     .unwrap();
@@ -392,7 +398,7 @@ use simsapa_backend::helpers::{
 const DUMMY_DHP23: &str = "dummyword te jhāyino sātatikā, niccaṁ daḷhaparakkamā, phusanti dhīrā nibbānaṁ.";
 
 fn items_of(result: &AllParagraphsProcessingResult) -> Vec<serde_json::Value> {
-    let inputs = WordSelectionParagraphInput::from_result(result, false).unwrap();
+    let inputs = WordSelectionParagraphInput::from_result(result, &[], None, false).unwrap();
     build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap()
 }
 
@@ -639,7 +645,7 @@ fn test_apply_contextual_only_answers() {
             .insert("daḷha".to_string(), daḷha.candidates[daḷha.selected_candidate].uid.clone());
     }
     result.paragraphs[0].rows = rebuilt_rows(&result);
-    let inputs = WordSelectionParagraphInput::from_result(&result, true).unwrap();
+    let inputs = WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap();
     let items = build_word_selection_items(&inputs, WordSelectionBuildMode::SkipResolved { forced: false }).unwrap();
     let item = |id: &str| items.iter().find(|i| i["id"] == id).unwrap_or_else(|| panic!("no item {id}")).clone();
 
@@ -702,7 +708,7 @@ fn test_apply_contextual_only_answers() {
 
     // Answered words are not asked again; a reading a person chose stays.
     let again = build_word_selection_items(
-        &WordSelectionParagraphInput::from_result(&result, true).unwrap(),
+        &WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap(),
         WordSelectionBuildMode::SkipResolved { forced: false },
     )
     .unwrap();
@@ -727,7 +733,7 @@ fn test_apply_contextual_only_answers() {
     assert_eq!(words[comp_wi].component_readings["daḷha"].contextual_meaning.as_deref(), Some("steady"));
     // A user-selected reading is never asked about, even on a forced pass.
     let forced = build_word_selection_items(
-        &WordSelectionParagraphInput::from_result(&result, true).unwrap(),
+        &WordSelectionParagraphInput::from_result(&result, &[], None, true).unwrap(),
         WordSelectionBuildMode::SkipResolved { forced: true },
     )
     .unwrap();

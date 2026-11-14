@@ -427,8 +427,9 @@ pub struct AppSettings {
     pub gloss_lines_per_word: u8,
     /// Word in Sentence: the AI word selection also asks for a contextual
     /// meaning for every word with a dictionary sense, not only for the
-    /// ambiguous ones (docs/gloss-ai-word-selection.md).
-    #[serde(default)]
+    /// ambiguous ones (docs/gloss-ai-word-selection.md). On by default:
+    /// about 15 % more tokens, with no change in the senses chosen.
+    #[serde(default = "default_true")]
     pub gloss_contextual_all: bool,
 }
 
@@ -624,7 +625,7 @@ Respond with GFM-Markdown formatted text.
 
     prompts.insert(crate::gloss_translation::TRANSLATION_TEMPLATE_KEY.to_string(),
         r#"
-You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. The "Definition" column is the dictionary's range of senses for each word. Do not introduce senses that are not listed in the Definition; a word without a Definition in the table you may translate as you see fit. When the table has a "Contextual" column, it is the suggested rendering of the word in this sentence: prefer it for the literal translation. The natural translation may choose other wording from within the Definition, and where a Contextual value does not fit its Definition, follow the Definition instead. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
+You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. The "Meaning" column gives each word's sense in this passage: a rendering fitted to the sentence where one was chosen, otherwise the dictionary's definition. Do not introduce senses that are not listed; a word without a meaning in the table you may translate as you see fit. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
 
 Pāli passage:
 
@@ -648,19 +649,32 @@ You are an expert in Pāli grammar and vocabulary, assisting with the word-by-wo
 
     prompts.insert("Gloss Tab: Word Selection Request".to_string(),
         r#"
-Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics). When two options of an item have the same "word", they also carry a "uid": then return the chosen option's "uid" as well.
+
+The "paragraphs" list gives the full text of each paragraph the items come from, as {"p": <n>, "text": "…"}, with "source" naming the text it is from when that is known (e.g. "dn23/pli/ms"). An item whose id starts with "p<n>w" belongs to paragraph <n>: read the whole paragraph as the context of its items. The item's "context" marks the word's own occurrence with <b>…</b>, which tells repeated words apart.
 
 There are three kinds of items, distinguished by their "id" suffix:
 
 - Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
-- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"). Select the break-down that fits the context.
 - Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
 
 A sense or component item with a single option has no entry to choose: it asks only for the reading and the contextual meaning described below. Return that option's "word" with them.
 
 Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context; and "contextual_meanings": one short contextual meaning for each reading, in the order of "grammar_options" (e.g. ["of the nobleman", "for the nobleman"] for "masc gen sg" and "masc dat sg"). Readings that come out the same in English may repeat the same meaning.
 
+An option with "dpd_example": true is the entry whose example in the Digital Pāḷi Dictionary is this very passage: the dictionary's editor chose that sense for this text. Prefer it unless the context clearly rules it out.
+
 Every selection of a sense or component item must also have "contextual_meaning": a short English rendering of the word as used in this sentence (e.g. "arisen", "of the nobleman", "I would dwell"), drawn from the selected entry's dictionary meaning and following the case, number and person of the reading that fits. It is shown to the reader next to the dictionary definition, not in place of it. Give only the core meaning in a few words; do not append grammatical case notes in parentheses.
+
+Common disambiguation rules:
+
+- In the stock phrase "kāyassa bhedā paraṁ maraṇā", "kāyassa" is genitive, "bhedā" and "maraṇā" are ablative singular, and "paraṁ" is the indeclinable "after", never nominative plurals.
+- A final vowel lengthened before a quotative "'ti" is sandhi: at the end of a quotation, prefer the break-down that restores the short vowel (e.g. "upapajjanti + iti"), unless the context clearly needs the long-vowel reading.
+- In "yena <person or place> tena upasaṅkami", "yena" and "tena" are the adverbs "where … there", not instrumental pronouns.
+- Inside direct speech, a word set off by commas that addresses the listener (e.g. "bho", or a teacher's name) is usually vocative.
+- A counted span of time, such as "paṇṇavīsativassāni" or "vassāni" ("for twenty-five years"), is accusative of duration, not nominative.
+- When the dative and the genitive reading of the same form are offered, prefer the genitive for possession or relation ("of X"); choose the dative only for a recipient, purpose or benefit ("for X", "to X").
 
 <<WORD_SELECTION_JSON>>
 
@@ -686,6 +700,82 @@ Respond with GFM-Markdown formatted text.
 /// replaces it with the current default; an edited prompt is kept.
 fn superseded_default_system_prompts() -> Vec<(&'static str, &'static str)> {
     vec![
+        ("Gloss Tab: AI Translation", r#"
+You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. The "Definition" column is the dictionary's range of senses for each word. Do not introduce senses that are not listed in the Definition; a word without a Definition in the table you may translate as you see fit. When the table has a "Contextual" column, it is the suggested rendering of the word in this sentence: prefer it for the literal translation. The natural translation may choose other wording from within the Definition, and where a Contextual value does not fit its Definition, follow the Definition instead. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
+
+Pāli passage:
+
+<<PALI_PASSAGE>>
+
+Chosen word senses:
+
+<<WORD_TABLE>>
+
+Return two translations: "translation", in natural, readable English; and "literal_translation", close to word-by-word, following the Pāli word order and grammar where English allows.
+
+Respond with a JSON object with exactly these two keys, and nothing else (no prose, no markdown code fences):
+
+{"translation": "<natural English>", "literal_translation": "<word-by-word English>"}
+"#),
+        ("Gloss Tab: Word Selection Request", r#"
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics) and its "uid".
+
+The "paragraphs" list gives the full text of each paragraph the items come from, as {"p": <n>, "text": "…"}, with "source" naming the text it is from when that is known (e.g. "dn23/pli/ms"). An item whose id starts with "p<n>w" belongs to paragraph <n>: read the whole paragraph as the context of its items. The item's "context" marks the word's own occurrence with <b>…</b>, which tells repeated words apart.
+
+There are three kinds of items, distinguished by their "id" suffix:
+
+- Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
+
+A sense or component item with a single option has no entry to choose: it asks only for the reading and the contextual meaning described below. Return that option's "word" with them.
+
+Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context; and "contextual_meanings": one short contextual meaning for each reading, in the order of "grammar_options" (e.g. ["of the nobleman", "for the nobleman"] for "masc gen sg" and "masc dat sg"). Readings that come out the same in English may repeat the same meaning.
+
+An option with "dpd_example": true is the entry whose example in the Digital Pāḷi Dictionary is this very passage: the dictionary's editor chose that sense for this text. Prefer it unless the context clearly rules it out.
+
+Every selection of a sense or component item must also have "contextual_meaning": a short English rendering of the word as used in this sentence (e.g. "arisen", "of the nobleman", "I would dwell"), drawn from the selected entry's dictionary meaning and following the case, number and person of the reading that fits. It is shown to the reader next to the dictionary definition, not in place of it. Give only the core meaning in a few words; do not append grammatical case notes in parentheses.
+
+Common disambiguation rules:
+
+- In the stock phrase "kāyassa bhedā paraṁ maraṇā", "kāyassa" is genitive, "bhedā" and "maraṇā" are ablative singular, and "paraṁ" is the indeclinable "after", never nominative plurals.
+- A final vowel lengthened before a quotative "'ti" is sandhi: at the end of a quotation, prefer the break-down that restores the short vowel (e.g. "upapajjanti + iti"), unless the context clearly needs the long-vowel reading.
+- In "yena <person or place> tena upasaṅkami", "yena" and "tena" are the adverbs "where … there", not instrumental pronouns.
+- Inside direct speech, a word set off by commas that addresses the listener (e.g. "bho", or a teacher's name) is usually vocative.
+- A counted span of time, such as "paṇṇavīsativassāni" or "vassāni" ("for twenty-five years"), is accusative of duration, not nominative.
+- When the dative and the genitive reading of the same form are offered, prefer the genitive for possession or relation ("of X"); choose the dative only for a recipient, purpose or benefit ("for X", "to X").
+
+<<WORD_SELECTION_JSON>>
+
+Respond with JSON in exactly this format, one selection per item:
+
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "uid": "<chosen option's uid>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>", "contextual_meanings": ["<meaning for each reading, when the option has grammar_options>"]}]}
+
+A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
+"#),
+        ("Gloss Tab: Word Selection Request", r#"
+Each item below is a Pāli word in its context, with candidate options. For each item, select the option that fits the context, and return its "word" value copied verbatim (including sense numbers and diacritics).
+
+There are three kinds of items, distinguished by their "id" suffix:
+
+- Sense items (id "p<n>w<n>"): the options are candidate dictionary entries for the word; select the entry whose meaning fits the context.
+- Break-down items (id ending in "d"): the word is a compound or sandhi form, and each option's "word" is a possible break-down into component words (e.g. "sādhu + iti"; the option "uid" is a pseudo-uid like "d:0"). Select the break-down that fits the context.
+- Component items (id ending in "c<n>"): the item's "word" is the compound, and "component_word" names one of its component words; the options are candidate dictionary entries for that component. The item's "deconstructions" array lists the compound's possible break-downs as strings; when the item also has a "breakdowns" array, the component occurs only in those break-downs. Select the entry whose meaning fits the component as used within the compound in context, and keep your component selections consistent with the break-down you selected for that compound (when a break-down item for it is present).
+
+A sense or component item with a single option has no entry to choose: it asks only for the reading and the contextual meaning described below. Return that option's "word" with them.
+
+Some options carry a "grammar_options" list: the grammatical readings of the word for that dictionary entry (e.g. "nt acc sg of ta", "nt nom sg of ta"). When the option you select has one, also return "grammar_index": the 0-based index of the reading that fits the word as used in the context; and "contextual_meanings": one short contextual meaning for each reading, in the order of "grammar_options" (e.g. ["of the nobleman", "for the nobleman"] for "masc gen sg" and "masc dat sg"). Readings that come out the same in English may repeat the same meaning.
+
+Every selection of a sense or component item must also have "contextual_meaning": a short English rendering of the word as used in this sentence (e.g. "arisen", "of the nobleman", "I would dwell"), drawn from the selected entry's dictionary meaning and following the case, number and person of the reading that fits. It is shown to the reader next to the dictionary definition, not in place of it. Give only the core meaning in a few words; do not append grammatical case notes in parentheses.
+
+<<WORD_SELECTION_JSON>>
+
+Respond with JSON in exactly this format, one selection per item:
+
+{"selections": [{"id": "<item id>", "word": "<chosen option's word>", "grammar_index": <index, when the option has grammar_options>, "contextual_meaning": "<meaning in context>", "contextual_meanings": ["<meaning for each reading, when the option has grammar_options>"]}]}
+
+A selection entry may also carry two optional fields: "confidence" — either "confident" (the default) or "review" when the context is insufficient to decide; and "note" — a one-line reason for "review" entries.
+"#),
         ("Gloss Tab: AI Translation", r#"
 You are a Pāli translator. Using the word senses in the table below, translate the Pāli passage into English. Do not introduce senses that are not listed; a word without a sense in the table you may translate as you see fit. Component rows (starting with "- ") give the parts of the compound or sandhi word above them.
 
@@ -1001,7 +1091,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             gloss_export_formats: default_gloss_export_formats(),
             gloss_export_gloss_format: default_gloss_format(),
             gloss_lines_per_word: default_gloss_lines_per_word(),
-            gloss_contextual_all: false,
+            gloss_contextual_all: true,
         }
     }
 }
@@ -1219,13 +1309,16 @@ mod tests {
         assert_eq!(clamp_gloss_lines_per_word(3), 2);
     }
 
-    /// Settings saved before the "Contextual meaning for every word" option
-    /// existed read with it off.
+    /// "Contextual meaning for every word" is on by default, also for
+    /// settings saved before it existed; a stored choice is kept.
     #[test]
-    fn gloss_contextual_all_defaults_to_off() {
+    fn gloss_contextual_all_defaults_to_on() {
         let mut json: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
-        assert_eq!(json.remove("gloss_contextual_all"), Some(serde_json::json!(false)));
+        assert_eq!(json.remove("gloss_contextual_all"), Some(serde_json::json!(true)));
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json.clone())).unwrap();
+        assert!(settings.gloss_contextual_all);
+        json.insert("gloss_contextual_all".to_string(), serde_json::json!(false));
         let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
         assert!(!settings.gloss_contextual_all);
     }
@@ -1242,8 +1335,10 @@ mod tests {
             .filter(|(k, _)| *k == request_key)
             .map(|(_, text)| text)
             .collect();
-        // The one with grammar readings, and the one before it.
-        assert_eq!(old_requests.len(), 2);
+        // The one that asked for every uid, the ones before the paragraph
+        // texts, with contextual meanings for every reading, with grammar
+        // readings, and the first.
+        assert_eq!(old_requests.len(), 4);
         let defaults = default_system_prompts();
         assert!(old_requests.iter().all(|old| old.trim() != defaults[request_key]));
 
@@ -1256,25 +1351,30 @@ mod tests {
             assert!(settings.system_prompts[translation_key].contains("<<WORD_TABLE>>"));
             assert_eq!(settings.system_prompts[request_key], defaults[request_key]);
             assert!(settings.system_prompts[request_key].contains("\"contextual_meanings\""));
+            assert!(settings.system_prompts[request_key].contains("\"paragraphs\"") && settings.system_prompts[request_key].contains("\"dpd_example\""));
         }
 
         settings.system_prompts.insert(request_key.to_string(), "my own request".to_string());
         assert!(!settings.merge_default_system_prompts());
         assert_eq!(settings.system_prompts[request_key], "my own request");
 
-        // The translation template from before the Contextual column.
+        // The earlier translation templates.
         let old_translations: Vec<&str> = superseded_default_system_prompts()
             .into_iter()
             .filter(|(k, _)| *k == translation_key)
             .map(|(_, text)| text)
             .collect();
-        assert_eq!(old_translations.len(), 1);
-        assert_ne!(old_translations[0].trim(), defaults[translation_key]);
-        settings.system_prompts.insert(translation_key.to_string(), old_translations[0].trim().to_string());
-        assert!(settings.merge_default_system_prompts());
-        assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
-        assert!(settings.system_prompts[translation_key].contains("\"Contextual\""));
-        assert!(settings.system_prompts[translation_key].contains("<<PALI_PASSAGE>>"));
+        // The one with the Contextual and Definition columns, and the one
+        // before it.
+        assert_eq!(old_translations.len(), 2);
+        for old in old_translations {
+            assert_ne!(old.trim(), defaults[translation_key]);
+            settings.system_prompts.insert(translation_key.to_string(), old.trim().to_string());
+            assert!(settings.merge_default_system_prompts());
+            assert_eq!(settings.system_prompts[translation_key], defaults[translation_key]);
+            assert!(settings.system_prompts[translation_key].contains("\"Meaning\" column"));
+            assert!(settings.system_prompts[translation_key].contains("<<PALI_PASSAGE>>"));
+        }
 
         settings.system_prompts.insert(translation_key.to_string(), "my own translation".to_string());
         assert!(!settings.merge_default_system_prompts());

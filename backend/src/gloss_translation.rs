@@ -28,10 +28,12 @@ pub struct TranslationVocabRow {
     /// The word, with a `- ` per depth for a component (`- daḷha`).
     pub word: String,
     pub grammar: String,
-    /// The suggested rendering of the word in this sentence, from the AI's
-    /// word selection; empty when there is none, and always for Headwords.
+    /// The rendering of the word in this sentence, from the AI's word
+    /// selection; empty when there is none, and always for Headwords. The
+    /// table's Meaning when set (`word_table_markdown`).
     pub contextual: String,
-    /// The dictionary's meaning of the chosen sense (Headwords: its summary).
+    /// The dictionary's meaning of the chosen sense (Headwords: its summary):
+    /// the table's Meaning when there is no contextual one.
     pub definition: String,
 }
 
@@ -124,28 +126,14 @@ fn cell(text: &str) -> String {
 }
 
 /// The word table as Markdown, as in DPD's grounded translation prompt:
-/// `| Word | Grammar | Contextual | Definition |` when any row has a contextual
-/// meaning, otherwise `| Word | Grammar | Definition |` (always so for
-/// Headwords).
+/// `| Word | Grammar | Meaning |`, the Meaning being the row's contextual
+/// meaning, or its definition when it has none. (Sending both in two columns
+/// gave nearly the same translations with a 20–38 % larger prompt.)
 pub fn word_table_markdown(vocab: &[TranslationVocabRow]) -> String {
-    let with_contextual = vocab.iter().any(|v| !v.contextual.trim().is_empty());
-    let mut out = if with_contextual {
-        String::from("| Word | Grammar | Contextual | Definition |\n| :--- | :--- | :--- | :--- |\n")
-    } else {
-        String::from("| Word | Grammar | Definition |\n| :--- | :--- | :--- |\n")
-    };
+    let mut out = String::from("| Word | Grammar | Meaning |\n| :--- | :--- | :--- |\n");
     for v in vocab {
-        if with_contextual {
-            out.push_str(&format!(
-                "| {} | {} | {} | {} |\n",
-                cell(&v.word),
-                cell(&v.grammar),
-                cell(&v.contextual),
-                cell(&v.definition)
-            ));
-        } else {
-            out.push_str(&format!("| {} | {} | {} |\n", cell(&v.word), cell(&v.grammar), cell(&v.definition)));
-        }
+        let meaning = if v.contextual.trim().is_empty() { &v.definition } else { &v.contextual };
+        out.push_str(&format!("| {} | {} | {} |\n", cell(&v.word), cell(&v.grammar), cell(meaning)));
     }
     out.trim_end().to_string()
 }
@@ -241,28 +229,23 @@ mod tests {
     }
 
     #[test]
-    fn word_table_has_four_columns_with_a_contextual_value() {
+    fn word_table_meaning_is_the_contextual_else_the_definition() {
         let t = word_table_markdown(&vocab());
-        assert!(t.starts_with("| Word | Grammar | Contextual | Definition |\n| :--- | :--- | :--- | :--- |\n"));
-        assert!(t.contains("| te | pron, masc nom pl of ta | they | that; those |\n"));
-        assert!(t.ends_with("| - daḷha | pp |  | firm \\| strong |"));
-    }
-
-    #[test]
-    fn word_table_has_three_columns_without_a_contextual_value() {
+        assert!(t.starts_with("| Word | Grammar | Meaning |\n| :--- | :--- | :--- |\n"));
+        assert!(t.contains("| te | pron, masc nom pl of ta | they |\n"));
+        assert!(t.contains("| daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama | having firm effort |\n"));
+        assert!(t.ends_with("| - daḷha | pp | firm \\| strong |"));
+        // A blank contextual meaning falls back to the definition.
         let mut v = vocab();
         v[0].contextual = "  ".into();
-        let t = word_table_markdown(&v);
-        assert!(t.starts_with("| Word | Grammar | Definition |\n| :--- | :--- | :--- |\n"));
-        assert!(t.contains("| te | pron, masc nom pl of ta | that; those |\n"));
-        assert!(!t.contains("Contextual"));
+        assert!(word_table_markdown(&v).contains("| te | pron, masc nom pl of ta | that; those |\n"));
     }
 
     #[test]
     fn prompt_substitutes_passage_and_table() {
         let p = build_translation_prompt(" te daḷhaparakkamā ", &vocab(), "SYS", "P: <<PALI_PASSAGE>>\nT:\n<<WORD_TABLE>>\nEND");
-        assert!(p.starts_with("SYS\n\nP: te daḷhaparakkamā\nT:\n| Word | Grammar | Contextual | Definition |\n"));
-        assert!(p.contains("| - daḷha | pp |  | firm \\| strong |\nEND"));
+        assert!(p.starts_with("SYS\n\nP: te daḷhaparakkamā\nT:\n| Word | Grammar | Meaning |\n"));
+        assert!(p.contains("| - daḷha | pp | firm \\| strong |\nEND"));
         let no_sys = build_translation_prompt("x", &[], "  ", "<<PALI_PASSAGE>>");
         assert_eq!(no_sys, "x");
     }

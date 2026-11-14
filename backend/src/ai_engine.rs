@@ -284,6 +284,65 @@ pub fn run_walk_blocking(
     validate: Option<&dyn Fn(&str) -> Result<(), String>>,
     on_progress: &mut dyn FnMut(String, String, String),
 ) -> WalkOutcome {
+    run_walk_blocking_for(RequestPurpose::General, is_cancelled, entries, auto_fallback, auto_retry, messages, validate, on_progress)
+}
+
+/// What a request is for, which sets its sampling temperature and, for
+/// Gemini, its output limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RequestPurpose {
+    /// Translations, chats, and everything else.
+    #[default]
+    General,
+    /// Choosing one of a word's dictionary senses (and its reading) for
+    /// `items` request items: a classification task, where a low temperature
+    /// gives the same choice for the same passage from run to run.
+    WordSelection { items: usize },
+}
+
+/// The output limit of a general request (Gemini, Anthropic).
+pub const GENERAL_MAX_OUTPUT_TOKENS: u64 = 16_384;
+/// Gemini 3 Flash's maximum output.
+pub const GEMINI_MAX_OUTPUT_TOKENS: u64 = 65_536;
+
+impl RequestPurpose {
+    /// The temperature sent to providers that take one. Gemini, Anthropic and
+    /// OpenAI's reasoning models are exceptions (`make_api_request_for`).
+    pub fn temperature(self) -> f64 {
+        match self {
+            RequestPurpose::General => 0.7,
+            RequestPurpose::WordSelection { .. } => 0.2,
+        }
+    }
+
+    /// Gemini's `max_output_tokens`. Its thinking tokens count against the
+    /// limit, and `gemini-3.6-flash` thought about 14 500 tokens for 106–149
+    /// word-selection items, which cut replies off at 16 384. A word-selection
+    /// request gets 8 192 + 300 per item, within the general limit and
+    /// Gemini's maximum. The limit is a cap, not a target: a reply is as long
+    /// as it needs, and only the tokens produced are billed; sizing it to the
+    /// request still bounds what a looping reply can cost.
+    pub fn max_output_tokens(self) -> u64 {
+        match self {
+            RequestPurpose::General => GENERAL_MAX_OUTPUT_TOKENS,
+            RequestPurpose::WordSelection { items } => (8_192 + 300 * items as u64)
+                .clamp(GENERAL_MAX_OUTPUT_TOKENS, GEMINI_MAX_OUTPUT_TOKENS),
+        }
+    }
+}
+
+/// `run_walk_blocking` for a request of the given purpose.
+#[allow(clippy::too_many_arguments)]
+pub fn run_walk_blocking_for(
+    purpose: RequestPurpose,
+    is_cancelled: &mut dyn FnMut() -> bool,
+    entries: &[ModelUsageEntry],
+    auto_fallback: bool,
+    auto_retry: bool,
+    messages: &[ChatMessage],
+    validate: Option<&dyn Fn(&str) -> Result<(), String>>,
+    on_progress: &mut dyn FnMut(String, String, String),
+) -> WalkOutcome {
     let rt = match Runtime::new() {
         Ok(rt) => rt,
         Err(e) => {
@@ -307,9 +366,18 @@ pub fn run_walk_blocking(
         auto_fallback,
         auto_retry,
         &mut |provider, model| {
-            let response = rt.block_on(make_api_request(messages, model, provider))?;
+            let response = rt.block_on(make_api_request_for(messages, model, provider, purpose))?;
             if let Some(validate) = validate {
                 if let Err(msg) = validate(&response) {
+                    // The start of the body, to see what shape a model
+                    // answered in.
+                    crate::logger::debug(&format!(
+                        "invalid response from {} ({}): {}: {}",
+                        model,
+                        provider,
+                        msg,
+                        response.chars().take(600).collect::<String>()
+                    ));
                     return Err(AiRequestError::new(
                         AiErrorKind::InvalidResponse,
                         provider,
@@ -370,6 +438,22 @@ pub fn run_single_model_walk(
 }
 
 pub async fn make_api_request(messages: &[ChatMessage], model: &str, provider_name: &str) -> Result<String, AiRequestError> {
+    make_api_request_for(messages, model, provider_name, RequestPurpose::General).await
+}
+
+/// `make_api_request` for a request of the given purpose. Its temperature
+/// (`RequestPurpose::temperature`) goes to every provider that takes one,
+/// except Gemini, which keeps 0.7 with `top_k` 1 (nearly greedy already;
+/// Google advises against lowering the temperature of Gemini 3 models, which
+/// can make them loop). Anthropic gets no sampling parameters, and OpenAI's
+/// reasoning models no `temperature` (`openai_responses::sends_temperature`).
+pub async fn make_api_request_for(
+    messages: &[ChatMessage],
+    model: &str,
+    provider_name: &str,
+    purpose: RequestPurpose,
+) -> Result<String, AiRequestError> {
+    let temperature = purpose.temperature();
     let api_key = get_provider_api_key(provider_name);
     if api_key.is_empty() {
         return Err(AiRequestError::new(
@@ -389,22 +473,24 @@ pub async fn make_api_request(messages: &[ChatMessage], model: &str, provider_na
 
     // Match on the ProviderName enum to handle all possible values
     match provider_enum {
-        ProviderName::DeepSeek => handle_deepseek_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::Gemini => handle_gemini_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::XAI => handle_xai_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::DeepSeek => handle_deepseek_request(messages, model, provider_name, &api_key, http_client, temperature).await,
+        ProviderName::Gemini => {
+            handle_gemini_request(messages, model, provider_name, &api_key, http_client, purpose.max_output_tokens()).await
+        }
+        ProviderName::XAI => handle_xai_request(messages, model, provider_name, &api_key, http_client, temperature).await,
         ProviderName::Anthropic => handle_anthropic_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::OpenAI => handle_openai_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::OpenRouter => handle_openrouter_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::Mistral => handle_mistral_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::HuggingFace => handle_huggingface_request(messages, model, provider_name, &api_key, http_client).await,
-        ProviderName::Perplexity => handle_perplexity_request(messages, model, provider_name, &api_key, http_client).await,
+        ProviderName::OpenAI => handle_openai_request(messages, model, provider_name, &api_key, http_client, temperature).await,
+        ProviderName::OpenRouter => handle_openrouter_request(messages, model, provider_name, &api_key, http_client, temperature).await,
+        ProviderName::Mistral => handle_mistral_request(messages, model, provider_name, &api_key, http_client, temperature).await,
+        ProviderName::HuggingFace => handle_huggingface_request(messages, model, provider_name, &api_key, http_client, temperature).await,
+        ProviderName::Perplexity => handle_perplexity_request(messages, model, provider_name, &api_key, http_client, temperature).await,
         ProviderName::NvidiaNim => handle_openai_compatible_request(
             messages, model, provider_name, &api_key, http_client,
-            "NVIDIA NIM", "https://integrate.api.nvidia.com/v1",
+            "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", temperature,
         ).await,
         ProviderName::SambaNova => handle_openai_compatible_request(
             messages, model, provider_name, &api_key, http_client,
-            "SambaNova", "https://api.sambanova.ai/v1",
+            "SambaNova", "https://api.sambanova.ai/v1", temperature,
         ).await,
     }
 }
@@ -417,6 +503,7 @@ async fn handle_openai_compatible_request(
     http_client: reqwest::Client,
     label: &str,
     base_url: &str,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     // NVIDIA NIM, SambaNova and similar OpenAI-compatible endpoints expose
     // the traditional `/chat/completions` path but not OpenAI's newer
@@ -435,12 +522,12 @@ async fn handle_openai_compatible_request(
         Some(system_prompt) => {
             client.agent(model)
                   .preamble(&system_prompt)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
         None => {
             client.agent(model)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
     };
@@ -454,6 +541,7 @@ async fn handle_gemini_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    max_output_tokens: u64,
 ) -> Result<String, AiRequestError> {
     let client = gemini::Client::<reqwest::Client>::builder()
         .http_client(http_client)
@@ -467,11 +555,10 @@ async fn handle_gemini_request(
         top_k: Some(1),
         top_p: Some(0.95),
         candidate_count: Some(1),
-        // On Gemini "thinking" models (e.g. gemini-3-flash-preview) the
-        // internal thinking tokens count against max_output_tokens, so a
-        // 4096 cap truncated word-selection JSON replies mid-object. Keep
-        // enough headroom for thinking + a long structured answer.
-        max_output_tokens: Some(16384),
+        // On Gemini "thinking" models the internal thinking tokens count
+        // against max_output_tokens, so the limit leaves room for thinking
+        // and a long structured answer (`RequestPurpose::max_output_tokens`).
+        max_output_tokens: Some(max_output_tokens),
         ..Default::default()
     };
     let cfg = AdditionalParameters::default().with_config(gen_cfg);
@@ -501,6 +588,7 @@ async fn handle_xai_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     // Sent with plain reqwest, not rig-core: rig 0.30's xAI provider tags
     // every input item `"type": "Message"` (its enum uses `rename` where it
@@ -509,7 +597,7 @@ async fn handle_xai_request(
     // keeping the conversation for 30 days. xAI accepts `temperature` on its
     // reasoning models (only the penalties and `stop` are rejected), so it is
     // always sent.
-    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::XAI_RESPONSES_URL, true).await
+    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::XAI_RESPONSES_URL, Some(temperature)).await
 }
 
 async fn handle_anthropic_request(
@@ -573,13 +661,14 @@ async fn handle_openai_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     // Sent with plain reqwest, not rig-core: rig 0.30 always sends
     // `temperature`, which the GPT-5 family rejects, and sends earlier
     // assistant turns without the `id` an output message needs. See
     // `crate::openai_responses`.
-    let with_temperature = openai_responses::sends_temperature(model, model_reasoning_flag(provider, model));
-    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::RESPONSES_URL, with_temperature).await
+    let temperature = openai_responses::sends_temperature(model, model_reasoning_flag(provider, model)).then_some(temperature);
+    send_responses_request(messages, model, provider, api_key, http_client, openai_responses::RESPONSES_URL, temperature).await
 }
 
 /// Send a Responses API (`POST …/responses`) request with plain reqwest and
@@ -592,7 +681,7 @@ async fn send_responses_request(
     api_key: &str,
     http_client: reqwest::Client,
     url: &str,
-    with_temperature: bool,
+    temperature: Option<f64>,
 ) -> Result<String, AiRequestError> {
     // Same message convention as `get_response!`: a lone message is the user
     // prompt (any system prompt is already prepended to it); otherwise the
@@ -614,7 +703,7 @@ async fn send_responses_request(
         return Err(request_setup_error(provider, model, "No messages provided"));
     }
 
-    let body = openai_responses::request_body(model, instructions.as_deref(), &turns, with_temperature);
+    let body = openai_responses::request_body(model, instructions.as_deref(), &turns, temperature);
 
     let response = http_client
         .post(url)
@@ -656,12 +745,13 @@ async fn handle_openrouter_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     let headers = [
         ("HTTP-Referer", chat_completions::OPENROUTER_APP_REFERER),
         ("X-OpenRouter-Title", chat_completions::OPENROUTER_APP_TITLE),
     ];
-    send_chat_completions(messages, model, provider, api_key, http_client, chat_completions::OPENROUTER_URL, &headers).await
+    send_chat_completions(messages, model, provider, api_key, http_client, chat_completions::OPENROUTER_URL, &headers, temperature).await
 }
 
 async fn handle_deepseek_request(
@@ -670,8 +760,9 @@ async fn handle_deepseek_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
-    send_chat_completions(messages, model, provider, api_key, http_client, chat_completions::DEEPSEEK_URL, &[]).await
+    send_chat_completions(messages, model, provider, api_key, http_client, chat_completions::DEEPSEEK_URL, &[], temperature).await
 }
 
 /// A Chat Completions request sent with plain reqwest, not rig-core: rig 0.30
@@ -685,6 +776,7 @@ async fn send_chat_completions(
     http_client: reqwest::Client,
     url: &str,
     headers: &[(&str, &str)],
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     // Same message convention as `get_response!`: a lone message is the user
     // prompt (any system prompt is already prepended to it); otherwise the
@@ -706,7 +798,7 @@ async fn send_chat_completions(
         return Err(request_setup_error(provider, model, "No messages provided"));
     }
 
-    let body = chat_completions::request_body(model, system_prompt.as_deref(), &turns);
+    let body = chat_completions::request_body(model, system_prompt.as_deref(), &turns, temperature);
 
     let mut request = http_client.post(url).bearer_auth(api_key);
     for (name, value) in headers {
@@ -737,6 +829,7 @@ async fn handle_mistral_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     let client = mistral::Client::<reqwest::Client>::builder()
         .http_client(http_client)
@@ -750,12 +843,12 @@ async fn handle_mistral_request(
         Some(system_prompt) => {
             client.agent(model)
                   .preamble(&system_prompt)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
         None => {
             client.agent(model)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
     };
@@ -769,6 +862,7 @@ async fn handle_huggingface_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     let client = huggingface::Client::<reqwest::Client>::builder()
         .http_client(http_client)
@@ -782,12 +876,12 @@ async fn handle_huggingface_request(
         Some(system_prompt) => {
             client.agent(model)
                   .preamble(&system_prompt)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
         None => {
             client.agent(model)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
     };
@@ -801,6 +895,7 @@ async fn handle_perplexity_request(
     provider: &str,
     api_key: &str,
     http_client: reqwest::Client,
+    temperature: f64,
 ) -> Result<String, AiRequestError> {
     let client = perplexity::Client::<reqwest::Client>::builder()
         .http_client(http_client)
@@ -814,15 +909,42 @@ async fn handle_perplexity_request(
         Some(system_prompt) => {
             client.agent(model)
                   .preamble(&system_prompt)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
         None => {
             client.agent(model)
-                  .temperature(0.7)
+                  .temperature(temperature)
                   .build()
         }
     };
 
     Ok(get_response!(agent, messages, model, provider))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Word selection is sent with a low temperature, everything else with
+    /// the general one.
+    #[test]
+    fn request_purpose_temperatures() {
+        assert_eq!(RequestPurpose::default(), RequestPurpose::General);
+        assert_eq!(RequestPurpose::General.temperature(), 0.7);
+        assert_eq!(RequestPurpose::General.temperature(), chat_completions::TEMPERATURE);
+        assert_eq!(RequestPurpose::General.temperature(), openai_responses::TEMPERATURE);
+        assert_eq!(RequestPurpose::WordSelection { items: 10 }.temperature(), 0.2);
+    }
+
+    /// Gemini's output limit grows with a word-selection request's items,
+    /// within the general limit and Gemini's maximum.
+    #[test]
+    fn request_purpose_output_limits() {
+        assert_eq!(RequestPurpose::General.max_output_tokens(), 16_384);
+        assert_eq!(RequestPurpose::WordSelection { items: 17 }.max_output_tokens(), 16_384);
+        assert_eq!(RequestPurpose::WordSelection { items: 106 }.max_output_tokens(), 8_192 + 31_800);
+        assert_eq!(RequestPurpose::WordSelection { items: 149 }.max_output_tokens(), 8_192 + 44_700);
+        assert_eq!(RequestPurpose::WordSelection { items: 378 }.max_output_tokens(), 65_536);
+    }
 }

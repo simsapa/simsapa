@@ -27,7 +27,7 @@ Item {
         // Silence for less output during qml tests.
     }
 
-    function sequential_word_selection_request(request_id: int, prompt: string) {
+    function sequential_word_selection_request(request_id: int, prompt: string, item_count: int) {
         // Silence for less output during qml tests.
     }
 

@@ -131,17 +131,20 @@ pub fn parse_gloss_format(name: &str) -> Result<GlossFormat, String> {
 /// Managed by a server that has an AI provider (`.manage(GlossAiRunner::new(…))`);
 /// without one, `"ai": true` is a `400`.
 ///
-/// The arguments: the result, the paragraph texts, `translate`, and
-/// `contextual_all` (a contextual meaning for every word).
-pub type GlossAiRunFn =
-    dyn Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool) -> AllParagraphsProcessingResult + Send + Sync;
+/// The arguments: the result, the paragraph texts, `translate`,
+/// `contextual_all` (a contextual meaning for every word), and the record a
+/// `reference` resolved to (sent with the paragraphs in the word-selection
+/// request).
+pub type GlossAiRunFn = dyn Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool, Option<String>) -> AllParagraphsProcessingResult
+    + Send
+    + Sync;
 
 #[derive(Clone)]
 pub struct GlossAiRunner(pub Arc<GlossAiRunFn>);
 
 impl GlossAiRunner {
     pub fn new(
-        f: impl Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool) -> AllParagraphsProcessingResult
+        f: impl Fn(AllParagraphsProcessingResult, Vec<String>, bool, bool, Option<String>) -> AllParagraphsProcessingResult
             + Send
             + Sync
             + 'static,
@@ -340,7 +343,7 @@ pub async fn gloss_text(
     let opts = req.options.clone().unwrap_or_default();
     let plan = validate_gloss_text_request(&req, &opts).map_err(|m| bad_request(&m))?;
 
-    let (paragraphs, title) = match &req.reference {
+    let (paragraphs, title, source_uid) = match &req.reference {
         Some(reference) => {
             let source = resolve_gloss_source(&dbm.appdata, reference, plan.edition, req.paragraphs.as_deref())
                 .map_err(|e| {
@@ -352,9 +355,9 @@ pub async fn gloss_text(
                     GlossTextError::Json(json_error(status, &e.to_string()))
                 })?;
             let title = source.title();
-            (source.paragraphs, title)
+            (source.paragraphs, title, Some(source.uid))
         }
-        None => (split_gloss_paragraphs(req.text.as_deref().unwrap_or("")), String::new()),
+        None => (split_gloss_paragraphs(req.text.as_deref().unwrap_or("")), String::new(), None),
     };
 
     if plan.exact {
@@ -398,9 +401,9 @@ pub async fn gloss_text(
         && result.success
     {
         let contextual_all = plan.contextual_all.unwrap_or_else(|| {
-            get_app_data().app_settings_cache.read().map(|s| s.gloss_contextual_all).unwrap_or(false)
+            get_app_data().app_settings_cache.read().map(|s| s.gloss_contextual_all).unwrap_or(true)
         });
-        result = run_ai_off_runtime(runner, result, paragraphs.clone(), plan.translate, contextual_all).await?;
+        result = run_ai_off_runtime(runner, result, paragraphs.clone(), plan.translate, contextual_all, source_uid).await?;
     }
 
     match plan.output_format {
@@ -421,12 +424,13 @@ async fn run_ai_off_runtime(
     paragraphs: Vec<String>,
     translate: bool,
     contextual_all: bool,
+    source_uid: Option<String>,
 ) -> Result<AllParagraphsProcessingResult, GlossTextError> {
     let (tx, rx) = rocket::tokio::sync::oneshot::channel();
     let spawned = std::thread::Builder::new()
         .name("gloss_text-ai".to_string())
         .spawn(move || {
-            let _ = tx.send((runner.0)(result, paragraphs, translate, contextual_all));
+            let _ = tx.send((runner.0)(result, paragraphs, translate, contextual_all, source_uid));
         });
     if let Err(e) = spawned {
         error(&format!("gloss_text(): cannot start the AI thread: {}", e));

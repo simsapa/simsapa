@@ -48,6 +48,11 @@ gloss of it.
   Two lines is the default.
 - G5. After an AI word-selection pass, every resolved word that has a
   dictionary sense also has a contextual meaning.
+- G6. The word-selection request gives the model what it needs to choose
+  well: the whole paragraph, the source text when known, DPD's own example
+  match, DPD's common disambiguation rules, and a low temperature, and
+  it leaves out what the model does not need (the options' uids). An answer
+  whose lemma differs only in case, `ṃ` or spacing is still used.
 
 ## 3. User Stories
 
@@ -242,8 +247,9 @@ gloss of it.
   `--no-contextual-all`, defaulting to the app setting), and a parameter of the
   `/gloss_text` API route. With the option off, the request is what it is now:
   only ambiguous words and reading-only items, and those answers still carry
-  `contextual_meaning`. Its **default (on or off) is decided by the
-  measurement in FR-G7**.
+  `contextual_meaning`. **Default: on.** The FR-G7 measurement found +15.5 %
+  total tokens (`gemini-3.6-flash`, three passages), with no change in the
+  senses chosen. The larger answers need the output limit of FR-K8.
 - **FR-G1.** With the option on, `build_word_selection_items()`
   (`backend/src/helpers.rs`) must include, when the request is built with the
   paragraph's rows, a **contextual-only item** for every resolved word or component row that has a
@@ -343,20 +349,19 @@ gloss of it.
 
 - **FR-J1.** The translation word table (`TranslationVocabRow`,
   `translation_vocabulary_from_rows()` and `word_table_markdown()` in
-  `backend/src/gloss_translation.rs`) gets **both** values:
-  `| Word | Grammar | Contextual | Definition |`. Contextual is empty when the
-  row has none.
-- **FR-J2.** Update the default `"Gloss Tab: AI Translation"` prompt
-  (`backend/src/app_settings.rs`): the Contextual column is the suggested
-  rendering of the word in this sentence and is preferred for the literal
-  translation. The Definition column is the dictionary's range of senses. The
-  fluent translation may use a different wording from within the Definition,
-  and should correct a Contextual value that does not fit the Definition. The
-  rule "do not introduce senses that are not listed" now refers to the
-  Definition.
+  `backend/src/gloss_translation.rs`) is `| Word | Grammar | Meaning |`.
+  Meaning is the row's Contextual value, or its Definition when it has
+  none. (Decided by the FR-J4 comparison, choice (b): with both columns the
+  translations were nearly the same, while the prompt was 20–38 % larger
+  and slower.)
+- **FR-J2.** The default `"Gloss Tab: AI Translation"` prompt
+  (`backend/src/app_settings.rs`) says that Meaning is each word's sense in
+  this passage: a rendering fitted to the sentence where one was chosen,
+  otherwise the dictionary's definition. "Do not introduce senses that are
+  not listed" refers to it.
 - **FR-J3.** The Headwords format's translation table
-  (`translation_vocabulary_from_words()`) is unchanged: word and summary only,
-  with no Contextual column.
+  (`translation_vocabulary_from_words()`) has the same three columns, with
+  the summary as Meaning.
 - **FR-J4. Verify the choice before finishing.** This is a planned
   comparison, run during implementation. On the FR-G7 passages, request the
   translation with (a) both columns and (b) Contextual only, falling back to
@@ -404,6 +409,113 @@ gloss of it.
   `docs/dpd-analysis-procedure.md` (§1.7 Rendering, if it describes the
   columns), `docs/simsapa-cli-and-localhost-api.md`, and `PROJECT_MAP.md` if
   files are added.
+
+### K. Word-selection request quality
+
+Added after comparing Simsapa's word-selection request with DPD's
+(`dpd-db` `exporter/analysis/`, the recorded fixture requests). Simsapa's
+request is 8–13× smaller, and its options are already more compact than
+DPD's, so these changes are about what the model is told, not about size.
+They apply to the network path (Gloss tab, CLI, `/gloss_text`). The
+`gloss-agent-check` payload is unchanged.
+
+- **FR-K1. The paragraph text.** The request payload gets a `paragraphs`
+  list next to `items`: one entry per paragraph that has an item,
+  `{"p": <paragraph index>, "text": "<the paragraph>"}`, with `ṁ` for the
+  niggahīta as in the item contexts. Each item keeps its marked `context`
+  window, which tells repeated words apart (`natthi` three times). The
+  prompt says that an item id `p<n>w…` belongs to paragraph `<n>`, and
+  that the paragraph is the context for every item in it. With no
+  paragraph text (a caller without it), the list is left out and the
+  request is as before.
+- **FR-K2. The source text.** When the caller knows the paragraph's
+  source (a sutta reference given to `simsapa gloss` or to `/gloss_text`),
+  the paragraph entry gets `"source": "<uid>"` (e.g. `dn23/pli/ms`). The
+  Gloss tab has no per-paragraph source and sends none. It is sent once
+  per paragraph, not per item. The agent path's per-item `source_uid`
+  is unchanged.
+- **FR-K3. DPD's example match.** When one of a sense's DPD examples
+  overlaps the paragraph strongly (the overlap the default ranking
+  already computes, of at least `STRONG_EXAMPLE_OVERLAP_WORDS` words, so a
+  one-word or two-word paragraph matches nothing), the option gets
+  `"dpd_example": true`. That means the passage is, or contains, the example
+  the DPD editor gave for this sense. The prompt says to prefer such an
+  option unless the context clearly rules it out. The matches are stored on
+  the word (`ProcessedWord::example_match_uids`) by
+  `rank_paragraph_default_senses()`, so the Gloss tab and saved sessions
+  carry them too. Component options get no flag (components have no
+  example rank).
+- **FR-K4. Common disambiguation rules.** The default word-selection
+  request prompt gets DPD's `COMMON_PALI_RULES`, adapted to Simsapa's
+  spelling: the stock phrase `kāyassa bhedā paraṁ maraṇā`; the short
+  final vowel before quotative `'ti`; `yena … tena upasaṅkami` as "where …
+  there"; a comma-set-off address in direct speech is usually vocative;
+  counted time spans are accusative of duration; genitive over dative
+  unless a recipient, purpose or benefit is meant. As in FR-G6, the
+  current default goes into `superseded_default_system_prompts()` first.
+- **FR-K5. A low temperature for word selection.** A word-selection
+  request is sent with temperature 0.2 where the provider takes one.
+  Translation and the other requests keep 0.7. Exceptions:
+  - **Gemini** keeps its current settings (0.7 with `top_k` 1, which is
+    nearly greedy already). Google advises against lowering the temperature
+    of Gemini 3 models, which can make them loop.
+  - **Anthropic** gets no sampling parameters, as now.
+  - **OpenAI's reasoning models** get no `temperature`, as now
+    (`sends_temperature()`).
+  The request functions take the purpose (word selection or general). The
+  temperature is not a user setting.
+- **FR-K6. Lemmas, not uids; lenient lemma matching.** The prompt does
+  not send an option's `uid` when the item's options have distinct `word`s
+  (nearly always for DPD). It sends the `uid` only when two options share a
+  `word`, and asks for it back only then. The stored item list that answers
+  are checked against keeps every `uid`.
+
+  *Experiment.* A first version always sent the `uid` and asked for it in
+  every answer, so that a correct uid could rescue a misspelled lemma. The
+  FR-K7 runs (about 550 answers from `ministral-8b-latest` and
+  `gemini-3.6-flash`) never needed it: every lemma was copied exactly. The
+  echo made the answers much longer (AN3.33 ¶1: 1 878 → 3 422 output
+  tokens), so it was taken out again.
+
+  `parse_word_selection_response()` resolves an entry in this order:
+  1. the `word` matches one option exactly: that option;
+  2. *(lenient mode only)* otherwise, the `uid` names an option of the
+     item: that option, with a `warn` log line naming the misspelled
+     lemma;
+  3. *(lenient mode only)* otherwise, the `word` matches exactly one option
+     after normalising both (Unicode NFC, `ṃ` → `ṁ`, lower case, trimmed,
+     whitespace runs folded): that option, with a log line;
+  4. otherwise the entry is invalid, as now.
+  When the `word` and the `uid` both name options but different ones, the
+  entry is invalid in strict mode, as now. In lenient mode the `word`
+  wins, with a `warn` log line: the lemma carries the meaning, while a uid
+  is an opaque number that is easy to copy from the wrong option. Strict
+  mode (`gloss-agent-check`) keeps exact matching, since an agent's
+  answers must be exact. A `uid` given by a model, or by an edited prompt,
+  is still accepted.
+- **FR-K7. Measure the effect.** This is a planned comparison, run after
+  FR-K1–K6. It uses the maintainer's free Mistral key, so it is kept to
+  about a dozen requests. On DPD's five fixture passages
+  (`backend/tests/data/dpd_analysis/fixtures/`), run word selection once
+  with the request as it was before section K, and once with K1–K6. Count
+  the agreement of the chosen senses with DPD's `study.md` choices (DPD's
+  choices were made by an AI too, so they are a consistent reference, not
+  the truth). Also count the answers rescued by FR-K6, the request sizes
+  and the tokens. The baseline and the new run differ in several ways at
+  once, so the result shows the combined effect only.
+
+- **FR-K8. An output limit sized to the request.** A word-selection
+  request to Gemini gets `max_output_tokens` = 8 192 + 300 per item, at
+  least 16 384 (the general limit) and at most 65 536 (Gemini 3 Flash's
+  maximum). Thinking tokens count against it, and `gemini-3.6-flash`
+  thought about 14 500 tokens for 106–149 items, which cut two replies off
+  at 16 384. The limit is a cap, not a target: a reply is as long as it
+  needs, and only the tokens produced are billed. Small requests used well
+  under the general limit (TH215: about 2 900 of 16 384). Sizing it to the
+  request still bounds what a looping reply can cost. Anthropic keeps its
+  16 384: it is sent no thinking, and some of its models refuse a larger
+  `max_tokens`. A paragraph of more than about 190 items still needs
+  splitting (task 7.7).
 
 ## 5. Non-Goals (Out of Scope)
 
@@ -497,10 +609,10 @@ gloss of it.
 
 ## 9. Open Questions
 
-1. **Default of the "Contextual meaning for every word" option:** decided from
-   the FR-G7 measurement. The 50 % threshold is provisional.
-2. **Translation word table:** both columns by default; confirmed or changed
-   by the FR-J4 comparison.
+1. **Default of the "Contextual meaning for every word" option:** on
+   (FR-G0, from the FR-G7 measurement).
+2. **Translation word table:** one Meaning column, Contextual else
+   Definition (FR-J1, from the FR-J4 comparison).
 
 Decided: a grammar reading chosen by hand shows the AI's meaning for that
 reading (FR-G8) when there is one, and otherwise an empty Contextual cell
