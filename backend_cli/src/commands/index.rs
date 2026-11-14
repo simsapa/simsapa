@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use simsapa_backend::cli_support::{self, IndexArea};
 use simsapa_backend::errln;
+use simsapa_backend::search::indexer::IndexBuildSummary;
 use simsapa_backend::{get_app_data, get_app_globals};
 
 use crate::exit::CliResult;
@@ -61,6 +62,9 @@ struct IndexOutput {
     action: &'static str,
     area: Option<&'static str>,
     lang: Option<String>,
+    /// What a build or rebuild indexed; absent for `delete`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<IndexBuildSummary>,
 }
 
 fn area_name(a: IndexAreaArg) -> &'static str {
@@ -71,7 +75,8 @@ fn area_name(a: IndexAreaArg) -> &'static str {
     }
 }
 
-/// Requires the full preamble and the write lock. Progress lines go to stderr.
+/// Requires the full preamble and the write lock. Progress lines and the
+/// build summary go to stderr.
 pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
     let paths = &get_app_globals().paths;
     let mut report = |line: &str| errln!("{}", line);
@@ -84,8 +89,11 @@ pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
     let area = filter.area.map(IndexArea::from);
     let lang = filter.lang.as_deref();
 
-    match cmd {
-        IndexCommands::Delete(_) => cli_support::delete_index_dirs(paths, area, lang, &mut report)?,
+    let summary = match cmd {
+        IndexCommands::Delete(_) => {
+            cli_support::delete_index_dirs(paths, area, lang, &mut report)?;
+            None
+        }
         _ => cli_support::build_indexes(
             &get_app_data().dbm,
             paths,
@@ -94,6 +102,12 @@ pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
             matches!(cmd, IndexCommands::Rebuild(_)),
             &mut report,
         )?,
+    };
+
+    if let Some(summary) = &summary {
+        for line in cli_support::summary_lines(summary) {
+            errln!("{}", line);
+        }
     }
 
     if json {
@@ -102,6 +116,7 @@ pub fn run(cmd: &IndexCommands, json: bool) -> CliResult {
             action,
             area: filter.area.map(area_name),
             lang: filter.lang.clone(),
+            summary,
         })
     } else {
         outln!("Done.");

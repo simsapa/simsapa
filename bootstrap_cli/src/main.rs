@@ -635,7 +635,7 @@ fn index_command(cmd: IndexCommands) -> Result<(), String> {
         IndexArea::Library => cli_support::IndexArea::Library,
     });
 
-    cli_support::build_indexes(
+    let summary = cli_support::build_indexes(
         &app_data.dbm,
         &globals.paths,
         area,
@@ -645,7 +645,10 @@ fn index_command(cmd: IndexCommands) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    println!("Done.");
+    match summary {
+        Some(summary) => cli_support::summary_lines(&summary).iter().for_each(|l| println!("{}", l)),
+        None => println!("Done."),
+    }
     Ok(())
 }
 

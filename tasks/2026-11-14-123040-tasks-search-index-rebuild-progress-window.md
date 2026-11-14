@@ -5,9 +5,10 @@ Source PRD: `tasks/2026-11-14-123040-prd---search-index-rebuild-progress-window.
 ## Relevant Files
 
 - `backend/src/search/indexer.rs` - `build_all_indexes()` and the per-area `build_*_index` functions; gets the step plan, the progress/cancel variant, the summary and the `INCOMPLETE` marker. `build_steps_with_progress()` is the shared core for the full and the filtered (CLI) builds. Unit tests in its `mod tests`.
-- `backend/src/cli_support.rs` - `build_indexes()`, the shared core of `simsapa index build|rebuild`; reports steps and returns the summary.
+- `backend/src/cli_support.rs` - `build_indexes()`, the shared core of `simsapa index build|rebuild`; reports steps and returns the summary. `filtered_index_steps()` (bold definitions go with `--area dict-words`), `format_elapsed()`, `summary_lines()`.
 - `backend_cli/src/commands/index.rs` - `simsapa index` command: prints the step lines and the summary, and adds `summary` to `--json`.
-- `backend_cli/tests/write_commands.rs` - existing `index build` / `index delete` CLI tests; extend for the step lines and the JSON `summary`.
+- `backend_cli/tests/write_commands.rs` - CLI write-command tests; `test_index_rebuild_reports_steps_and_summary` builds the `en` library index into a temp folder linked to the dist databases and checks the step lines and the JSON `summary`.
+- `bootstrap_cli/src/main.rs` - `simsapa_bootstrap_cli index` also calls `cli_support::build_indexes()`; prints the summary lines.
 - `backend/src/fulltext_status.rs` - the only place for user-facing fulltext status wording; gets the `Incomplete` state. Has the test that a closed searcher reads as `NotOpenedYet`.
 - `backend/src/lib.rs` - `fulltext_status_json()`, `reinit_fulltext_searcher()`; `AppGlobalPaths` (`index_dir`, `suttas_index_dir`, `dict_words_index_dir`, `library_index_dir`). Gets `INDEX_WRITE_LOCK` and `close_fulltext_searcher()`.
 - `bridges/src/sutta_bridge.rs` - `rebuild_search_index()`, its signals, `check_search_index_status()`; gets cancel, the running guard and the new signals.
@@ -113,14 +114,14 @@ Depends on: 1.0 (`plan_index_steps`, `build_all_indexes_with_progress`, `IndexBu
 - Summary lines, stderr: `Done in 4m 37s.` then `  Suttas: 48213 documents (de, en, pli)` for each area.
 - `--json` output: the existing `status`, `action`, `area`, `lang`, plus `summary: { elapsed_secs, areas: [{ area, documents, languages }] }`, left out (`skip_serializing_if = "Option::is_none"`) for `delete`.
 
-- [ ] 2.0 CLI: `[N/M] <label>` step lines and a final summary for `simsapa index build|rebuild` (all filter cases), plus the optional `summary` object in `--json`, with `backend_cli` tests
-  - [ ] 2.1 Change `cli_support::build_indexes()` to return `Result<Option<IndexBuildSummary>>`. `Some` for build/rebuild, `None` is unused here but keeps `delete` uniform if needed.
-  - [ ] 2.2 `(None, None)`: call `build_all_indexes_with_progress` with `on_step` → `report(&format!("[{}/{}] {}", i, total, step.label()))` and a never-set flag. Map `Cancelled` to an error (it cannot happen here).
-  - [ ] 2.3 Filtered cases: build the step plan filtered by area and/or language (a filter helper over `plan_index_steps`, or a `build_steps_with_progress(steps, …)` function shared with 1.6), so the `[N/M]` total counts only the filtered steps. Keep `write_version_file()` at the end as now. Decide whether the filtered builds also write and remove `INCOMPLETE`. Recommended: yes for `rebuild`, since it deletes first.
-  - [ ] 2.4 Check the other `cli_support::build_indexes()` callers (`bootstrap_cli index`) still compile with the new return type.
-  - [ ] 2.5 In `backend_cli/src/commands/index.rs`: print the summary lines with `errln!` after a build/rebuild. Add `summary: Option<IndexBuildSummary>` to `IndexOutput`.
-  - [ ] 2.6 Tests in `backend_cli/tests/write_commands.rs`: **add the assertions to the existing `index build` / `index delete` tests** (lines ~83–164), so no new full builds are added: stderr contains a `[1/` line; `--json` output parses and has `summary.areas` with the four areas; `index delete --json` has no `summary`.
-  - [ ] 2.7 `cd backend_cli && cargo test` (memory-capped) passes.
+- [x] 2.0 CLI: `[N/M] <label>` step lines and a final summary for `simsapa index build|rebuild` (all filter cases), plus the optional `summary` object in `--json`, with `backend_cli` tests
+  - [x] 2.1 Change `cli_support::build_indexes()` to return `Result<Option<IndexBuildSummary>>`. `Some` for build/rebuild, `None` is unused here but keeps `delete` uniform if needed.
+  - [x] 2.2 `(None, None)`: call `build_all_indexes_with_progress` with `on_step` → `report(&format!("[{}/{}] {}", i, total, step.label()))` and a never-set flag. Map `Cancelled` to an error (it cannot happen here).
+  - [x] 2.3 Filtered cases: build the step plan filtered by area and/or language (a filter helper over `plan_index_steps`, or a `build_steps_with_progress(steps, …)` function shared with 1.6), so the `[N/M]` total counts only the filtered steps. Keep `write_version_file()` at the end as now. Decide whether the filtered builds also write and remove `INCOMPLETE`. Recommended: yes for `rebuild`, since it deletes first.
+  - [x] 2.4 Check the other `cli_support::build_indexes()` callers (`bootstrap_cli index`) still compile with the new return type.
+  - [x] 2.5 In `backend_cli/src/commands/index.rs`: print the summary lines with `errln!` after a build/rebuild. Add `summary: Option<IndexBuildSummary>` to `IndexOutput`.
+  - [x] 2.6 Tests in `backend_cli/tests/write_commands.rs`: **add the assertions to the existing `index build` / `index delete` tests** (lines ~83–164), so no new full builds are added: stderr contains a `[1/` line; `--json` output parses and has `summary.areas` with the four areas; `index delete --json` has no `summary`.
+  - [x] 2.7 `cd backend_cli && cargo test` (memory-capped) passes.
 
 ### 3.0 specs
 
