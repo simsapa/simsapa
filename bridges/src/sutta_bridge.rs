@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 
 use core::pin::Pin;
@@ -1026,13 +1026,18 @@ pub mod qobject {
         #[cxx_name = "topicIndexDataChanged"]
         fn topic_index_data_changed(self: Pin<&mut SuttaBridge>);
 
+        /// Before each step of a search index rebuild. Step 0 (total 0) is
+        /// removing the old index; steps 1..=total are the build steps.
         #[qsignal]
         #[cxx_name = "rebuildSearchIndexProgress"]
-        fn rebuild_search_index_progress(self: Pin<&mut SuttaBridge>, message: QString);
+        fn rebuild_search_index_progress(self: Pin<&mut SuttaBridge>, step: i32, total: i32, label: QString);
 
+        /// The rebuild ended. `outcome` is `"success"`, `"cancelled"` or
+        /// `"error"`; `summary_json` is the minified build summary on success,
+        /// `""` otherwise; `message` is the error text, `""` otherwise.
         #[qsignal]
-        #[cxx_name = "rebuildSearchIndexCompleted"]
-        fn rebuild_search_index_completed(self: Pin<&mut SuttaBridge>, success: bool, message: QString);
+        #[cxx_name = "rebuildSearchIndexFinished"]
+        fn rebuild_search_index_finished(self: Pin<&mut SuttaBridge>, outcome: QString, summary_json: QString, message: QString);
 
         #[qsignal]
         #[cxx_name = "storageDiagnosticsCompleted"]
@@ -1451,6 +1456,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn rebuild_search_index(self: Pin<&mut SuttaBridge>);
+
+        #[qinvokable]
+        fn cancel_rebuild_search_index(self: &SuttaBridge);
+
+        #[qinvokable]
+        fn is_rebuilding_search_index(self: &SuttaBridge) -> bool;
 
         #[qinvokable]
         fn run_storage_diagnostics(self: Pin<&mut SuttaBridge>);
@@ -2202,6 +2213,104 @@ pub struct SuttaBridgeRust {
     results_query_generation: Arc<AtomicU64>,
 }
 
+
+/// Set while a Rebuild Search Index thread runs. See
+/// `SuttaBridge::rebuild_search_index()`.
+static REBUILD_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Set by `cancel_rebuild_search_index()`; cleared when a rebuild starts.
+static REBUILD_CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// Clears [`REBUILD_RUNNING`] on every exit path of the rebuild thread.
+struct RebuildRunningGuard;
+
+impl Drop for RebuildRunningGuard {
+    fn drop(&mut self) {
+        REBUILD_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
+/// The rebuild itself, on the rebuild thread. Returns the
+/// `rebuildSearchIndexFinished` arguments: outcome, summary JSON, message.
+fn run_search_index_rebuild(
+    qt_thread: &cxx_qt::CxxQtThread<qobject::SuttaBridge>,
+) -> (&'static str, String, String) {
+    // One in-app index writer at a time: a library index build for a book
+    // import must not be writing into the folder this deletes.
+    let _index_write = match simsapa_backend::INDEX_WRITE_LOCK.try_lock() {
+        Ok(guard) => guard,
+        Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+        Err(std::sync::TryLockError::WouldBlock) => {
+            info("rebuild_search_index: another index update is running, not starting");
+            return (
+                "error",
+                String::new(),
+                "Another search index update is running. Try again when it has finished.".to_string(),
+            );
+        }
+    };
+
+    let emit_progress = |step: usize, total: usize, label: String| {
+        let label = QString::from(&label);
+        crate::queue_or_log(qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
+            qo.as_mut().rebuild_search_index_progress(step as i32, total as i32, label);
+        });
+    };
+
+    emit_progress(0, 0, "Removing old index…".to_string());
+
+    let app_data = get_app_data();
+    let globals = get_app_globals();
+    let paths = &globals.paths;
+
+    // The open searcher maps files inside index_dir; on Windows a mapped file
+    // cannot be deleted. Searches during the rebuild get "not opened yet".
+    simsapa_backend::close_fulltext_searcher();
+
+    if let Ok(true) = paths.index_dir.try_exists() {
+        if let Err(e) = std::fs::remove_dir_all(&paths.index_dir) {
+            let error_msg = format!("Failed to remove old index: {}", e);
+            error(&error_msg);
+            simsapa_backend::reinit_fulltext_searcher();
+            return ("error", String::new(), error_msg);
+        }
+    }
+
+    let mut on_step = |i: usize, total: usize, step: &simsapa_backend::search::indexer::IndexStep| {
+        emit_progress(i, total, step.label());
+    };
+
+    let result = simsapa_backend::search::indexer::build_all_indexes_with_progress(
+        &app_data.dbm.appdata,
+        &app_data.dbm.dictionaries,
+        &app_data.dbm.dpd,
+        paths,
+        &mut on_step,
+        &REBUILD_CANCEL,
+    );
+
+    // The index on disk changed in every outcome: the old one is gone.
+    simsapa_backend::reinit_fulltext_searcher();
+
+    match result {
+        Ok(simsapa_backend::search::indexer::IndexBuildOutcome::Completed(summary)) => {
+            info(&format!(
+                "rebuild_search_index: completed in {}s",
+                summary.elapsed_secs
+            ));
+            let json = serde_json::to_string(&summary).unwrap_or_default();
+            ("success", json, String::new())
+        }
+        Ok(simsapa_backend::search::indexer::IndexBuildOutcome::Cancelled) => {
+            info("rebuild_search_index: cancelled, the index is incomplete");
+            ("cancelled", String::new(), String::new())
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to rebuild search index: {}", e);
+            error(&error_msg);
+            ("error", String::new(), error_msg)
+        }
+    }
+}
 
 impl qobject::SuttaBridge {
     pub fn emit_update_window_title(self: Pin<&mut Self>, sutta_uid: QString, sutta_ref: QString, sutta_title: QString) {
@@ -4833,10 +4942,17 @@ impl qobject::SuttaBridge {
                     let globals = simsapa_backend::get_app_globals();
                     let library_index_dir = &globals.paths.library_index_dir;
 
-                    if let Err(e) = simsapa_backend::search::indexer::build_library_index(
-                        &app_data.dbm.appdata, library_index_dir, &effective_lang
-                    ) {
-                        warn(&format!("Failed to build library index for language {}: {}", effective_lang, e));
+                    {
+                        // Wait for a running Rebuild Search Index rather than
+                        // writing into the folder it deletes.
+                        let _index_write = simsapa_backend::INDEX_WRITE_LOCK
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner());
+                        if let Err(e) = simsapa_backend::search::indexer::build_library_index(
+                            &app_data.dbm.appdata, library_index_dir, &effective_lang
+                        ) {
+                            warn(&format!("Failed to build library index for language {}: {}", effective_lang, e));
+                        }
                     }
 
                     simsapa_backend::reinit_fulltext_searcher();
@@ -4859,9 +4975,13 @@ impl qobject::SuttaBridge {
     }
 
     /// Check the search index status.
-    /// Returns a JSON string: {"exists": bool, "current": bool}
+    /// Returns a JSON string:
+    /// `{"exists": bool, "current": bool, "incomplete": bool, "message": string}`
     /// - exists: whether the index directory exists
     /// - current: whether the VERSION file matches the expected version
+    /// - incomplete: whether the last build did not finish (`INCOMPLETE` marker)
+    /// - message: the user-facing sentence for the incomplete case, from
+    ///   `fulltext_status.rs`, or `""`
     pub fn check_search_index_status(&self) -> QString {
         let globals = get_app_globals();
         let index_dir = &globals.paths.index_dir;
@@ -4874,8 +4994,20 @@ impl qobject::SuttaBridge {
             false
         };
 
-        let json = format!(r#"{{"exists": {}, "current": {}}}"#, exists, current);
-        QString::from(&json)
+        let incomplete = exists && simsapa_backend::search::indexer::is_index_incomplete(index_dir);
+        let message = if incomplete {
+            simsapa_backend::fulltext_status::INCOMPLETE_MESSAGE
+        } else {
+            ""
+        };
+
+        let json = serde_json::json!({
+            "exists": exists,
+            "current": current,
+            "incomplete": incomplete,
+            "message": message,
+        });
+        QString::from(&json.to_string())
     }
 
     /// Whether fulltext search can currently return results, and what to say if
@@ -4913,70 +5045,78 @@ impl qobject::SuttaBridge {
         QString::from(&simsapa_backend::db::get_startup_db_report_json())
     }
 
+    /// Delete the fulltext index and build it again for every language, on a
+    /// background thread. Emits `rebuildSearchIndexProgress` before each step
+    /// and `rebuildSearchIndexFinished` once at the end. Refuses (logs and
+    /// returns) while a rebuild is already running. See
+    /// `docs/fulltext-index-storage-and-file-locking.md`.
     pub fn rebuild_search_index(self: Pin<&mut Self>) {
+        if REBUILD_RUNNING
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            info("rebuild_search_index: a rebuild is already running, not starting another");
+            return;
+        }
+        REBUILD_CANCEL.store(false, Ordering::SeqCst);
         info("rebuild_search_index: starting background rebuild");
 
         let qt_thread = self.qt_thread();
+        let thread_qt = qt_thread.clone();
 
-        thread::spawn(move || {
-            let progress_msg = QString::from("Rebuilding search index...");
-            crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                qo.as_mut().rebuild_search_index_progress(progress_msg);
-            });
-
-            let app_data = get_app_data();
-            let globals = get_app_globals();
-            let paths = &globals.paths;
-
-            // Delete existing index directories to rebuild from scratch
-            if let Ok(true) = paths.index_dir.try_exists() {
-                let msg = QString::from("Removing old index...");
-                crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                    qo.as_mut().rebuild_search_index_progress(msg);
+        let spawned = thread::Builder::new()
+            .name("rebuild-search-index".to_string())
+            .spawn(move || {
+                let qt_thread = thread_qt;
+                // A panic must still end the rebuild with an outcome: the
+                // progress window refuses to close until one arrives.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _running = RebuildRunningGuard;
+                    run_search_index_rebuild(&qt_thread)
+                }));
+                let (outcome, summary_json, message) = result.unwrap_or_else(|_| {
+                    error("rebuild_search_index: the rebuild thread panicked");
+                    REBUILD_RUNNING.store(false, Ordering::SeqCst);
+                    simsapa_backend::reinit_fulltext_searcher();
+                    (
+                        "error",
+                        String::new(),
+                        "Failed to rebuild search index: the rebuild stopped unexpectedly.".to_string(),
+                    )
                 });
 
-                if let Err(e) = std::fs::remove_dir_all(&paths.index_dir) {
-                    let error_msg = format!("Failed to remove old index: {}", e);
-                    error(&error_msg);
-                    let error_qstr = QString::from(&error_msg);
-                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                        qo.as_mut().rebuild_search_index_completed(false, error_qstr);
-                    });
-                    return;
-                }
-            }
-
-            let msg = QString::from("Building fulltext indexes for all languages...");
-            crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                qo.as_mut().rebuild_search_index_progress(msg);
+                let outcome = QString::from(outcome);
+                let summary_json = QString::from(&summary_json);
+                let message = QString::from(&message);
+                crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
+                    qo.as_mut().rebuild_search_index_finished(outcome, summary_json, message);
+                });
             });
 
-            match simsapa_backend::search::indexer::build_all_indexes(
-                &app_data.dbm.appdata,
-                &app_data.dbm.dictionaries,
-                &app_data.dbm.dpd,
-                paths,
-            ) {
-                Ok(()) => {
-                    // Re-initialize the fulltext searcher with new indexes
-                    simsapa_backend::reinit_fulltext_searcher();
+        if let Err(e) = spawned {
+            REBUILD_RUNNING.store(false, Ordering::SeqCst);
+            let msg = format!("Failed to rebuild search index: could not start the rebuild: {}", e);
+            error(&msg);
+            let msg = QString::from(&msg);
+            crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
+                qo.as_mut().rebuild_search_index_finished(QString::from("error"), QString::from(""), msg);
+            });
+        }
+    }
 
-                    info("rebuild_search_index: completed successfully");
-                    let success_msg = QString::from("Search index rebuilt successfully.");
-                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                        qo.as_mut().rebuild_search_index_completed(true, success_msg);
-                    });
-                }
-                Err(e) => {
-                    let error_msg = format!("Failed to rebuild search index: {}", e);
-                    error(&error_msg);
-                    let error_qstr = QString::from(&error_msg);
-                    crate::queue_or_log(&qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
-                        qo.as_mut().rebuild_search_index_completed(false, error_qstr);
-                    });
-                }
-            }
-        });
+    /// Ask a running rebuild to stop at its next check point. Safe to call
+    /// when no rebuild is running.
+    pub fn cancel_rebuild_search_index(&self) {
+        if REBUILD_RUNNING.load(Ordering::SeqCst) {
+            info("rebuild_search_index: cancel requested");
+            REBUILD_CANCEL.store(true, Ordering::SeqCst);
+        } else {
+            info("rebuild_search_index: cancel requested, but no rebuild is running");
+        }
+    }
+
+    pub fn is_rebuilding_search_index(&self) -> bool {
+        REBUILD_RUNNING.load(Ordering::SeqCst)
     }
 
     /// Run the storage diagnostics report on a background thread and emit
@@ -5229,6 +5369,12 @@ impl qobject::SuttaBridge {
                         let globals = simsapa_backend::get_app_globals();
                         let library_index_dir = &globals.paths.library_index_dir;
 
+                        // Wait for a running Rebuild Search Index rather than
+                        // writing into the folder it deletes.
+                        let index_write = simsapa_backend::INDEX_WRITE_LOCK
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner());
+
                         if let Err(e) = simsapa_backend::search::indexer::build_library_index(
                             &app_data.dbm.appdata, library_index_dir, &old_lang
                         ) {
@@ -5240,6 +5386,7 @@ impl qobject::SuttaBridge {
                         ) {
                             warn(&format!("Failed to rebuild library index for new language {}: {}", new_lang, e));
                         }
+                        drop(index_write);
 
                         // Reload the fulltext searcher
                         simsapa_backend::reinit_fulltext_searcher();

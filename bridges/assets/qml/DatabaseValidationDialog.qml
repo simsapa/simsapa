@@ -338,7 +338,7 @@ ApplicationWindow {
     property bool export_in_progress: false
 
     // Search-index rebuild state. rebuildSearchIndexProgress /
-    // rebuildSearchIndexCompleted are *global* SuttaBridge signals, and the
+    // rebuildSearchIndexFinished are *global* SuttaBridge signals, and the
     // AppSettingsWindow rebuild dialog listens to them too — so, like
     // upgrade_initiated_here above, only the window that started the rebuild
     // reacts to it.
@@ -361,17 +361,18 @@ ApplicationWindow {
     Connections {
         target: SuttaBridge
 
-        function onRebuildSearchIndexProgress(message) {
+        function onRebuildSearchIndexProgress(step: int, total: int, label: string) {
             if (!root.rebuild_initiated_here) return;
-            root.rebuild_status_message = message;
+            root.rebuild_status_message = step === 0 ? label : ("Step " + step + "/" + total + ": " + label);
         }
 
-        function onRebuildSearchIndexCompleted(success, message) {
+        function onRebuildSearchIndexFinished(outcome: string, summary_json: string, message: string) {
             if (!root.rebuild_initiated_here) return;
-            logger.info("onRebuildSearchIndexCompleted: " + success + " " + message);
+            logger.info("onRebuildSearchIndexFinished: " + outcome + " " + message);
             root.rebuild_initiated_here = false;
             root.is_rebuilding = false;
-            root.rebuild_status_message = message;
+            root.rebuild_status_message = outcome === "success" ? "Search index rebuilt."
+                : (outcome === "cancelled" ? "The rebuild was cancelled." : message);
             // Release the screen lock when the rebuild ACTUALLY ends, not when
             // the dialog closes — the rebuild continues in the background if
             // the user closes this window.

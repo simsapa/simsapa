@@ -530,7 +530,7 @@ ApplicationWindow {
         property bool is_rebuilding: false
         property string status_message: ""
 
-        // rebuildSearchIndexProgress / rebuildSearchIndexCompleted are global
+        // rebuildSearchIndexProgress / rebuildSearchIndexFinished are global
         // SuttaBridge signals; DatabaseValidationDialog can start a rebuild
         // too, so only react to a rebuild started here.
         property bool rebuild_initiated_here: false
@@ -598,16 +598,17 @@ ApplicationWindow {
         Connections {
             target: SuttaBridge
 
-            function onRebuildSearchIndexProgress(message) {
+            function onRebuildSearchIndexProgress(step: int, total: int, label: string) {
                 if (!rebuild_index_dialog.rebuild_initiated_here) return;
-                rebuild_index_dialog.status_message = message;
+                rebuild_index_dialog.status_message = step === 0 ? label : ("Step " + step + "/" + total + ": " + label);
             }
 
-            function onRebuildSearchIndexCompleted(success, message) {
+            function onRebuildSearchIndexFinished(outcome: string, summary_json: string, message: string) {
                 if (!rebuild_index_dialog.rebuild_initiated_here) return;
                 rebuild_index_dialog.rebuild_initiated_here = false;
                 rebuild_index_dialog.is_rebuilding = false;
-                rebuild_index_dialog.status_message = message;
+                rebuild_index_dialog.status_message = outcome === "success" ? "Search index rebuilt."
+                    : (outcome === "cancelled" ? "The rebuild was cancelled." : message);
                 // Release the screen lock only here — when the rebuild
                 // actually ends. Closing the dialog mid-rebuild must not
                 // release it, since the background job continues.

@@ -1558,7 +1558,11 @@ ${query_text}`;
         let status_json = SuttaBridge.check_search_index_status();
         try {
             let status = JSON.parse(status_json);
-            if (!status.exists) {
+            if (status.incomplete) {
+                // The wording is the backend's (fulltext_status.rs).
+                search_index_notification.status_text = status.message + "\n\nUse Settings → General → Database → Rebuild Search Index.";
+                search_index_notification.open();
+            } else if (!status.exists) {
                 search_index_notification.status_text = "Search index not found. Fulltext search will not work until you build it.\n\nUse Settings → General → Database → Rebuild Search Index to create one.";
                 search_index_notification.open();
             } else if (!status.current) {
