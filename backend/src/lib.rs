@@ -474,6 +474,33 @@ pub fn reinit_fulltext_searcher() {
     open_fulltext_searcher();
 }
 
+/// Drop the open searcher, so no index file stays memory-mapped.
+///
+/// Called before the index folder is deleted for a rebuild: on Windows a mapped
+/// file cannot be deleted. Fulltext queries until the next
+/// [`reinit_fulltext_searcher`] get the "not opened yet" status. See
+/// `docs/fulltext-index-storage-and-file-locking.md`.
+pub fn close_fulltext_searcher() {
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    match FULLTEXT_SEARCHER.write() {
+        Ok(mut guard) => *guard = None,
+        Err(poisoned) => *poisoned.into_inner() = None,
+    }
+    info("Fulltext searcher closed");
+}
+
+/// One in-app Tantivy index writer at a time.
+///
+/// The Rebuild Search Index thread takes it with `try_lock()` for the whole
+/// rebuild and refuses to start when it is held; the in-app library index
+/// builds (book import and removal) take it with `lock()`, so they wait for a
+/// running rebuild instead of writing into a folder it deletes. See
+/// `docs/fulltext-index-storage-and-file-locking.md`.
+pub static INDEX_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The open itself. **Callers must hold [`SEARCHER_OPEN_LOCK`].**
 fn open_fulltext_searcher() {
     let g = get_app_globals();

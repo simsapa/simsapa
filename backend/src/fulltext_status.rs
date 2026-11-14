@@ -413,6 +413,18 @@ mod tests {
         )
     }
 
+    /// A rebuild closes the searcher before deleting the index; until it is
+    /// reopened, the status must say "not opened yet", never report counts
+    /// from the deleted files.
+    #[test]
+    fn a_closed_searcher_reads_as_not_opened_yet() {
+        crate::close_fulltext_searcher();
+        assert!(crate::fulltext_index_counts().is_none());
+        assert!(!crate::is_fulltext_searcher_ready());
+        let status = build_status(crate::fulltext_index_counts(), &[]);
+        assert_eq!(status.state, FulltextState::NotOpenedYet);
+    }
+
     #[test]
     fn no_searcher_is_not_measured_rather_than_healthy() {
         let status = build_status(None, &[]);
