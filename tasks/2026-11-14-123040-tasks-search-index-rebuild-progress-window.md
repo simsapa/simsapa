@@ -13,16 +13,16 @@ Source PRD: `tasks/2026-11-14-123040-prd---search-index-rebuild-progress-window.
 - `api/src/helpers.rs` - `/health` fulltext block: passes `incomplete` to the per-area messages; `incomplete` listed in the state doc comment.
 - `backend/src/lib.rs` - `fulltext_status_json()`, `reinit_fulltext_searcher()`; `AppGlobalPaths` (`index_dir`, `suttas_index_dir`, `dict_words_index_dir`, `library_index_dir`). Gets `INDEX_WRITE_LOCK` and `close_fulltext_searcher()`.
 - `bridges/src/sutta_bridge.rs` - `rebuild_search_index()` (thread spawn, panic catch) and `run_search_index_rebuild()` (write lock, close searcher, delete, build, reinit), `REBUILD_RUNNING` / `REBUILD_CANCEL` and `RebuildRunningGuard`, `cancel_rebuild_search_index()`, `is_rebuilding_search_index()`, the `rebuildSearchIndexProgress(step, total, label)` / `rebuildSearchIndexFinished(outcome, summary_json, message)` signals, `check_search_index_status()` with `incomplete` / `message`; the library index builds take `INDEX_WRITE_LOCK`.
-- `bridges/src/api.rs` - the `extern "C++"` callback declarations (`callback_open_dictionaries_window()` is the model).
+- `bridges/src/api.rs` - the `extern "C++"` callback declarations; gets `callback_open_search_index_rebuild_window()`.
 - `bridges/assets/qml/com/profoundlabs/simsapa/SuttaBridge.qml` - qmllint type stub for the new / changed bridge functions.
 - `bridges/build.rs` - `qml_files` list: register `assets/qml/SearchIndexRebuildWindow.qml`.
-- `bridges/assets/qml/SearchIndexRebuildWindow.qml` - **new**: the progress window.
+- `bridges/assets/qml/SearchIndexRebuildWindow.qml` - **new**: the progress window. Starts the rebuild in `start_rebuild_if_idle()`; refuses to close while `rebuild_active`; a 1 s timer updates the elapsed time and, if the bridge reports no rebuild running for 3 ticks without an outcome signal, ends from `check_search_index_status()` (`end_without_outcome()`), so the modal window can never be stuck.
 - `bridges/assets/qml/DictionariesWindow.qml` - model for the `StackLayout` frames and the close refusal in `onClosing`.
 - `bridges/assets/qml/DictionaryIndexProgressWindow.qml` - model for the window's size and `ProgressBar` handling.
 - `bridges/assets/qml/AppSettingsWindow.qml` - Settings entry point (`rebuild_index_dialog`, `action_rebuild_search_index`).
 - `bridges/assets/qml/DatabaseValidationDialog.qml` - second entry point (`is_rebuilding`, `Connections`, `refresh_fulltext_status()`).
 - `bridges/assets/qml/SuttaSearchWindow.qml` - startup "index not found / outdated" notice; gets the incomplete case.
-- `cpp/search_index_rebuild_window.h`, `cpp/search_index_rebuild_window.cpp` - **new**: C++ wrapper (copy `cpp/dictionaries_window.*`).
+- `cpp/search_index_rebuild_window.h`, `cpp/search_index_rebuild_window.cpp` - **new**: C++ wrapper (copy of `cpp/dictionaries_window.*`, guarded `m_root`).
 - `cpp/window_manager.h`, `cpp/window_manager.cpp` - `create_search_index_rebuild_window()`, its list, the `on_window_closed()` branch.
 - `cpp/gui.cpp`, `cpp/gui.h` - `callback_open_search_index_rebuild_window()`.
 - `CMakeLists.txt` - add `cpp/search_index_rebuild_window.cpp` beside `cpp/dictionaries_window.cpp`.
@@ -197,17 +197,17 @@ Depends on: 4.0 (signals and invokables).
   - The finished handler (guarded by `rebuild_initiated_here`, or for a rebuild this window adopted in `start_rebuild_if_idle`): close `cancel_confirm_dialog` if open, release keep-screen-on for every outcome, then go to frame 2/3/4.
   - `onClosing: function(close)`: refuse while `views_stack.currentIndex` is 0 or 1. Otherwise `logger.info(...)` and `SuttaBridge.notify_window_closed("search_index_rebuild")`.
 
-- [ ] 5.0 New `SearchIndexRebuildWindow`: QML frames (progress, cancelling, summary, cancelled, error), the cancel confirmation dialog, keep-screen-on, refusing to close while running; C++ wrapper, `WindowManager` list and close branch, the `open_…` bridge → C++ callback chain, `build.rs` registration
-  - [ ] 5.1 Read `docs/window-lifecycle-and-reuse.md` §0, §5, §5b, §5b-bis and §7, `docs/keep-screen-awake.md`, `docs/qml-dialog-sizing.md` and `docs/android-edge-to-edge-and-safe-areas.md`.
-  - [ ] 5.2 Create `cpp/search_index_rebuild_window.{h,cpp}` by copying `cpp/dictionaries_window.*` (guarded `m_root`). Add the `.cpp` to `CMakeLists.txt`.
-  - [ ] 5.3 `cpp/window_manager.{h,cpp}`: the forward declaration, `QList<SearchIndexRebuildWindow*> search_index_rebuild_windows`, `create_search_index_rebuild_window()` (reuse calls `start_rebuild_if_idle`, null-checking `m_root`), and the `"search_index_rebuild"` branch in `on_window_closed()`.
-  - [ ] 5.4 `bridges/src/api.rs`: declare `fn callback_open_search_index_rebuild_window();`. `cpp/gui.{h,cpp}`: implement it, calling the manager.
-  - [ ] 5.5 `bridges/src/sutta_bridge.rs`: `#[qinvokable] fn open_search_index_rebuild_window(self: &SuttaBridge)`, calling the callback. Add it to the stub `SuttaBridge.qml`.
-  - [ ] 5.6 Write `bridges/assets/qml/SearchIndexRebuildWindow.qml` per the specs: `Logger { id: logger }`, the `AssetManager` instance used as in `AppSettingsWindow.qml` (`manager`), the `Connections` to `SuttaBridge`, the five frames, the dialog, the timer and `onClosing`.
-  - [ ] 5.7 Summary frame: parse `summary_json`. Show "Search index rebuilt in Xm Ys." and one line per area: label (Suttas / Dictionary words / Library / DPD bold definitions), the count with thousands separators (`Number(n).toLocaleString(Qt.locale(), 'f', 0)`), and the languages joined with ", ". **OK** closes the window.
-  - [ ] 5.8 Cancelled frame text (PRD §4.4) with one **Close** button (no Rebuild Again). Error frame with `error_message`, wrapped, and **OK**.
-  - [ ] 5.9 Register `"assets/qml/SearchIndexRebuildWindow.qml"` in `bridges/build.rs` `qml_files`, with that exact relative path and no `..`.
-  - [ ] 5.10 `make build -B` passes; `make qml-lint` shows no new warnings in `SearchIndexRebuildWindow.qml`.
+- [x] 5.0 New `SearchIndexRebuildWindow`: QML frames (progress, cancelling, summary, cancelled, error), the cancel confirmation dialog, keep-screen-on, refusing to close while running; C++ wrapper, `WindowManager` list and close branch, the `open_…` bridge → C++ callback chain, `build.rs` registration
+  - [x] 5.1 Read `docs/window-lifecycle-and-reuse.md` §0, §5, §5b, §5b-bis and §7, `docs/keep-screen-awake.md`, `docs/qml-dialog-sizing.md` and `docs/android-edge-to-edge-and-safe-areas.md`.
+  - [x] 5.2 Create `cpp/search_index_rebuild_window.{h,cpp}` by copying `cpp/dictionaries_window.*` (guarded `m_root`). Add the `.cpp` to `CMakeLists.txt`.
+  - [x] 5.3 `cpp/window_manager.{h,cpp}`: the forward declaration, `QList<SearchIndexRebuildWindow*> search_index_rebuild_windows`, `create_search_index_rebuild_window()` (reuse calls `start_rebuild_if_idle`, null-checking `m_root`), and the `"search_index_rebuild"` branch in `on_window_closed()`.
+  - [x] 5.4 `bridges/src/api.rs`: declare `fn callback_open_search_index_rebuild_window();`. `cpp/gui.{h,cpp}`: implement it, calling the manager.
+  - [x] 5.5 `bridges/src/sutta_bridge.rs`: `#[qinvokable] fn open_search_index_rebuild_window(self: &SuttaBridge)`, calling the callback. Add it to the stub `SuttaBridge.qml`.
+  - [x] 5.6 Write `bridges/assets/qml/SearchIndexRebuildWindow.qml` per the specs: `Logger { id: logger }`, the `AssetManager` instance used as in `AppSettingsWindow.qml` (`manager`), the `Connections` to `SuttaBridge`, the five frames, the dialog, the timer and `onClosing`.
+  - [x] 5.7 Summary frame: parse `summary_json`. Show "Search index rebuilt in Xm Ys." and one line per area: label (Suttas / Dictionary words / Library / DPD bold definitions), the count with thousands separators (`Number(n).toLocaleString(Qt.locale(), 'f', 0)`), and the languages joined with ", ". **OK** closes the window.
+  - [x] 5.8 Cancelled frame text (PRD §4.4) with one **Close** button (no Rebuild Again). Error frame with `error_message`, wrapped, and **OK**.
+  - [x] 5.9 Register `"assets/qml/SearchIndexRebuildWindow.qml"` in `bridges/build.rs` `qml_files`, with that exact relative path and no `..`.
+  - [x] 5.10 `make build -B` passes; `make qml-lint` shows no new warnings in `SearchIndexRebuildWindow.qml`.
 
 ### 6.0 specs
 
@@ -215,7 +215,8 @@ Depends on: 5.0 (`SuttaBridge.open_search_index_rebuild_window()`).
 
 - [ ] 6.0 Entry points: Settings and Database Validation open the new window; their own rebuild-progress UI is removed; Database Validation re-checks the index when the rebuild ends
   - [ ] 6.1 `AppSettingsWindow.qml`: make `rebuild_index_dialog` a plain Yes / No confirmation. Clamp its width as per the dialog rules and add a `DialogHeader`. `onAccepted` calls `SuttaBridge.open_search_index_rebuild_window()`. Remove `is_rebuilding`, `status_message`, `rebuild_initiated_here`, the BusyIndicator, the progress labels, the `Connections` and the `"search-index-rebuild-settings"` keep-screen-on calls.
-  - [ ] 6.2 `DatabaseValidationDialog.qml`: the **Rebuild Search Index** button calls `SuttaBridge.open_search_index_rebuild_window()`. Remove `is_rebuilding`, its keep-screen-on calls and the progress text at the line-1179 / 1189 / 1248 bindings. Keep one `Connections` with `onRebuildSearchIndexFinished` that calls **both** `refresh_search_index_status()` and `refresh_fulltext_status()`, as the current completion handler at line ~383 does, for every outcome, without an "initiated here" guard (any rebuild changes what the dialog shows). Keep the button visible while `search_index_failed`, and make it visible for the `incomplete` state too.
+  - [ ] 6.2 **Note from 5.0:** `SuttaBridge` is a `#[qml_singleton]`, one instance per QML engine, and each top-level window has its own engine. The rebuild signals are emitted only on the bridge instance that called `rebuild_search_index()`, i.e. the rebuild window's engine, so a `Connections` in `DatabaseValidationDialog` will **not** receive `rebuildSearchIndexFinished` once the window starts the rebuild. Use the PRD req. 31 alternative: re-check when the dialog becomes active again (the rebuild window is application-modal, so the dialog's window is re-activated when it closes).
+  - [ ] 6.2a `DatabaseValidationDialog.qml`: the **Rebuild Search Index** button calls `SuttaBridge.open_search_index_rebuild_window()`. Remove `is_rebuilding`, its keep-screen-on calls and the progress text at the line-1179 / 1189 / 1248 bindings. Remove its rebuild `Connections`. When the dialog becomes active again (6.2), call **both** `refresh_search_index_status()` and `refresh_fulltext_status()`, as the current completion handler at line ~383 does. Keep the button visible while `search_index_failed`, and make it visible for the `incomplete` state too.
   - [ ] 6.3 `grep -rn "rebuild_search_index\|RebuildSearchIndex" bridges/assets/qml` shows only the new window, the stub, the Settings `open_…` call and the Database Validation `open_…` call / refresh handler.
   - [ ] 6.4 `make build -B` and `make qml-test` pass, with no new qmllint warnings in the touched files.
   - [ ] 6.5 Write the manual GUI test steps for the user (do not run the GUI): Settings → Rebuild Search Index… → Yes; watch the steps; Cancel → Keep Rebuilding (rebuild continues); Cancel → Cancel Rebuild (cancelled frame with only Close; other windows blocked until it is closed; then Database Validation shows "incomplete"); a second rebuild from Settings run to completion (summary frame); while the window is open, no other app window takes input; the × button and Android back are refused while running; the Database Validation entry point; opening from Settings while a rebuild runs shows its progress.

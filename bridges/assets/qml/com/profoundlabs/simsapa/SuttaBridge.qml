@@ -1050,6 +1050,10 @@ Item {
         console.log("open_dictionaries_window()");
     }
 
+    function open_search_index_rebuild_window() {
+        console.log("open_search_index_rebuild_window()");
+    }
+
     function open_sutta_languages_window() {
         console.log("open_sutta_languages_window()");
     }

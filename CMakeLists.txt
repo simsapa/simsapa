@@ -436,6 +436,7 @@ list(APPEND cpp_files
     cpp/storage_recovery_window.cpp
     cpp/sutta_languages_window.cpp
     cpp/dictionaries_window.cpp
+    cpp/search_index_rebuild_window.cpp
     cpp/library_window.cpp
     cpp/reference_search_window.cpp
     cpp/topic_index_window.cpp

@@ -1413,6 +1413,9 @@ pub mod qobject {
         fn open_dictionaries_window(self: &SuttaBridge);
 
         #[qinvokable]
+        fn open_search_index_rebuild_window(self: &SuttaBridge);
+
+        #[qinvokable]
         fn open_library_window(self: &SuttaBridge);
 
         #[qinvokable]
@@ -4617,6 +4620,12 @@ impl qobject::SuttaBridge {
     pub fn open_dictionaries_window(&self) {
         use crate::api::ffi;
         ffi::callback_open_dictionaries_window();
+    }
+
+    /// Open the Rebuild Search Index window, which starts the rebuild itself.
+    pub fn open_search_index_rebuild_window(&self) {
+        use crate::api::ffi;
+        ffi::callback_open_search_index_rebuild_window();
     }
 
     pub fn open_library_window(&self) {

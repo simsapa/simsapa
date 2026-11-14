@@ -225,6 +225,10 @@ void callback_open_dictionaries_window() {
   AppGlobals::manager->create_dictionaries_window();
 }
 
+void callback_open_search_index_rebuild_window() {
+  AppGlobals::manager->create_search_index_rebuild_window();
+}
+
 void callback_open_library_window() {
   AppGlobals::manager->create_library_window();
 }

@@ -5,6 +5,7 @@
 #include "storage_recovery_window.h"
 #include "sutta_languages_window.h"
 #include "dictionaries_window.h"
+#include "search_index_rebuild_window.h"
 #include "library_window.h"
 #include "reference_search_window.h"
 #include "topic_index_window.h"
@@ -716,6 +717,21 @@ DictionariesWindow* WindowManager::create_dictionaries_window() {
     return w;
 }
 
+SearchIndexRebuildWindow* WindowManager::create_search_index_rebuild_window() {
+    if (SearchIndexRebuildWindow* reused = reuse_or_evict(this->search_index_rebuild_windows)) {
+        show_and_activate_window(reused->m_root);
+        // A reused window runs no Component.onCompleted, so start the rebuild
+        // here. The QML function does nothing while a rebuild is showing.
+        if (reused->m_root) {
+            QMetaObject::invokeMethod(reused->m_root, "start_rebuild_if_idle");
+        }
+        return reused;
+    }
+    SearchIndexRebuildWindow* w = new SearchIndexRebuildWindow(this->m_app);
+    search_index_rebuild_windows.append(w);
+    return w;
+}
+
 LibraryWindow* WindowManager::create_library_window() {
     if (LibraryWindow* reused = reuse_or_evict(this->library_windows)) {
         show_and_activate_window(reused->m_root);
@@ -850,6 +866,8 @@ void WindowManager::on_window_closed(const QString& window_type) {
         close_one(this->sutta_languages_windows);
     } else if (window_type == "dictionaries") {
         close_one(this->dictionaries_windows);
+    } else if (window_type == "search_index_rebuild") {
+        close_one(this->search_index_rebuild_windows);
     } else if (window_type == "chanting_practice") {
         close_one(this->chanting_practice_windows);
     } else if (window_type == "chanting_review") {
