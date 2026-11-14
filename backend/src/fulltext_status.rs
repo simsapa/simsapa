@@ -69,9 +69,16 @@ pub struct FulltextStatus {
     /// emit is written in this file, which is what `no_jargon_in_user_facing_strings`
     /// is able to check.
     pub reason: &'static str,
+    /// Whether the last index build did not finish (the `INCOMPLETE` marker in
+    /// the index folder: a cancelled or failed rebuild, a crash). Carried so the
+    /// per-area messages in [`FulltextStatus::to_json`] can say so too.
+    pub incomplete: bool,
 }
 
-/// The four distinguishable states, in the order they are checked.
+/// What to say when the last index build did not finish.
+pub const INCOMPLETE_MESSAGE: &str = "The search index is incomplete, so fulltext search will not find everything. Use Rebuild Search Index to do a full re-index.";
+
+/// The distinguishable states, in the order they are checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FulltextState {
     /// No searcher has been built this session. "Not measured", never "no
@@ -84,6 +91,10 @@ pub enum FulltextState {
     /// Index directories exist, but not one index could be opened. This is the
     /// state the whole fix exists for.
     CouldNotOpen,
+    /// The last index build did not finish (a cancelled or failed rebuild), so
+    /// some languages or areas are missing or empty. Search may work for what
+    /// was built; a full rebuild is needed.
+    Incomplete,
     /// At least one index is open and searchable.
     Ready,
 }
@@ -157,9 +168,18 @@ fn describe_counts(counts: &FulltextIndexCounts) -> String {
 /// Build the verdict from the two facts recorded at searcher-open time.
 ///
 /// `counts` is `None` when no searcher has been built this session.
+/// `incomplete` is whether the index folder holds the `INCOMPLETE` marker,
+/// i.e. the last build did not finish.
+///
+/// An incomplete index is reported as [`FulltextState::Incomplete`] whenever
+/// some of it exists, with two exceptions: no index directory at all is still
+/// `FilesNotFound` (nothing to search), and directories that exist but would
+/// not open are still `CouldNotOpen` (a rebuild on this storage location would
+/// not fix that).
 pub fn build_status(
     counts: Option<FulltextIndexCounts>,
     failures: &[(String, String)],
+    incomplete: bool,
 ) -> FulltextStatus {
     let Some(counts) = counts else {
         return FulltextStatus {
@@ -169,8 +189,34 @@ pub fn build_status(
             counts: FulltextIndexCounts::default(),
             failure_count: 0,
             reason: "",
+            incomplete,
         };
     };
+
+    let incomplete_status = |counts: FulltextIndexCounts| {
+        let reason = reason_or_empty(failures);
+        let message = if failures.is_empty() {
+            INCOMPLETE_MESSAGE.to_string()
+        } else {
+            format!(
+                "{} Some search index files could not be opened. {}",
+                INCOMPLETE_MESSAGE, reason
+            )
+        };
+        FulltextStatus {
+            is_valid: false,
+            message,
+            state: FulltextState::Incomplete,
+            counts,
+            failure_count: failures.len(),
+            reason,
+            incomplete: true,
+        }
+    };
+
+    if incomplete && counts.total_opened() > 0 {
+        return incomplete_status(counts);
+    }
 
     if counts.total_opened() > 0 {
         // Something opened, so fulltext search works — but "works" and "is
@@ -196,6 +242,7 @@ pub fn build_status(
             counts,
             failure_count: failures.len(),
             reason,
+            incomplete,
         };
     }
 
@@ -212,7 +259,14 @@ pub fn build_status(
             counts,
             failure_count: failures.len(),
             reason: "",
+            incomplete,
         };
+    }
+
+    // Directories are there and nothing failed to open: a build that stopped
+    // before any language finished.
+    if incomplete && failures.is_empty() {
+        return incomplete_status(counts);
     }
 
     let message = if failures.is_empty() {
@@ -239,6 +293,7 @@ pub fn build_status(
         counts,
         failure_count: failures.len(),
         reason: reason_or_empty(failures),
+        incomplete,
     }
 }
 
@@ -255,7 +310,14 @@ fn reason_or_empty(failures: &[(String, String)]) -> &'static str {
 
 /// The current verdict, read from the process-global searcher and failure list.
 pub fn current_status() -> FulltextStatus {
-    build_status(crate::fulltext_index_counts(), &crate::searcher_open_failures())
+    let incomplete = crate::search::indexer::is_index_incomplete(
+        &crate::get_app_globals().paths.index_dir,
+    );
+    build_status(
+        crate::fulltext_index_counts(),
+        &crate::searcher_open_failures(),
+        incomplete,
+    )
 }
 
 /// The verdict for **one** search area.
@@ -297,11 +359,19 @@ pub fn area_state(area: &crate::search::searcher::FulltextAreaStatus) -> Fulltex
 ///   A user who never downloaded a language has no fault to report, and telling
 ///   them their index is broken would send them to Rebuild Search Index for
 ///   nothing (FR-26).
+///
+/// The exception to the silence is an **incomplete** index (`incomplete`, the
+/// last build did not finish): any area may be missing languages, so an empty
+/// search says so rather than "No results found".
 pub fn area_message(
     area: &crate::search::searcher::FulltextAreaStatus,
     reason: &str,
+    incomplete: bool,
 ) -> String {
     if area.failed == 0 {
+        if incomplete {
+            return INCOMPLETE_MESSAGE.to_string();
+        }
         return String::new();
     }
 
@@ -354,17 +424,17 @@ impl FulltextStatus {
             self.counts.sutta.dir_present,
             self.counts.sutta.failed,
             area_state(&self.counts.sutta).as_str(),
-            json_escape(&area_message(&self.counts.sutta, self.reason)),
+            json_escape(&area_message(&self.counts.sutta, self.reason, self.incomplete)),
             self.counts.dict.opened,
             self.counts.dict.dir_present,
             self.counts.dict.failed,
             area_state(&self.counts.dict).as_str(),
-            json_escape(&area_message(&self.counts.dict, self.reason)),
+            json_escape(&area_message(&self.counts.dict, self.reason, self.incomplete)),
             self.counts.library.opened,
             self.counts.library.dir_present,
             self.counts.library.failed,
             area_state(&self.counts.library).as_str(),
-            json_escape(&area_message(&self.counts.library, self.reason)),
+            json_escape(&area_message(&self.counts.library, self.reason, self.incomplete)),
         )
     }
 }
@@ -375,6 +445,7 @@ impl FulltextState {
             FulltextState::NotOpenedYet => "not_opened_yet",
             FulltextState::FilesNotFound => "files_not_found",
             FulltextState::CouldNotOpen => "could_not_open",
+            FulltextState::Incomplete => "incomplete",
             FulltextState::Ready => "ready",
         }
     }
@@ -413,16 +484,33 @@ mod tests {
         )
     }
 
+    /// A rebuild closes the searcher before deleting the index; until it is
+    /// reopened, the status must say "not opened yet", never report counts
+    /// from the deleted files.
+    #[test]
+    fn a_closed_searcher_reads_as_not_opened_yet() {
+        crate::close_fulltext_searcher();
+        assert!(crate::fulltext_index_counts().is_none());
+        assert!(!crate::is_fulltext_searcher_ready());
+        let status = build_status(crate::fulltext_index_counts(), &[], false);
+        assert_eq!(status.state, FulltextState::NotOpenedYet);
+
+        // The localhost API calls init_fulltext_searcher() before every
+        // fulltext query: it must not reopen a searcher closed for a rebuild.
+        crate::init_fulltext_searcher();
+        assert!(crate::fulltext_index_counts().is_none(), "init must not reopen a closed searcher");
+    }
+
     #[test]
     fn no_searcher_is_not_measured_rather_than_healthy() {
-        let status = build_status(None, &[]);
+        let status = build_status(None, &[], false);
         assert!(!status.is_valid);
         assert_eq!(status.state, FulltextState::NotOpenedYet);
     }
 
     #[test]
     fn open_indexes_are_reported_valid_with_their_counts() {
-        let status = build_status(Some(counts(3, 2, 1, true)), &[]);
+        let status = build_status(Some(counts(3, 2, 1, true)), &[], false);
         assert!(status.is_valid);
         assert_eq!(status.state, FulltextState::Ready);
         assert!(
@@ -436,7 +524,7 @@ mod tests {
     /// — a user who downloaded only suttas has no fault to report.
     #[test]
     fn empty_areas_are_omitted_from_the_count_description() {
-        let status = build_status(Some(counts(2, 0, 0, true)), &[]);
+        let status = build_status(Some(counts(2, 0, 0, true)), &[], false);
         assert!(status.is_valid);
         assert!(status.message.contains("2 sutta"), "got {}", status.message);
         assert!(!status.message.contains("dictionary"), "got {}", status.message);
@@ -444,7 +532,7 @@ mod tests {
 
     #[test]
     fn one_index_is_singular() {
-        let status = build_status(Some(counts(1, 0, 0, true)), &[]);
+        let status = build_status(Some(counts(1, 0, 0, true)), &[], false);
         assert!(status.message.contains("1 sutta index"), "got {}", status.message);
         assert!(!status.message.contains("indexes"), "got {}", status.message);
     }
@@ -454,7 +542,7 @@ mod tests {
     /// one sends the user to the wrong remedy.
     #[test]
     fn absent_directories_are_not_reported_as_a_failure_to_open() {
-        let status = build_status(Some(counts(0, 0, 0, false)), &[]);
+        let status = build_status(Some(counts(0, 0, 0, false)), &[], false);
         assert!(!status.is_valid);
         assert_eq!(status.state, FulltextState::FilesNotFound);
         assert!(status.message.contains("not found"), "got {}", status.message);
@@ -474,7 +562,7 @@ mod tests {
             .map(|p| lock_failure(p))
             .collect();
 
-        let status = build_status(Some(counts(0, 0, 0, true)), &failures);
+        let status = build_status(Some(counts(0, 0, 0, true)), &failures, false);
         assert!(!status.is_valid);
         assert_eq!(status.state, FulltextState::CouldNotOpen);
         assert_eq!(status.failure_count, 3);
@@ -489,7 +577,7 @@ mod tests {
     /// found", not "would not open".
     #[test]
     fn present_but_empty_directories_are_files_not_found() {
-        let status = build_status(Some(counts(0, 0, 0, true)), &[]);
+        let status = build_status(Some(counts(0, 0, 0, true)), &[], false);
         assert_eq!(status.state, FulltextState::FilesNotFound);
     }
 
@@ -499,7 +587,7 @@ mod tests {
             lock_failure("suttas/en"),
             ("dict_words/pli".to_string(), "Permission denied (os error 13)".to_string()),
         ];
-        let status = build_status(Some(counts(0, 0, 0, true)), &failures);
+        let status = build_status(Some(counts(0, 0, 0, true)), &failures, false);
         assert!(
             status.message.contains("could not be read"),
             "got {}",
@@ -517,14 +605,15 @@ mod tests {
         ];
 
         let mut messages: Vec<String> = Vec::new();
-        messages.push(build_status(None, &[]).message);
-        messages.push(build_status(Some(counts(0, 0, 0, false)), &[]).message);
-        messages.push(build_status(Some(counts(0, 0, 0, true)), &[]).message);
-        messages.push(build_status(Some(counts(3, 2, 1, true)), &[]).message);
+        messages.push(build_status(None, &[], false).message);
+        messages.push(build_status(Some(counts(0, 0, 0, false)), &[], false).message);
+        messages.push(build_status(Some(counts(0, 0, 0, true)), &[], false).message);
+        messages.push(build_status(Some(counts(3, 2, 1, true)), &[], false).message);
         messages.push(
             build_status(
                 Some(counts(0, 0, 0, true)),
                 &[lock_failure("suttas/en")],
+                false,
             )
             .message,
         );
@@ -535,9 +624,16 @@ mod tests {
                     lock_failure("suttas/en"),
                     ("d".to_string(), "Permission denied".to_string()),
                 ],
+                false,
             )
             .message,
         );
+        messages.push(build_status(Some(counts(3, 0, 0, true)), &[], true).message);
+        messages.push(
+            build_status(Some(counts(3, 0, 0, true)), &[lock_failure("dict_words/pli")], true)
+                .message,
+        );
+        messages.push(area_message(&area(0, false), "", true));
 
         // Every plain reason the classifier can return, reached through the
         // public entry point rather than asserted on in isolation.
@@ -551,10 +647,11 @@ mod tests {
             let status = build_status(
                 Some(counts(0, 0, 0, true)),
                 &[("suttas/en".to_string(), raw.to_string())],
+                false,
             );
             // The per-area sentence is shown in the search results panel and is
             // just as user-facing as the whole-app one.
-            messages.push(area_message(&status.counts.sutta, status.reason));
+            messages.push(area_message(&status.counts.sutta, status.reason, false));
             messages.push(status.message);
         }
 
@@ -570,7 +667,7 @@ mod tests {
 
     #[test]
     fn json_shape_carries_the_state_and_the_counts() {
-        let status = build_status(Some(counts(3, 2, 1, true)), &[]);
+        let status = build_status(Some(counts(3, 2, 1, true)), &[], false);
         let json = status.to_json();
         assert!(json.contains(r#""is_valid":true"#), "got {json}");
         assert!(json.contains(r#""state":"ready""#), "got {json}");
@@ -603,6 +700,7 @@ mod tests {
         let status = build_status(
             Some(counts(0, 0, 0, true)),
             &[lock_failure("/vol/index/suttas/pli")],
+            false,
         );
         let parsed: serde_json::Value = serde_json::from_str(&status.to_json())
             .expect("to_json must produce parseable JSON");
@@ -626,7 +724,7 @@ mod tests {
             dict: area(0, true),
             library: area(0, false),
         };
-        let status = build_status(Some(counts), &[lock_failure("/vol/index/dict_words/pli")]);
+        let status = build_status(Some(counts), &[lock_failure("/vol/index/dict_words/pli")], false);
 
         // Search works, and something is wrong. Both are true, and the two
         // fields say so separately — `state` is what the search UI branches on,
@@ -645,10 +743,10 @@ mod tests {
         // Never downloaded, never attempted: not a fault, and silent.
         assert_eq!(area_state(&status.counts.library), FulltextState::FilesNotFound);
 
-        assert!(area_message(&status.counts.sutta, status.reason).is_empty());
-        assert!(area_message(&status.counts.library, status.reason).is_empty());
+        assert!(area_message(&status.counts.sutta, status.reason, false).is_empty());
+        assert!(area_message(&status.counts.library, status.reason, false).is_empty());
 
-        let dict_message = area_message(&status.counts.dict, status.reason);
+        let dict_message = area_message(&status.counts.dict, status.reason, false);
         assert!(
             dict_message.starts_with("The search index could not be opened."),
             "got {dict_message}"
@@ -670,11 +768,11 @@ mod tests {
             dict: area(2, true),
             library: area(0, false),
         };
-        let status = build_status(Some(counts), &[lock_failure("/vol/index/suttas/pli")]);
+        let status = build_status(Some(counts), &[lock_failure("/vol/index/suttas/pli")], false);
 
         assert_eq!(area_state(&status.counts.sutta), FulltextState::Ready);
 
-        let message = area_message(&status.counts.sutta, status.reason);
+        let message = area_message(&status.counts.sutta, status.reason, false);
         assert!(
             message.contains("may be incomplete"),
             "a partly-open area must say results are incomplete, not that nothing opened: {message}"
@@ -685,14 +783,76 @@ mod tests {
         );
 
         // The fully-open area stays silent.
-        assert!(area_message(&status.counts.dict, status.reason).is_empty());
+        assert!(area_message(&status.counts.dict, status.reason, false).is_empty());
+    }
+
+    /// A rebuild that was cancelled after some languages were built: search
+    /// works for those, and the status must not read as healthy.
+    #[test]
+    fn an_incomplete_index_with_some_indexes_open_is_incomplete() {
+        // Library never built: no directory, nothing failed.
+        let counts = FulltextIndexCounts {
+            sutta: area(2, true),
+            dict: area(1, true),
+            library: area(0, false),
+        };
+        let status = build_status(Some(counts), &[], true);
+        assert_eq!(status.state, FulltextState::Incomplete);
+        assert!(!status.is_valid);
+        assert_eq!(status.message, INCOMPLETE_MESSAGE);
+        assert_eq!(status.counts.sutta.opened, 2, "the counts are kept");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&status.to_json()).expect("parseable JSON");
+        assert_eq!(parsed["state"], "incomplete");
+        assert_eq!(parsed["is_valid"], false);
+        // An empty search of any area says the index is incomplete, rather
+        // than "No results found".
+        assert_eq!(parsed["library"]["message"], INCOMPLETE_MESSAGE);
+        assert_eq!(parsed["sutta"]["message"], INCOMPLETE_MESSAGE);
+    }
+
+    /// Cancelled before any language was written: the folders exist but hold
+    /// nothing, and nothing failed to open.
+    #[test]
+    fn an_incomplete_index_with_nothing_open_is_still_incomplete() {
+        let status = build_status(Some(counts(0, 0, 0, true)), &[], true);
+        assert_eq!(status.state, FulltextState::Incomplete);
+        assert!(!status.is_valid);
+    }
+
+    /// No index folder at all: there is nothing to search, which is the
+    /// "not found" diagnosis whatever the marker says.
+    #[test]
+    fn an_incomplete_marker_without_index_dirs_is_files_not_found() {
+        let status = build_status(Some(counts(0, 0, 0, false)), &[], true);
+        assert_eq!(status.state, FulltextState::FilesNotFound);
+    }
+
+    /// Files that would not open are a storage problem; calling them
+    /// "incomplete" would send the user to a rebuild that cannot help.
+    #[test]
+    fn an_incomplete_index_that_would_not_open_is_could_not_open() {
+        let status = build_status(
+            Some(counts(0, 0, 0, true)),
+            &[lock_failure("/vol/index/suttas/pli")],
+            true,
+        );
+        assert_eq!(status.state, FulltextState::CouldNotOpen);
+    }
+
+    /// The searcher is closed for the whole rebuild, while the marker exists.
+    #[test]
+    fn an_incomplete_marker_with_no_searcher_is_not_opened_yet() {
+        let status = build_status(None, &[], true);
+        assert_eq!(status.state, FulltextState::NotOpenedYet);
     }
 
     /// The message is interpolated into JSON by hand, so a quote in it must not
     /// produce a document the QML side cannot parse.
     #[test]
     fn json_escapes_quotes_in_the_message() {
-        let mut status = build_status(Some(counts(1, 0, 0, true)), &[]);
+        let mut status = build_status(Some(counts(1, 0, 0, true)), &[], false);
         status.message = r#"a "quoted" word and a \ backslash"#.to_string();
         let json = status.to_json();
         assert!(json.contains(r#"\"quoted\""#), "got {json}");

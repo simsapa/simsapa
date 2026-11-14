@@ -457,6 +457,12 @@ pub fn init_fulltext_searcher() {
         return;
     }
 
+    // Closed for a rebuild: opening now would map files in a folder that is
+    // being deleted or is half-built. Only reinit_fulltext_searcher() reopens.
+    if SEARCHER_CLOSED.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+
     open_fulltext_searcher();
 }
 
@@ -471,8 +477,48 @@ pub fn reinit_fulltext_searcher() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+    SEARCHER_CLOSED.store(false, std::sync::atomic::Ordering::SeqCst);
     open_fulltext_searcher();
 }
+
+/// Set by [`close_fulltext_searcher`], cleared by [`reinit_fulltext_searcher`].
+/// While set, [`init_fulltext_searcher`] does not open: the localhost API calls
+/// it before every fulltext query, and during a rebuild that would map files in
+/// the folder being deleted (fatal to the deletion on Windows) or return
+/// results from a half-built index. Read and written under
+/// [`SEARCHER_OPEN_LOCK`].
+static SEARCHER_CLOSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Drop the open searcher, so no index file stays memory-mapped.
+///
+/// Called before the index folder is deleted for a rebuild: on Windows a mapped
+/// file cannot be deleted. It stays closed until the next
+/// [`reinit_fulltext_searcher`]: [`init_fulltext_searcher`] does not reopen it,
+/// so fulltext queries meanwhile get the "not opened yet" status. See
+/// `docs/fulltext-index-storage-and-file-locking.md`.
+pub fn close_fulltext_searcher() {
+    let _open_guard = SEARCHER_OPEN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    SEARCHER_CLOSED.store(true, std::sync::atomic::Ordering::SeqCst);
+    match FULLTEXT_SEARCHER.write() {
+        Ok(mut guard) => *guard = None,
+        Err(poisoned) => *poisoned.into_inner() = None,
+    }
+    info("Fulltext searcher closed");
+}
+
+/// One in-app Tantivy index writer at a time.
+///
+/// The Rebuild Search Index thread takes it with `try_lock()` for the whole
+/// rebuild and refuses to start when it is held; the in-app library index
+/// builds (book import, and a book's language change) take it with `lock()`,
+/// and hold it until their `reinit_fulltext_searcher()` has run, so they wait
+/// for a running rebuild instead of writing into a folder it deletes, and never
+/// reopen the searcher in the middle of one. See
+/// `docs/fulltext-index-storage-and-file-locking.md`.
+pub static INDEX_WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The open itself. **Callers must hold [`SEARCHER_OPEN_LOCK`].**
 fn open_fulltext_searcher() {

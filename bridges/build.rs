@@ -105,6 +105,7 @@ fn main() {
         "assets/qml/BookmarkFolderDialog.qml",
         "assets/qml/DictionaryIndexProgressWindow.qml",
         "assets/qml/DictionariesWindow.qml",
+        "assets/qml/SearchIndexRebuildWindow.qml",
         "assets/qml/DictionaryListItem.qml",
         "assets/qml/AvailableDictionaryRow.qml",
         "assets/qml/DictionaryImportRow.qml",

@@ -13,6 +13,7 @@ class DpdUpgradeWindow;
 class StorageRecoveryWindow;
 class SuttaLanguagesWindow;
 class DictionariesWindow;
+class SearchIndexRebuildWindow;
 class LibraryWindow;
 class ReferenceSearchWindow;
 class TopicIndexWindow;
@@ -79,6 +80,9 @@ class WindowManager : public QObject {
         DpdUpgradeWindow* create_dpd_upgrade_window();
         SuttaLanguagesWindow* create_sutta_languages_window();
         DictionariesWindow* create_dictionaries_window();
+        /// Single-instance. On reuse it calls the QML start_rebuild_if_idle(),
+        /// so opening it again after an outcome frame starts a new rebuild.
+        SearchIndexRebuildWindow* create_search_index_rebuild_window();
         LibraryWindow* create_library_window();
         ReferenceSearchWindow* create_reference_search_window();
         TopicIndexWindow* create_topic_index_window();
@@ -106,6 +110,7 @@ class WindowManager : public QObject {
         QList<DpdUpgradeWindow*> dpd_upgrade_windows;
         QList<SuttaLanguagesWindow*> sutta_languages_windows;
         QList<DictionariesWindow*> dictionaries_windows;
+        QList<SearchIndexRebuildWindow*> search_index_rebuild_windows;
         QList<LibraryWindow*> library_windows;
         QList<ReferenceSearchWindow*> reference_search_windows;
         QList<TopicIndexWindow*> topic_index_windows;

@@ -61,6 +61,7 @@ pub mod ffi {
         fn callback_open_sutta_tab(window_id: QString, show_result_data_json: QString);
         fn callback_open_sutta_languages_window();
         fn callback_open_dictionaries_window();
+        fn callback_open_search_index_rebuild_window();
         fn callback_open_library_window();
         fn callback_open_reference_search_window();
         fn callback_open_topic_index_window();

@@ -188,8 +188,72 @@ pub fn delete_index_dirs(
     Ok(())
 }
 
+/// Whether one planned build step falls under the `area` / `lang` filter. The
+/// DPD bold definitions belong to the dictionary-words area: they live in the
+/// `pli` dictionary index, which building that index clears.
+fn step_matches(step: &indexer::IndexStep, area: Option<IndexArea>, lang: Option<&str>) -> bool {
+    let area_ok = match area {
+        None => true,
+        Some(IndexArea::Suttas) => step.area == indexer::IndexStepArea::Suttas,
+        Some(IndexArea::DictWords) => matches!(
+            step.area,
+            indexer::IndexStepArea::DictWords | indexer::IndexStepArea::BoldDefinitions
+        ),
+        Some(IndexArea::Library) => step.area == indexer::IndexStepArea::Library,
+    };
+    area_ok && lang.is_none_or(|l| step.lang == l)
+}
+
+/// The build steps selected by `area` / `lang`, in build order: the full plan
+/// from [`indexer::plan_index_steps`], filtered. A language with no rows in an
+/// area has no step there.
+pub fn filtered_index_steps(dbm: &DbManager, area: Option<IndexArea>, lang: Option<&str>) -> Result<Vec<indexer::IndexStep>> {
+    let wants = |a: IndexArea| area.is_none() || area == Some(a);
+    let sutta_langs = if wants(IndexArea::Suttas) { indexer::get_sutta_languages(&dbm.appdata)? } else { Vec::new() };
+    let dict_langs = if wants(IndexArea::DictWords) { indexer::get_dict_word_languages(&dbm.dictionaries)? } else { Vec::new() };
+    let library_langs = if wants(IndexArea::Library) { indexer::get_library_languages(&dbm.appdata)? } else { Vec::new() };
+
+    Ok(indexer::plan_index_steps(&sutta_langs, &dict_langs, &library_langs)
+        .into_iter()
+        .filter(|s| step_matches(s, area, lang))
+        .collect())
+}
+
+/// `4m 37s`, `12s`, `1h 2m 5s`.
+pub fn format_elapsed(secs: u64) -> String {
+    let (h, m, s) = (secs / 3600, (secs % 3600) / 60, secs % 60);
+    if h > 0 {
+        format!("{}h {}m {}s", h, m, s)
+    } else if m > 0 {
+        format!("{}m {}s", m, s)
+    } else {
+        format!("{}s", s)
+    }
+}
+
+/// The summary lines printed after a build, e.g. `Done in 4m 37s.` then
+/// `  Suttas: 48213 documents (de, en, pli)` for each area.
+pub fn summary_lines(summary: &indexer::IndexBuildSummary) -> Vec<String> {
+    let mut lines = vec![format!("Done in {}.", format_elapsed(summary.elapsed_secs))];
+    for (a, area) in indexer::IndexStepArea::ALL.iter().zip(&summary.areas) {
+        let mut line = format!("  {}: {} documents", a.label(), area.documents);
+        if !area.languages.is_empty() {
+            let mut langs = area.languages.clone();
+            langs.sort();
+            line.push_str(&format!(" ({})", langs.join(", ")));
+        }
+        lines.push(line);
+    }
+    lines
+}
+
 /// Build the fulltext indexes selected by `area` / `lang`; with `rebuild`,
-/// delete them first. Progress lines go to `report`.
+/// delete them first. Each step goes to `report` as `[3/9] Suttas (pli)`.
+///
+/// Returns the build summary. Runs through
+/// [`indexer::build_steps_with_progress`], so the `INCOMPLETE` marker stays
+/// in the index folder if the build fails part way, and a filtered build
+/// leaves a marker it found in place.
 pub fn build_indexes(
     dbm: &DbManager,
     paths: &AppGlobalPaths,
@@ -197,89 +261,34 @@ pub fn build_indexes(
     lang: Option<&str>,
     rebuild: bool,
     report: &mut dyn FnMut(&str),
-) -> Result<()> {
+) -> Result<Option<indexer::IndexBuildSummary>> {
     if rebuild {
         delete_index_dirs(paths, area, lang, report)?;
     }
 
-    match (area, lang) {
-        // Build everything
-        (None, None) => {
-            report("Building all fulltext indexes...");
-            indexer::build_all_indexes(&dbm.appdata, &dbm.dictionaries, &dbm.dpd, paths)?;
-        }
+    let steps = filtered_index_steps(dbm, area, lang)?;
+    report(&format!("Building {} fulltext index step(s)...", steps.len()));
 
-        // Build all languages for a specific area
-        (Some(IndexArea::Suttas), None) => {
-            report("Building sutta indexes for all languages...");
-            for l in &indexer::get_sutta_languages(&dbm.appdata)? {
-                report(&format!("  Building sutta index for language: {}", l));
-                indexer::build_sutta_index(&dbm.appdata, &paths.suttas_index_dir, l)?;
-            }
-            indexer::write_version_file(&paths.index_dir)?;
-        }
+    // The CLI has no cancel (Ctrl-C ends the process).
+    let never = std::sync::atomic::AtomicBool::new(false);
+    // Only an unfiltered build completes an index an earlier build left
+    // unfinished (the INCOMPLETE marker).
+    let full_plan = area.is_none() && lang.is_none();
+    let outcome = indexer::build_steps_with_progress(
+        &steps,
+        full_plan,
+        &dbm.appdata,
+        &dbm.dictionaries,
+        &dbm.dpd,
+        paths,
+        &mut |i, total, step| report(&format!("[{}/{}] {}", i, total, step.label())),
+        &never,
+    )?;
 
-        (Some(IndexArea::DictWords), None) => {
-            report("Building dictionary indexes for all languages...");
-            for l in &indexer::get_dict_word_languages(&dbm.dictionaries)? {
-                report(&format!("  Building dict_word index for language: {}", l));
-                indexer::build_dict_index(&dbm.dictionaries, &paths.dict_words_index_dir, l)?;
-            }
-            indexer::write_version_file(&paths.index_dir)?;
-        }
-
-        (Some(IndexArea::Library), None) => {
-            report("Building library indexes for all languages...");
-            for l in &indexer::get_library_languages(&dbm.appdata)? {
-                report(&format!("  Building library index for language: {}", l));
-                indexer::build_library_index(&dbm.appdata, &paths.library_index_dir, l)?;
-            }
-            indexer::write_version_file(&paths.index_dir)?;
-        }
-
-        // Build a specific language across all areas
-        (None, Some(lang_code)) => {
-            report(&format!("Building indexes for language: {}", lang_code));
-            let lang_code_owned = lang_code.to_string();
-
-            if indexer::get_sutta_languages(&dbm.appdata)?.contains(&lang_code_owned) {
-                report(&format!("  Building sutta index for language: {}", lang_code));
-                indexer::build_sutta_index(&dbm.appdata, &paths.suttas_index_dir, lang_code)?;
-            }
-
-            if indexer::get_dict_word_languages(&dbm.dictionaries)?.contains(&lang_code_owned) {
-                report(&format!("  Building dict_word index for language: {}", lang_code));
-                indexer::build_dict_index(&dbm.dictionaries, &paths.dict_words_index_dir, lang_code)?;
-            }
-
-            if indexer::get_library_languages(&dbm.appdata)?.contains(&lang_code_owned) {
-                report(&format!("  Building library index for language: {}", lang_code));
-                indexer::build_library_index(&dbm.appdata, &paths.library_index_dir, lang_code)?;
-            }
-            indexer::write_version_file(&paths.index_dir)?;
-        }
-
-        // Build a specific area + language
-        (Some(IndexArea::Suttas), Some(lang_code)) => {
-            report(&format!("Building sutta index for language: {}", lang_code));
-            indexer::build_sutta_index(&dbm.appdata, &paths.suttas_index_dir, lang_code)?;
-            indexer::write_version_file(&paths.index_dir)?;
-        }
-
-        (Some(IndexArea::DictWords), Some(lang_code)) => {
-            report(&format!("Building dict_word index for language: {}", lang_code));
-            indexer::build_dict_index(&dbm.dictionaries, &paths.dict_words_index_dir, lang_code)?;
-            indexer::write_version_file(&paths.index_dir)?;
-        }
-
-        (Some(IndexArea::Library), Some(lang_code)) => {
-            report(&format!("Building library index for language: {}", lang_code));
-            indexer::build_library_index(&dbm.appdata, &paths.library_index_dir, lang_code)?;
-            indexer::write_version_file(&paths.index_dir)?;
-        }
+    match outcome {
+        indexer::IndexBuildOutcome::Completed(summary) => Ok(Some(summary)),
+        indexer::IndexBuildOutcome::Cancelled => Err(anyhow!("The index build was cancelled.")),
     }
-
-    Ok(())
 }
 
 // ===== Appdata statistics =====
@@ -458,6 +467,63 @@ pub fn appdata_stats_output_folder(db_path: &Path, output_folder: Option<&Path>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::indexer::{IndexBuildAreaSummary, IndexBuildSummary, IndexStep, IndexStepArea};
+
+    fn step(area: IndexStepArea, lang: &str) -> IndexStep {
+        IndexStep { area, lang: lang.to_string() }
+    }
+
+    #[test]
+    fn test_step_filter_by_area_and_language() {
+        let bold = step(IndexStepArea::BoldDefinitions, "pli");
+        let dict_en = step(IndexStepArea::DictWords, "en");
+        let sutta_pli = step(IndexStepArea::Suttas, "pli");
+
+        assert!(step_matches(&bold, None, None));
+        assert!(step_matches(&bold, Some(IndexArea::DictWords), None), "bold definitions go with the dictionary words");
+        assert!(step_matches(&bold, Some(IndexArea::DictWords), Some("pli")));
+        assert!(!step_matches(&bold, Some(IndexArea::DictWords), Some("en")));
+        assert!(!step_matches(&bold, Some(IndexArea::Suttas), None));
+        assert!(step_matches(&bold, None, Some("pli")));
+
+        assert!(step_matches(&dict_en, Some(IndexArea::DictWords), Some("en")));
+        assert!(!step_matches(&dict_en, Some(IndexArea::Library), Some("en")));
+        assert!(step_matches(&sutta_pli, None, Some("pli")));
+        assert!(!step_matches(&sutta_pli, None, Some("en")));
+    }
+
+    #[test]
+    fn test_format_elapsed() {
+        assert_eq!(format_elapsed(0), "0s");
+        assert_eq!(format_elapsed(59), "59s");
+        assert_eq!(format_elapsed(277), "4m 37s");
+        assert_eq!(format_elapsed(3725), "1h 2m 5s");
+    }
+
+    #[test]
+    fn test_summary_lines() {
+        let area = |name: &str, documents: u64, langs: &[&str]| IndexBuildAreaSummary {
+            area: name.to_string(),
+            documents,
+            languages: langs.iter().map(|s| s.to_string()).collect(),
+        };
+        let summary = IndexBuildSummary {
+            elapsed_secs: 277,
+            areas: vec![
+                area("suttas", 48213, &["pli", "en", "de"]),
+                area("dict_words", 10, &["en"]),
+                area("library", 0, &[]),
+                area("bold_definitions", 5, &["pli"]),
+            ],
+        };
+        assert_eq!(summary_lines(&summary), vec![
+            "Done in 4m 37s.",
+            "  Suttas: 48213 documents (de, en, pli)",
+            "  Dictionary words: 10 documents (en)",
+            "  Library: 0 documents",
+            "  DPD bold definitions: 5 documents (pli)",
+        ]);
+    }
 
     #[test]
     fn test_appdata_stats_markdown_and_json() {

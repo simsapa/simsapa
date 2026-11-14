@@ -165,6 +165,74 @@ fn test_write_command_refused_while_another_command_holds_the_lock() {
     assert_eq!(out.status.code(), Some(2), "stderr: {}", stderr(&out));
 }
 
+// ===== Index build progress and summary =====
+
+/// A simsapa folder whose `app-assets/` links to the dist databases, so an
+/// index build reads real rows and writes its index into the temp folder,
+/// never into the dist index. `None` when the dist databases are absent or
+/// links cannot be made.
+#[cfg(unix)]
+fn temp_folder_with_dist_databases() -> Option<tempfile::TempDir> {
+    if !dist_available() {
+        return None;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let assets = dir.path().join("app-assets");
+    fs::create_dir_all(&assets).unwrap();
+    for db in ["appdata.sqlite3", "dictionaries.sqlite3", "dpd.sqlite3"] {
+        let src = Path::new(DIST_SIMSAPA_DIR).join("app-assets").join(db);
+        if std::os::unix::fs::symlink(&src, assets.join(db)).is_err() {
+            return None;
+        }
+    }
+    Some(dir)
+}
+
+/// `index rebuild` reports `[N/M] <label>` steps and a summary on stderr, and
+/// `--json` carries the summary with every area. `index delete --json` has no
+/// summary. The build is the `en` library index only, which is small.
+#[cfg(unix)]
+#[test]
+fn test_index_rebuild_reports_steps_and_summary() {
+    let Some(dir) = temp_folder_with_dist_databases() else { return };
+    let index_dir = dir.path().join("app-assets/index");
+
+    let out = simsapa(dir.path(), &["index", "rebuild", "--area", "library", "--lang", "en", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let err = stderr(&out);
+    assert!(err.contains("[1/1] Library (en)"), "stderr: {err}");
+    assert!(err.contains("Done in "), "stderr: {err}");
+    assert!(err.contains("  Library: "), "stderr: {err}");
+
+    let doc = stdout_json(&out);
+    assert_eq!(doc["status"], "ok");
+    assert_eq!(doc["action"], "rebuild");
+    assert_eq!(doc["area"], "library");
+    assert_eq!(doc["lang"], "en");
+    let areas: Vec<&str> = doc["summary"]["areas"]
+        .as_array()
+        .expect("summary.areas")
+        .iter()
+        .map(|a| a["area"].as_str().unwrap())
+        .collect();
+    assert_eq!(areas, vec!["suttas", "dict_words", "library", "bold_definitions"]);
+    let library = &doc["summary"]["areas"][2];
+    assert!(library["documents"].as_u64().unwrap() > 0, "summary: {}", doc["summary"]);
+    assert_eq!(library["languages"], serde_json::json!(["en"]));
+    assert!(doc["summary"]["elapsed_secs"].is_u64());
+
+    assert!(index_dir.join("library/en").try_exists().unwrap(), "built into the temp folder");
+    assert!(index_dir.join("VERSION").try_exists().unwrap());
+    assert!(!index_dir.join("INCOMPLETE").try_exists().unwrap(), "a finished build removes the marker");
+
+    let out = simsapa(dir.path(), &["index", "delete", "--area", "library", "--lang", "en", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(&out));
+    let doc = stdout_json(&out);
+    assert_eq!(doc["action"], "delete");
+    assert!(doc.get("summary").is_none(), "delete has no summary: {doc}");
+    assert!(!index_dir.join("library/en").try_exists().unwrap());
+}
+
 // ===== Import into the dist databases =====
 
 /// A minimal StarDict triplet with `words`, each defined as "dummy definition".

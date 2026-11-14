@@ -46,8 +46,8 @@ Item {
     signal releasesCheckCompleted(request_id: string);
 
     // Search index signals
-    signal rebuildSearchIndexProgress(message: string);
-    signal rebuildSearchIndexCompleted(success: bool, message: string);
+    signal rebuildSearchIndexProgress(step: int, total: int, label: string);
+    signal rebuildSearchIndexFinished(outcome: string, summary_json: string, message: string);
     signal storageDiagnosticsCompleted(success: bool, summary: string);
     signal fileSelectionTestCompleted(success: bool, outcome: string);
     signal importFilePickCompleted(success: bool, uri: string, message: string);
@@ -282,7 +282,7 @@ Item {
     }
 
     function check_search_index_status(): string {
-        return '{"exists": true, "current": true}';
+        return '{"exists": true, "current": true, "incomplete": false, "message": ""}';
     }
 
     function get_fulltext_status(): string {
@@ -291,6 +291,14 @@ Item {
 
     function rebuild_search_index() {
         console.log("rebuild_search_index()");
+    }
+
+    function cancel_rebuild_search_index() {
+        console.log("cancel_rebuild_search_index()");
+    }
+
+    function is_rebuilding_search_index(): bool {
+        return false;
     }
 
     function run_storage_diagnostics() {
@@ -1040,6 +1048,10 @@ Item {
 
     function open_dictionaries_window() {
         console.log("open_dictionaries_window()");
+    }
+
+    function open_search_index_rebuild_window() {
+        console.log("open_search_index_rebuild_window()");
     }
 
     function open_sutta_languages_window() {

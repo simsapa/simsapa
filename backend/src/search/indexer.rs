@@ -1,8 +1,11 @@
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use anyhow::Result;
 use diesel::prelude::*;
+use serde::Serialize;
 use tantivy::{doc, Directory, DocSet, Index, IndexWriter, Term, TERMINATED};
 use tantivy::schema::IndexRecordOption;
 
@@ -47,8 +50,30 @@ pub fn open_or_create_index(dir: &Path, schema: tantivy::schema::Schema, lang: &
     Ok(index)
 }
 
+/// How often (in rows) a running step checks the cancel flag. Cancel is also
+/// checked before each step. See `docs/fulltext-index-storage-and-file-locking.md`.
+const CANCEL_CHECK_EVERY: usize = 1000;
+
+/// What one build step did: the documents it added, or that it stopped on the
+/// cancel flag without committing them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StepResult {
+    Done(u64),
+    Cancelled,
+}
+
+/// True at a cancel check point (every [`CANCEL_CHECK_EVERY`] rows) when the
+/// flag is set.
+fn cancel_requested(row: usize, cancel: &AtomicBool) -> bool {
+    row % CANCEL_CHECK_EVERY == 0 && cancel.load(Ordering::Relaxed)
+}
+
 /// Build fulltext index for suttas of a given language.
 pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
+    build_sutta_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+}
+
+fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
     use crate::db::appdata_schema::suttas::dsl::*;
 
     info(&format!("Building sutta index for language: {}", lang));
@@ -104,8 +129,14 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
 
     info(&format!("Indexing {} suttas for language {}", sutta_list.len(), lang));
 
-    let mut indexed_count = 0;
-    for sutta in &sutta_list {
+    let mut indexed_count: u64 = 0;
+    for (row, sutta) in sutta_list.iter().enumerate() {
+        if cancel_requested(row, cancel) {
+            // Dropping the writer without commit() discards the added documents.
+            info(&format!("Sutta index for {} cancelled after {} documents", lang, indexed_count));
+            return Ok(StepResult::Cancelled);
+        }
+
         let plain = sutta.content_plain.as_deref().unwrap_or("");
         if plain.is_empty() {
             continue;
@@ -155,11 +186,15 @@ pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &s
 
     info(&format!("Sutta index committed: {} documents for language {}", indexed_count, lang));
 
-    Ok(())
+    Ok(StepResult::Done(indexed_count))
 }
 
 /// Build fulltext index for dictionary words of a given language.
 pub fn build_dict_index(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
+    build_dict_index_cancellable(dict_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+}
+
+fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
     use crate::db::dictionaries_schema::dict_words::dsl::*;
 
     info(&format!("Building dict_words index for language: {}", lang));
@@ -195,8 +230,13 @@ pub fn build_dict_index(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str) 
 
     info(&format!("Indexing {} dict_words for language {}", word_list.len(), lang));
 
-    let mut indexed_count = 0;
-    for dw in &word_list {
+    let mut indexed_count: u64 = 0;
+    for (row, dw) in word_list.iter().enumerate() {
+        if cancel_requested(row, cancel) {
+            info(&format!("Dict_words index for {} cancelled after {} documents", lang, indexed_count));
+            return Ok(StepResult::Cancelled);
+        }
+
         let def = dw.definition_plain.as_deref().unwrap_or("");
         if def.is_empty() {
             continue;
@@ -234,7 +274,7 @@ pub fn build_dict_index(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str) 
 
     info(&format!("Dict_words index committed: {} documents for language {}", indexed_count, lang));
 
-    Ok(())
+    Ok(StepResult::Done(indexed_count))
 }
 
 /// Append the rows for a single `dict_label` to the per-language dict index
@@ -358,6 +398,15 @@ pub fn append_bold_definitions_to_dict_index(
     dict_words_index_dir: &Path,
     lang: &str,
 ) -> Result<()> {
+    append_bold_definitions_cancellable(dpd_db, dict_words_index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+}
+
+fn append_bold_definitions_cancellable(
+    dpd_db: &DatabaseHandle,
+    dict_words_index_dir: &Path,
+    lang: &str,
+    cancel: &AtomicBool,
+) -> Result<StepResult> {
     use crate::db::dpd_schema::bold_definitions::dsl as bd_dsl;
 
     info(&format!("Appending bold_definitions to dict index for language: {}", lang));
@@ -386,8 +435,15 @@ pub fn append_bold_definitions_to_dict_index(
     const PAGE: i64 = 10_000;
     let mut last_id: i32 = 0;
     let mut read_count = 0;
-    let mut indexed_count = 0;
+    let mut indexed_count: u64 = 0;
     loop {
+        // PAGE is a multiple of CANCEL_CHECK_EVERY, so the row index restarts
+        // at a check point on every page.
+        if cancel.load(Ordering::Relaxed) {
+            info(&format!("bold_definitions append cancelled after {} documents", indexed_count));
+            return Ok(StepResult::Cancelled);
+        }
+
         let rows: Vec<BoldRow> = dpd_db.do_read(|db_conn| {
             bd_dsl::bold_definitions
                 .select((bd_dsl::id, bd_dsl::uid, bd_dsl::bold, bd_dsl::ref_code, bd_dsl::nikaya,
@@ -401,7 +457,12 @@ pub fn append_bold_definitions_to_dict_index(
         last_id = last.0;
         read_count += rows.len();
 
-        for (_id, uid, bold, ref_code, nikaya, book, title, subhead, plain) in &rows {
+        for (row, (_id, uid, bold, ref_code, nikaya, book, title, subhead, plain)) in rows.iter().enumerate() {
+            if row > 0 && cancel_requested(row, cancel) {
+                info(&format!("bold_definitions append cancelled after {} documents", indexed_count));
+                return Ok(StepResult::Cancelled);
+            }
+
             if plain.is_empty() {
                 continue;
             }
@@ -441,11 +502,15 @@ pub fn append_bold_definitions_to_dict_index(
 
     info(&format!("bold_definitions index committed: {} documents", indexed_count));
 
-    Ok(())
+    Ok(StepResult::Done(indexed_count))
 }
 
 /// Build fulltext index for library book chapters of a given language.
 pub fn build_library_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
+    build_library_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+}
+
+fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
     use crate::db::appdata_schema::book_spine_items::dsl as spine_dsl;
     use crate::db::appdata_schema::books::dsl as books_dsl;
 
@@ -482,8 +547,13 @@ pub fn build_library_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: 
 
     info(&format!("Found {} book spine items total", items.len()));
 
-    let mut indexed_count = 0;
-    for (spine_item, book) in &items {
+    let mut indexed_count: u64 = 0;
+    for (row, (spine_item, book)) in items.iter().enumerate() {
+        if cancel_requested(row, cancel) {
+            info(&format!("Library index for {} cancelled after {} documents", lang, indexed_count));
+            return Ok(StepResult::Cancelled);
+        }
+
         // Determine effective language: spine_item.language > book.language > "en"
         let effective_lang = spine_item.language.as_deref()
             .filter(|s| !s.is_empty())
@@ -531,7 +601,7 @@ pub fn build_library_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: 
 
     info(&format!("Library index committed: {} documents for language {}", indexed_count, lang));
 
-    Ok(())
+    Ok(StepResult::Done(indexed_count))
 }
 
 /// Get distinct effective languages across all library book spine items.
@@ -599,6 +669,233 @@ pub fn get_dict_word_languages(dict_db: &DatabaseHandle) -> Result<Vec<String>> 
         .collect())
 }
 
+// ---------------------------------------------------------------------------
+// Building every index, step by step
+// ---------------------------------------------------------------------------
+
+/// The area one build step writes. Not `cli_support::IndexArea`: that one is
+/// the CLI's `--area` filter and has no bold definitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexStepArea {
+    Suttas,
+    DictWords,
+    Library,
+    BoldDefinitions,
+}
+
+impl IndexStepArea {
+    /// All areas, in build order.
+    pub const ALL: [IndexStepArea; 4] = [
+        IndexStepArea::Suttas,
+        IndexStepArea::DictWords,
+        IndexStepArea::Library,
+        IndexStepArea::BoldDefinitions,
+    ];
+
+    /// The machine name used in the build summary JSON.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IndexStepArea::Suttas => "suttas",
+            IndexStepArea::DictWords => "dict_words",
+            IndexStepArea::Library => "library",
+            IndexStepArea::BoldDefinitions => "bold_definitions",
+        }
+    }
+
+    /// The name shown to the user.
+    pub fn label(&self) -> &'static str {
+        match self {
+            IndexStepArea::Suttas => "Suttas",
+            IndexStepArea::DictWords => "Dictionary words",
+            IndexStepArea::Library => "Library",
+            IndexStepArea::BoldDefinitions => "DPD bold definitions",
+        }
+    }
+}
+
+/// One step of an index build: one area, one language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexStep {
+    pub area: IndexStepArea,
+    pub lang: String,
+}
+
+impl IndexStep {
+    /// E.g. `Suttas (pli)`, `DPD bold definitions (pli)`.
+    pub fn label(&self) -> String {
+        format!("{} ({})", self.area.label(), self.lang)
+    }
+}
+
+/// The DPD bold definitions are Pāli commentary text, appended into the `pli`
+/// dictionary index.
+pub const BOLD_DEFINITIONS_LANG: &str = "pli";
+
+/// The whole build plan, worked out before the first step runs so the total is
+/// known from the start: suttas per language, then dictionary words per
+/// language, then library per language, then the DPD bold definitions. The bold
+/// definitions come after the dictionary words because `build_dict_index`
+/// clears the `pli` index that they are appended to.
+pub fn plan_index_steps(sutta_langs: &[String], dict_langs: &[String], library_langs: &[String]) -> Vec<IndexStep> {
+    let mut steps = Vec::new();
+    let mut push = |area: IndexStepArea, langs: &[String]| {
+        for lang in langs {
+            steps.push(IndexStep { area, lang: lang.clone() });
+        }
+    };
+    push(IndexStepArea::Suttas, sutta_langs);
+    push(IndexStepArea::DictWords, dict_langs);
+    push(IndexStepArea::Library, library_langs);
+    steps.push(IndexStep { area: IndexStepArea::BoldDefinitions, lang: BOLD_DEFINITIONS_LANG.to_string() });
+    steps
+}
+
+/// The documents and languages one area received in a build.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct IndexBuildAreaSummary {
+    /// `suttas` | `dict_words` | `library` | `bold_definitions`
+    pub area: String,
+    pub documents: u64,
+    pub languages: Vec<String>,
+}
+
+/// What a finished build did. Every area is listed, in build order, also when
+/// it had no languages (0 documents).
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct IndexBuildSummary {
+    pub elapsed_secs: u64,
+    pub areas: Vec<IndexBuildAreaSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IndexBuildOutcome {
+    Completed(IndexBuildSummary),
+    /// Stopped on the cancel flag. The step that was running was not committed,
+    /// no `VERSION` was written and the `INCOMPLETE` marker is left in place.
+    Cancelled,
+}
+
+/// Run one step against its database and index folder.
+fn run_index_step(
+    step: &IndexStep,
+    appdata_db: &DatabaseHandle,
+    dict_db: &DatabaseHandle,
+    dpd_db: &DatabaseHandle,
+    paths: &AppGlobalPaths,
+    cancel: &AtomicBool,
+) -> Result<StepResult> {
+    let lang = step.lang.as_str();
+    match step.area {
+        IndexStepArea::Suttas => build_sutta_index_cancellable(appdata_db, &paths.suttas_index_dir, lang, cancel),
+        IndexStepArea::DictWords => build_dict_index_cancellable(dict_db, &paths.dict_words_index_dir, lang, cancel),
+        IndexStepArea::Library => build_library_index_cancellable(appdata_db, &paths.library_index_dir, lang, cancel),
+        IndexStepArea::BoldDefinitions => append_bold_definitions_cancellable(dpd_db, &paths.dict_words_index_dir, lang, cancel),
+    }
+}
+
+/// Run a step plan in order, reporting each step before it starts and checking
+/// `cancel` before each step and inside each step (see [`CANCEL_CHECK_EVERY`]).
+///
+/// Writes the `INCOMPLETE` marker in `paths.index_dir` before the first step
+/// and, on success, writes `VERSION` and then removes the marker. A cancel or
+/// an error leaves the marker, so the fulltext status reports the index as
+/// incomplete. Used for the full build and for the CLI's filtered builds.
+///
+/// `full_plan` says whether `steps` is every step of the build. A filtered
+/// build that finishes leaves a marker it found in place: building one area or
+/// language does not complete an index that an earlier build left unfinished.
+#[allow(clippy::too_many_arguments)]
+pub fn build_steps_with_progress(
+    steps: &[IndexStep],
+    full_plan: bool,
+    appdata_db: &DatabaseHandle,
+    dict_db: &DatabaseHandle,
+    dpd_db: &DatabaseHandle,
+    paths: &AppGlobalPaths,
+    on_step: &mut dyn FnMut(usize, usize, &IndexStep),
+    cancel: &AtomicBool,
+) -> Result<IndexBuildOutcome> {
+    let started = Instant::now();
+    let total = steps.len();
+
+    let was_incomplete = is_index_incomplete(&paths.index_dir);
+    write_incomplete_marker(&paths.index_dir)?;
+
+    let mut areas: Vec<IndexBuildAreaSummary> = IndexStepArea::ALL
+        .iter()
+        .map(|a| IndexBuildAreaSummary { area: a.as_str().to_string(), documents: 0, languages: Vec::new() })
+        .collect();
+
+    for (i, step) in steps.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            info(&format!("Index build cancelled before step {}/{}", i + 1, total));
+            return Ok(IndexBuildOutcome::Cancelled);
+        }
+
+        on_step(i + 1, total, step);
+        info(&format!("Index build step {}/{}: {}", i + 1, total, step.label()));
+
+        match run_index_step(step, appdata_db, dict_db, dpd_db, paths, cancel)? {
+            StepResult::Cancelled => return Ok(IndexBuildOutcome::Cancelled),
+            StepResult::Done(documents) => {
+                let idx = IndexStepArea::ALL.iter().position(|a| *a == step.area).unwrap_or(0);
+                let summary = &mut areas[idx];
+                summary.documents += documents;
+                if !summary.languages.contains(&step.lang) {
+                    summary.languages.push(step.lang.clone());
+                }
+            }
+        }
+    }
+
+    write_version_file(&paths.index_dir)?;
+    if full_plan || !was_incomplete {
+        remove_incomplete_marker(&paths.index_dir)?;
+    } else {
+        info("Filtered index build finished; the index was already incomplete, so the INCOMPLETE marker stays");
+    }
+
+    Ok(IndexBuildOutcome::Completed(IndexBuildSummary {
+        elapsed_secs: started.elapsed().as_secs(),
+        areas,
+    }))
+}
+
+/// Build every index for every language found in the databases, reporting
+/// progress and stopping on `cancel`.
+///
+/// `on_step(step, total, &step)` is called once before each step, with a
+/// 1-based step number. The whole plan is read before the first step, so
+/// `total` is fixed from the first call.
+pub fn build_all_indexes_with_progress(
+    appdata_db: &DatabaseHandle,
+    dict_db: &DatabaseHandle,
+    dpd_db: &DatabaseHandle,
+    paths: &AppGlobalPaths,
+    on_step: &mut dyn FnMut(usize, usize, &IndexStep),
+    cancel: &AtomicBool,
+) -> Result<IndexBuildOutcome> {
+    info("Building all fulltext indexes...");
+
+    let sutta_langs = get_sutta_languages(appdata_db)?;
+    info(&format!("Sutta languages: {:?}", sutta_langs));
+    let dict_langs = get_dict_word_languages(dict_db)?;
+    info(&format!("Dict_word languages: {:?}", dict_langs));
+    let library_langs = get_library_languages(appdata_db)?;
+    info(&format!("Library languages: {:?}", library_langs));
+
+    let steps = plan_index_steps(&sutta_langs, &dict_langs, &library_langs);
+
+    let outcome = build_steps_with_progress(&steps, true, appdata_db, dict_db, dpd_db, paths, on_step, cancel)?;
+    match &outcome {
+        IndexBuildOutcome::Completed(summary) => {
+            info(&format!("All fulltext indexes built successfully in {}s.", summary.elapsed_secs));
+        }
+        IndexBuildOutcome::Cancelled => info("Building all fulltext indexes was cancelled."),
+    }
+    Ok(outcome)
+}
+
 /// Build all fulltext indexes for all languages found in the databases.
 pub fn build_all_indexes(
     appdata_db: &DatabaseHandle,
@@ -606,37 +903,42 @@ pub fn build_all_indexes(
     dpd_db: &DatabaseHandle,
     paths: &AppGlobalPaths,
 ) -> Result<()> {
-    info("Building all fulltext indexes...");
-
-    let sutta_langs = get_sutta_languages(appdata_db)?;
-    info(&format!("Sutta languages: {:?}", sutta_langs));
-
-    for lang in &sutta_langs {
-        build_sutta_index(appdata_db, &paths.suttas_index_dir, lang)?;
-    }
-
-    let dict_langs = get_dict_word_languages(dict_db)?;
-    info(&format!("Dict_word languages: {:?}", dict_langs));
-
-    for lang in &dict_langs {
-        build_dict_index(dict_db, &paths.dict_words_index_dir, lang)?;
-    }
-
-    let library_langs = get_library_languages(appdata_db)?;
-    info(&format!("Library languages: {:?}", library_langs));
-
-    for lang in &library_langs {
-        build_library_index(appdata_db, &paths.library_index_dir, lang)?;
-    }
-
-    // DPD bold-definitions commentary is Pāli only; append into the
-    // unified dict index (under the "pli" lang subdir).
-    append_bold_definitions_to_dict_index(dpd_db, &paths.dict_words_index_dir, "pli")?;
-
-    write_version_file(&paths.index_dir)?;
-
-    info("All fulltext indexes built successfully.");
+    let never = AtomicBool::new(false);
+    build_all_indexes_with_progress(appdata_db, dict_db, dpd_db, paths, &mut |_, _, _| {}, &never)?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// The INCOMPLETE marker
+// ---------------------------------------------------------------------------
+
+/// A file in `index_dir` that is present from the first build step until
+/// `VERSION` has been written. A cancelled, failed or interrupted build leaves
+/// it, and the fulltext status then reports the index as incomplete. A missing
+/// `VERSION` alone could not tell that apart from an index an older Simsapa
+/// built.
+pub const INCOMPLETE_MARKER: &str = "INCOMPLETE";
+
+pub fn write_incomplete_marker(index_dir: &Path) -> Result<()> {
+    match index_dir.try_exists() {
+        Ok(true) => {}
+        _ => std::fs::create_dir_all(index_dir)?,
+    }
+    std::fs::write(index_dir.join(INCOMPLETE_MARKER), "")?;
+    Ok(())
+}
+
+pub fn remove_incomplete_marker(index_dir: &Path) -> Result<()> {
+    let marker = index_dir.join(INCOMPLETE_MARKER);
+    if let Ok(true) = marker.try_exists() {
+        std::fs::remove_file(&marker)?;
+    }
+    Ok(())
+}
+
+/// Whether the last build into `index_dir` did not finish.
+pub fn is_index_incomplete(index_dir: &Path) -> bool {
+    matches!(index_dir.join(INCOMPLETE_MARKER).try_exists(), Ok(true))
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +969,17 @@ pub fn write_version_file(index_dir: &Path) -> Result<()> {
     std::fs::write(&version_path, INDEX_VERSION)?;
 
     info(&format!("Wrote index VERSION file: {}", version_path.display()));
+    Ok(())
+}
+
+/// Remove the VERSION file, if there is one. The rebuild does this before it
+/// deletes the index folder, so a deletion that stops part way leaves an index
+/// that reads as outdated rather than current.
+pub fn remove_version_file(index_dir: &Path) -> Result<()> {
+    let version_path = index_dir.join("VERSION");
+    if let Ok(true) = version_path.try_exists() {
+        std::fs::remove_file(&version_path)?;
+    }
     Ok(())
 }
 
@@ -999,5 +1312,176 @@ mod tests {
         assert!(after.contains("keep_label"), "live label must still be reported");
         assert!(!after.contains("remove_label"),
             "tombstoned-only label must NOT be reported (regression: perpetual reconcile popup)");
+    }
+
+    fn langs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn plan_index_steps_order_total_and_labels() {
+        let steps = plan_index_steps(&langs(&["pli", "en"]), &langs(&["en", "pli"]), &langs(&["en"]));
+        let labels: Vec<String> = steps.iter().map(|s| s.label()).collect();
+        assert_eq!(labels, vec![
+            "Suttas (pli)",
+            "Suttas (en)",
+            "Dictionary words (en)",
+            "Dictionary words (pli)",
+            "Library (en)",
+            "DPD bold definitions (pli)",
+        ]);
+        assert_eq!(steps[5].area, IndexStepArea::BoldDefinitions);
+    }
+
+    #[test]
+    fn plan_index_steps_with_no_languages_still_has_the_bold_definitions() {
+        let steps = plan_index_steps(&[], &[], &[]);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].label(), "DPD bold definitions (pli)");
+    }
+
+    #[test]
+    fn incomplete_marker_round_trip() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let index_dir = tmp.path().join("index");
+        assert!(!is_index_incomplete(&index_dir), "no folder: not incomplete");
+
+        write_incomplete_marker(&index_dir).unwrap();
+        assert!(is_index_incomplete(&index_dir));
+
+        remove_incomplete_marker(&index_dir).unwrap();
+        assert!(!is_index_incomplete(&index_dir));
+        // Removing a missing marker is not an error.
+        remove_incomplete_marker(&index_dir).unwrap();
+    }
+
+    #[test]
+    fn remove_version_file_makes_the_index_not_current() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let index_dir = tmp.path().join("index");
+        write_version_file(&index_dir).unwrap();
+        assert!(is_index_current(&index_dir));
+
+        remove_version_file(&index_dir).unwrap();
+        assert!(!is_index_current(&index_dir));
+        // Removing a missing VERSION is not an error.
+        remove_version_file(&index_dir).unwrap();
+    }
+
+    /// Paths from the dist `SIMSAPA_DIR` (see `backend/.env`) with every index
+    /// folder moved into `tmp`, and handles for the three dist databases.
+    /// `None` when the dist databases are absent.
+    fn dist_dbs_with_temp_index(tmp: &Path) -> Option<(AppGlobalPaths, DatabaseHandle, DatabaseHandle, DatabaseHandle)> {
+        dotenvy::dotenv().ok();
+        let mut paths = AppGlobalPaths::new();
+        for db in [&paths.appdata_db_path, &paths.dict_db_path, &paths.dpd_db_path] {
+            if !matches!(db.try_exists(), Ok(true)) {
+                return None;
+            }
+        }
+        paths.index_dir = tmp.join("index");
+        paths.suttas_index_dir = paths.index_dir.join("suttas");
+        paths.dict_words_index_dir = paths.index_dir.join("dict_words");
+        paths.library_index_dir = paths.index_dir.join("library");
+
+        let appdata = DatabaseHandle::new(&paths.appdata_database_url).ok()?;
+        let dict = DatabaseHandle::new(&paths.dict_database_url).ok()?;
+        let dpd = DatabaseHandle::new(&paths.dpd_database_url).ok()?;
+        Some((paths, appdata, dict, dpd))
+    }
+
+    #[test]
+    fn build_all_indexes_with_cancel_already_set_builds_nothing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        let cancel = AtomicBool::new(true);
+        let mut calls = 0;
+        let outcome = build_all_indexes_with_progress(
+            &appdata, &dict, &dpd, &paths, &mut |_, _, _| calls += 1, &cancel,
+        ).unwrap();
+
+        assert_eq!(outcome, IndexBuildOutcome::Cancelled);
+        assert_eq!(calls, 0, "no step may start");
+        assert!(is_index_incomplete(&paths.index_dir), "the marker stays after a cancel");
+        assert!(!matches!(paths.index_dir.join("VERSION").try_exists(), Ok(true)), "no VERSION after a cancel");
+    }
+
+    #[test]
+    fn cancel_set_during_step_one_stops_before_step_two() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        // A library language no book has keeps step 1 small. Step 2 would be
+        // a full Pāli sutta build if the cancel were missed.
+        let steps = vec![
+            IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() },
+            IndexStep { area: IndexStepArea::Suttas, lang: "pli".to_string() },
+        ];
+
+        let cancel = AtomicBool::new(false);
+        let mut started: Vec<(usize, usize)> = Vec::new();
+        let outcome = build_steps_with_progress(
+            &steps, false, &appdata, &dict, &dpd, &paths,
+            &mut |i, total, _step| {
+                started.push((i, total));
+                cancel.store(true, Ordering::Relaxed);
+            },
+            &cancel,
+        ).unwrap();
+
+        assert_eq!(outcome, IndexBuildOutcome::Cancelled);
+        assert_eq!(started, vec![(1, 2)], "only step 1 may start");
+        assert!(is_index_incomplete(&paths.index_dir));
+        assert!(!matches!(paths.index_dir.join("VERSION").try_exists(), Ok(true)), "no VERSION after a cancel");
+        assert!(!matches!(paths.suttas_index_dir.join("pli").try_exists(), Ok(true)), "step 2 must not touch its index");
+    }
+
+    #[test]
+    fn a_finished_plan_writes_version_removes_the_marker_and_lists_every_area() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
+        let cancel = AtomicBool::new(false);
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+
+        let IndexBuildOutcome::Completed(summary) = outcome else { panic!("expected Completed") };
+        let names: Vec<&str> = summary.areas.iter().map(|a| a.area.as_str()).collect();
+        assert_eq!(names, vec!["suttas", "dict_words", "library", "bold_definitions"]);
+        assert_eq!(summary.areas[2].documents, 0);
+        assert_eq!(summary.areas[2].languages, vec!["dummy-none".to_string()]);
+        assert!(summary.areas[0].languages.is_empty());
+        assert!(!is_index_incomplete(&paths.index_dir));
+        assert!(is_index_current(&paths.index_dir));
+    }
+
+    #[test]
+    fn a_filtered_build_keeps_the_marker_of_an_unfinished_build() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        // An earlier full build stopped part way.
+        write_incomplete_marker(&paths.index_dir).unwrap();
+
+        let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
+        let cancel = AtomicBool::new(false);
+
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
+        assert!(is_index_incomplete(&paths.index_dir), "a filtered build must not clear the marker");
+
+        // A build of the whole plan does clear it.
+        let outcome = build_steps_with_progress(&steps, true, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
+        assert!(!is_index_incomplete(&paths.index_dir), "a full build clears the marker");
     }
 }
