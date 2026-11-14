@@ -224,16 +224,17 @@ counts plus recorded failures into one verdict and one plain-language sentence.
 is what lets its `no_jargon_in_user_facing_strings` test enforce the wording rule
 across the whole feature at once.
 
-`FulltextState` has **four** variants, not two, and the distinction is the
+`FulltextState` has **five** variants, not two, and the distinction is the
 `StartupDbReport` principle applied here — "the files are not there" and "the
 files are there and would not open" are different diagnoses and must never be
 conflated:
 
 | State | Means |
 |---|---|
-| `NotMeasured` | No searcher has been built this session. Not "no failures". |
+| `NotOpenedYet` | No searcher is open: none has been built this session, or it is closed for a rebuild (§10). Not "no failures". |
 | `FilesNotFound` | No index directory exists. Nothing is broken; offer a rebuild. |
 | `CouldNotOpen` | Directories exist and not one index opened. **The state this whole fix exists for.** |
+| `Incomplete` (`"incomplete"`) | The `INCOMPLETE` marker is in `index_dir`: the last build did not finish (§10). `is_valid` is false; the counts of what did open are kept. |
 | `Ready` | At least one index is open and searchable. |
 
 Two fields answer two different questions, and both are needed:
@@ -414,3 +415,121 @@ column above is `ReloadPolicy::Manual` on both arms.
   index, each re-reading and CRC32-ing `meta.json` every 500 ms for the life of
   the process: six threads and ~12 reads/s against the user's storage volume,
   growing with every downloaded language.
+
+## 10. Rebuild Search Index: the progress window, cancel and the `INCOMPLETE` marker
+
+**Rebuild Search Index…** (Settings → General → Database) and the **Rebuild
+Search Index** button in Database Validation both open one window,
+`bridges/assets/qml/SearchIndexRebuildWindow.qml`. Their own dialogs only
+confirm and open it. The rebuild runs on a background thread in the live app;
+no restart is involved.
+
+### The window
+
+Single-instance, destroyed on close, `Qt.ApplicationModal`: the rest of the
+app is blocked from the confirmation until the user closes the outcome frame,
+since the index is deleted and half-built in between. A `StackLayout` of
+frames: 0 progress, 1 cancelling, 2 summary, 3 cancelled, 4 error.
+`onClosing` refuses the close while frame 0 or 1 is showing (the × button, the
+OS close action, Android back), which is also what makes the immediate
+`notify_window_closed` safe. The window holds the `search-index-rebuild`
+keep-screen-on holder from the start to the outcome
+(`docs/keep-screen-awake.md`).
+
+**The rebuild signals reach only the window's own QML engine.** `SuttaBridge`
+is a QML singleton, one instance per engine, and every top-level window has its
+own engine, so `rebuildSearchIndexProgress(step, total, label)` and
+`rebuildSearchIndexFinished(outcome, summary_json, message)` are emitted on the
+instance that called `rebuild_search_index()`. Other windows follow a rebuild
+by polling `is_rebuilding_search_index()`:
+
+- Database Validation polls it once a second after opening the window, and
+  re-runs both its search-index check and its fulltext-status check once the
+  flag clears. It does not wait for focus to come back: which window gets it is
+  up to the platform.
+- The window itself, when it was opened while a rebuild was already running, or
+  when a start was refused, sees the flag clear with no outcome signal. After 3
+  one-second ticks it ends from `check_search_index_status()`
+  (`end_without_outcome()`), so the modal window can never be left with no way
+  to close it.
+
+### What the rebuild does
+
+`SuttaBridge::rebuild_search_index()` refuses a second rebuild while one runs
+(`REBUILD_RUNNING`, cleared by a `Drop` guard on every exit of the thread,
+panic included), clears `REBUILD_CANCEL`, and runs
+`run_search_index_rebuild()`:
+
+1. **`INDEX_WRITE_LOCK.try_lock()`** (`backend/src/lib.rs`) for the whole
+   rebuild. If it is held, the outcome is `error` with "Another search index
+   update is running. Try again when it has finished." The in-app library index
+   builds (book import, a book's language change) take the same lock with
+   `lock()` and **hold it through their `reinit_fulltext_searcher()`**, so they
+   wait for a running rebuild, and a rebuild cannot start between their build
+   and their reinit and have its closed searcher reopened. The startup
+   dictionary reconcile and the DPD upgrade reindex run before any window that
+   can start a rebuild exists, and do not take it.
+2. Step 0, "Removing old index…".
+3. **`close_fulltext_searcher()`** before the deletion. The open searcher keeps
+   the index files memory-mapped, and on Windows a mapped file cannot be
+   deleted. The searcher **stays closed until the next
+   `reinit_fulltext_searcher()`**: `init_fulltext_searcher()`, which the
+   localhost API calls before each fulltext query, does not reopen it
+   (`SEARCHER_CLOSED`). Fulltext queries during the rebuild get the
+   `NotOpenedYet` status, never results from a folder being deleted or
+   half-built.
+4. **`VERSION` is removed first, then `index_dir`.** If `remove_dir_all` stops
+   part way, what is left reads as outdated, and the `INCOMPLETE` marker is
+   written into it; the outcome is `error`. The old index is gone before any
+   build step runs, so fulltext search is unavailable for the whole rebuild,
+   and a cancel or a failure leaves an incomplete index. There is no staging
+   folder.
+5. `build_all_indexes_with_progress()` (`backend/src/search/indexer.rs`).
+6. **`reinit_fulltext_searcher()` after every outcome** — success, cancelled
+   and error — since the index on disk changed in all three.
+
+### The steps
+
+`plan_index_steps()` works out the whole plan before the first step, so the
+total is fixed from step 1: one step per sutta language, per dictionary-word
+language, per library language, then `DPD bold definitions (pli)`. The bold
+definitions come last because `build_dict_index` clears the `pli` dictionary
+index they are appended to. `build_steps_with_progress()` runs a plan and is
+shared by the full build and the CLI's filtered builds; `build_all_indexes()`
+is a wrapper with a no-op `on_step` and a flag that is never set.
+
+The summary counts the documents as each step adds them (no second query) and
+lists every area, also one with no languages (0 documents). The `pli`
+dictionary index's `num_docs()` is the dictionary words (pli) plus the bold
+definitions.
+
+### Cancel
+
+The window's **Cancel** opens a confirmation ("Cancel the Rebuild?"); the
+rebuild keeps running while it is open, and if the rebuild ends meanwhile the
+dialog closes itself. **Cancel Rebuild** calls `cancel_rebuild_search_index()`,
+which sets `REBUILD_CANCEL` (safe when idle), and shows the cancelling frame.
+
+The flag is checked **before each step and every 1000 rows inside a step**
+(`CANCEL_CHECK_EVERY`). A cancelled step returns before `commit()` and drops its
+`IndexWriter`, which discards its uncommitted documents. Each step starts with
+`delete_all_documents()` + `commit()`, so the language being built is left
+empty, not half-filled. Two parts of a step cannot be interrupted: the database
+read that loads a language's rows before indexing, and a commit that has
+started. The cancelling frame covers that wait.
+
+### The `INCOMPLETE` marker
+
+A missing `VERSION` cannot tell an unfinished build from an index an older
+Simsapa built, so `build_steps_with_progress()` writes an empty `INCOMPLETE`
+file into `index_dir` before the first step and removes it only after
+`write_version_file()` has succeeded. A cancel, an error, a crash or a power
+loss leaves it. `fulltext_status.rs` reads it (`is_index_incomplete()`, via
+`try_exists()`) and reports `Incomplete` (§6). An area with no open index then
+shows the incomplete message rather than "No results found", and
+`check_search_index_status()` returns `incomplete` with that message for the
+startup notice in `SuttaSearchWindow.qml` and for Database Validation.
+
+**A filtered CLI build (`--area`, `--lang`) leaves a marker it found in place**
+(`full_plan: false`): building one area or language does not complete an index
+an earlier build left unfinished. Only a full build clears it.

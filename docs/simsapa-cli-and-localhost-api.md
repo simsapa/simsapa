@@ -324,6 +324,63 @@ candidates (and marks them `A`), writes the Translation and the Literal
 Translation, and saves the document as `<reference>-gloss.md`, without making
 any LLM request of its own.
 
+### A.2.5 Building the search index: `simsapa index`
+
+`simsapa index build` builds the fulltext indexes, `simsapa index rebuild`
+deletes them first and builds them again, and `simsapa index delete` deletes
+them. With no options they cover every area and language; `--area
+suttas|dict-words|library` and `--lang <code>` narrow them, alone or together.
+The DPD bold definitions are part of the `pli` dictionary index, so they go
+with `--area dict-words` (and `--lang pli`).
+
+The steps are worked out before the first one runs, so the total is known from
+the start. Each step is printed on stderr as it begins, then a summary:
+
+```text
+[1/9] Suttas (de)
+[2/9] Suttas (en)
+[3/9] Suttas (pli)
+[4/9] Dictionary words (en)
+[5/9] Dictionary words (pli)
+[6/9] Library (en)
+[7/9] DPD bold definitions (pli)
+…
+Done in 4m 37s.
+  Suttas: 48213 documents (de, en, pli)
+  Dictionary words: 412903 documents (en, pli)
+  Library: 2104 documents (en)
+  DPD bold definitions: 51330 documents (pli)
+```
+
+The order is suttas, then dictionary words, then library, each per language,
+then the bold definitions. With `--area` or `--lang` the total counts only the
+steps that run. Every area has a summary line, also one with no languages (`0
+documents`). stdout gets `Done.`.
+
+With `--json`, stdout gets one object. `summary` is there for `build` and
+`rebuild`, and left out for `delete`:
+
+```json
+{"status":"ok","action":"rebuild","area":null,"lang":null,
+ "summary":{"elapsed_secs":277,"areas":[
+   {"area":"suttas","documents":48213,"languages":["de","en","pli"]},
+   {"area":"dict_words","documents":412903,"languages":["en","pli"]},
+   {"area":"library","documents":2104,"languages":["en"]},
+   {"area":"bold_definitions","documents":51330,"languages":["pli"]}]}}
+```
+
+`area` in `summary.areas` is always one of `suttas`, `dict_words`, `library`,
+`bold_definitions`, in that order. The top-level `area` is the `--area` given
+(`dict-words` spelled as on the command line), or `null`.
+
+**An unfinished build reports the index as incomplete.** A build that stops
+part way (an error, the process killed, the machine shut down) leaves the index
+marked incomplete, and the fulltext status then says `incomplete` (§10) until a
+full `simsapa index build` or `rebuild` finishes. A build with `--area` or
+`--lang` does not clear that state, since it builds only part of the index. The
+command cannot be interrupted cleanly with Ctrl-C; an interrupted build is an
+unfinished one.
+
 ## A.3 Output: clean text, or `--json`
 
 The default output is compact plain text meant to be read, by a person or an
@@ -1074,7 +1131,7 @@ fulltext searcher has been initialized (§8):
   },
   "fulltext_searcher_ready": false,   // see note below
   "fulltext": {                       // per-area detail; see note below
-    "state": "could_not_open",        // not_opened_yet | files_not_found | could_not_open | ready
+    "state": "could_not_open",        // not_opened_yet | files_not_found | could_not_open | incomplete | ready
     "message": "The search index could not be opened. This storage location does not support the file locking the search index needs.",
     "failure_count": 6,
     // Per area: its own state and its own sentence. `message` is "" when there
@@ -1150,9 +1207,10 @@ fulltext searcher has been initialized (§8):
 
   | `state` | Meaning |
   |---|---|
-  | `not_opened_yet` | No searcher built this session. Not measured — **not** "no failures". |
+  | `not_opened_yet` | No searcher built this session, or the GUI app has closed it while it rebuilds the index. Not measured — **not** "no failures". |
   | `files_not_found` | No index directory, or no per-language index in one. Nothing is broken; nothing has been built or downloaded. |
   | `could_not_open` | Index files are present and every attempt to open one failed. This is a fault. |
+  | `incomplete` | The last index build did not finish (a cancelled or failed rebuild, or an interrupted `simsapa index build`), so some languages or areas are missing or empty. Search works for what was built. `message` says so and asks for a full rebuild, and an area with nothing open carries the same `message`. |
   | `ready` | At least one index is open. |
 
   `opened: 0` for a single area is normal — it usually means the user has not

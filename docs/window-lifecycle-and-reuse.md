@@ -16,7 +16,7 @@ it.
 
 | | **Pooled** | **Single-instance** | **Single-instance, kept** |
 |---|---|---|---|
-| Members | `SuttaSearchWindow` only | seven secondary windows (§5) | `SuttaNavigationWindow` only (§5d) |
+| Members | `SuttaSearchWindow` only | eight secondary windows (§5) | `SuttaNavigationWindow` only (§5d) |
 | On close | hidden, kept in the list | destroyed: removed from the list + `deleteLater()` | close **accepted**, nothing notified: the platform window goes, the wrapper, engine and QML state stay |
 | "An instance exists" | list membership — tells you **nothing** useful | `m_root != nullptr` | `m_root != nullptr` |
 | "The user has it open" | `visible` (`window_is_open()`) | same as "an instance exists" | `visible` — but nothing asks |
@@ -161,7 +161,7 @@ window count** restored on next launch. Pooled windows must not appear in it.
 
 ## 5. Single-instance windows, destroyed on close
 
-Seven windows are single-instance and destroyed when they close. Each
+Eight windows are single-instance and destroyed when they close. Each
 `create_*_window()` has the same shape, built on the `reuse_or_evict<T>()`
 template in `window_manager.cpp`:
 
@@ -226,7 +226,7 @@ from `setup_qml()`. It would be fewer files, but handler ordering against the
 window's own `onClosing` is unspecified, so "destroy only when the close is
 actually accepted" becomes unverifiable. Use the explicit QML call.
 
-**None of the seven hosts a `WebEngineView`** (grep-verified), so the destruction
+**None of the eight hosts a `WebEngineView`** (grep-verified), so the destruction
 chain involves no Chromium render-process teardown. That is what makes this
 tractable, and it is a large part of why the same treatment was not extended to
 `SuttaSearchWindow` — see `docs/webengine-stale-black-frame-workaround.md` for
@@ -253,6 +253,7 @@ leaks the window.
 | `SuttaLanguagesWindow` | `sutta_languages` | language download / import / removal | `onDownloadsCompleted` / `onRemovalCompleted` |
 | `ChantingPracticeReviewWindow` | `chanting_review` | an in-progress recording | `onRecording_completed` |
 | `DictionariesWindow` | `dictionaries` | **none needed** — its `onClosing` already *refuses* the close while `views_stack.currentIndex` is 1/2/3/6 (deleting, importing, renaming, downloading), so no operation can be running when a close is accepted. Keep the refuse; it is what makes the immediate notify safe | — |
+| `SearchIndexRebuildWindow` | `search_index_rebuild` | **none needed** — its `onClosing` *refuses* the close while `views_stack.currentIndex` is 0/1 (rebuilding, cancelling), so no rebuild can be running when a close is accepted. It is also `Qt.ApplicationModal`, and its `search-index-rebuild` keep-screen-on hold is released in the outcome handler, never in `onClosing` | — |
 | `ChantingPracticeWindow` | `chanting_practice` | **none needed** — it only browses the collection tree; recording and playback live in the review window | — |
 | `DpdUpgradeWindow` | *(none — a startup window in its own `app.exec()`, see §0)* | the DPD upgrade, started from a `Timer` once the window is up. Nothing is destroyed early, but closing the window would quit the app mid-run, so its `onClosing` **refuses** the close while the run is going (from the Apply step on the run cannot be cancelled either). The keep-screen-on hold `dpd-upgrade-window` is released in the completion handlers, never in `onClosing` | `onUpgradeCompleted` / `onUpgradeFailed` |
 | `SuttaNavigationWindow` | *(none — never notifies)* | **nothing to defer** — it is never destroyed (§5d), so no completion signal can be lost to a close. It also starts nothing off the Qt thread: every `nav_tree_*` read is synchronous | — |
@@ -301,8 +302,7 @@ Five traps in that table:
 
 ### 5b-bis. Re-open runs no `Component.onCompleted` — re-init on show
 
-Five of the seven windows used to be constructed fresh on every open. They are
-now **reused**, so `Component.onCompleted` runs once per *instance*, not once per
+The single-instance windows are **reused**, so `Component.onCompleted` runs once per *instance*, not once per
 open, and anything it set up is whatever the user left behind when they closed
 the window. §8's "a revived window must be reset" applies to the unparameterised
 windows too — an earlier reading of it as "unparameterised windows need no
@@ -315,6 +315,7 @@ What that turned up, and what each window now does in `onVisibleChanged`:
 | `SuttaLanguagesWindow` | closing on the completion page (`views_stack.currentIndex = 2`, whose only control is **Quit**) reopened straight back onto it, over a stale installed-language list — with no route back to the list short of restarting the app | re-reads both language lists and returns to index 0 — **unless** a download or removal is running, which keeps its progress view |
 | `LibraryWindow` | the book list was read only at load | re-reads it |
 | `ChantingPracticeReviewWindow` | `onClosing` releases the mobile keep-screen-on flag, and only `Component.onCompleted` takes it — so every reused review window ran with the screen free to sleep | re-acquires it (a window flag, not a counted lock, so setting it twice is harmless) |
+| `SearchIndexRebuildWindow` | the outcome frame of the last rebuild | not `onVisibleChanged`: the reuse path in `create_search_index_rebuild_window()` calls the QML `start_rebuild_if_idle()` through `QMetaObject::invokeMethod`, which starts a new rebuild unless one is showing. A new window calls it from `Component.onCompleted`. In practice the window is destroyed on close, so the reuse path is reached only while it is still open |
 | `TopicIndexWindow`, `ReferenceSearchWindow` | nothing — carrying the previous letter, query and results across a re-open is the better behaviour | nothing |
 
 Two mechanical points. `visible: true` on the root means `onVisibleChanged` fires

@@ -147,7 +147,7 @@ substantially.
   **re-open a window the user closed**, exactly the Topic Index "Open in new
   window looks stuck on" bug — and the **session save** in `gui.cpp`'s
   `aboutToQuit`, whose array length is the restored window count), and why
-  mobile never pools. And for the seven single-instance windows: the shared
+  mobile never pools. And for the eight single-instance windows: the shared
   `reuse_or_evict<T>()` shape, why reuse must go through
   `show_and_activate_window()` and not the raw `show`/`raise`/`requestActivate`
   triple, the **null-`m_root` eviction** rule (a failed engine load is otherwise
@@ -1007,7 +1007,7 @@ substantially.
   retired the SD-card performance notice. §6 is the other half of the fix,
   **honest reporting**: `fulltext_status.rs` as the single place every
   user-facing string is written (so one test enforces the no-jargon rule),
-  `FulltextState`'s four variants, why `state` and `is_valid` answer **different**
+  `FulltextState`'s five variants (with `Incomplete`), why `state` and `is_valid` answer **different**
   questions, per-area messages where an **empty message is the instruction to
   stay silent**, and the **search-mode allowlist** that stops Contains/Title/
   Headword/DPD-Lookup searches inheriting "the index could not be opened". §7
@@ -1015,7 +1015,13 @@ substantially.
   explicit `reinit_fulltext_searcher()` **mandatory** after every in-app index
   mutation, and opening the searcher is serialised because
   `begin_open_session()` clears the failure list. §9 is the benchmark proving the
-  wrapper costs nothing (aggregate 1.00× / 1.02× / 0.97×).
+  wrapper costs nothing (aggregate 1.00× / 1.02× / 0.97×). §10 is **Rebuild
+  Search Index**: the application-modal progress window (its signals reach only
+  its own QML engine, so other windows poll `is_rebuilding_search_index()`),
+  `INDEX_WRITE_LOCK`, the searcher **closed** before the folder is deleted and
+  kept closed until `reinit_fulltext_searcher()`, the step plan, cancel every
+  1000 rows without a commit, and the `INCOMPLETE` marker that a filtered CLI
+  build leaves in place.
 - [Gloss AI word selection, context cache, exports](./gloss-ai-word-selection.md) —
   how the Gloss tab picks **which dictionary sense** an ambiguous word has. The
   **resolution chain** (`user-selected` cache row → `built-in-human-checked` row
