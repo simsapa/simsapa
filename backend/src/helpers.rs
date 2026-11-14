@@ -5150,7 +5150,7 @@ fn normalized_lemma(lemma: &str) -> String {
 ///
 /// An entry selects an option by its **`word` lemma** (resolved to the uid
 /// within that item's option list) and/or by `uid` directly. The prompt asks
-/// for both. In `Lenient` mode a lemma that names no option is rescued by a
+/// for the uid only when two options share a lemma. In `Lenient` mode a lemma that names no option is rescued by a
 /// `uid` that does, then by a lemma equal up to `normalized_lemma()`; when the
 /// lemma and the uid name different options, the lemma wins; each with a
 /// `warn` log line. A uid also picks among options that share its lemma. An

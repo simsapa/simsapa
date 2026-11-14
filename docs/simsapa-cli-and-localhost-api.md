@@ -251,6 +251,7 @@ simsapa gloss --format docx --output dhp23.docx dhp23
 | `--model-name <model>` | Ask this AI model (`gemini-3-flash-preview`) instead of the Fallback sequence set in the app, whether or not it is enabled there |
 | `--provider <name>` | The provider of `--model-name` (`Gemini`, `OpenRouter`, …), in any letter case. Needed only for a model no provider in the app lists, or one several list |
 | `--no-translate` | Let the AI choose word senses but make no translation |
+| `--contextual-all`, `--no-contextual-all` | Ask the AI for a contextual meaning for every word (`--contextual-all`), or only for the words with a sense or a reading to choose (`--no-contextual-all`). Default: the app's "Contextual meaning for every word" setting, which is on unless changed. Word in Sentence only; refused with `--no-ai`, `--exact` and `--gloss-format headwords` |
 | `--exact` | One exact DPD lookup per word; with `--gloss-format headwords` only |
 | `--no-duplicates-globally`, `--skip-common`, `--common-words <words>` | Leave out repeated or common words |
 
@@ -2110,6 +2111,7 @@ Pāli text of a sutta reference.
   | `ai` | `false` | Ask the server's AI provider to choose the senses of ambiguous words (§16.1.2). |
   | `translate` | `false` | Also translate each paragraph; only with `ai`. |
   | `output_format` | `"json"` | `"json"`, or the analysis document as `"markdown"` (`text/markdown`), `"html"` (`text/html`) or `"org"` (`text/plain`), the same document the app's Gloss tab exports. |
+  | `contextual_all` | the app setting | Ask the AI for a contextual meaning for every word, not only for the words with a sense or a reading to choose (as `simsapa gloss --contextual-all`). Only with `ai` in the Word in Sentence format; with `exact`, without `ai` or with `"headwords"` it is a `400`. |
   | `lines_per_word` | `2` | The Word in Sentence document table: `2` puts each word on two table rows, `1` on one (as `simsapa gloss --lines-per-word`). Only with a `"markdown"`, `"html"` or `"org"` `output_format` and the Word in Sentence format; another value, or the option with JSON output or `"headwords"`, is a `400`. |
 
 - **Reference input.** `reference` takes a sutta uid or reference (`dhp23`,
@@ -2190,7 +2192,12 @@ Sentence format, their grammar readings, contextual meanings and the
 components of compound headwords); with `translate` it then asks for each
 paragraph's two translations, a readable Translation and a Literal
 Translation (`ai_translations[]`: `{ model_name, response, literal_translation }`,
-`response` being the Translation). The AI's choices are marked `A`. It is
+`response` being the Translation). With `contextual_all` (on unless the app
+setting is changed) every word gets a `contextual` value, not only the words
+with a choice to make. The request carries each paragraph's text, and the
+record's uid when the passage was given as a `reference`; a long paragraph's
+words are asked for in several requests of at most 80 words. The AI's choices
+are marked `A`. It is
 off by default: an agent calling the API normally chooses senses and writes
 translations itself, and the route never starts a paid request unasked.
 
@@ -2268,7 +2275,7 @@ a dedicated thread; the handler is a pure protocol adapter.
 
 | Message | Meaning |
 |---------|---------|
-| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>","rows_json"?:"<serialized rows>"},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. `rows_json`, a Word in Sentence paragraph's `rows` serialized the same way, is optional: with it the items also ask for grammar readings, contextual meanings and the components of compound headwords. A Headwords-format `words_data` is the usual input. |
+| `{"type":"request","paragraphs":[{"paragraph_index":0,"words_json":"<serialized words_data>","rows_json"?:"<serialized rows>","text"?:"<paragraph>","source_uid"?:"<uid>","contextual_all"?:true},…]}` | Start one run. `words_json` is a paragraph's `words_data` array serialized as a **string** (i.e. the JSON stringified). Item ids embed `paragraph_index`. `rows_json`, a Word in Sentence paragraph's `rows` serialized the same way, is optional: with it the items also ask for grammar readings, contextual meanings and the components of compound headwords, and with `contextual_all` also for a contextual meaning of every word. `text` and `source_uid`, also optional, give the model the whole paragraph and the record it is from. A Headwords-format `words_data` is the usual input. |
 | `{"type":"cancel"}` | Abandon the in-flight run. |
 
 **Server → client messages:**

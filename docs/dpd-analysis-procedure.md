@@ -243,7 +243,11 @@ smaller prompts exist for the cases where they do not:
 
 Simsapa's translation template (`"Gloss Tab: AI Translation"`,
 `gloss_translation.rs`) adapts the grounded prompt, since Simsapa translates
-after the senses are chosen.
+after the senses are chosen. Its word table is `| Word | Grammar | Meaning |`,
+where Meaning is the row's Contextual value (the AI's rendering in this
+sentence), or its Definition when it has none, as DPD's Meaning column is; the
+prompt says so, and "do not introduce senses that are not listed" refers to
+it.
 
 ### 1.6 Ranking
 
@@ -306,6 +310,16 @@ there are groups), `### Word-by-Word Analysis` and the table
   deconstruction — not into etymological breakdowns.
 - Cells escape `|` as `\|`.
 
+Simsapa's Word in Sentence table differs in its columns: DPD's Meaning holds
+the contextual meaning when there is one, while Simsapa shows the AI's
+**Contextual** and the dictionary's **Definition** (`meaning_combo`, cleaned as
+above) as two columns, so the reader can tell them apart (gap 6), and writes
+the construction in square brackets. One line per word:
+`ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf.`;
+two lines per word (the default) put the meanings on line 1 and Grammar,
+Construction and Root on line 2
+([gloss-ai-word-selection.md](./gloss-ai-word-selection.md) §6).
+
 `example_bolding.py` bolds the analysed word inside DPD example sentences for
 DPD's own editing workflow; it does not affect the report.
 
@@ -326,18 +340,18 @@ DPD's own editing workflow; it does not affect the report.
 | 9 Occurrence keys | AI item ids `p<pi>w<wi>` (sense), `…d` (break-down), `…c<k>` (component) — `build_word_selection_items` |
 | 10–14 Components of a compound headword | Word in Sentence: `GlossRowBuilder::headword_parts` / `construction_parts` / `part_cands` (`expands_into_components`, `breakdown_source`, `normalize_kammadharaya_construction`, the negative-kammadhāraya rule), memoised per construction for a gloss run; an inflected part with no lookup row: `GlossRowBuilder::inflection_table_cands` over `db::dpd::headwords_inflecting_to` (gap 5); Headwords: shown compact |
 | 10–14 Components of a deconstruction | `Deconstruction.components` with their lookup results; `resolve_compound_selections` |
-| 15 DB-example pre-match | `rank_paragraph_default_senses`: `text_overlap` against the paragraph (`example_overlap_text`), as the first rank after the demotion tier; no `source_text_overlap` |
-| 16 First-pass prompt | `"Gloss Tab: Word Selection System Prompt"` + `"… Request"` (`app_settings.rs`), assembled by `build_word_selection_prompt` (`helpers.rs`) for every caller; with the Word in Sentence rows the items carry `grammar_options` and the components of compound headwords (`docs/gloss-ai-word-selection.md` §10); senses only, no translation |
-| 17 Response schema | `parse_word_selection_response`, `validate_word_selection_response_shape` (`helpers.rs`): chosen uid per item, optional `grammar_index` and `contextual_meaning` |
+| 15 DB-example pre-match | `rank_paragraph_default_senses`: `text_overlap` against the paragraph (`example_overlap_text`), as the first rank after the demotion tier; no `source_text_overlap`; a strong overlap is stored in `ProcessedWord::example_match_uids` and sent to the AI as `"dpd_example": true` on the option |
+| 16 First-pass prompt | `"Gloss Tab: Word Selection System Prompt"` + `"… Request"` (`app_settings.rs`), assembled by `build_word_selection_prompt` (`helpers.rs`) for every caller, with the paragraph texts (and the source uid when known) in a `paragraphs` list, DPD's common disambiguation rules in the prompt, no option uids unless two options share a lemma, and temperature 0.2 where the provider takes one; with the Word in Sentence rows the items carry `grammar_options`, the components of compound headwords and, with "Contextual meaning for every word", one-option contextual-only items (`docs/gloss-ai-word-selection.md` §4, §10); senses only, no translation |
+| 17 Response schema | `parse_word_selection_response`, `validate_word_selection_response_shape` (`helpers.rs`): chosen lemma per item (lenient matching on the network path), optional `grammar_index`, `contextual_meaning` and `contextual_meanings` (one per reading) |
 | 18 Recovery | `invalid_response` classification and the fallback/retry engine (`ai_error.rs`, `ai_fallback.rs`) |
-| 19 Chunking | `WORD_SELECTION_BATCH_CHAR_LIMIT` batching (`docs/gloss-ai-word-selection.md`) |
+| 19 Chunking | `word_selection_item_chunks`: at most `WORD_SELECTION_MAX_ITEMS_PER_REQUEST` (80) items and `WORD_SELECTION_BATCH_CHAR_LIMIT` characters per request, a word's items kept together, the answers merged (`docs/gloss-ai-word-selection.md` §4) |
 | 20 Quotative *ti* | iti rules: the quoted `'ti` is always *iti*; the base word is looked up, short final vowel first (`gloss_lookup_words`; `docs/pali-sandhi-and-quote-marks.md` §5) |
 | 21 Retries | the sequential fallback engine (`ai_fallback.rs`, `prompt_manager.rs`) |
 | 22 Merge | QML apply path in `GlossTab.qml` and its Rust port `apply_word_selection_answers` (`gloss_word_selection_apply.rs`), both writing `ai-selected` cache rows; readings and contextual meanings kept in the session (`ProcessedWord::reading`, `component_readings`) |
 | Cache | `resolve_gloss_word_selection` chain over `gloss_word_context_cache` and `gloss_phrase_selections`; DPD has none |
-| 1.5 Translation | `"Gloss Tab: AI Translation"` template, `gloss_translation.rs` (`build_translation_prompt` with a Word / Grammar / Meaning table, `parse_translation_response`); Translation and Literal Translation |
+| 1.5 Translation | `"Gloss Tab: AI Translation"` template, `gloss_translation.rs` (`build_translation_prompt` with a Word / Grammar / Meaning table, Meaning = Contextual else Definition, `parse_translation_response`); Translation and Literal Translation |
 | 1.6 Ranking | tokens without a cache row or set phrase: `gloss_sense_ranking::rank_paragraph_default_senses` sets `selected_index` (both formats, from `process_all_paragraphs` / `process_single_paragraph`); a token's reading: `default_reading_index` (`_grammar_case_rank`, then first); components: `best_component_option` (a tier ahead of DPD's ranks, `component_tier`: a headword DPD's filters keep and with a `meaning_1`; then ranks 4–10, no DB-example rank), then the built-in default senses |
-| 1.7 Rendering | rows: `gloss_rows.rs` (`GlossRowBuilder::paragraph_rows`, `top_level_grammar`, `construction_text`, `root_combo`, `meaning_combo`, `clean_meaning`; a row's `definition` and its separate `contextual` from the session reading, `apply_contextual`; recursion into a component's components by `Cand::renders_components`), on `ParagraphProcessingResult::rows`; documents: `text_export.rs` (`gloss_export`), `docx_export.rs`, `anki_export.rs`, from `GlossExportData` built in QML, one row per headword (Headwords layout) |
+| 1.7 Rendering | rows: `gloss_rows.rs` (`GlossRowBuilder::paragraph_rows`, `top_level_grammar`, `construction_text`, `root_combo`, `meaning_combo`, `clean_meaning`; a row's `definition` and its separate `contextual` from the session reading, `apply_contextual`; recursion into a component's components by `Cand::renders_components`), on `ParagraphProcessingResult::rows`; documents: `text_export.rs` (`gloss_export`), `docx_export.rs`, `anki_export.rs`, from `GlossExportData` built by `gloss_export_builder.rs`, one or two table rows per word (`lines_per_word`), Contextual and Definition as separate columns; one row per headword (Headwords layout) |
 
 ## 3. Gap list
 

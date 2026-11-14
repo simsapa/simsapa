@@ -44,7 +44,7 @@ PRD: [2026-11-13-135127-prd---word-in-sentence-two-line-layout-and-contextual-co
 - `backend/tests/test_gloss_word_in_sentence.rs` - the row builder tests: Definition and Contextual kept apart, per-reading meanings, sense change, component readings, old `meaning`-only rows rebuilt on load.
 - `backend/tests/data/gloss_export_contract/paragraph.json`, `expected_word_in_sentence.json` - contract fixtures, row `meaning` → `definition` + `contextual`.
 - `backend/tests/test_anki_export.rs`, `test_gloss_export_contract.rs`, `test_dpd_analysis_conformance.rs` - fixtures and asserts on the renamed field; the Anki `{definition}` / `{contextual}` variables, the unknown-variable error, the data CSV column.
-- `backend_cli/skills/gloss-pali-passage/SKILL.md` - the example Word in Sentence table header.
+- `backend_cli/skills/gloss-pali-passage/SKILL.md` - the example two-line Word in Sentence table, the Contextual / Definition notes, the quoted translation instructions.
 - `backend_cli/tests/gloss_command.rs`, `api/tests/gloss_text.rs` - the Markdown table header asserts.
 
 ### Notes
@@ -322,14 +322,14 @@ references into the review file.
 
 **Depends on:** all of the above, including 9.0 (done before 8.0).
 
-- [ ] 8.0 Docs and final checks: `gloss-ai-word-selection.md`, `dpd-analysis-procedure.md`, `simsapa-cli-and-localhost-api.md`, `PROJECT_MAP.md`, the full test runs
-  - [ ] 8.1 `docs/gloss-ai-word-selection.md`: the request changes of section K (the `paragraphs` list with `source`, `dpd_example` and `example_match_uids`, the common rules, the word-selection temperature, the resolution order in the reply parser with the uid rescue, the dropped `grammar_index`, the object with `selections`, the output limit sized to the request, the requests split into chunks of at most 80 items with a word's items together and merged back in `PromptManager`); §10 "Where readings and contextual meanings are kept" (Contextual is shown beside the Definition, never in its place); a new subsection on contextual-only items and the option; `contextual_meanings` (one meaning per reading, how a hand-chosen reading picks its entry or clears the meaning, the lenient parse); §6 Exports (the column set, one/two lines, which formats, the Headwords format unchanged); the translation word table in §10's "two-part translation". Describe current behaviour only, without history.
-  - [ ] 8.2 `docs/dpd-analysis-procedure.md`: §1.5 (the translation table now has Contextual and Definition) and §1.7 Rendering / §2 step table, where they describe Simsapa's columns.
-  - [ ] 8.3 `docs/simsapa-cli-and-localhost-api.md`: `--lines-per-word`, `--contextual-all` / `--no-contextual-all`, the API options `lines_per_word` and `contextual_all`, the row fields `definition` / `contextual`. Keep it self-contained (no links, no source paths). Run its self-containment test.
-  - [ ] 8.3a `backend_cli/skills/gloss-pali-passage/SKILL.md` (l. 88): the example Word in Sentence table header still has the old `Grammar | Meaning` columns; update it to the current one-/two-line headers.
-  - [ ] 8.4 `PROJECT_MAP.md`: update only if a file was added or a file's role changed (e.g. `GlossWordInSentenceRow.qml`'s description).
-  - [ ] 8.5 Final runs: `make rust-test` and `make qml-test` (memory-capped, per `CLAUDE.md`), and `make build -B`. Record the results in this file.
-  - [ ] 8.6 Ask the user to do the manual GUI checks (phone and tablet widths, dark mode, the export window radios, an export in each format in both modes), then ask before committing.
+- [x] 8.0 Docs and final checks: `gloss-ai-word-selection.md`, `dpd-analysis-procedure.md`, `simsapa-cli-and-localhost-api.md`, `PROJECT_MAP.md`, the full test runs
+  - [x] 8.1 `docs/gloss-ai-word-selection.md`: the request changes of section K (the `paragraphs` list with `source`, `dpd_example` and `example_match_uids`, the common rules, the word-selection temperature, the resolution order in the reply parser with the uid rescue, the dropped `grammar_index`, the object with `selections`, the output limit sized to the request, the requests split into chunks of at most 80 items with a word's items together and merged back in `PromptManager`); §10 "Where readings and contextual meanings are kept" (Contextual is shown beside the Definition, never in its place); a new subsection on contextual-only items and the option; `contextual_meanings` (one meaning per reading, how a hand-chosen reading picks its entry or clears the meaning, the lenient parse); §6 Exports (the column set, one/two lines, which formats, the Headwords format unchanged); the translation word table in §10's "two-part translation". Describe current behaviour only, without history.
+  - [x] 8.2 `docs/dpd-analysis-procedure.md`: §1.5 (the translation table now has Contextual and Definition) and §1.7 Rendering / §2 step table, where they describe Simsapa's columns.
+  - [x] 8.3 `docs/simsapa-cli-and-localhost-api.md`: `--lines-per-word`, `--contextual-all` / `--no-contextual-all`, the API options `lines_per_word` and `contextual_all`, the row fields `definition` / `contextual`. Keep it self-contained (no links, no source paths). Run its self-containment test.
+  - [x] 8.3a `backend_cli/skills/gloss-pali-passage/SKILL.md` (l. 88): the example Word in Sentence table header still has the old `Grammar | Meaning` columns; update it to the current one-/two-line headers.
+  - [x] 8.4 `PROJECT_MAP.md`: update only if a file was added or a file's role changed (e.g. `GlossWordInSentenceRow.qml`'s description).
+  - [x] 8.5 Final runs: `make rust-test` and `make qml-test` (memory-capped, per `CLAUDE.md`), and `make build -B`. Record the results in this file. (Done: 2263 Rust tests pass, including the doc self-containment and skill tests; 197 QML tests pass, no qmllint warnings in the touched files; `make build -B` OK.)
+  - [x] 8.6 Ask the user to do the manual GUI checks (phone and tablet widths, dark mode, the export window radios, an export in each format in both modes), then ask before committing.
 
 ### 9.0 Word-selection request quality (PRD section K)
 
