@@ -197,6 +197,10 @@ ApplicationWindow {
         if (!status.exists) {
             root.search_index_message = "Search index is missing";
             root.search_index_failed = true;
+        } else if (status.incomplete) {
+            // Wording from fulltext_status.rs, never written here.
+            root.search_index_message = status.message;
+            root.search_index_failed = true;
         } else if (!status.current) {
             root.search_index_message = "Search index is outdated";
             root.search_index_failed = true;
@@ -337,52 +341,27 @@ ApplicationWindow {
     // is in progress (see PRD §11.2).
     property bool export_in_progress: false
 
-    // Search-index rebuild state. rebuildSearchIndexProgress /
-    // rebuildSearchIndexFinished are *global* SuttaBridge signals, and the
-    // AppSettingsWindow rebuild dialog listens to them too — so, like
-    // upgrade_initiated_here above, only the window that started the rebuild
-    // reacts to it.
-    property bool rebuild_initiated_here: false
-    property bool is_rebuilding: false
-    property string rebuild_status_message: ""
-
-    AssetManager { id: manager }
+    // Set when this dialog opened the rebuild window. The rebuild's signals go
+    // only to that window's engine, so this dialog re-checks the index when it
+    // is active again: the rebuild window is application-modal, so that is
+    // after it has closed.
+    property bool rebuild_window_opened: false
 
     function start_search_index_rebuild() {
-        logger.info("start_search_index_rebuild()");
-        root.rebuild_initiated_here = true;
-        root.is_rebuilding = true;
-        root.rebuild_status_message = "Rebuilding…";
-        // Long operation: keep the screen awake until it actually ends.
-        manager.set_keep_screen_on("search-index-rebuild-validation", true);
-        SuttaBridge.rebuild_search_index();
+        logger.info("start_search_index_rebuild(): opening the rebuild window");
+        root.rebuild_window_opened = true;
+        SuttaBridge.open_search_index_rebuild_window();
     }
 
-    Connections {
-        target: SuttaBridge
-
-        function onRebuildSearchIndexProgress(step: int, total: int, label: string) {
-            if (!root.rebuild_initiated_here) return;
-            root.rebuild_status_message = step === 0 ? label : ("Step " + step + "/" + total + ": " + label);
-        }
-
-        function onRebuildSearchIndexFinished(outcome: string, summary_json: string, message: string) {
-            if (!root.rebuild_initiated_here) return;
-            logger.info("onRebuildSearchIndexFinished: " + outcome + " " + message);
-            root.rebuild_initiated_here = false;
-            root.is_rebuilding = false;
-            root.rebuild_status_message = outcome === "success" ? "Search index rebuilt."
-                : (outcome === "cancelled" ? "The rebuild was cancelled." : message);
-            // Release the screen lock when the rebuild ACTUALLY ends, not when
-            // the dialog closes — the rebuild continues in the background if
-            // the user closes this window.
-            manager.set_keep_screen_on("search-index-rebuild-validation", false);
-            // Refresh the index row in place so it flips to OK (and the
-            // success label appears) without a manual re-run. The rebuild also
-            // reopens the searcher, so the fulltext row can change with it.
-            root.refresh_search_index_status();
-            root.refresh_fulltext_status();
-        }
+    onActiveChanged: {
+        if (!root.active || !root.rebuild_window_opened) return;
+        if (SuttaBridge.is_rebuilding_search_index()) return;
+        root.rebuild_window_opened = false;
+        logger.info("DatabaseValidationDialog: re-checking the search index after a rebuild");
+        // The rebuild also reopens the searcher, so the fulltext row can
+        // change with it.
+        root.refresh_search_index_status();
+        root.refresh_fulltext_status();
     }
 
     // Both UpdateNotificationDialog and DatabaseValidationDialog are siblings
@@ -1177,19 +1156,11 @@ ApplicationWindow {
                 }
 
                 Label {
-                    text: "  - " + (root.is_rebuilding
-                                    ? root.rebuild_status_message
-                                    : root.search_index_message)
+                    text: "  - " + root.search_index_message
                     font.pointSize: root.pointSize
-                    color: (root.search_index_failed && !root.is_rebuilding) ? palette.mid : palette.text
+                    color: root.search_index_failed ? palette.mid : palette.text
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                }
-
-                BusyIndicator {
-                    visible: root.is_rebuilding
-                    running: visible
-                    Layout.alignment: Qt.AlignLeft
                 }
             }
 
@@ -1246,11 +1217,11 @@ ApplicationWindow {
                 Layout.bottomMargin: 5
 
                 Button {
-                    text: root.is_rebuilding ? "Rebuilding Search Index…" : "Rebuild Search Index"
+                    text: "Rebuild Search Index"
                     font.pointSize: root.pointSize
                     Layout.fillWidth: true
-                    visible: root.search_index_failed || root.is_rebuilding
-                    enabled: !root.is_rebuilding
+                    // Also covers an incomplete index (see refresh_search_index_status()).
+                    visible: root.search_index_failed
                     onClicked: {
                         root.start_search_index_rebuild();
                     }

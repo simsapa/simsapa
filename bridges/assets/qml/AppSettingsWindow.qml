@@ -522,45 +522,21 @@ ApplicationWindow {
     Dialog {
         id: rebuild_index_dialog
         title: "Rebuild Search Index"
-        anchors.centerIn: parent
         modal: true
-        // Clamped to the window: a fixed 400 is wider than a phone screen.
-        width: Math.min(root.width - 40, 400)
+        focus: true
+        // Clamped to the window overlay: a fixed 400 is wider than a phone screen.
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 40, 400)
+        standardButtons: Dialog.Yes | Dialog.No
 
-        property bool is_rebuilding: false
-        property string status_message: ""
+        header: DialogHeader { text: rebuild_index_dialog.title }
 
-        // rebuildSearchIndexProgress / rebuildSearchIndexFinished are global
-        // SuttaBridge signals; DatabaseValidationDialog can start a rebuild
-        // too, so only react to a rebuild started here.
-        property bool rebuild_initiated_here: false
+        // The rebuild window starts the rebuild, shows its progress and
+        // outcome, and holds the keep-screen-on lock.
+        onAccepted: SuttaBridge.open_search_index_rebuild_window()
 
-        standardButtons: rebuild_index_dialog.is_rebuilding ? Dialog.NoButton : (rebuild_index_dialog.status_message !== "" ? Dialog.Ok : Dialog.Yes | Dialog.No)
-
-        onAccepted: {
-            if (!rebuild_index_dialog.is_rebuilding && rebuild_index_dialog.status_message === "") {
-                rebuild_index_dialog.rebuild_initiated_here = true;
-                rebuild_index_dialog.is_rebuilding = true;
-                rebuild_index_dialog.status_message = "";
-                rebuild_index_dialog.open();
-                // Long operation: keep the screen awake until it actually ends.
-                manager.set_keep_screen_on("search-index-rebuild-settings", true);
-                SuttaBridge.rebuild_search_index();
-            }
-        }
-
-        onRejected: {
-            rebuild_index_dialog.is_rebuilding = false;
-            rebuild_index_dialog.status_message = "";
-        }
-
-        onClosed: {
-            if (!rebuild_index_dialog.is_rebuilding) {
-                rebuild_index_dialog.status_message = "";
-            }
-        }
-
-        // `width: parent.width` is required for the wrapping Labels: declared
+        // `width: parent.width` is required for the wrapping Label: declared
         // children are parented to popupItem->contentItem(), which is already
         // sized to availableWidth. Without it the text does not wrap.
         ColumnLayout {
@@ -568,51 +544,9 @@ ApplicationWindow {
             width: parent.width
 
             Label {
-                visible: !rebuild_index_dialog.is_rebuilding && rebuild_index_dialog.status_message === ""
-                text: "This will rebuild the fulltext search index for all languages.\nThis may take a few minutes."
+                text: "This will rebuild the fulltext search index for all languages. This may take a few minutes."
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
-            }
-
-            Label {
-                visible: rebuild_index_dialog.is_rebuilding
-                text: rebuild_index_dialog.status_message !== "" ? rebuild_index_dialog.status_message : "Rebuilding..."
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-
-            BusyIndicator {
-                visible: rebuild_index_dialog.is_rebuilding && rebuild_index_dialog.status_message === ""
-                running: visible
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            Label {
-                visible: !rebuild_index_dialog.is_rebuilding && rebuild_index_dialog.status_message !== ""
-                text: rebuild_index_dialog.status_message
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-        }
-
-        Connections {
-            target: SuttaBridge
-
-            function onRebuildSearchIndexProgress(step: int, total: int, label: string) {
-                if (!rebuild_index_dialog.rebuild_initiated_here) return;
-                rebuild_index_dialog.status_message = step === 0 ? label : ("Step " + step + "/" + total + ": " + label);
-            }
-
-            function onRebuildSearchIndexFinished(outcome: string, summary_json: string, message: string) {
-                if (!rebuild_index_dialog.rebuild_initiated_here) return;
-                rebuild_index_dialog.rebuild_initiated_here = false;
-                rebuild_index_dialog.is_rebuilding = false;
-                rebuild_index_dialog.status_message = outcome === "success" ? "Search index rebuilt."
-                    : (outcome === "cancelled" ? "The rebuild was cancelled." : message);
-                // Release the screen lock only here — when the rebuild
-                // actually ends. Closing the dialog mid-rebuild must not
-                // release it, since the background job continues.
-                manager.set_keep_screen_on("search-index-rebuild-settings", false);
             }
         }
     }
