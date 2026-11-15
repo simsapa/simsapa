@@ -1762,8 +1762,9 @@ translation can be zipped by key.
   (e.g. the Pāli and `/en/sujato`) have none.
 - **Which texts have it.** Only segmented texts: the SuttaCentral Pāli
   (`/pli/ms`), the Bilara translations (e.g. `/en/sujato`, `/en/brahmali`),
-  the segmented Bodhi, PTS, Ṭhānissaro, Munindo (Dhammapada) and Nyanadipa
-  (Sutta Nipāta) translations (§13.5), and the CST Pāli with its OpenTipitaka
+  the segmented Bodhi, PTS, Ṭhānissaro, Munindo, Ānandajoti, Buddharakkhita
+  and Feldmeier (Dhammapada) and Nyanadipa (Sutta Nipāta) translations
+  (§13.5), and the CST Pāli with its OpenTipitaka
   English (`/pli/cst`, `/en/opentipitaka`).
   Most other translations are stored as HTML; for those use `/sutta_html` (§13).
   The segment ids of a CST text are not SuttaCentral's: `mn1:1.1` in
@@ -1885,11 +1886,15 @@ only the segments that have an entry, so look it up by the segment ids of
 - **Glosses**: the `sutta_glosses` table is in the schema and the reader
   displays it, but no gloss records are in the shipped database today, so
   `glosses` is `null`.
-- **Munindo and Nyanadipa are segmented.** Ajahn Munindo's Dhammapada
+- **Munindo, Nyanadipa and the Dhammapada of Ānandajoti, Buddharakkhita and Feldmeier are segmented.** Ajahn Munindo's Dhammapada
   (`dhp179-196/en/munindo`, one record per chapter) and Bhante Nyanadipa's
   Sutta Nipāta verses (`snp4.2/en/nyanadipa`) have `content_json` with the
   segment ids of the Pāli. Their segments keep the translator's verse lines as
   `\n` (§13.4). Nyanadipa's song of Piṅgiya is `snp5.19/en/nyanadipa`.
+  The Dhammapada of Ānandajoti, Buddharakkhita and Feldmeier
+  (`dhp1-20/en/feldmeier`, one record per chapter) is segmented the same way.
+  Buddharakkhita's translation is prose: his sentences are spread over the
+  Pāli lines, with no `\n`.
 - **Line breaks.** The text of every record may contain `\n` and leading `\t`,
   with the meaning given in §13.4.
 - **Order.** Every segment object is the stored column **verbatim**, embedded

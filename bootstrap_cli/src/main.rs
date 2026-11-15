@@ -1033,13 +1033,15 @@ enum Commands {
     },
 
     /// Check the segment files (bilara/*.json, bilara/footnotes.json) of the
-    /// Munindo or Nyanadipa translation against their source text and the Pāli:
+    /// Munindo or Nyanadipa translation, or of the SuttaCentral HTML Dhammapada
+    /// translations, against their source text and the Pāli:
     /// segment ids, the joined text, the hashes, the title and heading
     /// segments, and the footnotes. Read-only. Prints every problem and exits
     /// with 1 if there is any. See docs/munindo-nyanadipa-segmentation.md.
     CheckSegmentFiles {
-        /// The source folder: dhammapada-munindo or nyanadipa-translations. A
-        /// path that does not exist is looked up in bootstrap-assets-resources.
+        /// The source folder: dhammapada-munindo, nyanadipa-translations or
+        /// dhammapada-suttacentral. A path that does not exist is looked up in
+        /// bootstrap-assets-resources.
         #[arg(value_name = "SOURCE_FOLDER")]
         source_folder: PathBuf,
 
@@ -1366,9 +1368,12 @@ fn check_segment_files(source_folder: &Path, sc_data: Option<&Path>) -> Result<(
 
     let report = sf::check_source_folder(&source_folder, &sc_data).map_err(|e| format!("{:#}", e))?;
     if report.files_checked == 0 {
-        println!("No segment files in {}", sf::SourceKind::from_source_folder(&source_folder)
+        let dirs: Vec<String> = sf::SourceKind::kinds_of_source_folder(&source_folder)
+            .unwrap_or_default()
+            .into_iter()
             .map(|k| k.segment_dir(&source_folder).display().to_string())
-            .unwrap_or_default());
+            .collect();
+        println!("No segment files in {}", dirs.join(", "));
     }
     for problem in &report.problems {
         println!("{}", problem);

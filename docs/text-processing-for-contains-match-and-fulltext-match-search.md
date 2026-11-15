@@ -74,7 +74,8 @@ consuming it, so `replace_all` handles adjacent boilerplate correctly).
 
 Shared entry point for **all** sutta bootstrap sources (SuttaCentral HTML + Bilara
 JSON, dhammatalks_org, tipitaka_xml/CST, buddha_ujja). The segmented records of
-suttas-core and of the Nyanadipa and Munindo segment files reach it through
+suttas-core and of the Nyanadipa, Munindo and SuttaCentral-HTML Dhammapada
+segment files reach it through
 `bilara_html_and_plain_text()`, as Bilara JSON, without their footnotes; a
 `\n` or `\t` in a segment is whitespace in the plain text, and the Dhammapada
 verse-group ranges (`183–185.`) are part of it

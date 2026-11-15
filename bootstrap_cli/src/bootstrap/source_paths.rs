@@ -103,6 +103,26 @@ pub const MUNINDO_TEXTS_SUBDIR: &str = "markdown";
 pub const NYANADIPA_TEXTS_SUBDIR: &str = "texts-sc-numbering";
 /// The footnote file of a segment-file source, inside its folder.
 pub const SEGMENT_FOOTNOTES_SUBFILE: &str = "bilara/footnotes.json";
+/// Segment files of the Dhammapada translations SuttaCentral has only as HTML
+/// (Ānandajoti, Buddharakkhita, Feldmeier), `bilara/<translator>/<sutta_id>.json`,
+/// and the drafting script that wrote them (`tools/`). See
+/// docs/munindo-nyanadipa-segmentation.md.
+pub const DHAMMAPADA_SUTTACENTRAL_DIR: &str = "dhammapada-suttacentral";
+/// The folder of the per-translator segment folders inside
+/// `DHAMMAPADA_SUTTACENTRAL_DIR`.
+pub const SUTTACENTRAL_DHP_BILARA_SUBDIR: &str = "bilara";
+
+/// Under [`SC_DATA_DIR`]: a translator's SuttaCentral Dhammapada pages, the
+/// inputs of the `dhammapada-suttacentral` segment files.
+pub fn suttacentral_dhp_html_subdir(translator: &str) -> String {
+    format!("html_text/en/pli/sutta/kn/dhp/{}/dhp", translator)
+}
+
+/// `dhammapada-suttacentral/bilara/<translator>`, relative to the bootstrap
+/// assets folder.
+pub fn suttacentral_dhp_bilara_dir(translator: &str) -> PathBuf {
+    Path::new(DHAMMAPADA_SUTTACENTRAL_DIR).join(SUTTACENTRAL_DHP_BILARA_SUBDIR).join(translator)
+}
 
 /// `dhammapada-munindo/bilara`, relative to the bootstrap assets folder.
 pub fn munindo_bilara_dir() -> PathBuf {

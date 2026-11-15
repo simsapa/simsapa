@@ -120,6 +120,9 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
             required("Nyanadipa segment files", paths::nyanadipa_bilara_dir(), Dir),
             required("Nyanadipa footnotes", paths::nyanadipa_footnotes_file(), File),
             required("Dhammapada Munindo segment files", paths::munindo_bilara_dir(), Dir),
+            required("Dhammapada Ānandajoti segment files (SuttaCentral HTML)", paths::suttacentral_dhp_bilara_dir("anandajoti"), Dir),
+            required("Dhammapada Buddharakkhita segment files (SuttaCentral HTML)", paths::suttacentral_dhp_bilara_dir("buddharakkhita"), Dir),
+            required("Dhammapada Feldmeier segment files (SuttaCentral HTML)", paths::suttacentral_dhp_bilara_dir("feldmeier"), Dir),
             required(
                 "Dhammapada Commentary (Ānandajoti) pages manifest",
                 paths::dhammapada_commentary_anandajoti_dir().join(crate::bootstrap::dhammapada_commentary_anandajoti::MANIFEST_FILE),

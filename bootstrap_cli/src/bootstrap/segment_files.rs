@@ -1,11 +1,15 @@
-//! Segment files of the Munindo and Nyanadipa translations.
+//! Segment files of the Munindo and Nyanadipa translations, and of the
+//! Dhammapada translations SuttaCentral has only as HTML (Ānandajoti,
+//! Buddharakkhita, Feldmeier).
 //!
 //! Each source folder holds a `bilara/` folder with one `<sutta_id>.json` per
 //! text, in suttas-core's segmentation form (every Pāli `ms` segment id, in
-//! Pāli order), and, for Nyanadipa, `bilara/footnotes.json`. This module reads
-//! them, computes suttas-core-compatible hashes, and implements the checks of
-//! the `check-segment-files` command, and builds and imports the records of
-//! `DhammapadaMunindoImporter` and `NyanadipaImporter`. See
+//! Pāli order), and, for Nyanadipa, `bilara/footnotes.json`;
+//! `dhammapada-suttacentral` holds one `bilara/<translator>/` folder per
+//! translator. This module reads them, computes suttas-core-compatible hashes,
+//! and implements the checks of the `check-segment-files` command, and builds
+//! and imports the records of `DhammapadaMunindoImporter`,
+//! `NyanadipaImporter` and `DhammapadaSuttaCentralImporter`. See
 //! docs/munindo-nyanadipa-segmentation.md.
 
 use std::collections::{HashMap, HashSet};
@@ -26,6 +30,7 @@ use simsapa_backend::db::appdata_models::NewSutta;
 use simsapa_backend::db::appdata_schema::suttas;
 use simsapa_backend::footnotes::word_count;
 use simsapa_backend::helpers::{consistent_niggahita, pali_to_ascii, sutta_html_to_plain_text};
+use simsapa_backend::logger;
 
 use crate::bootstrap::footnote_sutta_links::{link_sutta_refs, SuttaRefResolver};
 use crate::bootstrap::helpers::{
@@ -41,10 +46,11 @@ use crate::bootstrap::suttas_core::{footnotes_value_from, pli_ms_uids, write_com
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SegmentFile {
     pub sutta_id: String,
-    /// `munindo` or `nyanadipa`.
+    /// `munindo`, `nyanadipa`, `anandajoti`, `buddharakkhita` or `feldmeier`.
     pub translator: String,
     /// The source file the segments were cut from, relative to the source
-    /// folder (`markdown/dhp-14.md`).
+    /// folder (`markdown/dhp-14.md`), or for a SuttaCentral HTML text to the
+    /// `sc-data` folder (`html_text/en/pli/sutta/kn/dhp/feldmeier/dhp/dhp1-20.html`).
     pub input: String,
     /// `text_hash()` of the source file.
     pub input_hash: String,
@@ -53,6 +59,12 @@ pub struct SegmentFile {
     /// A translator's introduction to this text, as HTML.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub introduction: Option<String>,
+    /// The copyright holder, for `suttas.copyright`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copyright: Option<String>,
+    /// The licence, for `suttas.license`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
     /// Every Pāli segment id, in Pāli order.
     pub segments: Vec<Segment>,
 }
@@ -61,13 +73,14 @@ pub struct SegmentFile {
 pub struct Segment {
     pub id: String,
     pub text: String,
-    /// `copy` (empty or structural, taken over unchanged) or `manual` (text
-    /// placed by hand: never overwrite without asking).
+    /// `copy` (empty or structural, taken over unchanged), `auto` (text placed
+    /// by the drafting script of `dhammapada-suttacentral`, which may redo it)
+    /// or `manual` (text placed by hand: never overwrite without asking).
     pub source: String,
 }
 
 /// The `source` values a segment file may use.
-pub const SEGMENT_SOURCES: [&str; 2] = ["copy", "manual"];
+pub const SEGMENT_SOURCES: [&str; 3] = ["copy", "auto", "manual"];
 
 /// `bilara/footnotes.json`: the notes of every text of one source, with the
 /// fields of a suttas-core `segment_footnotes` row.
@@ -98,46 +111,86 @@ pub struct FootnoteEntry {
 pub enum SourceKind {
     Munindo,
     Nyanadipa,
+    /// The SuttaCentral HTML Dhammapada translations, in
+    /// `dhammapada-suttacentral/bilara/<translator>/`.
+    Anandajoti,
+    Buddharakkhita,
+    Feldmeier,
 }
+
+/// The translators of `dhammapada-suttacentral`, in import order.
+pub const SUTTACENTRAL_DHP_KINDS: [SourceKind; 3] = [SourceKind::Anandajoti, SourceKind::Buddharakkhita, SourceKind::Feldmeier];
 
 impl SourceKind {
     pub fn translator(self) -> &'static str {
         match self {
             SourceKind::Munindo => "munindo",
             SourceKind::Nyanadipa => "nyanadipa",
+            SourceKind::Anandajoti => "anandajoti",
+            SourceKind::Buddharakkhita => "buddharakkhita",
+            SourceKind::Feldmeier => "feldmeier",
         }
     }
 
-    /// The kind of a source folder, from its folder name.
-    pub fn from_source_folder(folder: &Path) -> Result<Self> {
+    /// A Dhammapada translation SuttaCentral has as HTML, whose record the
+    /// SuttaCentral import writes and the segment file replaces.
+    pub fn is_suttacentral_html(self) -> bool {
+        SUTTACENTRAL_DHP_KINDS.contains(&self)
+    }
+
+    /// A Dhammapada translation: its records get the verse-group ranges and a
+    /// `<chapter>. <title>` title segment.
+    pub fn is_dhammapada(self) -> bool {
+        self == SourceKind::Munindo || self.is_suttacentral_html()
+    }
+
+    /// The kinds of a source folder, from its folder name: one, or the three
+    /// translators of `dhammapada-suttacentral`.
+    pub fn kinds_of_source_folder(folder: &Path) -> Result<Vec<Self>> {
         match folder.file_name().and_then(|n| n.to_str()) {
-            Some(source_paths::DHAMMAPADA_MUNINDO_DIR) => Ok(SourceKind::Munindo),
-            Some(source_paths::NYANADIPA_DIR) => Ok(SourceKind::Nyanadipa),
+            Some(source_paths::DHAMMAPADA_MUNINDO_DIR) => Ok(vec![SourceKind::Munindo]),
+            Some(source_paths::NYANADIPA_DIR) => Ok(vec![SourceKind::Nyanadipa]),
+            Some(source_paths::DHAMMAPADA_SUTTACENTRAL_DIR) => Ok(SUTTACENTRAL_DHP_KINDS.to_vec()),
             _ => bail!(
-                "{}: not a segment-file source folder (expected {} or {})",
+                "{}: not a segment-file source folder (expected {}, {} or {})",
                 folder.display(), source_paths::DHAMMAPADA_MUNINDO_DIR, source_paths::NYANADIPA_DIR,
+                source_paths::DHAMMAPADA_SUTTACENTRAL_DIR,
             ),
         }
     }
 
-    /// The `bilara/` folder of a source folder of this kind.
+    /// The folder of the segment files of this kind in its source folder.
     pub fn segment_dir(self, source_folder: &Path) -> PathBuf {
         match self {
             SourceKind::Munindo => source_folder.join(source_paths::MUNINDO_BILARA_SUBDIR),
             SourceKind::Nyanadipa => source_folder.join(source_paths::NYANADIPA_BILARA_SUBDIR),
+            _ => source_folder.join(source_paths::SUTTACENTRAL_DHP_BILARA_SUBDIR).join(self.translator()),
+        }
+    }
+
+    /// The folder a segment file's `input` is relative to: the source folder,
+    /// or `sc-data` for the SuttaCentral HTML texts.
+    pub fn input_base(self, source_folder: &Path, sc_data_dir: &Path) -> PathBuf {
+        if self.is_suttacentral_html() {
+            sc_data_dir.to_path_buf()
+        } else {
+            source_folder.to_path_buf()
         }
     }
 
     /// The source texts that must each be the `input` of one segment file,
-    /// relative to the source folder and sorted: Munindo's chapters
-    /// (`markdown/dhp-<n>.md`, not the book-wide front matter) and Nyanadipa's
-    /// suttas (`texts-sc-numbering/*.md`).
-    pub fn source_texts(self, source_folder: &Path) -> Result<Vec<String>> {
-        let (subdir, prefix) = match self {
-            SourceKind::Munindo => (source_paths::MUNINDO_TEXTS_SUBDIR, "dhp-"),
-            SourceKind::Nyanadipa => (source_paths::NYANADIPA_TEXTS_SUBDIR, ""),
+    /// relative to `input_base()` and sorted: Munindo's chapters
+    /// (`markdown/dhp-<n>.md`, not the book-wide front matter), Nyanadipa's
+    /// suttas (`texts-sc-numbering/*.md`), and the translator's SuttaCentral
+    /// chapter pages (`html_text/…/<translator>/dhp/dhp*.html`).
+    pub fn source_texts(self, source_folder: &Path, sc_data_dir: &Path) -> Result<Vec<String>> {
+        let sc_subdir = source_paths::suttacentral_dhp_html_subdir(self.translator());
+        let (subdir, prefix, extension) = match self {
+            SourceKind::Munindo => (source_paths::MUNINDO_TEXTS_SUBDIR, "dhp-", ".md"),
+            SourceKind::Nyanadipa => (source_paths::NYANADIPA_TEXTS_SUBDIR, "", ".md"),
+            _ => (sc_subdir.as_str(), "dhp", ".html"),
         };
-        let dir = source_folder.join(subdir);
+        let dir = self.input_base(source_folder, sc_data_dir).join(subdir);
         let entries = match fs::read_dir(&dir) {
             Ok(e) => e,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
@@ -145,7 +198,7 @@ impl SourceKind {
         };
         let mut names: Vec<String> = entries
             .filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
-            .filter(|n| n.starts_with(prefix) && n.ends_with(".md"))
+            .filter(|n| n.starts_with(prefix) && n.ends_with(extension))
             .map(|n| format!("{}/{}", subdir, n))
             .collect();
         names.sort();
@@ -362,11 +415,31 @@ pub fn html_plain(text: &str) -> String {
     collapse_whitespace(&html_escape::decode_html_entities(&text))
 }
 
-/// Reduces a source Markdown file to its title, its body as plain words, and
-/// its footnotes. Removed from the body: the title, the translator's verse
-/// numbers, footnote markers and definitions, Markdown line-break syntax,
-/// emphasis and escapes.
+static RE_HTML_H1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<h1[^>]*>(.*?)</h1>").unwrap());
+/// A SuttaCentral verse anchor: `<a class='ref sc' id='sc1' …>SC 1</a>`.
+static RE_SC_VERSE_ANCHOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<a class='ref sc'[^>]*>[^<]*</a>").unwrap());
+
+/// Reduces a SuttaCentral `html_text` page to its `<h1>` title and the plain
+/// words of its body: the text between `</header>` and `<footer>`, without the
+/// verse anchors (`SC 1`). The header (division names) and the footer
+/// (translator, edition, licence) are not part of the text.
+pub fn normalized_suttacentral_html(source_html: &str) -> NormalizedSource {
+    let title = RE_HTML_H1.captures(source_html).map(|c| html_plain(&c[1])).unwrap_or_default();
+    let body = source_html.split_once("</header>").map(|(_, b)| b).unwrap_or("");
+    let body = body.split("<footer").next().unwrap_or("");
+    let body = RE_SC_VERSE_ANCHOR.replace_all(body, "");
+    NormalizedSource { title, text: html_plain(&body), ..Default::default() }
+}
+
+/// Reduces a source file to its title, its body as plain words, and its
+/// footnotes. From a Markdown source this removes the title, the translator's
+/// verse numbers, footnote markers and definitions, Markdown line-break
+/// syntax, emphasis and escapes; a SuttaCentral HTML source goes through
+/// `normalized_suttacentral_html()`.
 pub fn normalized_source_text(source_md: &str, kind: SourceKind) -> NormalizedSource {
+    if kind.is_suttacentral_html() {
+        return normalized_suttacentral_html(source_md);
+    }
     let mut out = NormalizedSource::default();
     let lines: Vec<&str> = source_md.lines().collect();
     let mut body: Vec<String> = Vec::with_capacity(lines.len());
@@ -393,6 +466,7 @@ pub fn normalized_source_text(source_md: &str, kind: SourceKind) -> NormalizedSo
                         continue;
                     }
                 }
+                _ => {}
             }
         }
 
@@ -411,6 +485,7 @@ pub fn normalized_source_text(source_md: &str, kind: SourceKind) -> NormalizedSo
             SourceKind::Nyanadipa => {
                 line = RE_NYANADIPA_VERSE_NUMBER.replace(&line, "").to_string();
             }
+            _ => {}
         }
         line = RE_MD_LINE_BREAK.replace(&line, "").to_string();
         body.push(line);
@@ -453,6 +528,8 @@ pub struct SegmentedRecord {
     /// `sutta_comments.content_json` for the text's notes; `None` without notes.
     pub footnotes_value: Option<String>,
     pub footnote_count: usize,
+    pub copyright: Option<String>,
+    pub license: Option<String>,
 }
 
 impl SourceKind {
@@ -466,6 +543,10 @@ impl SourceKind {
         match self {
             SourceKind::Munindo => format!("{}/{}", source_paths::DHAMMAPADA_MUNINDO_DIR, source_paths::MUNINDO_BILARA_SUBDIR),
             SourceKind::Nyanadipa => format!("{}/{}", source_paths::NYANADIPA_DIR, source_paths::NYANADIPA_BILARA_SUBDIR),
+            _ => format!(
+                "{}/{}/{}",
+                source_paths::DHAMMAPADA_SUTTACENTRAL_DIR, source_paths::SUTTACENTRAL_DHP_BILARA_SUBDIR, self.translator(),
+            ),
         }
     }
 }
@@ -473,12 +554,14 @@ impl SourceKind {
 static RE_CHAPTER_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+\.\s+").unwrap());
 
 /// The record title from the page-title segment's text: Nyanadipa's heading
-/// as it is, Munindo's `14. The Buddha` without its chapter number.
+/// as it is, a Dhammapada chapter's `14. The Buddha` without its chapter
+/// number.
 pub fn record_title(kind: SourceKind, title_segment: &str) -> String {
     let title = html_plain(title_segment);
-    match kind {
-        SourceKind::Munindo => RE_CHAPTER_PREFIX.replace(&title, "").into_owned(),
-        SourceKind::Nyanadipa => title,
+    if kind.is_dhammapada() {
+        RE_CHAPTER_PREFIX.replace(&title, "").into_owned()
+    } else {
+        title
     }
 }
 
@@ -525,7 +608,7 @@ pub fn build_segmented_record(
         })
         .collect();
 
-    if kind == SourceKind::Munindo {
+    if kind.is_dhammapada() {
         apply_dhp_verse_ranges(&mut content, false, &uid);
     }
 
@@ -565,6 +648,8 @@ pub fn build_segmented_record(
         description,
         footnotes_value,
         footnote_count,
+        copyright: file.copyright.clone().filter(|s| !s.trim().is_empty()),
+        license: file.license.clone().filter(|s| !s.trim().is_empty()),
     })
 }
 
@@ -617,8 +702,8 @@ fn insert_segmented_record(conn: &mut SqliteConnection, kind: SourceKind, sutta_
             source_info: Some(&source_info),
             source_language: None,
             message: None,
-            copyright: None,
-            license: None,
+            copyright: rec.copyright.as_deref(),
+            license: rec.license.as_deref(),
         })
         .execute(conn)
         .with_context(|| format!("Inserting {}", rec.uid))?;
@@ -626,14 +711,67 @@ fn insert_segmented_record(conn: &mut SqliteConnection, kind: SourceKind, sutta_
     write_comments(conn, id, &rec.uid, "en", kind.translator(), rec.footnotes_value.as_deref())
 }
 
-/// Imports every segment file of `source_folder` (`dhammapada-munindo` or
-/// `nyanadipa-translations`) into appdata, in one transaction, and returns the
-/// uids written. The SuttaCentral import must have run: each text's template
-/// is its `…/pli/ms` record's. A missing or empty `bilara/` folder, a missing
-/// Nyanadipa `footnotes.json`, and any file that fails to build are errors, so
+/// What the import did with one SuttaCentral HTML record.
+enum Replaced {
+    Done,
+    /// The record already has `content_json`: SuttaCentral now publishes the
+    /// text segmented, and its own text is kept.
+    AlreadySegmented,
+}
+
+/// Writes `rec` over the SuttaCentral HTML record of the same uid, which keeps
+/// its `id`, `uid`, reference, range fields and `source_uid`; its title
+/// becomes the translator's. A missing record is an error.
+fn replace_suttacentral_record(conn: &mut SqliteConnection, kind: SourceKind, rec: &SegmentedRecord) -> Result<Replaced> {
+    let existing: Option<(i32, Option<String>)> = suttas::table
+        .filter(suttas::uid.eq(&rec.uid))
+        .select((suttas::id, suttas::content_json))
+        .first(conn)
+        .optional()?;
+    let Some((id, content_json)) = existing else {
+        bail!("{}: no such record; the SuttaCentral import writes it, and this step only replaces its text", rec.uid);
+    };
+    if content_json.is_some_and(|c| !c.trim().is_empty()) {
+        return Ok(Replaced::AlreadySegmented);
+    }
+    let title_ascii = pali_to_ascii(Some(&rec.title));
+    diesel::update(suttas::table.filter(suttas::id.eq(id)))
+        .set((
+            suttas::title.eq(Some(&rec.title)),
+            suttas::title_ascii.eq(Some(&title_ascii)),
+            suttas::description.eq(rec.description.as_ref()),
+            suttas::content_plain.eq(Some(&rec.content_plain)),
+            suttas::content_html.eq(None::<String>),
+            suttas::content_json.eq(Some(&rec.content_json)),
+            suttas::content_json_tmpl.eq(Some(&rec.content_json_tmpl)),
+            suttas::copyright.eq(rec.copyright.as_ref()),
+            suttas::license.eq(rec.license.as_ref()),
+            suttas::source_info.eq(Some(kind.source_info())),
+        ))
+        .execute(conn)
+        .with_context(|| format!("Updating {}", rec.uid))?;
+    write_comments(conn, id, &rec.uid, "en", kind.translator(), rec.footnotes_value.as_deref())?;
+    Ok(Replaced::Done)
+}
+
+/// Imports every segment file of `source_folder` (`dhammapada-munindo`,
+/// `nyanadipa-translations` or `dhammapada-suttacentral`) into appdata, in one
+/// transaction per kind, and returns the uids written. The SuttaCentral import
+/// must have run: each text's template is its `…/pli/ms` record's, and a
+/// SuttaCentral HTML text replaces the text of its existing record (one that
+/// SuttaCentral meanwhile publishes segmented is kept, with a warning). A
+/// missing or empty segment folder, a missing Nyanadipa `footnotes.json`, a
+/// missing record to replace, and any file that fails to build are errors, so
 /// a release cannot ship with a text missing.
 pub fn import_source_folder(conn: &mut SqliteConnection, source_folder: &Path) -> Result<Vec<String>> {
-    let kind = SourceKind::from_source_folder(source_folder)?;
+    let mut uids = Vec::new();
+    for kind in SourceKind::kinds_of_source_folder(source_folder)? {
+        uids.extend(import_kind(conn, kind, source_folder)?);
+    }
+    Ok(uids)
+}
+
+fn import_kind(conn: &mut SqliteConnection, kind: SourceKind, source_folder: &Path) -> Result<Vec<String>> {
     let dir = kind.segment_dir(source_folder);
     match dir.try_exists() {
         Ok(true) => {}
@@ -649,7 +787,7 @@ pub fn import_source_folder(conn: &mut SqliteConnection, source_folder: &Path) -
     let footnotes = match (read_footnote_file(&footnote_path)?, kind) {
         (Some(f), _) => f.footnotes,
         (None, SourceKind::Nyanadipa) => bail!("Footnote file not found: {}", footnote_path.display()),
-        (None, SourceKind::Munindo) => vec![],
+        (None, _) => vec![],
     };
     let sutta_ids: HashSet<&str> = files.iter().map(|(_, f)| f.sutta_id.as_str()).collect();
     if let Some(e) = footnotes.iter().find(|e| !sutta_ids.contains(e.sutta_id.as_str())) {
@@ -667,8 +805,18 @@ pub fn import_source_folder(conn: &mut SqliteConnection, source_folder: &Path) -
             let template = pali_template_from_db(conn, &file.sutta_id)?;
             let rec = build_segmented_record(kind, file, &template, &notes, &link_fn)
                 .with_context(|| format!("Building {}", path.display()))?;
-            insert_segmented_record(conn, kind, &file.sutta_id, &rec)?;
-            uids.push(rec.uid);
+            if kind.is_suttacentral_html() {
+                match replace_suttacentral_record(conn, kind, &rec)? {
+                    Replaced::Done => uids.push(rec.uid),
+                    Replaced::AlreadySegmented => logger::warn(&format!(
+                        "{}: SuttaCentral now has this text segmented; keeping its text, not {}",
+                        rec.uid, path.display(),
+                    )),
+                }
+            } else {
+                insert_segmented_record(conn, kind, &file.sutta_id, &rec)?;
+                uids.push(rec.uid);
+            }
         }
         Ok(uids)
     })
@@ -790,12 +938,13 @@ pub fn check_hashes(path: &Path, file: &SegmentFile, source_md: &str, pali_ids: 
     problems
 }
 
-/// The value the title segment must hold: `<chapter>. <title>` for Munindo,
-/// the Markdown heading for Nyanadipa.
+/// The value the title segment must hold: `<chapter>. <title>` for a
+/// Dhammapada chapter, the Markdown heading for Nyanadipa.
 pub fn expected_title(kind: SourceKind, sutta_id: &str, source_title: &str) -> Option<String> {
-    match kind {
-        SourceKind::Munindo => dhp_chapter_number(sutta_id).map(|n| format!("{}. {}", n, source_title)),
-        SourceKind::Nyanadipa => Some(source_title.to_string()),
+    if kind.is_dhammapada() {
+        dhp_chapter_number(sutta_id).map(|n| format!("{}. {}", n, source_title))
+    } else {
+        Some(source_title.to_string())
     }
 }
 
@@ -947,13 +1096,23 @@ pub struct CheckReport {
 }
 
 /// Runs every check on the segment files of `source_folder`
-/// (`dhammapada-munindo` or `nyanadipa-translations`) against the Pāli of
-/// `sc_data_dir` (the `sc-data` folder). Read-only.
+/// (`dhammapada-munindo`, `nyanadipa-translations` or
+/// `dhammapada-suttacentral`) against the Pāli of `sc_data_dir` (the `sc-data`
+/// folder). Read-only.
 pub fn check_source_folder(source_folder: &Path, sc_data_dir: &Path) -> Result<CheckReport> {
-    let kind = SourceKind::from_source_folder(source_folder)?;
+    let mut report = CheckReport::default();
+    for kind in SourceKind::kinds_of_source_folder(source_folder)? {
+        let r = check_kind(kind, source_folder, sc_data_dir)?;
+        report.files_checked += r.files_checked;
+        report.problems.extend(r.problems);
+    }
+    Ok(report)
+}
+
+fn check_kind(kind: SourceKind, source_folder: &Path, sc_data_dir: &Path) -> Result<CheckReport> {
     let dir = kind.segment_dir(source_folder);
     let mut report = CheckReport::default();
-    let source_texts = kind.source_texts(source_folder)?;
+    let source_texts = kind.source_texts(source_folder, sc_data_dir)?;
 
     let paths = match dir.try_exists() {
         Ok(true) => segment_file_paths(&dir)?,
@@ -1009,7 +1168,7 @@ fn check_one_file(
         problems.push(Problem::new(path, None, format!("translator {:?}, expected {:?}", file.translator, kind.translator())));
     }
 
-    let source_path = source_folder.join(&file.input);
+    let source_path = kind.input_base(source_folder, sc_data_dir).join(&file.input);
     let source_md = fs::read_to_string(&source_path)
         .with_context(|| format!("Reading the input {}", source_path.display()))?;
     let source = normalized_source_text(&source_md, kind);
@@ -1088,6 +1247,8 @@ mod tests {
             input_hash: String::new(),
             pali_hash: String::new(),
             introduction: None,
+            copyright: None,
+            license: None,
             segments: vec![
                 Segment { id: "snp4.2:0.2".into(), text: "The Cave".into(), source: "manual".into() },
                 Segment { id: "snp4.2:1.1".into(), text: "Imprisoned in\na <i>cave</i>, ".into(), source: "manual".into() },
@@ -1126,9 +1287,14 @@ mod tests {
         fixtures_dir().join(source_paths::NYANADIPA_DIR)
     }
 
+    /// Feldmeier's Dhp 1–2 only; the other two translators have no fixture.
+    fn suttacentral_folder() -> PathBuf {
+        fixtures_dir().join(source_paths::DHAMMAPADA_SUTTACENTRAL_DIR)
+    }
+
     #[test]
     fn test_good_fixtures_have_no_problems() {
-        for folder in [munindo_folder(), nyanadipa_folder()] {
+        for folder in [munindo_folder(), nyanadipa_folder(), suttacentral_folder()] {
             let report = check_source_folder(&folder, &sc_data()).unwrap();
             assert_eq!(report.files_checked, 1, "{:?}", folder);
             assert!(report.problems.is_empty(), "{:?}: {:#?}", folder, report.problems);
@@ -1327,7 +1493,7 @@ mod tests {
             fs::write(folder.join("markdown").join(name), "").unwrap();
         }
         assert_eq!(
-            SourceKind::Munindo.source_texts(&folder).unwrap(),
+            SourceKind::Munindo.source_texts(&folder, &sc_data()).unwrap(),
             vec!["markdown/dhp-1.md", "markdown/dhp-2.md"],
         );
 
@@ -1456,6 +1622,102 @@ mod tests {
     }
 
     #[test]
+    fn test_normalized_suttacentral_html() {
+        let html = fs::read_to_string(sc_data().join("html_text/en/pli/sutta/kn/dhp/feldmeier/dhp/dhp1-20.html")).unwrap();
+        let n = normalized_source_text(&html, SourceKind::Feldmeier);
+        assert_eq!(n.title, "Pairs");
+        assert!(n.text.starts_with("All phenomena are preceded by the mind, Created"), "{}", n.text);
+        assert!(n.text.ends_with("Happiness follows as an ever-present shadow."), "the footer is not text: {}", n.text);
+        assert!(!n.text.contains("SC 1"), "verse anchors are removed");
+        assert!(n.footnote_markers.is_empty());
+        assert_eq!(expected_title(SourceKind::Feldmeier, "dhp1-20", &n.title).unwrap(), "1. Pairs");
+        assert_eq!(record_title(SourceKind::Feldmeier, "1. Pairs"), "Pairs");
+    }
+
+    #[test]
+    fn test_suttacentral_kinds_and_folders() {
+        let folder = suttacentral_folder();
+        assert_eq!(SourceKind::kinds_of_source_folder(&folder).unwrap(), SUTTACENTRAL_DHP_KINDS);
+        assert_eq!(SourceKind::Feldmeier.segment_dir(&folder), folder.join("bilara/feldmeier"));
+        assert_eq!(SourceKind::Feldmeier.input_base(&folder, &sc_data()), sc_data());
+        assert_eq!(SourceKind::Munindo.input_base(&munindo_folder(), &sc_data()), munindo_folder());
+        assert_eq!(SourceKind::Anandajoti.source_info(), "dhammapada-suttacentral/bilara/anandajoti");
+        assert_eq!(
+            SourceKind::Feldmeier.source_texts(&folder, &sc_data()).unwrap(),
+            vec!["html_text/en/pli/sutta/kn/dhp/feldmeier/dhp/dhp1-20.html"],
+        );
+        assert!(SourceKind::Anandajoti.source_texts(&folder, &sc_data()).unwrap().is_empty());
+    }
+
+    /// A SuttaCentral HTML-only record, as the SuttaCentral import writes it.
+    fn insert_html_record(conn: &mut SqliteConnection, uid: &str) -> i32 {
+        diesel::sql_query(
+            "INSERT INTO suttas (uid, sutta_ref, nikaya, language, title, content_html, source_uid) \
+             VALUES (?, 'Dhp 1-20', 'kn', 'en', '1. Pairs ', '<div>old</div>', 'feldmeier')",
+        )
+        .bind::<diesel::sql_types::Text, _>(uid)
+        .execute(conn)
+        .unwrap();
+        suttas::table.filter(suttas::uid.eq(uid)).select(suttas::id).first(conn).unwrap()
+    }
+
+    #[test]
+    fn test_import_suttacentral_replaces_the_html_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = test_support::scratch_appdata(&dir);
+        let template = pali_template(&sc_data(), "dhp1-20").unwrap();
+        test_support::insert_pali(&mut conn, "dhp1-20", &serde_json::to_string(&template).unwrap());
+
+        // No record to replace: an error naming it.
+        let err = import_kind(&mut conn, SourceKind::Feldmeier, &suttacentral_folder()).unwrap_err();
+        assert!(format!("{:#}", err).contains("dhp1-20/en/feldmeier"), "{:#}", err);
+
+        let id = insert_html_record(&mut conn, "dhp1-20/en/feldmeier");
+        let uids = import_kind(&mut conn, SourceKind::Feldmeier, &suttacentral_folder()).unwrap();
+        assert_eq!(uids, ["dhp1-20/en/feldmeier"]);
+
+        let row = test_support::record_row(&mut conn, "dhp1-20/en/feldmeier");
+        assert!(row.content_html.is_none());
+        assert_eq!(row.title, "Pairs", "the translator's title, without the chapter number");
+        assert_eq!(row.sutta_ref, "Dhp 1-20");
+        assert_eq!(row.source_info.as_deref(), Some("dhammapada-suttacentral/bilara/feldmeier"));
+        let content = test_support::content_map(&row.content_json);
+        assert!(content.keys().eq(template.keys()), "content_json keys follow the Pāli template");
+        assert_eq!(content["dhp1:0.3"], "1. Pairs");
+        assert_eq!(content["dhp1:0.4"], "1.", "the verse-group range");
+        assert_eq!(content["dhp2:0"], "2.");
+        assert_eq!(content["dhp1:2"], "Created by the mind,\nAnd have the mind as their master.\n");
+        assert!(row.content_plain.contains("all phenomena are preceded by the mind"), "{}", row.content_plain);
+
+        let (same_id, copyright, license): (i32, Option<String>, Option<String>) = suttas::table
+            .filter(suttas::uid.eq("dhp1-20/en/feldmeier"))
+            .select((suttas::id, suttas::copyright, suttas::license))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(same_id, id, "updated in place");
+        assert_eq!(copyright.as_deref(), Some("Peter Feldmeier"));
+        assert_eq!(license.as_deref(), Some("Creative Commons Attribution-NonCommercial 4.0 International License"));
+    }
+
+    #[test]
+    fn test_import_suttacentral_keeps_a_record_already_segmented() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = test_support::scratch_appdata(&dir);
+        test_support::insert_pali(&mut conn, "dhp1-20", &serde_json::to_string(&pali_template(&sc_data(), "dhp1-20").unwrap()).unwrap());
+        insert_html_record(&mut conn, "dhp1-20/en/feldmeier");
+        diesel::update(suttas::table.filter(suttas::uid.eq("dhp1-20/en/feldmeier")))
+            .set(suttas::content_json.eq(Some(r#"{"dhp1:1":"SuttaCentral's own"}"#)))
+            .execute(&mut conn)
+            .unwrap();
+
+        let uids = import_kind(&mut conn, SourceKind::Feldmeier, &suttacentral_folder()).unwrap();
+        assert!(uids.is_empty());
+        let row = test_support::record_row(&mut conn, "dhp1-20/en/feldmeier");
+        assert_eq!(row.content_json, r#"{"dhp1:1":"SuttaCentral's own"}"#);
+        assert_eq!(row.title, "1. Pairs ");
+    }
+
+    #[test]
     fn test_import_without_pali_template_names_the_uid() {
         let dir = tempfile::tempdir().unwrap();
         let mut conn = test_support::scratch_appdata(&dir);
@@ -1514,8 +1776,11 @@ pub mod test_support {
 
     /// Imports `source_folder` (real bootstrap assets) into a scratch appdata
     /// seeded with the Dhammapada and Sutta Nipāta Pāli templates of the dist
-    /// database, which is opened read-only. `None` (the test skips) when the
-    /// folder or the dist database is absent.
+    /// database, which is opened read-only, and with an HTML-only record for
+    /// each Dhammapada chapter of the SuttaCentral HTML translators (the uid
+    /// and title of the dist database's record), as the SuttaCentral import
+    /// writes them. `None` (the test skips) when the folder or the dist
+    /// database is absent.
     pub fn import_into_scratch(source_folder: &Path) -> Option<(tempfile::TempDir, SqliteConnection, Vec<String>)> {
         let dist = source_paths::bootstrap_assets_dir_from_crate().join("dist/simsapa/app-assets/appdata.sqlite3");
         if !matches!(source_folder.join("bilara").try_exists(), Ok(true)) || !matches!(dist.try_exists(), Ok(true)) {
@@ -1530,12 +1795,30 @@ pub mod test_support {
             .load(&mut dist_conn)
             .unwrap();
 
+        let translators: Vec<&str> = SUTTACENTRAL_DHP_KINDS.iter().map(|k| k.translator()).collect();
+        let html_records: Vec<(String, String, Option<String>, Option<String>)> = suttas::table
+            .filter(suttas::uid.like("dhp%/en/%"))
+            .filter(suttas::source_uid.eq_any(&translators))
+            .filter(suttas::uid.not_like("%.att/%"))
+            .select((suttas::uid, suttas::sutta_ref, suttas::title, suttas::source_uid))
+            .load(&mut dist_conn)
+            .unwrap();
+
         let dir = tempfile::tempdir().unwrap();
         let mut conn = scratch_appdata(&dir);
         for (uid, tmpl) in templates {
             if let (Some(sutta_id), Some(tmpl)) = (uid.strip_suffix("/pli/ms"), tmpl) {
                 insert_pali(&mut conn, sutta_id, &tmpl);
             }
+        }
+        for (uid, sutta_ref, title, source_uid) in html_records {
+            sql_query("INSERT INTO suttas (uid, sutta_ref, nikaya, language, title, content_html, source_uid) VALUES (?, ?, 'kn', 'en', ?, '<div>html</div>', ?)")
+                .bind::<Text, _>(uid)
+                .bind::<Text, _>(sutta_ref)
+                .bind::<diesel::sql_types::Nullable<Text>, _>(title)
+                .bind::<diesel::sql_types::Nullable<Text>, _>(source_uid)
+                .execute(&mut conn)
+                .unwrap();
         }
         let uids = import_source_folder(&mut conn, source_folder).unwrap();
         Some((dir, conn, uids))

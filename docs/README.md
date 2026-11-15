@@ -528,7 +528,7 @@ substantially.
   `data-n`, a bottom bar that updates incrementally so a selection survives), and
   the `survey-suttas-core` report. A version bump of the appdata DB is needed
   before release.
-- [Munindo and Nyanadipa segment files, Dhammapada verse groups, verse lines](./munindo-nyanadipa-segmentation.md) —
+- [Munindo, Nyanadipa and SuttaCentral-HTML segment files, Dhammapada verse groups, verse lines](./munindo-nyanadipa-segmentation.md) —
   Ajahn Munindo's Dhammapada and Bhante Nyanadipa's Sutta Nipāta as
   hand-placed segment files (`bilara/<sutta_id>.json` in suttas-core's
   segmentation form, every Pāli id in Pāli order, suttas-core-compatible
@@ -539,10 +539,16 @@ substantially.
   `check-segment-files` command (run after any edit; the bootstrap does not).
   The Dhammapada verse-group rule (`dhpN:0` and the first verse's `0.4`; en
   dash; `dhp416:5.0` excluded) and the three importers that write the ranges
-  (SuttaCentral for Pāli and Sujato, suttas-core for Ṭhānissaro, the Munindo
-  import). The verse-segment line contract (`\n` = line, leading tabs =
-  indent level) and `render_verse_lines()`, which leaves every segment
-  without line data byte-identical.
+  (SuttaCentral for Pāli and Sujato, suttas-core for Ṭhānissaro, the
+  segment-file import). The verse-segment line contract (`\n` = line, leading
+  tabs = indent level) and `render_verse_lines()`, which leaves every segment
+  without line data byte-identical. §8: Ānandajoti's, Buddharakkhita's and
+  Feldmeier's Dhammapada, which SuttaCentral has only as HTML, drafted from
+  its pages by `dhammapada-suttacentral/tools/draft_segment_files.py` (verse
+  anchors by `id`, Feldmeier's print line wraps kept with their line,
+  Buddharakkhita's prose split into clauses, meaning alignment against the
+  segmented English) with every hand placement in `tools/placements.json`;
+  the import replaces the text of SuttaCentral's HTML records in place.
 - [Dhammapada commentary: Ānandajoti's pages, and the commentary records of a vagga](./dhammapada-commentary-anandajoti.md) —
   Ānandajoti's *Dhamma Verses Commentary* as one page per vagga,
   `dhp<range>.att/en/anandajoti`, beside the CST aṭṭhakathā

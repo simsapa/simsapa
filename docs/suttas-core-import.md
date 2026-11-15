@@ -39,9 +39,9 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
   its `build.log` and a `BUILT-FROM.txt` (the `simsapa` commit, each merged
   branch's commit, the build command), repoint `current`, re-run the bootstrap.
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org
-  imports and **before** the Dhammapada (tipitaka.net), Nyanadipa and Munindo
-  steps, the library imports and the navigation-tree builds. The Nyanadipa and
-  Munindo steps read their own segment files
+  imports and **before** the Dhammapada (tipitaka.net), Nyanadipa, Munindo and
+  SuttaCentral-HTML Dhammapada steps, the library imports and the
+  navigation-tree builds. Those three steps read their own segment files
   ([munindo-nyanadipa-segmentation.md](./munindo-nyanadipa-segmentation.md)),
   not suttas-core. The tree resolves each leaf's `sutta_uid`
   against rows that exist, so it must see the final uids; the library imports
@@ -96,11 +96,13 @@ segments are joined; do not "clean" it.
 
 `default_english_for_pali()` (`backend/src/app_data.rs`) picks Sujato's
 segmented English when the text has one. `…/en/bodhi`, `…/en/horner`,
-`…/en/munindo`, `…/en/nyanadipa` and SuttaCentral's `…/en/suddhaso` all sort
+`…/en/munindo`, `…/en/nyanadipa`, `…/en/anandajoti`, `…/en/buddharakkhita`,
+`…/en/feldmeier` and SuttaCentral's `…/en/suddhaso` all sort
 before `…/en/sujato` by uid, so it is chosen by name. Without it, the rule
 takes, in uid order, a segmented English imported from SuttaCentral
 (`source_info` NULL), then any other segmented English (suttas-core's,
-Munindo's, Nyanadipa's), then any English, always leaving out the AI English.
+Munindo's, Nyanadipa's, the SuttaCentral-HTML Dhammapada's), then any English,
+always leaving out the AI English.
 This is why every other segmented import writes `source_info`.
 
 ## 3. Ajahn Ṭhānissaro

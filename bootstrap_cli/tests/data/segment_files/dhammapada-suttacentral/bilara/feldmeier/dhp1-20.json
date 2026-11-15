@@ -1,0 +1,28 @@
+{
+  "sutta_id": "dhp1-20",
+  "translator": "feldmeier",
+  "input": "html_text/en/pli/sutta/kn/dhp/feldmeier/dhp/dhp1-20.html",
+  "input_hash": "cd845887499fa237",
+  "pali_hash": "e5b402427eb2344a",
+  "copyright": "Peter Feldmeier",
+  "license": "Creative Commons Attribution-NonCommercial 4.0 International License",
+  "segments": [
+    {"id":"dhp1:0.1","text":"","source":"copy"},
+    {"id":"dhp1:0.2","text":"","source":"copy"},
+    {"id":"dhp1:0.3","text":"1. Pairs","source":"auto"},
+    {"id":"dhp1:0.4","text":"","source":"copy"},
+    {"id":"dhp1:1","text":"All phenomena are preceded by the mind,\n","source":"manual"},
+    {"id":"dhp1:2","text":"Created by the mind,\nAnd have the mind as their master.\n","source":"manual"},
+    {"id":"dhp1:3","text":"If one speaks or acts from a corrupted mind,\n","source":"manual"},
+    {"id":"dhp1:4","text":"","source":"copy"},
+    {"id":"dhp1:5","text":"Suffering follows as the cart-wheel follows the ox’s\nfoot.\n","source":"manual"},
+    {"id":"dhp1:6","text":"","source":"copy"},
+    {"id":"dhp2:0","text":"","source":"copy"},
+    {"id":"dhp2:1","text":"All phenomena are preceded by the mind,\n","source":"manual"},
+    {"id":"dhp2:2","text":"Created by the mind,\nAnd have the mind as their master.\n","source":"manual"},
+    {"id":"dhp2:3","text":"If one speaks or acts with a pure mind,\n","source":"manual"},
+    {"id":"dhp2:4","text":"","source":"copy"},
+    {"id":"dhp2:5","text":"Happiness follows as an ever-present shadow.\n","source":"manual"},
+    {"id":"dhp2:6","text":"","source":"copy"}
+  ]
+}

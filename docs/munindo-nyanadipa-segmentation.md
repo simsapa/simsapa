@@ -1,10 +1,11 @@
-# Munindo and Nyanadipa segment files, Dhammapada verse groups, verse lines
+# Munindo, Nyanadipa and SuttaCentral-HTML segment files, Dhammapada verse groups, verse lines
 
-How Ajahn Munindo's *A Dhammapada for Contemplation* and Bhante Nyanadipa's
-*The Silent Sages of Old* (Sutta Nipāta) are stored as segmented
-(Bilara-style) texts, how the Dhammapada verse-group numbers are added to the
-Pāli and the English records, and how the reader renders line breaks and
-indentation inside a verse segment.
+How Ajahn Munindo's *A Dhammapada for Contemplation*, Bhante Nyanadipa's
+*The Silent Sages of Old* (Sutta Nipāta), and the three Dhammapada
+translations SuttaCentral has only as HTML (Ānandajoti, Buddharakkhita,
+Feldmeier) are stored as segmented (Bilara-style) texts, how the Dhammapada
+verse-group numbers are added to the Pāli and the English records, and how the
+reader renders line breaks and indentation inside a verse segment.
 
 A segmented record (`content_json` keyed by the SuttaCentral segment ids of
 the Pāli `ms` text) is shown line by line beside the Pāli in the Lines and
@@ -16,16 +17,18 @@ Code:
   hashes, the checks of `check-segment-files`, and the import shared by both
   importers (`build_segmented_record()`, `import_source_folder()`).
 - `bootstrap_cli/src/bootstrap/dhammapada_munindo.rs`,
-  `bootstrap_cli/src/bootstrap/nyanadipa.rs` — the two importers, thin
-  wrappers over `import_source_folder()`.
+  `bootstrap_cli/src/bootstrap/nyanadipa.rs`,
+  `bootstrap_cli/src/bootstrap/dhammapada_suttacentral.rs` — the three
+  importers, thin wrappers over `import_source_folder()`.
 - `bootstrap_cli/src/bootstrap/helpers.rs` — `dhp_verse_group_ranges()`,
   `apply_dhp_verse_ranges()`, `dhp_chapter_number()`, `range_title_key()`.
 - `backend/src/helpers.rs` — `render_verse_lines()`.
 
 The decisions behind the placement of every non-obvious line, and every
-mismatch between a source file and the Pāli, are in the review report
-`2026-11-08-100734-review---munindo-nyanadipa-segmentation.md` (in `tasks/`
-or `tasks/archive/`).
+mismatch between a source file and the Pāli, are in the review reports
+`2026-11-08-100734-review---munindo-nyanadipa-segmentation.md` and
+`2026-11-15-192449-review---suttacentral-dhammapada-segmentation.md` (in
+`tasks/` or `tasks/archive/`).
 
 ## 1. Files
 
@@ -35,9 +38,11 @@ Each source folder under `bootstrap-assets-resources/` has a `bilara/` folder:
 |---|---|---|
 | `dhammapada-munindo/` | `bilara/dhp1-20.json` … `dhp383-423.json`, 26, one per chapter | `markdown/dhp-N.md` |
 | `nyanadipa-translations/` | `bilara/snp1.1.json` …, 36, one per sutta, plus `bilara/footnotes.json` | `texts-sc-numbering/*.md` |
+| `dhammapada-suttacentral/` | `bilara/<translator>/dhp1-20.json` …, 26 per translator (`anandajoti`, `buddharakkhita`, `feldmeier`) | `sc-data/html_text/en/pli/sutta/kn/dhp/<translator>/dhp/*.html` |
 
-The files are data, written by hand (by reading), not generated at bootstrap
-time. The `markdown/`, `html/` and `texts-sc-numbering/` files stay as the
+The files are data, not generated at bootstrap time. Munindo's and
+Nyanadipa's were written by hand (by reading); the SuttaCentral ones are
+drafted by a script and hand placements (§8). The `markdown/`, `html/` and `texts-sc-numbering/` files stay as the
 input they were made from and are never edited. Munindo's `html/` files are
 only pandoc output of his Markdown, so the Markdown is the input. Nyanadipa's
 own `texts/` folder (his numbering, shifted in the Pārāyanavagga) is not used.
@@ -70,10 +75,16 @@ The segmentation form of suttas-core
 
 - `segments` lists **every** segment id of the Pāli `ms` root file, in the
   Pāli file's order, including the empty ones.
-- `input` is the source text, relative to the source folder.
+- `input` is the source text, relative to the source folder; for
+  `dhammapada-suttacentral`, relative to `sc-data`
+  (`html_text/en/pli/sutta/kn/dhp/feldmeier/dhp/dhp1-20.html`).
 - `source`: `copy` for a segment taken over unchanged (empty or structural),
-  `manual` for text placed by hand. `manual` means "never overwrite without
-  asking", as in suttas-core. Any other value is a read error.
+  `auto` for text placed by the `dhammapada-suttacentral` drafting script's
+  rules, `manual` for text placed by hand. `manual` means "never overwrite
+  without asking", as in suttas-core. Any other value is a read error.
+- `copyright`, `license` (optional): stored in `suttas.copyright` /
+  `suttas.license`. The SuttaCentral files carry them from the page footers;
+  the reader does not show them.
 - `introduction` (optional, HTML): a chapter- or sutta-level introduction by
   the translator. The importer stores it in `suttas.description` and prepends
   its text to `content_plain`, as for Ṭhānissaro's introductions. Neither
@@ -159,6 +170,7 @@ renders as the page title (`page_title_key()`):
 |---|---|---|---|
 | Munindo | `dhp179:0.3` | `<h1 class='range-title'>` | `14. The Buddha` |
 | Nyanadipa | `snp4.2:0.2` | `<h1 class='sutta-title'>` | `The Cave` |
+| SuttaCentral HTML | `dhp179:0.3` | `<h1 class='range-title'>` | `14. The Chapter about the Buddha` (the page's `<h1>`) |
 
 The multi-column views show no record title (a column header holds only the
 column label), so a title outside a segment is not seen at all; in the Solo
@@ -169,7 +181,7 @@ the short heading of his Markdown file, which must name the same sutta as the
 Pāli title of the SC number. The division segments above the title stay `""`.
 The record's `title` field is the title without the chapter number
 (`record_title()`), so search results and the navigation tree show
-`The Buddha`, `The Cave`.
+`The Buddha`, `The Cave`, `The Chapter about the Buddha`.
 
 The Dhammapada verse-group heading segments are `""` in the files; the
 importer fills them (§4).
@@ -187,7 +199,7 @@ suttas-core steps, in one transaction per source. Per segment file
   never through `serde_json::Value`). A file id or a note segment the template
   lacks is an error. `consistent_niggahita()` is applied to every segment,
   note and introduction.
-- Munindo: the verse-group ranges (§4), before the plain text.
+- The Dhammapada texts: the verse-group ranges (§4), before the plain text.
 - `content_plain` through `bilara_html_and_plain_text()`, without notes, the
   introduction first; `content_html = NULL`; `description` = introduction.
 - Notes → `sutta_comments` in the `ssp-fn` stored form, through the same
@@ -197,11 +209,20 @@ suttas-core steps, in one transaction per source. Per segment file
   uids); `Sn 4:17` and `Sn 204` (a verse number) stay text.
 - `uid` `<sutta_id>/en/munindo` / `…/en/nyanadipa`; `source_info`
   `dhammapada-munindo/bilara` / `nyanadipa-translations/bilara`.
+- The SuttaCentral HTML texts are not inserted: each **replaces the text of
+  the HTML record the SuttaCentral import wrote** under the same uid
+  (`dhp1-20/en/feldmeier`), in place (`replace_suttacentral_record()`), keeping
+  `id`, `uid`, `sutta_ref`, range fields and `source_uid`, and setting the
+  title, the content fields, `copyright`, `license` and `source_info`
+  `dhammapada-suttacentral/bilara/<translator>`. The step runs after Munindo's.
+  A missing record is an error. A record that already has `content_json`
+  (SuttaCentral has meanwhile published the text segmented) is kept and
+  logged, and its segment file is then obsolete.
 
-Both sources are **required** in the preflight (`bilara/` folders, and
-Nyanadipa's `footnotes.json`), and a missing or empty folder or any file that
-fails to build stops the bootstrap, so a release cannot ship with a text
-missing. Sujato stays the default English beside the Pāli, and the
+All three sources are **required** in the preflight (the `bilara/` folders,
+one per SuttaCentral translator, and Nyanadipa's `footnotes.json`), and a
+missing or empty folder or any file that fails to build stops the bootstrap,
+so a release cannot ship with a text missing. Sujato stays the default English beside the Pāli, and the
 `source_info` keeps these records behind SuttaCentral's segmented English
 where Sujato has none (`default_english_for_pali()`, see
 [suttas-core-import.md](./suttas-core-import.md) §2).
@@ -243,9 +264,10 @@ Applied by three importers, and only to these records:
 |---|---|
 | `dhp…/pli/ms`, `dhp…/en/sujato` | SuttaCentral, `bilara_text_to_sutta()` (`suttacentral.rs`) |
 | `dhp…/en/thanissaro` | suttas-core, `build_record()` (`suttas_core.rs`) |
-| `dhp…/en/munindo` | `build_segmented_record()` (`segment_files.rs`) |
+| `dhp…/en/munindo`, `dhp…/en/anandajoti`, `…/en/buddharakkhita`, `…/en/feldmeier` | `build_segmented_record()` (`segment_files.rs`) |
 
-Other languages' Dhammapada translations and the Sutta Nipāta get no ranges.
+The other Dhammapada translations (other languages, and the English ones
+stored as HTML) and the Sutta Nipāta get no ranges.
 
 The suttas-core importer also writes `<chapter>. <title>` into the
 range-title segment of Ṭhānissaro's 26 chapters (`14. Awakened`): his title
@@ -258,6 +280,7 @@ from that segment, trimmed, else the record title; the chapter number from
 cd bootstrap_cli
 cargo run -- check-segment-files dhammapada-munindo
 cargo run -- check-segment-files nyanadipa-translations [--sc-data <dir>]
+cargo run -- check-segment-files dhammapada-suttacentral   # all three translators
 ```
 
 A folder name that is not a path is looked up in `bootstrap-assets-resources`;
@@ -268,7 +291,9 @@ editing any segment file**; the bootstrap does not run it. For every file:
 2. the joined text equals the normalised source (`normalized_source_text()`:
    title, verse numbers, footnote markers and definitions, Markdown line-break
    syntax, emphasis and escapes removed; HTML tags removed from the segments;
-   whitespace collapsed; apostrophes curly on both sides); the first differing
+   whitespace collapsed; apostrophes curly on both sides; for a SuttaCentral
+   page, `normalized_suttacentral_html()`: the text between `</header>` and
+   `<footer>` without the `SC n` verse anchors and tags); the first differing
    word is printed with its context and segment id;
 3. `input_hash` and `pali_hash` are current, else the file is "stale";
 4. the segments above the title and the verse-group headings are empty, and
@@ -324,6 +349,9 @@ whitespace.
 ## 7. Traps
 
 - Never derive the Dhammapada alignment from Munindo's verse numbers.
+- Never hand-edit a `dhammapada-suttacentral` segment file: the drafting
+  script rewrites them all. A placement decision goes in
+  `tools/placements.json` (§8).
 - Never sort `content_json` keys, and keep every template key.
 - Keep trailing whitespace at segment ends.
 - Leave heading segments `""` in the files; the importer writes the ranges.
@@ -331,3 +359,54 @@ whitespace.
 - Footnote markers go in before `render_verse_lines()`, never after.
 - A change to a segment file or to how ranges are written changes
   `content_plain`: it ships with a re-bootstrap and an index rebuild.
+
+## 8. The SuttaCentral HTML Dhammapada translations
+
+SuttaCentral has Ānandajoti's, Buddharakkhita's and Feldmeier's Dhammapada
+only as `html_text` pages, one per chapter, with an anchor before each verse
+(`<a class='ref sc' id='sc183' … data-uid='dhp183'>SC 183</a>`). The files in
+`dhammapada-suttacentral/bilara/<translator>/` are written by
+`tools/draft_segment_files.py` in that folder, from those pages, the Pāli root,
+and `tools/placements.json`:
+
+```sh
+cd bootstrap-assets-resources/dhammapada-suttacentral
+python3 -I tools/draft_segment_files.py .. [--report <file.json>]
+```
+
+It rewrites every file, so the files can be redone after an `sc-data` update
+(a page changed by SuttaCentral shows as "stale" in check 3) without losing a
+hand placement. Its rules:
+
+- **Verses** come from the anchors' `id`, never `data-uid` (wrong, `dhp1`, on
+  every verse of Ānandajoti's chapter 23). Anchors with no text between them
+  (Buddharakkhita's Dhp 87–88, 104–105, 138–140, 186–187, 190–191, 195–196,
+  246–247, 271–272, 345–346) form one group: his paragraph translates them
+  together, and its sentences are spread over all their segments.
+- **Units** are the translator's lines (`<br>`, paragraph ends), kept as `\n`
+  inside a segment. Buddharakkhita writes prose: his units are sentences and
+  clauses (split after `. ; : ? !` and a space), joined by a space inside a
+  segment. Feldmeier's pages keep the print edition's **line wraps**
+  (`following death he is<br>tormented;`): a Feldmeier line that starts in
+  lowercase stays one unit with the line before it, the break kept.
+- **Placement**, in the translator's order, as §2: as many units as Pāli lines,
+  one each; Ānandajoti with half as many, one line per half-verse (`dhp183:1`,
+  `dhp183:3`; his lines are the Pāli half-verses); otherwise a monotone
+  alignment by meaning, scored by the words a unit shares with Sujato's,
+  Suddhaso's, Ṭhānissaro's and Munindo's segments. The alignment is a draft:
+  every verse it placed was read, and the ones it got wrong are fixed in
+  `tools/placements.json` (`"feldmeier/dhp5": ["dhp5:1", "dhp5:3", "dhp5:4"]`,
+  `source: manual`).
+- **Across an anchor.** Where SuttaCentral anchors a line to the verse next to
+  the one it translates (Feldmeier's Dhp 229–230 and 375–376), a placement key
+  naming the range (`feldmeier/dhp229-230`) joins the groups, and the line is
+  placed in the verse it translates. Each such case is in the review report.
+- **Left empty**: the verse-group headings (the importer writes the ranges),
+  each chapter's vagga-end line (`Yamakavaggo paṭhamo.`), the colophon of
+  Dhp 423, and the repeat of Dhp 416 (`dhp416:5.1`–`8`).
+- **Not text**: the page header (division names) and footer (translator,
+  edition, licence). The footer's holder and licence are in the files'
+  `copyright` / `license`.
+
+After a run, `check-segment-files dhammapada-suttacentral` must report no
+problem.

@@ -7,6 +7,7 @@ pub mod thanissaro_uid_map;
 pub mod thanissaro_intro;
 pub mod footnote_sutta_links;
 pub mod dhammapada_munindo;
+pub mod dhammapada_suttacentral;
 pub mod dhammapada_tipitaka;
 pub mod dhammapada_commentary_anandajoti;
 pub mod nyanadipa;
@@ -48,6 +49,7 @@ pub use appdata::{AppdataBootstrap, DB_VERSION};
 pub use dhammatalks_org::DhammatalksSuttaImporter;
 pub use suttas_core::SuttasCoreImporter;
 pub use dhammapada_munindo::DhammapadaMunindoImporter;
+pub use dhammapada_suttacentral::DhammapadaSuttaCentralImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
 pub use dhammapada_commentary_anandajoti::import::DhammapadaCommentaryAnandajotiImporter;
 pub use nyanadipa::NyanadipaImporter;
@@ -324,10 +326,12 @@ RELEASE_CHANNEL=development
             }
         }
 
-        // Nyanadipa's Sutta Nipāta and Munindo's Dhammapada, from their segment
-        // files. Required, as every translation source is; their templates are
-        // the `…/pli/ms` records of the SuttaCentral import.
-        // See docs/munindo-nyanadipa-segmentation.md.
+        // Nyanadipa's Sutta Nipāta, Munindo's Dhammapada, and the Dhammapada
+        // translations SuttaCentral has only as HTML (Ānandajoti,
+        // Buddharakkhita, Feldmeier), from their segment files. Required, as
+        // every translation source is; their templates are the `…/pli/ms`
+        // records of the SuttaCentral import, and the last three replace the
+        // text of its HTML records. See docs/munindo-nyanadipa-segmentation.md.
         {
             logger::info("Importing suttas from nyanadipa-translations/bilara");
             let mut importer = NyanadipaImporter::new(bootstrap_assets_dir.join(source_paths::NYANADIPA_DIR));
@@ -335,6 +339,10 @@ RELEASE_CHANNEL=development
 
             logger::info("Importing suttas from dhammapada-munindo/bilara");
             let mut importer = DhammapadaMunindoImporter::new(bootstrap_assets_dir.join(source_paths::DHAMMAPADA_MUNINDO_DIR));
+            importer.import(&mut conn)?;
+
+            logger::info("Importing suttas from dhammapada-suttacentral/bilara");
+            let mut importer = DhammapadaSuttaCentralImporter::new(bootstrap_assets_dir.join(source_paths::DHAMMAPADA_SUTTACENTRAL_DIR));
             importer.import(&mut conn)?;
         }
 

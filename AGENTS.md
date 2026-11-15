@@ -179,10 +179,12 @@ add a line here and an entry there.
   in-app Update / Reset.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) —
   the suttas-core bootstrap step.
-- [Munindo and Nyanadipa segment files, Dhammapada verse groups, verse lines](./docs/munindo-nyanadipa-segmentation.md) —
+- [Munindo, Nyanadipa and SuttaCentral-HTML segment files, Dhammapada verse groups, verse lines](./docs/munindo-nyanadipa-segmentation.md) —
   the hand-placed `bilara/` files and `check-segment-files` (run it after any
   edit), the verse-range rule, and `render_verse_lines()`. Never align
-  Munindo by his verse numbers.
+  Munindo by his verse numbers. Ānandajoti's, Buddharakkhita's and
+  Feldmeier's Dhammapada are drafted by `dhammapada-suttacentral/tools/`:
+  never hand-edit those files, put a placement in `tools/placements.json`.
 - [Dhammapada commentary: Ānandajoti's pages](./docs/dhammapada-commentary-anandajoti.md) —
   the `dhp<range>.att` records (CST, OpenTipitaka, Ānandajoti, Daw Mya Tin),
   `dhammapada-commentary-extract` and its import. A commentary is any `.att` /
