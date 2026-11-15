@@ -62,16 +62,42 @@ export function to_option(entry: any): TranslationOption {
 }
 
 /**
+ * The kind of text a uid names, for the dropdown text: "comm" for an
+ * aṭṭhakathā, "sub-comm" for a ṭīkā, "" for a mūla text. Reads the reference
+ * part as sorts_as_commentary() in backend/src/db/appdata.rs does: an `.att` /
+ * `.tik` suffix (`dhp179-196.att/en/anandajoti`), or the file kind of a CST
+ * XML record (`s0101a.att0.xml/pli/cst`).
+ */
+export function text_kind_label(uid: string): string {
+  let uid_ref = uid.split("/")[0];
+  if (uid_ref.endsWith(".xml")) {
+    uid_ref = "." + (uid_ref.slice(0, -4).split(".")[1] || "");
+  }
+  const kind = uid_ref.slice(uid_ref.lastIndexOf(".") + 1);
+  if (uid_ref.includes(".") && kind.startsWith("att")) {
+    return "comm";
+  }
+  if (uid_ref.includes(".") && kind.startsWith("tik")) {
+    return "sub-comm";
+  }
+  return "";
+}
+
+/**
  * The dropdown text for an option: "author (language)", or for a Pāli source
  * "Pāli (edition)" — several Pāli editions (ms, cst) can be in the list, so
- * the uid's source part distinguishes them.
+ * the uid's source part distinguishes them. A commentary adds its kind:
+ * "anandajoti (en, comm)", "Pāli (cst, sub-comm)", since a mūla text and its
+ * commentary share the author and the edition.
  */
 export function option_text(opt: TranslationOption): string {
-  if (opt.is_pali) {
-    const edition = opt.uid.split("/")[2] || "";
-    return edition ? `Pāli (${edition})` : "Pāli";
-  }
-  return opt.language ? `${opt.author} (${opt.language})` : opt.author;
+  const parts = opt.is_pali
+    ? [opt.uid.split("/")[2] || ""]
+    : [opt.language];
+  parts.push(text_kind_label(opt.uid));
+  const detail = parts.filter((part) => part !== "").join(", ");
+  const name = opt.is_pali ? "Pāli" : opt.author;
+  return detail ? `${name} (${detail})` : name;
 }
 
 /** The column label shown in the settings panel's color rows ("Pāli" / author). */

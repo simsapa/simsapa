@@ -468,7 +468,7 @@ impl AppdataDbHandle {
             has_content_json: bool,
         }
 
-        let res_sorted_data: Vec<TranslationData> = sort_suttas(res)
+        let res_sorted_data: Vec<TranslationData> = sort_translations(res)
             .into_iter().map(|s| {
                 // uid format: "mn1/en/sujato" — the third part is the author.
                 let author = s.uid.split('/').nth(2).unwrap_or("").to_string();
@@ -1731,6 +1731,26 @@ pub fn sort_suttas(res: Vec<Sutta>) -> Vec<Sutta> {
     results.extend(pli_others);
     results.extend(remaining);
     results
+}
+
+/// `sort_suttas()` order for a list of related texts, as the bottom column
+/// bar and the translation tabs show them: the Pāli editions are placed as
+/// there, and each translator's commentaries follow their mūla texts
+/// (`anandajoti (en)`, `anandajoti (en, comm)`, `daw (en, comm)`, …) instead
+/// of all commentaries after all mūla texts. Search results keep
+/// `sort_suttas()`, which lists every mūla text before a commentary.
+pub fn sort_translations(res: Vec<Sutta>) -> Vec<Sutta> {
+    let mut sorted = sort_suttas(res);
+    let pali_count = sorted.iter().take_while(|s| s.language == "pli").count();
+    let range_start = |s: &Sutta| {
+        let (base, _) = split_sutta_ref_kind(&s.uid);
+        comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0)
+    };
+    sorted[pali_count..].sort_by_cached_key(|s| {
+        let author = s.uid.split('/').nth(2).unwrap_or("").to_string();
+        (s.language.clone(), is_ot_english_uid(&s.uid), author, sorts_as_commentary(&s.uid), range_start(s), s.uid.clone())
+    });
+    sorted
 }
 
 impl AppdataDbHandle {

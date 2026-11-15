@@ -448,8 +448,15 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   `dhp21-32.att/en/anandajoti` is offered on `dhp21-32/pli/ms` only with
   *Include commentary in translations*, like `dhp21-32.att/pli/cst`
   ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2).
-  Labels name the author and edition only ("anandajoti (en)"), so a vagga's
-  verses and its commentary by one author read alike.
+  Labels name the author and language ("anandajoti (en)") or the Pāli edition
+  ("Pāli (cst)"), and a commentary adds its kind (`text_kind_label()`):
+  "anandajoti (en, comm)" for `.att`, "opentipitaka (en, sub-comm)" for
+  `.tik`, "Pāli (cst, comm)" — a mūla text and its commentary share the
+  author and the edition. The list is in `sort_translations()` order: each
+  translator's commentaries follow their mūla texts (anandajoti (en),
+  anandajoti (en, comm), daw (en, comm), …, opentipitaka (en), opentipitaka
+  (en, comm)), where search results (`sort_suttas()`) list every mūla text
+  first.
 - Rules: minimum one column (last "×" disabled); "+" suggests the Pāli
   first, then the next unshown translation; options displayed in another
   column are disabled; in Lines mode `has_content_json == false` entries,

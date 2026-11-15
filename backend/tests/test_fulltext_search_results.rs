@@ -3,7 +3,7 @@ mod helpers;
 use serial_test::serial;
 use serde::{Deserialize, Serialize};
 
-use simsapa_backend::db::appdata::sort_suttas;
+use simsapa_backend::db::appdata::{sort_suttas, sort_translations};
 use simsapa_backend::db::appdata_models::Sutta;
 use simsapa_backend::search::searcher::{FulltextSearcher, SearchFilters};
 
@@ -233,5 +233,41 @@ fn test_sort_suttas_cst_mula_before_commentary() {
             "mn1/en/sujato",
         ],
         "sort_suttas should order: pli/ms, then pli mūla, then pli commentary, then other languages"
+    );
+}
+
+/// Test that sort_translations() keeps each translator's commentaries beside
+/// their mūla texts (the bottom column bar and the translation tabs), with the
+/// AI English last and the Pāli editions placed as sort_suttas() places them.
+#[test]
+fn test_sort_translations_groups_commentaries_with_their_translator() {
+    let input = vec![
+        make_sutta(1, "dhp179-196.att/en/opentipitaka", "en",  "Dhp-a OT"),
+        make_sutta(2, "dhp179-196.att/en/daw",          "en",  "Dhp-a Daw"),
+        make_sutta(3, "dhp179-196/en/opentipitaka",     "en",  "Dhp OT"),
+        make_sutta(4, "dhp179-196.att/pli/cst",         "pli", "Dhp-a CST"),
+        make_sutta(5, "dhp179-196.att/en/anandajoti",   "en",  "Dhp-a Anandajoti"),
+        make_sutta(6, "dhp179-196/en/sujato",           "en",  "Dhp Sujato"),
+        make_sutta(7, "dhp179-196/en/anandajoti",       "en",  "Dhp Anandajoti"),
+        make_sutta(8, "dhp179-196/pli/ms",              "pli", "Dhp MS"),
+        make_sutta(9, "dhp179-196/pli/cst",             "pli", "Dhp CST"),
+    ];
+
+    let sorted = sort_translations(input);
+    let uids: Vec<&str> = sorted.iter().map(|s| s.uid.as_str()).collect();
+
+    assert_eq!(
+        uids,
+        vec![
+            "dhp179-196/pli/ms",
+            "dhp179-196/pli/cst",
+            "dhp179-196.att/pli/cst",
+            "dhp179-196/en/anandajoti",
+            "dhp179-196.att/en/anandajoti",
+            "dhp179-196.att/en/daw",
+            "dhp179-196/en/sujato",
+            "dhp179-196/en/opentipitaka",
+            "dhp179-196.att/en/opentipitaka",
+        ],
     );
 }

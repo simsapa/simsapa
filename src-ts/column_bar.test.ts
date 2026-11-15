@@ -92,6 +92,20 @@ describe("column_bar helpers", () => {
     expect(cb.option_text(options[1])).toBe("bodhi (en)");
   });
 
+  test("option_text marks commentaries and sub-commentaries", () => {
+    const opt = (uid: string) => cb.to_option({
+      item_uid: uid, language: uid.split("/")[1], author: uid.split("/")[2],
+    });
+    expect(cb.option_text(opt("dhp179-196/en/anandajoti"))).toBe("anandajoti (en)");
+    expect(cb.option_text(opt("dhp179-196.att/en/anandajoti"))).toBe("anandajoti (en, comm)");
+    expect(cb.option_text(opt("mn1.tik/en/opentipitaka"))).toBe("opentipitaka (en, sub-comm)");
+    expect(cb.option_text(opt("dhp179-196.att/pli/cst"))).toBe("Pāli (cst, comm)");
+    expect(cb.option_text(opt("s0101a.att0.xml/pli/cst"))).toBe("Pāli (cst, comm)");
+    expect(cb.option_text(opt("s0101t.tik.xml/pli/cst"))).toBe("Pāli (cst, sub-comm)");
+    expect(cb.option_text(opt("s0101m.mul.xml/pli/cst"))).toBe("Pāli (cst)");
+    expect(cb.option_text(opt("an5.91-100/pli/ms"))).toBe("Pāli (ms)");
+  });
+
   test("next_unshown suggests the Pāli first, then unshown translations in order", () => {
     expect(cb.next_unshown(options, ["mn1/en/sujato"], "sidebyside")!.uid).toBe("mn1/pli/ms");
     expect(cb.next_unshown(options, ["mn1/en/sujato", "mn1/pli/ms"], "sidebyside")!.uid).toBe("mn1/en/bodhi");
