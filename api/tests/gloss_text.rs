@@ -213,9 +213,19 @@ fn test_gloss_text_route() {
     // With a runner: its result is the response, and its translations reach
     // the document.
     let c = client(true);
-    let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true } }));
+    let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true, "contextual_all": false } }));
     assert_eq!(s, Status::Ok);
     assert!(body.ends_with(r#""ai_errors":["stub ran without translate"]}"#), "{body}");
+    // With no `contextual_all`, the runner gets the app setting.
+    let setting = simsapa_backend::get_app_data().app_settings_cache.read().unwrap().gloss_contextual_all;
+    let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true } }));
+    assert_eq!(s, Status::Ok);
+    let expected = if setting {
+        r#""ai_errors":["stub contextual_all","stub ran without translate"]}"#
+    } else {
+        r#""ai_errors":["stub ran without translate"]}"#
+    };
+    assert!(body.ends_with(expected), "gloss_contextual_all = {setting}: {body}");
     // `contextual_all` reaches the runner.
     let (s, _, body) = post(&c, serde_json::json!({ "text": "te jhāyino", "options": { "ai": true, "contextual_all": true } }));
     assert_eq!(s, Status::Ok);
@@ -224,7 +234,7 @@ fn test_gloss_text_route() {
     assert_eq!(s, Status::Ok);
     assert!(body.ends_with(r#""ai_errors":["stub ran without translate"]}"#), "{body}");
     // A reference's record reaches the runner; text given directly has none.
-    let (s, _, body) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "ai": true } }));
+    let (s, _, body) = post(&c, serde_json::json!({ "reference": "dhp23", "options": { "ai": true, "contextual_all": false } }));
     assert_eq!(s, Status::Ok);
     assert!(body.ends_with(r#""ai_errors":["stub source dhp21-32/pli/ms","stub ran without translate"]}"#), "{body}");
     let (s, _, md) = post(&c, serde_json::json!({
