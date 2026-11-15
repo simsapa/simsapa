@@ -1171,8 +1171,10 @@ pub(crate) mod fixture {
     pub const MAPPED_FILE: &str = "s0201m.mul.xml";
     /// Not on the list, with a head and two chapters, and a toc leaf for each.
     /// The name only has to be an unverified file: the rows are Dhammapada text
-    /// (see [`divided_rows`]), which stays readable in the assertions.
-    pub const DIVIDED_FILE: &str = "s0501m.mul.xml";
+    /// (see [`divided_rows`]), which stays readable in the assertions. It was
+    /// `s0501m.mul.xml` until KN phase 1 verified the Khuddakapāṭha; the
+    /// Nettippakaraṇa is among the last KN files due to be verified.
+    pub const DIVIDED_FILE: &str = "s0519m.mul.xml";
     /// One toc leaf against two chapter markers, so it takes the whole-file path.
     pub const WHOLE_FILE: &str = "abh05t.nrf.xml";
 
@@ -1482,9 +1484,9 @@ pub(crate) mod fixture {
                     DIVIDED_FILE,
                     "Khuddakanikāye",
                     vec![
-                        ("s0501m.mul0.xml", "Ganthārambhakathā"),
-                        ("s0501m.mul1.xml", "1. Yamakavaggo"),
-                        ("s0501m.mul2.xml", "2. Appamādavaggo"),
+                        ("s0519m.mul0.xml", "Ganthārambhakathā"),
+                        ("s0519m.mul1.xml", "1. Yamakavaggo"),
+                        ("s0519m.mul2.xml", "2. Appamādavaggo"),
                     ],
                 ),
                 (WHOLE_FILE, "Abhidhammapiṭake", vec![("abh05t.nrf0.xml", "Paṭhamo")]),
@@ -1759,9 +1761,9 @@ mod tests {
                 "mn1/pli/cst",
                 "mn2/pli/cst",
                 "mn3/pli/cst",
-                "s0501m.mul0.xml/pli/cst",
-                "s0501m.mul1.xml/pli/cst",
-                "s0501m.mul2.xml/pli/cst",
+                "s0519m.mul0.xml/pli/cst",
+                "s0519m.mul1.xml/pli/cst",
+                "s0519m.mul2.xml/pli/cst",
             ]
         );
 
@@ -1793,8 +1795,8 @@ mod tests {
             "<article id='mn1' class='cst'><header><h3>Majjhimanikāyo 1</h3>\
              <h1>1. Mūlapariyāyasuttaṁ</h1></header><p class='centered'>"
         ));
-        assert!(first(&mut fixture, "s0501m.mul1.xml/pli/cst").starts_with(
-            "<article id='s0501m.mul1' class='cst'><header><h1>1. Yamakavaggo</h1></header><h2 class='chapter'>"
+        assert!(first(&mut fixture, "s0519m.mul1.xml/pli/cst").starts_with(
+            "<article id='s0519m.mul1' class='cst'><header><h1>1. Yamakavaggo</h1></header><h2 class='chapter'>"
         ));
         assert!(first(&mut fixture, "abh05t.nrf.xml/pli/cst").starts_with(
             "<article id='abh05t.nrf' class='cst'><header><h1>abh05t.nrf</h1></header>"
@@ -1805,15 +1807,15 @@ mod tests {
     fn the_division_records_partition_the_rows_with_the_head_as_its_own_division() {
         let mut fixture = imported();
 
-        let head = stored(&mut fixture, "s0501m.mul0.xml/pli/cst");
+        let head = stored(&mut fixture, "s0519m.mul0.xml/pli/cst");
         assert_eq!(head.title.as_deref(), Some("Ganthārambhakathā"));
         let json = head.content_json.unwrap();
         assert!(json.contains("Dhammapadapāḷi") && json.contains("Namo tassa"), "{}", json);
         assert!(!json.contains("Yamakavaggo"), "{}", json);
 
-        let second = stored(&mut fixture, "s0501m.mul2.xml/pli/cst").content_json.unwrap();
+        let second = stored(&mut fixture, "s0519m.mul2.xml/pli/cst").content_json.unwrap();
         assert!(second.contains("Appamādavaggo") && !second.contains("Yamakavaggo"), "{}", second);
-        assert_eq!(stored(&mut fixture, "s0501m.mul2.xml/pli/cst").group_index, Some(2));
+        assert_eq!(stored(&mut fixture, "s0519m.mul2.xml/pli/cst").group_index, Some(2));
     }
 
     #[test]
@@ -1872,7 +1874,7 @@ mod tests {
 
         let mut uids: Vec<&str> = variants.iter().map(|v| v.sutta_uid.as_str()).collect();
         uids.sort();
-        assert_eq!(uids, ["mn1/pli/cst", "s0501m.mul1.xml/pli/cst", "s0501m.mul2.xml/pli/cst"]);
+        assert_eq!(uids, ["mn1/pli/cst", "s0519m.mul1.xml/pli/cst", "s0519m.mul2.xml/pli/cst"]);
 
         for variant in &variants {
             assert_eq!(variant.language.as_deref(), Some("pli"));
@@ -1903,7 +1905,7 @@ mod tests {
 
         // The row whose Pāli is nothing but a note, and a phrase that crosses
         // the comma in it.
-        let note_only = stored(&mut fixture, "s0501m.mul2.xml/pli/cst").content_plain.unwrap();
+        let note_only = stored(&mut fixture, "s0519m.mul2.xml/pli/cst").content_plain.unwrap();
         let query = normalize_query_text(Some("appamādo ca, cittaṃ pupphañca".to_string()));
         assert!(note_only.contains(&query), "{:?} in {}", query, note_only);
         assert!(!query.contains(','), "{}", query);
@@ -2126,9 +2128,9 @@ mod tests {
         // An empty `en_title`.
         assert_eq!(title(&mut fixture, "mn2/en/opentipitaka"), "2. Sabbāsavasuttaṁ");
         // A division's first chapter row.
-        assert_eq!(title(&mut fixture, "s0501m.mul1.xml/en/opentipitaka"), "1. The Pairs");
+        assert_eq!(title(&mut fixture, "s0519m.mul1.xml/en/opentipitaka"), "1. The Pairs");
         // A head division has no chapter row, because `ot_id` 0 is not a cut.
-        assert_eq!(title(&mut fixture, "s0501m.mul0.xml/en/opentipitaka"), "Ganthārambhakathā");
+        assert_eq!(title(&mut fixture, "s0519m.mul0.xml/en/opentipitaka"), "Ganthārambhakathā");
         // A whole file, though its rows have chapter rows.
         assert_eq!(title(&mut fixture, "abh05t.nrf.xml/en/opentipitaka"), "abh05t.nrf");
 
@@ -2149,11 +2151,11 @@ mod tests {
         let mut fixture = fixture::CstFixture::new().unwrap();
         edit_fragments(
             &fixture,
-            "UPDATE cst_segments SET english = '' WHERE cst_file = 's0501m.mul.xml' AND ot_id = 2",
+            "UPDATE cst_segments SET english = '' WHERE cst_file = 's0519m.mul.xml' AND ot_id = 2",
         );
         fixture.importer().import(&mut fixture.appdata).unwrap();
 
-        let english = stored(&mut fixture, "s0501m.mul1.xml/en/opentipitaka");
+        let english = stored(&mut fixture, "s0519m.mul1.xml/en/opentipitaka");
         assert_eq!(english.title.as_deref(), Some("1. Yamakavaggo"));
     }
 
@@ -2174,7 +2176,7 @@ mod tests {
             )
         );
 
-        let division = stored(&mut fixture, "s0501m.mul1.xml/en/opentipitaka");
+        let division = stored(&mut fixture, "s0519m.mul1.xml/en/opentipitaka");
         assert!(
             division
                 .content_json_tmpl

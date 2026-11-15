@@ -42,7 +42,7 @@
 //! ## The verified list names source files; the toc names divisions
 //!
 //! [`VERIFIED_CST_FILES`] carries the file names the **parser** read, which are
-//! the `romn/` source names and the `cst_file` values (measured: all 54 entries
+//! the `romn/` source names and the `cst_file` values (measured: all 63 entries
 //! appear in all three of `cst_file`, `romn/` and the toc set, with no
 //! mismatch in either direction). The navigation tree, by contrast, works in the
 //! **division** files the CST toc links -- `s0101a.att0.xml`,
@@ -107,7 +107,7 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// in `docs/sutta-navigation-tree.md` §6.1. A commentary file (`.att` / `.tik`)
 /// must be fully mapped: the reader's m | a | t buttons depend on it, and
 /// `test_verified_commentary_files_are_fully_mapped` checks it.
-static VERIFIED_CST_FILES: [&str; 54] = [
+static VERIFIED_CST_FILES: [&str; 63] = [
     // Dīgha Nikāya
     "s0101a.att.xml",
     "s0101m.mul.xml",
@@ -171,6 +171,15 @@ static VERIFIED_CST_FILES: [&str; 54] = [
     // Khuddaka Nikāya
     "s0502m.mul.xml",
     "s0502a.att.xml",
+    "s0501m.mul.xml",
+    "s0503m.mul.xml",
+    "s0504m.mul.xml",
+    "s0505m.mul.xml",
+    "s0506m.mul.xml",
+    "s0507m.mul.xml",
+    "s0509m.mul.xml",
+    "s0511m.mul.xml",
+    "s0512m.mul.xml",
 ];
 
 
