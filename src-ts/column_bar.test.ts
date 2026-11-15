@@ -9,7 +9,7 @@ import * as ds from "./display_settings";
 const BAR_HTML = `
   <div class="column-bar" id="columnBar">
     <div class="column-bar-items" id="columnBarItems"></div>
-    <button type="button" class="column-bar-add" id="columnBarAdd" title="Add a column">+</button>
+    <button type="button" class="column-bar-add" id="columnBarAdd" title="Add a column" aria-label="Add a column"><svg class="column-bar-add-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11"/></svg></button>
   </div>
   <div id="ssp_content"><p>old</p></div>
 `;
