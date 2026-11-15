@@ -927,28 +927,19 @@ Item {
 
         function test_sense_labels_rule() {
             var r = make_wis_row(wis_row_data({}));
-            // Same base, every candidate numbered: shortened.
+            // Same base: the lemma is kept.
             compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" },
                                     { uid: "b", lemma_1: "uppanna 2", meaning: "born (in)" }]),
-                    ["1: arisen", "2: born (in)"]);
-            compare(r.sense_labels([{ uid: "a", lemma_1: "citta 1.1", meaning: "mind" },
-                                    { uid: "b", lemma_1: "citta 1.2", meaning: "thought" }]),
-                    ["1.1: mind", "1.2: thought"]);
-            // Different bases: full names.
+                    ["uppanna 1: arisen", "uppanna 2: born (in)"]);
             compare(r.sense_labels([{ uid: "a", lemma_1: "ta 1", meaning: "that" },
                                     { uid: "b", lemma_1: "so", meaning: "he" }]),
                     ["ta 1: that", "so: he"]);
-            // A base without a number among numbered ones: full names.
-            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna", meaning: "arisen" },
-                                    { uid: "b", lemma_1: "uppanna 2", meaning: "born" }]),
-                    ["uppanna: arisen", "uppanna 2: born"]);
-            // No lemma_1: the uid, full names.
+            // No lemma_1: the uid.
             compare(r.sense_labels([{ uid: "x/dpd", meaning: "m" },
                                     { uid: "b", lemma_1: "x 2", meaning: "n" }]),
                     ["x/dpd: m", "x 2: n"]);
-            // A single candidate keeps its name.
-            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1", meaning: "arisen" }]),
-                    ["uppanna 1: arisen"]);
+            // No meaning: the name alone.
+            compare(r.sense_labels([{ uid: "a", lemma_1: "uppanna 1" }]), ["uppanna 1"]);
             compare(r.sense_labels([]), []);
         }
 
@@ -976,7 +967,7 @@ Item {
                 if (combos[i].visible && combos[i].displayText === "arisen; appeared; come into being (in)") sense = combos[i];
             }
             verify(sense !== null);
-            compare(sense.model, ["1: arisen; appeared; come into being (in)", "2: born (in); lit. gone up"]);
+            compare(sense.model, ["uppanna 1: arisen; appeared; come into being (in)", "uppanna 2: born (in); lit. gone up"]);
         }
 
         function test_wis_row_line2_and_brackets() {

@@ -108,26 +108,12 @@ Frame {
     }
     readonly property int line2_row: root.two_lines ? 1 : 0
 
-    // The sense ComboBox's list labels. When every candidate's lemma_1 is
-    // "<base> <number>" with one shared base (`uppanna 1`, `uppanna 2`), a
-    // label is "<number>: <meaning>"; otherwise "<lemma_1>: <meaning>". A
-    // candidate without a sense number, or without a lemma_1, keeps the full
-    // labels for all, and so does a single candidate.
+    // The sense ComboBox's list labels: "<lemma_1>: <meaning>", with the uid
+    // when there is no lemma_1. The lemma is kept even when all senses share
+    // one base: it helps to read the definition.
     function sense_labels(candidates: var): var {
-        let list = candidates || [];
-        let sense_number = /^(.*\S)\s+(\d+(?:\.\d+)?)$/;
-        let base = null;
-        let shorten = list.length > 1;
-        for (let i = 0; i < list.length && shorten; i++) {
-            let m = sense_number.exec(list[i].lemma_1 || "");
-            if (m === null || (base !== null && m[1] !== base)) {
-                shorten = false;
-            } else {
-                base = m[1];
-            }
-        }
-        return list.map((c) => {
-            let name = shorten ? sense_number.exec(c.lemma_1)[2] : (c.lemma_1 || c.uid);
+        return (candidates || []).map((c) => {
+            let name = c.lemma_1 || c.uid;
             return c.meaning ? name + ": " + c.meaning : name;
         });
     }

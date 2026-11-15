@@ -934,7 +934,10 @@ and `**Literal Translation:**` (a model heading only when there are several;
 no Literal line for a translation saved before the two-part translation),
 `### Variants` (one `a//b` line per group, only when there are groups),
 `### Word-by-Word Analysis` and the table. Contextual is the AI's contextual
-meaning (empty when there is none), Definition the dictionary's, and the
+meaning (empty when there is none), written in italic as in the Gloss tab
+(`<i>` in HTML, `*…*` in Markdown, `/…/` in Org, an italic run in DOCX;
+`CONTEXTUAL_COL` / `LINE1_CONTEXTUAL_COL` in `export_types.rs`), Definition
+the dictionary's, and the
 construction is written in square brackets (`[ud + √pad + na]`, nothing when
 empty). The Headwords tables have no Contextual column.
 
@@ -1720,9 +1723,8 @@ the Definition takes its width (line 2 keeps its grid). Line 2 is hidden when
 Grammar, Construction and Root are all empty. The construction is in square
 brackets, nothing when empty. The closed sense ComboBox shows the chosen
 sense's Definition. Its dropdown labels come from `sense_labels(candidates)`:
-when every candidate's `lemma_1` has a trailing sense number and the same
-base (`uppanna 1`, `uppanna 2`), each label is `<number>: <meaning>`;
-otherwise `<lemma_1>: <meaning>`. The popup is widened to the widest label,
+`<lemma_1>: <meaning>` for every candidate, even when all share one base
+(`uppanna 1`, `uppanna 2`) — the lemma helps to read the definition. The popup is widened to the widest label,
 up to the row width.
 
 The **"Lines per word:"** option (the Gloss Settings ComboBox and the

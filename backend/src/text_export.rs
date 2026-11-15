@@ -12,7 +12,7 @@ use regex::Regex;
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    GlossExportRow, GlossExportVocabItem, CONTEXTUAL_COL, LINE1_CONTEXTUAL_COL, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
     word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
@@ -186,6 +186,20 @@ fn table_cell_text(text: &str, format: TextFormat) -> String {
     }
 }
 
+/// A table cell's text in italic, as the Gloss tab shows the Contextual
+/// meaning. Empty text stays empty.
+fn italic_cell_text(text: &str, format: TextFormat) -> String {
+    let cell = table_cell_text(text.trim(), format);
+    if cell.is_empty() {
+        return cell;
+    }
+    match format {
+        TextFormat::Html => format!("<i>{cell}</i>"),
+        TextFormat::Markdown => format!("*{cell}*"),
+        TextFormat::OrgMode => format!("/{cell}/"),
+    }
+}
+
 /// The Word-by-Word table, one or two table rows per word.
 fn word_table(rows: &[GlossExportRow], format: TextFormat, two_lines: bool) -> String {
     if two_lines {
@@ -204,9 +218,14 @@ fn html_row_start(shaded: bool) -> String {
     }
 }
 
-/// A Markdown / Org table row of `cells`.
-fn text_table_row(cells: &[String], format: TextFormat) -> String {
-    let cells: Vec<String> = cells.iter().map(|c| table_cell_text(c, format)).collect();
+/// A Markdown / Org table row of `cells`, the `italic_col` cell in italic
+/// (`usize::MAX` for none).
+fn text_table_row(cells: &[String], format: TextFormat, italic_col: usize) -> String {
+    let cells: Vec<String> = cells
+        .iter()
+        .enumerate()
+        .map(|(i, c)| if i == italic_col { italic_cell_text(c, format) } else { table_cell_text(c, format) })
+        .collect();
     format!("| {} |\n", cells.join(" | "))
 }
 
@@ -238,9 +257,10 @@ fn word_table_two_lines(rows: &[GlossExportRow], format: TextFormat) -> String {
             for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
                 let [id, word, contextual, definition, _, conf] = row.line1_cells();
                 out.push_str(&html_row_start(shaded));
-                for cell in [&id, &word, &contextual] {
+                for cell in [&id, &word] {
                     out.push_str(&format!("<td>{}</td>", table_cell_text(cell, format)));
                 }
+                out.push_str(&format!("<td>{}</td>", italic_cell_text(&contextual, format)));
                 out.push_str(&format!("<td colspan=\"2\">{}</td>", table_cell_text(&definition, format)));
                 out.push_str(&format!("<td>{}</td></tr>\n", table_cell_text(&conf, format)));
                 out.push_str(&html_row_start(shaded));
@@ -254,8 +274,8 @@ fn word_table_two_lines(rows: &[GlossExportRow], format: TextFormat) -> String {
         TextFormat::Markdown | TextFormat::OrgMode => {
             out.push_str(&text_table_header(&WORD_TABLE_2L_COLUMNS, format));
             for row in rows {
-                out.push_str(&text_table_row(&row.line1_cells(), format));
-                out.push_str(&text_table_row(&row.line2_cells(), format));
+                out.push_str(&text_table_row(&row.line1_cells(), format, LINE1_CONTEXTUAL_COL));
+                out.push_str(&text_table_row(&row.line2_cells(), format, usize::MAX));
             }
         }
     }
@@ -274,8 +294,13 @@ fn word_table_one_line(rows: &[GlossExportRow], format: TextFormat) -> String {
             out.push_str("</tr></thead>\n<tbody>\n");
             for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
                 out.push_str(&html_row_start(shaded));
-                for cell in row.cells() {
-                    out.push_str(&format!("<td>{}</td>", table_cell_text(&cell, format)));
+                for (i, cell) in row.cells().iter().enumerate() {
+                    let text = if i == CONTEXTUAL_COL {
+                        italic_cell_text(cell, format)
+                    } else {
+                        table_cell_text(cell, format)
+                    };
+                    out.push_str(&format!("<td>{}</td>", text));
                 }
                 out.push_str("</tr>\n");
             }
@@ -284,7 +309,7 @@ fn word_table_one_line(rows: &[GlossExportRow], format: TextFormat) -> String {
         TextFormat::Markdown | TextFormat::OrgMode => {
             out.push_str(&text_table_header(&WORD_TABLE_COLUMNS, format));
             for row in rows {
-                out.push_str(&text_table_row(&row.cells(), format));
+                out.push_str(&text_table_row(&row.cells(), format, CONTEXTUAL_COL));
             }
         }
     }
@@ -877,7 +902,7 @@ mod tests {
             "### Word-by-Word Analysis\n\n",
             "| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |\n",
             "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n",
-            "| 29188 | te | masc nom pl of ta | they | those |  |  | A |\n",
+            "| 29188 | te | masc nom pl of ta | *they* | those |  |  | A |\n",
             "| 28829 | jhāyino | masc nom pl of jhāyī |  | meditators | [√jhā + ī] | √jhā 3 ya (think, meditate) |  |\n",
             "| 32215 | daḷhaparakkamā | adj, masc nom pl of daḷhaparakkama |  | having firm effort | [daḷha + parakkama] |  | N |\n",
             "| 32201 | - daḷha | pp |  | firm \\| strong | [√dah + ta] | √dah 1 a (be strong) | H |\n",
@@ -931,7 +956,7 @@ mod tests {
         assert!(html.contains("<th>Conf.</th>"));
         assert!(html.contains("<th>Contextual</th><th>Definition</th>"));
         // A row with a contextual meaning, and one without (an empty cell).
-        assert!(html.contains("<td>te</td><td>masc nom pl of ta</td><td>they</td><td>those</td><td></td>"));
+        assert!(html.contains("<td>te</td><td>masc nom pl of ta</td><td><i>they</i></td><td>those</td><td></td>"));
         assert!(html.contains("<td>- daḷha</td><td>pp</td><td></td><td>firm | strong</td><td>[√dah + ta]</td>"));
         // te: shaded; jhāyino: plain; daḷhaparakkamā and its component: shaded; xyz: plain.
         let shaded = format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">");
@@ -945,7 +970,7 @@ mod tests {
         assert!(org.contains("*** English Translation"));
         assert!(org.contains("*Translation:* Those wise ones"));
         assert!(org.contains("| ID | Word in Sentence | Grammar | Contextual | Definition | Construction | Root | Conf. |\n|---+---+---+---+---+---+---+---|\n"));
-        assert!(org.contains("| 29188 | te | masc nom pl of ta | they | those |  |  | A |"));
+        assert!(org.contains("| 29188 | te | masc nom pl of ta | /they/ | those |  |  | A |"));
         assert!(org.contains("| 32201 | - daḷha | pp |  | firm \\vert{} strong | [√dah + ta] |"));
     }
 
@@ -958,8 +983,8 @@ mod tests {
             "### Word-by-Word Analysis\n\n",
             "| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |\n",
             "| :--- | :--- | :--- | :--- | :--- | :--- |\n",
-            // A token with a contextual meaning.
-            "| 29188 | te | they | those |  | A |\n",
+            // A token with a contextual meaning, in italic.
+            "| 29188 | te | *they* | those |  | A |\n",
             "|  |  | masc nom pl of ta |  |  |  |\n",
             // A token without one.
             "| 28829 | jhāyino |  | meditators |  |  |\n",
@@ -979,7 +1004,7 @@ mod tests {
         assert!(org.contains(concat!(
             "| ID | Word in Sentence | Contextual / Grammar | Definition / Construction | Root | Conf. |\n",
             "|---+---+---+---+---+---|\n",
-            "| 29188 | te | they | those |  | A |\n",
+            "| 29188 | te | /they/ | those |  | A |\n",
             "|  |  | masc nom pl of ta |  |  |  |\n",
         )), "got:\n{}", org);
     }
@@ -992,7 +1017,7 @@ mod tests {
         assert!(html.contains("<th>Contextual / Grammar</th><th>Definition / Construction</th><th>Root</th><th>Conf.</th>"));
         let shaded = format!("<tr style=\"background-color: #{WORD_TABLE_SHADE_HEX};\">");
         assert!(html.contains(&format!(
-            "{shaded}<td>29188</td><td>te</td><td>they</td><td colspan=\"2\">those</td><td>A</td></tr>\n\
+            "{shaded}<td>29188</td><td>te</td><td><i>they</i></td><td colspan=\"2\">those</td><td>A</td></tr>\n\
              {shaded}<td></td><td></td><td>masc nom pl of ta</td><td></td><td></td><td></td></tr>\n"
         )), "{}", html);
         assert!(html.contains(
@@ -1008,7 +1033,7 @@ mod tests {
         let data: GlossExportData = serde_json::from_str(&word_in_sentence_json()).unwrap();
         let para_json = serde_json::to_string(&data.paragraphs[0]).unwrap();
         let out = gloss_paragraph_export(&para_json, 1, "markdown", 2).unwrap();
-        assert!(out.contains("| 29188 | te | they | those |  | A |\n|  |  | masc nom pl of ta |"), "{}", out);
+        assert!(out.contains("| 29188 | te | *they* | those |  | A |\n|  |  | masc nom pl of ta |"), "{}", out);
     }
 
     #[test]

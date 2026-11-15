@@ -47,7 +47,7 @@ use markdown::mdast::{Code, List, Node, Table};
 
 use crate::export_types::{
     confidence_cell, AiResponse, ChatExportData, ChatMessage, GlossExportData, GlossExportParagraph,
-    GlossExportRow, GlossExportVocabItem, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
+    GlossExportRow, GlossExportVocabItem, CONTEXTUAL_COL, WORD_TABLE_2L_COLUMNS, WORD_TABLE_COLUMNS, WORD_TABLE_SHADE_HEX,
     word_table_row_shades,
 };
 use crate::gloss_rows::{CONFIDENCE_LEGEND, CONFIDENCE_LEGEND_LEAD, NO_AI_PROVIDER_NOTE};
@@ -489,7 +489,7 @@ fn word_table(rows: &[GlossExportRow]) -> String {
         let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
         let texts = row.cells();
         for (col, (text, w)) in texts.iter().zip(WORD_TABLE_COL_TWIPS).enumerate() {
-            let runs = [run(false, false, text)];
+            let runs = [run(false, col == CONTEXTUAL_COL, text)];
             let indent = if col == 1 { row.depth as u32 * COMPONENT_INDENT_TWIPS } else { 0 };
             cells.push_str(&table_cell_indent_fill("VocabEntry", &w.to_string(), indent, fill, &runs));
         }
@@ -517,14 +517,15 @@ fn word_table_two_lines(rows: &[GlossExportRow]) -> String {
     let w = WORD_TABLE_2L_COL_TWIPS;
     for (row, shaded) in rows.iter().zip(word_table_row_shades(rows)) {
         let fill = if shaded { Some(WORD_TABLE_SHADE_HEX) } else { None };
-        let cell = |text: &str, width: u32, span: u32, indent: u32| {
-            table_cell_span_fill("VocabEntry", &width.to_string(), span, indent, fill, &[run(false, false, text)])
+        let cell_runs = |runs: &[String], width: u32, span: u32, indent: u32| {
+            table_cell_span_fill("VocabEntry", &width.to_string(), span, indent, fill, runs)
         };
+        let cell = |text: &str, width: u32, span: u32, indent: u32| cell_runs(&[run(false, false, text)], width, span, indent);
         let [id, word, contextual, definition, _, conf] = row.line1_cells();
         let line1 = [
             cell(&id, w[0], 1, 0),
             cell(&word, w[1], 1, row.depth as u32 * COMPONENT_INDENT_TWIPS),
-            cell(&contextual, w[2], 1, 0),
+            cell_runs(&[run(false, true, &contextual)], w[2], 1, 0),
             cell(&definition, w[3] + w[4], 2, 0),
             cell(&conf, w[5], 1, 0),
         ]
@@ -1369,6 +1370,9 @@ mod tests {
         // Both words are in the first (shaded) band: 5 + 6 cells each.
         let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
         assert_eq!(table.matches(&shd).count(), 2 * 11);
+        // The Contextual meaning is italic, as in the Gloss tab.
+        assert!(table.contains(r#"<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">of firm effort</w:t>"#), "{}", table);
+        assert_eq!(table.matches("<w:i/>").count(), 1);
     }
 
     #[test]
@@ -1417,6 +1421,9 @@ mod tests {
         assert!(doc.contains(&format!(r#"<w:ind w:left="{}"/></w:pPr><w:r><w:t xml:space="preserve">- daḷha</w:t>"#, COMPONENT_INDENT_TWIPS)));
         assert!(!text.contains("Paragraph 1"));
         assert!(!text.contains(NO_AI_PROVIDER_NOTE));
+        // The Contextual meaning is italic, as in the Gloss tab; the Definition is not.
+        assert!(doc.contains(r#"<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">of firm effort</w:t>"#), "{}", doc);
+        assert!(doc.contains(r#"<w:r><w:t xml:space="preserve">having firm effort</w:t>"#));
         // The token and its component share the first (shaded) band: 8 cells each.
         let shd = format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#, WORD_TABLE_SHADE_HEX);
         assert_eq!(doc.matches(&shd).count(), 16);

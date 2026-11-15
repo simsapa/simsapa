@@ -139,6 +139,12 @@ pub const WORD_TABLE_COLUMNS: [&str; 8] =
 pub const WORD_TABLE_2L_COLUMNS: [&str; 6] =
     ["ID", "Word in Sentence", "Contextual / Grammar", "Definition / Construction", "Root", "Conf."];
 
+/// The Contextual column's index in `WORD_TABLE_COLUMNS` (`cells()`) and in
+/// `WORD_TABLE_2L_COLUMNS` (`line1_cells()`). The exports write it in italic,
+/// as the Gloss tab does.
+pub const CONTEXTUAL_COL: usize = 3;
+pub const LINE1_CONTEXTUAL_COL: usize = 2;
+
 /// Background shade of a Word-by-Word table row, as in the Gloss tab:
 /// alternating per token, and a compound's component rows share their
 /// token's shade. `true` is the shaded band (the first token's, like the
