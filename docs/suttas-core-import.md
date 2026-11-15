@@ -146,9 +146,23 @@ Unmapped records are **kept as HTML** and each is logged: `kp1`–`kp9` (not in
 suttas-core), `sn44` (the saṁyutta introduction page), `thag3.8` (empty text).
 A text whose segments are all empty (`thag3.8`, `thag3.9`) is never imported.
 
-Titles come from `raw_translations.title`; 15 texts (the split `sn43.*`) have
-none and fall back to the mapped record's title, then `title_pali`, and are
-logged.
+dhammatalks.org's MN 92 and MN 98 pages hold only a cross-reference
+("MN 92 = Sn 3:7"); the dhammatalks.org importer skips such pages
+(`is_cross_reference_page()`), and suttas-core's `mn92` / `mn98` give the text
+under those numbers.
+
+Titles come from `raw_translations.title`, with note markers removed
+(`title_without_note_markers()`): a few carry the cite of a note on the heading
+(`Sela[^ed]`, `[^1]An Exhortation to a Dog-practice Ascetic`), which would show
+as text in search results. 15 texts (the split `sn43.*`) have none and fall back
+to the mapped record's title, then `title_pali`, and are logged.
+
+The dhammatalks.org importer reads the page `<title>`, whose current form is
+`AN 6:20 Mindfulness of Death (2) | Maraṇassati Sutta | sutta on dhammatalks.org`:
+the English title goes to `title`, the Pāli one to `title_pali`, as in the
+suttas-core records. The 2023 form (`AN 6:20 &nbsp;Maraṇassati Sutta | …`) is
+still read by the older patterns. These titles reach the release only in the
+records kept as HTML and the `sn43.*` fallback.
 
 ### Dhammapada verse groups and chapter titles
 

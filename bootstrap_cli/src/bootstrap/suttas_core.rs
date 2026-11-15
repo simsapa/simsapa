@@ -187,6 +187,20 @@ fn note_newlines_to_html(text: &str) -> String {
     RE_LINE.replace_all(&text, "<br>").into_owned()
 }
 
+/// A `raw_translations.title` without its note markers, trimmed. Some titles
+/// carry the cite of a note on the heading (`Sela[^ed]`, Walshe's
+/// `To Sigālaka[^972]`, `[^1]An Exhortation to a Dog-practice Ascetic`); the
+/// note itself is in `segment_footnotes`, and a marker in the title would show
+/// as text in the search results and the window title.
+fn title_without_note_markers(title: &str) -> String {
+    lazy_static::lazy_static! {
+        static ref RE_MARKER: Regex = Regex::new(r"\[\^[^\]\s]*\]").unwrap();
+        static ref RE_SPACES: Regex = Regex::new(r"\s{2,}").unwrap();
+    }
+    let title = RE_MARKER.replace_all(title, "");
+    RE_SPACES.replace_all(title.trim(), " ").into_owned()
+}
+
 impl SuttasCoreDb {
     /// Opens the database at `path` read-only. `path` is normally the
     /// `current/suttas.sqlite` symlinked path; it is resolved so the log and
@@ -364,8 +378,8 @@ impl SuttasCoreDb {
             .or_else(|| rows.first());
 
         Ok(chosen
-            .and_then(|r| r.title.clone())
-            .map(|t| consistent_niggahita(Some(t.trim().to_string())))
+            .and_then(|r| r.title.as_deref().map(title_without_note_markers))
+            .map(|t| consistent_niggahita(Some(t)))
             .filter(|t| !t.is_empty()))
     }
 
@@ -2301,5 +2315,57 @@ mod tests {
         assert!(c["thag10.5:9.2"].starts_with("—blind fools"), "{:?}", c["thag10.5:9.2"]);
         assert!(c["thag10.5:10.2"].starts_with("—as they would with a serpent\n"), "{:?}", c["thag10.5:10.2"]);
         assert!(!rec.content_plain.contains("<em>"), "{:?}", rec.content_plain);
+    }
+
+    #[test]
+    fn test_title_without_note_markers() {
+        assert_eq!(title_without_note_markers("Sela[^ed]"), "Sela");
+        assert_eq!(title_without_note_markers("To Sigālaka[^972]"), "To Sigālaka");
+        assert_eq!(
+            title_without_note_markers("[^1]An Exhortation to a Dog-practice Ascetic"),
+            "An Exhortation to a Dog-practice Ascetic"
+        );
+        assert_eq!(title_without_note_markers(" Two [^3] Parts "), "Two Parts");
+        assert_eq!(title_without_note_markers("Mindfulness of Death (2)"), "Mindfulness of Death (2)");
+    }
+
+    /// Every record title is free of note markers. MN 92 and MN 98, which
+    /// dhammatalks.org only points at Sn 3:7 and Sn 3:9, carry Ṭhānissaro's
+    /// segmented text under their own numbers.
+    #[test]
+    fn test_real_data_titles_have_no_note_markers() {
+        let base = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate();
+        let core_path = base.join(crate::bootstrap::source_paths::SUTTAS_CORE_DB);
+        let appdata_path = base.join("dist/simsapa/app-assets/appdata.sqlite3");
+        if !matches!(core_path.try_exists(), Ok(true)) || !matches!(appdata_path.try_exists(), Ok(true)) {
+            eprintln!("suttas-core or appdata database not found, skipping");
+            return;
+        }
+        let mut db = SuttasCoreDb::open(&core_path).unwrap().expect("suttas-core database");
+        let mut bad = Vec::new();
+        for translator in db.translators().unwrap() {
+            if translator == "ms" {
+                continue;
+            }
+            for (sutta_id, language) in db.segmented_texts(&translator).unwrap() {
+                if let Some(title) = db.title(&sutta_id, &translator, &language).unwrap()
+                    && title.contains("[^")
+                {
+                    bad.push(format!("{} {}: {}", translator, sutta_id, title));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{:?}", bad);
+
+        let mut app = SqliteConnection::establish(&sqlite_readonly_uri(&appdata_path).unwrap()).unwrap();
+        for (sutta_id, title, opening) in [
+            ("mn92", "Sela", "I have heard that on one occasion"),
+            ("mn98", "Vāseṭṭha", "I have heard that on one occasion"),
+            ("mn57", "An Exhortation to a Dog-practice Ascetic", "I have heard that"),
+        ] {
+            let rec = db.build_record(sutta_id, "than", "en", &mut app, &identity).unwrap();
+            assert_eq!(rec.title.as_deref(), Some(title), "{}", sutta_id);
+            assert!(rec.content_plain.to_lowercase().contains(&opening.to_lowercase()), "{}: {:?}", sutta_id, &rec.content_plain[..rec.content_plain.len().min(200)]);
+        }
     }
 }

@@ -15,6 +15,55 @@ use crate::bootstrap::SuttaData;
 
 use super::SuttaImporter;
 
+lazy_static::lazy_static! {
+    /// The page's reference at the start of a current-format `<title>`:
+    /// "AN 6:20 ", "SN 38.10 ", "AN 1:21–30, 39–40 ", "Dhp XVII : ", "101 " (Iti).
+    static ref RE_TITLE_REFERENCE: Regex = Regex::new(
+        r"^(?:(?:DN|MN|SN|AN|Sn|Khp|Thag|Thig|Ud|Dhp)\s+[0-9IVXLC]+(?:[:.][0-9]+)?(?:[–—-][0-9]+)?(?:,\s*[0-9]+(?:[–—-][0-9]+)?)*|[0-9]+(?:[–—-][0-9]+)?)(?:\s+:\s+|\s+)"
+    ).unwrap();
+}
+
+/// Titles and Pāli titles from dhammatalks.org's current `<title>` format:
+///
+/// ```text
+/// AN 6:20 Mindfulness of Death (2) | Maraṇassati Sutta | sutta on dhammatalks.org
+/// Sn 5:4 Mettagū’s Questions | sutta on dhammatalks.org
+/// Dhp XVII : Anger | sutta on dhammatalks.org
+/// ```
+///
+/// Returns `(title, title_pali)`, the English title and the Pāli one (empty
+/// when the page names none), as the suttas-core records have them. `None` for
+/// any other format (the 2023 mirror's `AN 6:20 &nbsp;Maraṇassati Sutta | …`).
+fn parse_current_title_text(title_text: &str) -> Option<(String, String)> {
+    let rest = title_text
+        .strip_suffix("| sutta on dhammatalks.org")
+        .or_else(|| title_text.strip_suffix("| suttas on dhammatalks.org"))?
+        .trim();
+    let mut parts = rest.splitn(2, " | ");
+    let with_reference = parts.next().unwrap_or("").trim();
+    let title_pali = parts.next().unwrap_or("").trim().to_string();
+    let title = RE_TITLE_REFERENCE.replace(with_reference, "").trim().to_string();
+    // A title that is only a reference keeps it, rather than becoming empty.
+    let title = if title.is_empty() { with_reference.to_string() } else { title };
+    Some((title, title_pali))
+}
+
+/// A page that only points at a text elsewhere: every `#sutta h1` is a
+/// cross-reference ("MN 92 = Sn 3:7") and there is no paragraph. SN 44:1's page,
+/// which has such a heading among its text, is not one.
+fn is_cross_reference_page(html_text: &str) -> bool {
+    let document = Html::parse_document(html_text);
+    let h1_selector = Selector::parse("#sutta h1").unwrap();
+    let p_selector = Selector::parse("#sutta p, #sutta pre").unwrap();
+    let h1s: Vec<String> = document
+        .select(&h1_selector)
+        .map(|h| h.text().collect::<String>())
+        .collect();
+    !h1s.is_empty()
+        && h1s.iter().all(|t| t.contains(" = "))
+        && document.select(&p_selector).next().is_none()
+}
+
 pub struct DhammatalksSuttaImporter {
     resource_path: PathBuf,
     limit: Option<i32>,
@@ -57,7 +106,13 @@ impl DhammatalksSuttaImporter {
             .ok_or_else(|| anyhow::anyhow!("No <title> found in HTML"))?;
         let title_text = title_capture[1].trim();
 
-        // Extract title - try different patterns based on path
+        if let Some((title, title_pali)) = parse_current_title_text(title_text) {
+            let title = consistent_niggahita(Some(title.replace("&nbsp;", " ").replace("&amp;", "and").trim().to_string()));
+            let title_pali = consistent_niggahita(Some(title_pali.replace("&nbsp;", " ").replace("&amp;", "and").trim().to_string()));
+            return Ok((title, title_pali));
+        }
+
+        // The 2023 format. Extract title - try different patterns based on path
         let title = {
             // First, try path-specific patterns
             let m = if path_str.contains("/Ud/") {
@@ -239,6 +294,7 @@ impl DhammatalksSuttaImporter {
         let mut success_count = 0;
         let mut error_count = 0;
         let mut imported_count = 0;
+        let mut skipped_pointers = Vec::new();
 
         for file_path in &files {
             if let Some(lim) = self.limit
@@ -247,6 +303,17 @@ impl DhammatalksSuttaImporter {
                 }
 
             pb.set_message(format!("{}", file_path.file_name().unwrap().to_string_lossy()));
+
+            // "MN 92 = Sn 3:7": no text of its own. The suttas-core step
+            // imports the text under this number (mn92/en/thanissaro).
+            match fs::read_to_string(file_path) {
+                Ok(html) if is_cross_reference_page(&html) => {
+                    skipped_pointers.push(file_path.file_name().unwrap().to_string_lossy().to_string());
+                    pb.inc(1);
+                    continue;
+                }
+                _ => {}
+            }
 
             match self.parse_sutta(file_path) {
                 Ok(sutta) => {
@@ -280,6 +347,12 @@ impl DhammatalksSuttaImporter {
         ));
 
         logger::info(&format!("Successfully imported {} Dhammatalks.org suttas", success_count));
+        if !skipped_pointers.is_empty() {
+            logger::info(&format!(
+                "Skipped {} cross-reference pages with no text of their own: {}",
+                skipped_pointers.len(), skipped_pointers.join(", "),
+            ));
+        }
         if error_count > 0 {
             logger::warn(&format!("{} suttas failed to import", error_count));
         }
@@ -318,9 +391,9 @@ mod tests {
         assert_eq!(sutta.language, "en");
         assert_eq!(sutta.source_uid, "thanissaro");
 
-        // Check titles - from old DB: title="Maraṇassati Sutta", title_pali="Mindfulness of Death (2)"
-        assert_eq!(sutta.title, "Maraṇassati Sutta");
-        assert_eq!(sutta.title_pali, Some("Mindfulness of Death (2)".to_string()));
+        // The English title and the Pāli one, as the suttas-core records have them.
+        assert_eq!(sutta.title, "Mindfulness of Death (2)");
+        assert_eq!(sutta.title_pali, Some("Maraṇassati Sutta".to_string()));
 
         // Verify wrapper div exists
         assert!(sutta.content_html.contains("<div class=\"dhammatalks_org\">"), "Missing wrapper div");
@@ -353,10 +426,8 @@ mod tests {
         assert_eq!(sutta.language, "en");
         assert_eq!(sutta.source_uid, "thanissaro");
 
-        // Check titles - the title includes the number prefix from the HTML
-        // Old DB: "4 Mettagū's Questions"  (different unicode quotes)
-        assert!(sutta.title.contains("Mettagū") && sutta.title.contains("Questions"),
-            "Title should contain main text, got: {}", sutta.title);
+        assert_eq!(sutta.title, "Mettagū’s Questions");
+        assert_eq!(sutta.title_pali, None);
 
         // Load expected content
         let expected_path = PathBuf::from("tests/data/dhammatalks-org/snp5.4_expected.html");
@@ -389,8 +460,8 @@ mod tests {
         assert_eq!(sutta.language, "en");
         assert_eq!(sutta.source_uid, "thanissaro");
 
-        // Check titles - from old DB: title="Anger"
         assert_eq!(sutta.title, "Anger");
+        assert_eq!(sutta.title_pali, None);
 
         // Load expected content
         let expected_path = PathBuf::from("tests/data/dhammatalks-org/dhp221-234_expected.html");
@@ -401,5 +472,88 @@ mod tests {
 
             assert!(sutta.content_html.contains("dhammatalks_org"), "Missing wrapper div");
         }
+    }
+
+    #[test]
+    fn test_parse_current_title_text() {
+        let cases = [
+            ("AN 6:20 Mindfulness of Death (2) | Maraṇassati Sutta | sutta on dhammatalks.org", "Mindfulness of Death (2)", "Maraṇassati Sutta"),
+            ("SN 38.10 Craving | Taṇhā Sutta | sutta on dhammatalks.org", "Craving", "Taṇhā Sutta"),
+            ("AN 1:21–30, 39–40 A Single Thing | Ekadhamma Suttas | sutta on dhammatalks.org", "A Single Thing", "Ekadhamma Suttas"),
+            ("SN 15:14–19 Mother | Mātu Sutta | sutta on dhammatalks.org", "Mother", "Mātu Sutta"),
+            ("SN 44 Undeclared-Connected | Abyākata Saṁyutta | sutta on dhammatalks.org", "Undeclared-Connected", "Abyākata Saṁyutta"),
+            ("Ud 2:2 Kings | Rājā Sutta | sutta on dhammatalks.org", "Kings", "Rājā Sutta"),
+            ("Sn 5:4 Mettagū’s Questions | sutta on dhammatalks.org", "Mettagū’s Questions", ""),
+            ("Thag 3:8 Yasoja | suttas on dhammatalks.org", "Yasoja", ""),
+            ("Khp 1 Saraṇagamana — Going for Refuge | sutta on dhammatalks.org", "Saraṇagamana — Going for Refuge", ""),
+            ("Dhp XVII : Anger | sutta on dhammatalks.org", "Anger", ""),
+            ("101 Itivuttaka | sutta on dhammatalks.org", "Itivuttaka", ""),
+            ("Introduction | Itivuttaka | sutta on dhammatalks.org", "Introduction", "Itivuttaka"),
+        ];
+        for (text, title, title_pali) in cases {
+            assert_eq!(
+                parse_current_title_text(text),
+                Some((title.to_string(), title_pali.to_string())),
+                "{}", text
+            );
+        }
+        // The 2023 format is left to the older patterns.
+        assert_eq!(parse_current_title_text("AN 6:20 &nbsp;Maraṇassati Sutta | Mindfulness of Death (2)"), None);
+        assert_eq!(parse_current_title_text("Khp 1 &nbsp;Saraṇagamana — Going for Refuge"), None);
+    }
+
+    /// Every sutta page of the mirror gets a title without the site's suffix,
+    /// a separator or a leftover reference.
+    #[test]
+    fn test_all_mirror_titles_are_clean() {
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMATALKS_SUTTAS_DIR);
+        let importer = DhammatalksSuttaImporter { resource_path, limit: None };
+        if !importer.resource_path.exists() {
+            println!("dhammatalks.org mirror not found, skipping test");
+            return;
+        }
+        let re_reference = Regex::new(r"^(DN|MN|SN|AN|Sn|Khp|Thag|Thig|Ud|Dhp) ").unwrap();
+        let paths = importer.discover_sutta_files().expect("discover");
+        assert!(paths.len() > 1000, "only {} pages", paths.len());
+        let mut bad = Vec::new();
+        for path in &paths {
+            let html = fs::read_to_string(path).expect("read");
+            let (title, title_pali) = importer.extract_title_info(&html, path).expect("title");
+            for t in [&title, &title_pali] {
+                if t.contains('|') || t.contains("dhammatalks") || t.contains("&nbsp;") || t.contains("&#160;") || re_reference.is_match(t) {
+                    bad.push(format!("{}: {:?} / {:?}", path.display(), title, title_pali));
+                }
+            }
+            if title.trim().is_empty() {
+                bad.push(format!("{}: empty title", path.display()));
+            }
+        }
+        assert!(bad.is_empty(), "{} bad titles:\n{}", bad.len(), bad.join("\n"));
+    }
+
+    #[test]
+    fn test_cross_reference_pages() {
+        let pointer = r#"<html><body><div id="sutta"><div id="MN92"><h1>MN 92 = <a href="../KN/StNp/StNp3_7.html">Sn 3:7</a></h1></div></div></body></html>"#;
+        assert!(is_cross_reference_page(pointer));
+        let with_text = r#"<html><body><div id="sutta"><h1 id="SN44.1">Khemā</h1><p>Text.</p><h1>SN 44:2 = <a href="SN22_86.html">SN 22:86</a></h1></div></body></html>"#;
+        assert!(!is_cross_reference_page(with_text));
+        let sutta = r#"<html><body><div id="sutta"><h1 id="MN1">The Root Sequence</h1><p>Text.</p></div></body></html>"#;
+        assert!(!is_cross_reference_page(sutta));
+
+        // In the mirror: MN 92 and MN 98 only.
+        let resource_path = crate::bootstrap::source_paths::bootstrap_assets_dir_from_crate().join(crate::bootstrap::source_paths::DHAMMATALKS_SUTTAS_DIR);
+        let importer = DhammatalksSuttaImporter { resource_path, limit: None };
+        if !importer.resource_path.exists() {
+            println!("dhammatalks.org mirror not found, skipping the mirror check");
+            return;
+        }
+        let pointers: Vec<String> = importer
+            .discover_sutta_files()
+            .expect("discover")
+            .iter()
+            .filter(|p| is_cross_reference_page(&fs::read_to_string(p).expect("read")))
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(pointers, vec!["MN92.html".to_string(), "MN98.html".to_string()]);
     }
 }
