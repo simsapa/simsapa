@@ -1032,6 +1032,13 @@ pub mod qobject {
         #[cxx_name = "rebuildSearchIndexProgress"]
         fn rebuild_search_index_progress(self: Pin<&mut SuttaBridge>, step: i32, total: i32, label: QString);
 
+        /// A few times a second while a step runs: how many of the step's
+        /// `total` rows the search engine has finished with. `done == total`
+        /// while the step writes its index files.
+        #[qsignal]
+        #[cxx_name = "rebuildSearchIndexDocs"]
+        fn rebuild_search_index_docs(self: Pin<&mut SuttaBridge>, done: i32, total: i32);
+
         /// The rebuild ended. `outcome` is `"success"`, `"cancelled"` or
         /// `"error"`; `summary_json` is the minified build summary on success,
         /// `""` otherwise; `message` is the error text, `""` otherwise.
@@ -2294,12 +2301,21 @@ fn run_search_index_rebuild(
         emit_progress(i, total, step.label());
     };
 
+    let mut on_docs = |done: u64, total: u64| {
+        let done = i32::try_from(done).unwrap_or(i32::MAX);
+        let total = i32::try_from(total).unwrap_or(i32::MAX);
+        crate::queue_or_log(qt_thread, "sutta_bridge::rebuild_search_index", move |mut qo| {
+            qo.as_mut().rebuild_search_index_docs(done, total);
+        });
+    };
+
     let result = simsapa_backend::search::indexer::build_all_indexes_with_progress(
         &app_data.dbm.appdata,
         &app_data.dbm.dictionaries,
         &app_data.dbm.dpd,
         paths,
         &mut on_step,
+        &mut on_docs,
         &REBUILD_CANCEL,
     );
 

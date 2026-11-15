@@ -15,6 +15,7 @@ use crate::db::dictionaries_models::DictWord;
 use crate::logger::{error, info, warn};
 use crate::AppGlobalPaths;
 
+use super::index_feed::{run_tracked_step, StepResult, TrackedDoc};
 use super::lenient_directory::LenientLockMmapDirectory;
 use super::schema::{build_dict_schema, build_library_schema, build_sutta_schema};
 use super::tokenizer::register_tokenizers;
@@ -50,30 +51,24 @@ pub fn open_or_create_index(dir: &Path, schema: tantivy::schema::Schema, lang: &
     Ok(index)
 }
 
-/// How often (in rows) a running step checks the cancel flag. Cancel is also
-/// checked before each step. See `docs/fulltext-index-storage-and-file-locking.md`.
-const CANCEL_CHECK_EVERY: usize = 1000;
+/// The writer memory budget of every build step.
+const WRITER_MEMORY_BUDGET: usize = 50_000_000;
 
-/// What one build step did: the documents it added, or that it stopped on the
-/// cancel flag without committing them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StepResult {
-    Done(u64),
-    Cancelled,
-}
-
-/// True at a cancel check point (every [`CANCEL_CHECK_EVERY`] rows) when the
-/// flag is set.
-fn cancel_requested(row: usize, cancel: &AtomicBool) -> bool {
-    row % CANCEL_CHECK_EVERY == 0 && cancel.load(Ordering::Relaxed)
-}
+/// A callback that ignores a step's document progress.
+fn no_doc_progress(_done: u64, _total: u64) {}
 
 /// Build fulltext index for suttas of a given language.
 pub fn build_sutta_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
-    build_sutta_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+    build_sutta_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false), &mut no_doc_progress).map(|_| ())
 }
 
-fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
+fn build_sutta_index_cancellable(
+    appdata_db: &DatabaseHandle,
+    index_dir: &Path,
+    lang: &str,
+    cancel: &AtomicBool,
+    on_docs: &mut dyn FnMut(u64, u64),
+) -> Result<StepResult> {
     use crate::db::appdata_schema::suttas::dsl::*;
 
     info(&format!("Building sutta index for language: {}", lang));
@@ -82,7 +77,7 @@ fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, 
     let schema = build_sutta_schema(lang);
     let index = open_or_create_index(&lang_index_dir, schema, lang)?;
 
-    let mut writer: IndexWriter = index.writer(50_000_000)?;
+    let mut writer: IndexWriter<TrackedDoc> = index.writer(WRITER_MEMORY_BUDGET)?;
 
     // Clear existing documents before rebuilding
     writer.delete_all_documents()?;
@@ -129,16 +124,17 @@ fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, 
 
     info(&format!("Indexing {} suttas for language {}", sutta_list.len(), lang));
 
+    let result = run_tracked_step(writer, &index, sutta_list.len() as u64, cancel, on_docs, |feed| {
     let mut indexed_count: u64 = 0;
-    for (row, sutta) in sutta_list.iter().enumerate() {
-        if cancel_requested(row, cancel) {
-            // Dropping the writer without commit() discards the added documents.
+    for sutta in sutta_list.iter() {
+        if feed.is_stopping() {
             info(&format!("Sutta index for {} cancelled after {} documents", lang, indexed_count));
-            return Ok(StepResult::Cancelled);
+            return Ok(indexed_count);
         }
 
         let plain = sutta.content_plain.as_deref().unwrap_or("");
         if plain.is_empty() {
+            feed.skip_row();
             continue;
         }
 
@@ -156,7 +152,7 @@ fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, 
 
         let uid_rev = reversed_lowercased(&sutta.uid);
 
-        writer.add_document(doc!(
+        feed.add(doc!(
             uid_field => sutta.uid.as_str(),
             uid_rev_field => uid_rev.as_str(),
             title_field => t,
@@ -173,28 +169,28 @@ fn build_sutta_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, 
 
         indexed_count += 1;
     }
+    Ok(indexed_count)
+    })?;
 
-    // Finalize the index:
-    // 1. commit() persists documents and makes them searchable.
-    // 2. wait_merging_threads() blocks until background merges finish. Since it takes 'self',
-    //    it consumes the writer and explicitly releases the INDEX_WRITER_LOCK.
-    // 3. sync_directory() ensures the OS flushes directory metadata, preventing "file changed"
-    //    errors during external archival (tar).
-    writer.commit()?;
-    writer.wait_merging_threads()?;
-    index.directory().sync_directory()?;
-
-    info(&format!("Sutta index committed: {} documents for language {}", indexed_count, lang));
-
-    Ok(StepResult::Done(indexed_count))
+    match result {
+        StepResult::Done(n) => info(&format!("Sutta index committed: {} documents for language {}", n, lang)),
+        StepResult::Cancelled => info(&format!("Sutta index for {} cancelled", lang)),
+    }
+    Ok(result)
 }
 
 /// Build fulltext index for dictionary words of a given language.
 pub fn build_dict_index(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
-    build_dict_index_cancellable(dict_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+    build_dict_index_cancellable(dict_db, index_dir, lang, &AtomicBool::new(false), &mut no_doc_progress).map(|_| ())
 }
 
-fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
+fn build_dict_index_cancellable(
+    dict_db: &DatabaseHandle,
+    index_dir: &Path,
+    lang: &str,
+    cancel: &AtomicBool,
+    on_docs: &mut dyn FnMut(u64, u64),
+) -> Result<StepResult> {
     use crate::db::dictionaries_schema::dict_words::dsl::*;
 
     info(&format!("Building dict_words index for language: {}", lang));
@@ -203,7 +199,7 @@ fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang
     let schema = build_dict_schema(lang);
     let index = open_or_create_index(&lang_index_dir, schema, lang)?;
 
-    let mut writer: IndexWriter = index.writer(50_000_000)?;
+    let mut writer: IndexWriter<TrackedDoc> = index.writer(WRITER_MEMORY_BUDGET)?;
 
     // Clear existing documents before rebuilding
     writer.delete_all_documents()?;
@@ -230,15 +226,17 @@ fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang
 
     info(&format!("Indexing {} dict_words for language {}", word_list.len(), lang));
 
+    let result = run_tracked_step(writer, &index, word_list.len() as u64, cancel, on_docs, |feed| {
     let mut indexed_count: u64 = 0;
-    for (row, dw) in word_list.iter().enumerate() {
-        if cancel_requested(row, cancel) {
+    for dw in word_list.iter() {
+        if feed.is_stopping() {
             info(&format!("Dict_words index for {} cancelled after {} documents", lang, indexed_count));
-            return Ok(StepResult::Cancelled);
+            return Ok(indexed_count);
         }
 
         let def = dw.definition_plain.as_deref().unwrap_or("");
         if def.is_empty() {
+            feed.skip_row();
             continue;
         }
 
@@ -251,7 +249,7 @@ fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang
 
         let uid_rev = reversed_lowercased(&dw.uid);
 
-        writer.add_document(doc!(
+        feed.add(doc!(
             uid_field => dw.uid.as_str(),
             uid_rev_field => uid_rev.as_str(),
             word_field => w.as_str(),
@@ -265,16 +263,14 @@ fn build_dict_index_cancellable(dict_db: &DatabaseHandle, index_dir: &Path, lang
 
         indexed_count += 1;
     }
+    Ok(indexed_count)
+    })?;
 
-    // Finalize the index:
-    // See build_sutta_index for details on why wait_merging_threads and sync_directory are used.
-    writer.commit()?;
-    writer.wait_merging_threads()?;
-    index.directory().sync_directory()?;
-
-    info(&format!("Dict_words index committed: {} documents for language {}", indexed_count, lang));
-
-    Ok(StepResult::Done(indexed_count))
+    match result {
+        StepResult::Done(n) => info(&format!("Dict_words index committed: {} documents for language {}", n, lang)),
+        StepResult::Cancelled => info(&format!("Dict_words index for {} cancelled", lang)),
+    }
+    Ok(result)
 }
 
 /// Append the rows for a single `dict_label` to the per-language dict index
@@ -398,7 +394,7 @@ pub fn append_bold_definitions_to_dict_index(
     dict_words_index_dir: &Path,
     lang: &str,
 ) -> Result<()> {
-    append_bold_definitions_cancellable(dpd_db, dict_words_index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+    append_bold_definitions_cancellable(dpd_db, dict_words_index_dir, lang, &AtomicBool::new(false), &mut no_doc_progress).map(|_| ())
 }
 
 fn append_bold_definitions_cancellable(
@@ -406,6 +402,7 @@ fn append_bold_definitions_cancellable(
     dict_words_index_dir: &Path,
     lang: &str,
     cancel: &AtomicBool,
+    on_docs: &mut dyn FnMut(u64, u64),
 ) -> Result<StepResult> {
     use crate::db::dpd_schema::bold_definitions::dsl as bd_dsl;
 
@@ -415,7 +412,7 @@ fn append_bold_definitions_cancellable(
     let schema = build_dict_schema(lang);
     let index = open_or_create_index(&lang_index_dir, schema, lang)?;
 
-    let mut writer: IndexWriter = index.writer(50_000_000)?;
+    let writer: IndexWriter<TrackedDoc> = index.writer(WRITER_MEMORY_BUDGET)?;
 
     let schema = index.schema();
     let uid_field = schema.get_field("uid").unwrap();
@@ -433,15 +430,16 @@ fn append_bold_definitions_cancellable(
     // whole table with every column is ~370k rows and hundreds of MB.
     type BoldRow = (i32, String, String, String, String, String, String, String, String);
     const PAGE: i64 = 10_000;
+    let total_rows: i64 = dpd_db.do_read(|db_conn| bd_dsl::bold_definitions.count().get_result(db_conn))?;
+
+    let result = run_tracked_step(writer, &index, total_rows.max(0) as u64, cancel, on_docs, |feed| {
     let mut last_id: i32 = 0;
     let mut read_count = 0;
     let mut indexed_count: u64 = 0;
     loop {
-        // PAGE is a multiple of CANCEL_CHECK_EVERY, so the row index restarts
-        // at a check point on every page.
-        if cancel.load(Ordering::Relaxed) {
+        if feed.is_stopping() {
             info(&format!("bold_definitions append cancelled after {} documents", indexed_count));
-            return Ok(StepResult::Cancelled);
+            return Ok(indexed_count);
         }
 
         let rows: Vec<BoldRow> = dpd_db.do_read(|db_conn| {
@@ -457,13 +455,14 @@ fn append_bold_definitions_cancellable(
         last_id = last.0;
         read_count += rows.len();
 
-        for (row, (_id, uid, bold, ref_code, nikaya, book, title, subhead, plain)) in rows.iter().enumerate() {
-            if row > 0 && cancel_requested(row, cancel) {
+        for (_id, uid, bold, ref_code, nikaya, book, title, subhead, plain) in rows.iter() {
+            if feed.is_stopping() {
                 info(&format!("bold_definitions append cancelled after {} documents", indexed_count));
-                return Ok(StepResult::Cancelled);
+                return Ok(indexed_count);
             }
 
             if plain.is_empty() {
+                feed.skip_row();
                 continue;
             }
 
@@ -476,7 +475,7 @@ fn append_bold_definitions_cancellable(
 
             let uid_rev = reversed_lowercased(uid);
 
-            writer.add_document(doc!(
+            feed.add(doc!(
                 uid_field => uid.as_str(),
                 uid_rev_field => uid_rev.as_str(),
                 word_field => bold.as_str(),
@@ -493,24 +492,28 @@ fn append_bold_definitions_cancellable(
         }
     }
     info(&format!("Indexed {} of {} bold_definitions rows", indexed_count, read_count));
+    Ok(indexed_count)
+    })?;
 
-    // Finalize the index: see build_sutta_index for the rationale behind
-    // wait_merging_threads() and sync_directory().
-    writer.commit()?;
-    writer.wait_merging_threads()?;
-    index.directory().sync_directory()?;
-
-    info(&format!("bold_definitions index committed: {} documents", indexed_count));
-
-    Ok(StepResult::Done(indexed_count))
+    match result {
+        StepResult::Done(n) => info(&format!("bold_definitions index committed: {} documents", n)),
+        StepResult::Cancelled => info("bold_definitions append cancelled"),
+    }
+    Ok(result)
 }
 
 /// Build fulltext index for library book chapters of a given language.
 pub fn build_library_index(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str) -> Result<()> {
-    build_library_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false)).map(|_| ())
+    build_library_index_cancellable(appdata_db, index_dir, lang, &AtomicBool::new(false), &mut no_doc_progress).map(|_| ())
 }
 
-fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path, lang: &str, cancel: &AtomicBool) -> Result<StepResult> {
+fn build_library_index_cancellable(
+    appdata_db: &DatabaseHandle,
+    index_dir: &Path,
+    lang: &str,
+    cancel: &AtomicBool,
+    on_docs: &mut dyn FnMut(u64, u64),
+) -> Result<StepResult> {
     use crate::db::appdata_schema::book_spine_items::dsl as spine_dsl;
     use crate::db::appdata_schema::books::dsl as books_dsl;
 
@@ -520,7 +523,7 @@ fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path
     let schema = build_library_schema(lang);
     let index = open_or_create_index(&lang_index_dir, schema, lang)?;
 
-    let mut writer: IndexWriter = index.writer(50_000_000)?;
+    let mut writer: IndexWriter<TrackedDoc> = index.writer(WRITER_MEMORY_BUDGET)?;
 
     // Clear existing documents before rebuilding
     writer.delete_all_documents()?;
@@ -547,11 +550,12 @@ fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path
 
     info(&format!("Found {} book spine items total", items.len()));
 
+    let result = run_tracked_step(writer, &index, items.len() as u64, cancel, on_docs, |feed| {
     let mut indexed_count: u64 = 0;
-    for (row, (spine_item, book)) in items.iter().enumerate() {
-        if cancel_requested(row, cancel) {
+    for (spine_item, book) in items.iter() {
+        if feed.is_stopping() {
             info(&format!("Library index for {} cancelled after {} documents", lang, indexed_count));
-            return Ok(StepResult::Cancelled);
+            return Ok(indexed_count);
         }
 
         // Determine effective language: spine_item.language > book.language > "en"
@@ -562,11 +566,13 @@ fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path
             .to_lowercase();
 
         if effective_lang != lang {
+            feed.skip_row();
             continue;
         }
 
         let plain = spine_item.content_plain.as_deref().unwrap_or("");
         if plain.is_empty() {
+            feed.skip_row();
             continue;
         }
 
@@ -579,7 +585,7 @@ fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path
 
         let spine_item_uid_rev = reversed_lowercased(&spine_item.spine_item_uid);
 
-        writer.add_document(doc!(
+        feed.add(doc!(
             spine_item_uid_field => spine_item.spine_item_uid.as_str(),
             spine_item_uid_rev_field => spine_item_uid_rev.as_str(),
             book_uid_field => spine_item.book_uid.as_str(),
@@ -593,15 +599,14 @@ fn build_library_index_cancellable(appdata_db: &DatabaseHandle, index_dir: &Path
 
         indexed_count += 1;
     }
+    Ok(indexed_count)
+    })?;
 
-    // Finalize the index
-    writer.commit()?;
-    writer.wait_merging_threads()?;
-    index.directory().sync_directory()?;
-
-    info(&format!("Library index committed: {} documents for language {}", indexed_count, lang));
-
-    Ok(StepResult::Done(indexed_count))
+    match result {
+        StepResult::Done(n) => info(&format!("Library index committed: {} documents for language {}", n, lang)),
+        StepResult::Cancelled => info(&format!("Library index for {} cancelled", lang)),
+    }
+    Ok(result)
 }
 
 /// Get distinct effective languages across all library book spine items.
@@ -783,18 +788,23 @@ fn run_index_step(
     dpd_db: &DatabaseHandle,
     paths: &AppGlobalPaths,
     cancel: &AtomicBool,
+    on_docs: &mut dyn FnMut(u64, u64),
 ) -> Result<StepResult> {
     let lang = step.lang.as_str();
     match step.area {
-        IndexStepArea::Suttas => build_sutta_index_cancellable(appdata_db, &paths.suttas_index_dir, lang, cancel),
-        IndexStepArea::DictWords => build_dict_index_cancellable(dict_db, &paths.dict_words_index_dir, lang, cancel),
-        IndexStepArea::Library => build_library_index_cancellable(appdata_db, &paths.library_index_dir, lang, cancel),
-        IndexStepArea::BoldDefinitions => append_bold_definitions_cancellable(dpd_db, &paths.dict_words_index_dir, lang, cancel),
+        IndexStepArea::Suttas => build_sutta_index_cancellable(appdata_db, &paths.suttas_index_dir, lang, cancel, on_docs),
+        IndexStepArea::DictWords => build_dict_index_cancellable(dict_db, &paths.dict_words_index_dir, lang, cancel, on_docs),
+        IndexStepArea::Library => build_library_index_cancellable(appdata_db, &paths.library_index_dir, lang, cancel, on_docs),
+        IndexStepArea::BoldDefinitions => append_bold_definitions_cancellable(dpd_db, &paths.dict_words_index_dir, lang, cancel, on_docs),
     }
 }
 
 /// Run a step plan in order, reporting each step before it starts and checking
-/// `cancel` before each step and inside each step (see [`CANCEL_CHECK_EVERY`]).
+/// `cancel` before each step and, while a step runs, every quarter second.
+///
+/// `on_docs(done, total)` reports the rows of the running step that tantivy
+/// has finished with, a few times a second, on the calling thread. `done ==
+/// total` while the step writes its files. See [`super::index_feed`].
 ///
 /// Writes the `INCOMPLETE` marker in `paths.index_dir` before the first step
 /// and, on success, writes `VERSION` and then removes the marker. A cancel or
@@ -813,6 +823,7 @@ pub fn build_steps_with_progress(
     dpd_db: &DatabaseHandle,
     paths: &AppGlobalPaths,
     on_step: &mut dyn FnMut(usize, usize, &IndexStep),
+    on_docs: &mut dyn FnMut(u64, u64),
     cancel: &AtomicBool,
 ) -> Result<IndexBuildOutcome> {
     let started = Instant::now();
@@ -835,7 +846,7 @@ pub fn build_steps_with_progress(
         on_step(i + 1, total, step);
         info(&format!("Index build step {}/{}: {}", i + 1, total, step.label()));
 
-        match run_index_step(step, appdata_db, dict_db, dpd_db, paths, cancel)? {
+        match run_index_step(step, appdata_db, dict_db, dpd_db, paths, cancel, on_docs)? {
             StepResult::Cancelled => return Ok(IndexBuildOutcome::Cancelled),
             StepResult::Done(documents) => {
                 let idx = IndexStepArea::ALL.iter().position(|a| *a == step.area).unwrap_or(0);
@@ -866,13 +877,15 @@ pub fn build_steps_with_progress(
 ///
 /// `on_step(step, total, &step)` is called once before each step, with a
 /// 1-based step number. The whole plan is read before the first step, so
-/// `total` is fixed from the first call.
+/// `total` is fixed from the first call. `on_docs` is as in
+/// [`build_steps_with_progress`].
 pub fn build_all_indexes_with_progress(
     appdata_db: &DatabaseHandle,
     dict_db: &DatabaseHandle,
     dpd_db: &DatabaseHandle,
     paths: &AppGlobalPaths,
     on_step: &mut dyn FnMut(usize, usize, &IndexStep),
+    on_docs: &mut dyn FnMut(u64, u64),
     cancel: &AtomicBool,
 ) -> Result<IndexBuildOutcome> {
     info("Building all fulltext indexes...");
@@ -886,7 +899,7 @@ pub fn build_all_indexes_with_progress(
 
     let steps = plan_index_steps(&sutta_langs, &dict_langs, &library_langs);
 
-    let outcome = build_steps_with_progress(&steps, true, appdata_db, dict_db, dpd_db, paths, on_step, cancel)?;
+    let outcome = build_steps_with_progress(&steps, true, appdata_db, dict_db, dpd_db, paths, on_step, on_docs, cancel)?;
     match &outcome {
         IndexBuildOutcome::Completed(summary) => {
             info(&format!("All fulltext indexes built successfully in {}s.", summary.elapsed_secs));
@@ -904,7 +917,7 @@ pub fn build_all_indexes(
     paths: &AppGlobalPaths,
 ) -> Result<()> {
     let never = AtomicBool::new(false);
-    build_all_indexes_with_progress(appdata_db, dict_db, dpd_db, paths, &mut |_, _, _| {}, &never)?;
+    build_all_indexes_with_progress(appdata_db, dict_db, dpd_db, paths, &mut |_, _, _| {}, &mut no_doc_progress, &never)?;
     Ok(())
 }
 
@@ -1400,7 +1413,7 @@ mod tests {
         let cancel = AtomicBool::new(true);
         let mut calls = 0;
         let outcome = build_all_indexes_with_progress(
-            &appdata, &dict, &dpd, &paths, &mut |_, _, _| calls += 1, &cancel,
+            &appdata, &dict, &dpd, &paths, &mut |_, _, _| calls += 1, &mut no_doc_progress, &cancel,
         ).unwrap();
 
         assert_eq!(outcome, IndexBuildOutcome::Cancelled);
@@ -1431,6 +1444,7 @@ mod tests {
                 started.push((i, total));
                 cancel.store(true, Ordering::Relaxed);
             },
+            &mut no_doc_progress,
             &cancel,
         ).unwrap();
 
@@ -1450,7 +1464,7 @@ mod tests {
 
         let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
         let cancel = AtomicBool::new(false);
-        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &mut no_doc_progress, &cancel).unwrap();
 
         let IndexBuildOutcome::Completed(summary) = outcome else { panic!("expected Completed") };
         let names: Vec<&str> = summary.areas.iter().map(|a| a.area.as_str()).collect();
@@ -1475,13 +1489,58 @@ mod tests {
         let steps = vec![IndexStep { area: IndexStepArea::Library, lang: "dummy-none".to_string() }];
         let cancel = AtomicBool::new(false);
 
-        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        let outcome = build_steps_with_progress(&steps, false, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &mut no_doc_progress, &cancel).unwrap();
         assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
         assert!(is_index_incomplete(&paths.index_dir), "a filtered build must not clear the marker");
 
         // A build of the whole plan does clear it.
-        let outcome = build_steps_with_progress(&steps, true, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &cancel).unwrap();
+        let outcome = build_steps_with_progress(&steps, true, &appdata, &dict, &dpd, &paths, &mut |_, _, _| {}, &mut no_doc_progress, &cancel).unwrap();
         assert!(matches!(outcome, IndexBuildOutcome::Completed(_)));
         assert!(!is_index_incomplete(&paths.index_dir), "a full build clears the marker");
+    }
+
+    /// A cancel in the middle of a large step stops it within seconds: the
+    /// documents still queued in tantivy are indexed as empty ones, not
+    /// worked off. Progress follows tantivy's work and is reported while the
+    /// step runs.
+    #[test]
+    fn a_cancel_during_a_large_step_returns_within_seconds() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let Some((paths, appdata, dict, dpd)) = dist_dbs_with_temp_index(tmp.path()) else {
+            return;
+        };
+
+        let steps = vec![IndexStep { area: IndexStepArea::Suttas, lang: "pli".to_string() }];
+        let cancel = AtomicBool::new(false);
+        let mut reports: Vec<(u64, u64)> = Vec::new();
+        let mut cancelled_at: Option<Instant> = None;
+
+        let outcome = build_steps_with_progress(
+            &steps, false, &appdata, &dict, &dpd, &paths,
+            &mut |_, _, _| {},
+            &mut |done, total| {
+                reports.push((done, total));
+                // Cancel once tantivy has its queue full and is working.
+                if cancelled_at.is_none() && done >= 1000 {
+                    cancel.store(true, Ordering::Relaxed);
+                    cancelled_at = Some(Instant::now());
+                }
+            },
+            &cancel,
+        ).unwrap();
+
+        assert_eq!(outcome, IndexBuildOutcome::Cancelled);
+        let cancelled_at = cancelled_at.expect("progress reached 1000 documents");
+        let stop_secs = cancelled_at.elapsed().as_secs_f64();
+        info(&format!("cancel took {:.2}s, {} progress reports", stop_secs, reports.len()));
+        assert!(stop_secs < 5.0, "the step took {:.1}s to stop after the cancel", stop_secs);
+
+        let total = reports[0].1;
+        assert_eq!(reports[0].0, 0, "the first report is 0 done");
+        assert!(total > 1000);
+        assert!(reports.iter().all(|(d, t)| *t == total && *d <= total));
+        assert!(reports.windows(2).all(|w| w[0].0 <= w[1].0), "progress never goes back");
+        assert!(reports.last().unwrap().0 < total, "the step stopped part way");
+        assert!(is_index_incomplete(&paths.index_dir));
     }
 }

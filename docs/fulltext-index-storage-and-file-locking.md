@@ -438,7 +438,8 @@ keep-screen-on holder from the start to the outcome
 
 **The rebuild signals reach only the window's own QML engine.** `SuttaBridge`
 is a QML singleton, one instance per engine, and every top-level window has its
-own engine, so `rebuildSearchIndexProgress(step, total, label)` and
+own engine, so `rebuildSearchIndexProgress(step, total, label)`,
+`rebuildSearchIndexDocs(done, total)` and
 `rebuildSearchIndexFinished(outcome, summary_json, message)` are emitted on the
 instance that called `rebuild_search_index()`. Other windows follow a rebuild
 by polling `is_rebuilding_search_index()`:
@@ -498,6 +499,30 @@ index they are appended to. `build_steps_with_progress()` runs a plan and is
 shared by the full build and the CLI's filtered builds; `build_all_indexes()`
 is a wrapper with a no-op `on_step` and a flag that is never set.
 
+### Progress inside a step: `index_feed.rs`
+
+`IndexWriter::add_document()` only queues a document. Tantivy's workers index
+it later, and the queue holds up to 10,000 documents, which for the sutta steps
+is a minute or more of work. A count of the documents *added* therefore jumps
+to the queue size and then sits still through `commit()`, which waits for the
+whole queue; dropping the writer waits for it too.
+
+So each step's documents go through `backend/src/search/index_feed.rs`:
+
+- Every document is wrapped in a `TrackedDoc`, and **tantivy dropping it
+  counts it as done**. A row the step skips (empty text, another language)
+  counts at once (`skip_row()`). `done` therefore follows tantivy's work,
+  also during `commit()`, and reaches `total` (the rows the step reads) when
+  only writing the files is left.
+- `run_tracked_step()` runs the row loop and the commit on a scoped helper
+  thread. The step's own thread polls every 250 ms: it reports
+  `on_docs(done, total)` when the count has moved, and passes a cancel on.
+  `on_step` / `on_docs` therefore stay on the calling thread and need not be
+  `Send`. The window draws one bar for the whole rebuild (finished steps plus
+  the running step's share) and the line "12,345 of 16,241 documents",
+  "Reading the texts from the database…" before `on_docs` starts, or
+  "Writing the index files…" at `done == total`.
+
 The summary counts the documents as each step adds them (no second query) and
 lists every area, also one with no languages (0 documents). The `pli`
 dictionary index's `num_docs()` is the dictionary words (pli) plus the bold
@@ -510,13 +535,24 @@ rebuild keeps running while it is open, and if the rebuild ends meanwhile the
 dialog closes itself. **Cancel Rebuild** calls `cancel_rebuild_search_index()`,
 which sets `REBUILD_CANCEL` (safe when idle), and shows the cancelling frame.
 
-The flag is checked **before each step and every 1000 rows inside a step**
-(`CANCEL_CHECK_EVERY`). A cancelled step returns before `commit()` and drops its
-`IndexWriter`, which discards its uncommitted documents. Each step starts with
-`delete_all_documents()` + `commit()`, so the language being built is left
-empty, not half-filled. Two parts of a step cannot be interrupted: the database
-read that loads a language's rows before indexing, and a commit that has
-started. The cancelling frame covers that wait.
+The flag is checked **before each step and every 250 ms while a step runs**
+(`run_tracked_step()`). On a cancel, every queued `TrackedDoc` that tantivy has
+not started on shows it **no fields**, so the queue is worked off in moments
+instead of being indexed (the first read of a document's fields decides for
+all three of tantivy's reads, so none is half indexed). The row loop returns,
+and the writer is dropped without `commit()`, which discards the step's
+documents. A step cancelled part way stops within a second
+(`a_cancel_during_a_large_step_returns_within_seconds`).
+
+Each step starts with `delete_all_documents()` + `commit()`, so the language
+being built is left empty, not half-filled. A cancel that arrives during a
+`commit()` lets it finish (with the remaining documents empty) and the step
+still returns `Cancelled`. Three parts cannot be interrupted: deleting the old
+index (step 0), the database read that loads a step's rows, and writing the
+files of a commit that has started. When Cancel Rebuild is confirmed, the
+cancelling frame says which of these it is waiting for, from the progress at
+that moment (the rebuild stops reporting progress once cancelled), and counts
+the seconds since the cancel.
 
 ### The `INCOMPLETE` marker
 

@@ -47,6 +47,7 @@ Item {
 
     // Search index signals
     signal rebuildSearchIndexProgress(step: int, total: int, label: string);
+    signal rebuildSearchIndexDocs(done: int, total: int);
     signal rebuildSearchIndexFinished(outcome: string, summary_json: string, message: string);
     signal storageDiagnosticsCompleted(success: bool, summary: string);
     signal fileSelectionTestCompleted(success: bool, outcome: string);

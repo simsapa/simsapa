@@ -20,7 +20,7 @@ ApplicationWindow {
 
     title: "Rebuild Search Index"
     width: is_mobile ? Screen.desktopAvailableWidth : 520
-    height: is_mobile ? Screen.desktopAvailableHeight : Math.min(380, Screen.desktopAvailableHeight)
+    height: is_mobile ? Screen.desktopAvailableHeight : Math.min(440, Screen.desktopAvailableHeight)
     visible: true
     color: palette.window
     flags: Qt.Dialog
@@ -44,7 +44,15 @@ ApplicationWindow {
     property int step: 0
     property int total: 0
     property string step_label: ""
+    // Rows of the running step the search engine has finished with, out of
+    // docs_total. 0/0 while the step reads its rows from the database.
+    property int docs_done: 0
+    property int docs_total: 0
     property real started_at_ms: 0
+    // When Cancel Rebuild was confirmed, and what the rebuild was doing then.
+    property real cancel_started_at_ms: 0
+    property string cancel_wait_text: ""
+    property string cancel_elapsed_text: ""
     property string elapsed_text: ""
     property var summary: null
     property string error_message: ""
@@ -107,13 +115,61 @@ ApplicationWindow {
     function update_elapsed() {
         const secs = Math.floor((Date.now() - root.started_at_ms) / 1000);
         root.elapsed_text = "Elapsed: " + root.format_elapsed(secs);
+        if (root.cancel_started_at_ms > 0) {
+            const cancel_secs = Math.floor((Date.now() - root.cancel_started_at_ms) / 1000);
+            root.cancel_elapsed_text = "Stopping for " + root.format_elapsed(cancel_secs);
+        }
+    }
+
+    // The part of the running step, for the line under the step label.
+    function docs_text(): string {
+        if (root.step === 0) {
+            return "";
+        }
+        if (root.docs_total === 0) {
+            return "Reading the texts from the database…";
+        }
+        if (root.docs_done >= root.docs_total) {
+            return "Writing the index files…";
+        }
+        return root.format_count(root.docs_done) + " of " + root.format_count(root.docs_total) + " documents";
+    }
+
+    // The whole rebuild as one fraction: finished steps plus the running
+    // step's share of its documents.
+    function overall_progress(): real {
+        if (root.total === 0 || root.step === 0) {
+            return 0;
+        }
+        const step_part = root.docs_total > 0 ? root.docs_done / root.docs_total : 0;
+        return Math.min(1, (root.step - 1 + step_part) / root.total);
+    }
+
+    // What a cancel waits for. The rebuild stops reporting progress once it
+    // is cancelled, so this is worked out when the cancel is confirmed.
+    function describe_cancel_wait(): string {
+        if (root.step === 0) {
+            return "Waiting for the old search index to finish being deleted. Deleting files cannot be stopped part way; the rebuild stops as soon as it is done.";
+        }
+        if (root.docs_total === 0) {
+            return "Waiting for the database read for " + root.step_label + " to finish. It cannot be stopped part way; the rebuild stops as soon as it is done.";
+        }
+        if (root.docs_done >= root.docs_total) {
+            return "Waiting for the search engine to finish writing the index files for " + root.step_label + ". Writing files cannot be stopped part way, because that would damage the index.";
+        }
+        return "The search engine is dropping the documents it has not indexed yet and closing its files. This takes a few seconds.";
     }
 
     function reset_state() {
         root.step = 0;
         root.total = 0;
         root.step_label = "";
+        root.docs_done = 0;
+        root.docs_total = 0;
         root.started_at_ms = Date.now();
+        root.cancel_started_at_ms = 0;
+        root.cancel_wait_text = "";
+        root.cancel_elapsed_text = "";
         root.elapsed_text = "Elapsed: 0s";
         root.summary = null;
         root.error_message = "";
@@ -201,6 +257,14 @@ ApplicationWindow {
             root.step = step;
             root.total = total;
             root.step_label = label;
+            root.docs_done = 0;
+            root.docs_total = 0;
+        }
+
+        function onRebuildSearchIndexDocs(done: int, total: int) {
+            if (!root.rebuild_initiated_here) return;
+            root.docs_done = done;
+            root.docs_total = total;
         }
 
         function onRebuildSearchIndexFinished(outcome: string, summary_json: string, message: string) {
@@ -272,6 +336,9 @@ ApplicationWindow {
             if (!root.rebuild_active) return;
             logger.info("SearchIndexRebuildWindow: cancel confirmed");
             SuttaBridge.cancel_rebuild_search_index();
+            root.cancel_started_at_ms = Date.now();
+            root.cancel_wait_text = root.describe_cancel_wait();
+            root.cancel_elapsed_text = "Stopping for 0s";
             views_stack.currentIndex = 1;
         }
     }
@@ -323,14 +390,31 @@ ApplicationWindow {
                             from: 0
                             to: 1
                             indeterminate: root.step === 0 || root.total === 0
-                            value: root.total > 0 ? (root.step - 1) / root.total : 0
+                            value: root.overall_progress()
                             Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: root.docs_text()
+                            visible: text.length > 0
+                            font.pointSize: root.pointSize
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
                         }
 
                         Label {
                             text: root.elapsed_text
                             font.pointSize: root.pointSize
                             color: palette.mid
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
+                        Label {
+                            text: "The rest of Simsapa is unavailable until the rebuild is finished, because searches need the index that is being rebuilt. A full rebuild takes several minutes."
+                            font.pointSize: root.pointSize - 1
+                            wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                         }
@@ -380,13 +464,21 @@ ApplicationWindow {
                             horizontalAlignment: Text.AlignHCenter
                         }
 
+                        Label {
+                            text: root.cancel_wait_text
+                            font.pointSize: root.pointSize
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+
                         ProgressBar {
                             indeterminate: true
                             Layout.fillWidth: true
                         }
 
                         Label {
-                            text: root.elapsed_text
+                            text: root.cancel_elapsed_text
                             font.pointSize: root.pointSize
                             color: palette.mid
                             Layout.fillWidth: true

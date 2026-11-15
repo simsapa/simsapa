@@ -282,6 +282,7 @@ pub fn build_indexes(
         &dbm.dpd,
         paths,
         &mut |i, total, step| report(&format!("[{}/{}] {}", i, total, step.label())),
+        &mut |_, _| {},
         &never,
     )?;
 
