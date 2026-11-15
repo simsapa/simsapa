@@ -191,7 +191,13 @@ substantially.
   the toc-driven division split on `cst_segments` rows, and the four rebuild
   commands that must be run together (`import-cst`, `build-navigation-tree`,
   `index rebuild --area suttas --lang pli` and `--lang en` — the Tantivy index
-  does not heal itself). **§2f: the summaries and
+  does not heal itself), and **§6.1, the checklist after a fragments update
+  from `tipitaka-xml-parser`**: every verified commentary file must be fully
+  mapped (`test_verified_commentary_files_are_fully_mapped`), because the
+  reader's **m | a | t** buttons take a group with any commentary record to
+  have them all. Which commentaries CST has at all is `CST_COLLECTIONS` in
+  `backend/src/cst_files.rs`, computed from the CST file list, not the
+  mapping. **§2f: the summaries and
   context notes are not in the table** — they are three TOML files in `assets/`
   embedded in the app (`backend/src/navigation_texts.rs`, parsed on
   the window's first query and never at startup), so a text fix ships with an

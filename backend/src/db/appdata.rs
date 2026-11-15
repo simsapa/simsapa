@@ -1,6 +1,7 @@
 use diesel::prelude::*;
 use crate::helpers::{
     comparable_sutta_range, related_sutta_uids, related_sutta_uids_like_pattern, split_sutta_ref_kind,
+    related_text_lookup, RelatedTextLookup,
     SuttaRefKind,
 };
 use crate::opentipitaka::is_ot_english_uid;
@@ -247,97 +248,69 @@ impl AppdataDbHandle {
             .cloned()
     }
 
+    /// The mūla, aṭṭhakathā and ṭīkā of `sutta_uid`, in that order, as
+    /// [`related_text_lookup`] decides them. One query covers all three.
+    pub fn related_texts_lookup(&self, sutta_uid: &str) -> [(SuttaRefKind, RelatedTextLookup); 3] {
+        use crate::db::appdata_schema::suttas::dsl::*;
+
+        let candidate_uids: Vec<String> = self.do_read(|db_conn| {
+            suttas
+                .filter(uid.like(related_sutta_uids_like_pattern(sutta_uid)))
+                .select(uid)
+                .load(db_conn)
+        }).unwrap_or_default();
+
+        [SuttaRefKind::Mula, SuttaRefKind::Atthakatha, SuttaRefKind::Tika]
+            .map(|kind| (kind, related_text_lookup(sutta_uid, kind, &candidate_uids)))
+    }
+
     /// Find a related sutta (commentary, sub-commentary, or root text) for the given sutta UID.
     ///
     /// `relation` is one of: "att" (commentary), "tik" (sub-commentary), "mula" (root text).
     ///
-    /// Returns JSON: `{"found": true, "item_uid": "...", "table_name": "suttas", "sutta_title": "...", "sutta_ref": "..."}`
-    /// or `{"found": false, "sutta_title": "..."}` with the current sutta's title for fallback search.
+    /// Returns JSON: `{"found": true, "status": "found", "item_uid": "...", "table_name": "suttas", "sutta_title": "...", "sutta_ref": "..."}`
+    /// or `{"found": false, "status": "missing" | "unknown", "sutta_title": "..."}` with the
+    /// current sutta's title for the fallback search. `missing`: the text is mapped
+    /// and has none ([`RelatedTextLookup::Missing`]); `unknown`: only a search can tell.
     pub fn find_related_sutta_json(&self, sutta_uid: &str, relation: &str) -> String {
-        use crate::db::appdata_schema::suttas::dsl::*;
-
-        // Parse the UID: "mn1/pli/ms" -> ref_part="mn1", lang_source="pli/ms"
-        // or "mn1.att/pli/cst" -> ref_part="mn1.att", lang_source="pli/cst"
-        let parts: Vec<&str> = sutta_uid.splitn(2, '/').collect();
-        if parts.len() < 2 {
-            return serde_json::json!({"found": false, "sutta_title": ""}).to_string();
-        }
-
-        let ref_part = parts[0]; // e.g. "mn1", "mn1.att", "mn1.tik"
-        let lang_source = parts[1]; // e.g. "pli/ms", "pli/cst"
-
-        // Get the current sutta's title for fallback search
         let current_title = self.get_sutta(sutta_uid)
             .and_then(|s| s.title)
             .unwrap_or_default();
 
-        // Derive the base ref (strip .att, .tik suffixes to get the mūla ref)
-        let base_ref = ref_part
-            .split(".att").next().unwrap_or(ref_part)
-            .split(".tik").next().unwrap_or(ref_part);
-
-        // Build the target ref based on relation
-        let target_ref = match relation {
-            "att" => format!("{}.att", base_ref),
-            "tik" => format!("{}.tik", base_ref),
-            "mula" => base_ref.to_string(),
+        let target_kind = match relation {
+            "att" => SuttaRefKind::Atthakatha,
+            "tik" => SuttaRefKind::Tika,
+            "mula" => SuttaRefKind::Mula,
             _ => {
-                return serde_json::json!({"found": false, "sutta_title": current_title}).to_string();
+                return serde_json::json!({"found": false, "status": "unknown", "sutta_title": current_title}).to_string();
             }
         };
 
-        // Try to find the target sutta with the same lang/source first
-        let target_uid = format!("{}/{}", target_ref, lang_source);
-        if let Some(sutta) = self.get_sutta(&target_uid) {
-            return serde_json::json!({
-                "found": true,
-                "item_uid": sutta.uid,
-                "table_name": "suttas",
-                "sutta_title": sutta.title.unwrap_or_default(),
-                "sutta_ref": sutta.sutta_ref,
-            }).to_string();
-        }
+        let lookup = self.related_texts_lookup(sutta_uid)
+            .into_iter()
+            .find(|(kind, _)| *kind == target_kind)
+            .map(|(_, lookup)| lookup)
+            .unwrap_or(RelatedTextLookup::Unknown);
 
-        // Try with pli/cst source (commentary is typically CST)
-        let cst_uid = format!("{}/pli/cst", target_ref);
-        #[allow(clippy::collapsible_if)]
-        if cst_uid != target_uid {
-            if let Some(sutta) = self.get_sutta(&cst_uid) {
-                return serde_json::json!({
+        match lookup {
+            RelatedTextLookup::Found(found_uid) => match self.get_sutta(&found_uid) {
+                Some(sutta) => serde_json::json!({
                     "found": true,
+                    "status": "found",
                     "item_uid": sutta.uid,
                     "table_name": "suttas",
                     "sutta_title": sutta.title.unwrap_or_default(),
                     "sutta_ref": sutta.sutta_ref,
-                }).to_string();
+                }).to_string(),
+                None => serde_json::json!({"found": false, "status": "unknown", "sutta_title": current_title}).to_string(),
+            },
+            RelatedTextLookup::Missing => {
+                serde_json::json!({"found": false, "status": "missing", "sutta_title": current_title}).to_string()
+            }
+            RelatedTextLookup::Unknown => {
+                serde_json::json!({"found": false, "status": "unknown", "sutta_title": current_title}).to_string()
             }
         }
-
-        // Try LIKE search for any matching uid with the target ref
-        let like_pattern = format!("{}/%", target_ref);
-        let result = self.do_read(|db_conn| {
-            suttas
-                .filter(uid.like(&like_pattern))
-                .select(Sutta::as_select())
-                .first(db_conn)
-                .optional()
-        });
-
-        if let Ok(Some(sutta)) = result {
-            return serde_json::json!({
-                "found": true,
-                "item_uid": sutta.uid,
-                "table_name": "suttas",
-                "sutta_title": sutta.title.unwrap_or_default(),
-                "sutta_ref": sutta.sutta_ref,
-            }).to_string();
-        }
-
-        // Not found
-        serde_json::json!({
-            "found": false,
-            "sutta_title": current_title,
-        }).to_string()
     }
 
     pub fn get_full_sutta_uid(&self, partial_uid: &str) -> Option<String> {

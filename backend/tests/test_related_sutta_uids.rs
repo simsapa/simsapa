@@ -265,3 +265,172 @@ fn an_opened_dhammapada_commentary_lists_every_english_translation() {
         assert!(!listed.iter().any(|uid| uid.starts_with("dhp1-20")), "{:?}", listed);
     }
 }
+
+mod related_text_lookup_tests {
+    use simsapa_backend::helpers::{
+        related_text_lookup, text_kind_of_uid, RelatedTextLookup, SuttaRefKind,
+    };
+    use simsapa_backend::html_content::related_texts_nav_html;
+
+    use super::uids;
+
+    const ATT: SuttaRefKind = SuttaRefKind::Atthakatha;
+    const TIK: SuttaRefKind = SuttaRefKind::Tika;
+    const MULA: SuttaRefKind = SuttaRefKind::Mula;
+
+    fn pressed_class() -> &'static str {
+        r#"class="related-texts-nav-button pressed""#
+    }
+
+    fn found(uid: &str) -> RelatedTextLookup {
+        RelatedTextLookup::Found(uid.to_string())
+    }
+
+    #[test]
+    fn the_same_reference_is_found_first() {
+        let c = uids(&["mn1/pli/ms", "mn1.att/en/opentipitaka", "mn1.att/pli/cst", "mn1-2.att/pli/cst"]);
+        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c), found("mn1.att/pli/cst"));
+    }
+
+    #[test]
+    fn the_same_source_is_preferred() {
+        let c = uids(&["mn1/pli/ms", "mn1/pli/cst", "mn1/en/opentipitaka", "mn1.att/pli/cst", "mn1.att/en/opentipitaka"]);
+        assert_eq!(related_text_lookup("mn1.att/en/opentipitaka", MULA, &c), found("mn1/en/opentipitaka"));
+        assert_eq!(related_text_lookup("mn1.att/pli/cst", MULA, &c), found("mn1/pli/cst"));
+        // From a translation, the Pāli commentary before an English one.
+        assert_eq!(related_text_lookup("mn1/en/sujato", ATT, &c), found("mn1.att/pli/cst"));
+    }
+
+    #[test]
+    fn a_span_that_covers_the_sutta_is_found() {
+        let c = uids(&["an5.91/pli/ms", "an5.81-90.tik/pli/cst", "an5.91-100.tik/pli/cst", "an5.101.tik/pli/cst"]);
+        assert_eq!(related_text_lookup("an5.91/pli/ms", TIK, &c), found("an5.91-100.tik/pli/cst"));
+
+        let c = uids(&["dhp15/pli/ms", "dhp1-20.att/pli/cst", "dhp1-20.att/en/anandajoti"]);
+        assert_eq!(related_text_lookup("dhp15/pli/ms", ATT, &c), found("dhp1-20.att/pli/cst"));
+        // Back from the commentary to the first sutta of the span.
+        let c = uids(&["dhp2/pli/ms", "dhp10/pli/ms", "dhp1/pli/ms", "dhp1-20.att/pli/cst"]);
+        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", MULA, &c), found("dhp1/pli/ms"));
+    }
+
+    #[test]
+    fn the_opened_kind_is_the_opened_text() {
+        let c = uids(&["mn1/pli/ms", "mn1/pli/cst", "mn1.att/pli/cst"]);
+        assert_eq!(related_text_lookup("mn1/pli/ms", MULA, &c), found("mn1/pli/ms"));
+        assert_eq!(related_text_lookup("mn1.att/pli/cst", ATT, &c), found("mn1.att/pli/cst"));
+    }
+
+    #[test]
+    fn a_gap_in_a_mapped_group_is_missing() {
+        let c = uids(&["dhp15/pli/ms", "dhp1-20.att/pli/cst"]);
+        // CST has no Dhammapada ṭīkā.
+        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", TIK, &c), RelatedTextLookup::Missing);
+
+        let c = uids(&["sn12.32/pli/ms", "sn12.31.att/pli/cst", "sn12.33.att/pli/cst"]);
+        assert_eq!(related_text_lookup("sn12.32/pli/ms", ATT, &c), RelatedTextLookup::Missing);
+    }
+
+    #[test]
+    fn another_group_does_not_make_this_one_mapped() {
+        // `mn%` also matches `mnd`.
+        let c = uids(&["mnd1/pli/ms", "mnd1.att/pli/cst"]);
+        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+        let c = uids(&["sn12.1/pli/ms", "sn11.1.att/pli/cst"]);
+        assert_eq!(related_text_lookup("sn12.1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+    }
+
+    #[test]
+    fn what_cst_lacks_is_missing_and_what_it_has_unmapped_is_unknown() {
+        let none: Vec<String> = vec![];
+        // An unmapped book with an aṭṭhakathā and no ṭīkā.
+        assert_eq!(related_text_lookup("snp1.1/pli/ms", ATT, &none), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("snp1.1/pli/ms", TIK, &none), RelatedTextLookup::Missing);
+        // The Milindapañha: no aṭṭhakathā, a ṭīkā in an añña file.
+        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", ATT, &none), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", TIK, &none), RelatedTextLookup::Unknown);
+        // A CST division record, by its book.
+        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", TIK, &none), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", ATT, &none), RelatedTextLookup::Unknown);
+        // A collection the table does not know stays unknown.
+        assert_eq!(related_text_lookup("pli-tv-bu-pm/pli/ms", ATT, &none), RelatedTextLookup::Unknown);
+        // A record from another source still opens.
+        let c = uids(&["dhp15/pli/ms", "dhp15.tik/en/someone"]);
+        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c), found("dhp15.tik/en/someone"));
+    }
+
+    #[test]
+    fn a_division_record_is_never_mapped() {
+        let c = uids(&["abh01m.mul0.xml/pli/cst", "abh01a.att0.xml/pli/cst"]);
+        assert_eq!(related_text_lookup("abh01m.mul0.xml/pli/cst", ATT, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("abh01a.att0.xml/pli/cst", MULA, &c), RelatedTextLookup::Unknown);
+        // Nor does a division record count as a mapped commentary of a sutta.
+        let c = uids(&["s0101a.att0.xml/pli/cst"]);
+        assert_eq!(related_text_lookup("s0101a/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+    }
+
+    #[test]
+    fn the_kind_of_a_division_record_is_read_from_its_file_name() {
+        assert_eq!(text_kind_of_uid("mn1/pli/ms"), Some(MULA));
+        assert_eq!(text_kind_of_uid("mn1.att/en/opentipitaka"), Some(ATT));
+        assert_eq!(text_kind_of_uid("an5.91-100.tik/pli/cst"), Some(TIK));
+        assert_eq!(text_kind_of_uid("abh01a.att0.xml/pli/cst"), Some(ATT));
+        assert_eq!(text_kind_of_uid("abh01t.tik12.xml/pli/cst"), Some(TIK));
+        assert_eq!(text_kind_of_uid("abh01m.mul0.xml/pli/cst"), Some(MULA));
+        assert_eq!(text_kind_of_uid("e0105n.nrf18.xml/pli/cst"), None);
+    }
+
+    #[test]
+    fn the_nav_presses_the_current_kind_and_disables_a_missing_text() {
+        let lookups = [
+            (MULA, RelatedTextLookup::Unknown),
+            (ATT, found("mn1.att/pli/cst")),
+            (TIK, RelatedTextLookup::Missing),
+        ];
+        let html = related_texts_nav_html(&lookups, Some(MULA));
+        let buttons: Vec<&str> = html.split("<button").skip(1).collect();
+        assert_eq!(buttons.len(), 3);
+        let pressed = r#"class="related-texts-nav-button pressed""#;
+        assert!(buttons[0].contains(pressed) && buttons[0].contains(r#"aria-pressed="true""#));
+        assert!(buttons[0].contains(r#"data-action="open-root-text""#));
+        assert!(!buttons[1].contains(pressed) && !buttons[1].contains(" disabled>"));
+        assert!(buttons[1].contains(r#"aria-pressed="false""#));
+        assert!(buttons[1].contains(r#"data-action="open-commentary-text""#));
+        assert!(buttons[2].contains(" disabled>") && buttons[2].contains(r#"data-action="open-sub-commentary-text""#));
+
+        // A division of an añña file presses nothing.
+        let html = related_texts_nav_html(&lookups, None);
+        assert!(!html.contains(pressed_class()));
+    }
+}
+
+/// Against the shipped database: a mapped text, a gap in a mapped group, and
+/// an unmapped group.
+#[test]
+#[serial]
+fn the_shipped_database_resolves_the_related_texts() {
+    use simsapa_backend::helpers::{RelatedTextLookup, SuttaRefKind};
+    h::app_data_setup();
+    let appdata = &get_app_data().dbm.appdata;
+    let lookup = |uid: &str, kind: SuttaRefKind| {
+        appdata.related_texts_lookup(uid).into_iter().find(|(k, _)| *k == kind).unwrap().1
+    };
+    let found = |uid: &str| RelatedTextLookup::Found(uid.to_string());
+
+    assert_eq!(lookup("mn1/pli/ms", SuttaRefKind::Atthakatha), found("mn1.att/pli/cst"));
+    assert_eq!(lookup("mn1.att/pli/cst", SuttaRefKind::Tika), found("mn1.tik/pli/cst"));
+    assert_eq!(lookup("mn1.tik/pli/cst", SuttaRefKind::Mula), found("mn1/pli/cst"));
+    assert_eq!(lookup("an10.4/pli/ms", SuttaRefKind::Atthakatha), found("an10.3-5.att/pli/cst"));
+    // The aṭṭhakathā passes over AN 10.10.
+    assert_eq!(lookup("an10.10/pli/ms", SuttaRefKind::Atthakatha), RelatedTextLookup::Missing);
+    assert_eq!(lookup("snp1.1/pli/ms", SuttaRefKind::Atthakatha), RelatedTextLookup::Unknown);
+    // The Appamādavagga has its aṭṭhakathā, and CST has no Dhammapada ṭīkā.
+    assert_eq!(lookup("dhp21-32/pli/ms", SuttaRefKind::Atthakatha), found("dhp21-32.att/pli/cst"));
+    assert_eq!(lookup("dhp21-32/pli/ms", SuttaRefKind::Tika), RelatedTextLookup::Missing);
+    assert_eq!(lookup("snp1.1/pli/ms", SuttaRefKind::Tika), RelatedTextLookup::Missing);
+
+    let json: serde_json::Value = serde_json::from_str(&appdata.find_related_sutta_json("an10.10/pli/ms", "att")).unwrap();
+    assert_eq!(json["status"], "missing");
+    let json: serde_json::Value = serde_json::from_str(&appdata.find_related_sutta_json("an10.4/pli/ms", "att")).unwrap();
+    assert_eq!(json["item_uid"], "an10.3-5.att/pli/cst");
+}

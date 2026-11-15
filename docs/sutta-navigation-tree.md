@@ -372,6 +372,72 @@ Within one edition no two mūla records overlap, so the rule never offers a
 neighbouring sutta as an edition of the opened one. If a source is ever added
 whose records overlap each other, that is where this rule needs a second look.
 
+### The m | a | t buttons and the Commentary menu
+
+A sutta page has an **m | a | t** button group in its top-left row, after the
+reading mode and prev/next buttons (`assets/templates/related_texts_nav.html`,
+`assets/sass/_related_texts_nav.scss`). The buttons open the mūla, aṭṭhakathā or
+ṭīkā of the tab in a new tab, through the same actions as the page menu's
+Commentary group (`open-root-text`, `open-commentary-text`,
+`open-sub-commentary-text` → `open_related_sutta()` in `SuttaSearchWindow.qml`).
+`RelatedTextsNavController` in `assets/js/suttas.js` sends the menu's own
+`runAction()`, so the two cannot drift apart.
+
+One rule, `related_text_lookup()` in `backend/src/helpers.rs`, decides both the
+buttons (rendered with the page by `related_texts_nav_html()`) and what the
+action does (`find_related_sutta_json()`). For each kind it returns:
+
+| Result | When | Button | Action |
+|---|---|---|---|
+| `Found(uid)` | a record of the same reference, else one whose span shares a sutta with it (the rule above) | enabled | opens `uid` in a new tab |
+| `Missing` | none, and CST has no text of this kind for the collection; or the **group** (`mn`, `sn12`, `dhp`) has sutta-numbered records of this kind | disabled | "No commentary for this text" |
+| `Unknown` | none, CST has one, and the group has no such records; a collection the table does not know | enabled | the dialog offering a title search |
+
+The kind the tab already shows is pressed and does nothing: `text_kind_of_uid()`,
+which also reads a division record's kind from its file name
+(`abh01a.att0.xml` is an aṭṭhakathā; an `.nrf` division is none of the three).
+Among several matches the same language and source as the opened record wins,
+then `pli/cst`, `pli/ms`, any Pāli record, and the lowest span.
+
+**Which commentaries CST has at all** comes from `CST_COLLECTIONS` in
+`backend/src/cst_files.rs`: each SuttaCentral collection (`dhp`, `tha-ap`,
+`pli-tv-bu-vb`) with the CST mūla files it is in. It records no yes/no:
+`cst_collection_has_text()` reads the answer from `CST_SOURCE_FILES`, where a
+book's commentaries are the files with its stem and the `a` / `t` letter
+(`s0502m.mul.xml` → `s0502a.att.xml`, no `s0502t*.tik.xml`). A commentary that
+CST keeps outside its book goes in `other_files` — the Milinda-ṭīkā,
+`e1210n.nrf.xml`, which is how the Milindapañha has a ṭīkā and no aṭṭhakathā. A
+CST division record finds its collection by the book stem of its file name
+(`s0503m.mul0.xml` → `ud`). What CST has:
+
+| Collections | Aṭṭhakathā | Ṭīkā |
+|---|---|---|
+| DN, MN, SN, AN, Netti, the Abhidhamma, the Vinaya | yes | yes |
+| the other Khuddaka books (Kp … Ps) | yes | no |
+| Milindapañha | no | yes (añña) |
+| Peṭakopadesa | no | no |
+
+The Pātimokkha is not in the table, so its buttons search: which CST files
+comment on it is not settled. `CST_SOURCE_FILES` is the `romn/` listing; if
+the CST checkout is ever refreshed, compare it again.
+
+**Within a collection that has the kind, "mapped" is per group, because the
+commentary files are mapped whole.** Every file with sutta-numbered `.att` /
+`.tik` records (DN, MN, SN, AN, the Dhammapada aṭṭhakathā) is fully mapped
+(§3.2), so a group with any such record has them all, and a gap is a sutta the
+commentary passes over (`an10.10`), not a missing mapping. A group with none —
+an unmapped book such as the Sutta Nipāta's aṭṭhakathā — is unknown, since the
+text is in a division record that only a search finds. A text with no
+comparable span (`mil3.1.1`) is unknown unless its exact reference matches or
+CST lacks the kind.
+
+> **Trap: a partially mapped commentary file disables real commentaries.** Its
+> unmapped suttas keep their text in division records, but the group now has
+> sutta-numbered records, so their button reads `Missing`. Before a commentary
+> file enters `VERIFIED_CST_FILES` as anything but fully mapped, the group rule
+> needs a per-file answer. `test_verified_commentary_files_are_fully_mapped`
+> catches it (§6.1).
+
 This is the intended division of labour: the tree gives one route to a text, and
 the reader gives the editions of it. Do not add a second `sutta_uid` to a node,
 or a per-edition branch, to reproduce in the tree what the reader already does.
@@ -1566,6 +1632,56 @@ bad one in their defect summary.
 `build-navigation-tree` does not drop columns: a database bootstrapped while
 the table still carried `blurb` and `context_note` keeps both, unread, until a
 full re-bootstrap.
+
+
+### 6.1 After a fragments update from `tipitaka-xml-parser`
+
+A new `fragments.sqlite3` (new mappings, parser fixes) or a file added to
+`VERIFIED_CST_FILES` changes which CST records exist, and with them the
+reader's **m | a | t** buttons (§2a, "The m | a | t buttons and the Commentary
+menu"). In order:
+
+1. **A newly verified file** goes into `VERIFIED_CST_FILES`
+   (`bootstrap_cli/src/bootstrap/cst_coverage.rs`) only after the review in
+   §3.1.
+2. **Check that every verified commentary file is fully mapped:**
+
+   ``` sh
+   cd bootstrap_cli && cargo test test_verified_commentary_files_are_fully_mapped -- --ignored
+   ```
+
+   The buttons take a group with any sutta-numbered `.att` / `.tik` record to
+   have them all, so a partially mapped commentary file grays out the
+   commentaries of its unmapped suttas. If the test fails, the file is not
+   ready to verify, or `related_text_lookup()` needs a per-file answer first —
+   never a change to the test's expectation.
+3. **Run the four rebuild commands of §6**, all four.
+4. **Run the lookup tests against the rebuilt database:**
+
+   ``` sh
+   cd backend && cargo test --test test_related_sutta_uids
+   ```
+
+   `the_shipped_database_resolves_the_related_texts` pins real answers
+   (`an10.10` has no aṭṭhakathā, `snp1.1`'s aṭṭhakathā is unmapped). A book
+   that became mapped changes them: confirm the record now exists, then update
+   the expectation to the new answer.
+5. **Leave `CST_COLLECTIONS` and `CST_SOURCE_FILES` alone**
+   (`backend/src/cst_files.rs`). They describe the CST books, not the
+   mapping, and change only when the CST checkout does or when a SuttaCentral
+   collection the table does not list (the Pātimokkha) gets records. After a
+   CST checkout update, compare the list with the folder:
+
+   ``` sh
+   diff <(sed -n '/CST_SOURCE_FILES: \[/,/^\];/p' backend/src/cst_files.rs | grep -oE '"[^"]+\.xml"' | tr -d '"' | sort) \
+        <(ls ../bootstrap-assets-resources/tipitaka-org-vri-cst/tipitaka-xml/romn | grep -v '\.toc\.xml$' | grep '\.xml$' | sort)
+   ```
+
+The buttons need no app rebuild: they are computed from the database when a
+page is rendered, so a newly mapped book's buttons move from searching to
+opening (or disabled) on their own. A mapping defect found on the way is
+reported to `tipitaka-xml-parser`, never patched in Simsapa, and the rebuilt
+`appdata.sqlite3` is never committed.
 
 ## 7. Related
 

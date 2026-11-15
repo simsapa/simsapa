@@ -2,6 +2,7 @@ use serde::Serialize;
 use tinytemplate::TinyTemplate;
 
 use crate::{get_app_globals, is_mobile};
+use crate::helpers::{RelatedTextLookup, SuttaRefKind};
 
 static PAGE_HTML: &str = include_str!("../../assets/templates/page.html");
 static FIND_HTML: &str = include_str!("../../assets/templates/find.html");
@@ -10,6 +11,8 @@ pub static PREV_NEXT_CHAPTER_HTML: &str = include_str!("../../assets/templates/p
 // Appended to the prev/next navigation on book chapter pages only — sutta
 // pages share PREV_NEXT_CHAPTER_HTML but have no table of contents.
 pub static TOC_BUTTON_HTML: &str = include_str!("../../assets/templates/toc_button.html");
+// Appended after the prev/next navigation on sutta pages.
+static RELATED_TEXTS_NAV_HTML: &str = include_str!("../../assets/templates/related_texts_nav.html");
 static MENU_HTML: &str = include_str!("../../assets/templates/menu.html");
 static CONFIRM_MODAL_HTML: &str = include_str!("../../assets/templates/confirm_modal.html");
 static FOOTNOTE_MODAL_HTML: &str = include_str!("../../assets/templates/footnote_modal.html");
@@ -66,6 +69,43 @@ impl Default for TmplContext {
             body_class: "".to_string(),
         }
     }
+}
+
+/// The m | a | t button group (`assets/templates/related_texts_nav.html`).
+///
+/// `lookups` is [`crate::db::appdata::AppdataDbHandle::related_texts_lookup`]'s
+/// result, `current_kind` the kind of text the page shows
+/// ([`text_kind_of_uid`]). The current kind is pressed and does nothing; a
+/// [`RelatedTextLookup::Missing`] text is disabled. A found or unknown text
+/// sends the menu action, which opens the text or offers a title search.
+pub fn related_texts_nav_html(
+    lookups: &[(SuttaRefKind, RelatedTextLookup)],
+    current_kind: Option<SuttaRefKind>,
+) -> String {
+    let buttons: Vec<String> = lookups
+        .iter()
+        .map(|(kind, lookup)| {
+            let (label, name, action) = match kind {
+                SuttaRefKind::Mula => ("m", "Mūla (root text)", "open-root-text"),
+                SuttaRefKind::Atthakatha => ("a", "Aṭṭhakathā (commentary)", "open-commentary-text"),
+                SuttaRefKind::Tika => ("t", "Ṭīkā (sub-commentary)", "open-sub-commentary-text"),
+            };
+            let is_current = current_kind == Some(*kind);
+            let (class, title, disabled) = if is_current {
+                (" pressed", format!("{}: this tab", name), "")
+            } else {
+                match lookup {
+                    RelatedTextLookup::Found(_) => ("", format!("Open the {} in a new tab", name), ""),
+                    RelatedTextLookup::Unknown => ("", format!("Search for the {}", name), ""),
+                    RelatedTextLookup::Missing => ("", format!("No {} for this text", name), " disabled"),
+                }
+            };
+            format!(
+                r#"<button class="related-texts-nav-button{class}" data-action="{action}" aria-pressed="{is_current}" title="{title}" aria-label="{title}"{disabled}>{label}</button>"#,
+            )
+        })
+        .collect();
+    RELATED_TEXTS_NAV_HTML.replace("{buttons}", &buttons.join(""))
 }
 
 pub fn sutta_html_page(content: &str,

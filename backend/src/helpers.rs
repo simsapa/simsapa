@@ -18,6 +18,7 @@ use crate::app_settings::SuttaLayout;
 use crate::types::{SearchArea, SearchResult, WordInfo, WordProcessingOptions, WordProcessingResult, ProcessedWord, UnrecognizedWord};
 use crate::lookup::*;
 use crate::logger::{error, info, warn};
+use crate::cst_files::{cst_collection_for_uid, cst_collection_has_text};
 
 lazy_static! {
     // MN44; MN 118; AN 4.10; Sn 4:2; Dhp 182; Thag 1207; Vism 152
@@ -479,6 +480,152 @@ pub fn related_sutta_uids_like_pattern(opened_uid: &str) -> String {
         Some(range) if base.contains('.') => format!("{}.%", range.group),
         Some(range) => format!("{}%", range.group),
         None => format!("{}%", base),
+    }
+}
+
+/// The kind of text a uid names, for showing which of mūla / aṭṭhakathā / ṭīkā
+/// a tab is reading.
+///
+/// Like [`split_sutta_ref_kind`], but it also reads the CST division records,
+/// whose uid is a source file name (`abh01a.att0.xml/pli/cst` is an
+/// aṭṭhakathā). `None` for a division of an *añña* file (`.nrf`), which is none
+/// of the three.
+pub fn text_kind_of_uid(uid: &str) -> Option<SuttaRefKind> {
+    lazy_static! {
+        static ref RE_CST_FILE_KIND: Regex = Regex::new(r"\.(att|tik|mul|nrf)\d*\.xml$").unwrap();
+    }
+    let (base, kind) = split_sutta_ref_kind(uid);
+    if let Some(caps) = RE_CST_FILE_KIND.captures(base) {
+        return match &caps[1] {
+            "att" => Some(SuttaRefKind::Atthakatha),
+            "tik" => Some(SuttaRefKind::Tika),
+            "mul" => Some(SuttaRefKind::Mula),
+            _ => None,
+        };
+    }
+    Some(kind)
+}
+
+/// What [`related_text_lookup`] found for one kind of related text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelatedTextLookup {
+    /// The uid of the record to open.
+    Found(String),
+    /// The group has been mapped to texts of this kind, and none covers this
+    /// one: the text does not exist.
+    Missing,
+    /// No mapping to say either way. The text may exist in a CST division
+    /// record, which only a search can find.
+    Unknown,
+}
+
+/// The related text of `target_kind` (the mūla, aṭṭhakathā or ṭīkā) for
+/// `opened_uid`, chosen from `candidate_uids` (the uids that
+/// [`related_sutta_uids_like_pattern`] matches).
+///
+/// The kind `opened_uid` already is resolves to `opened_uid` itself. Otherwise a
+/// record of the same reference is preferred, then one whose span shares a
+/// sutta with it ([`sutta_refs_are_related`]: `an5.91` → `an5.91-100.tik`).
+/// Among those: the same language and source as the opened record, then
+/// `pli/cst`, `pli/ms`, any Pāli record, anything, and the lowest span first.
+///
+/// When nothing is found, the text is [`RelatedTextLookup::Missing`] if CST
+/// has no text of this kind for the collection at all
+/// ([`crate::cst_files::CST_COLLECTIONS`]: the Dhammapada has no ṭīkā), or if
+/// the group is mapped and this text is a gap in it.
+///
+/// "Mapped" is decided per group (`mn`, `sn12`, `dhp`): `tipitaka-xml-parser`
+/// maps a whole source file to sutta uids or none of it, so a group with any
+/// sutta-numbered record of the kind has them all, and a gap is a text that
+/// does not exist. A CST division record (a `.xml` uid) is never mapped.
+pub fn related_text_lookup(
+    opened_uid: &str,
+    target_kind: SuttaRefKind,
+    candidate_uids: &[String],
+) -> RelatedTextLookup {
+    let (opened_base, opened_kind) = split_sutta_ref_kind(opened_uid);
+    if opened_kind == target_kind && !opened_base.ends_with(".xml") {
+        return RelatedTextLookup::Found(opened_uid.to_string());
+    }
+    // CST has no text of this kind for the collection at all (the Dhammapada's
+    // ṭīkā). Asked only once no record is found, so that a record from another
+    // source still opens.
+    let cst_lacks_it = || {
+        target_kind != SuttaRefKind::Mula
+            && cst_collection_for_uid(opened_uid).is_some_and(|c| !cst_collection_has_text(c, target_kind))
+    };
+    if opened_base.ends_with(".xml") {
+        return if cst_lacks_it() { RelatedTextLookup::Missing } else { RelatedTextLookup::Unknown };
+    }
+    let opened_lang_source = opened_uid.split_once('/').map(|(_, s)| s).unwrap_or("");
+
+    let source_rank = |candidate: &str| -> u8 {
+        let lang_source = candidate.split_once('/').map(|(_, s)| s).unwrap_or("");
+        if lang_source == opened_lang_source {
+            0
+        } else if lang_source == "pli/cst" {
+            1
+        } else if lang_source == "pli/ms" {
+            2
+        } else if lang_source.starts_with("pli/") {
+            3
+        } else {
+            4
+        }
+    };
+
+    let of_kind: Vec<&String> = candidate_uids
+        .iter()
+        .filter(|c| c.as_str() != opened_uid)
+        .filter(|c| {
+            let (base, kind) = split_sutta_ref_kind(c);
+            kind == target_kind && !base.ends_with(".xml")
+        })
+        .collect();
+
+    let best = |matches: Vec<&String>| -> Option<String> {
+        matches
+            .into_iter()
+            .min_by_key(|c| {
+                let (base, _) = split_sutta_ref_kind(c);
+                let start = comparable_sutta_range(base).and_then(|r| r.start).unwrap_or(0);
+                (source_rank(c), start, c.to_string())
+            })
+            .cloned()
+    };
+
+    let same_ref = of_kind
+        .iter()
+        .copied()
+        .filter(|c| split_sutta_ref_kind(c).0 == opened_base)
+        .collect();
+    if let Some(found) = best(same_ref) {
+        return RelatedTextLookup::Found(found);
+    }
+
+    let overlapping = of_kind
+        .iter()
+        .copied()
+        .filter(|c| sutta_refs_are_related(opened_base, split_sutta_ref_kind(c).0))
+        .collect();
+    if let Some(found) = best(overlapping) {
+        return RelatedTextLookup::Found(found);
+    }
+
+    if cst_lacks_it() {
+        return RelatedTextLookup::Missing;
+    }
+
+    let Some(opened_group) = comparable_sutta_range(opened_base).map(|r| r.group) else {
+        return RelatedTextLookup::Unknown;
+    };
+    let group_is_mapped = of_kind.iter().any(|c| {
+        comparable_sutta_range(split_sutta_ref_kind(c).0).is_some_and(|r| r.group == opened_group)
+    });
+    if group_is_mapped {
+        RelatedTextLookup::Missing
+    } else {
+        RelatedTextLookup::Unknown
     }
 }
 

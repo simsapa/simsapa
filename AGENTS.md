@@ -53,6 +53,11 @@ break without noticing.
   `normalize_dpd_query_split()`), never `normalize_query_text()` alone, which
   splits iti sandhi. Never `LIKE` on the DPD `lookup` table. —
   [search-snippet-highlight-pipeline.md](./docs/search-snippet-highlight-pipeline.md) §9d–§9e
+- **A fragments update from `tipitaka-xml-parser`** (a new `fragments.sqlite3`
+  or a change to `VERIFIED_CST_FILES`) runs the §6.1 checklist: a verified
+  commentary file must be fully mapped (the reader's m | a | t buttons depend
+  on it), then the four rebuild commands, then the lookup tests. —
+  [sutta-navigation-tree.md](./docs/sutta-navigation-tree.md) §6.1
 - **Iti-sandhi rule changes change `content_plain` and the indexes**: they ship
   with a re-bootstrap. — [pali-sandhi-and-quote-marks.md](./docs/pali-sandhi-and-quote-marks.md)
 - **Check SQLite plans with real values**: STAT4 plans per bound value, so
@@ -167,7 +172,9 @@ add a line here and an entry there.
 - [Relocated storage recovery (Android)](./docs/relocated-storage-recovery.md) —
   `storage_path_state()`, recorded vs. resolved paths, sweep gating.
 - [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the navigation
-  hierarchy, its TOML texts, the Timeline page, the CST rebuild commands.
+  hierarchy, its TOML texts, the Timeline page, the CST rebuild commands, the
+  m | a | t buttons and which commentaries CST has, and §6.1, what to run after
+  a fragments update.
 - [CIPS index updates](./docs/cips-index-updates.md) — the Topic Index and its
   in-app Update / Reset.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) —

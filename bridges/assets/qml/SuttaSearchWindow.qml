@@ -1112,8 +1112,12 @@ ApplicationWindow {
                 sutta_ref: tab_data.sutta_ref || "",
                 sutta_title: tab_data.sutta_title || "",
             });
+        } else if (result.status === "missing") {
+            // The text is mapped to its commentaries, and this kind has none.
+            const names = { "att": "commentary", "tik": "sub-commentary", "mula": "root text" };
+            sutta_html_view_layout.show_transient_message("No " + (names[relation] || "related text") + " for this text");
         } else {
-            // Not found - show dialog offering to search by title
+            // Not mapped, so it may exist in an unsplit CST record: offer to search by title
             related_sutta_not_found_dialog.search_title = result.sutta_title;
             related_sutta_not_found_dialog.open();
         }

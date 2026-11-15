@@ -19,6 +19,11 @@
 //! no records under its file name, and a query naming only such files finds
 //! nothing.
 
+use lazy_static::lazy_static;
+use regex::Regex;
+
+use crate::helpers::{split_sutta_ref_kind, SuttaRefKind};
+
 /// The 217 source files of the CST edition, `romn/*.xml`.
 pub static CST_SOURCE_FILES: [&str; 217] = [
     "abh01a.att.xml",
@@ -317,6 +322,139 @@ pub fn uid_is_record_of_file(uid: &str, file: &str) -> bool {
     number.chars().all(|c| c.is_ascii_digit())
 }
 
+/// A SuttaCentral collection and the CST books its mūla text is in.
+///
+/// Whether the collection has an aṭṭhakathā or a ṭīkā is not written here: it
+/// is read from [`CST_SOURCE_FILES`] by [`cst_collection_has_text`], since a
+/// CST book's commentaries are the files with its stem and the `a` / `t`
+/// letter (`s0502m.mul.xml` → `s0502a.att.xml`, and no `s0502t*.tik.xml`).
+#[derive(Debug)]
+pub struct CstCollection {
+    /// The uid prefix: `dhp`, `tha-ap`, `pli-tv-bu-vb`. A uid belongs to it when
+    /// its prefix is this or starts with this and a `-`.
+    pub sc_collection: &'static str,
+    /// Its mūla files in [`CST_SOURCE_FILES`].
+    pub mula_files: &'static [&'static str],
+    /// Commentaries on it that CST keeps outside its book, in an *añña* file.
+    pub other_files: &'static [(SuttaRefKind, &'static str)],
+}
+
+const fn collection(sc_collection: &'static str, mula_files: &'static [&'static str]) -> CstCollection {
+    CstCollection { sc_collection, mula_files, other_files: &[] }
+}
+
+/// The collections whose CST books are known. A collection missing here (the
+/// Pātimokkha) is not known to have or lack a commentary, so its buttons search.
+pub static CST_COLLECTIONS: [CstCollection; 35] = [
+    collection("dn", &["s0101m.mul.xml", "s0102m.mul.xml", "s0103m.mul.xml"]),
+    collection("mn", &["s0201m.mul.xml", "s0202m.mul.xml", "s0203m.mul.xml"]),
+    collection("sn", &["s0301m.mul.xml", "s0302m.mul.xml", "s0303m.mul.xml", "s0304m.mul.xml", "s0305m.mul.xml"]),
+    collection("an", &[
+        "s0401m.mul.xml", "s0402m1.mul.xml", "s0402m2.mul.xml", "s0402m3.mul.xml",
+        "s0403m1.mul.xml", "s0403m2.mul.xml", "s0403m3.mul.xml",
+        "s0404m1.mul.xml", "s0404m2.mul.xml", "s0404m3.mul.xml", "s0404m4.mul.xml",
+    ]),
+    collection("kp", &["s0501m.mul.xml"]),
+    collection("dhp", &["s0502m.mul.xml"]),
+    collection("ud", &["s0503m.mul.xml"]),
+    collection("iti", &["s0504m.mul.xml"]),
+    collection("snp", &["s0505m.mul.xml"]),
+    collection("vv", &["s0506m.mul.xml"]),
+    collection("pv", &["s0507m.mul.xml"]),
+    collection("thag", &["s0508m.mul.xml"]),
+    collection("thig", &["s0509m.mul.xml"]),
+    collection("tha-ap", &["s0510m1.mul.xml", "s0510m2.mul.xml"]),
+    collection("thi-ap", &["s0510m1.mul.xml", "s0510m2.mul.xml"]),
+    collection("bv", &["s0511m.mul.xml"]),
+    collection("cp", &["s0512m.mul.xml"]),
+    collection("ja", &["s0513m.mul.xml", "s0514m.mul.xml"]),
+    collection("mnd", &["s0515m.mul.xml"]),
+    collection("cnd", &["s0516m.mul.xml"]),
+    collection("ps", &["s0517m.mul.xml"]),
+    // No aṭṭhakathā. The Milinda-ṭīkā is an añña text (its heading reads
+    // "Milidaṭīkā" in the source).
+    CstCollection {
+        sc_collection: "mil",
+        mula_files: &["s0518m.nrf.xml"],
+        other_files: &[(SuttaRefKind::Tika, "e1210n.nrf.xml")],
+    },
+    collection("ne", &["s0519m.mul.xml"]),
+    collection("pe", &["s0520m.nrf.xml"]),
+    collection("ds", &["abh01m.mul.xml"]),
+    collection("vb", &["abh02m.mul.xml"]),
+    // The Pañcapakaraṇa: one aṭṭhakathā and one ṭīkā for the five books.
+    collection("dt", &["abh03m1.mul.xml"]),
+    collection("pp", &["abh03m2.mul.xml"]),
+    collection("kv", &["abh03m3.mul.xml"]),
+    collection("ya", &["abh03m4.mul.xml", "abh03m5.mul.xml", "abh03m6.mul.xml"]),
+    collection("patthana", &[
+        "abh03m7.mul.xml", "abh03m8.mul.xml", "abh03m9.mul.xml", "abh03m10.mul.xml", "abh03m11.mul.xml",
+    ]),
+    // The Bhikkhunī Vibhaṅga is in the Pācittiyapāḷi.
+    collection("pli-tv-bu-vb", &["vin01m.mul.xml", "vin02m1.mul.xml"]),
+    collection("pli-tv-bi-vb", &["vin02m1.mul.xml"]),
+    collection("pli-tv-kd", &["vin02m2.mul.xml", "vin02m3.mul.xml"]),
+    collection("pli-tv-pvr", &["vin02m4.mul.xml"]),
+];
+
+lazy_static! {
+    /// A CST file name's book stem and kind letter: `s0402m1.mul.xml` →
+    /// (`s0402`, `m`), `abh03m10.mul.xml` → (`abh03`, `m`), `vin01t1.tik.xml` →
+    /// (`vin01`, `t`). The *añña* `e…n` files have no book stem.
+    static ref RE_CST_BOOK_STEM: Regex = Regex::new(r"^([a-z]+\d+)([amt])\d*\.").unwrap();
+}
+
+fn book_stem(file_name: &str) -> Option<&str> {
+    RE_CST_BOOK_STEM.captures(file_name).and_then(|c| c.get(1)).map(|m| m.as_str())
+}
+
+/// The collection a uid belongs to: by its SuttaCentral prefix (`dhp21-32`,
+/// `pli-tv-bu-vb-pj1`), or, for a CST record named by its file
+/// (`s0503m.mul0.xml`, `s0508a1.att3.xml`), by the book that file is in.
+pub fn cst_collection_for_uid(uid: &str) -> Option<&'static CstCollection> {
+    let (base, _) = split_sutta_ref_kind(uid);
+
+    if base.ends_with(".xml") {
+        let stem = book_stem(base)?;
+        return CST_COLLECTIONS
+            .iter()
+            .find(|c| c.mula_files.iter().any(|f| book_stem(f) == Some(stem)));
+    }
+
+    let prefix = base
+        .find(|c: char| c.is_ascii_digit())
+        .map(|i| &base[..i])
+        .unwrap_or(base)
+        .trim_end_matches(['-', '.']);
+    CST_COLLECTIONS
+        .iter()
+        .filter(|c| {
+            prefix == c.sc_collection
+                || prefix.strip_prefix(c.sc_collection).is_some_and(|rest| rest.starts_with('-'))
+        })
+        // The longest prefix wins, should two entries ever nest.
+        .max_by_key(|c| c.sc_collection.len())
+}
+
+/// Whether CST has a text of `kind` for the collection. A mūla always exists.
+pub fn cst_collection_has_text(collection: &CstCollection, kind: SuttaRefKind) -> bool {
+    let (letter, extension) = match kind {
+        SuttaRefKind::Mula => return true,
+        SuttaRefKind::Atthakatha => ("a", ".att.xml"),
+        SuttaRefKind::Tika => ("t", ".tik.xml"),
+    };
+    if collection.other_files.iter().any(|(k, _)| *k == kind) {
+        return true;
+    }
+    collection.mula_files.iter().filter_map(|f| book_stem(f)).any(|stem| {
+        CST_SOURCE_FILES.iter().any(|name| {
+            book_stem(name) == Some(stem)
+                && name.strip_prefix(stem).is_some_and(|rest| rest.starts_with(letter))
+                && name.ends_with(extension)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,5 +537,54 @@ mod tests {
         assert!(!uid_is_record_of_file("abh03m10.mul0.xml/pli/cst", "abh03m1.mul"));
         assert!(!uid_is_record_of_file("vin02m4.mulx.xml/pli/cst", "vin02m4.mul"));
         assert!(!uid_is_record_of_file("mn11.att/pli/cst", "s0201a.att"));
+    }
+
+    fn has(uid: &str, kind: SuttaRefKind) -> bool {
+        let c = cst_collection_for_uid(uid).unwrap_or_else(|| panic!("no collection for {}", uid));
+        cst_collection_has_text(c, kind)
+    }
+
+    #[test]
+    fn test_every_collection_file_is_a_source_file() {
+        for c in &CST_COLLECTIONS {
+            assert!(!c.mula_files.is_empty(), "{}", c.sc_collection);
+            for f in c.mula_files.iter().chain(c.other_files.iter().map(|(_, f)| f)) {
+                assert!(CST_SOURCE_FILES.contains(f), "{}: {}", c.sc_collection, f);
+            }
+        }
+    }
+
+    #[test]
+    fn test_collection_for_uid() {
+        assert_eq!(cst_collection_for_uid("dhp21-32/pli/ms").unwrap().sc_collection, "dhp");
+        assert_eq!(cst_collection_for_uid("dhp21-32.att/pli/cst").unwrap().sc_collection, "dhp");
+        assert_eq!(cst_collection_for_uid("tha-ap12/pli/ms").unwrap().sc_collection, "tha-ap");
+        assert_eq!(cst_collection_for_uid("thag1.1/pli/ms").unwrap().sc_collection, "thag");
+        assert_eq!(cst_collection_for_uid("pli-tv-bu-vb-pj1/pli/ms").unwrap().sc_collection, "pli-tv-bu-vb");
+        assert_eq!(cst_collection_for_uid("mil3.1.1/pli/ms").unwrap().sc_collection, "mil");
+        // By the book of a CST file record.
+        assert_eq!(cst_collection_for_uid("s0503m.mul0.xml/pli/cst").unwrap().sc_collection, "ud");
+        assert_eq!(cst_collection_for_uid("s0508a1.att3.xml/pli/cst").unwrap().sc_collection, "thag");
+        assert!(cst_collection_for_uid("abh03m10.mul2.xml/pli/cst").is_some());
+        // Not known: no answer rather than a wrong one.
+        assert!(cst_collection_for_uid("pli-tv-bu-pm/pli/ms").is_none());
+        assert!(cst_collection_for_uid("mnd1/pli/ms").unwrap().sc_collection == "mnd");
+        assert!(cst_collection_for_uid("e0101n.mul0.xml/pli/cst").is_none());
+    }
+
+    #[test]
+    fn test_which_commentaries_cst_has() {
+        use SuttaRefKind::{Atthakatha, Tika};
+        for uid in ["dn1/pli/ms", "mn1/pli/ms", "sn1.1/pli/ms", "an1.1/pli/ms", "ne1/pli/ms",
+                    "ds1.1/pli/ms", "patthana1.1/pli/ms", "pli-tv-kd1/pli/ms", "pli-tv-bi-vb-pc1/pli/ms"] {
+            assert!(has(uid, Atthakatha) && has(uid, Tika), "{}", uid);
+        }
+        // The Khuddaka books other than the Netti have an aṭṭhakathā and no ṭīkā.
+        for uid in ["kp1/pli/ms", "dhp21-32/pli/ms", "ud1.1/pli/ms", "snp1.1/pli/ms", "thag1.1/pli/ms",
+                    "tha-ap1/pli/ms", "ja1/pli/ms", "ps1.1/pli/ms", "s0503m.mul0.xml/pli/cst"] {
+            assert!(has(uid, Atthakatha) && !has(uid, Tika), "{}", uid);
+        }
+        assert!(!has("mil3.1.1/pli/ms", Atthakatha) && has("mil3.1.1/pli/ms", Tika));
+        assert!(!has("pe1/pli/ms", Atthakatha) && !has("pe1/pli/ms", Tika));
     }
 }

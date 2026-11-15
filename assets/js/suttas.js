@@ -423,8 +423,32 @@ class ChapterNavigationController {
     }
 }
 
+// The m | a | t group (assets/templates/related_texts_nav.html). Each button
+// runs the menu's Commentary action, so the two cannot drift apart. The
+// pressed button is this tab's own kind, and a disabled one has no text.
+class RelatedTextsNavController {
+    constructor(menu) {
+        this.menu = menu;
+        this.buttons = document.querySelectorAll('#relatedTextsNav .related-texts-nav-button');
+
+        this.buttons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (button.disabled || button.classList.contains('pressed')) {
+                    return;
+                }
+                this.menu.runAction(button.dataset.action);
+            });
+            // Prevent text selection clearing
+            button.addEventListener('mousedown', (e) => e.preventDefault());
+        });
+    }
+}
+
 document.addEventListener("DOMContentLoaded", function(_event) {
-    new HamburgerMenu();
+    const hamburger_menu = new HamburgerMenu();
+    new RelatedTextsNavController(hamburger_menu);
     new ReadingModeController();
     new ChapterNavigationController();
     if (IS_MOBILE) {

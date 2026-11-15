@@ -103,8 +103,10 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// `cst_segments` rows, which never depends on the parser's sutta splitting.
 ///
 /// Adding an entry is a deliberate act: run `tipitaka-xml-parser`'s validations
-/// over the file, review the result, then add it here and re-run the CST import
-/// and the Pāli fulltext index rebuild.
+/// over the file, review the result, then add it here and follow the checklist
+/// in `docs/sutta-navigation-tree.md` §6.1. A commentary file (`.att` / `.tik`)
+/// must be fully mapped: the reader's m | a | t buttons depend on it, and
+/// `test_verified_commentary_files_are_fully_mapped` checks it.
 static VERIFIED_CST_FILES: [&str; 54] = [
     // Dīgha Nikāya
     "s0101a.att.xml",
@@ -595,5 +597,37 @@ mod tests {
 
         assert_eq!(divisions.len(), 1);
         assert_eq!(ot_ids(&divisions[0]), [0, 1, 2, 3]);
+    }
+
+    /// Against the bootstrap assets' `fragments.sqlite3`: every verified
+    /// commentary file is fully mapped.
+    ///
+    /// The reader's m | a | t buttons rely on it (`related_text_lookup()` in
+    /// `backend/src/helpers.rs`): a group with any sutta-numbered `.att` / `.tik`
+    /// record is taken to have them all, so the unmapped suttas of a partially
+    /// mapped commentary file would show their commentary as missing. When this
+    /// fails after a fragments update, see `docs/sutta-navigation-tree.md` §6.1.
+    ///
+    /// `cargo test test_verified_commentary_files_are_fully_mapped -- --ignored`.
+    #[test]
+    #[ignore]
+    fn test_verified_commentary_files_are_fully_mapped() {
+        use crate::bootstrap::source_paths as paths;
+
+        let fragments_db = paths::bootstrap_assets_dir_from_crate().join(paths::CST_FRAGMENTS_DB);
+        if !matches!(fragments_db.try_exists(), Ok(true)) {
+            return;
+        }
+        let mut conn = SqliteConnection::establish(&fragments_db.to_string_lossy()).expect("fragments db");
+        let coverage = compute_coverage(&mut conn).expect("coverage");
+
+        let not_fully_mapped: Vec<String> = VERIFIED_CST_FILES
+            .iter()
+            .filter(|f| f.ends_with(".att.xml") || f.ends_with(".tik.xml"))
+            .map(|f| (f, coverage_of(&coverage, f)))
+            .filter(|(_, c)| c.class != CoverageClass::FullyMapped)
+            .map(|(f, c)| format!("{}: {} ({} of {} mapped, gapless: {})", f, c.class.name(), c.mapped, c.total, c.gapless))
+            .collect();
+        assert!(not_fully_mapped.is_empty(), "{:#?}", not_fully_mapped);
     }
 }

@@ -871,6 +871,17 @@ impl AppData {
             String::new()
         };
 
+        // The m | a | t group follows prev/next (or the reading mode button
+        // when there is no prev/next): `_related_texts_nav.scss` places it by
+        // which siblings precede it.
+        let mut nav_html = nav_html;
+        {
+            use crate::helpers::text_kind_of_uid;
+            use crate::html_content::related_texts_nav_html;
+            let lookups = self.dbm.appdata.related_texts_lookup(&sutta.uid);
+            nav_html.push_str(&related_texts_nav_html(&lookups, text_kind_of_uid(&sutta.uid)));
+        }
+
         // Wrap content in the full HTML page structure
         use crate::html_content::sutta_html_page_with_nav;
         let final_html = sutta_html_page_with_nav(
