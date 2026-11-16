@@ -967,6 +967,35 @@ pub fn dpd_convert_example_sutta_refs(
         // Captures the first whitespace/tag-delimited reference token.
         static ref RE_DPD_SUTTA_P: Regex =
             Regex::new(r#"<p class=(?:"sutta"|sutta)>([^\s<]+)"#).unwrap();
+    }
+    RE_DPD_SUTTA_P
+        .replace_all(html, |caps: &regex::Captures| {
+            match dpd_example_source_resolve(&caps[1], sutta_map) {
+                Some((uid_path, display)) => format!(
+                    r#"<p class="sutta"><a href="ssp://suttas/{}" class="sutta-link">{}</a>"#,
+                    uid_path, display
+                ),
+                None => caps[0].to_string(),
+            }
+        })
+        .to_string()
+}
+
+/// The Simsapa sutta uid (`dn22/pli/ms`) of a DPD example's source code
+/// (`DN22.3`), resolved as [`dpd_convert_example_sutta_refs`] resolves the
+/// codes of the example paragraphs. `None` for a code that names no sutta
+/// (`VIN1.2.1`, a commentary, a grammar book).
+pub fn dpd_example_source_uid(code: &str, sutta_map: &HashMap<String, (String, String)>) -> Option<String> {
+    dpd_example_source_resolve(code.trim(), sutta_map).map(|(uid_path, _)| uid_path)
+}
+
+/// The `(uid_path, display)` of a DPD example source code; see
+/// [`dpd_convert_example_sutta_refs`] for the rules.
+fn dpd_example_source_resolve(
+    orig: &str,
+    sutta_map: &HashMap<String, (String, String)>,
+) -> Option<(String, String)> {
+    lazy_static! {
         // DN/MN code with a paragraph sub-number, e.g. "DN22.3" -> "DN22".
         static ref RE_DPD_DN_MN_PARA: Regex =
             Regex::new(r"^((?:DN|MN)\d+)\.\d+$").unwrap();
@@ -977,42 +1006,29 @@ pub fn dpd_convert_example_sutta_refs(
             r"^((?:THAG|THIG|SNP|ITI|KHP|UDA|AN|SN|TH|KP|UD)\d+\.\d+)\.\d+$"
         ).unwrap();
     }
-    RE_DPD_SUTTA_P
-        .replace_all(html, |caps: &regex::Captures| {
-            let orig = &caps[1];
-            let code = orig.to_uppercase();
+    let code = orig.to_uppercase();
 
-            // Resolve via the DPD sutta_map: try the code directly, then drop a
-            // DN/MN paragraph number, then drop a group-nikāya paragraph number.
-            let from_map = sutta_map
-                .get(&code)
-                .or_else(|| {
-                    RE_DPD_DN_MN_PARA
-                        .captures(&code)
-                        .and_then(|c| sutta_map.get(&c[1].to_string()))
-                })
-                .or_else(|| {
-                    RE_DPD_GROUP_PARA
-                        .captures(&code)
-                        .and_then(|c| sutta_map.get(&c[1].to_string()))
-                });
-
-            let resolved: Option<(String, String)> = match from_map {
-                Some((uid_path, display)) => Some((uid_path.clone(), display.clone())),
-                // A lone number in the group is a verse number, e.g. "Thag1123".
-                None => verse_sutta_ref_to_uid(&code.to_lowercase())
-                    .map(|uid| (format!("{}/pli/ms", uid), dpd_sutta_code_display(orig))),
-            };
-
-            match resolved {
-                Some((uid_path, display)) => format!(
-                    r#"<p class="sutta"><a href="ssp://suttas/{}" class="sutta-link">{}</a>"#,
-                    uid_path, display
-                ),
-                None => caps[0].to_string(),
-            }
+    // Resolve via the DPD sutta_map: try the code directly, then drop a
+    // DN/MN paragraph number, then drop a group-nikāya paragraph number.
+    let from_map = sutta_map
+        .get(&code)
+        .or_else(|| {
+            RE_DPD_DN_MN_PARA
+                .captures(&code)
+                .and_then(|c| sutta_map.get(&c[1].to_string()))
         })
-        .to_string()
+        .or_else(|| {
+            RE_DPD_GROUP_PARA
+                .captures(&code)
+                .and_then(|c| sutta_map.get(&c[1].to_string()))
+        });
+
+    match from_map {
+        Some((uid_path, display)) => Some((uid_path.clone(), display.clone())),
+        // A lone number in the group is a verse number, e.g. "Thag1123".
+        None => verse_sutta_ref_to_uid(&code.to_lowercase())
+            .map(|uid| (format!("{}/pli/ms", uid), dpd_sutta_code_display(orig))),
+    }
 }
 
 /// Remove the DPD `<p class=sutta>…</p>` example-source reference paragraphs
@@ -6412,6 +6428,18 @@ mod tests {
         let input8 = "<p class=sutta>thag50 someName";
         let expected8 = "<p class=\"sutta\"><a href=\"ssp://suttas/thag1.50/pli/ms\" class=\"sutta-link\">thag 50</a> someName";
         assert_eq!(dpd_convert_example_sutta_refs(input8, &map), expected8);
+    }
+
+    #[test]
+    fn test_dpd_example_source_uid() {
+        let mut map: HashMap<String, (String, String)> = HashMap::new();
+        map.insert("DN22".to_string(), ("dn22/pli/ms".to_string(), "DN 22".to_string()));
+        map.insert("SN56.11".to_string(), ("sn56.11/pli/ms".to_string(), "SN 56.11".to_string()));
+        assert_eq!(dpd_example_source_uid("DN22.15", &map).as_deref(), Some("dn22/pli/ms"));
+        assert_eq!(dpd_example_source_uid("sn56.11.5", &map).as_deref(), Some("sn56.11/pli/ms"));
+        assert_eq!(dpd_example_source_uid("Thag50", &map).as_deref(), Some("thag1.50/pli/ms"));
+        assert_eq!(dpd_example_source_uid("VIN1.4.3.2", &map), None);
+        assert_eq!(dpd_example_source_uid("bālāvatāra", &map), None);
     }
 
     #[test]

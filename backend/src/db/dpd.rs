@@ -2928,6 +2928,38 @@ struct DictWordHtmlRow {
     definition_plain: String,
 }
 
+/// The map from an uppercased DPD source code (`AN6.61`) to the sutta's
+/// `(uid_path, display)` (`("an6.61/pli/ms", "AN 6.61")`), read from the
+/// `sutta_info` table of a DPD database. It is the `sutta_map` of
+/// [`crate::helpers::dpd_convert_example_sutta_refs`] and
+/// [`crate::helpers::dpd_example_source_uid`].
+pub fn load_dpd_sutta_map(dpd_conn: &mut SqliteConnection) -> Result<HashMap<String, (String, String)>> {
+    let rows: Vec<SuttaInfoRow> = sql_query(
+        "SELECT dpd_code, sc_code, sc_file_path FROM sutta_info \
+         WHERE dpd_code != '' AND sc_code != ''",
+    )
+    .load(dpd_conn)
+    .context("Failed to load sutta_info")?;
+
+    // sc_file_path looks like "sc_bilara_data/root/pli/ms/sutta/..." — pull the
+    // lang/author segment after "root/". Default to pli/ms when absent.
+    let re_path = regex::Regex::new(r"root/([^/]+)/([^/]+)/").unwrap();
+
+    let mut sutta_map: HashMap<String, (String, String)> = HashMap::new();
+    for r in rows {
+        let (lang, author) = match re_path.captures(&r.sc_file_path) {
+            Some(c) => (c[1].to_string(), c[2].to_string()),
+            None => ("pli".to_string(), "ms".to_string()),
+        };
+        let uid_path = format!("{}/{}/{}", r.sc_code.to_lowercase(), lang, author);
+        let display = crate::helpers::dpd_sutta_code_display(&r.sc_code);
+        sutta_map
+            .entry(r.dpd_code.to_uppercase())
+            .or_insert((uid_path, display));
+    }
+    Ok(sutta_map)
+}
+
 /// Convert the DPD example sutta references, e.g.:
 ///
 /// ```
@@ -2959,30 +2991,7 @@ pub fn convert_dpd_example_sutta_links(dict_db_path: &Path, dpd_db_path: &Path, 
 
     // 1. Build the DPD source-code -> (uid_path, display) map from sutta_info.
     let mut dpd_conn = open_db_path(dpd_db_path)?;
-
-    let rows: Vec<SuttaInfoRow> = sql_query(
-        "SELECT dpd_code, sc_code, sc_file_path FROM sutta_info \
-         WHERE dpd_code != '' AND sc_code != ''",
-    )
-    .load(&mut dpd_conn)
-    .context("Failed to load sutta_info")?;
-
-    // sc_file_path looks like "sc_bilara_data/root/pli/ms/sutta/..." — pull the
-    // lang/author segment after "root/". Default to pli/ms when absent.
-    let re_path = regex::Regex::new(r"root/([^/]+)/([^/]+)/").unwrap();
-
-    let mut sutta_map: HashMap<String, (String, String)> = HashMap::new();
-    for r in rows {
-        let (lang, author) = match re_path.captures(&r.sc_file_path) {
-            Some(c) => (c[1].to_string(), c[2].to_string()),
-            None => ("pli".to_string(), "ms".to_string()),
-        };
-        let uid_path = format!("{}/{}/{}", r.sc_code.to_lowercase(), lang, author);
-        let display = crate::helpers::dpd_sutta_code_display(&r.sc_code);
-        sutta_map
-            .entry(r.dpd_code.to_uppercase())
-            .or_insert((uid_path, display));
-    }
+    let sutta_map = load_dpd_sutta_map(&mut dpd_conn)?;
     info(&format!("Loaded {} DPD sutta_info code mappings", sutta_map.len()));
 
     // 2. Rewrite DPD dict_words definition_html in batches.
