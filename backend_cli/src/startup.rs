@@ -19,6 +19,7 @@ use simsapa_backend::errln;
 use simsapa_backend::app_data::AppData;
 use simsapa_backend::logger::{self, LoggerHostOptions};
 use simsapa_backend::update_checker::{db_version_of, get_app_version, is_local_db_obsolete};
+use simsapa_backend::update_status::{InstalledDb, installed_db_version};
 use simsapa_backend::{
     appdata_db_exists, check_and_configure_for_first_start, check_delete_files_for_upgrade,
     check_remove_app_assets, check_remove_lang_index_dirs, dotenv_c, ensure_no_empty_db_files, get_app_globals,
@@ -240,6 +241,23 @@ pub fn incompatible_db_sentence(db_version: &str) -> String {
         db_version,
         get_app_version()
     )
+}
+
+/// The incompatible-database warning for a command that runs without the
+/// preamble but reads the databases (`stats`): the version is read from
+/// `appdata.sqlite3` directly. Prints nothing when it cannot be read.
+pub fn warn_if_db_incompatible_unopened() {
+    let paths = &get_app_globals().paths;
+    let InstalledDb::Version(db_version) = installed_db_version(&paths.appdata_db_path, &paths.appdata_database_url)
+    else {
+        return;
+    };
+    if is_local_db_obsolete(&get_app_version(), Some(&db_version)).is_none() {
+        return;
+    }
+    let sentence = incompatible_db_sentence(&db_version);
+    logger::warn(&sentence);
+    errln!("Warning: {}\nRun `simsapa setup` to install the new databases; your user data is kept.", sentence);
 }
 
 /// Apply `policy` to the open databases. Requires the preamble.

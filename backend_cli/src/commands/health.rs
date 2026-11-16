@@ -15,6 +15,8 @@
 
 use std::time::Duration;
 
+use serde::Serialize;
+
 use simsapa_api::{HealthFulltextArea, HealthInfo, health_info, init_app_globals_api};
 use simsapa_backend::update_checker::get_app_version;
 use simsapa_backend::update_status::{
@@ -23,6 +25,7 @@ use simsapa_backend::update_status::{
 };
 use simsapa_backend::{get_app_data, get_app_globals, init_fulltext_searcher};
 
+use crate::commands::install_skill::{SkillsState, SkillsStatus, current_skills_status};
 use crate::exit::CliResult;
 use crate::output::{outln, print_json};
 
@@ -56,11 +59,42 @@ pub fn run(json: bool, no_update_check: bool) -> CliResult {
             .unwrap_or_else(|_| UpdateStatus::failed(&get_app_version(), true, "the update check failed")),
         (None, None) => unreachable!("a check is started whenever it is not disabled"),
     };
+    let skills = current_skills_status();
     if json {
-        print_json(&info)
+        print_json(&CliHealth { info: &info, skills: skills.as_ref() })
     } else {
         print_text(&info);
+        outln!("Agent skills     {}", skills_line(skills.as_ref()));
         Ok(())
+    }
+}
+
+/// The `/health` document plus `skills`, which only the CLI reports: they are
+/// files in the user's and the current folder's agent configuration, which a
+/// server has no reason to know about.
+#[derive(Serialize)]
+struct CliHealth<'a> {
+    #[serde(flatten)]
+    info: &'a HealthInfo,
+    skills: Option<&'a SkillsStatus>,
+}
+
+pub fn skills_line(s: Option<&SkillsStatus>) -> String {
+    let Some(s) = s else { return "unknown (cannot read the current folder)".to_string() };
+    match s.state {
+        SkillsState::NotInstalled => "not installed (simsapa install-skill)".to_string(),
+        SkillsState::UpToDate => format!("up to date ({})", s.version),
+        SkillsState::Outdated => {
+            let mut versions: Vec<&str> = s
+                .installed
+                .iter()
+                .filter(|f| !f.up_to_date)
+                .map(|f| f.version.as_deref().unwrap_or("unknown"))
+                .collect();
+            versions.sort();
+            versions.dedup();
+            format!("outdated: {}, not {} ({})", versions.join(", "), s.version, s.commands.join("; "))
+        }
     }
 }
 

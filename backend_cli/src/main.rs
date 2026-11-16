@@ -204,6 +204,11 @@ fn run(cli: &Cli) -> CliResult {
     if let Commands::InstallSkill(args) = &cli.command {
         return commands::install_skill::run(args, cli.json);
     }
+    // A warning only: the command runs either way. `health` reports the skills
+    // among its own lines instead.
+    if !matches!(cli.command, Commands::Health) {
+        commands::install_skill::warn_if_outdated();
+    }
     // Before any `AppGlobals` exists: it reads API_PORT once.
     if let Commands::Serve(args) = &cli.command {
         commands::serve::prepare_port(args)?;
@@ -271,6 +276,7 @@ fn run(cli: &Cli) -> CliResult {
         Commands::Stats(args) => {
             // Opens its own connection to appdata.sqlite3.
             startup::require_databases()?;
+            startup::warn_if_db_incompatible_unopened();
             commands::stats::run(args, cli.json)
         }
         Commands::Import(cmd) => {

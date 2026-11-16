@@ -58,8 +58,9 @@ yourself.
 
 **After an app update, the databases may be incompatible** (another major or
 minor version than the program's). Then the read-only commands and `serve`
-print a warning on stderr and still answer, though results may be missing or
-wrong, and `import` and `index` refuse. `simsapa setup` offers to install the
+(and `stats`) print a warning on stderr and still answer, though results may
+be missing or wrong, and `import` and `index` refuse, since they would write
+into databases this version cannot read. `simsapa setup` offers to install the
 new databases: it exports your user data (settings, bookmarks, imported books
 and dictionaries, gloss and prompt history, chanting recordings), replaces the
 databases, downloads your sutta languages again and imports the user data into
@@ -223,7 +224,26 @@ is found it installs nothing and says how to name a place.
   `unchanged`.
 - Start a new agent session afterwards; agents read their skills and commands
   at start-up.
-- After upgrading simsapa, run it again to refresh them.
+- After upgrading simsapa, run it again to refresh them. Each skill and
+  command file records the simsapa version that wrote it (`version` in its
+  frontmatter or comment). Every other command compares the files it finds
+  with its own text: the global folders, and the local ones of the current
+  folder and each folder above it. When one differs it prints a warning on
+  stderr naming the versions and the command that updates each place, then
+  runs as usual:
+
+  ```
+  Warning: the installed simsapa agent skills are from simsapa 1.2.0, not 1.3.0; they may name commands or options that have changed. Update them with:
+    simsapa install-skill --agent claude --global
+  ```
+
+  `SIMSAPA_NO_SKILL_CHECK=1` turns the warning off. `simsapa health` shows
+  the same on its `Agent skills` line (`up to date (1.3.0)`, `outdated: 1.2.0,
+  not 1.3.0 (<command>)`, `not installed (simsapa install-skill)`), and
+  `simsapa health --json` as `skills`: `{state, version, installed, commands}`,
+  `state` being `up_to_date`, `outdated` or `not_installed`, and each of
+  `installed` `{agent, scope, kind, name, path, version, up_to_date}`. A file
+  simsapa did not write is not looked at.
 
 ### A.2.4 Glossing a passage: `simsapa gloss`
 
@@ -648,6 +668,8 @@ Updates          not checked (turned off in Simsapa's settings)
 Being offline is not an error for `health`: its exit code does not depend on
 the update check. `simsapa health --json` carries the same result as its
 `updates` object (§10).
+`health` also reports whether the installed agent skills match this version
+(A.2.3); `GET /health` does not.
 
 ## A.9 The DPD dictionary: `dpd check` and `dpd upgrade`
 

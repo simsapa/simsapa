@@ -547,6 +547,227 @@ pub fn run(args: &InstallSkillArgs, json: bool) -> CliResult {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Are the installed skills this version's?
+// ---------------------------------------------------------------------------
+
+/// `SIMSAPA_NO_SKILL_CHECK=1` (or `true`) turns off the stderr warning about
+/// outdated skills. `simsapa health` reports them regardless.
+pub const NO_SKILL_CHECK_ENV: &str = "SIMSAPA_NO_SKILL_CHECK";
+
+/// One file this command wrote, found where an agent reads it.
+#[derive(Debug, Clone, Serialize)]
+pub struct FoundSkillFile {
+    pub agent: &'static str,
+    pub scope: &'static str,
+    /// `skill` or `command`.
+    pub kind: &'static str,
+    pub name: &'static str,
+    pub path: String,
+    /// The simsapa version recorded in the file, `null` when it has none.
+    pub version: Option<String>,
+    pub up_to_date: bool,
+    /// The folder `--local` was run in (local scope only).
+    #[serde(skip)]
+    base: Option<PathBuf>,
+    #[serde(skip)]
+    agent_enum: Option<Agent>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillsState {
+    UpToDate,
+    Outdated,
+    NotInstalled,
+}
+
+/// The `skills` object of `simsapa health --json`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillsStatus {
+    pub state: SkillsState,
+    /// This program's version, the one the skills should have.
+    pub version: String,
+    pub installed: Vec<FoundSkillFile>,
+    /// The commands that update the outdated files, one per place.
+    pub commands: Vec<String>,
+}
+
+/// The `version` in a skill's frontmatter, or in a command file's comment.
+fn recorded_version(text: &str) -> Option<String> {
+    text.lines().take(20).find_map(|line| {
+        let rest = &line[line.find("version:")? + "version:".len()..];
+        let v = rest.trim().trim_end_matches("-->").trim().trim_matches('"').trim();
+        (!v.is_empty()).then(|| v.to_string())
+    })
+}
+
+/// A file at `path` that this command wrote, compared with `rendered`.
+/// `None` when absent, unreadable or not ours.
+fn found_file(
+    agent: Agent,
+    scope: Scope,
+    kind: Kind,
+    def: &SkillDef,
+    path: PathBuf,
+    rendered: &str,
+    base: Option<&Path>,
+) -> Option<FoundSkillFile> {
+    if !path_exists(&path) {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    if !text.contains(GENERATOR_MARKER) {
+        return None;
+    }
+    Some(FoundSkillFile {
+        agent: agent.api_name(),
+        scope: scope.api_name(),
+        kind: if kind == Kind::Skill { "skill" } else { "command" },
+        name: def.name,
+        path: path.to_string_lossy().into_owned(),
+        version: recorded_version(&text),
+        up_to_date: text == rendered,
+        base: base.map(Path::to_path_buf),
+        agent_enum: Some(agent),
+    })
+}
+
+fn found_in(env: &SkillEnv, scope: Scope, out: &mut Vec<FoundSkillFile>) {
+    let base = (scope == Scope::Local).then_some(env.base.as_path());
+    for agent in Agent::ALL {
+        for def in SKILLS.iter() {
+            if let Ok(dir) = env.skill_dir(agent, scope, def.name) {
+                out.extend(found_file(agent, scope, Kind::Skill, def, dir.join(SKILL_FILE), &def.render(), base));
+            }
+            if let Ok(Some(path)) = env.command_file(agent, scope, def.name) {
+                out.extend(found_file(agent, scope, Kind::Command, def, path, &def.render_command(), base));
+            }
+        }
+    }
+}
+
+/// Every skill and command file this command wrote that an agent started in
+/// `env.base` would read: the global folders, and the local ones of
+/// `env.base` and each folder above it (an agent may run in a subfolder of
+/// the project). The home folder is not a local base: its `.claude` is the
+/// global one.
+pub fn find_installed(env: &SkillEnv) -> Vec<FoundSkillFile> {
+    let mut found = Vec::new();
+    found_in(env, Scope::Global, &mut found);
+    for dir in env.base.ancestors() {
+        if env.home.as_deref() == Some(dir) {
+            continue;
+        }
+        let local = SkillEnv { base: dir.to_path_buf(), ..env.clone() };
+        found_in(&local, Scope::Local, &mut found);
+    }
+    found
+}
+
+/// The command that rewrites every file of one place (scope and folder),
+/// naming each agent found there, so that the Claude Code / OpenCode duplicate
+/// rule applies as it did when they were installed.
+fn update_command(files: &[&FoundSkillFile], scope: Scope, base: Option<&Path>, cwd: &Path) -> String {
+    let mut cmd = String::from("simsapa install-skill");
+    for agent in Agent::ALL {
+        if files.iter().any(|f| f.agent_enum == Some(agent)) {
+            cmd.push_str(" --agent ");
+            cmd.push_str(agent.api_name());
+        }
+    }
+    match scope {
+        Scope::Global => cmd.push_str(" --global"),
+        Scope::Local => {
+            cmd.push_str(" --local");
+            if let Some(b) = base.filter(|b| *b != cwd) {
+                cmd.push_str(&format!(" --dir \"{}\"", b.display()));
+            }
+        }
+    }
+    cmd
+}
+
+pub fn skills_status(env: &SkillEnv) -> SkillsStatus {
+    let installed = find_installed(env);
+    let version = get_app_version().trim_start_matches('v').to_string();
+
+    // Places in the order found: (scope, base).
+    let mut places: Vec<(Scope, Option<PathBuf>)> = Vec::new();
+    for f in &installed {
+        let scope = if f.scope == "global" { Scope::Global } else { Scope::Local };
+        let key = (scope, f.base.clone());
+        if !places.contains(&key) {
+            places.push(key);
+        }
+    }
+    let commands: Vec<String> = places
+        .iter()
+        .filter_map(|(scope, base)| {
+            let files: Vec<&FoundSkillFile> = installed
+                .iter()
+                .filter(|f| f.scope == scope.api_name() && f.base == *base)
+                .collect();
+            files
+                .iter()
+                .any(|f| !f.up_to_date)
+                .then(|| update_command(&files, *scope, base.as_deref(), &env.base))
+        })
+        .collect();
+
+    let state = if installed.is_empty() {
+        SkillsState::NotInstalled
+    } else if commands.is_empty() {
+        SkillsState::UpToDate
+    } else {
+        SkillsState::Outdated
+    };
+    SkillsStatus { state, version, installed, commands }
+}
+
+/// The stderr warning for outdated skills, `None` when there is nothing to say.
+pub fn outdated_warning(status: &SkillsStatus) -> Option<String> {
+    if status.state != SkillsState::Outdated {
+        return None;
+    }
+    let mut versions: Vec<String> = status
+        .installed
+        .iter()
+        .filter(|f| !f.up_to_date)
+        .map(|f| f.version.clone().unwrap_or_else(|| "unknown".to_string()))
+        .collect();
+    versions.sort();
+    versions.dedup();
+    let from = if versions.iter().all(|v| *v == status.version) {
+        format!("differ from this version's ({})", status.version)
+    } else {
+        format!("are from simsapa {}, not {}", versions.join(", "), status.version)
+    };
+    Some(format!(
+        "Warning: the installed simsapa agent skills {}; they may name commands or options that have changed. \
+         Update them with:\n{}",
+        from,
+        status.commands.iter().map(|c| format!("  {}", c)).collect::<Vec<_>>().join("\n")
+    ))
+}
+
+/// Print the outdated-skills warning on stderr, unless `SIMSAPA_NO_SKILL_CHECK`
+/// is set. Never fails: a folder that cannot be read is skipped.
+pub fn warn_if_outdated() {
+    if std::env::var(NO_SKILL_CHECK_ENV).is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")) {
+        return;
+    }
+    let Ok(env) = SkillEnv::from_process(None) else { return };
+    if let Some(warning) = outdated_warning(&skills_status(&env)) {
+        errln!("{}", warning);
+    }
+}
+
+/// For `simsapa health`, from the current folder.
+pub fn current_skills_status() -> Option<SkillsStatus> {
+    SkillEnv::from_process(None).ok().map(|env| skills_status(&env))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,5 +1084,82 @@ mod tests {
         assert!(!b.path().join(".opencode/skills").exists());
         assert!(b.path().join(".opencode/commands/gloss-pali-passage.md").exists());
         assert!(b.path().join(".opencode/commands/simsapa.md").exists());
+    }
+
+    fn install(e: &SkillEnv, agents: &[Agent], global: bool) {
+        for t in select_targets(agents, global, !global, false, e).unwrap().targets {
+            for f in &t.files {
+                write_file(f).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_recorded_version() {
+        assert_eq!(recorded_version(&SKILLS[0].render()).as_deref(), Some(get_app_version().trim_start_matches('v')));
+        assert_eq!(recorded_version(&SKILLS[1].render_command()).as_deref(), Some(get_app_version().trim_start_matches('v')));
+        assert_eq!(recorded_version("---\nname: x\n---\n"), None);
+    }
+
+    #[test]
+    fn test_skills_status_not_installed_and_up_to_date() {
+        let (h, b) = dirs();
+        let e = env(h.path(), b.path());
+        let s = skills_status(&e);
+        assert_eq!(s.state, SkillsState::NotInstalled);
+        assert!(outdated_warning(&s).is_none());
+
+        install(&e, &[Agent::Claude], true);
+        let s = skills_status(&e);
+        assert_eq!(s.state, SkillsState::UpToDate);
+        assert_eq!(s.installed.len(), 2);
+        assert!(s.commands.is_empty());
+        assert!(outdated_warning(&s).is_none());
+    }
+
+    #[test]
+    fn test_skills_status_outdated_names_the_update_command() {
+        let (h, b) = dirs();
+        let e = env(h.path(), b.path());
+        install(&e, &[Agent::Claude, Agent::Opencode], true);
+        let skill = h.path().join(".claude/skills/simsapa/SKILL.md");
+        let old = SKILLS[0].render().replace(
+            &format!("version: \"{}\"", get_app_version().trim_start_matches('v')),
+            "version: \"0.9.0\"",
+        );
+        std::fs::write(&skill, old).unwrap();
+
+        let s = skills_status(&e);
+        assert_eq!(s.state, SkillsState::Outdated);
+        // Both agents of the place, so OpenCode's skill copies stay dropped.
+        assert_eq!(s.commands, vec!["simsapa install-skill --agent claude --agent opencode --global".to_string()]);
+        let w = outdated_warning(&s).unwrap();
+        assert!(w.contains("are from simsapa 0.9.0, not "), "{w}");
+        assert!(w.contains("\n  simsapa install-skill --agent claude --agent opencode --global"), "{w}");
+
+        // A foreign file is not ours to report.
+        std::fs::write(&skill, "my own notes").unwrap();
+        assert_eq!(skills_status(&e).state, SkillsState::UpToDate);
+    }
+
+    #[test]
+    fn test_skills_status_finds_a_local_install_in_a_parent_folder() {
+        let (h, b) = dirs();
+        install(&env(h.path(), b.path()), &[Agent::Pi], false);
+        let sub = b.path().join("notes/sub");
+        mk(&sub);
+        let e = env(h.path(), &sub);
+        let skill = b.path().join(".pi/skills/simsapa/SKILL.md");
+        std::fs::write(&skill, format!("---\nmetadata:\n  {}\n  version: \"0.9.0\"\n---\n", GENERATOR_MARKER)).unwrap();
+
+        let s = skills_status(&e);
+        assert_eq!(s.state, SkillsState::Outdated);
+        assert_eq!(
+            s.commands,
+            vec![format!("simsapa install-skill --agent pi --local --dir \"{}\"", b.path().display())]
+        );
+        // From the project folder itself, no --dir.
+        let s = skills_status(&env(h.path(), b.path()));
+        assert_eq!(s.commands, vec!["simsapa install-skill --agent pi --local".to_string()]);
     }
 }
