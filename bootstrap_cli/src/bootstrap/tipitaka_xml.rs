@@ -52,7 +52,9 @@ use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::detect_nikaya_structure;
 use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts, xml_fragments};
 use tipitaka_xml_parser::fragments_models::{CstSegmentRecord, CstTextRecord, XmlFragmentRecord};
-use tipitaka_xml_parser::opentipitaka::{build_bilara_text, cst_text_code, cst_text_kind, BilaraText, SegmentRow};
+use tipitaka_xml_parser::opentipitaka::{
+    build_bilara_text, cst_text_code, cst_text_kind, BilaraText, SegmentRow, JOINED_VOLUMES,
+};
 use tipitaka_xml_parser::types::{GroupLevel, GroupType};
 
 /// Sutta record matching appdata schema
@@ -237,6 +239,24 @@ pub fn fragment_title(cst_sutta: Option<&str>, group_levels_json: &str) -> Strin
 /// The kind suffix (`.att`, `.tik`, `.kkh`) comes from `cst_text_code()`, which reads it
 /// from the file name, or from the `cst_code` in a file whose kind is per fragment
 /// (`vin04t.nrf.xml`: the Kaṅkhāvitaraṇī's `kkh.` codes).
+/// Whether the export joined this file's first mapped fragment to the last record
+/// of the previous volume ([`JOINED_VOLUMES`]): `vin01t2`'s first fragment, whose
+/// text is in `vin01t1`'s `pli-tv-bu-vb-pj1.tik` record. The fragment then has no
+/// `cst_texts` row of its own, and is skipped on purpose; the joined record must
+/// exist under the first volume with the same code.
+fn joined_into_previous_volume(frag_conn: &mut SqliteConnection, cst_file: &str, code: &str) -> Result<bool> {
+    let Some((first_volume, _)) = JOINED_VOLUMES.iter().find(|(_, next)| *next == cst_file) else {
+        return Ok(false);
+    };
+    let records: i64 = cst_texts::table
+        .filter(cst_texts::cst_file.eq(*first_volume))
+        .filter(cst_texts::code.eq(code))
+        .count()
+        .get_result(frag_conn)
+        .with_context(|| format!("Failed to look for {} in {}", code, first_volume))?;
+    Ok(records == 1)
+}
+
 pub fn fragment_uid(cst_file: &str, cst_code: Option<&str>, sc_code: &str) -> String {
     format!("{}/pli/cst", cst_text_code(cst_file, cst_code, sc_code))
 }
@@ -596,6 +616,10 @@ impl TipitakaXmlImporter {
                 .map(|text| (text.frag_idx_code.clone(), text))
                 .collect();
 
+            // Whether a mapped fragment of this file has been seen: only the first one
+            // can have been joined to the previous volume.
+            let mut seen_mapped = false;
+
             for (idx, row) in rows.iter().enumerate() {
                 // An empty record whose text and uid a neighbour carries:
                 // expected, and not worth a warning that would bury a fragment
@@ -616,13 +640,22 @@ impl TipitakaXmlImporter {
                     }
                 };
 
+                let first_mapped = !seen_mapped;
+                seen_mapped = true;
+                let code = cst_text_code(filename, row.cst_code.as_deref(), &sc_code);
                 let Some(text) = texts.remove(&row.frag_idx_code) else {
+                    if first_mapped && joined_into_previous_volume(frag_conn, filename, &code)? {
+                        logger::info(&format!(
+                            "Fragment {} of {} ({}) is part of the previous volume's record",
+                            row.frag_idx_code, filename, code
+                        ));
+                        continue;
+                    }
                     bail!(
                         "Fragment {} of {} ({}) has no cst_texts row",
                         row.frag_idx_code, filename, sc_code
                     );
                 };
-                let code = cst_text_code(filename, row.cst_code.as_deref(), &sc_code);
                 if text.code != code {
                     bail!(
                         "Fragment {} of {} has the code {} in cst_texts, expected {}",
@@ -1579,6 +1612,103 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Inserts a fragment of a Vinaya ṭīkā volume, and its `cst_texts` record when
+    /// `text` is given (Pāli rows).
+    fn insert_vinaya_fragment(conn: &mut SqliteConnection, cst_file: &str, idx: &str, line: i32, sc_code: &str, text: Option<&[&str]>) {
+        use tipitaka_xml_parser::fragments_models::{NewCstText, NewXmlFragment};
+        diesel::insert_into(xml_fragments::table)
+            .values(NewXmlFragment {
+                cst_file,
+                frag_idx_code: idx,
+                frag_type: "Sutta",
+                frag_review: None,
+                nikaya: "majjhima",
+                cst_code: None,
+                sc_code: Some(sc_code),
+                content_xml: "<p rend=\"bodytext\">x</p>",
+                content_html: None,
+                cst_vagga: None,
+                cst_sutta: Some("Verañjakaṇḍavaṇṇanā"),
+                cst_paranum: None,
+                sc_sutta: None,
+                start_line: line,
+                start_char: 0,
+                end_line: line + 1,
+                end_char: 0,
+                group_levels: "[]",
+            })
+            .execute(conn)
+            .unwrap();
+        let Some(pali) = text else { return };
+        let code = cst_text_code(cst_file, None, sc_code);
+        let rows: Vec<SegmentRow> = pali
+            .iter()
+            .map(|p| SegmentRow {
+                paranum: None,
+                pali_html: p.to_string(),
+                pali_wrapper: "<p class='bodytext'>{}</p>".to_string(),
+                variant: None,
+                english: format!("English of {}", p),
+            })
+            .collect();
+        let text = build_bilara_text(&code, &rows).unwrap();
+        diesel::insert_into(cst_texts::table)
+            .values(NewCstText {
+                cst_file,
+                frag_idx_code: idx,
+                code: &code,
+                pali_content_json: &text.pali_content_json,
+                pali_content_json_tmpl: &text.pali_content_json_tmpl,
+                pali_variant_json: None,
+                en_title: "The Verañjā section",
+                en_content_json: &text.en_content_json,
+                en_content_json_tmpl: &text.en_content_json_tmpl,
+            })
+            .execute(conn)
+            .unwrap();
+    }
+
+    /// `vin01t1` and `vin01t2` (`JOINED_VOLUMES`): the export stores the joined
+    /// `pli-tv-bu-vb-pj1.tik` record under `vin01t1`, and `vin01t2`'s first fragment
+    /// has none. It is skipped on purpose, and the record holds both volumes' text.
+    #[test]
+    fn the_first_fragment_of_a_joined_volume_is_part_of_the_previous_record() {
+        let fixture = fixture::CstFixture::new().unwrap();
+        let mut conn = SqliteConnection::establish(&fixture.fragments_db.to_string_lossy()).unwrap();
+        insert_vinaya_fragment(&mut conn, "vin01t1.tik.xml", "1.0", 2, "pli-tv-bu-vb-pj1", Some(&["Verañjā", "Sudinno"]));
+        insert_vinaya_fragment(&mut conn, "vin01t2.tik.xml", "1.0", 2, "pli-tv-bu-vb-pj1", None);
+        insert_vinaya_fragment(&mut conn, "vin01t2.tik.xml", "2.0", 3, "pli-tv-bu-vb-pj2", Some(&["Dhaniyo"]));
+
+        let files = ["vin01t1.tik.xml".to_string(), "vin01t2.tik.xml".to_string()];
+        let records = fixture.importer().import_from_fragments(&mut conn, &files).unwrap();
+        let pali: Vec<&SuttaRecord> = records.iter().filter(|r| r.language == "pli").collect();
+        let uids: Vec<&str> = pali.iter().map(|r| r.uid.as_str()).collect();
+        assert_eq!(uids, ["pli-tv-bu-vb-pj1.tik/pli/cst", "pli-tv-bu-vb-pj2.tik/pli/cst"]);
+        let joined = pali[0].content_plain.as_deref().unwrap();
+        assert!(joined.contains("verañjā") && joined.contains("sudinno"), "{}", joined);
+        assert_eq!(records.iter().filter(|r| r.uid == "pli-tv-bu-vb-pj1.tik/en/opentipitaka").count(), 1);
+    }
+
+    /// Without the joined record under the first volume, the fragment is missing
+    /// its record, as is any other fragment of the next volume.
+    #[test]
+    fn a_joined_volume_without_the_joined_record_is_an_error() {
+        let fixture = fixture::CstFixture::new().unwrap();
+        let mut conn = SqliteConnection::establish(&fixture.fragments_db.to_string_lossy()).unwrap();
+        insert_vinaya_fragment(&mut conn, "vin01t1.tik.xml", "1.0", 2, "pli-tv-bu-vb-pj1", Some(&["Verañjā"]));
+        insert_vinaya_fragment(&mut conn, "vin01t2.tik.xml", "1.0", 2, "pli-tv-bu-vb-pj1", None);
+        insert_vinaya_fragment(&mut conn, "vin01t2.tik.xml", "2.0", 3, "pli-tv-bu-vb-pj2", None);
+
+        let files = ["vin01t1.tik.xml".to_string(), "vin01t2.tik.xml".to_string()];
+        let error = fixture.importer().import_from_fragments(&mut conn, &files).unwrap_err();
+        assert!(format!("{:#}", error).contains("Fragment 2.0 of vin01t2.tik.xml (pli-tv-bu-vb-pj2) has no cst_texts row"));
+
+        let mut conn = SqliteConnection::establish(&fixture.fragments_db.to_string_lossy()).unwrap();
+        sql_query("DELETE FROM cst_texts WHERE cst_file = 'vin01t1.tik.xml'").execute(&mut conn).unwrap();
+        let error = fixture.importer().import_from_fragments(&mut conn, &files[1..]).unwrap_err();
+        assert!(format!("{:#}", error).contains("Fragment 1.0 of vin01t2.tik.xml (pli-tv-bu-vb-pj1) has no cst_texts row"));
+    }
 
     const LEVELS: &str = r#"[
         {"group_type":"Nikaya","group_number":null,"title":"Aṅguttaranikāye","id":null},
