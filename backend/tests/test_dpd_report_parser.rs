@@ -1,10 +1,7 @@
 //! Tests for the DPD report and `distilled.json` readers used by the Word in
 //! Sentence conformance test. Pure file parsing: no database.
 
-#[path = "helpers/dpd_report.rs"]
-mod dpd_report;
-
-use dpd_report::*;
+use simsapa_backend::dpd_report::*;
 
 /// Lines of the table that are rows: every `|` line after the
 /// `### Word-by-Word Analysis` heading except the header and separator.

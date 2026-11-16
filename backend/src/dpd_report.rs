@@ -1,13 +1,13 @@
 //! Readers for the DPD passage analysis reports and fixtures in
-//! `tests/data/dpd_analysis/` (see its `SOURCE.md` and
-//! `docs/dpd-analysis-procedure.md` §1.7 for the format).
-//!
-//! Include with `#[path = "helpers/dpd_report.rs"] mod dpd_report;`, so a test
-//! does not pull in `helpers/mod.rs` and its app-data setup.
+//! `backend/tests/data/dpd_analysis/` (see its `SOURCE.md` and
+//! `docs/dpd-analysis-procedure.md` §1.7 for the format), and the alignment
+//! of a report's tokens with the gloss rows. Used by the conformance tests
+//! and by tools that build test sets from the reports.
 
-#![allow(dead_code)]
-
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+use crate::gloss_rows::{GlossRow, RowCandidate, RowChoice, RowChooser};
 
 /// One row of a report's Word-by-Word table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -290,4 +290,126 @@ pub fn all_report_paths() -> Vec<PathBuf> {
         .map(|n| fixture_report_path(n))
         .chain(EXAMPLES.iter().map(|n| example_report_path(n)))
         .collect()
+}
+
+/// TC 6 of the DPD analysis PRD: `ṃ` → `ṁ`, trim, collapse spaces, curly
+/// apostrophes as straight.
+pub fn norm_report_text(s: &str) -> String {
+    s.replace('ṃ', "ṁ")
+        .replace(['’', '‘', 'ʼ'], "'")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The word without apostrophes and hyphens, lowercased, for aligning tokens.
+pub fn bare_report_word(s: &str) -> String {
+    norm_report_text(s).replace(['\'', '-'], "").to_lowercase()
+}
+
+/// A report row with the rows nested under it (its components).
+#[derive(Debug, Clone)]
+pub struct Node {
+    pub row: ReportRow,
+    pub children: Vec<Node>,
+}
+
+/// Nests the report's rows by depth: one node per top-level token.
+pub fn report_tree(rows: &[ReportRow]) -> Vec<Node> {
+    fn build(rows: &[ReportRow], i: &mut usize, depth: usize) -> Vec<Node> {
+        let mut nodes = Vec::new();
+        while *i < rows.len() && rows[*i].depth == depth {
+            let row = rows[*i].clone();
+            *i += 1;
+            let children = build(rows, i, depth + 1);
+            nodes.push(Node { row, children });
+        }
+        nodes
+    }
+    let mut i = 0;
+    build(rows, &mut i, 0)
+}
+
+/// Longest common subsequence alignment of the token words.
+pub fn align(a: &[String], b: &[String]) -> Vec<(Option<usize>, Option<usize>)> {
+    let (n, m) = (a.len(), b.len());
+    let mut dp = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            dp[i][j] = if a[i] == b[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
+        }
+    }
+    let (mut i, mut j) = (0, 0);
+    let mut out = Vec::new();
+    while i < n && j < m {
+        if a[i] == b[j] {
+            out.push((Some(i), Some(j)));
+            i += 1;
+            j += 1;
+        } else if dp[i + 1][j] >= dp[i][j + 1] {
+            out.push((Some(i), None));
+            i += 1;
+        } else {
+            out.push((None, Some(j)));
+            j += 1;
+        }
+    }
+    out.extend((i..n).map(|i| (Some(i), None)));
+    out.extend((j..m).map(|j| (None, Some(j))));
+    out
+}
+
+/// Replays DPD's choices: for a row with an ID, the candidate with that ID
+/// and the reading with DPD's Grammar text; for a break-down row, the
+/// candidate with DPD's Construction.
+pub struct DpdChooser<'a> {
+    /// Simsapa token index → DPD token node.
+    pub tokens: HashMap<usize, &'a Node>,
+}
+
+impl RowChooser for DpdChooser<'_> {
+    fn choose(&self, token_index: usize, path: &[usize], candidates: &[RowCandidate]) -> Option<RowChoice> {
+        let mut node = *self.tokens.get(&token_index)?;
+        for k in path {
+            node = node.children.get(*k)?;
+        }
+        let row = &node.row;
+        match row.id {
+            Some(id) => {
+                let candidate = candidates.iter().position(|c| c.id == Some(id))?;
+                let grammar_index = candidates[candidate]
+                    .grammar_options
+                    .iter()
+                    .position(|g| norm_report_text(g) == norm_report_text(&row.grammar));
+                Some(RowChoice { candidate, grammar_index })
+            }
+            None => {
+                let candidate = candidates
+                    .iter()
+                    .position(|c| c.id.is_none() && norm_report_text(&c.construction) == norm_report_text(&row.construction))?;
+                Some(RowChoice { candidate, grammar_index: None })
+            }
+        }
+    }
+}
+
+/// Replays DPD's token choices only (and a quoted iti token's base row, which
+/// is the token's own sense choice), so every other component row is chosen
+/// by Simsapa's component ranking.
+pub struct TokenOnlyChooser<'a> {
+    pub inner: DpdChooser<'a>,
+    pub quoted_iti_tokens: HashSet<usize>,
+}
+
+impl RowChooser for TokenOnlyChooser<'_> {
+    fn choose(&self, token_index: usize, path: &[usize], candidates: &[RowCandidate]) -> Option<RowChoice> {
+        let replay = path.is_empty() || (path == [0] && self.quoted_iti_tokens.contains(&token_index));
+        if replay { self.inner.choose(token_index, path, candidates) } else { None }
+    }
+}
+
+/// Whether a row is a quoted iti token's top-level row, whose sense choice is
+/// on its base-word component row.
+pub fn is_quoted_iti_row(s: &GlossRow) -> bool {
+    s.candidates.len() == 1 && s.components.first().is_some_and(|c| c.word_index.is_some())
 }

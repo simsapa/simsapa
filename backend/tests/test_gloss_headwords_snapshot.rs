@@ -16,8 +16,6 @@
 //!
 //! A missing snapshot file fails the test: run the command above to write it.
 
-#[path = "helpers/dpd_report.rs"]
-mod dpd_report;
 
 mod helpers;
 use helpers as h;
@@ -26,6 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use serial_test::serial;
+use simsapa_backend::dpd_report;
 use simsapa_backend::get_app_data;
 use simsapa_backend::helpers::{process_all_paragraphs, process_single_paragraph};
 use simsapa_backend::types::{

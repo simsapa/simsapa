@@ -43,6 +43,7 @@ pub mod lookup;
 pub mod lookup_forms;
 pub mod dpd_form_grammar;
 pub mod gloss_rows;
+pub mod dpd_report;
 pub mod gloss_sense_ranking;
 pub mod gloss_default_senses;
 pub mod gloss_variants;
