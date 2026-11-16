@@ -27,7 +27,7 @@ use crate::db::dpd::{
     DpdDbHandle, HeadwordRowFields, InflectionMatch, LookupResult, RootFields,
 };
 use crate::db::dpd_models::{lemma_clean_of, Lookup};
-use crate::gloss_default_senses::{built_in_default_index, default_senses};
+use crate::gloss_default_senses::{built_in_default_index, default_senses, DefaultSenses};
 use crate::helpers::{
     consistent_niggahita, gloss_cache_word_key, gloss_context_hash, normalize_dpd_query_text,
     normalize_gloss_context, resolve_gloss_word_selection, GlossResolutionData, GlossWordContext,
@@ -577,8 +577,8 @@ fn best_component_option(cands: &[Cand], parent_meaning: &str) -> (usize, usize)
 /// DPD's component ranking, then the built-in default senses
 /// (`gloss_default_senses`): a component rule first, then the rules for a
 /// token.
-fn built_in_component_option(word: &str, cands: &[Cand], parent_meaning: &str) -> (usize, usize) {
-    if let Some(i) = default_senses()
+fn built_in_component_option(rules: &DefaultSenses, word: &str, cands: &[Cand], parent_meaning: &str) -> (usize, usize) {
+    if let Some(i) = rules
         .for_component(word)
         .and_then(|id| cands.iter().position(|c| c.id == Some(id)))
         .filter(|i| component_tier(&cands[*i]) == 1)
@@ -590,7 +590,7 @@ fn built_in_component_option(word: &str, cands: &[Cand], parent_meaning: &str) -
     let lemma_cleans: Vec<String> = cands.iter().map(|c| lemma_clean_of(&c.lemma_1)).collect();
     let lemma_refs: Vec<Option<&str>> = lemma_cleans.iter().map(|l| Some(l.as_str())).collect();
     let direct = |c: &Cand| c.readings.iter().any(|r| matches!(r.source, ReadingSource::Triple(_) | ReadingSource::Stem));
-    match built_in_default_index(default_senses(), word, &ids, &lemma_refs, ci, |i| component_tier(&cands[i]) == 1, |i, j| {
+    match built_in_default_index(rules, word, &ids, &lemma_refs, ci, |i| component_tier(&cands[i]) == 1, |i, j| {
         direct(&cands[i]) >= direct(&cands[j])
     }) {
         Some(i) => (i, best_component_reading(&cands[i], parent_meaning)),
@@ -676,6 +676,8 @@ pub struct GlossRowBuilder {
     /// Per (headword id, form): the cells of the headword's inflection table
     /// that hold the form (`form_readings`).
     own_table_cells: HashMap<(i32, String), Rc<Vec<String>>>,
+    /// The built-in default senses for the component choice.
+    default_senses: &'static DefaultSenses,
 }
 
 impl GlossRowBuilder {
@@ -691,7 +693,15 @@ impl GlossRowBuilder {
             expanding: HashSet::new(),
             inflection_matches: HashMap::new(),
             own_table_cells: HashMap::new(),
+            default_senses: default_senses(),
         })
+    }
+
+    /// Uses `rules` instead of the embedded built-in default senses for the
+    /// component choice; `no_default_senses()` leaves it to the ranking.
+    pub fn with_default_senses(mut self, rules: &'static DefaultSenses) -> Self {
+        self.default_senses = rules;
+        self
     }
 
     // -- Cached reads --------------------------------------------------------
@@ -1320,7 +1330,7 @@ impl GlossRowBuilder {
         let row_cands: Vec<RowCandidate> = cands.iter().map(|c| c.row_candidate(false)).collect();
         let (mut ci, mut ri) = match chosen {
             Some(ci) => (ci, best_component_reading(&cands[ci], parent_meaning)),
-            None => built_in_component_option(word, cands, parent_meaning),
+            None => built_in_component_option(self.default_senses, word, cands, parent_meaning),
         };
         if let Some(gi) = reading_for(reading, &cands[ci]).and_then(|r| r.grammar_index) {
             ri = gi;

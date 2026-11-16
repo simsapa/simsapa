@@ -21,7 +21,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::db::dpd::{headword_row_fields_by_ids, DpdDbHandle, HeadwordRowFields, LookupResult};
-use crate::gloss_default_senses::{built_in_default_index, default_senses};
+use crate::gloss_default_senses::{built_in_default_index, default_senses, DefaultSenses};
 use crate::gloss_rows::{grammar_case_rank, inflected_readings, Reading, ReadingSource};
 use crate::types::{ProcessedWord, WordProcessingResult};
 
@@ -192,6 +192,18 @@ pub fn rank_paragraph_default_senses(
     words: &mut [Option<WordProcessingResult>],
     paragraph_text: &str,
 ) -> Result<()> {
+    rank_paragraph_default_senses_with(dpd, words, paragraph_text, default_senses())
+}
+
+/// `rank_paragraph_default_senses` with the given built-in default senses
+/// instead of the embedded ones; `no_default_senses()` leaves the choice to
+/// the ranking alone.
+pub fn rank_paragraph_default_senses_with(
+    dpd: &DpdDbHandle,
+    words: &mut [Option<WordProcessingResult>],
+    paragraph_text: &str,
+    rules: &DefaultSenses,
+) -> Result<()> {
     let ambiguous = |pw: &ProcessedWord| {
         let is_deconstructor_resolved = pw.direct_uids.is_empty() && !pw.deconstructions.is_empty();
         !is_deconstructor_resolved && sense_count(pw) > 1
@@ -259,7 +271,7 @@ pub fn rank_paragraph_default_senses(
             // dukkhaṁ?" stays `dukkha 4`, the sense whose example it is).
             if !ranked[best].db_example_strong
                 && let Some(i) = built_in_default_index(
-                default_senses(),
+                rules,
                 &pw.original_word,
                 &ids,
                 &lemma_cleans,

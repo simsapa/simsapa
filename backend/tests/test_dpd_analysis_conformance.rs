@@ -690,3 +690,47 @@ fn test_component_rules_apply_to_parts_only() {
     let token = rows.iter().find(|r| r.word == "Tena").expect("token Tena");
     assert_eq!(token.id, Some(29188));
 }
+
+/// With `no_default_senses()` the component rule for `tena` in
+/// `tenupasaṅkami` is not applied, and the embedded rules still are by
+/// default: the ranking can be measured without the built-in default senses.
+#[test]
+#[serial]
+fn test_component_choice_without_default_senses() {
+    use simsapa_backend::gloss_default_senses::no_default_senses;
+    h::app_data_setup();
+    let passage = "Atha kho bhagavā yena āyasmā ānando tenupasaṅkami.";
+    fn tena_id(rows: &[GlossRow]) -> Option<i32> {
+        let token = rows.iter().find(|r| r.word == "tenupasaṅkami").expect("token");
+        token.components.iter().find(|c| norm(&c.word) == "tena").and_then(|c| c.id)
+    }
+    assert_eq!(tena_id(&gloss_rows(passage, None)), Some(31218));
+
+    let app_data = get_app_data();
+    let dpd = &app_data.dbm.dpd;
+    let options = WordProcessingOptions {
+        no_duplicates_globally: false,
+        skip_common: false,
+        common_words: Vec::new(),
+        existing_global_stems: HashMap::new(),
+        existing_paragraph_unrecognized: HashMap::new(),
+        existing_global_unrecognized: Vec::new(),
+        gloss_format: GlossFormat::WordInSentence,
+    };
+    let words = extract_words_with_context(passage);
+    let mut processed: Vec<Option<WordProcessingResult>> = words
+        .iter()
+        .map(|w| {
+            let info = WordInfo { word: w.clean_word.clone(), sentence: w.context_snippet.clone(), original_word: w.original_word.clone() };
+            process_word_for_glossing(&info, &options, dpd, None).unwrap()
+        })
+        .collect();
+    simsapa_backend::gloss_sense_ranking::rank_paragraph_default_senses_with(dpd, &mut processed, passage, no_default_senses()).unwrap();
+    let mut stems = HashMap::new();
+    let processed = apply_gloss_dedup(processed, &options, &mut stems);
+    let tokens: Vec<TokenInput> = words.iter().zip(&processed).map(|(context, result)| TokenInput { context, result }).collect();
+    let mut builder = GlossRowBuilder::new(dpd).unwrap().with_default_senses(no_default_senses());
+    let rows = builder.paragraph_rows(&tokens, Some(&GlossResolutionData::default()), None).unwrap();
+    let id = tena_id(&rows);
+    assert!(id.is_some() && id != Some(31218), "{:?}", id);
+}

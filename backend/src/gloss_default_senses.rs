@@ -104,6 +104,14 @@ impl DefaultSenses {
     }
 }
 
+/// No rules: the ranking alone decides. For measuring the ranking without the
+/// built-in default senses (`rank_paragraph_default_senses_with`,
+/// `GlossRowBuilder::with_default_senses`).
+pub fn no_default_senses() -> &'static DefaultSenses {
+    static NONE: OnceLock<DefaultSenses> = OnceLock::new();
+    NONE.get_or_init(|| DefaultSenses { forms: HashMap::new(), homonyms: HashMap::new(), components: HashMap::new() })
+}
+
 /// The embedded rules. A file that does not parse is a build defect, caught
 /// by `test_embedded_default_senses_parse`; at runtime it means no rules.
 pub fn default_senses() -> &'static DefaultSenses {
