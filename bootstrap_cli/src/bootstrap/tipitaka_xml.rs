@@ -378,11 +378,12 @@ fn fragment_header(nikaya_and_number: &str, title: &str) -> String {
 /// numbers belong to: "Udāna 1.1", "Dhammapada 21-32", and for an aṭṭhakathā file
 /// "Udāna-aṭṭhakathā 1.1". The kind comes from the file name, as in
 /// `cst_text_code()`. The Book level is not used, since it reads "Udānapāḷi" in the
-/// mūla. The collection is the uid's whole leading alphabetic run, matched exactly, so
-/// `thig` never matches `thag`; a prefix not in the table keeps the nikāya name.
+/// mūla. The collection is everything before the uid's first digit, matched exactly,
+/// so `thig` never matches `thag`, and a prefix with a `-` of its own works
+/// (`tha-ap1` is "Therāpadāna 1"); a prefix not in the table keeps the nikāya name.
 fn header_nikaya_and_number(cst_file: &str, sc_code: &str, nikaya_name: &str) -> String {
-    let prefix: String = sc_code.chars().take_while(|c| c.is_alphabetic()).collect();
-    let number: String = sc_code.chars().skip_while(|c| c.is_alphabetic()).collect();
+    let digit = sc_code.find(|c: char| c.is_ascii_digit()).unwrap_or(sc_code.len());
+    let (prefix, number) = sc_code.split_at(digit);
 
     let collection = KHUDDAKA_COLLECTIONS
         .iter()
@@ -401,9 +402,9 @@ fn header_nikaya_and_number(cst_file: &str, sc_code: &str, nikaya_name: &str) ->
 /// `with_niggahita` turns that into the stored `ṁ`.
 ///
 /// These are the collections whose fragments the parser codes with SC uids (the
-/// Dhammapada and KN phase 1). Phase 2 collections (`thag`, `ja`, …) keep the nikāya
-/// name until they are added here.
-const KHUDDAKA_COLLECTIONS: [(&str, &str, &str); 10] = [
+/// Dhammapada and KN phases 1 and 2). Later collections keep the nikāya name until
+/// they are added here.
+const KHUDDAKA_COLLECTIONS: [(&str, &str, &str); 14] = [
     ("kp", "Khuddakapāṭha", "Khuddakapāṭha-aṭṭhakathā"),
     ("dhp", "Dhammapada", "Dhammapada-aṭṭhakathā"),
     ("ud", "Udāna", "Udāna-aṭṭhakathā"),
@@ -414,6 +415,10 @@ const KHUDDAKA_COLLECTIONS: [(&str, &str, &str); 10] = [
     ("thig", "Therīgāthā", "Therīgāthā-aṭṭhakathā"),
     ("bv", "Buddhavaṃsa", "Buddhavaṃsa-aṭṭhakathā"),
     ("cp", "Cariyāpiṭaka", "Cariyāpiṭaka-aṭṭhakathā"),
+    ("thag", "Theragāthā", "Theragāthā-aṭṭhakathā"),
+    ("tha-ap", "Therāpadāna", "Apadāna-aṭṭhakathā"),
+    ("thi-ap", "Therī Apadāna", "Apadāna-aṭṭhakathā"),
+    ("ja", "Jātaka", "Jātaka-aṭṭhakathā"),
 ];
 
 fn division_header(title: &str) -> String {
@@ -1980,8 +1985,25 @@ mod tests {
             "Udāna-aṭṭhakathā 1.1"
         );
 
-        // A phase-2 collection keeps the nikāya name; the prefix match is exact.
-        assert_eq!(header_nikaya_and_number("s0508m.mul.xml", "thag1.1", khuddaka), "Khuddakanikāye 1.1");
+        // KN phase 2, with the hyphenated `tha-ap`/`thi-ap` prefixes.
+        let cases = [
+            ("s0508m.mul.xml", "thag1.1", "Theragāthā 1.1"),
+            ("s0510m1.mul.xml", "tha-ap1", "Therāpadāna 1"),
+            ("s0510m2.mul.xml", "tha-ap563", "Therāpadāna 563"),
+            ("s0510m2.mul.xml", "thi-ap1", "Therī Apadāna 1"),
+            ("s0510m2.mul.xml", "thi-ap40", "Therī Apadāna 40"),
+            ("s0514m.mul.xml", "ja547", "Jātaka 547"),
+            ("s0513a1.att.xml", "ja1", "Jātaka-aṭṭhakathā 1"),
+            ("s0510a.att.xml", "thi-ap1", "Apadāna-aṭṭhakathā 1"),
+        ];
+        for (cst_file, sc_code, expected) in cases {
+            assert_eq!(header_nikaya_and_number(cst_file, sc_code, khuddaka), expected, "{}", sc_code);
+        }
+        // The prefix match is exact: `thig` is not `thag`, and `th` or `tha` is nothing.
+        assert_eq!(header_nikaya_and_number("s0509m.mul.xml", "thig1.1", khuddaka), "Therīgāthā 1.1");
+        assert_eq!(header_nikaya_and_number("s05xxm.mul.xml", "tha1", khuddaka), "Khuddakanikāye 1");
+        // A uid with no number keeps the nikāya name.
+        assert_eq!(header_nikaya_and_number("s05xxm.mul.xml", "thag", khuddaka), "Khuddakanikāye ");
 
         // The headers of `an5.91-92.att/pli/cst` and `sn12.1/pli/cst`.
         assert_eq!(
