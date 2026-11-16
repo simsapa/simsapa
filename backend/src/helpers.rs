@@ -297,8 +297,9 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
 
     ref_str = ref_str.replace("--", "-");
 
-    // CST commentary suffixes: mn1.att -> mn1, mn1.tik -> mn1
-    if ref_str.ends_with(".att") || ref_str.ends_with(".tik") {
+    // CST commentary suffixes: mn1.att -> mn1, mn1.tik -> mn1,
+    // pli-tv-bu-vb-pj1.kkh -> pli-tv-bu-vb-pj1
+    if ref_str.ends_with(".att") || ref_str.ends_with(".tik") || ref_str.ends_with(".kkh") {
         ref_str = ref_str[..ref_str.len() - 4].to_string();
     }
 
@@ -374,12 +375,16 @@ pub fn sutta_range_from_ref(reference: &str) -> Option<SuttaRange> {
 }
 
 /// Which text of a sutta a uid names: the sutta itself, or one of its two CST
-/// commentaries (`mn1.att/pli/cst`, `mn1.tik/pli/cst`).
+/// commentaries (`mn1.att/pli/cst`, `mn1.tik/pli/cst`), or the Kaṅkhāvitaraṇī, the
+/// commentary on the pātimokkhas, on a Vinaya rule (`pli-tv-bu-vb-pj1.kkh/pli/cst`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuttaRefKind {
     Mula,
     Atthakatha,
     Tika,
+    /// The Kaṅkhāvitaraṇī (`.kkh`). It has no m | a | t button: it is reached by
+    /// search and by uid, and it never counts as a mūla, an aṭṭhakathā or a ṭīkā.
+    Kankhavitarani,
 }
 
 /// Split a uid into the sutta reference it is about and the kind of text it
@@ -390,6 +395,8 @@ pub fn split_sutta_ref_kind(uid: &str) -> (&str, SuttaRefKind) {
         (base, SuttaRefKind::Atthakatha)
     } else if let Some(base) = uid_ref.strip_suffix(".tik") {
         (base, SuttaRefKind::Tika)
+    } else if let Some(base) = uid_ref.strip_suffix(".kkh") {
+        (base, SuttaRefKind::Kankhavitarani)
     } else {
         (uid_ref, SuttaRefKind::Mula)
     }

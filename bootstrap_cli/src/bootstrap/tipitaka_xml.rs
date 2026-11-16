@@ -52,7 +52,7 @@ use tipitaka_xml_parser::encoding::read_xml_file;
 use tipitaka_xml_parser::detect_nikaya_structure;
 use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts, xml_fragments};
 use tipitaka_xml_parser::fragments_models::{CstSegmentRecord, CstTextRecord, XmlFragmentRecord};
-use tipitaka_xml_parser::opentipitaka::{build_bilara_text, cst_text_code, BilaraText, SegmentRow};
+use tipitaka_xml_parser::opentipitaka::{build_bilara_text, cst_text_code, cst_text_kind, BilaraText, SegmentRow};
 use tipitaka_xml_parser::types::{GroupLevel, GroupType};
 
 /// Sutta record matching appdata schema
@@ -233,8 +233,12 @@ pub fn fragment_title(cst_sutta: Option<&str>, group_levels_json: &str) -> Strin
 ///
 /// Shared so the navigation spine can name the same row the import wrote,
 /// rather than rebuilding the convention beside it and drifting from it.
-pub fn fragment_uid(cst_file: &str, sc_code: &str) -> String {
-    format!("{}/pli/cst", cst_text_code(cst_file, sc_code))
+///
+/// The kind suffix (`.att`, `.tik`, `.kkh`) comes from `cst_text_code()`, which reads it
+/// from the file name, or from the `cst_code` in a file whose kind is per fragment
+/// (`vin04t.nrf.xml`: the Kaṅkhāvitaraṇī's `kkh.` codes).
+pub fn fragment_uid(cst_file: &str, cst_code: Option<&str>, sc_code: &str) -> String {
+    format!("{}/pli/cst", cst_text_code(cst_file, cst_code, sc_code))
 }
 
 /// Escape a title for the header. The template's only `{}` must stay the
@@ -421,6 +425,60 @@ const KHUDDAKA_COLLECTIONS: [(&str, &str, &str); 14] = [
     ("ja", "Jātaka", "Jātaka-aṭṭhakathā"),
 ];
 
+/// The `nikaya_and_number` line of a Vinaya record's header (`pli-tv-…` uids), or
+/// `None` for any other uid.
+///
+/// The rule class is named in full and the number follows it: "Bhikkhu Pārājika 1",
+/// "Bhikkhunī Nissaggiya Pācittiya 12", "Khandhaka 22", "Parivāra 2.16"; the
+/// pātimokkhas have no number ("Bhikkhu Pātimokkha"). A commentary record names the
+/// work before it: "Samantapāsādikā, Bhikkhu Pārājika 1" (`.att`), "Sāratthadīpanī, …"
+/// (`.tik`), "Kaṅkhāvitaraṇī, …" (`.kkh`). The kind comes from the text code, not the file
+/// name alone: in `vin04t.nrf.xml` the Kaṅkhāvitaraṇī's `kkh.` `cst_code`s make it `.kkh`
+/// (`cst_text_kind()`).
+fn vinaya_header(cst_file: &str, cst_code: Option<&str>, sc_code: &str) -> Option<String> {
+    if !sc_code.starts_with("pli-tv-") {
+        return None;
+    }
+    let digit = sc_code.find(|c: char| c.is_ascii_digit()).unwrap_or(sc_code.len());
+    let (prefix, number) = sc_code.split_at(digit);
+    let (_, class) = VINAYA_CLASSES.iter().find(|(uid_prefix, _)| *uid_prefix == prefix)?;
+    let name = if number.is_empty() { class.to_string() } else { format!("{} {}", class, number) };
+    let work = match cst_text_kind(cst_file, cst_code) {
+        ".att" => Some("Samantapāsādikā"),
+        ".tik" => Some("Sāratthadīpanī"),
+        ".kkh" => Some("Kaṅkhāvitaraṇī"),
+        _ => None,
+    };
+    Some(with_niggahita(&match work {
+        Some(work) => format!("{}, {}", work, name),
+        None => name,
+    }))
+}
+
+/// The Vinaya uid prefixes (up to the first digit, or the whole uid of a pātimokkha)
+/// and the names of their rule classes in the record header.
+const VINAYA_CLASSES: [(&str, &str); 19] = [
+    ("pli-tv-bu-pm", "Bhikkhu Pātimokkha"),
+    ("pli-tv-bi-pm", "Bhikkhunī Pātimokkha"),
+    ("pli-tv-bu-vb-pj", "Bhikkhu Pārājika"),
+    ("pli-tv-bu-vb-ss", "Bhikkhu Saṅghādisesa"),
+    ("pli-tv-bu-vb-ay", "Bhikkhu Aniyata"),
+    ("pli-tv-bu-vb-np", "Bhikkhu Nissaggiya Pācittiya"),
+    ("pli-tv-bu-vb-pc", "Bhikkhu Pācittiya"),
+    ("pli-tv-bu-vb-pd", "Bhikkhu Pāṭidesanīya"),
+    ("pli-tv-bu-vb-sk", "Bhikkhu Sekhiya"),
+    ("pli-tv-bu-vb-as", "Bhikkhu Adhikaraṇasamatha"),
+    ("pli-tv-bi-vb-pj", "Bhikkhunī Pārājika"),
+    ("pli-tv-bi-vb-ss", "Bhikkhunī Saṅghādisesa"),
+    ("pli-tv-bi-vb-np", "Bhikkhunī Nissaggiya Pācittiya"),
+    ("pli-tv-bi-vb-pc", "Bhikkhunī Pācittiya"),
+    ("pli-tv-bi-vb-pd", "Bhikkhunī Pāṭidesanīya"),
+    ("pli-tv-bi-vb-sk", "Bhikkhunī Sekhiya"),
+    ("pli-tv-bi-vb-as", "Bhikkhunī Adhikaraṇasamatha"),
+    ("pli-tv-kd", "Khandhaka"),
+    ("pli-tv-pvr", "Parivāra"),
+];
+
 fn division_header(title: &str) -> String {
     format!("<header><h1>{}</h1></header>", escape_title(title))
 }
@@ -564,7 +622,7 @@ impl TipitakaXmlImporter {
                         row.frag_idx_code, filename, sc_code
                     );
                 };
-                let code = cst_text_code(filename, &sc_code);
+                let code = cst_text_code(filename, row.cst_code.as_deref(), &sc_code);
                 if text.code != code {
                     bail!(
                         "Fragment {} of {} has the code {} in cst_texts, expected {}",
@@ -572,7 +630,7 @@ impl TipitakaXmlImporter {
                     );
                 }
 
-                let uid = fragment_uid(filename, &sc_code);
+                let uid = fragment_uid(filename, row.cst_code.as_deref(), &sc_code);
 
                 // Skip duplicate UIDs
                 if used_uids.contains(&uid) {
@@ -604,8 +662,8 @@ impl TipitakaXmlImporter {
                 let nikaya_name = group_levels.first()
                     .map(|level| level.title.clone())
                     .unwrap_or_else(|| row.nikaya.clone());
-                let nikaya_and_number =
-                    header_nikaya_and_number(filename, &sc_code, &nikaya_name);
+                let nikaya_and_number = vinaya_header(filename, row.cst_code.as_deref(), &sc_code)
+                    .unwrap_or_else(|| header_nikaya_and_number(filename, &sc_code, &nikaya_name));
                 let header = |title: &str| fragment_header(&nikaya_and_number, title);
 
                 let en_title = text.en_title.clone();
@@ -1426,7 +1484,7 @@ pub(crate) mod fixture {
                 .filter(|row| row.fragment == Some(fragment.idx))
                 .map(Row::to_segment_row)
                 .collect();
-            let code = cst_text_code(MAPPED_FILE, sc_code);
+            let code = cst_text_code(MAPPED_FILE, None, sc_code);
             let text = build_bilara_text(&code, &segment_rows)?;
             diesel::insert_into(cst_texts::table)
                 .values(NewCstText {
@@ -2017,6 +2075,30 @@ mod tests {
     }
 
     #[test]
+    fn the_header_names_a_vinaya_rule_class_and_the_commentary_work() {
+        let cases = [
+            ("vin01m.mul.xml", Some("vin.bu.pj.1"), "pli-tv-bu-vb-pj1", "Bhikkhu Pārājika 1"),
+            ("vin01m.mul.xml", Some("vin.bu.np.1"), "pli-tv-bu-vb-np1", "Bhikkhu Nissaggiya Pācittiya 1"),
+            ("vin02m1.mul.xml", Some("vin.bi.pc.91"), "pli-tv-bi-vb-pc91-93", "Bhikkhunī Pācittiya 91-93"),
+            ("vin02m1.mul.xml", Some("vin.bu.as.1"), "pli-tv-bu-vb-as1-7", "Bhikkhu Adhikaraṇasamatha 1-7"),
+            ("vin02m3.mul.xml", Some("vin.kd.22"), "pli-tv-kd22", "Khandhaka 22"),
+            ("vin02m4.mul.xml", Some("vin.pvr.2.16"), "pli-tv-pvr2.16", "Parivāra 2.16"),
+            ("vin04t.nrf.xml", Some("vin.bu.pm"), "pli-tv-bu-pm", "Bhikkhu Pātimokkha"),
+            ("vin04t.nrf.xml", Some("vin.bi.pm"), "pli-tv-bi-pm", "Bhikkhunī Pātimokkha"),
+            ("vin04t.nrf.xml", Some("kkh.bu.pm"), "pli-tv-bu-pm", "Kaṅkhāvitaraṇī, Bhikkhu Pātimokkha"),
+            ("vin04t.nrf.xml", Some("kkh.bu.sk.3"), "pli-tv-bu-vb-sk3-4", "Kaṅkhāvitaraṇī, Bhikkhu Sekhiya 3-4"),
+            ("vin01a.att.xml", None, "pli-tv-bu-vb-pj1", "Samantapāsādikā, Bhikkhu Pārājika 1"),
+            ("vin02t.tik.xml", None, "pli-tv-kd1", "Sāratthadīpanī, Khandhaka 1"),
+        ];
+        for (cst_file, cst_code, sc_code, expected) in cases {
+            assert_eq!(vinaya_header(cst_file, cst_code, sc_code).as_deref(), Some(expected), "{}", sc_code);
+        }
+        // Not a Vinaya uid, or an unknown class: the other header rules apply.
+        assert_eq!(vinaya_header("s0201m.mul.xml", None, "mn1"), None);
+        assert_eq!(vinaya_header("vin05t.nrf.xml", None, "pli-tv-xx1"), None);
+    }
+
+    #[test]
     fn the_fixture_has_each_file_shape_the_import_handles() {
         use tipitaka_xml_parser::fragments_models::{CstSegmentRecord, CstTextRecord};
         use tipitaka_xml_parser::fragments_schema::{cst_segments, cst_texts};
@@ -2356,6 +2438,12 @@ mod tests {
         let twins = pali_edition_twins(
             &uids(&["mn1/pli/ms", "vin01m.mul0.xml/pli/ms"]),
             &uids(&["mn1.att/pli/cst", "mn1.tik/pli/cst", "vin01m.mul0.xml/pli/cst"]),
+        );
+        assert!(twins.is_empty(), "{:?}", twins);
+        // Nor is the Kaṅkhāvitaraṇī a twin of the mūla it comments on.
+        let twins = pali_edition_twins(
+            &uids(&["pli-tv-bu-vb-pj1/pli/ms", "pli-tv-bu-pm/pli/ms"]),
+            &uids(&["pli-tv-bu-vb-pj1.kkh/pli/cst", "pli-tv-bu-pm.kkh/pli/cst"]),
         );
         assert!(twins.is_empty(), "{:?}", twins);
     }

@@ -440,6 +440,8 @@ pub fn cst_collection_for_uid(uid: &str) -> Option<&'static CstCollection> {
 pub fn cst_collection_has_text(collection: &CstCollection, kind: SuttaRefKind) -> bool {
     let (letter, extension) = match kind {
         SuttaRefKind::Mula => return true,
+        // The Kaṅkhāvitaraṇī is not a kind of the m | a | t buttons.
+        SuttaRefKind::Kankhavitarani => return false,
         SuttaRefKind::Atthakatha => ("a", ".att.xml"),
         SuttaRefKind::Tika => ("t", ".tik.xml"),
     };

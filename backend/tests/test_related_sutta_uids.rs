@@ -360,6 +360,28 @@ mod related_text_lookup_tests {
     }
 
     #[test]
+    fn a_kankhavitarani_record_is_its_own_kind_and_grays_out_nothing() {
+        use simsapa_backend::helpers::{split_sutta_ref_kind, sutta_range_from_ref};
+        const KKH: SuttaRefKind = SuttaRefKind::Kankhavitarani;
+        assert_eq!(split_sutta_ref_kind("pli-tv-bu-vb-pj1.kkh/pli/cst"), ("pli-tv-bu-vb-pj1", KKH));
+        assert_eq!(split_sutta_ref_kind("pli-tv-bu-pm.kkh/pli/cst"), ("pli-tv-bu-pm", KKH));
+        assert_eq!(text_kind_of_uid("pli-tv-bu-vb-sk3-4.kkh/en/opentipitaka"), Some(KKH));
+        let range = sutta_range_from_ref("pli-tv-bu-vb-sk3-4.kkh/pli/cst").unwrap();
+        assert_eq!((range.group.as_str(), range.start, range.end), ("pli-tv-bu-vb-sk", Some(3), Some(4)));
+
+        // A group with a Kaṅkhāvitaraṇī record and no aṭṭhakathā is not mapped for the
+        // aṭṭhakathā, and the record is never taken for the mūla.
+        let c = uids(&["pli-tv-bu-vb-pj1/pli/ms", "pli-tv-bu-vb-pj1.kkh/pli/cst", "pli-tv-bu-vb-pj2.kkh/pli/cst"]);
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", TIK, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj2/pli/ms", MULA, &c), found("pli-tv-bu-vb-pj2/pli/ms"));
+        assert_eq!(
+            related_text_lookup("pli-tv-bu-vb-pj1.kkh/pli/cst", MULA, &c),
+            found("pli-tv-bu-vb-pj1/pli/ms")
+        );
+    }
+
+    #[test]
     fn a_division_record_is_never_mapped() {
         let c = uids(&["abh01m.mul0.xml/pli/cst", "abh01a.att0.xml/pli/cst"]);
         assert_eq!(related_text_lookup("abh01m.mul0.xml/pli/cst", ATT, &c), RelatedTextLookup::Unknown);

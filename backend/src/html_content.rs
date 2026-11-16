@@ -89,6 +89,8 @@ pub fn related_texts_nav_html(
                 SuttaRefKind::Mula => ("m", "Mūla (root text)", "open-root-text"),
                 SuttaRefKind::Atthakatha => ("a", "Aṭṭhakathā (commentary)", "open-commentary-text"),
                 SuttaRefKind::Tika => ("t", "Ṭīkā (sub-commentary)", "open-sub-commentary-text"),
+                // Not one of the m | a | t buttons; never in `lookups`.
+                SuttaRefKind::Kankhavitarani => ("k", "Kaṅkhāvitaraṇī", "open-commentary-text"),
             };
             let is_current = current_kind == Some(*kind);
             let (class, title, disabled) = if is_current {

@@ -973,7 +973,7 @@ fn load_fragments(
     let coverage = crate::bootstrap::cst_coverage::compute_coverage(&mut frag_conn)?;
 
     use tipitaka_xml_parser::fragments_schema::xml_fragments;
-    let rows: Vec<(String, Option<String>, Option<String>, String)> = xml_fragments::table
+    let rows: Vec<(String, Option<String>, Option<String>, String, Option<String>)> = xml_fragments::table
         .filter(xml_fragments::frag_type.eq("Sutta"))
         .filter(xml_fragments::sc_code.is_not_null())
         .select((
@@ -981,6 +981,7 @@ fn load_fragments(
             xml_fragments::sc_code,
             xml_fragments::cst_sutta,
             xml_fragments::group_levels,
+            xml_fragments::cst_code,
         ))
         .order((xml_fragments::cst_file.asc(), xml_fragments::start_line.asc()))
         .load(&mut frag_conn)
@@ -995,9 +996,9 @@ fn load_fragments(
     // is the same one.
     let mut seen_uids: HashSet<String> = HashSet::new();
 
-    for (cst_file, sc_code, cst_sutta, group_levels) in rows {
+    for (cst_file, sc_code, cst_sutta, group_levels, cst_code) in rows {
         let Some(sc_code) = sc_code else { continue };
-        let uid = fragment_uid(&cst_file, &sc_code);
+        let uid = fragment_uid(&cst_file, cst_code.as_deref(), &sc_code);
         if !seen_uids.insert(uid.clone()) {
             continue;
         }
