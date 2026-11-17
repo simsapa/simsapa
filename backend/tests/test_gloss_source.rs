@@ -63,13 +63,18 @@ fn test_sn18_1_second_paragraph() {
 #[test]
 #[serial]
 fn test_dpd_codes_ud_and_iti() {
-    let ud = resolve("UD1", PaliEdition::Default, None).unwrap();
+    // The code is read the same in either edition; MS keeps the text fixed.
+    let ud = resolve("UD1", PaliEdition::Ms, None).unwrap();
     assert_eq!(ud.uid, "ud1.1/pli/ms");
     assert!(ud.text().contains("Yadā have pātubhavanti dhammā"), "{}", ud.text());
 
-    let iti = resolve("ITI1", PaliEdition::Default, None).unwrap();
+    let iti = resolve("ITI1", PaliEdition::Ms, None).unwrap();
     assert_eq!(iti.uid, "iti1/pli/ms");
     assert!(iti.text().contains("Yena lobhena luddhāse"), "{}", iti.text());
+
+    // The default edition reads CST where it has the record.
+    assert_eq!(resolve("UD1", PaliEdition::Default, None).unwrap().uid, "ud1.1/pli/cst");
+    assert_eq!(resolve("ITI1", PaliEdition::Default, None).unwrap().uid, "iti1/pli/cst");
 }
 
 #[test]

@@ -383,12 +383,10 @@ mod related_text_lookup_tests {
             related_text_lookup("ja62/en/sujato", SuttaRefKind::Atthakatha, &c, &[]),
             RelatedTextLookup::Found("ja62.att/pli/cst".to_string())
         );
-        let from_page = related_text_lookup("ja62.att/en/anandajoti", SuttaRefKind::Mula, &c, &[]);
-        assert!(
-            matches!(&from_page, RelatedTextLookup::Found(uid) if uid.starts_with("ja62/") && !uid.contains(".att")),
-            "{:?}",
-            from_page
-        );
+        // From the page, the mūla button opens what it opens from the CST commentary.
+        let from_cst = related_text_lookup("ja62.att/pli/cst", SuttaRefKind::Mula, &c, &[]);
+        assert_eq!(from_cst, RelatedTextLookup::Found("ja62/pli/cst".to_string()));
+        assert_eq!(related_text_lookup("ja62.att/en/anandajoti", SuttaRefKind::Mula, &c, &[]), from_cst);
     }
 
     const ATT: SuttaRefKind = SuttaRefKind::Atthakatha;
