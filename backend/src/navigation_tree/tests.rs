@@ -12,6 +12,22 @@ fn empty_db() -> SqliteConnection {
     SqliteConnection::establish(":memory:").expect("in-memory db")
 }
 
+/// The connection-level filter with **no** summaries or context notes.
+///
+/// The fixtures reuse real node uids (`sn`, `sn56`, `sn56.11`), and the
+/// embedded texts are keyed by those same uids, so the shipped summaries would
+/// leak into every assertion about the stored columns -- `sn56`'s summary
+/// mentions "linked", which is a different test's whole query. The tests that
+/// mean to exercise the texts build their own and call `filter_nodes_conn`
+/// directly.
+fn filter_without_texts(
+    db_conn: &mut SqliteConnection,
+    query: &str,
+    limit: i64,
+) -> QueryResult<Vec<NavigationMatch>> {
+    filter_nodes_conn(db_conn, query, limit, &NavigationTexts::default())
+}
+
 fn migrated_db() -> SqliteConnection {
     crate::db::appdata_schema_test_db()
 }
@@ -176,15 +192,15 @@ fn level_query_returns_one_level_in_sort_order() {
 fn filter_matches_pali_title_english_title_and_uid() {
     let mut db_conn = seeded_db();
 
-    let by_pali = filter_nodes_conn(&mut db_conn, "dhammacakka", 50).unwrap();
+    let by_pali = filter_without_texts(&mut db_conn, "dhammacakka", 50).unwrap();
     assert_eq!(by_pali.len(), 1);
     assert_eq!(by_pali[0].node.node_uid, "sn56.11");
 
-    let by_english = filter_nodes_conn(&mut db_conn, "Wheel of Dhamma", 50).unwrap();
+    let by_english = filter_without_texts(&mut db_conn, "Wheel of Dhamma", 50).unwrap();
     assert_eq!(by_english.len(), 1);
     assert_eq!(by_english[0].node.node_uid, "sn56.11");
 
-    let by_node_uid = filter_nodes_conn(&mut db_conn, "sn56", 50).unwrap();
+    let by_node_uid = filter_without_texts(&mut db_conn, "sn56", 50).unwrap();
     let uids: Vec<&str> = by_node_uid
         .iter()
         .map(|m| m.node.node_uid.as_str())
@@ -192,7 +208,7 @@ fn filter_matches_pali_title_english_title_and_uid() {
     assert_eq!(uids, vec!["sn56", "sn56.11"]);
 
     // The sutta uid is matched too, and it is not the node uid.
-    let by_sutta_uid = filter_nodes_conn(&mut db_conn, "sn56.11/pli/ms", 50).unwrap();
+    let by_sutta_uid = filter_without_texts(&mut db_conn, "sn56.11/pli/ms", 50).unwrap();
     assert_eq!(by_sutta_uid.len(), 1);
     assert_eq!(by_sutta_uid[0].node.node_uid, "sn56.11");
 }
@@ -200,7 +216,7 @@ fn filter_matches_pali_title_english_title_and_uid() {
 #[test]
 fn filter_reconstructs_the_breadcrumb_path() {
     let mut db_conn = seeded_db();
-    let hits = filter_nodes_conn(&mut db_conn, "dhammacakka", 50).unwrap();
+    let hits = filter_without_texts(&mut db_conn, "dhammacakka", 50).unwrap();
     assert_eq!(
         hits[0].breadcrumbs,
         vec![
@@ -212,7 +228,7 @@ fn filter_reconstructs_the_breadcrumb_path() {
     );
 
     // A root has no breadcrumbs at all.
-    let roots = filter_nodes_conn(&mut db_conn, "Vinaya", 50).unwrap();
+    let roots = filter_without_texts(&mut db_conn, "Vinaya", 50).unwrap();
     assert!(roots[0].breadcrumbs.is_empty());
 }
 
@@ -223,7 +239,7 @@ fn a_missing_ancestor_is_carried_as_its_uid() {
         .execute(&mut db_conn)
         .unwrap();
 
-    let hits = filter_nodes_conn(&mut db_conn, "dhammacakka", 50).unwrap();
+    let hits = filter_without_texts(&mut db_conn, "dhammacakka", 50).unwrap();
     // The broken segment shows as its uid rather than the path silently
     // shortening, so the defect is visible.
     assert_eq!(hits[0].breadcrumbs.len(), 4);
@@ -233,8 +249,8 @@ fn a_missing_ancestor_is_carried_as_its_uid() {
 #[test]
 fn filter_honours_the_limit_and_ignores_an_empty_query() {
     let mut db_conn = seeded_db();
-    assert!(filter_nodes_conn(&mut db_conn, "   ", 50).unwrap().is_empty());
-    assert_eq!(filter_nodes_conn(&mut db_conn, "s", 2).unwrap().len(), 2);
+    assert!(filter_without_texts(&mut db_conn, "   ", 50).unwrap().is_empty());
+    assert_eq!(filter_without_texts(&mut db_conn, "s", 2).unwrap().len(), 2);
 }
 
 #[test]
@@ -242,7 +258,7 @@ fn a_bare_wildcard_does_not_match_everything() {
     let mut db_conn = seeded_db();
     // '%' is stripped, so the query is empty after trimming and matches
     // nothing -- rather than returning the whole tree as a flat list.
-    assert!(filter_nodes_conn(&mut db_conn, "%", 50).unwrap().is_empty());
+    assert!(filter_without_texts(&mut db_conn, "%", 50).unwrap().is_empty());
 }
 
 #[test]
@@ -387,7 +403,7 @@ fn the_summary_and_the_context_note_reach_the_view_from_the_texts() {
 
     // A filter hit is filled the same way.
     let mut db_conn = seeded_db();
-    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
+    let matches = filter_without_texts(&mut db_conn, "dhammacakka", 20).expect("query");
     let hit = NavigationMatchView::from_match(&matches[0], &texts);
     assert_eq!(hit.node.blurb.as_deref(), Some("The Buddha's first discourse."));
     assert_eq!(hit.node.context_note.as_deref(), Some("Chanted on Āsāḷha Pūjā."));
@@ -441,7 +457,7 @@ fn a_table_with_columns_the_schema_does_not_name_still_answers() {
     assert!(view.blurb.is_none());
     assert!(view.context_note.is_none());
 
-    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("filter");
+    let matches = filter_without_texts(&mut db_conn, "dhammacakka", 20).expect("filter");
     assert_eq!(matches.len(), 1);
 }
 
@@ -494,7 +510,7 @@ fn a_missing_table_is_an_error_not_a_panic() {
     let mut db_conn = empty_db();
     assert!(children_of_conn(&mut db_conn, None).is_err());
     assert!(node_by_uid_conn(&mut db_conn, "sutta").is_err());
-    assert!(filter_nodes_conn(&mut db_conn, "sutta", 50).is_err());
+    assert!(filter_without_texts(&mut db_conn, "sutta", 50).is_err());
     assert!(tree_is_available_conn(&mut db_conn).is_err());
 }
 
@@ -516,7 +532,7 @@ fn the_filter_folds_accents_case_and_the_niggahita() {
     // The seeded titles are `Saccasaṁyutta` and `Saṁyutta Nikāya`. A reader on
     // a phone keyboard types none of those characters.
     for typed in ["saccasamyutta", "Saccasaṃyutta", "SACCASAMYUTTA", "saccasaṁyutta"] {
-        let hits = filter_nodes_conn(&mut db_conn, typed, 50).unwrap();
+        let hits = filter_without_texts(&mut db_conn, typed, 50).unwrap();
         assert_eq!(
             hits.iter().map(|m| m.node.node_uid.as_str()).collect::<Vec<_>>(),
             vec!["sn56"],
@@ -527,11 +543,11 @@ fn the_filter_folds_accents_case_and_the_niggahita() {
     // `Dīgha` and `Saṁyutta Nikāya` -- a long vowel and a capital with a
     // diacritic, which SQLite's ASCII-only LIKE case folding cannot reach.
     assert_eq!(
-        filter_nodes_conn(&mut db_conn, "digha", 50).unwrap().len(),
+        filter_without_texts(&mut db_conn, "digha", 50).unwrap().len(),
         1
     );
     assert_eq!(
-        filter_nodes_conn(&mut db_conn, "SAMYUTTA NIKAYA", 50).unwrap().len(),
+        filter_without_texts(&mut db_conn, "SAMYUTTA NIKAYA", 50).unwrap().len(),
         1
     );
 }
@@ -543,10 +559,138 @@ fn the_filter_matches_level_names_as_well_as_suttas() {
     // A reader who already knows where they are going types the level name.
     // Branch nodes are matched on equal terms with leaves -- that is what makes
     // the filter a shortcut past the drill-down rather than a sutta lookup.
-    let hits = filter_nodes_conn(&mut db_conn, "linked", 50).unwrap();
+    let hits = filter_without_texts(&mut db_conn, "linked", 50).unwrap();
     let uids: Vec<&str> = hits.iter().map(|m| m.node.node_uid.as_str()).collect();
     assert_eq!(uids, vec!["sutta/linked", "sn"]);
     assert!(hits.iter().all(|m| m.node.sutta_uid.is_none()));
+}
+
+#[test]
+fn the_filter_matches_each_word_instead_of_the_literal_phrase() {
+    let mut db_conn = seeded_db();
+
+    // No seeded title contains the literal string "wheel rolling", but both
+    // words are in `sn56.11` ("Setting the Wheel of Dhamma Rolling"). As in
+    // the Topic Index search, the whitespace-separated words are ANDed, so
+    // word order and repeated spaces make no difference.
+    for typed in [
+        "wheel rolling",
+        "WHEEL ROLLING",
+        "rolling wheel",
+        "wheel  rolling",
+    ] {
+        let uids: Vec<String> = filter_without_texts(&mut db_conn, typed, 50)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.node.node_uid)
+            .collect();
+        assert_eq!(uids, vec!["sn56.11"], "{typed:?} should AND its words");
+    }
+
+    // Every word must match: `vinaya` is another row's title, so pairing it
+    // with `wheel` leaves nothing.
+    assert!(filter_without_texts(&mut db_conn, "wheel vinaya", 50)
+        .unwrap()
+        .is_empty());
+
+    // The words may land in different fields of the joined column -- the title
+    // here, the sutta uid there.
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "wheel sn56.11/pli/ms", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn56.11"]);
+
+    // A phrase that is present verbatim still matches, since a title holding
+    // the phrase holds each of its words.
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "Linked Discourses", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn"]);
+
+    // A word that cleans to nothing drops out instead of matching everything,
+    // the same rule a bare `%` follows on its own.
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "wheel %", 50)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect();
+    assert_eq!(uids, vec!["sn56.11"]);
+}
+
+#[test]
+fn the_filter_matches_the_summary_and_the_context_note() {
+    let mut db_conn = seeded_db();
+
+    // `sutta/long` carries neither of the words below in its title fields.
+    let texts = NavigationTexts::from_toml(
+        r#"
+"sutta/long" = """
+The rule about <i>relinquishing</i> a lodging.
+"""
+"#,
+        "",
+        r#"
+["sutta/long"]
+note = "Anchored at Sāñcī."
+"#,
+    );
+
+    let mut uids = |query: &str| -> Vec<String> {
+        filter_nodes_conn(&mut db_conn, query, 50, &texts)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.node.node_uid)
+            .collect()
+    };
+
+    // A word from the summary alone, and one that only appears after the markup
+    // is stripped: `<i>relinquishing</i>` is the displayed word.
+    assert_eq!(uids("lodging"), vec!["sutta/long"]);
+    assert_eq!(uids("relinquish"), vec!["sutta/long"]);
+
+    // A word from the context note alone.
+    assert_eq!(uids("sanci"), vec!["sutta/long"]);
+
+    // One word from the summary and one from the note: the node's texts are
+    // searched as a whole, not field by field.
+    assert_eq!(uids("relinquish sanci"), vec!["sutta/long"]);
+
+    // A word from the stored column and one from the note, likewise.
+    assert_eq!(uids("long sanci"), vec!["sutta/long"]);
+
+    // Every word must still match: a word no field holds leaves nothing.
+    assert!(uids("relinquish vinaya").is_empty());
+
+    // A suppressed summary is hidden, not gone: hiding it is a display
+    // decision, so its words are still found.
+    let suppressed = NavigationTexts::from_toml(
+        r#"
+"sutta/long" = "The rule about relinquishing a lodging."
+"#,
+        r#"
+"sutta/long" = ""
+"#,
+        r#"
+["sutta/long"]
+note = "Anchored at Sāñcī."
+"#,
+    );
+    assert_eq!(
+        filter_nodes_conn(&mut db_conn, "lodging", 50, &suppressed)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        filter_nodes_conn(&mut db_conn, "sanci", 50, &suppressed)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -728,7 +872,7 @@ fn children_json_is_an_array_of_rows_in_order() {
 #[test]
 fn a_filter_match_serializes_with_its_breadcrumbs() {
     let mut db_conn = seeded_db();
-    let matches = filter_nodes_conn(&mut db_conn, "dhammacakka", 20).expect("query");
+    let matches = filter_without_texts(&mut db_conn, "dhammacakka", 20).expect("query");
     assert!(!matches.is_empty(), "the seed contains sn56.11");
 
     let texts = NavigationTexts::default();
@@ -1065,7 +1209,7 @@ fn titles_and_prose_are_not_read_as_references() {
 #[test]
 fn a_reference_with_a_space_finds_the_text() {
     let mut db_conn = seeded_db();
-    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "SN 56.11", 50)
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "SN 56.11", 50)
         .unwrap()
         .into_iter()
         .map(|m| m.node.node_uid)
@@ -1076,7 +1220,7 @@ fn a_reference_with_a_space_finds_the_text() {
 #[test]
 fn the_exact_uid_comes_first_then_the_substring_matches() {
     let mut db_conn = seeded_db();
-    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "sn 56", 50)
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "sn 56", 50)
         .unwrap()
         .into_iter()
         .map(|m| m.node.node_uid)
@@ -1099,7 +1243,7 @@ fn a_reading_that_names_nothing_falls_back_to_the_text_as_typed() {
         .expect("insert");
 
     assert_eq!(ref_query_uids("ne 1"), vec!["ne1"]);
-    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "ne 1", 50)
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "ne 1", 50)
         .unwrap()
         .into_iter()
         .map(|m| m.node.node_uid)
@@ -1133,7 +1277,7 @@ fn a_reading_that_names_no_node_is_tried_as_a_prefix() {
     // `kv 1` names no node -- the Kathāvatthu goes straight to `kv1.1` -- so
     // the reading is matched as a substring before the typed text is.
     let mut db_conn = seeded_db();
-    let uids: Vec<String> = filter_nodes_conn(&mut db_conn, "SN 56.1", 50)
+    let uids: Vec<String> = filter_without_texts(&mut db_conn, "SN 56.1", 50)
         .unwrap()
         .into_iter()
         .map(|m| m.node.node_uid)

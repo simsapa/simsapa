@@ -2,11 +2,10 @@
 //!
 //! The table is written by the CLI bootstrap from two independent spines — the
 //! SuttaCentral structure in the `sc-data` checkout and the tipitaka.org CST
-//! toc files — and is read here one level at a time. Nothing in this module
-//! ever loads the whole tree: the level query is
-//! `WHERE parent_uid = ? ORDER BY sort_index`, and the whole-tree filter is two
-//! statements over the materialized `search_text`, `sort_path` and `path`
-//! columns.
+//! toc files — and is read here one level at a time. A level query is
+//! `WHERE parent_uid = ? ORDER BY sort_index`, and the whole-tree filter reads
+//! one narrow column per row (`node_uid`, `search_text`, `sort_path`) before
+//! loading the few matching rows; it never loads every row's text.
 //!
 //! **Three columns are materialized at build time, and changing how any of them
 //! is derived means rebuilding the tree.** `search_text` (what the filter
@@ -353,6 +352,26 @@ fn like_pattern(query: &str) -> Option<String> {
     Some(format!("%{}%", cleaned))
 }
 
+/// The words the filter matches on: the query folded as `search_text` was, split
+/// on whitespace, with the `LIKE` wildcards removed.
+///
+/// The caller ANDs them, so `mind simile` finds a node whose texts hold **both**
+/// words rather than the literal string `mind simile`, which almost no title
+/// contains. It is the reading the Topic Index search uses. A word that cleans
+/// to nothing (a bare `%`) contributes no word, and a query with no words at all
+/// yields none — which matches nothing rather than the whole tree.
+fn folded_terms(query: &str) -> Vec<String> {
+    normalize_for_search(query)
+        .split_whitespace()
+        .map(|term| {
+            term.chars()
+                .filter(|c| *c != '%' && *c != '_')
+                .collect::<String>()
+        })
+        .filter(|term| !term.is_empty())
+        .collect()
+}
+
 /// The uids a filter query names, when it is typed as a sutta reference or a
 /// uid: `dn 1` → `dn1`, `SN 56.11` → `sn56.11`, `Dhp 182` → the chapter uid.
 ///
@@ -422,27 +441,110 @@ fn exact_uid_nodes_conn(
         .load::<NavigationNode>(db_conn)
 }
 
-/// Filter the **whole** tree on the Pāli title, the English title, the node uid
-/// and the sutta uid, returning each match with its breadcrumb titles.
+/// The rows a title filter matches, in tree order, at most `limit`.
 ///
-/// Matching is against the folded `search_text` column, which carries all four
-/// fields, so `samyutta` reaches `Saṁyuttaṁ` and `MAHAVAGGA` reaches
-/// `Mahāvaggo`. Branch nodes are matched as well as leaves: the filter is how a
-/// reader who already knows what they want skips the drill-down, and a level
-/// name is as legitimate a thing to search for as a sutta title.
+/// A node matches when **every** word of the query appears in its text: the
+/// folded `search_text` column (Pāli title, English title, node uid, sutta uid),
+/// or a summary, or the context note. Words may land in different fields of the
+/// same row — one in the English title, one in the context note — which is what
+/// makes `lives sanci` reach the Jātaka node (`past lives` in its summary,
+/// `Sāñcī` in its note).
+///
+/// The summaries and notes are asset text rather than columns, so SQL cannot
+/// search them: the query is not one statement per word but one **narrow read
+/// of the whole tree** (`node_uid`, `search_text`, `sort_path` — none of the
+/// text or path columns), the words are tested in Rust against the column and
+/// [`NavigationTexts::blurb_or_note_contains`], and only the matching uids are
+/// then loaded in full. Reading three short columns for 16,907 rows takes a few
+/// milliseconds; the alternative is a materialized copy of the summaries, which
+/// would go stale against the asset files the app ships.
+///
+/// A summary the window is not showing — the Summaries toggle, an empty
+/// override — is still searched: hiding a text is cosmetic and must not change
+/// what a query finds.
+fn term_match_nodes_conn(
+    db_conn: &mut SqliteConnection,
+    query: &str,
+    limit: i64,
+    texts: &NavigationTexts,
+) -> QueryResult<Vec<NavigationNode>> {
+    let words = folded_terms(query);
+    if words.is_empty() || limit <= 0 {
+        return Ok(Vec::new());
+    }
+
+    let rows: Vec<(String, String, String)> = navigation_nodes::table
+        .select((
+            navigation_nodes::node_uid,
+            navigation_nodes::search_text,
+            navigation_nodes::sort_path,
+        ))
+        .load(db_conn)?;
+
+    let mut hits: Vec<(String, String)> = rows
+        .into_iter()
+        .filter(|(node_uid, search_text, _)| {
+            words.iter().all(|word| {
+                // `search_text` is folded exactly as the words are, so
+                // `contains` is the filter's `LIKE '%word%'`.
+                search_text.contains(word.as_str())
+                    || texts.blurb_or_note_contains(node_uid, word)
+            })
+        })
+        // `sort_path` orders the hits in tree order, and doing it here rather
+        // than in SQL sorts only the matches -- and lets the LIMIT keep the
+        // first N in that order rather than the first N by rowid.
+        .map(|(node_uid, _, sort_path)| (sort_path, node_uid))
+        .collect();
+    hits.sort();
+    hits.truncate(limit as usize);
+    if hits.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let uids: Vec<String> = hits.into_iter().map(|(_, node_uid)| node_uid).collect();
+    navigation_nodes::table
+        .filter(navigation_nodes::node_uid.eq_any(&uids))
+        .select(NavigationNode::as_select())
+        .order(navigation_nodes::sort_path.asc())
+        .limit(limit)
+        .load::<NavigationNode>(db_conn)
+}
+
+/// Filter the **whole** tree on the node's texts: the Pāli title, the English
+/// title, the node uid, the sutta uid, the summaries (blurb) and the context
+/// note. Each match is returned with its breadcrumb titles.
+///
+/// The first four are the folded `search_text` column, so `samyutta` reaches
+/// `Saṁyuttaṁ` and `MAHAVAGGA` reaches `Mahāvaggo`. Branch nodes are matched as
+/// well as leaves: the filter is how a reader who already knows what they want
+/// skips the drill-down, and a level name is as legitimate a thing to search
+/// for as a sutta title.
+///
+/// The summaries and the context notes are **not columns** -- they are asset
+/// text parsed once into [`NavigationTexts`] -- so they cannot be searched in
+/// SQL, and they are searched whether or not the window is showing them. See
+/// [`term_match_nodes_conn`].
 ///
 /// **A query typed as a sutta reference is matched as one** (see
 /// [`ref_query_uids`]): `dn 1` lists DN 1 first, then every node whose
 /// folded fields contain `dn1` — the substring matches a typed `dn1` gives.
 ///
-/// Two statements by design: the matches with their `path` strings, then one
-/// `WHERE node_uid IN (…)` over the union of every match's ancestors. Resolving
-/// ancestor *titles* from a delimiter-joined path inside a single statement
-/// would need a recursive CTE to split the string, which buys nothing here.
+/// **Every other query is a title filter whose words are ANDed**, as the Topic
+/// Index search is: `mind simile` lists the nodes whose texts hold both words,
+/// not the literal string `mind simile`. A phrase that does appear verbatim
+/// still matches, since a text holding the phrase holds each of its words.
+///
+/// The final statements are by design separate: the matches with their `path`
+/// strings, then one `WHERE node_uid IN (…)` over the union of every match's
+/// ancestors. Resolving ancestor *titles* from a delimiter-joined path inside a
+/// single statement would need a recursive CTE to split the string, which buys
+/// nothing here.
 pub fn filter_nodes_conn(
     db_conn: &mut SqliteConnection,
     query: &str,
     limit: i64,
+    texts: &NavigationTexts,
 ) -> QueryResult<Vec<NavigationMatch>> {
     let ref_uids = ref_query_uids(query);
 
@@ -466,49 +568,54 @@ pub fn filter_nodes_conn(
     }
     matches.truncate(limit.max(0) as usize);
 
-    // Which text the substring pass looks for. A reading that named a node
-    // exactly is the one the reader meant. Failing that, each reading is tried
-    // as a substring in turn -- `kv 1` names no node, but `kv1` is the prefix
-    // of `kv1.1`, `kv1.2`, ... -- and last of all the query as typed, since a
-    // reading that matches nothing at all (`raja 1` → `raja1`) was never a
-    // reference.
-    let mut candidates: Vec<&str> = Vec::with_capacity(ref_uids.len() + 1);
-    match hit_uid {
-        Some(uid) => candidates.push(uid),
-        None => {
-            candidates.extend(ref_uids.iter().map(String::as_str));
-            candidates.push(query);
-        }
-    }
+    if ref_uids.is_empty() {
+        // No uid was named, so this is the title filter. It is matched by
+        // `term_match_nodes_conn`, which searches the displayed texts too.
+        matches = term_match_nodes_conn(db_conn, query, limit, texts)?;
+    } else {
+        // The reference readings, in the order they are tried: the first one
+        // that finds anything supplies the rows. `kv 1` names no node, but
+        // `kv1` is the prefix of `kv1.1`, `kv1.2`, ... -- and last of all the
+        // query as typed, since a reading that matches nothing at all
+        // (`raja 1` → `raja1`) was never a reference.
+        let readings: Vec<String> = match hit_uid {
+            Some(uid) => vec![uid.to_string()],
+            None => ref_uids
+                .iter()
+                .cloned()
+                .chain(std::iter::once(query.to_string()))
+                .collect(),
+        };
 
-    for text_query in candidates {
-        if (matches.len() as i64) >= limit {
-            break;
-        }
-        let Some(pattern) = like_pattern(text_query) else { continue };
+        for text_query in readings {
+            if (matches.len() as i64) >= limit {
+                break;
+            }
+            let Some(pattern) = like_pattern(&text_query) else { continue };
 
-        let substring: Vec<NavigationNode> = navigation_nodes::table
-            .filter(navigation_nodes::search_text.like(&pattern))
-            .select(NavigationNode::as_select())
-            // Tree order, so a match sits where browsing would have found it --
-            // and so the LIMIT keeps the first N in that order rather than the
-            // first N alphabetically. See `join_sort_path`.
-            .order(navigation_nodes::sort_path.asc())
-            .limit(limit)
-            .load::<NavigationNode>(db_conn)?;
+            let substring: Vec<NavigationNode> = navigation_nodes::table
+                .filter(navigation_nodes::search_text.like(&pattern))
+                .select(NavigationNode::as_select())
+                // Tree order, so a match sits where browsing would have found it --
+                // and so the LIMIT keeps the first N in that order rather than the
+                // first N alphabetically. See `join_sort_path`.
+                .order(navigation_nodes::sort_path.asc())
+                .limit(limit)
+                .load::<NavigationNode>(db_conn)?;
 
-        let found_any = !substring.is_empty();
-        let seen: std::collections::HashSet<String> =
-            matches.iter().map(|n| n.node_uid.clone()).collect();
-        let room = (limit as usize).saturating_sub(matches.len());
-        matches.extend(
-            substring
-                .into_iter()
-                .filter(|n| !seen.contains(&n.node_uid))
-                .take(room),
-        );
-        if found_any {
-            break;
+            let found_any = !substring.is_empty();
+            let seen: std::collections::HashSet<String> =
+                matches.iter().map(|n| n.node_uid.clone()).collect();
+            let room = (limit as usize).saturating_sub(matches.len());
+            matches.extend(
+                substring
+                    .into_iter()
+                    .filter(|n| !seen.contains(&n.node_uid))
+                    .take(room),
+            );
+            if found_any {
+                break;
+            }
         }
     }
 
@@ -614,9 +721,15 @@ pub fn children_of(parent: Option<&str>) -> Vec<NavigationNode> {
 }
 
 /// Whole-tree filter. See `filter_nodes_conn`.
+///
+/// The summaries and context notes are asset text rather than columns, so they
+/// are matched from the cached parse. `open_sutta_navigation_window()` warms
+/// that parse off the GUI thread before the window's QML loads; a keystroke
+/// that arrives first waits for the same parse rather than starting a second.
 pub fn filter_nodes(query: &str, limit: i64) -> Vec<NavigationMatch> {
+    let texts = navigation_texts();
     with_appdata("filter_nodes", Vec::new(), |db_conn| {
-        filter_nodes_conn(db_conn, query, limit)
+        filter_nodes_conn(db_conn, query, limit, texts)
     })
 }
 

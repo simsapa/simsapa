@@ -240,6 +240,32 @@ as well as leaves** — it is how a reader who already knows where they are goin
 skips the drill-down, so a level name is as legitimate a thing to type as a
 sutta title.
 
+**The query's words are ANDed, as in the Topic Index search.** `mind simile`
+lists the nodes whose texts hold **both** words, in tree order, rather than the
+literal string `mind simile` that almost no title contains — `folded_terms()`
+splits the folded query on whitespace and every word must be found. This cannot
+lose a phrase match: a text holding the phrase holds each of its words. It does
+widen a two-word search, which is the point — typing `samyutta nikaya` now also
+reaches the three `Saṁyuttanikāya` commentary nodes, where the phrase `samyutta
+nikaya` matched only the one node that spells it with a space. A word that folds
+to nothing (a bare `%`) contributes no word, so it cannot turn the filter into a
+whole-tree list. **The stored column is unchanged, so this needs no rebuild** —
+only the query-side reading changed, not `search_text`.
+
+**A word may also be found in a summary or a context note**, which are not in
+the column at all (see §2f). `term_match_nodes_conn` therefore does not run one
+`LIKE` per word: it reads `node_uid`, `search_text` and `sort_path` for the
+whole tree (a few milliseconds over ~17,000 rows, since no prose column is
+read), tests each word in Rust against the column or against
+`NavigationTexts::blurb_or_note_contains`, sorts the hits by `sort_path` and
+loads only those rows in full. The summaries are asset text, so a materialized
+copy would have to be rebuilt with the tree and would still go stale against the
+TOML files the app ships; matching them from the cached parse avoids that
+altogether. Words may land in different fields of one row — `lives sanci` is
+found in the Jātaka node because its summary says "past lives" and its note says
+"Sāñcī". **A summary the window is not drawing is searched too**: the Summaries
+toggle and an empty override are display decisions, not data removal.
+
 Titles are stored folded too, by `fold_title` in the single `flatten_node` pass
 that every row of both spines passes through. The sources disagree — the CST toc
 writes `Saccasaṃyuttaṃ`, SuttaCentral writes `Saccasaṁyutta` — and folding at the
@@ -535,6 +561,13 @@ reading in turn (`kv 1` names no node, but `kv1` prefixes `kv1.1`, `kv1.2`, …)
 and last on the text as typed, because a reading that matches nothing
 (`raja 1` → `raja1`) was never a reference.
 
+**A query that names no uid at all is not read this way** — it takes the
+whole-tree title filter's reading instead: the whitespace-separated words are
+ANDed against `search_text` **and** the node's summaries and context note, as in
+the Topic Index search (the `search_text` section above). The two readings are
+exclusive on purpose. Splitting a reference into words would turn `dn 1` into
+the terms `dn` and `1`, and `LIKE '%1%'` alone reaches most of the tree.
+
 ## 2b. The breadcrumb bar shows the path, never the history
 
 `SuttaNavigationWindow.enter_level()` recomputes the whole path from the node's
@@ -788,6 +821,10 @@ titles.
 The top bar's checkbox is labelled **Summaries** and controls the blurb **and
 the uid**, on **every** row in the window — level rows, tree rows and filter
 hits alike. On means on for all of them; off means off for all of them.
+
+It is a **display** switch only. A summary the window is not drawing — toggle
+off, or an empty override that hides SuttaCentral's text — is still the node's
+data, and the whole-tree filter still searches it (see §2a).
 
 It did not start that way, and the first reading was a defect worth recording.
 The PRD scoped the toggle to *level rows*, so a tree row never showed a blurb
@@ -1051,7 +1088,10 @@ is drawn only when the row has both. It is truncated to two lines like the
 summary but has **its own** more/less button and its own expansion state
 (`context_note_expanded_uids` in `SuttaNavigationWindow.qml`), so opening one
 does not open the other. Neither text is part of `search_text`, so the filter
-does not match on them.
+cannot reach them through SQL: `NavigationTexts::from_toml` folds each node's
+summaries and note once into `summary_search`, and `term_match_nodes_conn` tests
+the query's words against that map as well as against `search_text` (see §2a).
+That is why both texts are searchable whether or not the row is drawing them.
 
 ## 2g. The window: what its rows are built from
 
@@ -1083,6 +1123,15 @@ The rules below are the ones that break quietly.
   level from one walks `parent_uid` up through `nav_tree_node_json()`
   (`ancestor_segments()`), which is the same walk §2b uses for every other
   route.
+- **The filter's whole-tree read stays narrow: `node_uid`, `search_text` and
+  `sort_path` only.** It runs on every keystroke, so a matched row's full text
+  is loaded for the hits alone, never for the tree. The summaries and context
+  notes are not columns and are matched in Rust from the cached
+  `NavigationTexts`; they must not be pulled into the query, or into
+  `search_text`.
+- **Hiding a summary is cosmetic, so it stays searchable.** The Summaries
+  toggle and an empty override decide what the row *draws*; they do not remove
+  the node's data from what the filter finds.
 - **Translation counts are one query per level and are not cached.** The count
   is "translations in the languages installed right now", so it changes with a
   language download. `translation_counts_conn()` asks for the whole level at

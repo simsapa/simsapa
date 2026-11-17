@@ -567,7 +567,7 @@ ApplicationWindow {
                 id: filter_input
                 Layout.fillWidth: true
                 Layout.columnSpan: root.is_mobile ? 2 : 1
-                placeholderText: "Filter the whole tree: title, English title or uid"
+                placeholderText: "Filter the whole tree: title, uid, summary or note (all words must match)"
                 font.pointSize: root.pointSize
                 selectByMouse: true
 

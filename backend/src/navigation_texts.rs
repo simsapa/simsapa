@@ -6,7 +6,7 @@
 //! `["<node_uid>"]` table per node, holding the note and the dates of its
 //! origin. See docs/sutta-navigation-tree.md.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -17,7 +17,9 @@ use crate::app_settings::{
     NAVIGATION_BLURB_OVERRIDES_TOML, NAVIGATION_BLURB_SUTTACENTRAL_TOML,
     NAVIGATION_CONTEXT_NOTES_TOML,
 };
+use crate::helpers::strip_html;
 use crate::logger::{error, info};
+use crate::navigation_tree::normalize_for_search;
 
 /// Parse a node-texts file into `node_uid` → unwrapped text.
 ///
@@ -128,6 +130,19 @@ pub struct NavigationTexts {
     overrides: HashMap<String, String>,
     /// The project's own notes. No entry with an empty note.
     context_notes: HashMap<String, ContextNote>,
+    /// The node's SuttaCentral blurb, its override and its context note, markup
+    /// stripped and folded by [`normalize_for_search`], as one string, for the
+    /// whole-tree filter.
+    ///
+    /// Folded here, once, because the filter runs on every keystroke and must
+    /// not re-fold a megabyte of prose as the reader types. Absent where the
+    /// node has none of the three.
+    ///
+    /// **All three texts are here, not just the one the row shows.** Whether a
+    /// summary is displayed is cosmetic -- the Summaries toggle, or an empty
+    /// override that hides SuttaCentral's text -- and it must not decide what a
+    /// search finds: the data is still the node's data.
+    summary_search: HashMap<String, String>,
 }
 
 impl NavigationTexts {
@@ -168,11 +183,61 @@ impl NavigationTexts {
             }
         };
 
-        Self {
-            suttacentral: parse("navigation-blurb-suttacentral.toml", suttacentral, false),
-            overrides: parse("navigation-blurb-overrides.toml", overrides, true),
-            context_notes,
+        let suttacentral = parse("navigation-blurb-suttacentral.toml", suttacentral, false);
+        let overrides = parse("navigation-blurb-overrides.toml", overrides, true);
+
+        // Every node either file has a text for. The union, not each file's
+        // keys in turn: a node can have a context note and no blurb.
+        let mut node_uids: HashSet<&String> = HashSet::new();
+        node_uids.extend(suttacentral.keys());
+        node_uids.extend(overrides.keys());
+        node_uids.extend(context_notes.keys());
+
+        let mut summary_search: HashMap<String, String> = HashMap::new();
+        for node_uid in node_uids {
+            let note = context_notes
+                .get(node_uid)
+                .map(|entry| entry.note.as_str())
+                .unwrap_or_default();
+
+            // Every text the node has, not only the one it shows: a suppressed
+            // or replaced summary is still the node's data, and whether the
+            // window draws it is a display decision. Markup is stripped first,
+            // since `<i>` is not a word the reader sees.
+            let searchable = [
+                suttacentral.get(node_uid).map(String::as_str).unwrap_or_default(),
+                overrides.get(node_uid).map(String::as_str).unwrap_or_default(),
+                note,
+            ]
+            .map(strip_html)
+            .join("\n");
+
+            let folded = normalize_for_search(&searchable);
+            if !folded.trim().is_empty() {
+                summary_search.insert(node_uid.clone(), folded);
+            }
         }
+
+        Self {
+            suttacentral,
+            overrides,
+            context_notes,
+            summary_search,
+        }
+    }
+
+    /// Whether any of a node's summaries or its context note contains a term,
+    /// which the caller must already have folded with [`normalize_for_search`].
+    ///
+    /// They are matched from here rather than from SQL because they are asset
+    /// text, not columns: the whole-tree filter searches them on top of the
+    /// stored title/uid column. The summaries are searched whether or not the
+    /// window is showing them — [`blurb`](Self::blurb) is what decides what is
+    /// displayed, and that is a display question.
+    pub fn blurb_or_note_contains(&self, node_uid: &str, folded_term: &str) -> bool {
+        self.summary_search
+            .get(node_uid)
+            .is_some_and(|text| text.contains(folded_term))
     }
 
     /// The summary a node shows: its override if there is one — an empty
@@ -266,6 +331,36 @@ summary.
         assert_eq!(texts.blurb("sn56.11"), Some("The Buddha's first discourse."));
         // No entry anywhere.
         assert_eq!(texts.blurb("sn99.99"), None);
+    }
+
+    #[test]
+    fn the_search_copy_holds_every_summary_whether_shown_or_not() {
+        let texts = NavigationTexts::from_toml(
+            r#"
+"dn" = "The <em>Long</em> Discourses."
+"mn" = "The Middle Discourses."
+"#,
+            r#"
+"mn" = ""
+"#,
+            r#"
+["dn"]
+note = "Dated c. 3rd century BCE at Sāñcī."
+"#,
+        );
+
+        // Folded once here, so the caller's folded query reaches a diacritic
+        // it never typed.
+        assert!(texts.blurb_or_note_contains("dn", &normalize_for_search("sanci")));
+        assert!(texts.blurb_or_note_contains("dn", &normalize_for_search("LONG")));
+        // Markup is stripped: a tag name is not a word the reader sees.
+        assert!(!texts.blurb_or_note_contains("dn", &normalize_for_search("em")));
+        // A suppressed summary is hidden, not gone: hiding it is a display
+        // decision and must not take its words out of the search.
+        assert_eq!(texts.blurb("mn"), None);
+        assert!(texts.blurb_or_note_contains("mn", &normalize_for_search("middle")));
+        // A node with no texts at all is absent rather than present and empty.
+        assert!(!texts.blurb_or_note_contains("sn56.11", &normalize_for_search("discourse")));
     }
 
     #[test]

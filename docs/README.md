@@ -175,7 +175,10 @@ substantially.
   `search_text` / `path` / `sort_path` columns (**changing how one is derived
   means rebuilding the tree** — a stale one fails silently), the edition an SC
   leaf opens, textless Pātimokkha leaves redirected through `parallels.json`,
-  the Summaries toggle, **which records the reader's translation tabs list**
+  the Summaries toggle, **the whole-tree filter** (its words are ANDed as in
+  the Topic Index, and it searches the summary and context note as well as the
+  stored title/uid column — a hidden summary is still searched), **which
+  records the reader's translation tabs list**
   (§2a: `related_sutta_uids()` relates two references when their spans
   *overlap*, in both directions, so `an5.91` lists `an5.91-100.tik` and the
   reverse — never match on the reference string; multi-dot refs such as
