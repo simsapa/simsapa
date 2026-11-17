@@ -278,22 +278,10 @@ verse and sub-story anchors and PTS page markers intact.
   `api`, `backend_cli` stay green (apart from known timed-test drift).
 - Search pins (`search_results_pin.tsv`) regenerated and reviewed.
 
-## 9. Open Questions
+## 9. Open Questions (answered by the survey, tasks 3.0)
 
-1. **Heading and class map:** the exact heading levels for Nipāta, Jātaka,
-   Story of the Present / Past, verses, and word-commentary are known only after
-   the survey (3.0). Already checked: `toc.ncx` has `Ja 1` … `Ja 547`, each once
-   (547 entries), and the dist DB has 547 contiguous `ja<N>.att/pli/cst` uids,
-   no ranges. The large Jātakas have nested TOC entries (Vessantara: "The Small
-   Wood", "The Great Wood", "The Children", "Maddī", "Sakka", …): the survey
-   decides whether those are sections of the page (expected).
-2. **Verse numbering:** does the epub number verses within each Jātaka? If so,
-   verse anchors follow its numbers; if not, there are none.
-3. **Jātakas with multiple CST uids?** The dist DB has one `ja<N>.att` per
-   Jātaka (547). If the epub counts differently (e.g. a Jātaka split or merged),
-   the report names it and the importer skips pages with no CST counterpart,
-   with a warning, rather than inventing a uid.
-4. **Largest page size** and Android load time are unknown until the extraction
-   runs.
-5. **Bottom-bar label:** assumed already correct after the Dhammapada work
-   (FR 22); to be confirmed with a test in the first Part C task.
+1. **Heading and class map:** Jātaka = `h3` "Ja N Pāli<br>English (label)"; Nipāta = the `h2` "Book <Roman>." heading; sections = `h4` (only 10 Jātakas have them). Present / Past stories and the word-commentary have no headings. The TOC's nested entries are the `h4` sections.
+2. **Verse numbering:** numbered per Jātaka ("N. " before the Pāli verse); repeated and missing numbers exist and are reported.
+3. **Jātakas with multiple CST uids?** No: 547 on both sides, contiguous.
+4. **Largest page size:** about 295 KB of epub markup (Ja 546): no split.
+5. **Bottom-bar label:** confirmed by a test (`ja62.att/en/anandajoti` → "anandajoti (en, comm)").
