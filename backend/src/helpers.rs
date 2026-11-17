@@ -4618,6 +4618,16 @@ pub enum WordSelectionBuildMode {
     IncludeResolved,
 }
 
+/// The `summary` of an option in a word-selection request: the lookup
+/// result's summary (a sense) or the candidate's meaning (a component),
+/// HTML tags removed, cut to 200 characters.
+pub fn word_selection_option_summary(summary: &str) -> String {
+    lazy_static! {
+        static ref RE_HTML_TAG: Regex = Regex::new(r"<[^>]*>").unwrap();
+    }
+    RE_HTML_TAG.replace_all(summary, "").chars().take(200).collect()
+}
+
 /// Build the shared `pali_word_selection` request items for the given
 /// paragraphs (docs/gloss-ai-word-selection.md §4), following the FR-A5 case
 /// partition:
@@ -4695,10 +4705,6 @@ pub fn build_word_selection_items(
     paragraphs: &[WordSelectionParagraphInput],
     mode: WordSelectionBuildMode,
 ) -> Result<Vec<serde_json::Value>, String> {
-    lazy_static! {
-        static ref RE_HTML_TAG: Regex = Regex::new(r"<[^>]*>").unwrap();
-    }
-
     // Whether an item with the given resolution origin is skipped in this mode.
     let skip_resolved = |resolution: Option<&str>| -> bool {
         match mode {
@@ -4711,9 +4717,7 @@ pub fn build_word_selection_items(
     };
 
     let option_json = |r: &serde_json::Value| -> serde_json::Value {
-        let summary = r.get("summary").and_then(|v| v.as_str()).unwrap_or("");
-        let summary = RE_HTML_TAG.replace_all(summary, "");
-        let summary: String = summary.chars().take(200).collect();
+        let summary = word_selection_option_summary(r.get("summary").and_then(|v| v.as_str()).unwrap_or(""));
         serde_json::json!({
             "uid": r.get("uid").and_then(|v| v.as_str()).unwrap_or(""),
             "word": r.get("word").and_then(|v| v.as_str()).unwrap_or(""),
@@ -4894,11 +4898,10 @@ pub fn build_word_selection_items(
                 if let Some(top) = top_row {
                     let annotation = serde_json::json!([top.construction]);
                     let candidate_option = |c: &crate::gloss_rows::RowCandidate| -> serde_json::Value {
-                        let summary = RE_HTML_TAG.replace_all(&c.meaning, "");
                         let mut o = serde_json::json!({
                             "uid": c.uid,
                             "word": c.lemma_1,
-                            "summary": summary.chars().take(200).collect::<String>(),
+                            "summary": word_selection_option_summary(&c.meaning),
                         });
                         if c.grammar_options.len() > 1 {
                             o.as_object_mut()

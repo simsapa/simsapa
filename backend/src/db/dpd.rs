@@ -1906,25 +1906,7 @@ fn parse_words(
     for w in uniq_words {
         match &w {
             UDpdWord::Headword(h) => {
-                let meaning = if !h.meaning_1.is_empty() {
-                    &h.meaning_1
-                } else {
-                    &h.meaning_2
-                };
-                let construction = if h.construction.is_empty() {
-                    " ".to_string()
-                } else {
-                    // The construction field can contain variations, separated by newlines
-                    // [na > a + saṁ + √ñā + ā + a], [asaññā + a]
-                    format!(" <b>[{}]</b> ", h.construction.replace("\n", "], ["))
-                };
-                // NOTE: Don't prefix the snippet with the word, it causes repetition.
-                // If needed, it can be added just before display.
-                let snippet = format!("<i>({})</i> {} {} <i>{}</i>",
-                                      h.pos,
-                                      meaning,
-                                      construction,
-                                      strip_html(&h.grammar));
+                let snippet = dpd_headword_snippet(&h.pos, &h.meaning_1, &h.meaning_2, &h.construction, &h.grammar);
                 res_page.push(SearchResult::from_dpd_headword(h, snippet));
             }
             UDpdWord::Root(r) => {
@@ -1940,6 +1922,24 @@ fn parse_words(
     }
 
     res_page
+}
+
+/// The snippet of a DPD headword in a lookup result: part of speech,
+/// meaning, construction and grammar, with HTML tags. It is the `summary` of
+/// a `LookupResult`, and so of a sense option in a word-selection request
+/// (`helpers::word_selection_option_summary`).
+pub fn dpd_headword_snippet(pos: &str, meaning_1: &str, meaning_2: &str, construction: &str, grammar: &str) -> String {
+    let meaning = if !meaning_1.is_empty() { meaning_1 } else { meaning_2 };
+    let construction = if construction.is_empty() {
+        " ".to_string()
+    } else {
+        // The construction field can contain variations, separated by newlines
+        // [na > a + saṁ + √ñā + ā + a], [asaññā + a]
+        format!(" <b>[{}]</b> ", construction.replace("\n", "], ["))
+    };
+    // NOTE: Don't prefix the snippet with the word, it causes repetition.
+    // If needed, it can be added just before display.
+    format!("<i>({})</i> {} {} <i>{}</i>", pos, meaning, construction, strip_html(grammar))
 }
 
 /// Ids per `IN (…)` headword read, below SQLite's bound-variable limit.
