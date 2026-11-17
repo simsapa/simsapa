@@ -379,7 +379,8 @@ whose records overlap each other, that is where this rule needs a second look.
 A sutta page has an **m | a | t** button group in its top-left row, after the
 reading mode and prev/next buttons (`assets/templates/related_texts_nav.html`,
 `assets/sass/_related_texts_nav.scss`). The buttons open the mūla, aṭṭhakathā or
-ṭīkā of the tab in a new tab, through the same actions as the page menu's
+ṭīkā of the tab, focusing its tab if it is already open and otherwise opening it
+in a new one, through the same actions as the page menu's
 Commentary group (`open-root-text`, `open-commentary-text`,
 `open-sub-commentary-text` → `open_related_sutta()` in `SuttaSearchWindow.qml`).
 `RelatedTextsNavController` in `assets/js/suttas.js` sends the menu's own
@@ -417,7 +418,7 @@ Without a row, for each kind it returns:
 
 | Result | When | Button | Action |
 |---|---|---|---|
-| `Found(uid)` | a record of the same reference, else one whose span shares a sutta with it (the rule above) | enabled | opens `uid` in a new tab |
+| `Found(uid)` | a record of the same reference, else one whose span shares a sutta with it (the rule above) | enabled | focuses the tab if `uid` is already open, else opens `uid` in a new tab |
 | `Missing` | none, and CST has no text of this kind for the collection; or the **group** (`mn`, `sn12`, `dhp`) has sutta-numbered records of this kind | disabled | "No commentary for this text" |
 | `Unknown` | none, CST has one, and the group has no such records; a collection the table does not know | enabled | the dialog offering a title search |
 

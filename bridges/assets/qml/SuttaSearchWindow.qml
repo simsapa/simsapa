@@ -218,16 +218,26 @@ ApplicationWindow {
         }
     }
 
-    function open_history_item(item_uid, table_name, sutta_ref, sutta_title) {
-        // Check if the item is already open in a tab
+    // The first open tab with that uid, as its tab data, or null. Pinned tabs
+    // win over results, results over translations.
+    function find_tab_with_uid(item_uid: string): var {
         let models = [tabs_pinned_model, tabs_results_model, tabs_translations_model];
         for (let m = 0; m < models.length; m++) {
             for (let i = 0; i < models[m].count; i++) {
                 if (models[m].get(i).item_uid === item_uid) {
-                    root.focus_on_tab_with_id_key(models[m].get(i).id_key);
-                    return;
+                    return models[m].get(i);
                 }
             }
+        }
+        return null;
+    }
+
+    function open_history_item(item_uid, table_name, sutta_ref, sutta_title) {
+        // Check if the item is already open in a tab
+        let existing_tab = root.find_tab_with_uid(item_uid);
+        if (existing_tab) {
+            root.focus_on_tab_with_id_key(existing_tab.id_key);
+            return;
         }
 
         let result_data = {
@@ -1050,6 +1060,15 @@ ApplicationWindow {
         const result = JSON.parse(result_json);
 
         if (result.found) {
+            // If the related text is already open in a tab, focus that tab
+            // instead of opening a second one of the same uid.
+            let existing_tab = root.find_tab_with_uid(result.item_uid);
+            if (existing_tab) {
+                root.reveal_html_panel();
+                root.focus_on_tab_with_id_key(existing_tab.id_key);
+                return;
+            }
+
             // Determine which model the current tab is in, and the index
             let target_model = null;
             let insert_index = -1;
