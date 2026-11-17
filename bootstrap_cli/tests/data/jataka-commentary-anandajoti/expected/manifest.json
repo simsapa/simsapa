@@ -1,0 +1,36 @@
+{
+  "epub_file": "Fixture-Jataka.epub",
+  "epub_sha256": "8546067c7091ce111b9b04b616f3dcc15f1c43c4a7da24317d0c87ecb769d904",
+  "jatakas": [
+    {
+      "uid": "ja1.att/en/anandajoti",
+      "file": "ja1.html",
+      "jataka_number": 1,
+      "title": "The Birth Story about What Is Unquestionable",
+      "title_pali": "Apaṇṇakajātaka",
+      "nipata_number": 1,
+      "nipata": "Ekanipāta",
+      "verse_count": 1
+    },
+    {
+      "uid": "ja2.att/en/anandajoti",
+      "file": "ja2.html",
+      "jataka_number": 2,
+      "title": "The Birth Story about the Sandy Waste",
+      "title_pali": "Vaṇṇūpathajātaka",
+      "nipata_number": 1,
+      "nipata": "Ekanipāta",
+      "verse_count": 2
+    },
+    {
+      "uid": "ja3.att/en/anandajoti",
+      "file": "ja3.html",
+      "jataka_number": 3,
+      "title": "The Birth Story about the Merchant",
+      "title_pali": "Serivāṇijajātaka",
+      "nipata_number": 2,
+      "nipata": "Dukanipāta",
+      "verse_count": 0
+    }
+  ]
+}

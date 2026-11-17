@@ -49,3 +49,28 @@ impl Report {
         text
     }
 }
+
+/// Write the pages `(file name, html)`, the pretty-printed manifest and the
+/// report to `out_dir` (created if missing), overwriting.
+pub fn write_output<M: serde::Serialize>(
+    out_dir: &std::path::Path,
+    pages: &[(&str, &str)],
+    manifest: &M,
+    manifest_file: &str,
+    report_text: &str,
+    report_file: &str,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    std::fs::create_dir_all(out_dir).with_context(|| format!("Cannot create {}", out_dir.display()))?;
+    for (file_name, html) in pages {
+        let path = out_dir.join(file_name);
+        std::fs::write(&path, html).with_context(|| format!("Cannot write {}", path.display()))?;
+    }
+    let mut manifest_text = serde_json::to_string_pretty(manifest)?;
+    manifest_text.push('\n');
+    let path = out_dir.join(manifest_file);
+    std::fs::write(&path, manifest_text).with_context(|| format!("Cannot write {}", path.display()))?;
+    let path = out_dir.join(report_file);
+    std::fs::write(&path, report_text).with_context(|| format!("Cannot write {}", path.display()))?;
+    Ok(())
+}

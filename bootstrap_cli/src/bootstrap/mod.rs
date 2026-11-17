@@ -11,6 +11,7 @@ pub mod dhammapada_suttacentral;
 pub mod dhammapada_tipitaka;
 pub mod anandajoti_epub;
 pub mod dhammapada_commentary_anandajoti;
+pub mod jataka_commentary_anandajoti;
 pub mod nyanadipa;
 pub mod segment_files;
 pub mod buddha_ujja;

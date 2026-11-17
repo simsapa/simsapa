@@ -64,8 +64,11 @@ pub struct ClassMap {
     pub span_style: fn(&str) -> SpanStyle,
     /// A paragraph class as (semantic class, known).
     pub paragraph_class: fn(&str) -> (Option<&'static str>, bool),
-    /// The span class of the commentator's notes.
+    /// The span class of the author's own additions (the commentator's notes,
+    /// the translator's overview), and the paragraph class a paragraph holding
+    /// one gets.
     pub commentator_span_class: &'static str,
+    pub commentator_paragraph_class: &'static str,
 }
 
 /// The page frame: the whole `content_html`. `header_inner` is the content of
@@ -251,8 +254,8 @@ impl<'r, 'a> Writer<'r, 'a> {
         let has_commentator_span = block.el.descendants().any(|n| {
             ElementRef::wrap(n).is_some_and(|e| e.value().name() == "span" && e.value().attr("class") == Some(self.classes.commentator_span_class))
         });
-        if has_commentator_span && !classes.contains(&"commentator-note") {
-            classes.push("commentator-note");
+        if has_commentator_span && !classes.contains(&self.classes.commentator_paragraph_class) {
+            classes.push(self.classes.commentator_paragraph_class);
         }
         if classes.is_empty() {
             out.push_str("<p>");

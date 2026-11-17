@@ -84,7 +84,7 @@ pub fn text_without_refs(node: NodeRef<Node>, page_marker_classes: &[&str]) -> S
     collapse_whitespace(&out)
 }
 
-fn push_text_without_refs(node: NodeRef<Node>, page_marker_classes: &[&str], out: &mut String) {
+pub fn push_text_without_refs(node: NodeRef<Node>, page_marker_classes: &[&str], out: &mut String) {
     match node.value() {
         Node::Text(text) => out.push_str(text),
         Node::Element(el) => {

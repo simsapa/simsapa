@@ -1069,6 +1069,23 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Extract Ānandajoti's Jātaka translation from its epub into one HTML
+    /// page per Jātaka (`ja<N>.att/en/anandajoti`), with manifest.json and
+    /// extract-report.txt, for the bootstrap to import. Run it again only when
+    /// the epub changes. Source defects are reported, never repaired, and do
+    /// not fail the command. See docs/jataka-commentary-anandajoti.md.
+    JatakaCommentaryExtract {
+        /// The epub (default: library-imports/books/The-Jataka.epub in
+        /// bootstrap-assets-resources)
+        #[arg(long, value_name = "EPUB_PATH")]
+        epub: Option<PathBuf>,
+
+        /// The output folder (default: jataka-commentary-anandajoti in
+        /// bootstrap-assets-resources)
+        #[arg(long, value_name = "OUTPUT_DIR")]
+        output: Option<PathBuf>,
+    },
+
     /// Compare the dhammatalks.org and SuttaCentral records with suttas-core
     /// and write a JSON report of the differences, for porting fixes back to
     /// suttas-core. Reads both databases read-only. The appdata database must
@@ -1142,7 +1159,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::JatakaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1311,6 +1328,9 @@ fn main() {
         Commands::DhammapadaCommentaryExtract { epub, output } => {
             dhammapada_commentary_extract(epub, output)
         }
+        Commands::JatakaCommentaryExtract { epub, output } => {
+            jataka_commentary_extract(epub, output)
+        }
 
         Commands::SurveySuttasCore { appdata, suttas_core, output } => {
             let suttas_core = suttas_core.unwrap_or_else(survey_suttas_core::default_suttas_core_path);
@@ -1352,6 +1372,21 @@ fn dhammapada_commentary_extract(epub: Option<PathBuf>, output: Option<PathBuf>)
         output.display(),
         REPORT_FILE
     );
+    Ok(())
+}
+
+/// `jataka-commentary-extract`: prints the report; fails only when the epub
+/// cannot be read or the output cannot be written.
+fn jataka_commentary_extract(epub: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), String> {
+    use bootstrap::jataka_commentary_anandajoti::{extract, REPORT_FILE};
+    use bootstrap::source_paths as paths;
+    let assets = paths::bootstrap_assets_dir_from_crate();
+    let epub = epub.unwrap_or_else(|| assets.join(paths::jataka_commentary_epub_file()));
+    let output = output.unwrap_or_else(|| assets.join(paths::jataka_commentary_anandajoti_dir()));
+
+    let extraction = extract::run(&epub, &output).map_err(|e| format!("{:#}", e))?;
+    print!("{}", extraction.report_text);
+    println!("Wrote {} pages to {} (report: {})", extraction.pages.len(), output.display(), REPORT_FILE);
     Ok(())
 }
 

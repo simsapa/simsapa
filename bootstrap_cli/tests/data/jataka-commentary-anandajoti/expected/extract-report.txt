@@ -1,0 +1,10 @@
+The Birth Stories (Jātaka): extraction report
+epub: Fixture-Jataka.epub (SHA-256 8546067c7091ce111b9b04b616f3dcc15f1c43c4a7da24317d0c87ecb769d904)
+
+Defects in the source (reported, not repaired):
+- Ja 4–547 missing from the book
+
+Markup the extraction does not map (rendered as its text):
+- <span class="t99"> (1×)
+
+Summary: 3 Jātakas, 2 sections, 3 verses, 5 note references to 5 notes, 1 defects, 1 unmapped

@@ -91,6 +91,7 @@ pub static CLASS_MAP: ClassMap = ClassMap {
     span_style,
     paragraph_class,
     commentator_span_class: COMMENTATOR_SPAN_CLASS,
+    commentator_paragraph_class: "commentator-note",
 };
 
 fn story_html(w: &mut Writer, out: &mut String, story: &Story, story_id: &str, substory_ids: &[String]) {

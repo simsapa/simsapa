@@ -216,3 +216,23 @@ mod tests {
         );
     }
 }
+
+/// Ānandajoti's Jātaka translation, one page per Jātaka with
+/// `manifest.json` and `extract-report.txt`. Written by the
+/// `jataka-commentary-extract` command from [`jataka_commentary_epub_file()`].
+/// See docs/jataka-commentary-anandajoti.md.
+pub const JATAKA_COMMENTARY_ANANDAJOTI_DIR: &str = "jataka-commentary-anandajoti";
+/// The epub the Jātaka pages are extracted from, inside
+/// [`LIBRARY_IMPORTS_BOOKS_DIR`]. The same file is the `jataka-comm` library book.
+pub const JATAKA_COMMENTARY_EPUB_NAME: &str = "The-Jataka.epub";
+
+/// `jataka-commentary-anandajoti`, relative to the bootstrap assets folder.
+pub fn jataka_commentary_anandajoti_dir() -> PathBuf {
+    PathBuf::from(JATAKA_COMMENTARY_ANANDAJOTI_DIR)
+}
+
+/// `library-imports/books/The-Jataka.epub`, relative to the bootstrap assets
+/// folder.
+pub fn jataka_commentary_epub_file() -> PathBuf {
+    Path::new(LIBRARY_IMPORTS_BOOKS_DIR).join(JATAKA_COMMENTARY_EPUB_NAME)
+}
