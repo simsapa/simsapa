@@ -173,8 +173,8 @@ add a line here and an entry there.
   `storage_path_state()`, recorded vs. resolved paths, sweep gating.
 - [Sutta navigation tree](./docs/sutta-navigation-tree.md) — the navigation
   hierarchy, its TOML texts, the Timeline page, the CST rebuild commands, the
-  m | a | t buttons and which commentaries CST has, and §6.1, what to run after
-  a fragments update.
+  m | a | t buttons (the `cst_commentaries` table first) and which commentaries
+  CST has, and §6.1, what to run after a fragments update.
 - [CIPS index updates](./docs/cips-index-updates.md) — the Topic Index and its
   in-app Update / Reset.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) —

@@ -34,7 +34,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::bootstrap::cst_coverage::{
-    self, coverage_of, CoverageClass, SplitError, MOVED_REVIEW,
+    self, coverage_of, is_verified, CoverageClass, SplitError, MOVED_REVIEW,
 };
 use crate::bootstrap::helpers::uid_to_ref;
 use crate::bootstrap::navigation_tree::coverage_report::CstCoverageReport;
@@ -44,6 +44,7 @@ use simsapa_backend::helpers::{
     pali_to_ascii, split_sutta_ref_kind, sutta_html_to_plain_text, sutta_range_from_ref,
     sutta_refs_are_related, SuttaRefKind,
 };
+use simsapa_backend::cst_files::cst_book_commentary_files;
 use simsapa_backend::logger;
 use simsapa_backend::opentipitaka::{ot_license_footer_html, OT_AUTHOR_UID, OT_LICENSE};
 use html_escape;
@@ -194,6 +195,105 @@ pub fn store_pali_edition_twins(conn: &mut SqliteConnection) -> Result<()> {
         cst_uids.len()
     ));
 
+    Ok(())
+}
+
+/// One `cst_commentaries` row of the fragments DB: (`mula_code`, `mula_file`,
+/// `kind`, `status`, `text_code`, `cst_file`).
+pub type CommentaryTableRow = (String, String, String, String, Option<String>, Option<String>);
+
+/// Whether a `cst_commentaries` row may be copied into appdata, by the verified
+/// list (`is_verified`):
+///
+/// - a `has` row when both its mūla file and its commentary file are verified;
+/// - a `none` row when its mūla file and **every** commentary file of its book and
+///   kind ([`cst_book_commentary_files`]) are, so that "none" is never asserted
+///   from an unverified file. A book with no file of that kind needs only its mūla
+///   file.
+pub fn keep_commentary_row(row: &CommentaryTableRow, is_verified: impl Fn(&str) -> bool) -> bool {
+    let (_, mula_file, kind, status, _, cst_file) = row;
+    if !is_verified(mula_file) {
+        return false;
+    }
+    match status.as_str() {
+        "has" => cst_file.as_deref().is_some_and(&is_verified),
+        "none" => {
+            let kind = match kind.as_str() {
+                "att" => SuttaRefKind::Atthakatha,
+                "tik" => SuttaRefKind::Tika,
+                _ => return false,
+            };
+            cst_book_commentary_files(mula_file, kind).into_iter().all(is_verified)
+        }
+        _ => false,
+    }
+}
+
+/// Replace appdata's `cst_commentaries` with the rows of the fragments DB that
+/// [`keep_commentary_row`] keeps, each `text_code` stored as the full uid of the
+/// record it opens (`ud2.3.att` → `ud2.3.att/pli/cst`). A fragments DB without the
+/// table (an export from before it) leaves appdata's table empty.
+///
+/// Run at the end of the CST import, so a re-run recomputes it.
+pub fn store_commentary_table(frag_conn: &mut SqliteConnection, conn: &mut SqliteConnection) -> Result<()> {
+    use simsapa_backend::db::appdata_schema::cst_commentaries as app;
+    use tipitaka_xml_parser::fragments_schema::cst_commentaries as frag;
+
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        n: i64,
+    }
+    let has_table = diesel::sql_query(
+        "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'cst_commentaries'",
+    )
+    .get_result::<Count>(frag_conn)
+    .context("Failed to look for cst_commentaries in the fragments DB")?
+    .n
+        > 0;
+    let rows: Vec<CommentaryTableRow> = if has_table {
+        frag::table
+            .select((frag::mula_code, frag::mula_file, frag::kind, frag::status, frag::text_code, frag::cst_file))
+            .load(frag_conn)
+            .context("Failed to read cst_commentaries from the fragments DB")?
+    } else {
+        logger::warn("The fragments DB has no cst_commentaries table: the m | a | t buttons use their own rules");
+        Vec::new()
+    };
+    let kept: Vec<&CommentaryTableRow> = rows.iter().filter(|row| keep_commentary_row(row, is_verified)).collect();
+
+    conn.transaction(|conn| {
+        diesel::delete(app::table).execute(conn).context("Failed to clear cst_commentaries")?;
+        for chunk in kept.chunks(500) {
+            let values: Vec<_> = chunk
+                .iter()
+                .map(|(mula_code, mula_file, kind, status, text_code, cst_file)| {
+                    (
+                        app::mula_code.eq(mula_code),
+                        app::mula_file.eq(mula_file),
+                        app::kind.eq(kind),
+                        app::status.eq(status),
+                        app::text_code.eq(text_code.as_ref().map(|code| format!("{}/pli/cst", code))),
+                        app::cst_file.eq(cst_file),
+                    )
+                })
+                .collect();
+            diesel::insert_into(app::table)
+                .values(&values)
+                .execute(conn)
+                .context("Failed to insert into cst_commentaries")?;
+        }
+        Ok::<(), anyhow::Error>(())
+    })?;
+
+    let count = |status: &str| kept.iter().filter(|row| row.3 == status).count();
+    logger::info(&format!(
+        "cst_commentaries: {} has and {} none rows copied, {} of {} dropped (a file not verified)",
+        count("has"),
+        count("none"),
+        rows.len() - kept.len(),
+        rows.len()
+    ));
     Ok(())
 }
 
@@ -1156,6 +1256,7 @@ impl TipitakaXmlImporter {
         ));
 
         store_pali_edition_twins(conn)?;
+        store_commentary_table(&mut frag_conn, conn)?;
 
         Ok(report)
     }
@@ -1612,6 +1713,43 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn commentary_row(mula_file: &str, kind: &str, status: &str, cst_file: Option<&str>) -> CommentaryTableRow {
+        (
+            "x1".to_string(),
+            mula_file.to_string(),
+            kind.to_string(),
+            status.to_string(),
+            cst_file.map(|f| format!("{}-code", f)),
+            cst_file.map(str::to_string),
+        )
+    }
+
+    #[test]
+    fn the_commentary_table_keeps_only_verified_rows() {
+        let verified = |list: &'static [&'static str]| move |file: &str| list.contains(&file);
+        let both = verified(&["s0510m2.mul.xml", "s0510a.att.xml", "s0503m.mul.xml", "s0503a.att.xml"]);
+        let mula_only = verified(&["s0510m2.mul.xml", "s0503m.mul.xml"]);
+
+        // has: both files verified.
+        let has = commentary_row("s0503m.mul.xml", "att", "has", Some("s0503a.att.xml"));
+        assert!(keep_commentary_row(&has, both));
+        assert!(!keep_commentary_row(&has, mula_only));
+        assert!(!keep_commentary_row(&has, verified(&["s0503a.att.xml"])));
+
+        // none: the mūla file and every commentary file of the book and kind.
+        let none_att = commentary_row("s0510m2.mul.xml", "att", "none", None);
+        assert!(keep_commentary_row(&none_att, both));
+        assert!(!keep_commentary_row(&none_att, mula_only), "s0510a.att.xml is not verified");
+        // The Apadāna has no ṭīkā file: the mūla file is enough.
+        let none_tik = commentary_row("s0510m2.mul.xml", "tik", "none", None);
+        assert!(keep_commentary_row(&none_tik, mula_only));
+        assert!(!keep_commentary_row(&none_tik, verified(&[])));
+        // The Theragāthā aṭṭhakathā is in two files: both must be verified.
+        let thag = commentary_row("s0508m.mul.xml", "att", "none", None);
+        assert!(!keep_commentary_row(&thag, verified(&["s0508m.mul.xml", "s0508a1.att.xml"])));
+        assert!(keep_commentary_row(&thag, verified(&["s0508m.mul.xml", "s0508a1.att.xml", "s0508a2.att.xml"])));
+    }
 
     /// Inserts a fragment of a Vinaya ṭīkā volume, and its `cst_texts` record when
     /// `text` is given (Pāli rows).

@@ -346,6 +346,23 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    /// Which mūla texts have an aṭṭhakathā (`att`) and a ṭīkā (`tik`): `has`, with
+    /// the uid of the record that covers it, or `none`. Copied by the bootstrap from
+    /// the fragments DB, for verified files only. May be absent after a failed
+    /// migration (no rows: the lookup falls back to its own rules). See
+    /// docs/sutta-navigation-tree.md, "The m | a | t buttons and the Commentary menu".
+    cst_commentaries (id) {
+        id -> Integer,
+        mula_code -> Text,
+        mula_file -> Text,
+        kind -> Text,
+        status -> Text,
+        text_code -> Nullable<Text>,
+        cst_file -> Nullable<Text>,
+    }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(
     app_settings,
     suttas,
@@ -368,4 +385,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     navigation_nodes,
     pali_edition_twins,
     sutta_uid_renames,
+    cst_commentaries,
 );

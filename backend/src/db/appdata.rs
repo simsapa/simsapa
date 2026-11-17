@@ -1,7 +1,7 @@
 use diesel::prelude::*;
 use crate::helpers::{
     comparable_sutta_range, related_sutta_uids, related_sutta_uids_like_pattern, split_sutta_ref_kind,
-    related_text_lookup, RelatedTextLookup,
+    related_text_lookup, CommentaryStatus, RelatedTextLookup,
     SuttaRefKind,
 };
 use crate::opentipitaka::is_ot_english_uid;
@@ -249,7 +249,8 @@ impl AppdataDbHandle {
     }
 
     /// The mūla, aṭṭhakathā and ṭīkā of `sutta_uid`, in that order, as
-    /// [`related_text_lookup`] decides them. One query covers all three.
+    /// [`related_text_lookup`] decides them. One query covers all three, and one
+    /// more reads the `cst_commentaries` rows of its reference.
     pub fn related_texts_lookup(&self, sutta_uid: &str) -> [(SuttaRefKind, RelatedTextLookup); 3] {
         use crate::db::appdata_schema::suttas::dsl::*;
 
@@ -259,9 +260,35 @@ impl AppdataDbHandle {
                 .select(uid)
                 .load(db_conn)
         }).unwrap_or_default();
+        let commentary = self.commentary_statuses(sutta_uid);
 
         [SuttaRefKind::Mula, SuttaRefKind::Atthakatha, SuttaRefKind::Tika]
-            .map(|kind| (kind, related_text_lookup(sutta_uid, kind, &candidate_uids)))
+            .map(|kind| (kind, related_text_lookup(sutta_uid, kind, &candidate_uids, &commentary)))
+    }
+
+    /// The `cst_commentaries` rows of `sutta_uid`'s reference (`ud2.3/pli/ms` →
+    /// the rows of `ud2.3`). An appdata database from before the table, or one where
+    /// the read fails, gives no rows, and the lookup falls back to its own rules.
+    pub fn commentary_statuses(&self, sutta_uid: &str) -> Vec<CommentaryStatus> {
+        use crate::db::appdata_schema::cst_commentaries;
+
+        let (base, _) = split_sutta_ref_kind(sutta_uid);
+        let rows: Vec<(String, Option<String>)> = self.do_read(|db_conn| {
+            cst_commentaries::table
+                .filter(cst_commentaries::mula_code.eq(base))
+                .select((cst_commentaries::kind, cst_commentaries::text_code))
+                .load(db_conn)
+        }).unwrap_or_default();
+        rows.into_iter()
+            .filter_map(|(row_kind, text_code)| {
+                let kind = match row_kind.as_str() {
+                    "att" => SuttaRefKind::Atthakatha,
+                    "tik" => SuttaRefKind::Tika,
+                    _ => return None,
+                };
+                Some(CommentaryStatus { kind, text_uid: text_code })
+            })
+            .collect()
     }
 
     /// Find a related sutta (commentary, sub-commentary, or root text) for the given sutta UID.

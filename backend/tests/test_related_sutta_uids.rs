@@ -268,7 +268,7 @@ fn an_opened_dhammapada_commentary_lists_every_english_translation() {
 
 mod related_text_lookup_tests {
     use simsapa_backend::helpers::{
-        related_text_lookup, text_kind_of_uid, RelatedTextLookup, SuttaRefKind,
+        related_text_lookup, text_kind_of_uid, CommentaryStatus, RelatedTextLookup, SuttaRefKind,
     };
     use simsapa_backend::html_content::related_texts_nav_html;
 
@@ -289,74 +289,148 @@ mod related_text_lookup_tests {
     #[test]
     fn the_same_reference_is_found_first() {
         let c = uids(&["mn1/pli/ms", "mn1.att/en/opentipitaka", "mn1.att/pli/cst", "mn1-2.att/pli/cst"]);
-        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c), found("mn1.att/pli/cst"));
+        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c, &[]), found("mn1.att/pli/cst"));
     }
 
     #[test]
     fn the_same_source_is_preferred() {
         let c = uids(&["mn1/pli/ms", "mn1/pli/cst", "mn1/en/opentipitaka", "mn1.att/pli/cst", "mn1.att/en/opentipitaka"]);
-        assert_eq!(related_text_lookup("mn1.att/en/opentipitaka", MULA, &c), found("mn1/en/opentipitaka"));
-        assert_eq!(related_text_lookup("mn1.att/pli/cst", MULA, &c), found("mn1/pli/cst"));
+        assert_eq!(related_text_lookup("mn1.att/en/opentipitaka", MULA, &c, &[]), found("mn1/en/opentipitaka"));
+        assert_eq!(related_text_lookup("mn1.att/pli/cst", MULA, &c, &[]), found("mn1/pli/cst"));
         // From a translation, the Pāli commentary before an English one.
-        assert_eq!(related_text_lookup("mn1/en/sujato", ATT, &c), found("mn1.att/pli/cst"));
+        assert_eq!(related_text_lookup("mn1/en/sujato", ATT, &c, &[]), found("mn1.att/pli/cst"));
     }
 
     #[test]
     fn a_span_that_covers_the_sutta_is_found() {
         let c = uids(&["an5.91/pli/ms", "an5.81-90.tik/pli/cst", "an5.91-100.tik/pli/cst", "an5.101.tik/pli/cst"]);
-        assert_eq!(related_text_lookup("an5.91/pli/ms", TIK, &c), found("an5.91-100.tik/pli/cst"));
+        assert_eq!(related_text_lookup("an5.91/pli/ms", TIK, &c, &[]), found("an5.91-100.tik/pli/cst"));
 
         let c = uids(&["dhp15/pli/ms", "dhp1-20.att/pli/cst", "dhp1-20.att/en/anandajoti"]);
-        assert_eq!(related_text_lookup("dhp15/pli/ms", ATT, &c), found("dhp1-20.att/pli/cst"));
+        assert_eq!(related_text_lookup("dhp15/pli/ms", ATT, &c, &[]), found("dhp1-20.att/pli/cst"));
         // Back from the commentary to the first sutta of the span.
         let c = uids(&["dhp2/pli/ms", "dhp10/pli/ms", "dhp1/pli/ms", "dhp1-20.att/pli/cst"]);
-        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", MULA, &c), found("dhp1/pli/ms"));
+        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", MULA, &c, &[]), found("dhp1/pli/ms"));
     }
 
     #[test]
     fn the_opened_kind_is_the_opened_text() {
         let c = uids(&["mn1/pli/ms", "mn1/pli/cst", "mn1.att/pli/cst"]);
-        assert_eq!(related_text_lookup("mn1/pli/ms", MULA, &c), found("mn1/pli/ms"));
-        assert_eq!(related_text_lookup("mn1.att/pli/cst", ATT, &c), found("mn1.att/pli/cst"));
+        assert_eq!(related_text_lookup("mn1/pli/ms", MULA, &c, &[]), found("mn1/pli/ms"));
+        assert_eq!(related_text_lookup("mn1.att/pli/cst", ATT, &c, &[]), found("mn1.att/pli/cst"));
     }
 
     #[test]
     fn a_gap_in_a_mapped_group_is_missing() {
         let c = uids(&["dhp15/pli/ms", "dhp1-20.att/pli/cst"]);
         // CST has no Dhammapada ṭīkā.
-        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c), RelatedTextLookup::Missing);
-        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", TIK, &c), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c, &[]), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("dhp1-20.att/pli/cst", TIK, &c, &[]), RelatedTextLookup::Missing);
 
         let c = uids(&["sn12.32/pli/ms", "sn12.31.att/pli/cst", "sn12.33.att/pli/cst"]);
-        assert_eq!(related_text_lookup("sn12.32/pli/ms", ATT, &c), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("sn12.32/pli/ms", ATT, &c, &[]), RelatedTextLookup::Missing);
     }
 
     #[test]
     fn another_group_does_not_make_this_one_mapped() {
         // `mn%` also matches `mnd`.
         let c = uids(&["mnd1/pli/ms", "mnd1.att/pli/cst"]);
-        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("mn1/pli/ms", ATT, &c, &[]), RelatedTextLookup::Unknown);
         let c = uids(&["sn12.1/pli/ms", "sn11.1.att/pli/cst"]);
-        assert_eq!(related_text_lookup("sn12.1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("sn12.1/pli/ms", ATT, &c, &[]), RelatedTextLookup::Unknown);
     }
 
     #[test]
     fn what_cst_lacks_is_missing_and_what_it_has_unmapped_is_unknown() {
         let none: Vec<String> = vec![];
         // An unmapped book with an aṭṭhakathā and no ṭīkā.
-        assert_eq!(related_text_lookup("snp1.1/pli/ms", ATT, &none), RelatedTextLookup::Unknown);
-        assert_eq!(related_text_lookup("snp1.1/pli/ms", TIK, &none), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("snp1.1/pli/ms", ATT, &none, &[]), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("snp1.1/pli/ms", TIK, &none, &[]), RelatedTextLookup::Missing);
         // The Milindapañha: no aṭṭhakathā, a ṭīkā in an añña file.
-        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", ATT, &none), RelatedTextLookup::Missing);
-        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", TIK, &none), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", ATT, &none, &[]), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("mil3.1.1/pli/ms", TIK, &none, &[]), RelatedTextLookup::Unknown);
         // A CST division record, by its book.
-        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", TIK, &none), RelatedTextLookup::Missing);
-        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", ATT, &none), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", TIK, &none, &[]), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("s0503m.mul0.xml/pli/cst", ATT, &none, &[]), RelatedTextLookup::Unknown);
         // A collection the table does not know stays unknown.
-        assert_eq!(related_text_lookup("pli-tv-bu-pm/pli/ms", ATT, &none), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("pli-tv-bu-pm/pli/ms", ATT, &none, &[]), RelatedTextLookup::Unknown);
         // A record from another source still opens.
         let c = uids(&["dhp15/pli/ms", "dhp15.tik/en/someone"]);
-        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c), found("dhp15.tik/en/someone"));
+        assert_eq!(related_text_lookup("dhp15/pli/ms", TIK, &c, &[]), found("dhp15.tik/en/someone"));
+    }
+
+    fn has(kind: SuttaRefKind, uid: &str) -> CommentaryStatus {
+        CommentaryStatus { kind, text_uid: Some(uid.to_string()) }
+    }
+
+    fn none(kind: SuttaRefKind) -> CommentaryStatus {
+        CommentaryStatus { kind, text_uid: None }
+    }
+
+    #[test]
+    fn the_commentary_table_comes_first() {
+        let no_candidates: Vec<String> = vec![];
+        // The Therī Apadāna and the last Buddhavaṃsa text, which the aṭṭhakathā does not
+        // reach: the table says none, and the CST collection rules alone would say Unknown.
+        assert_eq!(related_text_lookup("thi-ap3/pli/ms", ATT, &no_candidates, &[]), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("thi-ap3/pli/ms", ATT, &no_candidates, &[none(ATT), none(TIK)]), RelatedTextLookup::Missing);
+        assert_eq!(related_text_lookup("bv29/pli/ms", ATT, &no_candidates, &[none(ATT), none(TIK)]), RelatedTextLookup::Missing);
+        // A has row opens its record.
+        let c = uids(&["ud2.3/pli/ms", "ud2.3.att/pli/cst"]);
+        assert_eq!(
+            related_text_lookup("ud2.3/pli/ms", ATT, &c, &[has(ATT, "ud2.3.att/pli/cst"), none(TIK)]),
+            found("ud2.3.att/pli/cst")
+        );
+        assert_eq!(related_text_lookup("ud2.3/pli/ms", TIK, &c, &[has(ATT, "ud2.3.att/pli/cst"), none(TIK)]), RelatedTextLookup::Missing);
+        // A ranged commentary code, from a text inside it.
+        let c = uids(&["iti6/pli/ms", "iti5-7.att/pli/cst"]);
+        assert_eq!(related_text_lookup("iti6/pli/ms", ATT, &c, &[has(ATT, "iti5-7.att/pli/cst")]), found("iti5-7.att/pli/cst"));
+        // An AN sutta the aṭṭhakathā skips, in a group with commentary records.
+        let c = uids(&["an5.3/pli/ms", "an5.2.att/pli/cst", "an5.6.att/pli/cst"]);
+        assert_eq!(related_text_lookup("an5.3/pli/ms", ATT, &c, &[none(ATT)]), RelatedTextLookup::Missing);
+        // The opened kind is still the opened text, and the mūla is not in the table.
+        assert_eq!(related_text_lookup("ud2.3.att/pli/cst", ATT, &c, &[none(ATT)]), found("ud2.3.att/pli/cst"));
+        let c = uids(&["ud2.3/pli/ms", "ud2.3.att/pli/cst"]);
+        assert_eq!(related_text_lookup("ud2.3.att/pli/cst", MULA, &c, &[has(ATT, "ud2.3.att/pli/cst")]), found("ud2.3/pli/ms"));
+        // From an opened aṭṭhakathā, its reference's ṭīkā row answers.
+        assert_eq!(related_text_lookup("ud2.3.att/pli/cst", TIK, &c, &[none(TIK)]), RelatedTextLookup::Missing);
+    }
+
+    #[test]
+    fn a_has_row_chooses_by_source_among_its_records_and_their_translations() {
+        // From an English mūla, the English translation of the commentary record.
+        let c = uids(&["ud2.3/en/someone", "ud2.3.att/pli/cst", "ud2.3.att/en/someone", "ud2.2.att/en/someone"]);
+        assert_eq!(
+            related_text_lookup("ud2.3/en/someone", ATT, &c, &[has(ATT, "ud2.3.att/pli/cst")]),
+            found("ud2.3.att/en/someone")
+        );
+        // Several records cover a mūla range: the lowest span of the preferred source.
+        let c = uids(&["an11.22-29/pli/ms", "an11.22.att/pli/cst", "an11.23-29.att/pli/cst"]);
+        assert_eq!(
+            related_text_lookup(
+                "an11.22-29/pli/ms",
+                ATT,
+                &c,
+                &[has(ATT, "an11.23-29.att/pli/cst"), has(ATT, "an11.22.att/pli/cst")]
+            ),
+            found("an11.22.att/pli/cst")
+        );
+    }
+
+    #[test]
+    fn a_none_row_still_opens_a_record_of_the_same_reference() {
+        let c = uids(&["thi-ap3/pli/ms", "thi-ap3.att/en/someone"]);
+        assert_eq!(related_text_lookup("thi-ap3/pli/ms", ATT, &c, &[none(ATT)]), found("thi-ap3.att/en/someone"));
+    }
+
+    #[test]
+    fn no_row_keeps_the_current_rules() {
+        let c = uids(&["sn12.32/pli/ms", "sn12.31.att/pli/cst", "sn12.33.att/pli/cst"]);
+        assert_eq!(related_text_lookup("sn12.32/pli/ms", ATT, &c, &[]), RelatedTextLookup::Missing);
+        // A row of the other kind says nothing about this one.
+        assert_eq!(related_text_lookup("sn12.32/pli/ms", ATT, &c, &[none(TIK)]), RelatedTextLookup::Missing);
+        let none_uids: Vec<String> = vec![];
+        assert_eq!(related_text_lookup("snp1.1/pli/ms", ATT, &none_uids, &[none(TIK)]), RelatedTextLookup::Unknown);
     }
 
     #[test]
@@ -372,11 +446,11 @@ mod related_text_lookup_tests {
         // A group with a Kaṅkhāvitaraṇī record and no aṭṭhakathā is not mapped for the
         // aṭṭhakathā, and the record is never taken for the mūla.
         let c = uids(&["pli-tv-bu-vb-pj1/pli/ms", "pli-tv-bu-vb-pj1.kkh/pli/cst", "pli-tv-bu-vb-pj2.kkh/pli/cst"]);
-        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
-        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", TIK, &c), RelatedTextLookup::Unknown);
-        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj2/pli/ms", MULA, &c), found("pli-tv-bu-vb-pj2/pli/ms"));
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", ATT, &c, &[]), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj1/pli/ms", TIK, &c, &[]), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("pli-tv-bu-vb-pj2/pli/ms", MULA, &c, &[]), found("pli-tv-bu-vb-pj2/pli/ms"));
         assert_eq!(
-            related_text_lookup("pli-tv-bu-vb-pj1.kkh/pli/cst", MULA, &c),
+            related_text_lookup("pli-tv-bu-vb-pj1.kkh/pli/cst", MULA, &c, &[]),
             found("pli-tv-bu-vb-pj1/pli/ms")
         );
     }
@@ -384,11 +458,11 @@ mod related_text_lookup_tests {
     #[test]
     fn a_division_record_is_never_mapped() {
         let c = uids(&["abh01m.mul0.xml/pli/cst", "abh01a.att0.xml/pli/cst"]);
-        assert_eq!(related_text_lookup("abh01m.mul0.xml/pli/cst", ATT, &c), RelatedTextLookup::Unknown);
-        assert_eq!(related_text_lookup("abh01a.att0.xml/pli/cst", MULA, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("abh01m.mul0.xml/pli/cst", ATT, &c, &[]), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("abh01a.att0.xml/pli/cst", MULA, &c, &[]), RelatedTextLookup::Unknown);
         // Nor does a division record count as a mapped commentary of a sutta.
         let c = uids(&["s0101a.att0.xml/pli/cst"]);
-        assert_eq!(related_text_lookup("s0101a/pli/ms", ATT, &c), RelatedTextLookup::Unknown);
+        assert_eq!(related_text_lookup("s0101a/pli/ms", ATT, &c, &[]), RelatedTextLookup::Unknown);
     }
 
     #[test]
@@ -445,7 +519,8 @@ fn the_shipped_database_resolves_the_related_texts() {
     assert_eq!(lookup("an10.4/pli/ms", SuttaRefKind::Atthakatha), found("an10.3-5.att/pli/cst"));
     // The aṭṭhakathā passes over AN 10.10.
     assert_eq!(lookup("an10.10/pli/ms", SuttaRefKind::Atthakatha), RelatedTextLookup::Missing);
-    assert_eq!(lookup("snp1.1/pli/ms", SuttaRefKind::Atthakatha), RelatedTextLookup::Unknown);
+    // An unmapped book (KN phase 5).
+    assert_eq!(lookup("mnd1/pli/ms", SuttaRefKind::Atthakatha), RelatedTextLookup::Unknown);
     // The Appamādavagga has its aṭṭhakathā, and CST has no Dhammapada ṭīkā.
     assert_eq!(lookup("dhp21-32/pli/ms", SuttaRefKind::Atthakatha), found("dhp21-32.att/pli/cst"));
     assert_eq!(lookup("dhp21-32/pli/ms", SuttaRefKind::Tika), RelatedTextLookup::Missing);
@@ -455,4 +530,61 @@ fn the_shipped_database_resolves_the_related_texts() {
     assert_eq!(json["status"], "missing");
     let json: serde_json::Value = serde_json::from_str(&appdata.find_related_sutta_json("an10.4/pli/ms", "att")).unwrap();
     assert_eq!(json["item_uid"], "an10.3-5.att/pli/cst");
+}
+
+/// Against the shipped database: the `cst_commentaries` rows of the opened text are
+/// read and decide the lookup. The fixture rows use a `dummy-` reference no real record
+/// has, and are deleted by that prefix.
+#[test]
+#[serial]
+fn the_commentary_table_is_read_from_appdata() {
+    use diesel::prelude::*;
+    use simsapa_backend::db::appdata_schema::cst_commentaries;
+    use simsapa_backend::helpers::{RelatedTextLookup, SuttaRefKind};
+    h::app_data_setup();
+    let appdata = &get_app_data().dbm.appdata;
+
+    let cleanup = || {
+        appdata
+            .do_write(|db_conn| {
+                diesel::delete(cst_commentaries::table.filter(cst_commentaries::mula_code.like("dummy-%"))).execute(db_conn)
+            })
+            .expect("delete the dummy rows");
+    };
+    cleanup();
+    appdata
+        .do_write(|db_conn| {
+            diesel::insert_into(cst_commentaries::table)
+                .values(&vec![
+                    (
+                        cst_commentaries::mula_code.eq("dummy-ud2.3"),
+                        cst_commentaries::mula_file.eq("dummy.mul.xml"),
+                        cst_commentaries::kind.eq("att"),
+                        cst_commentaries::status.eq("has"),
+                        cst_commentaries::text_code.eq(Some("dummy-ud2.3.att/pli/cst")),
+                        cst_commentaries::cst_file.eq(Some("dummy.att.xml")),
+                    ),
+                    (
+                        cst_commentaries::mula_code.eq("dummy-ud2.3"),
+                        cst_commentaries::mula_file.eq("dummy.mul.xml"),
+                        cst_commentaries::kind.eq("tik"),
+                        cst_commentaries::status.eq("none"),
+                        cst_commentaries::text_code.eq(None),
+                        cst_commentaries::cst_file.eq(None),
+                    ),
+                ])
+                .execute(db_conn)
+        })
+        .expect("insert the dummy rows");
+
+    let statuses = appdata.commentary_statuses("dummy-ud2.3/pli/ms");
+    let lookups = appdata.related_texts_lookup("dummy-ud2.3/pli/ms");
+    cleanup();
+
+    assert_eq!(statuses.len(), 2, "{:?}", statuses);
+    let lookup = |kind: SuttaRefKind| lookups.iter().find(|(k, _)| *k == kind).unwrap().1.clone();
+    assert_eq!(lookup(SuttaRefKind::Atthakatha), RelatedTextLookup::Found("dummy-ud2.3.att/pli/cst".to_string()));
+    assert_eq!(lookup(SuttaRefKind::Tika), RelatedTextLookup::Missing);
+    // A text with no row: none read.
+    assert!(appdata.commentary_statuses("dummy-ud2.4/pli/ms").is_empty());
 }

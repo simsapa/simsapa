@@ -385,7 +385,33 @@ Commentary group (`open-root-text`, `open-commentary-text`,
 
 One rule, `related_text_lookup()` in `backend/src/helpers.rs`, decides both the
 buttons (rendered with the page by `related_texts_nav_html()`) and what the
-action does (`find_related_sutta_json()`). For each kind it returns:
+action does (`find_related_sutta_json()`).
+
+**The commentary table comes first.** `cst_commentaries` (appdata) says, per mūla
+text and kind, whether it `has` an aṭṭhakathā / ṭīkā and the uid of the record that
+covers it, or `none`. `tipitaka-xml-parser` computes it from the commentary's own
+paragraph citations and verifies it (its `docs/opentipitaka-export.md`, "The
+commentary table"); the bootstrap copies it (`store_commentary_table()` in
+`bootstrap_cli/src/bootstrap/tipitaka_xml.rs`) with the verified-list filter: a
+`has` row when its mūla file and commentary file are on `VERIFIED_CST_FILES`, a
+`none` row when its mūla file and every commentary file of its book and kind are.
+`AppdataDbHandle::commentary_statuses()` reads the rows of the opened text's
+reference (`ud2.3/pli/ms` → `ud2.3`) and `related_text_lookup()` takes them as an
+argument; it stays a pure function. For a kind:
+
+- the opened text's own kind: the opened text, as below;
+- a `has` row: `Found`, among the rows' records and the candidates of the same
+  reference (a translation of the commentary from another source), by the source
+  preference below (`iti12` → `iti11-13.att/pli/cst`);
+- only `none` rows: `Missing` (`thi-ap3`, `bv29`, an AN sutta the aṭṭhakathā
+  skips), unless a record of the same reference exists after all;
+- no row (an unverified or unmapped book, a mūla range that the table keys
+  otherwise, an appdata from before the table, whose read gives no rows): the rules
+  below, unchanged.
+
+This is why `CST_COLLECTIONS` needs no exception for `thi-ap`: its rows say `none`.
+
+Without a row, for each kind it returns:
 
 | Result | When | Button | Action |
 |---|---|---|---|
@@ -430,6 +456,9 @@ an unmapped book such as the Sutta Nipāta's aṭṭhakathā — is unknown, sin
 text is in a division record that only a search finds. A text with no
 comparable span (`mil3.1.1`) is unknown unless its exact reference matches or
 CST lacks the kind.
+
+The group rule below is the fallback when the table has no row. With the table,
+a book whose commentaries are mapped and verified answers per text.
 
 > **Trap: a partially mapped commentary file disables real commentaries.** Its
 > unmapped suttas keep their text in division records, but the group now has

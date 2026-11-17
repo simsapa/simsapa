@@ -404,7 +404,10 @@ lazy_static! {
     static ref RE_CST_BOOK_STEM: Regex = Regex::new(r"^([a-z]+\d+)([amt])\d*\.").unwrap();
 }
 
-fn book_stem(file_name: &str) -> Option<&str> {
+/// The book stem of a CST file name (`s0510m1.mul.xml` → `s0510`), by
+/// `RE_CST_BOOK_STEM`. `tipitaka-xml-parser`'s `cst_book_stem()` follows the same
+/// rule for the `cst_commentaries` table.
+pub fn book_stem(file_name: &str) -> Option<&str> {
     RE_CST_BOOK_STEM.captures(file_name).and_then(|c| c.get(1)).map(|m| m.as_str())
 }
 
@@ -434,6 +437,29 @@ pub fn cst_collection_for_uid(uid: &str) -> Option<&'static CstCollection> {
         })
         // The longest prefix wins, should two entries ever nest.
         .max_by_key(|c| c.sc_collection.len())
+}
+
+/// The CST files of a book's commentary of `kind` (aṭṭhakathā or ṭīkā), from
+/// [`CST_SOURCE_FILES`]: the files with the book stem of `mula_file`, the `a` / `t`
+/// letter and the `.att.xml` / `.tik.xml` extension. Empty for any other kind.
+pub fn cst_book_commentary_files(mula_file: &str, kind: SuttaRefKind) -> Vec<&'static str> {
+    let (letter, extension) = match kind {
+        SuttaRefKind::Atthakatha => ("a", ".att.xml"),
+        SuttaRefKind::Tika => ("t", ".tik.xml"),
+        _ => return Vec::new(),
+    };
+    let Some(stem) = book_stem(mula_file) else {
+        return Vec::new();
+    };
+    CST_SOURCE_FILES
+        .iter()
+        .copied()
+        .filter(|name| {
+            book_stem(name) == Some(stem)
+                && name.strip_prefix(stem).is_some_and(|rest| rest.starts_with(letter))
+                && name.ends_with(extension)
+        })
+        .collect()
 }
 
 /// Whether CST has a text of `kind` for the collection. A mūla always exists.

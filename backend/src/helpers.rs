@@ -526,9 +526,32 @@ pub enum RelatedTextLookup {
     Unknown,
 }
 
+/// A row of the `cst_commentaries` table for the opened text: whether it has a
+/// commentary of `kind`, and which record covers it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommentaryStatus {
+    /// [`SuttaRefKind::Atthakatha`] or [`SuttaRefKind::Tika`].
+    pub kind: SuttaRefKind,
+    /// The uid of the record that covers the text (`ud2.3.att/pli/cst`), or `None`
+    /// for a text that has no commentary of this kind.
+    pub text_uid: Option<String>,
+}
+
 /// The related text of `target_kind` (the mūla, aṭṭhakathā or ṭīkā) for
 /// `opened_uid`, chosen from `candidate_uids` (the uids that
 /// [`related_sutta_uids_like_pattern`] matches).
+///
+/// **The commentary table comes first.** `commentary` holds the
+/// `cst_commentaries` rows of the opened text's reference (`tipitaka-xml-parser`
+/// knows per mūla text which commentary record covers it, from the citations,
+/// and verifies it). For `target_kind`:
+///
+/// - a `has` row: [`RelatedTextLookup::Found`], choosing among the rows'
+///   records and the candidates of the same reference (a translation of the
+///   commentary from another source) by the source preference below;
+/// - only `none` rows: [`RelatedTextLookup::Missing`], unless a record of the
+///   same reference exists after all (it opens);
+/// - no row: the rules below, unchanged.
 ///
 /// The kind `opened_uid` already is resolves to `opened_uid` itself. Otherwise a
 /// record of the same reference is preferred, then one whose span shares a
@@ -549,6 +572,7 @@ pub fn related_text_lookup(
     opened_uid: &str,
     target_kind: SuttaRefKind,
     candidate_uids: &[String],
+    commentary: &[CommentaryStatus],
 ) -> RelatedTextLookup {
     let (opened_base, opened_kind) = split_sutta_ref_kind(opened_uid);
     if opened_kind == target_kind && !opened_base.ends_with(".xml") {
@@ -601,11 +625,35 @@ pub fn related_text_lookup(
             .cloned()
     };
 
-    let same_ref = of_kind
+    let same_ref: Vec<&String> = of_kind
         .iter()
         .copied()
         .filter(|c| split_sutta_ref_kind(c).0 == opened_base)
         .collect();
+
+    // The commentary table.
+    let rows: Vec<&CommentaryStatus> = commentary.iter().filter(|row| row.kind == target_kind).collect();
+    let has: Vec<&String> = rows.iter().filter_map(|row| row.text_uid.as_ref()).collect();
+    if !has.is_empty() {
+        let bases: Vec<&str> = has.iter().map(|uid| split_sutta_ref_kind(uid).0).collect();
+        let mut pool = has.clone();
+        pool.extend(
+            of_kind
+                .iter()
+                .copied()
+                .filter(|c| bases.contains(&split_sutta_ref_kind(c).0) && !has.contains(c)),
+        );
+        if let Some(found) = best(pool) {
+            return RelatedTextLookup::Found(found);
+        }
+    }
+    if !rows.is_empty() && has.is_empty() {
+        return match best(same_ref) {
+            Some(found) => RelatedTextLookup::Found(found),
+            None => RelatedTextLookup::Missing,
+        };
+    }
+
     if let Some(found) = best(same_ref) {
         return RelatedTextLookup::Found(found);
     }

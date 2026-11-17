@@ -636,10 +636,13 @@ mod baseline_migration_tests {
         assert_eq!(applied, 0);
     }
 
-    /// The baseline is the only appdata migration, so an installed database
-    /// with it recorded has nothing pending.
+    /// The baseline comes first and every later appdata migration is a dated
+    /// folder after it (`cst_commentaries`, a new table an installed database
+    /// takes in place); a fresh database records them all and has nothing
+    /// pending. A fold into the baseline (docs/database-migrations.md §0) removes
+    /// the dated folders from this list again.
     #[test]
-    fn baseline_is_the_only_appdata_migration() {
+    fn baseline_then_dated_appdata_migrations() {
         let mut db_conn = appdata_schema_test_db();
         let pending = db_conn
             .pending_migrations(APPDATA_MIGRATIONS)
@@ -652,7 +655,7 @@ mod baseline_migration_tests {
             .into_iter()
             .map(|r| r.version)
             .collect();
-        assert_eq!(versions, vec!["20260723000000".to_string()]);
+        assert_eq!(versions, vec!["20260723000000".to_string(), "20261116000000".to_string()]);
     }
 
     #[derive(QueryableByName)]
