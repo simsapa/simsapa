@@ -1276,7 +1276,9 @@ fn main() {
                 limit,
                 skip_archives,
             })
-                .map_err(|e| e.to_string())
+                // `{:#}` includes the anyhow context chain (e.g. the underlying
+                // DPD or DB error) instead of just the top message.
+                .map_err(|e| format!("{:#}", e))
         }
 
         Commands::DhammapadaTipitakaNetExport { legacy_db_path, output_db_path } => {
