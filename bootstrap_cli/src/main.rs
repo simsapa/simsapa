@@ -829,8 +829,9 @@ enum Commands {
         #[arg(long, value_name = "LIMIT")]
         limit: Option<i32>,
 
-        /// Do not create the release .tar.bz2 archives (faster, for
-        /// work-in-progress runs; the dist databases and indexes are built as usual)
+        /// Do not create the release .tar.bz2 archives, nor VACUUM the databases
+        /// that go into them (faster, for work-in-progress runs; the dist
+        /// databases and indexes are built and ANALYZEd as usual, only larger)
         #[arg(long, default_value_t = false)]
         skip_archives: bool,
     },
@@ -1266,7 +1267,15 @@ fn main() {
         }
 
         Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit, skip_archives } => {
-            bootstrap::bootstrap(write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit, skip_archives)
+            bootstrap::bootstrap(bootstrap::BootstrapOptions {
+                write_new_dotenv,
+                skip_appdata,
+                skip_dpd,
+                skip_languages,
+                only_languages,
+                limit,
+                skip_archives,
+            })
                 .map_err(|e| e.to_string())
         }
 

@@ -127,10 +127,33 @@ pub fn ensure_directory_exists(path: &Path) -> Result<()> {
 }
 
 /// Main bootstrap function - orchestrates the entire bootstrap process
-pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, skip_languages: bool, only_languages: Option<String>, limit: Option<i32>, skip_archives: bool) -> Result<()> {
+/// The options of the `bootstrap` command (see its `--help`).
+#[derive(Debug, Default, Clone)]
+pub struct BootstrapOptions {
+    pub write_new_dotenv: bool,
+    pub skip_appdata: bool,
+    pub skip_dpd: bool,
+    pub skip_languages: bool,
+    pub only_languages: Option<String>,
+    pub limit: Option<i32>,
+    /// Also skips the `VACUUM` of each database: it only shrinks the files
+    /// for their archives.
+    pub skip_archives: bool,
+}
+
+pub fn bootstrap(options: BootstrapOptions) -> Result<()> {
+    let BootstrapOptions {
+        write_new_dotenv,
+        skip_appdata,
+        skip_dpd,
+        skip_languages,
+        only_languages,
+        limit,
+        skip_archives,
+    } = options;
     logger::info("=== bootstrap() ===");
     if skip_archives {
-        logger::info("--skip-archives flag set: the release .tar.bz2 archives will not be created");
+        logger::info("--skip-archives flag set: the release .tar.bz2 archives will not be created, nor the databases vacuumed");
     }
     if skip_appdata {
         logger::info("--skip-appdata flag set: Appdata initialization and bootstrap will be skipped");
@@ -477,7 +500,9 @@ RELEASE_CHANNEL=development
         // SQLite picks a catastrophic plan for Headword Match — see
         // tasks/prd-fixing-headword-match-slow-query.md.
         check_fts_tables(&dict_db_path, &DICTIONARIES_FTS_TABLES)?;
-        vacuum_db(&dict_db_path)?;
+        if !skip_archives {
+            vacuum_db(&dict_db_path)?;
+        }
         analyze_db(&dict_db_path)?;
         if !skip_archives {
             create_database_archive(&dict_db_path, &release_databases_dir)?;
@@ -486,7 +511,9 @@ RELEASE_CHANNEL=development
         logger::info("=== Prepare dpd.sqlite3 (and its archive) ===");
         let dpd_db_path = assets_dir.join("dpd.sqlite3");
         check_fts_tables(&dpd_db_path, &DPD_FTS_TABLES)?;
-        vacuum_db(&dpd_db_path)?;
+        if !skip_archives {
+            vacuum_db(&dpd_db_path)?;
+        }
         analyze_db(&dpd_db_path)?;
         if !skip_archives {
             create_database_archive(&dpd_db_path, &release_databases_dir)?;
@@ -655,7 +682,9 @@ RELEASE_CHANNEL=development
         logger::info("=== Prepare appdata.sqlite3 (and its archive) ===");
         let appdata_db_path = assets_dir.join("appdata.sqlite3");
         check_fts_tables(&appdata_db_path, &APPDATA_FTS_TABLES)?;
-        vacuum_db(&appdata_db_path)?;
+        if !skip_archives {
+            vacuum_db(&appdata_db_path)?;
+        }
         analyze_db(&appdata_db_path)?;
         if !skip_archives {
             create_appdata_archive(&assets_dir, &release_databases_dir)?;
@@ -881,7 +910,7 @@ RELEASE_CHANNEL=development
 
     logger::info("=== Bootstrap completed ===");
     if skip_archives {
-        logger::warn("--skip-archives: no .tar.bz2 archives were created; this run is not a release");
+        logger::warn("--skip-archives: no .tar.bz2 archives were created and no database was vacuumed; this run is not a release");
     }
 
     let end_time = Local::now();

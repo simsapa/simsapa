@@ -117,7 +117,10 @@ bundled SQLite has FTS5, `trigram` is part of FTS5, and a missing tokenizer
 makes `CREATE VIRTUAL TABLE` fail rather than create an empty table.
 
 The scripts do not `VACUUM`. The bootstrap vacuums each shipped database once,
-with `vacuum_db()`, before its `ANALYZE` and its archive. The runtime never
+with `vacuum_db()`, before its `ANALYZE` and its archive (a work-in-progress
+run leaves it out with the archives, `bootstrap --skip-archives`; `ANALYZE`
+still runs, and the run ends with a warning that it is not a release). The
+runtime never
 vacuums: on `dpd.sqlite3` that rewrites 2.4 GB and needs as much free space
 again. `VACUUM` cannot run inside a transaction.
 
