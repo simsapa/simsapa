@@ -482,6 +482,10 @@ RELEASE_CHANNEL=development
 
     // Digital Pāli Dictionary
     if !skip_dpd {
+        // The destination file must exist before `init_app_data()` opens it:
+        // the connection pools keep the file they opened, and the migration
+        // runs in place (see `dpd::prepare_dpd_output()`).
+        dpd::prepare_dpd_output(&bootstrap_assets_dir, &assets_dir)?;
         init_app_data();
         dpd::dpd_bootstrap(&bootstrap_assets_dir, &assets_dir, limit)?;
 

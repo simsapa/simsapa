@@ -1165,7 +1165,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::JatakaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::JatakaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::ImportMigrateDpd { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1215,11 +1215,19 @@ fn main() {
         Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path, res_dir } => {
             match dpd_input_path.try_exists() {
                 Ok(true) => {
+                    // No `init_app_data()`: its connection pools keep
+                    // `dpd.sqlite3` open, and `import_migrate_dpd()` moves the
+                    // migrated file over the output path (the DPD upgrade
+                    // pipeline's rule — see docs/dpd-upgrades.md §2). Only the
+                    // dictionaries row is needed, and a local handle reads it.
+                    simsapa_backend::init_app_globals();
                     let paths = &simsapa_backend::get_app_globals().paths;
                     let output_path = dpd_output_path
                         .unwrap_or_else(|| simsapa_backend::get_create_simsapa_app_assets_path().join("dpd.sqlite3"));
-                    get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
-                        .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
+                    db::DatabaseHandle::new(&paths.dict_database_url)
+                        .map_err(|e| format!("Failed to open dictionaries.sqlite3: {:#}", e))
+                        .and_then(|dictionaries| dictionaries.find_or_create_dpd_dictionary()
+                            .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e)))
                         .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
                             &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None,
                             &|stage| simsapa_backend::logger::info(stage.label()),

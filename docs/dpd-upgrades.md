@@ -56,6 +56,19 @@ global app data. In order:
    `version` column of the DPD row of `dictionaries.dictionaries`, so the
    pages and the data both record their release.
 
+**The bootstrap migrates `dpd.sqlite3` in place.** `AppData`'s connection pools
+keep the file (the inode) they opened, so a file renamed over a path they hold
+leaves every later read on the replaced one — `append_bold_definitions_to_dict_index()`
+and the gloss phrase seeder failed with `no such table: dpd_headwords` when the
+bootstrap did that. So `bootstrap()` calls `prepare_dpd_output()` to copy
+`dpd.db` to `app-assets/dpd.sqlite3` *before* `init_app_data()`, and
+`import_migrate_dpd()` is given that path as both input and output: step 2 is a
+no-op and steps 1 and 3–6 run on the open file. The staged upgrade path still
+uses step 2, on a file nothing has open: `dpd upgrade` runs no `AppData`
+([backend-cli-and-npm-package.md](./backend-cli-and-npm-package.md)), and
+`bootstrap_cli import-migrate-dpd` reads only the dictionaries row, through a
+local handle, instead of `init_app_data()`.
+
 ## 3. The `dpd_res` table
 
 ```sql

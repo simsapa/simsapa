@@ -2753,6 +2753,12 @@ pub fn root_fields_by_keys(
 /// Migrate the upstream DPD database at `dpd_input_path` in place, move it to
 /// `dpd_output_path`, and add the derived columns and the indexes.
 ///
+/// `dpd_output_path` may be the same file as `dpd_input_path`: the bootstrap
+/// puts the copy at its final `dpd.sqlite3` path before `init_app_data()` opens
+/// it and migrates it there, because the app's pools keep the inode they
+/// opened and a rename over it would leave them reading the replaced file
+/// (see `dpd_migrate()` in `bootstrap_cli/src/bootstrap/dpd.rs`).
+///
 /// `dict_db_path` is the dictionaries database holding the DPD StarDict pages
 /// of the same release (the construction summaries are cut from them), and
 /// `dpd_dictionary_id` is the id of the DPD row in it. `res_dir` is the
@@ -2879,8 +2885,12 @@ fn record_dpd_release_version(dpd_db_path: &Path, dict_db_path: &Path, dpd_dicti
 }
 
 /// `fs::rename`, or copy and remove when the two paths are on different
-/// volumes.
+/// volumes. A file already at its destination is left alone: the bootstrap
+/// migrates `dpd.sqlite3` in place.
 fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    if crate::same_path(&from.to_string_lossy(), &to.to_string_lossy()) {
+        return Ok(());
+    }
     match fs::rename(from, to) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
@@ -3753,9 +3763,20 @@ pub fn create_dpd_indexes(dpd_db_path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::inflection_cell_titles;
+    use super::{inflection_cell_titles, move_file};
 
     const YOGA_TABLE: &str = "<table class='inflection'><tr><th>nom</th><td title='masc nom sg'>yog<b>o</b></td><td title='masc nom pl'>yog<b>ā</b><br><span class='gray'>yog<b>āse</b></span></td></tr><tr><th>instr</th><td title='masc instr sg'>yog<b>ā</b><br>yog<b>ena</b></td><td title='masc instr pl'>yog<b>ehi</b></td></tr><tr><th>abl</th><td title='masc abl sg'>yog<b>ato</b><br><span class='gray'>yog<b>asmā</b></span><br>yog<b>ā</b></td><td title='masc abl pl'>yog<b>ato</b></td></tr><tr><th>in comps</th><td title='in comps'>yog<b>a</b></td><td title=''></td></tr></table>";
+
+    /// `import_migrate_dpd()` is given the same path for input and output when
+    /// the bootstrap migrates the already-open `dpd.sqlite3` in place.
+    #[test]
+    fn move_file_onto_itself_keeps_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dpd.sqlite3");
+        std::fs::write(&path, b"dpd").unwrap();
+        move_file(&path, &path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"dpd");
+    }
 
     #[test]
     fn cell_titles_match_whole_entries() {
