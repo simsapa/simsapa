@@ -158,6 +158,39 @@ fn the_shipped_dhammapada_vagga_lists_its_commentary_tabs() {
     assert_eq!(row["has_content_json"], serde_json::Value::Bool(false), "{}", row);
 }
 
+/// Against the shipped database: the Jātaka 62 tabs, in both directions.
+#[test]
+#[serial]
+fn the_shipped_jataka_lists_its_anandajoti_tab() {
+    h::app_data_setup();
+
+    let with = listed_uids("ja62/pli/ms", true);
+    for uid in ["ja62.att/pli/cst", "ja62.att/en/opentipitaka", "ja62.att/en/anandajoti"] {
+        assert!(with.contains(&uid.to_string()), "{} missing: {:?}", uid, with);
+    }
+    assert!(!with.iter().any(|uid| uid.starts_with("ja6.att/") || uid.starts_with("ja63.att/")), "{:?}", with);
+    let without = listed_uids("ja62/pli/ms", false);
+    assert!(!without.iter().any(|uid| uid.contains(".att")), "{:?}", without);
+
+    for setting in [true, false] {
+        let from_commentary = listed_uids("ja62.att/pli/cst", setting);
+        assert!(from_commentary.contains(&"ja62.att/en/anandajoti".to_string()), "{:?}", from_commentary);
+        assert!(from_commentary.contains(&"ja62.att/en/opentipitaka".to_string()), "{:?}", from_commentary);
+        assert!(from_commentary.contains(&"ja62/pli/ms".to_string()), "{:?}", from_commentary);
+    }
+
+    let json = get_app_data()
+        .dbm
+        .appdata
+        .get_translations_data_json_for_sutta_uid("ja62.att/pli/cst", true, false);
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("translations JSON");
+    let row = rows
+        .iter()
+        .find(|r| r["item_uid"] == "ja62.att/en/anandajoti")
+        .expect("anandajoti row");
+    assert_eq!(row["has_content_json"], serde_json::Value::Bool(false), "{}", row);
+}
+
 #[test]
 fn the_opentipitaka_commentary_follows_the_commentary_setting() {
     let candidates = uids(&[
