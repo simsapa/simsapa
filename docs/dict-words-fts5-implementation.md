@@ -133,6 +133,22 @@ on the dist databases. Run it after any change to that search code:
 cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture
 ```
 
+The Suttas pins are tied to their data per search word: the rows whose
+`content_plain` contains the word, found with a plain `LIKE` (not the FTS
+index), are listed in id order in
+`backend/tests/data/search_results_pin_rows.tsv`. After a re-bootstrap, the
+cases of a word whose rows are unchanged are still compared strictly, so a
+search-code regression shows up on a new database too; the cases of a word
+whose rows changed are rewritten, with a summary of the added, removed, edited
+and reordered rows on stderr, and the `git diff` of the rows file names them.
+The Dictionary pins keep one fingerprint of the whole data they read and are
+rewritten together when it changes.
+
+Contains Match results come in row-id order, so the bootstrap must insert rows
+in a fixed order: the SuttaCentral import sorts its uids naturally
+(`natural_uid_cmp()`, `an1.2` before `an1.10`) instead of following a
+`HashMap`.
+
 1. **Functional Testing:**
    - Test dictionary searches with various query patterns
    - Verify pagination works correctly

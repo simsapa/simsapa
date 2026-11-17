@@ -1,5 +1,5 @@
 # case	total	rows	uids_sha256	content_sha256	first_uids
-# <area>.@db: the fingerprint of the database the pins of <area> were made from
+# dict.@db: the fingerprint of the database the dictionary pins were made from; suttas.@rows|<word>: of the rows of that word (search_results_pin_rows.tsv)
 dict.@db	dictionaries:3:6d4d7ddbb2f37115 dict_words:187122:bb59cf40b071ef24 bold_definitions:369147:8361c33e101d53d0
 dict.contains+bold|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
 dict.contains+bold|-|kamma|all	46930	46930	f52254085af3e361	651b6b1cce61b30e	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
@@ -128,7 +128,9 @@ dict.headword|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14
 dict.headword|uid_prefix=kamma|kamma|all	187	187	6748d96cf08f24a1	e67e7fa988d84c66	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
 dict.headword|uid_prefix=kamma|ssa|all	4	4	b16cfd271e277d93	252c4a642cc455ab	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
 dict.headword|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.@db	suttas:45091:99c24cde9ab6b8bb
+suttas.@rows|kakacena	31:305fb53d8bee1a0b
+suttas.@rows|mindfulness	3530:cb93899b7910c15d
+suttas.@rows|saṅkhārā	1418:3e9ea48968f38757
 suttas.contains|-|kakacena|p0	31	10	7e98e37ffccff84b	11c9ebadeef5edf5	ps1.3/pli/ms,mn21/pli/ms,mn28/pli/ms
 suttas.contains|-|kakacena|plast	31	1	a9c3bcb7e683da24	3df7b9379c025d47	s0517m.mul0.xml/pli/cst
 suttas.contains|-|mindfulness|p0	3530	10	0b572e366ca00a0a	493d80e12199bb54	sn46.26/en/sujato,da14/en/patton,sn46.12/en/bodhi

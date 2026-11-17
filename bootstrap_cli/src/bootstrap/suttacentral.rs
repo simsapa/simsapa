@@ -1186,7 +1186,13 @@ impl SuttaCentralImporter {
         let mut inserted_count = 0;
         let mut error_count = 0;
 
-        for (uid, sutta_data) in suttas.iter() {
+        // Insert in natural uid order: row ids are the order of the Contains
+        // Match results the reader sees (`ORDER BY f.rowid`), so they must not
+        // follow the HashMap's iteration order, which changes on every run.
+        let mut sorted: Vec<(&String, &SuttaCentralData)> = suttas.iter().collect();
+        sorted.sort_by(|a, b| natural_uid_cmp(a.0, b.0));
+
+        for (uid, sutta_data) in sorted {
             pb.set_message(uid.clone());
 
             let new_sutta = sutta_data.to_new_sutta();
@@ -1241,6 +1247,42 @@ impl SuttaImporter for SuttaCentralImporter {
         logger::info(&format!("SuttaCentral import completed for lang '{}'", &self.lang));
         Ok(())
     }
+}
+
+/// Compare uids the way a reader counts: runs of digits as numbers, the rest
+/// as text, so `an1.2` comes before `an1.10` and `dhp1-20` before `dhp21-32`.
+pub fn natural_uid_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    /// The runs of a uid: each a digit run or a non-digit run.
+    fn runs(s: &str) -> Vec<&str> {
+        let mut out = Vec::new();
+        let mut start = 0;
+        let bytes = s.as_bytes();
+        for i in 1..=bytes.len() {
+            if i == bytes.len() || bytes[i].is_ascii_digit() != bytes[start].is_ascii_digit() {
+                out.push(&s[start..i]);
+                start = i;
+            }
+        }
+        out
+    }
+
+    let (ra, rb) = (runs(a), runs(b));
+    for (x, y) in ra.iter().zip(rb.iter()) {
+        let both_digits = x.as_bytes()[0].is_ascii_digit() && y.as_bytes()[0].is_ascii_digit();
+        let ord = if both_digits {
+            // Numeric value without parsing: fewer significant digits is smaller.
+            let (xt, yt) = (x.trim_start_matches('0'), y.trim_start_matches('0'));
+            xt.len().cmp(&yt.len()).then_with(|| xt.cmp(yt)).then_with(|| x.len().cmp(&y.len()))
+        } else {
+            x.cmp(y)
+        };
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+    ra.len().cmp(&rb.len()).then_with(|| a.cmp(b))
 }
 
 #[cfg(test)]
@@ -1795,5 +1837,21 @@ mod tests {
         for words in ["he is one who delights in the ending of craving a disciple", "rightly selfawakened one"] {
             assert!(plain.to_lowercase().contains(words), "{plain:?}");
         }
+    }
+
+    #[test]
+    fn natural_uid_order_counts_the_numbers() {
+        let mut uids = vec![
+            "an1.10/en/sujato", "sn1.1/en/sujato", "an1.2/en/sujato", "dhp21-32/en/sujato",
+            "an10.1/en/sujato", "dhp1-20/en/sujato", "snp1.1/en/sujato", "an2.1/en/sujato",
+            "an1.2/pli/ms",
+        ];
+        uids.sort_by(|a, b| super::natural_uid_cmp(a, b));
+        assert_eq!(uids, [
+            "an1.2/en/sujato", "an1.2/pli/ms", "an1.10/en/sujato", "an2.1/en/sujato", "an10.1/en/sujato",
+            "dhp1-20/en/sujato", "dhp21-32/en/sujato", "sn1.1/en/sujato", "snp1.1/en/sujato",
+        ]);
+        assert_eq!(super::natural_uid_cmp("mn007/x", "mn7/x"), std::cmp::Ordering::Greater);
+        assert_eq!(super::natural_uid_cmp("mn7/x", "mn7/x"), std::cmp::Ordering::Equal);
     }
 }
