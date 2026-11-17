@@ -189,6 +189,9 @@ add a line here and an entry there.
   the `dhp<range>.att` records (CST, OpenTipitaka, Ānandajoti, Daw Mya Tin),
   `dhammapada-commentary-extract` and its import. A commentary is any `.att` /
   `.tik` uid, whatever its source; epub defects are reported, never repaired.
+- [Jātaka commentary: Ānandajoti's pages](./docs/jataka-commentary-anandajoti.md) —
+  the `ja<N>.att/en/anandajoti` pages, `jataka-commentary-extract`, the shared
+  `anandajoti_epub/` module, and the 32 repeated verse numbers the epub reports.
 - [New bootstrap import sources go into the preflight check](./docs/bootstrap-preflight.md).
 
 ### DPD, gloss and AI

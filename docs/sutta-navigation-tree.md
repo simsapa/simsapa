@@ -336,8 +336,10 @@ Which *kinds* are listed is decided separately, by the two settings:
 **The kind is read from the uid, never the source.** A reference ending in
 `.att` is an aṭṭhakathā and one ending in `.tik` a ṭīkā, whoever made it:
 `dhp21-32.att/en/anandajoti` and `dhp21-32.att/en/daw` follow
-`include_cst_commentary` exactly as `dhp21-32.att/pli/cst` does, here and in
-search ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2).
+`include_cst_commentary` exactly as `dhp21-32.att/pli/cst` does, as do the
+`ja<N>.att/en/anandajoti` Jātaka pages, here and in search
+([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2,
+[jataka-commentary-anandajoti.md](./jataka-commentary-anandajoti.md) §2).
 
 The lookup runs in two steps. A `LIKE` on the group prefix
 (`related_sutta_uids_like_pattern()`: `an5.%`, `mn%`) reads **uids only**, the
