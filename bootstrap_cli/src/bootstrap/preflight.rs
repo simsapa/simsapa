@@ -128,6 +128,11 @@ pub fn bootstrap_sources(steps: &PreflightSteps) -> Vec<Source> {
                 paths::dhammapada_commentary_anandajoti_dir().join(crate::bootstrap::dhammapada_commentary_anandajoti::MANIFEST_FILE),
                 File,
             ),
+            required(
+                "Jātaka commentary (Ānandajoti) pages manifest",
+                paths::jataka_commentary_anandajoti_dir().join(crate::bootstrap::jataka_commentary_anandajoti::MANIFEST_FILE),
+                File,
+            ),
             optional("Library imports TOML", paths::LIBRARY_IMPORTS_TOML, File),
             optional("Library imports books folder", paths::LIBRARY_IMPORTS_BOOKS_DIR, Dir),
             optional("Chanting practice", paths::CHANTING_PRACTICE_DIR, Dir),

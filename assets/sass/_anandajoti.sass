@@ -1,14 +1,16 @@
-// Ānandajoti's Dhamma Verses Commentary pages, `dhp….att/en/anandajoti`. The
-// classes are the ones the dhammapada-commentary-extract command writes; see
-// docs/dhammapada-commentary-anandajoti.md. The colours are translucent or
+// Ānandajoti's Dhamma Verses Commentary pages, `dhp….att/en/anandajoti`, and
+// his Jātaka translation, `ja<N>.att/en/anandajoti`. The classes are the ones
+// the dhammapada-commentary-extract and jataka-commentary-extract commands
+// write; see docs/dhammapada-commentary-anandajoti.md and
+// docs/jataka-commentary-anandajoti.md. The colours are translucent or
 // opacity-based, so the same rules read in the light and the dark theme.
 
 $rule_color: rgba(128, 128, 128, 0.4)
 
-.anandajoti-dhp-comm
+.anandajoti-dhp-comm, .anandajoti-jataka-comm
   // The page and sub-story tables of contents: compact, and lighter than the
   // text, so a long list does not push the first story far down.
-  nav.page-toc, nav.substory-toc
+  nav.page-toc, nav.substory-toc, nav.section-toc
     font-size: 0.8em
     line-height: 1.35
     opacity: 0.85
@@ -80,6 +82,61 @@ $rule_color: rgba(128, 128, 128, 0.4)
 
 // The vagga's Pāli name, under the <h1> in the article header.
 article header p.vagga-title-pali
+  text-align: center
+  font-style: italic
+  margin-top: -0.5em
+
+// The Jātaka pages: one section per page, the Pāli verse and its translation
+// as consecutive paragraphs, the translator's overview set apart.
+.anandajoti-jataka-comm
+  section.jataka
+    margin-top: 1em
+
+  h2.jataka-heading
+    font-size: 1.15em
+    text-align: center
+    margin: 0.6em 0 1em 0
+
+  h3.section-heading
+    font-size: 1.05em
+    text-align: center
+    margin-top: 1.8em
+
+  nav.section-toc
+    border-bottom: 1px solid $rule_color
+    padding-bottom: 0.6em
+    margin-bottom: 1.2em
+
+  // Each verse line is its own paragraph: no gap between lines.
+  p.verse, p.verse-quote
+    margin: 0 8%
+
+  p.verse-translation
+    margin: 0.6em 8% 1em 8%
+
+  p.list-line
+    margin: 0 0 0 1.3em
+    text-indent: -1.3em
+
+  p.indented
+    margin-left: 4%
+    margin-right: 4%
+
+  // A stanza break: no-break space only.
+  p.spacer
+    margin: 0
+    line-height: 0.8
+
+  // The translator's overview, identification, Compare and Keywords lines.
+  p.translator-note
+    font-size: 0.9em
+    opacity: 0.85
+    margin-left: 0
+    margin-right: 0
+    font-style: normal
+
+// The Jātaka's Pāli name, under the <h1> in the article header.
+article header p.jataka-title-pali
   text-align: center
   font-style: italic
   margin-top: -0.5em

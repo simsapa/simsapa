@@ -61,6 +61,7 @@
 //! Every note is referenced once. Note refs also occur inside headings.
 
 pub mod extract;
+pub mod import;
 pub mod page;
 
 #[cfg(test)]

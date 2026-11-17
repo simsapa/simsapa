@@ -54,6 +54,7 @@ pub use dhammapada_munindo::DhammapadaMunindoImporter;
 pub use dhammapada_suttacentral::DhammapadaSuttaCentralImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
 pub use dhammapada_commentary_anandajoti::import::DhammapadaCommentaryAnandajotiImporter;
+pub use jataka_commentary_anandajoti::import::JatakaCommentaryAnandajotiImporter;
 pub use nyanadipa::NyanadipaImporter;
 pub use suttacentral::SuttaCentralImporter;
 pub use buddha_ujja::BuddhaUjjaImporter;
@@ -357,6 +358,20 @@ RELEASE_CHANNEL=development
             let mut importer = DhammapadaCommentaryAnandajotiImporter::new(
                 bootstrap_assets_dir.join(source_paths::dhammapada_commentary_anandajoti_dir()),
                 bootstrap_assets_dir.join(source_paths::dhammapada_commentary_epub_file()),
+            );
+            importer.import(&mut conn)?;
+        }
+
+        // Ānandajoti's Jātaka translation, one page per Jātaka, from the
+        // jataka-commentary-extract output. Its rows copy their grouping from
+        // the `ja<N>.att/en/opentipitaka` records of the CST import above and
+        // need the `ja<N>.att/pli/cst` record. See
+        // docs/jataka-commentary-anandajoti.md.
+        {
+            logger::info("Importing suttas from jataka-commentary-anandajoti");
+            let mut importer = JatakaCommentaryAnandajotiImporter::new(
+                bootstrap_assets_dir.join(source_paths::jataka_commentary_anandajoti_dir()),
+                bootstrap_assets_dir.join(source_paths::jataka_commentary_epub_file()),
             );
             importer.import(&mut conn)?;
         }
