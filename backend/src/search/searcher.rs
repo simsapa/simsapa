@@ -2014,6 +2014,22 @@ mod tests {
         assert_eq!(uids, ["dhp21-32/en/anandajoti", "dhp21-32/pli/cst"]);
     }
 
+    /// A Jātaka and its commentary, in CST Pāli and in translations.
+    const JA_FILTER_DOCS: [(&str, &str); 4] = [
+        ("ja62.att/en/anandajoti", "anandajoti"),
+        ("ja62.att/pli/cst", "cst"),
+        ("ja62/en/sujato", "sujato"),
+        ("ja62/pli/cst", "cst"),
+    ];
+
+    #[test]
+    fn test_commentary_filter_covers_the_jataka_commentary() {
+        let uids = uids_after_sutta_filters(&JA_FILTER_DOCS, &cst_filters(true, false));
+        assert_eq!(uids, ["ja62/en/sujato", "ja62/pli/cst"]);
+        let uids = uids_after_sutta_filters(&JA_FILTER_DOCS, &cst_filters(true, true));
+        assert_eq!(uids.len(), JA_FILTER_DOCS.len());
+    }
+
     #[test]
     fn test_commentary_filter_on_keeps_every_dhammapada_record() {
         let uids = uids_after_sutta_filters(&DHP_FILTER_DOCS, &cst_filters(true, true));
