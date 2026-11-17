@@ -655,6 +655,12 @@ note = "Anchored at Sāñcī."
     // A word from the context note alone.
     assert_eq!(uids("sanci"), vec!["sutta/long"]);
 
+    // Both sides are folded by `normalize_for_search`, so a query typed in
+    // caps with the diacritics the note uses reaches the same row -- the
+    // two-sided fold is what makes the filter's `contains` an accent-blind
+    // match, and a one-sided one would be a silent miss.
+    assert_eq!(uids("SĀÑCĪ"), vec!["sutta/long"]);
+
     // One word from the summary and one from the note: the node's texts are
     // searched as a whole, not field by field.
     assert_eq!(uids("relinquish sanci"), vec!["sutta/long"]);

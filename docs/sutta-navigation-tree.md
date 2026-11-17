@@ -255,8 +255,8 @@ only the query-side reading changed, not `search_text`.
 **A word may also be found in a summary or a context note**, which are not in
 the column at all (see §2f). `term_match_nodes_conn` therefore does not run one
 `LIKE` per word: it reads `node_uid`, `search_text` and `sort_path` for the
-whole tree (a few milliseconds over ~17,000 rows, since no prose column is
-read), tests each word in Rust against the column or against
+whole tree (a few milliseconds in a release build over ~17,000 rows, since no
+prose column is read), tests each word in Rust against the column or against
 `NavigationTexts::blurb_or_note_contains`, sorts the hits by `sort_path` and
 loads only those rows in full. The summaries are asset text, so a materialized
 copy would have to be rebuilt with the tree and would still go stale against the
@@ -1091,7 +1091,8 @@ does not open the other. Neither text is part of `search_text`, so the filter
 cannot reach them through SQL: `NavigationTexts::from_toml` folds each node's
 summaries and note once into `summary_search`, and `term_match_nodes_conn` tests
 the query's words against that map as well as against `search_text` (see §2a).
-That is why both texts are searchable whether or not the row is drawing them.
+The map holds every text the node has, so both are searchable whether or not the
+row is drawing them.
 
 ## 2g. The window: what its rows are built from
 
@@ -1124,11 +1125,11 @@ The rules below are the ones that break quietly.
   (`ancestor_segments()`), which is the same walk §2b uses for every other
   route.
 - **The filter's whole-tree read stays narrow: `node_uid`, `search_text` and
-  `sort_path` only.** It runs on every keystroke, so a matched row's full text
-  is loaded for the hits alone, never for the tree. The summaries and context
-  notes are not columns and are matched in Rust from the cached
-  `NavigationTexts`; they must not be pulled into the query, or into
-  `search_text`.
+  `sort_path` only.** It runs on every filter change (debounced 250 ms in QML,
+  or at once on Enter), so a matched row's full text is loaded for the hits
+  alone, never for the tree. The summaries and context notes are not columns
+  and are matched in Rust from the cached `NavigationTexts`; they must not be
+  pulled into the query, or into `search_text`.
 - **Hiding a summary is cosmetic, so it stays searchable.** The Summaries
   toggle and an empty override decide what the row *draws*; they do not remove
   the node's data from what the filter finds.
