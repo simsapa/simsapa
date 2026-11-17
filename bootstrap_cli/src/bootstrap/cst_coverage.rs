@@ -107,7 +107,7 @@ use tipitaka_xml_parser::fragments_schema::xml_fragments;
 /// in `docs/sutta-navigation-tree.md` §6.1. A commentary file (`.att` / `.tik`)
 /// must be fully mapped: the reader's m | a | t buttons depend on it, and
 /// `test_verified_commentary_files_are_fully_mapped` checks it.
-static VERIFIED_CST_FILES: [&str; 82] = [
+static VERIFIED_CST_FILES: [&str; 101] = [
     // Dīgha Nikāya
     "s0101a.att.xml",
     "s0101m.mul.xml",
@@ -185,6 +185,25 @@ static VERIFIED_CST_FILES: [&str; 82] = [
     "s0512m.mul.xml",
     "s0513m.mul.xml",
     "s0514m.mul.xml",
+    "s0501a.att.xml",
+    "s0503a.att.xml",
+    "s0504a.att.xml",
+    "s0505a.att.xml",
+    "s0506a.att.xml",
+    "s0507a.att.xml",
+    "s0508a1.att.xml",
+    "s0508a2.att.xml",
+    "s0509a.att.xml",
+    "s0510a.att.xml",
+    "s0511a.att.xml",
+    "s0512a.att.xml",
+    "s0513a1.att.xml",
+    "s0513a2.att.xml",
+    "s0513a3.att.xml",
+    "s0513a4.att.xml",
+    "s0514a1.att.xml",
+    "s0514a2.att.xml",
+    "s0514a3.att.xml",
 
     // Vinaya Piṭaka
     "vin01m.mul.xml",
