@@ -179,6 +179,9 @@ add a line here and an entry there.
   in-app Update / Reset.
 - [Segmented translations from suttas-core](./docs/suttas-core-import.md) —
   the suttas-core bootstrap step.
+- [Rebuilding the suttas-core database](./docs/suttas-core-db-rebuild.md) —
+  before a bootstrap: update the `simsapa` branch, re-pin sc-data, build into a
+  dated folder, repoint `current`, run the import tests.
 - [Munindo, Nyanadipa and SuttaCentral-HTML segment files, Dhammapada verse groups, verse lines](./docs/munindo-nyanadipa-segmentation.md) —
   the hand-placed `bilara/` files and `check-segment-files` (run it after any
   edit), the verse-range rule, and `render_verse_lines()`. Never align

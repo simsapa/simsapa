@@ -531,6 +531,14 @@ substantially.
   `data-n`, a bottom bar that updates incrementally so a selection survives), and
   the `survey-suttas-core` report. A version bump of the appdata DB is needed
   before release.
+- [Rebuilding the suttas-core database](./suttas-core-db-rebuild.md) — the
+  hand procedure that produces `suttas-core-db/current/suttas.sqlite` before a
+  bootstrap: find which of our suttas-core branches upstream has merged (it
+  rebases them, so `git cherry` misleads; use `range-diff`), re-branch
+  `simsapa`, re-pin sc-data with `sync.ts` (report, `--remap`, `--write`,
+  `stale.ts`), build with `--verse-indent --emphasis` into a dated folder,
+  write `BUILT-FROM.txt`, repoint `current`, run the `suttas_core` real-data
+  tests.
 - [Munindo, Nyanadipa and SuttaCentral-HTML segment files, Dhammapada verse groups, verse lines](./munindo-nyanadipa-segmentation.md) —
   Ajahn Munindo's Dhammapada and Bhante Nyanadipa's Sutta Nipāta as
   hand-placed segment files (`bilara/<sutta_id>.json` in suttas-core's

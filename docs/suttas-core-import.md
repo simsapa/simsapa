@@ -28,8 +28,9 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
   `test_real_data_than_emphasis_and_opening_dash_survive_import` fails; it also
   fails on a build without `glue-opening-punctuation`.
 - `simsapa` is `master` with the feature branches merged that upstream has not
-  merged yet: `than-verse-indent`, `glue-opening-punctuation` (opening
-  punctuation the model cut onto the previous line), `than-emphasis`. It is
+  merged yet. There are none at the moment: upstream has merged
+  `than-verse-indent`, `glue-opening-punctuation` and `than-emphasis`, and
+  `simsapa` is `master` plus the sc-data re-pin. It is
   never pushed. A fix goes on its feature branch, then
   `git switch simsapa && git merge <branch>`. `rerere` is on in that clone
   (`autoupdate` off), so a conflict resolved there before is replayed into the
@@ -38,6 +39,8 @@ A suttas-core text is keyed by the SuttaCentral segment ids of the Pāli root
 - To use a new suttas-core build: put its database in a new dated folder with
   its `build.log` and a `BUILT-FROM.txt` (the `simsapa` commit, each merged
   branch's commit, the build command), repoint `current`, re-run the bootstrap.
+  The full procedure, from updating the branch and re-pinning sc-data to the
+  import tests, is in [suttas-core-db-rebuild.md](./suttas-core-db-rebuild.md).
 - Position: in `bootstrap()` **after** the SuttaCentral and dhammatalks.org
   imports and **before** the Dhammapada (tipitaka.net), Nyanadipa, Munindo and
   SuttaCentral-HTML Dhammapada steps, the library imports and the
