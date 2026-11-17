@@ -562,6 +562,18 @@ substantially.
   mapping, and the defect report (**reported, never repaired**). A Dhammapada
   verse is glossed from the MS record, since the CST records are keyed by
   vagga.
+- [Jātaka commentary: Ānandajoti's pages](./jataka-commentary-anandajoti.md) —
+  Ānandajoti's *The Birth Stories (Jātakatthavaṇṇanā)* as one page per Jātaka,
+  `ja<N>.att/en/anandajoti`, beside the CST aṭṭhakathā `ja<N>.att/pli/cst` and
+  its OpenTipitaka English. The extract → import stages
+  (`jataka-commentary-extract`, the manifest's SHA-256 warning), the epub
+  facts (122 content files read as one heading-ordered stream, the three notes
+  files, the Book heading that gives the Nipāta), the anchor scheme
+  (`ja-62`, `ja-536-the-small-wood`, `ja-62-v1`, `note-4`), the class mapping,
+  and the defect report (**reported, never repaired**; the 2023 epub's only
+  defects are 32 repeated verse numbers). The shared `anandajoti_epub/` module
+  holds what the Dhammapada and Jātaka imports have in common; a third
+  Ānandajoti epub needs only its own structure and class tables.
 - [Releases info lookup and the embedded fallback JSON](./releases-info-and-fallback.md) —
   how the app obtains **releases info** (the `github_repo` / `version_tag` used
   to build GitHub asset download URLs for setup and language downloads). The live

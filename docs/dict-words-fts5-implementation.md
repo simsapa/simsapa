@@ -117,7 +117,10 @@ bundled SQLite has FTS5, `trigram` is part of FTS5, and a missing tokenizer
 makes `CREATE VIRTUAL TABLE` fail rather than create an empty table.
 
 The scripts do not `VACUUM`. The bootstrap vacuums each shipped database once,
-with `vacuum_db()`, before its `ANALYZE` and its archive. The runtime never
+with `vacuum_db()`, before its `ANALYZE` and its archive (a work-in-progress
+run leaves it out with the archives, `bootstrap --skip-archives`; `ANALYZE`
+still runs, and the run ends with a warning that it is not a release). The
+runtime never
 vacuums: on `dpd.sqlite3` that rewrites 2.4 GB and needs as much free space
 again. `VACUUM` cannot run inside a transaction.
 
@@ -132,6 +135,22 @@ on the dist databases. Run it after any change to that search code:
 ``` sh
 cd backend && cargo test --test test_search_results_pin -- --ignored --nocapture
 ```
+
+The Suttas pins are tied to their data per search word: the rows whose
+`content_plain` contains the word, found with a plain `LIKE` (not the FTS
+index), are listed in id order in
+`backend/tests/data/search_results_pin_rows.tsv`. After a re-bootstrap, the
+cases of a word whose rows are unchanged are still compared strictly, so a
+search-code regression shows up on a new database too; the cases of a word
+whose rows changed are rewritten, with a summary of the added, removed, edited
+and reordered rows on stderr, and the `git diff` of the rows file names them.
+The Dictionary pins keep one fingerprint of the whole data they read and are
+rewritten together when it changes.
+
+Contains Match results come in row-id order, so the bootstrap must insert rows
+in a fixed order: the SuttaCentral import sorts its uids naturally
+(`natural_uid_cmp()`, `an1.2` before `an1.10`) instead of following a
+`HashMap`.
 
 1. **Functional Testing:**
    - Test dictionary searches with various query patterns

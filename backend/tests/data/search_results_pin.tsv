@@ -1,5 +1,5 @@
 # case	total	rows	uids_sha256	content_sha256	first_uids
-# <area>.@db: the fingerprint of the database the pins of <area> were made from
+# dict.@db: the fingerprint of the database the dictionary pins were made from; suttas.@rows|<word>: of the rows of that word (search_results_pin_rows.tsv)
 dict.@db	dictionaries:3:6d4d7ddbb2f37115 dict_words:187122:bb59cf40b071ef24 bold_definitions:369147:8361c33e101d53d0
 dict.contains+bold|-|ceylon|all	1242	1242	ee2fa35e2cb71c4f	c0654c91d9457c12	akarabhaṇḍa/dppn,akkhakkhāyika/dppn,akkharamālā/dppn
 dict.contains+bold|-|kamma|all	46930	46930	f52254085af3e361	651b6b1cce61b30e	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
@@ -128,37 +128,39 @@ dict.headword|uid_prefix=kamma|ceylon|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14
 dict.headword|uid_prefix=kamma|kamma|all	187	187	6748d96cf08f24a1	e67e7fa988d84c66	kamma-1/dpd,kamma-2/dpd,kamma-3/dpd
 dict.headword|uid_prefix=kamma|ssa|all	4	4	b16cfd271e277d93	252c4a642cc455ab	kammassaka/dpd,kammassakatā/dpd,kammassakomhi/dpd
 dict.headword|uid_prefix=kamma|sutthu|all	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.@db	suttas:36045:4bce886044f9cf24
-suttas.contains|-|kakacena|p0	30	10	1591e63211dd885a	c52f463bf2635259	ps1.3/pli/ms,mn28/pli/ms,mn21/pli/ms
-suttas.contains|-|kakacena|plast	30	10	d5b61b1d5dfc95a3	84cad4d8b327bd67	s0508a2.att2.xml/pli/cst,s0512a.att3.xml/pli/cst,s0513a1.att1.xml/pli/cst
-suttas.contains|-|mindfulness|p0	3334	10	1f51b08cbc9d2cb8	3655f964cc875bcc	an10.136/en/sujato,kv9.3/en/aung-rhysdavids,sn47.16/en/bodhi
-suttas.contains|-|mindfulness|plast	3334	4	51495b617dc35ef7	8cc36b3b4e8e33eb	dhp129-145.att/en/anandajoti,dhp290-305.att/en/anandajoti,dhp334-359.att/en/anandajoti
-suttas.contains|-|saṅkhārā|p0	1378	10	80c091659da221d6	29a3c47cecbb8175	mil6.2.4/pli/ms,bv8/pli/ms,tha-ap429/pli/ms
-suttas.contains|-|saṅkhārā|plast	1378	8	c1d846a4785685ff	5d704d301173a4c9	vin11t.nrf0.xml/pli/cst,vin11t.nrf35.xml/pli/cst,vin12t.nrf2.xml/pli/cst
+suttas.@rows|kakacena	31:305fb53d8bee1a0b
+suttas.@rows|mindfulness	3530:cb93899b7910c15d
+suttas.@rows|saṅkhārā	1418:3e9ea48968f38757
+suttas.contains|-|kakacena|p0	31	10	7e98e37ffccff84b	11c9ebadeef5edf5	ps1.3/pli/ms,mn21/pli/ms,mn28/pli/ms
+suttas.contains|-|kakacena|plast	31	1	a9c3bcb7e683da24	3df7b9379c025d47	s0517m.mul0.xml/pli/cst
+suttas.contains|-|mindfulness|p0	3530	10	0b572e366ca00a0a	493d80e12199bb54	sn46.26/en/sujato,da14/en/patton,sn46.12/en/bodhi
+suttas.contains|-|mindfulness|plast	3530	10	f3c6839723119f04	27cfaa8e839f44cf	dhp1-20.att/en/anandajoti,dhp21-32.att/en/anandajoti,dhp33-43.att/en/anandajoti
+suttas.contains|-|saṅkhārā|p0	1418	10	0256c1060dad45af	a38c01a9c21a4a8b	sn22.45/pli/ms,sn22.53/pli/ms,an10.90/pli/ms
+suttas.contains|-|saṅkhārā|plast	1418	8	117346df586df498	00407931c56bc8fd	vin11t.nrf35.xml/pli/cst,vin12t.nrf2.xml/pli/cst,vin13t.nrf1.xml/pli/cst
 suttas.contains|lang=en|kakacena|p0	1	1	aa051fe5537dc0cd	3761440f68561422	s0105t.nrf0.xml/en/opentipitaka
 suttas.contains|lang=en|kakacena|plast	1	1	aa051fe5537dc0cd	3761440f68561422	s0105t.nrf0.xml/en/opentipitaka
-suttas.contains|lang=en|mindfulness|p0	3334	10	1f51b08cbc9d2cb8	3655f964cc875bcc	an10.136/en/sujato,kv9.3/en/aung-rhysdavids,sn47.16/en/bodhi
-suttas.contains|lang=en|mindfulness|plast	3334	4	51495b617dc35ef7	8cc36b3b4e8e33eb	dhp129-145.att/en/anandajoti,dhp290-305.att/en/anandajoti,dhp334-359.att/en/anandajoti
-suttas.contains|lang=en|saṅkhārā|p0	51	10	00a585e1c038e68f	cf09664de6880cc0	dn15.tik/en/opentipitaka,dn33.att/en/opentipitaka,dn28.tik/en/opentipitaka
-suttas.contains|lang=en|saṅkhārā|plast	51	1	4c48a90954e0c6dc	168daa82852a6611	dhp383-423.att/en/anandajoti
+suttas.contains|lang=en|mindfulness|p0	3530	10	0b572e366ca00a0a	493d80e12199bb54	sn46.26/en/sujato,da14/en/patton,sn46.12/en/bodhi
+suttas.contains|lang=en|mindfulness|plast	3530	10	f3c6839723119f04	27cfaa8e839f44cf	dhp1-20.att/en/anandajoti,dhp21-32.att/en/anandajoti,dhp33-43.att/en/anandajoti
+suttas.contains|lang=en|saṅkhārā|p0	52	10	00a585e1c038e68f	cf09664de6880cc0	dn15.tik/en/opentipitaka,dn33.att/en/opentipitaka,dn28.tik/en/opentipitaka
+suttas.contains|lang=en|saṅkhārā|plast	52	2	1ffb5c4ada6e2b33	5277a129073fe2c7	dhp383-423.att/en/anandajoti,ja95.att/en/anandajoti
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|kakacena|p0	5	5	b3915c5431f0dab3	c0f40ec1033a730e	mn21.att/pli/cst,mn21/pli/cst,mn28/pli/cst
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|kakacena|plast	5	5	b3915c5431f0dab3	c0f40ec1033a730e	mn21.att/pli/cst,mn21/pli/cst,mn28/pli/cst
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|mindfulness|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|saṅkhārā|p0	76	10	06320aaa41ee6c9c	6391a771ee0c3b2f	mn1.att/pli/cst,mn2.att/pli/cst,mn9.att/pli/cst
 suttas.contains|lang=pli,nikaya=majjhima,no_ms|saṅkhārā|plast	76	6	0fb59037836abfc6	59eebfedf78f5ef4	mn120.tik/pli/cst,mn121.tik/pli/cst,mn122.tik/pli/cst
-suttas.contains|lang=pli|kakacena|p0	29	10	1591e63211dd885a	c52f463bf2635259	ps1.3/pli/ms,mn28/pli/ms,mn21/pli/ms
-suttas.contains|lang=pli|kakacena|plast	29	9	cb1bc2517d86e04a	72023ffffee0e91e	s0512a.att3.xml/pli/cst,s0513a1.att1.xml/pli/cst,s0513a2.att0.xml/pli/cst
+suttas.contains|lang=pli|kakacena|p0	30	10	7e98e37ffccff84b	11c9ebadeef5edf5	ps1.3/pli/ms,mn21/pli/ms,mn28/pli/ms
+suttas.contains|lang=pli|kakacena|plast	30	10	90adec1b89e079bf	48bf61448a1acc7f	e0101n.mul8.xml/pli/cst,e0101n.mul9.xml/pli/cst,e0103n.att8.xml/pli/cst
 suttas.contains|lang=pli|mindfulness|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.contains|lang=pli|saṅkhārā|p0	1327	10	80c091659da221d6	29a3c47cecbb8175	mil6.2.4/pli/ms,bv8/pli/ms,tha-ap429/pli/ms
-suttas.contains|lang=pli|saṅkhārā|plast	1327	7	0c678a6a43d6c572	d72598dd7b4f297f	vin08t.nrf31.xml/pli/cst,vin09t.nrf13.xml/pli/cst,vin11t.nrf0.xml/pli/cst
+suttas.contains|lang=pli|saṅkhārā|p0	1366	10	0256c1060dad45af	a38c01a9c21a4a8b	sn22.45/pli/ms,sn22.53/pli/ms,an10.90/pli/ms
+suttas.contains|lang=pli|saṅkhārā|plast	1366	6	2aa23b80afc9db6f	f70c0d35fb388e2f	vin09t.nrf13.xml/pli/cst,vin11t.nrf0.xml/pli/cst,vin11t.nrf35.xml/pli/cst
 suttas.contains|nikaya=sn|kakacena|p0	0	0	e3b0c44298fc1c14	e3b0c44298fc1c14	
-suttas.contains|nikaya=sn|mindfulness|p0	648	10	1889025bcaddd482	6f74c73630f164ff	sn47.16/en/bodhi,sn56.13/en/sujato,sn54.12/en/sujato
+suttas.contains|nikaya=sn|mindfulness|p0	648	10	99bb5476204c6170	331c771b82087d21	sn46.26/en/sujato,sn46.12/en/bodhi,sn48.18/en/sujato
 suttas.contains|nikaya=sn|mindfulness|plast	648	8	887da6c230cc2908	fa673a450a47be99	snp2.11/en/thanissaro,snp3.2/en/thanissaro,snp5.1/en/thanissaro
-suttas.contains|nikaya=sn|saṅkhārā|p0	199	10	e03e9acbedce1bb5	33e0dee83625be62	sn23.4/pli/ms,sn14.11/pli/ms,sn22.13/pli/ms
-suttas.contains|nikaya=sn|saṅkhārā|plast	199	9	30a15f12aae629c8	b5ed3251df88aaa8	sn36.17/pli/ms,sn36.15/pli/ms,sn12.48/pli/ms
-suttas.contains|no_ms|kakacena|p0	27	10	2d5fd511213a4a36	d632aeba977bc313	dn1.tik/pli/cst,mn21.att/pli/cst,mn21/pli/cst
-suttas.contains|no_ms|kakacena|plast	27	7	2731c108aed2952d	33fb2848a39687a6	s0513a2.att0.xml/pli/cst,s0513a4.att6.xml/pli/cst,s0514a3.att.xml/pli/cst
-suttas.contains|no_ms|mindfulness|p0	3334	10	1f51b08cbc9d2cb8	3655f964cc875bcc	an10.136/en/sujato,kv9.3/en/aung-rhysdavids,sn47.16/en/bodhi
-suttas.contains|no_ms|mindfulness|plast	3334	4	51495b617dc35ef7	8cc36b3b4e8e33eb	dhp129-145.att/en/anandajoti,dhp290-305.att/en/anandajoti,dhp334-359.att/en/anandajoti
-suttas.contains|no_ms|saṅkhārā|p0	965	10	53f06799a43c24d0	d9e469e0e7c23afe	dn1.att/pli/cst,dn1.tik/pli/cst,dn2.tik/pli/cst
-suttas.contains|no_ms|saṅkhārā|plast	965	5	49d8980e9d2c1206	e734323411bf3a91	vin13t.nrf1.xml/pli/cst,vin13t.nrf2.xml/pli/cst,dhp235-255.att/en/anandajoti
+suttas.contains|nikaya=sn|saṅkhārā|p0	199	10	579ac90a1d62c36c	794335d2ce822833	sn22.45/pli/ms,sn22.53/pli/ms,sn14.11/pli/ms
+suttas.contains|nikaya=sn|saṅkhārā|plast	199	9	238a08c4ed506298	62a3369f248a7be4	sn22.139/pli/ms,sn15.20/pli/ms,sn22.92/pli/ms
+suttas.contains|no_ms|kakacena|p0	28	10	16fef8739301fcc9	99f24e7d05724908	dn1.tik/pli/cst,mn21.att/pli/cst,mn21/pli/cst
+suttas.contains|no_ms|kakacena|plast	28	8	c27ceec23b9d9859	b288d8241eb0af3a	e0601n.nrf1.xml/pli/cst,e0902n.nrf0.xml/pli/cst,e1010n.nrf3.xml/pli/cst
+suttas.contains|no_ms|mindfulness|p0	3530	10	0b572e366ca00a0a	493d80e12199bb54	sn46.26/en/sujato,da14/en/patton,sn46.12/en/bodhi
+suttas.contains|no_ms|mindfulness|plast	3530	10	f3c6839723119f04	27cfaa8e839f44cf	dhp1-20.att/en/anandajoti,dhp21-32.att/en/anandajoti,dhp33-43.att/en/anandajoti
+suttas.contains|no_ms|saṅkhārā|p0	1005	10	53f06799a43c24d0	d9e469e0e7c23afe	dn1.att/pli/cst,dn1.tik/pli/cst,dn2.tik/pli/cst
+suttas.contains|no_ms|saṅkhārā|plast	1005	5	7d0a7f4d2855d486	6e3d7f78a8b0536a	vin13t.nrf2.xml/pli/cst,dhp235-255.att/en/anandajoti,dhp273-289.att/en/anandajoti

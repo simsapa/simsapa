@@ -72,7 +72,7 @@ fn files_under_opf(entries: BTreeMap<String, String>, file_name: String, sha256:
     Ok(EpubFiles { file_name, sha256, opf_name, files })
 }
 
-pub(super) fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -226,7 +226,7 @@ pub struct TocEntry {
     pub fragment: Option<String>,
 }
 
-fn parse_ncx(text: &str) -> Result<Vec<TocEntry>> {
+pub fn parse_ncx(text: &str) -> Result<Vec<TocEntry>> {
     let mut reader = Reader::from_str(text);
     reader.trim_text(true);
     let mut entries: Vec<TocEntry> = Vec::new();

@@ -17,8 +17,13 @@ The same book stays in the library as `dhp-comm`
 and Conclusion. The sutta pages hold the stories only.
 
 Code: `bootstrap_cli/src/bootstrap/dhammapada_commentary_anandajoti/`
-(`epub.rs` reading, `extract.rs` structure and checks, `page.rs` the page
-HTML, `import.rs` the bootstrap step). Styles: `assets/sass/_anandajoti.sass`.
+(`extract.rs` the vagga / story structure and checks, `page.rs` the page HTML
+and its class tables, `import.rs` the bootstrap step), on the shared epub code
+in `bootstrap_cli/src/bootstrap/anandajoti_epub/` (epub reading, the block
+stream and notes, the HTML writer, the page frame, the report, `CopiedColumns`
+and the SHA-256 check), which his Jātaka pages use too
+([jataka-commentary-anandajoti.md](./jataka-commentary-anandajoti.md) §8).
+Styles: `assets/sass/_anandajoti.sass`.
 
 ## 1. The uid scheme
 

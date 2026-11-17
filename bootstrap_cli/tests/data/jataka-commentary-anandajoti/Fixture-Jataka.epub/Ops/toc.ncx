@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+<navMap>
+<navPoint id="n1" playOrder="1"><navLabel><text>Introduction</text></navLabel><content src="001.html"/></navPoint>
+<navPoint id="n2" playOrder="2"><navLabel><text>Book I. Ekanipāta  The Section with One Verse</text></navLabel><content src="003.html"/>
+<navPoint id="n3" playOrder="3"><navLabel><text>Ja 1 Apaṇṇakajātaka  The Birth Story about What Is Unquestionable (1s)</text></navLabel><content src="003.html#ncx1"/></navPoint>
+<navPoint id="n4" playOrder="4"><navLabel><text>Ja 2 Vaṇṇūpathajātaka The Birth Story about the Sandy Waste (1s)</text></navLabel><content src="003.html#ncx2"/></navPoint>
+</navPoint>
+<navPoint id="n5" playOrder="5"><navLabel><text>Book II. Dukanipāta  The Section with Two Verses</text></navLabel><content src="004.html"/>
+<navPoint id="n6" playOrder="6"><navLabel><text>Ja 3 Serivāṇijajātaka The Birth Story about the Merchant (2s)</text></navLabel><content src="004.html"/></navPoint>
+</navPoint>
+</navMap>
+</ncx>

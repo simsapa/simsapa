@@ -98,6 +98,7 @@ describe("column_bar helpers", () => {
     });
     expect(cb.option_text(opt("dhp179-196/en/anandajoti"))).toBe("anandajoti (en)");
     expect(cb.option_text(opt("dhp179-196.att/en/anandajoti"))).toBe("anandajoti (en, comm)");
+    expect(cb.option_text(opt("ja62.att/en/anandajoti"))).toBe("anandajoti (en, comm)");
     expect(cb.option_text(opt("mn1.tik/en/opentipitaka"))).toBe("opentipitaka (en, sub-comm)");
     expect(cb.option_text(opt("dhp179-196.att/pli/cst"))).toBe("Pāli (cst, comm)");
     expect(cb.option_text(opt("s0101a.att0.xml/pli/cst"))).toBe("Pāli (cst, comm)");

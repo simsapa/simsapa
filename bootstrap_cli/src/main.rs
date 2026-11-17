@@ -828,6 +828,12 @@ enum Commands {
         /// Limit the number of suttas to import (for testing purposes)
         #[arg(long, value_name = "LIMIT")]
         limit: Option<i32>,
+
+        /// Do not create the release .tar.bz2 archives, nor VACUUM the databases
+        /// that go into them (faster, for work-in-progress runs; the dist
+        /// databases and indexes are built and ANALYZEd as usual, only larger)
+        #[arg(long, default_value_t = false)]
+        skip_archives: bool,
     },
 
     /// Export Dhammapada Tipitaka.net suttas from legacy database
@@ -1069,6 +1075,23 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Extract Ānandajoti's Jātaka translation from its epub into one HTML
+    /// page per Jātaka (`ja<N>.att/en/anandajoti`), with manifest.json and
+    /// extract-report.txt, for the bootstrap to import. Run it again only when
+    /// the epub changes. Source defects are reported, never repaired, and do
+    /// not fail the command. See docs/jataka-commentary-anandajoti.md.
+    JatakaCommentaryExtract {
+        /// The epub (default: library-imports/books/The-Jataka.epub in
+        /// bootstrap-assets-resources)
+        #[arg(long, value_name = "EPUB_PATH")]
+        epub: Option<PathBuf>,
+
+        /// The output folder (default: jataka-commentary-anandajoti in
+        /// bootstrap-assets-resources)
+        #[arg(long, value_name = "OUTPUT_DIR")]
+        output: Option<PathBuf>,
+    },
+
     /// Compare the dhammatalks.org and SuttaCentral records with suttas-core
     /// and write a JSON report of the differences, for porting fixes back to
     /// suttas-core. Reads both databases read-only. The appdata database must
@@ -1142,7 +1165,7 @@ fn main() {
 
     // Don't initialize app data for bootstrap commands since they need to create directories first
     match &cli.command {
-        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::RebuildDpd { .. } => {
+        Commands::Bootstrap { .. } | Commands::DhammapadaTipitakaNetExport { .. } | Commands::SuttacentralImportLanguagesList | Commands::SuttacentralLangCodeToName | Commands::ImportEpub { .. } | Commands::ImportHtml { .. } | Commands::ParseCipsIndex { .. } | Commands::ImportLanguage { .. } | Commands::BuildNavigationTree { .. } | Commands::UpdateProviderModels { .. } | Commands::UpdateReleasesFallback { .. } | Commands::SurveySuttasCore { .. } | Commands::CheckSegmentFiles { .. } | Commands::DhammapadaCommentaryExtract { .. } | Commands::JatakaCommentaryExtract { .. } | Commands::ImportChantingPractice { .. } | Commands::ImportMigrateDpd { .. } | Commands::RebuildDpd { .. } => {
             // Skip app data initialization for bootstrap, export, suttacentral, import, and parse commands
         }
         _ => {
@@ -1192,11 +1215,19 @@ fn main() {
         Commands::ImportMigrateDpd { dpd_input_path, dpd_output_path, res_dir } => {
             match dpd_input_path.try_exists() {
                 Ok(true) => {
+                    // No `init_app_data()`: its connection pools keep
+                    // `dpd.sqlite3` open, and `import_migrate_dpd()` moves the
+                    // migrated file over the output path (the DPD upgrade
+                    // pipeline's rule — see docs/dpd-upgrades.md §2). Only the
+                    // dictionaries row is needed, and a local handle reads it.
+                    simsapa_backend::init_app_globals();
                     let paths = &simsapa_backend::get_app_globals().paths;
                     let output_path = dpd_output_path
                         .unwrap_or_else(|| simsapa_backend::get_create_simsapa_app_assets_path().join("dpd.sqlite3"));
-                    get_app_data().dbm.dictionaries.find_or_create_dpd_dictionary()
-                        .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e))
+                    db::DatabaseHandle::new(&paths.dict_database_url)
+                        .map_err(|e| format!("Failed to open dictionaries.sqlite3: {:#}", e))
+                        .and_then(|dictionaries| dictionaries.find_or_create_dpd_dictionary()
+                            .map_err(|e| format!("Failed to find or create the DPD dictionary row: {}", e)))
                         .and_then(|dpd_dict| db::dpd::import_migrate_dpd(
                             &dpd_input_path, &output_path, &paths.dict_db_path, dpd_dict.id, &res_dir, None,
                             &|stage| simsapa_backend::logger::info(stage.label()),
@@ -1243,9 +1274,19 @@ fn main() {
             gloss_corpus_explore::gloss_corpus_explore(&params)
         }
 
-        Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit } => {
-            bootstrap::bootstrap(write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit)
-                .map_err(|e| e.to_string())
+        Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit, skip_archives } => {
+            bootstrap::bootstrap(bootstrap::BootstrapOptions {
+                write_new_dotenv,
+                skip_appdata,
+                skip_dpd,
+                skip_languages,
+                only_languages,
+                limit,
+                skip_archives,
+            })
+                // `{:#}` includes the anyhow context chain (e.g. the underlying
+                // DPD or DB error) instead of just the top message.
+                .map_err(|e| format!("{:#}", e))
         }
 
         Commands::DhammapadaTipitakaNetExport { legacy_db_path, output_db_path } => {
@@ -1311,6 +1352,9 @@ fn main() {
         Commands::DhammapadaCommentaryExtract { epub, output } => {
             dhammapada_commentary_extract(epub, output)
         }
+        Commands::JatakaCommentaryExtract { epub, output } => {
+            jataka_commentary_extract(epub, output)
+        }
 
         Commands::SurveySuttasCore { appdata, suttas_core, output } => {
             let suttas_core = suttas_core.unwrap_or_else(survey_suttas_core::default_suttas_core_path);
@@ -1352,6 +1396,21 @@ fn dhammapada_commentary_extract(epub: Option<PathBuf>, output: Option<PathBuf>)
         output.display(),
         REPORT_FILE
     );
+    Ok(())
+}
+
+/// `jataka-commentary-extract`: prints the report; fails only when the epub
+/// cannot be read or the output cannot be written.
+fn jataka_commentary_extract(epub: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), String> {
+    use bootstrap::jataka_commentary_anandajoti::{extract, REPORT_FILE};
+    use bootstrap::source_paths as paths;
+    let assets = paths::bootstrap_assets_dir_from_crate();
+    let epub = epub.unwrap_or_else(|| assets.join(paths::jataka_commentary_epub_file()));
+    let output = output.unwrap_or_else(|| assets.join(paths::jataka_commentary_anandajoti_dir()));
+
+    let extraction = extract::run(&epub, &output).map_err(|e| format!("{:#}", e))?;
+    print!("{}", extraction.report_text);
+    println!("Wrote {} pages to {} (report: {})", extraction.pages.len(), output.display(), REPORT_FILE);
     Ok(())
 }
 

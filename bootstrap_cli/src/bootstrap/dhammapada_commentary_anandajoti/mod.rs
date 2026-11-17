@@ -56,7 +56,6 @@
 //!   Heedfulness there are nine." and "In the Miscellaneous Chapter there are
 //!   nine.", some followed by a note ref, and the total ("the 305 stories").
 
-pub mod epub;
 pub mod extract;
 pub mod import;
 pub mod page;

@@ -9,7 +9,9 @@ pub mod footnote_sutta_links;
 pub mod dhammapada_munindo;
 pub mod dhammapada_suttacentral;
 pub mod dhammapada_tipitaka;
+pub mod anandajoti_epub;
 pub mod dhammapada_commentary_anandajoti;
+pub mod jataka_commentary_anandajoti;
 pub mod nyanadipa;
 pub mod segment_files;
 pub mod buddha_ujja;
@@ -52,6 +54,7 @@ pub use dhammapada_munindo::DhammapadaMunindoImporter;
 pub use dhammapada_suttacentral::DhammapadaSuttaCentralImporter;
 pub use dhammapada_tipitaka::DhammapadaTipitakaImporter;
 pub use dhammapada_commentary_anandajoti::import::DhammapadaCommentaryAnandajotiImporter;
+pub use jataka_commentary_anandajoti::import::JatakaCommentaryAnandajotiImporter;
 pub use nyanadipa::NyanadipaImporter;
 pub use suttacentral::SuttaCentralImporter;
 pub use buddha_ujja::BuddhaUjjaImporter;
@@ -124,8 +127,34 @@ pub fn ensure_directory_exists(path: &Path) -> Result<()> {
 }
 
 /// Main bootstrap function - orchestrates the entire bootstrap process
-pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, skip_languages: bool, only_languages: Option<String>, limit: Option<i32>) -> Result<()> {
+/// The options of the `bootstrap` command (see its `--help`).
+#[derive(Debug, Default, Clone)]
+pub struct BootstrapOptions {
+    pub write_new_dotenv: bool,
+    pub skip_appdata: bool,
+    pub skip_dpd: bool,
+    pub skip_languages: bool,
+    pub only_languages: Option<String>,
+    pub limit: Option<i32>,
+    /// Also skips the `VACUUM` of each database: it only shrinks the files
+    /// for their archives.
+    pub skip_archives: bool,
+}
+
+pub fn bootstrap(options: BootstrapOptions) -> Result<()> {
+    let BootstrapOptions {
+        write_new_dotenv,
+        skip_appdata,
+        skip_dpd,
+        skip_languages,
+        only_languages,
+        limit,
+        skip_archives,
+    } = options;
     logger::info("=== bootstrap() ===");
+    if skip_archives {
+        logger::info("--skip-archives flag set: the release .tar.bz2 archives will not be created, nor the databases vacuumed");
+    }
     if skip_appdata {
         logger::info("--skip-appdata flag set: Appdata initialization and bootstrap will be skipped");
     }
@@ -359,6 +388,20 @@ RELEASE_CHANNEL=development
             importer.import(&mut conn)?;
         }
 
+        // Ānandajoti's Jātaka translation, one page per Jātaka, from the
+        // jataka-commentary-extract output. Its rows copy their grouping from
+        // the `ja<N>.att/en/opentipitaka` records of the CST import above and
+        // need the `ja<N>.att/pli/cst` record. See
+        // docs/jataka-commentary-anandajoti.md.
+        {
+            logger::info("Importing suttas from jataka-commentary-anandajoti");
+            let mut importer = JatakaCommentaryAnandajotiImporter::new(
+                bootstrap_assets_dir.join(source_paths::jataka_commentary_anandajoti_dir()),
+                bootstrap_assets_dir.join(source_paths::jataka_commentary_epub_file()),
+            );
+            importer.import(&mut conn)?;
+        }
+
         // The navigation tree is built after every sutta import, so each
         // leaf's `sutta_uid` is resolved against rows that exist and one that
         // is missing can be reported rather than guessed.
@@ -439,6 +482,10 @@ RELEASE_CHANNEL=development
 
     // Digital Pāli Dictionary
     if !skip_dpd {
+        // The destination file must exist before `init_app_data()` opens it:
+        // the connection pools keep the file they opened, and the migration
+        // runs in place (see `dpd::prepare_dpd_output()`).
+        dpd::prepare_dpd_output(&bootstrap_assets_dir, &assets_dir)?;
         init_app_data();
         dpd::dpd_bootstrap(&bootstrap_assets_dir, &assets_dir, limit)?;
 
@@ -450,23 +497,31 @@ RELEASE_CHANNEL=development
         // let whitney_zip_path = bootstrap_assets_dir.join("stardict-imports/whitney-gd.zip");
         // import_stardict_zip_bootstrap(&whitney_zip_path, "whitney", "en")?;
 
-        logger::info("=== Create dictionaries.tar.bz2 ===");
+        logger::info("=== Prepare dictionaries.sqlite3 (and its archive) ===");
         let dict_db_path = assets_dir.join("dictionaries.sqlite3");
         // ANALYZE must run before the archive so shipped DBs arrive with
         // `sqlite_stat1` / `sqlite_stat4` populated. Without it the bundled
         // SQLite picks a catastrophic plan for Headword Match — see
         // tasks/prd-fixing-headword-match-slow-query.md.
         check_fts_tables(&dict_db_path, &DICTIONARIES_FTS_TABLES)?;
-        vacuum_db(&dict_db_path)?;
+        if !skip_archives {
+            vacuum_db(&dict_db_path)?;
+        }
         analyze_db(&dict_db_path)?;
-        create_database_archive(&dict_db_path, &release_databases_dir)?;
+        if !skip_archives {
+            create_database_archive(&dict_db_path, &release_databases_dir)?;
+        }
 
-        logger::info("=== Create dpd.tar.bz2 ===");
+        logger::info("=== Prepare dpd.sqlite3 (and its archive) ===");
         let dpd_db_path = assets_dir.join("dpd.sqlite3");
         check_fts_tables(&dpd_db_path, &DPD_FTS_TABLES)?;
-        vacuum_db(&dpd_db_path)?;
+        if !skip_archives {
+            vacuum_db(&dpd_db_path)?;
+        }
         analyze_db(&dpd_db_path)?;
-        create_database_archive(&dpd_db_path, &release_databases_dir)?;
+        if !skip_archives {
+            create_database_archive(&dpd_db_path, &release_databases_dir)?;
+        }
     } else {
         logger::info("Skipping DPD initialization and bootstrap");
     }
@@ -560,8 +615,10 @@ RELEASE_CHANNEL=development
         thread::sleep(time::Duration::from_millis(500));
 
         // Create index.tar.bz2 from the index/ directory
-        logger::info("=== Create index.tar.bz2 ===");
-        create_index_archive(&assets_dir, &release_databases_dir)?;
+        if !skip_archives {
+            logger::info("=== Create index.tar.bz2 ===");
+            create_index_archive(&assets_dir, &release_databases_dir)?;
+        }
     }
 
     // Warm the AppSettings caches into appdata.sqlite3 BEFORE archiving so the
@@ -626,12 +683,16 @@ RELEASE_CHANNEL=development
         logger::info("=== Warm AppSettings caches ===");
         simsapa_backend::app_data::warm_caches_into_appdata();
 
-        logger::info("=== Create appdata.tar.bz2 ===");
+        logger::info("=== Prepare appdata.sqlite3 (and its archive) ===");
         let appdata_db_path = assets_dir.join("appdata.sqlite3");
         check_fts_tables(&appdata_db_path, &APPDATA_FTS_TABLES)?;
-        vacuum_db(&appdata_db_path)?;
+        if !skip_archives {
+            vacuum_db(&appdata_db_path)?;
+        }
         analyze_db(&appdata_db_path)?;
-        create_appdata_archive(&assets_dir, &release_databases_dir)?;
+        if !skip_archives {
+            create_appdata_archive(&assets_dir, &release_databases_dir)?;
+        }
     }
 
     logger::info("=== Bootstrap Languages from SuttaCentral ===");
@@ -718,13 +779,18 @@ RELEASE_CHANNEL=development
 
                                             // Create archive with database and index directory
                                             let lang_index_dir = globals.paths.suttas_index_dir.join(lang);
-                                            match create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir) {
-                                                Ok(_) => {
-                                                    logger::info(&format!("Successfully created archive for language: {}", lang));
-                                                    cleanup_language_index_dir(&lang_index_dir, lang);
-                                                }
-                                                Err(e) => {
-                                                    logger::error(&format!("Failed to create archive for language {}: {}", lang, e));
+                                            if skip_archives {
+                                                // The leftover index must go either way: see cleanup_language_index_dir().
+                                                cleanup_language_index_dir(&lang_index_dir, lang);
+                                            } else {
+                                                match create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir) {
+                                                    Ok(_) => {
+                                                        logger::info(&format!("Successfully created archive for language: {}", lang));
+                                                        cleanup_language_index_dir(&lang_index_dir, lang);
+                                                    }
+                                                    Err(e) => {
+                                                        logger::error(&format!("Failed to create archive for language {}: {}", lang, e));
+                                                    }
                                                 }
                                             }
                                         }
@@ -794,7 +860,9 @@ RELEASE_CHANNEL=development
 
                 // Create archive with database and index directory
                 let lang_index_dir = globals.paths.suttas_index_dir.join(lang);
-                create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir)?;
+                if !skip_archives {
+                    create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir)?;
+                }
                 cleanup_language_index_dir(&lang_index_dir, lang);
             } else {
                 logger::warn(&format!("Buddha Ujja database not found: {:?}", bu_db_path));
@@ -845,6 +913,9 @@ RELEASE_CHANNEL=development
     }
 
     logger::info("=== Bootstrap completed ===");
+    if skip_archives {
+        logger::warn("--skip-archives: no .tar.bz2 archives were created and no database was vacuumed; this run is not a release");
+    }
 
     let end_time = Local::now();
     let duration = end_time - start_time;

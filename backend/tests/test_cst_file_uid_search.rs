@@ -3,15 +3,14 @@
 //! These tests run against the shipped database and name its records, so they
 //! depend on how the bootstrap imported each file.
 //!
-//! **Anticipated breakage:** `vin02m4.mul.xml` (Parivārapāḷi) is not yet in
+//! **Anticipated breakage:** `abh02m.mul.xml` (Vibhaṅgapāḷi) is not yet in
 //! the tipitaka-xml-parser fragments, so it is imported as its 18 toc
-//! divisions, `vin02m4.mul0.xml/pli/cst` … `vin02m4.mul17.xml/pli/cst`. Once
-//! it is added to the fragments, its text is imported under SuttaCentral-style
-//! uids and nothing is stored under its file name any more. The tests below
-//! marked `[vin02m4]` will then fail. That failure is expected, not a
-//! regression: remove those tests, or point them at a file that is still
-//! imported by its divisions (check with
-//! `select uid from suttas where uid like '%.xml/pli/cst'`).
+//! divisions, `abh02m.mul0.xml/pli/cst` … `abh02m.mul17.xml/pli/cst`. Once
+//! it is added to `VERIFIED_CST_FILES`, its text is imported under
+//! SuttaCentral-style uids and nothing is stored under its file name any more.
+//! The tests below marked `[abh02m]` will then fail. That failure is expected,
+//! not a regression: point them at a file that is still imported by its
+//! divisions (check with `select uid from suttas where uid like '%.xml/pli/cst'`).
 
 use serial_test::serial;
 
@@ -45,26 +44,26 @@ fn uid_search(query: &str) -> Vec<String> {
     uid_search_page(query, 1000, 0).0
 }
 
-/// [vin02m4]
+/// [abh02m]
 #[test]
 #[serial]
 fn test_cst_file_name_finds_its_divisions_in_order() {
     h::app_data_setup();
 
-    let expected: Vec<String> = (0..=17).map(|n| format!("vin02m4.mul{}.xml/pli/cst", n)).collect();
-    assert_eq!(uid_search("vin02m4.mul"), expected);
-    assert_eq!(uid_search("vin02m4.mul.xml"), expected);
+    let expected: Vec<String> = (0..=17).map(|n| format!("abh02m.mul{}.xml/pli/cst", n)).collect();
+    assert_eq!(uid_search("abh02m.mul"), expected);
+    assert_eq!(uid_search("abh02m.mul.xml"), expected);
 }
 
-/// [vin02m4] for the `vin02` half.
+/// [abh02m] for the `abh02` half.
 #[test]
 #[serial]
 fn test_cst_file_name_part_finds_every_matching_file() {
     h::app_data_setup();
 
-    let uids = uid_search("vin02");
-    assert!(uids.contains(&"vin02m4.mul0.xml/pli/cst".to_string()));
-    assert!(uids.iter().all(|uid| uid.starts_with("vin02") && uid.ends_with(".xml/pli/cst")));
+    let uids = uid_search("abh02");
+    assert!(uids.contains(&"abh02m.mul0.xml/pli/cst".to_string()));
+    assert!(uids.iter().all(|uid| uid.starts_with("abh02") && uid.ends_with(".xml/pli/cst")));
 
     let uids = uid_search("e01");
     assert!(
@@ -75,14 +74,14 @@ fn test_cst_file_name_part_finds_every_matching_file() {
     assert!(uids.iter().all(|uid| uid.starts_with("e01")));
 }
 
-/// [vin02m4]
+/// [abh02m]
 #[test]
 #[serial]
 fn test_cst_division_name_finds_that_division() {
     h::app_data_setup();
 
-    assert_eq!(uid_search("vin02m4.mul1"), vec!["vin02m4.mul1.xml/pli/cst".to_string()]);
-    assert_eq!(uid_search("vin02m4.mul1.xml"), vec!["vin02m4.mul1.xml/pli/cst".to_string()]);
+    assert_eq!(uid_search("abh02m.mul1"), vec!["abh02m.mul1.xml/pli/cst".to_string()]);
+    assert_eq!(uid_search("abh02m.mul1.xml"), vec!["abh02m.mul1.xml/pli/cst".to_string()]);
 }
 
 /// The pages of a file-name search are consecutive slices of the one ordered

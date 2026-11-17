@@ -17,14 +17,25 @@
 //!
 //!     cargo test --test test_search_results_pin -- --ignored --nocapture
 //!
-//! The pins describe one database, so each section of the golden file starts
-//! with a fingerprint of the rows its searches read (`dict.@db`, `suttas.@db`:
-//! ids, uids, languages and text lengths). On the database the pins were made
-//! from, any difference is a change in the search code and fails the test. On
-//! another database (a new bootstrap) the comparison says nothing about the
-//! code: the test rewrites its section of the golden file and passes. Review
-//! that rewrite in `git diff` against the source data before committing it.
-//! To rewrite every pin regardless of the fingerprint:
+//! The pins describe the data they were made from, so each case is tied to a
+//! fingerprint of the rows it reads.
+//!
+//! - **Suttas:** per search word. `suttas.@rows|<word>` fingerprints the rows
+//!   whose `content_plain` contains the word, found with a plain `LIKE` on
+//!   `suttas` (not through the FTS index), in id order: their uids, nikāya,
+//!   title and text. The rows themselves are listed in
+//!   `tests/data/search_results_pin_rows.tsv` (word, uid, text hash), so the
+//!   `git diff` of that file shows which records a new database added,
+//!   removed, edited or reordered. A case whose word's rows are unchanged is
+//!   checked strictly, also on a new database: a difference there is a change
+//!   in the search code and fails the test. The cases of a word whose rows
+//!   changed are rewritten, with a summary of the change on stderr.
+//! - **Dictionary:** one fingerprint of the rows all its searches read
+//!   (`dict.@db`: ids, uids, languages and text lengths). On another database
+//!   the test rewrites the whole section and passes.
+//!
+//! Review a rewrite in `git diff` against the source data before committing
+//! it. To rewrite every pin regardless of the fingerprints:
 //!
 //!     SIMSAPA_PIN_WRITE=1 cargo test --test test_search_results_pin -- --ignored --nocapture
 //!
@@ -48,6 +59,8 @@ mod helpers;
 use helpers as h;
 
 const GOLDEN_FILE: &str = "tests/data/search_results_pin.tsv";
+const ROWS_FILE: &str = "tests/data/search_results_pin_rows.tsv";
+const SUTTAS_WORDS: [&str; 3] = ["saṅkhārā", "mindfulness", "kakacena"];
 const WHOLE_LIST_PAGE_LEN: usize = 1_000_000;
 
 #[derive(Clone, Default)]
@@ -249,10 +262,9 @@ fn suttas_pins(out: &mut BTreeMap<String, String>) {
         Filters { nikaya_prefix: Some("sn"), ..Default::default() },
         Filters { lang: Some("pli"), exclude_ms_mula: true, nikaya_prefix: Some("majjhima"), ..Default::default() },
     ];
-    let words = ["saṅkhārā", "mindfulness", "kakacena"];
     let mode = SearchMode::ContainsMatch;
 
-    for word in words {
+    for word in SUTTAS_WORDS {
         for f in &filter_sets {
             let (first, total) = run_page(&SearchArea::Suttas, &mode, false, f, word, Some(page_len), 0);
             let name = format!("suttas.contains|{}|{}", f.name(), word);
@@ -314,15 +326,178 @@ fn dictionary_db_fingerprint() -> String {
     format!("{} {}", dict.join(" "), bold)
 }
 
-/// The rows the Suttas Contains searches read.
-fn suttas_db_fingerprint() -> String {
-    get_app_data().dbm.appdata.do_read(|conn| {
-        table_fingerprint(conn, "suttas",
-            "SELECT id, uid || char(9) || COALESCE(language, '') || char(9) || COALESCE(nikaya, '') \
-             || char(9) || COALESCE(source_uid, '') AS key, \
-             COALESCE(length(title), 0) AS a, COALESCE(length(content_plain), 0) AS b \
-             FROM suttas ORDER BY id")
-    }).expect("suttas fingerprint")
+#[derive(QueryableByName)]
+struct SuttaTextRow {
+    #[diesel(sql_type = Text)]
+    uid: String,
+    #[diesel(sql_type = Text)]
+    nikaya: String,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    content: String,
+}
+
+/// The rows a Suttas Contains case for `word` can return, in id order (the
+/// order of the results), as `<word>\t<uid>\t<text hash>` lines. Found with a
+/// plain `LIKE` on `suttas`, so they do not depend on the FTS index or on the
+/// search code under test. The pattern is built from the query text the
+/// search itself uses.
+fn suttas_word_rows(word: &str) -> Vec<String> {
+    let app_data = get_app_data();
+    let f = Filters::default();
+    let task = SearchQueryTask::new(&app_data.dbm, word.to_string(),
+                                    params(&SearchMode::ContainsMatch, false, &f, None), SearchArea::Suttas);
+    let pattern = format!("%{}%", task.query_text);
+    let rows: Vec<SuttaTextRow> = app_data.dbm.appdata.do_read(|conn| {
+        sql_query("SELECT uid, COALESCE(nikaya, '') AS nikaya, COALESCE(title, '') AS title, \
+                   content_plain AS content FROM suttas WHERE content_plain LIKE ? ORDER BY id")
+            .bind::<Text, _>(&pattern)
+            .load(conn)
+    }).expect("suttas rows of a word");
+    rows.iter()
+        .map(|r| {
+            let mut hasher = Sha256::new();
+            for s in [&r.nikaya, &r.title, &r.content] {
+                hasher.update(s.as_bytes());
+                hasher.update(b"\t");
+            }
+            format!("{}\t{}\t{}", word, r.uid, hex_prefix(hasher.finalize().as_slice()))
+        })
+        .collect()
+}
+
+/// `<rows>:<hash>` over a word's row lines.
+fn rows_fingerprint(lines: &[String]) -> String {
+    let mut hasher = Sha256::new();
+    for l in lines {
+        hasher.update(l.as_bytes());
+        hasher.update(b"\n");
+    }
+    format!("{}:{}", lines.len(), hex_prefix(hasher.finalize().as_slice()))
+}
+
+/// The search word of a suttas key: `suttas.@rows|<word>` or
+/// `suttas.contains|<filters>|<word>|<page>`.
+fn suttas_key_word(key: &str) -> Option<&str> {
+    let parts: Vec<&str> = key.split('|').collect();
+    match parts.as_slice() {
+        ["suttas.@rows", word] => Some(word),
+        [_, _, word, _] => Some(word),
+        _ => None,
+    }
+}
+
+fn rows_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ROWS_FILE)
+}
+
+/// The pinned rows, by word.
+fn read_rows() -> BTreeMap<String, Vec<String>> {
+    let mut rows: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let text = fs::read_to_string(rows_path()).unwrap_or_default();
+    for l in text.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+        let word = l.split('\t').next().unwrap_or_default();
+        rows.entry(word.to_string()).or_default().push(l.to_string());
+    }
+    rows
+}
+
+fn write_rows(rows: &BTreeMap<String, Vec<String>>) {
+    let mut text = String::from("# word\tuid\ttext_sha256: the suttas whose content_plain contains the word, in id order\n");
+    for lines in rows.values() {
+        for l in lines {
+            text.push_str(l);
+            text.push('\n');
+        }
+    }
+    fs::write(rows_path(), text).expect("write rows file");
+}
+
+/// What changed between a word's pinned rows and its rows now: added, removed
+/// and edited uids, and whether the shared ones changed order.
+fn rows_change(word: &str, pinned: &[String], now: &[String]) -> String {
+    let parse = |lines: &[String]| -> Vec<(String, String)> {
+        lines.iter()
+            .map(|l| {
+                let mut it = l.split('\t').skip(1);
+                (it.next().unwrap_or_default().to_string(), it.next().unwrap_or_default().to_string())
+            })
+            .collect()
+    };
+    let (old, new) = (parse(pinned), parse(now));
+    let old_map: HashMap<&str, &str> = old.iter().map(|(u, h)| (u.as_str(), h.as_str())).collect();
+    let new_map: HashMap<&str, &str> = new.iter().map(|(u, h)| (u.as_str(), h.as_str())).collect();
+    let added: Vec<&str> = new.iter().map(|(u, _)| u.as_str()).filter(|u| !old_map.contains_key(u)).collect();
+    let removed: Vec<&str> = old.iter().map(|(u, _)| u.as_str()).filter(|u| !new_map.contains_key(u)).collect();
+    let edited: Vec<&str> = new.iter()
+        .filter(|(u, h)| old_map.get(u.as_str()).is_some_and(|o| o != h))
+        .map(|(u, _)| u.as_str())
+        .collect();
+    let old_shared: Vec<&str> = old.iter().map(|(u, _)| u.as_str()).filter(|u| new_map.contains_key(u)).collect();
+    let new_shared: Vec<&str> = new.iter().map(|(u, _)| u.as_str()).filter(|u| old_map.contains_key(u)).collect();
+    let sample = |v: &[&str]| -> String {
+        let shown: Vec<&str> = v.iter().take(5).copied().collect();
+        if v.len() > shown.len() { format!("{}, …", shown.join(", ")) } else { shown.join(", ") }
+    };
+    format!("{}: {} rows -> {}; {} added ({}), {} removed ({}), {} edited ({}){}",
+            word, old.len(), new.len(),
+            added.len(), sample(&added), removed.len(), sample(&removed), edited.len(), sample(&edited),
+            if old_shared != new_shared { "; the shared rows changed order" } else { "" })
+}
+
+/// Compare the suttas pins with the golden file, word by word (see the module
+/// docs): strictly where a word's rows are unchanged, rewriting the cases of a
+/// word whose rows changed.
+fn check_or_write_suttas(got: BTreeMap<String, String>, rows_now: BTreeMap<String, Vec<String>>) {
+    let prefix = "suttas.";
+    if std::env::var("SIMSAPA_PIN_WRITE").is_ok() {
+        write_section(&got, prefix);
+        write_rows(&rows_now);
+        return;
+    }
+
+    let golden = if golden_path().try_exists().unwrap_or(false) { read_golden() } else { BTreeMap::new() };
+    let rows_pinned = read_rows();
+    let changed: Vec<&str> = SUTTAS_WORDS.iter().copied()
+        .filter(|w| {
+            let key = format!("suttas.@rows|{}", w);
+            golden.get(&key) != got.get(&key)
+        })
+        .collect();
+    let stale_keys = golden.keys().any(|k| {
+        k.starts_with(prefix) && suttas_key_word(k).is_none_or(|w| !SUTTAS_WORDS.contains(&w))
+    });
+
+    if !changed.is_empty() || stale_keys {
+        for word in &changed {
+            let empty = Vec::new();
+            eprintln!("suttas pins rewritten, the rows changed: {}",
+                      rows_change(word, rows_pinned.get(*word).unwrap_or(&empty), &rows_now[*word]));
+        }
+        // Keep the pinned lines of the unchanged words, so that they are still
+        // compared below; replace everything else of the section.
+        let mut section: BTreeMap<String, String> = golden.iter()
+            .filter(|(k, _)| k.starts_with(prefix)
+                    && suttas_key_word(k).is_some_and(|w| SUTTAS_WORDS.contains(&w) && !changed.contains(&w)))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        section.extend(got.iter()
+            .filter(|(k, _)| suttas_key_word(k).is_some_and(|w| changed.contains(&w)))
+            .map(|(k, v)| (k.clone(), v.clone())));
+        write_section(&section, prefix);
+        write_rows(&rows_now);
+    }
+
+    let unchanged: BTreeMap<String, String> = got.into_iter()
+        .filter(|(k, _)| suttas_key_word(k).is_some_and(|w| !changed.contains(&w)))
+        .collect();
+    let golden: BTreeMap<String, String> = golden.into_iter()
+        .filter(|(k, _)| suttas_key_word(k).is_some_and(|w| SUTTAS_WORDS.contains(&w) && !changed.contains(&w)))
+        .collect();
+    let diffs = diffs_against(&golden, &unchanged, prefix);
+    assert!(diffs.is_empty(), "{} pinned results differ although their rows did not change:\n{}",
+            diffs.len(), diffs.join("\n"));
 }
 
 fn golden_path() -> PathBuf {
@@ -346,7 +521,7 @@ fn write_section(got: &BTreeMap<String, String>, prefix: &str) {
     all.retain(|k, _| !k.starts_with(prefix));
     all.extend(got.iter().map(|(k, v)| (k.clone(), v.clone())));
     let mut text = String::from("# case\ttotal\trows\tuids_sha256\tcontent_sha256\tfirst_uids\n");
-    text.push_str("# <area>.@db: the fingerprint of the database the pins of <area> were made from\n");
+    text.push_str("# dict.@db: the fingerprint of the database the dictionary pins were made from; suttas.@rows|<word>: of the rows of that word (search_results_pin_rows.tsv)\n");
     for (k, v) in &all {
         text.push_str(&format!("{}\t{}\n", k, v));
     }
@@ -410,8 +585,12 @@ fn test_dictionary_results_pinned() {
 #[serial]
 fn test_suttas_contains_results_pinned() {
     h::app_data_setup();
+    let rows_now: BTreeMap<String, Vec<String>> =
+        SUTTAS_WORDS.iter().map(|w| (w.to_string(), suttas_word_rows(w))).collect();
     let mut got = BTreeMap::new();
-    got.insert("suttas.@db".to_string(), suttas_db_fingerprint());
+    for (word, lines) in &rows_now {
+        got.insert(format!("suttas.@rows|{}", word), rows_fingerprint(lines));
+    }
     suttas_pins(&mut got);
-    check_or_write(got, "suttas.");
+    check_or_write_suttas(got, rows_now);
 }

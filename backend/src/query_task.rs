@@ -2953,12 +2953,15 @@ mod commentary_filter_tests {
 
     use super::{commentary_exclusion_sql, SearchQueryTask};
 
-    const SUTTAS: [&str; 9] = [
+    const SUTTAS: [&str; 12] = [
         "dhp21-32.att/en/anandajoti",
         "dhp21-32.att/en/opentipitaka",
         "dhp21-32.att/pli/cst",
         "dhp21-32/en/anandajoti",
         "dhp21-32/pli/cst",
+        "ja62.att/en/anandajoti",
+        "ja62.att/pli/cst",
+        "ja62/pli/cst",
         "mn1.tik/pli/cst",
         "mn1/en/opentipitaka",
         "mn1/pli/ms",
@@ -3009,7 +3012,7 @@ mod commentary_filter_tests {
         .collect();
 
         assert_eq!(title_match, contains_match, "Title Match and Contains Match disagree");
-        assert_eq!(title_match, ["dhp21-32/en/anandajoti", "dhp21-32/pli/cst", "mn1/en/opentipitaka", "mn1/pli/ms"]);
+        assert_eq!(title_match, ["dhp21-32/en/anandajoti", "dhp21-32/pli/cst", "ja62/pli/cst", "mn1/en/opentipitaka", "mn1/pli/ms"]);
     }
 }
 

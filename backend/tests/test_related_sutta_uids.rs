@@ -158,6 +158,39 @@ fn the_shipped_dhammapada_vagga_lists_its_commentary_tabs() {
     assert_eq!(row["has_content_json"], serde_json::Value::Bool(false), "{}", row);
 }
 
+/// Against the shipped database: the Jātaka 62 tabs, in both directions.
+#[test]
+#[serial]
+fn the_shipped_jataka_lists_its_anandajoti_tab() {
+    h::app_data_setup();
+
+    let with = listed_uids("ja62/pli/ms", true);
+    for uid in ["ja62.att/pli/cst", "ja62.att/en/opentipitaka", "ja62.att/en/anandajoti"] {
+        assert!(with.contains(&uid.to_string()), "{} missing: {:?}", uid, with);
+    }
+    assert!(!with.iter().any(|uid| uid.starts_with("ja6.att/") || uid.starts_with("ja63.att/")), "{:?}", with);
+    let without = listed_uids("ja62/pli/ms", false);
+    assert!(!without.iter().any(|uid| uid.contains(".att")), "{:?}", without);
+
+    for setting in [true, false] {
+        let from_commentary = listed_uids("ja62.att/pli/cst", setting);
+        assert!(from_commentary.contains(&"ja62.att/en/anandajoti".to_string()), "{:?}", from_commentary);
+        assert!(from_commentary.contains(&"ja62.att/en/opentipitaka".to_string()), "{:?}", from_commentary);
+        assert!(from_commentary.contains(&"ja62/pli/ms".to_string()), "{:?}", from_commentary);
+    }
+
+    let json = get_app_data()
+        .dbm
+        .appdata
+        .get_translations_data_json_for_sutta_uid("ja62.att/pli/cst", true, false);
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("translations JSON");
+    let row = rows
+        .iter()
+        .find(|r| r["item_uid"] == "ja62.att/en/anandajoti")
+        .expect("anandajoti row");
+    assert_eq!(row["has_content_json"], serde_json::Value::Bool(false), "{}", row);
+}
+
 #[test]
 fn the_opentipitaka_commentary_follows_the_commentary_setting() {
     let candidates = uids(&[
@@ -266,13 +299,95 @@ fn an_opened_dhammapada_commentary_lists_every_english_translation() {
     }
 }
 
+/// One Jātaka's records, a neighbour (`ja63`) and a number that is a prefix of
+/// another (`ja6` / `ja62`).
+fn jataka_candidates() -> Vec<String> {
+    uids(&[
+        "ja62/pli/ms",
+        "ja62/pli/cst",
+        "ja62/en/sujato",
+        "ja62/en/chalmers",
+        "ja62/en/opentipitaka",
+        "ja62.att/pli/cst",
+        "ja62.att/en/opentipitaka",
+        "ja62.att/en/anandajoti",
+        "ja63.att/pli/cst",
+        "ja63.att/en/anandajoti",
+        "ja6.att/en/anandajoti",
+    ])
+}
+
+#[test]
+fn a_jataka_lists_its_commentary_only_with_the_setting() {
+    let candidates = jataka_candidates();
+
+    let with = related_sutta_uids("ja62/pli/ms", &candidates, true);
+    for uid in ["ja62.att/pli/cst", "ja62.att/en/opentipitaka", "ja62.att/en/anandajoti"] {
+        assert!(with.contains(&uid.to_string()), "{} missing: {:?}", uid, with);
+    }
+    assert!(!with.iter().any(|uid| uid.starts_with("ja63") || uid.starts_with("ja6.")), "{:?}", with);
+
+    let without = related_sutta_uids("ja62/pli/ms", &candidates, false);
+    assert!(!without.iter().any(|uid| uid.contains(".att")), "{:?}", without);
+}
+
+#[test]
+fn an_opened_jataka_commentary_lists_its_english_translations() {
+    let candidates = jataka_candidates();
+    for opened in ["ja62.att/pli/cst", "ja62.att/en/opentipitaka"] {
+        for include_cst_commentary in [true, false] {
+            let listed = related_sutta_uids(opened, &candidates, include_cst_commentary);
+            for uid in ["ja62.att/en/anandajoti", "ja62.att/en/opentipitaka", "ja62/pli/ms"] {
+                if uid == opened {
+                    continue;
+                }
+                assert!(
+                    listed.contains(&uid.to_string()),
+                    "{} missing from {} (setting {}): {:?}",
+                    uid,
+                    opened,
+                    include_cst_commentary,
+                    listed
+                );
+            }
+            assert!(!listed.iter().any(|uid| uid.starts_with("ja63") || uid.starts_with("ja6.")), "{:?}", listed);
+        }
+    }
+}
+
+#[test]
+fn the_jataka_candidate_pattern_finds_the_commentary() {
+    let pattern = related_sutta_uids_like_pattern("ja62/pli/ms");
+    assert_eq!(pattern, "ja%");
+    for uid in jataka_candidates().iter().filter(|uid| uid.contains(".att")) {
+        assert!(like_matches(&pattern, uid), "{} does not match {}", uid, pattern);
+    }
+}
+
 mod related_text_lookup_tests {
     use simsapa_backend::helpers::{
         related_text_lookup, text_kind_of_uid, CommentaryStatus, RelatedTextLookup, SuttaRefKind,
     };
     use simsapa_backend::html_content::related_texts_nav_html;
 
-    use super::uids;
+    use super::{jataka_candidates, uids};
+
+    #[test]
+    fn an_anandajoti_jataka_page_does_not_change_the_buttons() {
+        let c = jataka_candidates();
+        assert_eq!(
+            related_text_lookup("ja62/pli/ms", SuttaRefKind::Atthakatha, &c, &[]),
+            RelatedTextLookup::Found("ja62.att/pli/cst".to_string())
+        );
+        assert_eq!(
+            related_text_lookup("ja62/en/sujato", SuttaRefKind::Atthakatha, &c, &[]),
+            RelatedTextLookup::Found("ja62.att/pli/cst".to_string())
+        );
+        // From the page, the mūla button opens what it opens from the CST commentary.
+        let from_cst = related_text_lookup("ja62.att/pli/cst", SuttaRefKind::Mula, &c, &[]);
+        assert_eq!(from_cst, RelatedTextLookup::Found("ja62/pli/cst".to_string()));
+        assert_eq!(related_text_lookup("ja62.att/en/anandajoti", SuttaRefKind::Mula, &c, &[]), from_cst);
+    }
 
     const ATT: SuttaRefKind = SuttaRefKind::Atthakatha;
     const TIK: SuttaRefKind = SuttaRefKind::Tika;

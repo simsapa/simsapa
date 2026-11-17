@@ -58,31 +58,51 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
     Ok(())
 }
 
-pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option<i32>) -> Result<()> {
-    logger::info("=== dpd_migrate() ===");
-
-    let source_db_path = bootstrap_assets_dir
-        .join(source_paths::DPD_DB);
-    let dest_db_path = assets_dir.join("dpd.db");
-
+/// Put the upstream DPD database at its final `dpd.sqlite3` path **before**
+/// `init_app_data()` opens it.
+///
+/// `AppData`'s connection pools keep the file (the inode) they opened. The
+/// migration used to write `app-assets/dpd.db` and rename it over
+/// `dpd.sqlite3`; on Linux the rename leaves every pooled connection reading
+/// the replaced file, and on Windows it fails outright while the file is open.
+/// So the destination is created first and `dpd_migrate()` migrates it in
+/// place. Every later read — `append_bold_definitions_to_dict_index()`, the
+/// gloss phrase seeder — then sees the migrated database.
+pub fn prepare_dpd_output(bootstrap_assets_dir: &Path, assets_dir: &Path) -> Result<()> {
+    let source_db_path = bootstrap_assets_dir.join(source_paths::DPD_DB);
     match source_db_path.try_exists() {
         Ok(true) => {}
         Ok(false) => anyhow::bail!("Source DPD database not found at: {}", source_db_path.display()),
         Err(e) => anyhow::bail!("Cannot access source DPD database {}: {}", source_db_path.display(), e),
     }
 
-    // Copy the database file
-    fs::copy(&source_db_path, &dest_db_path)
+    let output_path = assets_dir.join("dpd.sqlite3");
+    fs::copy(&source_db_path, &output_path)
         .with_context(|| format!(
             "Failed to copy DPD database from {} to {}",
             source_db_path.display(),
-            dest_db_path.display()
+            output_path.display()
         ))?;
+    logger::info(&format!("Copied the DPD database to {}", output_path.display()));
 
-    logger::info("Copied dpd.db to assets directory");
+    Ok(())
+}
 
-    let dpd_input_path = dest_db_path;
-    let dpd_output_path = assets_dir.join("dpd.sqlite3");
+/// Migrate the `dpd.sqlite3` that `prepare_dpd_output()` put in place, without
+/// moving the file: the app's pools already have it open.
+pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option<i32>) -> Result<()> {
+    logger::info("=== dpd_migrate() ===");
+
+    let dpd_db_path = assets_dir.join("dpd.sqlite3");
+    match dpd_db_path.try_exists() {
+        Ok(true) => {}
+        Ok(false) => anyhow::bail!(
+            "DPD database not found at: {} (prepare_dpd_output() must run before init_app_data())",
+            dpd_db_path.display()
+        ),
+        Err(e) => anyhow::bail!("Cannot access DPD database {}: {}", dpd_db_path.display(), e),
+    }
+
     let dict_db_path = assets_dir.join("dictionaries.sqlite3");
 
     // The DPD StarDict import has created the `dpd` dictionaries row.
@@ -93,8 +113,9 @@ pub fn dpd_migrate(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Option
     // The res/ files of the same release go into dpd.sqlite3's dpd_res table.
     let res_dir = bootstrap_assets_dir.join(source_paths::DPD_RES_DIR);
 
+    // Input and output are the same path: the file is migrated in place.
     simsapa_backend::db::dpd::import_migrate_dpd(
-        &dpd_input_path, &dpd_output_path, &dict_db_path, dpd_dictionary_id, &res_dir, limit,
+        &dpd_db_path, &dpd_db_path, &dict_db_path, dpd_dictionary_id, &res_dir, limit,
         &|stage| logger::info(stage.label()), &BatchProgress::none())
         .context("Failed to migrate DPD database")?;
 

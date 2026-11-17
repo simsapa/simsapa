@@ -446,8 +446,12 @@ re-renders on it (an event rather than an import, to avoid a module cycle:
   [sutta-navigation-tree.md](./sutta-navigation-tree.md)). **A commentary is any
   record whose reference ends in `.att` or `.tik`, whatever its source**, so
   `dhp21-32.att/en/anandajoti` is offered on `dhp21-32/pli/ms` only with
-  *Include commentary in translations*, like `dhp21-32.att/pli/cst`
-  ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2).
+  *Include commentary in translations*, like `dhp21-32.att/pli/cst`, and
+  `ja62.att/en/anandajoti` on `ja62/pli/ms`. On a commentary record itself, by
+  contrast, its fellows are always offered: `dhp21-32.att/pli/cst` and
+  `ja62.att/pli/cst` list their `.att` siblings whatever the setting
+  ([dhammapada-commentary-anandajoti.md](./dhammapada-commentary-anandajoti.md) §2,
+  [jataka-commentary-anandajoti.md](./jataka-commentary-anandajoti.md) §2).
   Labels name the author and language ("anandajoti (en)") or the Pāli edition
   ("Pāli (cst)"), and a commentary adds its kind (`text_kind_label()`):
   "anandajoti (en, comm)" for `.att`, "opentipitaka (en, sub-comm)" for

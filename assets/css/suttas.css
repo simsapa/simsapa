@@ -895,80 +895,130 @@ body.dark .suttacentral.sbs-blocks .sbs-col {
   font-size: 0.8em;
 }
 
-.anandajoti-dhp-comm nav.page-toc, .anandajoti-dhp-comm nav.substory-toc {
+.anandajoti-dhp-comm nav.page-toc, .anandajoti-dhp-comm nav.substory-toc, .anandajoti-dhp-comm nav.section-toc, .anandajoti-jataka-comm nav.page-toc, .anandajoti-jataka-comm nav.substory-toc, .anandajoti-jataka-comm nav.section-toc {
   font-size: 0.8em;
   line-height: 1.35;
   opacity: 0.85;
 }
-.anandajoti-dhp-comm nav.page-toc ul, .anandajoti-dhp-comm nav.substory-toc ul {
+.anandajoti-dhp-comm nav.page-toc ul, .anandajoti-dhp-comm nav.substory-toc ul, .anandajoti-dhp-comm nav.section-toc ul, .anandajoti-jataka-comm nav.page-toc ul, .anandajoti-jataka-comm nav.substory-toc ul, .anandajoti-jataka-comm nav.section-toc ul {
   margin: 0.4em 0 1em 0;
   padding-left: 1.2em;
 }
-.anandajoti-dhp-comm nav.page-toc li, .anandajoti-dhp-comm nav.substory-toc li {
+.anandajoti-dhp-comm nav.page-toc li, .anandajoti-dhp-comm nav.substory-toc li, .anandajoti-dhp-comm nav.section-toc li, .anandajoti-jataka-comm nav.page-toc li, .anandajoti-jataka-comm nav.substory-toc li, .anandajoti-jataka-comm nav.section-toc li {
   margin: 0.15em 0;
 }
-.anandajoti-dhp-comm nav.page-toc {
+.anandajoti-dhp-comm nav.page-toc, .anandajoti-jataka-comm nav.page-toc {
   border-bottom: 1px solid rgba(128, 128, 128, 0.4);
   padding-bottom: 0.6em;
   margin-bottom: 1.5em;
 }
-.anandajoti-dhp-comm section.story {
+.anandajoti-dhp-comm section.story, .anandajoti-jataka-comm section.story {
   margin-top: 2.5em;
 }
-.anandajoti-dhp-comm .story-title-pali {
+.anandajoti-dhp-comm .story-title-pali, .anandajoti-jataka-comm .story-title-pali {
   font-size: 1em;
   font-style: italic;
   font-weight: normal;
   margin-top: -0.4em;
 }
-.anandajoti-dhp-comm .story-meta {
+.anandajoti-dhp-comm .story-meta, .anandajoti-jataka-comm .story-meta {
   font-size: 0.85em;
   opacity: 0.8;
   border-left: 3px solid rgba(128, 128, 128, 0.4);
   padding-left: 0.8em;
   margin: 0.6em 0 1em 0;
 }
-.anandajoti-dhp-comm .story-meta p {
+.anandajoti-dhp-comm .story-meta p, .anandajoti-jataka-comm .story-meta p {
   margin: 0.2em 0;
 }
-.anandajoti-dhp-comm .substory-heading {
+.anandajoti-dhp-comm .substory-heading, .anandajoti-jataka-comm .substory-heading {
   font-size: 1.05em;
   margin-top: 1.8em;
 }
-.anandajoti-dhp-comm p.verse {
+.anandajoti-dhp-comm p.verse, .anandajoti-jataka-comm p.verse {
   margin: 0.8em 8%;
   text-indent: 0;
 }
-.anandajoti-dhp-comm p.story-past {
+.anandajoti-dhp-comm p.story-past, .anandajoti-jataka-comm p.story-past {
   margin-left: 4%;
 }
-.anandajoti-dhp-comm p.commentator-note {
+.anandajoti-dhp-comm p.commentator-note, .anandajoti-jataka-comm p.commentator-note {
   margin-left: 4%;
   margin-right: 4%;
   font-size: 0.9em;
   font-style: italic;
 }
-.anandajoti-dhp-comm span.pts-ref {
+.anandajoti-dhp-comm span.pts-ref, .anandajoti-jataka-comm span.pts-ref {
   font-size: 0.7em;
   opacity: 0.6;
   white-space: nowrap;
 }
-.anandajoti-dhp-comm section.notes {
+.anandajoti-dhp-comm section.notes, .anandajoti-jataka-comm section.notes {
   margin-top: 3em;
   border-top: 1px solid rgba(128, 128, 128, 0.4);
   font-size: 0.85em;
 }
-.anandajoti-dhp-comm section.notes h2 {
+.anandajoti-dhp-comm section.notes h2, .anandajoti-jataka-comm section.notes h2 {
   font-size: 1.1em;
 }
-.anandajoti-dhp-comm section.notes li p {
+.anandajoti-dhp-comm section.notes li p, .anandajoti-jataka-comm section.notes li p {
   margin: 0.3em 0;
 }
-.anandajoti-dhp-comm section.notes a.footnote-backref {
+.anandajoti-dhp-comm section.notes a.footnote-backref, .anandajoti-jataka-comm section.notes a.footnote-backref {
   text-decoration: none;
 }
 
 article header p.vagga-title-pali {
+  text-align: center;
+  font-style: italic;
+  margin-top: -0.5em;
+}
+
+.anandajoti-jataka-comm section.jataka {
+  margin-top: 1em;
+}
+.anandajoti-jataka-comm h2.jataka-heading {
+  font-size: 1.15em;
+  text-align: center;
+  margin: 0.6em 0 1em 0;
+}
+.anandajoti-jataka-comm h3.section-heading {
+  font-size: 1.05em;
+  text-align: center;
+  margin-top: 1.8em;
+}
+.anandajoti-jataka-comm nav.section-toc {
+  border-bottom: 1px solid rgba(128, 128, 128, 0.4);
+  padding-bottom: 0.6em;
+  margin-bottom: 1.2em;
+}
+.anandajoti-jataka-comm p.verse, .anandajoti-jataka-comm p.verse-quote {
+  margin: 0 8%;
+}
+.anandajoti-jataka-comm p.verse-translation {
+  margin: 0.6em 8% 1em 8%;
+}
+.anandajoti-jataka-comm p.list-line {
+  margin: 0 0 0 1.3em;
+  text-indent: -1.3em;
+}
+.anandajoti-jataka-comm p.indented {
+  margin-left: 4%;
+  margin-right: 4%;
+}
+.anandajoti-jataka-comm p.spacer {
+  margin: 0;
+  line-height: 0.8;
+}
+.anandajoti-jataka-comm p.translator-note {
+  font-size: 0.9em;
+  opacity: 0.85;
+  margin-left: 0;
+  margin-right: 0;
+  font-style: normal;
+}
+
+article header p.jataka-title-pali {
   text-align: center;
   font-style: italic;
   margin-top: -0.5em;
