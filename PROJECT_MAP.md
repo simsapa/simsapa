@@ -159,7 +159,9 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   │   ├── DrawerMenu.qml
 │   │   ├── FulltextResults.qml
 │   │   ├── GlossClearCacheDialog.qml
+│   │   ├── GlossComboBox.qml
 │   │   ├── GlossExportWindow.qml
+│   │   ├── GlossOptionButton.qml
 │   │   ├── GlossSettingsWindow.qml
 │   │   ├── GlossTab.qml
 │   │   ├── GlossWordInSentenceRow.qml

@@ -58,34 +58,6 @@
       "confidence": "N"
     },
     {
-      "uid": "71212/dpd",
-      "word": "hi 1",
-      "summary": "<i>(ind)</i> indeed; certainly; truly; definitely   <i>ind, emph</i>",
-      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
-      "confidence": "N"
-    },
-    {
-      "uid": "17847/dpd",
-      "word": "eta",
-      "summary": "<i>(pron)</i> this   <i>pron, base</i>",
-      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
-      "confidence": "N"
-    },
-    {
-      "uid": "70762/dpd",
-      "word": "ha 1.1",
-      "summary": "<i>(letter)</i> (gram) letter h; 39th letter of the alphabet; guttural semi-vowel   <i>letter, masc</i>",
-      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
-      "confidence": "N"
-    },
-    {
-      "uid": "10832/dpd",
-      "word": "aha 1.1",
-      "summary": "<i>(nt)</i> day   <i>nt, in comps</i>",
-      "context_snippet": "te jhāyino sātatikā, niccaṁ daḷhaparakkamā, <b>evaṁhetaṁ</b> yenāyasmā te xyzqw.",
-      "confidence": "N"
-    },
-    {
       "uid": "54177/dpd",
       "word": "yenāyasmā",
       "summary": "<i>(sandhi)</i> where venerable  <b>[yena + āyasmā]</b>  <i>sandhi, adv + masc</i>",

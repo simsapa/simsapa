@@ -40,6 +40,7 @@ Frame {
     property string text_color: "#000000"
     property string bg_color: "#FAE6B2"
     property string bg_color_lighter: "#FBEDC7"
+    readonly property string row_bg_color: root.item.alt % 2 === 0 ? root.bg_color_lighter : root.bg_color
 
     // The user picked another sense / reading in the ComboBoxes (real
     // interactions only: onActivated, never onCurrentIndexChanged).
@@ -123,7 +124,7 @@ Frame {
 
     background: Rectangle {
         border.width: 0
-        color: root.item.alt % 2 === 0 ? root.bg_color_lighter : root.bg_color
+        color: root.row_bg_color
     }
 
     FontMetrics {
@@ -176,8 +177,10 @@ Frame {
 
         // Grammar: a ComboBox only when the chosen sense has several
         // readings.
-        ComboBox {
+        GlossComboBox {
             id: grammar_select
+            bg_color: root.row_bg_color
+            text_color: root.text_color
             visible: root.show_line2_cells && root.has_grammar_choice
             model: root.grammar_options
             currentIndex: root.row.grammar_index || 0
@@ -222,8 +225,10 @@ Frame {
         // Definition: the sense ComboBox when there are several senses. Its
         // closed text is the chosen sense's definition; the list names each
         // sense.
-        ComboBox {
+        GlossComboBox {
             id: sense_select
+            bg_color: root.row_bg_color
+            text_color: root.text_color
             visible: root.has_choice
             model: root.sense_labels(root.candidates)
             currentIndex: root.row.selected_candidate || 0
@@ -295,8 +300,9 @@ Frame {
             wrapMode: Text.WordWrap
         }
 
-        Button {
+        GlossOptionButton {
             id: dict_btn
+            tip: "Open in the Dictionary tab"
             icon.source: "icons/32x32/bxs_book_content.png"
             enabled: root.has_id
             opacity: root.has_id ? 1.0 : 0.0

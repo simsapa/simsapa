@@ -101,8 +101,7 @@ fn headwords_vocabulary(words: &[ProcessedWord]) -> Vec<GlossExportVocabItem> {
             continue;
         }
         if w.direct_uids.is_empty() && !w.deconstructions.is_empty() {
-            let selected = w.selected_deconstruction_index.unwrap_or(0);
-            for comp in visible_components(w, selected, w.deconstruction_locked) {
+            for comp in selected_components(w) {
                 let results = component_results(w, comp);
                 if results.is_empty() {
                     continue;
@@ -149,19 +148,18 @@ fn vocab_item(result: &LookupResult, w: &ProcessedWord, confidence: Option<Confi
 }
 
 /// The components shown for a deconstructor-resolved word: the selected
-/// break-down's when locked, else every break-down's, each component word
-/// once in first-appearance order. A port of
-/// `DeconstructorUtils.visible_components()`.
-fn visible_components(w: &ProcessedWord, selected: usize, locked: bool) -> Vec<&DeconstructionComponent> {
-    if locked && let Some(dec) = w.deconstructions.get(selected) {
-        return dec.components.iter().collect();
-    }
-    let mut seen = std::collections::HashSet::new();
+/// break-down's (the first when none is selected), as the Gloss tab's rows
+/// show them in both formats. `deconstruction_locked` is not read: the Gloss
+/// tab has no lock (WordSummary and FulltextResults still do).
+fn selected_components(w: &ProcessedWord) -> Vec<&DeconstructionComponent> {
+    let selected = w
+        .selected_deconstruction_index
+        .unwrap_or(0)
+        .min(w.deconstructions.len().saturating_sub(1));
     w.deconstructions
-        .iter()
-        .flat_map(|d| d.components.iter())
-        .filter(|c| seen.insert(c.word.as_str()))
-        .collect()
+        .get(selected)
+        .map(|d| d.components.iter().collect())
+        .unwrap_or_default()
 }
 
 /// A component's results, in its `result_uids` order. A port of
@@ -341,6 +339,35 @@ mod tests {
         assert_eq!(words, ["sādhu 2", "iti"]);
         assert_eq!(items[0].confidence, Some(Confidence::H));
         assert_eq!(items[1].confidence, None);
+    }
+
+    #[test]
+    fn headwords_vocabulary_lists_only_the_selected_break_down_without_a_lock() {
+        let mut w = processed_word(
+            "pañcaggadāyakaṁ",
+            vec![result("1/dpd", "pañca"), result("2/dpd", "gadā"), result("3/dpd", "agga"), result("4/dpd", "dāyaka")],
+        );
+        let component = |word: &str, uid: &str| DeconstructionComponent { word: word.to_string(), result_uids: vec![uid.into()] };
+        w.deconstructions = vec![
+            Deconstruction {
+                words_joined: "pañca + gadā".to_string(),
+                components: vec![component("pañca", "1/dpd"), component("gadā", "2/dpd")],
+            },
+            Deconstruction {
+                words_joined: "pañca + agga + dāyakaṁ".to_string(),
+                components: vec![component("pañca", "1/dpd"), component("agga", "3/dpd"), component("dāyakaṁ", "4/dpd")],
+            },
+        ];
+        w.deconstruction_locked = false;
+
+        let words_of = |w: &ProcessedWord| -> Vec<String> {
+            headwords_vocabulary(std::slice::from_ref(w)).into_iter().map(|v| v.word).collect()
+        };
+        // Nothing selected: the first break-down.
+        assert_eq!(words_of(&w), ["pañca", "gadā"]);
+        // Selected, unlocked: still only the selected break-down.
+        w.selected_deconstruction_index = Some(1);
+        assert_eq!(words_of(&w), ["pañca", "agga", "dāyaka"]);
     }
 
     #[test]

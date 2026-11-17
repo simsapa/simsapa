@@ -418,7 +418,7 @@ Session.) The cogwheel (and the menu bar's Gloss > Gloss Settings...) opens
 `GlossSettingsWindow.qml`, an in-tree child `ApplicationWindow` like the
 Export window, with every option in full, each with a short explanation, and
 a second **Clear Word-Selection Cache...** button under AI word selection. The option buttons
-(`GlossOptionButton`, an inline `ToolButton`: icon plus abbreviation) show the
+(`GlossOptionButton.qml`, a flat `ToolButton`: icon plus abbreviation) show the
 state of the most used ones:
 
 | Button | Option | Shows |
@@ -1299,7 +1299,7 @@ closed; it prints each stored rule with its lemma.
 | Word in Sentence rows, session carry-over | `backend/src/gloss_rows.rs` (`GlossRowBuilder`, `carry_over_session_choices()`); rows rebuilt against the cache: `gloss_word_selection_apply::rebuild_rows_with_cache()` |
 | Bridge fns | `bridges/src/sutta_bridge.rs` (cache save/delete/count/clear, settings, `annotate_gloss_words_json`, `export_gloss_session_json`, `open_gloss_session_export`, `import_gloss_word_cache`, `parse_word_selection_response`, `get_default_system_prompt`, `export_gloss_docx`, `export_chat_docx`, `gloss_export`, `gloss_paragraph_export`, `chat_export`, `chat_message_export`, `get_gloss_format` / `set_gloss_format`, `get_gloss_auto_translate` / `set_gloss_auto_translate`, `get_gloss_format_info_shown` / `set_gloss_format_info_shown`, `refresh_gloss_paragraph_json`, `gloss_export_paragraph_json`) |
 | AI request/response | `bridges/src/prompt_manager.rs` |
-| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordInSentenceRow.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; shared compound UI: `bridges/assets/qml/DeconstructorSelector.qml` (break-down ComboBox + lock), `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
+| UI | `bridges/assets/qml/GlossTab.qml`, `bridges/assets/qml/GlossWordInSentenceRow.qml`, `bridges/assets/qml/GlossWordSelectionDialog.qml`, `bridges/assets/qml/SystemPromptsDialog.qml`; row controls: `bridges/assets/qml/GlossComboBox.qml`, `bridges/assets/qml/GlossOptionButton.qml`; compound helpers: `bridges/assets/qml/DeconstructorUtils.qml` (pure filter helpers) — see §9 |
 | CLI | `bootstrap_cli/src/import_gloss_data.rs`, `bootstrap_cli/src/gloss_corpus_explore.rs`, `bootstrap_cli/src/gloss_ngrams.rs`, `bootstrap_cli/src/gloss_agent_check.rs` |
 | Agent skill | `.claude/skills/gloss-agent-check/SKILL.md` (the `/gloss-agent-check` working procedure) |
 | Data | `assets/gloss-phrase-selections.json`, `bootstrap-assets-resources/gloss-data-cache/` |
@@ -1365,10 +1365,21 @@ emits — this is what keeps iti-sandhi-heavy text from crowding the gloss:
 - **(b) ≥ 2 direct senses** (`direct_uids` non-empty) → today's single sense
   ComboBox + one `p<pi>w<wi>` AI sense item.
 - **(c) deconstructor-resolved, one break-down** (`direct_uids` empty, exactly
-  one deconstruction) → **no selector row**; an indented (~20 px) sub-row per
-  component word, each with its own sense ComboBox (≥ 2 senses) or static text.
-- **(d) deconstructor-resolved, ≥ 2 break-downs** → as (c) plus a
-  `DeconstructorSelector` row (break-down ComboBox + lock).
+  one deconstruction) → the compound word with **no break-down choice**; an
+  indented (~20 px) sub-row per component word, each with its own sense
+  ComboBox (≥ 2 senses) or static text.
+- **(d) deconstructor-resolved, ≥ 2 break-downs** → as (c), with a shield and a
+  break-down ComboBox beside the compound word, as in the Word in Sentence
+  break-down row (§10).
+
+**The Gloss tab has no break-down lock.** In both formats a compound shows the
+components of its selected break-down only (the first when none is
+selected), never the union of all break-downs, which mixes parts of
+contradicting break-downs. The Headwords list, its export
+(`gloss_export_builder.rs`) and the Word in Sentence rows (`gloss_rows.rs`)
+all follow this. `deconstruction_locked` is still written (a break-down
+choice sets it) and kept in sessions, but nothing in the Gloss tab reads it;
+WordSummary and FulltextResults keep `DeconstructorSelector` and its lock.
 
 **Mixed words** (both direct results *and* deconstructions, e.g. *sādhūti* — the
 127,791 both-kind lookup keys) render per (a)/(b): the direct match resolves them,
@@ -1384,10 +1395,11 @@ break-down — trivially selected), `deconstruction_locked: bool`,
 `component_selected_uids: HashMap<String,String>` (component word → chosen result
 uid; uid-based so it survives lock-filtering and break-down switches).
 
-`DeconstructorSelector.qml` (ComboBox + checkable lock, `system-uicons--lock*.png`)
-and `DeconstructorUtils.qml` (pure `visible_uids()` / `breakdowns_of_uid()`; a
-plain instantiated component like `Logger`, **not** a singleton) are shared by
-GlossTab, WordSummary and FulltextResults. **Locked** = show `direct_uids` ∪ the
+`DeconstructorUtils.qml` (pure `visible_uids()` / `breakdowns_of_uid()`; a
+plain instantiated component like `Logger`, **not** a singleton) is shared by
+GlossTab, WordSummary and FulltextResults; `DeconstructorSelector.qml`
+(ComboBox + checkable lock, `system-uicons--lock*.png`) only by WordSummary
+and FulltextResults. **Locked** = show `direct_uids` ∪ the
 selected break-down's component uids; **unlocked** = the full list (today's
 behavior). Break-down and sense ComboBoxes change only via `onActivated`. In
 `FulltextResults.qml` the selector filters the loaded page client-side and its
@@ -1450,8 +1462,8 @@ mixed-word ambiguity on the direct `sense_results` (FR-F2).
 ### Exports and the data bank
 
 Exports (HTML/Markdown/Org/DOCX/Anki) render cases (a)/(b) as today (the selected
-sense) and cases (c)/(d) as one line per **visible** component (lock filtering
-applied) with that component's selected sense. All state persists in
+sense) and cases (c)/(d) as one line per component of the selected break-down (no lock
+filtering) with that component's selected sense. All state persists in
 `words_data_json`, so JSON export / Open JSON and history restore carry it.
 
 The gloss data-bank format (`bootstrap_cli/src/gloss_agent_check.rs`, the `/gloss-agent-check`
@@ -1726,6 +1738,16 @@ sense's Definition. Its dropdown labels come from `sense_labels(candidates)`:
 `<lemma_1>: <meaning>` for every candidate, even when all share one base
 (`uppanna 1`, `uppanna 2`) — the lemma helps to read the definition. The popup is widened to the widest label,
 up to the row width.
+
+**The row controls blend into the row.** Every ComboBox in a gloss row (the
+sense and Grammar ComboBoxes here, the Headwords list's word and component
+ComboBoxes) is a `GlossComboBox.qml`: a copy of the Fusion ComboBox that takes
+`bg_color` (the row's alternating colour) and `text_color` from the tab's
+theme colours and draws only a bottom border and the arrow, with the Fusion
+popup list. The dictionary lookup buttons are `GlossOptionButton`s (flat, the
+icon tinted by the theme). A new row control takes the row's colours the same
+way rather than a stock `ComboBox` / `Button`, whose grey panel is hard to
+read on the row colours.
 
 The **"Lines per word:"** option (the Gloss Settings ComboBox and the
 **1L / 2L** button, §3a), enabled only in the Word in Sentence format, sets `gloss_lines_per_word` (`AppSettings`,

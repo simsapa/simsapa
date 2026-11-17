@@ -2173,7 +2173,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             if (sel.kind === "c") {
                 // AI component sense choice. Answers for components outside
                 // the chosen break-down are stored too (harmless — they only
-                // display when unlocked or after a break-down switch).
+                // display after a break-down switch).
                 let cw = sel.component_word;
                 if (!w.component_readings) w.component_readings = ({});
                 // A component item with one option asked only for the
@@ -2333,7 +2333,7 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
     // `component_resolutions`. See docs/gloss-ai-word-selection.md (grouped
     // lookup) and the shared DeconstructorUtils helpers.
 
-    // User picked a break-down from the DeconstructorSelector ComboBox: persist
+    // User picked a break-down from a break-down ComboBox: persist
     // the index, auto-lock (mirroring the cache-restore semantics, which set
     // `deconstruction_locked = true` for a resolved break-down), and save a
     // "user-selected" cache row storing the break-down string on the compound's
@@ -2368,26 +2368,6 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             logger.error("update_deconstruction_selection: failed to save break-down for '" + w.original_word + "'");
         }
 
-        root.set_paragraph_words(paragraph_idx, words_data);
-        root.session_needs_saving = true;
-    }
-
-    // User toggled the DeconstructorSelector lock. Lock state is a per-session
-    // view filter persisted in words_data_json; no cache write (the cache stores
-    // the break-down string, which resolves to locked on restore).
-    function update_deconstruction_lock(paragraph_idx, word_idx, locked) {
-        if (paragraph_idx >= paragraph_model.count) return;
-        var paragraph = paragraph_model.get(paragraph_idx);
-        if (!paragraph || !paragraph.words_data_json) return;
-        var words_data;
-        try {
-            words_data = JSON.parse(paragraph.words_data_json);
-        } catch (e) {
-            logger.error("update_deconstruction_lock: failed to parse words_data_json: " + e);
-            return;
-        }
-        if (word_idx >= words_data.length) return;
-        words_data[word_idx].deconstruction_locked = locked;
         root.set_paragraph_words(paragraph_idx, words_data);
         root.session_needs_saving = true;
     }
@@ -3754,12 +3734,28 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                             property bool has_selector: wordItem.is_deconstructor_resolved && wordItem.decs.length >= 2
                             property int selected_dec_index: {
                                 let si = wordItem.modelData.selected_deconstruction_index;
-                                return (si !== null && si !== undefined) ? si : 0;
+                                return (si !== null && si !== undefined) ? Math.min(si, wordItem.decs.length - 1) : 0;
                             }
-                            property bool dec_locked: wordItem.modelData.deconstruction_locked || false
+                            // The selected break-down's components (the first
+                            // break-down when none is selected), as in the Word
+                            // in Sentence rows: the Gloss tab has no lock, so
+                            // `deconstruction_locked` is not read here.
                             property var visible_components: wordItem.is_deconstructor_resolved
-                                ? dec_utils.visible_components(wordItem.modelData, wordItem.selected_dec_index, wordItem.dec_locked)
+                                ? dec_utils.visible_components(wordItem.modelData, wordItem.selected_dec_index, true)
                                 : []
+                            // The break-down choice as a Word in Sentence row
+                            // item, for the shared row_shield_clicked() cycle.
+                            property var breakdown_item: ({
+                                kind: "breakdown",
+                                owner: wordItem.index,
+                                key: "",
+                                row: {
+                                    word: wordItem.modelData.original_word,
+                                    resolution: wordItem.modelData.deconstruction_resolution || null,
+                                    candidates: wordItem.decs.map((d) => ({ uid: d.words_joined })),
+                                    selected_candidate: wordItem.selected_dec_index
+                                }
+                            })
 
                             ColumnLayout {
                                 id: mainContent
@@ -3781,8 +3777,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                         width: parent.width
                                         spacing: 10
 
-                                        ComboBox {
+                                        GlossComboBox {
                                             id: word_select
+                                        bg_color: (wordItem.index % 2 === 0 ? root.bg_color_lighter : root.bg_color)
+                                        text_color: root.text_color
                                         Layout.alignment: Qt.AlignTop
                                         Layout.preferredWidth: wordItem.width * 0.2
                                         visible: {
@@ -3920,8 +3918,9 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                             textFormat: Text.RichText
                                         }
 
-                                        Button {
+                                        GlossOptionButton {
                                             id: show_word_in_dict_tab
+                                            tip: "Open in the Dictionary tab"
                                             icon.source: "icons/32x32/bxs_book_content.png"
                                             Layout.preferredHeight: word_select.height
                                             Layout.preferredWidth: word_select.height
@@ -3961,29 +3960,62 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                         width: parent.width
                                         spacing: 4
 
-                                        // Compound word header.
-                                        Text {
-                                            text: wordItem.modelData.original_word
-                                            color: root.text_color
-                                            font.bold: true
-                                            font.pointSize: root.vocab_font_point_size
-                                            wrapMode: TextEdit.WordWrap
-                                        }
-
-                                        // Break-down selector (case (d) only).
-                                        DeconstructorSelector {
-                                            id: compound_selector
-                                            visible: wordItem.has_selector
+                                        // Compound word, with the break-down choice
+                                        // when there are >= 2 break-downs (case (d)):
+                                        // the same shield + ComboBox as the Word in
+                                        // Sentence break-down row, saved by the same
+                                        // update_deconstruction_selection().
+                                        RowLayout {
                                             Layout.fillWidth: true
-                                            Layout.leftMargin: 20
-                                            model: wordItem.decs.map((d) => d.words_joined)
-                                            current_index: wordItem.selected_dec_index
-                                            locked: wordItem.dec_locked
-                                            onActivated: (index) => {
-                                                root.update_deconstruction_selection(wordItem.paragraph_index, wordItem.index, index);
+                                            spacing: 10
+
+                                            Text {
+                                                Layout.preferredWidth: wordItem.width * 0.2
+                                                Layout.alignment: Qt.AlignTop
+                                                text: wordItem.modelData.original_word
+                                                color: root.text_color
+                                                font.bold: true
+                                                font.pointSize: root.vocab_font_point_size
+                                                wrapMode: TextEdit.WrapAtWordBoundaryOrAnywhere
                                             }
-                                            onLock_toggled: (locked) => {
-                                                root.update_deconstruction_lock(wordItem.paragraph_index, wordItem.index, locked);
+
+                                            ToolButton {
+                                                id: breakdown_shield
+                                                visible: wordItem.has_selector
+                                                property var shield: root.shield_state(wordItem.modelData.deconstruction_resolution || null)
+                                                icon.source: breakdown_shield.shield.icon
+                                                icon.color: "transparent"
+                                                Layout.preferredHeight: breakdown_select.height
+                                                Layout.preferredWidth: breakdown_select.height
+                                                Layout.alignment: Qt.AlignTop
+                                                ToolTip.visible: hovered
+                                                ToolTip.delay: 500
+                                                ToolTip.text: breakdown_shield.shield.tooltip
+                                                onClicked: root.row_shield_clicked(wordItem.paragraph_index, wordItem.breakdown_item)
+                                            }
+
+                                            GlossComboBox {
+                                                id: breakdown_select
+                                                visible: wordItem.has_selector
+                                                bg_color: (wordItem.index % 2 === 0 ? root.bg_color_lighter : root.bg_color)
+                                                text_color: root.text_color
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignTop
+                                                font.pointSize: root.vocab_font_point_size
+                                                model: wordItem.decs.map((d) => d.words_joined)
+                                                currentIndex: wordItem.selected_dec_index
+                                                onActivated: (index) => {
+                                                    if (index !== wordItem.selected_dec_index) {
+                                                        root.update_deconstruction_selection(wordItem.paragraph_index, wordItem.index, index);
+                                                    }
+                                                }
+                                            }
+
+                                            // The dict button column of the rows below.
+                                            Item {
+                                                visible: wordItem.has_selector
+                                                Layout.preferredWidth: breakdown_select.height
+                                                Layout.preferredHeight: 1
                                             }
                                         }
 
@@ -4011,8 +4043,10 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                                 }
                                                 property string comp_resolution: (wordItem.modelData.component_resolutions || ({}))[compRow.comp_word] || ""
 
-                                                ComboBox {
+                                                GlossComboBox {
                                                     id: comp_select
+                                                    bg_color: (wordItem.index % 2 === 0 ? root.bg_color_lighter : root.bg_color)
+                                                    text_color: root.text_color
                                                     Layout.alignment: Qt.AlignTop
                                                     Layout.preferredWidth: wordItem.width * 0.2
                                                     visible: compRow.comp_results.length > 1
@@ -4107,7 +4141,8 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
                                                         textFormat: Text.RichText
                                                     }
 
-                                                    Button {
+                                                    GlossOptionButton {
+                                                        tip: "Open in the Dictionary tab"
                                                         icon.source: "icons/32x32/bxs_book_content.png"
                                                         Layout.preferredHeight: comp_select.height
                                                         Layout.preferredWidth: comp_select.height
@@ -4180,24 +4215,6 @@ So vivicceva kāmehi vivicca akusalehi dhammehi savitakkaṁ savicāraṁ viveka
             unsave_word_dialog.component_word = "";
             unsave_word_dialog.is_breakdown = false;
         }
-    }
-
-    // A gloss option button under the main input: an icon and a short
-    // abbreviation, `checked` bound to the option's state. Not `checkable`, so
-    // a click never replaces the binding; the click handler sets the option.
-    // Each one sets `implicitHeight` to the Export button's: a Flow aligns its
-    // items at the top, and Fusion's ToolButton is taller than its Button.
-    component GlossOptionButton: ToolButton {
-        property string tip: ""
-        display: AbstractButton.TextBesideIcon
-        font.pointSize: 10
-        topPadding: 3
-        bottomPadding: 3
-        icon.width: 16
-        icon.height: 16
-        ToolTip.visible: hovered && tip.length > 0
-        ToolTip.delay: 500
-        ToolTip.text: tip
     }
 
     GlossSettingsWindow {

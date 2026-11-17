@@ -1074,8 +1074,9 @@ substantially.
   results exist), the **FR-A5 case partition** (mixed words like *sādhūti* stay
   compact — no compound UI, no extra AI items; only deconstructor-resolved words
   get per-component sub-rows and a break-down selector for ≥ 2 break-downs), the
-  new `ProcessedWord` fields, the shared `DeconstructorSelector.qml` /
-  `DeconstructorUtils.qml` (lock = `direct_uids` ∪ selected break-down), the AI
+  new `ProcessedWord` fields, `DeconstructorUtils.qml`, the lock of
+  `DeconstructorSelector.qml` (WordSummary / FulltextResults only; the Gloss
+  tab has no lock and shows the selected break-down's components), the AI
   item id scheme (`p<pi>w<wi>` sense / `d` break-down with `d:<n>` pseudo-uids /
   `c<k>` component with an explicit `component_word` field), the **compound-row
   (`deconstruction` string, empty uid) + component-row cache** keyed on the

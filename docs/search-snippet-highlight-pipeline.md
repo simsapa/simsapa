@@ -754,7 +754,7 @@ the same search for a compound part with no `lookup` row
 | Break-down guesses              | `backend/src/db/dpd.rs` `deconstructor_prefix_guess`, `DECONSTRUCTOR_GUESS_KEYS_SQL`, `DECONSTRUCTOR_GUESS_KEY_CAP` (tests: `backend/tests/test_dpd_breakdown_guesses.rs`) |
 | Lookup cancellation             | `backend/src/lookup_cancel.rs`; `sutta_bridge.rs` `results_query_generation` (tests: `backend/tests/test_dpd_lookup_cancel.rs`) |
 | Combined merge (3 streams)      | `bridges/src/sutta_bridge.rs` `fetch_combined_page`             |
-| Break-down selector (QML)       | `bridges/assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` / `GlossTab.qml` |
+| Break-down selector (QML)       | `bridges/assets/qml/DeconstructorSelector.qml` (emit-only), embedded by `FulltextResults.qml` / `WordSummary.qml` (the Gloss tab has its own break-down ComboBox, no lock) |
 | QML render / header dedup       | `bridges/assets/qml/FulltextResults.qml` `update_page` (`show_header`, `find_query`) |
 | Find-bar jump / open path       | `bridges/assets/qml/SuttaSearchWindow.qml` `show_result_in_html_view` / `new_tab_data` |
 | Find-bar punctuation tolerance  | `src-ts/find.ts` `makeInterWordFlexible` (+ `find.test.ts`)     |
