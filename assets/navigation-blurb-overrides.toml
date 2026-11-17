@@ -39,3 +39,15 @@
 #   that names no node, and an empty value for a node that has no SuttaCentral
 #   summary to hide.
 # - This file is written by hand only. No command rewrites it.
+
+# Mahākhandhaka aka Mahāvagga
+"pli-tv-kd1" = """
+The <i>Mahākhandhaka</i>, aka. <i>Mahāvagga</i>, “the Great chapter,” begins by telling the story of
+the Buddha after his awakening. Three of the Buddha’s first and most well-known
+discourses – the Setting in motion of the wheel of the Teaching, the
+Characteristics of non-self, and the Discourse on fire – are given in full. As
+he starts to accumulate disciples, an ordination procedure gradually evolves. A
+large number of rules that concern ordination, especially about the eligibility
+of the candidate, are laid down, as are rules governing the relationship between
+teacher and student, including rules about novices.
+"""
