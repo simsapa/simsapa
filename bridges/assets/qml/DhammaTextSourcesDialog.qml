@@ -71,6 +71,7 @@ ApplicationWindow {
     <li><a href="https://tipitaka.org/cst4">tipitaka.org</a> Chaṭṭha Saṅgāyana Tipiṭaka 4</li>
     <li><a href="https://www.dhammatalks.org/">dhammatalks.org</a> Translations by Aj Thanissaro</li>
     <li><a href="https://ancient-buddhist-texts.net/English-Texts/Dhamma-Verses-Comm/">Dhamma Verses Commentary: A Revised Translation of the Dhammapada Aṭṭhakathā (Revised by Ānandajoti Bhikkhu, 2024)</a></li>
+    <li><a href="https://ancient-buddhist-texts.net/English-Texts/Jataka/">The Birth Stories, Jātakatthavaṇṇanā (Revised by Ānandajoti Bhikkhu, 2023)</a></li>
     <li><a href="https://www.tipitaka.net/tipitaka/dhp/">tipitaka.net</a> The Dhammapada: Verses and Stories Translated by Daw Mya Tin, M.A.</li>
     <li><a href="https://forestsangha.org/teachings/books/a-dhammapada-for-contemplation?language=English">A Dhammapada for Contemplation</a> by Ajahn Munindo</li>
     <li><a href="https://a-buddha-ujja.hu/">a-buddha-ujja.hu</a> Hungarian sutta translations</li>
