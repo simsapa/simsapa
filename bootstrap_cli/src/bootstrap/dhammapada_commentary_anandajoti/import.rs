@@ -3,97 +3,23 @@
 //! the same vagga. See docs/dhammapada-commentary-anandajoti.md.
 
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use anyhow::{bail, Context, Result};
 use diesel::prelude::*;
-use regex::Regex;
 
 use simsapa_backend::db::appdata_models::NewSutta;
 use simsapa_backend::db::appdata_schema::suttas;
-use simsapa_backend::helpers::{pali_to_ascii, sutta_html_to_plain_text};
+use simsapa_backend::helpers::pali_to_ascii;
 use simsapa_backend::logger;
 
-use super::epub::sha256_hex;
 use super::{Manifest, MANIFEST_FILE};
-use crate::bootstrap::helpers::uid_to_ref;
-use crate::bootstrap::{SuttaData, SuttaImporter};
+use crate::bootstrap::SuttaImporter;
 
-pub const SOURCE_UID: &str = "anandajoti";
-const COPYRIGHT: &str = "Ānandajoti Bhikkhu";
-/// Creative Commons Attribution-ShareAlike 4.0, as the author publishes the
-/// book. The epub itself states no licence (its title page says only that
-/// Burlingame's 1921 translation, which it revises, is in the public domain).
-const LICENSE: Option<&str> = Some("CC BY-SA 4.0");
+pub use crate::bootstrap::anandajoti_epub::import::{page_plain_text, CopiedColumns, SOURCE_UID};
+use crate::bootstrap::anandajoti_epub::import::{check_epub_sha256, COPYRIGHT, LICENSE};
 const SOURCE_INFO: &str = "Dhamma Verses Commentary: A Revised Translation of the Dhammapada Aṭṭhakathā \
 (Revised 2024), Ānandajoti Bhikkhu, after E. W. Burlingame. \
 https://ancient-buddhist-texts.net/English-Texts/Dhamma-Verses-Comm/";
-
-/// Parts of a page that are left out of `content_plain`: the Notes section, the
-/// note reference numbers (which would run into the words around them), and the
-/// page and sub-story tables of contents (which repeat the headings). They are
-/// matched in the markup `page.rs` writes, which nests none of them.
-static RE_NOT_PLAIN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r#"(?s)<section class="notes">.*?</section>|<sup class="footnote-reference">.*?</sup>|<nav\b[^>]*>.*?</nav>"#,
-    )
-    .unwrap()
-});
-
-/// The text a page contributes to the Contains and Fulltext indexes.
-pub fn page_plain_text(content_html: &str) -> String {
-    sutta_html_to_plain_text(&RE_NOT_PLAIN.replace_all(content_html, " "))
-}
-
-/// The columns copied from the `.att/en/opentipitaka` record of the same vagga.
-/// The Daw Mya Tin import (`dhammapada_tipitaka.rs`) uses them too.
-#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
-pub struct CopiedColumns {
-    pub sutta_ref: String,
-    pub nikaya: String,
-    pub group_path: Option<String>,
-    pub group_index: Option<i32>,
-    pub order_index: Option<i32>,
-    pub sutta_range_group: Option<String>,
-    pub sutta_range_start: Option<i32>,
-    pub sutta_range_end: Option<i32>,
-}
-
-impl CopiedColumns {
-    pub(crate) fn load(conn: &mut SqliteConnection, uid: &str) -> Result<Option<Self>> {
-        Ok(suttas::table
-            .filter(suttas::uid.eq(uid))
-            .select((
-                suttas::sutta_ref,
-                suttas::nikaya,
-                suttas::group_path,
-                suttas::group_index,
-                suttas::order_index,
-                suttas::sutta_range_group,
-                suttas::sutta_range_start,
-                suttas::sutta_range_end,
-            ))
-            .first::<CopiedColumns>(conn)
-            .optional()?)
-    }
-
-    /// As the CST import derives them from the vagga reference
-    /// (`dhp21-32.att`), with no grouping.
-    pub(crate) fn derived(reference: &str) -> Self {
-        let sc_code = reference.strip_suffix(".att").unwrap_or(reference);
-        let (sutta_range_group, sutta_range_start, sutta_range_end) = SuttaData::parse_range_from_uid(reference);
-        CopiedColumns {
-            sutta_ref: uid_to_ref(sc_code),
-            nikaya: "khuddaka".to_string(),
-            group_path: None,
-            group_index: None,
-            order_index: None,
-            sutta_range_group,
-            sutta_range_start,
-            sutta_range_end,
-        }
-    }
-}
 
 pub struct DhammapadaCommentaryAnandajotiImporter {
     /// The extraction's output folder.
@@ -114,38 +40,17 @@ impl DhammapadaCommentaryAnandajotiImporter {
         serde_json::from_str(&text).with_context(|| format!("Cannot parse {}", path.display()))
     }
 
-    /// Warns, and never fails, when the epub is missing or differs from the
-    /// one the manifest was made from.
-    fn check_epub_sha256(&self, manifest: &Manifest) {
-        let advice = "re-run dhammapada-commentary-extract";
-        match std::fs::read(&self.epub_file) {
-            Ok(bytes) => {
-                let sha256 = sha256_hex(&bytes);
-                if sha256 != manifest.epub_sha256 {
-                    logger::warn(&format!(
-                        "{} has SHA-256 {}, but the Dhammapada commentary pages were extracted from {}: {}",
-                        self.epub_file.display(),
-                        sha256,
-                        manifest.epub_sha256,
-                        advice
-                    ));
-                }
-            }
-            Err(e) => logger::warn(&format!(
-                "Cannot read {} to check the Dhammapada commentary pages against it ({}): {}",
-                self.epub_file.display(),
-                e,
-                advice
-            )),
-        }
-    }
-
     pub fn import_pages(&self, conn: &mut SqliteConnection) -> Result<usize> {
         if !matches!(self.dir.try_exists(), Ok(true)) {
             bail!("Dhammapada commentary folder not found: {}", self.dir.display());
         }
         let manifest = Self::read_manifest(&self.dir)?;
-        self.check_epub_sha256(&manifest);
+        check_epub_sha256(
+            &self.epub_file,
+            &manifest.epub_sha256,
+            "the Dhammapada commentary pages",
+            "re-run dhammapada-commentary-extract",
+        );
 
         let mut count = 0;
         for vagga in &manifest.vaggas {
@@ -219,7 +124,7 @@ impl SuttaImporter for DhammapadaCommentaryAnandajotiImporter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bootstrap::dhammapada_commentary_anandajoti::epub::EpubFiles;
+    use crate::bootstrap::anandajoti_epub::epub::EpubFiles;
     use crate::bootstrap::dhammapada_commentary_anandajoti::extract::{extract, write_extraction};
     use crate::bootstrap::segment_files::test_support::scratch_appdata;
     use crate::bootstrap::source_paths;

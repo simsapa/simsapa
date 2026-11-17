@@ -8,39 +8,37 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result};
 use ego_tree::NodeRef;
 use regex::Regex;
-use scraper::{ElementRef, Html, Node, Selector};
+use scraper::{ElementRef, Node};
 
-use super::epub::{EpubFiles, TocEntry};
+use crate::bootstrap::anandajoti_epub::epub::{EpubFiles, TocEntry};
+use crate::bootstrap::anandajoti_epub::report::Report;
+use crate::bootstrap::anandajoti_epub::source::{
+    body_blocks, collapse_whitespace, find_notes_files, parse_files, parse_notes, Block,
+    Notes, ParsedFile,
+};
 use super::page::{render_vagga, Page};
 use super::{Manifest, ManifestVagga, MANIFEST_FILE, REPORT_FILE, SC_VAGGA_RANGES};
 
 /// The gray spans that hold page markers (`{1.3}`, `[28.146]`).
 pub const PAGE_MARKER_CLASSES: [&str; 5] = ["t10", "t17", "t21", "t25", "t27"];
 
+/// Whether `el` is a page marker span of this epub.
+pub fn is_page_marker(el: &ElementRef) -> bool {
+    crate::bootstrap::anandajoti_epub::source::is_page_marker(el, &PAGE_MARKER_CLASSES)
+}
+
+/// The text of `node` without note refs and page markers of this epub.
+pub fn text_without_refs(node: NodeRef<Node>) -> String {
+    crate::bootstrap::anandajoti_epub::source::text_without_refs(node, &PAGE_MARKER_CLASSES)
+}
+
 static RE_VAGGA_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\. ").unwrap());
 static RE_STORY_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\.(\d+) ").unwrap());
 static RE_VERSE_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^Dhp (\d+)(?:-(\d+))?$").unwrap());
-static RE_NOTE_NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\{(\d+)\}$").unwrap());
 static RE_COUNT_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^In the (.+?) (?:there are|are) ([a-z]+(?:-[a-z]+)?)(?: stories)?\.$").unwrap()
 });
 static RE_TOTAL_STORIES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\d+) stories\b").unwrap());
-
-/// One block element of a content file.
-#[derive(Clone, Copy)]
-pub struct Block<'a> {
-    pub file: &'a str,
-    pub el: ElementRef<'a>,
-}
-
-impl<'a> Block<'a> {
-    pub fn tag(&self) -> &'a str {
-        self.el.value().name()
-    }
-    pub fn class(&self) -> &'a str {
-        self.el.value().attr("class").unwrap_or("")
-    }
-}
 
 pub struct Vagga<'a> {
     pub number: u32,
@@ -92,136 +90,6 @@ pub struct SubStory<'a> {
     pub title: String,
 }
 
-/// A note of the notes file.
-pub struct Note<'a> {
-    pub number: u32,
-    /// Its paragraphs. In the first, the leading anchor and back-link are
-    /// skipped: rendering starts at child node `first_paragraph_start`.
-    pub paragraphs: Vec<ElementRef<'a>>,
-    pub first_paragraph_start: usize,
-}
-
-/// The notes, keyed by `(file, anchor id)`, the target of a note ref.
-pub struct Notes<'a> {
-    pub by_target: BTreeMap<(String, String), Note<'a>>,
-    /// The files the note refs point to (`notes.html`).
-    pub files: BTreeSet<String>,
-}
-
-impl Notes<'_> {
-    /// `(file, anchor)` of a note ref's `href`, if it points into a notes
-    /// file.
-    pub fn target_of(&self, href: &str) -> Option<(String, String)> {
-        let (file, anchor) = href.split_once('#')?;
-        self.files.contains(file).then(|| (file.to_string(), anchor.to_string()))
-    }
-}
-
-/// The defects found in the source, and the markup the extraction does not
-/// map. Lines, in the order found.
-#[derive(Default)]
-pub struct Report {
-    pub defects: Vec<String>,
-    pub unmapped: BTreeMap<String, usize>,
-}
-
-impl Report {
-    pub fn defect(&mut self, line: String) {
-        self.defects.push(line);
-    }
-    pub fn unmapped(&mut self, what: String) {
-        *self.unmapped.entry(what).or_default() += 1;
-    }
-}
-
-/// Whether `el` is a page marker span.
-pub fn is_page_marker(el: &ElementRef) -> bool {
-    el.value().name() == "span" && PAGE_MARKER_CLASSES.contains(&el.value().attr("class").unwrap_or(""))
-}
-
-/// The link text of a note ref, `{4}` → 4.
-pub fn note_ref_number(el: &ElementRef) -> Option<u32> {
-    let text: String = el.text().collect();
-    RE_NOTE_NUMBER.captures(text.trim()).and_then(|c| c[1].parse().ok())
-}
-
-/// Whether `el` is a note ref: a link whose text is `{N}`. Used before the
-/// notes files are known; afterwards [`Notes::target_of`] decides.
-fn looks_like_note_ref(el: &ElementRef) -> bool {
-    el.value().name() == "a" && el.value().attr("href").is_some() && note_ref_number(el).is_some()
-}
-
-/// Collapse whitespace (the no-break space included) and trim.
-pub fn collapse_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// The text of `node`, with note refs and page markers left out and `<br>`
-/// read as a space, whitespace collapsed.
-pub fn text_without_refs(node: NodeRef<Node>) -> String {
-    let mut out = String::new();
-    push_text_without_refs(node, &mut out);
-    collapse_whitespace(&out)
-}
-
-fn push_text_without_refs(node: NodeRef<Node>, out: &mut String) {
-    match node.value() {
-        Node::Text(text) => out.push_str(text),
-        Node::Element(el) => {
-            if el.name() == "br" {
-                out.push(' ');
-                return;
-            }
-            if let Some(element) = ElementRef::wrap(node)
-                && (looks_like_note_ref(&element) || is_page_marker(&element))
-            {
-                return;
-            }
-            for child in node.children() {
-                push_text_without_refs(child, out);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// The parsed content files, in spine order.
-pub struct ParsedFile {
-    pub name: String,
-    pub doc: Html,
-}
-
-pub fn parse_files(epub: &EpubFiles) -> Result<Vec<ParsedFile>> {
-    epub.spine()?
-        .into_iter()
-        .map(|name| {
-            let text = epub.get(&name)?;
-            Ok(ParsedFile { doc: Html::parse_document(text), name })
-        })
-        .collect()
-}
-
-static BODY: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body").unwrap());
-
-/// The block elements of a file's `<body>`. Text directly in the body that
-/// is not whitespace is reported.
-fn body_blocks<'a>(file: &'a ParsedFile, report: &mut Report) -> Vec<Block<'a>> {
-    let Some(body) = file.doc.select(&BODY).next() else {
-        return Vec::new();
-    };
-    let mut blocks = Vec::new();
-    for child in body.children() {
-        match child.value() {
-            Node::Element(_) => blocks.push(Block { file: &file.name, el: ElementRef::wrap(child).unwrap() }),
-            Node::Text(text) if !text.trim().is_empty() => {
-                report.defect(format!("{}: text outside any paragraph: {:?}", file.name, collapse_whitespace(text)));
-            }
-            _ => {}
-        }
-    }
-    blocks
-}
-
 /// What a heading of the content files is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeadingKind {
@@ -250,70 +118,6 @@ pub struct Book<'a> {
     /// The blocks after the last vagga (the Conclusion).
     pub after: Vec<Block<'a>>,
     pub headings: Vec<HeadingRecord>,
-}
-
-/// The head of a note paragraph: it opens (whitespace aside) with an empty
-/// anchor and a `{N}` link. Gives the anchor id, N, and the index of the
-/// child node after the link.
-fn note_head(p: &ElementRef) -> Option<(String, u32, usize)> {
-    let mut elements = p.children().enumerate().filter(|(_, node)| match node.value() {
-        Node::Text(text) => !text.trim().is_empty(),
-        _ => true,
-    });
-    let (_, anchor) = elements.next()?;
-    let (link_index, link) = elements.next()?;
-    let (anchor, link) = (ElementRef::wrap(anchor)?, ElementRef::wrap(link)?);
-    let id = anchor.value().attr("id")?;
-    let is_head = anchor.value().name() == "a"
-        && anchor.value().attr("href").is_none()
-        && looks_like_note_ref(&link);
-    is_head.then(|| (id.to_string(), note_ref_number(&link).unwrap(), link_index + 1))
-}
-
-/// Whether most of a file's paragraphs are note heads: the notes file, as
-/// against a content file that its back-links point to.
-fn is_notes_file(file: &ParsedFile) -> bool {
-    static P: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body p").unwrap());
-    let (mut heads, mut paragraphs) = (0, 0);
-    for p in file.doc.select(&P) {
-        paragraphs += 1;
-        if note_head(&p).is_some() {
-            heads += 1;
-        }
-    }
-    paragraphs > 0 && heads * 2 > paragraphs
-}
-
-/// Read the notes files: one `<p>` per note, opening with an anchor and a
-/// `{N}` back-link; a `<p>` without them continues the note before it.
-fn parse_notes<'a>(files: &'a [ParsedFile], note_files: &BTreeSet<String>, report: &mut Report) -> Notes<'a> {
-    let mut by_target: BTreeMap<(String, String), Note<'a>> = BTreeMap::new();
-    for file in files.iter().filter(|f| note_files.contains(&f.name)) {
-        let mut last: Option<(String, String)> = None;
-        for block in body_blocks(file, report) {
-            if block.tag() != "p" {
-                continue;
-            }
-            match note_head(&block.el) {
-                Some((anchor, number, start)) => {
-                    let key = (file.name.clone(), anchor);
-                    if by_target.contains_key(&key) {
-                        report.defect(format!("{}: note anchor {} appears twice", file.name, key.1));
-                    }
-                    by_target.insert(
-                        key.clone(),
-                        Note { number, paragraphs: vec![block.el], first_paragraph_start: start },
-                    );
-                    last = Some(key);
-                }
-                None => match last.as_ref().and_then(|key| by_target.get_mut(key)) {
-                    Some(note) => note.paragraphs.push(block.el),
-                    None => report.defect(format!("{}: a paragraph before the first note", file.name)),
-                },
-            }
-        }
-    }
-    Notes { by_target, files: note_files.clone() }
 }
 
 /// Split a vagga heading into the English title and the Pāli name: at the
@@ -382,26 +186,7 @@ enum Stage {
 /// Walk the content files as one stream of blocks, and switch vagga, story
 /// and sub-story on each heading.
 pub fn read_book<'a>(files: &'a [ParsedFile], report: &mut Report) -> Book<'a> {
-    // The notes files: those the `{N}` links point to, and whose paragraphs
-    // are notes. The notes' back-links are `{N}` links too, to content files.
-    let mut targets: BTreeSet<String> = BTreeSet::new();
-    for file in files {
-        for node in file.doc.root_element().descendants() {
-            if let Some(el) = ElementRef::wrap(node)
-                && looks_like_note_ref(&el)
-                && let Some((target, _)) = el.value().attr("href").unwrap().split_once('#')
-                && !target.is_empty()
-                && target != file.name
-            {
-                targets.insert(target.to_string());
-            }
-        }
-    }
-    let note_files: BTreeSet<String> = files
-        .iter()
-        .filter(|f| targets.contains(&f.name) && is_notes_file(f))
-        .map(|f| f.name.clone())
-        .collect();
+    let note_files = find_notes_files(files);
     let notes = parse_notes(files, &note_files, report);
 
     let mut vaggas: Vec<Vagga<'a>> = Vec::new();
@@ -861,33 +646,15 @@ pub fn extract(epub: &EpubFiles) -> Result<Extraction> {
     let note_ref_count: usize = pages.iter().map(|p| p.note_ref_count).sum();
     let note_count: usize = pages.iter().map(|p| p.note_count).sum();
 
-    let mut text = String::new();
-    text.push_str("Dhamma Verses Commentary: extraction report\n");
-    text.push_str(&format!("epub: {} (SHA-256 {})\n\n", epub.file_name, epub.sha256));
-    text.push_str("Defects in the source (reported, not repaired):\n");
-    if report.defects.is_empty() {
-        text.push_str("(none)\n");
-    }
-    for line in &report.defects {
-        text.push_str(&format!("- {}\n", line));
-    }
-    text.push_str("\nMarkup the extraction does not map (rendered as its text):\n");
-    if report.unmapped.is_empty() {
-        text.push_str("(none)\n");
-    }
-    for (what, count) in &report.unmapped {
-        text.push_str(&format!("- {} ({}×)\n", what, count));
-    }
-    text.push_str(&format!(
-        "\nSummary: {} vaggas, {} stories, {} sub-stories, {} note references to {} notes, {} defects, {} unmapped\n",
+    let summary = format!(
+        "{} vaggas, {} stories, {} sub-stories, {} note references to {} notes",
         pages.len(),
         story_count,
         substory_count,
         note_ref_count,
-        note_count,
-        report.defects.len(),
-        report.unmapped.len()
-    ));
+        note_count
+    );
+    let text = report.render("Dhamma Verses Commentary", &epub.file_name, &epub.sha256, &summary);
 
     Ok(Extraction { pages, manifest, report_text: text, story_count, defect_count: report.defects.len() })
 }

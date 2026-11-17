@@ -17,17 +17,15 @@
 //! `note-ref-4-2`, …; each note links back to its first ref
 //! (`a.footnote-backref`).
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-use ego_tree::NodeRef;
 use regex::Regex;
-use scraper::{ElementRef, Node};
 
-use super::extract::{
-    collapse_whitespace, is_page_marker, note_ref_number, Block, BodyItem, Notes, Report, Story, Vagga,
-};
+use super::extract::{BodyItem, Story, Vagga};
 use super::page_uid;
+use crate::bootstrap::anandajoti_epub::page::{escape, frame, ClassMap, SpanStyle, Writer};
+use crate::bootstrap::anandajoti_epub::report::Report;
+use crate::bootstrap::anandajoti_epub::source::{collapse_whitespace, Notes};
 
 pub struct Page {
     pub uid: String,
@@ -45,37 +43,6 @@ pub struct Page {
 
 static RE_SUBSTORY_LABEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+[a-z]+)\.?(?:\s|$)").unwrap());
 static RE_SUBSTORY_PART: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^Part (\d+)\.?(?:\s|$)").unwrap());
-
-fn escape(text: &str) -> String {
-    html_escape::encode_text(text).into_owned()
-}
-
-/// The text of a page-marker span as (before, marker, after). The marker runs
-/// from the first `{` or `[` to the last `}` or `]`; the source's grey span
-/// sometimes also covers the text around it (`[28.167] –`, a dialogue dash),
-/// which stays outside the `pts-ref` span. A marker split over two spans
-/// (`{3.` and `465}`) has a bracket on one side only, and that side runs to
-/// the end of the text. Whitespace at either end stays outside too.
-pub fn split_page_marker(text: &str) -> (&str, &str, &str) {
-    let trimmed = text.trim();
-    let start_offset = text.len() - text.trim_start().len();
-    let mut start = 0;
-    let mut end = trimmed.len();
-    if let Some(i) = trimmed.find(['{', '[']) {
-        start = i;
-    }
-    if let Some(i) = trimmed.rfind(['}', ']']) {
-        end = i + 1;
-    }
-    if start >= end {
-        // No bracket pair in order: keep the whole text as the marker.
-        start = 0;
-        end = trimmed.len();
-    }
-    let lead_end = start_offset + start;
-    let marker_end = start_offset + end;
-    (&text[..lead_end], &text[lead_end..marker_end], &text[marker_end..])
-}
 
 /// The label of a sub-story heading, for its anchor: "1a Story of …" →
 /// `1a`, "Part 5. Rejection …" → `part-5`.
@@ -108,259 +75,82 @@ const PLAIN_SPAN_CLASSES: [&str; 14] =
     ["t2", "t3", "t4", "t7", "t8", "t9", "t12", "t13", "t15", "t16", "t19", "t20", "t24", "t26"];
 const PLAIN_SPAN_CLASSES_TH: [&str; 7] = ["th12", "th22", "th31", "th33", "th34", "th42", "th44"];
 
-struct Writer<'r, 'a> {
-    notes: &'r Notes<'a>,
-    report: &'r mut Report,
-    ids: BTreeSet<String>,
-    /// Refs seen per note, keyed by note target.
-    ref_counts: BTreeMap<(String, String), u32>,
-    /// Notes in order of first reference.
-    note_order: Vec<(String, String)>,
-    note_ref_count: usize,
-    /// Where the writer is, for report lines: "007.html: story 1.1".
-    context: String,
-}
-
-impl Writer<'_, '_> {
-    /// `base`, or `base-2`, `base-3`, … if it is taken.
-    fn unique_id(&mut self, base: &str) -> String {
-        let mut id = base.to_string();
-        let mut k = 2;
-        while self.ids.contains(&id) {
-            id = format!("{}-{}", base, k);
-            k += 1;
-        }
-        self.ids.insert(id.clone());
-        id
-    }
-
-    fn children(&mut self, out: &mut String, node: NodeRef<Node>) {
-        for child in node.children() {
-            self.inline(out, child);
-        }
-    }
-
-    /// Render inline content: text, `<br>`, emphasis, page markers and note
-    /// refs. The epub's own anchors are dropped, and links that do not lead
-    /// to a note become plain text.
-    fn inline(&mut self, out: &mut String, node: NodeRef<Node>) {
-        let el = match node.value() {
-            Node::Text(text) => {
-                out.push_str(&escape(text));
-                return;
-            }
-            Node::Element(_) => ElementRef::wrap(node).unwrap(),
-            _ => return,
-        };
-        let name = el.value().name();
-        let class = el.value().attr("class").unwrap_or("");
-        match name {
-            "br" => out.push_str("<br>"),
-            "a" => match el.value().attr("href") {
-                Some(href) => match self.notes.target_of(href) {
-                    Some(target) => self.note_ref(out, &el, target),
-                    None => self.children(out, node),
-                },
-                None => self.children(out, node),
-            },
-            "span" if is_page_marker(&el) => {
-                let text: String = el.text().collect();
-                let (lead, marker, trail) = split_page_marker(&text);
-                out.push_str(&escape(lead));
-                if !marker.is_empty() {
-                    out.push_str("<span class=\"pts-ref\">");
-                    out.push_str(&escape(marker));
-                    out.push_str("</span>");
-                }
-                out.push_str(&escape(trail));
-            }
-            "span" => match class {
-                "t5" | "t14" | "t28" => self.wrapped(out, node, "<b>", "</b>"),
-                "t6" | "t18" | "t23" | "th43" => self.wrapped(out, node, "<i>", "</i>"),
-                "t11" => self.wrapped(out, node, "<b><i>", "</i></b>"),
-                "t22" => self.wrapped(out, node, "<sup>", "</sup>"),
-                _ => {
-                    if !PLAIN_SPAN_CLASSES.contains(&class) && !PLAIN_SPAN_CLASSES_TH.contains(&class) {
-                        self.report.unmapped(format!("<span class=\"{}\">", class));
-                    }
-                    self.children(out, node);
-                }
-            },
-            "b" | "i" | "em" | "strong" | "sup" | "sub" => {
-                let (open, close) = (format!("<{}>", name), format!("</{}>", name));
-                self.wrapped(out, node, &open, &close);
-            }
-            _ => {
-                self.report.unmapped(format!("<{}> inline", name));
-                self.children(out, node);
-            }
-        }
-    }
-
-    fn wrapped(&mut self, out: &mut String, node: NodeRef<Node>, open: &str, close: &str) {
-        out.push_str(open);
-        self.children(out, node);
-        out.push_str(close);
-    }
-
-    fn note_ref(&mut self, out: &mut String, el: &ElementRef, target: (String, String)) {
-        let ref_number = note_ref_number(el);
-        let Some(note) = self.notes.by_target.get(&target) else {
-            self.report.defect(format!(
-                "{}: note ref {} points to {}#{}, which is no note",
-                self.context,
-                ref_number.map(|n| format!("{{{}}}", n)).unwrap_or_else(|| "(no number)".into()),
-                target.0,
-                target.1
-            ));
-            let text: String = el.text().collect();
-            out.push_str(&format!("<sup>{}</sup>", escape(&text)));
-            return;
-        };
-        if ref_number != Some(note.number) {
-            self.report.defect(format!(
-                "{}: note ref {:?} points to note {}",
-                self.context,
-                el.text().collect::<String>(),
-                note.number
-            ));
-        }
-        self.note_ref_count += 1;
-        let count = self.ref_counts.entry(target.clone()).or_insert(0);
-        *count += 1;
-        if *count == 1 {
-            self.note_order.push(target);
-        }
-        let base = if *count == 1 { format!("note-ref-{}", note.number) } else { format!("note-ref-{}-{}", note.number, count) };
-        let number = note.number;
-        let id = self.unique_id(&base);
-        out.push_str(&format!(
-            "<sup class=\"footnote-reference\"><a id=\"{}\" href=\"#note-{}\">{}</a></sup>",
-            id, number, number
-        ));
-    }
-
-    /// A block of the text: a paragraph with its semantic class.
-    fn block(&mut self, out: &mut String, block: &Block) {
-        let tag = block.tag();
-        if tag != "p" {
-            self.report.unmapped(format!("<{} class=\"{}\"> block", tag, block.class()));
-            out.push_str("<p>");
-            self.children(out, *block.el);
-            out.push_str("</p>\n");
-            return;
-        }
-        let (class, known) = paragraph_class(block.class());
-        if !known {
-            self.report.unmapped(format!("<p class=\"{}\">", block.class()));
-        }
-        let mut classes: Vec<&str> = class.into_iter().collect();
-        let has_commentator_span = block.el.descendants().any(|n| {
-            ElementRef::wrap(n).is_some_and(|e| e.value().name() == "span" && e.value().attr("class") == Some(COMMENTATOR_SPAN_CLASS))
-        });
-        if has_commentator_span && !classes.contains(&"commentator-note") {
-            classes.push("commentator-note");
-        }
-        if classes.is_empty() {
-            out.push_str("<p>");
-        } else {
-            out.push_str(&format!("<p class=\"{}\">", classes.join(" ")));
-        }
-        self.children(out, *block.el);
-        out.push_str("</p>\n");
-    }
-
-    fn story(&mut self, out: &mut String, story: &Story, story_id: &str, substory_ids: &[String]) {
-        for v in &story.verses {
-            let id = format!("dhp-v{}", v);
-            if self.ids.insert(id.clone()) {
-                out.push_str(&format!("<a id=\"{}\"></a>\n", id));
-            }
-        }
-        out.push_str(&format!("<section class=\"story\" id=\"{}\">\n", story_id));
-        out.push_str("<h2>");
-        self.children(out, *story.heading.el);
-        out.push_str("</h2>\n");
-        if let Some(pali) = &story.pali_title {
-            out.push_str("<h3 class=\"story-title-pali\">");
-            self.children(out, *pali.el);
-            out.push_str("</h3>\n");
-        }
-        if !story.meta.is_empty() {
-            out.push_str("<div class=\"story-meta\">\n");
-            for block in &story.meta {
-                self.block(out, block);
-            }
-            out.push_str("</div>\n");
-        }
-        let substories: Vec<_> = story.substories().collect();
-        if !substories.is_empty() {
-            out.push_str("<nav class=\"substory-toc\"><ul>\n");
-            for (sub, id) in substories.iter().zip(substory_ids) {
-                out.push_str(&format!("<li><a href=\"#{}\">{}</a></li>\n", id, escape(&sub.title)));
-            }
-            out.push_str("</ul></nav>\n");
-        }
-        let mut sub_index = 0;
-        for item in &story.body {
-            match item {
-                BodyItem::Block(block) => self.block(out, block),
-                BodyItem::SubStory(sub) => {
-                    out.push_str(&format!("<h4 class=\"substory-heading\" id=\"{}\">", substory_ids[sub_index]));
-                    self.children(out, *sub.heading.el);
-                    out.push_str("</h4>\n");
-                    sub_index += 1;
-                }
-            }
-        }
-        out.push_str("</section>\n");
-    }
-
-    fn notes_section(&mut self, out: &mut String) {
-        if self.note_order.is_empty() {
-            return;
-        }
-        out.push_str("<section class=\"notes\">\n<h2>Notes</h2>\n<ol>\n");
-        for target in self.note_order.clone() {
-            let note = &self.notes.by_target[&target];
-            let id = self.unique_id(&format!("note-{}", note.number));
-            out.push_str(&format!("<li id=\"{}\" value=\"{}\">", id, note.number));
-            let last = note.paragraphs.len() - 1;
-            for (i, paragraph) in note.paragraphs.iter().enumerate() {
-                let mut text = String::new();
-                let skip = if i == 0 { note.first_paragraph_start } else { 0 };
-                for child in paragraph.children().skip(skip) {
-                    self.inline(&mut text, child);
-                }
-                out.push_str("<p>");
-                out.push_str(text.trim());
-                if i == last {
-                    out.push_str(&format!(
-                        " <a class=\"footnote-backref\" href=\"#note-ref-{}\">↩</a>",
-                        note.number
-                    ));
-                }
-                out.push_str("</p>");
-            }
-            out.push_str("</li>\n");
-        }
-        out.push_str("</ol>\n</section>\n");
+fn span_style(class: &str) -> SpanStyle {
+    match class {
+        "t5" | "t14" | "t28" => SpanStyle::Bold,
+        "t6" | "t18" | "t23" | "th43" => SpanStyle::Italic,
+        "t11" => SpanStyle::BoldItalic,
+        "t22" => SpanStyle::Superscript,
+        _ if PLAIN_SPAN_CLASSES.contains(&class) || PLAIN_SPAN_CLASSES_TH.contains(&class) => SpanStyle::Plain,
+        _ => SpanStyle::Unmapped,
     }
 }
+
+pub static CLASS_MAP: ClassMap = ClassMap {
+    page_marker_classes: &super::extract::PAGE_MARKER_CLASSES,
+    span_style,
+    paragraph_class,
+    commentator_span_class: COMMENTATOR_SPAN_CLASS,
+};
+
+fn story_html(w: &mut Writer, out: &mut String, story: &Story, story_id: &str, substory_ids: &[String]) {
+    for v in &story.verses {
+        let id = format!("dhp-v{}", v);
+        if w.ids.insert(id.clone()) {
+            out.push_str(&format!("<a id=\"{}\"></a>\n", id));
+        }
+    }
+    out.push_str(&format!("<section class=\"story\" id=\"{}\">\n", story_id));
+    out.push_str("<h2>");
+    w.children(out, *story.heading.el);
+    out.push_str("</h2>\n");
+    if let Some(pali) = &story.pali_title {
+        out.push_str("<h3 class=\"story-title-pali\">");
+        w.children(out, *pali.el);
+        out.push_str("</h3>\n");
+    }
+    if !story.meta.is_empty() {
+        out.push_str("<div class=\"story-meta\">\n");
+        for block in &story.meta {
+            w.block(out, block);
+        }
+        out.push_str("</div>\n");
+    }
+    let substories: Vec<_> = story.substories().collect();
+    if !substories.is_empty() {
+        out.push_str("<nav class=\"substory-toc\"><ul>\n");
+        for (sub, id) in substories.iter().zip(substory_ids) {
+            out.push_str(&format!("<li><a href=\"#{}\">{}</a></li>\n", id, escape(&sub.title)));
+        }
+        out.push_str("</ul></nav>\n");
+    }
+    let mut sub_index = 0;
+    for item in &story.body {
+        match item {
+            BodyItem::Block(block) => w.block(out, block),
+            BodyItem::SubStory(sub) => {
+                out.push_str(&format!("<h4 class=\"substory-heading\" id=\"{}\">", substory_ids[sub_index]));
+                w.children(out, *sub.heading.el);
+                out.push_str("</h4>\n");
+                sub_index += 1;
+            }
+        }
+    }
+    out.push_str("</section>\n");
+}
+
 
 /// Render one vagga page.
 pub fn render_vagga(vagga: &Vagga, verse_start: u32, verse_end: u32, notes: &Notes, report: &mut Report) -> Page {
     let uid = page_uid(verse_start, verse_end);
     let article_id = uid.split('/').next().unwrap().to_string();
-    let mut writer = Writer {
+    let mut writer = Writer::new(
         notes,
         report,
-        ids: BTreeSet::from([article_id.clone()]),
-        ref_counts: BTreeMap::new(),
-        note_order: Vec::new(),
-        note_ref_count: 0,
-        context: format!("{}: vagga {}", vagga.heading.file, vagga.number),
-    };
+        &CLASS_MAP,
+        &article_id,
+        format!("{}: vagga {}", vagga.heading.file, vagga.number),
+    );
 
     // Anchor ids first, so that the lists can link to them.
     let mut story_ids: Vec<String> = Vec::new();
@@ -399,22 +189,18 @@ pub fn render_vagga(vagga: &Vagga, verse_start: u32, verse_end: u32, notes: &Not
     }
     for ((story, id), sub_ids) in vagga.stories.iter().zip(&story_ids).zip(&substory_ids) {
         writer.context = format!("{}: story {}", story.heading.file, story.label());
-        writer.story(&mut body, story, id, sub_ids);
+        story_html(&mut writer, &mut body, story, id, sub_ids);
     }
     writer.notes_section(&mut body);
 
-    let mut html = String::new();
-    html.push_str("<div class=\"suttacentral html-text\">\n");
-    html.push_str(&format!("<article id=\"{}\" lang=\"en\">\n", article_id));
-    html.push_str("<header>\n<ul>\n<li class=\"division\">Minor Collection</li>\n");
-    html.push_str("<li class=\"subdivision\">Dhamma Verses Commentary</li>\n</ul>\n");
-    html.push_str(&format!("<h1>{}</h1>\n", escape(&vagga.title)));
+    let mut header = String::new();
+    header.push_str("<ul>\n<li class=\"division\">Minor Collection</li>\n");
+    header.push_str("<li class=\"subdivision\">Dhamma Verses Commentary</li>\n</ul>\n");
+    header.push_str(&format!("<h1>{}</h1>\n", escape(&vagga.title)));
     if !vagga.title_pali.is_empty() {
-        html.push_str(&format!("<p class=\"vagga-title-pali\">{}</p>\n", escape(&vagga.title_pali)));
+        header.push_str(&format!("<p class=\"vagga-title-pali\">{}</p>\n", escape(&vagga.title_pali)));
     }
-    html.push_str("</header>\n<div class=\"anandajoti-dhp-comm\">\n");
-    html.push_str(&body);
-    html.push_str("</div>\n</article>\n</div>\n");
+    let html = frame(&article_id, &header, "anandajoti-dhp-comm", &body);
 
     Page {
         file_name: format!("{}.html", article_id.trim_end_matches(".att")),
