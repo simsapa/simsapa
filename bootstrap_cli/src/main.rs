@@ -828,6 +828,11 @@ enum Commands {
         /// Limit the number of suttas to import (for testing purposes)
         #[arg(long, value_name = "LIMIT")]
         limit: Option<i32>,
+
+        /// Do not create the release .tar.bz2 archives (faster, for
+        /// work-in-progress runs; the dist databases and indexes are built as usual)
+        #[arg(long, default_value_t = false)]
+        skip_archives: bool,
     },
 
     /// Export Dhammapada Tipitaka.net suttas from legacy database
@@ -1260,8 +1265,8 @@ fn main() {
             gloss_corpus_explore::gloss_corpus_explore(&params)
         }
 
-        Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit } => {
-            bootstrap::bootstrap(write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit)
+        Commands::Bootstrap { write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit, skip_archives } => {
+            bootstrap::bootstrap(write_new_dotenv, skip_appdata, skip_dpd, skip_languages, only_languages, limit, skip_archives)
                 .map_err(|e| e.to_string())
         }
 

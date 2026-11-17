@@ -127,8 +127,11 @@ pub fn ensure_directory_exists(path: &Path) -> Result<()> {
 }
 
 /// Main bootstrap function - orchestrates the entire bootstrap process
-pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, skip_languages: bool, only_languages: Option<String>, limit: Option<i32>) -> Result<()> {
+pub fn bootstrap(write_new_dotenv: bool, skip_appdata: bool, skip_dpd: bool, skip_languages: bool, only_languages: Option<String>, limit: Option<i32>, skip_archives: bool) -> Result<()> {
     logger::info("=== bootstrap() ===");
+    if skip_archives {
+        logger::info("--skip-archives flag set: the release .tar.bz2 archives will not be created");
+    }
     if skip_appdata {
         logger::info("--skip-appdata flag set: Appdata initialization and bootstrap will be skipped");
     }
@@ -467,7 +470,7 @@ RELEASE_CHANNEL=development
         // let whitney_zip_path = bootstrap_assets_dir.join("stardict-imports/whitney-gd.zip");
         // import_stardict_zip_bootstrap(&whitney_zip_path, "whitney", "en")?;
 
-        logger::info("=== Create dictionaries.tar.bz2 ===");
+        logger::info("=== Prepare dictionaries.sqlite3 (and its archive) ===");
         let dict_db_path = assets_dir.join("dictionaries.sqlite3");
         // ANALYZE must run before the archive so shipped DBs arrive with
         // `sqlite_stat1` / `sqlite_stat4` populated. Without it the bundled
@@ -476,14 +479,18 @@ RELEASE_CHANNEL=development
         check_fts_tables(&dict_db_path, &DICTIONARIES_FTS_TABLES)?;
         vacuum_db(&dict_db_path)?;
         analyze_db(&dict_db_path)?;
-        create_database_archive(&dict_db_path, &release_databases_dir)?;
+        if !skip_archives {
+            create_database_archive(&dict_db_path, &release_databases_dir)?;
+        }
 
-        logger::info("=== Create dpd.tar.bz2 ===");
+        logger::info("=== Prepare dpd.sqlite3 (and its archive) ===");
         let dpd_db_path = assets_dir.join("dpd.sqlite3");
         check_fts_tables(&dpd_db_path, &DPD_FTS_TABLES)?;
         vacuum_db(&dpd_db_path)?;
         analyze_db(&dpd_db_path)?;
-        create_database_archive(&dpd_db_path, &release_databases_dir)?;
+        if !skip_archives {
+            create_database_archive(&dpd_db_path, &release_databases_dir)?;
+        }
     } else {
         logger::info("Skipping DPD initialization and bootstrap");
     }
@@ -577,8 +584,10 @@ RELEASE_CHANNEL=development
         thread::sleep(time::Duration::from_millis(500));
 
         // Create index.tar.bz2 from the index/ directory
-        logger::info("=== Create index.tar.bz2 ===");
-        create_index_archive(&assets_dir, &release_databases_dir)?;
+        if !skip_archives {
+            logger::info("=== Create index.tar.bz2 ===");
+            create_index_archive(&assets_dir, &release_databases_dir)?;
+        }
     }
 
     // Warm the AppSettings caches into appdata.sqlite3 BEFORE archiving so the
@@ -643,12 +652,14 @@ RELEASE_CHANNEL=development
         logger::info("=== Warm AppSettings caches ===");
         simsapa_backend::app_data::warm_caches_into_appdata();
 
-        logger::info("=== Create appdata.tar.bz2 ===");
+        logger::info("=== Prepare appdata.sqlite3 (and its archive) ===");
         let appdata_db_path = assets_dir.join("appdata.sqlite3");
         check_fts_tables(&appdata_db_path, &APPDATA_FTS_TABLES)?;
         vacuum_db(&appdata_db_path)?;
         analyze_db(&appdata_db_path)?;
-        create_appdata_archive(&assets_dir, &release_databases_dir)?;
+        if !skip_archives {
+            create_appdata_archive(&assets_dir, &release_databases_dir)?;
+        }
     }
 
     logger::info("=== Bootstrap Languages from SuttaCentral ===");
@@ -735,13 +746,18 @@ RELEASE_CHANNEL=development
 
                                             // Create archive with database and index directory
                                             let lang_index_dir = globals.paths.suttas_index_dir.join(lang);
-                                            match create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir) {
-                                                Ok(_) => {
-                                                    logger::info(&format!("Successfully created archive for language: {}", lang));
-                                                    cleanup_language_index_dir(&lang_index_dir, lang);
-                                                }
-                                                Err(e) => {
-                                                    logger::error(&format!("Failed to create archive for language {}: {}", lang, e));
+                                            if skip_archives {
+                                                // The leftover index must go either way: see cleanup_language_index_dir().
+                                                cleanup_language_index_dir(&lang_index_dir, lang);
+                                            } else {
+                                                match create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir) {
+                                                    Ok(_) => {
+                                                        logger::info(&format!("Successfully created archive for language: {}", lang));
+                                                        cleanup_language_index_dir(&lang_index_dir, lang);
+                                                    }
+                                                    Err(e) => {
+                                                        logger::error(&format!("Failed to create archive for language {}: {}", lang, e));
+                                                    }
                                                 }
                                             }
                                         }
@@ -811,7 +827,9 @@ RELEASE_CHANNEL=development
 
                 // Create archive with database and index directory
                 let lang_index_dir = globals.paths.suttas_index_dir.join(lang);
-                create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir)?;
+                if !skip_archives {
+                    create_language_archive(&lang_db_path, &lang_index_dir, &assets_dir, &release_databases_dir)?;
+                }
                 cleanup_language_index_dir(&lang_index_dir, lang);
             } else {
                 logger::warn(&format!("Buddha Ujja database not found: {:?}", bu_db_path));
@@ -862,6 +880,9 @@ RELEASE_CHANNEL=development
     }
 
     logger::info("=== Bootstrap completed ===");
+    if skip_archives {
+        logger::warn("--skip-archives: no .tar.bz2 archives were created; this run is not a release");
+    }
 
     let end_time = Local::now();
     let duration = end_time - start_time;
