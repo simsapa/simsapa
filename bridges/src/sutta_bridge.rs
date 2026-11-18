@@ -6079,7 +6079,13 @@ impl qobject::SuttaBridge {
             // update is found, since the new databases bring their own DPD.
             // A manual check always includes it; an automatic one only when
             // the user turned on DPD update notifications.
-            let dpd_check = if include_no_updates || get_app_data().get_notify_about_dpd_updates() {
+            //
+            // `try_get_app_data()`: on first run DownloadAppdataWindow calls
+            // this before init_app_data(), and a panic here kills the thread
+            // before `releases_check_completed`, leaving the window stuck.
+            let notify_dpd = simsapa_backend::try_get_app_data()
+                .is_some_and(|app_data| app_data.get_notify_about_dpd_updates());
+            let dpd_check = if include_no_updates || notify_dpd {
                 Some(thread::spawn(check_for_dpd_update))
             } else {
                 None
