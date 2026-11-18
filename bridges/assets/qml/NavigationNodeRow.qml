@@ -66,6 +66,145 @@ Frame {
 
     property int pointSize: 12
 
+    /// The filter query whose words are highlighted in the row's titles,
+    /// summary and context note. Empty on a level row and a tree row: only a
+    /// filter hit has something to show the reason for.
+    property string highlight_query: ""
+    property string match_bg: "#F6E600"
+
+    /// The query's words, folded as the backend folds them (see
+    /// `fold_for_search()`), with the `LIKE` wildcards removed as
+    /// `folded_terms()` removes them.
+    readonly property var highlight_terms: {
+        const folded = root.fold_for_search(root.highlight_query, false).folded;
+        return folded.split(/\s+/)
+            .map(t => t.replace(/[%_]/g, ""))
+            .filter(t => t.length > 0);
+    }
+
+    readonly property string headline_html: root.highlight_html(root.headline, false)
+    readonly property string title_en_html: root.highlight_html(root.node.title_en || "", false)
+    readonly property string blurb_html: root.highlight_html(root.node.blurb || "", true)
+    readonly property string context_note_html: root.highlight_html(root.node.context_note || "", true)
+
+    /// One character folded the way `normalize_for_search()` folds it in
+    /// `backend/src/navigation_tree.rs`: the niggahita and the root sign, the
+    /// typography a keyboard cannot type, then every combining mark (which is
+    /// what `pali_to_ascii` amounts to for the Pāli letters), then lowercase.
+    /// A fold that differs from the backend's only misses a highlight; it
+    /// never changes what matched.
+    function fold_char(c: string): string {
+        switch (c) {
+        case "ŋ": case "Ŋ": return "m";
+        case "√": return " ";
+        case "\u2018": case "\u2019": case "\u201A": case "\u201B": case "\u2032": return "'";
+        case "\u201C": case "\u201D": case "\u201E": case "\u201F": case "\u2033": return "\"";
+        case "\u2212": return "-";
+        case "\u00A0": case "\u2009": case "\u202F": return " ";
+        case "\u2026": return "...";
+        }
+        if (c >= "\u2010" && c <= "\u2015") {
+            return "-";
+        }
+        return c.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    /// The folded text, and for each folded character the index into `text`
+    /// of the character it came from. A fold may change the length (`…` is
+    /// three characters), so a match position in the folded text is mapped
+    /// back through `source`, never used as an index into `text` directly.
+    ///
+    /// With `is_html`, a tag contributes nothing: `<i>` is not a word the
+    /// reader sees, and the backend strips it before matching too.
+    function fold_for_search(text: string, is_html: bool): var {
+        let folded = "";
+        let source = [];
+        let in_tag = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (is_html) {
+                if (c === "<") { in_tag = true; }
+                if (in_tag) {
+                    if (c === ">") { in_tag = false; }
+                    continue;
+                }
+            }
+            const f = root.fold_char(c);
+            for (let k = 0; k < f.length; k++) {
+                folded += f[k];
+                source.push(i);
+            }
+        }
+        return { folded: folded, source: source };
+    }
+
+    function escape_html(c: string): string {
+        if (c === "&") return "&amp;";
+        if (c === "<") return "&lt;";
+        if (c === ">") return "&gt;";
+        return c;
+    }
+
+    /// `text` as rich text with every occurrence of a query word on a
+    /// background, matched on the folded text so `samyutta` marks `Saṁyutta`.
+    /// Returns "" when nothing in it matches, which tells the label to draw
+    /// the text as it always does.
+    ///
+    /// Plain text is escaped; HTML (the summaries hold `<i>` and `<p>`) is
+    /// passed through, and a highlight is closed before every tag so a span
+    /// never straddles one.
+    function highlight_html(text: string, is_html: bool): string {
+        if (root.highlight_terms.length === 0 || text.length === 0) {
+            return "";
+        }
+        const f = root.fold_for_search(text, is_html);
+        let marked = new Array(text.length).fill(false);
+        let any = false;
+        for (const term of root.highlight_terms) {
+            let from = 0;
+            while (true) {
+                const at = f.folded.indexOf(term, from);
+                if (at < 0) {
+                    break;
+                }
+                for (let k = at; k < at + term.length; k++) {
+                    marked[f.source[k]] = true;
+                }
+                any = true;
+                from = at + 1;
+            }
+        }
+        if (!any) {
+            return "";
+        }
+
+        let out = "";
+        let open = false;
+        let in_tag = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (is_html && c === "<") { in_tag = true; }
+            if (in_tag) {
+                if (open) { out += "</span>"; open = false; }
+                out += c;
+                if (c === ">") { in_tag = false; }
+                continue;
+            }
+            if (marked[i] && !open) {
+                out += "<span style='background-color: " + root.match_bg + ";'>";
+                open = true;
+            } else if (!marked[i] && open) {
+                out += "</span>";
+                open = false;
+            }
+            out += is_html ? c : root.escape_html(c);
+        }
+        if (open) {
+            out += "</span>";
+        }
+        return out;
+    }
+
     signal toggle_expand()
     signal enter_level()
     signal open_text()
@@ -202,9 +341,12 @@ Frame {
                     Layout.fillWidth: true
                     spacing: 0
 
+                    // A highlighted title is rich text; an unhighlighted one
+                    // keeps the format it always had.
                     Label {
                         Layout.fillWidth: true
-                        text: root.headline
+                        text: root.headline_html.length > 0 ? root.headline_html : root.headline
+                        textFormat: root.headline_html.length > 0 ? Text.RichText : Text.AutoText
                         font.pointSize: root.pointSize
                         font.bold: true
                         wrapMode: Text.WordWrap
@@ -213,7 +355,8 @@ Frame {
                     Label {
                         visible: root.has_en
                         Layout.fillWidth: true
-                        text: root.node.title_en || ""
+                        text: root.title_en_html.length > 0 ? root.title_en_html : (root.node.title_en || "")
+                        textFormat: root.title_en_html.length > 0 ? Text.RichText : Text.AutoText
                         font.pointSize: root.pointSize
                         // A text's translated title is as much its name as the
                         // Pāli one; a level's English name is a gloss.
@@ -358,7 +501,13 @@ Frame {
                 visible: root.blurb_visible
                 Layout.fillWidth: true
                 Layout.leftMargin: root.summary_indent
-                text: root.node.blurb || ""
+                // A summary that holds a match is drawn **in full**, as rich
+                // text: rich text cannot be cut at two lines (Qt ignores
+                // `maximumLineCount` and `elide` for it), and a match is the
+                // part of the summary the reader most needs to see, so it
+                // must not be behind "more".
+                text: root.blurb_html.length > 0 ? root.blurb_html : (root.node.blurb || "")
+                textFormat: root.blurb_html.length > 0 ? Text.RichText : Text.AutoText
                 font.pointSize: Math.max(8, root.pointSize - 1)
                 color: palette.text
                 wrapMode: Text.WordWrap
@@ -369,7 +518,8 @@ Frame {
             // A button, not a tap on the text: the row body's tap belongs to
             // expand/collapse of the node itself.
             Button {
-                visible: root.blurb_visible && (root.blurb_expanded || blurb_label.truncated)
+                visible: root.blurb_visible && root.blurb_html.length === 0
+                    && (root.blurb_expanded || blurb_label.truncated)
                 Layout.leftMargin: root.summary_indent
                 flat: true
                 padding: 2
@@ -397,7 +547,9 @@ Frame {
                 visible: root.context_note_visible
                 Layout.fillWidth: true
                 Layout.leftMargin: root.summary_indent
-                text: root.node.context_note || ""
+                // In full when it holds a match, as the summary is.
+                text: root.context_note_html.length > 0 ? root.context_note_html : (root.node.context_note || "")
+                textFormat: root.context_note_html.length > 0 ? Text.RichText : Text.AutoText
                 font.pointSize: Math.max(8, root.pointSize - 1)
                 color: palette.text
                 wrapMode: Text.WordWrap
@@ -408,7 +560,7 @@ Frame {
             // Its own button and its own state: opening the note does not
             // open the summary above it.
             Button {
-                visible: root.context_note_visible
+                visible: root.context_note_visible && root.context_note_html.length === 0
                     && (root.context_note_expanded || context_note_label.truncated)
                 Layout.leftMargin: root.summary_indent
                 flat: true

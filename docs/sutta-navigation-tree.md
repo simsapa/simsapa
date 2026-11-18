@@ -1130,6 +1130,30 @@ The rules below are the ones that break quietly.
   alone, never for the tree. The summaries and context notes are not columns
   and are matched in Rust from the cached `NavigationTexts`; they must not be
   pulled into the query, or into `search_text`.
+- **The filter is scoped to the current level by default.** The "Only in
+  sub-items of the current level" checkbox (on by default, not persisted)
+  passes `current_parent_uid` to `nav_tree_filter_json()` as `scope_uid`, and
+  the backend keeps every query to the nodes whose `path` names it
+  (`scope_like_pattern()`: `LIKE '%|<uid>|%'`, with `_` and `%` in the uid
+  escaped). The scope node itself is not a hit. The scope is applied **inside**
+  each query — the exact-uid, the word and the substring pass — never to their
+  results, or the `LIMIT` would keep the first N of the whole tree and then
+  drop most of them. An empty `scope_uid` (unchecked, or the top level) is the
+  whole tree. While a scoped filter shows, the breadcrumb bar stays visible as
+  the scope, and pressing a segment re-runs the filter at that level
+  (`load_level()`).
+- **Filter hits highlight the query's words** in the headline, English title,
+  summary and context note, on the Topic Index window's background colours.
+  `NavigationNodeRow.highlight_html()` matches on text folded the way
+  `normalize_for_search()` folds it (`fold_char()` is its JS mirror), so
+  `samyutta` marks `Saṁyutta`; a position in the folded text is mapped back
+  through `source`, since a fold can change the length (`…`). A fold that
+  drifts from the backend's only loses a highlight, never a match. Summary
+  tags (`<i>`, `<p>`) are skipped and a highlight span is closed before each
+  one. **A summary or note that holds a match is drawn in full, without its
+  "more" button**: highlighting needs `Text.RichText`, and Qt ignores
+  `maximumLineCount` and `elide` for rich text — and the match is what the
+  reader needs to see. Text with no match keeps its usual format and clamp.
 - **Hiding a summary is cosmetic, so it stays searchable.** The Summaries
   toggle and an empty override decide what the row *draws*; they do not remove
   the node's data from what the filter finds.

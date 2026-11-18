@@ -1268,8 +1268,8 @@ Item {
         return "[]";
     }
 
-    function nav_tree_filter_json(query: string, limit: int): string {
-        console.log("nav_tree_filter_json():", query, limit);
+    function nav_tree_filter_json(query: string, scope_uid: string, limit: int): string {
+        console.log("nav_tree_filter_json():", query, scope_uid, limit);
         return "[]";
     }
 

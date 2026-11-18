@@ -129,6 +129,16 @@ ApplicationWindow {
     readonly property bool filter_active: root.filter_text.trim().length >= root.min_filter_length
     property var filter_rows: []
 
+    /// "Only in sub-items of the current level": the filter searches the
+    /// descendants of `current_parent_uid` rather than the whole tree. At the
+    /// top level the two are the same. Not persisted -- like the filter text
+    /// it lives as long as the window object -- and on by default. An alias
+    /// for the same reason `show_summaries` is one.
+    property alias filter_in_current_level: scope_toggle.checked
+
+    /// The match background, as the Topic Index window draws it.
+    readonly property string match_bg: root.is_dark ? "#007A31" : "#F6E600"
+
     ThemeHelper {
         id: theme_helper
         target_window: root
@@ -248,6 +258,12 @@ ApplicationWindow {
         root.translation_counts = ({});
         root.rebuild_rows();
         level_list.positionViewAtBeginning();
+        // A breadcrumb pressed while a scoped filter is showing moves the
+        // scope, so the hits are re-read for the new level.
+        if (root.filter_active && root.filter_in_current_level) {
+            filter_timer.stop();
+            root.run_filter();
+        }
         // The rows are drawn first and the counts arrive after: entering a
         // level must feel instantaneous (FR-50), and the count query is the
         // one part of a level render that grows with the level's size.
@@ -369,8 +385,10 @@ ApplicationWindow {
     /// Entering a level from a flat filter hit. Clearing the filter input is
     /// what returns the window to the tree, now standing at that level.
     function enter_level_from_filter(node) {
-        root.enter_level(node);
+        // Cleared first, so entering the level does not re-run the filter
+        // for a scope that is about to be dropped.
         filter_input.text = "";
+        root.enter_level(node);
     }
 
     /// Enter a node's level from outside the window: the button on a Timeline
@@ -442,7 +460,9 @@ ApplicationWindow {
             root.filter_rows = [];
             return;
         }
-        const json = SuttaBridge.nav_tree_filter_json(query, root.filter_limit);
+        // Empty is the whole tree; so is the top level, whose uid is "".
+        const scope_uid = root.filter_in_current_level ? root.current_parent_uid : "";
+        const json = SuttaBridge.nav_tree_filter_json(query, scope_uid, root.filter_limit);
         try {
             const parsed = JSON.parse(json);
             root.filter_rows = Array.isArray(parsed) ? parsed : [];
@@ -642,9 +662,26 @@ ApplicationWindow {
             }
         }
 
+        CheckBox {
+            id: scope_toggle
+            visible: root.tree_is_available
+            Layout.fillWidth: true
+            text: "Only in sub-items of the current level"
+            font.pointSize: root.pointSize
+            checked: true
+            onToggled: {
+                if (root.filter_active) {
+                    filter_timer.stop();
+                    root.run_filter();
+                }
+            }
+        }
+
+        // Shown while a scoped filter is active too: the path is then the
+        // scope being searched, and a segment moves it.
         NavigationBreadcrumbBar {
             id: breadcrumb_bar
-            visible: root.tree_is_available && !root.filter_active
+            visible: root.tree_is_available && (!root.filter_active || root.filter_in_current_level)
             Layout.fillWidth: true
             segments: root.breadcrumbs
             pointSize: root.pointSize
@@ -744,6 +781,8 @@ ApplicationWindow {
 
                     node: filter_item.modelData.node
                     is_filter_row: true
+                    highlight_query: root.filter_text
+                    match_bg: root.match_bg
                     breadcrumb_text: (filter_item.modelData.breadcrumbs || []).join(" › ")
                     pointSize: root.pointSize
                     show_summaries: root.show_summaries

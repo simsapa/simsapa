@@ -1875,7 +1875,7 @@ pub mod qobject {
 
         /// Whole-tree filter as a JSON array of `{node, breadcrumbs}`.
         #[qinvokable]
-        fn nav_tree_filter_json(self: &SuttaBridge, query: &QString, limit: i32) -> QString;
+        fn nav_tree_filter_json(self: &SuttaBridge, query: &QString, scope_uid: &QString, limit: i32) -> QString;
 
         /// One node as a JSON object, or `null` when there is no such node.
         #[qinvokable]
@@ -6662,18 +6662,24 @@ impl qobject::SuttaBridge {
         QString::from(&navigation_tree::children_json(parent.as_deref()))
     }
 
-    /// Whole-tree filter as JSON, each hit carrying its breadcrumb titles.
+    /// Filter as JSON, each hit carrying its breadcrumb titles. A non-empty
+    /// `scope_uid` keeps it to that node's descendants; empty is the whole
+    /// tree.
     ///
     /// A non-positive limit is refused rather than passed on: diesel would
     /// emit `LIMIT 0` for zero and a negative one means "no limit" in SQLite,
     /// so a QML slip would silently return either nothing or the whole tree as
     /// a flat list.
-    pub fn nav_tree_filter_json(&self, query: &QString, limit: i32) -> QString {
+    pub fn nav_tree_filter_json(&self, query: &QString, scope_uid: &QString, limit: i32) -> QString {
         if limit <= 0 {
             error(&format!("nav_tree_filter_json(): refusing limit {}", limit));
             return QString::from("[]");
         }
-        QString::from(&navigation_tree::filter_json(&query.to_string(), limit as i64))
+        QString::from(&navigation_tree::filter_json(
+            &query.to_string(),
+            &scope_uid.to_string(),
+            limit as i64,
+        ))
     }
 
     /// One node as JSON, or `null`.

@@ -25,7 +25,7 @@ fn filter_without_texts(
     query: &str,
     limit: i64,
 ) -> QueryResult<Vec<NavigationMatch>> {
-    filter_nodes_conn(db_conn, query, limit, &NavigationTexts::default())
+    filter_nodes_conn(db_conn, query, None, limit, &NavigationTexts::default())
 }
 
 fn migrated_db() -> SqliteConnection {
@@ -251,6 +251,50 @@ fn filter_honours_the_limit_and_ignores_an_empty_query() {
     let mut db_conn = seeded_db();
     assert!(filter_without_texts(&mut db_conn, "   ", 50).unwrap().is_empty());
     assert_eq!(filter_without_texts(&mut db_conn, "s", 2).unwrap().len(), 2);
+}
+
+fn scoped_uids(db_conn: &mut SqliteConnection, query: &str, scope: &str) -> Vec<String> {
+    filter_nodes_conn(db_conn, query, Some(scope), 50, &NavigationTexts::default())
+        .unwrap()
+        .into_iter()
+        .map(|m| m.node.node_uid)
+        .collect()
+}
+
+#[test]
+fn a_scoped_filter_matches_only_the_descendants_of_the_scope() {
+    let mut db_conn = seeded_db();
+
+    // `sutta`, `sutta/long` and `vinaya` all hold an `s` but are not under
+    // `sutta/linked`, and `sutta/linked` itself is excluded too: the scope
+    // node is the level the reader stands in, not one of its sub-items.
+    assert_eq!(
+        scoped_uids(&mut db_conn, "s", "sutta/linked"),
+        vec!["sn", "sn56", "sn56.11"]
+    );
+    // Every depth below the scope, not only its children.
+    assert_eq!(scoped_uids(&mut db_conn, "dhammacakka", "sutta"), vec!["sn56.11"]);
+    assert!(scoped_uids(&mut db_conn, "dhammacakka", "vinaya").is_empty());
+
+    // A reference query is scoped too.
+    assert_eq!(scoped_uids(&mut db_conn, "sn 56", "sn"), vec!["sn56", "sn56.11"]);
+    assert!(scoped_uids(&mut db_conn, "sn 56", "sutta/long").is_empty());
+
+    // `|sn|` is delimited, so it does not match inside `|sn56|`, and an empty
+    // scope is the whole tree.
+    assert_eq!(scoped_uids(&mut db_conn, "sutta", "sn56"), vec!["sn56.11"]);
+    assert_eq!(scoped_uids(&mut db_conn, "vinaya", "  ").len(), 1);
+}
+
+#[test]
+fn a_scope_uid_holding_like_wildcards_matches_literally() {
+    assert_eq!(scope_like_pattern(Some("a_b%c")).unwrap(), "%|a\\_b\\%c|%");
+    assert!(scope_like_pattern(Some("")).is_none());
+    assert!(scope_like_pattern(None).is_none());
+
+    let mut db_conn = seeded_db();
+    // `sutt_` would match `sutta` as a LIKE wildcard.
+    assert!(scoped_uids(&mut db_conn, "sn", "sutt_").is_empty());
 }
 
 #[test]
@@ -520,7 +564,7 @@ fn the_public_api_is_empty_without_app_data() {
     // so the window shows "navigation index not available". There is no
     // `AppData` in a unit-test process, which is the same code path.
     assert!(children_of(None).is_empty());
-    assert!(filter_nodes("sutta", 50).is_empty());
+    assert!(filter_nodes("sutta", None, 50).is_empty());
     assert!(node_by_uid("sutta").is_none());
     assert!(!tree_is_available());
 }
@@ -640,7 +684,7 @@ note = "Anchored at Sāñcī."
     );
 
     let mut uids = |query: &str| -> Vec<String> {
-        filter_nodes_conn(&mut db_conn, query, 50, &texts)
+        filter_nodes_conn(&mut db_conn, query, None, 50, &texts)
             .unwrap()
             .into_iter()
             .map(|m| m.node.node_uid)
@@ -686,13 +730,13 @@ note = "Anchored at Sāñcī."
 "#,
     );
     assert_eq!(
-        filter_nodes_conn(&mut db_conn, "lodging", 50, &suppressed)
+        filter_nodes_conn(&mut db_conn, "lodging", None, 50, &suppressed)
             .unwrap()
             .len(),
         1
     );
     assert_eq!(
-        filter_nodes_conn(&mut db_conn, "sanci", 50, &suppressed)
+        filter_nodes_conn(&mut db_conn, "sanci", None, 50, &suppressed)
             .unwrap()
             .len(),
         1
@@ -897,7 +941,7 @@ fn the_public_json_api_is_empty_without_app_data() {
     // Same tolerance as the typed readers: no `AppData` (and so no table) must
     // render as "nothing here", not as a parse error in QML.
     assert_eq!(children_json(None), "[]");
-    assert_eq!(filter_json("dhamma", 10), "[]");
+    assert_eq!(filter_json("dhamma", "", 10), "[]");
     assert_eq!(node_json("sn56.11"), "null");
 }
 
@@ -1273,7 +1317,7 @@ fn a_reference_is_not_matched_through_a_redirected_leafs_text() {
         .execute(&mut db_conn)
         .expect("insert");
 
-    let found = exact_uid_nodes_conn(&mut db_conn, "pli-tv-bu-vb-pj1", 50).unwrap();
+    let found = exact_uid_nodes_conn(&mut db_conn, "pli-tv-bu-vb-pj1", None, 50).unwrap();
     let uids: Vec<&str> = found.iter().map(|n| n.node_uid.as_str()).collect();
     assert_eq!(uids, vec!["pli-tv-bu-vb-pj1"]);
 }

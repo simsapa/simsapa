@@ -372,6 +372,29 @@ fn folded_terms(query: &str) -> Vec<String> {
         .collect()
 }
 
+/// The `LIKE` pattern that keeps a filter to the **descendants** of
+/// `scope_uid`: every node whose `path` names it as an ancestor. The node
+/// itself is not in its own path, so it is not a match -- the scope is "the
+/// sub-items of the current level", and the level row is the one the reader is
+/// standing in.
+///
+/// `path` is delimited at both ends, so `|sn|` cannot match inside `|sn56|`.
+/// A uid may hold `_`, which `LIKE` reads as a wildcard, so the pattern is
+/// escaped and the caller must add `.escape('\\')`.
+///
+/// `None` for an empty scope, which is the whole tree.
+fn scope_like_pattern(scope_uid: Option<&str>) -> Option<String> {
+    let uid = scope_uid.map(str::trim).filter(|u| !u.is_empty())?;
+    let mut escaped = String::with_capacity(uid.len() + 4);
+    for c in uid.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    Some(format!("%{d}{}{d}%", escaped, d = PATH_DELIMITER))
+}
+
 /// The uids a filter query names, when it is typed as a sutta reference or a
 /// uid: `dn 1` → `dn1`, `SN 56.11` → `sn56.11`, `Dhp 182` → the chapter uid.
 ///
@@ -425,9 +448,14 @@ pub fn ref_query_uids(query: &str) -> Vec<String> {
 fn exact_uid_nodes_conn(
     db_conn: &mut SqliteConnection,
     uid: &str,
+    scope: Option<&str>,
     limit: i64,
 ) -> QueryResult<Vec<NavigationNode>> {
-    navigation_nodes::table
+    let mut query = navigation_nodes::table.into_boxed();
+    if let Some(pattern) = scope {
+        query = query.filter(navigation_nodes::path.like(pattern.to_string()).escape('\\'));
+    }
+    query
         .filter(
             navigation_nodes::node_uid.eq(uid).or(navigation_nodes::redirect_uid.is_null().and(
                 navigation_nodes::sutta_uid
@@ -465,6 +493,7 @@ fn exact_uid_nodes_conn(
 fn term_match_nodes_conn(
     db_conn: &mut SqliteConnection,
     query: &str,
+    scope: Option<&str>,
     limit: i64,
     texts: &NavigationTexts,
 ) -> QueryResult<Vec<NavigationNode>> {
@@ -473,7 +502,11 @@ fn term_match_nodes_conn(
         return Ok(Vec::new());
     }
 
-    let rows: Vec<(String, String, String)> = navigation_nodes::table
+    let mut narrow = navigation_nodes::table.into_boxed();
+    if let Some(pattern) = scope {
+        narrow = narrow.filter(navigation_nodes::path.like(pattern.to_string()).escape('\\'));
+    }
+    let rows: Vec<(String, String, String)> = narrow
         .select((
             navigation_nodes::node_uid,
             navigation_nodes::search_text,
@@ -543,10 +576,15 @@ fn term_match_nodes_conn(
 pub fn filter_nodes_conn(
     db_conn: &mut SqliteConnection,
     query: &str,
+    scope_uid: Option<&str>,
     limit: i64,
     texts: &NavigationTexts,
 ) -> QueryResult<Vec<NavigationMatch>> {
     let ref_uids = ref_query_uids(query);
+    // Applied inside every query below rather than to their results, so the
+    // LIMIT keeps the first N matches *within* the scope.
+    let scope_pattern = scope_like_pattern(scope_uid);
+    let scope = scope_pattern.as_deref();
 
     let mut matches: Vec<NavigationNode> = Vec::new();
     // The first reading that named a node. The substring pass runs on it,
@@ -556,7 +594,7 @@ pub fn filter_nodes_conn(
         if (matches.len() as i64) >= limit {
             break;
         }
-        let found = exact_uid_nodes_conn(db_conn, uid, limit)?;
+        let found = exact_uid_nodes_conn(db_conn, uid, scope, limit)?;
         if !found.is_empty() && hit_uid.is_none() {
             hit_uid = Some(uid);
         }
@@ -571,7 +609,7 @@ pub fn filter_nodes_conn(
     if ref_uids.is_empty() {
         // No uid was named, so this is the title filter. It is matched by
         // `term_match_nodes_conn`, which searches the displayed texts too.
-        matches = term_match_nodes_conn(db_conn, query, limit, texts)?;
+        matches = term_match_nodes_conn(db_conn, query, scope, limit, texts)?;
     } else {
         // The reference readings, in the order they are tried: the first one
         // that finds anything supplies the rows. `kv 1` names no node, but
@@ -593,8 +631,13 @@ pub fn filter_nodes_conn(
             }
             let Some(pattern) = like_pattern(&text_query) else { continue };
 
-            let substring: Vec<NavigationNode> = navigation_nodes::table
-                .filter(navigation_nodes::search_text.like(&pattern))
+            let mut substring_query = navigation_nodes::table.into_boxed();
+            if let Some(scope_pattern) = scope {
+                substring_query = substring_query
+                    .filter(navigation_nodes::path.like(scope_pattern.to_string()).escape('\\'));
+            }
+            let substring: Vec<NavigationNode> = substring_query
+                .filter(navigation_nodes::search_text.like(pattern.clone()))
                 .select(NavigationNode::as_select())
                 // Tree order, so a match sits where browsing would have found it --
                 // and so the LIMIT keeps the first N in that order rather than the
@@ -720,16 +763,17 @@ pub fn children_of(parent: Option<&str>) -> Vec<NavigationNode> {
     })
 }
 
-/// Whole-tree filter. See `filter_nodes_conn`.
+/// Whole-tree filter, or the filter over the descendants of `scope_uid` when
+/// it is non-empty. See `filter_nodes_conn`.
 ///
 /// The summaries and context notes are asset text rather than columns, so they
 /// are matched from the cached parse. `open_sutta_navigation_window()` warms
 /// that parse off the GUI thread before the window's QML loads; a keystroke
 /// that arrives first waits for the same parse rather than starting a second.
-pub fn filter_nodes(query: &str, limit: i64) -> Vec<NavigationMatch> {
+pub fn filter_nodes(query: &str, scope_uid: Option<&str>, limit: i64) -> Vec<NavigationMatch> {
     let texts = navigation_texts();
     with_appdata("filter_nodes", Vec::new(), |db_conn| {
-        filter_nodes_conn(db_conn, query, limit, texts)
+        filter_nodes_conn(db_conn, query, scope_uid, limit, texts)
     })
 }
 
@@ -944,10 +988,12 @@ pub fn children_json(parent: Option<&str>) -> String {
     to_json_array("children_json", &views)
 }
 
-/// Whole-tree filter as a JSON array of [`NavigationMatchView`].
-pub fn filter_json(query: &str, limit: i64) -> String {
+/// Filter as a JSON array of [`NavigationMatchView`]; an empty `scope_uid` is
+/// the whole tree.
+pub fn filter_json(query: &str, scope_uid: &str, limit: i64) -> String {
     let texts = navigation_texts();
-    let mut views: Vec<NavigationMatchView> = filter_nodes(query, limit)
+    let scope = (!scope_uid.trim().is_empty()).then_some(scope_uid);
+    let mut views: Vec<NavigationMatchView> = filter_nodes(query, scope, limit)
         .iter()
         .map(|m| NavigationMatchView::from_match(m, texts))
         .collect();
