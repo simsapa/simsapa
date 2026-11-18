@@ -567,7 +567,7 @@ ApplicationWindow {
                 id: filter_input
                 Layout.fillWidth: true
                 Layout.columnSpan: root.is_mobile ? 2 : 1
-                placeholderText: "Filter the whole tree: e.g. mahavagga vinaya = mahavagga AND vinaya"
+                placeholderText: "Search: e.g. mahavagga awakening = mahavagga AND awakening"
                 font.pointSize: root.pointSize
                 selectByMouse: true
 
