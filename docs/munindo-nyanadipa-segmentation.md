@@ -222,7 +222,13 @@ suttas-core steps, in one transaction per source. Per segment file
 All three sources are **required** in the preflight (the `bilara/` folders,
 one per SuttaCentral translator, and Nyanadipa's `footnotes.json`), and a
 missing or empty folder or any file that fails to build stops the bootstrap,
-so a release cannot ship with a text missing. Sujato stays the default English beside the Pāli, and the
+so a release cannot ship with a text missing. The one exception is a
+`--limit` run, which imports only the first N SuttaCentral texts: there a text
+whose `…/pli/ms` template or SuttaCentral record to replace was not imported is
+skipped with a `--limit: skipping` warning (`skip_under_limit()` in
+`bootstrap_cli/src/bootstrap/mod.rs`). A new step that reads records another
+step wrote goes through the same function for a missing record, or `--limit`
+runs stop at it. Sujato stays the default English beside the Pāli, and the
 `source_info` keeps these records behind SuttaCentral's segmented English
 where Sujato has none (`default_english_for_pali()`, see
 [suttas-core-import.md](./suttas-core-import.md) §2).

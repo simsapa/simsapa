@@ -155,6 +155,51 @@ pub fn vacuum_db(db_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The journal mode recorded in a database file (`"delete"`, `"wal"`, …), read
+/// through a fresh plain connection.
+pub fn journal_mode(db_path: &Path) -> Result<String> {
+    #[derive(QueryableByName)]
+    struct Mode {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        journal_mode: String,
+    }
+    let mut conn = open_db_path_plain(db_path)?;
+    let mode = diesel::sql_query("PRAGMA journal_mode")
+        .get_result::<Mode>(&mut conn)
+        .with_context(|| format!("Failed to read the journal mode of {}", db_path.display()))?;
+    Ok(mode.journal_mode.to_lowercase())
+}
+
+/// Switch a database file out of WAL into the rollback journal
+/// (`journal_mode = DELETE`). WAL mode is persistent, recorded in the file.
+///
+/// **Must run while no other connection has the file open**: SQLite leaves WAL
+/// only on an exclusive lock. A database file the bootstrap archives must not
+/// be in WAL mode. With a connection pool holding it open, committed pages wait
+/// in the `-wal` file until a checkpoint, and the last connection to close
+/// (the r2d2 reaper closes idle ones after 10 minutes) writes them into the
+/// main file, so `tar` read a file that was both incomplete and changing
+/// (`file changed as we read it`). In rollback-journal mode every commit is
+/// written to the main file before it returns, and an idle reader never writes.
+pub fn set_rollback_journal(db_path: &Path) -> Result<()> {
+    if journal_mode(db_path)? == "delete" {
+        return Ok(());
+    }
+    let mut conn = open_db_path_plain(db_path)?;
+    conn.batch_execute("PRAGMA journal_mode = DELETE;")
+        .with_context(|| format!("Failed to set journal_mode = DELETE on {}", db_path.display()))?;
+    drop(conn);
+    let mode = journal_mode(db_path)?;
+    if mode != "delete" {
+        anyhow::bail!(
+            "{} is still in journal_mode = {} (another connection has it open?)",
+            db_path.display(), mode
+        );
+    }
+    info(&format!("set_rollback_journal(): {} switched to journal_mode = DELETE", db_path.display()));
+    Ok(())
+}
+
 /// `ANALYZE` a database file, failing on an error. `DatabaseHandle::analyze`
 /// is the runtime hook, which only logs a failure; the bootstrap uses this one,
 /// because a shipped database without `sqlite_stat1` makes some queries
@@ -171,6 +216,39 @@ pub fn analyze_db(db_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wal_db(dir: &Path) -> std::path::PathBuf {
+        let path = dir.join("wal.sqlite3");
+        let mut conn = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        conn.batch_execute("PRAGMA journal_mode = WAL; CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (1);").unwrap();
+        path
+    }
+
+    #[test]
+    fn set_rollback_journal_leaves_wal_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wal_db(dir.path());
+        assert_eq!(journal_mode(&path).unwrap(), "wal");
+        set_rollback_journal(&path).unwrap();
+        assert_eq!(journal_mode(&path).unwrap(), "delete");
+        // Recorded in the file: a later connection keeps it.
+        set_rollback_journal(&path).unwrap();
+        assert_eq!(journal_mode(&path).unwrap(), "delete");
+    }
+
+    /// The reason `prepare_dpd_output()` converts before `init_app_data()`:
+    /// with another connection open, the file stays in WAL mode, and the
+    /// function says so instead of returning as if it had switched.
+    #[test]
+    fn set_rollback_journal_fails_while_another_connection_is_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wal_db(dir.path());
+        let mut other = SqliteConnection::establish(&path.to_string_lossy()).unwrap();
+        other.batch_execute("SELECT * FROM t;").unwrap();
+        assert!(set_rollback_journal(&path).is_err());
+        drop(other);
+        set_rollback_journal(&path).unwrap();
+    }
 
     #[test]
     fn the_dictionaries_script_has_the_six_sync_triggers() {

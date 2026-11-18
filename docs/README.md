@@ -504,7 +504,9 @@ substantially.
   Covers the manual bootstrap preparation (extract `dpd.db.tar.xz` and the
   `dpd/` folder of `dpd-goldendict.zip` into `dpd-db-for-bootstrap/<date>/`,
   point `current` at it; the bootstrap never extracts), the import order in
-  `import_migrate_dpd()` (explicit paths, no global app data), the `res/`
+  `import_migrate_dpd()` (explicit paths, no global app data; the bootstrap
+  migrates `dpd.sqlite3` in place, switched out of WAL mode before
+  `init_app_data()` opens it, **never archive a WAL-mode database**), the `res/`
   conversions (niggahīta in text files only; the stylesheet's relative font
   `url()`s kept, **never a port in the table**), the `<link href>` check
   (report, never repair), the DPD row's `version` = `dpd_release_version`, and

@@ -69,6 +69,34 @@ uses step 2, on a file nothing has open: `dpd upgrade` runs no `AppData`
 `bootstrap_cli import-migrate-dpd` reads only the dictionaries row, through a
 local handle, instead of `init_app_data()`.
 
+**`dpd.sqlite3` is in rollback-journal mode before anything opens it.** The
+upstream `dpd.db` is in WAL mode, recorded in the file, and the copy inherits
+it. `prepare_dpd_output()` switches the copy to `journal_mode = DELETE` right
+after copying it, while it is the only connection: leaving WAL needs an
+exclusive lock, so after `init_app_data()` it is no longer possible. The pools
+keep the file open through the `VACUUM`, `ANALYZE` and `tar` that follow the
+DPD step. In WAL mode the pages these commit wait in `dpd.sqlite3-wal`, so the
+main file that `tar` reads is incomplete. When the r2d2 reaper closes the last
+idle connection, 10 minutes after `init_app_data()`, a checkpoint writes those
+pages into the main file, in the middle of the read, and the bootstrap fails
+with `tar: dpd.sqlite3: file changed as we read it`. `--skip-archives` runs no
+`tar` and hides the problem. In rollback-journal mode every commit is in the
+main file when it returns, and an idle reader never writes. So the shipped
+`dpd.sqlite3` is in `delete` mode, like `appdata.sqlite3` and
+`dictionaries.sqlite3`. The rules for any change here:
+
+- Every archive function (`create_database_archive()`,
+  `create_appdata_archive()`, `create_language_archive()`) calls
+  `ensure_archivable_db()`, which refuses a WAL-mode file or a leftover
+  `-journal`. Keep that call in any new archive function.
+- A database that a step opens through `AppData` and that is archived later
+  must never be switched (back) to WAL. If a source ships in WAL mode, switch
+  its copy with `fts_scripts::set_rollback_journal()` before
+  `init_app_data()`, as `prepare_dpd_output()` does.
+- `prepare_dpd_output()` copies only `dpd.db`, so it refuses a source with a
+  non-empty `dpd.db-wal`. Checkpoint the release (open and close it with
+  `sqlite3`) instead of copying the `-wal` file.
+
 ## 3. The `dpd_res` table
 
 ```sql
@@ -274,7 +302,11 @@ cargo run --release -- --simsapa-dir <dir> rebuild-dpd [--limit N]
 - Run it with the app closed. The pipeline's `upgrade.lock` stops a second
   run, but nothing stops the app from holding the databases open.
 - `--limit N` imports only N StarDict entries and bold definitions, for a
-  quick test of the wiring; the result is not a usable dictionary.
+  quick test of the wiring; the result is not a usable dictionary. The
+  `bold_definitions` rows past the limit are deleted
+  (`populate_bold_definitions_derived_columns()`), since they would keep
+  `uid = ''` and fail the unique `uid` index. The bootstrap's `--limit` passes
+  the same N; a run without a limit never deletes a row.
 - Use `cargo run --release`: in a debug build the StarDict parse and the
   footer strip take several minutes each instead of under a minute.
 - Disk: the run needs the free space `estimate_space()` prints (about 6 GB for

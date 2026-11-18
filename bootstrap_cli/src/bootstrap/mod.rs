@@ -43,7 +43,7 @@ use simsapa_backend::db::{
 use simsapa_backend::{init_app_data, get_app_data, get_app_globals, get_create_simsapa_dir, get_create_simsapa_app_assets_path, normalize_lexically, logger};
 use simsapa_backend::search::indexer;
 use simsapa_backend::dictionary_manager_core::import_user_zip;
-use simsapa_backend::db::fts_scripts::{analyze_db, vacuum_db};
+use simsapa_backend::db::fts_scripts::{analyze_db, journal_mode, vacuum_db};
 use simsapa_backend::stardict_parse::StardictImportProgress;
 
 pub use helpers::SuttaData;
@@ -141,6 +141,29 @@ pub struct BootstrapOptions {
     pub skip_archives: bool,
 }
 
+/// Set by `bootstrap()` when `--limit` is given. See `skip_under_limit()`.
+static LIMITED_RUN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `--limit` imports only the first N suttas of each limited source, so the
+/// records a later step depends on (a `…/pli/ms` template, a SuttaCentral
+/// record whose text it replaces, a CST record a commentary is grouped under)
+/// are missing for most texts. A step that meets such a missing dependency
+/// calls this: under `--limit` it logs a warning and returns `true`, and the
+/// step skips that one text; in a full run it returns `false`, and the step
+/// keeps failing, so a release can never ship with a text left out.
+///
+/// **A new import step that reads records another step wrote must go through
+/// this for a missing record**, or `--limit` runs stop at that step. Only the
+/// "record not there" case: a record that is there and wrong stays an error.
+pub fn skip_under_limit(what: &str) -> bool {
+    if LIMITED_RUN.load(std::sync::atomic::Ordering::Relaxed) {
+        logger::warn(&format!("--limit: skipping {}", what));
+        true
+    } else {
+        false
+    }
+}
+
 pub fn bootstrap(options: BootstrapOptions) -> Result<()> {
     let BootstrapOptions {
         write_new_dotenv,
@@ -181,8 +204,9 @@ pub fn bootstrap(options: BootstrapOptions) -> Result<()> {
     let iso_date = start_time.format("%Y-%m-%d").to_string();
 
     if let Some(lim) = limit {
-        logger::info(&format!("Limit set to {}", lim));
+        logger::info(&format!("Limit set to {}; texts whose source records the limit left out are skipped", lim));
     }
+    LIMITED_RUN.store(limit.is_some(), std::sync::atomic::Ordering::Relaxed);
 
     // Running the binary with 'cargo run', the PWD is simsapa/bootstrap_cli/.
     // The asset folders are one level above simsapa/.
@@ -484,7 +508,10 @@ RELEASE_CHANNEL=development
     if !skip_dpd {
         // The destination file must exist before `init_app_data()` opens it:
         // the connection pools keep the file they opened, and the migration
-        // runs in place (see `dpd::prepare_dpd_output()`).
+        // runs in place. It is also switched out of WAL mode there, the only
+        // point where nothing has it open: the pools keep it open through the
+        // VACUUM, ANALYZE and tar below, and a WAL-mode file changes under tar
+        // when the pool reaper closes them (see `dpd::prepare_dpd_output()`).
         dpd::prepare_dpd_output(&bootstrap_assets_dir, &assets_dir)?;
         init_app_data();
         dpd::dpd_bootstrap(&bootstrap_assets_dir, &assets_dir, limit)?;
@@ -1006,6 +1033,33 @@ pub fn clean_and_create_folders(
     Ok(())
 }
 
+/// Refuse to archive a database file that is not complete on its own.
+///
+/// `tar` reads only the main file. In WAL mode, committed pages can still be
+/// in the `-wal` file, and while any connection (an `AppData` pool) has the
+/// file open, a checkpoint can write them into the main file in the middle of
+/// the read: `tar: dpd.sqlite3: file changed as we read it`, or, worse, an
+/// archive that tar accepted and that lacks the last commits. Each database
+/// must reach the archive step in rollback-journal mode; the switch out of WAL
+/// is made before anything opens the file (`dpd::prepare_dpd_output()`), since
+/// it needs an exclusive lock. A leftover `-journal` means a write is still
+/// open or was interrupted.
+fn ensure_archivable_db(db_path: &Path) -> Result<()> {
+    let mode = journal_mode(db_path)?;
+    if mode == "wal" {
+        anyhow::bail!(
+            "{} is in journal_mode = WAL and cannot be archived while it is open: switch it to \
+             journal_mode = DELETE before init_app_data() opens it (see dpd::prepare_dpd_output())",
+            db_path.display()
+        );
+    }
+    let hot_journal = PathBuf::from(format!("{}-journal", db_path.display()));
+    if let Ok(true) = hot_journal.try_exists() {
+        anyhow::bail!("{} exists: a write to the database is open or was interrupted", hot_journal.display());
+    }
+    Ok(())
+}
+
 /// Create tar.bz2 archive from a database file and move to release directory
 ///
 /// Takes a database path (e.g., "path/to/appdata.sqlite3") and creates a compressed
@@ -1021,6 +1075,8 @@ pub fn create_database_archive(db_path: &Path, release_databases_dir: &Path) -> 
 
     let db_dir = db_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid database path"))?;
+
+    ensure_archivable_db(db_path)?;
 
     logger::info(&format!("Creating {} archive", tar_name));
 
@@ -1051,6 +1107,7 @@ pub fn create_database_archive(db_path: &Path, release_databases_dir: &Path) -> 
 /// (e.g., chanting-recordings/) that need to be distributed alongside it.
 pub fn create_appdata_archive(assets_dir: &Path, release_databases_dir: &Path) -> Result<()> {
     let tar_name = "appdata.tar.bz2";
+    ensure_archivable_db(&assets_dir.join("appdata.sqlite3"))?;
 
     logger::info(&format!("Creating {} archive", tar_name));
 
@@ -1140,6 +1197,8 @@ pub fn create_language_archive(
         .ok_or_else(|| anyhow::anyhow!("Invalid database filename"))?;
 
     let tar_name = db_name.replace(".sqlite3", ".tar.bz2");
+
+    ensure_archivable_db(db_path)?;
 
     logger::info(&format!("Creating {} archive", tar_name));
 

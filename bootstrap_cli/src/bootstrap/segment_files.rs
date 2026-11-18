@@ -653,6 +653,16 @@ pub fn build_segmented_record(
     })
 }
 
+/// Whether `suttas` has a row with this uid.
+fn sutta_record_exists(conn: &mut SqliteConnection, uid: &str) -> Result<bool> {
+    let id: Option<i32> = suttas::table
+        .filter(suttas::uid.eq(uid))
+        .select(suttas::id)
+        .first(conn)
+        .optional()?;
+    Ok(id.is_some())
+}
+
 /// The `content_json_tmpl` of Simsapa's own `<sutta_id>/pli/ms` record, in
 /// document order. Its absence is an error naming the uid.
 pub fn pali_template_from_db(conn: &mut SqliteConnection, sutta_id: &str) -> Result<IndexMap<String, String>> {
@@ -762,7 +772,9 @@ fn replace_suttacentral_record(conn: &mut SqliteConnection, kind: SourceKind, re
 /// SuttaCentral meanwhile publishes segmented is kept, with a warning). A
 /// missing or empty segment folder, a missing Nyanadipa `footnotes.json`, a
 /// missing record to replace, and any file that fails to build are errors, so
-/// a release cannot ship with a text missing.
+/// a release cannot ship with a text missing. Under `--limit` a text whose
+/// template or record to replace was not imported is skipped
+/// (`skip_under_limit()`).
 pub fn import_source_folder(conn: &mut SqliteConnection, source_folder: &Path) -> Result<Vec<String>> {
     let mut uids = Vec::new();
     for kind in SourceKind::kinds_of_source_folder(source_folder)? {
@@ -802,9 +814,19 @@ fn import_kind(conn: &mut SqliteConnection, kind: SourceKind, source_folder: &Pa
         for (path, file) in &files {
             let notes: Vec<FootnoteEntry> =
                 footnotes.iter().filter(|e| e.sutta_id == file.sutta_id).cloned().collect();
+            let pli_uid = format!("{}/pli/ms", file.sutta_id);
+            if !sutta_record_exists(conn, &pli_uid)?
+                && crate::bootstrap::skip_under_limit(&format!("{}: no template, {} was not imported", path.display(), pli_uid)) {
+                continue;
+            }
             let template = pali_template_from_db(conn, &file.sutta_id)?;
             let rec = build_segmented_record(kind, file, &template, &notes, &link_fn)
                 .with_context(|| format!("Building {}", path.display()))?;
+            if kind.is_suttacentral_html()
+                && !sutta_record_exists(conn, &rec.uid)?
+                && crate::bootstrap::skip_under_limit(&format!("{}: {} to replace was not imported", path.display(), rec.uid)) {
+                continue;
+            }
             if kind.is_suttacentral_html() {
                 match replace_suttacentral_record(conn, kind, &rec)? {
                     Replaced::Done => uids.push(rec.uid),

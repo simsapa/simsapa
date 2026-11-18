@@ -3255,7 +3255,11 @@ struct BoldDefRow {
 
 /// Add `uid` and `commentary_plain` columns to `bold_definitions` and
 /// populate them. Idempotent: skipped if all rows already have non-empty uid.
-/// `limit` caps the number of rows processed (for bootstrap testing).
+/// `limit` caps the number of rows processed (for bootstrap testing). The
+/// rows past the limit are **deleted**: they would keep `uid = ''`, and the
+/// unique index `idx_bold_definitions_uid` that `create_dpd_indexes()` builds
+/// next fails on the duplicates. A limited database is a test database, never
+/// a release.
 pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Option<i32>, progress: &BatchProgress) -> Result<()> {
     info("populate_bold_definitions_derived_columns()");
 
@@ -3357,6 +3361,10 @@ pub fn populate_bold_definitions_derived_columns(dpd_db_path: &Path, limit: Opti
                 .bind::<Text, _>(ba)
                 .bind::<Integer, _>(*id)
                 .execute(conn)?;
+        }
+        if limit.is_some() {
+            let deleted = sql_query("DELETE FROM bold_definitions WHERE uid = ''").execute(conn)?;
+            info(&format!("limit: deleted the {} bold_definitions rows past the limit", deleted));
         }
         Ok(())
     })?;

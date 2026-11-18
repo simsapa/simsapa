@@ -4,7 +4,7 @@ use anyhow::{Result, Context};
 
 use simsapa_backend::{get_app_data, logger};
 use simsapa_backend::batch_progress::BatchProgress;
-use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, FtsScript};
+use simsapa_backend::db::fts_scripts::{run_fts5_script_on_path, set_rollback_journal, FtsScript};
 
 use crate::import_stardict_dictionary;
 use crate::bootstrap::source_paths;
@@ -68,12 +68,37 @@ pub fn dpd_bootstrap(bootstrap_assets_dir: &Path, assets_dir: &Path, limit: Opti
 /// So the destination is created first and `dpd_migrate()` migrates it in
 /// place. Every later read — `append_bold_definitions_to_dict_index()`, the
 /// gloss phrase seeder — then sees the migrated database.
+///
+/// **The copy is switched out of WAL mode here, the only point where nothing
+/// else has it open.** The upstream `dpd.db` is in WAL mode, and the mode is
+/// recorded in the file. A WAL-mode `dpd.sqlite3` held open by the pools for
+/// the rest of the bootstrap keeps its committed pages (the `ANALYZE` after the
+/// `VACUUM`, at least) in `dpd.sqlite3-wal`: the main file `tar` archives is
+/// incomplete, and when the r2d2 reaper closes the last idle connection, 10
+/// minutes after `init_app_data()`, the checkpoint writes those pages into it
+/// — `tar: dpd.sqlite3: file changed as we read it`. After `init_app_data()`
+/// the switch is impossible: leaving WAL needs an exclusive lock.
+/// `create_database_archive()` refuses a WAL-mode file, so this cannot come
+/// back silently. See docs/dpd-upgrades.md §2.
 pub fn prepare_dpd_output(bootstrap_assets_dir: &Path, assets_dir: &Path) -> Result<()> {
     let source_db_path = bootstrap_assets_dir.join(source_paths::DPD_DB);
     match source_db_path.try_exists() {
         Ok(true) => {}
         Ok(false) => anyhow::bail!("Source DPD database not found at: {}", source_db_path.display()),
         Err(e) => anyhow::bail!("Cannot access source DPD database {}: {}", source_db_path.display(), e),
+    }
+
+    // Only the main file is copied. A non-empty `dpd.db-wal` beside it holds
+    // committed pages the copy would lose; the release is prepared wrong
+    // (report it, never repair the source).
+    let source_wal_path = bootstrap_assets_dir.join(format!("{}-wal", source_paths::DPD_DB));
+    if let Ok(meta) = fs::metadata(&source_wal_path)
+        && meta.len() > 0 {
+        anyhow::bail!(
+            "The source DPD database has un-checkpointed pages in {} ({} bytes); \
+             checkpoint it (open and close it with sqlite3) before the bootstrap",
+            source_wal_path.display(), meta.len()
+        );
     }
 
     let output_path = assets_dir.join("dpd.sqlite3");
@@ -84,6 +109,9 @@ pub fn prepare_dpd_output(bootstrap_assets_dir: &Path, assets_dir: &Path) -> Res
             output_path.display()
         ))?;
     logger::info(&format!("Copied the DPD database to {}", output_path.display()));
+
+    set_rollback_journal(&output_path)
+        .context("Failed to switch the DPD database out of WAL mode")?;
 
     Ok(())
 }
