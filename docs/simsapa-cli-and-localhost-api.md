@@ -34,6 +34,8 @@ downloads the databases (about 4.8 GB on disk once extracted):
 ```sh
 npm install -g @simsapa/cli
 simsapa setup              # asks before downloading; --yes for scripts
+simsapa install-skill      # installs skill files for agents; --yes for scripts
+simsapa health             # check db version compatibility and available updates
 simsapa search suttas "four noble truths"
 ```
 
