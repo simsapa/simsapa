@@ -23,6 +23,7 @@ Install it from npm (Node.js 18 or later) and download the databases:
 ```sh
 npm install -g @simsapa/cli
 simsapa setup
+simsapa install-skill
 ```
 
 Supported platforms: Linux x64 and arm64, macOS on Apple Silicon, and Windows
