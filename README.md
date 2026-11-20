@@ -3,12 +3,12 @@
 A sutta reader and Pāli dictionary application. Feature highlights:
 
 - [Fulltext search](https://simsapa.github.io/features/search-queries/) with Pāli declension matching
-- Search result filtering options
-- Integrates suttas with commentaries, dictionaries and a book library
-- Line-by-line or side-by-side columns layout with multiple translations
-- Pāli text gloss analysis with export formats
+  + Suttas, commentaries, dictionaries and a book library
+- [Search result filtering](https://simsapa.github.io/features/app-windows/#search-result-filtering) options
+- [Reading layout](https://simsapa.github.io/features/app-windows/#reading-layout-display-settings): line-by-line or side-by-side columns with multiple translations
+- [Pāli text gloss analysis](https://simsapa.github.io/features/app-windows/#gloss-tab) with export formats
 - [Extensions and plugins](https://github.com/simsapa/simsapa-extensions-and-plugins) for browsers and note taking app
-- Command line interface (`@simsapa/cli` npm package) for humans and AI agents
+- [Command line interface](https://simsapa.github.io/features/cli-localhost-api/) (`@simsapa/cli` npm package) for humans and AI agents
 
 Download from the [Releases](https://github.com/simsapa/simsapa/releases) page for Linux, MacOS, Windows.
 For Android, install from from the [Play Store](https://play.google.com/store/apps/details?id=io.github.simsapa.app) 
@@ -19,11 +19,13 @@ Installation guides: [Linux](https://simsapa.github.io/install/linux/) / [MacOS]
 On the first run, it downloads the application database and fulltext index.
 After the database download, the application works offline.
 
-![Contains Match Search on Linux](docs/contains-match-dpd-lookup-linux.png)
+![Sutta Search](docs/sutta-search-results-tab-screenshot.png)
 
-Android:
+![Gloss Tab Word-in-Sentence](gloss-tab-word-in-sentence-dhp44-45.png)
 
-![Contains Match Search on Android](docs/contains-match-dpd-lookup-android.png)
+Android (dark theme):
+
+![Android Dark Theme](docs/android-phone-portrait-dark-theme.jpg)
 
 ## Command-line tool: `@simsapa/cli`
 
