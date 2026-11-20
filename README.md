@@ -21,11 +21,7 @@ After the database download, the application works offline.
 
 ![Sutta Search](docs/sutta-search-results-tab-screenshot.png)
 
-![Gloss Tab Word-in-Sentence](gloss-tab-word-in-sentence-dhp44-45.png)
-
-Android (dark theme):
-
-![Android Dark Theme](docs/android-phone-portrait-dark-theme.jpg)
+![Gloss Tab Word-in-Sentence](docs/gloss-tab-word-in-sentence-dhp44-45.png)
 
 ## Command-line tool: `@simsapa/cli`
 
