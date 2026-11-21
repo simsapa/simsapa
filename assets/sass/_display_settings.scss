@@ -8,10 +8,9 @@
 // (--btn-*, --menu-*, --text-*) defined in _menu.scss :root / body.dark, so
 // light and dark themes follow the top menu automatically.
 
-// Same metrics as _menu.scss (module-scoped sass vars are not shared).
-$button_size: 30px;
+// The button is sized by the --top-btn-* custom properties (_menu.scss);
+// $edge_margin is for the bottom column bar.
 $edge_margin: 10px;
-$button_spacing: 5px;
 $border_radius: 2px;
 $card_radius: 8px;
 $font_size: 13px;
@@ -28,10 +27,10 @@ $font_size_small: 11px;
 
 .display-settings-button {
     position: fixed;
-    top: $edge_margin;
-    right: ($edge_margin + $button_size + $button_spacing);
-    width: $button_size;
-    height: $button_size;
+    top: var(--top-btn-edge);
+    right: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+    width: var(--top-btn-size);
+    height: var(--top-btn-size);
     background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
     border: 1px solid var(--btn-border);
     border-radius: $border_radius;
@@ -47,8 +46,8 @@ $font_size_small: 11px;
     transform: translateZ(0);
 
     .display-settings-icon {
-        width: 15px;
-        height: 15px;
+        width: var(--top-btn-icon);
+        height: var(--top-btn-icon);
         opacity: 0.8;
     }
 
@@ -67,8 +66,8 @@ $font_size_small: 11px;
 
 .display-settings-panel {
     position: fixed;
-    top: ($edge_margin + $button_size + $button_spacing);
-    right: $edge_margin;
+    top: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+    right: var(--top-btn-edge);
     width: 320px;
     max-height: 80vh;
     overflow-y: auto;
@@ -77,7 +76,9 @@ $font_size_small: 11px;
     border: 1px solid var(--menu-border);
     border-radius: $card_radius;
     box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
-    z-index: 999;
+    // Above the bottom chrome: the footnote bar (1000) and the column bar
+    // (1001), which it would otherwise open underneath. Modals are 10000.
+    z-index: 1002;
     opacity: 0;
     visibility: hidden;
     transform: translateY(-5px) translateZ(0);

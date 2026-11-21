@@ -1,10 +1,8 @@
 // Find Bar - Qt Fusion Style
 // Matches the existing menu design patterns
 
-$find_button_size: 30px;
 $find_bar_height: 40px;
 $edge_margin: 10px;
-$button_spacing: 5px;
 $border_radius: 2px;
 $font_size: 13px;
 $animation_duration: 1s;
@@ -21,10 +19,10 @@ $animation_duration: 1s;
 // Search Icon Button - matches menu button style
 .find-search-button {
     position: fixed;
-    top: $edge_margin;  // Same height as menu button
-    right: ($edge_margin + $find_button_size + $button_spacing + $find_button_size + $button_spacing);  // Position to the left of the display settings button
-    width: $find_button_size;
-    height: $find_button_size;
+    top: var(--top-btn-edge);  // Same height as menu button
+    right: calc(var(--top-btn-edge) + 2 * (var(--top-btn-size) + var(--top-btn-spacing)));  // Position to the left of the display settings button
+    width: var(--top-btn-size);
+    height: var(--top-btn-size);
     background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
     border: 1px solid var(--btn-border);
     border-radius: $border_radius;
@@ -40,8 +38,8 @@ $animation_duration: 1s;
     transform: translateZ(0);
 
     .search-icon {
-        width: 15px;
-        height: 15px;
+        width: var(--top-btn-icon);
+        height: var(--top-btn-icon);
         opacity: 0.8;
     }
 
@@ -64,8 +62,8 @@ $animation_duration: 1s;
 // Find Bar - fades in/out with simple opacity transition
 .find-bar {
     position: fixed;
-    top: $edge_margin;
-    right: ($edge_margin + 4 * ($find_button_size + $button_spacing) + 3px);  // Left of the gloss selection button, which stays visible
+    top: var(--top-btn-edge);
+    right: calc(var(--top-btn-edge) + 4 * (var(--top-btn-size) + var(--top-btn-spacing)) + 3px);  // Left of the gloss selection button, which stays visible
     height: $find_bar_height;
     width: 380px;
     background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);
@@ -261,12 +259,12 @@ body.dark .ssp-find-highlight.current {
 // Mobile Responsiveness
 @media (max-width: 768px) {
     .find-bar {
-        top: ($edge_margin + $find_button_size + $button_spacing);
-        right: $edge_margin;
+        top: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+        right: var(--top-btn-edge);
         left: auto;
         
         &.show {
-            width: calc(100vw - #{$edge_margin * 2});
+            width: calc(100vw - 2 * var(--top-btn-edge));
             min-width: 280px;
         }
     }

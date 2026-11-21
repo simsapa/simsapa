@@ -1128,6 +1128,11 @@ h4 {
 }
 
 :root {
+  --top-btn-size: 30px;
+  --top-btn-edge: 10px;
+  --top-btn-spacing: 5px;
+  --top-btn-icon: 15px;
+  --top-btn-font-size: 13px;
   --bg-primary: #f5f5f5;
   --bg-primary-darker: #ededed;
   --bg-content: white;
@@ -1171,6 +1176,14 @@ h4 {
   --text-shadow-dark: rgba(0, 0, 0, 0.5);
 }
 
+@media (max-width: 389px) {
+  :root {
+    --top-btn-size: 26px;
+    --top-btn-spacing: 4px;
+    --top-btn-icon: 13px;
+    --top-btn-font-size: 12px;
+  }
+}
 body.dark {
   --bg-primary: #2b2b2b;
   --bg-primary-darker: #242424;
@@ -1224,10 +1237,10 @@ body.dark {
 
 .menu-button, .gloss-selection-button {
   position: fixed;
-  top: 10px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
+  top: var(--top-btn-edge);
+  right: var(--top-btn-edge);
+  width: var(--top-btn-size);
+  height: var(--top-btn-size);
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
   border: 1px solid var(--btn-border);
   border-radius: 2px;
@@ -1242,8 +1255,8 @@ body.dark {
 }
 
 .menu-button .menu-icon, .menu-button .gloss-selection-icon, .gloss-selection-button .menu-icon, .gloss-selection-button .gloss-selection-icon {
-  width: 15px;
-  height: 15px;
+  width: var(--top-btn-icon);
+  height: var(--top-btn-icon);
   opacity: 0.8;
 }
 
@@ -1260,19 +1273,19 @@ body.dark {
 }
 
 .gloss-selection-button {
-  right: 115px;
+  right: calc(var(--top-btn-edge) + 3 * (var(--top-btn-size) + var(--top-btn-spacing)));
 }
 
 .menu-dropdown {
   position: fixed;
-  top: 45px;
-  right: 10px;
+  top: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+  right: var(--top-btn-edge);
   width: 280px;
   background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);
   border: 1px solid var(--menu-border);
   border-radius: 2px;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25), inset 0 1px 0 var(--text-shadow-light);
-  z-index: 999;
+  z-index: 1002;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-5px) translateZ(0);
@@ -2029,10 +2042,10 @@ body.footnote-bar-visible #ssp_content {
 
 .display-settings-button {
   position: fixed;
-  top: 10px;
-  right: 45px;
-  width: 30px;
-  height: 30px;
+  top: var(--top-btn-edge);
+  right: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+  width: var(--top-btn-size);
+  height: var(--top-btn-size);
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
   border: 1px solid var(--btn-border);
   border-radius: 2px;
@@ -2047,8 +2060,8 @@ body.footnote-bar-visible #ssp_content {
 }
 
 .display-settings-button .display-settings-icon {
-  width: 15px;
-  height: 15px;
+  width: var(--top-btn-icon);
+  height: var(--top-btn-icon);
   opacity: 0.8;
 }
 
@@ -2065,8 +2078,8 @@ body.footnote-bar-visible #ssp_content {
 
 .display-settings-panel {
   position: fixed;
-  top: 45px;
-  right: 10px;
+  top: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+  right: var(--top-btn-edge);
   width: 320px;
   max-height: 80vh;
   overflow-y: auto;
@@ -2075,7 +2088,7 @@ body.footnote-bar-visible #ssp_content {
   border: 1px solid var(--menu-border);
   border-radius: 8px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
-  z-index: 999;
+  z-index: 1002;
   opacity: 0;
   visibility: hidden;
   transform: translateY(-5px) translateZ(0);
@@ -2799,10 +2812,10 @@ body.dark {
 
 .find-search-button {
   position: fixed;
-  top: 10px;
-  right: 80px;
-  width: 30px;
-  height: 30px;
+  top: var(--top-btn-edge);
+  right: calc(var(--top-btn-edge) + 2 * (var(--top-btn-size) + var(--top-btn-spacing)));
+  width: var(--top-btn-size);
+  height: var(--top-btn-size);
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);
   border: 1px solid var(--btn-border);
   border-radius: 2px;
@@ -2817,8 +2830,8 @@ body.dark {
 }
 
 .find-search-button .search-icon {
-  width: 15px;
-  height: 15px;
+  width: var(--top-btn-icon);
+  height: var(--top-btn-icon);
   opacity: 0.8;
 }
 
@@ -2836,8 +2849,8 @@ body.dark {
 
 .find-bar {
   position: fixed;
-  top: 10px;
-  right: 153px;
+  top: var(--top-btn-edge);
+  right: calc(var(--top-btn-edge) + 4 * (var(--top-btn-size) + var(--top-btn-spacing)) + 3px);
   height: 40px;
   width: 380px;
   background: linear-gradient(to bottom, var(--menu-bg-start) 0%, var(--menu-bg-end) 100%);
@@ -3018,12 +3031,12 @@ body.dark .ssp-find-highlight.current {
 
 @media (max-width: 768px) {
   .find-bar {
-    top: 45px;
-    right: 10px;
+    top: calc(var(--top-btn-edge) + var(--top-btn-size) + var(--top-btn-spacing));
+    right: var(--top-btn-edge);
     left: auto;
   }
   .find-bar.show {
-    width: calc(100vw - 20px);
+    width: calc(100vw - 2 * var(--top-btn-edge));
     min-width: 280px;
   }
   .find-input {
@@ -3119,15 +3132,15 @@ body.dark {
 
 #readingModeButton {
   position: fixed;
-  top: 10px;
-  left: 10px;
+  top: var(--top-btn-edge);
+  left: var(--top-btn-edge);
   z-index: 1000;
   transform: translateZ(0);
 }
 
 .reading-mode-button .reading-mode-icon {
-  width: 15px;
-  height: 15px;
+  width: var(--top-btn-icon);
+  height: var(--top-btn-icon);
   opacity: 0.8;
 }
 
@@ -3139,39 +3152,39 @@ body.dark {
 
 #tocTabButton {
   position: fixed;
-  top: 10px;
-  left: 45px;
+  top: var(--top-btn-edge);
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 1);
   z-index: 1000;
   transform: translateZ(0);
 }
 
 #prevChapterButton {
   position: fixed;
-  top: 10px;
-  left: 45px;
+  top: var(--top-btn-edge);
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 1);
   z-index: 1000;
   transform: translateZ(0);
 }
 
 #nextChapterButton {
   position: fixed;
-  top: 10px;
-  left: 80px;
+  top: var(--top-btn-edge);
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 2);
   z-index: 1000;
   transform: translateZ(0);
 }
 
 #tocTabButton ~ #prevChapterButton {
-  left: 80px;
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 2);
 }
 
 #tocTabButton ~ #nextChapterButton {
-  left: 115px;
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 3);
 }
 
 .chapter-nav-button .chapter-nav-icon {
-  width: 15px;
-  height: 15px;
+  width: var(--top-btn-icon);
+  height: var(--top-btn-icon);
   opacity: 0.8;
 }
 
@@ -3183,25 +3196,25 @@ body.dark {
 
 #relatedTextsNav {
   position: fixed;
-  top: 10px;
-  left: 45px;
+  top: var(--top-btn-edge);
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 1);
   z-index: 1000;
   transform: translateZ(0);
   display: flex;
-  height: 30px;
+  height: var(--top-btn-size);
 }
 
 #prevChapterButton ~ #relatedTextsNav {
-  left: 115px;
+  left: calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * 3);
 }
 
 .related-texts-nav-button {
-  width: 30px;
-  height: 30px;
+  width: var(--top-btn-size);
+  height: var(--top-btn-size);
   margin: 0;
   padding: 0;
   font-family: sans-serif;
-  font-size: 13px;
+  font-size: var(--top-btn-font-size);
   line-height: 1;
   color: var(--text-primary);
   background: linear-gradient(to bottom, var(--btn-bg-start) 0%, var(--btn-bg-end) 100%);

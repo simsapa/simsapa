@@ -1,24 +1,19 @@
 // Reading Mode Button
 // Positioned on the left side of the page
 
-$button_size: 30px;
-$edge_margin: 10px;
-$border_radius: 2px;
-$button_spacing: 5px;
-
 // Reading mode button (on the left side)
 #readingModeButton {
     position: fixed;
-    top: $edge_margin;
-    left: $edge_margin;
+    top: var(--top-btn-edge);
+    left: var(--top-btn-edge);
     z-index: 1000;
     transform: translateZ(0);
 }
 
 .reading-mode-button {
     .reading-mode-icon {
-        width: 15px;
-        height: 15px;
+        width: var(--top-btn-icon);
+        height: var(--top-btn-icon);
         opacity: 0.8;
     }
 

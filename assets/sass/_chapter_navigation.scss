@@ -11,20 +11,16 @@
 // inserts them into the same parent), which is what makes the `~` combinator
 // below the whole mechanism: no JS, and no page-type class on the body.
 
-$button_size: 30px;
-$edge_margin: 10px;
-$border_radius: 2px;
-$button_spacing: 5px;
-
 // The nth button position from the left edge. Slot 0 is the reading mode
-// button: 10px, 45px, 80px, 115px…
+// button: 10px, 45px, 80px, 115px… at the default size (the --top-btn-*
+// custom properties, _menu.scss).
 @function button_slot($n) {
-    @return $edge_margin + ($button_size + $button_spacing) * $n;
+    @return calc(var(--top-btn-edge) + (var(--top-btn-size) + var(--top-btn-spacing)) * #{$n});
 }
 
 @mixin fixed_top_left_button($left) {
     position: fixed;
-    top: $edge_margin;
+    top: var(--top-btn-edge);
     left: $left;
     z-index: 1000;
     transform: translateZ(0);
@@ -56,8 +52,8 @@ $button_spacing: 5px;
 
 .chapter-nav-button {
     .chapter-nav-icon {
-        width: 15px;
-        height: 15px;
+        width: var(--top-btn-icon);
+        height: var(--top-btn-icon);
         opacity: 0.8;
     }
 
