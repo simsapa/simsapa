@@ -1,5 +1,7 @@
 # Simsapa Dhamma Reader
 
+<https://simsapa.github.io/>
+
 A sutta reader and Pāli dictionary application.
 
 See the [feature demo video](https://youtu.be/sHs6sPIQmqs) for how the UI interface works.
