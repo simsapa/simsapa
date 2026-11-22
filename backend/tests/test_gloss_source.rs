@@ -49,6 +49,20 @@ fn test_sn_default_is_cst_without_paragraph_numbers() {
 
 #[test]
 #[serial]
+fn test_commentary_with_its_edition() {
+    // A commentary uid is a reference with its edition suffix. Each CST
+    // segment is a paragraph, the headings (`:0.x`) left out.
+    let s = resolve("sn56.11.att/pli/cst", PaliEdition::Ms, None).unwrap();
+    assert_eq!(s.uid, "sn56.11.att/pli/cst");
+    assert!(s.paragraphs[0].starts_with("Dutiyassa paṭhame bārāṇasiyanti"), "{}", s.paragraphs[0]);
+    assert!(s.paragraphs.iter().all(|p| !p.contains('<') && !p.contains("Dhammacakkappavattanavaggo")));
+
+    // Without the suffix it is not a reference.
+    assert!(matches!(resolve("sn56.11.att", PaliEdition::Ms, None), Err(GlossSourceError::BadRequest(_))));
+}
+
+#[test]
+#[serial]
 fn test_sn18_1_second_paragraph() {
     let s = resolve("SN18.1", PaliEdition::Default, Some("2")).unwrap();
     assert_eq!(s.uid, "sn18.1/pli/cst");

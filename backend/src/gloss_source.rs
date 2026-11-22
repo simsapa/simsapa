@@ -124,11 +124,13 @@ impl GlossSource {
 
 /// Whether `input` reads as one sutta reference rather than Pāli text: a
 /// collection abbreviation and a number (`dhp23`, `SN 18.1`, `Th 215`,
-/// `mn4/pli/ms`). Pāli words carry no digits, so text never matches.
+/// `mn4/pli/ms`). Pāli words carry no digits, so text never matches. A
+/// commentary or sub-commentary uid (`sn56.11.att/pli/cst`, `.tik`) is a
+/// reference only with its edition suffix.
 pub fn is_sutta_reference(input: &str) -> bool {
     lazy_static! {
         static ref RE_REF: Regex =
-            Regex::new(r"^[a-zāīū]+(-[a-z]+)*\s?\d+([.\-]\d+)*(/[a-z]+/[a-z0-9-]+)?$").unwrap();
+            Regex::new(r"^[a-zāīū]+(-[a-z]+)*\s?\d+([.\-]\d+)*((\.(att|tik))?/[a-z]+/[a-z0-9-]+)?$").unwrap();
     }
     RE_REF.is_match(&input.trim().to_lowercase())
 }
@@ -415,12 +417,22 @@ mod tests {
 
     #[test]
     fn detects_references_not_text() {
-        for r in ["dhp23", "DHP23", "sn1.71", "SN 18.1", "Th 215", "mn4/pli/ms", "ud1", "iti1", "an3.33", "pli-tv-kd1"] {
+        for r in ["dhp23", "DHP23", "sn1.71", "SN 18.1", "Th 215", "mn4/pli/ms", "ud1", "iti1", "an3.33", "pli-tv-kd1",
+                  "sn56.11.att/pli/cst", "pli-tv-bu-vb-np1.att/pli/cst", "snp4.11.tik/pli/cst"] {
             assert!(is_sutta_reference(r), "{r}");
         }
-        for t in ["evaṁ me sutaṁ", "dhamma", "te jhāyino sātatikā", "", "dhp 23 24"] {
+        for t in ["evaṁ me sutaṁ", "dhamma", "te jhāyino sātatikā", "", "dhp 23 24", "sn56.11.att"] {
             assert!(!is_sutta_reference(t), "{t}");
         }
+    }
+
+    #[test]
+    fn keeps_commentary_codes() {
+        assert_eq!(
+            reference_code("sn56.11.att/pli/cst"),
+            ("sn56.11.att".to_string(), Some("/pli/cst".to_string()))
+        );
+        assert_eq!(reference_code("pli-tv-bu-vb-np1.att/pli/cst").0, "pli-tv-bu-vb-np1.att");
     }
 
     #[test]
