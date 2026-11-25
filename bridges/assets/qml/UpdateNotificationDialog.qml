@@ -68,6 +68,21 @@ ApplicationWindow {
     // A DPD check error shown in the "no updates" notice of a manual check.
     property string dpd_note: ""
 
+    // "Don't show this notification again" on the app and db notices, on by
+    // default. When the notice closes with it on, this release is not shown
+    // again by the automatic startup check; the manual "Check for Updates..."
+    // still shows it (see check_for_updates() in sutta_bridge.rs).
+    property bool dont_show_again: true
+
+    onVisibleChanged: {
+        if (root.visible || !root.dont_show_again || root.version.length === 0) {
+            return;
+        }
+        if (root.dialog_type === "app" || root.dialog_type === "db") {
+            SuttaBridge.dismiss_update_notification(root.dialog_type, root.version);
+        }
+    }
+
     // Theme support
     property bool is_dark: theme_helper.is_dark
 
@@ -118,6 +133,7 @@ ApplicationWindow {
     function show_app_update(update_info_json: string) {
         root.parse_update_info(update_info_json);
         root.dialog_type = "app";
+        root.dont_show_again = true;
         theme_helper.apply();
         root.show();
         root.raise();
@@ -127,6 +143,7 @@ ApplicationWindow {
     function show_db_update(update_info_json: string) {
         root.parse_update_info(update_info_json);
         root.dialog_type = "db";
+        root.dont_show_again = true;
         theme_helper.apply();
         root.show();
         root.raise();
@@ -368,6 +385,25 @@ ApplicationWindow {
                     }
                 }
 
+                CheckBox {
+                    id: app_dont_show_again_checkbox
+                    text: "Don't show this notification again"
+                    font.pointSize: root.pointSize
+                    checked: root.dont_show_again
+                    onToggled: root.dont_show_again = checked
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
+                    Layout.fillWidth: true
+                    // The style's label does not wrap; this one does, on narrow screens.
+                    contentItem: Label {
+                        text: app_dont_show_again_checkbox.text
+                        font: app_dont_show_again_checkbox.font
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: app_dont_show_again_checkbox.indicator.width + app_dont_show_again_checkbox.spacing
+                    }
+                }
+
                 // Fixed button area at the bottom
                 RowLayout {
                     Layout.fillWidth: true
@@ -552,6 +588,25 @@ ApplicationWindow {
                         }
 
                         Item { Layout.fillHeight: true }
+                    }
+                }
+
+                CheckBox {
+                    id: db_dont_show_again_checkbox
+                    text: "Don't show this notification again"
+                    font.pointSize: root.pointSize
+                    checked: root.dont_show_again
+                    onToggled: root.dont_show_again = checked
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
+                    Layout.fillWidth: true
+                    // The style's label does not wrap; this one does, on narrow screens.
+                    contentItem: Label {
+                        text: db_dont_show_again_checkbox.text
+                        font: db_dont_show_again_checkbox.font
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: db_dont_show_again_checkbox.indicator.width + db_dont_show_again_checkbox.spacing
                     }
                 }
 

@@ -325,6 +325,16 @@ DPD Dictionary Updates**, **off by default**). The manual **Help → Check for
 Updates...** (also a button in Settings) is a deliberate action and always
 checks both, whatever the settings say.
 
+**"Don't show this notification again".** The app, database and DPD notices
+each have this checkbox, on by default. Closing a notice with it on records
+`"<kind>:<version>"` (`app`, `db`, `dpd`) in
+`AppSettings::dismissed_update_notifications`, one entry per kind, so a newer
+release of that kind is shown again. Only the automatic check skips a
+dismissed release (in `check_for_updates()` when `include_no_updates` is false,
+and in `check_for_dpd_updates()`); it then goes on to the next part, so a
+dismissed app update does not hide a database or DPD update. The manual check
+shows every available update.
+
 **The check.** `SuttaBridge::check_for_updates()` (the manual action, and the
 automatic check at startup when Simsapa notifications are on) starts
 `check_for_dpd_update()` on its own thread before it asks the releases server,

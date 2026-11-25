@@ -1131,6 +1131,10 @@ Item {
         return true;
     }
 
+    function dismiss_update_notification(kind: string, version: string) {
+        console.log("dismiss_update_notification()", kind, version);
+    }
+
     function set_notify_about_simsapa_updates(enabled: bool) {
         console.log("set_notify_about_simsapa_updates():", enabled);
     }

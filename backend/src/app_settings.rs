@@ -237,6 +237,11 @@ pub struct AppSettings {
     /// Whether to check for a newer DPD release on startup and offer it.
     /// Off by default; the manual "Check for Updates..." always checks.
     pub notify_about_dpd_updates: bool,
+    /// Update notifications the user chose not to see again, one per kind, as
+    /// `"<kind>:<version>"` (kind `app`, `db` or `dpd`). Only the automatic
+    /// startup check skips them; the manual "Check for Updates..." shows every
+    /// available update. A newer release of the same kind is shown again.
+    pub dismissed_update_notifications: Vec<String>,
     /// Whether to opt out of sending device info and usage stats when checking
     /// for updates. When true, the releases API request omits the system info
     /// fields entirely and sends no_stats = true.
@@ -878,6 +883,22 @@ impl<'de> Deserialize<'de> for AppSettings {
 }
 
 impl AppSettings {
+    /// Whether the user chose not to see the notification of this `kind`
+    /// (`app`, `db`, `dpd`) and `version` again.
+    pub fn is_update_notification_dismissed(&self, kind: &str, version: &str) -> bool {
+        let key = format!("{}:{}", kind, version);
+        self.dismissed_update_notifications.iter().any(|k| *k == key)
+    }
+
+    /// Record that the notification of this `kind` and `version` is not to be
+    /// shown again. It replaces an earlier entry of the same kind: a newer
+    /// release supersedes it, so the list holds at most one entry per kind.
+    pub fn dismiss_update_notification(&mut self, kind: &str, version: &str) {
+        let prefix = format!("{}:", kind);
+        self.dismissed_update_notifications.retain(|k| !k.starts_with(&prefix));
+        self.dismissed_update_notifications.push(format!("{}{}", prefix, version));
+    }
+
     /// Carry the removed `mobile_top_bar_margin` setting over to
     /// `mobile_extra_top_margin`: `SystemValue` -> 0 (Qt supplies the inset),
     /// `CustomValue(v)` -> v (the user keeps the spacing they chose).
@@ -1045,6 +1066,7 @@ table tr td \{ text-align: left; padding: 0.1em 0.5em; }
             legacy_mobile_top_bar_margin: None,
             notify_about_simsapa_updates: true,
             notify_about_dpd_updates: false,
+            dismissed_update_notifications: Vec::new(),
             dont_send_stats: false,
             release_channel: None,
             app_keybindings: AppKeybindings::default(),
@@ -1261,6 +1283,33 @@ mod tests {
         let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
         assert!(!settings.notify_about_dpd_updates);
         assert!(settings.notify_about_simsapa_updates);
+    }
+
+    /// A dismissed notification matches only its own kind and version, a
+    /// second dismissal of the same kind replaces the first, and settings saved
+    /// before the field existed load with none dismissed.
+    #[test]
+    fn dismissed_update_notifications() {
+        let mut settings = AppSettings::default();
+        assert!(!settings.is_update_notification_dismissed("app", "1.4.0"));
+
+        settings.dismiss_update_notification("app", "1.4.0");
+        settings.dismiss_update_notification("dpd", "2026.11.01");
+        assert!(settings.is_update_notification_dismissed("app", "1.4.0"));
+        assert!(!settings.is_update_notification_dismissed("app", "1.4.1"));
+        assert!(!settings.is_update_notification_dismissed("db", "1.4.0"));
+
+        settings.dismiss_update_notification("app", "1.4.1");
+        assert!(!settings.is_update_notification_dismissed("app", "1.4.0"));
+        assert!(settings.is_update_notification_dismissed("app", "1.4.1"));
+        assert!(settings.is_update_notification_dismissed("dpd", "2026.11.01"));
+        assert_eq!(settings.dismissed_update_notifications.len(), 2);
+
+        let mut json: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&serde_json::to_string(&AppSettings::default()).unwrap()).unwrap();
+        assert!(json.remove("dismissed_update_notifications").is_some());
+        let settings: AppSettings = serde_json::from_value(serde_json::Value::Object(json)).unwrap();
+        assert!(settings.dismissed_update_notifications.is_empty());
     }
 
     /// The Gloss Export dialog's formats default to DOCX, also for settings

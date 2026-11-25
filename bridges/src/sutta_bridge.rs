@@ -1775,6 +1775,11 @@ pub mod qobject {
         #[qinvokable]
         fn get_notify_about_simsapa_updates(self: &SuttaBridge) -> bool;
 
+        /// Don't show the update notification of this `kind` ("app", "db",
+        /// "dpd") and `version` again at startup.
+        #[qinvokable]
+        fn dismiss_update_notification(self: &SuttaBridge, kind: &QString, version: &QString);
+
         #[qinvokable]
         fn set_notify_about_simsapa_updates(self: Pin<&mut SuttaBridge>, enabled: bool);
 
@@ -6042,7 +6047,8 @@ impl qobject::SuttaBridge {
     /// * `include_no_updates` - If true, emits noUpdatesAvailable signal when no updates found.
     ///   True only for the manual "Check for Updates..." action, which always
     ///   includes the DPD part; otherwise the DPD part runs only when DPD update
-    ///   notifications are on.
+    ///   notifications are on. When false (the automatic check), releases the
+    ///   user dismissed with "Don't show this again" are not reported.
     /// * `screen_size` - Screen resolution string (e.g., "1920 x 1080") for analytics, can be empty
     /// * `save_stats_behaviour` - Controls stats saving: "enabled", "disabled", or "determine"
     pub fn check_for_updates(self: Pin<&mut Self>, request_id: &QString, include_no_updates: bool, screen_size: &QString, save_stats_behaviour: &QString) {
@@ -6105,8 +6111,11 @@ impl qobject::SuttaBridge {
             // before `releases_check_completed`, leaving the window stuck.
             let notify_dpd = simsapa_backend::try_get_app_data()
                 .is_some_and(|app_data| app_data.get_notify_about_dpd_updates());
+            // The automatic check skips the releases the user chose not to be
+            // told about again; the manual one shows every update.
+            let skip_dismissed = !include_no_updates;
             let dpd_check = if include_no_updates || notify_dpd {
-                Some(thread::spawn(check_for_dpd_update))
+                Some(thread::spawn(move || check_for_dpd_update(skip_dismissed)))
             } else {
                 None
             };
@@ -6163,8 +6172,11 @@ impl qobject::SuttaBridge {
                 }
             };
 
-            // Check for app update
-            if let Some(mut app_update) = update_checker::has_app_update(&releases_info, &app_version) {
+            // Check for app update. A dismissed one is passed over, and the
+            // check goes on to the database and DPD parts.
+            if let Some(mut app_update) = update_checker::has_app_update(&releases_info, &app_version)
+                .filter(|u| !(skip_dismissed && is_update_notification_dismissed("app", &u.version)))
+            {
                 // Convert release_notes from markdown to HTML
                 if let Some(ref notes) = app_update.release_notes {
                     app_update.release_notes = Some(markdown_to_html(notes));
@@ -6192,7 +6204,9 @@ impl qobject::SuttaBridge {
                 &releases_info,
                 &app_version,
                 db_version.as_deref(),
-            ) {
+            )
+            .filter(|u| !(skip_dismissed && is_update_notification_dismissed("db", &u.version)))
+            {
                 // Convert release_notes from markdown to HTML
                 if let Some(ref notes) = db_update.release_notes {
                     db_update.release_notes = Some(markdown_to_html(notes));
@@ -6253,7 +6267,7 @@ impl qobject::SuttaBridge {
                 info("SuttaBridge::check_for_dpd_updates() - local db obsolete, no DPD offer");
                 None
             } else {
-                check_for_dpd_update().ok().flatten()
+                check_for_dpd_update(true).ok().flatten()
             };
             crate::queue_or_log(&qt_thread, "sutta_bridge::check_for_dpd_updates", move |mut qo| {
                 if let Some(json) = dpd_offer {
@@ -6272,6 +6286,17 @@ impl qobject::SuttaBridge {
     /// Set whether the startup update check also checks for DPD releases.
     pub fn set_notify_about_dpd_updates(self: Pin<&mut Self>, enabled: bool) {
         get_app_data().set_notify_about_dpd_updates(enabled);
+    }
+
+    /// Don't show the update notification of this `kind` ("app", "db", "dpd")
+    /// and `version` again in the automatic startup check. The manual "Check
+    /// for Updates..." still shows it.
+    pub fn dismiss_update_notification(&self, kind: &QString, version: &QString) {
+        let (kind, version) = (kind.to_string(), version.to_string());
+        if kind.is_empty() || version.is_empty() {
+            return;
+        }
+        get_app_data().dismiss_update_notification(&kind, &version);
     }
 
     /// Get whether to notify about Simsapa updates.
@@ -7681,9 +7706,15 @@ impl qobject::SuttaBridge {
 /// The DPD part of the update check, on its own thread: the offer as JSON
 /// (release notes as HTML), `None` when there is nothing to offer, or the
 /// error in words when GitHub could not be asked.
-fn check_for_dpd_update() -> Result<Option<String>, String> {
+/// With `skip_dismissed`, a release the user chose not to be told about again
+/// is `Ok(None)`.
+fn check_for_dpd_update(skip_dismissed: bool) -> Result<Option<String>, String> {
     use simsapa_backend::dpd_upgrade::{offer, DpdUpgradePaths};
     match offer::check_for_update(&DpdUpgradePaths::from_globals()) {
+        Ok(Some(o)) if skip_dismissed && is_update_notification_dismissed("dpd", &o.version) => {
+            info(&format!("check_for_dpd_update(): DPD {} was dismissed", o.version));
+            Ok(None)
+        }
         Ok(Some(mut o)) => {
             o.release_notes = markdown_to_html(&o.release_notes);
             Ok(Some(serde_json::to_string(&o).unwrap_or_default()))
@@ -7694,6 +7725,18 @@ fn check_for_dpd_update() -> Result<Option<String>, String> {
             Err("Could not check for DPD updates.".to_string())
         }
     }
+}
+
+/// Whether the user chose not to see the update notification of this `kind`
+/// (`app`, `db`, `dpd`) and `version` again. `false` before app data exists
+/// (the first-run download window checks before `init_app_data()`).
+fn is_update_notification_dismissed(kind: &str, version: &str) -> bool {
+    let dismissed = simsapa_backend::try_get_app_data()
+        .is_some_and(|app_data| app_data.is_update_notification_dismissed(kind, version));
+    if dismissed {
+        info(&format!("Update notification {}:{} was dismissed, not shown", kind, version));
+    }
+    dismissed
 }
 
 /// The DPD part's answer; `Ok(None)` when it was not started.

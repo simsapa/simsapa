@@ -80,11 +80,24 @@ ApplicationWindow {
             return;
         }
         root.marker_error = "";
+        root.dont_show_again = true;
         root.view = "offer";
         theme_helper.apply();
         root.show();
         root.raise();
         root.requestActivate();
+    }
+
+    // "Don't show this notification again" on the offer, on by default. When
+    // the dialog closes with it on, this release is not offered again by the
+    // automatic startup check; the manual "Check for Updates..." still offers
+    // it (see check_for_dpd_update() in sutta_bridge.rs).
+    property bool dont_show_again: true
+
+    onVisibleChanged: {
+        if (!root.visible && root.dont_show_again && root.version.length > 0 && root.view !== "closing") {
+            SuttaBridge.dismiss_update_notification("dpd", root.version);
+        }
     }
 
     function start_update() {
@@ -251,6 +264,25 @@ ApplicationWindow {
                     }
                 }
 
+                CheckBox {
+                    id: dpd_dont_show_again_checkbox
+                    text: "Don't show this notification again"
+                    font.pointSize: root.pointSize
+                    checked: root.dont_show_again
+                    onToggled: root.dont_show_again = checked
+                    Layout.leftMargin: 10
+                    Layout.rightMargin: 10
+                    Layout.fillWidth: true
+                    // The style's label does not wrap; this one does, on narrow screens.
+                    contentItem: Label {
+                        text: dpd_dont_show_again_checkbox.text
+                        font: dpd_dont_show_again_checkbox.font
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: dpd_dont_show_again_checkbox.indicator.width + dpd_dont_show_again_checkbox.spacing
+                    }
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 10
@@ -258,7 +290,7 @@ ApplicationWindow {
                     Item { Layout.fillWidth: true }
 
                     Button {
-                        text: "Later"
+                        text: "Close"
                         font.pointSize: root.pointSize
                         onClicked: root.close()
                     }
