@@ -138,7 +138,7 @@ add a line here and an entry there.
   **open**; not a CSS fault, do not "fix" `.column-bar`.
 - [Android / ChromeOS soft keyboard](./docs/android-soft-keyboard.md) —
   **apply its technique to every new text input**; the Gboard/Thai Shift bug
-  is upstream and needs a Qt upgrade.
+  is a Qt bug, fixed by the patched Qt for Android kit (keep the helper as is).
 - [Android edge-to-edge and safe areas](./docs/android-edge-to-edge-and-safe-areas.md) —
   never assign `topPadding`/`padding` on an `ApplicationWindow` root; anchor a
   window's root item to its parent.
@@ -254,6 +254,9 @@ add a line here and an entry there.
   re-run `scripts/android-api-scan.sh` after a Qt, NDK, native crate or JNI change.
 - [Android Qt upgrade considerations](./docs/android-qt-upgrade-considerations.md) —
   work deferred to the Qt upgrade.
+- [Patched Qt for Android kit](./docs/qt-android-patched-kit.md) — Android
+  builds use Qt 6.9.3 + `android/qt-patches/`, built by `make android-qt-kit`;
+  a verify gate checks every package; carry the patches to any new Qt.
 - [macOS: distributing without a Developer ID](./docs/macos-unsigned-distribution.md).
 - [Apple App Store readiness](./docs/apple-app-store-readiness.md).
 - [Windows portable install](./docs/windows-portable-install.md).
@@ -311,6 +314,13 @@ no `.dmg` exists. `(N)` does not work here either. Delete optional matches with
   (`pthread_cond_clockwait` needs API 30+). Stay on r26b/r27.
 - **Never hand-delete `android-build/`** — it wedges the tree; use
   `make android-clean`.
+- **Android builds use the patched Qt kit** (`../qt-<QT_ANDROID>-thai-fix`,
+  `make android-qt-kit`), for **every** ABI; never point an ABI at a stock kit
+  to get a build through, and never distribute a `SIMSAPA_ALLOW_STOCK_QT=1`
+  build. A Qt Java class copied into `android/src/` does nothing (the jar's
+  copy wins); Qt changes go into `android/qt-patches/`. Prove a package with
+  the verify gate (`scripts/qt-patched-kit/verify-package.sh`), never with a
+  green build. [docs/qt-android-patched-kit.md](./docs/qt-android-patched-kit.md).
 - **AGP is pinned at 8.6.0 and the JDK at 17–21.** The compileSdk 36 warning is
   expected and suppressed; do not bump AGP outside a Qt upgrade (change one
   variable at a time):

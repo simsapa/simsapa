@@ -72,6 +72,17 @@ qt_declared_version() {
     sed -n "s/^[[:space:]]*set(QT_${1}[[:space:]]*\"\([^\"]*\)\").*/\1/p" "$root/CMakeLists.txt" | head -n1
 }
 
+# The Android Qt root the build uses: QT_ANDROID_ROOT as build-android.sh
+# exports it, else build-android.sh's default, the patched kit beside the repo
+# (docs/qt-android-patched-kit.md). Holds android_<abi>/ and gcc_64/.
+android_qt_root() {
+    if [ -n "${QT_ANDROID_ROOT:-}" ]; then
+        printf '%s\n' "$QT_ANDROID_ROOT"
+    else
+        printf '%s\n' "$(dirname "$root")/qt-$(qt_declared_version ANDROID)-thai-fix"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Shared report: things every platform builds with.
 # ---------------------------------------------------------------------------
@@ -394,7 +405,7 @@ report_android() {
             x86)         kit="android_x86";       rust_target="i686-linux-android" ;;
             *)           advise "unrecognised ABI '$abi' -- cannot check its kit or Rust target"; continue ;;
         esac
-        local kit_path="$HOME/Qt/$declared/$kit"
+        local kit_path; kit_path="$(android_qt_root)/$kit"
         if [ -d "$kit_path" ]; then
             ok "Qt kit for $abi: $kit_path"
         else
@@ -410,7 +421,7 @@ report_android() {
     # Host tools, and the desktop-Qt leak this section exists to catch.
     #
     # The cross-build runs the ANDROID Qt's host tools -- moc, rcc,
-    # androiddeployqt from $HOME/Qt/<QT_ANDROID>/gcc_64, resolved automatically
+    # androiddeployqt from <Android Qt root>/gcc_64, resolved automatically
     # via __qt_platform_initial_qt_host_path, which is why nothing sets
     # QT_HOST_PATH. They are dynamically linked against libQt6Core.so.6.
     #
@@ -422,7 +433,8 @@ report_android() {
     # they diverge -- i.e. exactly when it is least expected.
     # -----------------------------------------------------------------------
     section "Android host tools"
-    local host_kit="$HOME/Qt/$declared/gcc_64"
+    # In the patched kit root, gcc_64 is a symlink to ~/Qt/<version>/gcc_64.
+    local host_kit; host_kit="$(android_qt_root)/gcc_64"
     item "host kit" "$host_kit"
     if [ ! -d "$host_kit" ]; then
         critical "Qt $declared host kit NOT installed: $host_kit"
@@ -547,7 +559,7 @@ if [ "$mode" = "all" ]; then
         case "$p" in
             LINUX)   kit="$HOME/Qt/$(qt_declared_version LINUX)/gcc_64" ;;
             MACOS)   kit="$HOME/Qt/$(qt_declared_version MACOS)/macos" ;;
-            ANDROID) kit="$HOME/Qt/$(qt_declared_version ANDROID)/android_arm64_v8a" ;;
+            ANDROID) kit="$(android_qt_root)/android_arm64_v8a" ;;
         esac
         if [ -d "$kit" ]; then item "QT_$p kit" "$kit"; else item "QT_$p kit" "(not installed: $kit)"; fi
     done
@@ -569,7 +581,7 @@ else
             report_common
             # The primary ABI's kit is what supplies qt-cmake for the top-level
             # configure; per-ABI kits are checked in report_android.
-            check_qt_kit ANDROID "$HOME/Qt/$(qt_declared_version ANDROID)/android_arm64_v8a" qmake
+            check_qt_kit ANDROID "$(android_qt_root)/android_arm64_v8a" qmake
             check_reader_agreement
             report_android
             ;;

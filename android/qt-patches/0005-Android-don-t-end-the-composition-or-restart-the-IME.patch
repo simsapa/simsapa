@@ -1,0 +1,72 @@
+From f4f6da6ec177c5ca96f21b3f1bd0a242e2be7954 Mon Sep 17 00:00:00 2001
+From: Gambhiro <gambhiro@users.noreply.github.com>
+Date: Tue, 24 Nov 2026 08:49:07 +0000
+Subject: [PATCH 5/6] Android: don't end the composition or restart the IME on
+ modifier keys
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Gboard's Thai layout sends its one-shot Shift through
+InputConnection.sendKeyEvent() as a KEYCODE_SHIFT_LEFT down/up pair,
+while the current word is still being composed. Qt handled that key
+like any other non-text key:
+
+- QtInputConnection.sendKeyEvent() calls finishComposingText() for
+  every key (QTBUG-85715). Ending the composition is an edit the IME
+  did not make, so Gboard resets its input context
+  (LatinIme.resetInputContext reason=5) and falls back to the base
+  layer before the next key. The shifted character cannot be typed
+  mid-word; only shift-lock works. In Thai the shifted layer holds
+  different characters (e.g. the vowel in "รู้"), not capitals.
+- QtEditText.onKeyDown() calls restartImmInput() for every key. In
+  fullscreen (extract) mode that restarts the input connection, which
+  drops the Shift in the same way.
+
+A modifier key changes no text, so neither is needed for it. Android's
+own EditText does neither. Skip both for KeyEvent.isModifierKey().
+Other keys sent through sendKeyEvent() keep the existing behavior.
+
+Fixes: QTBUG-XXXXX
+---
+ .../jar/src/org/qtproject/qt/android/QtEditText.java      | 4 +++-
+ .../src/org/qtproject/qt/android/QtInputConnection.java   | 8 ++++++--
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtEditText.java b/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
+index 79774961..7a6dee4b 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
+@@ -128,7 +128,9 @@ class QtEditText extends View
+     @Override
+     public boolean onKeyDown (int keyCode, KeyEvent event)
+     {
+-        if (null != m_inputConnection)
++        // A modifier key does not change the text, and in fullscreen mode
++        // restarting the IME for it drops the IME's one-shot Shift.
++        if (null != m_inputConnection && !KeyEvent.isModifierKey(keyCode))
+             m_inputConnection.restartImmInput();
+ 
+         return super.onKeyDown(keyCode, event);
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+index 9b3538dc..60b4add4 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+@@ -302,8 +302,12 @@ class QtInputConnection extends BaseInputConnection
+     {
+         // QTBUG-85715
+         // If the sendKeyEvent was invoked, it means that the button not related with composingText was used
+-        // In such case composing text (if it exists) should be finished immediately
+-        finishComposingText();
++        // In such case composing text (if it exists) should be finished immediately.
++        // Modifier keys are the exception: an IME such as Gboard sends its
++        // one-shot Shift this way in the middle of a word, and finishing the
++        // composition there makes the IME reset its state and drop the Shift.
++        if (!KeyEvent.isModifierKey(event.getKeyCode()))
++            finishComposingText();
+         if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER && m_view != null) {
+             KeyEvent fakeEvent;
+             switch (m_view.m_imeOptions) {
+-- 
+2.56.1
+

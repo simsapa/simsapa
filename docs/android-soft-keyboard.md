@@ -6,7 +6,8 @@ tapped, and it misbehaves in several other ways around taps, selection and
 window close. The fixed ones are handled by the reusable
 [`MobileKeyboardHelper.qml`](../bridges/assets/qml/MobileKeyboardHelper.qml)
 component plus a per-field `EnterKey.type` (§5 also needs one line per window);
-§4 is an unfixed Qt bug, and
+§4 is a Qt bug fixed by Simsapa's patched Qt for Android kit
+([qt-android-patched-kit.md](./qt-android-patched-kit.md)), and
 ["Tried on device and rejected"](#tried-on-device-and-rejected--do-not-redo)
 lists the approaches that were measured and discarded.
 
@@ -39,6 +40,19 @@ Confirmed from `adb logcat` on the ChromeOS device: on the working single tap,
 activeFocus=true` fires, a second `request_keyboard` runs, Qt's
 `QtInputDelegate.showKeyboard` drives `InsetsController.show(ime())`, and the
 retry observes `im.visible=true` on attempt 1 and stops.
+
+**With the patched Qt kit** (2026-11-25), the dropped `show()` is fixed in Qt
+itself (`android/qt-patches/0003`, upstream `5fd393cb69be`, QTBUG-140897: on
+Android 16 a keyboard request made twice was cancelled). On the S23 a field
+raises the keyboard on the first tap even with the helper's show/retry parts
+switched off, and no keyboard flash happens either. **The helper is kept
+unchanged anyway** (decision 2026-11-25): its focus-in `show()` is what raises
+the keyboard when code focuses a field (`forceActiveFocus()` when a dialog or
+window opens; Qt itself raises it only on a press), `0003` acts only on
+Android 11+ (minSdk is 28), ChromeOS (where the two-tap logs came from) was
+not tested, and iOS needs it. On the patched kit its extra `show()` calls are
+harmless. Evidence: `docs/mobile-keyboard-helper.md` in the research repo
+(see [qt-android-patched-kit.md](./qt-android-patched-kit.md)).
 
 > **Pitfall — never cast `Qt.inputMethod`.** Access it as an untyped `var`
 > (`readonly property var input_method: Qt.inputMethod`). A `Qt.inputMethod as
@@ -97,168 +111,65 @@ was tried a second time, as plain `adjustResize`, against the Shift-key bug in
 
 ### 4. Mid-word Shift is forced off (Thai and other non-Latin layouts)
 
-> ### ⚠ Measured on device 2026-08-08: **Qt 6.10.3 does NOT fix this, and the
-> mechanism below is not the whole story.**
->
-> Tested with Gboard's Thai layout on a Galaxy S23 (Android 16) against a 6.10.3
-> build. Typing **รู้**, the long vowel after the consonant is still reachable
-> only with shift-lock — a single Shift tap shows the shifted layer for a moment
-> and reverts immediately. **Identical to 6.9.3.**
->
-> Three things were established, in order, each disproving the previous
-> hypothesis:
->
-> 1. **The call-site count was the wrong measurement.** It counts
->    `QtInputConnection.java` only. A `restartImmInput()` call survived in a
->    *different* file, `QtEditText.onKeyDown()`, on the per-keystroke path — and
->    it is **byte-identical in 6.9.3 and 6.10.3**. That looked like a complete
->    explanation, since pressing Shift is itself a key down.
-> 2. **Removing that call does not fix the bug.** A patched `QtEditText` was
->    built and verified *live in the dex* (see the trap below), and Thai behaved
->    exactly as before. So `restartImmInput()` is not the cause.
-> 3. **No input-connection restart is involved at all.** A logcat capture across
->    a Shift press and a key press shows **zero** `restartInput` /
->    `APP_CALLED_RESTART_INPUT_API`. What it does show is Gboard resetting
->    itself, twice per key press:
->
->    ```
->    LatinIme.resetInputContext(): reason=5,
->        ExternalEditsInfo{action=0, offset=-1, textLength=0,
->                          originalTextLength=0, hasEdits=false}
->    ```
->
->    Note **`textLength=0`** — the editor looks *empty* to the IME even after
->    text has been typed into the QML field.
->
-> **Current best hypothesis (unproven):** Qt's Android input connection presents
-> a synthetic, essentially empty editor to the IME, keeping the real text in the
-> QML item. Gboard cannot reconcile that, resets its input context on each key,
-> and a one-shot Shift dies with it. Supporting contrast, from the same device
-> and layout: **Firefox behaves correctly** — one Shift tap holds for exactly one
-> character, then reverts. So the IME's one-shot mechanism is fine; something in
-> Qt cancels it.
->
-> **Consequence: upgrading Qt is not a fix for this bug**, and the Thai symptom
-> is no longer a reason to upgrade — see
-> [android-qt-upgrade-considerations.md §0](./android-qt-upgrade-considerations.md).
-> `QT_ANDROID` is back at 6.9.3.
->
-> #### Trap for anyone retrying a Qt Java patch
->
-> Dropping a patched copy of a Qt class into `android/src/org/qtproject/qt/android/`
-> **compiles, packages, and does nothing.** `Qt6Android.jar` still ships Qt's
-> version, so the APK defines the class in **two** dex files and ART resolves the
-> one in `classes.dex` — Qt's — while the patched copy sits inert in a later dex.
-> Measured with `dexdump`: two definitions, only the unpatched one reachable.
->
-> To make an override real, the class must be removed from the jar first (a
-> Gradle task over `libs/Qt6Android.jar`, hooked to `preBuild`, keeps that inside
-> the repo instead of modifying the installed Qt kit). **Verify with `dexdump`,
-> never with a green build** — the whole idea was nearly discarded on a false
-> negative produced this way. The scaffolding was removed after the experiment;
-> the method is recorded here because it is the only way to patch Qt's Android
-> Java from this project.
->
-> #### Where to pick this up
->
-> The next step is **not** another Qt version. It is to confirm the hypothesis
-> above — ideally by reproducing the symptom in a minimal Qt Quick app with a
-> bare `TextField`, which establishes whether it is Qt-generic or something about
-> our fields — and then to file it upstream with the `resetInputContext` /
-> `textLength=0` evidence. Ruled out already: `MobileKeyboardHelper`,
-> `inputMethodHints`, popup type resolution, `restartImmInput` in both files.
-
-**Status: an upstream Qt bug, not app code. NOT fixed by Qt 6.10.3 (see the box
-above); the earlier claim that Qt ≥ 6.10.1 fixes it was inferred from a call-site
-count and is now disproven on device.** No app-side fix is currently shipped; the
-user workaround is **shift-lock** (double-tap / long-press Shift), which works.
+**Status: fixed (2026-11-25) by Simsapa's patched Qt for Android kit**, not by
+app code and not by a Qt upgrade. The Android build uses that kit by default;
+see [qt-android-patched-kit.md](./qt-android-patched-kit.md). With stock Qt
+6.9.3 or 6.10.3 the bug is still there, and the user workaround is
+**shift-lock** (double-tap or long-press Shift).
 
 Symptom (Gboard, Thai layout, reported 2026-08-06): Shift gives **one** shifted
 character at the start of a word, and **mid-word it is forced straight back to
-the base layer** — pressing Shift again does nothing until a space is typed.
-Thai's shift layer is a second set of *distinct characters* rather than
-capitals, so those characters become untypeable.
+the base layer**. Thai's shift layer is a second set of *distinct characters*
+rather than capitals, so those characters (e.g. the long vowel in **รู้**)
+could only be typed with shift-lock. The US layout in the same field and
+Firefox with the Thai layout both worked.
 
-The measurements that bound the problem:
+**Cause** (found with a minimal Qt-only app and logged IME calls, 2026-11-23/24):
+Gboard sends the one-shot Shift to the editor as a `KEYCODE_SHIFT_LEFT`
+down/up pair through `InputConnection.sendKeyEvent()`, while the current Thai
+cluster (e.g. `ร`) is still composing. Qt treated it like any other key:
 
-| Where | Layout | Mid-word Shift |
-|---|---|---|
-| Simsapa search field (`SearchBarInput.qml`) | Thai | **forced off** |
-| Simsapa Gloss text area (`GlossTab.qml`, `gloss_text_input`) | Thai | **forced off** |
-| Simsapa search field | US | works (`dHaMmA` types fine) |
-| Firefox search bar | Thai | works (one Shift press per char, repeatable) |
+- `QtInputConnection.sendKeyEvent()` calls `finishComposingText()` for every
+  key (an old QTBUG-85715 workaround), modifier keys included. Ending the
+  composition is an edit Gboard did not make, so Gboard resets its input
+  context (`LatinIme.resetInputContext(): reason=5`) and drops the one-shot
+  Shift before the next key.
+- In fullscreen (landscape extract) mode, `QtEditText.onKeyDown()` also
+  restarts the IME for every key, which drops the Shift the same way.
 
-The two Simsapa fields share no configuration — the search field is single-line
-with `EnterKey.type: Qt.EnterKeySearch` and an `inputMethodHints`; the gloss
-field is a multi-line `TextArea` with neither — and both fail identically. That,
-plus the US layout working in the *same* field, puts the fault below QML, in
-Qt's Android input-connection layer.
+Android's own `EditText` does neither for a modifier key. The Qt-local patch
+`android/qt-patches/0005-…` skips both for `KeyEvent.isModifierKey()`. Three
+upstream backports go with it (`0001`–`0003`): without them, landscape
+(fullscreen) mode loses composing words and restarts the IME on every edit.
+Qt 6.10.3 has two of those backports but not `0005`, which is why it still
+failed; Qt `dev` still has both per-key behaviours (read from the source).
 
-**Eliminated on device — do not re-test:**
+What was **wrong** in the earlier analysis here: the `textLength=0` in
+Gboard's `ExternalEditsInfo` is only Gboard's summary of the edit (Firefox
+logs it too), not a sign that Qt shows the IME an empty editor; and
+`restartImmInput()` is a no-op in portrait, non-fullscreen use (it only calls
+`restartInput` when Qt is in fullscreen mode), which is why removing it changed
+nothing. **Eliminated on device** before the cause was found, still valid:
+`Qt.ImhPreferLowercase`, `Qt.ImhNoAutoUppercase`, the keyboard-height probe
+(`windowSoftInputMode`), `MobileKeyboardHelper`, popup type resolution.
 
-1. **`Qt.ImhPreferLowercase`** — removed, no change. Inert on Android
-   (`QtEditText.java:37` declares it; nothing reads it). Kept out anyway: Qt
-   Virtual Keyboard's `ShiftHandler` does `setShiftActive(!preferLowerCase)`
-   (`shifthandler.cpp:280-282`).
-2. **`Qt.ImhNoAutoUppercase`** — removed for one build, **no change to Thai**,
-   and it cost the lowercase look of romanised queries (the US layout began
-   sentence-capitalising, which confirmed the build had taken). **Restored.**
-3. **Qt's keyboard-height probe** — `android:windowSoftInputMode="adjustResize"`
-   disables `probeForKeyboardHeight()` (armed only when
-   `QtInputDelegate.m_softInputMode == 0`, which is what an absent attribute
-   gives). No change; reverted. A per-keystroke re-show would also have broken
-   the US layout.
-4. **`MobileKeyboardHelper`** — present on both failing fields, but it only acts
-   on tap/focus, and the failure happens mid-typing with no tap.
+**Verified on device** (Galaxy S23, Android 16, Gboard 18.6.3) with Simsapa
+built on the patched kit, 2026-11-25: one Shift tap mid-word gives the
+shifted character, then the base layer, in the search bar and in the gloss
+input (`gloss_text_input`); รู้ types without shift-lock; US typing and
+suggestions, Backspace over a Thai cluster, Enter, focus switching and rotation
+with a composing word all work.
 
-**The upstream fix.** qtbase commit
-[`f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
-— *"Android: Add support for GET_EXTRACTED_TEXT_MONITOR"*, 2025-10-08,
-`Fixes:` [QTBUG-140694](https://bugreports.qt.io/browse/QTBUG-140694),
-`Task-number:` [QTBUG-138858](https://bugreports.qt.io/browse/QTBUG-138858)
-[QTBUG-37980](https://bugreports.qt.io/browse/QTBUG-37980),
-`Pick-to: 6.10 6.9 6.8`. It adds
-`updateExtractedText()` support so the extracted-text field stays current
-**"without the need for restarting the input connection every time input is
-given"**, and adds an `m_isComposing` flag so selection changes are ignored
-during composition — which it says fixes composition text being corrupted.
+#### Trap for anyone patching Qt's Android Java
 
-That matters here because `InputMethodManager.restartInput()` is precisely what
-resets an IME's shift state. The call-site count tells the story:
-
-| Qt version | `restartImmInput()` call sites in `QtInputConnection.java` |
-|---|---|
-| 6.9.3 (ours) | **12** |
-| 6.10.1 | **2** (definition + `sendKeyEvent`) |
-| 6.10.3 | **2** — *plus the untouched per-key-down call in `QtEditText.java`* |
-
-**Read that last row before trusting this table.** Counting one file made the
-fix look complete; the surviving call in `QtEditText.onKeyDown()` is the one on
-the keystroke path, and the device test above shows the symptom is unchanged.
-
-Verified directly: the local 6.9.3 sources contain no
-`GET_EXTRACTED_TEXT_MONITOR`, `m_isComposing` or `updateFullScreenExtractedText`;
-the 6.10.1 sources contain all three. Qt 6.9.3 was released 2025-09-30 and the
-fix landed **eight days later**, so it missed our version by a hair despite
-being picked to the 6.9 branch.
-
-Causal story, plausible but **not proven**: mid-word the IME is composing, each
-keystroke restarted the input connection, and Gboard rebuilt its keyboard at the
-base layer; at a word boundary composition ends, so the next Shift survives.
-Why a US layout tolerates the same restarts (manual shift preserved, layout
-layer not) is unexplained — do not treat the fix as confirmed until it is tested
-on device.
-
-**How to test it:** build the Android target against a Qt ≥ 6.10.1 Android kit
-(only `gcc_64` is installed for 6.10.1 — the Android ABIs must be added via the
-MaintenanceTool), then re-run the table above. Note the 6.10.1 problems recorded
-in [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)
-are **Linux-AppImage-specific** (libtiff SONAME, WebEngine-on-FUSE SIGSEGV) and
-do not bear on the Android kits — but the rest of the Android upgrade checklist
-in that doc (AGP/Gradle coupling, the predictive-back opt-out) does. **minSdk 28
-is no longer part of that checklist:** it was raised on its own on 2026-08-26,
-decoupled from the upgrade, once a binary scan showed the app could not load
-below API 28 in the first place.
+Dropping a patched copy of a Qt class into `android/src/org/qtproject/qt/android/`
+**compiles, packages, and does nothing.** `Qt6Android.jar` still ships Qt's
+version, so the APK defines the class in **two** dex files and ART resolves the
+one in `classes.dex` — Qt's. That is why the fix is in the kit's jar, built by
+`make android-qt-kit`, and why every package goes through the verify gate
+(`scripts/qt-patched-kit/verify-package.sh`, which counts the class definitions
+with `dexdump` and looks for the fix's call sites). **Verify with `dexdump`,
+never with a green build.**
 
 ### 5. The blue cursor handle stays on screen after a window closes
 
@@ -317,8 +228,12 @@ reported; the pooled reader window is not affected, since it is only hidden.
 
 ### References
 
+(§4.) The full list of patches, with their upstream commits and bugs, is in
+[qt-android-patched-kit.md](./qt-android-patched-kit.md) §2.
+
 - [qtbase `f5c0296fdaad`](https://code.qt.io/cgit/qt/qtbase.git/commit/?id=f5c0296fdaad1f4f824e9bd96c525000f658fa81)
-  — the fix, with its commit message.
+  — once taken for "the fix"; it only covers fullscreen mode, and is carried
+  as the backport `android/qt-patches/0002`.
 - [`QtInputConnection.java` history](https://code.qt.io/cgit/qt/qtbase.git/log/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java)
   — how the `restartImmInput()` call sites evolved. The file at a given release
   can be read directly, which is how the 12-vs-2 count was verified:
@@ -334,7 +249,7 @@ reported; the pooled reader window is not affected, since it is only hidden.
 - [QTBUG-59958](https://bugreports.qt.io/browse/QTBUG-59958) — Gboard/SwiftKey
   predictive input corrupting text; same layer, same era.
 - [Qt 6.9.3 release announcement](https://www.qt.io/blog/qt-6.9.3-released) —
-  dated 2025-09-30, eight days before the fix landed.
+  dated 2025-09-30, eight days before `f5c0296fdaad` landed.
 
 > Practical note: `bugreports.qt.io/browse/…` now 301-redirects to
 > `qt-project.atlassian.net`, which renders through JavaScript — so these
@@ -393,7 +308,8 @@ Guidelines:
   the IME to sit on its lowercase layer, which is meaningless for non-Latin
   scripts whose shift layer holds distinct characters; it is inert on Android
   but not under Qt Virtual Keyboard. Neither hint is responsible for the
-  unresolved Thai Shift bug in §4 — both were removed and re-tested.
+  Thai Shift bug in §4 (fixed by the patched Qt kit) — both were removed and
+  re-tested.
 
   Case-insensitivity of queries is a **backend** guarantee, not an IME one, so
   nothing is lost: `SearchQueryTask::new()` lowercases every mode
@@ -444,7 +360,10 @@ desktop, so it is safe to add to any field.
 
 ## Tried on device and rejected — do not redo
 
-Each of these was written, built and measured on an Android 16 device. They are
+Each of these was written, built and measured on an Android 16 device, on
+**stock** Qt 6.9.3. The flash they deal with came from stock Qt restarting
+Gboard's input view on every `show()`; the patched kit removes that, but the
+helper keeps its flash handling for stock builds and other platforms. They are
 listed so the same ground is not covered twice; the two failed shapes of the §5
 cursor-handle fix are recorded there rather than repeated here.
 
@@ -471,9 +390,21 @@ Single-line inputs across the app carry `MobileKeyboardHelper {}` +
 `EnterKey.type` (search fields: `SearchBarInput`, `ReferenceSearchWindow`,
 `TopicIndexWindow`, `WordSummary` lookup → `EnterKeySearch`; form/dialog fields →
 `EnterKeyDone`), and the mobile-relevant multi-line content areas
-(`ChantingPracticeWindow` Pāli text) carry the helper without an `EnterKey.type`.
+(`ChantingPracticeWindow` Pāli text, the gloss inputs, the recording marker
+comment) carry the helper without an `EnterKey.type`.
 Read-only fields and desktop-only config/AI `TextArea`s (e.g. debug output,
 keybinding capture, Anki/prompt templates) are intentionally left untouched.
+
+**Known limitation (QTBUG-151926):** a long-press selection in a `TextArea`
+**without** the helper is lost when the finger lifts (the helper's re-apply is
+the workaround). That applies to the 13 read-only `TextArea`s (AI responses,
+update notes, diagnostics, …); selecting with the handles still works there.
+Left as is on purpose (2026-11-25). If the helper's re-apply ever stops
+working, the fallback is a plain `TextEdit` in a `ScrollView` instead of a
+Controls `TextArea` (it kept the selection 6/6 on the S23); the research
+repo's `cxx-qt-prototype/qml/PlainTextEditArea.qml` is a ready component. No
+press-and-hold interval change is needed: with the helper, a long press keeps
+its selection in `TextField`s and `TextArea`s at Qt's default interval.
 
 When adding a **new** text input, apply this technique.
 

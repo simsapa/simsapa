@@ -14,8 +14,18 @@ the next person does not have to re-derive any of it.
 > document still stands — including the build-version-correctness machinery,
 > which was built during that attempt and is kept.
 
+> ## The Android build uses a PATCHED Qt 6.9.3 kit (since 2026-11-25)
+>
+> The Thai Shift bug that motivated the 6.10.3 attempt is fixed by six patches
+> to Qt 6.9.3's qtbase, carried in `android/qt-patches/` and built into a kit
+> beside the repo (`make android-qt-kit`). **Any Qt upgrade for Android must
+> carry them forward** (or show on device that the new version no longer needs
+> them): see [qt-android-patched-kit.md](./qt-android-patched-kit.md) §6.
+
 Companion documents:
 
+- [qt-android-patched-kit.md](./qt-android-patched-kit.md) — the patched Qt
+  for Android kit, the verify gate, and how to carry the patches forward.
 - [android-multi-abi-and-chromeos.md](./android-multi-abi-and-chromeos.md) — the
   multi-ABI build mechanism, the manifest/permissions rules, the AGP pin.
 - [android-edge-to-edge-and-safe-areas.md](./android-edge-to-edge-and-safe-areas.md)
@@ -60,11 +70,16 @@ of `GET_EXTRACTED_TEXT_MONITOR`. Both facts are true. The conclusion was not:
   the IME even after text was typed.
 
 So the "Qt restarts the input connection on every keystroke" story is **not a
-sufficient explanation** of the bug. The live lead is that Qt's Android input
-connection presents a synthetic, empty editor, and Gboard drops its context —
-one-shot Shift included — because it cannot reconcile that. Firefox with the same
-Thai layout on the same device behaves correctly (one Shift tap holds for exactly
-one character), so the IME is fine; something in Qt's input handling cancels it.
+sufficient explanation** of the bug. (The lead recorded here at the time, that
+Qt shows the IME an empty editor, was also wrong: `textLength=0` is only
+Gboard's summary of an edit, and Firefox logs it too.)
+
+**Resolved 2026-11-25.** The cause is that Qt ends the composition (and, in
+fullscreen mode, restarts the IME) when Gboard sends its one-shot Shift as a
+key event; 6.10.3 still does both. It is fixed by a Qt-local patch plus three
+upstream backports to 6.9.3, built into Simsapa's patched kit
+([android-soft-keyboard.md §4](./android-soft-keyboard.md),
+[qt-android-patched-kit.md](./qt-android-patched-kit.md)).
 
 **Rule this earns:** *a Qt version must be judged on device, not by reading its
 sources.* Counting call sites in one file produced a confident, wrong prediction
@@ -152,7 +167,7 @@ it is dormant, not useless.
 
 | Component | Pinned at | Why |
 |---|---|---|
-| Qt | 6.9.3 | Desktop, Windows, macOS and Android all ride on it |
+| Qt | 6.9.3 (Android: the patched 6.9.3 kit, [qt-android-patched-kit.md](./qt-android-patched-kit.md)) | Desktop, Windows, macOS and Android all ride on it |
 | NDK | r26b / r27 (27.3.13750724 in use) | **Not r28** — its libc++ references `pthread_cond_clockwait` (bionic API 30+), which breaks the `cxx` C++ build. The exclusion is about API **30**, so it held at minSdk 27 and holds unchanged at 28 |
 | AGP | 8.6.0 | Coupled to the JDK pin and to Qt's `build.gradle` template |
 | Gradle wrapper | 8.10 | **Ours**, checked into `android/gradle/wrapper/` — see §2.4 |
@@ -403,9 +418,10 @@ ways — AAB/APK size, on-device install footprint, `zipalign -c -P 16`, and
   The reasoning below counted `restartImmInput()` in `QtInputConnection.java`
   only, and **missed `QtEditText.onKeyDown()`**, which calls it on every key
   down and is **byte-identical in 6.9.3 and 6.10.3**. `f5c0296fdaad` is
-  necessary but not sufficient. A patched-`QtEditText` route that would work on
-  **6.9.3, with no Qt upgrade at all**, is sketched in
-  [android-soft-keyboard.md §4](./android-soft-keyboard.md).
+  necessary but not sufficient. **Fixed since 2026-11-25 on 6.9.3, with no Qt
+  upgrade**, by the patched kit
+  ([qt-android-patched-kit.md](./qt-android-patched-kit.md)); an upgrade has to
+  carry those patches (§6).
 
   Superseded reasoning, kept because the sources it cites are accurate and only
   the conclusion was wrong:
@@ -544,6 +560,10 @@ unattributable.
    else. Text entry, a dialog, a dropdown, a sutta tab. This is ~1 hour and it is
    what would have ended the 6.10.3 attempt on day one.
 2. **Verify the motivating symptom is actually fixed**, on device.
+   For any upgrade: carry `android/qt-patches/` forward first (drop the
+   backports the new version has, rebuild with `make android-qt-kit`, and pass
+   the verify gate), then re-test the Thai Shift procedure — see
+   [qt-android-patched-kit.md](./qt-android-patched-kit.md) §6.
 3. Only then the packaging work: AGP/Gradle/JDK, 16 KB, multi-ABI AAB. (minSdk
    is already at Qt's declared floor of 28 and needs nothing here.)
 

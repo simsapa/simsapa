@@ -184,39 +184,50 @@ list(APPEND qt_modules
 
 if (ANDROID)
     set(qt_expected_version "${QT_ANDROID}")
-    # Detect Android ABI and set appropriate Qt paths
-    # ANDROID_ABI is set by the Android toolchain (e.g., armeabi-v7a, arm64-v8a, x86_64)
+    # Which Android Qt kit: the one whose qt-cmake configured this build.
+    #
+    # build-android.sh runs $QT_ANDROID_ROOT/android_<abi>/bin/qt-cmake, and
+    # that kit's qt.toolchain.cmake always prepends its own lib/cmake to
+    # CMAKE_PREFIX_PATH. So under qt-cmake CMAKE_PREFIX_PATH is never empty
+    # here, and the $ENV{HOME}/Qt/${QT_ANDROID} paths below are only a fallback
+    # for a configure without qt-cmake (plain cmake + the NDK toolchain). The
+    # Android build defaults to the patched kit, not to ~/Qt/${QT_ANDROID}
+    # (docs/qt-android-patched-kit.md), so do not "simplify" this back into
+    # an unconditional ~/Qt path.
     #
     # MULTI-ABI NOTE: for a multi-ABI build (see build-android.sh /
     # `make android-aab`), Qt configures one ExternalProject per additional ABI,
     # re-running CMake over this same source tree with that ABI's toolchain
-    # file. So ANDROID_ABI is correct in each sub-build and the branches below
-    # resolve per-ABI. Qt does NOT forward the parent's CMAKE_PREFIX_PATH to the
-    # sub-builds (only ANDROID_SDK_ROOT / ANDROID_NDK_ROOT and the variables
-    # named in QT_ANDROID_MULTI_ABI_FORWARD_VARS), which is exactly what makes
-    # the `if(NOT CMAKE_PREFIX_PATH)` guard below safe.
-    # See docs/android-multi-abi-and-chromeos.md.
-    if(ANDROID_ABI STREQUAL "armeabi-v7a")
-        set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_armv7")
-    elseif(ANDROID_ABI STREQUAL "arm64-v8a")
-        set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_arm64_v8a")
-    elseif(ANDROID_ABI STREQUAL "x86_64")
-        set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_x86_64")
-    elseif(ANDROID_ABI STREQUAL "x86")
-        set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_x86")
-    else()
-        # Default to arm64-v8a if ABI not detected.
-        # Deliberately a WARNING, not FATAL_ERROR: this is a working fallback
-        # with a sensible default, not a "Qt not found" condition.
-        set(ANDROID_QT_DIR "$ENV{HOME}/Qt/${QT_ANDROID}/android_arm64_v8a")
-        message(WARNING "ANDROID_ABI not detected, defaulting to android_arm64_v8a")
-    endif()
-
+    # file. Qt finds that ABI's kit as a sibling of the primary kit
+    # (<kit>/../android_<abi>, Qt6AndroidMacros.cmake
+    # _qt_internal_get_android_abi_prefix_path), and its toolchain sets
+    # CMAKE_PREFIX_PATH to it in the same way. Each sub-build therefore
+    # resolves its own ABI's kit from the same QT_ANDROID_ROOT; the parent's
+    # CMAKE_PREFIX_PATH is not forwarded. See docs/android-multi-abi-and-chromeos.md.
     if(NOT CMAKE_PREFIX_PATH)
-        set(CMAKE_PREFIX_PATH "${ANDROID_QT_DIR}")
+        if(ANDROID_ABI STREQUAL "armeabi-v7a")
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_ANDROID}/android_armv7")
+        elseif(ANDROID_ABI STREQUAL "arm64-v8a")
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_ANDROID}/android_arm64_v8a")
+        elseif(ANDROID_ABI STREQUAL "x86_64")
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_ANDROID}/android_x86_64")
+        elseif(ANDROID_ABI STREQUAL "x86")
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_ANDROID}/android_x86")
+        else()
+            # Default to arm64-v8a if ABI not detected.
+            # Deliberately a WARNING, not FATAL_ERROR: this is a working fallback
+            # with a sensible default, not a "Qt not found" condition.
+            set(CMAKE_PREFIX_PATH "$ENV{HOME}/Qt/${QT_ANDROID}/android_arm64_v8a")
+            message(WARNING "ANDROID_ABI not detected, defaulting to android_arm64_v8a")
+        endif()
+        message(STATUS "Android ABI: ${ANDROID_ABI}, no qt-cmake toolchain; "
+            "falling back to ${CMAKE_PREFIX_PATH}")
+    else()
+        message(STATUS "Android ABI: ${ANDROID_ABI}, Qt from the qt-cmake "
+            "toolchain: ${CMAKE_PREFIX_PATH}")
     endif()
-    message(STATUS "Android ABI: ${ANDROID_ABI}")
-    message(STATUS "Using Android Qt: ${ANDROID_QT_DIR}")
+    # The kit actually used is printed after find_package() below
+    # ("Qt <version> ... at <Qt6_DIR>", "Using qmake: ...").
 
     # Android's qmake is a POSIX shell wrapper applying the Android qt.conf --
     # it is NOT the host qmake6, and the name has no `6` suffix.

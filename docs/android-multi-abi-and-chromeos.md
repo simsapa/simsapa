@@ -233,29 +233,43 @@ requires. Chromebooks run 64-bit ARCVM.
 
 Each requested ABI needs its **Qt for Android kit installed**, or the configure
 aborts with *"Cannot find toolchain files for the manually specified Android
-ABIs"*. (`QT_PATH_ANDROID_ABI_<abi>` exists for non-standard install layouts;
-we don't need it.)
+ABIs"*. Qt looks for an extra ABI's kit as a **sibling** of the primary kit
+(`<kit>/../android_<abi>`). The build uses the patched kit root
+`../qt-<QT_ANDROID>-thai-fix` ([qt-android-patched-kit.md](./qt-android-patched-kit.md)),
+so **all three ABIs must be patched there**: `make android-qt-kit` builds
+`android_arm64_v8a`, `android_x86_64` and `android_armv7` into it (each needs
+the stock kit for that ABI installed as the source), and `build-android.sh`
+refuses an ABI whose `PATCHED-KIT-MANIFEST-<abi>.txt` is missing. Measured on
+2026-11-25: with only the arm64 kit patched, the three-ABI configure fails
+with the error above. (`QT_PATH_ANDROID_ABI_<abi>` exists for non-standard
+layouts; do not use it to point an ABI at the stock kit — that ABI would ship
+without the keyboard fixes.)
 
 `build-android.sh` forces `-G Ninja`. Qt warns
 (`QT_NO_WARN_ANDROID_MULTI_ABI_GENERATOR`) that ExternalProject step ordering is
 unreliable with other generators.
 
-### Why the project's per-ABI Qt path logic is safe
+### How each sub-build gets its ABI's Qt
 
-`CMakeLists.txt` picks `ANDROID_QT_DIR` (and from it `CMAKE_PREFIX_PATH` and the
-`qmake_path` handed to `cxx_qt_import_crate`) by branching on `ANDROID_ABI`,
-guarded by `if(NOT CMAKE_PREFIX_PATH)`. That guard is load-bearing and it is
-correct, for a non-obvious reason:
+Each sub-build is configured with **its own ABI kit's toolchain file**, found
+as a sibling of the primary kit, and that `qt.toolchain.cmake` prepends its kit
+to `CMAKE_PREFIX_PATH`. So `Qt6_DIR`, and from it the `qmake_path` handed to
+`cxx_qt_import_crate`, come from the right ABI's kit in the same
+`QT_ANDROID_ROOT`. The `$ENV{HOME}/Qt/${QT_ANDROID}/android_<abi>` branches in
+`CMakeLists.txt`, under `if(NOT CMAKE_PREFIX_PATH)`, are only a fallback for a
+configure without `qt-cmake`; under `build-android.sh` they never run. (Until
+2026-11-25 the status line printed that fallback path even when it was not
+used, which made the old "Verified" evidence here misleading.)
 
-**Qt does not forward the parent build's `CMAKE_PREFIX_PATH` to the sub-builds.**
-Only `ANDROID_SDK_ROOT`, `ANDROID_NDK_ROOT`, `QT_HOST_PATH`, the build type, a
+Qt does not forward the parent build's `CMAKE_PREFIX_PATH` to the sub-builds:
+only `ANDROID_SDK_ROOT`, `ANDROID_NDK_ROOT`, `QT_HOST_PATH`, the build type, a
 handful of internal flags, and whatever you name in
-`QT_ANDROID_MULTI_ABI_FORWARD_VARS` are passed down. Each sub-build therefore
-resolves its own ABI's Qt. Verified:
+`QT_ANDROID_MULTI_ABI_FORWARD_VARS` are passed down. Verified 2026-11-25 on
+the patched kit, from each sub-build's own `CMakeCache.txt`:
 
 ```
--- Using Android Qt: /home/gambhiro/Qt/6.9.3/android_x86_64    # x86_64 sub-build
--- Using Android Qt: /home/gambhiro/Qt/6.9.3/android_armv7     # armeabi-v7a sub-build
+android_abi_builds/x86_64:      Qt6_DIR=…/qt-6.9.3-thai-fix/android_x86_64/lib/cmake/Qt6
+android_abi_builds/armeabi-v7a: Qt6_DIR=…/qt-6.9.3-thai-fix/android_armv7/lib/cmake/Qt6
 ```
 
 If you ever add a variable to `QT_ANDROID_MULTI_ABI_FORWARD_VARS`, make sure it
@@ -554,11 +568,18 @@ compile, on:
   version in `bridges/Cargo.toml`
 
 Afterwards it prints the artifact path and mtime and the ABIs present, then runs
-two audits:
+three audits:
 
 **Cross-ABI contamination** (hard failure) — every packaged library's Qt ABI-name
 suffix must match its `lib/<abi>/` directory. See "Release builds must start
 clean" above for what this catches and why.
+
+**Patched-Qt verify gate** (hard failure) — the package must carry the patched
+Qt for every ABI: the `Qt6Android` classes once in the dex with the fix's call
+sites and marker, and each ABI's `qtforandroid` plugin with the checksum from
+that ABI's kit manifest. Skipped (with a warning) only for a
+`SIMSAPA_ALLOW_STOCK_QT=1` build. See
+[qt-android-patched-kit.md](./qt-android-patched-kit.md) §5.
 
 **ChromeOS compatibility** (warning) — lists the permissions that survived the
 merge, flags the ones from which Play infers required hardware (CAMERA,

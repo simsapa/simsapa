@@ -1,0 +1,57 @@
+From 5f2489cee45f7b4c7caf3126b6691ffb4247da24 Mon Sep 17 00:00:00 2001
+From: Gambhiro <gambhiro@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 18:38:35 +0000
+Subject: [PATCH 6/6] Android: [DO NOT MERGE] add build marker to the input
+ connection
+
+Add a "qt-thai-fix-marker-v1" string to QtInputConnection (Java, logged
+in the constructor) and to QAndroidInputContext (C++, logged with
+qCInfo in the constructor).
+
+This is not a fix. It lets a build script prove that an APK carries
+the patched Qt6Android jar and the patched qtforandroid platform
+plugin, rather than the stock ones: the marker shows up in the dex
+strings, in the plugin's .rodata, and in logcat at startup.
+---
+ .../jar/src/org/qtproject/qt/android/QtInputConnection.java    | 3 +++
+ src/plugins/platforms/android/qandroidinputcontext.cpp         | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+index 60b4add4..c0c12b0d 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+@@ -70,6 +70,8 @@ class QtInputConnection extends BaseInputConnection
+     private static final int KEYBOARD_CHECK_DELAY_MS = 100;
+ 
+     private static final String QtTAG = "QtInputConnection";
++    // Build marker: proves that this patched class is the one in the APK.
++    private static final String QT_THAI_FIX_MARKER = "qt-thai-fix-marker-v1";
+ 
+     private int m_extractedRequestToken = 0;
+     private boolean m_isComposing = false;
+@@ -128,6 +130,7 @@ class QtInputConnection extends BaseInputConnection
+         m_imm = (InputMethodManager)m_view.getContext().getSystemService(
+                                         Context.INPUT_METHOD_SERVICE);
+         m_qtInputConnectionListener = listener;
++        Log.d(QtTAG, "build marker: " + QT_THAI_FIX_MARKER);
+     }
+ 
+     void restartImmInput()
+diff --git a/src/plugins/platforms/android/qandroidinputcontext.cpp b/src/plugins/platforms/android/qandroidinputcontext.cpp
+index 54d56f1c..a2a257ac 100644
+--- a/src/plugins/platforms/android/qandroidinputcontext.cpp
++++ b/src/plugins/platforms/android/qandroidinputcontext.cpp
+@@ -401,6 +401,9 @@ QAndroidInputContext::QAndroidInputContext()
+     , m_focusObject(0)
+     , m_fullScreenMode(false)
+ {
++    // Build marker: proves that this patched plugin is the one in the APK.
++    qCInfo(lcQpaInputMethods, "build marker: %s", "qt-thai-fix-marker-v1");
++
+     QJniEnvironment env;
+     jclass clazz = env.findClass(QtNativeInputConnectionClassName);
+     if (Q_UNLIKELY(!clazz)) {
+-- 
+2.56.1
+

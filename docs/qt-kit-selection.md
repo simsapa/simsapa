@@ -120,11 +120,32 @@ if (ANDROID)                              <-- block 2: a SEPARATE block
 > A bare `else()` would also catch Windows whenever `CMAKE_PREFIX_PATH` is
 > preset.
 
-The inner `if(NOT CMAKE_PREFIX_PATH)` guards are load-bearing twice over: an
-explicitly passed `-DCMAKE_PREFIX_PATH` must win, and the **multi-ABI Android
-build depends on it** — Qt does not forward the parent's `CMAKE_PREFIX_PATH` to
-its per-ABI ExternalProject sub-builds, which is what lets each sub-build
-resolve its own ABI's kit.
+The inner `if(NOT CMAKE_PREFIX_PATH)` guards are load-bearing: an explicitly
+passed `-DCMAKE_PREFIX_PATH` must win. On Android the guard is in fact
+**always** satisfied by the time block 2 runs: `build-android.sh` configures
+with the chosen kit's `qt-cmake`, whose `qt.toolchain.cmake` prepends that
+kit's `lib/cmake` to `CMAKE_PREFIX_PATH`. So the `~/Qt/<QT_ANDROID>/android_<abi>`
+paths in block 2 are only a fallback for a configure without `qt-cmake`, and
+the Android kit is chosen by **`QT_ANDROID_ROOT`** alone (§4.1). The multi-ABI
+sub-builds work the same way: Qt finds each extra ABI's kit as a sibling of
+the primary kit (`<kit>/../android_<abi>`) and configures the sub-build with
+that kit's toolchain; the parent's `CMAKE_PREFIX_PATH` is not forwarded.
+(Measured 2026-11-25 with configure-only runs and the sub-builds' own
+`CMakeCache.txt`.)
+
+### 4.1 Android: the patched kit and `QT_ANDROID_ROOT`
+
+The Android build does **not** use the installed `~/Qt/<QT_ANDROID>` kit by
+default. `build-android.sh` sets `QT_ANDROID_ROOT` to the patched kit beside
+the repo, `../qt-<QT_ANDROID>-thai-fix` (built by `make android-qt-kit`), which
+has the same `{android_<abi>, gcc_64}` layout; `gcc_64` there is a symlink to
+the stock host kit. Patched or stock is decided by the kit's
+`PATCHED-KIT-MANIFEST-<abi>.txt` files: a kit without them is refused unless
+`SIMSAPA_ALLOW_STOCK_QT=1`. `scripts/qt-env-verify.sh` checks the kits under
+`QT_ANDROID_ROOT`. `QT_ANDROID` (the version) is still read from
+`CMakeLists.txt` as everywhere else, and the configure-time version assertion
+(§5.1) applies unchanged. Full description:
+[qt-android-patched-kit.md](./qt-android-patched-kit.md).
 
 **A second chain, further down, computes `qmake_exe_name` — and *that* one
 correctly starts with `if (ANDROID)`**, so a bare `else()` meaning "Linux

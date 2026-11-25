@@ -360,6 +360,19 @@ android-clean:
 # The release path.
 android-rebuild: android-clean android-aab
 
+# --- Patched Qt for Android kit ----------------------------------------------
+#
+# build-android.sh builds against the patched Qt kit beside this repo
+# (../qt-<QT_ANDROID>-thai-fix), not the installed ~/Qt/<version>: stock Qt
+# 6.9.3 loses Gboard's one-shot Shift mid-word (Thai), and has the other
+# keyboard bugs listed in docs/qt-android-patched-kit.md. This target builds
+# that kit for every ABI in ANDROID_ABIS' default set, from ~/Qt/<version>/Src
+# and android/qt-patches/. Needs the Qt "Sources" component and the stock
+# Android kits installed. About 2 minutes per ABI the first time, under a
+# memory cap (JOBS, MEMORY_MAX); safe to re-run. Never writes under ~/Qt.
+android-qt-kit:
+	./scripts/qt-patched-kit/build-kit.sh
+
 windows:
 	powershell -ExecutionPolicy Bypass -File build-windows.ps1
 

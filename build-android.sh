@@ -96,7 +96,20 @@ else
     qt_android_version_source="from CMakeLists.txt QT_ANDROID"
 fi
 QT_ANDROID_VERSION="${QT_ANDROID_VERSION:-$(qt_version_for ANDROID)}"
-QT_ANDROID_ROOT="${QT_ANDROID_ROOT:-$HOME/Qt/$QT_ANDROID_VERSION}"
+
+# The Qt for Android kit: by default the PATCHED kit beside this repo, not the
+# installed ~/Qt/<version>. Stock Qt 6.9.3 loses Gboard's one-shot Shift
+# mid-word (Thai), needs two taps to raise the keyboard, and more; the patches
+# are in android/qt-patches/ and `make android-qt-kit` builds the kit. A
+# stock kit is allowed only with SIMSAPA_ALLOW_STOCK_QT=1 (checked below, by
+# the kit's manifests, not by its path). See docs/qt-android-patched-kit.md.
+if [ -n "${QT_ANDROID_ROOT:-}" ]; then
+    qt_android_root_source="from environment"
+else
+    qt_android_root_source="default: patched kit beside the repo"
+    QT_ANDROID_ROOT="$(dirname "$PWD")/qt-$QT_ANDROID_VERSION-thai-fix"
+fi
+export QT_ANDROID_ROOT
 
 # The primary ABI supplies qt-cmake and the toolchain the top-level build uses.
 ANDROID_PRIMARY_ABI="${ANDROID_PRIMARY_ABI:-arm64-v8a}"
@@ -215,6 +228,10 @@ Environment:
   ANDROID_VERSION_NAME   Overrides the Cargo.toml version, e.g. 1.0.0-alpha.3
   ANDROID_ABIS, ANDROID_SDK_ROOT, ANDROID_NDK_ROOT, ANDROID_BUILD_DIR,
   QT_ANDROID_VERSION, QT_ANDROID_ROOT, ANDROID_PRIMARY_ABI
+  QT_ANDROID_ROOT        Default: the patched kit ../qt-<QT_ANDROID>-thai-fix
+                         (make android-qt-kit; docs/qt-android-patched-kit.md)
+  SIMSAPA_ALLOW_STOCK_QT=1  Allow a kit without the patches (stock Qt); skips
+                         the verify gate. Never distribute such a build.
 
 Signing credentials are read from android/signing.env (gitignored); any
 QT_ANDROID_KEYSTORE_* already exported in the shell takes precedence.
@@ -279,8 +296,16 @@ case "$ANDROID_PRIMARY_ABI" in
     *) die "Unsupported ANDROID_PRIMARY_ABI: $ANDROID_PRIMARY_ABI" ;;
 esac
 
+if [ "$qt_android_root_source" != "from environment" ] && [ ! -d "$QT_ANDROID_ROOT" ]; then
+    die "The patched Qt for Android kit is not built yet: $QT_ANDROID_ROOT
+Build it with:  make android-qt-kit   (about 10 minutes; docs/qt-android-patched-kit.md)
+Or build against stock Qt (NOT for distribution) by prefixing the command with:
+  QT_ANDROID_ROOT=\$HOME/Qt/$QT_ANDROID_VERSION SIMSAPA_ALLOW_STOCK_QT=1"
+fi
+
 [ -x "$QT_CMAKE" ] || die "qt-cmake not found at $QT_CMAKE
-Install the 'Android for $ANDROID_PRIMARY_ABI' component of Qt $QT_ANDROID_VERSION."
+Install the 'Android for $ANDROID_PRIMARY_ABI' component of Qt $QT_ANDROID_VERSION,
+or, for the patched kit, run: make android-qt-kit"
 
 # Every requested ABI needs its own Qt for Android kit installed, or Qt aborts
 # the configure with 'Cannot find toolchain files for the manually specified
@@ -297,8 +322,46 @@ for abi in "${_abi_list[@]}"; do
     esac
     [ -d "$QT_ANDROID_ROOT/$kit" ] || missing_kits="$missing_kits $abi ($kit)"
 done
-[ -z "$missing_kits" ] || die "Missing Qt for Android kits for:$missing_kits
-Install them with the Qt Maintenance Tool under Qt $QT_ANDROID_VERSION."
+[ -z "$missing_kits" ] || die "Missing Qt for Android kits in $QT_ANDROID_ROOT for:$missing_kits
+Install them with the Qt Maintenance Tool under Qt $QT_ANDROID_VERSION, then
+(re)build the patched kit with: make android-qt-kit"
+
+# Patched or stock: decided by the kit's manifests (one per ABI, written by
+# scripts/qt-patched-kit/build-kit.sh), never by the path. Every ABI being
+# packaged must be patched; a stock build needs SIMSAPA_ALLOW_STOCK_QT=1 and
+# skips the verify gate after packaging.
+unpatched_abis=""
+for abi in "${_abi_list[@]}"; do
+    [ -f "$QT_ANDROID_ROOT/PATCHED-KIT-MANIFEST-$abi.txt" ] || unpatched_abis="$unpatched_abis $abi"
+done
+if [ -z "$unpatched_abis" ]; then
+    QT_KIT_KIND="patched"
+elif [ "${SIMSAPA_ALLOW_STOCK_QT:-0}" = 1 ]; then
+    QT_KIT_KIND="stock"
+else
+    die "The Qt kit $QT_ANDROID_ROOT is not patched for:$unpatched_abis
+(no PATCHED-KIT-MANIFEST-<abi>.txt). Stock Qt has the Android keyboard bugs
+described in docs/qt-android-patched-kit.md. Build the patched kit with
+'make android-qt-kit', or set SIMSAPA_ALLOW_STOCK_QT=1 for a stock build
+that must not be distributed."
+fi
+
+# CMake keeps the toolchain file of an existing build directory and ignores a
+# new one (with only a warning), so a build dir configured with another kit
+# would silently keep using it. Stop instead (--clean removes the dir below).
+cache="$ANDROID_BUILD_DIR/CMakeCache.txt"
+if [ "$DO_CLEAN" -eq 0 ] && [ -f "$cache" ]; then
+    cached_toolchain="$(sed -n 's/^CMAKE_TOOLCHAIN_FILE:[A-Z]*=//p' "$cache")"
+    want_toolchain="$(realpath -m "$(dirname "$QT_CMAKE")/../lib/cmake/Qt6/qt.toolchain.cmake")"
+    if [ "$(realpath -m "$cached_toolchain")" != "$want_toolchain" ]; then
+        die "$ANDROID_BUILD_DIR was configured with another Qt kit:
+  $cached_toolchain
+This build wants:
+  $want_toolchain
+Remove the build directory first: pass --clean, or run 'make android-clean'
+(build/android-multiabi) / 'make android-arm64-clean' (build/android-arm64)."
+    fi
+fi
 
 # Corrosion (FindRust.cmake) maps CMAKE_ANDROID_ARCH_ABI to a Rust target
 # triple. Note armeabi-v7a resolves to armv7-linux-androideabi, NOT
@@ -540,6 +603,11 @@ if [ "$DO_SIGN" -eq 1 ] && [ "$RESIGN_AFTER_BUILD" -eq 0 ]; then
 fi
 
 echo "==> Qt          : $QT_ANDROID_VERSION ($qt_android_version_source), $QT_ANDROID_ROOT (primary ABI $ANDROID_PRIMARY_ABI)"
+echo "==> Qt kit      : $QT_KIT_KIND ($qt_android_root_source)"
+if [ "$QT_KIT_KIND" = stock ]; then
+    echo "    WARNING: stock Qt (SIMSAPA_ALLOW_STOCK_QT=1): has the keyboard bugs the"
+    echo "    patched kit fixes, and skips the verify gate. Do not distribute it."
+fi
 echo "==> JDK         : $JAVA_HOME ($("$JAVA_HOME/bin/java" -version 2>&1 | head -1))"
 echo "==> ABIs        : $ANDROID_ABIS"
 echo "==> NDK         : $ANDROID_NDK_ROOT ($ndk_source)"
@@ -773,6 +841,23 @@ See docs/android-multi-abi-and-chromeos.md.
 Do not upload this artifact."
 fi
 echo "      OK — every library matches its ABI directory."
+
+# --- patched-Qt verify gate --------------------------------------------------
+#
+# Proves that the package carries the patched Qt (the Qt6Android dex classes
+# and every ABI's qtforandroid plugin), not just that the build used a
+# patched kit's path: a stray stock jar or plugin would build just as green.
+# Hard failure. See docs/qt-android-patched-kit.md.
+if [ "$QT_KIT_KIND" = patched ]; then
+    echo "==> Patched-Qt verify gate:"
+    PATCHED_KIT_ROOT="$QT_ANDROID_ROOT" EXPECT_ABIS="$ANDROID_ABIS" \
+        ./scripts/qt-patched-kit/verify-package.sh "$artifact" --expect-patched \
+        | sed 's/^/    /' \
+        || die "The package does not carry the patched Qt (see the FAIL lines above).
+Do not distribute this artifact. See docs/qt-android-patched-kit.md."
+else
+    echo "==> Patched-Qt verify gate: SKIPPED (stock Qt, SIMSAPA_ALLOW_STOCK_QT=1)"
+fi
 
 # --- ChromeOS compatibility check -------------------------------------------
 #

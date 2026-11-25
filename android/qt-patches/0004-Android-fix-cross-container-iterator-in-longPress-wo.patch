@@ -1,0 +1,37 @@
+From 9fef1ecd64bb5b95386d0b368126f74079bf522e Mon Sep 17 00:00:00 2001
+From: Assam Boudjelthia <assam.boudjelthia@qt.io>
+Date: Sat, 18 Jul 2026 00:03:05 +0300
+Subject: [PATCH 4/6] Android: fix cross-container iterator in longPress word
+ select
+
+The backward word scan started at before.rbegin() but compared
+against after.rend(), mixing reverse iterators from two different
+containers. That is undefined behavior and could walk off the
+start of before when the preceding text is all alphanumeric.
+Compare against before.rend().
+
+Backport of upstream qtbase 83876bf5500b to 6.9.3.
+
+Fixes: QTBUG-148434
+Change-Id: I9e000e9e98cfbf00a577d988d872e36d89bdc6eb
+Reviewed-by: Ville Voutilainen <ville.voutilainen@qt.io>
+---
+ src/plugins/platforms/android/qandroidinputcontext.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/plugins/platforms/android/qandroidinputcontext.cpp b/src/plugins/platforms/android/qandroidinputcontext.cpp
+index 2318a1f6..54d56f1c 100644
+--- a/src/plugins/platforms/android/qandroidinputcontext.cpp
++++ b/src/plugins/platforms/android/qandroidinputcontext.cpp
+@@ -861,7 +861,7 @@ void QAndroidInputContext::longPress(int x, int y)
+             ++anchor;
+         }
+ 
+-        for (auto itch = before.rbegin(); itch != after.rend(); ++itch) {
++        for (auto itch = before.rbegin(); itch != before.rend(); ++itch) {
+             if (!itch->isLetterOrNumber())
+                 break;
+             --cursor;
+-- 
+2.56.1
+

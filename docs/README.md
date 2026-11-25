@@ -67,19 +67,16 @@ substantially.
   `focus: root.is_desktop` gate for pre-focused persistent fields, and the
   `Qt.ImhNoAutoUppercase`-only hint rule (never `Qt.ImhPreferLowercase`, which
   is inert on Android but forces the lowercase layer under Qt Virtual Keyboard).
-  **§4, the Gboard/Thai mid-word Shift bug — an upstream Qt bug with no app-side
-  fix**: Shift reverts to the base layer mid-word in *both* the search field and
-  the Gloss `TextArea` (which share no configuration), while a US layout in the
-  same field and Firefox with Thai both work; shift-lock is the user workaround.
-  Ruled out on device: `inputMethodHints` (removing `ImhNoAutoUppercase` changed
-  nothing and cost the lowercase look, so it was **restored**), Qt's
-  keyboard-height probe (`android:windowSoftInputMode="adjustResize"`, no effect,
-  reverted), and `MobileKeyboardHelper`. Fixed upstream by qtbase `f5c0296fdaad`
-  (`Fixes: QTBUG-140694`), which cuts `restartImmInput()` from **12** call sites
-  in 6.9.3 to **2** in 6.10.1 — it landed 8 days after 6.9.3 shipped, so only a
-  **Qt upgrade** fixes it (now the top functional reason in
-  [android-qt-upgrade-considerations.md](./android-qt-upgrade-considerations.md)).
-  **Apply this technique to every new text input.**
+  **§4, the Gboard/Thai mid-word Shift bug — a Qt bug, fixed since 2026-11-25
+  by the patched Qt for Android kit** ([qt-android-patched-kit.md](./qt-android-patched-kit.md)):
+  Qt ended the composition (and in fullscreen restarted the IME) when Gboard
+  sent its one-shot Shift as a key event, so Gboard reset and dropped the
+  Shift; Qt 6.10.3 still does this. With the patched kit the first-tap and
+  keyboard-flash problems of §1 are also fixed in Qt, but the helper is kept
+  unchanged (code-driven focus, ChromeOS, Android 9/10, iOS). Also the known
+  QTBUG-151926 limitation: a long-press selection is lost in a `TextArea`
+  without the helper (the read-only ones). **Apply this technique to every new
+  text input.**
 - [Mobile rendering troubleshooting](./mobile-rendering-troubleshooting.md) —
   the three mobile-only **Settings → Rendering** tab toggles that work around
   GPU framebuffer / scene-graph corruption on flaky Android drivers (flat result
@@ -704,6 +701,15 @@ substantially.
   `scripts/android-api-scan.sh` regenerates every measurement in it; **re-run it
   after a Qt upgrade, an NDK change, a new native crate or a new JNI call
   site**, and pass `--abi` — it scans one ABI at a time and defaults to arm64.
+- [Patched Qt for Android kit](./qt-android-patched-kit.md) — why Android
+  builds use Qt 6.9.3 with six qtbase patches (`android/qt-patches/`: the
+  Qt-local modifier-key fix for the Thai Shift bug, four upstream backports and
+  a build marker), how `make android-qt-kit` builds the kit for all three ABIs
+  beside the repo (`scripts/qt-patched-kit/`; only `Qt6Android.jar` and the
+  `qtforandroid` plugin change), how `build-android.sh` picks it
+  (`QT_ANDROID_ROOT` default, the manifests, `SIMSAPA_ALLOW_STOCK_QT=1`, the
+  stale-build-dir guard), the verify gate on every package, and how to carry
+  the patches to another Qt version.
 - [Android multi-ABI packaging and ChromeOS compatibility](./android-multi-abi-and-chromeos.md) —
   how the signed release AAB is built (`make android-aab` → `build-android.sh`,
   `QT_ANDROID_ABIS="arm64-v8a;x86_64;armeabi-v7a"`). **Never build release

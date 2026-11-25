@@ -1,0 +1,560 @@
+From ce5a792c0d49e7b5becc0178599bcfa8a55802bf Mon Sep 17 00:00:00 2001
+From: Gambhiro <gambhiro@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 20:38:36 +0000
+Subject: [PATCH] Android: [DEBUG, DO NOT MERGE] log IME calls under the
+ QtThaiDbg tag
+
+Temporary instrumentation for investigating the lost one-shot Shift of
+Gboard's Thai layout. Every line uses the logcat tag QtThaiDbg and
+starts with a sequence number (seq=jN on the Java side, seq=cN in C++).
+
+Java:
+- QtInputConnection: every InputConnection method the IME calls, with
+  arguments and result; for getExtractedText also the request token,
+  flags and GET_EXTRACTED_TEXT_MONITOR; for finishComposingText whether
+  the IME called it or Qt's own sendKeyEvent. Also logs (and passes on
+  to BaseInputConnection) requestCursorUpdates, performEditorAction,
+  clearMetaKeyStates, deleteSurroundingTextInCodePoints,
+  getSurroundingText and closeConnection, which Qt does not override.
+- QtEditText: onCreateInputConnection (EditorInfo fields),
+  onCheckIsTextEditor, onKeyDown, onKeyUp.
+- QtInputDelegate: every InputMethodManager and WindowInsetsController
+  call (updateSelection, restartInput, showSoftInput, show/hide(ime),
+  hideSoftInputFromWindow), showSoftwareKeyboard, onKeyDown, onKeyUp.
+
+C++ (only where qt.qpa.input.methods logging has no line):
+- getCursorCapsMode result,
+- focusObjectStopComposing when it commits a preedit,
+- showInputPanel, with the focus object's class,
+- the key events passed to QWindowSystemInterface.
+---
+ .../org/qtproject/qt/android/QtEditText.java  |  16 ++
+ .../qt/android/QtInputConnection.java         | 141 ++++++++++++++++--
+ .../qtproject/qt/android/QtInputDelegate.java |  15 ++
+ .../platforms/android/androidjniinput.cpp     |   7 +
+ .../android/qandroidinputcontext.cpp          |  17 +++
+ 5 files changed, 184 insertions(+), 12 deletions(-)
+
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtEditText.java b/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
+index 7a6dee4b..fc4fe312 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtEditText.java
+@@ -115,6 +115,10 @@ class QtEditText extends View
+             outAttrs.initialSelStart = extracted.selectionStart;
+             outAttrs.initialSelEnd = extracted.selectionEnd;
+         }
++        QtInputConnection.dbg("EditText.onCreateInputConnection inputType=0x" + Integer.toHexString(outAttrs.inputType)
++            + " imeOptions=0x" + Integer.toHexString(outAttrs.imeOptions)
++            + " initialCapsMode=0x" + Integer.toHexString(outAttrs.initialCapsMode)
++            + " initialSel=" + outAttrs.initialSelStart + "," + outAttrs.initialSelEnd);
+ 
+         return m_inputConnection;
+     }
+@@ -122,12 +126,15 @@ class QtEditText extends View
+     @Override
+     public boolean onCheckIsTextEditor ()
+     {
++        QtInputConnection.dbg("EditText.onCheckIsTextEditor -> true");
+         return true;
+     }
+ 
+     @Override
+     public boolean onKeyDown (int keyCode, KeyEvent event)
+     {
++        QtInputConnection.dbg("EditText.onKeyDown " + KeyEvent.keyCodeToString(keyCode)
++            + " meta=0x" + Integer.toHexString(event.getMetaState()));
+         // A modifier key does not change the text, and in fullscreen mode
+         // restarting the IME for it drops the IME's one-shot Shift.
+         if (null != m_inputConnection && !KeyEvent.isModifierKey(keyCode))
+@@ -136,6 +143,15 @@ class QtEditText extends View
+         return super.onKeyDown(keyCode, event);
+     }
+ 
++    // DEBUG (qt-patches/debug)
++    @Override
++    public boolean onKeyUp (int keyCode, KeyEvent event)
++    {
++        QtInputConnection.dbg("EditText.onKeyUp " + KeyEvent.keyCodeToString(keyCode)
++            + " meta=0x" + Integer.toHexString(event.getMetaState()));
++        return super.onKeyUp(keyCode, event);
++    }
++
+     @Override
+     protected void onDraw(Canvas canvas) {
+         // DEBUG CODE
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+index c0c12b0d..9219effb 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtInputConnection.java
+@@ -17,6 +17,8 @@ import android.view.inputmethod.ExtractedTextRequest;
+ import android.view.inputmethod.InputMethodManager;
+ import android.view.KeyEvent;
+ import android.view.inputmethod.InputConnection;
++import android.view.inputmethod.SurroundingText;
++import java.util.concurrent.atomic.AtomicInteger;
+ import android.graphics.Rect;
+ import android.app.Activity;
+ import android.util.DisplayMetrics;
+@@ -76,6 +78,22 @@ class QtInputConnection extends BaseInputConnection
+     private int m_extractedRequestToken = 0;
+     private boolean m_isComposing = false;
+     private boolean m_duringBatchEdit = false;
++
++    // DEBUG (qt-patches/debug): IME call logging, tag QtThaiDbg.
++    static final String DBG_TAG = "QtThaiDbg";
++    private static final AtomicInteger s_dbgSeq = new AtomicInteger();
++    private boolean m_dbgInSendKeyEvent = false;
++    static void dbg(String msg)
++    {
++        Log.d(DBG_TAG, "seq=j" + s_dbgSeq.incrementAndGet() + " " + msg);
++    }
++    static String q(CharSequence cs)
++    {
++        if (cs == null)
++            return "null";
++        StringBuilder b = new StringBuilder("\"").append(cs).append("\" len=").append(cs.length());
++        return b.toString();
++    }
+     private final QtInputConnectionListener m_qtInputConnectionListener;
+ 
+     class HideKeyboardRunnable implements Runnable {
+@@ -136,6 +154,7 @@ class QtInputConnection extends BaseInputConnection
+     void restartImmInput()
+     {
+         if (QtNativeInputConnection.fullscreenMode() && !m_duringBatchEdit) {
++            dbg("IMM.restartInput (restartImmInput, fullscreen)");
+             if (m_imm != null)
+                 m_imm.restartInput(m_view);
+         }
+@@ -153,6 +172,7 @@ class QtInputConnection extends BaseInputConnection
+         ExtractedTextRequest request = new ExtractedTextRequest();
+         request.token = m_extractedRequestToken;
+         ExtractedText extractedText = getExtractedText(request, InputConnection.GET_EXTRACTED_TEXT_MONITOR);
++        dbg("IMM.updateExtractedText token=" + m_extractedRequestToken);
+         m_imm.updateExtractedText(m_view, m_extractedRequestToken, extractedText);
+     }
+ 
+@@ -161,12 +181,15 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         m_duringBatchEdit = true;
+-        return QtNativeInputConnection.beginBatchEdit();
++        boolean r = QtNativeInputConnection.beginBatchEdit();
++        dbg("IC.beginBatchEdit -> " + r);
++        return r;
+     }
+ 
+     @Override
+     public boolean reportFullscreenMode (boolean enabled)
+     {
++        dbg("IC.reportFullscreenMode enabled=" + enabled);
+         QtNativeInputConnection.reportFullscreenMode(enabled);
+         // Always ignored on calling editor.
+         // Always false on Android 8 and later, true with earlier.
+@@ -178,6 +201,7 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         boolean result = QtNativeInputConnection.endBatchEdit();
++        dbg("IC.endBatchEdit -> " + result);
+         if (m_duringBatchEdit) {
+             m_duringBatchEdit = false;
+             updateFullScreenExtractedText();
+@@ -190,7 +214,9 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         updateFullScreenExtractedText();
+-        return QtNativeInputConnection.commitCompletion(text.getText().toString(), text.getPosition());
++        boolean r = QtNativeInputConnection.commitCompletion(text.getText().toString(), text.getPosition());
++        dbg("IC.commitCompletion " + q(text.getText()) + " pos=" + text.getPosition() + " -> " + r);
++        return r;
+     }
+ 
+     @Override
+@@ -198,6 +224,7 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         boolean result = QtNativeInputConnection.commitText(text.toString(), newCursorPosition);
++        dbg("IC.commitText " + q(text) + " newCursorPosition=" + newCursorPosition + " -> " + result);
+         updateFullScreenExtractedText();
+         return result;
+     }
+@@ -207,6 +234,7 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         boolean result = QtNativeInputConnection.deleteSurroundingText(leftLength, rightLength);
++        dbg("IC.deleteSurroundingText " + leftLength + " " + rightLength + " -> " + result);
+         updateFullScreenExtractedText();
+         return result;
+     }
+@@ -218,13 +246,17 @@ class QtInputConnection extends BaseInputConnection
+         setClosing(true);
+         m_isComposing = false;
+         updateFullScreenExtractedText();
+-        return QtNativeInputConnection.finishComposingText();
++        boolean r = QtNativeInputConnection.finishComposingText();
++        dbg("IC.finishComposingText caller=" + (m_dbgInSendKeyEvent ? "Qt.sendKeyEvent" : "IME") + " -> " + r);
++        return r;
+     }
+ 
+     @Override
+     public int getCursorCapsMode(int reqModes)
+     {
+-        return QtNativeInputConnection.getCursorCapsMode(reqModes);
++        int r = QtNativeInputConnection.getCursorCapsMode(reqModes);
++        dbg("IC.getCursorCapsMode reqModes=0x" + Integer.toHexString(reqModes) + " -> 0x" + Integer.toHexString(r));
++        return r;
+     }
+ 
+     @Override
+@@ -233,8 +265,13 @@ class QtInputConnection extends BaseInputConnection
+         QtExtractedText qExtractedText = QtNativeInputConnection.getExtractedText(request.hintMaxChars,
+                                                                                   request.hintMaxLines,
+                                                                                   flags);
+-        if (qExtractedText == null)
++        if (qExtractedText == null) {
++            dbg("IC.getExtractedText token=" + request.token + " reqFlags=0x" + Integer.toHexString(request.flags)
++                + " hintMaxChars=" + request.hintMaxChars + " hintMaxLines=" + request.hintMaxLines
++                + " flags=0x" + Integer.toHexString(flags)
++                + " MONITOR=" + ((flags & InputConnection.GET_EXTRACTED_TEXT_MONITOR) != 0) + " -> null");
+             return null;
++        }
+ 
+         ExtractedText extractedText = new ExtractedText();
+         extractedText.partialEndOffset = qExtractedText.partialEndOffset;
+@@ -243,6 +280,13 @@ class QtInputConnection extends BaseInputConnection
+         extractedText.selectionStart = qExtractedText.selectionStart;
+         extractedText.startOffset = qExtractedText.startOffset;
+         extractedText.text = qExtractedText.text;
++        dbg("IC.getExtractedText token=" + request.token + " reqFlags=0x" + Integer.toHexString(request.flags)
++            + " hintMaxChars=" + request.hintMaxChars + " hintMaxLines=" + request.hintMaxLines
++            + " flags=0x" + Integer.toHexString(flags)
++            + " MONITOR=" + ((flags & InputConnection.GET_EXTRACTED_TEXT_MONITOR) != 0)
++            + " -> text=" + q(extractedText.text) + " sel=" + extractedText.selectionStart + "," + extractedText.selectionEnd
++            + " startOffset=" + extractedText.startOffset
++            + " partial=" + extractedText.partialStartOffset + "," + extractedText.partialEndOffset);
+ 
+         if (flags == InputConnection.GET_EXTRACTED_TEXT_MONITOR)
+             m_extractedRequestToken = request.token;
+@@ -252,24 +296,31 @@ class QtInputConnection extends BaseInputConnection
+ 
+     public CharSequence getSelectedText(int flags)
+     {
+-        return QtNativeInputConnection.getSelectedText(flags);
++        CharSequence r = QtNativeInputConnection.getSelectedText(flags);
++        dbg("IC.getSelectedText flags=0x" + Integer.toHexString(flags) + " -> " + q(r));
++        return r;
+     }
+ 
+     @Override
+     public CharSequence getTextAfterCursor(int length, int flags)
+     {
+-        return QtNativeInputConnection.getTextAfterCursor(length, flags);
++        CharSequence r = QtNativeInputConnection.getTextAfterCursor(length, flags);
++        dbg("IC.getTextAfterCursor " + length + " flags=0x" + Integer.toHexString(flags) + " -> " + q(r));
++        return r;
+     }
+ 
+     @Override
+     public CharSequence getTextBeforeCursor(int length, int flags)
+     {
+-        return QtNativeInputConnection.getTextBeforeCursor(length, flags);
++        CharSequence r = QtNativeInputConnection.getTextBeforeCursor(length, flags);
++        dbg("IC.getTextBeforeCursor " + length + " flags=0x" + Integer.toHexString(flags) + " -> " + q(r));
++        return r;
+     }
+ 
+     @Override
+     public boolean performContextMenuAction(int id)
+     {
++        dbg("IC.performContextMenuAction id=" + id);
+         switch (id) {
+         case ID_SELECT_ALL:
+             return QtNativeInputConnection.selectAll();
+@@ -303,14 +354,21 @@ class QtInputConnection extends BaseInputConnection
+     @Override
+     public boolean sendKeyEvent(KeyEvent event)
+     {
++        dbg("IC.sendKeyEvent " + KeyEvent.keyCodeToString(event.getKeyCode())
++            + " action=" + event.getAction() + " meta=0x" + Integer.toHexString(event.getMetaState())
++            + " flags=0x" + Integer.toHexString(event.getFlags())
++            + " repeat=" + event.getRepeatCount() + " modifierKey=" + KeyEvent.isModifierKey(event.getKeyCode()));
+         // QTBUG-85715
+         // If the sendKeyEvent was invoked, it means that the button not related with composingText was used
+         // In such case composing text (if it exists) should be finished immediately.
+         // Modifier keys are the exception: an IME such as Gboard sends its
+         // one-shot Shift this way in the middle of a word, and finishing the
+         // composition there makes the IME reset its state and drop the Shift.
+-        if (!KeyEvent.isModifierKey(event.getKeyCode()))
++        if (!KeyEvent.isModifierKey(event.getKeyCode())) {
++            m_dbgInSendKeyEvent = true;
+             finishComposingText();
++            m_dbgInSendKeyEvent = false;
++        }
+         if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER && m_view != null) {
+             KeyEvent fakeEvent;
+             switch (m_view.m_imeOptions) {
+@@ -348,6 +406,7 @@ class QtInputConnection extends BaseInputConnection
+         setClosing(false);
+         m_isComposing = true;
+         boolean result = QtNativeInputConnection.setComposingText(text.toString(), newCursorPosition);
++        dbg("IC.setComposingText " + q(text) + " newCursorPosition=" + newCursorPosition + " -> " + result);
+         updateFullScreenExtractedText();
+         return result;
+     }
+@@ -379,7 +438,9 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         updateFullScreenExtractedText();
+-        return QtNativeInputConnection.replaceText(start, end, text.toString(), newCursorPosition);
++        boolean r = QtNativeInputConnection.replaceText(start, end, text.toString(), newCursorPosition);
++        dbg("IC.replaceText " + start + " " + end + " " + q(text) + " newCursorPosition=" + newCursorPosition + " -> " + r);
++        return r;
+     }
+ 
+     @Override
+@@ -387,17 +448,73 @@ class QtInputConnection extends BaseInputConnection
+     {
+         setClosing(false);
+         updateFullScreenExtractedText();
+-        return QtNativeInputConnection.setComposingRegion(start, end);
++        boolean r = QtNativeInputConnection.setComposingRegion(start, end);
++        dbg("IC.setComposingRegion " + start + " " + end + " -> " + r);
++        return r;
+     }
+ 
+     @Override
+     public boolean setSelection(int start, int end)
+     {
+         setClosing(false);
+-        if (m_isComposing)
++        if (m_isComposing) {
++            dbg("IC.setSelection " + start + " " + end + " ignored while composing");
+             return true;
++        }
+         boolean result = QtNativeInputConnection.setSelection(start, end);
++        dbg("IC.setSelection " + start + " " + end + " -> " + result);
+         updateFullScreenExtractedText();
+         return result;
+     }
++
++    // DEBUG (qt-patches/debug): methods Qt does not override, logged to see
++    // whether the IME uses them. Each calls the BaseInputConnection default.
++    @Override
++    public boolean requestCursorUpdates(int cursorUpdateMode)
++    {
++        boolean r = super.requestCursorUpdates(cursorUpdateMode);
++        dbg("IC.requestCursorUpdates mode=0x" + Integer.toHexString(cursorUpdateMode) + " -> " + r);
++        return r;
++    }
++
++    @Override
++    public boolean performEditorAction(int actionCode)
++    {
++        dbg("IC.performEditorAction " + actionCode);
++        return super.performEditorAction(actionCode);
++    }
++
++    @Override
++    public boolean clearMetaKeyStates(int states)
++    {
++        boolean r = super.clearMetaKeyStates(states);
++        dbg("IC.clearMetaKeyStates 0x" + Integer.toHexString(states) + " -> " + r);
++        return r;
++    }
++
++    @Override
++    public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength)
++    {
++        boolean r = super.deleteSurroundingTextInCodePoints(beforeLength, afterLength);
++        dbg("IC.deleteSurroundingTextInCodePoints " + beforeLength + " " + afterLength + " -> " + r);
++        return r;
++    }
++
++    @TargetApi(31)
++    @Override
++    public SurroundingText getSurroundingText(int beforeLength, int afterLength, int flags)
++    {
++        SurroundingText r = super.getSurroundingText(beforeLength, afterLength, flags);
++        dbg("IC.getSurroundingText " + beforeLength + " " + afterLength + " flags=0x" + Integer.toHexString(flags)
++            + " -> " + (r == null ? "null" : q(r.getText()) + " sel=" + r.getSelectionStart() + ","
++                        + r.getSelectionEnd() + " offset=" + r.getOffset()));
++        return r;
++    }
++
++    @Override
++    public void closeConnection()
++    {
++        dbg("IC.closeConnection");
++        super.closeConnection();
++    }
+ }
+diff --git a/src/android/jar/src/org/qtproject/qt/android/QtInputDelegate.java b/src/android/jar/src/org/qtproject/qt/android/QtInputDelegate.java
+index 0db89b66..67c1604b 100644
+--- a/src/android/jar/src/org/qtproject/qt/android/QtInputDelegate.java
++++ b/src/android/jar/src/org/qtproject/qt/android/QtInputDelegate.java
+@@ -135,6 +135,8 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+         if (m_imm != null) {
+             QtNative.runAction(() -> {
+                 if (m_imm != null) {
++                    QtInputConnection.dbg("IMM.updateSelection " + selStart + " " + selEnd
++                            + " " + candidatesStart + " " + candidatesEnd);
+                     m_imm.updateSelection(m_currentEditText, selStart, selEnd,
+                             candidatesStart, candidatesEnd);
+                 }
+@@ -147,6 +149,8 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+                               final int inputHints, final int enterKeyType)
+     {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
++            QtInputConnection.dbg("Insets.setWindowInsetsAnimationCallback + show(ime) keyboardVisible="
++                    + m_keyboardIsVisible);
+             Window window = activity.getWindow();
+             View decorView = window.getDecorView();
+             decorView.setWindowInsetsAnimationCallback(
+@@ -173,6 +177,7 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+         } else {
+             if (m_imm == null)
+                 return;
++            QtInputConnection.dbg("IMM.showSoftInput");
+             m_imm.showSoftInput(m_currentEditText, 0, new ResultReceiver(new Handler()) {
+                 @Override
+                 @SuppressWarnings("fallthrough")
+@@ -210,6 +215,8 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+             if (m_imm == null || m_currentEditText == null)
+                 return;
+ 
++            QtInputConnection.dbg("Delegate.showSoftwareKeyboard hints=0x" + Integer.toHexString(inputHints)
++                    + " enterKeyType=" + enterKeyType + " keyboardVisible=" + m_keyboardIsVisible);
+             if (updateSoftInputMode(activity, height))
+                 return;
+ 
+@@ -219,6 +226,7 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+             m_currentEditText.postDelayed(() -> {
+                 showKeyboard(activity, x, y, width, height, inputHints, enterKeyType);
+                 if (m_currentEditText.m_optionsChanged) {
++                    QtInputConnection.dbg("IMM.restartInput (showSoftwareKeyboard, options changed)");
+                     m_imm.restartInput(m_currentEditText);
+                     m_currentEditText.m_optionsChanged = false;
+                 }
+@@ -260,6 +268,7 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+         m_currentEditText.postDelayed(() -> {
+             if (m_imm == null || m_currentEditText == null)
+                 return;
++            QtInputConnection.dbg("IMM.restartInput (resetSoftwareKeyboard)");
+             m_imm.restartInput(m_currentEditText);
+             m_currentEditText.m_optionsChanged = false;
+         }, 5);
+@@ -282,8 +291,10 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+                     Log.w(TAG, "hideSoftwareKeyboard: The activity reference is null");
+                     return;
+                 }
++                QtInputConnection.dbg("Insets.hide(ime) (hideSoftwareKeyboard)");
+                 activity.getWindow().getInsetsController().hide(Type.ime());
+             } else {
++                QtInputConnection.dbg("IMM.hideSoftInputFromWindow");
+                 m_imm.hideSoftInputFromWindow(m_currentEditText.getWindowToken(), 0,
+                         new ResultReceiver(new Handler()) {
+                             @Override
+@@ -489,6 +500,8 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+ 
+     boolean onKeyDown(int keyCode, KeyEvent event)
+     {
++        QtInputConnection.dbg("Delegate.onKeyDown " + KeyEvent.keyCodeToString(keyCode)
++                + " meta=0x" + Integer.toHexString(event.getMetaState()) + " -> Qt keyDown");
+         m_metaState = MetaKeyKeyListener.handleKeyDown(m_metaState, keyCode, event);
+         int metaState = MetaKeyKeyListener.getMetaState(m_metaState) | event.getMetaState();
+         int c = event.getUnicodeChar(metaState);
+@@ -521,6 +534,8 @@ class QtInputDelegate implements QtInputConnection.QtInputConnectionListener, Qt
+ 
+     boolean onKeyUp(int keyCode, KeyEvent event)
+     {
++        QtInputConnection.dbg("Delegate.onKeyUp " + KeyEvent.keyCodeToString(keyCode)
++                + " meta=0x" + Integer.toHexString(event.getMetaState()) + " -> Qt keyUp");
+         if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                 || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                 || keyCode == KeyEvent.KEYCODE_MUTE)
+diff --git a/src/plugins/platforms/android/androidjniinput.cpp b/src/plugins/platforms/android/androidjniinput.cpp
+index a251cbd0..c59d9084 100644
+--- a/src/plugins/platforms/android/androidjniinput.cpp
++++ b/src/plugins/platforms/android/androidjniinput.cpp
+@@ -19,6 +19,8 @@
+ 
+ QT_BEGIN_NAMESPACE
+ 
++void qtThaiDbg(const QString &msg); // DEBUG (qt-patches/debug), qandroidinputcontext.cpp
++
+ Q_LOGGING_CATEGORY(lcQpaInputMethods, "qt.qpa.input.methods");
+ 
+ using namespace QtAndroid;
+@@ -852,6 +854,9 @@ namespace QtAndroidInput
+ 
+     static void keyDown(JNIEnv */*env*/, jobject /*thiz*/, jint key, jint unicode, jint modifier, jboolean autoRepeat)
+     {
++        qtThaiDbg(QStringLiteral("C++ keyDown androidKey=%1 qtKey=0x%2 unicode=0x%3 modifier=0x%4")
++                      .arg(key).arg(mapAndroidKey(key).toCombined(), 0, 16)
++                      .arg(unicode, 0, 16).arg(modifier, 0, 16));
+         QWindowSystemInterface::handleKeyEvent(0,
+                                                QEvent::KeyPress,
+                                                mapAndroidKey(key).toCombined(),
+@@ -862,6 +867,8 @@ namespace QtAndroidInput
+ 
+     static void keyUp(JNIEnv */*env*/, jobject /*thiz*/, jint key, jint unicode, jint modifier, jboolean autoRepeat)
+     {
++        qtThaiDbg(QStringLiteral("C++ keyUp androidKey=%1 qtKey=0x%2 modifier=0x%3")
++                      .arg(key).arg(mapAndroidKey(key).toCombined(), 0, 16).arg(modifier, 0, 16));
+         QWindowSystemInterface::handleKeyEvent(0,
+                                                QEvent::KeyRelease,
+                                                mapAndroidKey(key).toCombined(),
+diff --git a/src/plugins/platforms/android/qandroidinputcontext.cpp b/src/plugins/platforms/android/qandroidinputcontext.cpp
+index 7ba1a92b..4b4710d8 100644
+--- a/src/plugins/platforms/android/qandroidinputcontext.cpp
++++ b/src/plugins/platforms/android/qandroidinputcontext.cpp
+@@ -25,8 +25,18 @@
+ #include <qwindow.h>
+ #include <qpa/qplatformwindow.h>
+ 
++#include <atomic>
++
+ QT_BEGIN_NAMESPACE
+ 
++// DEBUG (qt-patches/debug): IME call logging, logcat tag QtThaiDbg.
++void qtThaiDbg(const QString &msg)
++{
++    static std::atomic<int> seq{0};
++    __android_log_print(ANDROID_LOG_DEBUG, "QtThaiDbg", "seq=c%d %s", ++seq,
++                        qUtf8Printable(msg));
++}
++
+ namespace {
+ 
+ class BatchEditLock
+@@ -176,6 +186,8 @@ static jint getCursorCapsMode(JNIEnv */*env*/, jobject /*thiz*/, jint reqModes)
+ 
+     jint res = 0;
+     runOnQtThread([&]{res = m_androidInputContext->getCursorCapsMode(reqModes);});
++    qtThaiDbg(QStringLiteral("C++ getCursorCapsMode reqModes=0x%1 -> 0x%2")
++                  .arg(reqModes, 0, 16).arg(res, 0, 16));
+     return res;
+ }
+ 
+@@ -953,6 +965,9 @@ void QAndroidInputContext::showInputPanel()
+     else if (qGuiApp->focusObject()->metaObject()->indexOfSignal("cursorPositionChanged()") >= 0)
+         m_updateCursorPosConnection = connect(qGuiApp->focusObject(), SIGNAL(cursorPositionChanged()), this, SLOT(updateCursorPosition()));
+ 
++    qtThaiDbg(QStringLiteral("C++ showInputPanel focus=%1 visible=%2")
++                  .arg(QString::fromLatin1(qGuiApp->focusObject()->metaObject()->className()))
++                  .arg(isInputPanelVisible()));
+     QRect rect = screenInputItemRectangle();
+     QtAndroidInput::showSoftwareKeyboard(rect.left(), rect.top(), rect.width(), rect.height(),
+                                          query->value(Qt::ImHints).toUInt(),
+@@ -1254,6 +1269,8 @@ bool QAndroidInputContext::focusObjectStopComposing()
+     const int blockPos = getBlockPosition(query);
+     const int localCursorPos = m_composingCursor - blockPos;
+ 
++    qtThaiDbg(QStringLiteral("C++ focusObjectStopComposing: commits preedit \"%1\" start=%2 cursor=%3")
++                  .arg(m_composingText).arg(m_composingTextStart).arg(m_composingCursor));
+     m_composingCursor = -1;
+ 
+     {
+-- 
+2.56.1
+

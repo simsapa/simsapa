@@ -1166,6 +1166,9 @@ Item {
                     id: marker_comment_field
                     placeholderText: "Add a comment..."
                     wrapMode: TextEdit.Wrap
+                    // Raises the keyboard reliably and keeps a long-press
+                    // selection (QTBUG-151926); see docs/android-soft-keyboard.md.
+                    MobileKeyboardHelper {}
                 }
             }
         }

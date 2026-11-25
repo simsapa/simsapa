@@ -31,10 +31,16 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
 │   ├── AndroidManifest.xml
 │   ├── AndroidManifest.beta.xml
 │   ├── build.gradle
+│   ├── qt-patches
 │   ├── res
 │   ├── res-beta
 ```
 
+- `qt-patches/` - The qtbase patches of the patched Qt for Android kit
+  (`git format-patch` files, applied in order; `debug/` holds an
+  instrumentation patch that is never shipped). Built into the kit by
+  `scripts/qt-patched-kit/build-kit.sh` (`make android-qt-kit`). See
+  [docs/qt-android-patched-kit.md](./docs/qt-android-patched-kit.md).
 - `AndroidManifest.xml` - Android app manifest. Permissions and `<uses-feature>`
   entries are declared **explicitly**: androiddeployqt's
   `%%INSERT_PERMISSIONS` / `%%INSERT_FEATURES` markers were deliberately removed
@@ -589,6 +595,17 @@ Frontend (Qt6/QML) ← → C++ Layer ← → Rust Backend with CXX-Qt (Database 
   `QT_ANDROID_KEYSTORE_*` env vars sourced from `android/signing.env`, then
   verifies the ABIs present in the artifact. See
   [docs/android-multi-abi-and-chromeos.md](./docs/android-multi-abi-and-chromeos.md).
+  Uses the patched Qt kit `../qt-<QT_ANDROID>-thai-fix` by default
+  (`QT_ANDROID_ROOT`; a stock kit only with `SIMSAPA_ALLOW_STOCK_QT=1`), stops
+  on a build dir configured with another kit, and runs the patched-Qt verify
+  gate on the package. See [docs/qt-android-patched-kit.md](./docs/qt-android-patched-kit.md).
+- `scripts/qt-patched-kit/` - Builds and checks the patched Qt for Android kit:
+  `env.sh` (shared settings), `prepare-src.sh` (pristine qtbase + `git am`
+  of `android/qt-patches/` in `../qt-work/qtbase-src`), `build-kit.sh`
+  (per-ABI qtbase build of the jar and the platform plugin, kit copy, swap,
+  manifest; `make android-qt-kit`), `relocate-kit.sh`, `verify-package.sh`
+  (the verify gate: dex classes, marker, per-ABI plugin checksums, fix call
+  sites).
 - `simsapa-installer.iss` - Inno Setup installer configuration for Windows
 - `WINDOWS_QUICK_START.md` - Quick reference for Windows builds
 - `WINDOWS_BUILD_GUIDE.md` - Complete Windows build documentation
