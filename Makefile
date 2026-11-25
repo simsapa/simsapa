@@ -116,8 +116,11 @@ js-test:
 qml-lint:
 	. ./scripts/qt-env.sh && qmllint -I ./bridges/assets/qml/ ./bridges/assets/qml/*.qml
 
+# qmltestrunner must be the project's Qt (scripts/qt-env.sh), like qmllint
+# above: a bare `qmltestrunner` resolves to the system Qt (/usr/bin), which
+# fails the run for reasons unrelated to the tests.
 qml-test: qml-lint
-	env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/
+	. ./scripts/qt-env.sh && env QT_QPA_PLATFORM=offscreen qmltestrunner -import ./bridges/assets/qml/ -input ./bridges/assets/qml/
 
 project-tree:
 	tree --gitignore --dirsfirst -I docs/ -I CMakeLists.txt.user -I res/ -I gradle/ -I vendor/ -I fonts/ -I icons/ -I scripts/ -I package-lock.json -I Cargo.lock -o project_tree.txt
