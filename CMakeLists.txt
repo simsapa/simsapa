@@ -376,6 +376,21 @@ if(NOT EXISTS "${qmake_path}")
 endif()
 message(STATUS "Using qmake: ${qmake_path}")
 
+# Which Qt kit this build uses, shown in the About dialog next to the Qt
+# version so a user can tell a build with the patched Android kit (the Thai
+# input fix, docs/qt-android-patched-kit.md) from a stock one. Decided by the
+# kit's manifest, as build-android.sh does, never by the path: the patched
+# kit root holds PATCHED-KIT-MANIFEST-<abi>.txt beside its android_<abi>
+# prefixes. In a multi-ABI build each ABI's sub-build decides for its own kit.
+set(SIMSAPA_QT_KIT "stock")
+if (ANDROID)
+    get_filename_component(_qt_kit_root "${_qt_prefix}/.." ABSOLUTE)
+    if(EXISTS "${_qt_kit_root}/PATCHED-KIT-MANIFEST-${ANDROID_ABI}.txt")
+        set(SIMSAPA_QT_KIT "thai-fix")
+    endif()
+endif()
+message(STATUS "Qt kit: ${SIMSAPA_QT_KIT}")
+
 find_package(CxxQt QUIET)
 if(NOT CxxQt_FOUND)
     include(FetchContent)
@@ -569,6 +584,15 @@ elseif (ANDROID)
 else()
     qt_add_executable(simsapadhammareader ${app_files})
 
+endif()
+
+# Read by get_qt_kit() in cpp/utils.cpp.
+target_compile_definitions(simsapadhammareader PRIVATE
+    SIMSAPA_QT_KIT="${SIMSAPA_QT_KIT}")
+# Read by get_android_version_code() in cpp/utils.cpp, for the About dialog.
+if (ANDROID AND NOT "${ANDROID_VERSION_CODE}" STREQUAL "")
+    target_compile_definitions(simsapadhammareader PRIVATE
+        SIMSAPA_ANDROID_VERSION_CODE="${ANDROID_VERSION_CODE}")
 endif()
 
 set_target_properties(simsapadhammareader PROPERTIES

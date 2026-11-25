@@ -160,6 +160,11 @@ ABI's kit as a **sibling** of the primary kit (`<kit>/../android_<abi>`,
   toolchain from the same root, so it uses the patched `android_x86_64` /
   `android_armv7` (checked: `CMAKE_TOOLCHAIN_FILE`, `Qt6_DIR` and qmake in
   `android_abi_builds/<abi>/CMakeCache.txt`).
+- **The About dialog shows the kit**, as `Qt Version: 6.9.3, Qt kit: thai-fix`
+  (or `stock`). `CMakeLists.txt` sets `SIMSAPA_QT_KIT` by the same manifest
+  test, per ABI (`<kit prefix>/../PATCHED-KIT-MANIFEST-<ANDROID_ABI>.txt`),
+  prints `-- Qt kit: …`, and compiles it into `get_qt_kit()` in
+  `cpp/utils.cpp`. Desktop builds are always `stock`.
 - `scripts/qt-env-verify.sh` checks the kits and the host kit under
   `QT_ANDROID_ROOT` (or the same default).
 

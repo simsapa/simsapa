@@ -799,6 +799,28 @@ QString get_qt_version() {
     return QString::fromLatin1(qVersion());
 }
 
+QString get_android_version_code() {
+    // The Android versionCode the package was built with (android/version.txt,
+    // passed in by CMakeLists.txt). Empty on other platforms, and on an Android
+    // build configured without ANDROID_VERSION_CODE (not via build-android.sh).
+#ifdef SIMSAPA_ANDROID_VERSION_CODE
+    return QString::fromLatin1(SIMSAPA_ANDROID_VERSION_CODE);
+#else
+    return QString();
+#endif
+}
+
+QString get_qt_kit() {
+    // Which Qt kit the app was built with: "thai-fix" for the patched Android
+    // kit (docs/qt-android-patched-kit.md), "stock" otherwise. Set by
+    // CMakeLists.txt from the kit's manifest.
+#ifdef SIMSAPA_QT_KIT
+    return QString::fromLatin1(SIMSAPA_QT_KIT);
+#else
+    return QString::fromLatin1("unknown");
+#endif
+}
+
 QString copy_apk_assets_to_internal_storage(QString apk_asset_path /* = QString("") */) {
     QString assets_storage = get_app_assets_path();
     QString ret_msg = QString("");

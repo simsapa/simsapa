@@ -859,6 +859,8 @@ pub mod qobject {
         fn get_import_staging_root() -> QString;
         fn copy_content_uri_to_temp_file(content_uri: &QString) -> QString;
         fn get_qt_version() -> QString;
+        fn get_qt_kit() -> QString;
+        fn get_android_version_code() -> QString;
         fn get_android_package_name() -> QString;
         fn get_installer_package_name() -> QString;
     }
@@ -1177,6 +1179,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn qt_version(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn qt_kit(self: &SuttaBridge) -> QString;
+
+        #[qinvokable]
+        fn android_version_code(self: &SuttaBridge) -> QString;
 
         #[qinvokable]
         fn dpd_version(self: &SuttaBridge) -> QString;
@@ -3300,6 +3308,18 @@ impl qobject::SuttaBridge {
 
     pub fn qt_version(&self) -> QString {
         qobject::get_qt_version()
+    }
+
+    /// The Qt kit the app was built with: "thai-fix" (the patched Android
+    /// kit) or "stock".
+    pub fn qt_kit(&self) -> QString {
+        qobject::get_qt_kit()
+    }
+
+    /// The Android versionCode (android/version.txt) the package was built
+    /// with, or empty (not Android).
+    pub fn android_version_code(&self) -> QString {
+        qobject::get_android_version_code()
     }
 
     /// DPD's own release (`db_info.dpd_release_version`), or "unknown".

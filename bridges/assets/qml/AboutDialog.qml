@@ -53,6 +53,12 @@ ApplicationWindow {
     property string app_version: Application.version
     // Runtime Qt version, e.g. "6.9.3" (from qVersion() via the C++ bridge).
     property string qt_version: SuttaBridge.qt_version()
+    // Qt kit the app was built with: "thai-fix" (the patched Android kit with
+    // the Thai input fix, docs/qt-android-patched-kit.md) or "stock".
+    property string qt_kit: SuttaBridge.qt_kit()
+    // Android versionCode from android/version.txt, e.g. "16"; empty on
+    // other platforms.
+    property string android_version_code: SuttaBridge.android_version_code()
     // Operating system name, e.g. "linux", "android", "osx", "windows".
     property string current_platform: Qt.platform.os
 
@@ -70,8 +76,8 @@ ApplicationWindow {
 
     function info_lines() {
         return [
-            `App version: ${root.app_version}`,
-            `Qt Version: ${root.qt_version}`,
+            `App version: ${root.app_version}` + (root.android_version_code ? `, Android version code: ${root.android_version_code}` : ""),
+            `Qt Version: ${root.qt_version}, Qt kit: ${root.qt_kit}`,
             `DPD version: ${SuttaBridge.dpd_version()}`,
             `SuttaCentral data: ${SuttaBridge.sc_data_version()}`,
             `Current platform: ${root.current_platform}`,
@@ -190,6 +196,7 @@ ApplicationWindow {
 
                     RowLayout {
                         spacing: 8
+                        Layout.fillWidth: true
                         Image {
                             source: "icons/appicons/simsapa.png"
                             Layout.preferredWidth: 64
@@ -199,15 +206,21 @@ ApplicationWindow {
                             text: root.app_name
                             font.bold: true
                             font.pointSize: root.pointSize + 5
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
                         }
                     }
 
+                    // fillWidth, or the column takes the labels' unwrapped
+                    // implicit width and the info text never wraps on a phone.
                     ColumnLayout {
                         spacing: 10
+                        Layout.fillWidth: true
                         Label {
                             textFormat: Text.RichText
                             font.pointSize: root.pointSize
-                            wrapMode: Text.WordWrap
+                            // Anywhere: the app data folder path has no spaces.
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             Layout.fillWidth: true
                             text: "<p>" + root.info_lines().join("</p><p>") + "</p>"
                         }
@@ -220,7 +233,7 @@ ApplicationWindow {
                             textFormat: Text.RichText
                             font.pointSize: root.pointSize
                             text: ""
-                            wrapMode: Text.WordWrap
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                             Layout.fillWidth: true
                         }
                     }

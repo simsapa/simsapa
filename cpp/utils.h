@@ -12,6 +12,8 @@ extern "C++" {
     QString copy_content_uri_to_temp_file(const QString& content_uri);
     QString get_qt_platform_name();
     QString get_qt_version();
+    QString get_qt_kit();
+    QString get_android_version_code();
     QString get_android_package_name();
     QString get_installer_package_name();
 }

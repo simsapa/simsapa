@@ -170,6 +170,14 @@ Item {
         return "6.9.3";
     }
 
+    function qt_kit(): string {
+        return "stock";
+    }
+
+    function android_version_code(): string {
+        return "";
+    }
+
 
     function dpd_version(): string {
 
